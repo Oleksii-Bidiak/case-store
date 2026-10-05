@@ -28,7 +28,7 @@ import {
 import { StaleCanonicalGuard } from "@/shared/lib/seo/stale-canonical-guard";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
-import { SITE_URL, dict } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER, H1_CLASS } from "@/shared/config";
 
 /**
  * `/catalog/<категорія>/<модель>` — the compatibility landing pages (TASK-490,
@@ -269,6 +269,7 @@ export async function generateMetadata({
         categoryImage: categoryNode?.image,
         defaultOgImage: seoMeta.ogImage,
         alt: title.absolute,
+        siteName,
       }),
     },
   };
@@ -364,8 +365,7 @@ export default async function CompatLandingPage({
   );
 
   return (
-    // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products catalog page shell (shared grid must align pixel-for-pixel)
-    <div className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 sm:py-8">
+    <div className={`${PAGE_CONTAINER} py-6 sm:py-8`}>
       {/* TASK-835 — a facet ticked before the head hydrates would otherwise
           leave the old canonical next to the new one. */}
       {canonicalPath && (
@@ -376,8 +376,7 @@ export default async function CompatLandingPage({
 
       <nav
         aria-label={dict.product.breadcrumbAria}
-        // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products breadcrumb type size
-        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-[13.5px] text-muted-foreground"
+        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
       >
         {trail.map((crumb, i) => {
           const isLast = i === trail.length - 1;
@@ -407,18 +406,25 @@ export default async function CompatLandingPage({
         })}
       </nav>
 
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products title block spacing */}
-      <div className="mb-[18px]">
-        {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products H1 type size */}
-        <h1 className="font-display text-[31px] leading-tight font-bold tracking-tight text-foreground">
-          {heading}
-        </h1>
+      <div className="mb-4.5">
+        <h1 className={`${H1_CLASS} text-foreground`}>{heading}</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           {subtitle}
         </p>
       </div>
 
-      <Suspense fallback={<ProductListSkeleton />}>
+      {/* Same shell as /categories/[slug] (TASK-515), and no device card —
+          the route fixes the device. */}
+      <Suspense
+        fallback={
+          <ProductListSkeleton
+            withSidebar
+            withCategoryChips={false}
+            hasCategory
+            lockedDevice
+          />
+        }
+      >
         <ProductListView
           initialParams={initialParams}
           lockedCategory={{ id: page.categoryId, slug: page.categorySlug }}

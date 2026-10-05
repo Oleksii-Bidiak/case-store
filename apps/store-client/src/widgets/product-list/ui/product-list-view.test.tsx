@@ -2,9 +2,14 @@ import { http, HttpResponse } from "msw";
 import {
   HydrationBoundary,
   QueryClient,
+  QueryClientProvider,
   dehydrate,
 } from "@tanstack/react-query";
+import { renderToString } from "react-dom/server";
+import { getCategoryControllerGetCategoryTreeQueryKey } from "@/entities/category";
 import { getProductControllerFindAllQueryKey } from "@/entities/product";
+import { AuthContext } from "@/entities/session/model/auth.context";
+import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import {
   renderWithProviders,
   screen,
@@ -204,6 +209,105 @@ describe("ProductListView — lockedCategory (/categories/[slug], TASK-277)", ()
 });
 
 /**
+ * TASK-1301 — `/promo` «Товари зі знижкою» is this listing with the discount
+ * as a route lock: the full catalogue toolbar, minus the «Зі знижкою» control.
+ */
+describe("ProductListView — lockedOnSale (/promo, TASK-1301)", () => {
+  it("queries on-sale positions only, whatever the URL says", async () => {
+    const productRequests = installCatalogHandlers();
+    currentPathname = "/promo";
+    currentQuery = "onSale=false&category=cases";
+
+    renderWithProviders(<ProductListView lockedOnSale />);
+
+    await screen.findByText("Alpha Case");
+    const lastRequest = productRequests.at(-1)!;
+    expect(lastRequest.searchParams.get("onSale")).toBe("true");
+    expect(lastRequest.searchParams.get("category")).toBe("cases");
+  });
+
+  it("keeps the catalogue chips row, but neither the discount control nor its chip", async () => {
+    installCatalogHandlers();
+    currentPathname = "/promo";
+    currentQuery = "inStock=true";
+
+    renderWithProviders(<ProductListView lockedOnSale />);
+    await screen.findByText("Alpha Case");
+
+    expect(
+      await screen.findByRole("group", {
+        name: dict.filters.categoryChipsAria,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: dict.filters.onSaleOnly }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: new RegExp(`^${dict.filters.onSaleChip}`),
+      }),
+    ).not.toBeInTheDocument();
+    // The availability chip stays: only the locked axis disappears.
+    expect(
+      screen.getByRole("button", {
+        name: new RegExp(`^${dict.filters.inStockChip}`),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("badges the filters button without the locked discount", async () => {
+    installCatalogHandlers();
+    currentPathname = "/promo";
+    currentQuery = "brand=apple";
+
+    renderWithProviders(<ProductListView lockedOnSale />);
+    await screen.findByText("Alpha Case");
+
+    const button = screen.getByRole("button", {
+      name: new RegExp(dict.filters.filtersButton),
+    });
+    expect(within(button).getByText("1")).toBeInTheDocument();
+  });
+
+  it("stays on /promo and keeps the lock when every filter is reset", async () => {
+    const user = userEvent.setup();
+    const productRequests = installCatalogHandlers({ empty: true });
+    currentPathname = "/promo";
+    currentQuery = "minPrice=9999";
+
+    renderWithProviders(<ProductListView lockedOnSale />);
+
+    await user.click(
+      await screen.findByRole("button", { name: dict.catalog.clearAllFilters }),
+    );
+
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    const [path, query] = target.split("?");
+    expect(path).toBe("/promo");
+    expect(new URLSearchParams(query).has("minPrice")).toBe(false);
+    expect(productRequests.at(-1)?.searchParams.get("onSale")).toBe("true");
+  });
+
+  // Next scrolls a search-param navigation to the page top — on /promo that is
+  // the hero, two screens above the listing. The anchor keeps it on the deals.
+  it("points filter changes and page links back at its anchor", async () => {
+    const user = userEvent.setup();
+    installCatalogHandlers({ empty: true });
+    currentPathname = "/promo";
+    currentQuery = "minPrice=9999";
+
+    renderWithProviders(<ProductListView lockedOnSale anchorId="deals" />);
+
+    await user.click(
+      await screen.findByRole("button", { name: dict.catalog.clearAllFilters }),
+    );
+
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    expect(target).toMatch(/^\/promo\?[^#]*#deals$/);
+  });
+});
+
+/**
  * TASK-414 — the catalogue filters: one reset set, the availability param, and
  * the per-category brand query.
  */
@@ -365,7 +469,7 @@ describe("ProductListView — filters (TASK-414)", () => {
     installCatalogHandlers();
 
     const aside = container.querySelector("aside")!;
-    expect(aside.className).toContain("lg:max-h-[calc(100dvh-7rem)]");
+    expect(aside.className).toContain("lg:max-h-sticky-aside");
     expect(aside.className).toContain("lg:overflow-y-auto");
     expect(aside.className).toContain("lg:overscroll-contain");
   });
@@ -528,5 +632,168 @@ describe("ProductListView — adopts the server's prefetch (TASK-563)", () => {
     expect(screen.getByText("Server Case")).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(productRequests).toHaveLength(0);
+  });
+});
+
+/**
+ * TASK-515 — the chips row is 60px of page above the toolbar and the grid. It
+ * used to be absent from the server HTML (no tree there) and mount after
+ * hydration, so the grid first rose out of the skeleton's place and then fell
+ * back. Now the row is in the first HTML when the route prefetched the tree,
+ * and a same-size placeholder stands in whenever there is no tree yet.
+ */
+describe("ProductListView — the category chips row holds its place (TASK-515)", () => {
+  const tree = {
+    data: [
+      treeNode("cat-locked", "cases", "Чохли"),
+      treeNode("cat-other", "chargers", "Зарядні"),
+    ],
+  };
+
+  const serverHtml = (ui: React.ReactElement) =>
+    renderToString(
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthContext.Provider
+          value={{
+            accessToken: null,
+            userId: null,
+            role: null,
+            isAuthenticated: false,
+            isInitializing: false,
+            setTokens: jest.fn(),
+            clearTokens: jest.fn(),
+          }}
+        >
+          {ui}
+        </AuthContext.Provider>
+      </QueryClientProvider>,
+    );
+
+  it("puts the chips into the server HTML when the route prefetched the tree", () => {
+    const prefetched = new QueryClient();
+    prefetched.setQueryData(
+      getCategoryControllerGetCategoryTreeQueryKey(),
+      tree,
+    );
+
+    const html = serverHtml(
+      <PrefetchBoundary state={dehydrate(prefetched)}>
+        <ProductListView categoryTreePrefetched />
+      </PrefetchBoundary>,
+    );
+
+    expect(html).toContain(`aria-label="${dict.filters.categoryChipsAria}"`);
+    expect(html).toContain("Зарядні");
+    expect(html).not.toContain('data-testid="category-chips-skeleton"');
+  });
+
+  it("reserves the row with its placeholder when the server had no tree", () => {
+    const html = serverHtml(<ProductListView />);
+
+    expect(html).toContain('data-testid="category-chips-skeleton"');
+    expect(html).not.toContain(dict.filters.categoryChipsAria);
+  });
+
+  it("keeps the placeholder on the client until the tree arrives", async () => {
+    installCatalogHandlers();
+    server.use(
+      http.get("*/api/categories/tree", () => new Promise<never>(() => {})),
+    );
+
+    renderWithProviders(<ProductListView />);
+
+    await screen.findByText("Alpha Case");
+    expect(screen.getByTestId("category-chips-skeleton")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: dict.filters.categoryChipsAria }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("swaps the placeholder for the chips once the tree is there", async () => {
+    installCatalogHandlers();
+
+    renderWithProviders(<ProductListView />);
+
+    expect(
+      await screen.findByRole("group", {
+        name: dict.filters.categoryChipsAria,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("category-chips-skeleton"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("draws no row at all on a category landing page, placeholder included", async () => {
+    installCatalogHandlers();
+    currentPathname = "/categories/cases";
+
+    renderWithProviders(
+      <ProductListView lockedCategory={{ id: "cat-locked", slug: "cases" }} />,
+    );
+
+    await screen.findByText("Alpha Case");
+    expect(
+      screen.queryByTestId("category-chips-skeleton"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// design-system §6 (TASK-870): icon + one line + ONE primary action, and the
+// action is a reset only when a reset would change something.
+describe("ProductListView — empty state (TASK-870)", () => {
+  it("makes the filter reset the primary action when filters emptied the list", async () => {
+    installCatalogHandlers({ empty: true });
+    currentQuery = "minPrice=9999";
+
+    renderWithProviders(<ProductListView />);
+    await screen.findByText(dict.catalog.emptyHeading);
+
+    expect(
+      screen.getByRole("button", { name: dict.catalog.clearAllFilters }),
+    ).toHaveAttribute("data-variant", "default");
+  });
+
+  it("leads home from an empty, unfiltered /products instead of a no-op reset", async () => {
+    installCatalogHandlers({ empty: true });
+
+    renderWithProviders(<ProductListView />);
+    await screen.findByText(dict.catalog.emptyUnfilteredBody);
+
+    expect(
+      screen.queryByRole("button", { name: dict.catalog.clearAllFilters }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: dict.common.goHome }),
+    ).toHaveAttribute("href", "/");
+  });
+
+  it("leads to the catalogue from an empty category landing page", async () => {
+    installCatalogHandlers({ empty: true });
+    currentPathname = "/categories/cases";
+
+    renderWithProviders(
+      <ProductListView lockedCategory={{ id: "cat-locked", slug: "cases" }} />,
+    );
+    await screen.findByText(dict.catalog.emptyHeading);
+
+    expect(
+      screen.getByRole("link", { name: dict.catalog.emptyBrowseAll }),
+    ).toHaveAttribute("href", "/products");
+  });
+
+  it("says nothing is on sale on an unfiltered /promo and leads to the catalogue", async () => {
+    installCatalogHandlers({ empty: true });
+    currentPathname = "/promo";
+
+    renderWithProviders(<ProductListView lockedOnSale />);
+    await screen.findByText(dict.promo.dealsEmptyHeading);
+
+    expect(
+      screen.queryByRole("button", { name: dict.catalog.clearAllFilters }),
+    ).not.toBeInTheDocument();
+    const cta = screen.getByRole("link", { name: dict.promo.dealsEmptyCta });
+    expect(cta).toHaveAttribute("href", "/products");
+    expect(cta).toHaveAttribute("data-variant", "default");
   });
 });

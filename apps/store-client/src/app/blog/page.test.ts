@@ -14,6 +14,9 @@ jest.mock("@/shared/api/pages-server", () => ({
 jest.mock("@/shared/api/seo-settings-server", () => ({
   fetchSeoSettings: jest.fn().mockResolvedValue(null),
 }));
+jest.mock("@/shared/api/site-contact-server", () => ({
+  fetchSiteContactSettings: jest.fn().mockResolvedValue(null),
+}));
 
 import { isValidElement, type ReactElement } from "react";
 import { SITE_URL, dict } from "@/shared/config";

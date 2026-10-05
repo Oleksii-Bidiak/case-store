@@ -40,6 +40,20 @@ describe("AccountClaimedOrders", () => {
     ).toHaveAttribute("href", "/orders");
   });
 
+  it("leaves the profile's «Зберегти» the only primary — outline + ghost (TASK-865)", () => {
+    params = new URLSearchParams("claimed=2");
+
+    const { container } = renderWithProviders(<AccountClaimedOrders />);
+
+    expect(container.querySelectorAll(".bg-primary")).toHaveLength(0);
+    expect(
+      screen.getByRole("link", { name: d.claimedOrdersCta }),
+    ).toHaveAttribute("data-variant", "outline");
+    expect(
+      screen.getByRole("button", { name: d.claimedOrdersDismiss }),
+    ).toHaveAttribute("data-variant", "ghost");
+  });
+
   it.each([
     ["no parameter at all", ""],
     ["a claim of zero — the normal case for everyone", "claimed=0"],

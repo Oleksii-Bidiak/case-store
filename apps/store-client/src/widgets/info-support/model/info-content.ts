@@ -115,10 +115,13 @@ export interface InfoPageLink {
   href: string;
 }
 
-// TASK-311 — NO FABRICATED FACTS in this file. Anything that is a claim about
-// the company (cities served, pickup points, service centres, years on the
-// market, customer counts, ratings) is an explicit `[bracketed placeholder]`
-// the owner fills in. Never replace a placeholder with a plausible invention.
+// TASK-311 — NO FABRICATED FACTS in this file. A claim about the company that
+// the code cannot know (cities served, pickup points, service centres, years on
+// the market, customer counts, ratings, a support schedule) is NOT written here
+// at all — never as a plausible invention, and since TASK-873 not as a visible
+// `[bracketed placeholder]` either: those reached shoppers verbatim whenever the
+// API was down. The owner states such facts in the CMS pages /info reads; this
+// fallback says only what holds for every deployment.
 
 export const DELIVERY_OPTIONS: readonly InfoOptionCard[] = [
   {
@@ -126,18 +129,6 @@ export const DELIVERY_OPTIONS: readonly InfoOptionCard[] = [
     title: "Нова Пошта",
     desc: "Відділення або поштомат по всій Україні",
     price: "за тарифом НП",
-  },
-  {
-    icon: "courier",
-    title: "Курʼєр по місту",
-    desc: "[міста курʼєрської доставки] — доставка в день замовлення",
-    price: "[вартість]",
-  },
-  {
-    icon: "pickup",
-    title: "Самовивіз",
-    desc: "[адреса пункту самовивозу]",
-    price: "безкоштовно",
   },
 ];
 
@@ -150,7 +141,7 @@ export const PAYMENT_OPTIONS: readonly InfoOptionCard[] = [
   {
     icon: "card",
     title: "Картка онлайн",
-    desc: "[платіжний провайдер: підключити перед запуском]",
+    desc: "Оплата карткою на сайті під час оформлення замовлення",
   },
   {
     icon: "shield",
@@ -173,16 +164,16 @@ export const WARRANTY_CARDS: readonly InfoWarrantyCard[] = [
   {
     big: "100%",
     title: "оригінальна техніка",
-    desc: "Сервісне обслуговування — [сервісний центр / партнер]",
+    desc: "Кожен пристрій перевіряємо перед відправкою",
   },
 ];
 
-export const ABOUT_STATS: readonly InfoStat[] = [
-  { num: "[N]", label: "років на ринку" },
-  { num: "[N]", label: "товарів у каталозі" },
-  { num: "[N]", label: "клієнтів" },
-  { num: "[N]", label: "середня оцінка" },
-];
+/**
+ * «Про нас у цифрах» — empty in the fallback: every figure (years, products,
+ * customers, rating) is a company fact the owner writes in the
+ * `info-about-stats` page. The view renders no stat row for an empty list.
+ */
+export const ABOUT_STATS: readonly InfoStat[] = [];
 
 export const ABOUT_VALUES: readonly InfoValue[] = [
   {
@@ -193,14 +184,14 @@ export const ABOUT_VALUES: readonly InfoValue[] = [
   { title: "Швидка доставка", desc: "Відправка день у день по всій Україні" },
   {
     title: "Підтримка",
-    desc: "Допоможемо з вибором та після покупки: [графік роботи підтримки]",
+    desc: "Допоможемо з вибором та після покупки",
   },
 ];
 
 export const INFO_FAQS: readonly InfoFaq[] = [
   {
     q: "Скільки коштує доставка?",
-    a: "Доставка Новою Поштою — за тарифами перевізника, безкоштовно при замовленні від 1 000 ₴. Курʼєр по місту — [вартість], самовивіз — [адреса пункту самовивозу].",
+    a: "Доставка Новою Поштою — за тарифами перевізника, безкоштовно при замовленні від 1 000 ₴.",
   },
   {
     q: "Як швидко відправляєте замовлення?",
@@ -220,6 +211,6 @@ export const INFO_FAQS: readonly InfoFaq[] = [
   },
   {
     q: "Які способи оплати доступні?",
-    a: "Оплата при отриманні — готівкою або карткою у відділенні Нової Пошти. Оплата карткою онлайн — [платіжний провайдер: підключити перед запуском].",
+    a: "Оплата при отриманні — готівкою або карткою у відділенні Нової Пошти. Оплата карткою онлайн — на сайті під час оформлення замовлення.",
   },
 ];

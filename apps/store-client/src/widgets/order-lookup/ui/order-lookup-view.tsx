@@ -1,4 +1,4 @@
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 import { OrderLookupForm } from "./order-lookup-form";
 
 /**
@@ -10,7 +10,7 @@ import { OrderLookupForm } from "./order-lookup-form";
 export function OrderLookupView() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
-      <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
+      <h1 className={`${H1_CLASS} text-foreground`}>
         {dict.orderLookup.heading}
       </h1>
       <OrderLookupForm />

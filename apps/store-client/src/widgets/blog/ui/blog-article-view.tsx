@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS, H2_CLASS } from "@/shared/config";
 import { FallbackImg } from "@/shared/ui";
 import {
   authorInitial,
@@ -34,7 +34,7 @@ export function BlogArticleView({
       {/* Breadcrumbs */}
       <nav
         aria-label={dict.product.breadcrumbAria}
-        className="mb-[22px] flex flex-wrap items-center gap-[9px] text-[13.5px] text-muted-foreground"
+        className="mb-[22px] flex flex-wrap items-center gap-[9px] text-sm text-muted-foreground"
       >
         <Link href="/" className="transition-colors hover:text-foreground">
           {dict.blog.breadcrumbHome}
@@ -53,16 +53,10 @@ export function BlogArticleView({
 
       {/* Article head */}
       <div className="mx-auto max-w-[760px]">
-        <span
-          className="inline-flex items-center gap-[7px] rounded-full px-[13px] py-[5px] text-[12.5px] font-bold tracking-[0.04em] text-primary"
-          style={{
-            background:
-              "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-          }}
-        >
+        <span className="inline-flex items-center gap-[7px] rounded-full px-[13px] py-[5px] text-xs font-bold tracking-[0.04em] text-primary bg-primary/12">
           {post.categoryName}
         </span>
-        <h1 className="mt-4 mb-3.5 font-display text-[36px] font-bold leading-[1.12] tracking-[-0.025em] text-foreground">
+        <h1 className={`mt-4 mb-3.5 ${H1_CLASS} text-foreground`}>
           {post.title}
         </h1>
         <p className="mb-[22px] text-[18px] leading-[1.55] text-muted-foreground">
@@ -74,7 +68,7 @@ export function BlogArticleView({
               {authorInitial(post.author)}
             </span>
             <div className="flex flex-col leading-[1.35]">
-              <span className="text-[14.5px] font-semibold text-foreground">
+              <span className="text-sm font-semibold text-foreground">
                 {post.author}
               </span>
               <span className="text-[13px] text-muted-foreground">
@@ -89,21 +83,21 @@ export function BlogArticleView({
         </div>
       </div>
 
-      {/* Cover */}
+      {/* Cover — sized by aspect ratio, not a fixed 380px (TASK-878): 4:3 on a
+          phone, 16:9 from sm, 5:2 from lg (≈380px tall at the 960px cap). */}
       <div
-        className="relative mx-auto mt-[26px] h-[380px] max-w-[960px] overflow-hidden rounded-[20px] shadow-elevated"
+        className="relative mx-auto mt-[26px] aspect-4/3 max-w-[960px] overflow-hidden rounded-2xl shadow-elevated sm:aspect-video lg:aspect-5/2"
         style={{ background: blogGradient(post.hue) }}
       >
         {/* A cover the CSP blocks or that fails to load leaves the gradient,
-            not a broken box (TASK-759). */}
+            not a broken box (TASK-759). TASK-873: the mockup's
+            «[ обкладинка статті ]» caption is gone — it was printed over the
+            real photo too. */}
         <FallbackImg
           src={post.coverImageUrl}
           alt=""
           className="size-full object-cover"
         />
-        <span className="absolute right-[18px] bottom-4 font-mono text-xs text-white/70">
-          {dict.blog.article.coverCaption}
-        </span>
       </div>
 
       {/* Body + TOC */}
@@ -116,7 +110,7 @@ export function BlogArticleView({
       {/* Related */}
       {related.length > 0 && (
         <section className="mt-[52px]">
-          <h2 className="mb-5 font-display text-[23px] font-bold tracking-[-0.02em] text-foreground">
+          <h2 className={`mb-5 ${H2_CLASS} text-foreground`}>
             {dict.blog.article.relatedHeading}
           </h2>
           <div className="grid gap-[22px] [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">

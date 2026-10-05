@@ -78,6 +78,17 @@
   --color-footer: #0f172a;
   --color-footer-foreground: #ffffff;
 
+  /* Brand gradient (TASK-879) — the primary hue deepening towards violet, for
+     the decorative panels that carry white copy (/contact hero, /info «Про
+     нас») and the 404 numeral. Declared once, not per theme: it is built from
+     `--color-primary`, so it follows whichever primary the theme resolves.
+     One definition instead of an inline `style` per widget → `bg-brand-gradient`. */
+  --gradient-brand: linear-gradient(
+    135deg,
+    var(--color-primary),
+    color-mix(in oklab, var(--color-primary) 55%, oklch(0.4 0.16 300))
+  );
+
   /* Radius — softened for a modern retail feel (was 0.375rem) */
   --radius: 0.75rem;
 
@@ -285,7 +296,7 @@
 /* ─────────────────────────────────────────────
    Tailwind v4 Theme — maps CSS vars to utilities
    e.g. --color-primary → bg-primary, text-primary
-        --radius        → rounded-[var(--radius)]
+        --radius-card   → rounded-card
    ───────────────────────────────────────────── */
 @theme inline {
   /* Colors */
@@ -331,11 +342,57 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
+  /* Role radii (owner decision 7.9, design-system.md §5, TASK-862) —
+     what the storefront renders, named by role instead of by px. */
+  --radius-card: 18px; /* card: product, info, cart/checkout/order panels */
+  --radius-cta: 13px; /* large primary call-to-action */
+  --radius-menu: 11px; /* menu / navigation item */
+
+  /* Layout — the one page-container width (owner decision 7.1, TASK-860).
+     `--container-*` is Tailwind's max-width namespace → `max-w-page`. Use it
+     through `PAGE_CONTAINER` (shared/config/layout.ts), not on its own. */
+  --container-page: 1320px;
+  /* Height cap of a sticky filter aside (TASK-414, TASK-517): the viewport
+     minus the 6rem sticky offset (`top-24`, STICKY_ASIDE_TOP) and a 1rem
+     breathing gap, so a tall aside scrolls inside itself instead of running
+     off a short screen. `--max-height-*` is Tailwind's max-height namespace →
+     `max-h-sticky-aside`. Pair with `overflow-y-auto overscroll-contain`. */
+  --max-height-sticky-aside: calc(100dvh - 7rem);
+  /* Height cap of a popover-anchored listbox (Combobox, TASK-502): the 15rem
+     list it always had (`max-h-60`), shrunk to the room Radix measured on the
+     side it opened towards — but never below 7.5rem (about three rows). The
+     floor is what makes the list FLIP: an async list first opens as a one-line
+     «Пошук…» that fits any sliver below the input, and a cap equal to that
+     sliver would then clamp the arriving results to it, so the list would never
+     overflow and collision detection would never move it. With the floor, a
+     cramped side overflows and Radix flips the list above the input. The
+     fallback keeps the plain 15rem if the variable is ever missing (an
+     undefined var would make the whole value invalid → no cap at all).
+     → `max-h-listbox`. */
+  --max-height-listbox: min(
+    15rem,
+    max(var(--radix-popover-content-available-height, 15rem), 7.5rem)
+  );
 
   /* Fonts */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-sora), var(--font-geist-sans);
+}
+
+/* Tailwind v4 has no background-image theme namespace, so the brand gradient
+   token becomes a utility here (TASK-879). Pair with `bg-clip-text
+   text-transparent` for gradient text. */
+@utility bg-brand-gradient {
+  background-image: var(--gradient-brand);
+}
+
+/* The cart and checkout page split: a fluid content column beside the 380px
+   summary (`lg:grid-cols-checkout`). One token for both pages and their
+   skeletons instead of four `grid-cols-[1fr_380px]` behind lint disables.
+   `minmax(0, 1fr)`: a long word or URL cannot widen the content track. */
+@utility grid-cols-checkout {
+  grid-template-columns: minmax(0, 1fr) 380px;
 }
 
 /* ─────────────────────────────────────────────
@@ -374,6 +431,20 @@
      utility (e.g. `cursor-zoom-in`) still wins. */
   button:not(:disabled) {
     cursor: pointer;
+  }
+
+  /* Room for a fixed bottom bar (TASK-864). A bar that pins a page's primary
+     action to the bottom edge below `md` marks itself `data-mobile-bar`; while
+     one is mounted, <body> gets bottom padding AFTER the footer, so at the very
+     end of the scroll the bar sits over this empty band instead of the footer's
+     last row (payment chips, copyright). A padding on the page view could not
+     do this — the footer renders after it. `:has()` re-evaluates live, so the
+     reserve exists exactly while a bar does (an empty cart, a finished order
+     have none), and from `md` up — where the bar dissolves — there is none. */
+  body:has([data-mobile-bar]) {
+    @variant max-md {
+      padding-bottom: --spacing(24);
+    }
   }
 }
 

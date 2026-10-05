@@ -385,7 +385,7 @@ export function CartItemRow({
 
   return (
     <li
-      className={`flex gap-[18px] border-b border-border p-[22px] last:border-b-0 ${
+      className={`flex gap-4 md:gap-6 border-b border-border p-[22px] last:border-b-0 ${
         removeItem.isPending ? "pointer-events-none opacity-60" : ""
       }`}
     >
@@ -393,7 +393,7 @@ export function CartItemRow({
         href={productHref}
         onClick={onNavigate}
         aria-label={dict.cart.viewProductAria(item.productName)}
-        className="shrink-0 rounded-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="shrink-0 rounded-cta focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {item.imageUrl && !imgFailed ? (
           <Image
@@ -402,12 +402,12 @@ export function CartItemRow({
             width={96}
             height={96}
             onError={() => setImgFailed(true)}
-            className="size-24 rounded-[13px] object-cover"
+            className="size-24 rounded-cta object-cover"
           />
         ) : (
           <ProductThumb
             name={item.productName}
-            className="size-24 rounded-[13px]"
+            className="size-24 rounded-cta"
             initialClassName="text-3xl"
           />
         )}
@@ -439,7 +439,7 @@ export function CartItemRow({
               </>
             ) : (
               <p
-                className={`flex items-center gap-1.5 text-[12.5px] ${
+                className={`flex items-center gap-1.5 text-xs ${
                   outOfStock ? "text-muted-foreground" : "text-success"
                 }`}
               >
@@ -514,7 +514,7 @@ export function CartItemRow({
 
           <div className="text-right">
             {lineOldText && (
-              <span className="block text-[12.5px] text-muted-foreground line-through">
+              <span className="block text-xs text-muted-foreground line-through">
                 {lineOldText}
               </span>
             )}
@@ -526,7 +526,7 @@ export function CartItemRow({
 
         {offers.length > 0 && (
           <div className="mt-4 border-t border-dashed border-border pt-3">
-            <p className="mb-1 flex items-center gap-1.5 text-[12.5px] font-bold text-primary">
+            <p className="mb-1 flex items-center gap-1.5 text-xs font-bold text-primary">
               <ShieldCheck className="size-[15px]" aria-hidden="true" />
               {dict.cart.offersHeading}
             </p>
@@ -557,10 +557,10 @@ export function CartItemRow({
                       />
                     )}
                   </span>
-                  <span className="min-w-0 flex-1 text-[13.5px] text-foreground">
+                  <span className="min-w-0 flex-1 text-sm text-foreground">
                     {service.name}
                   </span>
-                  <b className="font-mono text-[13.5px] font-bold whitespace-nowrap text-foreground">
+                  <b className="font-mono text-sm font-bold whitespace-nowrap text-foreground">
                     +{formatMoney(service.price)}
                   </b>
                 </label>

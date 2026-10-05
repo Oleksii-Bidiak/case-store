@@ -1,4 +1,5 @@
 import type { BannerEntity } from "@/shared/api/generated/models";
+import { PAGE_CONTAINER } from "@/shared/config";
 import { HeroSlider } from "./hero-slider";
 import { HeroCategorySidebar } from "./hero-category-sidebar";
 import { ModelPicker } from "./model-picker";
@@ -22,10 +23,7 @@ interface HeroBannerProps {
  */
 export function HeroBanner({ heroSlides, promoTiles }: HeroBannerProps = {}) {
   return (
-    <section
-      aria-label="Головний банер"
-      className="mx-auto w-full max-w-7xl px-4 pt-6"
-    >
+    <section aria-label="Головний банер" className={`${PAGE_CONTAINER} pt-6`}>
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
         <HeroCategorySidebar />

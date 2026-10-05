@@ -59,6 +59,16 @@ describe("Newsletter — social channels from the contact settings (TASK-741)", 
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
+  it("draws the subscribe submit as an outline, not a second primary (TASK-865)", () => {
+    renderWithProviders(<Newsletter />);
+
+    const submit = screen.getByRole("button", {
+      name: dict.newsletterForm.submit,
+    });
+    expect(submit).not.toHaveClass("bg-primary");
+    expect(submit).toHaveClass("border-border", "bg-background");
+  });
+
   it("still renders the newsletter subscribe form (regression)", () => {
     renderWithProviders(<Newsletter />);
 

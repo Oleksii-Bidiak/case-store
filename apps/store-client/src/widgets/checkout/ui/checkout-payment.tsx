@@ -53,7 +53,7 @@ const ICONS: Record<
  */
 export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
   return (
-    <section className="rounded-[18px] border border-border bg-card p-6 shadow-card">
+    <section className="rounded-card border border-border bg-card p-6 shadow-card">
       <h2 className="mb-4 font-display text-lg font-bold text-foreground">
         {dict.checkout.paymentHeading}
       </h2>
@@ -80,9 +80,7 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
                   className={[
                     "flex items-center gap-3.5 rounded-xl border-[1.5px] p-4 transition-colors",
                     "focus-within:outline-none focus-within:ring-2 focus-within:ring-ring",
-                    checked
-                      ? "border-primary [background:color-mix(in_oklab,var(--color-primary)_6%,var(--color-card))]"
-                      : "border-border",
+                    checked ? "border-primary bg-primary/6" : "border-border",
                     option.enabled
                       ? "cursor-pointer hover:border-primary/60"
                       : "cursor-not-allowed opacity-60",
@@ -102,24 +100,15 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
                     onChange={() => field.onChange(option.method)}
                   />
 
-                  <span
-                    className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-primary"
-                    style={{
-                      background:
-                        "color-mix(in oklab, var(--color-primary) 10%, var(--color-card))",
-                    }}
-                  >
+                  <span className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-primary bg-primary/10">
                     <Icon className="size-5" />
                   </span>
 
                   <span className="min-w-0 flex-1">
-                    <b className="block text-[14.5px] text-foreground">
+                    <b className="block text-sm text-foreground">
                       {option.title}
                     </b>
-                    <span
-                      id={noteId}
-                      className="text-[12.5px] text-muted-foreground"
-                    >
+                    <span id={noteId} className="text-xs text-muted-foreground">
                       {option.blockedBy === "account-required"
                         ? dict.checkout.payment.accountRequired
                         : option.note}
@@ -129,7 +118,7 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
                   {option.blockedBy === "account-required" && (
                     <Link
                       href="/login?redirect=/checkout"
-                      className="shrink-0 rounded text-[12.5px] font-medium text-primary underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="shrink-0 rounded text-xs font-medium text-primary underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {dict.checkout.payment.signIn}
                     </Link>
@@ -141,7 +130,7 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
         )}
       />
 
-      <p className="mt-3.5 flex items-start gap-2 text-[12.5px] text-muted-foreground">
+      <p className="mt-3.5 flex items-start gap-2 text-xs text-muted-foreground">
         <Phone className="mt-px size-3.5 shrink-0" aria-hidden="true" />
         {dict.checkout.paymentManagerNote}
       </p>

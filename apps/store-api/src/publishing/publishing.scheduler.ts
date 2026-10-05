@@ -17,7 +17,7 @@ const DEFAULT_CRON = '* * * * *';
 /**
  * PublishingScheduler — cron-driven publisher for scheduled content (TASK-187).
  *
- * Mirrors {@link MailOutboxWorker}: the job is registered in `onModuleInit` via
+ * Mirrors {@link NotificationOutboxWorker}: the job is registered in `onModuleInit` via
  * {@link SchedulerRegistry} (not the `@Cron` decorator) so the schedule is read
  * from config at runtime — `PUBLISHING_CRON`, default `* * * * *`.
  *

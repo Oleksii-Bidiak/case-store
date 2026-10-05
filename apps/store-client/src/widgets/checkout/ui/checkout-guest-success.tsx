@@ -4,7 +4,7 @@ import Link from "next/link";
 import { CheckCircle2, Mail, UserPlus } from "lucide-react";
 import type { OrderEntity } from "@/entities/order";
 import { Button } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
 import { CheckoutStepIndicator } from "./checkout-step-indicator";
 
@@ -51,11 +51,10 @@ export function CheckoutGuestSuccess({
           right up to the moment the order existed (TASK-407). */}
       <CheckoutStepIndicator current={3} />
 
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- matches the grandfathered checkout card radius this panel replaces on screen */}
-      <section className="flex flex-col gap-3 rounded-[18px] border border-border bg-card p-6 shadow-card">
+      <section className="flex flex-col gap-3 rounded-card border border-border bg-card p-6 shadow-card">
         <div className="flex items-center gap-3">
           <CheckCircle2 className="size-7 shrink-0 text-primary" aria-hidden />
-          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
+          <h1 className={`${H1_CLASS} text-foreground`}>
             {dict.checkout.guest.successHeading}
           </h1>
         </div>
@@ -92,8 +91,7 @@ export function CheckoutGuestSuccess({
         )}
       </section>
 
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- matches the grandfathered checkout card radius this panel replaces on screen */}
-      <section className="flex flex-col gap-3 rounded-[18px] border border-border bg-card p-6 shadow-card">
+      <section className="flex flex-col gap-3 rounded-card border border-border bg-card p-6 shadow-card">
         <div className="flex items-center gap-3">
           <UserPlus className="size-5 shrink-0 text-primary" aria-hidden />
           <h2 className="font-display text-lg font-bold text-foreground">

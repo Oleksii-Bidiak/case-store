@@ -6,7 +6,7 @@ import { useProductControllerGetCards } from "@/entities/product";
 import { ProductCard, Skeleton } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
-import { dict } from "@/shared/config";
+import { dict, H2_CLASS, PAGE_CONTAINER } from "@/shared/config";
 import {
   subscribeRecentlyViewed,
   getRecentlyViewedSnapshot,
@@ -70,12 +70,12 @@ export function RecentlyViewed() {
   return (
     <section
       aria-labelledby="recently-viewed-heading"
-      className="mx-auto w-full max-w-7xl px-4"
+      className={PAGE_CONTAINER}
     >
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <h2
           id="recently-viewed-heading"
-          className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl"
+          className={`${H2_CLASS} text-foreground`}
         >
           {dict.home.recentlyViewed.heading}
         </h2>

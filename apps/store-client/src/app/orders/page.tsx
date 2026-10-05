@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { OrderHistoryView, OrderHistorySkeleton } from "@/widgets";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER } from "@/shared/config";
 
 export const metadata: Metadata = {
   title: dict.meta.ordersTitle,
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function OrdersPage() {
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8">
+    <div className={`${PAGE_CONTAINER} py-8`}>
       <Suspense fallback={<OrderHistorySkeleton />}>
         <OrderHistoryView />
       </Suspense>

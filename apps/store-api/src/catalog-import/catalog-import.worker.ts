@@ -16,7 +16,7 @@ const DEFAULT_SCHEDULE = '*/10 * * * * *';
  *
  * Registered through {@link SchedulerRegistry} in `onModuleInit` rather than with
  * the `@Cron` decorator, so the schedule is read from config at boot — the same
- * shape `MailOutboxWorker` and `PaymentReconcileWorker` already use.
+ * shape `NotificationOutboxWorker` and `PaymentReconcileWorker` already use.
  *
  * Chunking is the point. Applying 1300 rows takes minutes: doing it inside the
  * confirm request would hold an HTTP connection open for the whole run and lose

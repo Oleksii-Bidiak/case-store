@@ -14,6 +14,10 @@ jest.mock("@/shared/api/banners-server", () => ({
   fetchPublishedBanners: jest.fn().mockResolvedValue({ ANNOUNCEMENT_BAR: [] }),
   BANNERS_COLLECTION_TAG: "banners",
 }));
+jest.mock("@/shared/api/site-contact-server", () => ({
+  fetchSiteContactSettings: jest.fn().mockResolvedValue(null),
+  SITE_CONTACT_TAG: "site-contact",
+}));
 jest.mock("@/widgets/header", () => ({ Header: () => null }));
 jest.mock("@/widgets", () => ({ Footer: () => null }));
 jest.mock("./providers", () => ({ Providers: () => null }));
@@ -35,6 +39,7 @@ import {
   BRAND_OG_IMAGE_PATH,
   BRAND_OG_IMAGE_WIDTH,
   dict,
+  SITE_NAME,
 } from "@/shared/config";
 
 const fetchSeo = fetchSeoSettings as jest.MockedFunction<
@@ -66,7 +71,7 @@ const brandFallbackImages = [
     url: BRAND_OG_IMAGE_PATH,
     width: BRAND_OG_IMAGE_WIDTH,
     height: BRAND_OG_IMAGE_HEIGHT,
-    alt: dict.meta.rootTitle,
+    alt: dict.meta.brandCardAlt(SITE_NAME),
   },
 ];
 
@@ -87,6 +92,19 @@ describe("root layout generateMetadata (TASK-279)", () => {
     const meta = await generateMetadata();
 
     expect(meta.openGraph?.images).toEqual(brandFallbackImages);
+  });
+
+  it("names the brand card after the admin-managed store name (TASK-546)", async () => {
+    fetchSeo.mockResolvedValue(makeSettings({ siteName: "Аксесуарня" }));
+
+    const meta = await generateMetadata();
+
+    expect(meta.openGraph?.images).toEqual([
+      {
+        ...brandFallbackImages[0],
+        alt: dict.meta.brandCardAlt("Аксесуарня"),
+      },
+    ]);
   });
 
   it("uses the admin defaultOgImage verbatim, without mixing in the fallback", async () => {

@@ -3,6 +3,7 @@
 export { CheckoutAddressForm } from "./ui/checkout-address-form";
 export { CheckoutContactFields } from "./ui/checkout-contact-fields";
 export { CheckoutReviewStep } from "./ui/checkout-review-step";
+export { CheckoutConsent } from "./ui/checkout-consent";
 export { useCheckout } from "./model/use-checkout";
 export { useCheckoutPrefill } from "./model/use-checkout-prefill";
 export { useCheckoutSteps } from "./model/use-checkout-steps";
@@ -20,6 +21,7 @@ export {
   DEFAULT_PAYMENT_METHOD,
   coercePaymentMethod,
   parseConfiguredMethods,
+  paymentMethodTitle,
   readConfiguredMethods,
   requiresPaymentHandoff,
   resolvePaymentMethods,

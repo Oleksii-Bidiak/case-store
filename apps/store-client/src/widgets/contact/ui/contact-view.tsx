@@ -7,15 +7,14 @@ import {
   ShoppingCart,
   Wrench,
   Building2,
-  MapPin,
   HelpCircle,
   Send,
   Camera,
-  ArrowRight,
   type LucideIcon,
 } from "lucide-react";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
+import { Button } from "@/shared/ui";
 import { ContactForm } from "./contact-form";
 
 // Configured messenger links on SiteContactSettings (TASK-154) → real chat links.
@@ -38,12 +37,12 @@ const DEPARTMENT_ICONS: Record<string, LucideIcon> = {
 const CARD =
   "block rounded-2xl border border-border bg-card p-[22px] no-underline shadow-card transition-[border-color,box-shadow] hover:border-primary hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const CHANNEL_ICON =
-  "mb-3.5 inline-flex size-[46px] items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary";
+  "mb-3.5 inline-flex size-[46px] items-center justify-center rounded-xl bg-primary/12 text-primary";
 
 /**
  * ContactView — the `/contact` page (Contact.dc.html redesign). A gradient hero,
  * four quick-contact channels, the message form (stub) + a side column
- * (departments / messengers / showroom) and a FAQ strip. Contact details,
+ * (departments / messengers) and a FAQ strip. Contact details,
  * working hours and messenger links come from the real admin-managed
  * SiteContactSettings (TASK-154) with localized fallbacks; the form has no
  * backend yet (TASK-177). Server component — only the form is interactive.
@@ -58,13 +57,12 @@ export function ContactView({
   const email = contact?.email ?? dict.footer.contactEmail;
   const hours = contact?.workingHours ?? dict.footer.contactHours;
   const messengers = MESSENGERS.filter((m) => contact?.[m.key]);
-  const mapHref = `https://maps.google.com/?q=${encodeURIComponent(d.officeAddress)}`;
 
   return (
     <div>
       <nav
         aria-label={dict.product.breadcrumbAria}
-        className="mb-[18px] flex items-center gap-2.5 text-[13.5px] text-muted-foreground"
+        className="mb-[18px] flex items-center gap-2.5 text-sm text-muted-foreground"
       >
         <Link href="/" className="transition-colors hover:text-foreground">
           {d.breadcrumbHome}
@@ -75,18 +73,11 @@ export function ContactView({
         <span className="font-medium text-foreground">{d.breadcrumb}</span>
       </nav>
 
-      {/* Hero */}
-      <div
-        className="mb-6 flex flex-wrap items-end justify-between gap-8 rounded-[20px] p-11 text-white"
-        style={{
-          background:
-            "linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 55%, oklch(0.4 0.16 300)))",
-        }}
-      >
+      {/* Hero — padding steps up with the viewport; a flat p-11 left ~270px of
+          copy at 390 (TASK-878). */}
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-6 rounded-2xl bg-brand-gradient p-6 text-white sm:gap-8 sm:p-8 lg:p-11">
         <div className="max-w-[560px]">
-          <h1 className="mb-3 font-display text-[30px] font-bold tracking-[-0.02em] sm:text-4xl">
-            {d.heading}
-          </h1>
+          <h1 className={`mb-3 ${H1_CLASS}`}>{d.heading}</h1>
           <p className="text-base leading-relaxed opacity-95">{d.intro}</p>
         </div>
         <div className="flex gap-7">
@@ -107,11 +98,11 @@ export function ContactView({
           <span className={CHANNEL_ICON}>
             <Phone className="size-[21px]" aria-hidden="true" />
           </span>
-          <span className="mb-1 block text-[12.5px] text-muted-foreground">
+          <span className="mb-1 block text-xs text-muted-foreground">
             {d.channels.phoneLabel}
           </span>
           <b className="block font-mono text-[17px] text-foreground">{phone}</b>
-          <span className="mt-1.5 block text-[12.5px] text-muted-foreground">
+          <span className="mt-1.5 block text-xs text-muted-foreground">
             {d.channels.phoneNote}
           </span>
         </a>
@@ -120,11 +111,11 @@ export function ContactView({
           <span className={CHANNEL_ICON}>
             <Mail className="size-[21px]" aria-hidden="true" />
           </span>
-          <span className="mb-1 block text-[12.5px] text-muted-foreground">
+          <span className="mb-1 block text-xs text-muted-foreground">
             {d.channels.emailLabel}
           </span>
           <b className="block text-[17px] break-all text-foreground">{email}</b>
-          <span className="mt-1.5 block text-[12.5px] text-muted-foreground">
+          <span className="mt-1.5 block text-xs text-muted-foreground">
             {d.channels.emailNote}
           </span>
         </a>
@@ -133,13 +124,13 @@ export function ContactView({
           <span className={CHANNEL_ICON}>
             <MessageCircle className="size-[21px]" aria-hidden="true" />
           </span>
-          <span className="mb-1 block text-[12.5px] text-muted-foreground">
+          <span className="mb-1 block text-xs text-muted-foreground">
             {d.channels.chatLabel}
           </span>
           <b className="block text-[17px] text-foreground">
             {d.channels.chatValue}
           </b>
-          <span className="mt-1.5 block text-[12.5px] text-muted-foreground">
+          <span className="mt-1.5 block text-xs text-muted-foreground">
             {d.channels.chatNote}
           </span>
         </a>
@@ -150,11 +141,11 @@ export function ContactView({
           <span className={CHANNEL_ICON}>
             <Clock className="size-[21px]" aria-hidden="true" />
           </span>
-          <span className="mb-1 block text-[12.5px] text-muted-foreground">
+          <span className="mb-1 block text-xs text-muted-foreground">
             {d.channels.hoursLabel}
           </span>
           <b className="block text-[17px] text-foreground">{hours}</b>
-          <span className="mt-1.5 block text-[12.5px] text-muted-foreground">
+          <span className="mt-1.5 block text-xs text-muted-foreground">
             {d.channels.hoursNote}
           </span>
         </div>
@@ -167,8 +158,8 @@ export function ContactView({
 
         <div className="flex flex-col gap-6">
           {/* Departments */}
-          <div className="rounded-[18px] border border-border bg-card p-[30px] shadow-card">
-            <h2 className="mb-[18px] font-display text-[19px] font-bold text-foreground">
+          <div className="rounded-card border border-border bg-card p-[30px] shadow-card">
+            <h2 className="mb-4 font-display text-xl font-bold text-foreground">
               {d.departmentsHeading}
             </h2>
             <div className="flex flex-col gap-1.5">
@@ -177,24 +168,28 @@ export function ContactView({
                 return (
                   <div
                     key={dep.key}
-                    className="flex items-center gap-3.5 rounded-[13px] border border-border bg-background p-3.5"
+                    className="flex items-center gap-3.5 rounded-cta border border-border bg-background p-3.5"
                   >
-                    <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary">
+                    <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-menu bg-primary/12 text-primary">
                       <Icon className="size-[19px]" aria-hidden="true" />
                     </span>
                     <div className="min-w-0 flex-1">
                       <b className="block text-sm text-foreground">
                         {dep.title}
                       </b>
-                      <span className="text-[12.5px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         {dep.desc}
                       </span>
                     </div>
+                    {/* TASK-873 — the shop's one support email, with the
+                        department as the subject: no per-department
+                        mailboxes exist in «Контакти магазину». */}
                     <a
-                      href={`mailto:${dep.email}`}
-                      className="text-[13.5px] font-semibold whitespace-nowrap text-primary hover:underline"
+                      href={`mailto:${email}?subject=${encodeURIComponent(dep.title)}`}
+                      aria-label={d.departmentWriteAria(dep.title)}
+                      className="inline-flex min-h-11 items-center text-sm font-semibold whitespace-nowrap text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      {dep.email}
+                      {d.departmentWrite}
                     </a>
                   </div>
                 );
@@ -205,12 +200,12 @@ export function ContactView({
           {/* Messengers */}
           <div
             id="messengers"
-            className="scroll-mt-24 rounded-[18px] border border-border bg-card p-[30px] shadow-card"
+            className="scroll-mt-24 rounded-card border border-border bg-card p-[30px] shadow-card"
           >
-            <h2 className="mb-1.5 font-display text-[19px] font-bold text-foreground">
+            <h2 className="mb-1.5 font-display text-xl font-bold text-foreground">
               {d.messengersHeading}
             </h2>
-            <p className="mb-4 text-[13.5px] text-muted-foreground">
+            <p className="mb-4 text-sm text-muted-foreground">
               {d.messengersIntro}
             </p>
             {messengers.length > 0 ? (
@@ -238,84 +233,36 @@ export function ContactView({
             )}
           </div>
 
-          {/* Office / showroom */}
-          <div className="overflow-hidden rounded-[18px] border border-border bg-card shadow-card">
-            <div
-              role="img"
-              aria-label={d.officeMapAria}
-              className="flex h-[150px] items-center justify-center"
-              style={{
-                background:
-                  "linear-gradient(120deg, color-mix(in oklab, var(--color-primary) 18%, var(--color-card)), color-mix(in oklab, var(--color-primary) 4%, var(--color-card)))",
-              }}
-            >
-              <span className="inline-flex size-[52px] items-center justify-center rounded-full bg-primary text-white shadow-elevated">
-                <MapPin className="size-6" aria-hidden="true" />
-              </span>
-            </div>
-            <div className="px-[30px] pt-6 pb-7">
-              <h2 className="mb-3.5 font-display text-[19px] font-bold text-foreground">
-                {d.officeHeading}
-              </h2>
-              <div className="flex flex-col gap-3">
-                <div className="flex items-start gap-3">
-                  <MapPin
-                    className="mt-0.5 size-[18px] shrink-0 text-primary"
-                    aria-hidden="true"
-                  />
-                  <span className="text-sm leading-normal text-foreground">
-                    {d.officeAddress}
-                    <br />
-                    <span className="text-[13px] text-muted-foreground">
-                      {d.officeAddressNote}
-                    </span>
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Clock
-                    className="size-[18px] shrink-0 text-primary"
-                    aria-hidden="true"
-                  />
-                  <span className="text-sm text-foreground">
-                    {d.officeHours}
-                  </span>
-                </div>
-              </div>
-              <a
-                href={mapHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-[18px] inline-flex items-center gap-2 text-[13.5px] font-semibold text-primary hover:underline"
-              >
-                {d.officeRoute}
-                <ArrowRight className="size-[15px]" aria-hidden="true" />
-              </a>
-            </div>
-          </div>
+          {/* TASK-873 — no office card: «Контакти магазину» stores no address
+              yet (TASK-721), and the card showed «[адреса офісу]»,
+              «[графік роботи офісу]» and a route to that placeholder. It
+              comes back with a real address field. */}
         </div>
       </div>
 
       {/* FAQ help strip */}
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-6 rounded-[18px] border border-border bg-card p-[26px] shadow-card">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-6 rounded-card border border-border bg-card p-[26px] shadow-card">
         <div className="flex items-center gap-4">
-          <span className="inline-flex size-12 items-center justify-center rounded-[13px] bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary">
+          <span className="inline-flex size-12 items-center justify-center rounded-cta bg-primary/12 text-primary">
             <HelpCircle className="size-[22px]" aria-hidden="true" />
           </span>
           <div>
             <b className="block font-display text-base text-foreground">
               {d.faqHeading}
             </b>
-            <span className="text-[13.5px] text-muted-foreground">
-              {d.faqBody}
-            </span>
+            <span className="text-sm text-muted-foreground">{d.faqBody}</span>
           </div>
         </div>
-        <Link
-          href="/info#faq"
-          className="inline-flex h-11 items-center rounded-xl bg-primary px-[22px] text-sm font-bold text-primary-foreground no-underline transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        {/* Outline (TASK-865): a detour to the FAQ — the form's submit is
+            the page's one primary action (design-system §1). */}
+        <Button
+          asChild
+          variant="outline"
+          size="lg"
+          className="h-11 rounded-cta font-semibold no-underline"
         >
-          {d.faqCta}
-        </Link>
+          <Link href="/info#faq">{d.faqCta}</Link>
+        </Button>
       </div>
     </div>
   );

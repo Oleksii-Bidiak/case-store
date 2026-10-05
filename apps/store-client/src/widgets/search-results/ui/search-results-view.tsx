@@ -1,18 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Loader2, SlidersHorizontal } from "lucide-react";
+import { Loader2, Search, SearchX } from "lucide-react";
 import { useSearch } from "@/entities/search";
 import { useCategoryControllerGetCategoryTree } from "@/entities/category";
+import { useBrandControllerFindAll } from "@/entities/brand";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import {
+  ActiveFilterChips,
   CategoryChips,
+  CategoryChipsSkeleton,
+  FiltersButton,
   FiltersDrawer,
+  ListingEmptyState,
   ProductFilters,
   clearFilterUpdates,
   countActiveFilters,
+  hasActiveFilters,
 } from "@/features/product-filters";
 import { ProductCard } from "@/shared/ui";
 import { Pagination } from "@/shared/ui/pagination";
@@ -30,13 +35,11 @@ import {
 
 const PAGE_SIZE = 20;
 
-/**
- * Same sidebar scroll box the catalogue uses: a sticky aside with no height cap
- * runs off a short viewport and, being `position: sticky`, page scroll never
- * brings the overflow back.
- */
-const ASIDE_SCROLL_BOX =
-  "lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto lg:overscroll-contain";
+// Hydration flag (TASK-534, as in `ProductListView`): `false` for the server
+// render and for hydration, `true` for every client render after that.
+const subscribeNever = () => () => {};
+const clientSnapshot = () => true;
+const serverSnapshot = () => false;
 
 interface SearchResultsViewProps {
   /** The search query from the URL (`?q=`). May be blank. */
@@ -134,10 +137,35 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
   // The public tree (roots + children, one payload) feeds the chips row and the
   // slug → id lookup the id-addressed brand list needs — the same query the
   // catalogue already holds, so it is shared through React Query's cache.
-  const { data: categoriesData } = useCategoryControllerGetCategoryTree();
-  const categories = categoriesData?.data ?? [];
+  const { data: categoriesData, isPending: categoriesPending } =
+    useCategoryControllerGetCategoryTree();
+  // Until hydration is done, render what the server had — no tree (TASK-534,
+  // the catalogue's rule): the header's menu can have fetched it first, and
+  // chips the server never drew are a hydration mismatch.
+  const hydrated = useSyncExternalStore(
+    subscribeNever,
+    clientSnapshot,
+    serverSnapshot,
+  );
+  const categories = hydrated ? (categoriesData?.data ?? []) : [];
+  // No tree yet → the chips row's placeholder, not nothing (TASK-515): the row
+  // is 60px of page above the toolbar and the grid, which used to drop by that
+  // much the moment the tree landed.
+  const categoryChipsPending = !hydrated || categoriesPending;
   const activeCategoryId = facets.category
     ? findCategoryIdBySlug(categories, facets.category)
+    : undefined;
+
+  // The brand chip's label (slug → name), as on the catalogue (TASK-876). Same
+  // category scope — and so the same React Query key — as the rail's own
+  // «Виробник» list, so the label costs no request of its own. Not asked for
+  // before there is a query: the blank page has no panel and no chips.
+  const { data: brandsData } = useBrandControllerFindAll(
+    activeCategoryId ? { categoryId: activeCategoryId } : undefined,
+    { query: { enabled } },
+  );
+  const activeBrandName = facets.brand
+    ? brandsData?.data.find((brand) => brand.slug === facets.brand)?.name
     : undefined;
 
   // Badge on the mobile «Фільтри» button. Counted through the shared definition
@@ -202,16 +230,16 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
 
   // No query yet — invite the shopper to search (no request, and no filter
   // panel: there is nothing yet to narrow).
+  // The search field lives in the header, so the one primary action here
+  // (design-system §6, TASK-870) is the way into the catalogue.
   if (!enabled) {
     return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
-        <p className="text-base font-medium text-card-foreground">
-          {dict.search.promptHeading}
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {dict.search.promptBody}
-        </p>
-      </div>
+      <ListingEmptyState
+        icon={Search}
+        heading={dict.search.promptHeading}
+        body={dict.search.promptBody}
+        action={{ label: dict.search.promptCta, href: "/products" }}
+      />
     );
   }
 
@@ -231,20 +259,20 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
       {dict.search.error}
     </p>
   ) : products.length === 0 ? (
-    <div className="rounded-lg border border-border bg-card p-8 text-center">
-      <p className="text-base font-medium text-card-foreground">
-        {dict.search.emptyHeading(trimmed)}
-      </p>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {dict.search.emptyBody}
-      </p>
-      <Link
-        href="/products"
-        className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
-      >
-        {dict.search.browseAll}
-      </Link>
-    </div>
+    // One primary action (design-system §6, TASK-870): drop the filters when
+    // they are what emptied the list — the same full reset the drawer offers,
+    // which keeps `?q=` — otherwise the query itself found nothing, and the
+    // way on is the whole catalogue.
+    <ListingEmptyState
+      icon={SearchX}
+      heading={dict.search.emptyHeading(trimmed)}
+      body={dict.search.emptyBody}
+      action={
+        hasActiveFilters({ ...panelParams, search: undefined })
+          ? { label: dict.catalog.clearAllFilters, onClick: resetFilters }
+          : { label: dict.search.browseAll, href: "/products" }
+      }
+    />
   ) : (
     <div className="flex flex-col gap-6">
       <p aria-live="polite" className="text-sm text-muted-foreground">
@@ -262,8 +290,9 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
         )}
         {/* Same 1 / 2 / 4 grid as the catalog (TASK-415) — search results are
             the same cards, so they must not jump to a different column count
-            than /products. Keep in sync with `SearchResultsSkeleton`. */}
-        <div className="grid grid-cols-1 items-stretch gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
+            than /products — and the same card rhythm, `gap-4 md:gap-6`
+            (TASK-876). Keep in sync with `SearchResultsSkeleton`. */}
+        <div className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
           {products.map((product, index) => (
             <ProductCard
               key={product.id}
@@ -291,38 +320,54 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
       {/* Category chips — the catalogue's own row (TASK-523), writing
           ?category=<slug>. No per-category counts yet: those need facet counts
           from the search engine (TASK-1401). */}
-      <CategoryChips
-        categories={categories}
-        activeCategorySlug={facets.category}
-        onSelect={(category) => applyFilters({ category })}
-      />
+      {categoryChipsPending ? (
+        // A selected category opens the subcategory row under it (its own
+        // children, or its siblings) — so reserve that row too. Only a
+        // childless root guesses wrong, and collapses by one row.
+        <CategoryChipsSkeleton withSubcategories={Boolean(facets.category)} />
+      ) : (
+        <CategoryChips
+          categories={categories}
+          activeCategorySlug={facets.category}
+          onSelect={(category) => applyFilters({ category })}
+        />
+      )}
 
-      {/* Toolbar: mobile filters button (left) + sort (right) */}
+      {/* Toolbar: mobile filters button (left) + sort (right) — the
+          catalogue's controls (TASK-876). `min-w-0` lets the sort pill shrink
+          and truncate on a 320px phone instead of widening the page. No
+          grid/list toggle yet: the list row lives in the catalogue widget,
+          and a widget does not import a widget (TASK-1621). */}
       <div className="mb-5 flex items-center gap-3">
-        <button
-          type="button"
+        <FiltersButton
+          activeCount={activeFilterCount}
           onClick={() => setFiltersOpen(true)}
-          className="inline-flex h-11 items-center gap-2 rounded-xl border-2 border-border bg-card px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:border-primary focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
-        >
-          <SlidersHorizontal className="size-5" />
-          {dict.filters.filtersButton}
-          {activeFilterCount > 0 && (
-            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">
-              {activeFilterCount}
-            </span>
-          )}
-        </button>
+        />
 
-        <div className="ml-auto">
+        <div className="ml-auto flex min-w-0 items-center gap-3">
           <SearchSortSelect value={facets.sort} onChange={applyFilters} />
         </div>
       </div>
 
+      {/* Removable chips for the active filters, as on the catalogue
+          (TASK-876). Without the keyword: it is the subject of the page and
+          already in the h1, and its × would land on the blank «Почніть пошук»
+          prompt. «Очистити все» is a full reset, which keeps `?q=` (see
+          `applyFilters`). No spec facets on /search, so no category id is
+          needed for their labels. */}
+      <ActiveFilterChips
+        currentParams={{ ...panelParams, search: undefined }}
+        brandName={activeBrandName}
+        onFilterChange={applyFilters}
+      />
+
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
-        {/* Desktop sidebar */}
+        {/* Desktop sidebar. A sticky aside with no height cap runs off a short
+            viewport, and page scroll never brings the overflow back — so it is
+            capped at `max-h-sticky-aside` and scrolls inside itself (TASK-414). */}
         <aside
-          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} ${ASIDE_SCROLL_BOX} lg:block lg:self-start`}
+          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} lg:block lg:max-h-sticky-aside lg:self-start lg:overflow-y-auto lg:overscroll-contain`}
         >
           <ProductFilters
             idPrefix="search-filter"

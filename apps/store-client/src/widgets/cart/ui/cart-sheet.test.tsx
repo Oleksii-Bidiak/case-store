@@ -106,3 +106,21 @@ describe("CartSheet — undo toast (TASK-497)", () => {
     await waitFor(() => expect(state.restored).toBe(true));
   });
 });
+
+describe("CartSheet — delivery note (TASK-881)", () => {
+  it("says the delivery price comes at checkout, never that it is free", async () => {
+    server.use(
+      http.get("*/api/cart", () =>
+        HttpResponse.json(makeCart([makeCartItem({ id: "item-1" })])),
+      ),
+    );
+
+    renderWithProviders(<CartSheet open onOpenChange={jest.fn()} />);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      await within(dialog).findByText(dict.cart.sheetDeliveryNote),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/безкоштовн/i)).not.toBeInTheDocument();
+  });
+});

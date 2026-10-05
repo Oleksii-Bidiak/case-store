@@ -8,7 +8,7 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { makeOrder } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
-import { statusBadgeClass } from "@/entities/order";
+import { statusBadgeStyle } from "@/entities/order";
 import { OrderConfirmationView } from "./order-confirmation-view";
 
 // next/navigation is unavailable under jsdom — mock the router.
@@ -64,13 +64,48 @@ describe("OrderConfirmationView", () => {
 
     renderWithProviders(<OrderConfirmationView orderId="order-1" />, authed);
 
-    const badge = await screen.findByLabelText(
-      dict.order.paymentStatusAria("PARTIALLY_REFUNDED"),
+    const label = await screen.findByText(
+      dict.order.paymentLabel("PARTIALLY_REFUNDED"),
     );
-    expect(badge).toHaveClass(
-      ...statusBadgeClass("PARTIALLY_REFUNDED").split(" "),
+    const badge = label.closest('[data-slot="badge"]');
+    expect(badge).toHaveAttribute(
+      "data-variant",
+      statusBadgeStyle("PARTIALLY_REFUNDED").variant,
     );
-    expect(badge).not.toHaveClass("bg-muted");
+    // §2 (TASK-868): a refund is muted, the same as REFUNDED — not red, and
+    // not the primary tint the in-progress PENDING wears.
+    expect(badge).toHaveAttribute("data-variant", "tint-muted");
+    expect(badge).toHaveAttribute(
+      "data-variant",
+      statusBadgeStyle("REFUNDED").variant,
+    );
+  });
+
+  it("names both status badges through the sr-only <dt>, not an aria-label (TASK-868)", async () => {
+    server.use(
+      http.get("*/api/orders/:id", () =>
+        HttpResponse.json(
+          makeOrder({ status: "SHIPPED", paymentStatus: "PAID" }),
+        ),
+      ),
+    );
+
+    renderWithProviders(<OrderConfirmationView orderId="order-1" />, authed);
+
+    const order = (
+      await screen.findByText(dict.order.orderStatusLabels.SHIPPED)
+    ).closest('[data-slot="badge"]');
+    const payment = screen
+      .getByText(dict.order.paymentLabel("PAID"))
+      .closest('[data-slot="badge"]');
+
+    expect(order).toHaveAttribute("data-variant", "tint-primary");
+    expect(order).toHaveClass("bg-primary/30");
+    expect(payment).toHaveAttribute("data-variant", "tint-success");
+    for (const badge of [order, payment]) {
+      expect(badge).not.toHaveAttribute("aria-label");
+      expect(badge?.closest("dd")?.previousElementSibling?.tagName).toBe("DT");
+    }
   });
 
   // ── TASK-609: the return door on the page the email links to ──────────────
@@ -328,6 +363,67 @@ describe("OrderConfirmationView", () => {
       expect(
         screen.queryByText(dict.order.payment.paidTitle),
       ).not.toBeInTheDocument();
+    });
+
+    describe("one primary action (TASK-865)", () => {
+      const continueLink = () =>
+        screen.getByRole("link", { name: dict.common.continueShopping });
+
+      it("leaves the retry as the only primary on a failed payment", async () => {
+        server.use(
+          http.get("*/api/orders/:id", () =>
+            HttpResponse.json(makeOrder({ paymentStatus: "FAILED" })),
+          ),
+        );
+
+        renderWithProviders(
+          <OrderConfirmationView orderId="order-1" />,
+          authed,
+        );
+
+        const retry = await screen.findByRole("button", {
+          name: dict.order.payment.retry,
+        });
+        expect(retry).toHaveAttribute("data-variant", "default");
+        expect(continueLink()).toHaveAttribute("data-variant", "outline");
+      });
+
+      it("keeps «Продовжити покупки» primary when nothing else is", async () => {
+        server.use(
+          http.get("*/api/orders/:id", () =>
+            HttpResponse.json(makeOrder({ paymentStatus: "PAID" })),
+          ),
+        );
+
+        renderWithProviders(
+          <OrderConfirmationView orderId="order-1" />,
+          authed,
+        );
+        await screen.findByRole("heading", { name: dict.order.thankYou });
+
+        expect(continueLink()).toHaveAttribute("data-variant", "default");
+      });
+
+      it("keeps it primary on a failed payment of a closed order — no retry there", async () => {
+        server.use(
+          http.get("*/api/orders/:id", () =>
+            HttpResponse.json(
+              makeOrder({ paymentStatus: "FAILED", status: "CANCELLED" }),
+            ),
+          ),
+        );
+
+        renderWithProviders(
+          <OrderConfirmationView orderId="order-1" />,
+          authed,
+        );
+        await screen.findByRole("heading", { name: dict.order.thankYou });
+
+        expect(
+          screen.queryByRole("button", { name: dict.order.payment.retry }),
+        ).not.toBeInTheDocument();
+        expect(continueLink()).toHaveAttribute("data-variant", "default");
+      });
     });
 
     it("says plainly when the callback never arrived", async () => {

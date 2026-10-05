@@ -286,4 +286,50 @@ describe("LoginForm", () => {
       ).toBeInTheDocument();
     });
   });
+
+  // TASK-871: /reset-password lands here with ?passwordReset=1. It used to land
+  // with no word that anything had happened.
+  describe("after a password reset", () => {
+    it("confirms the new password on the login page", () => {
+      mockSearchParams = { passwordReset: "1" };
+      renderWithProviders(<LoginForm />);
+
+      expect(screen.getByRole("status")).toHaveTextContent(
+        dict.auth.resetPassword.success,
+      );
+    });
+
+    it("says nothing without the flag", () => {
+      renderWithProviders(<LoginForm />);
+
+      expect(
+        screen.queryByText(dict.auth.resetPassword.success),
+      ).not.toBeInTheDocument();
+    });
+
+    it("stays out of the header sheet even if the page URL carries the flag", () => {
+      mockSearchParams = { passwordReset: "1" };
+      renderWithProviders(<LoginForm onAuthenticated={jest.fn()} />);
+
+      expect(
+        screen.queryByText(dict.auth.resetPassword.success),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("links each field error to its input (a11y)", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<LoginForm />);
+
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.login.submit }),
+    );
+
+    const email = screen.getByLabelText(dict.auth.login.email);
+    await waitFor(() => expect(email).toHaveAttribute("aria-invalid", "true"));
+    expect(email).toHaveAccessibleDescription(dict.auth.login.validationEmail);
+    expect(
+      screen.getByLabelText(dict.auth.login.password),
+    ).toHaveAccessibleDescription(dict.auth.login.validationPassword);
+  });
 });

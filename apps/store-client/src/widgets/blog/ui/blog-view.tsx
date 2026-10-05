@@ -3,14 +3,15 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { dict } from "@/shared/config";
+import { Newspaper, SearchX } from "lucide-react";
+import { dict, H1_CLASS } from "@/shared/config";
 import { Pagination } from "@/shared/ui/pagination";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import type { BlogPostView } from "../model/posts";
 import { BlogArrowDownIcon, BlogSearchIcon } from "./blog-icons";
-import { BlogEmptyState } from "./blog-empty-state";
+import { BlogEmptyState, type BlogEmptyStateProps } from "./blog-empty-state";
 import { BlogFeaturedCard } from "./blog-featured-card";
-import { BlogNewsletter } from "./blog-newsletter";
+import { BlogNewsletter, type BlogNewsletterContact } from "./blog-newsletter";
 import { BlogPostCard } from "./blog-post-card";
 
 /** A category chip descriptor (the synthetic "all" bucket is added first). */
@@ -34,6 +35,13 @@ interface BlogViewProps {
   page: number;
   /** How many pages the current filter selection has. */
   totalPages: number;
+  /**
+   * The shop name from «SEO-налаштування» (TASK-873) — the badge reads
+   * «Журнал <назва>»; without it, the neutral «Журнал».
+   */
+  siteName?: string;
+  /** «Контакти магазину» — the newsletter block's social channels (TASK-873). */
+  contact?: BlogNewsletterContact | null;
 }
 
 /**
@@ -74,6 +82,8 @@ export function BlogView({
   query,
   page,
   totalPages,
+  siteName,
+  contact,
 }: BlogViewProps) {
   const router = useRouter();
 
@@ -108,22 +118,42 @@ export function BlogView({
   const hasPosts = posts.length > 0;
   const isEmpty = !featured && !hasPosts;
   const hasMore = page < totalPages;
+  const isFiltered = activeCategory !== "all" || query.trim() !== "";
+
+  // TASK-870 — the empty state's one primary action is the way on from THIS
+  // emptiness: a filter or a search found nothing → the whole journal; a page
+  // past the end → page 1; no articles at all → there is nothing to reset, so
+  // the catalogue.
+  const empty: BlogEmptyStateProps = isFiltered
+    ? {
+        icon: SearchX,
+        heading: dict.blog.emptyHeading,
+        body: dict.blog.emptyBody,
+        action: { label: dict.blog.emptyResetCta, href: "/blog" },
+      }
+    : page > 1
+      ? {
+          icon: Newspaper,
+          heading: dict.blog.emptyPageHeading,
+          body: dict.blog.emptyPageBody,
+          action: { label: dict.blog.emptyPageCta, href: "/blog" },
+        }
+      : {
+          icon: Newspaper,
+          heading: dict.blog.emptyNoneHeading,
+          body: dict.blog.emptyNoneBody,
+          action: { label: dict.blog.emptyNoneCta, href: "/products" },
+        };
 
   return (
     <>
       {/* Hero: badge + title + subtitle (left), search field (right) */}
       <div className="mb-[26px] flex flex-wrap items-end justify-between gap-6">
         <div className="max-w-[640px]">
-          <span
-            className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-[12.5px] font-bold tracking-[0.04em] text-primary"
-            style={{
-              background:
-                "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-            }}
-          >
-            {dict.blog.badge}
+          <span className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-xs font-bold tracking-[0.04em] text-primary uppercase bg-primary/12">
+            {siteName ? dict.blog.badgeNamed(siteName) : dict.blog.badge}
           </span>
-          <h1 className="mt-3.5 mb-2.5 font-display text-[38px] font-bold leading-[1.08] tracking-[-0.025em] text-foreground">
+          <h1 className={`mt-3.5 mb-2.5 ${H1_CLASS} text-foreground`}>
             {dict.blog.heading}
           </h1>
           <p className="text-base leading-[1.55] text-muted-foreground">
@@ -141,7 +171,7 @@ export function BlogView({
               onChange={onQuery}
               placeholder={dict.blog.searchPlaceholder}
               aria-label={dict.blog.searchAria}
-              className="h-full flex-1 border-none bg-transparent pr-2 text-[14.5px] text-foreground outline-none placeholder:text-muted-foreground"
+              className="h-full flex-1 border-none bg-transparent pr-2 text-base text-foreground outline-none placeholder:text-muted-foreground md:text-sm"
             />
           </div>
         </div>
@@ -160,7 +190,7 @@ export function BlogView({
               key={chip.slug}
               href={blogHref(chip.slug, text)}
               aria-current={active ? "true" : undefined}
-              className={`inline-flex h-[38px] cursor-pointer items-center gap-2 rounded-full border-[1.5px] px-4 text-[13.5px] font-semibold no-underline transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              className={`inline-flex h-[38px] cursor-pointer items-center gap-2 rounded-full border-[1.5px] px-4 text-sm font-semibold no-underline transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 active
                   ? "border-primary bg-primary text-primary-foreground"
                   : "border-border bg-card text-foreground hover:border-primary"
@@ -185,7 +215,7 @@ export function BlogView({
       )}
 
       {/* Empty state */}
-      {isEmpty && <BlogEmptyState />}
+      {isEmpty && <BlogEmptyState {...empty} />}
 
       {/* Next page shortcut — the reading order most people want, one click */}
       {hasMore && (
@@ -193,7 +223,7 @@ export function BlogView({
           <Link
             href={blogHref(activeCategory, query, page + 1)}
             rel="next"
-            className="inline-flex h-12 cursor-pointer items-center gap-2.5 rounded-xl border-[1.5px] border-border bg-card px-[26px] text-[14.5px] font-semibold text-foreground no-underline transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex h-12 cursor-pointer items-center gap-2.5 rounded-xl border-[1.5px] border-border bg-card px-[26px] text-sm font-semibold text-foreground no-underline transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {dict.blog.nextPageLink}
             <BlogArrowDownIcon width={17} height={17} />
@@ -213,7 +243,7 @@ export function BlogView({
       )}
 
       {/* Newsletter / social channels */}
-      <BlogNewsletter />
+      <BlogNewsletter contact={contact} />
     </>
   );
 }

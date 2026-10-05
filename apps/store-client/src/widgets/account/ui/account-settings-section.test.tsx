@@ -4,6 +4,7 @@ import { dict } from "@/shared/config";
 import { AccountSettingsSection } from "./account-settings-section";
 
 const d = dict.account.dashboard;
+const t = dict.theme;
 
 /**
  * A real next-themes provider, not a mocked `useTheme` (same call as the
@@ -32,10 +33,10 @@ describe("AccountSettingsSection", () => {
       screen.getByRole("heading", { name: d.appearanceHeading }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("radiogroup", { name: dict.header.themeAria }),
+      screen.getByRole("radiogroup", { name: t.groupAria }),
     ).toBeInTheDocument();
     expect(screen.getAllByRole("radio")).toHaveLength(3);
-    for (const label of [d.themeLight, d.themeSystem, d.themeDark]) {
+    for (const label of [t.light, t.system, t.dark]) {
       expect(screen.getByRole("radio", { name: label })).toBeInTheDocument();
     }
   });
@@ -55,9 +56,9 @@ describe("AccountSettingsSection", () => {
     const user = userEvent.setup();
     renderSettings();
 
-    await user.click(screen.getByRole("radio", { name: d.themeDark }));
+    await user.click(screen.getByRole("radio", { name: t.dark }));
 
-    expect(screen.getByRole("radio", { name: d.themeDark })).toHaveAttribute(
+    expect(screen.getByRole("radio", { name: t.dark })).toHaveAttribute(
       "aria-checked",
       "true",
     );
@@ -65,7 +66,7 @@ describe("AccountSettingsSection", () => {
     expect(window.localStorage.getItem("theme")).toBe("dark");
 
     // …and back, so the page is proven to drive the switch in both directions.
-    await user.click(screen.getByRole("radio", { name: d.themeLight }));
+    await user.click(screen.getByRole("radio", { name: t.light }));
 
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });

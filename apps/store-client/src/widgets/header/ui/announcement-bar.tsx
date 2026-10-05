@@ -1,10 +1,17 @@
 import Link from "next/link";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER } from "@/shared/config";
+import { toTelHref } from "@/shared/lib";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
 interface AnnouncementBarProps {
   /** ANNOUNCEMENT_BAR banner (falls back to the hardcoded message when absent). */
   banner?: BannerEntity;
+  /**
+   * Support phone from the admin-managed SiteContactSettings — the same source
+   * as the footer contacts. Null/blank (not configured, or the settings fetch
+   * failed) hides the phone instead of showing a placeholder number.
+   */
+  phone?: string | null;
 }
 
 /**
@@ -12,16 +19,21 @@ interface AnnouncementBarProps {
  * same-day message on the left and the support phone on the right. The message
  * comes from the admin ANNOUNCEMENT_BAR banner when one is published; otherwise
  * the hardcoded dictionary copy renders unchanged. When the banner carries a CTA
- * href, the message becomes a link. Non-sticky: it scrolls away while the header
- * itself stays pinned.
+ * href, the message becomes a link. The phone is the shop's contact setting
+ * (TASK-873) and is simply absent when unset — the message then owns the strip.
+ * Non-sticky: it scrolls away while the header itself stays pinned.
  */
-export function AnnouncementBar({ banner }: AnnouncementBarProps = {}) {
+export function AnnouncementBar({ banner, phone }: AnnouncementBarProps = {}) {
   const message = banner?.title ?? dict.header.announcement;
   const href = banner?.ctaHref ?? undefined;
+  const phoneLabel = phone?.trim() || null;
+  const phoneHref = phoneLabel ? toTelHref(phoneLabel) : null;
 
   return (
     <div className="bg-footer text-footer-foreground">
-      <div className="mx-auto flex h-10 max-w-7xl items-center justify-between gap-3 px-4 text-[13px]">
+      <div
+        className={`${PAGE_CONTAINER} flex h-10 items-center justify-between gap-3 text-[13px]`}
+      >
         <span className="inline-flex min-w-0 items-center gap-2">
           <span
             aria-hidden="true"
@@ -38,13 +50,17 @@ export function AnnouncementBar({ banner }: AnnouncementBarProps = {}) {
             <span className="truncate">{message}</span>
           )}
         </span>
-        <a
-          href={dict.header.phoneHref}
-          aria-label={dict.header.phoneAria}
-          className="shrink-0 font-mono font-semibold whitespace-nowrap opacity-90 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-footer-foreground"
-        >
-          {dict.header.phone}
-        </a>
+        {phoneLabel && phoneHref && (
+          <a
+            href={phoneHref}
+            // Label-in-name (WCAG 2.5.3): the accessible name carries the
+            // visible number, so a voice-control user can say what they see.
+            aria-label={`${dict.header.phoneAria}: ${phoneLabel}`}
+            className="shrink-0 font-mono font-semibold whitespace-nowrap opacity-90 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-footer-foreground"
+          >
+            {phoneLabel}
+          </a>
+        )}
       </div>
     </div>
   );

@@ -86,6 +86,21 @@ describe("BlogArticleView", () => {
     }
   });
 
+  it("sizes the cover by aspect ratio, not a fixed 380px (TASK-878)", () => {
+    const { container } = renderWithProviders(
+      <BlogArticleView
+        post={makePost({ coverImageUrl: "https://example.com/cover.jpg" })}
+        related={[]}
+      />,
+    );
+
+    const frame = container.querySelector(
+      'img[src="https://example.com/cover.jpg"]',
+    )?.parentElement as HTMLElement;
+    expect(frame).toHaveClass("aspect-4/3", "sm:aspect-video", "lg:aspect-5/2");
+    expect(frame.className).not.toMatch(/\bh-\[/);
+  });
+
   it("drops a cover that fails to load, leaving the gradient (TASK-759)", () => {
     const { container } = renderWithProviders(
       <BlogArticleView
@@ -108,10 +123,8 @@ describe("BlogArticleView", () => {
         'img[src="https://blocked.example.com/cover.jpg"]',
       ),
     ).toBeNull();
-    // The caption over the gradient backdrop stays.
-    expect(
-      screen.getByText(dict.blog.article.coverCaption),
-    ).toBeInTheDocument();
+    // TASK-873 — no «[ обкладинка статті ]» caption, with or without a photo.
+    expect(container.textContent).not.toContain("обкладинка статті");
   });
 
   it("renders related posts, excluding the current article", () => {

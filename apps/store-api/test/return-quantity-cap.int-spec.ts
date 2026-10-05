@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
 import { ReturnRepository } from '../src/order/returns/return.repository';
 import { ReturnService } from '../src/order/returns/return.service';
+import { ShopNotifier } from '../src/notification/shop-notifier.service';
 import { CacheService } from '../src/cache';
 import { PrismaService } from '../src/prisma';
 import { ProductIndexer } from '../src/search/product-indexer';
@@ -49,6 +50,11 @@ describe('ReturnService.createReturn — quantity cap under concurrency (integra
         OrderRepository,
         ReturnRepository,
         ReturnService,
+        // TASK-677: the shop ping is not what this suite tests.
+        {
+          provide: ShopNotifier,
+          useValue: { enqueueReturnRequested: jest.fn().mockResolvedValue(0) },
+        },
         // Caches and search are touched only after a restock commits; neither is
         // part of the guarantee under test.
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },

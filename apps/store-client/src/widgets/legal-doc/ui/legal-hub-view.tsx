@@ -1,6 +1,8 @@
 import type { ComponentType, SVGProps } from "react";
 import Link from "next/link";
-import { dict } from "@/shared/config";
+import { FileText } from "lucide-react";
+import { dict, H1_CLASS } from "@/shared/config";
+import { Button } from "@/shared/ui";
 import { formatLegalDateShort } from "../model/extract-sections";
 import {
   LegalArrowRightIcon,
@@ -47,7 +49,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
       {/* Breadcrumbs */}
       <nav
         aria-label={dict.product.breadcrumbAria}
-        className="mb-[22px] flex flex-wrap items-center gap-[9px] text-[13.5px] text-muted-foreground"
+        className="mb-[22px] flex flex-wrap items-center gap-[9px] text-sm text-muted-foreground"
       >
         <Link href="/" className="transition-colors hover:text-foreground">
           {dict.legal.breadcrumbHome}
@@ -62,16 +64,10 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
 
       {/* Hero */}
       <div className="mb-[30px] max-w-[640px]">
-        <span
-          className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-[12.5px] font-bold tracking-[0.04em] text-primary"
-          style={{
-            background:
-              "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-          }}
-        >
+        <span className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-xs font-bold tracking-[0.04em] text-primary bg-primary/12">
           {dict.legal.hub.badge}
         </span>
-        <h1 className="mt-3.5 mb-2.5 font-display text-[34px] font-bold leading-[1.1] tracking-[-0.025em] text-foreground">
+        <h1 className={`mt-3.5 mb-2.5 ${H1_CLASS} text-foreground`}>
           {dict.legal.hub.heading}
         </h1>
         <p className="text-base leading-[1.55] text-muted-foreground">
@@ -91,13 +87,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
                 className="flex flex-col rounded-2xl border border-border bg-card p-[22px] no-underline shadow-card transition-[border-color,transform,box-shadow] hover:-translate-y-[3px] hover:border-primary hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <div className="mb-3.5 flex items-center justify-between">
-                  <span
-                    className="inline-flex size-11 items-center justify-center rounded-xl text-primary"
-                    style={{
-                      background:
-                        "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-                    }}
-                  >
+                  <span className="inline-flex size-11 items-center justify-center rounded-xl text-primary bg-primary/12">
                     <Icon width={22} height={22} />
                   </span>
                   <span className="inline-flex size-[30px] items-center justify-center rounded-full text-muted-foreground">
@@ -108,11 +98,11 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
                   {doc.title}
                 </b>
                 {doc.excerpt && (
-                  <span className="mb-4 text-[13.5px] leading-[1.5] text-muted-foreground">
+                  <span className="mb-4 text-sm leading-[1.5] text-muted-foreground">
                     {doc.excerpt}
                   </span>
                 )}
-                <span className="mt-auto inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+                <span className="mt-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                   <LegalClockIcon width={14} height={14} />
                   {dict.legal.hub.updatedPrefix}{" "}
                   {formatLegalDateShort(doc.updatedAt)}
@@ -122,37 +112,60 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
           })}
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">{dict.legal.hub.empty}</p>
+        // TASK-870 — design-system §6: icon + one line + a primary action, the
+        // same card as the catalogue's `ListingEmptyState`. With nothing to
+        // read, asking support IS the way on, so the card carries the hub's
+        // one primary and the support card below is not rendered: two
+        // «Звʼязатися з нами» buttons a few pixels apart would be two primaries.
+        <div className="flex flex-col items-center justify-center rounded-card border border-border bg-card px-5 py-14 text-center shadow-card">
+          <span
+            aria-hidden="true"
+            className="mb-4 inline-flex size-18 items-center justify-center rounded-full bg-muted text-muted-foreground"
+          >
+            <FileText className="size-8" strokeWidth={1.6} />
+          </span>
+          <p className="max-w-md font-display text-xl font-bold text-foreground">
+            {dict.legal.hub.empty}
+          </p>
+          <p className="mt-2.5 max-w-md text-sm text-muted-foreground">
+            {dict.legal.hub.emptyBody}
+          </p>
+          <Button asChild size="lg" className="mt-5 h-11">
+            <Link href={dict.legal.contactHref}>
+              {dict.legal.hub.supportCta}
+            </Link>
+          </Button>
+        </div>
       )}
 
-      {/* Support CTA */}
-      <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card px-[26px] py-[22px] shadow-card">
-        <div className="flex items-center gap-3.5">
-          <span
-            className="inline-flex size-[46px] items-center justify-center rounded-xl text-primary"
-            style={{
-              background:
-                "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-            }}
-          >
-            <LegalChatIcon width={23} height={23} />
-          </span>
-          <div>
-            <b className="block font-display text-base text-foreground">
-              {dict.legal.hub.supportHeading}
-            </b>
-            <span className="text-[13.5px] text-muted-foreground">
-              {dict.legal.hub.supportSubtitle}
+      {/* Support CTA — the empty card above already carries this action */}
+      {docs.length > 0 && (
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card px-[26px] py-[22px] shadow-card">
+          <div className="flex items-center gap-3.5">
+            <span className="inline-flex size-[46px] items-center justify-center rounded-xl text-primary bg-primary/12">
+              <LegalChatIcon width={23} height={23} />
             </span>
+            <div>
+              <b className="block font-display text-base text-foreground">
+                {dict.legal.hub.supportHeading}
+              </b>
+              <span className="text-sm text-muted-foreground">
+                {dict.legal.hub.supportSubtitle}
+              </span>
+            </div>
           </div>
+          {/* The hub's one primary action, as in LegalHub.dc.html (TASK-865);
+            on Button so it gets the focus ring it lacked. */}
+          <Button
+            asChild
+            className="h-11 rounded-menu px-6 font-semibold no-underline"
+          >
+            <Link href={dict.legal.contactHref}>
+              {dict.legal.hub.supportCta}
+            </Link>
+          </Button>
         </div>
-        <Link
-          href={dict.legal.contactHref}
-          className="inline-flex h-11 items-center rounded-[11px] bg-primary px-[22px] text-sm font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary/90"
-        >
-          {dict.legal.hub.supportCta}
-        </Link>
-      </div>
+      )}
     </>
   );
 }

@@ -1,117 +1,136 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SITE_NAME } from "@/shared/config";
+/**
+ * A name that is NOT the `STORE_NAME` fallback, so every assertion below proves
+ * the lettering comes from the `siteName` prop (TASK-546), not the constant.
+ */
+const STORE_NAME = "Аксесуарня";
 import { Logo } from "./logo";
 
 /** store-api uploads origin — allow-listed in next.config.ts by default. */
 const RASTER_LOGO = "http://localhost:3001/uploads/branding/logo.webp";
 const SVG_LOGO = "http://localhost:3001/uploads/branding/logo.svg";
 /** The typographic fallback shows the first letter of the brand name (TASK-743). */
-const MONOGRAM = SITE_NAME.charAt(0);
+const MONOGRAM = STORE_NAME.charAt(0);
 
 describe("Logo (TASK-299)", () => {
   it("renders the typographic monogram + wordmark when no logo is uploaded", () => {
-    render(<Logo />);
+    render(<Logo siteName={STORE_NAME} />);
 
     expect(screen.getByText(MONOGRAM)).toBeInTheDocument();
-    expect(screen.getByText(SITE_NAME)).toBeInTheDocument();
+    expect(screen.getByText(STORE_NAME)).toBeInTheDocument();
     expect(document.querySelector("img")).not.toBeInTheDocument();
   });
 
-  it("treats null / blank logoUrl as no logo", () => {
-    const { rerender } = render(<Logo logoUrl={null} />);
-    expect(screen.getByText(SITE_NAME)).toBeInTheDocument();
+  // ── TASK-546: the lettering is the admin-managed store name ───────────────
+  it("follows a renamed store — wordmark, monogram letter and nothing of the default", () => {
+    const { rerender } = render(<Logo siteName={STORE_NAME} />);
+    expect(screen.queryByText("CaseStore")).not.toBeInTheDocument();
 
-    rerender(<Logo logoUrl="   " />);
-    expect(screen.getByText(SITE_NAME)).toBeInTheDocument();
+    rerender(<Logo siteName="Чохлярня" />);
+    expect(screen.getByText("Чохлярня")).toBeInTheDocument();
+    expect(screen.getByText("Ч")).toBeInTheDocument();
+    expect(screen.queryByText(STORE_NAME)).not.toBeInTheDocument();
+  });
+
+  it("treats null / blank logoUrl as no logo", () => {
+    const { rerender } = render(<Logo siteName={STORE_NAME} logoUrl={null} />);
+    expect(screen.getByText(STORE_NAME)).toBeInTheDocument();
+
+    rerender(<Logo siteName={STORE_NAME} logoUrl="   " />);
+    expect(screen.getByText(STORE_NAME)).toBeInTheDocument();
     expect(document.querySelector("img")).not.toBeInTheDocument();
   });
 
   it("routes a raster logo on the uploads origin through the next/image optimizer", () => {
-    render(<Logo logoUrl={RASTER_LOGO} />);
+    render(<Logo siteName={STORE_NAME} logoUrl={RASTER_LOGO} />);
 
-    const img = screen.getByRole("img", { name: SITE_NAME });
+    const img = screen.getByRole("img", { name: STORE_NAME });
     const src = img.getAttribute("src") ?? "";
     expect(src).toContain("/_next/image");
     expect(src).toContain(encodeURIComponent(RASTER_LOGO));
     // The image carries the brand name — the wordmark is not duplicated.
-    expect(screen.queryByText(SITE_NAME)).not.toBeInTheDocument();
+    expect(screen.queryByText(STORE_NAME)).not.toBeInTheDocument();
   });
 
   it("serves an SVG logo as a plain <img>, never through the optimizer", () => {
     // `next/image` would need images.dangerouslyAllowSVG, which we deliberately
     // keep off — the optimizer must never be asked to render SVG.
-    render(<Logo logoUrl={SVG_LOGO} />);
+    render(<Logo siteName={STORE_NAME} logoUrl={SVG_LOGO} />);
 
-    const img = screen.getByRole("img", { name: SITE_NAME });
+    const img = screen.getByRole("img", { name: STORE_NAME });
     expect(img).toHaveAttribute("src", SVG_LOGO);
     expect(img.getAttribute("src")).not.toContain("/_next/image");
   });
 
   it("ignores a query string / fragment when detecting SVG", () => {
-    render(<Logo logoUrl={`${SVG_LOGO}?v=2`} />);
+    render(<Logo siteName={STORE_NAME} logoUrl={`${SVG_LOGO}?v=2`} />);
 
-    const img = screen.getByRole("img", { name: SITE_NAME });
+    const img = screen.getByRole("img", { name: STORE_NAME });
     expect(img).toHaveAttribute("src", `${SVG_LOGO}?v=2`);
   });
 
   it("serves a raster logo from a non-allow-listed host as a plain <img> (next/image would throw)", () => {
     const foreign = "https://cdn.not-allowed.example/logo.png";
-    render(<Logo logoUrl={foreign} />);
+    render(<Logo siteName={STORE_NAME} logoUrl={foreign} />);
 
-    const img = screen.getByRole("img", { name: SITE_NAME });
+    const img = screen.getByRole("img", { name: STORE_NAME });
     expect(img).toHaveAttribute("src", foreign);
     expect(img.getAttribute("src")).not.toContain("/_next/image");
   });
 
   it("reserves the box with explicit width/height (no layout shift)", () => {
-    render(<Logo logoUrl={SVG_LOGO} />);
+    render(<Logo siteName={STORE_NAME} logoUrl={SVG_LOGO} />);
 
-    const img = screen.getByRole("img", { name: SITE_NAME });
+    const img = screen.getByRole("img", { name: STORE_NAME });
     expect(img).toHaveAttribute("width", "160");
     expect(img).toHaveAttribute("height", "36");
   });
 
   it("falls back to the monogram when the logo fails to load", () => {
-    render(<Logo logoUrl={SVG_LOGO} />);
+    render(<Logo siteName={STORE_NAME} logoUrl={SVG_LOGO} />);
 
-    fireEvent.error(screen.getByRole("img", { name: SITE_NAME }));
+    fireEvent.error(screen.getByRole("img", { name: STORE_NAME }));
 
     expect(screen.getByText(MONOGRAM)).toBeInTheDocument();
-    expect(screen.getByText(SITE_NAME)).toBeInTheDocument();
+    expect(screen.getByText(STORE_NAME)).toBeInTheDocument();
     expect(document.querySelector("img")).not.toBeInTheDocument();
   });
 
   it("recovers to a newly-uploaded logo after an earlier one failed to load", () => {
     // Header/footer persist across client navigations, so a stale error flag must
     // not mask a logo uploaded later in the same session (new logoUrl via ISR).
-    const { rerender } = render(<Logo logoUrl={SVG_LOGO} />);
+    const { rerender } = render(
+      <Logo siteName={STORE_NAME} logoUrl={SVG_LOGO} />,
+    );
 
-    fireEvent.error(screen.getByRole("img", { name: SITE_NAME }));
+    fireEvent.error(screen.getByRole("img", { name: STORE_NAME }));
     expect(screen.getByText(MONOGRAM)).toBeInTheDocument();
     expect(document.querySelector("img")).not.toBeInTheDocument();
 
     const NEW_LOGO = "http://localhost:3001/uploads/branding/logo-v2.svg";
-    rerender(<Logo logoUrl={NEW_LOGO} />);
+    rerender(<Logo siteName={STORE_NAME} logoUrl={NEW_LOGO} />);
 
-    const img = screen.getByRole("img", { name: SITE_NAME });
+    const img = screen.getByRole("img", { name: STORE_NAME });
     expect(img).toHaveAttribute("src", NEW_LOGO);
     expect(screen.queryByText(MONOGRAM)).not.toBeInTheDocument();
   });
 
   // ── TASK-410: the brand block is what yields on a 320px header row ─────────
   it("lets the wordmark truncate while the monogram keeps its size", () => {
-    const { container } = render(<Logo />);
+    const { container } = render(<Logo siteName={STORE_NAME} />);
 
     // Without min-w-0 a flex item's minimum width is its intrinsic width, so the
     // logo would push the header's action cluster off a narrow screen instead of
     // shortening itself.
     expect(container.firstChild).toHaveClass("min-w-0");
     expect(screen.getByText(MONOGRAM)).toHaveClass("shrink-0");
-    expect(screen.getByText(SITE_NAME)).toHaveClass("truncate");
+    expect(screen.getByText(STORE_NAME)).toHaveClass("truncate");
   });
 
   it("keeps min-w-0 when the call site passes its own wrapper classes", () => {
-    const { container } = render(<Logo className="gap-3" />);
+    const { container } = render(
+      <Logo siteName={STORE_NAME} className="gap-3" />,
+    );
 
     expect(container.firstChild).toHaveClass("min-w-0");
     expect(container.firstChild).toHaveClass("gap-3");
@@ -119,7 +138,11 @@ describe("Logo (TASK-299)", () => {
 
   it("applies the caller's wrapper / monogram classes", () => {
     const { container } = render(
-      <Logo className="gap-2.5" markClassName="shadow-elevated" />,
+      <Logo
+        siteName={STORE_NAME}
+        className="gap-2.5"
+        markClassName="shadow-elevated"
+      />,
     );
 
     expect(container.firstChild).toHaveClass("gap-2.5");

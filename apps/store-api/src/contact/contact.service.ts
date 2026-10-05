@@ -8,6 +8,8 @@ import {
   type CreateContactMessageInput,
 } from './contact.repository';
 import { ContactMessageEntity } from './entities';
+// Direct path, not the barrel: the barrel pulls in NotificationModule itself.
+import { ShopNotifier } from '../notification/shop-notifier.service';
 import {
   CreateContactMessageDto,
   ContactMessageListQueryDto,
@@ -71,6 +73,7 @@ export class ContactService {
   constructor(
     private readonly contactRepository: ContactRepository,
     private readonly logger: PinoLogger,
+    private readonly shopNotifier: ShopNotifier,
   ) {
     this.logger.setContext(ContactService.name);
   }
@@ -147,7 +150,27 @@ export class ContactService {
    * response to `{ id }` so no stored PII is echoed back.
    */
   async create(dto: CreateContactMessageDto): Promise<ContactMessageEntity> {
-    const message = await this.contactRepository.create(this.toCreateInput(dto));
+    // TASK-677: the shop's Telegram ping is queued in the message's own
+    // transaction. Only this path passes the hook — every row it writes is NEW;
+    // the honeypot's SPAM row in `submit` goes straight to the repository and
+    // never pings.
+    const message = await this.contactRepository.create(
+      this.toCreateInput(dto),
+      async (tx, created) => {
+        await this.shopNotifier.enqueueContactMessage(
+          {
+            messageId: created.id,
+            name: created.name,
+            phone: created.phone,
+            email: created.email,
+            topic: created.topic,
+            orderRef: created.orderRef,
+            message: created.message,
+          },
+          tx,
+        );
+      },
+    );
 
     this.logger.info(
       { contactMessageId: message.id, topic: message.topic },

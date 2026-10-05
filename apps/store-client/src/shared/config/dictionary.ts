@@ -42,6 +42,13 @@ export const dict = {
     genericError: "Щось пішло не так. Спробуйте ще раз.",
     // Accessible name for overlay close buttons (Dialog / Sheet) — TASK-259-F.
     close: "Закрити",
+    // TASK-880 — the segment error boundary (app/error.tsx, inside the layout)
+    // and the bare global-error fallback (outside it) share these strings.
+    errorTitle: "Щось пішло не так",
+    errorBody:
+      "Сторінку не вдалося показати. Спробуйте ще раз або поверніться на головну.",
+    // The digest Next attaches to a server error — what support matches in logs.
+    errorCode: (digest: string) => `Код помилки: ${digest}`,
   },
 
   nav: {
@@ -60,14 +67,14 @@ export const dict = {
     cartAria: "Кошик",
     openMenu: "Відкрити меню",
     menuTitle: "Меню",
-    accountTriggerAria: "Відкрити меню акаунту",
+    accountTriggerAria: "Кабінет — меню акаунту",
     accountMenuAria: "Меню акаунту",
     searchPlaceholder: "Пошук товарів…",
     searchSubmit: "Шукати",
-    // Top announcement bar (static — message + phone; TASK-167-A).
+    // Top announcement bar (TASK-167-A). The number itself is NOT here: it is
+    // the admin-managed SiteContactSettings.phone, hidden when unset (TASK-873)
+    // — a dictionary number would ring nobody.
     announcement: "Безкоштовна доставка від 1 000 ₴ · Відправка день у день",
-    phone: "0 800 00 00 00",
-    phoneHref: "tel:0800000000",
     phoneAria: "Зателефонувати в підтримку",
     // Catalog mega-menu trigger + labelled action cluster.
     catalogButton: "Каталог",
@@ -83,12 +90,6 @@ export const dict = {
     catalogSubcategoriesAria: "Підкатегорії",
     toggleSubcategoriesAria: (name: string) =>
       `Підкатегорії категорії «${name}»`,
-    // TASK-412 — the light/system/dark switch. The three option labels are NOT
-    // repeated here: they live once in `account.dashboard.theme*` below, so the
-    // header and the account settings can never drift apart. Only the group's
-    // accessible name is new — "Оформлення" alone would read as "checkout" next
-    // to a cart icon.
-    themeAria: "Тема оформлення",
     // TASK-413 — the mega-menu footer's second exit. «Усі категорії» lands on
     // the category index; a shopper who wants the goods themselves, not a
     // taxonomy, needs the flat catalogue too.
@@ -134,10 +135,18 @@ export const dict = {
      */
     openPanel: "Відкрити пошук",
     showAllResults: (q: string) => `Показати всі результати для «${q}»`,
+    /**
+     * Primary action of the no-query state on /search (TASK-870) — design-system
+     * §6 asks every empty state for one; the field itself is in the header.
+     */
+    promptCta: "До каталогу",
   },
 
   footer: {
-    rights: (year: number) => `© ${year} CaseStore. Усі права захищено.`,
+    // The name is SeoSettings.siteName via resolveSiteName (TASK-546), never a
+    // literal — the owner renames the store in /settings/seo.
+    rights: (year: number, siteName: string) =>
+      `© ${year} ${siteName}. Усі права захищено.`,
     tagline:
       "Інтернет-магазин аксесуарів та ґаджетів. Оригінальна продукція з офіційною гарантією та доставкою по Україні.",
     shopTitle: "Магазин",
@@ -173,13 +182,24 @@ export const dict = {
     // TASK-834 — the two hubs, so every published page has a way in.
     infoLegalHub: "Усі правові документи",
     infoHelpHub: "Довідка та підтримка",
+    // TASK-866 — /contact is the one contact form (owner decision 7.8); the
+    // footer is the site-wide way in, no header link exists.
+    contactFormLink: "Звʼязатися з нами",
   },
 
   trust: {
     shipping: "Безкоштовна доставка від 1 000 ₴",
-    returns: "Повернення протягом 30 днів",
+    // TASK-873 — 14 days, the statutory window (Закон «Про захист прав
+    // споживачів», ст. 9) that RETURN_POLICY, /info, /contact and the seeded
+    // «Повернення та обмін» page all state; the footer used to promise 30.
+    returns: "Повернення протягом 14 днів",
     secure: "Безпечна оплата",
     support: "Підтримка 24/7",
+    // TASK-864 — the trust strip under the cart / checkout summary. Delivery
+    // never promises «безкоштовно» there (TASK-881: Nova Poshta charges its own
+    // tariff, priced on the checkout), so it says how, not for how much.
+    orderDelivery: "Доставка Новою Поштою по всій Україні",
+    orderAria: "Наші гарантії",
   },
 
   hero: {
@@ -254,31 +274,26 @@ export const dict = {
       loading: "Завантаження…",
     },
 
-    // Three static promo tiles under the hero.
+    // Static promo tiles under the hero — the fallback when the owner has
+    // published no PROMO_TILE banner. TASK-873: every tile leads to a real page;
+    // the «Покупка частинами» and «Trade-in» tiles pointed at `#` (no such page,
+    // no trade-in service) and are gone.
     promoTiles: [
       {
         badge: "−30%",
         title: "Розпродаж аксесуарів",
         text: "Чохли, зарядки та захисне скло за зниженою ціною.",
         cta: "Дивитись акцію",
-        href: "/products",
+        href: "/promo",
         accent: "sale" as const,
       },
       {
-        badge: "КРЕДИТ 0%",
-        title: "Покупка частинами",
-        text: "До 24 платежів без переплат на замовлення.",
-        cta: "Дізнатись більше",
-        href: "#",
+        badge: "ВІД 1 000 ₴",
+        title: "Безкоштовна доставка",
+        text: "Нова Пошта по всій Україні — відправка день у день.",
+        cta: "Умови доставки",
+        href: "/info#delivery",
         accent: "primary" as const,
-      },
-      {
-        badge: "TRADE-IN",
-        title: "Обміняй старий ґаджет",
-        text: "Знижка на нові аксесуари за твій старий пристрій.",
-        cta: "Оцінити",
-        href: "#",
-        accent: "success" as const,
       },
     ],
 
@@ -293,7 +308,7 @@ export const dict = {
         subtitle: "Лише оригінальні аксесуари",
       },
       {
-        title: "Повернення 30 днів",
+        title: "Повернення 14 днів",
         subtitle: "Легкий обмін і повернення",
       },
       {
@@ -346,15 +361,8 @@ export const dict = {
       heading: "−10% на перше замовлення",
       subtitle:
         "Підпишись на розсилку та отримуй добірки новинок і персональні промокоди.",
-      // External social links — no real URLs yet (href "#"). The widget renders a
-      // "coming soon" toast for any placeholder href and a real <a> once set.
-      socials: [
-        { label: "Telegram", href: "#" },
-        { label: "Instagram", href: "#" },
-        { label: "YouTube", href: "#" },
-        { label: "Viber", href: "#" },
-      ],
-      socialSoon: "Наші канали скоро запрацюють.",
+      // The social buttons come from «Контакти магазину» (TASK-741); the old
+      // `href: "#"` list here was dead and is gone (TASK-873).
     },
   },
 
@@ -363,7 +371,9 @@ export const dict = {
   blog: {
     breadcrumbHome: "Головна",
     breadcrumb: "Блог",
-    badge: "ЖУРНАЛ MOBILESTORE",
+    // TASK-873 — the neutral badge; with the shop name from «SEO-налаштування»
+    // the hub renders `badgeNamed` instead (no more hardcoded «MOBILESTORE»).
+    badge: "Журнал",
     heading: "Блог про техніку та ґаджети",
     subtitle:
       "Огляди, гайди й поради від команди CaseStore — щоб обрати саме те, що потрібно, і вичавити з ґаджета максимум.",
@@ -387,14 +397,9 @@ export const dict = {
       heading: "Не пропускай нові статті",
       subtitle:
         "Підписуйся на канали CaseStore — огляди, гайди та знижки першими.",
-      // External social links — no real URLs yet (href "#"). The widget renders a
-      // "coming soon" toast for any placeholder href and a real <a> once set.
-      socials: [
-        { label: "Telegram", href: "#" },
-        { label: "Instagram", href: "#" },
-        { label: "YouTube", href: "#" },
-      ],
-      socialSoon: "Наші канали скоро запрацюють.",
+      // TASK-873 — the social buttons are the shop's real channels from
+      // «Контакти магазину», as on the home page (TASK-741); the old `href: "#"`
+      // list with its «скоро запрацюють» toast is gone.
     },
     // Article detail page (/blog/[slug], Article.dc.html import). The body and
     // the author's role/bio come from the API (TASK-170, TASK-554) — there is
@@ -405,7 +410,6 @@ export const dict = {
       copied: "Посилання скопійовано",
       telegramAria: "Поділитись у Telegram",
       facebookAria: "Поділитись у Facebook",
-      coverCaption: "[ обкладинка статті ]",
       tocHeading: "Зміст",
       relatedHeading: "Читайте також",
       // "{read} читання" — e.g. "8 хв читання".
@@ -416,6 +420,20 @@ export const dict = {
     // link says what it actually does: it opens the next page.
     nextPageLink: "Наступні статті",
     paginationAria: "Навігація сторінками статей",
+    badgeNamed: (name: string) => `Журнал ${name}`,
+    // TASK-870 — the empty hub, design-system §6: one line + one primary action.
+    // A filter or a search that found nothing offers the whole journal back; a
+    // page past the end sends the reader to page 1; a journal with no articles
+    // at all has nothing to reset, so the way on is the catalogue.
+    emptyResetCta: "Показати всі статті",
+    emptyPageHeading: "На цій сторінці статей немає",
+    emptyPageBody:
+      "Схоже, посилання застаріло — свіжі статті на першій сторінці.",
+    emptyPageCta: "До першої сторінки",
+    emptyNoneHeading: "Статей поки немає",
+    emptyNoneBody:
+      "Ми готуємо перші огляди й гайди. А поки — загляньте в каталог.",
+    emptyNoneCta: "До каталогу",
   },
 
   // Admin-authored static/legal pages (/legal + /legal/[slug], Legal.dc.html
@@ -432,8 +450,10 @@ export const dict = {
     contactHeading: "Залишились питання?",
     contactSubtitle: "Напишіть нам — відповімо протягом робочого дня",
     contactCta: "Звʼязатися",
-    // Contacts destination — the "Інформація та підтримка" page's Contacts tab.
-    contactHref: "/info#contacts",
+    // Contacts destination — /contact, the store's single contact form (owner
+    // decision 7.8, TASK-866). It used to be the /info Contacts tab, which
+    // carried a second copy of the form.
+    contactHref: "/contact",
     otherHeading: "Інші правові документи",
     // Legal hub index (/info, LegalHub.dc.html import).
     hub: {
@@ -443,11 +463,25 @@ export const dict = {
         "Усі офіційні документи CaseStore в одному місці — політики, умови та гарантії. Оберіть потрібний документ, щоб прочитати повну редакцію.",
       // "{updatedPrefix} {date}" → "Оновлено 12 черв. 2026".
       updatedPrefix: "Оновлено",
-      empty: "Документів поки немає.",
+      empty: "Документів поки немає",
       supportHeading: "Не знайшли потрібне?",
       supportSubtitle:
         "Наша підтримка допоможе розібратись із будь-яким документом",
       supportCta: "Звʼязатися з нами",
+      // TASK-870 — helper line of the empty hub; its action is `supportCta`.
+      emptyBody:
+        "Ми готуємо офіційні документи магазину. Поки що підтримка відповість на будь-яке питання про умови, доставку чи гарантію.",
+    },
+    // TASK-878 — below lg the TOC collapses into one disclosure row.
+    // Ukrainian pluralization: 1 розділ, 2–4 розділи, 5+ розділів.
+    tocToggle: (n: number) => {
+      const mod10 = n % 10;
+      const mod100 = n % 100;
+      let word = "розділів";
+      if (mod10 === 1 && mod100 !== 11) word = "розділ";
+      else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20))
+        word = "розділи";
+      return `Зміст документа · ${n} ${word}`;
     },
   },
 
@@ -528,6 +562,11 @@ export const dict = {
     // control is the chips row). Two behaviours, so two names: a screen reader
     // must not meet two identically named buttons that do different things.
     clearAllFilters: "Скинути всі фільтри",
+    // TASK-870 — the empty state when there is NO filter to drop (an empty
+    // category landing page, an empty compat page): a reset button there would
+    // be a no-op, so the primary action leads out to the whole catalogue.
+    emptyUnfilteredBody: "Тут поки немає товарів. Загляньте трохи згодом.",
+    emptyBrowseAll: "Переглянути всі товари",
   },
 
   // Info & support hub (/info, Info.dc.html import). Content is static (stub)
@@ -549,12 +588,11 @@ export const dict = {
     paymentHeading: "Оплата",
     paymentIntro: "Обирайте зручний спосіб — онлайн або при отриманні.",
     warrantyHeading: "Гарантія та сервіс",
-    warrantyIntro:
-      "Уся техніка — офіційна, з гарантією виробника. Сервісне обслуговування — [сервісний центр / партнер].",
+    warrantyIntro: "Уся техніка — офіційна, з гарантією виробника.",
     servicesHeading: "Додаткові сервіси захисту",
     aboutHeading: "Ми — CaseStore",
     aboutIntro:
-      "Інтернет-магазин електроніки, який з [рік заснування] року допомагає українцям обирати техніку без зайвого клопоту. Тільки оригінальні пристрої, офіційна гарантія та чесні ціни.",
+      "Інтернет-магазин електроніки, який допомагає українцям обирати техніку без зайвого клопоту. Тільки оригінальні пристрої, офіційна гарантія та чесні ціни.",
     valuesHeading: "Чому обирають нас",
     contactsHeading: "Звʼяжіться з нами",
     contactPhoneLabel: "Телефон",
@@ -583,6 +621,12 @@ export const dict = {
     servicePriceFrom: (price: string) => `від ${price}`,
     // TASK-560 — the published help pages /info does not render inline.
     pagesHeading: "Довідкові сторінки",
+    // TASK-866 — the Contacts section's link card to /contact, the store's
+    // single contact form (owner decision 7.8); its heading is `formHeading`.
+    contactsFormCardBody:
+      "Форма звернення — на сторінці «Звʼязатися з нами». Оберіть тему, за потреби додайте номер замовлення, і менеджер відповість протягом 1 робочого дня.",
+    contactsFormCardCta: "Перейти до форми",
+    contactsFormCardHref: "/contact",
   },
 
   // TASK-167-Q — dedicated contact page (/contact, Contact.dc.html). Contact
@@ -665,40 +709,45 @@ export const dict = {
       "Ми вже отримали ваш запит і відповімо на вказану пошту найближчим часом.",
     sentAgain: "Надіслати ще одне",
     departmentsHeading: "Відділи",
+    // TASK-873 — no per-department mailboxes exist in «Контакти магазину», so
+    // each row writes to the shop's one support email with the department as
+    // the subject (`departmentWrite`) instead of showing «[email відділу…]».
     departments: [
-      // TASK-311: department mailboxes are a company fact — placeholders until
-      // the owner confirms which addresses actually exist.
       {
         key: "sales",
         title: "Відділ продажів",
         desc: "Допомога з вибором і замовленням",
-        email: "[email відділу продажів]",
       },
       {
         key: "service",
         title: "Сервіс і гарантія",
         desc: "Ремонт, обмін, повернення",
-        email: "[email сервісу]",
       },
       {
         key: "b2b",
         title: "Співпраця",
         desc: "Опт, партнерство, реклама",
-        email: "[email для співпраці]",
       },
     ],
     messengersHeading: "Ми у месенджерах",
     messengersIntro: "Швидка відповідь у зручному для вас чаті.",
     messengersEmpty: "Зателефонуйте нам — ми на звʼязку щодня.",
+    // TASK-873 — the office card renders only with a real address, which
+    // «Контакти магазину» does not store yet (TASK-721); the placeholder
+    // address, note and hours that stood here are gone.
     officeHeading: "Офіс",
-    officeAddress: "[адреса офісу]",
-    officeAddressNote: "[уточнення адреси — поверх, орієнтир]",
-    officeHours: "[графік роботи офісу]",
     officeRoute: "Прокласти маршрут",
     officeMapAria: "Розташування офісу",
     faqHeading: "Можливо, відповідь уже є",
     faqBody: "Перегляньте часті питання про доставку, оплату та гарантію",
     faqCta: "До поширених питань",
+    // TASK-866 — the consent links to the privacy policy itself (the seeded
+    // LEGAL page), not to the /legal hub. A renamed slug still lands: the
+    // document route 308-redirects old slugs (TASK-435).
+    consentHref: "/legal/privacy-policy",
+    // TASK-873 — a department row's link: the support email, subject = title.
+    departmentWrite: "Написати",
+    departmentWriteAria: (title: string) => `Написати: ${title}`,
   },
 
   notFound: {
@@ -714,12 +763,13 @@ export const dict = {
     catalog: "До каталогу",
     /** Popular-section quick links. */
     popularHeading: "Популярні розділи",
+    // TASK-873 — the category chips are the store's real root categories
+    // (they were «Смартфони / Ноутбуки / Аудіо», all pointing at /products).
     popular: {
-      smartphones: "Смартфони",
-      laptops: "Ноутбуки",
-      audio: "Аудіо",
       promo: "Акції",
     },
+    /** Shortcut to the category hub when the tree could not be read. */
+    allCategories: "Усі категорії",
   },
 
   // TASK-167-N — Акції (promo) page. Hero copy + countdown are static marketing
@@ -786,6 +836,11 @@ export const dict = {
       stubNote:
         "Форма демонстраційна — підписка поки не надсилається на сервер.",
     },
+    // TASK-870 — the deals listing with nothing on sale and no filter to drop.
+    dealsEmptyHeading: "Зараз немає товарів зі знижкою",
+    dealsEmptyBody:
+      "Нові знижки з’являться найближчим часом — а поки перегляньте весь каталог.",
+    dealsEmptyCta: "До каталогу",
   },
 
   // Categories hub page (/categories, Categories.dc.html import).
@@ -798,6 +853,11 @@ export const dict = {
     viewAllInCategory: "Переглянути всі товари",
     // Popular brands strip — wired to the real Brand model (TASK-189).
     brandsHeading: "Популярні бренди",
+    // TASK-870 — the hub with no active category: crumbs + h1 + empty card.
+    heading: "Категорії",
+    emptyBody:
+      "Розділи каталогу саме оновлюються. Усі товари вже доступні — їх можна переглянути в каталозі.",
+    emptyCta: "До каталогу",
   },
 
   filters: {
@@ -952,7 +1012,9 @@ export const dict = {
     buyBoxInfo: {
       delivery: {
         title: "Доставка Новою Поштою",
-        text: "Безкоштовно від 1 000 ₴ · 1–2 дні",
+        // Nova Poshta is never free (B-6 #2): its tariff is priced at
+        // checkout for the chosen city (TASK-881).
+        text: "За тарифом перевізника · 1–2 дні",
       },
       warranty: {
         title: "Офіційна гарантія 12 міс.",
@@ -984,8 +1046,6 @@ export const dict = {
     // Full-screen gallery lightbox (TASK-416).
     zoomAria: "Відкрити фото на весь екран",
     lightboxTitle: (name: string) => `Фото товару «${name}»`,
-    lightboxHint:
-      "Гортайте стрілками ← та → або свайпом. Натисніть Esc, щоб закрити.",
     lightboxPrev: "Попереднє фото",
     lightboxNext: "Наступне фото",
     lightboxCounter: (current: number, total: number) =>
@@ -995,6 +1055,30 @@ export const dict = {
     // and a screen reader must hear four different names.
     railPrev: (title: string) => `${title}: гортати назад`,
     railNext: (title: string) => `${title}: гортати вперед`,
+    // Visible chip on the gallery's zoom trigger (TASK-832). Kept a substring
+    // of `zoomAria` so the visible label stays inside the accessible name
+    // (WCAG 2.5.3 «Label in Name»).
+    zoomChip: "На весь екран",
+    // Lightbox zoom, thumbnail strip and the visible gesture hint (TASK-521).
+    // The hint doubles as the dialog's description, so it names what works in
+    // the current state: a pointer or a touch screen, unzoomed or zoomed.
+    lightboxZoomToolbar: "Масштаб фото",
+    lightboxZoomOut: "Зменшити",
+    lightboxZoomIn: "Збільшити",
+    lightboxZoomReset: "Скинути масштаб",
+    lightboxZoomValue: (percent: number) => `${percent}%`,
+    lightboxThumbnails: "Мініатюри",
+    lightboxHintPointer: (canStep: boolean) =>
+      canStep
+        ? "Клік по фото — наблизити · ← → — гортати · Esc — закрити"
+        : "Клік по фото — наблизити · Esc — закрити",
+    lightboxHintPointerZoomed:
+      "Перетягніть, щоб роздивитися · подвійний клік або «Скинути» — назад до 100%",
+    lightboxHintTouch: (canStep: boolean) =>
+      canStep
+        ? "Свайп — гортати · подвійний тап або щипок — наблизити"
+        : "Подвійний тап або щипок — наблизити",
+    lightboxHintTouchZoomed: "Щипок — масштаб · один палець — панорама",
   },
 
   reviews: {
@@ -1103,12 +1187,10 @@ export const dict = {
     clearConfirmAction: "Так, очистити",
     clearError: "Не вдалося очистити кошик. Спробуйте ще раз.",
     secureCheckout: "Безпечне оформлення",
-    shippingNotice: "Безкоштовна доставка від 1 000 ₴",
     continueShopping: "Продовжити покупки",
     // Mini-cart slide-out (TASK-167-A).
     openAria: "Відкрити кошик",
     viewCartFull: "Перейти в кошик",
-    sheetShipping: "Безкоштовна доставка Новою Поштою",
     // line item
     remove: "Видалити",
     removeItemAria: "Видалити товар",
@@ -1140,7 +1222,6 @@ export const dict = {
     summaryHeading: "Разом",
     itemsLine: "Товари",
     deliveryLine: "Доставка",
-    shippingFree: "Безкоштовно",
     addonServicesLine: "Додаткові послуги",
     payable: "До сплати",
     termsNote: "Натискаючи, ви погоджуєтесь з умовами магазину",
@@ -1159,6 +1240,12 @@ export const dict = {
     removedToast: (name: string) => `«${name}» прибрано з кошика`,
     undoRemove: "Повернути",
     undoError: "Не вдалося повернути товар. Спробуйте ще раз.",
+    // Delivery in the cart (TASK-881). The price depends on the method (Nova
+    // Poshta's own tariff, a free pickup point, the courier's flat fee) and on
+    // the city — both chosen at checkout, so the cart says when the price
+    // appears rather than promising «Безкоштовно» the checkout then contradicts.
+    deliveryAtCheckout: "Розрахуємо на наступному кроці",
+    sheetDeliveryNote: "Вартість доставки розрахуємо під час оформлення",
   },
 
   // Promo code / discount (TASK-079)
@@ -1348,6 +1435,27 @@ export const dict = {
     },
     // Loyalty bonuses — stub (no loyalty backend — TASK-175).
     bonusesStub: "Списати бонуси (програма лояльності — незабаром)",
+    // Review step (TASK-882): the guest email and the chosen payment method are
+    // read back before the order is placed; city and branch share one row.
+    review: {
+      email: "Email",
+      delivery: "Доставка",
+      payment: "Оплата",
+    },
+    // Consent on the confirm step (TASK-882, docs/legal-checklist.md §1). The
+    // order IS the acceptance of the offer, so the box sits right above
+    // «Підтвердити замовлення». The links open a new tab: leaving /checkout
+    // would drop the filled form. `and` carries its own spaces, like the
+    // registration consent's.
+    consent: {
+      prefix: "Я приймаю умови",
+      offerLink: "публічної оферти",
+      and: " та ",
+      privacyLink: "політики конфіденційності",
+      newTab: "(відкривається в новій вкладці)",
+      required:
+        "Щоб підтвердити замовлення, прийміть умови публічної оферти та політики конфіденційності.",
+    },
   },
 
   order: {
@@ -1568,9 +1676,6 @@ export const dict = {
       // describes the behaviour: it introduces the control right below it.
       appearanceNote:
         "Оберіть тему інтерфейсу. «Системна» слідує за налаштуваннями пристрою, а ваш вибір зберігається в цьому браузері.",
-      themeDark: "Темна",
-      themeLight: "Світла",
-      themeSystem: "Системна",
       notificationsHeading: "Сповіщення",
       notifs: [
         {
@@ -1619,7 +1724,7 @@ export const dict = {
   orderHistory: {
     title: "Мої замовлення",
     empty: "У вас ще немає замовлень.",
-    emptyCta: "Перейти до товарів",
+    emptyCta: "До каталогу",
     orderNumber: "Замовлення",
     placedOn: "Дата",
     total: "Разом",
@@ -1718,6 +1823,12 @@ export const dict = {
         "Якщо такий email зареєстровано, ми надіслали посилання для скидання пароля. Перевірте вашу пошту.",
       backToLogin: "Повернутися до входу",
       validationEmail: "Введіть дійсну email-адресу",
+      // TASK-871: the request used to fail silently. Neither line depends on
+      // whether the address exists — a 429 is the IP throttle (5 per 60 s) and
+      // anything else is the network or the API, so existence-hiding holds.
+      errorTooMany: "Забагато спроб. Спробуйте ще раз за хвилину.",
+      errorNetwork:
+        "Не вдалося надіслати посилання. Перевірте з'єднання з інтернетом і спробуйте ще раз.",
     },
     resetPassword: {
       heading: "Новий пароль",
@@ -1731,6 +1842,8 @@ export const dict = {
       errorMissingToken:
         "Посилання неповне або пошкоджене. Скористайтеся посиланням з листа ще раз.",
       backToLogin: "Повернутися до входу",
+      // TASK-871: a rejected (401) link cannot be retried — offer a fresh one.
+      requestNewLink: "Надіслати нове посилання",
     },
     // Change password from /account (TASK-333). Distinct from `resetPassword`,
     // which is the emailed-token flow for someone who cannot sign in at all.
@@ -1882,6 +1995,14 @@ export const dict = {
       validationTerms: "Потрібно прийняти умови використання",
       // TASK-749: підпис поля-пастки для ботів (людина його не бачить).
       honeypotLabel: "Не заповнюйте це поле",
+      // TASK-871: the consent names AND links the documents. `consentPrefix`
+      // labels the checkbox; the two links describe it. `terms` above is the
+      // old unlinked sentence (append-only block — left in place, unused).
+      consentPrefix: "Погоджуюсь з",
+      consentOfferLink: "умовами публічної оферти",
+      consentAnd: " та ",
+      consentPrivacyLink: "політикою конфіденційності",
+      consentNewTab: "(відкривається в новій вкладці)",
     },
     logout: {
       signOut: "Вийти",
@@ -1975,6 +2096,10 @@ export const dict = {
     contactTitle: "Звʼязатися з нами",
     contactDescription:
       "Гаряча лінія, пошта, месенджери та адреса шоуруму — оберіть зручний спосіб звʼязку з CaseStore.",
+    // TASK-546 — `og:image:alt` of the committed brand card and the alt floor
+    // of `buildOgImages`: the resolved store name, not a literal.
+    brandCardAlt: (siteName: string) =>
+      `${siteName} — магазин аксесуарів для телефонів`,
   },
 
   // TASK-077 — variant dots + quick-add overlay on the product card.
@@ -2000,34 +2125,38 @@ export const dict = {
     /** Advertised "from {price}" prefix when a group has cheaper variants. */
     priceFrom: "від",
     /** Aria label for the wishlist heart when the product is NOT saved. */
-    wishlistAddAria: (name: string) => `Додати «${name}» до списку бажань`,
+    wishlistAddAria: (name: string) => `Додати «${name}» в обране`,
     /** Aria label for the wishlist heart when the product IS saved. */
-    wishlistRemoveAria: (name: string) => `Прибрати «${name}» зі списку бажань`,
+    wishlistRemoveAria: (name: string) => `Прибрати «${name}» з обраного`,
   },
 
   // TASK-076 — wishlist / favorites (guest via cookie, merges on login).
   wishlist: {
-    /** Header icon accessible label. */
-    headerAria: "Список бажань",
+    /** Header icon accessible label — the same word as its visible caption
+     *  `header.wishlistLabel`, so the spoken name contains the shown one. */
+    headerAria: "Обране",
     /** Mobile-menu link + nav label. */
-    navLabel: "Список бажань",
-    /** Page heading. */
-    heading: "Список бажань",
+    navLabel: "Обране",
+    /** Page heading and breadcrumb leaf — «Обране» everywhere (owner 7.11,
+     *  TASK-875), the same word as the header caption and the footer link. */
+    heading: "Обране",
     /** Count line under the heading. */
     count: (n: number) => `${n} ${n === 1 ? "товар" : "товарів"} збережено`,
     /** Empty-state heading + body + CTA. */
-    emptyHeading: "Ваш список бажань порожній",
+    emptyHeading: "В обраному поки порожньо",
     emptyBody:
       "Збережіть товари, натиснувши на сердечко, щоб знайти їх пізніше.",
     emptyCta: "Перейти до товарів",
     /** Remove-from-list control on a saved card. */
-    removeAria: (name: string) => `Прибрати «${name}» зі списку бажань`,
+    removeAria: (name: string) => `Прибрати «${name}» з обраного`,
     remove: "Прибрати",
     /** Error toast when a toggle/remove mutation fails. */
-    error: "Не вдалося оновити список бажань. Спробуйте ще раз.",
-    /** Metadata for the /wishlist route. */
-    metaTitle: "Список бажань | CaseStore",
-    metaDescription: "Збережені товари у вашому списку бажань.",
+    error: "Не вдалося оновити обране. Спробуйте ще раз.",
+    /** Metadata for the /wishlist route. The bare page name: the root
+     *  layout's title template appends the store name (TASK-875 — it used to
+     *  read «Список бажань | CaseStore | CaseStore»). */
+    metaTitle: "Обране",
+    metaDescription: "Товари, які ви зберегли в обране.",
     // TASK-167-P — wishlist redesign (Wishlist.dc.html): a client-side toolbar
     // (view / sort / add-all) + sidebar filters over the fetched saved items.
     breadcrumbHome: "Головна",
@@ -2049,6 +2178,15 @@ export const dict = {
     noMatchHeading: "Немає товарів за фільтрами",
     noMatchBody: "Спробуйте змінити параметри або скинути фільтри.",
     priceChip: (min: string, max: string) => `${min || "0"} – ${max || "∞"} ₴`,
+    // TASK-1300 — /wishlist as «каталог №2»: category rail section, the fold
+    // past five rows, the count line while filters narrow the list, and the
+    // chip labels (already-formatted money in, so the caller owns the locale).
+    categoryTitle: "Категорія",
+    showAllFacets: (n: number) => `Показати всі (${n})`,
+    showFewerFacets: "Згорнути",
+    foundOf: (found: number, total: number) => `Знайдено: ${found} з ${total}`,
+    categoryChip: (name: string) => `Категорія: ${name}`,
+    priceRangeChip: (min: string, max: string) => `Ціна: ${min} — ${max}`,
   },
 
   // TASK-188 — reusable newsletter subscribe form (features/newsletter-subscribe).
@@ -2079,6 +2217,20 @@ export const dict = {
     retry: "Спробувати ще раз",
     viewFullDetails: "Переглянути повну сторінку товару",
     variantsNote: "Кольори та інші варіанти доступні на сторінці товару.",
+  },
+
+  // TASK-532 — the light / system / dark switch (`features/theme`). It renders
+  // in three hosts — the header row, the slide-out menu and the account card
+  // «Оформлення» — so its copy lives here under its own name rather than in
+  // `header` or `account`: editing a "header" string must not silently change
+  // the account page, and vice versa.
+  theme: {
+    /** The radiogroup's accessible name (a visible caption in the menu).
+     *  "Оформлення" alone would read as "checkout" next to a cart icon. */
+    groupAria: "Тема оформлення",
+    light: "Світла",
+    system: "Системна",
+    dark: "Темна",
   },
 
   // --- Admin-managed recommendation carousels (TASK-139) ---------------------

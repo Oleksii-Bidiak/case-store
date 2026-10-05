@@ -37,6 +37,21 @@ describe("CartView", () => {
     ).toHaveAttribute("href", "/products");
   });
 
+  it("titles the empty cart page with its one h1 (TASK-751)", async () => {
+    server.use(http.get("*/api/cart", () => HttpResponse.json(makeCart([]))));
+
+    renderWithProviders(<CartView />);
+
+    const heading = await screen.findByRole("heading", {
+      level: 1,
+      name: dict.cart.emptyHeading,
+    });
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(
+      screen.getByRole("region", { name: dict.cart.emptyHeading }),
+    ).toContainElement(heading);
+  });
+
   it("renders the line items and summary for a populated cart", async () => {
     server.use(
       http.get("*/api/cart", () =>

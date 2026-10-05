@@ -4,6 +4,7 @@ import Script from "next/script";
 import { Providers } from "./providers";
 import { Header } from "@/widgets/header";
 import { Footer } from "@/widgets";
+import { ThemeColorSync } from "@/features/theme";
 import {
   PRIMARY_COLOR,
   PRIMARY_COLOR_DARK,
@@ -15,6 +16,7 @@ import {
 } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import {
   buildOgImages,
   resolveSeo,
@@ -56,6 +58,9 @@ const sora = Sora({
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Static pair for first paint and «Системна»: the browser follows the OS on
+  // its own. An EXPLICIT light/dark pick is layered on top on the client by
+  // <ThemeColorSync /> (TASK-506), which outranks this pair by tree order.
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: PRIMARY_COLOR },
     { media: "(prefers-color-scheme: dark)", color: PRIMARY_COLOR_DARK },
@@ -115,7 +120,11 @@ export async function generateMetadata(): Promise<Metadata> {
       // is why they call the same `buildOgImages` helper — TASK-432).
       images: buildOgImages({
         defaultOgImage: resolved.ogImage,
-        alt: resolved.title || dict.meta.rootTitle,
+        // No admin title → the helper's floor, the brand-card alt built from
+        // the resolved store name (TASK-546), not the constant-bearing
+        // `dict.meta.rootTitle`.
+        alt: resolved.title,
+        siteName,
       }),
     },
     // Search-console ownership verification (TASK-280, plan 146 Decision 2).
@@ -157,12 +166,21 @@ export default async function RootLayout({
   // URL is reused by the homepage, so Next dedupes it to a single request.
   // The SEO singleton carries the admin-uploaded store logo (TASK-299); it is the
   // same tagged URL `generateMetadata` above already read, so this costs no extra
-  // request. The Header is a Client Component, hence the plain serializable prop.
-  const [banners, seo] = await Promise.all([
+  // request. The support phone in the announcement bar (TASK-873) is the
+  // site-contact singleton — the very request the Footer makes, deduped, under
+  // the same `site-contact` tag, so an admin edit reaches header and footer
+  // together. The Header is a Client Component, hence the plain serializable
+  // props.
+  const [banners, seo, contact] = await Promise.all([
     fetchPublishedBanners(),
     fetchSeoSettings(),
+    fetchSiteContactSettings(),
   ]);
   const announcement = banners.ANNOUNCEMENT_BAR[0];
+  // TASK-546: the visible wordmark follows the same admin-managed name as the
+  // <title> template above — resolved here, passed to the client Header as a
+  // string. The Footer resolves it itself from the same deduped request.
+  const siteName = resolveSiteName(seo);
 
   return (
     <html
@@ -177,13 +195,19 @@ export default async function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <Providers>
+          <ThemeColorSync />
           <a
             href="#main-content"
             className="sr-only z-[100] rounded-md bg-primary px-4 py-2 text-primary-foreground focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
           >
             {dict.nav.skipToContent}
           </a>
-          <Header announcement={announcement} logoUrl={seo?.logoUrl} />
+          <Header
+            announcement={announcement}
+            logoUrl={seo?.logoUrl}
+            siteName={siteName}
+            supportPhone={contact?.phone}
+          />
           <main id="main-content" className="flex-1">
             {children}
           </main>

@@ -82,6 +82,63 @@ describe("ForgotPasswordForm", () => {
     expect(requestFired).toBe(false);
   });
 
+  // TASK-871: failures used to vanish, leaving a button that did nothing.
+  it("shows a network error and stays on the form when the request fails", async () => {
+    server.use(
+      http.post("*/api/auth/password-reset/request", () =>
+        HttpResponse.json({ statusCode: 503 }, { status: 503 }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ForgotPasswordForm />);
+
+    await user.type(
+      screen.getByLabelText(dict.auth.forgotPassword.email),
+      "user@test.ua",
+    );
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.forgotPassword.submit }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      dict.auth.forgotPassword.errorNetwork,
+    );
+    expect(
+      screen.queryByText(dict.auth.forgotPassword.success),
+    ).not.toBeInTheDocument();
+    // The form is still there to retry.
+    expect(
+      screen.getByRole("button", { name: dict.auth.forgotPassword.submit }),
+    ).toBeEnabled();
+  });
+
+  it("names the throttle on a 429 instead of a network error", async () => {
+    server.use(
+      http.post("*/api/auth/password-reset/request", () =>
+        HttpResponse.json({ statusCode: 429 }, { status: 429 }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ForgotPasswordForm />);
+
+    await user.type(
+      screen.getByLabelText(dict.auth.forgotPassword.email),
+      "user@test.ua",
+    );
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.forgotPassword.submit }),
+    );
+
+    expect(
+      await screen.findByText(dict.auth.forgotPassword.errorTooMany),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.auth.forgotPassword.errorNetwork),
+    ).not.toBeInTheDocument();
+  });
+
   it("switches back to login via the callback in sheet mode", async () => {
     const onSwitchToLogin = jest.fn();
     const user = userEvent.setup();

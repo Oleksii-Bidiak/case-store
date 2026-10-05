@@ -2,16 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
 
 import { cn } from "@/shared/lib/utils";
-
-interface AccountDropdownContextValue {
-  /** Close the panel and return focus to the trigger button. */
-  closeMenu: () => void;
-}
-
-const AccountDropdownContext =
-  React.createContext<AccountDropdownContextValue | null>(null);
 
 export interface AccountDropdownProps {
   /** Visual content of the trigger (e.g. an icon). The `<button>` is rendered internally. */
@@ -20,185 +13,188 @@ export interface AccountDropdownProps {
   triggerAria: string;
   /** `aria-label` for the `role="menu"` panel. */
   menuAria: string;
-  /** `<AccountDropdownItem>` elements (and optional `role="separator"` `<li>`s). */
+  /** `<AccountDropdownItem>` / `<AccountDropdownSeparator>` elements. */
   children: React.ReactNode;
-  /** Optional id base for the panel (used to wire `aria-controls`). */
-  id?: string;
-  /** Extra classes for the positioning wrapper. */
+  /** Extra classes for the wrapper around the trigger. */
   className?: string;
+  /**
+   * Extra classes for the trigger `<button>`, merged over the defaults via
+   * `cn()` — e.g. to lay out an icon + caption the way sibling actions are.
+   */
+  triggerClassName?: string;
+}
+
+/** The items arrow keys can land on (Radix marks disabled ones `data-disabled`). */
+const ENABLED_ITEM = '[role="menuitem"]:not([data-disabled])';
+
+/** Everything the browser's Tab sequence can reach. */
+const TABBABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Whether the browser would actually Tab to `el`: a `hidden sm:flex` header
+ * action is in the DOM but `display:none`, and `.focus()` on it is a no-op
+ * that drops focus on `<body>`. `checkVisibility()` sees through ancestors;
+ * where it is missing (older engines, jsdom) the element is assumed rendered.
+ */
+function isRendered(el: HTMLElement) {
+  return typeof el.checkVisibility === "function" ? el.checkVisibility() : true;
 }
 
 /**
- * AccountDropdown — a zero-dependency, WAI-ARIA "menu button" (disclosure).
+ * Move focus to the Tab-sequence neighbour of `from` (`1` next, `-1` previous).
+ * The panel is portalled to the end of `<body>`, so a native Tab out of it
+ * would land at the end of the page; this puts focus where Tab would have gone
+ * from the trigger instead. Falls back to the trigger itself.
+ */
+function focusTabNeighbour(from: HTMLElement, direction: 1 | -1) {
+  const tabbables = Array.from(
+    document.querySelectorAll<HTMLElement>(TABBABLE),
+  ).filter(
+    (el) =>
+      !el.closest("[data-radix-menu-content]") &&
+      !el.closest("[inert]") &&
+      !el.closest('[aria-hidden="true"]') &&
+      isRendered(el),
+  );
+  const index = tabbables.indexOf(from);
+  const target = index === -1 ? undefined : tabbables[index + direction];
+  (target ?? from).focus();
+}
+
+/**
+ * AccountDropdown — the header account "menu button" on Radix `DropdownMenu`
+ * (TASK-503; it was a hand-rolled `absolute` panel).
  *
- * Mirrors the zero-dep pattern of `combobox.tsx`: React-only, no shadcn/Radix.
- * The trigger owns `aria-haspopup="menu"` / `aria-expanded` / `aria-controls`;
- * the panel is a `role="menu"` `<ul>` with `role="menuitem"` children whose focus
- * is managed programmatically (roving tabIndex via `.focus()`).
+ * Radix brings what the hand-rolled panel lacked: the menu is portalled to
+ * `<body>` (no `overflow` ancestor clips it), positioned with collision
+ * detection (flips above / shifts inward near a viewport edge, 8px padding)
+ * and capped at the available height with its own scroll, so on a short
+ * window it no longer runs off the bottom edge. The look and the items are
+ * unchanged — right-aligned under the trigger, 4px below it.
  *
- * Keyboard: Enter/Space/ArrowDown open + focus first item (ArrowUp focuses last);
- * ArrowUp/ArrowDown cycle items (wrapping); Home/End jump to ends; Escape closes
- * and returns focus to the trigger; Tab closes without stealing focus. Activating
- * an item closes the menu and returns focus to the trigger. A document `mousedown`
- * listener closes the panel on outside click.
+ * Keyboard follows the WAI-ARIA APG menu button: Enter/Space/ArrowDown open
+ * and focus the first item, ArrowUp opens and focuses the last; inside the
+ * menu ArrowUp/ArrowDown cycle (wrapping, separators and disabled items
+ * skipped), Home/End jump to the ends, a printable character moves by
+ * typeahead, Escape closes and returns focus to the trigger. Tab/Shift+Tab
+ * close the menu and move on to the trigger's Tab neighbour — Radix alone
+ * would swallow Tab. A pointer open focuses the panel itself (Radix), so the
+ * first item is not painted as highlighted under a mouse.
+ *
+ * `modal={false}`: the page keeps scrolling, and an outside click both closes
+ * the menu and reaches its target, as with the old panel — no scroll lock, so
+ * no scrollbar-compensation jump in the sticky header.
  */
 export function AccountDropdown({
   triggerContent,
   triggerAria,
   menuAria,
   children,
-  id,
   className,
+  triggerClassName,
 }: AccountDropdownProps) {
   const [open, setOpen] = React.useState(false);
-
-  const containerRef = React.useRef<HTMLDivElement>(null);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
-  const menuRef = React.useRef<HTMLUListElement>(null);
-  // Which item to focus once the panel mounts: "first" (default) or "last".
-  const pendingFocusRef = React.useRef<"first" | "last">("first");
+  // Opened with ArrowUp → focus the last item instead of the first.
+  const focusLastRef = React.useRef(false);
+  // Closed with Tab → focus the trigger's Tab neighbour instead of the trigger.
+  const tabDirectionRef = React.useRef<1 | -1 | null>(null);
 
-  const reactId = React.useId();
-  const menuId = id ? `${id}-menu` : `account-dropdown-${reactId}`;
-
-  /** Enabled, focusable menu items currently in the panel (skips separators/disabled). */
-  const getItems = React.useCallback((): HTMLElement[] => {
-    const menu = menuRef.current;
-    if (!menu) return [];
-    return Array.from(
-      menu.querySelectorAll<HTMLElement>(
-        '[role="menuitem"]:not([aria-disabled="true"])',
-      ),
-    );
-  }, []);
-
-  const focusItemAt = React.useCallback(
-    (index: number) => {
-      const items = getItems();
-      if (items.length === 0) return;
-      const wrapped = ((index % items.length) + items.length) % items.length;
-      items[wrapped]?.focus();
-    },
-    [getItems],
-  );
-
-  const openMenu = React.useCallback((focus: "first" | "last") => {
-    pendingFocusRef.current = focus;
-    setOpen(true);
-  }, []);
-
-  const closeMenu = React.useCallback((returnFocus = true) => {
-    setOpen(false);
-    if (returnFocus) triggerRef.current?.focus();
-  }, []);
-
-  // On open, move focus into the panel (first item, or last for ArrowUp).
-  React.useEffect(() => {
-    if (!open) return;
-    if (pendingFocusRef.current === "last") {
-      const items = getItems();
-      items[items.length - 1]?.focus();
-    } else {
-      focusItemAt(0);
-    }
-  }, [open, focusItemAt, getItems]);
-
-  // Close on outside click (no focus return — focus follows the pointer).
-  React.useEffect(() => {
-    if (!open) return;
-    function handlePointerDown(event: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [open]);
-
+  // Radix's trigger handles Enter / Space / ArrowDown but not ArrowUp.
   function handleTriggerKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
-    switch (event.key) {
-      case "Enter":
-      case " ":
-      case "ArrowDown":
-        event.preventDefault();
-        openMenu("first");
-        break;
-      case "ArrowUp":
-        event.preventDefault();
-        openMenu("last");
-        break;
+    if (event.key === "ArrowUp" && !open) {
+      event.preventDefault();
+      focusLastRef.current = true;
+      setOpen(true);
     }
   }
 
-  function handleMenuKeyDown(event: React.KeyboardEvent<HTMLUListElement>) {
-    const items = getItems();
-    const currentIndex = items.indexOf(document.activeElement as HTMLElement);
-    switch (event.key) {
-      case "ArrowDown":
-        event.preventDefault();
-        focusItemAt(currentIndex + 1);
-        break;
-      case "ArrowUp":
-        event.preventDefault();
-        focusItemAt(currentIndex - 1);
-        break;
-      case "Home":
-        event.preventDefault();
-        focusItemAt(0);
-        break;
-      case "End":
-        event.preventDefault();
-        focusItemAt(items.length - 1);
-        break;
-      case "Escape":
-        event.preventDefault();
-        closeMenu(true);
-        break;
-      case "Tab":
-        // Let the browser move focus naturally; just dismiss the panel.
-        setOpen(false);
-        break;
-    }
+  // The mounted panel, as state: the effect below runs in the commit AFTER the
+  // panel mounts, i.e. after Radix's own open-focus (which, for a keyboard
+  // open, lands on the first item) — then it moves focus to the last one.
+  // `DropdownMenu.Content` exposes no public hook for the open-focus itself.
+  const [content, setContent] = React.useState<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    if (!content || !focusLastRef.current) return;
+    focusLastRef.current = false;
+    const items = content.querySelectorAll<HTMLElement>(ENABLED_ITEM);
+    items[items.length - 1]?.focus();
+  }, [content]);
+
+  // Radix applies the available-height cap only once the panel is positioned,
+  // i.e. after the open-focus already happened at full height — so on a short
+  // window an ArrowUp open would leave «Вийти» focused but scrolled out of the
+  // capped panel. Whenever the panel resizes, keep the focused item in view.
+  React.useEffect(() => {
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const active = document.activeElement;
+      const itemHasFocus =
+        active instanceof HTMLElement &&
+        active !== content &&
+        content.contains(active);
+      if (itemHasFocus) active.scrollIntoView({ block: "nearest" });
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [content]);
+
+  function handleContentKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab") return;
+    tabDirectionRef.current = event.shiftKey ? -1 : 1;
+    setOpen(false);
   }
 
-  const contextValue = React.useMemo<AccountDropdownContextValue>(
-    () => ({ closeMenu: () => closeMenu(true) }),
-    [closeMenu],
-  );
+  function handleCloseAutoFocus(event: Event) {
+    const direction = tabDirectionRef.current;
+    tabDirectionRef.current = null;
+    if (direction === null || !triggerRef.current) return;
+    // Our preventDefault also skips Radix's own "focus the trigger" handler.
+    event.preventDefault();
+    focusTabNeighbour(triggerRef.current, direction);
+  }
 
   return (
-    <div ref={containerRef} className={cn("relative", className)}>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        aria-label={triggerAria}
-        onClick={() => (open ? closeMenu(false) : openMenu("first"))}
-        onKeyDown={handleTriggerKeyDown}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    <div className={cn("relative", className)}>
+      <DropdownMenuPrimitive.Root
+        open={open}
+        onOpenChange={setOpen}
+        modal={false}
       >
-        {triggerContent}
-      </button>
+        <DropdownMenuPrimitive.Trigger
+          ref={triggerRef}
+          aria-label={triggerAria}
+          onKeyDown={handleTriggerKeyDown}
+          // min-h-11 min-w-11: a 44×44 touch target at minimum, while a
+          // caption passed in `triggerContent` can still grow it.
+          className={cn(
+            "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            triggerClassName,
+          )}
+        >
+          {triggerContent}
+        </DropdownMenuPrimitive.Trigger>
 
-      {open && (
-        <AccountDropdownContext.Provider value={contextValue}>
-          <ul
-            ref={menuRef}
-            id={menuId}
-            role="menu"
+        <DropdownMenuPrimitive.Portal>
+          <DropdownMenuPrimitive.Content
             aria-label={menuAria}
-            onKeyDown={handleMenuKeyDown}
-            className="absolute top-full right-0 z-50 mt-1 min-w-48 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-elevated"
+            // Radix names the menu after its trigger through aria-labelledby,
+            // which would outrank aria-label; the menu keeps its own name.
+            aria-labelledby={undefined}
+            align="end"
+            sideOffset={4}
+            collisionPadding={8}
+            loop
+            ref={setContent}
+            onCloseAutoFocus={handleCloseAutoFocus}
+            onKeyDown={handleContentKeyDown}
+            className="z-50 max-h-(--radix-dropdown-menu-content-available-height) max-w-(--radix-dropdown-menu-content-available-width) min-w-48 overflow-x-hidden overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-elevated outline-none"
           >
             {children}
-          </ul>
-        </AccountDropdownContext.Provider>
-      )}
+          </DropdownMenuPrimitive.Content>
+        </DropdownMenuPrimitive.Portal>
+      </DropdownMenuPrimitive.Root>
     </div>
   );
 }
@@ -213,10 +209,19 @@ export interface AccountDropdownItemProps {
 }
 
 /**
+ * The old item surface; `data-highlighted` is the Radix state of the item that
+ * holds focus (keyboard or pointer hover), so it paints the same `accent` fill
+ * the old `focus-visible` did. `rounded-menu` is the menu-item role radius
+ * (design-system §5).
+ */
+const ITEM_CLASS =
+  "block w-full cursor-pointer rounded-menu px-3 py-2 text-left text-sm text-foreground outline-none transition-colors select-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-accent data-highlighted:text-accent-foreground";
+
+/**
  * AccountDropdownItem — a single `role="menuitem"` entry. Renders a Next.js
  * `<Link>` when `href` is supplied, otherwise a `<button type="button">`.
- * Wrapped in a presentational `<li>` so the parent `<ul role="menu">` keeps a
- * valid list structure while the interactive element carries `role="menuitem"`.
+ * Selecting it (click, Enter or Space) runs `onClick`, closes the menu and
+ * returns focus to the trigger. Must be rendered inside `AccountDropdown`.
  */
 export function AccountDropdownItem({
   href,
@@ -224,49 +229,33 @@ export function AccountDropdownItem({
   disabled = false,
   children,
 }: AccountDropdownItemProps) {
-  const ctx = React.useContext(AccountDropdownContext);
-
-  const itemClass = cn(
-    "block w-full rounded-md px-3 py-2 text-left text-sm text-foreground outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
-    disabled && "pointer-events-none opacity-50",
-  );
-
-  function activate() {
-    if (disabled) return;
-    onClick?.();
-    ctx?.closeMenu();
-  }
-
-  if (href) {
-    return (
-      <li role="none">
-        <Link
-          href={href}
-          role="menuitem"
-          tabIndex={-1}
-          aria-disabled={disabled || undefined}
-          className={itemClass}
-          onClick={activate}
-        >
-          {children}
-        </Link>
-      </li>
-    );
-  }
-
   return (
-    <li role="none">
-      <button
-        type="button"
-        role="menuitem"
-        tabIndex={-1}
-        disabled={disabled}
-        aria-disabled={disabled || undefined}
-        className={itemClass}
-        onClick={activate}
-      >
-        {children}
-      </button>
-    </li>
+    <DropdownMenuPrimitive.Item
+      asChild
+      disabled={disabled}
+      onSelect={onClick}
+      className={ITEM_CLASS}
+    >
+      {href ? (
+        <Link href={href}>{children}</Link>
+      ) : (
+        <button type="button" disabled={disabled}>
+          {children}
+        </button>
+      )}
+    </DropdownMenuPrimitive.Item>
+  );
+}
+
+/** AccountDropdownSeparator — a `role="separator"` rule between item groups. */
+export function AccountDropdownSeparator({
+  className,
+}: {
+  className?: string;
+}) {
+  return (
+    <DropdownMenuPrimitive.Separator
+      className={cn("my-1 border-t border-border", className)}
+    />
   );
 }

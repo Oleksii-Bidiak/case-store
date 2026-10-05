@@ -3,7 +3,10 @@ import Link from "next/link";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
 import { formatMoney, getCardPricing, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
-import { Badge } from "./badge";
+import {
+  ProductCardBadges,
+  ProductCardSoldOutVeil,
+} from "./product-card-badges";
 import { ProductCardImage } from "./product-card-image";
 import { RatingStars } from "./rating-stars";
 import { ColorDots } from "./color-dots";
@@ -39,6 +42,7 @@ export function ProductCard({
   wishlist,
   priority = false,
   imageSizes,
+  reserveRows = false,
 }: {
   product: PublicProductEntity;
   /** Optional control rendered below the price (always visible). */
@@ -64,6 +68,17 @@ export function ProductCard({
    * (TASK-210).
    */
   imageSizes?: string;
+  /**
+   * Hold the card's optional rows open even when the product has nothing to
+   * put in them: the title keeps two lines, and the rating and colour-dots
+   * rows keep their 16px / 14px height (TASK-869). Every card then has the
+   * same height whatever its data, so the catalogue grid — the one place that
+   * swaps a skeleton for cards — lands on its placeholder to the pixel, on a
+   * page of single-colour, unrated products as much as on a page of variants.
+   * Only `ProductList` passes it; rails, search and the home grid keep the
+   * content-sized card.
+   */
+  reserveRows?: boolean;
 }) {
   const summary = product.variantSummary;
   const colors = summary?.colors ?? [];
@@ -104,30 +119,13 @@ export function ProductCard({
           priority={priority}
           sizes={imageSizes}
         />
-        {!product.inStock && (
-          <span
-            aria-hidden="true"
-            className="absolute inset-0 z-10 bg-card/55"
-          />
-        )}
-
-        <div className="absolute left-2.5 top-2.5 z-20 flex flex-col gap-1">
-          {!product.inStock && (
-            <Badge variant="secondary" className="shadow-sm">
-              {dict.product.outOfStock}
-            </Badge>
-          )}
-          {onSale && (
-            <Badge variant="sale" className="shadow-sm">
-              −{discountPercent}%
-            </Badge>
-          )}
-          {isNew && !onSale && product.inStock && (
-            <Badge variant="success" className="shadow-sm">
-              {dict.product.newBadge}
-            </Badge>
-          )}
-        </div>
+        {/* Badges and veil are shared with the wishlist card (TASK-875). */}
+        {!product.inStock && <ProductCardSoldOutVeil />}
+        <ProductCardBadges
+          inStock={product.inStock}
+          discountPercent={onSale ? discountPercent : 0}
+          isNew={isNew}
+        />
 
         {/* Wishlist heart — pinned top-right, above the stretched link (z-20) so
             it stays independently clickable without nesting a control in the
@@ -148,7 +146,9 @@ export function ProductCard({
       </div>
 
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <h3 className="line-clamp-2 text-sm font-medium text-card-foreground transition-colors group-hover:text-primary">
+        <h3
+          className={`line-clamp-2 text-sm font-medium text-card-foreground transition-colors group-hover:text-primary ${reserveRows ? "min-h-10" : ""}`}
+        >
           <Link
             href={`/products/${product.slug}`}
             data-card-link
@@ -158,11 +158,29 @@ export function ProductCard({
             {product.name}
           </Link>
         </h3>
-        <RatingStars
-          average={product.ratingAverage}
-          count={product.ratingCount}
-        />
-        {hasVariants && <ColorDots colors={colors} />}
+        {/* `RatingStars` and `ColorDots` render nothing for an unrated or
+            single-colour product; `reserveRows` keeps an empty box of the
+            row's height in their place (see the prop). */}
+        {product.ratingCount > 0 && product.ratingAverage != null ? (
+          <RatingStars
+            average={product.ratingAverage}
+            count={product.ratingCount}
+          />
+        ) : (
+          reserveRows && (
+            <div aria-hidden="true" className="h-4" data-row-slot="rating" />
+          )
+        )}
+        {hasVariants ? (
+          // Pinned to the 14px swatch height in a reserved grid: the «+N»
+          // overflow chip is a 16px text line and would otherwise make a
+          // many-colour card 2px taller than its neighbours.
+          <ColorDots colors={colors} className={reserveRows ? "h-3.5" : ""} />
+        ) : (
+          reserveRows && (
+            <div aria-hidden="true" className="h-3.5" data-row-slot="colors" />
+          )
+        )}
         <div className="mt-auto flex items-baseline gap-2">
           {showFrom && (
             <span className="text-xs text-muted-foreground">

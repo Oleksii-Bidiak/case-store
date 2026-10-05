@@ -1,0 +1,73 @@
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { SchedulerRegistry } from '@nestjs/schedule';
+import { CronJob } from 'cron';
+import { PinoLogger } from 'nestjs-pino';
+import { schedulingEnabled, stopCronJob } from '../common/scheduling/scheduling.util';
+import { NotificationOutboxService } from './notification-outbox.service';
+
+/** Registered name of the cron job — used to look it up via SchedulerRegistry. */
+const DISPATCH_JOB_NAME = 'mail-outbox-dispatch';
+
+/** Default schedule: every minute. */
+const DEFAULT_CRON = '* * * * *';
+
+/**
+ * NotificationOutboxWorker — cron-driven dispatcher for the transactional outbox
+ * (TASK-103). Mirrors {@link RefreshTokenCleanupService}: the job is registered
+ * in `onModuleInit` via {@link SchedulerRegistry} (not the `@Cron` decorator) so
+ * the schedule is read from config at runtime — `MAIL_OUTBOX_CRON`, default
+ * `* * * * *`. Each tick delegates to {@link NotificationOutboxService.dispatchDue};
+ * tick errors are caught and logged so a transient failure never crashes the
+ * scheduler.
+ */
+@Injectable()
+export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
+  private readonly cronExpression: string;
+
+  constructor(
+    private readonly outboxService: NotificationOutboxService,
+    private readonly config: ConfigService,
+    private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(NotificationOutboxWorker.name);
+    this.cronExpression = this.config.get<string>('MAIL_OUTBOX_CRON', DEFAULT_CRON);
+  }
+
+  onModuleInit(): void {
+    if (!schedulingEnabled(this.config)) return;
+    const job = new CronJob(this.cronExpression, () => {
+      void this.tick();
+    });
+
+    this.schedulerRegistry.addCronJob(DISPATCH_JOB_NAME, job);
+    job.start();
+
+    this.logger.info(
+      { event: 'mailOutbox.scheduled', cron: this.cronExpression },
+      `Mail outbox worker scheduled (${this.cronExpression})`,
+    );
+  }
+
+  /** See {@link stopCronJob} — Nest does not close manually registered jobs. */
+  onModuleDestroy(): void {
+    stopCronJob(this.schedulerRegistry, DISPATCH_JOB_NAME);
+  }
+
+  /**
+   * Run one dispatch pass. Public so it can be unit-tested directly without
+   * waiting for the scheduler to fire. Swallows (and logs) any error so a bad
+   * tick never propagates into the cron runner.
+   */
+  async tick(): Promise<void> {
+    try {
+      await this.outboxService.dispatchDue();
+    } catch (err) {
+      this.logger.error(
+        { event: 'mailOutbox.dispatch.error', err },
+        'Mail outbox dispatch tick failed',
+      );
+    }
+  }
+}

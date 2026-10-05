@@ -58,16 +58,21 @@ export function PromoCountdown() {
     },
   ];
 
+  // Below `sm` the strip is a four-column grid that shares the hero's content
+  // width (TASK-498): four fixed 62px tiles need 272px, and the hero leaves
+  // ~224px at 320 and ~264px at 360, so its `overflow-hidden` clipped the
+  // seconds tile. From `sm` the tiles return to their fixed width inline with
+  // the CTA, as in the mockup.
   return (
     <div
-      className="flex gap-2"
+      className="grid w-full grid-cols-4 gap-2 sm:flex sm:w-auto"
       role="timer"
       aria-label={dict.promo.countdown.aria}
     >
       {cells.map((cell) => (
         <div
           key={cell.label}
-          className="flex h-[62px] min-w-[62px] flex-col items-center justify-center rounded-[13px] bg-black/25 backdrop-blur-sm"
+          className="flex h-15.5 min-w-0 flex-col items-center justify-center rounded-cta bg-black/25 backdrop-blur-sm sm:min-w-15.5"
         >
           <span className="font-mono text-2xl leading-none font-bold">
             {pad(cell.val)}

@@ -9,10 +9,8 @@ import {
   prefetchQueries,
   serverRequestOptions,
 } from "@/shared/api/query-prefetch-server";
-import { JsonLd } from "@/shared/ui";
-import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
-import { SITE_URL, dict } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 
 /**
  * Time floor for the prerendered hub (TASK-563) — same reasoning as `/promo`:
@@ -50,13 +48,10 @@ export default async function CategoriesPage() {
   ]);
 
   return (
-    <div className="mx-auto w-full max-w-[1320px] px-4 pt-[22px] pb-16 sm:px-6">
-      <JsonLd
-        schema={buildBreadcrumbSchema([
-          { name: dict.categories.breadcrumbHome, item: SITE_URL },
-          { name: dict.meta.categoriesTitle, item: `${SITE_URL}/categories` },
-        ])}
-      />
+    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
+      {/* The BreadcrumbList is rendered by CategoriesView from the same crumbs
+          it shows (TASK-877): a schema here said «Категорії» while the page
+          showed the selected root category. */}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
         <CategoriesView />
       </PrefetchBoundary>

@@ -75,8 +75,8 @@ test.describe("manual theme switch", () => {
     await recordThemeAtFirstContent(page);
     await page.goto("/");
 
-    // The header switch starts at `lg` (TASK-504 replaced the earlier
-    // `min-[1100px]`); the default project viewport is 1280 wide, so it is on
+    // The header switch starts at `xl` (TASK-511/512; below it lives in the
+    // slide-out menu); the default project viewport is 1280 wide, so it is on
     // screen here.
     const dark = themeOption(page, "Темна");
     await expect(dark).toBeVisible();
@@ -182,5 +182,59 @@ test.describe("manual theme switch", () => {
         "the tokens and the utilities disagree, so form fields stay dark on a " +
         "light page",
     ).toBe("rgba(0, 0, 0, 0)");
+  });
+
+  /**
+   * The browser chrome (TASK-506). `viewport.themeColor` is a static pair keyed
+   * on `prefers-color-scheme`, so on its own it keeps the address bar dark over
+   * a page the visitor switched to light. ThemeColorSync puts a media-less meta
+   * first in `<head>`; this reads what a browser would actually pick — the first
+   * `theme-color` meta whose media matches — in a real engine, across a reload
+   * and a client-side navigation (React owns `<head>`, so a soft navigation is
+   * where a foreign tag would get dropped).
+   */
+  test("the theme-color meta follows the explicit choice", async ({ page }) => {
+    const effectiveThemeColor = () =>
+      page.evaluate(() => {
+        for (const meta of document.head.querySelectorAll<HTMLMetaElement>(
+          'meta[name="theme-color"]',
+        )) {
+          const media = meta.getAttribute("media");
+          if (!media || window.matchMedia(media).matches) return meta.content;
+        }
+        return null;
+      });
+    const overrides = page.locator("head meta[data-theme-color-override]");
+
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.goto("/");
+
+    // «Системна»: the media pair decides, nothing is layered on top.
+    await expect(overrides).toHaveCount(0);
+    expect(await effectiveThemeColor()).toBe("#6366f1");
+
+    await themeOption(page, "Світла").click();
+    await expect(overrides).toHaveCount(1);
+    expect(
+      await effectiveThemeColor(),
+      "the address bar stayed dark over a page the visitor switched to light",
+    ).toBe("#4f46e5");
+
+    await page.reload();
+    await expect(overrides).toHaveCount(1);
+    expect(await effectiveThemeColor()).toBe("#4f46e5");
+
+    // A soft navigation re-renders the head; the override must survive it.
+    await page
+      .locator("header")
+      .getByRole("link", { name: "Товари", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/products/);
+    await expect(overrides).toHaveCount(1);
+    expect(await effectiveThemeColor()).toBe("#4f46e5");
+
+    await themeOption(page, "Системна").click();
+    await expect(overrides).toHaveCount(0);
+    expect(await effectiveThemeColor()).toBe("#6366f1");
   });
 });

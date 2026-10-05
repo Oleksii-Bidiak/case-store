@@ -8,7 +8,11 @@ import {
   getProductControllerFindAllQueryOptions,
   type ProductControllerFindAllParams,
 } from "@/entities/product";
-import type { CatalogView } from "@/features/product-filters";
+import {
+  ListingEmptyState,
+  type CatalogView,
+  type ListingEmptyStateAction,
+} from "@/features/product-filters";
 import { Button, ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
@@ -30,8 +34,16 @@ interface ProductListProps {
   buildPageHref: (page: number) => string;
   /** Grid (cards) or list (rows) results layout. */
   view: CatalogView;
-  /** Clear every active filter (used by the empty state). */
-  onClearFilters: () => void;
+  /**
+   * What the empty state says and offers (TASK-870). The view decides: a
+   * filter reset when something narrows the list, a link out when nothing does
+   * — only it knows which filters the route has locked.
+   */
+  empty: {
+    heading: string;
+    body?: string;
+    action: ListingEmptyStateAction;
+  };
 }
 
 /**
@@ -51,7 +63,7 @@ export function ProductList({
   params,
   buildPageHref,
   view,
-  onClearFilters,
+  empty,
 }: ProductListProps) {
   const { data, isPending, isFetching, isError } =
     useProductControllerFindAll(params);
@@ -112,28 +124,12 @@ export function ProductList({
 
   if (products.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-[18px] border border-border bg-card px-5 py-14 text-center shadow-card">
-        <span
-          aria-hidden="true"
-          className="mb-[18px] inline-flex size-[72px] items-center justify-center rounded-full bg-muted text-muted-foreground"
-        >
-          <SearchX className="size-8" strokeWidth={1.6} />
-        </span>
-        <p className="max-w-[460px] font-display text-[22px] font-bold text-foreground">
-          {dict.catalog.emptyHeading}
-        </p>
-        <p className="mt-2.5 max-w-[440px] text-sm text-muted-foreground">
-          {dict.catalog.emptyBody}
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          className="mt-5"
-          onClick={onClearFilters}
-        >
-          {dict.catalog.clearAllFilters}
-        </Button>
-      </div>
+      <ListingEmptyState
+        icon={SearchX}
+        heading={empty.heading}
+        body={empty.body}
+        action={empty.action}
+      />
     );
   }
 
@@ -185,17 +181,18 @@ export function ProductList({
           // `ProductListSkeleton` — the skeleton must lay out in exactly the
           // same columns as the cards that replace it, or the page reflows on
           // every load. `items-stretch` is explicit: sibling cards in a row
-          // share one height whatever their title/badge count. The 18px gap is
-          // pre-existing debt (grandfathered in eslint-suppressions.json) and
-          // is left untouched here so the whole storefront can move to the 4px
-          // scale in one pass — see BACKLOG.
-          <div className="grid grid-cols-1 items-stretch gap-[18px] min-[390px]:grid-cols-2 lg:grid-cols-4">
+          // share one height whatever their title/badge count. The gap is the
+          // design-system card rhythm, `gap-4 md:gap-6` (TASK-500).
+          <div className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
             {products.map((product, index) => (
               <ProductCard
                 key={product.id}
                 product={product}
                 // First row is above the fold — load eagerly for LCP.
                 priority={index < 4}
+                // Same height for every card, whatever its data — the box
+                // `ProductListSkeleton` draws for it (TASK-869).
+                reserveRows
                 action={<ProductCardActions product={product} />}
                 hoverAction={<ProductQuickViewTrigger product={product} />}
               />

@@ -133,10 +133,27 @@ enum DiscountType {
   FIXED
 }
 
-enum MailOutboxStatus {
+enum NotificationOutboxStatus {
   PENDING
   SENT
   FAILED
+}
+
+/// Delivery channel of a NotificationOutbox row (TASK-672): answers "where",
+/// while the row's free-string `type` answers "what happened". The two stay
+/// separate on purpose — the channel is never encoded into `type`.
+enum NotificationChannel {
+  EMAIL
+  TELEGRAM
+}
+
+/// Who a messenger chat binding speaks to (TASK-675, owner decision 2026-10-01).
+/// SHOP — the shop's own chats (owner, staff, a staff group): every active SHOP
+/// binding receives every shop ping. CUSTOMER — one buyer's chat, tied to their
+/// account or, for a guest, to the order they connected it from.
+enum NotificationAudience {
+  SHOP
+  CUSTOMER
 }
 
 /// Discriminator for an OrderStatusHistory row (TASK-251): whether the row
@@ -353,6 +370,10 @@ model User {
   /// page, or a customer's from the admin panel when the shop filed it for them.
   /// Not "returns of this user's orders": that is reached through `Return.order`.
   openedReturns           Return[]                 @relation("ReturnCreatedBy")
+  /// Messenger chats this account connected (TASK-675) — a SHOP chat records who
+  /// connected it (audit only), a CUSTOMER chat whose notifications it receives.
+  notificationBindings    NotificationBinding[]
+  notificationTokens      NotificationBindingToken[]
 
   // Partial: unique for `true` only. Not a lookup key — see `isOwner` (TASK-634).
   @@unique([isOwner], where: { isOwner: true }, map: "users_single_owner_key")
@@ -809,6 +830,9 @@ model Order {
   statusHistory OrderStatusHistory[]
   payments      Payment[]
   returns       Return[]
+  /// Telegram chats a guest connected from the order-success page (TASK-675/679).
+  chatBindings  NotificationBinding[]
+  chatTokens    NotificationBindingToken[]
 
   @@index([userId])
   @@index([status])
@@ -1293,26 +1317,114 @@ model WishlistItem {
   @@map("wishlist_items")
 }
 
-/// Transactional mail outbox (TASK-103). Order creation enqueues a row in the
-/// same transaction as the order; a cron worker dispatches PENDING rows that are
-/// due (`nextAttemptAt <= now`) via the SMTP transport, retrying with backoff up
-/// to `maxAttempts` before marking the row FAILED. Generic `type` + JSON
-/// `payload` so new mail kinds reuse the table without a migration.
-model MailOutbox {
-  id            String           @id @default(uuid())
-  type          String
-  recipient     String
-  payload       Json
-  status        MailOutboxStatus @default(PENDING)
-  attempts      Int              @default(0)
-  maxAttempts   Int              @default(5) @map("max_attempts")
-  lastError     String?          @map("last_error")
-  nextAttemptAt DateTime         @default(now()) @map("next_attempt_at")
-  createdAt     DateTime         @default(now()) @map("created_at")
-  sentAt        DateTime?        @map("sent_at")
+/// Transactional notification outbox (TASK-103; multi-channel since TASK-672,
+/// formerly `mail_outbox`). A business event enqueues a row in the same
+/// transaction as the event itself; a cron worker dispatches PENDING rows that
+/// are due (`nextAttemptAt <= now`) through the row's `channel`, retrying with
+/// backoff up to `maxAttempts` before marking the row FAILED. Generic `type` +
+/// JSON `payload` so new notification kinds reuse the table without a migration.
+/// `type` is "what happened" (e.g. `order-confirmation`), `channel` is "where it
+/// goes" — two independent questions, never merged into one value.
+model NotificationOutbox {
+  id               String                   @id @default(uuid())
+  /// What happened — the renderer discriminator. Never carries the channel.
+  type             String
+  /// Where the row is delivered. Rows that predate TASK-672 were backfilled to EMAIL.
+  channel          NotificationChannel      @default(EMAIL)
+  /// The address in its own channel's space: an email address for EMAIL, a
+  /// Telegram `chat_id` for TELEGRAM, a phone number for a phone channel.
+  recipientAddress String                   @map("recipient_address")
+  payload          Json
+  status           NotificationOutboxStatus @default(PENDING)
+  attempts         Int                      @default(0)
+  maxAttempts      Int                      @default(5) @map("max_attempts")
+  lastError        String?                  @map("last_error")
+  nextAttemptAt    DateTime                 @default(now()) @map("next_attempt_at")
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  sentAt           DateTime?                @map("sent_at")
 
   @@index([status, nextAttemptAt])
-  @@map("mail_outbox")
+  @@index([channel, status])
+  @@map("notification_outbox")
+}
+
+/// A messenger chat that receives notifications (TASK-675). Created only by
+/// exchanging a one-time NotificationBindingToken that the chat itself sent to
+/// the bot (`/start <token>`), so an id typed by hand can never become a
+/// recipient. Never deleted: "disconnect" stamps `revokedAt`, and a chat that
+/// is connected again gets a NEW row — the old one stays as the record of who
+/// connected what, and when.
+model NotificationBinding {
+  id         String               @id @default(uuid())
+  channel    NotificationChannel
+  audience   NotificationAudience
+  /// The chat in its channel's own id space — for TELEGRAM the `chat_id`, kept
+  /// as a string (group ids are negative and exceed 32 bits).
+  externalId String               @map("external_id")
+  /// Chat title or @username as it was when the chat was connected — what the
+  /// admin screen shows. Not refreshed afterwards.
+  label      String?
+  /// SHOP: who connected the chat (audit only — every SHOP chat gets every ping).
+  /// CUSTOMER: whose notifications it receives. SetNull: the binding outlives
+  /// the account as a record, and `revokedAt` is what stops delivery.
+  userId     String?              @map("user_id")
+  user       User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// CUSTOMER guest chats: the order the chat was connected from (TASK-679).
+  orderId    String?              @map("order_id")
+  order      Order?               @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdAt  DateTime             @default(now()) @map("created_at")
+  /// Null = active. Set by "disconnect" in the admin, and when the channel says
+  /// the chat is gone (bot blocked or kicked, chat not found). Set once.
+  revokedAt  DateTime?            @map("revoked_at")
+
+  // One ACTIVE binding per chat and audience; revoked rows do not count, so a
+  // disconnected chat can be connected again. A partial index, so NEVER a unique
+  // selector: on the revoked side it matches many rows — find bindings with
+  // `findFirst … revokedAt: null` and write by `id` (the `User.isOwner` trap,
+  // TASK-634).
+  @@unique([channel, audience, externalId], where: { revokedAt: null }, map: "notification_bindings_active_key")
+  @@index([channel, audience, revokedAt])
+  @@map("notification_bindings")
+}
+
+/// One-time token behind a `https://t.me/<bot>?start=<token>` deep link
+/// (TASK-675). Only the SHA-256 of the token is stored — the raw value exists in
+/// the link and in the chat's `/start` message, nowhere else. Single-use:
+/// exchanging it stamps `consumedAt` in the same transaction that creates the
+/// binding. Short-lived: `expiresAt` is 15 minutes after issue.
+model NotificationBindingToken {
+  id         String               @id @default(uuid())
+  /// SHA-256 (hex) of the raw token.
+  tokenHash  String               @unique @map("token_hash")
+  channel    NotificationChannel
+  audience   NotificationAudience
+  /// Copied onto the binding. SetNull, like the binding: a 15-minute token is not
+  /// worth blocking an account deletion over, and a CUSTOMER token left with
+  /// neither an account nor an order is refused at exchange time.
+  userId     String?              @map("user_id")
+  user       User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// Cascade, unlike the binding: a guest token exists only to connect a chat TO
+  /// this order. Without the order it would bind a chat to nobody, so it goes too.
+  orderId    String?              @map("order_id")
+  order      Order?               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime             @map("expires_at")
+  /// Null = not used yet. Set once, by the exchange.
+  consumedAt DateTime?            @map("consumed_at")
+  createdAt  DateTime             @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("notification_binding_tokens")
+}
+
+/// Per-channel cursor of the inbound-update poller (TASK-675). For TELEGRAM it is
+/// the `getUpdates` offset — the last processed `update_id + 1` — so a restart
+/// neither replays old `/start` messages nor skips new ones.
+model NotificationChannelState {
+  channel      NotificationChannel @id
+  updateOffset BigInt              @default(0) @map("update_offset")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  @@map("notification_channel_state")
 }
 
 /// Blog category — a lightweight taxonomy for BlogPost (TASK-170). Slugs match

@@ -98,6 +98,77 @@ describe("HeroSlider", () => {
       expect(dot.className).toContain("before:size-11");
     }
   });
+
+  it("draws a white offset focus outline on the slide CTA — the indigo ring vanishes on the slide (TASK-865)", () => {
+    setReducedMotion(false);
+    render(<HeroSlider />);
+
+    const cta = screen.getByRole("link", { name: slides[0].cta });
+    expect(cta).toHaveClass(
+      "focus-visible:ring-0",
+      "focus-visible:outline-solid",
+      "focus-visible:outline-offset-2",
+      "focus-visible:outline-white",
+    );
+  });
+});
+
+describe("HeroSlider — responsive height (TASK-878)", () => {
+  const originalMatchMedia = window.matchMedia;
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it("reserves the tallest slide's height with inert, invisible sizers — one h1, no hidden links", () => {
+    setReducedMotion(true);
+    const { container } = render(<HeroSlider />);
+
+    const sizers = container.querySelectorAll("[data-slide-sizer]");
+    expect(sizers).toHaveLength(slides.length - 1);
+    for (const sizer of sizers) {
+      expect(sizer).toHaveAttribute("aria-hidden", "true");
+      expect(sizer).toHaveAttribute("inert");
+      expect(sizer.className).toContain("invisible");
+      expect(sizer.querySelector("h1, a")).toBeNull();
+    }
+
+    // Exactly one page h1 and one CTA link — the active slide's.
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(container.querySelectorAll("a")).toHaveLength(1);
+
+    // Below lg no fixed height: the box grows with the copy above a min
+    // height. From lg it is pinned at 440px so the sidebar row cannot stretch it.
+    const root = container.firstElementChild as HTMLElement;
+    expect(root).toHaveClass("grid", "min-h-105", "sm:min-h-110", "lg:h-110");
+    expect(root).not.toHaveClass("h-110");
+    expect(root).not.toHaveClass("sm:h-110");
+    expect(root.className).not.toMatch(/\bh-\[/);
+  });
+
+  it("gives the copy the full width on a phone — px-6, the side gutters only from sm", () => {
+    setReducedMotion(true);
+    render(<HeroSlider />);
+
+    const layer = screen.getByRole("heading", { level: 1 }).parentElement
+      ?.parentElement as HTMLElement;
+    expect(layer).toHaveClass("px-6", "sm:px-24");
+    expect(layer).not.toHaveClass("px-16");
+  });
+
+  it("keeps the prev / next / pause controls at a 44px touch target", () => {
+    setReducedMotion(true);
+    render(<HeroSlider />);
+
+    for (const name of [
+      dict.home.hero.prevSlide,
+      dict.home.hero.nextSlide,
+      dict.home.hero.pauseAutoplay,
+    ]) {
+      const control = screen.getByRole("button", { name });
+      expect(control).toHaveClass("size-11");
+      expect(control).not.toHaveClass("size-10");
+    }
+  });
 });
 
 describe("HeroSlider — banner pictures (TASK-740)", () => {
@@ -152,5 +223,24 @@ describe("HeroSlider — banner pictures (TASK-740)", () => {
       screen.getByRole("heading", { level: 1, name: "Без картинки" }),
     ).toBeInTheDocument();
     expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("shows no CTA for a slide the owner left without a link (TASK-873)", () => {
+    setReducedMotion(true);
+    const { container } = render(
+      <HeroSlider
+        banners={[
+          {
+            ...heroBanner("b1", "Без посилання", null),
+            ctaLabel: "Детальніше",
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("link", { name: /Детальніше/ }),
+    ).not.toBeInTheDocument();
+    expect(container.querySelector('a[href="#"]')).toBeNull();
   });
 });

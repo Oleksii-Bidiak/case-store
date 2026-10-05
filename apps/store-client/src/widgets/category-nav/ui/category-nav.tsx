@@ -16,7 +16,7 @@ import {
   useCategoryControllerGetRootCategories,
   type CategoryEntity,
 } from "@/entities/category";
-import { dict } from "@/shared/config";
+import { dict, H2_CLASS, PAGE_CONTAINER } from "@/shared/config";
 import { CategoryTileImage } from "@/shared/ui";
 import { CategoryNavSkeleton } from "./category-nav-skeleton";
 
@@ -30,15 +30,17 @@ const CATEGORY_STYLES: {
   { match: /case|чох/i, icon: Smartphone, tile: "bg-primary/12 text-primary" },
   { match: /charg|заряд/i, icon: Zap, tile: "bg-warning/12 text-warning" },
   { match: /cable|кабел/i, icon: Cable, tile: "bg-success/12 text-success" },
+  // Token tints only (TASK-879): the protection and audio tiles were raw
+  // sky / violet palette hues; they take the brand tint.
   {
     match: /screen|protect|скло|захис/i,
     icon: ShieldCheck,
-    tile: "bg-sky-500/12 text-sky-500",
+    tile: "bg-primary/12 text-primary",
   },
   {
     match: /audio|headph|навуш|аудіо/i,
     icon: Headphones,
-    tile: "bg-violet-500/12 text-violet-500",
+    tile: "bg-primary/12 text-primary",
   },
 ];
 
@@ -108,15 +110,9 @@ export function CategoryNav() {
   const categories = data?.data ?? [];
 
   return (
-    <section
-      aria-labelledby="categories-heading"
-      className="mx-auto w-full max-w-7xl px-4"
-    >
+    <section aria-labelledby="categories-heading" className={PAGE_CONTAINER}>
       <div className="mb-6 flex items-baseline justify-between">
-        <h2
-          id="categories-heading"
-          className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl"
-        >
+        <h2 id="categories-heading" className={`${H2_CLASS} text-foreground`}>
           {dict.home.categories.heading}
         </h2>
         <Link

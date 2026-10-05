@@ -1,4 +1,4 @@
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 
 /**
  * AccountBonusesSection — the "Бонуси" section. STUB: there is no loyalty /
@@ -10,11 +10,9 @@ export function AccountBonusesSection() {
 
   return (
     <div className="max-w-[760px]">
-      <h1 className="mb-6 font-display text-[28px] font-bold tracking-[-0.02em] text-foreground">
-        {d.bonusesHeading}
-      </h1>
+      <h1 className={`mb-6 ${H1_CLASS} text-foreground`}>{d.bonusesHeading}</h1>
 
-      <div className="flex flex-wrap items-center justify-between gap-6 rounded-[18px] bg-foreground px-8 py-[30px] text-background">
+      <div className="flex flex-wrap items-center justify-between gap-6 rounded-card bg-foreground px-8 py-[30px] text-background">
         <div>
           <span className="text-sm opacity-80">{d.bonusesAvailable}</span>
           <div className="mt-1 flex items-baseline gap-2.5">
@@ -22,7 +20,10 @@ export function AccountBonusesSection() {
             <span className="text-base opacity-85">₴ {d.bonusesHint}</span>
           </div>
         </div>
-        <span className="inline-flex size-[72px] items-center justify-center rounded-full bg-white/15 text-warning">
+        {/* Brand coin (TASK-879): amber is the low-stock warning colour (§2),
+            and bonuses are not a warning. White on primary is ≥ 4.4:1 in both
+            themes; the disc itself is decorative. */}
+        <span className="inline-flex size-[72px] items-center justify-center rounded-full bg-primary text-primary-foreground">
           <svg
             width="38"
             height="38"

@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { VerifyEmailConfirm } from "@/features/auth";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 
 export const metadata: Metadata = {
   title: dict.meta.verifyEmailTitle,
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 export default function VerifyEmailPage() {
   return (
     <section className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold text-foreground">
+      <h1 className={`${H1_CLASS} text-foreground`}>
         {dict.auth.verifyEmail.heading}
       </h1>
       {/* VerifyEmailConfirm reads useSearchParams() — needs a Suspense boundary. */}

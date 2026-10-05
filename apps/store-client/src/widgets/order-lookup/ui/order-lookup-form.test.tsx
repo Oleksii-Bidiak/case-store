@@ -3,7 +3,7 @@ import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib/format";
-import { statusBadgeClass, type PublicOrderEntity } from "@/entities/order";
+import { statusBadgeStyle, type PublicOrderEntity } from "@/entities/order";
 import { OrderLookupForm } from "./order-lookup-form";
 
 const d = dict.orderLookup;
@@ -156,16 +156,41 @@ describe("OrderLookupForm (TASK-483)", () => {
     renderWithProviders(<OrderLookupForm />);
     await fillAndSubmit(user);
 
-    const badge = await screen.findByLabelText(
-      dict.order.paymentStatusAria("PARTIALLY_REFUNDED"),
-    );
-    expect(badge).toHaveClass(
-      ...statusBadgeClass("PARTIALLY_REFUNDED").split(" "),
-    );
-    expect(badge).toHaveTextContent(
+    const label = await screen.findByText(
       dict.order.paymentLabel("PARTIALLY_REFUNDED"),
     );
+    const badge = label.closest('[data-slot="badge"]');
+    expect(badge).toHaveAttribute(
+      "data-variant",
+      statusBadgeStyle("PARTIALLY_REFUNDED").variant,
+    );
+    // §2 (TASK-868): muted, not destructive.
+    expect(badge).toHaveAttribute("data-variant", "tint-muted");
   });
+
+  // TASK-868: a <dl> may hold only dt/dd groups. The two delivery sentences
+  // used to be bare <p>s inside it.
+  it.each([
+    ["no city", { city: null, warehouse: null }, d.deliveryUnknown],
+    ["a courier", { city: "Київ", warehouse: null }, d.deliveryCourier],
+  ] as const)(
+    "keeps the delivery list valid with %s",
+    async (_case, delivery, sentence) => {
+      respondWith([{ ...order, delivery: { ...delivery } }]);
+      const user = userEvent.setup();
+
+      renderWithProviders(<OrderLookupForm />);
+      await fillAndSubmit(user);
+
+      const text = await screen.findByText(sentence);
+      expect(text.tagName).toBe("DD");
+      expect(text.previousElementSibling).toHaveTextContent(d.deliveryHeading);
+      expect(text.previousElementSibling).toHaveClass("sr-only");
+      for (const dl of document.querySelectorAll("dl")) {
+        expect(dl.querySelector("p")).toBeNull();
+      }
+    },
+  );
 
   describe("focus and announcement (TASK-626)", () => {
     it("moves focus to the result and announces it", async () => {
@@ -228,6 +253,58 @@ describe("OrderLookupForm (TASK-483)", () => {
 
       expect(await screen.findByText(d.errors.notFound)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: d.submit })).toHaveFocus();
+    });
+  });
+
+  describe("on primitives (TASK-872)", () => {
+    it("says «not found» on a 200 with an empty list, in the 404's exact words", async () => {
+      respondWith([]);
+      const user = userEvent.setup();
+
+      renderWithProviders(<OrderLookupForm />);
+      await fillAndSubmit(user);
+
+      const alert = await screen.findByText(d.errors.notFound);
+      expect(alert).toHaveAttribute("role", "alert");
+      // The form stays, focus stays on the button (TASK-626), no result region.
+      expect(screen.getByRole("button", { name: d.submit })).toHaveFocus();
+      expect(
+        screen.queryByRole("region", { name: d.resultsRegionAria }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    });
+
+    it("draws the fields with the shared Input and its focus-visible ring", () => {
+      renderWithProviders(<OrderLookupForm />);
+
+      for (const name of [d.fieldNumber, d.fieldPhone]) {
+        const field = screen.getByRole("textbox", { name });
+        expect(field).toHaveAttribute("data-slot", "input");
+        expect(field).toHaveClass("h-11", "focus-visible:ring-ring/50");
+      }
+      expect(screen.getByRole("button", { name: d.submit })).toHaveAttribute(
+        "data-slot",
+        "button",
+      );
+    });
+
+    it("masks the phone through PhoneInput and keeps its error out of the name", async () => {
+      const user = userEvent.setup();
+
+      renderWithProviders(<OrderLookupForm />);
+      const phone = screen.getByRole("textbox", { name: d.fieldPhone });
+      expect(phone).toHaveAttribute("type", "tel");
+      expect(phone).toHaveAttribute("inputmode", "numeric");
+
+      await user.type(phone, "501");
+      expect(phone).toHaveValue("+380 50 1");
+
+      await user.click(screen.getByRole("button", { name: d.submit }));
+      await screen.findByText(d.errors.phoneRequired);
+      // Still reachable by its bare label: the error is described-by, not named.
+      const invalid = screen.getByRole("textbox", { name: d.fieldPhone });
+      expect(invalid).toHaveAttribute("aria-invalid", "true");
+      expect(invalid).toHaveAccessibleDescription(d.errors.phoneRequired);
     });
   });
 

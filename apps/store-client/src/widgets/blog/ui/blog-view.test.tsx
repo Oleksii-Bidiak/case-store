@@ -72,6 +72,45 @@ describe("BlogView", () => {
     ).toBeInTheDocument();
   });
 
+  it("names the journal after the shop and shows each post's cover (TASK-873)", () => {
+    const { container } = renderWithProviders(
+      <BlogView
+        posts={[
+          makePost({
+            slug: "a",
+            title: "With cover",
+            coverImageUrl: "/uploads/blog/a.webp",
+          }),
+          makePost({ slug: "b", title: "Without cover" }),
+        ]}
+        categories={categories}
+        featured={makePost({
+          slug: "f",
+          title: "Featured Hero",
+          featured: true,
+          coverImageUrl: "/uploads/blog/f.webp",
+        })}
+        activeCategory="all"
+        query=""
+        page={1}
+        totalPages={1}
+        siteName="Volta"
+      />,
+    );
+
+    expect(screen.getByText(dict.blog.badgeNamed("Volta"))).toBeInTheDocument();
+    expect(screen.queryByText(/MOBILESTORE/i)).not.toBeInTheDocument();
+    // The featured hero and the grid card with a cover render it; the card
+    // without one keeps the gradient only.
+    expect(
+      container.querySelector('img[src="/uploads/blog/f.webp"]'),
+    ).not.toBeNull();
+    const withCover = screen.getByRole("link", { name: /With cover/ });
+    expect(withCover.querySelector("img")).toHaveAttribute("alt", "");
+    const withoutCover = screen.getByRole("link", { name: /Without cover/ });
+    expect(withoutCover.querySelector("img")).toBeNull();
+  });
+
   it("shows the empty state when there are no posts and no featured", () => {
     renderWithProviders(
       <BlogView
@@ -86,6 +125,58 @@ describe("BlogView", () => {
     );
 
     expect(screen.getByText(dict.blog.emptyHeading)).toBeInTheDocument();
+    expect(screen.getByText(dict.blog.emptyBody)).toBeInTheDocument();
+    // TASK-870 — one primary action: a filtered/searched empty hub offers the
+    // whole journal back (the URL contract drops ?category= and ?q=).
+    const reset = screen.getByRole("link", { name: dict.blog.emptyResetCta });
+    expect(reset).toHaveAttribute("href", "/blog");
+    expect(reset).toHaveAttribute("data-variant", "default");
+    expect(reset).toHaveClass("h-11");
+  });
+
+  it("sends a page past the end back to page 1 (TASK-870)", () => {
+    renderWithProviders(
+      <BlogView
+        posts={[]}
+        categories={categories}
+        featured={null}
+        activeCategory="all"
+        query=""
+        page={7}
+        totalPages={2}
+      />,
+    );
+
+    expect(screen.getByText(dict.blog.emptyPageHeading)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: dict.blog.emptyPageCta }),
+    ).toHaveAttribute("href", "/blog");
+  });
+
+  it("points an empty journal at the catalogue, with nothing to reset (TASK-870)", () => {
+    const { container } = renderWithProviders(
+      <BlogView
+        posts={[]}
+        categories={categories}
+        featured={null}
+        activeCategory="all"
+        query=""
+        page={1}
+        totalPages={1}
+      />,
+    );
+
+    expect(screen.getByText(dict.blog.emptyNoneHeading)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: dict.blog.emptyNoneCta }),
+    ).toHaveAttribute("href", "/products");
+    expect(
+      screen.queryByRole("link", { name: dict.blog.emptyResetCta }),
+    ).not.toBeInTheDocument();
+    // The glyph is decoration: its disc is hidden from assistive tech.
+    expect(
+      container.querySelector(".size-18")?.getAttribute("aria-hidden"),
+    ).toBe("true");
   });
 
   it("offers the next-page shortcut only while a next page exists", () => {

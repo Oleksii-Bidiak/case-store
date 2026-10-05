@@ -263,4 +263,75 @@ describe("RegisterForm", () => {
       expect(captured.current?.hpCheck).toBe("x".repeat(255));
     });
   });
+
+  // TASK-871 — layout and consent.
+  it("stacks first and last name in one column below sm", () => {
+    renderWithProviders(<RegisterForm />);
+
+    const row = screen
+      .getByLabelText(dict.auth.register.firstName)
+      .closest(".grid");
+    expect(row).toHaveClass("grid", "gap-4", "sm:grid-cols-2");
+    // No unconditional two-column grid: that squeezed both inputs on a 390.
+    expect(row).not.toHaveClass("grid-cols-2");
+    expect(row).toContainElement(
+      screen.getByLabelText(dict.auth.register.lastName),
+    );
+  });
+
+  describe("consent", () => {
+    const r = dict.auth.register;
+
+    it("links the offer and the privacy policy, each in a new tab", () => {
+      renderWithProviders(<RegisterForm />);
+
+      const offer = screen.getByRole("link", {
+        name: new RegExp(r.consentOfferLink),
+      });
+      const privacy = screen.getByRole("link", {
+        name: new RegExp(r.consentPrivacyLink),
+      });
+      expect(offer).toHaveAttribute("href", "/legal/offer");
+      expect(privacy).toHaveAttribute("href", "/legal/privacy-policy");
+      for (const link of [offer, privacy]) {
+        expect(link).toHaveAttribute("target", "_blank");
+        expect(link).toHaveAttribute("rel", "noopener noreferrer");
+        // Announces the new tab instead of surprising a screen-reader user.
+        expect(link).toHaveTextContent(r.consentNewTab);
+      }
+    });
+
+    it("names the checkbox by its label and describes it with the documents", () => {
+      renderWithProviders(<RegisterForm />);
+
+      const box = screen.getByRole("checkbox", { name: r.consentPrefix });
+      expect(box).toHaveAccessibleDescription(
+        new RegExp(`${r.consentOfferLink}.*${r.consentPrivacyLink}`),
+      );
+    });
+
+    it("keeps the document links outside the checkbox label", () => {
+      renderWithProviders(<RegisterForm />);
+
+      // A link inside a <label> is a second click target on one control: a
+      // mis-tap would tick the box instead of opening the document.
+      for (const name of [r.consentOfferLink, r.consentPrivacyLink]) {
+        expect(
+          screen.getByRole("link", { name: new RegExp(name) }).closest("label"),
+        ).toBeNull();
+      }
+    });
+
+    it("still blocks the submit until the box is ticked", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<RegisterForm />);
+
+      await user.click(screen.getByRole("button", { name: r.submit }));
+
+      const box = screen.getByRole("checkbox");
+      expect(await screen.findByText(r.validationTerms)).toBeInTheDocument();
+      expect(box).toHaveAttribute("aria-invalid", "true");
+      expect(mockPush).not.toHaveBeenCalled();
+    });
+  });
 });

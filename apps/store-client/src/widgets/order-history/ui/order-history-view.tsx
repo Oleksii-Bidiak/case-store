@@ -3,13 +3,14 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Package } from "lucide-react";
 import { useAuth } from "@/entities/session";
-import { statusBadgeClass, useGetOrders } from "@/entities/order";
+import { OrderStatusBadge, useGetOrders } from "@/entities/order";
 import { CancelOrderButton } from "@/features/cancel-order";
 import { useGetMyReturns, type ReturnEntity } from "@/entities/return";
 import { ReturnRequestButton } from "@/features/return-request";
 import { Badge, Button } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 import { formatDate, formatMoney } from "@/shared/lib";
 import { OrderHistorySkeleton } from "./order-history-skeleton";
 
@@ -86,7 +87,7 @@ export function OrderHistoryView() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <h1 className="font-display text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
+      <h1 className={`${H1_CLASS} text-foreground`}>
         {dict.orderHistory.title}
       </h1>
 
@@ -95,9 +96,21 @@ export function OrderHistoryView() {
           {dict.orderHistory.loadError}
         </p>
       ) : orders.length === 0 ? (
-        <div className="flex flex-col items-start gap-4 rounded-xl border border-border p-8">
-          <p className="text-muted-foreground">{dict.orderHistory.empty}</p>
-          <Button asChild>
+        // Design-system §6: icon + one line + a primary action (TASK-870).
+        // The same card as the catalogue's `ListingEmptyState` — muted disc,
+        // display-type line, 44px primary — so every empty list on the
+        // storefront reads alike.
+        <div className="flex flex-col items-center justify-center rounded-card border border-border bg-card px-5 py-14 text-center shadow-card">
+          <span
+            aria-hidden="true"
+            className="mb-4 inline-flex size-18 items-center justify-center rounded-full bg-muted text-muted-foreground"
+          >
+            <Package className="size-8" strokeWidth={1.6} />
+          </span>
+          <p className="max-w-md font-display text-xl font-bold text-foreground">
+            {dict.orderHistory.empty}
+          </p>
+          <Button asChild size="lg" className="mt-5 h-11">
             <Link href="/products">{dict.orderHistory.emptyCta}</Link>
           </Button>
         </div>
@@ -107,7 +120,7 @@ export function OrderHistoryView() {
             <li key={order.id} className="flex flex-wrap items-center gap-3">
               <Link
                 href={`/orders/${order.id}/confirmation`}
-                className="flex flex-1 flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-4 shadow-card transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex flex-1 flex-wrap items-center justify-between gap-3 rounded-card border border-border p-4 shadow-card transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <div className="flex flex-col">
                   <span className="font-medium text-foreground">
@@ -120,16 +133,12 @@ export function OrderHistoryView() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <span
-                    aria-label={`${dict.orderHistory.statusSr}: ${
-                      dict.order.orderStatusLabels[order.status] ?? order.status
-                    }`}
-                    className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${statusBadgeClass(
-                      order.status,
-                    )}`}
+                  <OrderStatusBadge
+                    status={order.status}
+                    srLabel={dict.orderHistory.statusSr}
                   >
                     {dict.order.orderStatusLabels[order.status] ?? order.status}
-                  </span>
+                  </OrderStatusBadge>
                   <ReturnStatusBadge status={latestReturn.get(order.id)} />
                   <span className="font-semibold text-foreground">
                     {formatMoney(order.total)}

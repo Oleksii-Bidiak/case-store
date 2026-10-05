@@ -27,7 +27,7 @@ export interface OrderPaymentExpiredParams {
   reorderUrl?: string;
 }
 
-/** The JSON-safe payload stored in a `MailOutbox` row: the params plus a recipient. */
+/** The JSON-safe payload stored in a `NotificationOutbox` row: the params plus a recipient. */
 export interface OrderPaymentExpiredMailPayload extends OrderPaymentExpiredParams {
   to: string;
 }

@@ -2,6 +2,7 @@
 
 import type { CategoryTreeNodeEntity } from "@/entities/category";
 import { dict } from "@/shared/config";
+import { subcategoryChipsOf } from "../model/category-chips";
 
 interface CategoryChipsProps {
   /**
@@ -50,17 +51,10 @@ export function CategoryChips({
     return null;
   }
 
-  // The root whose subtree is currently in focus: either it is directly
-  // selected, or one of its direct children is. Drives the second-row reveal.
-  const activeRoot = activeCategorySlug
-    ? categories.find(
-        (root) =>
-          root.slug === activeCategorySlug ||
-          root.children.some((child) => child.slug === activeCategorySlug),
-      )
-    : undefined;
-
-  const subcategories = activeRoot?.children ?? [];
+  // The children of the root whose subtree is in focus — the second-row
+  // reveal. Shared with the catalogue pages, which reserve the row in their
+  // skeleton by the same rule (TASK-515).
+  const subcategories = subcategoryChipsOf(categories, activeCategorySlug);
 
   return (
     <div className="mb-5 flex flex-col gap-2">

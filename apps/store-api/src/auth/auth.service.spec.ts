@@ -9,7 +9,7 @@ import { AuthService } from './auth.service';
 import type { IssuedSession } from './entities';
 import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
-import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
+import { NotificationOutboxService } from '../notification-outbox/notification-outbox.service';
 
 // ─── Mock argon2 ──────────────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ describe('AuthService', () => {
   let service: AuthService;
   let authRepository: jest.Mocked<AuthRepository>;
   let jwtService: jest.Mocked<JwtService>;
-  let mailOutboxService: jest.Mocked<MailOutboxService>;
+  let mailOutboxService: jest.Mocked<NotificationOutboxService>;
   let loggerMock: { info: jest.Mock; error: jest.Mock; warn: jest.Mock; debug: jest.Mock };
 
   beforeEach(async () => {
@@ -144,7 +144,7 @@ describe('AuthService', () => {
         { provide: AuthRepository, useValue: authRepositoryMock },
         { provide: JwtService, useValue: jwtServiceMock },
         { provide: ConfigService, useValue: configMock },
-        { provide: MailOutboxService, useValue: mailOutboxServiceMock },
+        { provide: NotificationOutboxService, useValue: mailOutboxServiceMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
       ],
     }).compile();
@@ -152,7 +152,9 @@ describe('AuthService', () => {
     service = module.get<AuthService>(AuthService);
     authRepository = module.get(AuthRepository) as jest.Mocked<AuthRepository>;
     jwtService = module.get(JwtService) as jest.Mocked<JwtService>;
-    mailOutboxService = module.get(MailOutboxService) as jest.Mocked<MailOutboxService>;
+    mailOutboxService = module.get(
+      NotificationOutboxService,
+    ) as jest.Mocked<NotificationOutboxService>;
   });
 
   // ─── register ──────────────────────────────────────────────────────────────
@@ -1594,7 +1596,7 @@ describe('AuthService — durations have no silent fallback', () => {
         {} as AuthRepository,
         {} as JwtService,
         configService,
-        {} as MailOutboxService,
+        {} as NotificationOutboxService,
         logger,
       );
   };

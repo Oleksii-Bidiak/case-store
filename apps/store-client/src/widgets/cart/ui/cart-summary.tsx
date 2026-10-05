@@ -5,6 +5,7 @@ import { type CartTotals } from "@/entities/cart";
 import { ApplyDiscount, useAppliedDiscount } from "@/features/apply-discount";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
+import { MobilePayBar } from "@/shared/ui";
 
 interface CartSummaryProps {
   totals: CartTotals;
@@ -18,9 +19,9 @@ interface CartSummaryProps {
 
 /**
  * CartSummary — the "Разом" order-totals panel: promo code (real coupons,
- * TASK-079), item subtotal, free-shipping and add-on-services lines, the payable
- * total, and the checkout CTA. The server re-validates and recomputes the coupon
- * authoritatively at order creation.
+ * TASK-079), item subtotal, delivery (priced at checkout — TASK-881) and
+ * add-on-services lines, the payable total, and the checkout CTA. The server
+ * re-validates and recomputes the coupon authoritatively at order creation.
  *
  * Add-on services (TASK-174) are real and server-computed: `totals.addonsTotal`
  * is read straight off the cart. The coupon is applied to the product subtotal
@@ -44,8 +45,8 @@ export function CartSummary({
   const payableText = formatMoney((payableCents / 100).toFixed(2));
 
   return (
-    <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-card">
-      <h2 className="mb-4 font-display text-[18px] font-bold text-foreground">
+    <div className="rounded-card border border-border bg-card p-[22px] shadow-card">
+      <h2 className="mb-4 font-display text-lg font-bold text-foreground">
         {dict.cart.summaryHeading}
       </h2>
 
@@ -61,10 +62,14 @@ export function CartSummary({
         </span>
       </div>
 
-      <div className="flex justify-between py-2 text-sm text-muted-foreground">
+      {/* Delivery is priced at checkout, never here (TASK-881): Nova Poshta
+          charges its own tariff for the chosen city, pickup is free, the
+          courier has a flat price — the cart knows none of that yet, so it
+          says when the price appears instead of promising «Безкоштовно». */}
+      <div className="flex justify-between gap-4 py-2 text-sm text-muted-foreground">
         <span>{dict.cart.deliveryLine}</span>
-        <span className="font-semibold text-success">
-          {dict.cart.shippingFree}
+        <span className="text-right text-foreground">
+          {dict.cart.deliveryAtCheckout}
         </span>
       </div>
 
@@ -88,19 +93,24 @@ export function CartSummary({
         </span>
       </div>
 
+      {/* Below md the CTA rides in the fixed «До сплати» bar (TASK-864); from
+          md up the bar dissolves and the CTA renders here, in the card — one
+          primary at every width. */}
       {hasUnavailableItems ? (
         // A real disabled <button>, not a styled link: a link with
         // `aria-disabled` still navigates on Enter, and /checkout would then
         // fail on an order the API refuses to create.
         <>
-          <button
-            type="button"
-            disabled
-            aria-describedby="cart-checkout-blocked"
-            className="flex h-13 w-full cursor-not-allowed items-center justify-center rounded-xl bg-muted text-base font-bold text-muted-foreground"
-          >
-            {dict.cart.checkout}
-          </button>
+          <MobilePayBar label={dict.cart.payable} amount={payableText}>
+            <button
+              type="button"
+              disabled
+              aria-describedby="cart-checkout-blocked"
+              className="flex h-11 w-full cursor-not-allowed items-center justify-center rounded-cta bg-muted text-sm font-bold text-muted-foreground md:h-13 md:text-base"
+            >
+              {dict.cart.checkout}
+            </button>
+          </MobilePayBar>
           <p
             id="cart-checkout-blocked"
             className="mt-3 text-center text-xs font-medium text-destructive"
@@ -110,13 +120,15 @@ export function CartSummary({
         </>
       ) : (
         <>
-          <Link
-            href="/checkout"
-            aria-label={dict.cart.checkoutAria}
-            className="flex h-[52px] items-center justify-center rounded-[13px] bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {dict.cart.checkout}
-          </Link>
+          <MobilePayBar label={dict.cart.payable} amount={payableText}>
+            <Link
+              href="/checkout"
+              aria-label={dict.cart.checkoutAria}
+              className="flex h-11 w-full items-center justify-center rounded-cta bg-primary px-4 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:h-13 md:text-base"
+            >
+              {dict.cart.checkout}
+            </Link>
+          </MobilePayBar>
           <p className="mt-3 text-center text-xs text-muted-foreground">
             {dict.cart.termsNote}
           </p>

@@ -1,6 +1,4 @@
-import { http, HttpResponse } from "msw";
 import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
-import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
 import { InfoView } from "./info-view";
@@ -46,9 +44,9 @@ describe("InfoView", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the real contact details + form on the contacts section", async () => {
+  it("shows the real contact details and a link card to /contact, not a form (TASK-866)", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<InfoView contact={contact} />);
+    const { container } = renderWithProviders(<InfoView contact={contact} />);
 
     await user.click(screen.getByRole("button", { name: d.nav.contacts }));
 
@@ -56,11 +54,85 @@ describe("InfoView", () => {
     expect(
       screen.getByRole("heading", { level: 2, name: d.formHeading }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: d.contactsFormCardCta }),
+    ).toHaveAttribute("href", "/contact");
+    // /contact is the single contact form (owner decision 7.8) — no second
+    // copy of it here, not even hidden.
+    expect(container.querySelector("form")).toBeNull();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     // Only the configured messenger link (Telegram) is shown.
     expect(screen.getByRole("link", { name: "Telegram" })).toHaveAttribute(
       "href",
       contact.telegramLink!,
     );
+  });
+
+  describe("every section is in the HTML (TASK-866)", () => {
+    it("renders all five panels, showing only the active one", () => {
+      const { container } = renderWithProviders(<InfoView contact={contact} />);
+
+      for (const key of [
+        "delivery",
+        "warranty",
+        "faq",
+        "about",
+        "contacts",
+      ] as const) {
+        const panel = container.querySelector(`#info-panel-${key}`);
+        expect(panel).not.toBeNull();
+        if (key === "delivery") {
+          expect(panel).not.toHaveAttribute("hidden");
+        } else {
+          expect(panel).toHaveAttribute("hidden");
+        }
+        expect(
+          screen.getByRole("button", { name: d.nav[key] }),
+        ).toHaveAttribute("aria-controls", `info-panel-${key}`);
+      }
+    });
+
+    it("puts every FAQ question and answer in the DOM before the FAQ tab is opened", () => {
+      const faqs = [
+        { q: "Питання один?", a: "Відповідь один." },
+        { q: "Питання два?", a: "Відповідь два." },
+      ];
+      const { container } = renderWithProviders(
+        <InfoView contact={contact} faqs={faqs} />,
+      );
+
+      const panel = container.querySelector("#info-panel-faq")!;
+      for (const faq of faqs) {
+        expect(panel).toHaveTextContent(faq.q);
+        expect(panel).toHaveTextContent(faq.a);
+      }
+      // Hidden from users and assistive tech until the tab is chosen.
+      expect(
+        screen.queryByRole("button", { name: "Питання один?" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("keeps a collapsed answer hidden and wires it to its question", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <InfoView
+          contact={contact}
+          faqs={[{ q: "Питання один?", a: "Відповідь один." }]}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: d.nav.faq }));
+      const question = screen.getByRole("button", { name: "Питання один?" });
+      const answer = screen.getByText("Відповідь один.");
+
+      expect(question).toHaveAttribute("aria-expanded", "false");
+      expect(question).toHaveAttribute("aria-controls", answer.id);
+      expect(answer).not.toBeVisible();
+
+      await user.click(question);
+      expect(question).toHaveAttribute("aria-expanded", "true");
+      expect(answer).toBeVisible();
+    });
   });
 
   describe("blocks from CMS pages (TASK-560)", () => {
@@ -187,89 +259,6 @@ describe("InfoView", () => {
       expect(
         screen.queryByRole("heading", { level: 3, name: d.servicesHeading }),
       ).not.toBeInTheDocument();
-    });
-  });
-
-  describe("contact form anti-spam (TASK-452)", () => {
-    async function openAndFill(user: ReturnType<typeof userEvent.setup>) {
-      await user.click(screen.getByRole("button", { name: d.nav.contacts }));
-      await user.type(
-        screen.getByRole("textbox", { name: d.formName }),
-        "Олександр",
-      );
-      // TASK-744 masks the field as `+380 NN NNN NNNN` with the prefix already
-      // shown, so a shopper types the nine national digits (TASK-1450).
-      await user.type(
-        screen.getByRole("textbox", { name: d.formPhone }),
-        "501112233",
-      );
-      await user.type(
-        screen.getByRole("textbox", { name: d.formEmail }),
-        "shopper@example.com",
-      );
-      await user.type(
-        screen.getByRole("textbox", { name: d.formMessage }),
-        "Питання про доставку",
-      );
-    }
-
-    it("carries the same hidden honeypot as the /contact form", async () => {
-      const user = userEvent.setup();
-      const { container } = renderWithProviders(<InfoView contact={contact} />);
-
-      await user.click(screen.getByRole("button", { name: d.nav.contacts }));
-
-      const input = container.querySelector('input[name="website"]');
-      expect(input).toHaveAttribute("tabindex", "-1");
-      expect(input).toHaveAttribute("autocomplete", "off");
-      expect(input).toHaveAttribute("data-1p-ignore");
-      expect(input).toHaveAttribute("data-lpignore", "true");
-      expect(input!.closest("div")).toHaveAttribute("inert");
-      expect(input!.closest("div")).toHaveAttribute("aria-hidden", "true");
-    });
-
-    it("sends no honeypot value for a person", async () => {
-      let received: Record<string, unknown> | null = null;
-      server.use(
-        http.post("*/api/contact", async ({ request }) => {
-          received = (await request.json()) as Record<string, unknown>;
-          return HttpResponse.json(
-            { data: { id: "contact-1" } },
-            { status: 201 },
-          );
-        }),
-      );
-
-      const user = userEvent.setup();
-      renderWithProviders(<InfoView contact={contact} />);
-
-      await openAndFill(user);
-      await user.click(screen.getByRole("button", { name: d.formSubmit }));
-
-      expect(await screen.findByText(d.formSent)).toBeInTheDocument();
-      expect(received).not.toHaveProperty("website");
-    });
-
-    it("tells a sender on the per-email cooldown to wait 10 minutes", async () => {
-      server.use(
-        http.post("*/api/contact", () =>
-          HttpResponse.json(
-            { statusCode: 429, error: "CONTACT_COOLDOWN", message: "recent" },
-            { status: 429 },
-          ),
-        ),
-      );
-
-      const user = userEvent.setup();
-      renderWithProviders(<InfoView contact={contact} />);
-
-      await openAndFill(user);
-      await user.click(screen.getByRole("button", { name: d.formSubmit }));
-
-      expect(
-        await screen.findByText(dict.contact.errors.cooldown),
-      ).toBeInTheDocument();
-      expect(screen.queryByText(d.formError)).not.toBeInTheDocument();
     });
   });
 });

@@ -5,14 +5,16 @@ import {
   fetchPublishedPosts,
   fetchBlogCategories,
 } from "@/shared/api/blog-server";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { JsonLd } from "@/shared/ui";
 import {
   buildBreadcrumbSchema,
   buildItemListSchema,
 } from "@/shared/lib/schema";
-import { buildListingMetadata } from "@/shared/lib/seo";
+import { buildListingMetadata, resolveSiteName } from "@/shared/lib/seo";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
-import { SITE_URL, dict } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 
 // TASK-435 — title/description come from the `blog` HUB page row so the owner
 // can edit them in the panel; the dictionary strings remain the fallback.
@@ -81,7 +83,10 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
   // promoted above the results the reader actually asked for.
   const isUnfiltered = !category && !query;
 
-  const [{ posts, meta }, categories] = await Promise.all([
+  // TASK-873 — the shop name for the hub badge («Журнал <назва>») and the real
+  // social channels for the newsletter block come from the admin settings
+  // (both tagged fetches that never throw — null falls back).
+  const [{ posts, meta }, categories, seo, contact] = await Promise.all([
     // develop paginates the hub (TASK-417); this branch keeps unlisted posts out
     // of it (TASK-436). A list surface wants both.
     fetchPublishedPosts({
@@ -92,6 +97,8 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
       includeUnlisted: false,
     }),
     fetchBlogCategories(),
+    fetchSeoSettings(),
+    fetchSiteContactSettings(),
   ]);
 
   const views = posts.map(toBlogPostView);
@@ -115,7 +122,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
   const listed = featured ? [featured, ...rest] : rest;
 
   return (
-    <div className="mx-auto w-full max-w-[1320px] px-4 pt-[22px] pb-16 sm:px-6">
+    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.blog.breadcrumbHome, item: SITE_URL },
@@ -140,7 +147,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
       {/* Breadcrumbs */}
       <nav
         aria-label={dict.product.breadcrumbAria}
-        className="mb-5 flex items-center gap-[9px] text-[13.5px] text-muted-foreground"
+        className="mb-5 flex items-center gap-[9px] text-sm text-muted-foreground"
       >
         <Link href="/" className="transition-colors hover:text-foreground">
           {dict.blog.breadcrumbHome}
@@ -161,6 +168,8 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
         query={query}
         page={pageNum}
         totalPages={totalPages}
+        siteName={resolveSiteName(seo)}
+        contact={contact}
       />
     </div>
   );

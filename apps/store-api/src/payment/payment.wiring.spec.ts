@@ -6,7 +6,8 @@ import { LoggerModule } from 'nestjs-pino';
 import { PrismaService } from '../prisma';
 import { OrderService } from '../order';
 import { CacheService } from '../cache';
-import { MailOutboxService } from '../mail-outbox';
+import { NotificationOutboxService } from '../notification-outbox';
+import { ShopNotifier } from '../notification/shop-notifier.service';
 import { LiqPayAdapter } from './adapters/liqpay/liqpay.adapter';
 import { PaymentReconcileWorker } from './payment-reconcile.worker';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment.port';
@@ -38,9 +39,11 @@ const prismaStub = {
   providers: [
     { provide: PrismaService, useValue: prismaStub },
     { provide: CacheService, useValue: { get: jest.fn(), set: jest.fn(), del: jest.fn() } },
-    { provide: MailOutboxService, useValue: { enqueue: jest.fn() } },
+    { provide: NotificationOutboxService, useValue: { enqueue: jest.fn() } },
+    // TASK-677: provided app-wide by the @Global NotificationModule.
+    { provide: ShopNotifier, useValue: { enqueueNewOrder: jest.fn() } },
   ],
-  exports: [PrismaService, CacheService, MailOutboxService],
+  exports: [PrismaService, CacheService, NotificationOutboxService, ShopNotifier],
 })
 class InfraStubModule {}
 

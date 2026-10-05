@@ -109,3 +109,19 @@ export function normalizeUAPhone(raw: string): string {
 export function isValidUAPhone(raw: string): boolean {
   return UA_PHONE_PATTERN.test(normalizeUAPhone(raw));
 }
+
+/**
+ * `tel:` URI for a human-formatted number the shop typed into its contact
+ * settings: keeps the digits and a leading `+`
+ * («+380 44 000-00-00» → «tel:+380440000000», «0 800 30 30 30» →
+ * «tel:0800303030»). Deliberately NOT normalised to `380…` — a free-phone
+ * `0 800` line must dial as written. Null when nothing dialable is left, so a
+ * stray non-number in the admin field hides the link rather than rendering one
+ * that dials nothing (TASK-873).
+ */
+export function toTelHref(phone: string): string | null {
+  const trimmed = phone.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return null;
+  return `tel:${trimmed.startsWith("+") ? "+" : ""}${digits}`;
+}

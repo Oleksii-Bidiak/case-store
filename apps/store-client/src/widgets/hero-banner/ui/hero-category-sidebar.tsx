@@ -9,19 +9,6 @@ import {
 import { Skeleton } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
-// Small palette cycled across the category dots so the rail looks intentional
-// even though categories carry no colour of their own.
-const DOT_COLORS = [
-  "text-primary",
-  "text-violet-500",
-  "text-sky-500",
-  "text-warning",
-  "text-success",
-  "text-sale",
-  "text-pink-500",
-  "text-emerald-500",
-] as const;
-
 /**
  * HeroCategorySidebar — the left rail beside the hero slider. Lists root
  * categories from the real API and links each to its filtered listing. Hidden
@@ -60,16 +47,17 @@ export function HeroCategorySidebar() {
       {!isPending && !isError && (
         <nav className="flex-1">
           <ul>
-            {(data?.data ?? []).map((category, i) => (
+            {(data?.data ?? []).map((category) => (
               <li key={category.id}>
                 <Link
                   href={`/categories/${category.slug}`}
                   className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <span
-                    aria-hidden="true"
-                    className={DOT_COLORS[i % DOT_COLORS.length]}
-                  >
+                  {/* One brand dot on every row (TASK-879). Categories carry no
+                      colour of their own, and cycling semantic colours (warning,
+                      success, sale) or raw palette hues would suggest a meaning
+                      they do not have (design-system §2/§10). */}
+                  <span aria-hidden="true" className="text-primary">
                     ●
                   </span>
                   <span className="truncate">{category.name}</span>

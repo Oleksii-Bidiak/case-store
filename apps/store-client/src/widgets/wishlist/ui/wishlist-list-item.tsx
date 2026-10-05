@@ -8,7 +8,7 @@ import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { ProductCardImage } from "@/shared/ui";
 import { formatMoney, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
-import { isOnSale } from "./wishlist-filters";
+import { isOnSale } from "../model/wishlist-catalog";
 
 /**
  * WishlistListItem — a saved product rendered as a horizontal row (the list view

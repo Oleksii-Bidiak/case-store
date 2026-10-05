@@ -6,7 +6,7 @@ import { randomBytes } from 'crypto';
 import { EmailTokenPurpose } from '@prisma/client';
 import { AuthRepository } from './auth.repository';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
-import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
+import { NotificationOutboxService } from '../notification-outbox/notification-outbox.service';
 import {
   GUEST_ORDER_CLAIM_PORT,
   type GuestOrderClaimPort,
@@ -52,7 +52,7 @@ export class EmailVerificationService {
 
   constructor(
     private readonly authRepository: AuthRepository,
-    private readonly mailOutboxService: MailOutboxService,
+    private readonly mailOutboxService: NotificationOutboxService,
     private readonly config: ConfigService,
     private readonly logger: PinoLogger,
     // TASK-485: used to reach the order side WITHOUT importing OrderModule —

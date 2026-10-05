@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FallbackImg } from "@/shared/ui";
 import { blogGradient, type BlogPostView } from "../model/posts";
 
 /**
@@ -9,12 +10,19 @@ export function BlogRelatedCard({ post }: { post: BlogPostView }) {
   return (
     <Link
       href={`/blog/${post.slug}`}
-      className="flex flex-col overflow-hidden rounded-[18px] border border-border bg-card no-underline shadow-card transition-[transform,box-shadow] duration-150 hover:-translate-y-1 hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex flex-col overflow-hidden rounded-card border border-border bg-card no-underline shadow-card transition-[transform,box-shadow] duration-150 hover:-translate-y-1 hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div
         className="relative h-[172px]"
         style={{ background: blogGradient(post.hue) }}
       >
+        {/* TASK-873 — the post's own cover when it has one; the gradient
+            stays behind it as the no-cover look and the failed-load fallback. */}
+        <FallbackImg
+          src={post.coverImageUrl}
+          alt=""
+          className="absolute inset-0 size-full object-cover"
+        />
         <span className="absolute left-3.5 top-3.5 rounded-full bg-card px-3 py-[5px] text-xs font-bold text-foreground">
           {post.categoryName}
         </span>
@@ -23,7 +31,7 @@ export function BlogRelatedCard({ post }: { post: BlogPostView }) {
         <h3 className="mb-2 font-display text-[16.5px] font-bold leading-[1.3] tracking-[-0.01em] text-foreground">
           {post.title}
         </h3>
-        <span className="mt-auto text-[12.5px] text-muted-foreground">
+        <span className="mt-auto text-xs text-muted-foreground">
           {post.date} · {post.read}
         </span>
       </div>

@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type BaseSyntheticEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type BaseSyntheticEvent,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch, type FieldErrors } from "react-hook-form";
@@ -9,6 +15,7 @@ import { useAuth } from "@/entities/session";
 import { useGetCart } from "@/entities/cart";
 import {
   CheckoutAddressForm,
+  CheckoutConsent,
   CheckoutContactFields,
   CheckoutReviewStep,
   useCheckout,
@@ -21,13 +28,28 @@ import {
   CHECKOUT_DEFAULT_VALUES,
   type CheckoutFormValues,
 } from "@/features/checkout";
-import { Button, CheckoutSkeleton, Textarea } from "@/shared/ui";
-import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
+import {
+  Button,
+  CheckoutSkeleton,
+  MobilePayBar,
+  OrderTrustStrip,
+  Textarea,
+} from "@/shared/ui";
+import { dict, STICKY_ASIDE_TOP, H1_CLASS } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
+import { useCheckoutTotal } from "../model/use-checkout-total";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { CheckoutStepIndicator } from "./checkout-step-indicator";
 import { CheckoutPayment } from "./checkout-payment";
 import { CheckoutGuestSuccess } from "./checkout-guest-success";
+
+/**
+ * The step's primary button: a full-width 44px thumb target with the CTA radius
+ * in the mobile bar, the regular `size="lg"` button from md up (TASK-864).
+ * Resolved through `cn()` inside `Button`, which knows the role radii.
+ */
+const MOBILE_BAR_CTA =
+  "h-11 w-full rounded-cta font-bold md:h-10 md:w-auto md:self-start md:rounded-md md:font-medium";
 
 /**
  * CheckoutView — client orchestrator for the `/checkout` route.
@@ -111,6 +133,14 @@ export function CheckoutView() {
   // `focusFirstError`. Consumed by the step-transition effect below.
   const pendingErrorFocus = useRef<keyof CheckoutFormValues | null>(null);
 
+  // Offer + privacy consent on the confirm step (TASK-882). Plain state, not a
+  // form field: the zod schema also runs on the step-1 «Далі», where an
+  // unticked box must not block. A blocked confirm sets `consentError` — the
+  // message is shown, never a silently disabled button.
+  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [consentError, setConsentError] = useState(false);
+  const consentRef = useRef<HTMLInputElement>(null);
+
   // Move focus on step transitions (not on initial mount): to the review heading
   // when advancing, back to the first field when returning (WCAG 2.4.3) — or to
   // the invalid field when the return was forced by a blocked submit.
@@ -181,8 +211,29 @@ export function CheckoutView() {
   // Built per submit rather than once per render: `focusFirstError` writes a ref,
   // and handing it to `handleSubmit` during render is what the React Compiler's
   // refs rule forbids.
-  const onStepSubmit = (event?: BaseSyntheticEvent) =>
-    handleSubmit(step === 1 ? goToReview : submitOrder, focusFirstError)(event);
+  //
+  // The step-2 submit is gated on the offer consent first (TASK-882): the box is
+  // on screen, so its message is the one the shopper can act on right away.
+  const onStepSubmit = (event?: BaseSyntheticEvent) => {
+    if (step === 2 && !consentAccepted) {
+      event?.preventDefault();
+      setConsentError(true);
+      consentRef.current?.focus();
+      return;
+    }
+    return handleSubmit(
+      step === 1 ? goToReview : submitOrder,
+      focusFirstError,
+    )(event);
+  };
+
+  const onConsentChange = (checked: boolean) => {
+    setConsentAccepted(checked);
+    if (checked) setConsentError(false);
+  };
+
+  // The same «До сплати» the order summary prints (TASK-864), for the bar.
+  const { totalText } = useCheckoutTotal(npCityRef);
 
   const items = data?.data?.items ?? [];
   const cartIsEmpty = !isInitializing && !isCartLoading && items.length === 0;
@@ -227,6 +278,8 @@ export function CheckoutView() {
   }
 
   return (
+    // No bottom padding here: the room for the fixed mobile «До сплати» bar is
+    // reserved by <body> below the footer (globals.css, TASK-864).
     <div>
       {/* Breadcrumbs — the checkout was the one step of the funnel with no way
           back to the cart except the browser button (TASK-407). Same markup as
@@ -248,14 +301,13 @@ export function CheckoutView() {
         <span className="text-foreground">{dict.checkout.breadcrumb}</span>
       </nav>
 
-      <h1 className="mb-6 font-display text-2xl font-bold tracking-tight text-foreground sm:text-[28px]">
+      <h1 className={`mb-6 ${H1_CLASS} text-foreground`}>
         {dict.checkout.title}
       </h1>
 
       <CheckoutStepIndicator current={step} />
 
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
+      <div className="grid gap-6 lg:grid-cols-checkout lg:items-start">
         <form
           onSubmit={onStepSubmit}
           className="flex min-w-0 flex-col gap-4"
@@ -264,13 +316,12 @@ export function CheckoutView() {
           {step === 1 && (
             <>
               {isGuest && (
-                // eslint-disable-next-line tailwindcss/no-arbitrary-value -- matches the grandfathered checkout card radius used by every sibling section below
-                <section className="rounded-[18px] border border-border bg-card p-6 shadow-card">
+                <section className="rounded-card border border-border bg-card p-6 shadow-card">
                   <CheckoutContactFields register={register} errors={errors} />
                 </section>
               )}
 
-              <section className="rounded-[18px] border border-border bg-card p-6 shadow-card">
+              <section className="rounded-card border border-border bg-card p-6 shadow-card">
                 <CheckoutAddressForm
                   legend={dict.checkout.shippingAddress}
                   register={register}
@@ -316,22 +367,39 @@ export function CheckoutView() {
 
               <CheckoutPayment control={control} options={paymentOptions} />
 
-              <Button
-                type="submit"
-                size="lg"
-                disabled={isSubmitting}
-                className="self-start"
-              >
-                {dict.checkout.nextStep}
-              </Button>
+              {/* Below md the step's primary rides in the fixed «До сплати»
+                  bar (TASK-864); from md up the bar dissolves and the button
+                  sits here, under the form, as before. */}
+              <MobilePayBar label={dict.checkout.totalLine} amount={totalText}>
+                <Button
+                  type="submit"
+                  size="lg"
+                  disabled={isSubmitting}
+                  className={MOBILE_BAR_CTA}
+                >
+                  {dict.checkout.nextStep}
+                </Button>
+              </MobilePayBar>
             </>
           )}
 
           {step === 2 && (
-            <>
-              <section className="rounded-[18px] border border-border bg-card p-6 shadow-card">
-                <CheckoutReviewStep ref={reviewHeadingRef} control={control} />
-              </section>
+            // One card holds the read-back, the consent and the step's actions
+            // (Checkout.dc.html «ЦІЛЬ · TASK-882»), so the box sits right above
+            // the button it unlocks.
+            <section className="flex flex-col gap-4 rounded-card border border-border bg-card p-6 shadow-card">
+              <CheckoutReviewStep
+                ref={reviewHeadingRef}
+                control={control}
+                showEmail={isGuest}
+              />
+
+              <CheckoutConsent
+                ref={consentRef}
+                checked={consentAccepted}
+                onCheckedChange={onConsentChange}
+                showError={consentError}
+              />
 
               {isError && errorMessage && (
                 <p role="alert" className="text-sm text-destructive">
@@ -356,20 +424,34 @@ export function CheckoutView() {
                 >
                   {dict.checkout.prevStep}
                 </Button>
-                <Button type="submit" size="lg" disabled={isPending}>
-                  {isPending
-                    ? dict.checkout.placingOrder
-                    : dict.checkout.placeOrder}
-                </Button>
+                {/* «Назад» stays in the flow; the confirm rides in the bar
+                    below md (TASK-864) and rejoins this row from md up. */}
+                <MobilePayBar
+                  label={dict.checkout.totalLine}
+                  amount={totalText}
+                >
+                  <Button
+                    type="submit"
+                    size="lg"
+                    disabled={isPending}
+                    className={MOBILE_BAR_CTA}
+                  >
+                    {isPending
+                      ? dict.checkout.placingOrder
+                      : dict.checkout.placeOrder}
+                  </Button>
+                </MobilePayBar>
               </div>
-            </>
+            </section>
           )}
         </form>
 
         {/* STICKY_ASIDE_TOP clears the z-50 site header so the stuck summary
             never sits under it (TASK-206 / TASK-234). */}
-        <aside className={`lg:sticky ${STICKY_ASIDE_TOP}`}>
+        <aside className={`flex flex-col gap-4 lg:sticky ${STICKY_ASIDE_TOP}`}>
           <CheckoutOrderSummary npCityRef={npCityRef} />
+          {/* Trust strip under the summary at every width (TASK-864). */}
+          <OrderTrustStrip />
         </aside>
       </div>
     </div>

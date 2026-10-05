@@ -6,7 +6,7 @@ import { useProductControllerFindAll } from "@/entities/product";
 import { ProductCard, Skeleton } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
-import { dict } from "@/shared/config";
+import { dict, H2_CLASS } from "@/shared/config";
 import {
   buildProductRailParams,
   type ProductRailFilter,
@@ -24,7 +24,7 @@ interface ProductRailProps {
 }
 
 const ARROW_CLASS =
-  "grid size-10 shrink-0 place-items-center rounded-[11px] border-[1.5px] border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "grid size-10 shrink-0 place-items-center rounded-menu border-[1.5px] border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * ProductRail — a horizontal snap-scroll rail of up to eight other products,
@@ -56,14 +56,14 @@ export function ProductRail({
 
   if (isPending) {
     return (
-      <section aria-labelledby={headingId} className="flex flex-col gap-4">
-        <h2
-          id={headingId}
-          className="font-display text-[22px] font-bold tracking-tight text-foreground"
-        >
+      <section
+        aria-labelledby={headingId}
+        className="flex flex-col gap-4 md:gap-6"
+      >
+        <h2 id={headingId} className={`${H2_CLASS} text-foreground`}>
           {title}
         </h2>
-        <div className="flex gap-[18px] overflow-hidden">
+        <div className="flex gap-4 md:gap-6 overflow-hidden">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton
               key={i}
@@ -84,12 +84,12 @@ export function ProductRail({
   }
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-[18px]">
+    <section
+      aria-labelledby={headingId}
+      className="flex flex-col gap-4 md:gap-6"
+    >
       <div className="flex items-center justify-between gap-3">
-        <h2
-          id={headingId}
-          className="font-display text-[22px] font-bold tracking-tight text-foreground"
-        >
+        <h2 id={headingId} className={`${H2_CLASS} text-foreground`}>
           {title}
         </h2>
         <div className="hidden gap-2.5 sm:flex">
@@ -114,7 +114,7 @@ export function ProductRail({
 
       <div
         ref={scrollRef}
-        className="flex snap-x snap-mandatory gap-[18px] overflow-x-auto pb-3.5 [scrollbar-width:thin]"
+        className="flex snap-x snap-mandatory gap-4 md:gap-6 overflow-x-auto pb-3.5 [scrollbar-width:thin]"
       >
         {products.map((product) => (
           <div key={product.id} className="w-[244px] shrink-0 snap-start">

@@ -86,7 +86,10 @@ function installProducts(
 const baseProps = {
   buildPageHref: (page: number) => `/products?page=${page}`,
   view: "grid" as const,
-  onClearFilters: jest.fn(),
+  empty: {
+    heading: "Товари не знайдено",
+    action: { label: "Скинути всі фільтри", onClick: jest.fn() },
+  },
 };
 
 const CAT_1_PAGES: Record<number, Product[]> = {
@@ -257,6 +260,50 @@ describe("ProductList load-more append (TASK-216)", () => {
     // Byte-identical, not merely "both responsive": any drift here is a visible
     // reflow when the skeleton is replaced by cards.
     expect(skeletonGrid?.className).toBe(realGrid?.className);
+  });
+
+  // TASK-869 — the results column is the «Знайдено товарів: N» line and the
+  // cards, `gap-6` apart. The skeleton used to draw the cards alone, so every
+  // catalogue placeholder sat 44px above where the real cards land.
+  it("reserves the result-count line above the cards, in the same column (TASK-869)", async () => {
+    installProducts({ "": CAT_1_PAGES }, { limit: 2 });
+
+    renderWithProviders(
+      <ProductList {...baseProps} params={{ page: 1, limit: 2 }} />,
+    );
+    const count = await screen.findByText(/Знайдено товарів/);
+    const realColumn = count.parentElement;
+
+    const { getByTestId } = renderWithProviders(<ProductListSkeleton />);
+    const placeholder = getByTestId("result-count-skeleton");
+    const skeletonColumn = placeholder.parentElement;
+
+    expect(skeletonColumn?.className).toBe(realColumn?.className);
+    // The count comes first in both, then the cards.
+    expect(skeletonColumn?.firstElementChild).toBe(placeholder);
+    expect(realColumn?.firstElementChild).toBe(count);
+    expect(skeletonColumn?.querySelector(".grid")).not.toBeNull();
+  });
+
+  // TASK-869 fix round — the skeleton cell reserves the title's second line,
+  // the rating row and the colour-dots row; the grid's cards must hold the
+  // same rows open for a single-colour, unrated product, or a page without
+  // variants (the first /products page) jumps up 22px per row on swap.
+  it("renders every grid card with its optional rows reserved (TASK-869)", async () => {
+    installProducts({ "": CAT_1_PAGES }, { limit: 2 });
+
+    const { container } = renderWithProviders(
+      <ProductList {...baseProps} params={{ page: 1, limit: 2 }} />,
+    );
+    await screen.findByText("Alpha Case");
+
+    const cards = container.querySelectorAll("article");
+    expect(cards).toHaveLength(2);
+    for (const card of Array.from(cards)) {
+      expect(card.querySelector('[data-row-slot="rating"]')).not.toBeNull();
+      expect(card.querySelector('[data-row-slot="colors"]')).not.toBeNull();
+      expect(card.querySelector("h3")).toHaveClass("min-h-10");
+    }
   });
 
   it("resets the accumulated pages when the base ?page= changes (back/forward, pagination links)", async () => {

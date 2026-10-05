@@ -16,7 +16,7 @@
 import type { MailTemplate } from './order-confirmation.template';
 
 /**
- * JSON-safe payload for an account-locked notice, as stored in a `MailOutbox`
+ * JSON-safe payload for an account-locked notice, as stored in a `NotificationOutbox`
  * row. Deliberately carries nothing about *why* the account was locked — the
  * mail says "contact support", it is not an audit trail.
  */

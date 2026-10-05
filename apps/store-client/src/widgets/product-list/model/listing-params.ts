@@ -27,6 +27,12 @@ export interface ListingLocks {
   categorySlug?: string;
   /** `/catalog/[category]/[device]` — the device-model slug. */
   deviceSlug?: string;
+  /**
+   * `/promo` «Товари зі знижкою» (TASK-1301): the listing is the on-sale slice
+   * of the catalogue whatever the query says. Not a path segment, but the same
+   * kind of axis — the route fixes it, so the query can never widen it.
+   */
+  onSale?: boolean;
 }
 
 /** Page size of the catalogue grid (the numbered pagination counts in it). */
@@ -70,7 +76,7 @@ export function buildCatalogListingParams(
     maxPrice: maxPrice ? Number(maxPrice) : undefined,
     specs: present(read("specs")),
     inStock: read("inStock") === "true" ? true : undefined,
-    onSale: read("onSale") === "true" ? true : undefined,
+    onSale: locks.onSale || read("onSale") === "true" ? true : undefined,
     page: page ? Number(page) : 1,
     limit: CATALOG_PAGE_SIZE,
     isActive: true,

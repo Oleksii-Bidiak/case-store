@@ -1,15 +1,8 @@
 "use client";
 
-import { ArrowDownWideNarrow } from "lucide-react";
 import type { SearchParams } from "@/entities/search";
 import { dict } from "@/shared/config";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/ui";
+import { SortSelect, type SortOption } from "@/features/product-filters";
 
 /** The orders `GET /api/search` accepts, straight off the generated contract. */
 export type SearchSortValue = NonNullable<SearchParams["sort"]>;
@@ -17,7 +10,7 @@ export type SearchSortValue = NonNullable<SearchParams["sort"]>;
 /** The default: ranked engine relevance, which no column can express. */
 const DEFAULT_SEARCH_SORT: SearchSortValue = "relevance";
 
-const SORT_OPTIONS: { value: SearchSortValue; label: string }[] = [
+const SORT_OPTIONS: readonly (SortOption & { value: SearchSortValue })[] = [
   { value: "relevance", label: dict.catalog.searchPage.sortRelevance },
   { value: "newest", label: dict.filters.sort.newest },
   { value: "price_asc", label: dict.filters.sort.priceAsc },
@@ -36,6 +29,13 @@ export function parseSearchSort(
   return match && match.value !== DEFAULT_SEARCH_SORT ? match.value : undefined;
 }
 
+/** The picked order → the one `sort` param, with relevance left off the URL. */
+function toSearchSortUpdates(
+  value: string,
+): Record<string, string | undefined> {
+  return { sort: value === DEFAULT_SEARCH_SORT ? undefined : value };
+}
+
 interface SearchSortSelectProps {
   /** Current order (omit for relevance). */
   value: SearchSortValue | undefined;
@@ -46,36 +46,20 @@ interface SearchSortSelectProps {
 /**
  * Sort control for `/search` (TASK-417).
  *
- * Deliberately NOT the catalogue's `SortSelect`: that one writes a
- * `sortBy`/`sortOrder` column pair, and the search endpoint's first-class order
- * is ranked relevance — not a column, so it cannot be spelled that way. Same
- * pill styling, so the two toolbars still read as one design.
+ * The catalogue's own `SortSelect` since TASK-876 — same pill, same 320px
+ * truncation, so the two toolbars are one design rather than two look-alikes.
+ * Only the vocabulary differs: the search endpoint's first-class order is
+ * ranked relevance, not a column, so it writes one `sort` param instead of the
+ * catalogue's `sortBy`/`sortOrder` pair.
  */
 export function SearchSortSelect({ value, onChange }: SearchSortSelectProps) {
   return (
-    <Select
-      value={value ?? DEFAULT_SEARCH_SORT}
-      onValueChange={(next) =>
-        onChange({ sort: next === DEFAULT_SEARCH_SORT ? undefined : next })
-      }
-    >
-      <SelectTrigger
-        aria-label={dict.catalog.searchPage.sortAria}
-        className="h-11 gap-2.5 rounded-xl border-2 border-border bg-card px-4 font-semibold text-foreground shadow-none *:data-[slot=select-value]:text-primary hover:border-primary"
-      >
-        <ArrowDownWideNarrow className="size-5" />
-        <span className="hidden font-medium text-muted-foreground sm:inline">
-          {dict.filters.sortPrefix}
-        </span>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent align="end" className="rounded-xl">
-        {SORT_OPTIONS.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <SortSelect
+      currentSort={value ?? DEFAULT_SEARCH_SORT}
+      options={SORT_OPTIONS}
+      ariaLabel={dict.catalog.searchPage.sortAria}
+      toUpdates={toSearchSortUpdates}
+      onChange={onChange}
+    />
   );
 }

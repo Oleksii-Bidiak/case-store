@@ -8,6 +8,8 @@ import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus, ReturnStatus } from '@prisma/client';
 import { ReturnRepository } from './return.repository';
 import { OrderRepository } from '../order.repository';
+// Direct path, not the barrel: the barrel pulls in NotificationModule itself.
+import { ShopNotifier } from '../../notification/shop-notifier.service';
 import { ReturnEntity } from './entities';
 import { RESTOCK_ON_STATUS, canTransitionReturn } from './return-state-machine';
 import type { CreateReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
@@ -58,6 +60,7 @@ export class ReturnService {
     private readonly returnRepository: ReturnRepository,
     private readonly orderRepository: OrderRepository,
     private readonly logger: PinoLogger,
+    private readonly shopNotifier: ShopNotifier,
   ) {
     this.logger.setContext(ReturnService.name);
   }
@@ -90,6 +93,20 @@ export class ReturnService {
         })),
       },
       assertClaimable,
+      // TASK-677: the shop's Telegram ping, in the return's own transaction.
+      // Only this door passes it — a return an operator opens in the admin
+      // (`adminCreateReturn`) has staff as its trigger and pings no one.
+      async (tx, inserted) => {
+        await this.shopNotifier.enqueueReturnRequested(
+          {
+            returnId: inserted.id,
+            orderId: inserted.orderId,
+            itemsCount: inserted.items.reduce((sum, item) => sum + item.quantity, 0),
+            reason: inserted.reason,
+          },
+          tx,
+        );
+      },
     );
 
     this.logger.info(

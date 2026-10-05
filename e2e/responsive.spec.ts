@@ -56,7 +56,7 @@ const CONTENT_RENDER_TIMEOUT_MS = 15_000;
  * cart redirects it straight back to `/cart`, so listing it here would have
  * measured `/cart` twice under a name that promised checkout.
  */
-const STATIC_ROUTES = ["/", "/products", "/cart"] as const;
+const STATIC_ROUTES = ["/", "/products", "/promo", "/cart"] as const;
 
 interface OverflowReport {
   scrollWidth: number;
@@ -122,9 +122,15 @@ async function measureOverflow(page: Page): Promise<OverflowReport> {
  * Each entry is therefore a marker of the route's OWN content. `/products`
  * cannot use the heading, which the server renders above the grid; it waits for
  * a card.
+ *
+ * `/promo` (TASK-1301) renders the same listing under its hero, and its H1 is
+ * the hero's. It waits for the listing toolbar's sort control — the element
+ * that overflowed at 320px — rather than a card: the minimal e2e seed need not
+ * hold a discounted product, and an empty deals list still has the toolbar.
  */
 const READY_SELECTOR: Record<string, string> = {
   "/products": '#main-content a[href^="/products/"]',
+  "/promo": '#main-content [data-slot="select-trigger"]',
 };
 
 /** Default marker: the route's own H1, which every storefront page renders. */

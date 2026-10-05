@@ -100,7 +100,7 @@ export class MailService {
 
   /**
    * Render and send an order-confirmation email from the JSON-safe payload
-   * stored in a `MailOutbox` row (TASK-103). Resolves without throwing when mail
+   * stored in a `NotificationOutbox` row (TASK-103). Resolves without throwing when mail
    * is disabled (logged no-op). When enabled, builds the message and dispatches
    * it through the SMTP transport — throwing on transport failure so the outbox
    * worker can apply its retry/backoff policy.
@@ -137,7 +137,7 @@ export class MailService {
 
   /**
    * Render and send a password-reset email from the JSON-safe payload stored in
-   * a `MailOutbox` row (TASK-169). Resolves without throwing when mail is
+   * a `NotificationOutbox` row (TASK-169). Resolves without throwing when mail is
    * disabled (logged no-op) — same contract as {@link sendOrderConfirmationPayload}.
    * When enabled, builds the message and dispatches it through the SMTP
    * transport, throwing on transport failure so the outbox worker can apply its
@@ -162,7 +162,7 @@ export class MailService {
 
   /**
    * Render and send an account-locked notice from the JSON-safe payload stored
-   * in a `MailOutbox` row (TASK-287). Same contract as the other payload senders:
+   * in a `NotificationOutbox` row (TASK-287). Same contract as the other payload senders:
    * a logged no-op when mail is disabled, throwing on transport failure so the
    * outbox worker applies its retry/backoff policy.
    */
@@ -185,7 +185,7 @@ export class MailService {
 
   /**
    * Render and send an email-verification link from the JSON-safe payload stored
-   * in a `MailOutbox` row (TASK-342). Same contract as the other payload
+   * in a `NotificationOutbox` row (TASK-342). Same contract as the other payload
    * senders: a logged no-op when mail is disabled, throwing on transport failure
    * so the outbox worker applies its retry/backoff policy.
    */
@@ -250,7 +250,7 @@ export class MailService {
 
   /**
    * Render and send the "your order has shipped" notice from the JSON-safe payload
-   * stored in a `MailOutbox` row (TASK-335). Same contract as the other payload
+   * stored in a `NotificationOutbox` row (TASK-335). Same contract as the other payload
    * senders: a logged no-op when mail is disabled, throwing on transport failure
    * so the outbox worker applies its retry/backoff policy.
    */
@@ -295,7 +295,7 @@ export class MailService {
 
   /**
    * Flatten a live {@link OrderEntity} send request into the JSON-safe
-   * {@link OrderConfirmationMailPayload} persisted in a `MailOutbox` row. Pure
+   * {@link OrderConfirmationMailPayload} persisted in a `NotificationOutbox` row. Pure
    * mapping (no DI) so both the direct send path and the outbox enqueue path
    * share one serialization, and `Date`/`Decimal` values are normalized to
    * strings before they hit the JSON column.

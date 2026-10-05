@@ -3,7 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import {
-  MailOutboxStatus,
+  NotificationOutboxStatus,
   OrderStatus,
   PaymentStatus,
   ReturnStatus,
@@ -621,7 +621,7 @@ describe('DashboardRepository (integration)', () => {
       await prisma.orderItem.deleteMany({});
       await prisma.order.deleteMany({});
       await prisma.review.deleteMany({});
-      await prisma.mailOutbox.deleteMany({});
+      await prisma.notificationOutbox.deleteMany({});
 
       // Orders: 1 PENDING (new + in-transit), 1 CONFIRMED-unpaid (in-transit),
       // 1 CANCELLED-unpaid (excluded from both counters).
@@ -681,27 +681,27 @@ describe('DashboardRepository (integration)', () => {
       });
 
       // Mail outbox: 1 FAILED (counted), 1 SENT (excluded).
-      await prisma.mailOutbox.create({
+      await prisma.notificationOutbox.create({
         data: {
           type: 'ORDER_CONFIRMATION',
-          recipient: 'buyer@test.local',
+          recipientAddress: 'buyer@test.local',
           payload: {},
-          status: MailOutboxStatus.FAILED,
+          status: NotificationOutboxStatus.FAILED,
         },
       });
-      await prisma.mailOutbox.create({
+      await prisma.notificationOutbox.create({
         data: {
           type: 'ORDER_CONFIRMATION',
-          recipient: 'buyer@test.local',
+          recipientAddress: 'buyer@test.local',
           payload: {},
-          status: MailOutboxStatus.SENT,
+          status: NotificationOutboxStatus.SENT,
         },
       });
     });
 
     afterAll(async () => {
       await prisma.review.deleteMany({});
-      await prisma.mailOutbox.deleteMany({});
+      await prisma.notificationOutbox.deleteMany({});
     });
 
     it('counts PENDING orders, unmoderated reviews, in-transit orders, and failed mail exactly', async () => {

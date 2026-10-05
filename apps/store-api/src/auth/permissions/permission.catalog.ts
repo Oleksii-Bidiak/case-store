@@ -243,6 +243,17 @@ export const PERMISSIONS = [
   { key: 'settings:contacts', zone: PERMISSION_ZONES.SETTINGS, label: 'Контакти' },
   { key: 'settings:delivery', zone: PERMISSION_ZONES.SETTINGS, label: 'Доставка' },
   { key: 'settings:search', zone: PERMISSION_ZONES.SETTINGS, label: 'Переіндексація пошуку' },
+  // TASK-675 (owner's decision 2026-10-01): the «Сповіщення» screen — the
+  // Telegram channel state, connecting and disconnecting the shop's chats and the
+  // test message (`/admin/notifications/*`). Plan 187 asked for `settings:write`,
+  // which never existed: settings rights are per screen, and borrowing one of the
+  // four above would make an unrelated tick open this one.
+  //
+  // NO BACKFILL. Like `categories:delete`, it adds reach nobody had yesterday:
+  // whoever holds it chooses which chats receive every order, message and return
+  // the shop gets. On deploy only the owner and admins hold it — by level — and a
+  // manager gets it when the owner ticks it.
+  { key: 'settings:notifications', zone: PERMISSION_ZONES.SETTINGS, label: 'Сповіщення' },
 
   // ── Аналітика ─────────────────────────────────────────────────────────────
   { key: 'analytics:read', zone: PERMISSION_ZONES.ANALYTICS, label: 'Дашборд і показники' },
