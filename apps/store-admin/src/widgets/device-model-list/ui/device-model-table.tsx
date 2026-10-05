@@ -154,12 +154,14 @@ function DeviceModelRegistry() {
   const total = data?.meta?.total ?? 0;
   const totalPages = data?.meta?.totalPages ?? 1;
 
+  // `undefined` = not known: still loading, or the read failed — never a 0
+  // that would tell the hide dialog there is nothing to warn about.
   const pagesOf = useMemo(
     () => (model: DeviceModelEntity) =>
-      compat.isLoading
+      compat.isLoading || compat.isError
         ? undefined
         : (compat.byModel.get(model.id)?.length ?? 0),
-    [compat.byModel, compat.isLoading],
+    [compat.byModel, compat.isLoading, compat.isError],
   );
   const columns = useMemo(
     () => buildDeviceModelColumns({ pagesOf }),
@@ -195,9 +197,11 @@ function DeviceModelRegistry() {
       setVisibility(model, true);
       return;
     }
+    const pages = pagesOf(model);
     const confirmed = await confirm({
       title: d.hideModelTitle(model.name),
-      description: d.hideModelBody(pagesOf(model) ?? 0),
+      description:
+        pages === undefined ? d.hideModelBodyUnknown : d.hideModelBody(pages),
       confirmLabel: d.hideAction,
     });
     if (confirmed) setVisibility(model, false);
@@ -243,19 +247,22 @@ function DeviceModelRegistry() {
     { id: HIDDEN_VIEW, label: d.viewHidden, count: counts[HIDDEN_VIEW] },
   ];
 
+  // The chip shows whenever the filter is on — a brand that is still loading
+  // or no longer exists (an old bookmark) must still be removable, or the list
+  // is narrowed with nothing on screen saying why.
   const brandName =
-    brands.find((brand) => brand.id === brandParam)?.name ?? null;
-  const chips: FilterChip[] =
-    brandParam && brandName
-      ? [
-          {
-            key: "brand",
-            label: d.chipBrand(brandName),
-            onRemove: () =>
-              updateParams({ deviceBrandId: undefined, page: undefined }),
-          },
-        ]
-      : [];
+    brands.find((brand) => brand.id === brandParam)?.name ??
+    (brandsQuery.isLoading ? "…" : d.chipBrandUnknown);
+  const chips: FilterChip[] = brandParam
+    ? [
+        {
+          key: "brand",
+          label: d.chipBrand(brandName),
+          onRemove: () =>
+            updateParams({ deviceBrandId: undefined, page: undefined }),
+        },
+      ]
+    : [];
 
   return (
     <>

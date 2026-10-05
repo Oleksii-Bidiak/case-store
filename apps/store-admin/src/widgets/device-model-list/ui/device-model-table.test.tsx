@@ -249,6 +249,21 @@ describe("DeviceModelTable — views and filters (ПР1–ПР3)", () => {
     expect(screen.queryByText(/Фільтр за брендом/)).not.toBeInTheDocument();
   });
 
+  it("keeps a removable chip for a brand id that no longer exists", async () => {
+    mockSearchParams = new URLSearchParams("deviceBrandId=gone-brand");
+    stubModels([]);
+    renderWithProviders(<DeviceModelTable />);
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.common.registry.removeChipAria(
+          d.chipBrand(d.chipBrandUnknown),
+        ),
+      }),
+    );
+    expect(mockReplace).toHaveBeenCalledWith("/devices/models");
+  });
+
   it("picks the brand in the filter sheet through a searchable combobox", async () => {
     stubModels([makeModelRow("m1", "iPhone 16 Pro")]);
     renderWithProviders(<DeviceModelTable />);
@@ -354,6 +369,25 @@ describe("DeviceModelTable — rows and «⋯» (ПР1, ПР2, ПР10)", () => {
       within(dialog).getByRole("button", { name: d.hideAction }),
     );
     await waitFor(() => expect(calls).toEqual(["deactivate"]));
+  });
+
+  it("does not promise «no pages» when the page count failed to load", async () => {
+    stubModels([makeModelRow("m1", "iPhone 16 Pro")]);
+    server.use(
+      http.get("*/api/catalog/compat-pages", () =>
+        HttpResponse.json({ message: "boom" }, { status: 500 }),
+      ),
+    );
+    renderWithProviders(<DeviceModelTable />, { auth: WRITER });
+    await screen.findByText("iPhone 16 Pro");
+
+    const menu = await openRowMenu("iPhone 16 Pro");
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: d.hideModelItem }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent(d.hideModelBodyUnknown);
+    expect(dialog).not.toHaveTextContent(d.hideModelBody(0));
   });
 
   it("shows a hidden model again straight away, and links no site catalog for it", async () => {

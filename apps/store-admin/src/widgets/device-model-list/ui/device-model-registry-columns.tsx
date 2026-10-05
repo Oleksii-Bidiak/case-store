@@ -161,7 +161,10 @@ export function renderDeviceModelCard(
             <span className="text-xs text-muted-foreground">{facts}</span>
           ) : null}
           <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>{pages ? d.pagesCount(pages) : d.noPages}</span>
+            {/* Unknown (still loading, or the read failed) is not «немає». */}
+            {pages === undefined ? null : (
+              <span>{pages ? d.pagesCount(pages) : d.noPages}</span>
+            )}
             <ModelStatusBadge isActive={model.isActive} />
           </span>
         </div>
