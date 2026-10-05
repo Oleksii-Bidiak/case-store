@@ -198,6 +198,9 @@ counters), `height` (artboard height, default 900/844). Headings use `var(--font
 exact lucide paths (lucide-react 1.27) rendered as CSS masks — regenerate from
 `node_modules/lucide-react/dist/esm/icons/*.mjs` if the nav gains an item.
 Update this file when `admin-nav-list.tsx`, `admin-header.tsx` or the drawer changes.
+`dn2` (Д-н2, TASK-855) adds the routes of plans 184–188 that the code does not have yet — «Звіти»
+`/analytics` after «Панель», «Головна» `/home` before «Банери», «Доставка» `/settings/delivery` and
+«Сповіщення» `/settings/notifications` after «Пошук». Off by default, so every older file draws the nav as before.
 
 ### Screen artboards (TASK-848 onward)
 
@@ -213,7 +216,12 @@ for «База» and «CRM» are separate files next to them — `OrdersProposal
 `PagesProposal`, `BlogProposal`, `RichTextEditorProposal`, `BlogCategoriesProposal`, `BannersProposal`,
 `CarouselsProposal`, `FaqProposal`, `ContentMapProposal`, `MediaProposal`, `BrandsProposal`, `DevicesProposal`,
 `AddonServicesProposal`, `ProductGroupsProposal`, `DiscountsProposal`, `CatalogImportProposal`,
-`ProductPreviewProposal`.dc.html — and the pre-session state is kept as `<Name>-before.dc.html`. Proposals pass
+`ProductPreviewProposal`.dc.html — and the pre-session state is kept as `<Name>-before.dc.html`.
+Д-н2 (2026-10-05, TASK-855) drew the screens plans 184–188 add, as new files with `dn2="true"` on AdminShell:
+`SettingsDelivery`, `CategoryDelete`, `Home`, `ReadOnlyTemplate`, `SitePreview`, `SettingsNotifications`,
+`Analytics`.dc.html, plus Т8–Т12 («Видалені» / «Відновити») appended to `ProductsProposal`. They were assembled
+locally from parts (kit = SettingsProposal's `<style>`, pruned to the classes each file uses — that keeps every
+file under the ~70 KB write cap) and checked served ↔ local byte for byte after every write. Proposals pass
 `proposed="true"` to AdminShell (Returns counter, help button, «Клієнти» / «Співробітники» labels); the
 as-is files do not, so they keep drawing the code. Keep proposal files under ~70 KB each: a larger
 `write_files` payload was cut off before it ran — split a section into its own file instead. Each file is a canvas like AdminShell's showcase:

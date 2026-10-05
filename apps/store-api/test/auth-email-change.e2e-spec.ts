@@ -11,7 +11,7 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
-import { MailOutboxRepository } from '../src/mail-outbox/mail-outbox.repository';
+import { NotificationOutboxRepository } from '../src/notification-outbox/notification-outbox.repository';
 import { AuditRepository } from '../src/audit/audit.repository';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 
@@ -23,7 +23,7 @@ import { createPermissionRepositoryMock } from './permission-repository.mock';
  * click, the OLD session no longer refreshes — and a stateless mock can only
  * assert that some method was called, not that the session it minted a minute
  * ago is dead now. The fake keeps users, links and refresh tokens in maps, and
- * the raw link tokens are read out of the outbox rows the real MailOutboxService
+ * the raw link tokens are read out of the outbox rows the real NotificationOutboxService
  * writes, exactly as they would reach an inbox.
  */
 
@@ -56,7 +56,8 @@ describe('Email change (e2e, TASK-396)', () => {
   const users = new Map<string, FakeUser>();
   const links = new Map<string, Row>(); // raw token → row
   const refresh = new Map<string, Row>(); // raw token → row
-  const outbox: Array<{ type: string; recipient: string; payload: Record<string, string> }> = [];
+  const outbox: Array<{ type: string; recipientAddress: string; payload: Record<string, string> }> =
+    [];
   const auditRows: Array<Record<string, unknown>> = [];
   let seq = 0;
   const nextId = (p: string) => `${p}-${++seq}`;
@@ -191,7 +192,7 @@ describe('Email change (e2e, TASK-396)', () => {
   };
 
   const mailOutboxRepositoryMock = {
-    enqueue: async (params: { type: string; recipient: string; payload: unknown }) => {
+    enqueue: async (params: { type: string; recipientAddress: string; payload: unknown }) => {
       outbox.push(params as (typeof outbox)[number]);
       return { id: nextId('mail') };
     },
@@ -265,7 +266,7 @@ describe('Email change (e2e, TASK-396)', () => {
       .useValue(authRepositoryFake)
       .overrideProvider(UserRepository)
       .useValue(userRepositoryMock)
-      .overrideProvider(MailOutboxRepository)
+      .overrideProvider(NotificationOutboxRepository)
       .useValue(mailOutboxRepositoryMock)
       .overrideProvider(AuditRepository)
       .useValue(auditRepositoryMock)
@@ -320,7 +321,7 @@ describe('Email change (e2e, TASK-396)', () => {
       .expect(200);
 
     // Two letters, two inboxes.
-    expect(outbox.map((r) => [r.type, r.recipient])).toEqual([
+    expect(outbox.map((r) => [r.type, r.recipientAddress])).toEqual([
       ['email-change-confirm', 'new@example.com'],
       ['email-change-notice', 'old@example.com'],
     ]);
@@ -523,7 +524,7 @@ describe('Email change (e2e, TASK-396)', () => {
       expect(res.body.data.email).toBe('found@example.com');
       expect(res.body.data.emailVerifiedAt).toBeNull();
 
-      expect(outbox.map((r) => [r.type, r.recipient])).toEqual([
+      expect(outbox.map((r) => [r.type, r.recipientAddress])).toEqual([
         ['email-verification', 'found@example.com'],
       ]);
       await refreshWith(session.cookie).expect(401);

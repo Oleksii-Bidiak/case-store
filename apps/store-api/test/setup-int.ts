@@ -13,3 +13,10 @@
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL =
   process.env.DATABASE_URL_TEST ?? 'postgresql://postgres:postgres@localhost:5432/store_test';
+
+// No real Telegram from integration tests (TASK-675), same guard as setup-e2e.ts:
+// a spec that boots the notification providers would otherwise run the start-up
+// `getMe` — and the updates poller — against api.telegram.org with whatever
+// token a developer left in the local env file. Empty = "unconfigured"; it is
+// still "set", so dotenv will not fill it in. Never put a real token here.
+process.env.TELEGRAM_BOT_TOKEN = '';

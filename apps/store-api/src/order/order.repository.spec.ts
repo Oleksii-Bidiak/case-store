@@ -1542,6 +1542,127 @@ describe('OrderRepository', () => {
       );
     });
 
+    // ── TASK-678: the in-transaction hook that announces a paid online order ──
+    describe('onPaid (TASK-678)', () => {
+      const cancelledSuccessPlan = {
+        paymentId: 'payment-1',
+        orderId: 'order-1',
+        expected: { status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PENDING },
+        attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+        paymentStatusChange: {
+          from: PaymentStatus.PENDING,
+          to: PaymentStatus.PAID,
+          note: OrderHistoryNote.PAID_AFTER_CANCEL,
+        },
+        paidAt: successPlan.paidAt,
+        clearReservation: true,
+      };
+
+      it('runs inside the transaction, with its tx and the re-read order, after the writes', async () => {
+        const tx = seedTx();
+        const reread = { id: 'order-1', items: [], paymentStatus: PaymentStatus.PAID };
+        tx.order.findUniqueOrThrow.mockResolvedValue(reread);
+        const onPaid = jest.fn().mockResolvedValue(undefined);
+
+        const result = await repository.applyPaymentOutcome(successPlan, onPaid);
+
+        expect(onPaid).toHaveBeenCalledTimes(1);
+        expect(onPaid).toHaveBeenCalledWith(tx, reread);
+        // After the conditional write and the history rows, i.e. once the
+        // payment is known to have landed.
+        const hookOrder = onPaid.mock.invocationCallOrder[0];
+        expect(tx.order.updateMany.mock.invocationCallOrder[0]).toBeLessThan(hookOrder);
+        expect(tx.order.findUniqueOrThrow.mock.invocationCallOrder[0]).toBeLessThan(hookOrder);
+        for (const call of tx.orderStatusHistory.create.mock.invocationCallOrder) {
+          expect(call).toBeLessThan(hookOrder);
+        }
+        expect(result).toBe(reread);
+      });
+
+      it('is not called for a success on a CANCELLED order (PAID_AFTER_CANCEL)', async () => {
+        seedTx();
+        const onPaid = jest.fn();
+
+        await repository.applyPaymentOutcome(cancelledSuccessPlan, onPaid);
+
+        expect(onPaid).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        [
+          'a FAILED attempt',
+          {
+            expected: { status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING },
+            attemptStatus: PaymentAttemptStatus.FAILED,
+            paymentStatusChange: { from: PaymentStatus.PENDING, to: PaymentStatus.FAILED },
+          },
+        ],
+        [
+          'a REFUNDED event',
+          {
+            expected: { status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID },
+            attemptStatus: PaymentAttemptStatus.REFUNDED,
+            paymentStatusChange: { from: PaymentStatus.PAID, to: PaymentStatus.REFUNDED },
+          },
+        ],
+        [
+          'a refused move',
+          {
+            expected: { status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.REFUNDED },
+            attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+            refusedPaymentStatusChange: {
+              current: PaymentStatus.REFUNDED,
+              rejected: PaymentStatus.PAID,
+              reason: 'table' as const,
+            },
+          },
+        ],
+        [
+          'an expired attempt that moves nothing on the order',
+          {
+            expected: { status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING },
+            attemptStatus: PaymentAttemptStatus.EXPIRED,
+          },
+        ],
+      ])('is not called for %s', async (_label, partial) => {
+        seedTx();
+        const onPaid = jest.fn();
+
+        await repository.applyPaymentOutcome(
+          { paymentId: 'payment-1', orderId: 'order-1', ...partial },
+          onPaid,
+        );
+
+        expect(onPaid).not.toHaveBeenCalled();
+      });
+
+      it('is not called when the order moved underneath the plan (the write throws first)', async () => {
+        const tx = seedTx();
+        tx.order.updateMany.mockResolvedValue({ count: 0 });
+        const onPaid = jest.fn();
+
+        await expect(repository.applyPaymentOutcome(successPlan, onPaid)).rejects.toThrow(
+          ConflictException,
+        );
+        expect(onPaid).not.toHaveBeenCalled();
+      });
+
+      it('rejects the whole application when the hook throws — the payment is not applied', async () => {
+        seedTx();
+        const onPaid = jest.fn().mockRejectedValue(new Error('outbox insert failed'));
+
+        await expect(repository.applyPaymentOutcome(successPlan, onPaid)).rejects.toThrow(
+          'outbox insert failed',
+        );
+      });
+
+      it('changes nothing for a caller that passes no hook', async () => {
+        seedTx();
+
+        await expect(repository.applyPaymentOutcome(successPlan)).resolves.toBeDefined();
+      });
+    });
+
     // ── TASK-627: the stock hold joins the arbiter, and a released one is re-taken ──
     describe('stockHold (TASK-627)', () => {
       const LINES = [

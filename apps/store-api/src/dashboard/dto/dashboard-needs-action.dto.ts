@@ -55,7 +55,7 @@ export class NeedsActionDto {
 
   @ApiProperty({
     type: Number,
-    description: 'Outbound emails permanently failed (MailOutbox status = FAILED)',
+    description: 'Outbound emails permanently failed (NotificationOutbox status = FAILED)',
     example: 1,
   })
   failedMails!: number;

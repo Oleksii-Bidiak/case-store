@@ -385,6 +385,13 @@ export interface PaymentWithOrderRow {
      * then re-take the stock rather than assume it is held.
      */
     restockedAt: Date | null;
+    /**
+     * TASK-678: whether this order is announced to the shop on payment (online)
+     * or was already announced at creation (ON_DELIVERY) — see shop-order-ping.ts.
+     */
+    paymentMethod: PaymentMethod;
+    /** TASK-678: the account whose name the shop's ping prints; null for a guest. */
+    userId: string | null;
   };
 }
 

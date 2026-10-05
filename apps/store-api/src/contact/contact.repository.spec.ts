@@ -81,6 +81,49 @@ describe('ContactRepository', () => {
           orderRef: null,
         },
       });
+      // No hook → no transaction: the SPAM path stays one plain insert.
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    describe('with an afterCreate hook (TASK-677)', () => {
+      const input = {
+        name: 'Ivan Petrenko',
+        phone: '+380671234567',
+        email: 'ivan@example.com',
+        message: 'Доброго дня!',
+      };
+      // A client distinct from the base one, so the test can tell them apart.
+      const tx = { contactMessage: { create: jest.fn() } };
+
+      beforeEach(() => {
+        prismaMock.$transaction.mockImplementationOnce((callback: (client: unknown) => unknown) =>
+          callback(tx),
+        );
+      });
+
+      it('inserts through the transaction and hands the hook that tx and the created row', async () => {
+        const created = makeMessage();
+        tx.contactMessage.create.mockResolvedValue(created);
+        const afterCreate = jest.fn().mockResolvedValue(undefined);
+
+        const result = await repository.create(input, afterCreate);
+
+        expect(result).toBe(created);
+        expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+        expect(tx.contactMessage.create).toHaveBeenCalledWith({
+          data: { ...input, topic: null, orderRef: null },
+        });
+        expect(prismaMock.contactMessage.create).not.toHaveBeenCalled();
+        expect(afterCreate).toHaveBeenCalledWith(tx, created);
+      });
+
+      it('rejects when the hook throws, so the transaction rolls the message back', async () => {
+        tx.contactMessage.create.mockResolvedValue(makeMessage());
+
+        await expect(
+          repository.create(input, jest.fn().mockRejectedValue(new Error('outbox down'))),
+        ).rejects.toThrow('outbox down');
+      });
     });
   });
 

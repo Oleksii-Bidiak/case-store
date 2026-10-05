@@ -5,6 +5,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { ContactMessage, ContactMessageStatus } from '@prisma/client';
 import { ContactMessagesNotFoundError, ContactRepository } from './contact.repository';
 import { ContactService } from './contact.service';
+import { ShopNotifier } from '../notification/shop-notifier.service';
 
 const now = new Date('2026-07-05T10:00:00.000Z');
 
@@ -35,6 +36,31 @@ const contactRepositoryMock = {
   findLatestMessageAgeMsByEmail: jest.fn(),
 };
 
+// TASK-677: the shop's Telegram ping for a NEW message.
+const shopNotifierMock = {
+  enqueueNewOrder: jest.fn(),
+  enqueueContactMessage: jest.fn(),
+  enqueueReturnRequested: jest.fn(),
+};
+
+/** The transaction client the repository hands the afterCreate hook. */
+const txMock = { marker: 'contact-tx' };
+
+/**
+ * Make the repository double behave like the real one: run the afterCreate hook
+ * (when one is passed) with the transaction client and the created row.
+ */
+const createRunsHook = (row: ContactMessage) =>
+  contactRepositoryMock.create.mockImplementation(
+    async (
+      _data: unknown,
+      afterCreate?: (tx: unknown, created: ContactMessage) => Promise<void>,
+    ) => {
+      if (afterCreate) await afterCreate(txMock, row);
+      return row;
+    },
+  );
+
 const pinoLoggerMock = {
   setContext: jest.fn(),
   info: jest.fn(),
@@ -47,6 +73,8 @@ describe('ContactService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // createRunsHook installs an implementation; clearAllMocks would keep it.
+    contactRepositoryMock.create.mockReset();
 
     // TASK-256 defaults: no registered user matches unless a test arms these.
     contactRepositoryMock.findMatchingUserId.mockResolvedValue(null);
@@ -57,6 +85,7 @@ describe('ContactService', () => {
         ContactService,
         { provide: ContactRepository, useValue: contactRepositoryMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
+        { provide: ShopNotifier, useValue: shopNotifierMock },
       ],
     }).compile();
 
@@ -79,14 +108,17 @@ describe('ContactService', () => {
 
       expect(result.id).toBe('msg-uuid-1');
       expect(result.status).toBe(ContactMessageStatus.NEW);
-      expect(contactRepositoryMock.create).toHaveBeenCalledWith({
-        name: 'Ivan Petrenko',
-        phone: '+380671234567',
-        email: 'ivan@example.com',
-        message: 'Доброго дня! Питання по замовленню.',
-        topic: 'order',
-        orderRef: 'ORD-10231',
-      });
+      expect(contactRepositoryMock.create).toHaveBeenCalledWith(
+        {
+          name: 'Ivan Petrenko',
+          phone: '+380671234567',
+          email: 'ivan@example.com',
+          message: 'Доброго дня! Питання по замовленню.',
+          topic: 'order',
+          orderRef: 'ORD-10231',
+        },
+        expect.any(Function),
+      );
     });
 
     it('defaults optional topic/orderRef to null', async () => {
@@ -101,7 +133,47 @@ describe('ContactService', () => {
 
       expect(contactRepositoryMock.create).toHaveBeenCalledWith(
         expect.objectContaining({ topic: null, orderRef: null }),
+        expect.any(Function),
       );
+    });
+
+    it('queues the shop ping through the message transaction (TASK-677)', async () => {
+      createRunsHook(makeMessage());
+
+      await service.create({
+        name: 'Ivan Petrenko',
+        phone: '+380671234567',
+        email: 'ivan@example.com',
+        message: 'Доброго дня! Питання по замовленню.',
+      });
+
+      expect(shopNotifierMock.enqueueContactMessage).toHaveBeenCalledTimes(1);
+      expect(shopNotifierMock.enqueueContactMessage).toHaveBeenCalledWith(
+        {
+          messageId: 'msg-uuid-1',
+          name: 'Ivan Petrenko',
+          phone: '+380671234567',
+          email: 'ivan@example.com',
+          topic: 'order',
+          orderRef: 'ORD-10231',
+          message: 'Доброго дня! Питання по замовленню.',
+        },
+        txMock,
+      );
+    });
+
+    it('fails the submission when the ping cannot be queued — the hook error propagates (TASK-677)', async () => {
+      createRunsHook(makeMessage());
+      shopNotifierMock.enqueueContactMessage.mockRejectedValueOnce(new Error('outbox down'));
+
+      await expect(
+        service.create({
+          name: 'Ivan',
+          phone: '+380671234567',
+          email: 'ivan@example.com',
+          message: 'A message body long enough',
+        }),
+      ).rejects.toThrow('outbox down');
     });
 
     it('returns matchedUserId: null with zero user-lookup calls (TASK-256: write path stays lean)', async () => {
@@ -160,6 +232,16 @@ describe('ContactService', () => {
         const note = contactRepositoryMock.create.mock.calls[0][0].adminNote as string;
         expect(note).toContain('x'.repeat(255));
         expect(note).not.toContain('x'.repeat(256));
+      });
+
+      it('never pings the shop for a SPAM row, and opens no transaction for it (TASK-677)', async () => {
+        createRunsHook(makeMessage({ id: 'spam-uuid-1', status: ContactMessageStatus.SPAM }));
+
+        await service.submit({ ...validDto, website: 'https://spam.example' });
+
+        // No hook handed over at all — the repository's plain insert path.
+        expect(contactRepositoryMock.create.mock.calls[0]).toHaveLength(1);
+        expect(shopNotifierMock.enqueueContactMessage).not.toHaveBeenCalled();
       });
 
       it('neither consults nor feeds the cooldown for a hit', async () => {

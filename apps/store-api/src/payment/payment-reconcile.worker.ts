@@ -70,7 +70,7 @@ export type ReservationExpiryMode = 'cancel' | 'release';
  * Registered via {@link SchedulerRegistry} rather than `@Cron` so the schedule
  * comes from `PAYMENT_RECONCILE_CRON` at runtime, and takes an injectable
  * {@link Clock} so its time arithmetic is deterministic under test — both
- * mirroring {@link MailOutboxWorker}.
+ * mirroring {@link NotificationOutboxWorker}.
  */
 @Injectable()
 export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {

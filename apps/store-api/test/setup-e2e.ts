@@ -52,3 +52,10 @@ process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://test:test@l
 // process to ~11 boots, and `workerIdleMemoryLimit` recycles one that still
 // grows too large. Do not lower this back to 1.
 process.env.REDIS_HOST = '';
+
+// No real Telegram from e2e (TASK-674). Every booted app runs the Telegram
+// channel's start-up `getMe`; a developer who put a bot token into the local
+// `.env` to try the bot would otherwise have every suite call api.telegram.org.
+// Empty = "unconfigured" (and, like REDIS_HOST above, still "set", so dotenv will
+// not fill it in). Never put a real token here.
+process.env.TELEGRAM_BOT_TOKEN = '';

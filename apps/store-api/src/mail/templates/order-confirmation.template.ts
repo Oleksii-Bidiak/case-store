@@ -76,7 +76,7 @@ export interface MailTemplate {
 }
 
 /**
- * Fully-serialized order-confirmation payload as stored in a `MailOutbox` row
+ * Fully-serialized order-confirmation payload as stored in a `NotificationOutbox` row
  * (TASK-103). It is the same data {@link buildOrderConfirmationEmail} needs, but
  * JSON-safe: `createdAt` is an ISO string (not a `Date`) because the row is
  * persisted as a `Json` column and rendered later by the retry worker. The
@@ -96,7 +96,7 @@ export interface OrderConfirmationMailPayload {
 const ORDER_NUMBER_LENGTH = 8;
 
 /** Short, human-friendly order number — the first 8 chars of the id, uppercased. */
-function orderNumber(id: string): string {
+export function orderNumber(id: string): string {
   return id.slice(0, ORDER_NUMBER_LENGTH).toUpperCase();
 }
 
@@ -127,7 +127,7 @@ const MONEY_FORMAT = new Intl.NumberFormat('uk-UA', {
   maximumFractionDigits: 2,
 });
 
-function formatMoney(value: string): string {
+export function formatMoney(value: string): string {
   const amount = Number(value);
   return Number.isFinite(amount) ? `${MONEY_FORMAT.format(amount)} ₴` : `${value} ₴`;
 }
