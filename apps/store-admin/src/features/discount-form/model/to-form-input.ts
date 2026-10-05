@@ -33,12 +33,14 @@ export function discountToFormInput(
 }
 
 /**
- * «Дублювати» (DiscountsProposal ПК1): the terms, the window and the switches
- * carry over; the code does not — it is unique, and the operator picks (or
- * generates) the new one.
+ * «Дублювати» (DiscountsProposal ПК1): the terms, the window and the promo-page
+ * switch carry over; the code does not — it is unique, and the operator picks
+ * (or generates) the new one. The copy starts SWITCHED OFF: a copy of a live
+ * code would otherwise go live the moment it is saved, before anyone has
+ * looked at its window.
  */
 export function duplicateDiscountInput(
   discount: DiscountEntity,
 ): DiscountFormInput {
-  return { ...discountToFormInput(discount), code: "" };
+  return { ...discountToFormInput(discount), code: "", isActive: false };
 }

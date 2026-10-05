@@ -9,6 +9,7 @@ export type DiscountStateFields = Pick<
   | "value"
   | "minSpend"
   | "maxRedemptions"
+  | "redeemedCount"
   | "perUserLimit"
   | "startsAt"
   | "expiresAt"
@@ -18,11 +19,12 @@ export type DiscountStateFields = Pick<
 /**
  * What a code does in the cart RIGHT NOW (DiscountsProposal ПК1). `isActive`
  * alone said «активний» about EXPIRED15 a week after it stopped working; the
- * badge now reads the window too. The switch wins: a disabled code is
- * «Вимкнено» whatever its dates say.
+ * badge now reads the window too, and the global cap: a code used 100 / 100
+ * times is refused by the cart however open its window. The switch wins: a
+ * disabled code is «Вимкнено» whatever its dates say.
  */
 export type DiscountDisplayState =
-  "live" | "scheduled" | "expired" | "disabled";
+  "live" | "scheduled" | "expired" | "exhausted" | "disabled";
 
 const instant = (iso: string | null): number | null => {
   if (!iso) return null;
@@ -43,6 +45,12 @@ export function discountDisplayState(
   if (start !== null && start > now) return "scheduled";
   const end = instant(discount.expiresAt);
   if (end !== null && end < now) return "expired";
+  if (
+    discount.maxRedemptions !== null &&
+    discount.redeemedCount >= discount.maxRedemptions
+  ) {
+    return "exhausted";
+  }
   return "live";
 }
 
@@ -62,6 +70,8 @@ export function discountStatusLabel(
       return d.statusScheduled(shortDate(discount.startsAt as string));
     case "expired":
       return d.statusExpired(shortDate(discount.expiresAt as string));
+    case "exhausted":
+      return d.statusExhausted;
     default:
       return d.statusLive;
   }

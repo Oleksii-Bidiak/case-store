@@ -21,6 +21,7 @@ function make(
     value: "10",
     minSpend: null,
     maxRedemptions: null,
+    redeemedCount: 0,
     perUserLimit: null,
     startsAt: null,
     expiresAt: null,
@@ -47,6 +48,24 @@ describe("discountDisplayState (DiscountsProposal ПК1)", () => {
     expect(
       discountDisplayState(make({ startsAt: "2026-10-14T21:00:00.000Z" }), NOW),
     ).toBe("scheduled");
+  });
+
+  it("is «exhausted» once the global cap is used up — the cart refuses it", () => {
+    expect(
+      discountDisplayState(
+        make({ maxRedemptions: 100, redeemedCount: 100 }),
+        NOW,
+      ),
+    ).toBe("exhausted");
+    expect(
+      discountDisplayState(
+        make({ maxRedemptions: 100, redeemedCount: 99 }),
+        NOW,
+      ),
+    ).toBe("live");
+    expect(
+      discountStatusLabel(make({ maxRedemptions: 5, redeemedCount: 5 }), NOW),
+    ).toBe(d.statusExhausted);
   });
 
   it("is «disabled» whatever the dates say when the switch is off", () => {

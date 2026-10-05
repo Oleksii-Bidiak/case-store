@@ -37,7 +37,11 @@ export function CreateDiscountView() {
   const queryClient = useQueryClient();
   const create = useAdminCreateDiscount();
   const fromId = useSearchParams().get("from") ?? "";
-  const source = useAdminGetDiscount(fromId);
+  // `enabled`: the generated guard only skips null/undefined, so an empty id
+  // would fire `GET /admin/discounts/` on every plain «Новий промокод».
+  const source = useAdminGetDiscount(fromId, {
+    query: { enabled: fromId !== "" },
+  });
   const sourceDiscount = fromId ? source.data?.data : undefined;
 
   const handleSubmit = (values: DiscountFormValues) => {

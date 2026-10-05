@@ -1771,6 +1771,7 @@ export const dict = {
     statusLive: "Діє",
     statusScheduled: (date: string) => `Заплановано з ${date}`,
     statusExpired: (date: string) => `Закінчився ${date}`,
+    statusExhausted: "Ліміт вичерпано",
     statusDisabled: "Вимкнено",
     usedCard: (used: string) => `використано ${used}`,
     rowEdit: "Редагувати",
@@ -1801,7 +1802,7 @@ export const dict = {
     sortPeriodHint: "Сортує за датою «Діє до».",
     // «Дублювати»: the copy opens as a new draft; the code must be new.
     duplicateNotice: (code: string) =>
-      `Копія промокоду ${code}: умови й період перенесено, код придумайте новий.`,
+      `Копія промокоду ${code}: умови й період перенесено, код придумайте новий. Копія вимкнена — увімкніть її, коли перевірите період.`,
     statsUsed: "Використано",
     statsTimes: (n: number) => countLabel(n, ["раз", "рази", "разів"]),
   },

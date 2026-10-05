@@ -140,6 +140,26 @@ describe("CreateDiscountView — «Дублювати» (?from=)", () => {
       minSpend: 3000,
       perUserLimit: 1,
       showOnPromoPage: true,
+      // A copy of a live code must not go live on save.
+      isActive: false,
     });
+  });
+});
+
+describe("CreateDiscountView — a plain «Новий промокод»", () => {
+  it("asks the API for no source when there is no ?from=", async () => {
+    const detailHits: string[] = [];
+    server.use(
+      http.get("*/api/admin/discounts/*", ({ request }) => {
+        detailHits.push(request.url);
+        return HttpResponse.json({ data: null });
+      }),
+    );
+    renderWithProviders(<CreateDiscountView />, { auth: WRITER });
+
+    expect(
+      await screen.findByRole("button", { name: d.createSubmit }),
+    ).toBeInTheDocument();
+    expect(detailHits).toEqual([]);
   });
 });

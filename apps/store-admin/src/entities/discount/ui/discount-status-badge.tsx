@@ -19,6 +19,7 @@ const VARIANT: Record<
   live: "default",
   scheduled: "outline",
   expired: "secondary",
+  exhausted: "secondary",
   disabled: "outline",
 };
 
