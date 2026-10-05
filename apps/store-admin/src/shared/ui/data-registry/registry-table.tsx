@@ -394,6 +394,26 @@ export function RegistryTable<T>({
         className={cn("relative", className)}
         aria-busy={isRefetching || undefined}
       >
+        {/* The table's header checkbox has no place on a card list — without
+            this a phone selects a page one card at a time. */}
+        {selection && rows.length > 0 ? (
+          <div
+            data-slot="registry-card-select-all"
+            className="mb-3 flex items-center gap-2 px-1"
+          >
+            <Checkbox
+              id={`${panelPrefix}-select-page`}
+              checked={selection.pageChecked}
+              onCheckedChange={selection.togglePage}
+            />
+            <label
+              htmlFor={`${panelPrefix}-select-page`}
+              className="text-sm text-muted-foreground"
+            >
+              {dict.common.table.selectAll}
+            </label>
+          </div>
+        ) : null}
         <ul aria-label={label} className="flex flex-col gap-3">
           {rows.map((row, index) => {
             const href = getRowHref?.(row);

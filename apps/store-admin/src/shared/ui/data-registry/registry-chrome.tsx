@@ -68,7 +68,16 @@ export interface QuickViewsProps {
   /** URL-driven by the caller. */
   onChange: (id: string) => void;
   className?: string;
+  /**
+   * Ties the tabs to the list they filter: each tab gets the id
+   * `quickViewTabId(idPrefix, view)` and `aria-controls={panelId}`. Without it
+   * the tabs promise a panel nobody can find.
+   */
+  panel?: { idPrefix: string; panelId: string };
 }
+
+export const quickViewTabId = (idPrefix: string, viewId: string) =>
+  `${idPrefix}-view-${viewId}`;
 
 /**
  * Preset views as pills. A `tablist` with roving focus: Tab lands on the
@@ -80,6 +89,7 @@ export function QuickViews({
   activeId,
   onChange,
   className,
+  panel,
 }: QuickViewsProps) {
   const refs = React.useRef<(HTMLButtonElement | null)[]>([]);
   // A deep link can select something no view matches (`?status=DELIVERED`).
@@ -109,6 +119,8 @@ export function QuickViews({
             }}
             type="button"
             role="tab"
+            id={panel ? quickViewTabId(panel.idPrefix, item.id) : undefined}
+            aria-controls={panel?.panelId}
             aria-selected={active}
             tabIndex={active || (!anyActive && index === 0) ? 0 : -1}
             onClick={() => onChange(item.id)}

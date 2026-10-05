@@ -10,6 +10,7 @@ import { ColumnsMenu } from "./columns-menu";
 import {
   FilterChips,
   QuickViews,
+  quickViewTabId,
   RegistryHeader,
   RegistrySummary,
   type FilterChip,
@@ -194,6 +195,13 @@ export function DataRegistry<T>({
   const searchParams = useSearchParams();
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const { settings, selection } = registry;
+  const viewsIdPrefix = React.useId();
+  const viewsPanelId = `${viewsIdPrefix}-panel`;
+  const activeViewTab =
+    quickViews &&
+    quickViews.items.some((item) => item.id === quickViews.activeId)
+      ? quickViewTabId(viewsIdPrefix, quickViews.activeId)
+      : undefined;
 
   const navigateTo = (query: string) =>
     router.replace(query ? `${pathname}?${query}` : pathname);
@@ -217,109 +225,123 @@ export function DataRegistry<T>({
           actions={headerActions}
         />
       ) : null}
-      {quickViews ? <QuickViews {...quickViews} /> : null}
-
-      <div className="flex flex-col gap-3">
-        <RegistryToolbar
-          search={search}
-          filters={
-            filters
-              ? {
-                  count: filters.count,
-                  open: filtersOpen,
-                  onOpenChange: setFiltersOpen,
-                }
-              : undefined
-          }
-          columnsMenu={
-            columnsMenu ? (
-              <ColumnsMenu columns={registry.columns} settings={settings} />
-            ) : null
-          }
-          viewsMenu={
-            views ? (
-              <ViewsMenu
-                defaultName={views.defaultName}
-                views={settings.settings.views}
-                activeViewId={settings.settings.activeViewId}
-                onApply={(id) => {
-                  const query = settings.applyView(id);
-                  if (query !== null) navigateTo(query);
-                }}
-                onSave={(name) => settings.saveView(name, currentQuery())}
-                onRename={settings.renameView}
-                onDelete={settings.deleteView}
-              />
-            ) : null
-          }
-          onRefresh={onRefresh}
-          isRefreshing={isRefreshing}
+      {quickViews ? (
+        <QuickViews
+          {...quickViews}
+          panel={{ idPrefix: viewsIdPrefix, panelId: viewsPanelId }}
         />
-        {notice}
-        <FilterChips chips={chips} onClearAll={onClearAllChips} />
-        <RegistrySummary sortLabel={sortLabel} updatedAt={updatedAt}>
-          {summary}
-        </RegistrySummary>
-        {selectable && bulk ? (
-          <RegistryBulkBar
-            selectedCount={selection.selectedCount}
-            itemForms={itemForms}
-            idleHint={bulk.idleHint}
-            actions={bulk.actions}
-            onExportSelected={
-              bulk.onExportSelected
-                ? () => bulk.onExportSelected?.([...selection.selectedIds])
+      ) : null}
+
+      {/* The quick views are tabs; this is what they switch. */}
+      <div
+        id={quickViews ? viewsPanelId : undefined}
+        role={quickViews ? "tabpanel" : undefined}
+        aria-labelledby={activeViewTab}
+        aria-label={quickViews && !activeViewTab ? title : undefined}
+        className="flex flex-col gap-4"
+      >
+        <div className="flex flex-col gap-3">
+          <RegistryToolbar
+            search={search}
+            filters={
+              filters
+                ? {
+                    count: filters.count,
+                    open: filtersOpen,
+                    onOpenChange: setFiltersOpen,
+                  }
                 : undefined
             }
-            overflow={bulk.overflow}
-            overflowWhenIdle={bulk.overflowWhenIdle}
-            isPending={bulk.isPending}
-            onClear={selection.clear}
+            columnsMenu={
+              columnsMenu ? (
+                <ColumnsMenu columns={registry.columns} settings={settings} />
+              ) : null
+            }
+            viewsMenu={
+              views ? (
+                <ViewsMenu
+                  defaultName={views.defaultName}
+                  views={settings.settings.views}
+                  activeViewId={settings.settings.activeViewId}
+                  onApply={(id) => {
+                    const query = settings.applyView(id);
+                    if (query !== null) navigateTo(query);
+                  }}
+                  onSave={(name) => settings.saveView(name, currentQuery())}
+                  onRename={settings.renameView}
+                  onDelete={settings.deleteView}
+                />
+              ) : null
+            }
+            onRefresh={onRefresh}
+            isRefreshing={isRefreshing}
+          />
+          {notice}
+          <FilterChips chips={chips} onClearAll={onClearAllChips} />
+          <RegistrySummary sortLabel={sortLabel} updatedAt={updatedAt}>
+            {summary}
+          </RegistrySummary>
+          {selectable && bulk ? (
+            <RegistryBulkBar
+              selectedCount={selection.selectedCount}
+              itemForms={itemForms}
+              idleHint={bulk.idleHint}
+              actions={bulk.actions}
+              onExportSelected={
+                bulk.onExportSelected
+                  ? () => bulk.onExportSelected?.([...selection.selectedIds])
+                  : undefined
+              }
+              overflow={bulk.overflow}
+              overflowWhenIdle={bulk.overflowWhenIdle}
+              isPending={bulk.isPending}
+              onClear={selection.clear}
+            />
+          ) : null}
+        </div>
+
+        <RegistryTable
+          label={title}
+          columns={registry.visibleColumns}
+          rows={registry.rows}
+          getRowId={registry.getRowId}
+          getRowLabel={getRowLabel}
+          getRowHref={getRowHref}
+          onRowOpen={onRowOpen}
+          rowClassName={rowClassName}
+          widths={registry.widths}
+          onResize={settings.setWidth}
+          density={settings.settings.density}
+          selection={selectable ? selection : undefined}
+          rowActions={rowActions}
+          rowActionsLabel={rowActionsLabel}
+          sort={sort}
+          totals={totals}
+          itemForms={itemForms}
+          renderCard={renderCard}
+          groupBy={groupBy}
+          renderExpanded={renderExpanded}
+          expandLabel={expandLabel}
+          isLoading={isLoading}
+          isError={isError}
+          errorMessage={errorMessage}
+          onRetry={onRetry}
+          isRetrying={isRetrying}
+          isRefetching={isRefetching}
+          emptyState={emptyState}
+          searchQuery={searchQuery}
+          isFiltered={isFiltered}
+        />
+
+        {pagination ? (
+          <TablePagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            pageSize={pagination.pageSize}
+            hidePageSize={pagination.hidePageSize}
           />
         ) : null}
       </div>
-
-      <RegistryTable
-        label={title}
-        columns={registry.visibleColumns}
-        rows={registry.rows}
-        getRowId={registry.getRowId}
-        getRowLabel={getRowLabel}
-        getRowHref={getRowHref}
-        onRowOpen={onRowOpen}
-        rowClassName={rowClassName}
-        widths={registry.widths}
-        onResize={settings.setWidth}
-        density={settings.settings.density}
-        selection={selectable ? selection : undefined}
-        rowActions={rowActions}
-        rowActionsLabel={rowActionsLabel}
-        sort={sort}
-        totals={totals}
-        itemForms={itemForms}
-        renderCard={renderCard}
-        groupBy={groupBy}
-        renderExpanded={renderExpanded}
-        expandLabel={expandLabel}
-        isLoading={isLoading}
-        isError={isError}
-        errorMessage={errorMessage}
-        onRetry={onRetry}
-        isRetrying={isRetrying}
-        isRefetching={isRefetching}
-        emptyState={emptyState}
-        searchQuery={searchQuery}
-        isFiltered={isFiltered}
-      />
-
-      {pagination ? (
-        <TablePagination
-          page={pagination.page}
-          totalPages={pagination.totalPages}
-          pageSize={pagination.pageSize}
-          hidePageSize={pagination.hidePageSize}
-        />
-      ) : null}
 
       {filters?.renderSheet({
         open: filtersOpen,

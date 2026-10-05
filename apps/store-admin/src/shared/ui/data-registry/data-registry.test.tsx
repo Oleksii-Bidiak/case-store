@@ -216,6 +216,26 @@ describe("DataRegistry — header and quick views", () => {
     await user.keyboard("{ArrowLeft}");
     expect(fresh).toHaveFocus();
   });
+
+  it("ties the views to the list they switch — a tabpanel named by the active view", () => {
+    renderWithProviders(
+      <Harness
+        quickViews={{
+          items: [
+            { id: "new", label: "Нові" },
+            { id: "all", label: "Усі" },
+          ],
+          activeId: "new",
+          onChange: jest.fn(),
+        }}
+      />,
+    );
+    const panel = screen.getByRole("tabpanel", { name: "Нові" });
+    for (const tab of screen.getAllByRole("tab")) {
+      expect(tab).toHaveAttribute("aria-controls", panel.id);
+    }
+    expect(within(panel).getByRole("table")).toBeInTheDocument();
+  });
 });
 
 describe("DataRegistry — toolbar", () => {
@@ -725,6 +745,31 @@ describe("DataRegistry — mobile cards and totals", () => {
       screen.getByRole("button", { name: "Дії #A0000001" }),
     ).toBeInTheDocument();
     expect(screen.getByText(dict.common.pageOf(1, 2))).toBeInTheDocument();
+  });
+
+  it("selects the whole page from the card list, as the table header does", async () => {
+    setViewport(true);
+    const user = userEvent.setup();
+    renderWithProviders(
+      <Harness
+        selectable
+        bulk={{ idleHint: "—" }}
+        renderCard={(o, { select }) => (
+          <div>
+            {select}
+            <span>{o.number}</span>
+          </div>
+        )}
+      />,
+    );
+    const all = screen.getByRole("checkbox", {
+      name: dict.common.table.selectAll,
+    });
+    await user.click(all);
+    expect(all).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.getByText(r.bulkSelected("2 замовлення")),
+    ).toBeInTheDocument();
   });
 
   it("navigates from a card tap", async () => {
