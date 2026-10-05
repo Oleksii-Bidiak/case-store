@@ -5483,7 +5483,11 @@ export const dict = {
     positionOutOfStock: "Немає в наявності",
     openProduct: "Відкрити товар",
     openProductAria: (name: string) => `Відкрити товар «${name}»`,
-    removeFromGroup: "Прибрати з групи",
+    removeFromGroup: "Прибрати з групи…",
+    removeConfirmTitle: (name: string) => `Прибрати «${name}» з групи?`,
+    removeConfirmBody:
+      "Товар лишиться в каталозі, але зникне з вибору варіантів на сторінках інших позицій групи. Повернути можна через «Додати позицію…».",
+    removeConfirmAction: "Прибрати",
     toastRemoved: "Позицію прибрано з групи",
     toastRemoveFailed: "Не вдалося прибрати позицію з групи",
     addPositions: "Додати позицію…",

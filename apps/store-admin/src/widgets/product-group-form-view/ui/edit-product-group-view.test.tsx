@@ -163,20 +163,37 @@ describe("EditProductGroupView (wave 198)", () => {
     ).toHaveAttribute("href", `/products/${P2}`);
   });
 
-  it("«⋯ → Прибрати з групи» takes the position out at once", async () => {
+  it("«⋯ → Прибрати з групи…» asks first, then takes the position out", async () => {
     renderWithProviders(<EditProductGroupView groupId={GROUP_ID} />, OWNER);
     await screen.findByRole("heading", { name: GROUP.name });
 
     const table = screen.getByRole("table");
-    await userEvent.click(
-      within(table).getByRole("button", {
-        name: dict.common.registry.rowActionsAria("iPhone 16 Pro 128 білий"),
-      }),
-    );
-    await userEvent.click(
-      screen.getByRole("menuitem", { name: g.removeFromGroup }),
-    );
+    const openMenu = async () => {
+      await userEvent.click(
+        within(table).getByRole("button", {
+          name: dict.common.registry.rowActionsAria("iPhone 16 Pro 128 білий"),
+        }),
+      );
+      await userEvent.click(
+        screen.getByRole("menuitem", { name: g.removeFromGroup }),
+      );
+      return screen.findByRole("alertdialog");
+    };
 
+    // A misclick is cancelled without a write.
+    let dialog = await openMenu();
+    expect(dialog).toHaveTextContent(
+      g.removeConfirmTitle("iPhone 16 Pro 128 білий"),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.common.cancel }),
+    );
+    expect(groupBodies).toEqual([]);
+
+    dialog = await openMenu();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: g.removeConfirmAction }),
+    );
     await waitFor(() =>
       expect(groupBodies).toEqual([{ ids: [P2], groupId: null }]),
     );

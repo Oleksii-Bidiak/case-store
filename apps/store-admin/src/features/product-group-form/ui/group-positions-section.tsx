@@ -25,6 +25,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useConfirmDialog,
 } from "@/shared/ui";
 import { FormSectionCard } from "@/shared/ui/form-section-card";
 import { formatCurrency } from "@/shared/lib/format";
@@ -84,6 +85,7 @@ export function GroupPositionsSection({
   const router = useRouter();
   const queryClient = useQueryClient();
   const setGroup = useProductControllerSetGroupMany();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerKey, setPickerKey] = useState(0);
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(
@@ -105,6 +107,13 @@ export function GroupPositionsSection({
   };
 
   const removeFromGroup = async (position: ProductSiblingEntity) => {
+    // Written at once, with no undo — ask first, as every other removal does.
+    const confirmed = await confirm({
+      title: g.removeConfirmTitle(position.name),
+      description: g.removeConfirmBody,
+      confirmLabel: g.removeConfirmAction,
+    });
+    if (!confirmed) return;
     setPendingIds((current) => new Set(current).add(position.id));
     try {
       await setGroup.mutateAsync({
@@ -336,6 +345,7 @@ export function GroupPositionsSection({
           isPending={setGroup.isPending}
         />
       ) : null}
+      {confirmDialog}
     </FormSectionCard>
   );
 }
