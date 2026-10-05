@@ -41,7 +41,7 @@ import {
   PRODUCT_LIST_PREFIX,
 } from '../cache';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
-import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
+import { CategorySubtreeIndexer } from '../common/ports';
 import { PermissionService } from '../auth/permissions';
 
 /**

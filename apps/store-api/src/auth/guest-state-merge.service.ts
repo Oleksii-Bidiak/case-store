@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { CartService } from '../cart/cart.service';
-import { WishlistService } from '../wishlist/wishlist.service';
+import { CartService } from '../cart';
+import { WishlistService } from '../wishlist';
 
 /** The guest tokens a request arrived with — either may be absent. */
 export interface GuestStateTokens {

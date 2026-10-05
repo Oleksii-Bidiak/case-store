@@ -8,7 +8,7 @@ import {
   kyivDayRange,
   monthEnd,
   monthStart,
-} from '../../common/time/kyiv-day';
+} from '../../common/time';
 
 /**
  * The period every `/analytics` report is asked about (TASK-685, plan 188).

@@ -6,9 +6,8 @@ import {
 } from '@nestjs/common';
 import { ReviewHiddenReason } from '@prisma/client';
 import { UserRepository, UpdateUserInput, FindAllParams } from './user.repository';
-import { AuthRepository } from '../auth/auth.repository';
-import { EmailChangeService } from '../auth/email-change.service';
-import { ReviewService } from '../review/review.service';
+import { AuthRepository, EmailChangeService } from '../auth';
+import { ReviewService } from '../review';
 import { UserEntity, UserAdminCardEntity } from './entities';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { assertMayManage, type PermissionActor } from '../auth/permissions';

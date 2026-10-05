@@ -1,8 +1,6 @@
 // Category Module — public API
 export { CategoryModule } from './category.module';
 export { CategoryService } from './category.service';
-export { CategoryController } from './category.controller';
-export { AdminCategoryController } from './admin-category.controller';
 export {
   CategoryRepository,
   type FindAllParams as CategoryFindAllParams,

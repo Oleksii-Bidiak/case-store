@@ -8,8 +8,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus, ReturnStatus } from '@prisma/client';
 import { ReturnRepository } from './return.repository';
 import { OrderRepository } from '../order.repository';
-// Direct path, not the barrel: the barrel pulls in NotificationModule itself.
-import { ShopNotifier } from '../../notification/shop-notifier.service';
+import { ShopNotifier } from '../../notification';
 import { ReturnEntity } from './entities';
 import { RESTOCK_ON_STATUS, canTransitionReturn } from './return-state-machine';
 import type { CreateReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';

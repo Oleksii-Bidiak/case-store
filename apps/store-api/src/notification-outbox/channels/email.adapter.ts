@@ -1,16 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { NotificationChannel, NotificationOutbox } from '@prisma/client';
-import { MailService } from '../../mail/mail.service';
-import type { OrderConfirmationMailPayload } from '../../mail/templates/order-confirmation.template';
-import type { PasswordResetMailPayload } from '../../mail/templates/password-reset.template';
-import type { AccountLockedMailPayload } from '../../mail/templates/account-locked.template';
-import type { EmailVerificationMailPayload } from '../../mail/templates/email-verification.template';
-import type { OrderShippedMailPayload } from '../../mail/templates/order-shipped.template';
-import type { OrderPaymentExpiredMailPayload } from '../../mail/templates/order-payment-expired.template';
-import type {
-  EmailChangeConfirmMailPayload,
-  EmailChangeNoticeMailPayload,
-} from '../../mail/templates/email-change.template';
+import {
+  MailService,
+  type AccountLockedMailPayload,
+  type EmailChangeConfirmMailPayload,
+  type EmailChangeNoticeMailPayload,
+  type EmailVerificationMailPayload,
+  type OrderConfirmationMailPayload,
+  type OrderPaymentExpiredMailPayload,
+  type OrderShippedMailPayload,
+  type PasswordResetMailPayload,
+} from '../../mail';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
   EMAIL_CHANGE_CONFIRM_MAIL_TYPE,

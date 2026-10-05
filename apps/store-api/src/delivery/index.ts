@@ -1,10 +1,6 @@
 export { DeliveryModule } from './delivery.module';
 export { DeliveryService, KYIV_CITY_REF } from './delivery.service';
 export type { DeliveryMethodSettings } from './delivery.service';
-export { PickupPointRepository, PICKUP_POINT_SELECT } from './pickup-point.repository';
-export type { PickupPoint } from './pickup-point.repository';
-export { DeliveryRepository, SINGLETON_ID as DELIVERY_SETTINGS_ID } from './delivery.repository';
-export type { UpsertDeliverySettingInput } from './delivery.repository';
 export { NovaPoshtaClient, NP_API_URL, DEFAULT_WEIGHT_KG } from './nova-poshta.client';
 export type {
   NpSettlementRaw,

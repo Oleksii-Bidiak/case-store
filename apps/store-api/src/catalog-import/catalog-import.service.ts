@@ -18,7 +18,7 @@ import {
   type PlannedRow,
 } from './catalog-plan';
 import type { ParsedCatalog, ParsedProductRow } from './catalog-import.types';
-import { ProductService } from '../product/product.service';
+import { ProductService } from '../product';
 import { IMPORTS_SUBDIR, type IStorageService, STORAGE_SERVICE } from '../storage';
 import { generateSlug } from '../common/utils';
 

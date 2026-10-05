@@ -13,8 +13,8 @@ import {
   ValidateIf,
   validateSync,
 } from 'class-validator';
-import { IsOriginList } from '../common/validators/is-origin-list.decorator';
-import { DURATION_PATTERN } from '../auth/duration.util';
+import { IsOriginList } from '../common/validators';
+import { DURATION_PATTERN } from '../auth';
 
 /**
  * An exact origin: scheme + host + optional port. No path, no trailing slash —

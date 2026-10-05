@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { PublishStatus } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: blog barrel > blog.module > search.module > this file. (BlogRepository is not in BlogModule.exports either; SearchModule provides its own — TASK-827)
 import { BlogRepository, type BlogPostWithCategory } from '../blog/blog.repository';
 import {
   MeiliClient,
@@ -10,7 +11,7 @@ import {
   type IndexSettings,
 } from './meili.client';
 import { UA_EN_SYNONYMS, extractSearchSynonymTerms, type SynonymMap } from './search-synonyms';
-import { SearchSynonymsService } from '../search-synonyms/search-synonyms.service';
+import { SearchSynonymsService } from '../search-synonyms';
 import type { BlogSearchHits } from './blog-indexer';
 
 /** Batch size for the full blog reindex pull. */

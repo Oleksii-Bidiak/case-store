@@ -1,8 +1,6 @@
 // Device Module — public API
 export { DeviceModule } from './device.module';
 export { DeviceService } from './device.service';
-export { DeviceController } from './device.controller';
-export { AdminDeviceController } from './admin-device.controller';
 export {
   DeviceRepository,
   type CreateDeviceBrandInput,

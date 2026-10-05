@@ -33,7 +33,7 @@ import {
   DeleteCategoryDto,
 } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
-// Direct file import, NOT the `../auth` barrel: the barrel pulls in `auth.module` →
+// The `auth/decorators` sub-barrel, NOT the `../auth` barrel: the barrel pulls in `auth.module` →
 // `auth.controller` → … → the `../category` barrel → this file, and that require cycle
 // leaves `CurrentUser` undefined at decorator-evaluation time ("CurrentUser is not a
 // function"). Anything on a module cycle's edge must bypass the barrels.

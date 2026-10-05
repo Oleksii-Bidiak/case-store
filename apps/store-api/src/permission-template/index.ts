@@ -6,13 +6,6 @@ export {
   type CreateTemplateInput,
   type UpdateTemplateInput,
 } from './permission-template.service';
-export { PermissionTemplateController } from './permission-template.controller';
-export {
-  PermissionTemplateRepository,
-  type PermissionTemplateRecord,
-  type CreatePermissionTemplateInput,
-  type UpdatePermissionTemplateInput,
-} from './permission-template.repository';
 export { PermissionTemplateEntity, AppliedTemplateEntity } from './entities';
 export {
   ApplyPermissionTemplateDto,

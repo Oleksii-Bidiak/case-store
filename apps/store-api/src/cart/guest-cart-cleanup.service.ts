@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { PinoLogger } from 'nestjs-pino';
-import { schedulingEnabled, stopCronJob } from '../common/scheduling/scheduling.util';
+import { schedulingEnabled, stopCronJob } from '../common/scheduling';
 import { CartRepository } from './cart.repository';
 import { GUEST_CART_CLEANUP_CRON, GUEST_CART_EMPTY_RETENTION_MS } from './cart.constants';
 

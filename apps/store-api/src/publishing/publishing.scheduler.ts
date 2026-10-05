@@ -4,7 +4,7 @@ import { DiscoveryService } from '@nestjs/core';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { PinoLogger } from 'nestjs-pino';
-import { schedulingEnabled, stopCronJob } from '../common/scheduling/scheduling.util';
+import { schedulingEnabled, stopCronJob } from '../common/scheduling';
 import { PUBLISHABLE_REPOSITORY, PublishablePort } from './publishing.tokens';
 import { RevalidationNotifier } from './revalidation.notifier';
 

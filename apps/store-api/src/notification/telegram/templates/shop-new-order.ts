@@ -1,5 +1,5 @@
 import type { NotificationOutbox } from '@prisma/client';
-import { formatMoney, orderNumber } from '../../../mail/templates/order-confirmation.template';
+import { formatMoney, orderNumber } from '../../../mail';
 import { escapeHtml } from '../telegram-html';
 import type { TelegramRenderContext } from '../telegram-renderers';
 import {

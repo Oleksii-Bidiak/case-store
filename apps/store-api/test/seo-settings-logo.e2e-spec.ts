@@ -8,7 +8,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
-import { SeoSettingsRepository, SINGLETON_ID } from '../src/seo-settings';
+import { SeoSettingsRepository, SINGLETON_ID } from '../src/seo-settings/seo-settings.repository';
 import { ImageProcessor, STORAGE_SERVICE } from '../src/storage';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';

@@ -26,7 +26,7 @@ import {
 } from '@nestjs/swagger';
 import { UserService } from './user.service';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
-import { JwtAuthGuard } from '../auth/guards';
+import { JwtAuthGuard, OperatorEmailChangeDto } from '../auth';
 import {
   CurrentActor,
   PermissionGuard,
@@ -35,7 +35,6 @@ import {
   type PermissionActor,
 } from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators';
-import { OperatorEmailChangeDto } from '../auth/dto/email-change.dto';
 import { AuditService, RecordsOwnAudit } from '../audit';
 import {
   UserEntity,

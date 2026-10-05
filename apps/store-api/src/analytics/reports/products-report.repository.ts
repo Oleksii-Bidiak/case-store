@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { publicProductSql } from '../../product/product-visibility';
+import { publicProductSql } from '../../product';
 import { PrismaService } from '../../prisma';
 import { ReportRange } from './report-period';
 import { soldLinesSql } from './sales-base';

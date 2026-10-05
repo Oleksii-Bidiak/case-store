@@ -9,7 +9,7 @@ import { DeviceModule } from '../device';
 // Slug → id for the facet endpoint's active-filter params (TASK-489). Provided,
 // not imported as a module — it is stateless, so a second instance costs
 // nothing, and this is exactly how `ProductModule` and `SearchModule` take it.
-import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
+import { CatalogueFilterResolver } from '../catalog-filter';
 
 /**
  * Structured-spec template module (TASK-191, plan 112). Owns the per-category

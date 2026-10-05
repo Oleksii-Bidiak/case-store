@@ -14,8 +14,7 @@ import { AppRepository } from './app.repository';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth';
 import { PermissionModule } from './auth/permissions';
-import { AuditModule } from './audit';
-import { AuditInterceptor } from './audit/audit.interceptor';
+import { AuditInterceptor, AuditModule } from './audit';
 import { UserModule } from './user';
 import { StaffModule } from './staff';
 import { PermissionTemplateModule } from './permission-template';
@@ -65,8 +64,7 @@ import {
 } from './throttler';
 import { HttpExceptionFilter, PrismaExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
-import { validateEnv } from './config/env.validation';
-import { buildPinoHttpOptions } from './config/pino.config';
+import { buildPinoHttpOptions, validateEnv } from './config';
 
 @Module({
   imports: [

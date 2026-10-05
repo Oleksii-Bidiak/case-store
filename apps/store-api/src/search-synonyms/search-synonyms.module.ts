@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: search barrel > search.module > this file
 import { MeiliClient } from '../search/meili.client';
 import { SearchSynonymsRepository } from './search-synonyms.repository';
 import { SearchSynonymsService } from './search-synonyms.service';

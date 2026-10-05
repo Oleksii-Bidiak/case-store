@@ -12,18 +12,15 @@ import {
 import { FACETABLE_TYPES, isFacetableType } from './attribute-definition.constants';
 import { CategoryRepository } from '../category';
 import { ConfigService } from '@nestjs/config';
-import {
-  CatalogueFilterResolver,
-  ResolvedCatalogueFilters,
-} from '../catalog-filter/catalogue-filter.resolver';
+import { CatalogueFilterResolver, ResolvedCatalogueFilters } from '../catalog-filter';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > attribute-definition barrel > this file
 import {
   MAX_SPEC_FACETS,
   parseSpecFilters,
   serializeSpecFilters,
   SpecFacetFilter,
 } from '../product/dto/product-list-query.dto';
-import { CacheService } from '../cache/cache.service';
-import { buildFilterableSpecsKey, FILTERABLE_SPECS_PREFIX } from '../cache/cache-key.util';
+import { CacheService, buildFilterableSpecsKey, FILTERABLE_SPECS_PREFIX } from '../cache';
 import { reorderErrorToHttp } from '../common/reorder';
 import {
   AttributeDefinitionEntity,

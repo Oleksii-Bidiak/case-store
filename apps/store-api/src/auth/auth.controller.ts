@@ -40,11 +40,8 @@ import { GoogleAuthGuard } from './guards';
 import { CurrentUser } from './decorators';
 import { AuthTokens } from './entities';
 import type { GoogleOAuthProfile } from './oauth/google-oauth-profile';
-import { CART_TOKEN_COOKIE, buildCartTokenCookieOptions } from '../cart/cart-identity.types';
-import {
-  WISHLIST_TOKEN_COOKIE,
-  buildWishlistTokenCookieOptions,
-} from '../wishlist/wishlist-identity.types';
+import { CART_TOKEN_COOKIE, buildCartTokenCookieOptions } from '../cart';
+import { WISHLIST_TOKEN_COOKIE, buildWishlistTokenCookieOptions } from '../wishlist';
 import {
   REFRESH_TOKEN_COOKIE,
   buildRefreshCookieOptions,

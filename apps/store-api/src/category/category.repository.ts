@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma';
 import { Category, Prisma, SlugRedirectEntity } from '@prisma/client';
 import { SlugRedirectRepository } from '../slug-redirect';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > category barrel > this file
 import { PUBLIC_PRODUCT_WHERE } from '../product/product-visibility';
 import { AdminCategoryTreeNodeEntity, AdminCategoryTreeRow } from './entities';
 import {

@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { CategoryRepository } from '../category/category.repository';
-import { DeviceRepository } from '../device/device.repository';
-import { DeviceModelEntity } from '../device/entities';
+import { CategoryRepository } from '../category';
+import { DeviceModelEntity, DeviceRepository } from '../device';
 import { CatalogLandingRepository } from './catalog-landing.repository';
 import { CompatLandingDetailEntity, CompatLandingPageEntity } from './entities';
 

@@ -26,7 +26,7 @@ import {
   ReorderBlogCategoriesDto,
   AdminBlogCategoryListQueryDto,
 } from './dto';
-import { BlogIndexer } from '../search/blog-indexer';
+import { BlogIndexer } from '../search';
 import { generateSlug } from '../common/utils';
 import { sanitizeRichText } from '../common/sanitize';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';

@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { SearchService } from './search.service';
 import { SearchQueryDto, SuggestQueryDto } from './dto';
 import { SearchSuggestionEntity } from './entities';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > search barrel > search.module > this file
 import { PublicProductEntity } from '../product/entities';
 
 /** Pagination metadata for a search result page. */

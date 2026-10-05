@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { DeliverySetting } from '@prisma/client';
-import { toTwoDecimals } from '../../addon-service/money.util';
+import { toTwoDecimals } from '../../addon-service';
 
 /**
  * The admin-editable dispatch origin (TASK-080-E).

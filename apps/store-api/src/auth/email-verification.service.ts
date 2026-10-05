@@ -6,11 +6,8 @@ import { randomBytes } from 'crypto';
 import { EmailTokenPurpose } from '@prisma/client';
 import { AuthRepository } from './auth.repository';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
-import { NotificationOutboxService } from '../notification-outbox/notification-outbox.service';
-import {
-  GUEST_ORDER_CLAIM_PORT,
-  type GuestOrderClaimPort,
-} from '../common/ports/guest-order-claim.port';
+import { NotificationOutboxService } from '../notification-outbox';
+import { GUEST_ORDER_CLAIM_PORT, type GuestOrderClaimPort } from '../common/ports';
 
 /** Bytes of entropy for an opaque verification token (→ 64 hex chars). */
 const VERIFICATION_TOKEN_BYTES = 32;

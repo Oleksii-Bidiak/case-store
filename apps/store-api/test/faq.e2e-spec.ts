@@ -8,7 +8,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
-import { FaqRepository } from '../src/faq';
+import { FaqRepository } from '../src/faq/faq.repository';
 import {
   ReorderDuplicateIdError,
   ReorderNotFoundError,

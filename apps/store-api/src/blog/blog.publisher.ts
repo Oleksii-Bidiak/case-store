@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { PublishablePort, RevalidateTarget } from '../publishing';
-import { BlogIndexer } from '../search/blog-indexer';
+import { BlogIndexer } from '../search';
 import { BlogRepository } from './blog.repository';
 
 /**

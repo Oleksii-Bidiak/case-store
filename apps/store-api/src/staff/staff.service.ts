@@ -7,10 +7,9 @@ import {
 } from '@nestjs/common';
 import { ReviewHiddenReason, User, UserRole } from '@prisma/client';
 import { StaffRepository, type StaffAccount } from './staff.repository';
-import { UserRepository } from '../user/user.repository';
-import { AuthRepository } from '../auth/auth.repository';
-import { AuthService } from '../auth/auth.service';
-import { ReviewService } from '../review/review.service';
+import { UserRepository } from '../user';
+import { AuthRepository, AuthService } from '../auth';
+import { ReviewService } from '../review';
 import { StaffPermissionsEntity, StaffUserEntity } from './entities';
 import { CreateStaffDto, StaffListQueryDto } from './dto';
 import { hashPassword } from '../common/security';

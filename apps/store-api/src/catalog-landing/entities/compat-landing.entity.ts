@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { DeviceModelEntity } from '../../device/entities';
+import { DeviceModelEntity } from '../../device';
 
 /**
  * One compatibility landing page that EXISTS — a (category × device model) pair

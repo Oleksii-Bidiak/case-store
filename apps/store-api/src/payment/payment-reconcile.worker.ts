@@ -4,7 +4,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { OrderStatus } from '@prisma/client';
 import { CronJob } from 'cron';
 import { PinoLogger } from 'nestjs-pino';
-import { schedulingEnabled, stopCronJob } from '../common/scheduling/scheduling.util';
+import { schedulingEnabled, stopCronJob } from '../common/scheduling';
 import { OrderService } from '../order';
 import { PAYMENT_CLOCK, type Clock } from './payment.clock';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment.port';

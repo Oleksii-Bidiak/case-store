@@ -21,11 +21,10 @@ import { OrderRepository, type AdminOrderExportRow } from './order.repository';
 // TASK-483: the public lookup has its own repository — see its docblock for why
 // the narrow projection gets a narrow query rather than a filtered wide one.
 import { OrderLookupRepository } from './order-lookup.repository';
-import { CartRepository, type CartWithItems } from '../cart/cart.repository';
-import { UserRepository } from '../user/user.repository';
+import { CartRepository, type CartWithItems } from '../cart';
+import { UserRepository } from '../user';
 import { NotificationOutboxService } from '../notification-outbox';
-// Direct path, not the barrel: the barrel pulls in NotificationModule itself.
-import { ShopNotifier } from '../notification/shop-notifier.service';
+import { ShopNotifier } from '../notification';
 import { DeliveryService, isDeliveryNotConfigured } from '../delivery';
 import { DiscountService } from '../discount';
 import { OrderEntity, OrderStatusHistoryEntity, PublicOrderEntity } from './entities';
@@ -67,7 +66,7 @@ import {
 } from '../addon-service';
 // Shared with the newsletter export: one formula-injection guard, so a fix
 // cannot land in one export and miss the other (see the helper's docblock).
-import { buildCsvDocument, escapeCsvField, toSingleCsvLine } from '../common/utils/csv.util';
+import { buildCsvDocument, escapeCsvField, toSingleCsvLine } from '../common/utils';
 // TASK-483/466: one canonical phone spelling on both sides of the comparison.
 import { normalizeUaPhone } from '../common/validators';
 import type { Paginated } from '../common/pagination';
@@ -93,7 +92,8 @@ import type {
   PaymentWithOrderRow,
   ShippingAddressData,
 } from './order.types';
-import type { PaymentApplyResult, PaymentEventInput } from '../payment/payment.types';
+import type { PaymentApplyResult, PaymentEventInput } from '../payment';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: payment barrel > payment.module > order barrel > this file
 import { PaymentOutcome } from '../payment/payment.types';
 
 const DEFAULT_PAGE = 1;

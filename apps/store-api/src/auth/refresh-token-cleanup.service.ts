@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { PinoLogger } from 'nestjs-pino';
-import { schedulingEnabled, stopCronJob } from '../common/scheduling/scheduling.util';
+import { schedulingEnabled, stopCronJob } from '../common/scheduling';
 import { AuthRepository } from './auth.repository';
 
 /** Registered name of the cron job — used to look it up via SchedulerRegistry. */

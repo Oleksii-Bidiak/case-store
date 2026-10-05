@@ -1,8 +1,6 @@
 // Order Module — public API
 export { OrderModule } from './order.module';
 export { OrderService } from './order.service';
-export { OrderController } from './order.controller';
-export { OrderRepository } from './order.repository';
 export { OrderEntity, OrderItemEntity } from './entities';
 // TASK-332: the transition table is part of this module's public contract. The
 // admin UI and the payment module both need to reason about what an order may do
@@ -34,7 +32,12 @@ export {
   DeliveryOrderErrorCode,
   deliveryPaymentNotAllowedError,
 } from './order.errors';
+// Statuses whose stock is still in the warehouse — the product module derives
+// reserved quantities from the same set the auto-restock guard uses (TASK-254).
+export { PRE_SHIPMENT_STATUSES } from './order.constants';
 export { CreateOrderDto, UpdateOrderStatusDto, OrderListQueryDto, AddressDto } from './dto';
+// The public order-number format — the per-number lookup throttle keys on it.
+export { ORDER_NUMBER_PATTERN, normalizeOrderNumber } from './dto/order-lookup.dto';
 export type {
   OrderWithItems,
   OrderItemRow,

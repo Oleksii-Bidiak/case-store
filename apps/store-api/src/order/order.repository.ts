@@ -17,7 +17,7 @@ import {
 } from '../cache';
 // The narrow seam SearchModule exports — this file never learns what the search
 // engine is, exactly as `ProductService` does not.
-import { ProductIndexer } from '../search/product-indexer';
+import { ProductIndexer } from '../search';
 import type {
   CreateOrderParams,
   OrderWithItems,
@@ -36,15 +36,15 @@ import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto'
 // TASK-425: the "waiting too long" threshold is the DASHBOARD's, imported rather
 // than re-typed. A 48 copied into this module is a 72 the day someone changes
 // the other one, and the chip would then quietly disagree with the tile.
-import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
+import { PENDING_STALE_HOURS } from '../dashboard';
 import { staleOrderError } from './order.errors';
-import { centsToString, sumLineCents, toCents } from '../addon-service/money.util';
-import { kyivDayRange } from '../common/time/kyiv-day';
+import { centsToString, sumLineCents, toCents } from '../addon-service';
+import { kyivDayRange } from '../common/time';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
 import { confirmsPaymentOfLiveOrder } from './shop-order-ping';
 // TASK-771: a revive that cannot re-claim its promo slot fails with the same
 // stable codes the checkout uses, so the admin sees the reason it already knows.
-import { DiscountErrorCode, conflictDiscount } from '../discount/discount.errors';
+import { DiscountErrorCode, conflictDiscount } from '../discount';
 
 /**
  * Shared Prisma include clause for order queries. Always fetches the order

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma, WishlistItem } from '@prisma/client';
 import { PrismaService } from '../prisma';
-import { PUBLIC_PRODUCT_WHERE } from '../product/product-visibility';
+import { PUBLIC_PRODUCT_WHERE } from '../product';
 import type { ResolvedWishlistIdentity } from './wishlist-identity.types';
 
 /**

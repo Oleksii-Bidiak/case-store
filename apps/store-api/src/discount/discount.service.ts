@@ -5,12 +5,11 @@ import {
   CreateDiscountInput,
   UpdateDiscountInput,
 } from './discount.repository';
-import { CartService } from '../cart';
-import type { ResolvedCartIdentity } from '../cart/cart-identity.types';
+import { CartService, type ResolvedCartIdentity } from '../cart';
 import { DiscountEntity, DiscountPreviewEntity, PublicDiscountEntity } from './entities';
 import { CreateDiscountDto, UpdateDiscountDto, DiscountListQueryDto } from './dto';
 import { DiscountErrorCode, badDiscount, conflictDiscount } from './discount.errors';
-import { centsToString, toCents } from '../addon-service/money.util';
+import { centsToString, toCents } from '../addon-service';
 import type { Paginated } from '../common/pagination';
 
 const DEFAULT_PAGE = 1;

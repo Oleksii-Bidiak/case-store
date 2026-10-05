@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: search barrel > search.module > search-synonyms.module > this file
 import { MeiliClient, PRODUCTS_INDEX, BLOG_POSTS_INDEX } from '../search/meili.client';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: search barrel > search.module > search-synonyms.module > this file
 import {
   DEFAULT_SYNONYM_GROUPS,
   UA_EN_SYNONYMS,

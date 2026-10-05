@@ -44,10 +44,12 @@ import { CreateOrderDto, OrderListQueryDto, OrderLookupDto } from './dto';
 // service performs, which `JwtAuthGuard` alone already states. The set of callers
 // admitted is unchanged.
 import { JwtAuthGuard, CurrentUser } from '../auth';
-import { OptionalJwtAuthGuard } from '../cart/guards';
-import { CartIdentityInterceptor } from '../cart/interceptors';
-import { CartIdentity } from '../cart/decorators';
-import type { ResolvedCartIdentity } from '../cart/cart-identity.types';
+import {
+  CartIdentity,
+  CartIdentityInterceptor,
+  OptionalJwtAuthGuard,
+  type ResolvedCartIdentity,
+} from '../cart';
 import type { OrderActor } from './order.types';
 
 /**

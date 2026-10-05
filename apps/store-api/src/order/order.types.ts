@@ -8,7 +8,7 @@ import {
   OrderHistoryChangeType,
   OrderHistoryNote,
 } from '@prisma/client';
-import type { CartWithItems } from '../cart/cart.repository';
+import type { CartWithItems } from '../cart';
 import type { AddressDto } from './dto';
 
 /**

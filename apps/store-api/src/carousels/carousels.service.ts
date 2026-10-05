@@ -16,9 +16,7 @@ import {
   SetCarouselItemsDto,
   ReorderCarouselsDto,
 } from './dto';
-import { ProductService } from '../product/product.service';
-import { ProductListQueryDto } from '../product/dto';
-import { PublicProductEntity } from '../product/entities';
+import { ProductListQueryDto, ProductService, PublicProductEntity } from '../product';
 import { CategoryRepository } from '../category';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
 import { reorderErrorToHttp } from '../common/reorder';

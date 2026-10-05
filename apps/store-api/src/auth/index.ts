@@ -1,13 +1,17 @@
 // Auth Module — public API
 export { AuthModule } from './auth.module';
 export { AuthService } from './auth.service';
-export { AuthController } from './auth.controller';
 export { AuthRepository } from './auth.repository';
+export { EmailVerificationService } from './email-verification.service';
+export { EmailChangeService } from './email-change.service';
 export { AuthTokens } from './entities';
+// The token-lifetime syntax (`15m`, `7d`) the env schema validates against.
+export { DURATION_PATTERN } from './duration.util';
 
 // DTOs
 export { RegisterDto } from './dto/register.dto';
 export { LoginDto } from './dto/login.dto';
+export { OperatorEmailChangeDto } from './dto/email-change.dto';
 
 // Guards. `RolesGuard` and `AdminGuard` were deleted in TASK-475 — both
 // predated `PermissionGuard` and neither could express the access model: one

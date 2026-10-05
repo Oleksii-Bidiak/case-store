@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Brand, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > brand barrel > this file
 import { PUBLIC_PRODUCT_WHERE } from '../product/product-visibility';
 
 /**

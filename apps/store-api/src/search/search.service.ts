@@ -1,7 +1,10 @@
 import { Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > search barrel > this file
 import { ProductRepository, ProductIndexSource } from '../product/product.repository';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: category barrel > category.module > search.module > this file
 import { CategoryRepository } from '../category/category.repository';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > search barrel > this file
 import { PublicProductEntity } from '../product/entities';
 import {
   MeiliClient,
@@ -10,8 +13,8 @@ import {
   SEARCH_MAX_TOTAL_HITS,
 } from './meili.client';
 import { UA_EN_SYNONYMS, extractSearchSynonymTerms, type SynonymMap } from './search-synonyms';
-import { SearchSynonymsService } from '../search-synonyms/search-synonyms.service';
-import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
+import { SearchSynonymsService } from '../search-synonyms';
+import { CatalogueFilterResolver } from '../catalog-filter';
 import { SearchSuggestionEntity } from './entities';
 import type { SearchQueryDto, SearchSort } from './dto';
 import type { Paginated, PaginationMeta } from '../common/pagination';

@@ -26,7 +26,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
-// Direct file import, NOT the `../auth` barrel: the barrel pulls the auth module
+// The `auth/decorators` sub-barrel, NOT the `../auth` barrel: the barrel pulls the auth module
 // in and the resulting require cycle leaves `CurrentUser` undefined at
 // decorator-evaluation time.
 import { CurrentUser } from '../auth/decorators';

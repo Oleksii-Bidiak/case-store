@@ -10,10 +10,8 @@ import { BrandEntity } from './entities';
 import { CreateBrandDto, UpdateBrandDto, BrandListQueryDto } from './dto';
 import { generateSlug } from '../common/utils';
 import type { Paginated } from '../common/pagination';
-import { CategoryRepository } from '../category/category.repository';
-import { CacheService } from '../cache';
-// Direct file import: the `../cache` barrel is outside this change's file scope.
-import { BRAND_LIST_PREFIX, brandListCategoryKey } from '../cache/cache-key.util';
+import { CategoryRepository } from '../category';
+import { BRAND_LIST_PREFIX, CacheService, brandListCategoryKey } from '../cache';
 
 /** Fallback TTL (seconds) when REDIS_CACHE_TTL_SECONDS is not configured. */
 const DEFAULT_CACHE_TTL_SECONDS = 300;

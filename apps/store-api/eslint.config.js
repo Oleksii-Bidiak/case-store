@@ -1,5 +1,103 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import nestConfig from '@store/eslint-config/nest';
 import tseslint from 'typescript-eslint';
+
+/**
+ * A module's `index.ts` is its public contract (TASK-818).
+ *
+ * Another module is entered through one of its OFFICIAL entry points only:
+ *   - its barrel (`../order`, `../order/index`);
+ *   - a `*.module` file, to import the Nest module class itself;
+ *   - one of the sub-barrels listed in `OFFICIAL_SUB_BARRELS`;
+ *   - `common/<entry>` — `common` is the shared kernel, not a feature module: it
+ *     has no root barrel and no Nest module, and each of its sub-directories
+ *     (`common/pagination`, `common/validators`, …) or single-file leaves
+ *     (`common/color-axis`) is an entry of its own. Reaching BELOW that
+ *     (`common/utils/csv.util`) is still a deep import.
+ * Anything else (`../product/product-visibility`, `../../cart/cart.repository`)
+ * reaches into the module's internals and is reported.
+ *
+ * A barrel re-exports the `*.module` file, so importing one loads that module's
+ * whole graph — and where that graph leads back to the importer, the require
+ * cycle leaves a decorator / `design:paramtypes` value `undefined` at load time
+ * ("CurrentUser is not a function", a Nest DI error at bootstrap). That is the ONE
+ * accepted reason for a deep path, and it is written down where it happens:
+ *   // eslint-disable-next-line local/no-deep-module-import -- cycle: <chain>
+ *
+ * Why a local rule and not `no-restricted-imports` patterns: a pattern sees only
+ * the import string, not the file it sits in, so it cannot tell `../dto/x` inside
+ * the importer's own module from `../dto/x` in a sibling module — nor that
+ * `../../order/x` leaves `src/order/returns/` for the SAME module. This rule
+ * resolves the path against the importing file and compares the top-level
+ * directories under `src/`. It also keeps clear of the flat-config trap below:
+ * the service block's `no-restricted-imports` is untouched.
+ */
+const SRC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'src');
+const SHARED_KERNEL = 'common';
+const OFFICIAL_SUB_BARRELS = new Set([
+  // RBAC: the permission catalogue, `@RequirePermission`, `PermissionGuard`.
+  'auth/permissions',
+  // `@CurrentUser()` — imported by most admin controllers, and lighter than the
+  // auth barrel (no AuthModule graph), which is what keeps them off a cycle.
+  'auth/decorators',
+]);
+const DEEP_IMPORT_MESSAGE =
+  "'{{source}}' reaches into the internals of the `{{module}}` module. Import through the " +
+  "module's index.ts (or an official sub-barrel / *.module file) — TASK-818. If the barrel " +
+  'creates a require cycle, keep the deep path with ' +
+  '`// eslint-disable-next-line local/no-deep-module-import -- cycle: <chain>`.';
+
+const noDeepModuleImport = {
+  meta: {
+    type: 'problem',
+    docs: { description: "Import other modules only through their public entry points (TASK-818)." },
+    schema: [],
+    messages: { deep: DEEP_IMPORT_MESSAGE },
+  },
+  create(context) {
+    const fromSegments = path.relative(SRC_DIR, context.physicalFilename).split(path.sep);
+    if (fromSegments[0] === '..') return {};
+    // A file directly under `src/` (main.ts, app.module.ts) belongs to no module.
+    const fromModule = fromSegments.length > 1 ? fromSegments[0] : null;
+
+    // Reported on the whole statement, so the `eslint-disable-next-line` of a
+    // multi-line import sits above its `import {` line, not inside the braces.
+    function check(node, reportOn = node) {
+      if (!node || node.type !== 'Literal' || typeof node.value !== 'string') return;
+      const source = node.value;
+      if (!source.startsWith('.')) return;
+      const target = path
+        .relative(SRC_DIR, path.resolve(path.dirname(context.physicalFilename), source))
+        .split(path.sep);
+      if (target[0] === '..' || target.length < 2) return; // outside src, or a src-root file
+      const [module, ...rest] = target;
+      if (module === fromModule) return;
+      if (!fs.existsSync(path.join(SRC_DIR, module))) return;
+      if (rest[rest.length - 1] === 'index') rest.pop();
+      const entry = rest.join('/');
+      if (entry === '') return; // the barrel
+      if (/\.module$/.test(rest[rest.length - 1])) return;
+      if (OFFICIAL_SUB_BARRELS.has(`${module}/${entry}`)) return;
+      if (module === SHARED_KERNEL && rest.length === 1) return;
+      context.report({ node: reportOn, messageId: 'deep', data: { source, module } });
+    }
+
+    return {
+      ImportDeclaration: (node) => check(node.source, node),
+      ExportNamedDeclaration: (node) => check(node.source, node),
+      ExportAllDeclaration: (node) => check(node.source, node),
+      ImportExpression: (node) => check(node.source),
+      TSImportType: (node) => check(node.argument?.literal ?? node.argument),
+      CallExpression: (node) => {
+        if (node.callee.type === 'Identifier' && node.callee.name === 'require') {
+          check(node.arguments[0]);
+        }
+      },
+    };
+  },
+};
 
 /**
  * "Services never touch the database client" (AGENTS.md, Clean Architecture),
@@ -118,6 +216,16 @@ export default [
       // Same flat-config caveat as `no-restricted-imports` above: a later block
       // setting `no-restricted-syntax` REPLACES this list — add selectors here.
       'no-restricted-syntax': ['error', ISOWNER_UNIQUE_SELECTOR],
+    },
+  },
+  {
+    // TASK-818 — see `noDeepModuleImport` above. Specs may reach into internals
+    // (they test them); the e2e/int suites live in `test/` and are not matched.
+    files: ['src/**/*.ts'],
+    ignores: ['src/**/*.spec.ts'],
+    plugins: { local: { rules: { 'no-deep-module-import': noDeepModuleImport } } },
+    rules: {
+      'local/no-deep-module-import': 'error',
     },
   },
   {

@@ -11,7 +11,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
-import { CONTENT_SUBDIR } from '../storage/storage-subdirs';
+import { CONTENT_SUBDIR } from '../storage';
 import { ImageUploadService } from './image-upload.service';
 import { imageMulterOptions } from './image-multer.options';
 import { UploadedImageEntity, UploadedImageResponseEnvelope } from './entities';

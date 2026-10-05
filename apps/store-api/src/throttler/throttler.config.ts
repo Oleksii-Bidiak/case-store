@@ -4,8 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { ThrottlerModuleOptions, ThrottlerOptions } from '@nestjs/throttler';
 import Redis from 'ioredis';
-// The DTO file, not the `order/dto` barrel: the throttler needs the two pure
-// helpers and nothing else from the order module.
+// eslint-disable-next-line local/no-deep-module-import -- cycle: order barrel > order.controller > throttler barrel > this file
 import { ORDER_NUMBER_PATTERN, normalizeOrderNumber } from '../order/dto/order-lookup.dto';
 import {
   ORDER_LOOKUP_NUMBER_THROTTLER,

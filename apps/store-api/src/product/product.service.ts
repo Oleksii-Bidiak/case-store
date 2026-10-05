@@ -32,20 +32,15 @@ import { generateSlug } from '../common/utils';
 import { sanitizeRichText } from '../common/sanitize';
 import type { Paginated } from '../common/pagination';
 import {
+  BRAND_LIST_PREFIX,
   CacheService,
   buildProductListKey,
   productDetailIdKey,
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
 } from '../cache';
-// Direct file import: the `../cache` barrel is outside this change's file scope,
-// so the brand-list prefix is taken from the module it is declared in.
-import { BRAND_LIST_PREFIX } from '../cache/cache-key.util';
-import {
-  CatalogueFilterResolver,
-  type ResolvedCatalogueFilters,
-} from '../catalog-filter/catalogue-filter.resolver';
-import { ProductIndexer } from '../search/product-indexer';
+import { CatalogueFilterResolver, type ResolvedCatalogueFilters } from '../catalog-filter';
+import { ProductIndexer } from '../search';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 /** Fallback TTL (seconds) when REDIS_CACHE_TTL_SECONDS is not configured. */

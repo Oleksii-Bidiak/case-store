@@ -5,7 +5,7 @@ import { NewsletterExportQueryDto, NewsletterListQueryDto, SubscribeDto } from '
 // Shared with the order export. This file used to carry its own byte-identical
 // `escapeCsv`, and the formula-injection hole was found in both copies at once —
 // which is the argument for there being only one.
-import { buildCsvDocument, escapeCsvField } from '../common/utils/csv.util';
+import { buildCsvDocument, escapeCsvField } from '../common/utils';
 import type { Paginated, PaginationMeta } from '../common/pagination';
 
 /** CSV header row for the subscriber export. */

@@ -9,3 +9,17 @@ export { BlogSearchService, BLOG_POSTS_INDEX_SETTINGS } from './blog-search.serv
 export type { BlogSearchQuery } from './blog-search.service';
 export { SearchCategorySubtreeIndexer } from './category-subtree-indexer';
 export { SearchSuggestionEntity } from './entities';
+// The built-in synonym dictionary the admin synonyms module seeds and extends.
+export {
+  DEFAULT_SYNONYM_GROUPS,
+  UA_EN_SYNONYMS,
+  buildSynonymMap,
+  type SynonymMap,
+} from './search-synonyms';
+// The verified full reindex, run by the `search:reindex` CLI script.
+export {
+  runSearchReindex,
+  SearchReindexError,
+  type SearchReindexDeps,
+  type IndexReport,
+} from './search-reindex.runner';

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { RetryAfterException } from '../common/filters/retry-after.exception';
+import { RetryAfterException } from '../common/filters';
 import { PinoLogger } from 'nestjs-pino';
 import { ContactMessageStatus } from '@prisma/client';
 import {
@@ -9,8 +9,7 @@ import {
 } from './contact.repository';
 import { ContactMessageEntity } from './entities';
 import type { Paginated, PaginationMeta } from '../common/pagination';
-// Direct path, not the barrel: the barrel pulls in NotificationModule itself.
-import { ShopNotifier } from '../notification/shop-notifier.service';
+import { ShopNotifier } from '../notification';
 import {
   CreateContactMessageDto,
   ContactMessageListQueryDto,

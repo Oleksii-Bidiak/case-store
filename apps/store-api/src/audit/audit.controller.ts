@@ -10,8 +10,7 @@ import {
 import { AuditService } from './audit.service';
 import { AuditLogQueryDto } from './dto';
 import { AuditLogEntity } from './entities';
-import { PermissionGuard } from '../auth/permissions/permission.guard';
-import { RequirePermission } from '../auth/permissions/require-permission.decorator';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 class AuditLogPaginationMeta {
   @ApiProperty({ example: 240 }) total!: number;
