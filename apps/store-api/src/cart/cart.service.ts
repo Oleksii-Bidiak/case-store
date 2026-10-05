@@ -353,6 +353,16 @@ export class CartService {
   }
 
   /**
+   * The cart checkout prices and orders, as the raw line rows (product,
+   * variant, selected add-ons) — or null when the identity has no cart. Never
+   * creates one: an order from a cart that does not exist is a 404, not an
+   * empty cart (TASK-827: `OrderService` used to call the repository for this).
+   */
+  loadForCheckout(identity: ResolvedCartIdentity): Promise<CartWithItems | null> {
+    return this.resolveCart(identity);
+  }
+
+  /**
    * Resolve the existing cart for an identity without creating one.
    * Returns null when no cart exists.
    */

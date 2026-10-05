@@ -340,10 +340,12 @@ export interface CreateOrderParams {
   /**
    * Optional promo-code discount to apply inside the order transaction
    * (TASK-079). The service has already recomputed the amount authoritatively
-   * via DiscountService.computeDiscount; the repository persists `amount` +
-   * `code` on the order, subtracts it from the total, and runs `redeem` (the
-   * service's cap re-check + redemption insert) within the same `$transaction`,
-   * so a cap race or a deactivation rolls the whole order back.
+   * via DiscountService.computeDiscount (which hands back an `AppliedDiscount` —
+   * `id`/`code`/`type`, not the Prisma row, TASK-827); the repository persists
+   * `amount` + `code` on the order, subtracts it from the total, and runs
+   * `redeem` (the service's cap re-check + redemption insert, keyed by the
+   * applied discount's `id`) within the same `$transaction`, so a cap race or a
+   * deactivation rolls the whole order back.
    */
   discount?: {
     /** Recomputed discount amount as a decimal string ("XX.YY"). */

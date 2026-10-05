@@ -20,8 +20,7 @@ import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
 import { confirmsPaymentOfLiveOrder } from './shop-order-ping';
 import { OrderEntity, PublicOrderEntity, type PublicOrderRow } from './entities';
-import { CartRepository, CartWithItems } from '../cart/cart.repository';
-import { createCartRepositoryMock } from '../../test/cart-repository.mock';
+import { CartService, type CartWithItems } from '../cart';
 import { CartEntity } from '../cart/entities/cart.entity';
 import { UserRepository } from '../user/user.repository';
 import { NotificationOutboxService } from '../notification-outbox';
@@ -218,7 +217,10 @@ const orderRepositoryMock = {
   applyPaymentOutcome: jest.fn(),
 };
 
-const cartRepositoryMock = createCartRepositoryMock();
+// TASK-827: checkout reads the cart through CartService, the one method it uses.
+const cartServiceMock: jest.Mocked<Pick<CartService, 'loadForCheckout'>> = {
+  loadForCheckout: jest.fn(),
+};
 
 // TASK-338: GUEST_ORDER_TOKEN_TTL_DAYS and STORE_CLIENT_URL. Defaults to the
 // service's own fallback when a key is not seeded, mirroring ConfigService.
@@ -336,7 +338,7 @@ describe('OrderService', () => {
         OrderService,
         { provide: OrderRepository, useValue: orderRepositoryMock },
         { provide: OrderLookupRepository, useValue: orderLookupRepositoryMock },
-        { provide: CartRepository, useValue: cartRepositoryMock },
+        { provide: CartService, useValue: cartServiceMock },
         { provide: UserRepository, useValue: userRepositoryMock },
         { provide: NotificationOutboxService, useValue: mailOutboxServiceMock },
         { provide: AddonApplicabilityResolver, useValue: addonResolverMock },
@@ -361,7 +363,7 @@ describe('OrderService', () => {
     });
 
     it('should create an order from the cart and return an OrderEntity', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
       const result = await service.createOrder(userActor, createDto);
@@ -369,10 +371,15 @@ describe('OrderService', () => {
       expect(result).toBeInstanceOf(OrderEntity);
       expect(result.userId).toBe(USER_ID);
       expect(result.status).toBe(OrderStatus.PENDING);
+      // A signed-in buyer's cart is loaded by their account id (TASK-827).
+      expect(cartServiceMock.loadForCheckout).toHaveBeenCalledWith({
+        type: 'user',
+        userId: USER_ID,
+      });
     });
 
     it('should pass the cart id, items and address to the repository', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
       await service.createOrder(userActor, createDto);
@@ -418,7 +425,7 @@ describe('OrderService', () => {
     // abandoned card payments was never returned. Every test was green throughout.
     // These two assertions are what would have caught it.
     it('starts the reservation countdown for a card order', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
       // An NP-routed order: a free-text (OTHER) order may not be paid online at
@@ -444,7 +451,7 @@ describe('OrderService', () => {
     });
 
     it('never starts a countdown for cash on delivery', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
       await service.createOrder(userActor, { ...createDto, paymentMethod: 'ON_DELIVERY' });
@@ -458,7 +465,7 @@ describe('OrderService', () => {
     });
 
     it('books a free-text order (no npCityRef) as OTHER at an explicit 0, without asking NP', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
       await service.createOrder(userActor, createDto);
@@ -474,7 +481,7 @@ describe('OrderService', () => {
       const npDto: CreateOrderDto = {
         shippingAddress: { ...address, npCityRef: 'city-ref-1', npWarehouseRef: 'wh-ref-1' },
       };
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
       deliveryServiceMock.estimateShipping.mockResolvedValue({ cost: '60.00', etaDays: 2 });
 
@@ -491,7 +498,7 @@ describe('OrderService', () => {
       const npDto: CreateOrderDto = {
         shippingAddress: { ...address, npCityRef: 'city-ref-1' },
       };
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
       deliveryServiceMock.estimateShipping.mockRejectedValue(new Error('NP down'));
 
@@ -520,7 +527,7 @@ describe('OrderService', () => {
       };
 
       beforeEach(() => {
-        cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+        cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
         orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
       });
 
@@ -561,10 +568,10 @@ describe('OrderService', () => {
 
     it('recomputes a promo code and forwards the discount to the repository', async () => {
       const discountDto: CreateOrderDto = { shippingAddress: address, discountCode: 'SUMMER10' };
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
       discountServiceMock.computeDiscount.mockResolvedValue({
-        discount: { id: 'd1', code: 'SUMMER10' },
+        discount: { id: 'd1', code: 'SUMMER10', type: 'PERCENT' },
         amount: '3.00',
       });
 
@@ -613,10 +620,10 @@ describe('OrderService', () => {
         ],
       };
       const discountDto: CreateOrderDto = { shippingAddress: address, discountCode: 'SUMMER10' };
-      cartRepositoryMock.findByUserId.mockResolvedValue(trickyCart);
+      cartServiceMock.loadForCheckout.mockResolvedValue(trickyCart);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
       discountServiceMock.computeDiscount.mockResolvedValue({
-        discount: { id: 'd1', code: 'SUMMER10' },
+        discount: { id: 'd1', code: 'SUMMER10', type: 'PERCENT' },
         amount: '3.00',
       });
 
@@ -633,10 +640,10 @@ describe('OrderService', () => {
 
     it('binds a redeem closure that delegates to DiscountService.redeem', async () => {
       const discountDto: CreateOrderDto = { shippingAddress: address, discountCode: 'SUMMER10' };
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
       discountServiceMock.computeDiscount.mockResolvedValue({
-        discount: { id: 'd1', code: 'SUMMER10' },
+        discount: { id: 'd1', code: 'SUMMER10', type: 'PERCENT' },
         amount: '3.00',
       });
 
@@ -649,7 +656,7 @@ describe('OrderService', () => {
     });
 
     it('does not touch the discount service when no code is supplied', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
       await service.createOrder(userActor, createDto);
@@ -659,21 +666,21 @@ describe('OrderService', () => {
     });
 
     it('should throw NotFoundException when the user has no cart', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(null);
+      cartServiceMock.loadForCheckout.mockResolvedValue(null);
 
       await expect(service.createOrder(userActor, createDto)).rejects.toThrow(NotFoundException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when the cart is empty', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(emptyCart);
+      cartServiceMock.loadForCheckout.mockResolvedValue(emptyCart);
 
       await expect(service.createOrder(userActor, createDto)).rejects.toThrow(BadRequestException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when a position has insufficient stock', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithLowStock);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithLowStock);
 
       await expect(service.createOrder(userActor, createDto)).rejects.toThrow(BadRequestException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
@@ -695,7 +702,7 @@ describe('OrderService', () => {
           },
         ],
       };
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithInactiveProduct);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithInactiveProduct);
 
       await expect(service.createOrder(userActor, createDto)).rejects.toThrow(BadRequestException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
@@ -716,7 +723,7 @@ describe('OrderService', () => {
           },
         ],
       };
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithWithdrawnCategory);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithWithdrawnCategory);
 
       await expect(service.createOrder(userActor, createDto)).rejects.toThrow(BadRequestException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
@@ -788,7 +795,7 @@ describe('OrderService', () => {
 
     beforeEach(() => {
       userRepositoryMock.findById.mockResolvedValue(recipient);
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       resolveCreateWithHook();
       deliveryServiceMock.estimateShipping.mockResolvedValue({ cost: '60.00', etaDays: 2 });
     });
@@ -1056,7 +1063,7 @@ describe('OrderService', () => {
           allEnabled({ price: '120.00', freeFrom: SUBTOTAL }),
         );
         discountServiceMock.computeDiscount.mockResolvedValue({
-          discount: { id: 'd1', code: 'SUMMER10' },
+          discount: { id: 'd1', code: 'SUMMER10', type: 'PERCENT' },
           amount: '3.00',
         });
 
@@ -1127,7 +1134,7 @@ describe('OrderService', () => {
   describe('createOrder — ban enforcement', () => {
     it('throws ForbiddenException when the placing user is inactive (banned)', async () => {
       userRepositoryMock.findById.mockResolvedValue(bannedUser);
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
 
       await expect(service.createOrder(userActor, createDto)).rejects.toThrow(ForbiddenException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
@@ -1135,7 +1142,7 @@ describe('OrderService', () => {
 
     it('throws ForbiddenException when the user no longer exists', async () => {
       userRepositoryMock.findById.mockResolvedValue(null);
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
 
       await expect(service.createOrder(userActor, createDto)).rejects.toThrow(ForbiddenException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
@@ -1143,15 +1150,15 @@ describe('OrderService', () => {
 
     it('checks the user before touching the cart (no inventory work for a banned user)', async () => {
       userRepositoryMock.findById.mockResolvedValue(bannedUser);
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
 
       await expect(service.createOrder(userActor, createDto)).rejects.toThrow(ForbiddenException);
-      expect(cartRepositoryMock.findByUserId).not.toHaveBeenCalled();
+      expect(cartServiceMock.loadForCheckout).not.toHaveBeenCalled();
     });
 
     it('fetches the user exactly once on the happy path (reused for the email)', async () => {
       userRepositoryMock.findById.mockResolvedValue(recipient);
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
       await service.createOrder(userActor, createDto);
@@ -1187,7 +1194,7 @@ describe('OrderService', () => {
     };
 
     it('re-resolves add-ons FRESH at order creation (one batched call) and freezes the effective price', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithSelectedAddon);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithSelectedAddon);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
       // The resolver reports an OVERRIDDEN price — that, not the catalog price,
       // is what must be frozen.
@@ -1212,7 +1219,7 @@ describe('OrderService', () => {
     });
 
     it('case 25 — silently DROPS a selection the resolver no longer returns (never throws)', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithSelectedAddon);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithSelectedAddon);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
       // The service was deactivated / the template changed since add-to-cart.
       addonResolverMock.resolveForProducts.mockResolvedValue(new Map([['product-uuid-1', []]]));
@@ -1229,7 +1236,7 @@ describe('OrderService', () => {
 
   describe('createOrder — outbox enqueue', () => {
     beforeEach(() => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       resolveCreateWithHook();
     });
 
@@ -1274,7 +1281,7 @@ describe('OrderService', () => {
 
   describe('createOrder — shop ping (TASK-677)', () => {
     beforeEach(() => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       userRepositoryMock.findById.mockResolvedValue(recipient);
       shopNotifierMock.enqueueNewOrder.mockResolvedValue(1);
     });
@@ -1332,7 +1339,7 @@ describe('OrderService', () => {
     });
 
     it('names a guest buyer by the name typed at checkout', async () => {
-      cartRepositoryMock.findByToken.mockResolvedValue({
+      cartServiceMock.loadForCheckout.mockResolvedValue({
         ...cartWithItems,
         userId: null,
         token: GUEST_CART_TOKEN,
@@ -3344,15 +3351,18 @@ describe('OrderService', () => {
     const guestCart: CartWithItems = { ...cartWithItems, userId: null, token: GUEST_CART_TOKEN };
 
     beforeEach(() => {
-      cartRepositoryMock.findByToken.mockResolvedValue(guestCart);
+      cartServiceMock.loadForCheckout.mockResolvedValue(guestCart);
       resolveCreateWithHook(makeOrder({ userId: null, guestEmail: guestContact.email }));
     });
 
     it('loads the cart by its cookie token, never by a user id', async () => {
       await service.createOrder(guestActor, createDto);
 
-      expect(cartRepositoryMock.findByToken).toHaveBeenCalledWith(GUEST_CART_TOKEN);
-      expect(cartRepositoryMock.findByUserId).not.toHaveBeenCalled();
+      expect(cartServiceMock.loadForCheckout).toHaveBeenCalledTimes(1);
+      expect(cartServiceMock.loadForCheckout).toHaveBeenCalledWith({
+        type: 'token',
+        token: GUEST_CART_TOKEN,
+      });
     });
 
     it('never looks up a user (there is no account to ban-check)', async () => {
@@ -3457,13 +3467,13 @@ describe('OrderService', () => {
     });
 
     it('404s when the guest cart cookie points at nothing', async () => {
-      cartRepositoryMock.findByToken.mockResolvedValue(null);
+      cartServiceMock.loadForCheckout.mockResolvedValue(null);
 
       await expect(service.createOrder(guestActor, createDto)).rejects.toThrow(NotFoundException);
     });
 
     it('applies the same stock and availability gates as an account order', async () => {
-      cartRepositoryMock.findByToken.mockResolvedValue({
+      cartServiceMock.loadForCheckout.mockResolvedValue({
         ...guestCart,
         items: cartWithLowStock.items,
       });
@@ -3473,7 +3483,7 @@ describe('OrderService', () => {
 
     it('mints no token at all for an account order', async () => {
       userRepositoryMock.findById.mockResolvedValue(recipient);
-      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       resolveCreateWithHook();
 
       await service.createOrder(userActor, createDto);

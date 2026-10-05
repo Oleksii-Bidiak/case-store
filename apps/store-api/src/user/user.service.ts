@@ -8,6 +8,7 @@ import { ReviewHiddenReason } from '@prisma/client';
 import { UserRepository, UpdateUserInput, FindAllParams } from './user.repository';
 import { AuthRepository, EmailChangeService } from '../auth';
 import { ReviewService } from '../review';
+import { DiscountService } from '../discount';
 import { UserEntity, UserAdminCardEntity } from './entities';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { assertMayManage, type PermissionActor } from '../auth/permissions';
@@ -27,6 +28,9 @@ export class UserService {
     private readonly reviewService: ReviewService,
     // TASK-396: the operator's half of changing a customer's sign-in address.
     private readonly emailChangeService: EmailChangeService,
+    // TASK-827: the customer card's redeemed coupons are the discount module's
+    // read, not a query on its tables from here.
+    private readonly discountService: DiscountService,
   ) {}
 
   /**
@@ -174,7 +178,7 @@ export class UserService {
         this.userRepository.getOrderCount(id),
         this.userRepository.getRecentOrders(id, CUSTOMER_CARD_RECENT_ORDERS_LIMIT),
         this.userRepository.getReviewsByUserId(id, CUSTOMER_CARD_REVIEWS_LIMIT),
-        this.userRepository.getRedeemedCoupons(id, CUSTOMER_CARD_COUPONS_LIMIT),
+        this.discountService.listUserRedemptions(id, CUSTOMER_CARD_COUPONS_LIMIT),
         this.userRepository.getContactMessagesByEmail(user.email, CUSTOMER_CARD_MESSAGES_LIMIT),
       ]);
 

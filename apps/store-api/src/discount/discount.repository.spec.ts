@@ -21,6 +21,7 @@ const prismaMock = {
   discountRedemption: {
     count: jest.fn(),
     create: jest.fn(),
+    findMany: jest.fn(),
   },
 };
 
@@ -253,6 +254,43 @@ describe('DiscountRepository', () => {
       expect(tx.discountRedemption.create).toHaveBeenCalledWith({
         data: { discountId: 'd1', userId: 'u1', orderId: 'o1' },
       });
+    });
+  });
+
+  // TASK-827: moved here from `UserRepository.getRedeemedCoupons` — the admin
+  // customer card reads it through `DiscountService.listUserRedemptions`.
+  describe('findRedemptionsByUser', () => {
+    it('joins discount code/type/value, newest first, capped, and flattens the row', async () => {
+      const value = new Prisma.Decimal('20.00');
+      prismaMock.discountRedemption.findMany.mockResolvedValue([
+        {
+          id: 'redemption-1',
+          orderId: 'order-1',
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          discount: { code: 'SUMMER20', type: 'PERCENT', value },
+        },
+      ]);
+
+      const rows = await repository.findRedemptionsByUser('user-1', 20);
+
+      expect(prismaMock.discountRedemption.findMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: { discount: { select: { code: true, type: true, value: true } } },
+      });
+      expect(rows).toEqual([
+        {
+          id: 'redemption-1',
+          code: 'SUMMER20',
+          type: 'PERCENT',
+          value,
+          orderId: 'order-1',
+          redeemedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ]);
+      // The Decimal is handed through untouched — the card's entity converts it.
+      expect(rows[0].value).toBe(value);
     });
   });
 });

@@ -21,7 +21,7 @@ import { OrderRepository, type AdminOrderExportRow } from './order.repository';
 // TASK-483: the public lookup has its own repository — see its docblock for why
 // the narrow projection gets a narrow query rather than a filtered wide one.
 import { OrderLookupRepository } from './order-lookup.repository';
-import { CartRepository, type CartWithItems } from '../cart';
+import { CartService, type CartWithItems } from '../cart';
 import { UserRepository } from '../user';
 import { NotificationOutboxService } from '../notification-outbox';
 import { ShopNotifier } from '../notification';
@@ -256,7 +256,8 @@ export class OrderService {
     private readonly orderRepository: OrderRepository,
     // TASK-483: the public lookup's own narrow query.
     private readonly orderLookupRepository: OrderLookupRepository,
-    private readonly cartRepository: CartRepository,
+    // TASK-827: the cart through its service, not another module's repository.
+    private readonly cartService: CartService,
     private readonly userRepository: UserRepository,
     private readonly mailOutbox: NotificationOutboxService,
     private readonly deliveryService: DeliveryService,
@@ -303,10 +304,11 @@ export class OrderService {
       }
     }
 
-    const cart =
+    const cart = await this.cartService.loadForCheckout(
       actor.type === 'user'
-        ? await this.cartRepository.findByUserId(actor.userId)
-        : await this.cartRepository.findByToken(actor.cartToken);
+        ? { type: 'user', userId: actor.userId }
+        : { type: 'token', token: actor.cartToken },
+    );
 
     if (!cart) {
       throw new NotFoundException('Cart not found');

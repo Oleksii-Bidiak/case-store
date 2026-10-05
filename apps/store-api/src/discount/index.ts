@@ -12,3 +12,4 @@ export {
   PreviewDiscountDto,
 } from './dto';
 export { DiscountErrorCode, badDiscount, conflictDiscount } from './discount.errors';
+export type { AppliedDiscount, UserDiscountRedemption } from './discount.types';

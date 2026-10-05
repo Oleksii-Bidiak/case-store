@@ -1,11 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma';
 import { User, UserRole, Prisma, PaymentStatus, ContactMessage } from '@prisma/client';
-import {
-  type AdminCardOrderRow,
-  type AdminCardReviewRow,
-  type AdminCardCouponRow,
-} from './user-admin-card.types';
+import { type AdminCardOrderRow, type AdminCardReviewRow } from './user-admin-card.types';
 
 /**
  * Parameters for paginated user queries.
@@ -322,27 +318,9 @@ export class UserRepository {
     }));
   }
 
-  /**
-   * The customer's redeemed coupons, newest first, capped at `limit`. The parent
-   * discount's `code`/`type`/`value` are joined in the same query, then
-   * flattened to `AdminCardCouponRow` (`redeemedAt` = `DiscountRedemption.createdAt`).
-   */
-  async getRedeemedCoupons(userId: string, limit: number): Promise<AdminCardCouponRow[]> {
-    const redemptions = await this.prisma.discountRedemption.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      include: { discount: { select: { code: true, type: true, value: true } } },
-    });
-    return redemptions.map((redemption) => ({
-      id: redemption.id,
-      code: redemption.discount.code,
-      type: redemption.discount.type,
-      value: redemption.discount.value,
-      orderId: redemption.orderId,
-      redeemedAt: redemption.createdAt,
-    }));
-  }
+  // The redeemed-coupons read moved to `DiscountRepository.findRedemptionsByUser`
+  // (TASK-827): `discountRedemption` belongs to the discount module, and the
+  // card now asks `DiscountService.listUserRedemptions` for it.
 
   /**
    * Contact-inbox messages matched by exact email string, newest first, capped
