@@ -1,6 +1,7 @@
 import {
   ADDON_DESCRIPTION_MAX,
   addonServiceSchema,
+  addonServiceSchemaFor,
   addonServiceFormValuesToDto,
   mapAddonServiceToFormValues,
   type AddonServiceFormInput,
@@ -54,6 +55,19 @@ describe("addonServiceSchema (TASK-174)", () => {
         ...baseInput,
         description: "а".repeat(301),
       }).success,
+    ).toBe(false);
+  });
+
+  // The API took 2000 before the limit: an unchanged older description must
+  // not block saving a new price.
+  it("lets a longer description saved earlier through unchanged, but not edited", () => {
+    const saved = "б".repeat(450);
+    const schema = addonServiceSchemaFor(saved);
+    expect(schema.safeParse({ ...baseInput, description: saved }).success).toBe(
+      true,
+    );
+    expect(
+      schema.safeParse({ ...baseInput, description: `${saved}!` }).success,
     ).toBe(false);
   });
 

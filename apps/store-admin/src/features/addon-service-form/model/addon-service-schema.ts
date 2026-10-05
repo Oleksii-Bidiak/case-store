@@ -24,24 +24,37 @@ export const ADDON_DESCRIPTION_MAX = 300;
  * legitimately be FREE (a complimentary trade-in valuation), so the floor is 0,
  * not 0.01 — the backend's `CreateAddonServiceDto` agrees.
  */
-export const addonServiceSchema = z.object({
-  name: z.string().trim().min(1, e.nameRequired).max(255, e.nameMax),
+export const addonServiceSchemaFor = (savedDescription?: string | null) =>
+  z.object({
+    name: z.string().trim().min(1, e.nameRequired).max(255, e.nameMax),
 
-  description: z
-    .string()
-    .trim()
-    .max(ADDON_DESCRIPTION_MAX, e.descriptionMax)
-    .optional(),
+    // A description saved before the 300 limit (the API took 2000) passes
+    // UNCHANGED — otherwise changing a price meant cutting someone's text
+    // first. Any edit to it is held to the limit.
+    description: z
+      .string()
+      .trim()
+      .optional()
+      .refine(
+        (value) =>
+          value === undefined ||
+          value.length <= ADDON_DESCRIPTION_MAX ||
+          value === savedDescription?.trim(),
+        e.descriptionMax,
+      ),
 
-  price: z
-    .string()
-    .trim()
-    .min(1, e.priceRequired)
-    .refine((value) => !Number.isNaN(Number(value)), e.priceNumber)
-    .refine((value) => Number(value) >= 0, e.priceNonNegative),
+    price: z
+      .string()
+      .trim()
+      .min(1, e.priceRequired)
+      .refine((value) => !Number.isNaN(Number(value)), e.priceNumber)
+      .refine((value) => Number(value) >= 0, e.priceNonNegative),
 
-  isActive: z.boolean().optional(),
-});
+    isActive: z.boolean().optional(),
+  });
+
+/** The create form's schema — nothing saved to grandfather. */
+export const addonServiceSchema = addonServiceSchemaFor();
 
 export type AddonServiceFormInput = z.input<typeof addonServiceSchema>;
 export type AddonServiceFormValues = z.output<typeof addonServiceSchema>;

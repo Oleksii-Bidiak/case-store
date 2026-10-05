@@ -17,7 +17,7 @@ import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
 import {
   ADDON_DESCRIPTION_MAX,
-  addonServiceSchema,
+  addonServiceSchemaFor,
   type AddonServiceFormInput,
   type AddonServiceFormValues,
 } from "../model/addon-service-schema";
@@ -81,7 +81,8 @@ export function AddonServiceForm({
     reset,
     formState: { errors, submitCount },
   } = useForm<AddonServiceFormInput, unknown, AddonServiceFormValues>({
-    resolver: zodResolver(addonServiceSchema),
+    // Held to the SAVED description: an older, longer one still saves as is.
+    resolver: zodResolver(addonServiceSchemaFor(defaultValues?.description)),
     defaultValues: { ...EMPTY_VALUES, ...defaultValues },
   });
 
