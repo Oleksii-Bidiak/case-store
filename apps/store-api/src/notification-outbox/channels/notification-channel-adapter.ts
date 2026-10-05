@@ -36,12 +36,21 @@ export interface NotificationChannelAdapter {
   readonly channel: NotificationChannel;
 
   /**
-   * Whether the channel's transport is configured. When `false` the dispatcher
+   * Whether the channel can deliver right now. When `false` the dispatcher
    * applies the "transport disabled" branch to this channel's rows only: in
-   * production they stay PENDING (and an error is logged), elsewhere they are
-   * drained as a no-op SENT.
+   * production they stay PENDING (and an error is logged); elsewhere they are
+   * drained as a no-op SENT — but only when {@link isConfigured} is `false` too.
    */
   isEnabled(): boolean;
+
+  /**
+   * Whether the channel is configured at all (SMTP switched on, bot token set),
+   * regardless of whether it currently works. Separates "this machine has no
+   * transport and never will" — the only case where the dev/CI no-op drain is
+   * safe — from "configured, but down or not verified yet", whose rows must stay
+   * PENDING everywhere: draining them would report delivery that never happened.
+   */
+  isConfigured(): boolean;
 
   /** Render and deliver one row. Resolves on success; throws on failure. */
   send(row: NotificationOutbox): Promise<void>;

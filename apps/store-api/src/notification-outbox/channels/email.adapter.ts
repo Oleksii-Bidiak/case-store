@@ -41,6 +41,11 @@ export class EmailAdapter implements NotificationChannelAdapter {
     return this.mailService.isEnabled();
   }
 
+  /** `MAIL_ENABLED` is the only switch mail has: off means "not configured". */
+  isConfigured(): boolean {
+    return this.mailService.isEnabled();
+  }
+
   /**
    * Cheap on purpose: reports whether mail is configured, without opening an
    * SMTP connection — a probe that talks to the relay on every admin page view

@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import type { PinoLogger } from 'nestjs-pino';
-import { NotificationOutbox, NotificationOutboxStatus } from '@prisma/client';
+import { NotificationChannel, NotificationOutbox, NotificationOutboxStatus } from '@prisma/client';
 import { NotificationOutboxService } from './notification-outbox.service';
 import { NotificationOutboxRepository } from './notification-outbox.repository';
 import { MailService } from '../mail/mail.service';
@@ -64,6 +64,17 @@ const repositoryMock = {
   hasRecentByTypeAndRecipient: jest.fn(),
 };
 
+/**
+ * The due rows, as `claimDue` serves them: one channel per call. A fixture
+ * without a `channel` is an email — the column default these rows predate.
+ */
+function givenDue(rows: NotificationOutbox[]): void {
+  repositoryMock.claimDue.mockImplementation(
+    (_now: Date, _limit: number, channel: NotificationChannel) =>
+      Promise.resolve(rows.filter((row) => (row.channel ?? NotificationChannel.EMAIL) === channel)),
+  );
+}
+
 const mailServiceMock = {
   isEnabled: jest.fn(),
   sendOrderConfirmationPayload: jest.fn(),
@@ -115,7 +126,7 @@ describe('NotificationOutboxService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mailServiceMock.isEnabled.mockReturnValue(true);
-    repositoryMock.claimDue.mockResolvedValue([]);
+    givenDue([]);
     repositoryMock.markSent.mockResolvedValue(undefined);
     repositoryMock.markRetry.mockResolvedValue(undefined);
     repositoryMock.markFailed.mockResolvedValue(undefined);
@@ -217,7 +228,7 @@ describe('NotificationOutboxService', () => {
         to: 'banned@example.com',
         supportUrl: 'http://localhost:3000/contact',
       };
-      repositoryMock.claimDue.mockResolvedValue([
+      givenDue([
         makeRow({
           id: 'al-1',
           type: ACCOUNT_LOCKED_MAIL_TYPE,
@@ -273,7 +284,7 @@ describe('NotificationOutboxService', () => {
       ['email-change-notice', 'sendEmailChangeNoticePayload'],
     ] as const)('routes a %s row to %s', async (type, sender) => {
       const payload = { to: 'x@example.com' };
-      repositoryMock.claimDue.mockResolvedValue([
+      givenDue([
         makeRow({ id: 'ec-1', type, payload: payload as unknown as NotificationOutbox['payload'] }),
       ]);
       mailServiceMock[sender].mockResolvedValue(undefined);
@@ -308,7 +319,7 @@ describe('NotificationOutboxService', () => {
     });
 
     it('routes an order-payment-expired row to sendOrderPaymentExpiredPayload', async () => {
-      repositoryMock.claimDue.mockResolvedValue([
+      givenDue([
         makeRow({
           id: 'pe-1',
           type: 'order-payment-expired',
@@ -333,7 +344,7 @@ describe('NotificationOutboxService', () => {
         resetUrl: 'http://localhost:3000/reset-password?token=abc',
         expiresInHuman: '1 годину',
       };
-      repositoryMock.claimDue.mockResolvedValue([
+      givenDue([
         makeRow({
           id: 'pr-1',
           type: PASSWORD_RESET_MAIL_TYPE,
@@ -355,7 +366,7 @@ describe('NotificationOutboxService', () => {
 
   describe('dispatchDue — nothing due', () => {
     it('returns zeroed counts and performs no sends when no rows are due', async () => {
-      repositoryMock.claimDue.mockResolvedValue([]);
+      givenDue([]);
 
       const result = await service.dispatchDue();
 
@@ -366,7 +377,7 @@ describe('NotificationOutboxService', () => {
     it('claims due rows using the injected clock and configured batch size', async () => {
       await service.dispatchDue();
 
-      expect(repositoryMock.claimDue).toHaveBeenCalledWith(NOW, 25);
+      expect(repositoryMock.claimDue).toHaveBeenCalledWith(NOW, 25, NotificationChannel.EMAIL);
     });
   });
 
@@ -374,7 +385,7 @@ describe('NotificationOutboxService', () => {
 
   describe('dispatchDue — success → SENT', () => {
     it('renders+sends each due row and marks it SENT', async () => {
-      repositoryMock.claimDue.mockResolvedValue([makeRow()]);
+      givenDue([makeRow()]);
       mailServiceMock.sendOrderConfirmationPayload.mockResolvedValue(undefined);
 
       const result = await service.dispatchDue();
@@ -385,11 +396,7 @@ describe('NotificationOutboxService', () => {
     });
 
     it('counts multiple successful sends', async () => {
-      repositoryMock.claimDue.mockResolvedValue([
-        makeRow({ id: 'a' }),
-        makeRow({ id: 'b' }),
-        makeRow({ id: 'c' }),
-      ]);
+      givenDue([makeRow({ id: 'a' }), makeRow({ id: 'b' }), makeRow({ id: 'c' })]);
       mailServiceMock.sendOrderConfirmationPayload.mockResolvedValue(undefined);
 
       const result = await service.dispatchDue();
@@ -403,7 +410,7 @@ describe('NotificationOutboxService', () => {
 
   describe('dispatchDue — transient failure → retry', () => {
     it('marks a first-attempt failure for retry with the base backoff window', async () => {
-      repositoryMock.claimDue.mockResolvedValue([makeRow({ attempts: 0 })]);
+      givenDue([makeRow({ attempts: 0 })]);
       mailServiceMock.sendOrderConfirmationPayload.mockRejectedValue(new Error('SMTP timeout'));
 
       const result = await service.dispatchDue();
@@ -421,7 +428,7 @@ describe('NotificationOutboxService', () => {
 
     it('grows the backoff exponentially with the attempt count', async () => {
       // attempts already 2 → becomes 3; backoff = base * 2^(3-1) = 4000ms.
-      repositoryMock.claimDue.mockResolvedValue([makeRow({ attempts: 2 })]);
+      givenDue([makeRow({ attempts: 2 })]);
       mailServiceMock.sendOrderConfirmationPayload.mockRejectedValue(new Error('boom'));
 
       await service.dispatchDue();
@@ -436,7 +443,7 @@ describe('NotificationOutboxService', () => {
 
     it('caps the backoff at the configured maximum', async () => {
       // attempts 8 → 9; base * 2^8 = 256000ms, capped to MAX_MS (10000ms).
-      repositoryMock.claimDue.mockResolvedValue([makeRow({ attempts: 8, maxAttempts: 20 })]);
+      givenDue([makeRow({ attempts: 8, maxAttempts: 20 })]);
       mailServiceMock.sendOrderConfirmationPayload.mockRejectedValue(new Error('still down'));
 
       await service.dispatchDue();
@@ -455,7 +462,7 @@ describe('NotificationOutboxService', () => {
   describe('dispatchDue — exhausted → FAILED', () => {
     it('marks the row terminally FAILED once the incremented attempts reach maxAttempts', async () => {
       // attempts 4, max 5 → becomes 5 → terminal.
-      repositoryMock.claimDue.mockResolvedValue([makeRow({ attempts: 4, maxAttempts: 5 })]);
+      givenDue([makeRow({ attempts: 4, maxAttempts: 5 })]);
       mailServiceMock.sendOrderConfirmationPayload.mockRejectedValue(new Error('permanent'));
 
       const result = await service.dispatchDue();
@@ -471,7 +478,7 @@ describe('NotificationOutboxService', () => {
   describe('dispatchDue — mail disabled', () => {
     it('drains due rows as no-op SENT outside production, without calling the transport', async () => {
       mailServiceMock.isEnabled.mockReturnValue(false);
-      repositoryMock.claimDue.mockResolvedValue([makeRow({ id: 'a' }), makeRow({ id: 'b' })]);
+      givenDue([makeRow({ id: 'a' }), makeRow({ id: 'b' })]);
 
       const result = await service.dispatchDue();
 
@@ -487,7 +494,7 @@ describe('NotificationOutboxService', () => {
     it('in production leaves rows PENDING instead of marking them SENT', async () => {
       const prodService = buildService('production');
       mailServiceMock.isEnabled.mockReturnValue(false);
-      repositoryMock.claimDue.mockResolvedValue([makeRow({ id: 'a' }), makeRow({ id: 'b' })]);
+      givenDue([makeRow({ id: 'a' }), makeRow({ id: 'b' })]);
 
       const result = await prodService.dispatchDue();
 
@@ -505,10 +512,7 @@ describe('NotificationOutboxService', () => {
 
   describe('dispatchDue — mixed batch', () => {
     it('processes every row independently: one SENT, one retried', async () => {
-      repositoryMock.claimDue.mockResolvedValue([
-        makeRow({ id: 'ok' }),
-        makeRow({ id: 'bad', attempts: 0 }),
-      ]);
+      givenDue([makeRow({ id: 'ok' }), makeRow({ id: 'bad', attempts: 0 })]);
       mailServiceMock.sendOrderConfirmationPayload
         .mockResolvedValueOnce(undefined)
         .mockRejectedValueOnce(new Error('flaky'));
@@ -526,7 +530,7 @@ describe('NotificationOutboxService', () => {
     });
 
     it('treats an unknown payload type as a transient failure (rescheduled, not lost)', async () => {
-      repositoryMock.claimDue.mockResolvedValue([makeRow({ type: 'unknown-type', attempts: 0 })]);
+      givenDue([makeRow({ type: 'unknown-type', attempts: 0 })]);
 
       const result = await service.dispatchDue();
 

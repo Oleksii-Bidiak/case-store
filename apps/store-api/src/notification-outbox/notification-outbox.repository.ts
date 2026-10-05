@@ -62,15 +62,18 @@ export class NotificationOutboxRepository {
   }
 
   /**
-   * Claim the rows due for dispatch: PENDING and `nextAttemptAt <= now`, oldest
-   * first (by next-attempt then creation time), capped at `limit`. The worker
+   * Claim one channel's rows due for dispatch: PENDING and `nextAttemptAt <= now`,
+   * oldest first (by next-attempt then creation time), capped at `limit`.
+   * Per channel on purpose: a blocked channel leaves its rows PENDING and due,
+   * so in a shared batch they would stay the oldest and fill every slot,
+   * starving the channels that work (plan 187 review, W1). The worker
    * flips each row's status immediately after, so a row is not re-claimed by the
    * next tick (single-instance cron for MVP; multi-instance would need row
    * locking — out of scope per plan 092).
    */
-  claimDue(now: Date, limit: number): Promise<NotificationOutbox[]> {
+  claimDue(now: Date, limit: number, channel: NotificationChannel): Promise<NotificationOutbox[]> {
     return this.prisma.notificationOutbox.findMany({
-      where: { status: NotificationOutboxStatus.PENDING, nextAttemptAt: { lte: now } },
+      where: { status: NotificationOutboxStatus.PENDING, nextAttemptAt: { lte: now }, channel },
       orderBy: [{ nextAttemptAt: 'asc' }, { createdAt: 'asc' }],
       take: limit,
     });

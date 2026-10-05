@@ -261,25 +261,26 @@ export class NotificationOutboxService {
    * Dispatch every currently-due outbox row. Public (not tied to the scheduler)
    * so it is unit-testable directly. Returns per-run counters for logging/metrics.
    *
-   * The claimed batch is split by `channel` and each group goes to the adapter of
-   * that channel (TASK-673). The "transport disabled" branch is decided per
-   * channel, so an unconfigured SMTP never holds back another channel's rows, and
-   * vice versa.
+   * Each channel claims its own batch (up to `batchSize`) and goes to the adapter
+   * of that channel (TASK-673). Claiming and the "transport disabled" branch are
+   * both per channel, so a blocked channel — whose rows stay PENDING and due —
+   * never holds back another channel's rows, and vice versa.
    */
   async dispatchDue(): Promise<DispatchResult> {
     const now = this.clock.now();
-    const due = await this.repository.claimDue(now, this.batchSize);
     const result: DispatchResult = { sent: 0, retried: 0, failed: 0 };
-
-    if (due.length === 0) {
-      return result;
-    }
 
     // Only a batch that actually reached a transport earns the summary line — a
     // batch that was entirely blocked or drained has already logged its own.
     let attempted = false;
 
-    for (const [channel, rows] of this.groupByChannel(due)) {
+    // Every channel the schema knows, not just the registered adapters: a row of
+    // a channel nobody delivers must surface through the "no adapter" branch.
+    for (const channel of Object.values(NotificationChannel)) {
+      const rows = await this.repository.claimDue(now, this.batchSize, channel);
+      if (rows.length === 0) {
+        continue;
+      }
       const adapter = this.adapters.get(channel);
 
       if (!adapter) {
@@ -300,7 +301,7 @@ export class NotificationOutboxService {
       }
 
       if (!adapter.isEnabled()) {
-        await this.handleDisabledChannel(channel, rows, now, result);
+        await this.handleDisabledChannel(adapter, rows, now, result);
         continue;
       }
 
@@ -320,40 +321,18 @@ export class NotificationOutboxService {
   }
 
   /**
-   * Split a claimed batch by channel, keeping the claim order inside each group
-   * (rows of one channel are still delivered oldest-first).
-   *
-   * A row without a `channel` counts as EMAIL — the column's schema default. The
-   * column is NOT NULL, so a database row always has one; the fallback only
-   * covers rows built by hand (tests, fixtures written before TASK-672), which
-   * every one of them meant as an email.
-   */
-  private groupByChannel(
-    rows: NotificationOutbox[],
-  ): Map<NotificationChannel, NotificationOutbox[]> {
-    const groups = new Map<NotificationChannel, NotificationOutbox[]>();
-    for (const row of rows) {
-      const channel = (row.channel as NotificationChannel | undefined) ?? NotificationChannel.EMAIL;
-      const group = groups.get(channel);
-      if (group) {
-        group.push(row);
-      } else {
-        groups.set(channel, [row]);
-      }
-    }
-    return groups;
-  }
-
-  /**
-   * The "transport disabled" branch for one channel's share of the batch —
-   * unchanged from the mail-only outbox, now applied per channel.
+   * The "transport disabled" branch for one channel's batch — the mail-only
+   * outbox's behaviour, now applied per channel, plus one case mail never had:
+   * a channel that is configured but not working (Telegram before `getMe`
+   * answers, or after it failed) keeps its rows PENDING outside production too.
    */
   private async handleDisabledChannel(
-    channel: NotificationChannel,
+    adapter: NotificationChannelAdapter,
     rows: NotificationOutbox[],
     now: Date,
     result: DispatchResult,
   ): Promise<void> {
+    const channel = adapter.channel;
     const isEmail = channel === NotificationChannel.EMAIL;
 
     if (this.isProduction) {
@@ -371,6 +350,18 @@ export class NotificationOutboxService {
         isEmail
           ? `MAIL_ENABLED is false in production — ${rows.length} outbox row(s) left PENDING and NOT delivered. Configure SMTP.`
           : `${channel} channel is not configured in production — ${rows.length} outbox row(s) left PENDING and NOT delivered.`,
+      );
+      return;
+    }
+
+    if (adapter.isConfigured()) {
+      // Configured but down, or not verified yet: these rows are real messages a
+      // working transport will deliver in a moment. Draining them here would mark
+      // SENT what nobody received — the very failure the production branch exists
+      // to prevent — on any non-production stand that does have a token.
+      this.logger.warn(
+        { event: 'mailOutbox.dispatch.blocked', channel, pending: rows.length },
+        `${channel} channel is configured but not available — ${rows.length} outbox row(s) left PENDING`,
       );
       return;
     }

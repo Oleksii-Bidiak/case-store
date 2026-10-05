@@ -43,10 +43,15 @@ type FakeAdapter = NotificationChannelAdapter & {
   isEnabled: jest.Mock<boolean, []>;
 };
 
-function fakeAdapter(channel: NotificationChannel, enabled = true): FakeAdapter {
+function fakeAdapter(
+  channel: NotificationChannel,
+  enabled = true,
+  configured = enabled,
+): FakeAdapter {
   return {
     channel,
     isEnabled: jest.fn(() => enabled),
+    isConfigured: jest.fn(() => configured),
     send: jest.fn<Promise<void>, [NotificationOutbox]>().mockResolvedValue(undefined),
     healthcheck: jest.fn().mockResolvedValue({ state: enabled ? 'ok' : 'disabled' }),
   };
@@ -58,6 +63,14 @@ const repositoryMock = {
   markRetry: jest.fn(),
   markFailed: jest.fn(),
 };
+
+/** The due rows, as `claimDue` serves them: one channel per call. */
+function givenDue(rows: NotificationOutbox[]): void {
+  repositoryMock.claimDue.mockImplementation(
+    (_now: Date, _limit: number, channel: NotificationChannel) =>
+      Promise.resolve(rows.filter((row) => row.channel === channel)),
+  );
+}
 
 const loggerMock = {
   info: jest.fn(),
@@ -110,7 +123,7 @@ describe('NotificationOutboxService.dispatchDue — channels (TASK-673)', () => 
       channel: NotificationChannel.TELEGRAM,
       recipientAddress: '123456789',
     });
-    repositoryMock.claimDue.mockResolvedValue([telegramRow, emailRow]);
+    givenDue([telegramRow, emailRow]);
 
     const result = await buildService([email, telegram]).dispatchDue();
 
@@ -126,7 +139,7 @@ describe('NotificationOutboxService.dispatchDue — channels (TASK-673)', () => 
   describe('a channel with no registered adapter', () => {
     it('retries the row with backoff (not lost, not sent) and still delivers the other channel', async () => {
       const email = fakeAdapter(NotificationChannel.EMAIL);
-      repositoryMock.claimDue.mockResolvedValue([
+      givenDue([
         makeRow({ id: 't-1', channel: NotificationChannel.TELEGRAM, attempts: 0 }),
         makeRow({ id: 'e-1' }),
       ]);
@@ -154,7 +167,7 @@ describe('NotificationOutboxService.dispatchDue — channels (TASK-673)', () => 
     });
 
     it('marks the row FAILED once the attempts reach maxAttempts', async () => {
-      repositoryMock.claimDue.mockResolvedValue([
+      givenDue([
         makeRow({ id: 't-1', channel: NotificationChannel.TELEGRAM, attempts: 4, maxAttempts: 5 }),
       ]);
 
@@ -173,7 +186,7 @@ describe('NotificationOutboxService.dispatchDue — channels (TASK-673)', () => 
   it('marks the row FAILED at once on a PermanentDeliveryError (no retry, attempts + 1)', async () => {
     const telegram = fakeAdapter(NotificationChannel.TELEGRAM);
     telegram.send.mockRejectedValue(new PermanentDeliveryError('Forbidden: bot was blocked'));
-    repositoryMock.claimDue.mockResolvedValue([
+    givenDue([
       makeRow({ id: 't-1', channel: NotificationChannel.TELEGRAM, attempts: 1, maxAttempts: 5 }),
     ]);
 
@@ -192,7 +205,7 @@ describe('NotificationOutboxService.dispatchDue — channels (TASK-673)', () => 
   it('in production a disabled EMAIL transport leaves EMAIL rows PENDING while an enabled TELEGRAM still sends', async () => {
     const email = fakeAdapter(NotificationChannel.EMAIL, false);
     const telegram = fakeAdapter(NotificationChannel.TELEGRAM, true);
-    repositoryMock.claimDue.mockResolvedValue([
+    givenDue([
       makeRow({ id: 'e-1' }),
       makeRow({ id: 't-1', channel: NotificationChannel.TELEGRAM }),
       makeRow({ id: 'e-2' }),
@@ -220,7 +233,7 @@ describe('NotificationOutboxService.dispatchDue — channels (TASK-673)', () => 
   it('outside production drains only the disabled channel as a no-op; the enabled one goes through its transport', async () => {
     const email = fakeAdapter(NotificationChannel.EMAIL, true);
     const telegram = fakeAdapter(NotificationChannel.TELEGRAM, false);
-    repositoryMock.claimDue.mockResolvedValue([
+    givenDue([
       makeRow({ id: 't-1', channel: NotificationChannel.TELEGRAM }),
       makeRow({ id: 'e-1' }),
     ]);
@@ -240,6 +253,58 @@ describe('NotificationOutboxService.dispatchDue — channels (TASK-673)', () => 
       expect.any(String),
     );
     expect(result).toEqual({ sent: 2, retried: 0, failed: 0 });
+  });
+
+  // Plan 187 review, W1: a blocked channel's rows stay PENDING and due, so in a
+  // shared oldest-first batch they would take every slot, tick after tick.
+  it('claims each channel separately, so a full batch of blocked TELEGRAM rows does not starve EMAIL', async () => {
+    const email = fakeAdapter(NotificationChannel.EMAIL);
+    const telegram = fakeAdapter(NotificationChannel.TELEGRAM, false, true);
+    const blocked = Array.from({ length: 25 }, (_, i) =>
+      makeRow({
+        id: `t-${i}`,
+        channel: NotificationChannel.TELEGRAM,
+        nextAttemptAt: new Date(NOW.getTime() - 60_000),
+      }),
+    );
+    givenDue([...blocked, makeRow({ id: 'e-1' })]);
+
+    const result = await buildService([email, telegram], 'production').dispatchDue();
+
+    expect(repositoryMock.claimDue).toHaveBeenCalledWith(NOW, 25, NotificationChannel.EMAIL);
+    expect(repositoryMock.claimDue).toHaveBeenCalledWith(NOW, 25, NotificationChannel.TELEGRAM);
+    expect(email.send).toHaveBeenCalledTimes(1);
+    expect(repositoryMock.markSent).toHaveBeenCalledTimes(1);
+    expect(repositoryMock.markSent).toHaveBeenCalledWith('e-1', NOW);
+    expect(result).toEqual({ sent: 1, retried: 0, failed: 0 });
+  });
+
+  // Plan 187 review, W2: a token is set, but `getMe` has not answered yet (or
+  // failed). These are real messages — the no-op drain would report them sent.
+  it('outside production keeps a configured-but-unavailable channel PENDING instead of draining it', async () => {
+    const email = fakeAdapter(NotificationChannel.EMAIL);
+    const telegram = fakeAdapter(NotificationChannel.TELEGRAM, false, true);
+    givenDue([
+      makeRow({ id: 't-1', channel: NotificationChannel.TELEGRAM }),
+      makeRow({ id: 'e-1' }),
+    ]);
+
+    const result = await buildService([email, telegram]).dispatchDue();
+
+    expect(telegram.send).not.toHaveBeenCalled();
+    expect(repositoryMock.markSent).toHaveBeenCalledTimes(1);
+    expect(repositoryMock.markSent).toHaveBeenCalledWith('e-1', NOW);
+    expect(repositoryMock.markRetry).not.toHaveBeenCalled();
+    expect(repositoryMock.markFailed).not.toHaveBeenCalled();
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'mailOutbox.dispatch.blocked',
+        channel: NotificationChannel.TELEGRAM,
+        pending: 1,
+      }),
+      expect.any(String),
+    );
+    expect(result).toEqual({ sent: 1, retried: 0, failed: 0 });
   });
 
   it('refuses two adapters for the same channel', () => {

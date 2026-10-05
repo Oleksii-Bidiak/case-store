@@ -102,6 +102,12 @@ describe('EmailAdapter', () => {
     expect(mailServiceMock.isEnabled).toHaveBeenCalledTimes(1);
   });
 
+  it.each([true, false])('isConfigured() follows MAIL_ENABLED (%s)', (enabled) => {
+    mailServiceMock.isEnabled.mockReturnValue(enabled);
+
+    expect(adapter.isConfigured()).toBe(enabled);
+  });
+
   it('healthcheck reports ok / disabled from configuration alone, sending nothing', async () => {
     mailServiceMock.isEnabled.mockReturnValue(true);
     await expect(adapter.healthcheck()).resolves.toEqual({ state: 'ok' });

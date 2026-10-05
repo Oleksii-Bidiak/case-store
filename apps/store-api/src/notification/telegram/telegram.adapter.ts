@@ -68,6 +68,14 @@ export class TelegramAdapter implements NotificationChannelAdapter {
     return false;
   }
 
+  /**
+   * True whenever a token is set — including while `getMe` has not answered yet
+   * or has failed. Such rows must wait, not be drained (see the interface).
+   */
+  isConfigured(): boolean {
+    return this.state.snapshot().state !== 'unconfigured';
+  }
+
   /** Maps the channel state onto the outbox's health vocabulary. Sends nothing. */
   async healthcheck(): Promise<ChannelHealth> {
     const snapshot = await this.state.ensureFresh();

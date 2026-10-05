@@ -32,6 +32,7 @@ describe('TelegramAdapter', () => {
     isOk: jest.fn(() => snapshot.state === 'ok'),
     ensureFresh: jest.fn(() => Promise.resolve(snapshot)),
     markFailed: jest.fn(),
+    snapshot: jest.fn(() => snapshot),
   };
   const bindings = {
     hasActiveRecipient: jest.fn(),
@@ -200,6 +201,20 @@ describe('TelegramAdapter', () => {
 
       expect(adapter.isEnabled()).toBe(false);
       expect(state.ensureFresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // A set token is "configured" even while getMe is pending or failing: the
+  // outbox must then keep the rows, never no-op-drain them (plan 187 review, W2).
+  describe('isConfigured', () => {
+    it.each<[TelegramChannelSnapshot, boolean]>([
+      [{ state: 'ok', botUsername: 'shop_bot', checkedAt: new Date() }, true],
+      [{ state: 'failed', reason: 'getMe has not answered yet', checkedAt: new Date(0) }, true],
+      [{ state: 'unconfigured' }, false],
+    ])('for %o is %s', (s, expected) => {
+      snapshot = s;
+
+      expect(adapter.isConfigured()).toBe(expected);
     });
   });
 

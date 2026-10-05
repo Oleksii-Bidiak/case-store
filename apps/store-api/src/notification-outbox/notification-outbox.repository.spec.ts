@@ -1,4 +1,4 @@
-import { NotificationOutboxStatus } from '@prisma/client';
+import { NotificationChannel, NotificationOutboxStatus } from '@prisma/client';
 import { NotificationOutboxRepository } from './notification-outbox.repository';
 import { PrismaService } from '../prisma';
 
@@ -90,14 +90,18 @@ describe('NotificationOutboxRepository', () => {
   // ─── claimDue (due-filter + ordering) ────────────────────────────────────────
 
   describe('claimDue', () => {
-    it('selects PENDING rows due at/before now, oldest first, limited to the batch size', async () => {
+    it('selects the PENDING rows of one channel due at/before now, oldest first, limited to the batch size', async () => {
       prismaMock.notificationOutbox.findMany.mockResolvedValue([]);
       const now = new Date('2026-06-30T12:00:00.000Z');
 
-      await repository.claimDue(now, 20);
+      await repository.claimDue(now, 20, NotificationChannel.TELEGRAM);
 
       expect(prismaMock.notificationOutbox.findMany).toHaveBeenCalledWith({
-        where: { status: NotificationOutboxStatus.PENDING, nextAttemptAt: { lte: now } },
+        where: {
+          status: NotificationOutboxStatus.PENDING,
+          nextAttemptAt: { lte: now },
+          channel: NotificationChannel.TELEGRAM,
+        },
         orderBy: [{ nextAttemptAt: 'asc' }, { createdAt: 'asc' }],
         take: 20,
       });
