@@ -215,14 +215,17 @@ export function ProductImageGallery({
       </div>
 
       {images.length > 1 && (
-        <ul className="flex gap-2 overflow-x-auto">
+        <ul
+          // `p-1`: room for the focus ring, which `overflow-x-auto` would clip.
+          className="flex gap-2 overflow-x-auto p-1"
+        >
           {images.map((image, index) => {
             const isActive = index === activeIndex;
             return (
               <li key={image.id}>
                 <button
                   type="button"
-                  aria-pressed={isActive}
+                  aria-current={isActive ? "true" : undefined}
                   aria-label={dict.product.showImageAria(index + 1)}
                   onClick={() => setActiveIndex(index)}
                   className={cn(

@@ -63,7 +63,7 @@ describe("ProductImageGallery — thumbnail strip gate (TASK-126)", () => {
     expect(thumbnails()).toHaveLength(3);
   });
 
-  it("swaps the active thumbnail on click (aria-pressed follows selection)", async () => {
+  it("swaps the active thumbnail on click (aria-current follows selection, as in the lightbox strip)", async () => {
     const user = userEvent.setup();
     renderWithProviders(
       <ProductImageGallery
@@ -73,13 +73,13 @@ describe("ProductImageGallery — thumbnail strip gate (TASK-126)", () => {
     );
 
     const [first, second] = thumbnails();
-    expect(first).toHaveAttribute("aria-pressed", "true");
-    expect(second).toHaveAttribute("aria-pressed", "false");
+    expect(first).toHaveAttribute("aria-current", "true");
+    expect(second).not.toHaveAttribute("aria-current");
 
     await user.click(second);
 
-    expect(first).toHaveAttribute("aria-pressed", "false");
-    expect(second).toHaveAttribute("aria-pressed", "true");
+    expect(first).not.toHaveAttribute("aria-current");
+    expect(second).toHaveAttribute("aria-current", "true");
   });
 });
 
@@ -411,7 +411,7 @@ describe("ProductImageGallery — letterboxed photos (TASK-518)", () => {
 
     const [first, second] = thumbnails();
     expect(second).toHaveClass("border-primary");
-    expect(second).toHaveAttribute("aria-pressed", "true");
+    expect(second).toHaveAttribute("aria-current", "true");
     expect(first).toHaveClass("border-border");
     expect(first).not.toHaveClass("border-primary");
   });
@@ -462,7 +462,7 @@ describe("ProductImageGallery — lightbox zoom (TASK-521)", () => {
   };
 
   const toolbarOf = (dialog: HTMLElement) =>
-    within(dialog).getByRole("toolbar", {
+    within(dialog).getByRole("group", {
       name: dict.product.lightboxZoomToolbar,
     });
 
@@ -503,6 +503,14 @@ describe("ProductImageGallery — lightbox zoom (TASK-521)", () => {
     for (const control of [zoomOut(), zoomIn(), reset()]) {
       expect(control).toHaveClass("size-11");
     }
+  });
+
+  it("groups the zoom controls without claiming the toolbar's arrow keys and opens without motion on reduced-motion", async () => {
+    const { dialog } = await openLightbox();
+
+    // ←/→ step and pan the photo, so an APG toolbar (arrow roving) would lie.
+    expect(within(dialog).queryByRole("toolbar")).not.toBeInTheDocument();
+    expect(dialog).toHaveClass("motion-reduce:animate-none");
   });
 
   it("steps «+» through 150, 250 and 400 % and «−» / reset back down", async () => {

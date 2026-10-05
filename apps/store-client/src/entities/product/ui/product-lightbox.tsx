@@ -558,7 +558,9 @@ export function ProductLightbox({
 
   const zoomToolbar = canZoom && (
     <div
-      role="toolbar"
+      // A group, not an APG toolbar: ←/→ belong to the dialog (step / pan), so
+      // the toolbar pattern's arrow-key roving between its buttons cannot hold.
+      role="group"
       aria-label={dict.product.lightboxZoomToolbar}
       // Phones: in the footer, above the thumbnails. From `sm`: lifted to the
       // top-right corner beside «Закрити» (the content box is the fixed
@@ -620,7 +622,7 @@ export function ProductLightbox({
         // The primitive's built-in close is a bare 16px icon — fine inside a
         // padded card, far below the 44px touch target on a full-bleed photo.
         showCloseButton={false}
-        className="inset-0 top-0 left-0 h-dvh w-screen max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 bg-background p-0 sm:max-w-none"
+        className="inset-0 top-0 left-0 h-dvh w-screen max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 bg-background p-0 motion-reduce:animate-none sm:max-w-none"
       >
         <DialogHeader className="sr-only">
           <DialogTitle>{dict.product.lightboxTitle(altFallback)}</DialogTitle>
