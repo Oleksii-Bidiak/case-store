@@ -1682,7 +1682,7 @@ export const dict = {
     saving: "Збереження…",
     saved: "Профіль оновлено",
     updateError: "Не вдалося оновити профіль. Спробуйте ще раз.",
-    ordersLink: "Мої замовлення",
+    ordersLink: "Історія замовлень",
     ordersLinkDesc: "Переглянути історію замовлень",
     signOut: "Вийти",
     loadError: "Не вдалося завантажити профіль.",
@@ -2174,7 +2174,6 @@ export const dict = {
     revertEmailChangeDescription: "Скасуйте зміну адреси для входу.",
     accountTitle: "Мій акаунт | CaseStore",
     accountDescription: "Керуйте профілем та переглядайте свої замовлення.",
-    ordersTitle: "Мої замовлення | CaseStore",
     ordersDescription: "Історія ваших замовлень.",
     // TASK-217 — the order history as a section of the account.
     accountOrdersTitle: "Історія замовлень | CaseStore",

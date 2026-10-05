@@ -5,7 +5,6 @@ import AccountLoading from "./account/loading";
 import AccountOrdersLoading from "./account/orders/loading";
 import CartLoading from "./cart/loading";
 import CheckoutLoading from "./checkout/loading";
-import OrdersLoading from "./orders/loading";
 import ConfirmationLoading from "./orders/[id]/confirmation/loading";
 import ProductsLoading from "./products/(catalog)/loading";
 import ProductLoading from "./products/[slug]/loading";
@@ -19,7 +18,6 @@ import ProductLoading from "./products/[slug]/loading";
 const LOADERS: Array<[string, ComponentType]> = [
   ["/cart", CartLoading],
   ["/checkout", CheckoutLoading],
-  ["/orders", OrdersLoading],
   ["/orders/[id]/confirmation", ConfirmationLoading],
   ["/products", ProductsLoading],
   ["/products/[slug]", ProductLoading],

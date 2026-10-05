@@ -201,7 +201,7 @@ export function Header({
                           {dict.header.myAccount}
                         </Link>
                         <Link
-                          href="/orders"
+                          href="/account/orders"
                           onClick={() => setMenuOpen(false)}
                           className={MOBILE_LINK_CLASS}
                         >
