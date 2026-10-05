@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LockIcon } from "lucide-react";
 import {
+  ROLE_VALUES,
   CustomerStatusBadge,
   customerDisplayName,
   customerInitial,
@@ -29,6 +30,7 @@ import { UserNotesPanel } from "@/features/user-notes";
 import {
   ChangeUserEmailDialog,
   DeleteUserDialog,
+  UserRoleChange,
 } from "@/features/user-account-actions";
 import {
   Badge,
@@ -298,19 +300,26 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
                 </>
               )}
 
+              {/* TEMPORARY (owner decision 2026-10-05, TASK-1743): the role
+                  control is back on the customer card, because «Додати
+                  співробітника» cannot promote an existing customer yet (an
+                  existing email answers 409). Remove it again once TASK-1059's
+                  «Хто» step finds the customer by email. A promoted account
+                  leaves `/api/users`, so the card would 404 on its next read —
+                  send the operator to the staff card instead. */}
               {canManageStaff && (
                 <>
                   {isOwner && <Separator />}
-                  <p className="text-xs text-muted-foreground">
-                    {d.staffAccessHintBefore}
-                    <Link
-                      href="/staff"
-                      className="rounded-xs font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-                    >
-                      {d.staffAccessHintLink}
-                    </Link>
-                    {d.staffAccessHintAfter}
-                  </p>
+                  <UserRoleChange
+                    userId={user.id}
+                    currentRole={user.role}
+                    targetName={name || user.email}
+                    onChanged={(nextRole) => {
+                      if (nextRole !== ROLE_VALUES.CUSTOMER) {
+                        router.push(`/staff/${user.id}`);
+                      }
+                    }}
+                  />
                 </>
               )}
             </section>

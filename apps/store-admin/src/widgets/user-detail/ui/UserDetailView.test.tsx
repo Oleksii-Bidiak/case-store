@@ -833,31 +833,28 @@ describe("UserDetailView — card by mockup (wave 198)", () => {
     ).toBeInTheDocument();
   });
 
-  describe("«Роль співробітника» is gone from the customer card (owner decision 2026-09-30)", () => {
-    it("renders no role control, and points at «Співробітники» instead", async () => {
+  // TASK-1743 (owner decision 2026-10-05): back on the customer card until the
+  // «Додати співробітника» wizard can promote an existing customer (TASK-1059).
+  describe("«Роль співробітника» is back on the customer card for now", () => {
+    it("offers the role control to a session with staff:write", async () => {
       mockCard();
       renderWithProviders(<UserDetailView userId={USER_ID} />);
 
-      await screen.findByText(dict.users.staffHeading);
       expect(
-        screen.queryByText(dict.users.roleChangeLabel),
-      ).not.toBeInTheDocument();
-      expect(
-        screen.queryByRole("combobox", { name: dict.users.roleChangeAria }),
-      ).not.toBeInTheDocument();
-      expect(
-        screen.getByRole("link", { name: dict.users.staffAccessHintLink }),
-      ).toHaveAttribute("href", "/staff");
+        await screen.findByRole("combobox", {
+          name: dict.users.roleChangeAria,
+        }),
+      ).toBeInTheDocument();
     });
 
-    it("keeps the hint behind staff:write — the same gate the role control had", async () => {
+    it("hides it without staff:write — the gate it always had", async () => {
       managerHolding(PERM.customersRead, PERM.customersCard);
       mockCard();
       renderWithProviders(<UserDetailView userId={USER_ID} />);
 
       await screen.findByText(dict.users.cardLtv);
       expect(
-        screen.queryByRole("link", { name: dict.users.staffAccessHintLink }),
+        screen.queryByRole("combobox", { name: dict.users.roleChangeAria }),
       ).not.toBeInTheDocument();
     });
   });
