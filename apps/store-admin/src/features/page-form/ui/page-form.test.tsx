@@ -135,6 +135,23 @@ describe("PageForm — content preview tab (TASK-266)", () => {
     );
   });
 
+  it("switches to the editor when write access arrives after the first render", () => {
+    // A cold load: permissions are not in yet, so the form mounts read-only.
+    const { rerender } = renderWithProviders(
+      <PageForm onSubmit={noop} isPending={false} readOnly />,
+    );
+    expect(
+      screen.getByRole("tab", { name: dict.contentPreview.tabPreview }),
+    ).toHaveAttribute("aria-selected", "true");
+
+    rerender(<PageForm onSubmit={noop} isPending={false} readOnly={false} />);
+
+    expect(
+      screen.getByRole("tab", { name: dict.contentPreview.tabEdit }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("rte-stub")).toBeInTheDocument();
+  });
+
   it("shows the empty placeholder in the preview tab before typing", async () => {
     renderWithProviders(<PageForm onSubmit={noop} isPending={false} />);
 

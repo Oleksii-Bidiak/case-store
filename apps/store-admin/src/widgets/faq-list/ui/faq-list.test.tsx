@@ -376,6 +376,26 @@ describe("AdminFaqTable — deep links keep working", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("a cold-loaded deep link opens EDITABLE once an editor's permissions arrive", async () => {
+    mockReorder();
+    const table = <AdminFaqTable dialog={{ mode: "edit", id: C }} />;
+    const { rerender } = renderWithProviders(
+      <WithAuth permissions={[]} arePermissionsLoading>
+        {table}
+      </WithAuth>,
+    );
+    await waitFor(() => expect(rowIds()).toHaveLength(3));
+    // Nothing is decided while the answer is still on its way.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    rerender(<WithAuth permissions={[PERM.faqWrite]}>{table}</WithAuth>);
+
+    const dialog = await screen.findByRole("dialog", { name: d.editHeading });
+    expect(
+      within(dialog).getByRole("button", { name: dict.faqForm.submit }),
+    ).toBeInTheDocument();
+  });
+
   it("/faq/[id]/edit opens that item once the list is in", async () => {
     mockReorder();
     renderTable({ props: { dialog: { mode: "edit", id: C } } });

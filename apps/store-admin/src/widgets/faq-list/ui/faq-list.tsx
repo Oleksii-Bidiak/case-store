@@ -115,7 +115,7 @@ export function AdminFaqTable({ dialog }: AdminFaqTableProps = {}) {
 function AdminFaqGrid({ dialog }: AdminFaqTableProps) {
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { can } = useAuth();
+  const { can, arePermissionsLoading } = useAuth();
   // The key the API guards every write here with.
   const canWrite = can(PERM.faqWrite);
   const { confirm, confirmDialog } = useConfirmDialog();
@@ -196,9 +196,12 @@ function AdminFaqGrid({ dialog }: AdminFaqTableProps) {
 
   /* ── the form dialog ─────────────────────────────────────────────────── */
 
-  // Seeded once from the ROUTE (a static prop, not async data).
+  // Seeded once from the ROUTE (a static prop, not async data). NOT from
+  // `canWrite`: on a cold load the permissions arrive after the first render,
+  // so a frozen `!canWrite` would open an editor's deep link read-only for
+  // good. Read-only is derived at render instead (below).
   const [dialogState, setDialogState] = useState<DialogState | null>(
-    dialog ? { ...dialog, readOnly: !canWrite } : null,
+    dialog ? { ...dialog } : null,
   );
   const closeDialog = () => {
     setDialogState(null);
@@ -482,7 +485,9 @@ function AdminFaqGrid({ dialog }: AdminFaqTableProps) {
         </div>
       )}
 
-      {dialogState && (dialogState.mode === "create" || editItem) ? (
+      {dialogState &&
+      !arePermissionsLoading &&
+      (dialogState.mode === "create" || editItem) ? (
         <FaqFormDialog
           open
           onOpenChange={(open) => {

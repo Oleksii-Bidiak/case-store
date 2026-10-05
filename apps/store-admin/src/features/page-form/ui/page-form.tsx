@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, type BaseSyntheticEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  type BaseSyntheticEvent,
+  type ReactNode,
+} from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -181,6 +186,17 @@ export function PageForm({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Content tab: preview for a read-only viewer, the editor otherwise. Kept
+  // in step with `readOnly` (forms.md rule 1a render-time guard) — on a cold
+  // load the permissions arrive after the first render, and a `defaultValue`
+  // would leave an editor staring at the preview.
+  const [contentTab, setContentTab] = useState(readOnly ? "preview" : "edit");
+  const [contentTabFor, setContentTabFor] = useState(readOnly);
+  if (contentTabFor !== readOnly) {
+    setContentTabFor(readOnly);
+    setContentTab(readOnly ? "preview" : "edit");
+  }
 
   const titleValue = useWatch({ control, name: "title" }) ?? "";
   const slugValue = useWatch({ control, name: "slug" }) ?? "";
@@ -509,7 +525,7 @@ export function PageForm({
                   the inactive panel, which is safe: the editor is fully
                   controlled by the RHF field. Read-only opens on the preview —
                   a disabled editor is a worse way to read a page. */}
-              <Tabs defaultValue={readOnly ? "preview" : "edit"}>
+              <Tabs value={contentTab} onValueChange={setContentTab}>
                 <TabsList>
                   <TabsTrigger value="edit">
                     {dict.contentPreview.tabEdit}
