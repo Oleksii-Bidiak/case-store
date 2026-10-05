@@ -63,6 +63,53 @@ describe("OrderPaymentPanel — an open order", () => {
   });
 });
 
+describe("OrderPaymentPanel — an unpaid online order (TASK-217)", () => {
+  const awaiting = { minutes: 23, until: "14:52", total: "3 200 ₴" };
+
+  it("says how long the goods are held and offers ONE primary «Оплатити»", () => {
+    const { container } = renderPanel({
+      paymentStatus: "PENDING",
+      orderStatus: "PENDING",
+      hasRecentAttempt: false,
+      awaiting,
+    });
+
+    expect(
+      screen.getByText(dict.orderHistory.awaitingPayment(23)),
+    ).toBeInTheDocument();
+    expect(screen.getByText(copy.awaitingBody("14:52"))).toBeInTheDocument();
+    const primary = container.querySelectorAll(
+      '[data-slot="button"][data-variant="default"]',
+    );
+    expect(primary).toHaveLength(1);
+    expect(primary[0]).toHaveTextContent(dict.orderHistory.pay("3 200 ₴"));
+  });
+
+  it("lets a recent attempt win: «Підтверджуємо…», not a second «Оплатити»", () => {
+    renderPanel({
+      paymentStatus: "PENDING",
+      orderStatus: "PENDING",
+      hasRecentAttempt: true,
+      isAwaitingCallback: true,
+      awaiting,
+    });
+
+    expect(screen.getByText(copy.pendingTitle)).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("stays silent once the reservation has lapsed (0 minutes)", () => {
+    const { container } = renderPanel({
+      paymentStatus: "PENDING",
+      orderStatus: "PENDING",
+      hasRecentAttempt: false,
+      awaiting: { ...awaiting, minutes: 0 },
+    });
+
+    expect(container).toBeEmptyDOMElement();
+  });
+});
+
 describe("OrderPaymentPanel — a closed order (TASK-407)", () => {
   it.each(["CANCELLED", "REFUNDED"] as const)(
     "hides the failed-payment retry on a %s order and says the order is cancelled",

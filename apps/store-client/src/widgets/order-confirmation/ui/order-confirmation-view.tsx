@@ -1,13 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/entities/session";
-import { useGetOrder } from "@/entities/order";
+import {
+  OrderTotalsBreakdown,
+  orderDeliveryDetails,
+  useGetOrder,
+} from "@/entities/order";
 import { CancelOrderButton } from "@/features/cancel-order";
 import { ReturnRequestButton } from "@/features/return-request";
-import { forgetPaymentAttempt, readPaymentAttempt } from "@/features/checkout";
+import {
+  OrderPaymentPanel,
+  offersPaymentRetry,
+  useForgetSettledPaymentAttempt,
+  usePaymentAttemptWatch,
+} from "@/features/checkout";
 import { dict, H1_CLASS } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
 import { Button } from "@/shared/ui";
@@ -15,24 +24,10 @@ import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
 import { OrderAddressSummary } from "./order-address-summary";
-import { OrderPaymentPanel, offersPaymentRetry } from "./order-payment-panel";
-import { OrderTotalsBreakdown } from "./order-totals-breakdown";
 
 interface OrderConfirmationViewProps {
   orderId: string;
 }
-
-/**
- * How long to keep asking the server whether the payment callback has landed,
- * measured from the moment this browser was handed off to the provider.
- *
- * Long enough to cover a 3-D Secure detour and a provider retry; short enough
- * that a shopper whose callback never arrives is told so plainly instead of
- * watching a spinner indefinitely. Past this window the reconciliation cron is
- * the safety net — not the shopper's patience.
- */
-const CALLBACK_WAIT_MS = 3 * 60 * 1000;
-const CALLBACK_POLL_MS = 4000;
 
 /**
  * The page-level CTA box on the `Button` primitive (focus ring, disabled tokens):
@@ -57,52 +52,19 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
   const router = useRouter();
   const { isAuthenticated, isInitializing } = useAuth();
 
-  // Did THIS browser just go off to pay for THIS order? Read once per order id.
-  // It is session-local and forgeable, so it may influence wording and polling
-  // and nothing else — every statement about money comes from `paymentStatus`.
-  const attempt = useMemo(() => readPaymentAttempt(orderId), [orderId]);
-  const callbackDeadline = attempt ? attempt.startedAt + CALLBACK_WAIT_MS : 0;
-
-  // Whether the wait window has run out. Held in state and flipped by a timer
-  // rather than compared against `Date.now()` during render: a render-time clock
-  // read is impure, and — worse here — it would only ever change when something
-  // unrelated happened to re-render, so a shopper staring at the page could sit
-  // on "confirming…" long past the point where we know better.
-  const [waitElapsed, setWaitElapsed] = useState(false);
-  useEffect(() => {
-    if (!attempt) return;
-    // Clamped rather than branched: an already-expired attempt schedules a
-    // zero-delay timer instead of setting state synchronously inside the effect,
-    // which would cascade an extra render for no benefit.
-    const remaining = Math.max(0, callbackDeadline - Date.now());
-    const timer = setTimeout(() => setWaitElapsed(true), remaining);
-    return () => clearTimeout(timer);
-  }, [attempt, callbackDeadline]);
+  // The payment-callback wait (TASK-330-B): whether this browser just went off
+  // to pay, whether we are still inside the wait window, and the poll that
+  // asks the server meanwhile. Shared with the account order detail (TASK-217).
+  const watch = usePaymentAttemptWatch(orderId);
 
   const { data, isLoading, isError, error, refetch } = useGetOrder(orderId, {
     query: {
       enabled: isAuthenticated,
-      // Poll only while there is a real reason to: this browser paid, the server
-      // still says PENDING, and we are inside the wait window. The predicate form
-      // reads the freshest cached order, so the first non-PENDING response stops
-      // the loop by itself.
-      refetchInterval: (query) => {
-        if (!attempt) return false;
-        if (query.state.data?.data?.paymentStatus !== "PENDING") return false;
-        if (Date.now() > callbackDeadline) return false;
-        return CALLBACK_POLL_MS;
-      },
+      refetchInterval: watch.refetchInterval,
     },
   });
 
-  // Once the payment reaches a settled state the note has done its job. Clearing
-  // it stops a later visit to this page from re-entering the "confirming" copy.
-  const settledStatus = data?.data?.paymentStatus;
-  useEffect(() => {
-    if (settledStatus && settledStatus !== "PENDING") {
-      forgetPaymentAttempt(orderId);
-    }
-  }, [settledStatus, orderId]);
+  useForgetSettledPaymentAttempt(orderId, data?.data?.paymentStatus);
 
   // Redirect unauthenticated visitors to login (once init has settled).
   useEffect(() => {
@@ -189,8 +151,8 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
         orderId={order.id}
         paymentStatus={order.paymentStatus}
         orderStatus={order.status}
-        hasRecentAttempt={!!attempt}
-        isAwaitingCallback={!!attempt && !waitElapsed}
+        hasRecentAttempt={watch.hasRecentAttempt}
+        isAwaitingCallback={watch.isAwaitingCallback}
       />
 
       <div className="flex flex-col gap-8 lg:grid lg:grid-cols-3">
@@ -213,6 +175,13 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
             >
               <Link href="/">{dict.common.continueShopping}</Link>
             </Button>
+            {/* TASK-217: the same order inside the account — timeline, ТТН,
+                cancel and return live there after this one-time page. */}
+            <Button asChild size="lg" variant="outline" className={PAGE_CTA}>
+              <Link href={`/account/orders/${order.id}`}>
+                {dict.order.viewInAccount}
+              </Link>
+            </Button>
             {order.status === "PENDING" && (
               <CancelOrderButton orderId={order.id} />
             )}
@@ -234,10 +203,14 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
         <aside className="flex flex-col gap-6 lg:col-span-1 lg:self-start">
           <OrderTotalsBreakdown
             subtotal={order.subtotal}
+            addonsTotal={order.addonsTotal}
             discount={order.discount}
+            discountCode={order.discountCode}
             shippingCost={order.shippingCost}
+            shippingPending={orderDeliveryDetails(order).shippingCostPending}
             tax={order.tax}
             total={order.total}
+            className="p-6 shadow-none"
           />
 
           {notes && (

@@ -12,6 +12,12 @@ const COPIED_RESET_MS = 2_000;
 interface OrderTrackingNumberProps {
   /** The Nova Poshta waybill (ТТН) the operator entered (TASK-335). */
   trackingNumber: string;
+  /**
+   * `tile` (default) — the order-history card's muted tile with its own
+   * «ТТН Нової Пошти» label. `inline` — the order detail's «ТТН» row, where
+   * the `<dt>` already names it: no tile, no label (AccountOrders.dc.html).
+   */
+  variant?: "tile" | "inline";
   className?: string;
 }
 
@@ -32,11 +38,18 @@ interface OrderTrackingNumberProps {
  * The two inline actions keep the tile's 40px rhythm while their hit area is
  * 44px tall (`-my-3 py-3`), design-system §8. Labels are `text-foreground`:
  * `muted-foreground` on the `bg-muted` tile is 4.34:1, under the 4.5:1 floor.
+ *
+ * The `inline` variant wraps in a narrow `<dd>` (number, then one action per
+ * line at 390), where negative margins would stack the 44px hit areas over
+ * each other. There each action is a real `min-h-11` box; from `sm`, where the
+ * row fits on one line, the block takes `-my-3` so it sits on the text row.
  */
 export function OrderTrackingNumber({
   trackingNumber,
+  variant = "tile",
   className,
 }: OrderTrackingNumberProps) {
+  const inline = variant === "inline";
   const t = dict.order.tracking;
   const [copied, setCopied] = useState(false);
 
@@ -55,18 +68,23 @@ export function OrderTrackingNumber({
     }
   }
 
-  const action =
-    "-my-3 inline-flex items-center gap-1 rounded-sm py-3 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  const action = cn(
+    "inline-flex items-center gap-1 rounded-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    inline ? "min-h-11" : "-my-3 py-3",
+  );
 
   return (
     <div
       data-testid="order-tracking"
       className={cn(
-        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-menu bg-muted px-3.5 py-2.5 text-sm text-foreground",
+        "flex flex-wrap items-center text-sm text-foreground",
+        inline
+          ? "gap-x-3.5 sm:-my-3"
+          : "gap-x-3 gap-y-2 rounded-menu bg-muted px-3.5 py-2.5",
         className,
       )}
     >
-      <span>{t.label}</span>
+      {!inline && <span>{t.label}</span>}
       <span className="font-mono font-semibold">{trackingNumber}</span>
       <button
         type="button"

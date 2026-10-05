@@ -61,6 +61,22 @@ export { useNow, NOW_TICK_MS } from "./lib/use-now";
 export { novaPoshtaTrackingUrl } from "./lib/tracking";
 export { OrderTrackingNumber } from "./ui/order-tracking-number";
 export { OrderItemThumb } from "./ui/order-item-thumb";
+export { orderUnitCount } from "./lib/order-units";
+export {
+  ORDER_TIMELINE_LENGTH,
+  orderTimelineIndex,
+  orderTimelineStates,
+  type OrderTimelineStepState,
+} from "./lib/order-timeline";
+export {
+  orderDeliveryDetails,
+  type OrderDeliveryDetails,
+  type OrderDeliveryPlaceKind,
+} from "./lib/order-delivery";
+// Shared by the confirmation page and the account order detail — moved down
+// from `widgets/order-confirmation`, which another widget may not import.
+export { OrderItemRow } from "./ui/order-item-row";
+export { OrderTotalsBreakdown } from "./ui/order-totals-breakdown";
 
 export {
   useCreateOrder,

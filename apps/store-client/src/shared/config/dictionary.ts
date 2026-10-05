@@ -1546,6 +1546,55 @@ export const dict = {
       orderClosedTitle: "Замовлення вже виконано",
       orderClosedBody:
         "Замовлення доставлено, тож онлайн-оплата для нього недоступна. Якщо є питання щодо оплати — зателефонуйте нам.",
+      // TASK-217: an unpaid ONLINE order still holding its reservation, on the
+      // account order detail. The title is `orderHistory.awaitingPayment(N)`,
+      // the button `orderHistory.pay(total)` — one wording on both screens.
+      awaitingBody: (time: string) =>
+        `Ми тримаємо товари за вами до ${time}. Якщо оплата не надійде, резерв знімемо, а замовлення скасуємо.`,
+    },
+
+    // ── Totals rows (TASK-217) ──────────────────────────────────────────────
+    // The confirmation page and the account order detail share one breakdown.
+    addons: "Послуги",
+    discountWithCode: (code: string) => `Знижка · ${code}`,
+    shippingFree: "Безкоштовно",
+    // `shippingAddress.shippingCostPending` (delivery OTHER): the 0 booked at
+    // checkout is not a price, the operator quotes it later (B-6 §4).
+    shippingPending: "Уточнить оператор",
+    paymentMethodLabel: "Спосіб оплати",
+    // The confirmation page's way into the account copy of the same order.
+    viewInAccount: "Деталі замовлення",
+
+    // ── Account order detail `/account/orders/[id]` (TASK-217) ──────────────
+    // AccountOrders.dc.html `#detail`. The h1 is
+    // `account.dashboard.orderHeading`, the back link `account.dashboard.nav.orders`.
+    detail: {
+      placedOn: (date: string) => `Оформлено ${date}`,
+      stepsAria: "Етапи замовлення",
+      // The API keeps no per-stage dates, so only «Оформлено» carries one.
+      steps: ["Оформлено", "Підтверджено", "Відправлено", "Доставлено"],
+      // A screen reader hears the state the colour shows.
+      stepDoneSr: "виконано",
+      stepNextSr: "ще попереду",
+      closedCancelled: "Замовлення скасовано",
+      closedRefunded: "Повернення коштів",
+      deliveryHeading: "Доставка",
+      deliveryMethod: "Спосіб",
+      deliveryRecipient: "Отримувач",
+      deliveryCity: "Місто",
+      deliveryWarehouse: "Відділення",
+      deliveryPickupPoint: "Пункт видачі",
+      deliveryAddress: "Адреса",
+      deliveryTracking: "ТТН",
+      trackingNone: "Ще не передано перевізнику",
+      // `OrderEntity.deliveryMethod`; the label says how the parcel travels.
+      deliveryMethods: {
+        NOVA_POSHTA: "Нова Пошта, відділення",
+        PICKUP: "Самовивіз із магазину",
+        COURIER: "Курʼєр додому",
+        OTHER: "Інша доставка",
+      } as Record<string, string>,
+      backToList: "До історії замовлень",
     },
 
     // ── Guest order status page (TASK-338) ──────────────────────────────────

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
-import { dict, H1_CLASS } from "@/shared/config";
+import { OrderDetailView } from "@/widgets";
+import { dict } from "@/shared/config";
 
 interface AccountOrderPageProps {
   params: Promise<{ id: string }>;
@@ -20,29 +19,18 @@ export async function generateMetadata({
 }
 
 /**
- * `/account/orders/[id]` — one order inside the account (TASK-217).
- * PLACEHOLDER for the shell step: the detail screen replaces it in a later
- * step. Below `lg` the shell drops its back-home line and chip strip on this
- * route, so the «← Історія замовлень» link here is the way back.
+ * `/account/orders/[id]` — one order inside the account (TASK-217). The frame,
+ * the menu and the auth guard are the account layout's AccountShell; below
+ * `lg` the shell drops its back-home line and chip strip on this route, so the
+ * view's own «← Історія замовлень» is the way back.
+ *
+ * Not to be confused with `/orders/[id]/confirmation`, checkout's step 3 (the
+ * provider's `result_url`, the thank-you and the `purchase` event). That page
+ * stays; it links here.
  */
 export default async function AccountOrderPage({
   params,
 }: AccountOrderPageProps) {
   const { id } = await params;
-  const d = dict.account.dashboard;
-
-  return (
-    <div className="flex flex-col gap-5">
-      <Link
-        href="/account/orders"
-        className="inline-flex items-center gap-2 self-start rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <ChevronLeft className="size-4.5" aria-hidden="true" />
-        {d.nav.orders}
-      </Link>
-      <h1 className={`${H1_CLASS} text-foreground`}>
-        {d.orderHeading(orderRef(id))}
-      </h1>
-    </div>
-  );
+  return <OrderDetailView orderId={id} />;
 }

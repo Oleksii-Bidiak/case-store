@@ -1,6 +1,5 @@
 import {
   ORDER_TAB_STATUSES,
-  orderUnitCount,
   ordersHref,
   parseOrderTab,
   parseOrdersPage,
@@ -69,13 +68,6 @@ describe("order history URL state (TASK-217)", () => {
 });
 
 describe("order card arithmetic (TASK-217)", () => {
-  it("counts units, not lines", () => {
-    expect(
-      orderUnitCount([{ quantity: 1 }, { quantity: 2 }, { quantity: 1 }]),
-    ).toBe(4);
-    expect(orderUnitCount([])).toBe(0);
-  });
-
   const lines = (n: number) => Array.from({ length: n }, (_, i) => i);
 
   it.each([

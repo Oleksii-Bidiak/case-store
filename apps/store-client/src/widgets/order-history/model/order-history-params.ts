@@ -1,4 +1,4 @@
-import type { GetOrdersStatusItem, OrderItemEntity } from "@/entities/order";
+import type { GetOrdersStatusItem } from "@/entities/order";
 
 /**
  * Pure model of `/account/orders` (TASK-217): the status tabs, the URL that
@@ -55,17 +55,6 @@ export function ordersHref(
   if (next.page > 1) params.set("page", String(next.page));
   const query = params.toString();
   return query ? `${pathname}?${query}` : pathname;
-}
-
-/**
- * Units on an order — Σ quantity, so «2 × кабель» counts two. The mockup's
- * detail (4 lines, one of them ×2 → «5 товарів») reads it this way, and so does
- * the cart badge; the thumbnails, one per line, are a different count.
- */
-export function orderUnitCount(
-  items: readonly Pick<OrderItemEntity, "quantity">[],
-): number {
-  return items.reduce((sum, item) => sum + item.quantity, 0);
 }
 
 /** Thumbnails a card shows from `sm` up, and below it (a 390px card fits 3). */

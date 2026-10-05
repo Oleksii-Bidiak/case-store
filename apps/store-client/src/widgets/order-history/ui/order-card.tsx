@@ -7,6 +7,7 @@ import {
   OrderItemThumb,
   OrderStatusBadge,
   OrderTrackingNumber,
+  orderUnitCount,
   type OrderEntity,
 } from "@/entities/order";
 import { CancelOrderButton } from "@/features/cancel-order";
@@ -19,7 +20,7 @@ import { ReturnRequestButton } from "@/features/return-request";
 import { dict } from "@/shared/config";
 import { formatDate, formatMoney } from "@/shared/lib";
 import { Badge, Button } from "@/shared/ui";
-import { orderUnitCount, thumbStrip } from "../model/order-history-params";
+import { thumbStrip } from "../model/order-history-params";
 import { ORDER_CARD_CLASS } from "./order-card-class";
 
 /** Existing Badge variants only; «Кошти повернено» is the solid success one. */

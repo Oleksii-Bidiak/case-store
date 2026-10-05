@@ -73,8 +73,11 @@ export function OrderConfirmationSkeleton() {
             <Skeleton className="h-5 w-36" />
           </div>
 
-          {/* CTA row — «Продовжити покупки» */}
-          <Skeleton className="h-12 w-56 rounded-cta" />
+          {/* CTA row — «Продовжити покупки», «Деталі замовлення» */}
+          <div className="flex flex-wrap gap-4">
+            <Skeleton className="h-12 w-56 rounded-cta" />
+            <Skeleton className="h-12 w-52 rounded-cta" />
+          </div>
         </div>
 
         {/* OrderTotalsBreakdown */}

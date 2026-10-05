@@ -1,4 +1,4 @@
-import { formatDate, formatDayMonth } from "./formatDate";
+import { formatDate, formatDayMonth, formatTime } from "./formatDate";
 
 describe("formatDate", () => {
   it("formats the long form with the genitive month and no «р.» suffix", () => {
@@ -37,5 +37,18 @@ describe("formatDayMonth", () => {
 
   it("returns an unusable input unchanged", () => {
     expect(formatDayMonth("nope")).toBe("nope");
+  });
+});
+
+describe("formatTime (TASK-217)", () => {
+  it("prints 24-hour Kyiv wall-clock time", () => {
+    // 11:52 UTC is 14:52 in Kyiv in summer (UTC+3).
+    expect(formatTime("2026-06-12T11:52:00Z")).toBe("14:52");
+    // Midnight reads 00, not 24.
+    expect(formatTime("2026-06-11T21:05:00Z")).toBe("00:05");
+  });
+
+  it("returns an unusable input unchanged", () => {
+    expect(formatTime("nope")).toBe("nope");
   });
 });

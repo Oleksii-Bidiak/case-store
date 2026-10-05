@@ -64,6 +64,7 @@ function AccountAuthRedirect() {
 export function AccountShell({
   children,
   ordersSkeleton = null,
+  orderDetailSkeleton = null,
 }: {
   children: ReactNode;
   /**
@@ -73,6 +74,8 @@ export function AccountShell({
    * import.
    */
   ordersSkeleton?: ReactNode;
+  /** Same, for `/account/orders/<id>` — from `widgets/order-detail`. */
+  orderDetailSkeleton?: ReactNode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -100,6 +103,8 @@ export function AccountShell({
             <AccountProfileSkeleton />
           ) : pathname === ACCOUNT_ORDERS_PATH ? (
             ordersSkeleton
+          ) : detail ? (
+            orderDetailSkeleton
           ) : null}
         </AccountShellSkeleton>
       </>

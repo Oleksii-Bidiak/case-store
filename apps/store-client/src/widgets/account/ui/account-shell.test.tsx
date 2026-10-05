@@ -199,6 +199,26 @@ describe("AccountShell (TASK-217 / TASK-867)", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("fills the content column with the order detail's skeleton on /account/orders/<id>", () => {
+    at("/account/orders/0b5e7c1a-1111-4222-8333-444455556666");
+    renderWithProviders(
+      <AccountShell
+        ordersSkeleton={<p>orders skeleton</p>}
+        orderDetailSkeleton={<p>detail skeleton</p>}
+      >
+        <p>route content</p>
+      </AccountShell>,
+      { auth: { isAuthenticated: false, isInitializing: true } },
+    );
+
+    expect(
+      within(screen.getByTestId("account-skeleton-content")).getByText(
+        "detail skeleton",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("orders skeleton")).not.toBeInTheDocument();
+  });
+
   it("keeps the order list's skeleton off the order detail and the profile", () => {
     at("/account/orders/abc");
     const { unmount } = renderWithProviders(
