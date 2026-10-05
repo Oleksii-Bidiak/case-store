@@ -44,6 +44,7 @@ import {
   useAdminCarouselControllerPublish,
   useAdminCarouselControllerUnpublish,
   useAdminCarouselControllerDelete,
+  DuplicateCarouselItemsError,
   useDuplicateCarousel,
   type CarouselEntity,
 } from "@/entities/carousel";
@@ -184,8 +185,12 @@ function AdminCarouselView() {
     try {
       await duplicate(carousel);
       toast.success(d.toastDuplicated);
-    } catch {
-      toast.error(d.toastDuplicateFailed);
+    } catch (error) {
+      toast.error(
+        error instanceof DuplicateCarouselItemsError
+          ? d.toastDuplicateItemsFailed
+          : d.toastDuplicateFailed,
+      );
     }
   };
 

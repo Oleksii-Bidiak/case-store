@@ -14,6 +14,7 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { PERM } from "@/entities/permission";
 import { CreateBannerView } from "./create-banner-view";
 import { EditBannerView } from "./edit-banner-view";
 
@@ -32,6 +33,7 @@ beforeEach(() => {
 });
 
 const d = dict.banners;
+const WRITER = { permissions: [PERM.bannersWrite] };
 const ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
 const banner = {
@@ -107,6 +109,17 @@ describe("EditBannerView", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers no «Дублювати» / «Видалити…» without banners:write", async () => {
+    renderWithProviders(<EditBannerView bannerId={ID} />);
+
+    await screen.findByRole("heading", { name: banner.title });
+    expect(
+      screen.queryByRole("button", {
+        name: dict.common.registry.rowActionsAria(banner.title),
+      }),
+    ).not.toBeInTheDocument();
+  });
+
   it("«Дублювати» creates a draft copy and opens it", async () => {
     const bodies: unknown[] = [];
     server.use(
@@ -115,7 +128,7 @@ describe("EditBannerView", () => {
         return HttpResponse.json({ data: { ...banner, id: "copy-1" } });
       }),
     );
-    renderWithProviders(<EditBannerView bannerId={ID} />);
+    renderWithProviders(<EditBannerView bannerId={ID} />, { auth: WRITER });
 
     await userEvent.click(
       await screen.findByRole("button", {
@@ -144,7 +157,7 @@ describe("EditBannerView", () => {
         return new HttpResponse(null, { status: 204 });
       }),
     );
-    renderWithProviders(<EditBannerView bannerId={ID} />);
+    renderWithProviders(<EditBannerView bannerId={ID} />, { auth: WRITER });
 
     await userEvent.click(
       await screen.findByRole("button", {

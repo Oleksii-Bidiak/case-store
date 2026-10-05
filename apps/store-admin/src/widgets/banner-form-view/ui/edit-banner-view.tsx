@@ -24,6 +24,8 @@ import {
   type BannerDisplayState,
   type BannerEntity,
 } from "@/entities/banner";
+import { useAuth } from "@/entities/session";
+import { PERM } from "@/entities/permission";
 import { Badge, RowActionsMenu, useConfirmDialog } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { toKyivDateTimeLocal } from "@/shared/lib";
@@ -61,6 +63,8 @@ export function EditBannerView({ bannerId }: EditBannerViewProps) {
   const create = useAdminBannerControllerCreate();
   const remove = useAdminBannerControllerDelete();
   const { confirm, confirmDialog } = useConfirmDialog();
+  const { can } = useAuth();
+  const canWrite = can(PERM.bannersWrite);
 
   const isNotFound = error?.response?.status === 404;
 
@@ -165,7 +169,7 @@ export function EditBannerView({ bannerId }: EditBannerViewProps) {
             </div>
           )}
         </div>
-        {banner && (
+        {banner && canWrite && (
           <RowActionsMenu
             label={dict.common.registry.rowActionsAria(banner.title)}
             className="mt-6 size-11 border md:size-9"

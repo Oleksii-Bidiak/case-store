@@ -21,9 +21,12 @@ import {
   useAdminCarouselControllerGetItems,
   useAdminCarouselControllerSetItems,
   useAdminCarouselControllerUpdate,
+  DuplicateCarouselItemsError,
   useDuplicateCarousel,
   type CarouselEntity,
 } from "@/entities/carousel";
+import { useAuth } from "@/entities/session";
+import { PERM } from "@/entities/permission";
 import { Badge, RowActionsMenu, useConfirmDialog } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatDate, toKyivDateTimeLocal } from "@/shared/lib";
@@ -65,6 +68,8 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
   const remove = useAdminCarouselControllerDelete();
   const { duplicate, isPending: isDuplicating } = useDuplicateCarousel();
   const { confirm, confirmDialog } = useConfirmDialog();
+  const { can } = useAuth();
+  const canWrite = can(PERM.carouselsWrite);
 
   const isNotFound = error?.response?.status === 404;
 
@@ -133,7 +138,12 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
       const copyId = await duplicate(source);
       toast.success(d.toastDuplicated);
       router.push(`/carousels/${copyId}/edit`);
-    } catch {
+    } catch (error) {
+      if (error instanceof DuplicateCarouselItemsError) {
+        toast.error(d.toastDuplicateItemsFailed);
+        router.push(`/carousels/${error.copyId}/edit`);
+        return;
+      }
       toast.error(d.toastDuplicateFailed);
     }
   };
@@ -191,7 +201,7 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
             </div>
           )}
         </div>
-        {carousel && (
+        {carousel && canWrite && (
           <RowActionsMenu
             label={dict.common.registry.rowActionsAria(carousel.title)}
             className="mt-6 size-11 border md:size-9"

@@ -6127,6 +6127,8 @@ export const dict = {
     duplicateTitle: (title: string) => `${title} (копія)`,
     toastDuplicated: "Копію збережено як чернетку — вона в кінці свого блоку",
     toastDuplicateFailed: "Не вдалося продублювати карусель",
+    toastDuplicateItemsFailed:
+      "Копію створено чернеткою, але без списку товарів. Відкрийте її й додайте товари — повторне «Дублювати» створить ще одну копію.",
     deleteAction: "Видалити…",
     deleteTitle: (title: string) => `Видалити карусель «${title}»?`,
     deleteDescriptionTab: (title: string) =>

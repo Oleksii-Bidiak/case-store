@@ -8,6 +8,7 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { PERM } from "@/entities/permission";
 import { EditCarouselView } from "./edit-carousel-view";
 
 const push = jest.fn();
@@ -244,7 +245,9 @@ describe("EditCarouselView — header «⋯» (КР5)", () => {
         return new HttpResponse(null, { status: 204 });
       }),
     );
-    renderWithProviders(<EditCarouselView carouselId={carouselId} />);
+    renderWithProviders(<EditCarouselView carouselId={carouselId} />, {
+      auth: { permissions: [PERM.carouselsWrite] },
+    });
 
     expect(
       await screen.findByRole("heading", { name: "Популярне" }),
@@ -274,5 +277,17 @@ describe("EditCarouselView — header «⋯» (КР5)", () => {
 
     await waitFor(() => expect(deleted).toEqual([carouselId]));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/carousels"));
+  });
+
+  it("offers no «⋯» without carousels:write", async () => {
+    stubCarousel("BESTSELLING", "DRAFT");
+    renderWithProviders(<EditCarouselView carouselId={carouselId} />);
+
+    await screen.findByRole("heading", { name: "Популярне" });
+    expect(
+      screen.queryByRole("button", {
+        name: dict.common.registry.rowActionsAria("Популярне"),
+      }),
+    ).not.toBeInTheDocument();
   });
 });

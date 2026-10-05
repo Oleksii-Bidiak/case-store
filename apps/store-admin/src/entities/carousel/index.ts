@@ -38,6 +38,7 @@ export { CarouselEntitySource, CarouselEntityPlacement } from "@/shared/api";
 
 // Wave 198 (TASK-1074): «Дублювати» on the existing create + set-items API.
 export {
+  DuplicateCarouselItemsError,
   duplicateCarouselPayload,
   useDuplicateCarousel,
 } from "./model/use-duplicate-carousel";
