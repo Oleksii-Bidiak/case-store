@@ -81,6 +81,8 @@ export function CatalogImportView() {
 
   const [runId, setRunId] = useState<string | null>(null);
   const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
+  // The run applied from THIS screen — the only one whose ticks we still hold.
+  const [appliedHere, setAppliedHere] = useState<string | null>(null);
   // The last file sent — «Спробувати ще раз» re-parses it without the picker.
   const lastFileRef = useRef<File | null>(null);
 
@@ -187,6 +189,7 @@ export function CatalogImportView() {
       { id: runId, data: decisions.toPayload() },
       {
         onSuccess: () => {
+          setAppliedHere(runId);
           void queryClient.invalidateQueries({
             queryKey: getCatalogImportControllerFindOneQueryKey(runId),
           });
@@ -326,7 +329,8 @@ export function CatalogImportView() {
           {run.status === "PARSED" &&
           plan &&
           !(duplicateOf && nothingToApply) ? (
-            <ImportPlanReview plan={plan} decisions={decisions} />
+            // Keyed by run: its tab and paging belong to one plan, not the next.
+            <ImportPlanReview key={run.id} plan={plan} decisions={decisions} />
           ) : null}
 
           {run.status === "PARSED" && summary ? (
@@ -365,13 +369,27 @@ export function CatalogImportView() {
 
           {run.status === "APPLIED" ? (
             <ImportDone
-              figures={{
-                created: summary?.creates ?? run.createCount,
-                updated: summary?.updates ?? run.updateCount,
-                hidden: summary?.missing ?? run.missingCount,
-                skipped: run.errorCount,
-                keptEdits: summary?.keptEdits ?? null,
-              }}
+              figures={
+                // The ticks are known only for a run applied on this screen;
+                // anything else shows the plan, and says so.
+                appliedHere === runId && summary
+                  ? {
+                      created: summary.creates,
+                      updated: summary.updates,
+                      hidden: summary.missing,
+                      skipped: run.errorCount,
+                      keptEdits: summary.keptEdits,
+                      planned: false,
+                    }
+                  : {
+                      created: run.createCount,
+                      updated: run.updateCount,
+                      hidden: run.missingCount,
+                      skipped: run.errorCount,
+                      keptEdits: null,
+                      planned: true,
+                    }
+              }
               onStartOver={finishRun}
             />
           ) : null}

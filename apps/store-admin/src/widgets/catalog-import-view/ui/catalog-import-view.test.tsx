@@ -216,7 +216,7 @@ const xlsx = () =>
   });
 
 async function chooseFile(file: File = xlsx()) {
-  await userEvent.upload(screen.getByLabelText(d.pickFile), file);
+  await userEvent.upload(screen.getByLabelText(d.fileInputLabel), file);
 }
 
 beforeEach(() => {
@@ -265,7 +265,7 @@ describe("CatalogImportView — step «Файл» (ІК1–ІК3)", () => {
     renderWithProviders(<CatalogImportView />, {});
 
     await userEvent.upload(
-      screen.getByLabelText(d.pickFile),
+      screen.getByLabelText(d.fileInputLabel),
       new File(["x"], "prices.csv", { type: "text/csv" }),
       { applyAccept: false },
     );
@@ -495,6 +495,9 @@ describe("CatalogImportView — step «Запис» (ІК11–ІК13)", () => {
       screen.getByRole("link", { name: d.toNewProducts(1) }),
     ).toHaveAttribute("href", "/products?status=hidden");
     expect(screen.getByRole("link", { name: d.toStore })).toBeInTheDocument();
+    // Opened from the history: the unticked rows are not known here, so the
+    // figures are the plan's, and the screen says so.
+    expect(screen.getByText(d.donePlannedNote)).toBeInTheDocument();
   });
 
   it("explains a failure in words, keeps the raw text folded, and offers a retry", async () => {

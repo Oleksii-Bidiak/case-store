@@ -99,23 +99,34 @@ export function ImportDropzone({ onFile, isUploading }: ImportDropzoneProps) {
           <UploadIcon aria-hidden="true" className="size-6 text-foreground" />
           <p className="font-semibold text-foreground">{d.dropTitle}</p>
           <p className="text-sm text-muted-foreground">{d.dropSubtitle}</p>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-1"
-            aria-describedby={wrongType ? `${hintId} ${errorId}` : hintId}
-            onClick={() => inputRef.current?.click()}
-          >
-            <FileSpreadsheetIcon aria-hidden="true" />
-            {d.pickFile}
-          </Button>
         </>
       )}
+      {/* Stays mounted and focusable while the file uploads: unmounting (or
+          `disabled`, which browsers blur) dropped a keyboard user's focus
+          onto <body>. `aria-disabled` + a guarded click instead. */}
+      {dragging && !isUploading ? null : (
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-1 aria-disabled:opacity-50"
+          aria-disabled={isUploading || undefined}
+          aria-busy={isUploading || undefined}
+          aria-describedby={wrongType ? `${hintId} ${errorId}` : hintId}
+          onClick={() => {
+            if (!isUploading) inputRef.current?.click();
+          }}
+        >
+          <FileSpreadsheetIcon aria-hidden="true" />
+          {d.pickFile}
+        </Button>
+      )}
+      {/* Its own name: the button already says «Обрати файл», and a screen
+          reader would otherwise read the same control twice. */}
       <input
         ref={inputRef}
         type="file"
         accept=".xlsx"
-        aria-label={d.pickFile}
+        aria-label={d.fileInputLabel}
         tabIndex={-1}
         className="sr-only"
         onChange={(event) => {

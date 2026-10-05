@@ -55,6 +55,12 @@ export interface WrittenFigures {
   skipped: number;
   /** Hand edits the operator kept — known only for a run reviewed here. */
   keptEdits: number | null;
+  /**
+   * The figures are the file's PLAN at parse time, not what was written: a
+   * run opened from the history has lost the operator's unticked rows, and
+   * the API stores only the planned counts (actual counts — TASK-1741).
+   */
+  planned: boolean;
 }
 
 /** What was written, and where to go next (ІК12). */
@@ -102,6 +108,9 @@ export function ImportDone({
           </div>
         ))}
       </dl>
+      {figures.planned ? (
+        <p className="text-sm text-muted-foreground">{d.donePlannedNote}</p>
+      ) : null}
       <p className="text-sm text-muted-foreground">{d.doneHint}</p>
       <div className="flex flex-wrap gap-3">
         {figures.created > 0 ? (
