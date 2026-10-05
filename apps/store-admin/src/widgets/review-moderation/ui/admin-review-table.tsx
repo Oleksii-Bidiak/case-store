@@ -316,8 +316,10 @@ export function buildReviewColumns(
     },
     {
       // «Схвалити» is the queue's one primary action and stays in the row;
-      // everything else is in «⋯» (В1/В2).
+      // everything else is in «⋯» (В1/В2). Locked: hiding it would leave no
+      // way to approve a single review outside the «На розгляді» bulk bar.
       id: "approve",
+      locked: true,
       label: dict.common.actions,
       header: <span className="sr-only">{dict.common.actions}</span>,
       resizable: false,
@@ -772,7 +774,9 @@ function AdminReviewTableView() {
           label: d.searchAria,
         }}
         filters={{
-          count: chips.length,
+          // Deep-link chips (product, IP) are not in the sheet — counting them
+          // would badge «Фільтри» with something the sheet cannot show.
+          count: sheetChipCount,
           renderSheet: ({ open, onOpenChange }) => (
             <ReviewFilterSheet
               open={open}

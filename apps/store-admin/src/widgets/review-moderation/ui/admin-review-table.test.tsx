@@ -765,6 +765,18 @@ describe("AdminReviewTable — «Сигнали накрутки» (В3)", () =>
     expect(mockReplace).toHaveBeenCalledWith("/reviews?status=all");
   });
 
+  it("does not badge «Фільтри» with the deep-link chips the sheet cannot show", async () => {
+    mockSearchParamsRef.current = new URLSearchParams(
+      "status=all&productId=product-uuid-1&createdIp=203.0.113.7",
+    );
+    stubReviews();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(screen.queryByText(r.filtersApplied(2))).not.toBeInTheDocument();
+    expect(screen.queryByText(r.filtersApplied(1))).not.toBeInTheDocument();
+  });
+
   it("narrows to an address and clears it, resetting the page", async () => {
     mockSearchParamsRef.current = new URLSearchParams(
       "status=all&createdIp=203.0.113.7&page=2",

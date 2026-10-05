@@ -23,4 +23,14 @@ describe("review queue columns — default widths (wave 198, В1 at 1440)", () =
     expect(total).toBeLessThanOrEqual(REVIEW_COLUMNS_WIDTH_BUDGET);
     expect(REVIEW_COLUMNS_WIDTH_BUDGET).toBe(1136 - 36 - 44 - 2);
   });
+
+  it("locks «Схвалити» — it is not in «⋯», so hiding it would lose the action", () => {
+    const approve = buildReviewColumns({
+      onApprove: () => {},
+      approvingId: null,
+      busyId: null,
+    }).find((column) => column.id === "approve");
+
+    expect(approve?.locked).toBe(true);
+  });
 });
