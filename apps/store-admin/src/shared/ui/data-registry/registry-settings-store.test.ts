@@ -180,7 +180,7 @@ describe("localStorage adapter", () => {
   it("forgets every list's settings on sign-out and leaves other keys alone", () => {
     const store = createLocalStorageRegistrySettingsStore();
     store.save("orders", stored({ density: "compact" }));
-    store.save("customers", stored());
+    store.save("customers", stored({}));
     window.localStorage.setItem("admin.other", "keep");
 
     clearRegistrySettings();
