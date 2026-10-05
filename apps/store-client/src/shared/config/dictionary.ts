@@ -67,7 +67,7 @@ export const dict = {
     cartAria: "Кошик",
     openMenu: "Відкрити меню",
     menuTitle: "Меню",
-    accountTriggerAria: "Відкрити меню акаунту",
+    accountTriggerAria: "Кабінет — меню акаунту",
     accountMenuAria: "Меню акаунту",
     searchPlaceholder: "Пошук товарів…",
     searchSubmit: "Шукати",

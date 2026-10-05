@@ -178,7 +178,7 @@ test.describe("header row by width (TASK-511, TASK-512)", () => {
     for (const width of [390, 768, 1024, 1280]) {
       await openAt(page, width);
       const trigger = header(page).getByRole("button", {
-        name: "Відкрити меню акаунту",
+        name: "Кабінет — меню акаунту",
       });
       await expect(trigger).toBeVisible();
       const box = await trigger.boundingBox();

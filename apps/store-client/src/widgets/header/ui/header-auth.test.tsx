@@ -117,6 +117,13 @@ describe("HeaderAuth", () => {
     expect(caption).toHaveClass("hidden", "xl:inline");
   });
 
+  it("starts the signed-in trigger's accessible name with its visible caption (WCAG 2.5.3)", () => {
+    // Voice-control users say what they see: «Кабінет» has to be in the name.
+    expect(
+      dict.header.accountTriggerAria.startsWith(dict.header.accountLabel),
+    ).toBe(true);
+  });
+
   it("exposes account and orders links inside the open dropdown", async () => {
     const user = userEvent.setup();
     renderWithProviders(<HeaderAuth />, {
