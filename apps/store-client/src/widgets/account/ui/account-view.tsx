@@ -1,203 +1,61 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
-import { useAuth, useAuthControllerLogout } from "@/entities/session";
+import { useSearchParams } from "next/navigation";
+import { useAuth } from "@/entities/session";
 import { useUserControllerGetProfile, type UserEntity } from "@/entities/user";
+import { dict, FEATURE_STUBS } from "@/shared/config";
 import {
-  dict,
-  FEATURE_STUBS,
-  STICKY_ASIDE_TOP,
-  PAGE_CONTAINER,
-} from "@/shared/config";
-import {
-  AccountIcon,
-  AccountBackIcon,
-  AccountLogoutIcon,
-} from "./account-icons";
-import { ACCOUNT_NAV } from "./account-nav";
-import { AccountSkeleton } from "./account-skeleton";
+  ACCOUNT_ORDERS_PATH,
+  parseAccountSection,
+  type AccountSectionKey,
+} from "./account-nav";
+import { AccountProfileSkeleton } from "./account-skeleton";
 import { AccountProfileSection } from "./account-profile-section";
 import { AccountBonusesSection } from "./account-bonuses-section";
 import { AccountSettingsSection } from "./account-settings-section";
 import { AccountPlaceholderSection } from "./account-placeholder-section";
 
-/** Inline dashboard sections (link items — orders/favorites — route away). */
-type SectionKey =
-  "profile" | "purchases" | "history" | "bonuses" | "compare" | "settings";
-
 /**
- * AccountView — the `/account` dashboard (Account.dc.html redesign). Auth-gated
- * like checkout. A sticky sidebar switches inline sections; orders + favorites
- * link to their existing pages (/orders, /wishlist). Profile reuses the real
+ * AccountView — the content column of `/account` (Account.dc.html). The frame
+ * around it — back link, menu, chip strip, auth guard — is AccountShell, from
+ * `app/account/layout.tsx`, shared with the order routes.
+ *
+ * The section comes from `?section=` (TASK-867), so a reload, a shared link
+ * and Back keep it; anything unknown is the profile. Profile reuses the real
  * ProfileForm; bonuses / settings / purchases / history / compare are stubs
- * (no backend — TASK-175).
+ * (no backend — TASK-175). Reads `useSearchParams`, so the page renders it
+ * inside `<Suspense>`.
  */
 export function AccountView() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const { isAuthenticated, isInitializing, clearTokens } = useAuth();
-  const logout = useAuthControllerLogout();
+  const searchParams = useSearchParams();
+  const section = parseAccountSection(searchParams.get("section"));
+  const { isAuthenticated } = useAuth();
 
-  const [section, setSection] = useState<SectionKey>("profile");
-
+  // The shell has already loaded this query before mounting the page, so this
+  // is a cache read; the skeleton branch covers a render outside the shell.
   const { data, isLoading, isError } = useUserControllerGetProfile({
     query: { enabled: isAuthenticated },
   });
 
-  useEffect(() => {
-    if (!isInitializing && !isAuthenticated) {
-      router.replace("/login?redirect=/account");
-    }
-  }, [isInitializing, isAuthenticated, router]);
-
-  if (isInitializing || !isAuthenticated || isLoading) {
-    // The one account skeleton (TASK-869): the same component as
-    // `app/account/loading.tsx` and the page's Suspense fallback. It owns this
-    // view's container, so none of the three loading states jumps.
-    return <AccountSkeleton />;
-  }
+  if (isLoading) return <AccountProfileSkeleton />;
 
   const user = data?.data;
-  const d = dict.account.dashboard;
-
-  const fullName =
-    [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() ||
-    user?.email ||
-    "";
-  const initials =
-    (
-      (user?.firstName?.[0] ?? "") + (user?.lastName?.[0] ?? "")
-    ).toUpperCase() || (user?.email?.[0] ?? "?").toUpperCase();
-
-  function handleLogout() {
-    logout.mutate(undefined, {
-      onSettled: () => {
-        clearTokens();
-        queryClient.clear();
-        router.push("/");
-      },
-    });
+  if (isError || !user) {
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {dict.account.loadError}
+      </p>
+    );
   }
 
-  return (
-    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
-      <Link
-        href="/"
-        className="mb-[22px] inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <AccountBackIcon width={18} height={18} />
-        {d.backHome}
-      </Link>
-
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
-      <div className="grid items-start gap-7 lg:grid-cols-[264px_1fr]">
-        {/* Sidebar */}
-        <aside
-          className={`rounded-card border border-border bg-card p-2 shadow-card lg:sticky ${STICKY_ASIDE_TOP}`}
-        >
-          <div className="flex items-center gap-3 px-3 pt-3.5 pb-4">
-            {/* Brand tint as a token utility over the card (TASK-879): the
-                same pixels as the old inline color-mix with --color-card. */}
-            <span className="inline-flex size-[46px] shrink-0 items-center justify-center rounded-full bg-primary/15 font-display text-[17px] font-bold text-primary">
-              {initials}
-            </span>
-            <span className="flex min-w-0 flex-col">
-              <b className="truncate font-display text-sm leading-tight text-foreground">
-                {d.greeting(fullName)}
-              </b>
-              {user?.phone && (
-                <span className="mt-0.5 font-mono text-xs text-muted-foreground">
-                  {user.phone}
-                </span>
-              )}
-            </span>
-          </div>
-          <div className="mx-1 mb-1.5 h-px bg-border" />
-
-          <nav aria-label={d.navAria} className="flex flex-col">
-            {ACCOUNT_NAV.map((entry) => {
-              const label = d.nav[entry.key as keyof typeof d.nav];
-              const active = !entry.href && section === entry.key;
-              const className = `relative mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-sm no-underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                // Active tint is a token utility over the card (TASK-879), not
-                // an inline color-mix style.
-                active
-                  ? "bg-primary/10 font-semibold text-primary"
-                  : "font-medium text-foreground hover:bg-muted"
-              }`;
-              const inner = (
-                <>
-                  {active && (
-                    <span
-                      aria-hidden="true"
-                      className="absolute top-[9px] bottom-[9px] left-0 w-[3px] rounded-full bg-primary"
-                    />
-                  )}
-                  <AccountIcon
-                    name={entry.icon}
-                    width={20}
-                    height={20}
-                    className={
-                      active ? "text-primary" : "text-muted-foreground"
-                    }
-                  />
-                  <span className="flex-1">{label}</span>
-                </>
-              );
-
-              return entry.href ? (
-                <Link key={entry.key} href={entry.href} className={className}>
-                  {inner}
-                </Link>
-              ) : (
-                <button
-                  key={entry.key}
-                  type="button"
-                  onClick={() => setSection(entry.key as SectionKey)}
-                  aria-current={active ? "page" : undefined}
-                  className={className}
-                >
-                  {inner}
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className="mx-1 my-1.5 h-px bg-border" />
-          <button
-            type="button"
-            onClick={handleLogout}
-            disabled={logout.isPending}
-            className="flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-          >
-            <AccountLogoutIcon width={20} height={20} />
-            {d.logout}
-          </button>
-        </aside>
-
-        {/* Content */}
-        <section className="min-w-0">
-          {isError || !user ? (
-            <p role="alert" className="text-sm text-destructive">
-              {dict.account.loadError}
-            </p>
-          ) : (
-            <AccountContent section={section} user={user} />
-          )}
-        </section>
-      </div>
-    </div>
-  );
+  return <AccountContent section={section} user={user} />;
 }
 
 function AccountContent({
   section,
   user,
 }: {
-  section: SectionKey;
+  section: AccountSectionKey;
   user: UserEntity;
 }) {
   const d = dict.account.dashboard;
@@ -214,7 +72,7 @@ function AccountContent({
           title={d.nav.purchases}
           body={d.purchasesBody}
           ctaLabel={d.purchasesCta}
-          ctaHref="/orders"
+          ctaHref={ACCOUNT_ORDERS_PATH}
         />
       );
     case "history":
@@ -227,8 +85,9 @@ function AccountContent({
         />
       );
     case "compare":
-      // Unreachable while the nav entry is filtered out, but the section is
-      // gated too so the placeholder cannot surface by any other route.
+      // parseAccountSection already maps `compare` to the profile while the
+      // entry is hidden; the gate stays so the placeholder cannot surface by
+      // any other route.
       return FEATURE_STUBS ? (
         <AccountPlaceholderSection
           title={d.nav.compare}

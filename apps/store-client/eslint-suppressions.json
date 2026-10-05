@@ -144,11 +144,6 @@
       "count": 8
     }
   },
-  "src/widgets/account/ui/account-view.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 8
-    }
-  },
   "src/widgets/blog/ui/blog-article-body.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 4

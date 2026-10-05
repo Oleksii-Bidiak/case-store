@@ -277,6 +277,15 @@ Override a component's default radius through `cn` (`shared/lib/utils.ts`), whic
 `card` / `cta` / `menu` with tailwind-merge and drops the default. Never join class strings by
 hand when a radius can come from both sides.
 
+**Chip outline:** the 1.5px border of chips and toolbar controls is `border-chip` (a `@utility`
+in `globals.css`, TASK-217; Tailwind v4 has no border-width theme namespace), paired with a
+colour: `border-chip border-border`, active `border-primary`. `cn` registers it as a border
+**width** — unregistered, tailwind-merge reads `border-<word>` as a colour and silently drops it
+beside `border-border`. Older call sites still spell `border-[1.5px]` under lint suppressions;
+move them over when you touch them. A horizontally scrolling chip row hides its bar with
+`scrollbar-none` and bleeds to the screen edge (`-mx-4 px-4 sm:-mx-6 sm:px-6`), so the
+half-clipped last chip says "scrolls".
+
 | Shadow            | Use                                                           |
 | ----------------- | ------------------------------------------------------------- |
 | `shadow-card`     | Resting product/info cards                                    |
@@ -351,9 +360,13 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
   count reflows the page when the content lands (parity fixes: TASK-869). A client view's own
   loading branch is the third path to the same screen: it renders the **same skeleton component**,
   and when the view owns its container the skeleton carries it too, so `loading.tsx` and the
-  fallback add no wrapper (`AccountSkeleton`: one component for all three). When a block's height
+  fallback add no wrapper. When a **layout** owns the frame, the split follows it: the account
+  routes render inside `app/account/layout.tsx`'s `AccountShell` (TASK-217), which draws
+  `AccountShellSkeleton` (container, back line, chip strip below `lg`, 264px menu from `lg`)
+  while the session loads, and every `loading.tsx` / fallback under that layout is the content
+  column only (`AccountProfileSkeleton`, no container). When a block's height
   depends on data the skeleton cannot have, reserve one state **on purpose** and name the cost:
-  `AccountSkeleton` reserves the «Адресу не підтверджено» card (new registrations and the seeded
+  `AccountProfileSkeleton` reserves the «Адресу не підтверджено» card (new registrations and the seeded
   customer start there), so for a verified address the contact and security cards rise by 138px
   (158px at 390) when the profile lands. A grid cell is drawn as the **card it stands in for**,
   block for block (frame, image, title lines, price, action row), not an image and two bars — the

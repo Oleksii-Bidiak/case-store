@@ -1,2 +1,3 @@
 export { AccountView } from "./ui/account-view";
-export { AccountSkeleton } from "./ui/account-skeleton";
+export { AccountShell } from "./ui/account-shell";
+export { AccountProfileSkeleton } from "./ui/account-skeleton";

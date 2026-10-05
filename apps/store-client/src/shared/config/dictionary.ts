@@ -1641,6 +1641,8 @@ export const dict = {
         settings: "Налаштування",
       },
       navAria: "Розділи кабінету",
+      // TASK-217 — the order detail's h1 (`#` + the first 8 id chars).
+      orderHeading: (ref: string) => `Замовлення #${ref}`,
       // Profile section
       profileHeading: "Особисті дані",
       contactHeading: "Контактна інформація",
@@ -2084,6 +2086,9 @@ export const dict = {
     accountDescription: "Керуйте профілем та переглядайте свої замовлення.",
     ordersTitle: "Мої замовлення | CaseStore",
     ordersDescription: "Історія ваших замовлень.",
+    // TASK-217 — the order history as a section of the account.
+    accountOrdersTitle: "Історія замовлень | CaseStore",
+    accountOrderTitle: (ref: string) => `Замовлення ${ref} | CaseStore`,
     blogTitle: "Блог",
     blogDescription:
       "Огляди, гайди та поради про смартфони, аксесуари й техніку — від команди CaseStore.",

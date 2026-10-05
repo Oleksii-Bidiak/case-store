@@ -14,6 +14,13 @@ const twMerge = extendTailwindMerge({
     theme: {
       radius: ["card", "cta", "menu"],
     },
+    // `border-chip` (the 1.5px chip outline, a `@utility` in globals.css) is a
+    // border WIDTH. Unregistered, tailwind-merge reads any `border-<word>` as a
+    // border colour and drops it next to `border-border` / `border-primary` —
+    // the chip silently lost its outline (TASK-217).
+    classGroups: {
+      "border-w": [{ border: ["chip"] }],
+    },
   },
 });
 
