@@ -219,7 +219,10 @@ develop і з фінального, усі 1488 файлів збіглися з
 - 1756 — `DiscountRepository` віддає сирі Prisma-моделі;
 - 1757 — `dashboard.repository.int-spec` залежить від залишків у `store_test`;
 - 1758 — два Swagger-класи `PaginationMeta`;
-- 1759 — `check-docs-links` червоний на чистому checkout через посилання на `uploads/`.
+- 1759 — `check-docs-links` червоний на чистому checkout через посилання на `uploads/`;
+- 1760 — `no-deep-module-import` пропускає імпорт `*Repository` через барель і аліас `@/` (з ревʼю);
+- 1761 — лінт конверта в сервісах обходиться змінною/тернарником/`.then` (з ревʼю);
+- 1762 — `CartService.loadForCheckout` віддає сирі рядки Prisma в `OrderService` (з ревʼю).
 
 **Для мержу:** після мержу `npm ci` + `npm run codegen`. На стенді старі Redis-ключі brand/product
 просто відпадуть за TTL або при першому purge.
