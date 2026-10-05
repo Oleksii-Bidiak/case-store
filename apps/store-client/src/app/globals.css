@@ -387,6 +387,14 @@
   background-image: var(--gradient-brand);
 }
 
+/* The cart and checkout page split: a fluid content column beside the 380px
+   summary (`lg:grid-cols-checkout`). One token for both pages and their
+   skeletons instead of four `grid-cols-[1fr_380px]` behind lint disables.
+   `minmax(0, 1fr)`: a long word or URL cannot widen the content track. */
+@utility grid-cols-checkout {
+  grid-template-columns: minmax(0, 1fr) 380px;
+}
+
 /* ─────────────────────────────────────────────
    Base Styles
    These are element defaults, so they live in `@layer base` (after Tailwind's

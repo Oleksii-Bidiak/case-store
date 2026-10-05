@@ -102,7 +102,7 @@ const CARD = "rounded-card border border-border bg-card p-6 shadow-card";
  * step-1 CheckoutView with the content blanked out, block for block: the
  * breadcrumb line (`mb-4`), the h1 slot (`mb-6`; two H1_CLASS lines below `sm`,
  * where «Оформлення замовлення» wraps, one from `sm`), the three-step stepper
- * (`mb-7`), then the same `[1fr_380px]` grid from `lg` — contact, address and
+ * (`mb-7`), then the same `grid-cols-checkout` grid from `lg` — contact, address and
  * payment cards on the left, the order summary and the trust strip on the
  * right. Below `lg` they stack like the page.
  *
@@ -154,8 +154,7 @@ export function CheckoutSkeleton() {
 
       <div
         data-testid="checkout-skeleton-grid"
-        // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors CheckoutView's fixed+fluid column layout, which has no named grid-cols-N equivalent
-        className="grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start"
+        className="grid gap-6 lg:grid-cols-checkout lg:items-start"
       >
         {/* Form: contact, address, payment */}
         <div className="flex min-w-0 flex-col gap-4">

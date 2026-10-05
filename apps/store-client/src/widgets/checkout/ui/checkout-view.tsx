@@ -307,8 +307,7 @@ export function CheckoutView() {
 
       <CheckoutStepIndicator current={step} />
 
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
+      <div className="grid gap-6 lg:grid-cols-checkout lg:items-start">
         <form
           onSubmit={onStepSubmit}
           className="flex min-w-0 flex-col gap-4"

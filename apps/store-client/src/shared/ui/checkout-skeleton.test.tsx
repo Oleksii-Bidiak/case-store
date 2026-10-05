@@ -3,7 +3,7 @@ import { CheckoutSkeleton } from "./checkout-skeleton";
 
 /**
  * TASK-869 — the checkout skeleton reproduces the step-1 CheckoutView: h1 slot,
- * stepper and the `[1fr_380px]` grid, so the page does not jump on load.
+ * stepper and the `grid-cols-checkout` grid, so the page does not jump on load.
  */
 describe("CheckoutSkeleton (TASK-869)", () => {
   it("is hidden from assistive tech", () => {
@@ -14,10 +14,10 @@ describe("CheckoutSkeleton (TASK-869)", () => {
     );
   });
 
-  it("uses the page's [1fr_380px] grid from lg, not grid-cols-3", () => {
+  it("uses the page's grid-cols-checkout grid from lg, not grid-cols-3", () => {
     render(<CheckoutSkeleton />);
     const grid = screen.getByTestId("checkout-skeleton-grid");
-    expect(grid).toHaveClass("grid", "gap-6", "lg:grid-cols-[1fr_380px]");
+    expect(grid).toHaveClass("grid", "gap-6", "lg:grid-cols-checkout");
     expect(grid).not.toHaveClass("lg:grid-cols-3");
     expect(grid.children).toHaveLength(2);
   });

@@ -14,7 +14,7 @@ function SummaryRow() {
  * CartSkeleton — loading placeholder for `/cart` (TASK-869). It is the
  * populated CartView with the content blanked out, block for block: the
  * breadcrumb line, the h1 slot at H1_CLASS line heights (`h-9 md:h-10`), then
- * the same `[1fr_380px]` grid from `lg` — the line-items card (rows + the
+ * the same `grid-cols-checkout` grid from `lg` — the line-items card (rows + the
  * «Додати ще товари / Очистити кошик» footer) and the aside with the summary
  * card and the trust strip. Below `lg` the two stack exactly like the page, so
  * neither the route `loading.tsx`, nor the `<Suspense>` fallback, nor
@@ -45,8 +45,7 @@ export function CartSkeleton() {
 
       <div
         data-testid="cart-skeleton-grid"
-        // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors CartView's fixed+fluid column layout, which has no named grid-cols-N equivalent
-        className="grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start"
+        className="grid gap-6 lg:grid-cols-checkout lg:items-start"
       >
         {/* Line items */}
         <div className="overflow-hidden rounded-card border border-border bg-card shadow-card">

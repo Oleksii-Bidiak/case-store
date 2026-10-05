@@ -14,10 +14,10 @@ describe("CartSkeleton (TASK-869)", () => {
     );
   });
 
-  it("uses the page's [1fr_380px] grid from lg, not grid-cols-3", () => {
+  it("uses the page's grid-cols-checkout grid from lg, not grid-cols-3", () => {
     render(<CartSkeleton />);
     const grid = screen.getByTestId("cart-skeleton-grid");
-    expect(grid).toHaveClass("grid", "gap-6", "lg:grid-cols-[1fr_380px]");
+    expect(grid).toHaveClass("grid", "gap-6", "lg:grid-cols-checkout");
     expect(grid).not.toHaveClass("lg:grid-cols-3");
     // Line-items card + aside (summary card and trust strip).
     expect(grid.children).toHaveLength(2);
