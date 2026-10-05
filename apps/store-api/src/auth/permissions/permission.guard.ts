@@ -44,9 +44,9 @@ export interface RequestWithActor {
  *
  * STEPS 6 AND 7 ARE IN THAT ORDER ON PURPOSE. An admin passes every permission
  * that exists, so the only thing between a deputy and the owner's reserve — the
- * four doors that decide who runs the shop: changing a role, setting a password,
- * deactivating and deleting an account — is that `@OwnerOnly` is consulted
- * first. Swap them and every test about admins doing admin things still passes
+ * routes marked `@OwnerOnly()`; today changing a customer's sign-in email,
+ * deleting a customer and transferring ownership — is that `@OwnerOnly` is
+ * consulted first. Swap them and every test about admins doing admin things still passes
  * while a deputy quietly gains the power to lock the owner out of their own shop.
  *
  * WHY STEP 4 IS A DATABASE READ: the role in the JWT is a 15-minute-old
@@ -124,8 +124,7 @@ export class PermissionGuard extends JwtAuthGuard {
     }
 
     // The reserve, closed to everyone else. BEFORE the admin bypass below: this
-    // one line is what stops a deputy reaching the four doors that decide who
-    // runs the shop.
+    // one line is what stops a deputy reaching the routes marked `@OwnerOnly()`.
     if (ownerOnly) {
       this.deny(context, userId, 'owner-only');
     }

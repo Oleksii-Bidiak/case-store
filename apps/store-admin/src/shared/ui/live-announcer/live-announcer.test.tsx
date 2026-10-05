@@ -106,6 +106,41 @@ describe("shared/ui/live-announcer", () => {
     expect(polite).toHaveTextContent("крок 1");
   });
 
+  it("a rejection also cancels a pending settled announcement", () => {
+    setup();
+    const polite = screen.getByTestId("tree-live-polite");
+
+    act(() => {
+      screen.getByRole("button", { name: "polite-repeat" }).click();
+      screen.getByRole("button", { name: "assertive" }).click();
+    });
+    expect(screen.getByTestId("tree-live-assertive")).toHaveTextContent(
+      "відхилено",
+    );
+
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    // The move that was refused must not be announced as the settled position.
+    expect(polite).toBeEmptyDOMElement();
+  });
+
+  it("a held key after a deliberate keypress still settles", () => {
+    setup();
+    const polite = screen.getByTestId("tree-live-polite");
+
+    act(() => {
+      screen.getByRole("button", { name: "polite" }).click();
+      screen.getByRole("button", { name: "polite-repeat-settled" }).click();
+    });
+    expect(polite).toHaveTextContent("крок 1");
+
+    act(() => {
+      jest.advanceTimersByTime(150);
+    });
+    expect(polite).toHaveTextContent("осіла позиція");
+  });
+
   it("routes rejections to the assertive region only", () => {
     setup();
     act(() => {

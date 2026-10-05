@@ -34,8 +34,9 @@ export interface DebouncedCallback<Args extends unknown[]> {
  * advanced the component's own "last pushed" guard to it, so the re-seed effect
  * saw URL and guard agree and left the operator with an EMPTY search box over a
  * list filtered by a term they had just cancelled — with nothing on screen to
- * explain it. Callers that predate `cancel()` work around the gap with a
- * monotonic token they check inside the callback; prefer `cancel()`.
+ * explain it. Use `cancel()` rather than a monotonic token checked inside the
+ * callback — the last such workaround (the admin `LiveAnnouncer`) moved onto
+ * `cancel()` in TASK-820.
  *
  * NOTE: this file is a VERBATIM copy shared by the two frontends —
  * `apps/store-admin/src/shared/lib/use-debounced-callback.ts` and

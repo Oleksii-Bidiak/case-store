@@ -29,7 +29,6 @@ import {
   useCallback,
   useContext,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -74,34 +73,34 @@ export function LiveAnnouncer({ children, className }: LiveAnnouncerProps) {
   const [assertive, setAssertive] = useState("");
 
   /**
-   * Monotonic token. An immediate (non-repeat) announcement bumps it, which
-   * invalidates any still-pending settled message from a previous key repeat —
-   * `useDebouncedCallback` has no `cancel()`, so the token IS the cancellation.
+   * The settled half of a held key. Any LATER immediate announcement — a
+   * deliberate keypress or a rejection — calls `emitSettled.cancel()`, so a
+   * still-pending settled message from an earlier repeat can never overwrite
+   * what came after it. A newer repeat simply reschedules.
    */
-  const tokenRef = useRef(0);
-
-  const emitSettled = useDebouncedCallback((message: string, token: number) => {
-    if (token !== tokenRef.current) return;
+  const emitSettled = useDebouncedCallback((message: string) => {
     setPolite(message);
   }, ANNOUNCE_SETTLE_MS);
 
   const announcePolite = useCallback(
     (message: string, options?: AnnounceOptions) => {
-      const token = tokenRef.current + 1;
-      tokenRef.current = token;
       if (options?.repeat) {
-        emitSettled(message, token);
+        emitSettled(message);
         return;
       }
+      emitSettled.cancel();
       setPolite(message);
     },
     [emitSettled],
   );
 
-  const announceAssertive = useCallback((message: string) => {
-    tokenRef.current += 1;
-    setAssertive(message);
-  }, []);
+  const announceAssertive = useCallback(
+    (message: string) => {
+      emitSettled.cancel();
+      setAssertive(message);
+    },
+    [emitSettled],
+  );
 
   const api = useMemo<AnnouncerApi>(
     () => ({ announcePolite, announceAssertive }),

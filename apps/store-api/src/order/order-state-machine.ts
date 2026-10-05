@@ -164,9 +164,12 @@ export function allowedTransitions(from: OrderStatus): OrderStatus[] {
  * ── One cross-rule lives NOT here, on purpose ───────────────────────────────
  * "A full REFUNDED is allowed only while the order itself is CANCELLED or
  * REFUNDED" reads two columns at once, so it is not expressible in a
- * `from → to` table. It is enforced beside this table, in the service
- * (`assertPaymentTransition`), and named there so the two halves of the rule are
- * found together.
+ * `from → to` table. It is enforced in the service, `OrderService`, by the
+ * private predicate `isPaymentTargetReachable(orderStatus, to)` — asked on the
+ * admin write (a 409), by the allowed-transitions list and on the webhook plan
+ * path — and by its mirror `isOrderTargetReachable(paymentStatus, to)` for the
+ * case where the ORDER column moves instead. Grep those two names to find both
+ * halves of the rule together.
  */
 export const PAYMENT_TRANSITIONS: Readonly<Record<PaymentStatus, readonly PaymentStatus[]>> =
   Object.freeze({
