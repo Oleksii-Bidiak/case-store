@@ -16,9 +16,11 @@ import {
 } from './product.repository';
 import {
   ProductErrorCode,
+  ProductCategoryBusyError,
   ProductCategoryGoneError,
   ProductRestoreConflictError,
   type ProductUniqueClash,
+  categoryBusyProduct,
   categoryGoneProduct,
   conflictProduct,
   restoreConflictCode,
@@ -81,12 +83,17 @@ function listSortBy(requested: string | undefined, tombstones: boolean): string 
 }
 
 /**
- * Map the repository's under-lock category check ({@link ProductCategoryGoneError}) onto
- * the same 400 the service's early check gives (TASK-1772); anything else re-throws.
+ * Map the repository's under-lock category check onto HTTP: a
+ * {@link ProductCategoryGoneError} is the same 400 the service's early check gives
+ * (TASK-1772), a {@link ProductCategoryBusyError} — the tree lock stayed held past the
+ * wait — the retryable 409 `PRODUCT_CATEGORY_BUSY`. Anything else re-throws.
  */
-function rethrowCategoryGone(error: unknown): never {
+function rethrowCategoryWrite(error: unknown): never {
   if (error instanceof ProductCategoryGoneError) {
     throw categoryGoneProduct();
+  }
+  if (error instanceof ProductCategoryBusyError) {
+    throw categoryBusyProduct();
   }
   throw error;
 }
@@ -598,7 +605,7 @@ export class ProductService {
         description: this.sanitizeDescription(input.description),
         isActive: input.isActive ?? false,
       })
-      .catch(rethrowCategoryGone);
+      .catch(rethrowCategoryWrite);
 
     // A new product may appear on any list page — bust every list cache entry.
     await this.invalidateProductLists();
@@ -679,7 +686,7 @@ export class ProductService {
         },
         slugRename,
       )
-      .catch(rethrowCategoryGone);
+      .catch(rethrowCategoryWrite);
 
     // Evict list pages and both detail variants. The slug may have changed, so
     // evict the OLD slug captured above; if it changed, also evict the new one.
@@ -1039,7 +1046,8 @@ export class ProductService {
    * one, so it names every field being written and the dialog asks for all of them.
    *
    * A category deleted between the up-front check and the locked write is the same
-   * 400 that check gives.
+   * 400 that check gives; a tree lock held past the wait is the retryable 409
+   * `PRODUCT_CATEGORY_BUSY`.
    */
   private async rethrowRestoreRace(
     error: unknown,
@@ -1048,6 +1056,9 @@ export class ProductService {
   ): Promise<never> {
     if (error instanceof ProductCategoryGoneError) {
       throw categoryGoneProduct();
+    }
+    if (error instanceof ProductCategoryBusyError) {
+      throw categoryBusyProduct();
     }
     if (!(error instanceof ProductRestoreConflictError)) {
       throw error;

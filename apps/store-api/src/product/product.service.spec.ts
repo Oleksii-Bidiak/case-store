@@ -8,7 +8,11 @@ import {
   CreateProductInput,
   UpdateProductInput,
 } from './product.repository';
-import { ProductCategoryGoneError, ProductRestoreConflictError } from './product.errors';
+import {
+  ProductCategoryBusyError,
+  ProductCategoryGoneError,
+  ProductRestoreConflictError,
+} from './product.errors';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
 import { AuditService } from '../audit';
 import { ProductSpecRepository } from './product-spec.repository';
@@ -1121,6 +1125,20 @@ describe('ProductService', () => {
       expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
       expect(productIndexerMock.index).not.toHaveBeenCalled();
     });
+
+    // A category delete held the tree lock past the save's wait: a retryable 409.
+    it('maps a busy category tree to 409 PRODUCT_CATEGORY_BUSY, with no side effects', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockRejectedValueOnce(new ProductCategoryBusyError());
+
+      const error = await service.create(createInput).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_BUSY');
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
   });
 
   // ─── update (admin) ───────────────────────────────────────────────────────────
@@ -1198,6 +1216,20 @@ describe('ProductService', () => {
       expect(error).toBeInstanceOf(BadRequestException);
       expect((error as BadRequestException).message).toBe('Category not found');
       expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_GONE');
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
+
+    it('maps a busy category tree to 409 PRODUCT_CATEGORY_BUSY, with no side effects', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockRejectedValueOnce(new ProductCategoryBusyError());
+
+      const error = await service
+        .update('product-uuid-1', { categoryId: mockProduct.categoryId, price: 1 })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_BUSY');
       expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
       expect(productIndexerMock.index).not.toHaveBeenCalled();
     });
@@ -2432,6 +2464,17 @@ describe('ProductService', () => {
       expect(error).toBeInstanceOf(BadRequestException);
       // TASK-1831: the under-lock check answers with the same code as the early one.
       expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_GONE');
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.remove).not.toHaveBeenCalled();
+    });
+
+    it('maps a busy category tree to 409 PRODUCT_CATEGORY_BUSY — the product stays deleted', async () => {
+      productRepositoryMock.restore.mockRejectedValue(new ProductCategoryBusyError());
+
+      const error = await service.restore(mockProduct.id).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_BUSY');
       expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
       expect(productIndexerMock.remove).not.toHaveBeenCalled();
     });

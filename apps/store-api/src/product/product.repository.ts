@@ -15,6 +15,7 @@ import { COUNTS_TOWARD_RATING } from '../review/review.constants';
 import { COLOR_SPEC_KEY, isColorAxis, withColorAxis } from '../common/color-axis';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
 import {
+  ProductCategoryBusyError,
   ProductCategoryGoneError,
   ProductRestoreConflictError,
   uniqueClashFromPrismaMeta,
@@ -36,6 +37,50 @@ const TX_OPTIONS = { timeout: 30_000, maxWait: 10_000 } as const;
  * so a save queued behind a delete does not time out before the delete could.
  */
 const CATEGORY_WRITE_TX_OPTIONS = { timeout: 15_000, maxWait: 10_000 } as const;
+
+/**
+ * How long a product write waits for the category tree lock before it gives up with
+ * {@link ProductCategoryBusyError} (a 409 the admin can retry). Set as Postgres
+ * `lock_timeout` for the lock statement only: the interactive-transaction `timeout`
+ * does NOT cut a statement short — a save stuck behind a long tree operation would
+ * keep waiting for as long as the holder holds the key, and only then fail its commit
+ * with `P2028` (measured). Well inside {@link CATEGORY_WRITE_TX_OPTIONS}' 15 s.
+ */
+const CATEGORY_LOCK_TIMEOUT = '5s';
+
+/**
+ * Did this Prisma error come from Postgres giving up on a lock wait (`55P03`,
+ * `lock_not_available` — what `lock_timeout` raises)? A raw statement fails as `P2010`;
+ * through the pg driver adapter the SQLSTATE sits in `meta.driverAdapterError.cause`,
+ * without it in `meta.code` — both are read.
+ */
+function isLockTimeout(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2010') {
+    return false;
+  }
+  const meta = (error.meta ?? {}) as {
+    code?: unknown;
+    driverAdapterError?: { cause?: { code?: unknown; originalCode?: unknown } };
+  };
+  const cause = meta.driverAdapterError?.cause;
+  return [meta.code, cause?.code, cause?.originalCode].includes('55P03');
+}
+
+/**
+ * A category-filing write's transaction outlived its budget (`P2028`) — the only thing
+ * that runs long in these short transactions is the wait for the tree lock — or its
+ * lock wait timed out: either way the tree is busy, not broken. Re-thrown as
+ * {@link ProductCategoryBusyError}; anything else passes through untouched.
+ */
+function rethrowCategoryBusy(error: unknown): never {
+  if (
+    isLockTimeout(error) ||
+    (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2028')
+  ) {
+    throw new ProductCategoryBusyError();
+  }
+  throw error;
+}
 
 /**
  * Slugs of a rename being persisted by this update — when present, the write
@@ -1073,14 +1118,16 @@ export class ProductRepository {
    *
    * Invariant I1 (TASK-1772): the category is re-checked under the category tree lock in
    * the same transaction as the insert — see {@link ProductRepository.lockLiveCategory}.
-   * A deleted (or missing) category throws {@link ProductCategoryGoneError}; nothing is
-   * written.
+   * A deleted (or missing) category throws {@link ProductCategoryGoneError}; a tree lock
+   * held past the wait throws {@link ProductCategoryBusyError}; nothing is written.
    */
   create(data: CreateProductInput & { slug: string }): Promise<Product> {
-    return this.prisma.$transaction(async (tx) => {
-      await this.lockLiveCategory(tx, data.categoryId);
-      return this.insertProduct(tx, data);
-    }, CATEGORY_WRITE_TX_OPTIONS);
+    return this.prisma
+      .$transaction(async (tx) => {
+        await this.lockLiveCategory(tx, data.categoryId);
+        return this.insertProduct(tx, data);
+      }, CATEGORY_WRITE_TX_OPTIONS)
+      .catch(rethrowCategoryBusy);
   }
 
   /**
@@ -1101,9 +1148,23 @@ export class ProductRepository {
     await this.assertCategoryLive(tx, categoryId);
   }
 
-  /** The SHARED half of {@link ProductRepository.lockLiveCategory} — take it FIRST. */
-  private lockCategoryTree(tx: Prisma.TransactionClient): Promise<void> {
-    return acquireSharedAdvisoryLocks(tx, [CATEGORY_TREE_LOCK_KEY]);
+  /**
+   * The SHARED half of {@link ProductRepository.lockLiveCategory} — take it FIRST.
+   *
+   * The wait is bounded: `lock_timeout` is set to {@link CATEGORY_LOCK_TIMEOUT} for the
+   * lock statement alone (transaction-local, then back to the default, so the product
+   * write's own row locks keep the usual behaviour). A tree operation holding the key
+   * longer than that makes the save fail fast with {@link ProductCategoryBusyError} —
+   * a retryable 409 — instead of hanging until a 500. The lock itself is unchanged.
+   */
+  private async lockCategoryTree(tx: Prisma.TransactionClient): Promise<void> {
+    await tx.$executeRaw`SELECT set_config('lock_timeout', ${CATEGORY_LOCK_TIMEOUT}, true)`;
+    try {
+      await acquireSharedAdvisoryLocks(tx, [CATEGORY_TREE_LOCK_KEY]);
+    } catch (error) {
+      rethrowCategoryBusy(error);
+    }
+    await tx.$executeRaw`SET LOCAL lock_timeout TO DEFAULT`;
   }
 
   /** The read half of {@link ProductRepository.lockLiveCategory} — only under the lock. */
@@ -1164,7 +1225,8 @@ export class ProductRepository {
    * {@link ProductRepository.lockLiveCategory}); a deleted category throws
    * {@link ProductCategoryGoneError} and nothing is written. That covers an UNCHANGED
    * `categoryId` too: a form re-sending the category it loaded would otherwise write a
-   * product a concurrent delete has just moved straight back into the tombstone.
+   * product a concurrent delete has just moved straight back into the tombstone. A tree
+   * lock held past the wait throws {@link ProductCategoryBusyError} (nothing written).
    */
   update(id: string, data: UpdateProductInput, slugRename?: SlugRenameInput): Promise<Product> {
     const { attributes, ...rest } = data;
@@ -1180,7 +1242,7 @@ export class ProductRepository {
       return this.prisma.product.update({ where: { id }, data: updateData });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const write = this.prisma.$transaction(async (tx) => {
       if (data.categoryId !== undefined) {
         await this.lockLiveCategory(tx, data.categoryId);
       }
@@ -1195,6 +1257,8 @@ export class ProductRepository {
       }
       return updated;
     }, CATEGORY_WRITE_TX_OPTIONS);
+    // Only a write that waited on the tree lock can be "busy"; a rename alone is not.
+    return filesCategory ? write.catch(rethrowCategoryBusy) : write;
   }
 
   /**
@@ -1564,7 +1628,8 @@ export class ProductRepository {
    * service saw) or waits until the restore commits — and then moves the now-live product
    * with the rest of the subtree. A deleted category throws
    * {@link ProductCategoryGoneError} and nothing is written. The lock is the shared one
-   * every category-filing product write takes ({@link ProductRepository.lockLiveCategory}).
+   * every category-filing product write takes ({@link ProductRepository.lockLiveCategory}),
+   * with the same bounded wait ({@link ProductCategoryBusyError}).
    *
    * Coming back on a slug other than its native one (`nativeSlug`, the address it was
    * deleted from — TASK-1828), the old links follow it, in the same transaction:
@@ -1621,7 +1686,7 @@ export class ProductRepository {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ProductRestoreConflictError(uniqueClashFromPrismaMeta(error.meta));
       }
-      throw error;
+      rethrowCategoryBusy(error);
     }
   }
 }

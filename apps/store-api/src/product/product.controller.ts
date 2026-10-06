@@ -439,6 +439,13 @@ export class ProductController {
       'Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing ' +
       'category (TASK-1831)',
   })
+  @ApiResponse({
+    status: 409,
+    description:
+      'PRODUCT_CATEGORY_BUSY — categories are being changed right now (a category delete ' +
+      'holds the tree lock longer than a save may wait); nothing was written, retry. ' +
+      'Also a plain 409 when the SKU is already taken',
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async create(@Body() dto: CreateProductDto): Promise<ProductResponse> {
     const product = await this.productService.create(dto);
@@ -466,6 +473,13 @@ export class ProductController {
       'category (TASK-1831)',
   })
   @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'PRODUCT_CATEGORY_BUSY — categories are being changed right now (a category delete ' +
+      'holds the tree lock longer than a save may wait); nothing was written, retry. ' +
+      'Also a plain 409 when the slug or SKU is already taken',
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async update(@Param('id') id: string, @Body() dto: UpdateProductDto): Promise<ProductResponse> {
     const product = await this.productService.update(id, dto);
@@ -810,7 +824,8 @@ export class ProductController {
     status: 409,
     description:
       'PRODUCT_SLUG_CONFLICT, PRODUCT_SKU_CONFLICT or PRODUCT_SLUG_SKU_CONFLICT — a live ' +
-      'product holds the slug / SKU / both; resend with a new value. Nothing was written',
+      'product holds the slug / SKU / both; resend with a new value. PRODUCT_CATEGORY_BUSY ' +
+      '— categories are being changed right now; retry. Nothing was written',
   })
   async restore(@Param('id') id: string, @Body() dto: RestoreProductDto): Promise<ProductResponse> {
     const product = await this.productService.restore(id, { slug: dto.slug, sku: dto.sku });

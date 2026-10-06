@@ -20,7 +20,7 @@ import { DeviceRepository } from '../src/device/device.repository';
 import { PrismaService } from '../src/prisma';
 import { buildProductListWhere } from '../src/product/product-list-where';
 import { PUBLIC_PRODUCT_WHERE } from '../src/product/product-visibility';
-import { ProductCategoryGoneError } from '../src/product/product.errors';
+import { ProductCategoryBusyError, ProductCategoryGoneError } from '../src/product/product.errors';
 import { ProductRepository } from '../src/product/product.repository';
 import { SlugRedirectRepository } from '../src/slug-redirect';
 
@@ -1062,6 +1062,64 @@ describe('Category deletion (integration, TASK-652/653)', () => {
         release();
         await sharedHolder;
       }
+    });
+
+    // A tree operation holding the key longer than a save may wait: the save gives up
+    // with a retryable "busy" (→ 409 PRODUCT_CATEGORY_BUSY) after the bounded lock wait,
+    // not with a transaction timeout (→ 500) once the holder lets go — and writes nothing.
+    it('a holder that keeps the tree lock past the wait makes create / update / restore busy', async () => {
+      const home = await makeCategory('busy-home', anchor, 121);
+      const other = await makeCategory('busy-other', anchor, 122);
+      const pBusy = await makeProduct('p-busy', home);
+      const pBusyGone = await makeProduct('p-busy-gone', home, {
+        isActive: false,
+        deletedAt: new Date('2026-01-01'),
+      });
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let signalLocked!: () => void;
+      const lockHeld = new Promise<void>((resolve) => (signalLocked = resolve));
+      const holder = prisma.$transaction(
+        async (tx) => {
+          await acquireAdvisoryLocks(tx, [CATEGORY_TREE_LOCK_KEY]);
+          signalLocked();
+          await gate;
+        },
+        { timeout: 25_000 },
+      );
+      await lockHeld;
+
+      try {
+        const startedAt = Date.now();
+        const [created, updated, restored] = await Promise.allSettled([
+          createInto('p-busy-new', home),
+          products.update(pBusy, { categoryId: other, name: 'del busy moved' }),
+          products.restore(pBusyGone, slug('p-busy-gone'), null),
+        ]);
+        const waited = Date.now() - startedAt;
+
+        for (const result of [created, updated, restored]) {
+          expect(result.status).toBe('rejected');
+          expect((result as PromiseRejectedResult).reason).toBeInstanceOf(ProductCategoryBusyError);
+        }
+        // The bounded lock wait (5 s), well before the 15 s transaction budget.
+        expect(waited).toBeGreaterThanOrEqual(4_500);
+        expect(waited).toBeLessThan(12_000);
+      } finally {
+        release();
+        await holder;
+      }
+
+      expect(await prisma.product.count({ where: { slug: slug('p-busy-new') } })).toBe(0);
+      const states = await productState([pBusy, pBusyGone]);
+      expect(states.find((p) => p.id === pBusy)?.categoryId).toBe(home);
+      expect(states.find((p) => p.id === pBusyGone)?.deletedAt).not.toBeNull();
+    }, 30_000);
+
+    it('once the holder lets go, the same save goes through', async () => {
+      const home = await makeCategory('busy-after-home', anchor, 123);
+      const created = await createInto('p-busy-after', home);
+      expect(created.categoryId).toBe(home);
     });
   });
 });

@@ -2784,6 +2784,9 @@
           },
           "403": {
             "description": "Forbidden — admin access required"
+          },
+          "409": {
+            "description": "PRODUCT_CATEGORY_BUSY — categories are being changed right now (a category delete holds the tree lock longer than a save may wait); nothing was written, retry. Also a plain 409 when the SKU is already taken"
           }
         },
         "security": [
@@ -3221,6 +3224,9 @@
           },
           "404": {
             "description": "Product not found"
+          },
+          "409": {
+            "description": "PRODUCT_CATEGORY_BUSY — categories are being changed right now (a category delete holds the tree lock longer than a save may wait); nothing was written, retry. Also a plain 409 when the slug or SKU is already taken"
           }
         },
         "security": [
@@ -3705,7 +3711,7 @@
             "description": "No deleted product with this id"
           },
           "409": {
-            "description": "PRODUCT_SLUG_CONFLICT, PRODUCT_SKU_CONFLICT or PRODUCT_SLUG_SKU_CONFLICT — a live product holds the slug / SKU / both; resend with a new value. Nothing was written"
+            "description": "PRODUCT_SLUG_CONFLICT, PRODUCT_SKU_CONFLICT or PRODUCT_SLUG_SKU_CONFLICT — a live product holds the slug / SKU / both; resend with a new value. PRODUCT_CATEGORY_BUSY — categories are being changed right now; retry. Nothing was written"
           }
         },
         "security": [

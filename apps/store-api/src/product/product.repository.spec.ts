@@ -1,6 +1,10 @@
 import { OrderStatus, Prisma, SlugRedirectEntity } from '@prisma/client';
 import { ProductRepository } from './product.repository';
-import { ProductCategoryGoneError, ProductRestoreConflictError } from './product.errors';
+import {
+  ProductCategoryBusyError,
+  ProductCategoryGoneError,
+  ProductRestoreConflictError,
+} from './product.errors';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
@@ -39,6 +43,34 @@ const prismaMock = {
   },
   $transaction: jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
 };
+
+/** The SQL text of one `$executeRaw` tagged-template call. */
+const rawSql = (call: unknown[]): string => (call[0] as TemplateStringsArray).join('?');
+
+/**
+ * The advisory-lock statement among the transaction's raw calls — the bounded-wait
+ * `lock_timeout` settings bracket it (TASK-1772 review), so it is not the first one.
+ */
+const advisoryLockCall = (): unknown[] => {
+  const call = txMock.$executeRaw.mock.calls.find((c: unknown[]) =>
+    rawSql(c).includes('pg_advisory'),
+  );
+  if (!call) throw new Error('no advisory lock was taken');
+  return call;
+};
+
+/** A Prisma known-request error as the client would throw it. */
+const prismaError = (code: string, meta: Record<string, unknown> = {}) =>
+  new Prisma.PrismaClientKnownRequestError(code, { code, clientVersion: 'test', meta });
+
+/** Postgres `lock_timeout` firing on a raw statement, as the pg driver adapter reports it. */
+const lockTimeout = () =>
+  prismaError('P2010', {
+    driverAdapterError: {
+      name: 'DriverAdapterError',
+      cause: { originalCode: '55P03', kind: 'postgres', code: '55P03' },
+    },
+  });
 
 const slugRedirectRepositoryMock = {
   recordRename: jest.fn(),
@@ -110,8 +142,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
 
   describe('create / update — category re-checked under the tree lock (TASK-1772)', () => {
     const order = (fn: jest.Mock): number => fn.mock.invocationCallOrder[0];
-    const lockSql = (): string =>
-      (txMock.$executeRaw.mock.calls[0][0] as TemplateStringsArray).join('?');
+    const lockSql = (): string => (advisoryLockCall()[0] as TemplateStringsArray).join('?');
 
     beforeEach(() => {
       txMock.$executeRaw.mockResolvedValue(1);
@@ -126,7 +157,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
       expect(prismaMock.product.create).not.toHaveBeenCalled();
       // The same tree key CategoryRepository.deleteSubtreeWithMove holds exclusively.
-      expect(txMock.$executeRaw.mock.calls[0][1]).toBe('categories:__tree__');
+      expect(advisoryLockCall()[1]).toBe('categories:__tree__');
       expect(lockSql()).toContain('pg_advisory_xact_lock_shared(');
       expect(txMock.category.findFirst).toHaveBeenCalledWith({
         where: { id: 'cat-1', deletedAt: null },
@@ -150,7 +181,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
 
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
       expect(prismaMock.product.update).not.toHaveBeenCalled();
-      expect(txMock.$executeRaw.mock.calls[0][1]).toBe('categories:__tree__');
+      expect(advisoryLockCall()[1]).toBe('categories:__tree__');
       expect(lockSql()).toContain('pg_advisory_xact_lock_shared(');
       expect(order(txMock.$executeRaw)).toBeLessThan(order(txMock.category.findFirst));
       expect(order(txMock.category.findFirst)).toBeLessThan(order(txMock.product.update));
@@ -183,6 +214,65 @@ describe('ProductRepository (soft-delete behaviour)', () => {
         'old-slug',
         'new-slug',
       );
+    });
+
+    it('bounds the wait: lock_timeout set just for the lock statement, then back to default', async () => {
+      await repository.create({ name: 'Case', slug: 'case', price: 9.99, categoryId: 'cat-1' });
+
+      const sql = txMock.$executeRaw.mock.calls.map((call: unknown[]) => rawSql(call));
+      expect(sql).toHaveLength(3);
+      expect(sql[0]).toContain("set_config('lock_timeout'");
+      expect(txMock.$executeRaw.mock.calls[0][1]).toBe('5s');
+      expect(sql[0]).toMatch(/, true\)$/); // transaction-local
+      expect(sql[1]).toContain('pg_advisory_xact_lock_shared(');
+      expect(sql[2]).toBe('SET LOCAL lock_timeout TO DEFAULT');
+    });
+
+    it.each([
+      ['create', () => repository.create({ name: 'C', slug: 'c', price: 1, categoryId: 'cat-1' })],
+      ['update', () => repository.update('product-1', { categoryId: 'cat-1' })],
+    ])(
+      '%s: a lock wait that times out (55P03) → ProductCategoryBusyError, nothing written',
+      async (_name, write) => {
+        txMock.$executeRaw.mockImplementation((sql: TemplateStringsArray) =>
+          sql.join('?').includes('pg_advisory')
+            ? Promise.reject(lockTimeout())
+            : Promise.resolve(1),
+        );
+
+        await expect(write()).rejects.toBeInstanceOf(ProductCategoryBusyError);
+        expect(txMock.category.findFirst).not.toHaveBeenCalled();
+        expect(txMock.product.create).not.toHaveBeenCalled();
+        expect(txMock.product.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('a transaction that outlived its budget (P2028) is busy too', async () => {
+      prismaMock.$transaction.mockRejectedValueOnce(prismaError('P2028', { operation: 'commit' }));
+
+      await expect(repository.update('product-1', { categoryId: 'cat-1' })).rejects.toBeInstanceOf(
+        ProductCategoryBusyError,
+      );
+    });
+
+    it('a slug rename alone takes no lock and is never reported busy', async () => {
+      const expired = prismaError('P2028', { operation: 'commit' });
+      prismaMock.$transaction.mockRejectedValueOnce(expired);
+
+      await expect(
+        repository.update('product-1', { slug: 'new' }, { oldSlug: 'old', newSlug: 'new' }),
+      ).rejects.toBe(expired);
+    });
+
+    it('any other error passes through untouched', async () => {
+      const broken = prismaError('P2010', { driverAdapterError: { cause: { code: '42P01' } } });
+      txMock.$executeRaw.mockImplementation((sql: TemplateStringsArray) =>
+        sql.join('?').includes('pg_advisory') ? Promise.reject(broken) : Promise.resolve(1),
+      );
+
+      await expect(
+        repository.create({ name: 'C', slug: 'c', price: 1, categoryId: 'cat-1' }),
+      ).rejects.toBe(broken);
     });
 
     it('update without a categoryId takes no lock (the hot, single-statement path)', async () => {
@@ -1027,7 +1117,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       await repository.restore('product-1', 'clear-case', 'SKU-1');
 
       // The same tree key CategoryRepository.deleteSubtreeWithMove holds for a delete.
-      const [lockSql, lockedKey] = txMock.$executeRaw.mock.calls[0];
+      const [lockSql, lockedKey] = advisoryLockCall();
       expect(lockedKey).toBe('categories:__tree__');
       // Shared, like every category-filing product write (TASK-1772): the delete holds
       // it exclusively, so the two still cannot interleave.
@@ -1045,6 +1135,17 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       const order = (fn: jest.Mock): number => fn.mock.invocationCallOrder[0];
       expect(order(txMock.$executeRaw)).toBeLessThan(order(txMock.product.findFirst));
       expect(order(txMock.category.findFirst)).toBeLessThan(order(txMock.product.update));
+    });
+
+    it('a tree lock held past the wait → ProductCategoryBusyError, the product stays deleted', async () => {
+      txMock.$executeRaw.mockImplementation((sql: TemplateStringsArray) =>
+        sql.join('?').includes('pg_advisory') ? Promise.reject(lockTimeout()) : Promise.resolve(1),
+      );
+
+      await expect(repository.restore('product-1', 'clear-case', null)).rejects.toBeInstanceOf(
+        ProductCategoryBusyError,
+      );
+      expect(txMock.product.update).not.toHaveBeenCalled();
     });
 
     it('refuses with ProductCategoryGoneError and writes nothing when the category is deleted', async () => {

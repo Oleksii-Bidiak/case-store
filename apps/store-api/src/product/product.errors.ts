@@ -25,6 +25,12 @@ export const ProductErrorCode = {
    * too (invariant I1).
    */
   CATEGORY_GONE: 'PRODUCT_CATEGORY_GONE',
+  /**
+   * The category tree is being restructured right now (a category delete holds its lock)
+   * and a write that files the product under a category gave up waiting for it — a 409.
+   * Nothing was written; the same request can simply be sent again in a moment.
+   */
+  CATEGORY_BUSY: 'PRODUCT_CATEGORY_BUSY',
 } as const;
 
 export type ProductErrorCode = (typeof ProductErrorCode)[keyof typeof ProductErrorCode];
@@ -70,6 +76,21 @@ export class ProductCategoryGoneError extends Error {
   constructor() {
     super('Category not found');
     this.name = 'ProductCategoryGoneError';
+  }
+}
+
+/**
+ * A product write that files the product under a category could not get the category
+ * tree lock in time (TASK-1772 review): a category delete — or another tree operation
+ * holding the key exclusively — ran longer than the lock wait allows, or the write's
+ * transaction ran out of time behind it. `ProductRepository` raises it in place of the
+ * raw Postgres lock timeout / Prisma `P2028`, which would otherwise surface as a 500;
+ * the service maps it onto the 409 {@link categoryBusyProduct}. Nothing is written.
+ */
+export class ProductCategoryBusyError extends Error {
+  constructor() {
+    super('The category tree is being changed — try again');
+    this.name = 'ProductCategoryBusyError';
   }
 }
 
@@ -137,5 +158,17 @@ export function categoryGoneProduct(): BadRequestException {
   return new BadRequestException({
     error: ProductErrorCode.CATEGORY_GONE,
     message: 'Category not found',
+  });
+}
+
+/**
+ * The 409 a category-filing product write answers when the category tree stayed locked
+ * longer than it may wait ({@link ProductCategoryBusyError}): categories are being
+ * changed right now, nothing was written, and the same request can be retried.
+ */
+export function categoryBusyProduct(): ConflictException {
+  return new ConflictException({
+    error: ProductErrorCode.CATEGORY_BUSY,
+    message: 'Categories are being changed right now — try again in a moment',
   });
 }
