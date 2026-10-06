@@ -42,6 +42,7 @@ import {
   AdminCategoryDetailEntity,
   AdminCategoryTreeNodeEntity,
   CategoryDeletionImpactEntity,
+  CategoryDeletionResultEntity,
   CategoryEntity,
   CategoryWithCountEntity,
 } from './entities';
@@ -65,6 +66,15 @@ class CategoryResponseEnvelope {
 class AdminCategoryDetailResponseEnvelope {
   @ApiProperty({ type: AdminCategoryDetailEntity })
   data!: AdminCategoryDetailEntity;
+}
+
+/**
+ * Response envelope for the category delete (TASK-1775): what the delete actually did —
+ * the target id (incl. a target it created) and the real moved / switched counts.
+ */
+class CategoryDeletionResponseEnvelope {
+  @ApiProperty({ type: CategoryDeletionResultEntity })
+  data!: CategoryDeletionResultEntity;
 }
 
 /**
@@ -146,6 +156,8 @@ export class AdminCategoryTreeResponse {
   AdminCategoryDetailResponseEnvelope,
   AdminCategoryDetailEntity,
   CategoryDeletionImpactEntity,
+  CategoryDeletionResponseEnvelope,
+  CategoryDeletionResultEntity,
   DeleteCategoryDto,
 )
 @Controller('admin/categories')
@@ -291,12 +303,16 @@ export class AdminCategoryController {
    * it depends on the body). An empty body (TASK-655) deletes a truly empty category
    * with no target at all.
    *
+   * Answers 200 with what the delete did (TASK-1775): the target id — including the id
+   * of a target `moveToNew` created — and the real moved / switched counts, counted in
+   * the delete's own transaction. It used to be a bodiless 204.
+   *
    * Its own permission (TASK-654): the route-level `categories:delete` REPLACES the
    * class-level `categories:write` (see `PermissionGuard.resolveRequirement`).
    */
   @Delete(':id')
   @RequirePermission('categories:delete')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Delete a category subtree, moving its products (admin)',
@@ -305,8 +321,11 @@ export class AdminCategoryController {
   @ApiParam({ name: 'id', description: 'Category UUID' })
   @ApiBody({ type: DeleteCategoryDto })
   @ApiResponse({
-    status: 204,
-    description: 'Category subtree deleted, products moved (or a truly empty category deleted)',
+    status: 200,
+    description:
+      'Category subtree deleted, products moved (or a truly empty category deleted). The body ' +
+      'reports the target (null for a target-less delete) and the real moved / switched counts',
+    type: CategoryDeletionResponseEnvelope,
   })
   @ApiResponse({
     status: 400,
@@ -335,8 +354,10 @@ export class AdminCategoryController {
     @Param('id') id: string,
     @Body() dto: DeleteCategoryDto,
     @CurrentUser('id') adminUserId: string,
-  ): Promise<void> {
-    await this.categoryService.delete(id, dto, adminUserId);
+  ): Promise<CategoryDeletionResponseEnvelope> {
+    const result = await this.categoryService.delete(id, dto, adminUserId);
+
+    return { data: CategoryDeletionResultEntity.fromResult(result) };
   }
 
   /**

@@ -1995,8 +1995,15 @@
           }
         },
         "responses": {
-          "204": {
-            "description": "Category subtree deleted, products moved (or a truly empty category deleted)"
+          "200": {
+            "description": "Category subtree deleted, products moved (or a truly empty category deleted). The body reports the target (null for a target-less delete) and the real moved / switched counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryDeletionResponseEnvelope"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation error; CATEGORY_MOVE_TARGET_REQUIRED (both modes, or neither mode for a category that is not truly empty — it has a subcategory, a product incl. a soft-deleted one, or a carousel); CATEGORY_MOVE_TARGET_IN_SUBTREE (the target or its parent is inside the subtree)"
@@ -17011,6 +17018,43 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/AdminCategoryDetailEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CategoryDeletionResultEntity": {
+        "type": "object",
+        "properties": {
+          "targetId": {
+            "type": "string",
+            "description": "The category the products and carousels moved into — the existing `moveToId`, or the id of the category `moveToNew` created. Null for a target-less delete of a truly empty category",
+            "nullable": true,
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "movedProducts": {
+            "type": "number",
+            "description": "Products re-filed into the target — active, inactive AND soft-deleted ones, so it can be higher than `deletionImpact.productCount` in the preview",
+            "example": 42
+          },
+          "switchedCarousels": {
+            "type": "number",
+            "description": "Homepage carousels switched from the deleted subtree to the target",
+            "example": 1
+          }
+        },
+        "required": [
+          "targetId",
+          "movedProducts",
+          "switchedCarousels"
+        ]
+      },
+      "CategoryDeletionResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CategoryDeletionResultEntity"
           }
         },
         "required": [

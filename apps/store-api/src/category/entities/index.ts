@@ -9,3 +9,4 @@ export {
   AdminCategoryDetailEntity,
   CategoryDeletionImpactEntity,
 } from './admin-category-detail.entity';
+export { CategoryDeletionResultEntity } from './category-deletion-result.entity';

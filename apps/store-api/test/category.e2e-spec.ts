@@ -1342,15 +1342,19 @@ describe('CategoryController (e2e)', () => {
       expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
     });
 
-    it('returns 204 for a manager with categories:delete moving into an existing category', async () => {
+    it('returns 200 for a manager with categories:delete moving into an existing category', async () => {
       permissionRepositoryMock.setGrants('MANAGER', ['categories:delete']);
       const token = generateAccessToken(managerId, 'MANAGER');
 
-      await request(app.getHttpServer())
+      const response = await request(app.getHttpServer())
         .delete(url)
         .set('Authorization', `Bearer ${token}`)
         .send(moveToId)
-        .expect(204);
+        .expect(200);
+      // TASK-1775: what the delete did, counted in its own transaction — nothing else.
+      expect(response.body).toEqual({
+        data: { targetId: TARGET_ID, movedProducts: 3, switchedCarousels: 0 },
+      });
       expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(testCategory.id, {
         kind: 'existing',
         id: TARGET_ID,
@@ -1376,14 +1380,14 @@ describe('CategoryController (e2e)', () => {
         expect(response.body).toHaveProperty('statusCode', 409);
       });
 
-      it('returns 204 with allowHiddenTarget: true and passes the consent on', async () => {
+      it('returns 200 with allowHiddenTarget: true and passes the consent on', async () => {
         const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
         await request(app.getHttpServer())
           .delete(url)
           .set('Authorization', `Bearer ${token}`)
           .send({ ...moveToId, allowHiddenTarget: true })
-          .expect(204);
+          .expect(200);
         expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(testCategory.id, {
           kind: 'existing',
           id: TARGET_ID,
@@ -1417,7 +1421,7 @@ describe('CategoryController (e2e)', () => {
       expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
     });
 
-    it('returns 204 for a manager holding both keys in moveToNew mode', async () => {
+    it('returns 200 for a manager holding both keys in moveToNew mode', async () => {
       permissionRepositoryMock.setGrants('MANAGER', ['categories:delete', 'categories:write']);
       const token = generateAccessToken(managerId, 'MANAGER');
 
@@ -1425,22 +1429,34 @@ describe('CategoryController (e2e)', () => {
         .delete(url)
         .set('Authorization', `Bearer ${token}`)
         .send(moveToNew)
-        .expect(204);
+        .expect(200);
       expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
         testCategory.id,
         expect.objectContaining({ kind: 'new', name: 'Інші аксесуари', parentId: null }),
       );
     });
 
-    it('returns 204 with an empty response for an admin creating a new target', async () => {
+    // TASK-1775: the dialog learns the id of the target it asked the server to create —
+    // no more re-reading the tree to find it by a slug guessed from the name.
+    it('returns 200 with the CREATED target id and the real counts in moveToNew mode', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      categoryRepositoryMock.deleteSubtreeWithMove.mockResolvedValue({
+        targetId: 'created-target-id',
+        targetCreated: true,
+        subtreeIds: [testCategory.id, 'child-id'],
+        movedProducts: 7,
+        switchedCarousels: 2,
+      });
 
       const response = await request(app.getHttpServer())
         .delete(url)
         .set('Authorization', `Bearer ${token}`)
         .send(moveToNew)
-        .expect(204);
-      expect(response.text).toBe('');
+        .expect(200);
+      // Exactly the three fields — the tombstoned ids and targetCreated stay internal.
+      expect(response.body).toEqual({
+        data: { targetId: 'created-target-id', movedProducts: 7, switchedCarousels: 2 },
+      });
     });
 
     it('returns 400 CATEGORY_MOVE_TARGET_REQUIRED for both modes', async () => {
@@ -1471,19 +1487,23 @@ describe('CategoryController (e2e)', () => {
       it.each([
         ['an empty JSON body', (req: request.Test) => req.send({})],
         ['no body at all', (req: request.Test) => req],
-      ])('returns 204 for %s and passes kind "none"', async (_label, withBody) => {
+      ])('returns 200 for %s and passes kind "none"', async (_label, withBody) => {
         const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-        await withBody(
+        const response = await withBody(
           request(app.getHttpServer()).delete(url).set('Authorization', `Bearer ${token}`),
-        ).expect(204);
+        ).expect(200);
+        // Nothing moved, so there is no target (TASK-1775).
+        expect(response.body).toEqual({
+          data: { targetId: null, movedProducts: 0, switchedCarousels: 0 },
+        });
         expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(testCategory.id, {
           kind: 'none',
         });
       });
 
       // Nothing is created, so `categories:delete` alone is enough.
-      it('returns 204 for a manager holding only categories:delete', async () => {
+      it('returns 200 for a manager holding only categories:delete', async () => {
         permissionRepositoryMock.setGrants('MANAGER', ['categories:delete']);
         const token = generateAccessToken(managerId, 'MANAGER');
 
@@ -1491,7 +1511,7 @@ describe('CategoryController (e2e)', () => {
           .delete(url)
           .set('Authorization', `Bearer ${token}`)
           .send({})
-          .expect(204);
+          .expect(200);
       });
 
       it('returns 400 CATEGORY_MOVE_TARGET_REQUIRED when the category is not empty', async () => {
