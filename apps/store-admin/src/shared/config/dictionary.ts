@@ -1617,6 +1617,11 @@ export const dict = {
       // No live product moved, but carousels now point at the hidden target.
       toastHiddenCarousels: (target: string, carousels: number) =>
         `${countLabel(carousels, ["карусель", "каруселі", "каруселей"])} головної ${pluralUk(carousels, ["порожня", "порожні", "порожні"])}, доки ви не покажете «${target}».`,
+      // ── ревʼю хвостів 185 U ──
+      // Appended to `toastMoved` (which counts only the LIVE products, from
+      // the answer's `movedLiveProducts`) when soft-deleted ones moved too.
+      toastAlsoDeleted: (count: number) =>
+        `Разом із ними — ${countLabel(count, ["видалений товар", "видалені товари", "видалених товарів"])}: їх видно у виді «Видалені».`,
     },
     // ── лише перегляд: право видаляти без права «Категорії» (TASK-1781) ──
     // `categories:delete` reads the tree and the card (the API half of

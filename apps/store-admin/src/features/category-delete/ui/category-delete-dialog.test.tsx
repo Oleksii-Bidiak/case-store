@@ -143,10 +143,15 @@ const CREATED = "44444444-4444-4444-8444-444444444444";
 interface DeleteResult {
   targetId: string | null;
   movedProducts: number;
+  /** Of `movedProducts`, the non-soft-deleted ones (review of 185 U). */
+  movedLiveProducts: number;
   switchedCarousels: number;
 }
 
-/** The 200 answer of a delete (TASK-1775): what the server DID. */
+/**
+ * The 200 answer of a delete (TASK-1775): what the server DID. Unless a test
+ * says otherwise, every moved product was a live one.
+ */
 function deleted(result: Partial<DeleteResult> = {}) {
   return HttpResponse.json({
     data: {
@@ -154,6 +159,7 @@ function deleted(result: Partial<DeleteResult> = {}) {
       movedProducts: 0,
       switchedCarousels: 0,
       ...result,
+      movedLiveProducts: result.movedLiveProducts ?? result.movedProducts ?? 0,
     },
   });
 }
@@ -199,6 +205,7 @@ function stub({
         movedProducts: targetId
           ? impact.productCount + impact.deletedProductCount
           : 0,
+        movedLiveProducts: targetId ? impact.productCount : 0,
         switchedCarousels: targetId ? impact.carouselCount : 0,
       });
     }),
@@ -714,6 +721,82 @@ describe("CategoryDeleteDialog — the target picker", () => {
     expect(successToast).toHaveBeenCalledTimes(1);
     const [message, options] = successToast.mock.calls[0];
     expect(message).toBe(d.toastMovedDeleted("Навушники", 2, "Аудіоаксесуари"));
+    expect(options?.action).toBeUndefined();
+  });
+
+  // The preview counted only deleted products, but a live one was filed in
+  // the branch before the confirm: the answer says so, and the toast follows
+  // it — no guessing from the preview (ревʼю хвостів 185 U).
+  it("names a live product added after the preview, with «Показати товари»", async () => {
+    const user = userEvent.setup();
+    stub({
+      impacts: {
+        [HEAD]: {
+          subcategoryCount: 0,
+          productCount: 0,
+          carouselCount: 0,
+          carousels: [],
+          deletedProductCount: 2,
+        },
+      },
+      respond: () =>
+        deleted({ targetId: AUDIO, movedProducts: 3, movedLiveProducts: 1 }),
+    });
+    const { onDeleted } = renderDialog();
+    await ready();
+    await pickTarget(user, "Аудіоаксесуари");
+    await user.click(screen.getByRole("button", { name: d.confirm }));
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+    const [message, options] = successToast.mock.calls[0];
+    expect(message).toBe(
+      `${d.toastMoved("Навушники", 1, "Аудіоаксесуари")} ${d.toastAlsoDeleted(2)}`,
+    );
+    expect(options.action.label).toBe(d.toastShowProducts);
+  });
+
+  it("counts live and deleted products apart when both moved", async () => {
+    const user = userEvent.setup();
+    stub({
+      respond: () =>
+        deleted({ targetId: AUDIO, movedProducts: 17, movedLiveProducts: 15 }),
+    });
+    const { onDeleted } = renderDialog();
+    await ready();
+    await pickTarget(user, "Аудіоаксесуари");
+    await user.click(
+      screen.getByRole("button", { name: "Видалити й перенести 15 товарів" }),
+    );
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+    const [message, options] = successToast.mock.calls[0];
+    expect(message).toBe(
+      "Категорію «Навушники» видалено. 15 товарів тепер у «Аудіоаксесуари». " +
+        "Разом із ними — 2 видалені товари: їх видно у виді «Видалені».",
+    );
+    expect(options.action.label).toBe(d.toastShowProducts);
+  });
+
+  it("says nothing about the product list when only deleted products moved — whatever the preview said", async () => {
+    const user = userEvent.setup();
+    // The preview counted 15 live products; by the confirm they were all
+    // deleted, and only tombstones moved.
+    stub({
+      respond: () =>
+        deleted({ targetId: AUDIO, movedProducts: 15, movedLiveProducts: 0 }),
+    });
+    const { onDeleted } = renderDialog();
+    await ready();
+    await pickTarget(user, "Аудіоаксесуари");
+    await user.click(
+      screen.getByRole("button", { name: "Видалити й перенести 15 товарів" }),
+    );
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+    const [message, options] = successToast.mock.calls[0];
+    expect(message).toBe(
+      d.toastMovedDeleted("Навушники", 15, "Аудіоаксесуари"),
+    );
     expect(options?.action).toBeUndefined();
   });
 });

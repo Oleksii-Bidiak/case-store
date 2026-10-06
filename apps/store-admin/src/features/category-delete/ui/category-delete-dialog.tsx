@@ -527,13 +527,6 @@ function CategoryDeleteForm({
             target: movedTo,
             result,
             targetId: resultTargetId,
-            // Only live products were in the preview's «N товарів»: when it
-            // had none and no more moved than the soft-deleted ones it named,
-            // only those moved (TASK-1836) — and the product list does not
-            // show them, so no «Показати товари».
-            deletedOnly:
-              impact.productCount === 0 &&
-              result.movedProducts <= impact.deletedProductCount,
             // TASK-1841: the consent sent is exactly the warning the operator
             // saw — the toast repeats it once the move is done.
             hidden: body.allowHiddenTarget === true,
@@ -575,29 +568,37 @@ function CategoryDeleteForm({
    * ДН-2.11, from the server's answer (TASK-1775). «Показати товари» opens
    * the product list filtered by the target — its id comes back in the
    * answer, also for a category created in this dialog.
+   *
+   * The answer splits what moved: `movedLiveProducts` are the products the
+   * list shows (active or hidden), `movedProducts - movedLiveProducts` the
+   * soft-deleted ones that moved along (TASK-1836, invariant I1). Both are
+   * counted in the delete's own transaction, so products added between the
+   * preview and the confirm are named correctly — no guessing from the
+   * preview. «Показати товари» only when a live product moved.
    */
   const toastResult = ({
     name: deletedName,
     target,
     result,
     targetId: resultTargetId,
-    deletedOnly,
     hidden,
   }: {
     name: string;
     target: string;
     result: CategoryDeletionResultEntity;
     targetId: string | null;
-    deletedOnly: boolean;
     /** Moved into a HIDDEN target (TASK-1837/1841): off the site till shown. */
     hidden: boolean;
   }) => {
-    const moved = result.movedProducts;
+    const live = result.movedLiveProducts;
+    const deleted = Math.max(0, result.movedProducts - live);
     const carousels = result.switchedCarousels;
-    if (moved > 0 && !deletedOnly) {
-      const message = hidden
-        ? `${d.toastMoved(deletedName, moved, target)} ${d.toastHiddenTail(target, carousels)}`
-        : d.toastMoved(deletedName, moved, target);
+    if (live > 0) {
+      const message = [
+        d.toastMoved(deletedName, live, target),
+        ...(hidden ? [d.toastHiddenTail(target, carousels)] : []),
+        ...(deleted > 0 ? [d.toastAlsoDeleted(deleted)] : []),
+      ].join(" ");
       toast.success(message, {
         duration: UNDO_TOAST_DURATION_MS,
         ...(resultTargetId
@@ -620,9 +621,9 @@ function CategoryDeleteForm({
       hidden && carousels > 0
         ? ` ${d.toastHiddenCarousels(target, carousels)}`
         : "";
-    if (moved > 0) {
+    if (deleted > 0) {
       toast.success(
-        `${d.toastMovedDeleted(deletedName, moved, target)}${carouselTail}`,
+        `${d.toastMovedDeleted(deletedName, deleted, target)}${carouselTail}`,
       );
     } else {
       toast.success(`${d.toastDone(deletedName)}${carouselTail}`);

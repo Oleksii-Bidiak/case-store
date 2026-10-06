@@ -442,7 +442,12 @@ describe("EditCategoryView — «Видалити…» on the card (TASK-655, Д
           bodies.push(await request.json());
           // TASK-1775: the delete answers with what it did.
           return HttpResponse.json({
-            data: { targetId: null, movedProducts: 0, switchedCarousels: 0 },
+            data: {
+              targetId: null,
+              movedProducts: 0,
+              movedLiveProducts: 0,
+              switchedCarousels: 0,
+            },
           });
         },
       ),
