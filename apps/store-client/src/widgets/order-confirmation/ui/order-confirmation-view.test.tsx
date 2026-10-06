@@ -49,7 +49,8 @@ describe("OrderConfirmationView", () => {
     expect(screen.getByText("Олег Коваль")).toBeInTheDocument();
     expect(screen.getByText("Відділення №1")).toBeInTheDocument();
     expect(screen.getByText("Київ")).toBeInTheDocument();
-    expect(screen.getByText("+380501234567")).toBeInTheDocument();
+    // The stored digits, shown in the UA mask.
+    expect(screen.getByText("+380 50 123 4567")).toBeInTheDocument();
     // Status badges render Ukrainian labels, not raw enums (TASK-129).
     expect(screen.getByText("Очікує підтвердження")).toBeInTheDocument();
     expect(screen.getByText("Оплата: Очікує оплати")).toBeInTheDocument();
@@ -197,6 +198,7 @@ describe("OrderConfirmationView", () => {
         shippingAddress: {
           firstName: "Олег",
           lastName: "Коваль",
+          phone: "380501234567",
           city: "Київ",
           address1: "вул. Хрещатик, 22",
           pickupPointName: "Магазин на Хрещатику",
@@ -210,6 +212,10 @@ describe("OrderConfirmationView", () => {
       expect(
         block.getByText(t.pickupTitle("Магазин на Хрещатику")),
       ).toBeInTheDocument();
+      // Who collects it and how to reach them (OrderConfirmation.dc.html).
+      expect(block.getByText("Олег Коваль")).toBeInTheDocument();
+      expect(block.getByText("+380 50 123 4567")).toBeInTheDocument();
+      expect(block.getByText("Київ, вул. Хрещатик, 22")).toBeInTheDocument();
       expect(block.getByText("Пн–Сб 10:00–20:00")).toBeInTheDocument();
       expect(
         block.getByRole("link", { name: new RegExp(t.mapLink) }),

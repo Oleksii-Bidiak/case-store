@@ -46,12 +46,13 @@ describe("OrderDeliveryBlock (TASK-647)", () => {
       block().getByText("Відділення №1: вул. Пилипа Орлика, 1"),
     ).toBeInTheDocument();
     expect(block().getByText("Київ")).toBeInTheDocument();
-    expect(block().getByText("+380501234567")).toBeInTheDocument();
+    // The stored number, in the UA mask (OrderConfirmation.dc.html).
+    expect(block().getByText("+380 50 123 4567")).toBeInTheDocument();
     expect(block().queryByText(t.otherNote)).toBeNull();
     expect(block().queryByRole("link")).toBeNull();
   });
 
-  it("pickup — the point as it was at checkout, the map link and the call note", () => {
+  it("pickup — who collects it, the point as it was at checkout, the map link and the call note", () => {
     renderWithProviders(
       <OrderDeliveryBlock
         order={{
@@ -83,8 +84,48 @@ describe("OrderDeliveryBlock (TASK-647)", () => {
     expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
     expect(link).toHaveTextContent(t.newTab);
     expect(block().getByText(t.pickupNote)).toBeInTheDocument();
-    // The point is the shop's, not the buyer's home: no recipient line.
-    expect(block().queryByText("Олег Коваль")).toBeNull();
+    // The counter needs to know who collects it, and how to reach them —
+    // the name in foreground, right under the method line.
+    const lines = Array.from(
+      screen.getByTestId("order-delivery").querySelectorAll("address > span"),
+    ).map((node) => node.textContent);
+    expect(lines).toEqual([
+      t.pickupTitle("Магазин на Хрещатику"),
+      "Олег Коваль",
+      "Київ, вул. Хрещатик, 22",
+      "Пн–Сб 10:00–20:00 · +380441234567",
+      "+380 50 123 4567",
+    ]);
+    expect(block().getByText("Олег Коваль")).toHaveClass("text-foreground");
+  });
+
+  it("pickup — no doubled city when the point's address already starts with it", () => {
+    renderWithProviders(
+      <OrderDeliveryBlock
+        order={{
+          deliveryMethod: "PICKUP",
+          shippingAddress: {
+            ...buyer,
+            pickupPointName: "Магазин",
+            pickupPointAddress: "Київ, вул. Хрещатик, 22",
+          },
+        }}
+      />,
+    );
+    expect(block().getByText("Київ, вул. Хрещатик, 22")).toBeInTheDocument();
+    expect(block().queryByText(/Київ, Київ/)).toBeNull();
+  });
+
+  it("keeps a non-UA number as typed rather than masking it into a wrong one", () => {
+    renderWithProviders(
+      <OrderDeliveryBlock
+        order={{
+          deliveryMethod: "COURIER",
+          shippingAddress: { ...buyer, phone: "+48 600 123 456" },
+        }}
+      />,
+    );
+    expect(block().getByText("+48 600 123 456")).toBeInTheDocument();
   });
 
   it("pickup without a map link — no dead link", () => {

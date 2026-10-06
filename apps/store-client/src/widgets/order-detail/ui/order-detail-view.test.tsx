@@ -343,7 +343,7 @@ describe("OrderDetailView (TASK-217)", () => {
         block.getByText(d.deliveryMethods.NOVA_POSHTA),
       ).toBeInTheDocument();
       expect(block.getByText("Олег Коваль")).toBeInTheDocument();
-      expect(block.getByText("+380501234567")).toBeInTheDocument();
+      expect(block.getByText("+380 50 123 4567")).toBeInTheDocument();
       expect(block.getByText("Київ")).toBeInTheDocument();
       expect(block.getByText("Відділення №1")).toBeInTheDocument();
     });

@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { renderWithProviders, screen, within } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { makeOrder } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
@@ -43,6 +43,39 @@ describe("GuestOrderView", () => {
     expect(screen.getByText("Відділення №1")).toBeInTheDocument();
     expect(screen.getByText("Олена Шевченко")).toBeInTheDocument();
     expect(screen.getByText("olena@example.com")).toBeInTheDocument();
+    // The guest contact phone (and the delivery recipient's), in the UA mask.
+    expect(screen.getAllByText("+380 50 123 4567").length).toBeGreaterThan(0);
+  });
+
+  // OrderConfirmation.dc.html #pickup: the counter needs to know who collects.
+  it("pickup — names who collects the order and their phone", async () => {
+    server.use(
+      http.get("*/api/orders/guest/:token", () =>
+        HttpResponse.json(
+          makeOrder({
+            userId: null,
+            deliveryMethod: "PICKUP",
+            shippingCost: "0.00",
+            shippingAddress: {
+              firstName: "Олена",
+              lastName: "Коваль",
+              phone: "380501234567",
+              city: "Київ",
+              address1: "вул. Хрещатик, 22",
+              pickupPointName: "Магазин на Хрещатику",
+              pickupPointAddress: "вул. Хрещатик, 22",
+            },
+          }),
+        ),
+      ),
+    );
+
+    renderWithProviders(<GuestOrderView token="token-1" />);
+
+    const block = within(await screen.findByTestId("order-delivery"));
+    expect(block.getByText("Олена Коваль")).toBeInTheDocument();
+    expect(block.getByText("Київ, вул. Хрещатик, 22")).toBeInTheDocument();
+    expect(block.getByText("+380 50 123 4567")).toBeInTheDocument();
   });
 
   // TASK-647: the same «Доставка» block as the confirmation page.

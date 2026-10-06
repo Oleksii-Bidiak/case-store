@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { ArrowUpRight, Info } from "lucide-react";
 import { dict } from "@/shared/config";
+import { displayPhone } from "@/shared/lib/phone";
 import { cn } from "@/shared/lib/utils";
 import {
   orderDeliveryDetails,
@@ -41,7 +42,7 @@ export function OrderDeliveryMapLink({
 /** A muted note with an info glyph — what happens next with this delivery. */
 export function OrderDeliveryNote({ children }: { children: ReactNode }) {
   return (
-    <p className="flex max-w-prose items-start gap-2 self-start rounded-lg bg-muted px-3 py-2.5 text-sm text-muted-foreground">
+    <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 text-sm text-muted-foreground">
       <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
       <span>{children}</span>
     </p>
@@ -57,37 +58,53 @@ function methodLine(details: OrderDeliveryDetails): string {
   return t.methods[details.method] ?? details.method;
 }
 
-/** The address lines under it, per method; empty parts are dropped. */
-function addressLines(details: OrderDeliveryDetails): string[] {
-  const join = (parts: (string | null)[], separator: string) =>
-    parts.filter(Boolean).join(separator);
+/**
+ * «<місто>, <адреса>» — unless the owner already typed the city into the
+ * point's address (the letter template's guard): never «Київ, Київ, вул. …».
+ */
+function cityAndAddress(city: string | null, address: string | null): string {
+  if (!address) return city ?? "";
+  if (!city || address.startsWith(city)) return address;
+  return `${city}, ${address}`;
+}
+
+/**
+ * The lines under the method line, per method; empty parts are dropped. The
+ * recipient comes first and is rendered in foreground colour (the mockup):
+ * it is who the parcel — or, for pickup, the counter — is waiting for.
+ */
+function addressLines(details: OrderDeliveryDetails): {
+  recipient: string | null;
+  lines: string[];
+} {
+  const phone = details.phone ? displayPhone(details.phone) : "";
 
   switch (details.method) {
     case "PICKUP":
-      // The shop's point, not the buyer: no recipient, the point's own phone.
-      return [
-        join([details.city, details.pickup?.address ?? null], ", "),
-        join(
-          [details.pickup?.hours ?? null, details.pickup?.phone ?? null],
-          " · ",
-        ),
-      ];
+      // OrderConfirmation.dc.html #pickup: who collects it, the point's
+      // address, its hours and own phone, then the buyer's phone.
+      return {
+        recipient: details.recipient,
+        lines: [
+          cityAndAddress(details.city, details.pickup?.address ?? null),
+          [details.pickup?.hours, details.pickup?.phone]
+            .filter(Boolean)
+            .join(" · "),
+          phone,
+        ],
+      };
     case "NOVA_POSHTA":
-      return [
-        details.recipient ?? "",
-        details.place?.value ?? "",
-        details.city ?? "",
-        details.phone ?? "",
-      ];
+      return {
+        recipient: details.recipient,
+        lines: [details.place?.value ?? "", details.city ?? "", phone],
+      };
     case "COURIER":
     case "OTHER":
     default:
-      return [
-        details.recipient ?? "",
-        details.street ?? "",
-        details.city ?? "",
-        details.phone ?? "",
-      ];
+      return {
+        recipient: details.recipient,
+        lines: [details.street ?? "", details.city ?? "", phone],
+      };
   }
 }
 
@@ -97,8 +114,9 @@ function addressLines(details: OrderDeliveryDetails): string[] {
  * the four methods, read from the order's address snapshot:
  *
  *   - Nova Poshta — recipient, branch, city, phone;
- *   - pickup — «Самовивіз · <точка>», the point's address, hours and phone as
- *     they were at checkout, «Як дістатися ↗», and the "we will call" note;
+ *   - pickup — «Самовивіз · <точка>», who collects it, the point's address,
+ *     hours and phone as they were at checkout, the buyer's phone,
+ *     «Як дістатися ↗», and the "we will call" note;
  *   - courier — recipient, street, city, phone;
  *   - other — what the buyer typed, and the note that an operator will price
  *     the delivery (only while it is still unpriced).
@@ -109,7 +127,8 @@ function addressLines(details: OrderDeliveryDetails): string[] {
 export function OrderDeliveryBlock({ order }: { order: DeliveryOrder }) {
   const t = dict.order.deliveryBlock;
   const details = orderDeliveryDetails(order);
-  const lines = addressLines(details).filter(Boolean);
+  const { recipient, lines: allLines } = addressLines(details);
+  const lines = allLines.filter(Boolean);
   const mapUrl = details.method === "PICKUP" ? details.pickup?.mapUrl : null;
 
   let note: string | null = null;
@@ -133,6 +152,7 @@ export function OrderDeliveryBlock({ order }: { order: DeliveryOrder }) {
         <span className="font-semibold text-foreground">
           {methodLine(details)}
         </span>
+        {recipient && <span className="text-foreground">{recipient}</span>}
         {lines.map((line, index) => (
           <span key={`${index}-${line}`}>{line}</span>
         ))}

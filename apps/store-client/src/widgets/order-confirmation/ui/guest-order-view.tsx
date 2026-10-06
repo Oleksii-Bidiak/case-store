@@ -8,6 +8,7 @@ import {
   useGetGuestOrder,
 } from "@/entities/order";
 import { dict, H1_CLASS } from "@/shared/config";
+import { displayPhone } from "@/shared/lib/phone";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
@@ -99,7 +100,9 @@ export function GuestOrderView({ token }: GuestOrderViewProps) {
               </h2>
               <p className="text-foreground">{order.guest.name}</p>
               <p className="text-muted-foreground">{order.guest.email}</p>
-              <p className="text-muted-foreground">{order.guest.phone}</p>
+              <p className="text-muted-foreground">
+                {displayPhone(order.guest.phone)}
+              </p>
             </section>
           )}
 

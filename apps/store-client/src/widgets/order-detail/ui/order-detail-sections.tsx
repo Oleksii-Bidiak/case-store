@@ -9,6 +9,7 @@ import {
   type OrderEntity,
 } from "@/entities/order";
 import { dict } from "@/shared/config";
+import { displayPhone } from "@/shared/lib/phone";
 import { cn } from "@/shared/lib/utils";
 
 /**
@@ -123,7 +124,7 @@ export function OrderDetailDelivery({ order }: { order: OrderEntity }) {
             )}
             {delivery.phone && (
               <span className="block font-mono text-muted-foreground">
-                {delivery.phone}
+                {displayPhone(delivery.phone)}
               </span>
             )}
           </DeliveryRow>

@@ -178,7 +178,11 @@ function deliveryLine(order: PublicOrderEntity): string {
     case "COURIER":
       return d.deliveryCourierMethod;
     case "OTHER":
-      return d.deliveryOther;
+      // The "manager will quote it" promise only while nobody has — once the
+      // totals row shows a price, the line must not contradict it.
+      return order.delivery.shippingCostPending
+        ? d.deliveryOther
+        : d.deliveryOtherPriced;
     case "NOVA_POSHTA":
     default:
       return d.deliveryNovaPoshta(order.delivery.warehouse);

@@ -134,6 +134,9 @@ test.describe("delivery after checkout (TASK-647)", () => {
 
     const block = page.getByTestId("order-delivery");
     await expect(block).toContainText("Самовивіз · Магазин на Хрещатику");
+    // Who collects it, and their phone in the UA mask (OrderConfirmation.dc.html).
+    await expect(block).toContainText("Олена Шевченко");
+    await expect(block).toContainText("+380 50 123 4567");
     await expect(block).toContainText("Київ, вул. Хрещатик, 22");
     await expect(block).toContainText("Пн–Сб 10:00–20:00 · +380441234567");
     await expect(

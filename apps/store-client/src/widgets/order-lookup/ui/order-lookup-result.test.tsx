@@ -128,6 +128,28 @@ describe("OrderLookupResult — delivery (TASK-1030)", () => {
     expect(screen.queryByText(d.shippingFree)).toBeNull();
   });
 
+  it("other, once priced — a neutral line that does not contradict the amount", () => {
+    renderWithProviders(
+      <OrderLookupResult
+        order={{
+          ...order,
+          deliveryMethod: "OTHER",
+          shippingCost: "95.00",
+          delivery: {
+            ...order.delivery,
+            city: "Ужгород",
+            warehouse: null,
+            shippingCostPending: false,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(d.deliveryOtherPriced)).toBeInTheDocument();
+    expect(screen.queryByText(d.deliveryOther)).toBeNull();
+    expect(shippingCell().textContent?.replace(/\s/g, "")).toBe("95₴");
+  });
+
   it("legacy Nova Poshta at 0 — the server's pending flag wins over «free»", () => {
     renderWithProviders(
       <OrderLookupResult

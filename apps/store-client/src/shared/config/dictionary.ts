@@ -1803,6 +1803,8 @@ export const dict = {
     deliveryOther: "Інший спосіб — вартість уточнить менеджер",
     shippingFree: "Безкоштовно",
     shippingPending: "Уточнить оператор",
+    // TASK-647 fix: OTHER once the operator has priced it.
+    deliveryOtherPriced: "Інший спосіб",
   },
 
   account: {
