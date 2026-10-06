@@ -140,9 +140,9 @@ describe('AuditRepository — findLatestActors (TASK-1830)', () => {
   it('keeps the NEWEST entry per entity, skips actor-less ones, and joins the current names', async () => {
     // Newest first, as the query orders them.
     prismaMock.auditLog.findMany.mockResolvedValue([
-      { entityId: 'p1', actorId: 'u2', actorEmail: 'second@store.com' },
-      { entityId: 'p1', actorId: 'u1', actorEmail: 'first@store.com' },
-      { entityId: 'p2', actorId: 'u-gone', actorEmail: 'gone@store.com' },
+      { entityId: 'p1', actorId: 'u2' },
+      { entityId: 'p1', actorId: 'u1' },
+      { entityId: 'p2', actorId: 'u-gone' },
     ]);
     prismaMock.user.findMany.mockResolvedValue([
       { id: 'u2', firstName: 'Олена', lastName: 'Коваль' },
@@ -162,19 +162,17 @@ describe('AuditRepository — findLatestActors (TASK-1830)', () => {
         actorId: { not: null },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      select: { entityId: true, actorId: true, actorEmail: true },
+      // Never the recorded email: it is not shown to colleagues, so it is not even read.
+      select: { entityId: true, actorId: true },
     });
     expect(prismaMock.user.findMany).toHaveBeenCalledWith({
       where: { id: { in: ['u2', 'u-gone'] } },
       select: { id: true, firstName: true, lastName: true },
     });
     expect([...result.entries()]).toEqual([
-      [
-        'p1',
-        { actorId: 'u2', actorEmail: 'second@store.com', firstName: 'Олена', lastName: 'Коваль' },
-      ],
-      // The account is gone — the entry's own email snapshot is all that is left.
-      ['p2', { actorId: 'u-gone', actorEmail: 'gone@store.com', firstName: null, lastName: null }],
+      ['p1', { actorId: 'u2', firstName: 'Олена', lastName: 'Коваль' }],
+      // The account is gone — still a person on record, just without a name.
+      ['p2', { actorId: 'u-gone', firstName: null, lastName: null }],
     ]);
   });
 

@@ -98,8 +98,11 @@ export class AuditService {
   /**
    * Who did `action` last to each of `entityIds` (TASK-1830), as `{ id, name }` — the
    * actor line of an admin list («видалено … · Олена К.»). `name` is «first last» from
-   * the user record, else the email the log recorded; an entity with no person on
-   * record (never logged, or only system actions) is absent from the map.
+   * the user record, or `null` when the user has no name or is gone: the email the log
+   * recorded is deliberately NOT a fallback — it would show another employee's address
+   * to colleagues — so the client labels a nameless actor neutrally («співробітник»).
+   * An entity with no person on record (never logged, or only system actions) is
+   * absent from the map.
    *
    * Reads the action log rather than a column on the entity on purpose: the log is
    * already the record of who did what, and it survives the account being deleted.
@@ -108,18 +111,15 @@ export class AuditService {
     action: string,
     entityType: string,
     entityIds: string[],
-  ): Promise<Map<string, { id: string; name: string }>> {
+  ): Promise<Map<string, { id: string; name: string | null }>> {
     const actors = await this.repository.findLatestActors(action, entityType, entityIds);
-    const result = new Map<string, { id: string; name: string }>();
+    const result = new Map<string, { id: string; name: string | null }>();
     for (const [entityId, actor] of actors) {
       const fullName = [actor.firstName, actor.lastName]
         .map((part) => part?.trim())
         .filter(Boolean)
         .join(' ');
-      const name = fullName || actor.actorEmail;
-      if (name) {
-        result.set(entityId, { id: actor.actorId, name });
-      }
+      result.set(entityId, { id: actor.actorId, name: fullName || null });
     }
     return result;
   }

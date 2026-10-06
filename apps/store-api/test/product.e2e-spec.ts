@@ -497,11 +497,14 @@ describe('ProductController (e2e)', () => {
         products: [
           { ...testProduct, id: 'gone-1', isActive: false, deletedAt },
           { ...testProduct, id: 'gone-2', isActive: false, deletedAt },
+          { ...testProduct, id: 'gone-3', isActive: false, deletedAt },
         ],
-        total: 2,
+        total: 3,
       });
       prismaServiceMock.auditLog.findMany.mockResolvedValueOnce([
-        { entityId: 'gone-1', actorId: testAdmin.id, actorEmail: testAdmin.email },
+        { entityId: 'gone-1', actorId: testAdmin.id },
+        // An actor whose account is gone: on record, but with no name to show.
+        { entityId: 'gone-3', actorId: 'account-gone' },
       ]);
       prismaServiceMock.user.findMany.mockResolvedValueOnce([
         { id: testAdmin.id, firstName: 'Олена', lastName: 'Коваль' },
@@ -517,7 +520,7 @@ describe('ProductController (e2e)', () => {
           where: expect.objectContaining({
             action: 'product.remove',
             entityType: 'product',
-            entityId: { in: ['gone-1', 'gone-2'] },
+            entityId: { in: ['gone-1', 'gone-2', 'gone-3'] },
           }),
         }),
       );
@@ -527,6 +530,14 @@ describe('ProductController (e2e)', () => {
         deletedBy: { id: testAdmin.id, name: 'Олена Коваль' },
       });
       expect(response.body.data[1]).toMatchObject({ id: 'gone-2', deletedBy: null });
+      // Name null, never the email the log recorded — the admin shows «співробітник».
+      expect(response.body.data[2]).toMatchObject({
+        id: 'gone-3',
+        deletedBy: { id: 'account-gone', name: null },
+      });
+      expect(
+        JSON.stringify(response.body.data.map((row: { deletedBy: unknown }) => row.deletedBy)),
+      ).not.toContain('@');
     });
 
     it('answers the live list with deletedAt and deletedBy null, without reading the log', async () => {

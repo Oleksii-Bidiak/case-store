@@ -101,24 +101,13 @@ describe('AuditService (TASK-318)', () => {
 
   // TASK-1830: the actor line of the admin «Видалені» list.
   describe('findLatestActors', () => {
-    it('names the actor «first last», falling back to the recorded email', async () => {
+    it('names the actor «first last», and a nameless one null — never by email', async () => {
       repositoryMock.findLatestActors.mockResolvedValue(
         new Map([
-          [
-            'p1',
-            {
-              actorId: 'u1',
-              actorEmail: 'olena@store.com',
-              firstName: 'Олена',
-              lastName: ' Коваль ',
-            },
-          ],
-          ['p2', { actorId: 'u2', actorEmail: 'max@store.com', firstName: 'Макс', lastName: null }],
-          [
-            'p3',
-            { actorId: 'u3', actorEmail: 'nameless@store.com', firstName: null, lastName: '' },
-          ],
-          ['p4', { actorId: 'u4', actorEmail: null, firstName: null, lastName: null }],
+          ['p1', { actorId: 'u1', firstName: 'Олена', lastName: ' Коваль ' }],
+          ['p2', { actorId: 'u2', firstName: 'Макс', lastName: null }],
+          ['p3', { actorId: 'u3', firstName: null, lastName: '' }],
+          ['p4', { actorId: 'u4', firstName: '  ', lastName: null }],
         ]),
       );
 
@@ -138,8 +127,10 @@ describe('AuditService (TASK-318)', () => {
       expect([...result.entries()]).toEqual([
         ['p1', { id: 'u1', name: 'Олена Коваль' }],
         ['p2', { id: 'u2', name: 'Макс' }],
-        ['p3', { id: 'u3', name: 'nameless@store.com' }],
-        // Nothing to show → absent (the list renders null), never an empty name.
+        // A person is on record, but without a name: the id stays, the name is null
+        // (the admin says «співробітник») — another employee's email is not exposed.
+        ['p3', { id: 'u3', name: null }],
+        ['p4', { id: 'u4', name: null }],
       ]);
     });
   });

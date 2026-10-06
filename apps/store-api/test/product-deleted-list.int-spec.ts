@@ -136,23 +136,27 @@ describe('Admin deleted-products list (integration, TASK-1830)', () => {
       new Date('2026-09-11'),
       new Date('2026-09-11'),
     );
+    const byGone = await makeTombstone('by-gone', new Date('2026-09-12'), new Date('2026-09-12'));
     // Deleted, restored, deleted again: the second delete is the one shown.
     await logDelete(twice, gone, new Date('2026-09-01T10:00:00.000Z'));
     await logDelete(twice, olena.id, new Date('2026-09-10T10:00:00.000Z'));
     await logDelete(systemOnly, null, new Date('2026-09-11T10:00:00.000Z'));
+    await logDelete(byGone, gone, new Date('2026-09-12T10:00:00.000Z'));
 
     const actors = await audit.findLatestActors(
       PRODUCT_DELETE_AUDIT.action,
       PRODUCT_DELETE_AUDIT.entityType,
-      [twice, systemOnly],
+      [twice, systemOnly, byGone],
     );
 
+    // No email in the answer — the entry's recorded address stays in the log.
     expect(actors.get(twice)).toEqual({
       actorId: olena.id,
-      actorEmail: `${olena.id}@log.test`,
       firstName: 'Олена',
       lastName: 'Коваль',
     });
     expect(actors.has(systemOnly)).toBe(false);
+    // A person is on record but the account is gone: by id, without a name.
+    expect(actors.get(byGone)).toEqual({ actorId: gone, firstName: null, lastName: null });
   });
 });

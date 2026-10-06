@@ -14,9 +14,13 @@ export class ProductActorEntity {
 
   @ApiProperty({
     description:
-      'Display name: «first last» from the user record when it has one, otherwise the ' +
-      'email the action log recorded (a soft-deleted account shows its original address)',
+      'Display name: «first last» from the user record. Null when the account has no ' +
+      'name or no longer exists — the email the action log recorded is never sent in ' +
+      'its place (one employee does not see another one’s address); the admin shows a ' +
+      'neutral label',
+    type: String,
+    nullable: true,
     example: 'Олена Коваль',
   })
-  name!: string;
+  name!: string | null;
 }

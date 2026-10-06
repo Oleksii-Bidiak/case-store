@@ -679,6 +679,17 @@ describe('ProductService', () => {
         expect(result.items[1].deletedBy).toBeNull();
       });
 
+      it('passes a nameless actor on by id with name null — the admin labels it', async () => {
+        productRepositoryMock.findAll.mockResolvedValue({ products: tombstones, total: 2 });
+        auditServiceMock.findLatestActors.mockResolvedValue(
+          new Map([['gone-1', { id: 'user-9', name: null }]]),
+        );
+
+        const result = await service.adminFindAll({ page: 1, limit: 20, deleted: true });
+
+        expect(result.items[0].deletedBy).toEqual({ id: 'user-9', name: null });
+      });
+
       it('never reads the action log for the live list — deletedAt and deletedBy are null', async () => {
         productRepositoryMock.findAll.mockResolvedValue({
           products: [{ ...mockProduct, deletedAt: null }],
