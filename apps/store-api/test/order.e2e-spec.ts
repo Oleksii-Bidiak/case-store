@@ -2418,7 +2418,102 @@ describe('OrderController (e2e)', () => {
       expect(response.body.data[0].delivery).toEqual({
         city: 'Київ',
         warehouse: 'Відділення №12',
+        pickupPointName: null,
+        pickupPointAddress: null,
+        shippingCostPending: false,
       });
+      // The fixture row carries no method column: the column default.
+      expect(response.body.data[0].deliveryMethod).toBe('NOVA_POSHTA');
+    });
+
+    // TASK-1030: the page names the real method. For a pickup order it shows the
+    // SHOP's point; for courier / OTHER it still shows the city and nothing more.
+    it('names the method and shows a pickup point, never the street of a courier or OTHER order', async () => {
+      const base = {
+        status: OrderStatus.CONFIRMED,
+        paymentStatus: PaymentStatus.PENDING,
+        paymentMethod: 'ON_DELIVERY',
+        createdAt: new Date('2026-09-01T10:00:00.000Z'),
+        subtotal: new Prisma.Decimal('500.00'),
+        discount: new Prisma.Decimal('0.00'),
+        shippingCost: new Prisma.Decimal('0.00'),
+        addonsTotal: new Prisma.Decimal('0.00'),
+        total: new Prisma.Decimal('500.00'),
+        trackingNumber: null,
+        items: [],
+      };
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([
+        {
+          ...base,
+          id: '94f5f971-0000-0000-0000-000000000001',
+          deliveryMethod: 'PICKUP',
+          shippingAddress: {
+            firstName: 'Olena',
+            lastName: 'Shevchenko',
+            phone: '+380501112233',
+            address1: 'вул. Хрещатик, 22',
+            city: 'Київ',
+            deliveryMethod: 'PICKUP',
+            carrier: null,
+            pickupPointName: 'Магазин на Хрещатику',
+            pickupPointAddress: 'вул. Хрещатик, 22',
+          },
+        },
+        {
+          ...base,
+          id: '94f5f971-0000-0000-0000-000000000002',
+          deliveryMethod: 'COURIER',
+          shippingAddress: {
+            firstName: 'Olena',
+            lastName: 'Shevchenko',
+            address1: 'вул. Січових Стрільців, 37, кв. 12',
+            city: 'Київ',
+            deliveryMethod: 'COURIER',
+            carrier: null,
+          },
+        },
+        {
+          ...base,
+          id: '94f5f971-0000-0000-0000-000000000003',
+          deliveryMethod: 'OTHER',
+          shippingAddress: {
+            firstName: 'Olena',
+            lastName: 'Shevchenko',
+            address1: 'вул. Корзо, 5',
+            city: 'Ужгород',
+            deliveryMethod: 'OTHER',
+            carrier: null,
+            shippingCostPending: true,
+          },
+        },
+      ]);
+
+      const response = await post({ number: validNumber, phone }).expect(200);
+      const [pickup, courier, other] = response.body.data;
+
+      expect(pickup.deliveryMethod).toBe('PICKUP');
+      expect(pickup.delivery).toEqual({
+        city: 'Київ',
+        warehouse: null,
+        pickupPointName: 'Магазин на Хрещатику',
+        pickupPointAddress: 'вул. Хрещатик, 22',
+        shippingCostPending: false,
+      });
+      expect(courier.deliveryMethod).toBe('COURIER');
+      expect(courier.delivery).toEqual({
+        city: 'Київ',
+        warehouse: null,
+        pickupPointName: null,
+        pickupPointAddress: null,
+        shippingCostPending: false,
+      });
+      expect(other.deliveryMethod).toBe('OTHER');
+      expect(other.delivery.shippingCostPending).toBe(true);
+
+      const body = JSON.stringify(response.body);
+      for (const secret of ['Olena', 'Shevchenko', '380501112233', 'Січових', 'Корзо']) {
+        expect(body).not.toContain(secret);
+      }
     });
   });
 

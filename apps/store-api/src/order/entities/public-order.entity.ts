@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { OrderStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
+import { DeliveryMethod, OrderStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 import { centsToString, toCents, toTwoDecimals } from '../../addon-service';
 import { ORDER_NUMBER_LENGTH } from '../dto/order-lookup.dto';
 import type { ShippingAddressData } from '../order.types';
@@ -17,6 +17,12 @@ export interface PublicOrderRow {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod | null;
+  /**
+   * The order-level method column (TASK-642, NOT NULL in the schema). Optional
+   * here only so fixtures written before TASK-1023 still type-check; absent
+   * reads as the column default, NOVA_POSHTA.
+   */
+  deliveryMethod?: DeliveryMethod | null;
   subtotal: { toString(): string };
   discount: { toString(): string };
   shippingCost: { toString(): string };
@@ -66,6 +72,12 @@ export class PublicOrderItemEntity {
  * this is a separate class rather than `ShippingAddressData` with a couple of
  * fields left unset: a field that is merely unassigned comes back the first time
  * somebody widens a `select`.
+ *
+ * TASK-1023 / TASK-1030 add the pickup point's name and address — the SHOP's
+ * public address, not the buyer's, so it is safe here — and filled ONLY for a
+ * PICKUP order: for every other method they are null, even if a snapshot were to
+ * carry them. A courier / OTHER order still shows nothing but the city; the
+ * street stays off this page (TASK-1030).
  */
 export class PublicOrderDeliveryEntity {
   @ApiProperty({
@@ -83,6 +95,51 @@ export class PublicOrderDeliveryEntity {
     example: 'Відділення №12',
   })
   warehouse!: string | null;
+
+  @ApiProperty({
+    description: 'PICKUP only: the pickup point name as it was at checkout; null otherwise',
+    type: String,
+    nullable: true,
+    example: 'Магазин на Хрещатику',
+  })
+  pickupPointName!: string | null;
+
+  @ApiProperty({
+    description:
+      "PICKUP only: the pickup point (the shop's own) address as it was at checkout; null " +
+      "otherwise — the buyer's street is never shown",
+    type: String,
+    nullable: true,
+    example: 'вул. Хрещатик, 22',
+  })
+  pickupPointAddress!: string | null;
+
+  @ApiProperty({
+    description:
+      'True when the booked shipping cost is a placeholder the operator will quote (OTHER) — ' +
+      'render "вартість уточнить оператор", never "0 ₴"',
+    example: false,
+  })
+  shippingCostPending!: boolean;
+}
+
+/**
+ * Whether an order's shipping cost is still to be quoted by the operator
+ * (TASK-647 / TASK-1030).
+ *
+ * The snapshot flag (TASK-643) is the primary signal. The fallback covers the
+ * orders the TASK-642 migration backfilled to OTHER — free-text-city orders
+ * from before the delivery methods existed: they carry no flag, booked 0, and
+ * that 0 was never "free delivery" either. An OTHER order with a non-zero cost
+ * has been quoted, so it is not pending.
+ */
+export function isShippingCostPending(
+  method: DeliveryMethod,
+  address: Pick<ShippingAddressData, 'shippingCostPending'> | null,
+  shippingCost: { toString(): string },
+): boolean {
+  if (address?.shippingCostPending === true) return true;
+  return method === DeliveryMethod.OTHER && toCents(shippingCost) === 0;
 }
 
 /**
@@ -104,7 +161,8 @@ export class PublicOrderDeliveryEntity {
  * buyer lives.
  *
  * What it shows: the number, the date, both statuses, the lines with quantities
- * and sums, the money, the delivery city + branch, and the waybill.
+ * and sums, the money, the delivery method, city + branch (or the pickup point),
+ * whether the shipping cost is still to be quoted, and the waybill.
  */
 export class PublicOrderEntity {
   @ApiProperty({
@@ -132,6 +190,14 @@ export class PublicOrderEntity {
     example: PaymentMethod.ON_DELIVERY,
   })
   paymentMethod!: PaymentMethod;
+
+  @ApiProperty({
+    description: 'How the order ships (TASK-1030)',
+    enum: DeliveryMethod,
+    enumName: 'DeliveryMethod',
+    example: DeliveryMethod.NOVA_POSHTA,
+  })
+  deliveryMethod!: DeliveryMethod;
 
   @ApiProperty({ description: 'Purchased lines', type: [PublicOrderItemEntity] })
   items!: PublicOrderItemEntity[];
@@ -177,6 +243,9 @@ export class PublicOrderEntity {
     entity.status = row.status;
     entity.paymentStatus = row.paymentStatus;
     entity.paymentMethod = row.paymentMethod ?? PaymentMethod.ON_DELIVERY;
+    // The column default, as in OrderEntity — absent only on old fixtures.
+    const deliveryMethod = row.deliveryMethod ?? DeliveryMethod.NOVA_POSHTA;
+    entity.deliveryMethod = deliveryMethod;
     entity.items = row.items.map((item) => ({
       productName: item.product.name,
       quantity: item.quantity,
@@ -189,9 +258,15 @@ export class PublicOrderEntity {
     entity.shippingCost = toTwoDecimals(row.shippingCost);
     entity.addonsTotal = toTwoDecimals(row.addonsTotal ?? '0');
     entity.total = toTwoDecimals(row.total);
+    // Picked field by field, never spread: anything not named here — the
+    // street above all — cannot reach this page (TASK-1030).
+    const isPickup = deliveryMethod === DeliveryMethod.PICKUP;
     entity.delivery = {
       city: address?.city ?? null,
       warehouse: address?.npWarehouseName ?? null,
+      pickupPointName: isPickup ? (address?.pickupPointName ?? null) : null,
+      pickupPointAddress: isPickup ? (address?.pickupPointAddress ?? null) : null,
+      shippingCostPending: isShippingCostPending(deliveryMethod, address, row.shippingCost),
     };
     entity.trackingNumber = row.trackingNumber ?? null;
     return entity;
