@@ -7,38 +7,65 @@ import {
   CHECKOUT_PAYMENT_METHODS,
   DEFAULT_PAYMENT_METHOD,
 } from "./payment-methods";
+import { CHECKOUT_DELIVERY_METHODS, DEFAULT_DELIVERY_METHOD } from "./delivery";
 
 /**
- * Checkout form schema — simplified for the Ukrainian market (manual delivery
- * for now; Nova Poshta API is a future integration). We collect the minimum a
- * human needs to fulfil an order by hand: recipient name, a contact phone,
- * the city, and a free-text delivery address / Nova Poshta branch.
+ * Checkout form schema — simplified for the Ukrainian market. We collect the
+ * minimum a human needs to fulfil an order: recipient name, a contact phone,
+ * and WHERE the parcel goes — which, since TASK-646, depends on the delivery
+ * method the shopper picked.
  *
- * These flat fields are mapped onto the backend `AddressDto` in `useCheckout`
- * (`deliveryAddress` → `address1`, `country` hard-set to `"UA"`). There is no
- * separate billing address in the MVP. `notes` is capped at 500 chars to match
- * the backend DTO.
+ * ── One object, one form type ───────────────────────────────────────────────
+ * The four delivery branches are NOT a discriminated union. They share one flat
+ * object — so `CheckoutFormValues` stays a single type behind a single
+ * `useForm`, exactly as the guest variant below does — and a `superRefine`
+ * decides which of the branch fields are required:
+ *
+ *   - NOVA_POSHTA — a city picked from the directory (`npCityRef`) and a
+ *                   branch (`deliveryAddress`). Or, when the directory is down
+ *                   (`npManual`, TASK-1097), a typed city and address.
+ *   - PICKUP      — a pickup point (`pickupPointId`).
+ *   - COURIER     — street and house; the city is the courier's own.
+ *   - OTHER       — a city and a free-text address / carrier.
+ *
+ * The flat fields are mapped onto the backend `AddressDto` in `useCheckout`.
+ * `notes` is capped at 500 chars to match the backend DTO.
+ *
+ * Zod runs a refinement only when the object itself parsed — a field that is
+ * missing altogether (`undefined` where a string belongs) skips it. That is a
+ * second reason every field has a default (forms.md Rule 4c).
  *
  * UA phone (TASK-407): validated on the NORMALISED number, not on the mask.
- * The previous rule — `/^\+?[\d\s()-]{10,20}$/` — matched the characters
- * `PhoneInput` had just drawn, so a string of brackets passed and a number with
- * two digits missing out of the middle did too. `isValidUAPhone` strips the
- * separators first and then requires `380` + 9 digits.
+ * `isValidUAPhone` strips the separators first and then requires `380` + 9
+ * digits — the old mask-shaped regex let a string of brackets through.
  */
-export const checkoutSchema = z.object({
+const checkoutFields = z.object({
   firstName: z.string().min(1, dict.checkout.validation.firstName),
   lastName: z.string().min(1, dict.checkout.validation.lastName),
   phone: z
     .string()
     .min(1, dict.checkout.validation.phone)
     .refine(isValidUAPhone, dict.checkout.validation.phone),
-  city: z.string().min(1, dict.checkout.validation.city),
-  // Nova Poshta refs (TASK-080) — set when the user picks from the autocomplete;
-  // empty for the free-text fallback (NP not configured / offline). The visible
-  // `city`/`deliveryAddress` strings stay required so manual orders still submit.
+  /**
+   * Delivery method (TASK-646). Defaults to Nova Poshta; the view moves it to
+   * the first method the shop offers once `GET /api/delivery/methods` answers.
+   */
+  deliveryMethod: z.enum(CHECKOUT_DELIVERY_METHODS),
+  /**
+   * The Nova Poshta directory failed and the shopper types the address by hand
+   * (TASK-1097). Set by code, never by a control of its own.
+   */
+  npManual: z.boolean().optional(),
+  // City and address are required per branch — see `refineDelivery`.
+  city: z.string(),
+  // Nova Poshta refs (TASK-080) — set when the user picks from the autocomplete.
   npCityRef: z.string().optional(),
-  deliveryAddress: z.string().min(1, dict.checkout.validation.deliveryAddress),
+  deliveryAddress: z.string(),
   npWarehouseRef: z.string().optional(),
+  pickupPointId: z.string().optional(),
+  courierStreet: z.string().optional(),
+  courierHouse: z.string().optional(),
+  courierApartment: z.string().optional(),
   notes: z.string().max(500, dict.checkout.validation.notesMax).optional(),
   /**
    * Guest contact email (TASK-338). Optional here and required by
@@ -56,10 +83,55 @@ export const checkoutSchema = z.object({
   paymentMethod: z.enum(CHECKOUT_PAYMENT_METHODS),
 });
 
+export type CheckoutFormValues = z.infer<typeof checkoutFields>;
+
+const isBlank = (value: string | undefined) => !(value ?? "").trim();
+
+/** The per-method requirements — see the schema's own comment. */
+function refineDelivery(values: CheckoutFormValues, ctx: z.RefinementCtx) {
+  const require = (
+    field: keyof CheckoutFormValues,
+    value: string | undefined,
+    message: string,
+  ) => {
+    if (isBlank(value)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message });
+    }
+  };
+  const v = dict.checkout.validation;
+  const dv = dict.checkout.delivery.validation;
+
+  switch (values.deliveryMethod) {
+    case "PICKUP":
+      require("pickupPointId", values.pickupPointId, dv.pickupPoint);
+      return;
+    case "COURIER":
+      require("courierStreet", values.courierStreet, dv.courierStreet);
+      require("courierHouse", values.courierHouse, dv.courierHouse);
+      return;
+    case "OTHER":
+      require("city", values.city, v.city);
+      require("deliveryAddress", values.deliveryAddress, dv.otherAddress);
+      return;
+    case "NOVA_POSHTA":
+    default:
+      require("city", values.city, v.city);
+      // A typed-but-not-picked city has no ref, and the server refuses a Nova
+      // Poshta order without one. The manual path (directory down) is the one
+      // place a typed city is the whole answer — it books as OTHER.
+      if (!values.npManual && !isBlank(values.city)) {
+        require("city", values.npCityRef, dv.npCity);
+      }
+      require("deliveryAddress", values.deliveryAddress, v.deliveryAddress);
+  }
+}
+
+export const checkoutSchema = checkoutFields.superRefine(refineDelivery);
+
 /**
  * Guest variant: the same shape with `email` actually required.
  *
- * Expressed as a refinement of the base object rather than a second `z.object`
+ * Expressed as a refinement of the base schema rather than a second `z.object`
  * so both schemas infer the **same** `CheckoutFormValues`. That keeps one form
  * type and one `useForm<CheckoutFormValues>` while letting the resolver be
  * swapped once we know whether the visitor is a guest.
@@ -90,19 +162,30 @@ export function checkoutSchemaFor(isGuest: boolean) {
   return isGuest ? guestCheckoutSchema : checkoutSchema;
 }
 
-export type CheckoutFormValues = z.infer<typeof checkoutSchema>;
-
 /**
  * Static form defaults. Constant by construction — never seeded from async
  * server data, per `docs/conventions/forms.md`.
  *
- * `phone` is listed for a reason (TASK-407): without a default the field starts
- * `undefined`, and zod reports an untouched phone as the English "Required"
- * instead of the Ukrainian sentence in the dictionary — the one thing on this
- * screen a shopper could not read.
+ * Every field is listed (Rule 4c). `phone` is the one that taught us (TASK-407):
+ * without a default the field starts `undefined`, and zod reports an untouched
+ * phone as the English "Required" instead of the Ukrainian sentence in the
+ * dictionary — the one thing on this screen a shopper could not read.
  */
 export const CHECKOUT_DEFAULT_VALUES = {
   email: "",
+  firstName: "",
+  lastName: "",
   phone: "",
+  deliveryMethod: DEFAULT_DELIVERY_METHOD,
+  npManual: false,
+  city: "",
+  npCityRef: "",
+  deliveryAddress: "",
+  npWarehouseRef: "",
+  pickupPointId: "",
+  courierStreet: "",
+  courierHouse: "",
+  courierApartment: "",
+  notes: "",
   paymentMethod: DEFAULT_PAYMENT_METHOD,
-} satisfies Partial<CheckoutFormValues>;
+} satisfies CheckoutFormValues;

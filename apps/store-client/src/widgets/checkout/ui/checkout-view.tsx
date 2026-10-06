@@ -18,7 +18,10 @@ import {
   CheckoutConsent,
   CheckoutContactFields,
   CheckoutReviewStep,
+  DeliveryMethodPicker,
+  resolveDeliveryMethod,
   useCheckout,
+  useDeliveryOptions,
   useCheckoutPrefill,
   useCheckoutSteps,
   checkoutSchemaFor,
@@ -94,17 +97,10 @@ export function CheckoutView() {
     handoffMessage,
   } = useCheckout({ isGuest });
 
-  // Which payment methods this deployment offers, narrowed to what THIS shopper
-  // can actually complete. Recomputed when the session settles: the online
-  // options need an account, the payment endpoint being behind a JWT guard.
-  const paymentOptions = useMemo(
-    () =>
-      resolvePaymentMethods({
-        configured: readConfiguredMethods(),
-        isAuthenticated,
-      }),
-    [isAuthenticated],
-  );
+  // The shop's delivery offer (TASK-646): which methods, the courier's terms,
+  // the pickup points and the delivery × payment matrix.
+  const { options: deliveryOptions, isLoading: isDeliveryLoading } =
+    useDeliveryOptions();
 
   const {
     register,
@@ -163,11 +159,64 @@ export function CheckoutView() {
   const npCityRef = useWatch({ control, name: "npCityRef" });
   const guestEmail = useWatch({ control, name: "email" }) ?? "";
   const paymentMethod = useWatch({ control, name: "paymentMethod" });
+  const selectedDelivery = useWatch({ control, name: "deliveryMethod" });
+  const npManual = useWatch({ control, name: "npManual" }) ?? false;
+  const pickupPointId = useWatch({ control, name: "pickupPointId" }) ?? "";
+
+  // The method to draw: the selection while the shop offers it, otherwise the
+  // first offered method. Resolved during render so a pickup-only shop never
+  // flashes Nova Poshta fields for the frame before the effect below lands.
+  const deliveryMethod = resolveDeliveryMethod(
+    selectedDelivery,
+    deliveryOptions.methods,
+  );
+
+  // …and the form value follows. Also re-asserts itself after the profile
+  // prefill's `reset()`, which restores the static default.
+  useEffect(() => {
+    if (isDeliveryLoading || selectedDelivery === deliveryMethod) return;
+    setValue("deliveryMethod", deliveryMethod, { shouldValidate: true });
+  }, [isDeliveryLoading, selectedDelivery, deliveryMethod, setValue]);
+
+  // A single pickup point is preselected — a choice of one is not a choice. A
+  // point the shop has since deactivated is dropped rather than submitted.
+  const pointIds = deliveryOptions.pickupPoints.map((point) => point.id);
+  const resolvedPointId = pointIds.includes(pickupPointId)
+    ? pickupPointId
+    : pointIds.length === 1
+      ? pointIds[0]
+      : "";
+  useEffect(() => {
+    if (isDeliveryLoading || resolvedPointId === pickupPointId) return;
+    setValue("pickupPointId", resolvedPointId, {
+      shouldValidate: resolvedPointId !== "",
+    });
+  }, [isDeliveryLoading, resolvedPointId, pickupPointId, setValue]);
+
+  // Which payment methods this deployment offers, narrowed to what THIS shopper
+  // can actually complete. Recomputed when the session settles — the online
+  // options need an account, the payment endpoint being behind a JWT guard —
+  // and when the delivery changes: the server's matrix rules some out
+  // (TASK-646), and the on-delivery note names where the money changes hands.
+  const paymentOptions = useMemo(
+    () =>
+      resolvePaymentMethods({
+        configured: readConfiguredMethods(),
+        isAuthenticated,
+        delivery: {
+          method: deliveryMethod,
+          npManual,
+          matrix: deliveryOptions.paymentMatrix,
+        },
+      }),
+    [isAuthenticated, deliveryMethod, npManual, deliveryOptions.paymentMatrix],
+  );
 
   // A session that expires mid-checkout (TASK-773) disables the online methods
   // under a choice already made. Nothing would then be checked, and the order
   // would go out as a guest with a method guests cannot complete — fall back to
-  // the method this shopper can still use.
+  // the method this shopper can still use. The same holds when the delivery
+  // changes to one the matrix restricts (TASK-646): card → «інша доставка».
   useEffect(() => {
     const allowed = coercePaymentMethod(paymentMethod, paymentOptions);
     if (allowed !== paymentMethod) setValue("paymentMethod", allowed);
@@ -233,7 +282,11 @@ export function CheckoutView() {
   };
 
   // The same «До сплати» the order summary prints (TASK-864), for the bar.
-  const { totalText } = useCheckoutTotal(npCityRef);
+  const { totalText } = useCheckoutTotal({
+    method: deliveryMethod,
+    npManual,
+    npCityRef,
+  });
 
   const items = data?.data?.items ?? [];
   const cartIsEmpty = !isInitializing && !isCartLoading && items.length === 0;
@@ -273,7 +326,14 @@ export function CheckoutView() {
     );
   }
 
-  if (isInitializing || isCartLoading || (cartIsEmpty && !isOrderSubmitted)) {
+  // The delivery list gates the form too: drawing it before the list arrives
+  // would show Nova Poshta fields to a shop that only does pickup.
+  if (
+    isInitializing ||
+    isCartLoading ||
+    isDeliveryLoading ||
+    (cartIsEmpty && !isOrderSubmitted)
+  ) {
     return <CheckoutSkeleton />;
   }
 
@@ -315,6 +375,14 @@ export function CheckoutView() {
         >
           {step === 1 && (
             <>
+              {/* The method first (CheckoutDelivery.dc.html): it decides
+                  which fields follow. Absent when the shop offers one. */}
+              <DeliveryMethodPicker
+                control={control}
+                options={deliveryOptions}
+                npCityRef={npCityRef}
+              />
+
               {isGuest && (
                 <section className="rounded-card border border-border bg-card p-6 shadow-card">
                   <CheckoutContactFields register={register} errors={errors} />
@@ -323,11 +391,13 @@ export function CheckoutView() {
 
               <section className="rounded-card border border-border bg-card p-6 shadow-card">
                 <CheckoutAddressForm
-                  legend={dict.checkout.shippingAddress}
+                  legend={dict.checkout.delivery.recipientHeading}
                   register={register}
                   control={control}
                   setValue={setValue}
                   errors={errors}
+                  method={deliveryMethod}
+                  options={deliveryOptions}
                 />
 
                 <div className="mt-4 flex flex-col gap-1">
@@ -449,7 +519,11 @@ export function CheckoutView() {
         {/* STICKY_ASIDE_TOP clears the z-50 site header so the stuck summary
             never sits under it (TASK-206 / TASK-234). */}
         <aside className={`flex flex-col gap-4 lg:sticky ${STICKY_ASIDE_TOP}`}>
-          <CheckoutOrderSummary npCityRef={npCityRef} />
+          <CheckoutOrderSummary
+            method={deliveryMethod}
+            npManual={npManual}
+            npCityRef={npCityRef}
+          />
           {/* Trust strip under the summary at every width (TASK-864). */}
           <OrderTrustStrip />
         </aside>

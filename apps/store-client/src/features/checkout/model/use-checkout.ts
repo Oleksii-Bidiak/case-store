@@ -18,6 +18,99 @@ import {
   toOrderPaymentMethod,
 } from "./payment-methods";
 import { checkoutHandoffMessage, useOrderPayment } from "./use-order-payment";
+import { courierAddressLine, type CheckoutDeliveryOptions } from "./delivery";
+import { useDeliveryOptions } from "./use-delivery-options";
+
+type DeliveryPayload = Pick<
+  CreateOrderDto,
+  "shippingAddress" | "deliveryMethod" | "pickupPointId"
+>;
+
+/**
+ * The delivery half of `CreateOrderDto`, by method (TASK-646). Country is fixed
+ * to UA; the server recomputes the shipping cost from the method and never
+ * takes a price from the client.
+ *
+ *   - Nova Poshta — the city and branch, with the NP refs from the autocomplete.
+ *   - Nova Poshta, directory down (TASK-1097) — the typed city and address with
+ *     NO `deliveryMethod` and NO `npCityRef`: the server infers OTHER from that
+ *     and accepts it even when «інша доставка» is switched off, because the
+ *     shopper never chose it. Sending NOVA_POSHTA would be refused (no ref).
+ *   - Pickup — the point id, plus the point's own city and address: `AddressDto`
+ *     still requires both, and the server overwrites them with its snapshot.
+ *   - Courier — the courier's city and «вулиця, буд, кв. N» as `address1`.
+ *   - Other — the typed city and the free-text address / carrier.
+ */
+export function toDeliveryPayload(
+  values: CheckoutFormValues,
+  options: CheckoutDeliveryOptions,
+): DeliveryPayload {
+  const recipient = {
+    firstName: values.firstName,
+    lastName: values.lastName,
+    phone: values.phone,
+    country: "UA",
+  };
+
+  switch (values.deliveryMethod) {
+    case "PICKUP": {
+      const point = options.pickupPoints.find(
+        (candidate) => candidate.id === values.pickupPointId,
+      );
+      return {
+        deliveryMethod: "PICKUP",
+        pickupPointId: values.pickupPointId,
+        shippingAddress: {
+          ...recipient,
+          city: point?.city ?? values.city,
+          address1: point?.address ?? point?.name ?? values.deliveryAddress,
+        },
+      };
+    }
+    case "COURIER":
+      return {
+        deliveryMethod: "COURIER",
+        shippingAddress: {
+          ...recipient,
+          city: options.courier.cityName ?? values.city,
+          address1: courierAddressLine(values),
+        },
+      };
+    case "OTHER":
+      return {
+        deliveryMethod: "OTHER",
+        shippingAddress: {
+          ...recipient,
+          city: values.city,
+          address1: values.deliveryAddress,
+        },
+      };
+    case "NOVA_POSHTA":
+    default:
+      if (values.npManual) {
+        return {
+          shippingAddress: {
+            ...recipient,
+            city: values.city,
+            address1: values.deliveryAddress,
+          },
+        };
+      }
+      return {
+        deliveryMethod: "NOVA_POSHTA",
+        shippingAddress: {
+          ...recipient,
+          city: values.city,
+          address1: values.deliveryAddress,
+          npCityRef: values.npCityRef || undefined,
+          npWarehouseRef: values.npWarehouseRef || undefined,
+          npWarehouseName: values.npWarehouseRef
+            ? values.deliveryAddress
+            : undefined,
+        },
+      };
+  }
+}
 
 export interface UseCheckoutOptions {
   /**
@@ -73,25 +166,13 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
 
   const mutation = useCreateOrder();
   const { startPayment, isStarting } = useOrderPayment();
+  // The pickup point's address and the courier's city (TASK-646) — the same
+  // cached `GET /api/delivery/methods` the form was drawn from.
+  const { options: deliveryOptions } = useDeliveryOptions();
 
   const submitOrder = async (values: CheckoutFormValues) => {
     const dto: CreateOrderDto = {
-      shippingAddress: {
-        firstName: values.firstName,
-        lastName: values.lastName,
-        phone: values.phone,
-        city: values.city,
-        // The delivery address / Nova Poshta branch maps to address1; country is
-        // fixed to UA. NP refs (TASK-080) are sent when the user picked from the
-        // autocomplete; omitted for the free-text fallback.
-        address1: values.deliveryAddress,
-        country: "UA",
-        npCityRef: values.npCityRef || undefined,
-        npWarehouseRef: values.npWarehouseRef || undefined,
-        npWarehouseName: values.npWarehouseRef
-          ? values.deliveryAddress
-          : undefined,
-      },
+      ...toDeliveryPayload(values, deliveryOptions),
       notes: values.notes || undefined,
       // TASK-650. Always sent, ON_DELIVERY included: without it the server
       // stores its default ON_DELIVERY for a card order too, so the order never

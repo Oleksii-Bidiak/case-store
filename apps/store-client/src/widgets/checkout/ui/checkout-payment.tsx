@@ -48,8 +48,10 @@ const ICONS: Record<
  * through for *this* shopper is drawn disabled with the reason attached
  * ({@link PaymentMethodOption.blockedBy}) instead of quietly swallowing a click.
  *
- * Which options exist at all is decided by `resolvePaymentMethods`, not here.
- * This component only draws what it is handed.
+ * Which options exist at all is decided by `resolvePaymentMethods`, not here —
+ * including the delivery × payment matrix (TASK-646: «інша доставка» is paid on
+ * receipt only) and the on-delivery note, which names where the money changes
+ * hands for the chosen delivery. This component only draws what it is handed.
  */
 export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
   return (
@@ -108,10 +110,11 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
                     <b className="block text-sm text-foreground">
                       {option.title}
                     </b>
+                    {/* A disabled option says why — the delivery matrix
+                        (TASK-646) or the missing account — through the same
+                        `aria-describedby` its note uses. */}
                     <span id={noteId} className="text-xs text-muted-foreground">
-                      {option.blockedBy === "account-required"
-                        ? dict.checkout.payment.accountRequired
-                        : option.note}
+                      {option.blockedReason ?? option.note}
                     </span>
                   </span>
 

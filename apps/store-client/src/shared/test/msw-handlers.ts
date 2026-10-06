@@ -2,7 +2,12 @@ import { http, HttpResponse } from "msw";
 import type { CartEntity, CartItemEntity } from "@/entities/cart";
 import type { OrderEntity, OrderItemEntity } from "@/entities/order";
 import type { UserEntity } from "@/entities/user";
-import type { NpCityDto, NpWarehouseDto } from "@/entities/delivery";
+import type {
+  DeliveryMethodsDto,
+  NpCityDto,
+  NpWarehouseDto,
+  PickupPointPublicDto,
+} from "@/entities/delivery";
 
 /**
  * Default MSW handlers for store-client component tests.
@@ -209,6 +214,45 @@ export function makeWarehouse(
   };
 }
 
+/** Build an active pickup point; override any field per-test. */
+export function makePickupPoint(
+  overrides: Partial<PickupPointPublicDto> = {},
+): PickupPointPublicDto {
+  return {
+    id: "pp-1",
+    name: "Магазин на Хрещатику",
+    city: "Київ",
+    address: "вул. Хрещатик, 22",
+    phone: "+380441234567",
+    workingHours: "Пн–Сб 10:00–20:00",
+    mapUrl: "https://maps.example/khreshchatyk",
+    ...overrides,
+  };
+}
+
+/**
+ * Build the `GET /api/delivery/methods` payload (TASK-646). Defaults to the
+ * full offer — all four methods, one pickup point, a Kyiv courier at 150 ₴
+ * free from 2 000 ₴ — with the server's own payment matrix (OTHER: on
+ * delivery only). Override per-test, e.g. `{ methods: ["NOVA_POSHTA"] }`.
+ */
+export function makeDeliveryMethods(
+  overrides: Partial<DeliveryMethodsDto> = {},
+): DeliveryMethodsDto {
+  return {
+    methods: ["NOVA_POSHTA", "PICKUP", "COURIER", "OTHER"],
+    courier: { price: "150.00", freeFrom: "2000.00", cityName: "Київ" },
+    pickupPoints: [makePickupPoint()],
+    paymentMatrix: {
+      NOVA_POSHTA: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+      PICKUP: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+      COURIER: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+      OTHER: ["ON_DELIVERY"],
+    },
+    ...overrides,
+  };
+}
+
 export const handlers = [
   // Cart read — a populated guest cart by default.
   http.get("*/api/cart", () => HttpResponse.json(makeCart())),
@@ -225,6 +269,10 @@ export const handlers = [
   ),
   http.get("*/api/delivery/estimate", () =>
     HttpResponse.json({ data: { cost: "60.00", etaDays: 2 } }),
+  ),
+  // Delivery methods (TASK-646) — the full offer; override per-test.
+  http.get("*/api/delivery/methods", () =>
+    HttpResponse.json({ data: makeDeliveryMethods() }),
   ),
 
   // Cart mutations — echo a minimal success envelope; tests assert the call,

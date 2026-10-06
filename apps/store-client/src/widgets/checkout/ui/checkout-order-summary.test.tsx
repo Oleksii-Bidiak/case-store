@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
@@ -72,6 +72,73 @@ describe("CheckoutOrderSummary", () => {
       await screen.findByText(dict.checkout.shippingCostUnknown),
     ).toBeInTheDocument();
   });
+
+  // ── TASK-646: the shipping row follows the delivery method ─────────────────
+  const shippingRow = (method: string) =>
+    screen.getByText(dict.checkout.delivery.summaryLine(method))
+      .parentElement as HTMLElement;
+
+  it("names the method and makes pickup free — no ETA, no sum", async () => {
+    renderWithProviders(<CheckoutOrderSummary method="PICKUP" />, authed);
+
+    expect(
+      await screen.findByText(dict.checkout.delivery.free),
+    ).toBeInTheDocument();
+    expect(shippingRow(dict.checkout.delivery.short.PICKUP)).toHaveTextContent(
+      dict.checkout.delivery.free,
+    );
+    expect(screen.queryByText(dict.checkout.deliveryEstimateLabel)).toBeNull();
+    expect(
+      screen.queryByText(dict.checkout.delivery.summaryWithoutShipping),
+    ).toBeNull();
+  });
+
+  it("adds the courier's price below the free threshold", async () => {
+    renderWithProviders(<CheckoutOrderSummary method="COURIER" />, authed);
+
+    // 998 ₴ of goods (default cart) + 150 ₴ courier.
+    await waitFor(() =>
+      expect(
+        shippingRow(dict.checkout.delivery.short.COURIER).textContent?.replace(
+          /\s/g,
+          "",
+        ),
+      ).toContain("150₴"),
+    );
+    expect(
+      screen
+        .getByText(dict.checkout.totalLine)
+        .parentElement?.textContent?.replace(/\s/g, ""),
+    ).toContain("1148₴");
+  });
+
+  it.each([
+    ["OTHER", false],
+    ["NOVA_POSHTA", true],
+  ] as const)(
+    "says «уточнить оператор» and that the total excludes it — %s, manual=%s",
+    async (method, npManual) => {
+      renderWithProviders(
+        <CheckoutOrderSummary
+          method={method}
+          npManual={npManual}
+          npCityRef={CITY_REF}
+        />,
+        authed,
+      );
+
+      expect(
+        await screen.findByText(dict.checkout.delivery.summaryWithoutShipping),
+      ).toBeInTheDocument();
+      expect(screen.getByText(dict.checkout.shippingCostUnknown)).toHaveClass(
+        "italic",
+      );
+      // The manual path never shows an NP estimate, even with a ref around.
+      expect(
+        screen.queryByText(dict.checkout.deliveryEstimateLabel),
+      ).toBeNull();
+    },
+  );
 
   it("keeps the promo control for a guest, with the sign-in hint pointing back to checkout", async () => {
     renderWithProviders(<CheckoutOrderSummary npCityRef={CITY_REF} />);
