@@ -1,12 +1,9 @@
-import type {
-  OrderEntityShippingAddress,
-  OrderEntityBillingAddress,
-} from "@/entities/order";
+import type { OrderEntity } from "@/entities/order";
 import { dict } from "@/shared/config";
 
 interface OrderAddressSummaryProps {
-  shippingAddress: OrderEntityShippingAddress; // { [key: string]: unknown } | null
-  billingAddress: OrderEntityBillingAddress; // { [key: string]: unknown } | null
+  shippingAddress: OrderEntity["shippingAddress"];
+  billingAddress: OrderEntity["billingAddress"];
 }
 
 /**

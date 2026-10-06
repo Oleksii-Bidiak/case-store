@@ -14,6 +14,7 @@ const order: PublicOrderEntity = {
   status: "SHIPPED",
   paymentStatus: "PENDING",
   paymentMethod: "ON_DELIVERY",
+  deliveryMethod: "NOVA_POSHTA",
   items: [
     {
       productName: "Чохол MagSafe",
@@ -28,7 +29,13 @@ const order: PublicOrderEntity = {
   shippingCost: "70.00",
   addonsTotal: "0.00",
   total: "668.00",
-  delivery: { city: "Київ", warehouse: "Відділення №12" },
+  delivery: {
+    city: "Київ",
+    warehouse: "Відділення №12",
+    pickupPointName: null,
+    pickupPointAddress: null,
+    shippingCostPending: false,
+  },
   trackingNumber: "20450000000001",
 };
 
@@ -176,7 +183,7 @@ describe("OrderLookupForm (TASK-483)", () => {
   ] as const)(
     "keeps the delivery list valid with %s",
     async (_case, delivery, sentence) => {
-      respondWith([{ ...order, delivery: { ...delivery } }]);
+      respondWith([{ ...order, delivery: { ...order.delivery, ...delivery } }]);
       const user = userEvent.setup();
 
       renderWithProviders(<OrderLookupForm />);

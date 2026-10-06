@@ -1,8 +1,8 @@
 import type { OrderEntity } from "@/shared/api/generated/models";
 
 /**
- * The address snapshot as the API stores it. Orval types it as a loose
- * `{ [key: string]: unknown } | null`, and it really does come in two shapes:
+ * The address snapshot as the API stores it. Orval now types it as
+ * `OrderShippingAddressEntity` (TASK-1023), but it really does come in two shapes:
  *
  * - what the checkout writes (`AddressDto` + the server's delivery fields):
  *   `firstName`, `lastName`, `phone`, `city`, `address1` (the branch or the
@@ -40,7 +40,10 @@ export interface OrderDeliveryDetails {
  * `/orders/status` projection that must never carry it.
  */
 export function orderDeliveryDetails(
-  order: Pick<OrderEntity, "deliveryMethod" | "shippingAddress">,
+  order: Pick<OrderEntity, "deliveryMethod"> & {
+    // Wider than the generated type on purpose: the seeded shape is not in it.
+    shippingAddress: OrderEntity["shippingAddress"] | AddressSnapshot;
+  },
 ): OrderDeliveryDetails {
   const address = (order.shippingAddress ?? {}) as AddressSnapshot;
 

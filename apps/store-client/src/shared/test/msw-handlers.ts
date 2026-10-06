@@ -124,6 +124,8 @@ export function makeOrder(overrides: Partial<OrderEntity> = {}): {
       paymentMethod: "ON_DELIVERY",
       // Required on OrderEntity since TASK-642 (M184A): same reason as above.
       deliveryMethod: "NOVA_POSHTA",
+      // Required-but-nullable on OrderEntity since TASK-1023: same reason as above.
+      pickupPointId: null,
       paidAt: null,
       // Required-but-nullable on OrderEntity since TASK-471, which exposed the
       // reservation deadline so the derived «Очікує оплати · N хв» / «Резерв
