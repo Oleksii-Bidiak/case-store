@@ -581,10 +581,15 @@ export class OrderService {
     // booked as OTHER (shipping quoted by the operator, `shippingCostPending`),
     // and the delivery × payment matrix below still applies: manual city + card
     // → 400 DELIVERY_PAYMENT_NOT_ALLOWED. An EXPLICIT `deliveryMethod: 'OTHER'`
-    // and an inferred NOVA_POSHTA keep the switch check.
-    const inferredOther = !dto.deliveryMethod && deliveryMethod === DeliveryMethod.OTHER;
-
+    // and an inferred NOVA_POSHTA keep the switch check. The fallback only
+    // stands in for Nova Poshta, so with NP itself switched off there is no
+    // outage to fall back from and the inferred OTHER is checked like any other.
     const { enabledMethods, courier } = await this.deliveryService.getMethodSettings();
+    const inferredOther =
+      !dto.deliveryMethod &&
+      deliveryMethod === DeliveryMethod.OTHER &&
+      enabledMethods.includes(DeliveryMethod.NOVA_POSHTA);
+
     if (!inferredOther && !enabledMethods.includes(deliveryMethod)) {
       throw deliveryMethodUnavailableError(deliveryMethod);
     }

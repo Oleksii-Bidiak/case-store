@@ -905,6 +905,21 @@ describe('OrderService', () => {
         expectDelivery400(err, 'DELIVERY_PAYMENT_NOT_ALLOWED');
       });
 
+      // The fallback exists for a Nova Poshta OUTAGE — with NP switched off there
+      // is no outage to fall back from, and a request without a method must not
+      // become a way to book a method the owner closed.
+      it('refuses a DERIVED OTHER while both NP and OTHER are off — TASK-1097', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue({
+          ...allEnabled(),
+          enabledMethods: ['PICKUP', 'COURIER'],
+        });
+
+        const err = await rejectionOf(service.createOrder(userActor, createDto));
+
+        expectDelivery400(err, 'DELIVERY_METHOD_UNAVAILABLE');
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      });
+
       it('still refuses an EXPLICIT OTHER while OTHER is off — TASK-1097', async () => {
         deliveryServiceMock.getMethodSettings.mockResolvedValue({
           ...DEFAULT_METHOD_SETTINGS,
