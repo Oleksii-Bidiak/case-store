@@ -130,16 +130,17 @@ export class PublicOrderDeliveryEntity {
  * The snapshot flag (TASK-643) is the primary signal. The fallback covers the
  * orders the TASK-642 migration backfilled to OTHER — free-text-city orders
  * from before the delivery methods existed: they carry no flag, booked 0, and
- * that 0 was never "free delivery" either. An OTHER order with a non-zero cost
- * has been quoted, so it is not pending.
+ * that 0 was never "free delivery" either. A non-zero cost wins over both: once
+ * there is an amount, it has been quoted (the snapshot flag is never rewritten).
+ * The order-confirmation letter applies the same rule (`shippingCostKind`).
  */
 export function isShippingCostPending(
   method: DeliveryMethod,
   address: Pick<ShippingAddressData, 'shippingCostPending'> | null,
   shippingCost: { toString(): string },
 ): boolean {
-  if (address?.shippingCostPending === true) return true;
-  return method === DeliveryMethod.OTHER && toCents(shippingCost) === 0;
+  if (toCents(shippingCost) !== 0) return false;
+  return address?.shippingCostPending === true || method === DeliveryMethod.OTHER;
 }
 
 /**

@@ -199,6 +199,12 @@ describe('isShippingCostPending', () => {
     expect(isShippingCostPending(DeliveryMethod.OTHER, null, money('120.00'))).toBe(false);
   });
 
+  it('is false once a cost is booked, even if the checkout snapshot still says pending', () => {
+    expect(
+      isShippingCostPending(DeliveryMethod.OTHER, { shippingCostPending: true }, money('120.00')),
+    ).toBe(false);
+  });
+
   it('is false for a free pickup or courier order', () => {
     expect(isShippingCostPending(DeliveryMethod.PICKUP, null, money('0.00'))).toBe(false);
     expect(isShippingCostPending(DeliveryMethod.COURIER, null, money('0'))).toBe(false);
