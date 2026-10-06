@@ -1971,6 +1971,16 @@
       без права на виторг не містить жодної колонки з гривнями. У воронки без Umami кнопки CSV
       немає.
       🎯 TASK-691
+- [🔁] **AD-ANL-10 — Сум немає і у відповідях звітів.** **Зроби:** працівником без «Виторг і фінансові
+      показники» відкрий «Звіти», у DevTools → Network знайди запити `reports/categories`,
+      `reports/brands` (вкладка «Бренди»), `reports/products`; потім у тій самій сесії повтори
+      будь-який із них, замінивши в адресі кінець на `reports/sales` (Network → Copy as fetch →
+      Console). **Має бути:** у тілах трьох відповідей немає ключа `revenue` (пошук «revenue» у
+      Response нічого не знаходить), у `products` — `rankedBy: "units"`; запиту `reports/sales`
+      сторінка сама не робить зовсім, а ручний повертає 403. Розділ «Звіти» в посібнику
+      ([20а](admin-guide.md#20a-zvity)) пояснює три числа виторгу й чому повернення падає в місяць
+      повернення.
+      🎯 TASK-695
 
 ### AD-PROD — Товари і групи (сторі К2.10, В2.2 · `/products`, `/products/new`, `/products/[id]/edit`, `/products/preview/[slug]`, `/product-groups*`)
 
@@ -4063,6 +4073,7 @@
 - **TASK-691** — AD-ORD-68, AD-MKT-16, AD-ANL-09
 - **TASK-692** — AD-ANL-01, AD-ANL-02, AD-ANL-03, AD-ANL-04, AD-ANL-05, AD-ANL-06, AD-ANL-07, AD-ANL-08
 - **TASK-693** — AD-DASH-31
+- **TASK-695** — AD-ANL-10
 - **TASK-694** — AD-DASH-20, AD-DASH-21
 - **TASK-1018** — SF-CHK-30
 - **TASK-642** — SYS-43
