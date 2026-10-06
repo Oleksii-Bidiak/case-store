@@ -289,4 +289,70 @@ describe('OrderRepository.createFromCart — persisted row (integration)', () =>
       });
     });
   });
+
+  // ─── Billing address (TASK-1022) ─────────────────────────────────────────────
+
+  describe('billing address defaulted from the shipping one (TASK-1022)', () => {
+    /** A shipping snapshot carrying every delivery-only field there is. */
+    const snapshot = {
+      firstName: 'Тарас',
+      lastName: 'Шевченко',
+      company: 'ФОП Шевченко',
+      phone: '+380501234567',
+      address1: 'Нова Пошта, відділення №12',
+      address2: 'під’їзд 2',
+      city: 'Київ',
+      state: 'Київська',
+      postalCode: '01001',
+      country: 'UA',
+      npCityRef: 'city-ref-1',
+      npWarehouseRef: 'wh-ref-1',
+      npWarehouseName: 'Відділення №12',
+      deliveryMethod: DeliveryMethod.PICKUP,
+      carrier: null,
+      shippingCostPending: true,
+      pickupPointName: 'Точка',
+      pickupPointAddress: 'вул. Хрещатик, 1',
+      pickupPointHours: 'Пн–Пт 10–19',
+      pickupPointPhone: '+380441234567',
+      pickupPointMapUrl: 'https://maps.example/x',
+    } as CreateOrderParams['shippingAddress'];
+
+    it('copies only the address fields — never the delivery snapshot', async () => {
+      const created = await repo.createFromCart(await buildParams({ shippingAddress: snapshot }));
+
+      const row = await persisted(created.id);
+      expect(row.billingAddress).toEqual({
+        firstName: 'Тарас',
+        lastName: 'Шевченко',
+        company: 'ФОП Шевченко',
+        phone: '+380501234567',
+        address1: 'Нова Пошта, відділення №12',
+        address2: 'під’їзд 2',
+        city: 'Київ',
+        state: 'Київська',
+        postalCode: '01001',
+        country: 'UA',
+      });
+      // The shipping snapshot itself is untouched.
+      expect(row.shippingAddress).toEqual(snapshot);
+    });
+
+    it('stores an explicit billing address as sent', async () => {
+      const billing = {
+        firstName: 'Олена',
+        lastName: 'Коваль',
+        phone: '+380671112233',
+        address1: 'вул. Городоцька, 5',
+        city: 'Львів',
+        country: 'UA',
+      };
+
+      const created = await repo.createFromCart(
+        await buildParams({ shippingAddress: snapshot, billingAddress: billing }),
+      );
+
+      expect((await persisted(created.id)).billingAddress).toEqual(billing);
+    });
+  });
 });
