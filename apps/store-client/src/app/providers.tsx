@@ -68,7 +68,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <QueryRecovery />
         <AuthProvider>
           {children}
-          <Toaster />
+          {/* `clearMobileBar` (TASK-1771): on phones the toasts stack above the
+              cart / checkout / PDP fixed bottom bar instead of over its action. */}
+          <Toaster clearMobileBar />
           <ReactQueryDevtools initialIsOpen={false} />
         </AuthProvider>
       </QueryClientProvider>

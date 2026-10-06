@@ -43,3 +43,36 @@ describe("globals.css — room for a fixed bottom bar (TASK-864)", () => {
     expect(ruleAt).toBeLessThan(css.indexOf("scrollbar-width: thin"));
   });
 });
+
+/**
+ * TASK-1771 — the toaster clears the bar. `<Toaster clearMobileBar />` binds
+ * sonner's bottom offsets to these two properties; a mounted bar publishes its
+ * measured height as `--mobile-bar-inset`. The inset may be read below `md`
+ * only — from `md` up the bar dissolves and desktop placement must not move.
+ * The on-screen result (the toast above «Оформити замовлення» at 390) is a
+ * browser check; the rules' shape is pinned here.
+ */
+describe("globals.css — toasts clear a fixed bottom bar (TASK-1771)", () => {
+  // Whitespace-insensitive, including inside a wrapped `calc( … )`.
+  const flat = squash(css).replace(/\(\s+/g, "(").replace(/\s+\)/g, ")");
+
+  it("keeps sonner's default offsets, on the spacing scale, at every width", () => {
+    expect(flat).toContain(
+      ":root { --toast-offset-bottom: --spacing(6); --toast-mobile-offset-bottom: --spacing(4); }",
+    );
+  });
+
+  it("adds the published bar height below md only", () => {
+    expect(flat).toContain(
+      ":root { @variant max-md { --toast-offset-bottom: calc(--spacing(6) + var(--mobile-bar-inset, 0px)); --toast-mobile-offset-bottom: calc(--spacing(4) + var(--mobile-bar-inset, 0px)); } }",
+    );
+    // …and nowhere else: one read per offset, both inside that block.
+    expect(flat.match(/var\(--mobile-bar-inset/g)).toHaveLength(2);
+  });
+
+  it("lives inside @layer base, after the body reserve", () => {
+    const at = css.indexOf("--toast-offset-bottom: --spacing(6);");
+    expect(at).toBeGreaterThan(css.indexOf("body:has([data-mobile-bar])"));
+    expect(at).toBeLessThan(css.indexOf("scrollbar-width: thin"));
+  });
+});

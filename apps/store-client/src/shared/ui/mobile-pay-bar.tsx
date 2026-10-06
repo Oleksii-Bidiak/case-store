@@ -1,4 +1,7 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { type ReactNode, useRef } from "react";
+import { useMobileBarInset } from "@/shared/lib/use-mobile-bar-inset";
 import { cn } from "@/shared/lib/utils";
 
 interface MobilePayBarProps {
@@ -26,6 +29,10 @@ interface MobilePayBarProps {
  *
  * Mind the ancestors: `position: fixed` is relative to the viewport only while
  * no ancestor sets `transform`, `filter`, `backdrop-filter` or `contain`.
+ *
+ * While mounted it also publishes its measured height (`useMobileBarInset`,
+ * TASK-1771), which lifts the global toaster above it below `md` — otherwise a
+ * toast lands on the bar's action, the very control focus is sent to.
  */
 export function MobilePayBar({
   label,
@@ -33,8 +40,12 @@ export function MobilePayBar({
   children,
   className,
 }: MobilePayBarProps) {
+  const barRef = useRef<HTMLDivElement>(null);
+  useMobileBarInset(barRef);
+
   return (
     <div
+      ref={barRef}
       data-testid="mobile-pay-bar"
       data-mobile-bar=""
       className={cn(
