@@ -28,7 +28,6 @@ import type {
   PaymentWithOrderRow,
   PaymentApplyPlan,
   ManualOrderParams,
-  ShippingAddressData,
 } from './order.types';
 import type { OrderListQueryDto, AdminOrderListQueryDto, AddressDto } from './dto';
 // The export query is declared beside the list query it narrows, and is not part
@@ -266,6 +265,28 @@ const DEFAULT_LIMIT = 10;
 const SEARCH_PHONE_MIN_DIGITS = 3;
 
 /**
+ * The `billing_address` column value for a new order (TASK-1022).
+ *
+ * A billing address the buyer did not send is stored as SQL NULL, meaning "same
+ * as shipping". Both order views rely on that contract: the storefront's
+ * `OrderAddressSummary` and the admin card render a separate «Платіжна адреса»
+ * block only for a non-null billing address that differs from shipping.
+ *
+ * The earlier defaults broke it. Copying the whole shipping object carried the
+ * TASK-643 delivery snapshot (`deliveryMethod`, `carrier`, `pickupPoint*`,
+ * `shippingCostPending`, NP refs) into a record about who pays. Copying only the
+ * address fields could never equal the snapshot again, so every order showed a
+ * redundant billing block. For PICKUP that block showed the pickup point's
+ * address as the billing address. Nothing server-side reads the billing column
+ * except the entity mapping, which already maps it to `null`.
+ */
+function billingAddressColumn(
+  billingAddress: AddressDto | undefined,
+): Prisma.InputJsonValue | typeof Prisma.DbNull {
+  return billingAddress ? (billingAddress as unknown as Prisma.InputJsonValue) : Prisma.DbNull;
+}
+
+/**
  * The payment methods whose stock reservation runs on a clock (review of plan
  * 180).
  *
@@ -278,44 +299,6 @@ const SEARCH_PHONE_MIN_DIGITS = 3;
  */
 // Mutable on purpose: Prisma's generated `in` filter takes `PaymentMethod[]`
 // and refuses a `readonly` array. Copied at each use site below.
-/**
- * The keys of a shipping address that describe WHERE and WHO — everything an
- * address is, and nothing about how the parcel travels (TASK-1022).
- */
-const BILLING_ADDRESS_KEYS = [
-  'firstName',
-  'lastName',
-  'company',
-  'address1',
-  'address2',
-  'city',
-  'state',
-  'postalCode',
-  'country',
-  'phone',
-] as const satisfies ReadonlyArray<keyof AddressDto & keyof ShippingAddressData>;
-
-type BillingAddressData = Partial<Pick<ShippingAddressData, (typeof BILLING_ADDRESS_KEYS)[number]>>;
-
-/**
- * The billing address an order gets when the buyer sent none (TASK-1022): the
- * address fields of the shipping one, picked by an ALLOW-list.
- *
- * Copying the whole object (the pre-fix `billingAddress ?? shippingAddress`)
- * carried the TASK-643 delivery snapshot — `deliveryMethod`, `carrier`, the
- * `pickupPoint*` fields, `shippingCostPending` — and the Nova Poshta refs into
- * a record that is about who pays. An allow-list rather than a deny-list, so the
- * next delivery field added to the snapshot cannot leak in by default.
- */
-function billingFromShipping(address: AddressDto | ShippingAddressData): BillingAddressData {
-  const source = address as unknown as Record<string, unknown>;
-  const billing: Record<string, unknown> = {};
-  for (const key of BILLING_ADDRESS_KEYS) {
-    if (source[key] !== undefined) billing[key] = source[key];
-  }
-  return billing as BillingAddressData;
-}
-
 const TIMED_RESERVATION_METHODS: PaymentMethod[] = [
   PaymentMethod.ONLINE,
   PaymentMethod.INSTALLMENTS,
@@ -475,10 +458,7 @@ export class OrderRepository {
           addonsTotal,
           total,
           shippingAddress: shippingAddress as unknown as Prisma.InputJsonValue,
-          // TASK-1022: defaulted from the ADDRESS part of the shipping snapshot
-          // only — see `billingFromShipping`.
-          billingAddress: (billingAddress ??
-            billingFromShipping(shippingAddress)) as unknown as Prisma.InputJsonValue,
+          billingAddress: billingAddressColumn(billingAddress),
           notes: notes ?? null,
           items: { create: itemData },
         },
@@ -648,8 +628,7 @@ export class OrderRepository {
           addonsTotal: new Prisma.Decimal(0),
           total,
           shippingAddress: params.shippingAddress as unknown as Prisma.InputJsonValue,
-          billingAddress: (params.billingAddress ??
-            billingFromShipping(params.shippingAddress)) as unknown as Prisma.InputJsonValue,
+          billingAddress: billingAddressColumn(params.billingAddress),
           notes: params.notes ?? null,
           internalNotes: params.internalNotes ?? null,
           items: { create: itemData },

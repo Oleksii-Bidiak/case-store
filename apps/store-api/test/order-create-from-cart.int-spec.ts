@@ -292,7 +292,7 @@ describe('OrderRepository.createFromCart — persisted row (integration)', () =>
 
   // ─── Billing address (TASK-1022) ─────────────────────────────────────────────
 
-  describe('billing address defaulted from the shipping one (TASK-1022)', () => {
+  describe('billing address when the buyer sent none (TASK-1022)', () => {
     /** A shipping snapshot carrying every delivery-only field there is. */
     const snapshot = {
       firstName: 'Тарас',
@@ -318,22 +318,18 @@ describe('OrderRepository.createFromCart — persisted row (integration)', () =>
       pickupPointMapUrl: 'https://maps.example/x',
     } as CreateOrderParams['shippingAddress'];
 
-    it('copies only the address fields — never the delivery snapshot', async () => {
+    // NULL means "same as shipping", the contract both order views render by.
+    // Any copy of the snapshot (whole or address fields only) made them show a
+    // redundant «Платіжна адреса» block.
+    it('stores SQL NULL — no copy of the delivery snapshot, no redundant billing block', async () => {
       const created = await repo.createFromCart(await buildParams({ shippingAddress: snapshot }));
 
       const row = await persisted(created.id);
-      expect(row.billingAddress).toEqual({
-        firstName: 'Тарас',
-        lastName: 'Шевченко',
-        company: 'ФОП Шевченко',
-        phone: '+380501234567',
-        address1: 'Нова Пошта, відділення №12',
-        address2: 'під’їзд 2',
-        city: 'Київ',
-        state: 'Київська',
-        postalCode: '01001',
-        country: 'UA',
-      });
+      expect(row.billingAddress).toBeNull();
+      // A real SQL NULL, not the JSON literal `null` (which `?? null` would hide).
+      const [raw] = await prisma.$queryRaw<{ isNull: boolean }[]>`
+        SELECT billing_address IS NULL AS "isNull" FROM orders WHERE id = ${created.id}`;
+      expect(raw.isNull).toBe(true);
       // The shipping snapshot itself is untouched.
       expect(row.shippingAddress).toEqual(snapshot);
     });

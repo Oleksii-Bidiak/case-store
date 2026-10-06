@@ -6,6 +6,7 @@ import {
   PaymentAttemptStatus,
   OrderHistoryChangeType,
   OrderHistoryNote,
+  Prisma,
 } from '@prisma/client';
 import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
 import { OrderRepository } from './order.repository';
@@ -397,10 +398,12 @@ describe('OrderRepository', () => {
       });
     });
 
-    // TASK-1022: a defaulted billing address is the ADDRESS, not the delivery
-    // decision — copying the snapshot made every billing record claim a carrier,
-    // a pickup point and a pending shipping quote.
-    it('createFromCart defaults billingAddress to the address fields of the shipping one only', async () => {
+    // TASK-1022 (fix round): an order whose buyer sent no billing address stores
+    // SQL NULL, meaning "same as shipping". Every copy of the shipping snapshot,
+    // whole or address fields only, differs from the snapshot itself, so the
+    // admin card and the storefront summary rendered a redundant «Платіжна
+    // адреса» block. For a PICKUP order that block showed the shop's own address.
+    it('createFromCart stores a NULL billingAddress when the buyer sent none', async () => {
       const tx = withTx();
 
       await repository.createFromCart({
@@ -409,25 +412,16 @@ describe('OrderRepository', () => {
         pickupPointId: 'point-uuid-1',
         shippingAddress: {
           ...baseParams.shippingAddress,
-          address2: 'кв. 5',
           npCityRef: 'city-ref-1',
-          npWarehouseRef: 'wh-ref-1',
-          npWarehouseName: 'Відділення №12',
           deliveryMethod: 'PICKUP',
           carrier: null,
           shippingCostPending: true,
           pickupPointName: 'Точка',
           pickupPointAddress: 'вул. Хрещатик, 1',
-          pickupPointHours: 'Пн–Пт',
-          pickupPointPhone: '+380441234567',
-          pickupPointMapUrl: 'https://maps.example/x',
         },
       });
 
-      expect(orderData(tx).billingAddress).toEqual({
-        ...baseParams.shippingAddress,
-        address2: 'кв. 5',
-      });
+      expect(orderData(tx).billingAddress).toBe(Prisma.DbNull);
     });
 
     it('createFromCart keeps an explicit billing address as sent', async () => {
@@ -445,7 +439,7 @@ describe('OrderRepository', () => {
       expect(orderData(tx).billingAddress).toEqual(billing);
     });
 
-    it('createManual defaults billingAddress to the address fields only (no NP refs)', async () => {
+    it('createManual stores a NULL billingAddress when none was sent', async () => {
       const tx = withTx();
 
       await repository.createManual(
@@ -462,7 +456,30 @@ describe('OrderRepository', () => {
         'admin-uuid-1',
       );
 
-      expect(orderData(tx).billingAddress).toEqual(baseParams.shippingAddress);
+      expect(orderData(tx).billingAddress).toBe(Prisma.DbNull);
+    });
+
+    it('createManual keeps an explicit billing address as sent', async () => {
+      const tx = withTx();
+      const billing = {
+        firstName: 'Олена',
+        lastName: 'Коваль',
+        city: 'Львів',
+        address1: 'вул. Городоцька, 5',
+      };
+
+      await repository.createManual(
+        {
+          userId: 'user-uuid-1',
+          items: [{ productId: 'product-uuid-1', quantity: 1, price: '10.00', name: 'Case' }],
+          shippingAddress: baseParams.shippingAddress as never,
+          billingAddress: billing as never,
+          deliveryMethod: 'NOVA_POSHTA',
+        },
+        'admin-uuid-1',
+      );
+
+      expect(orderData(tx).billingAddress).toEqual(billing);
     });
 
     it('createManual writes the method it is given', async () => {
