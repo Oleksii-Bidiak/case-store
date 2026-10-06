@@ -2008,7 +2008,7 @@
             "description": "Category not found, or CATEGORY_MOVE_TARGET_NOT_FOUND"
           },
           "409": {
-            "description": "CATEGORY_SLUG_CONFLICT (the new target slug is taken) or CATEGORY_TREE_STALE (the subtree changed concurrently — reload and retry)"
+            "description": "CATEGORY_SLUG_CONFLICT (the new target slug is taken), CATEGORY_TREE_STALE (the subtree changed concurrently — reload and retry) or CATEGORY_MOVE_TARGET_HIDDEN (the moveToId target is hidden and allowHiddenTarget was not true — nothing changed)"
           }
         },
         "security": [
@@ -17052,6 +17052,11 @@
                 "$ref": "#/components/schemas/DeleteCategoryMoveToNewDto"
               }
             ]
+          },
+          "allowHiddenTarget": {
+            "type": "boolean",
+            "description": "Consent to move the products into a HIDDEN (inactive) `moveToId` target — they then disappear from the storefront until that category is shown again. Without it a hidden target is refused with 409 `CATEGORY_MOVE_TARGET_HIDDEN` and nothing changes. Ignored for `moveToNew` (the new category is always created active).",
+            "example": true
           }
         }
       },

@@ -327,8 +327,9 @@ export class AdminCategoryController {
   @ApiResponse({
     status: 409,
     description:
-      'CATEGORY_SLUG_CONFLICT (the new target slug is taken) or CATEGORY_TREE_STALE ' +
-      '(the subtree changed concurrently — reload and retry)',
+      'CATEGORY_SLUG_CONFLICT (the new target slug is taken), CATEGORY_TREE_STALE ' +
+      '(the subtree changed concurrently — reload and retry) or CATEGORY_MOVE_TARGET_HIDDEN ' +
+      '(the moveToId target is hidden and allowHiddenTarget was not true — nothing changed)',
   })
   async delete(
     @Param('id') id: string,

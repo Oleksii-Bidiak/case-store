@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma, SlugRedirectEntity } from '@prisma/client';
 import { CategoryRepository } from './category.repository';
 import {
+  CategoryMoveTargetHiddenError,
   CategoryMoveTargetInSubtreeError,
   CategoryMoveTargetNotFoundError,
   CategoryMoveTargetRequiredError,
@@ -680,14 +681,14 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
   const SUBTREE = [{ id: 'node' }, { id: 'child' }, { id: 'grandchild' }];
   const lockKeys = (): unknown[] => tx.$executeRaw.mock.calls.map((args) => args[1]);
   const liveUnless =
-    (missing: string[]) =>
+    (missing: string[], hidden: string[] = []) =>
     ({ where }: { where: { id: string } }): Promise<unknown> =>
       Promise.resolve(
         missing.includes(where.id)
           ? null
           : where.id === 'node'
             ? { id: 'node', parentId: 'parent' }
-            : { id: where.id },
+            : { id: where.id, isActive: !hidden.includes(where.id) },
       );
 
   beforeEach(async () => {
@@ -822,6 +823,62 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
       expect.objectContaining({ where: { id: 'target', deletedAt: null } }),
     );
     expect(tx.product.updateMany).not.toHaveBeenCalled();
+  });
+
+  // TASK-1837: a hidden target takes every moved product off the storefront.
+  describe('hidden existing target', () => {
+    beforeEach(() => {
+      tx.category.findFirst.mockImplementation(liveUnless([], ['target']));
+    });
+
+    it('refuses it without consent — decided under the lock, nothing written', async () => {
+      await expect(
+        repo.deleteSubtreeWithMove('node', { kind: 'existing', id: 'target' }, NOW),
+      ).rejects.toBeInstanceOf(CategoryMoveTargetHiddenError);
+      expect(tx.category.findFirst).toHaveBeenCalledWith({
+        where: { id: 'target', deletedAt: null },
+        select: { id: true, isActive: true },
+      });
+      expect(lockKeys()[0]).toBe('categories:__tree__');
+      expect(tx.product.updateMany).not.toHaveBeenCalled();
+      expect(tx.carousel.updateMany).not.toHaveBeenCalled();
+      expect(tx.category.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses it when consent is explicitly false', async () => {
+      await expect(
+        repo.deleteSubtreeWithMove(
+          'node',
+          { kind: 'existing', id: 'target', allowHidden: false },
+          NOW,
+        ),
+      ).rejects.toBeInstanceOf(CategoryMoveTargetHiddenError);
+      expect(tx.product.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('moves into it with consent, exactly as into a visible one', async () => {
+      const result = await repo.deleteSubtreeWithMove(
+        'node',
+        { kind: 'existing', id: 'target', allowHidden: true },
+        NOW,
+      );
+
+      expect(result.targetId).toBe('target');
+      expect(result.movedProducts).toBe(4);
+      expect(tx.product.updateMany).toHaveBeenCalledWith({
+        where: { categoryId: { in: ['node', 'child', 'grandchild'] } },
+        data: { categoryId: 'target' },
+      });
+      expect(tx.category.update).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not need consent for a visible target', async () => {
+      tx.category.findFirst.mockImplementation(liveUnless([]));
+
+      await expect(
+        repo.deleteSubtreeWithMove('node', { kind: 'existing', id: 'target' }, NOW),
+      ).resolves.toEqual(expect.objectContaining({ targetId: 'target' }));
+    });
   });
 
   it('refuses with TREE_STALE when a child appeared between the two subtree reads', async () => {

@@ -28,6 +28,7 @@ import {
   CategoryDuplicateIdError,
   CategoryErrorCode,
   CategoryMaxDepthError,
+  CategoryMoveTargetHiddenError,
   CategoryMoveTargetInSubtreeError,
   CategoryMoveTargetNotFoundError,
   CategoryMoveTargetRequiredError,
@@ -1318,6 +1319,38 @@ describe('CategoryService', () => {
         expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
       });
 
+      // TASK-1837: a hidden target needs the operator's consent; the repository decides
+      // it under the lock, the service only carries the flag and maps the refusal.
+      it('passes allowHiddenTarget through as the target consent', async () => {
+        await service.delete(
+          'cat-uuid-1',
+          { moveToId: TARGET_ID, allowHiddenTarget: true },
+          'admin-1',
+        );
+
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith('cat-uuid-1', {
+          kind: 'existing',
+          id: TARGET_ID,
+          allowHidden: true,
+        });
+      });
+
+      it('maps a hidden target refused under the lock to 409 CATEGORY_MOVE_TARGET_HIDDEN, no side effects', async () => {
+        categoryRepositoryMock.deleteSubtreeWithMove.mockRejectedValue(
+          new CategoryMoveTargetHiddenError(),
+        );
+
+        const call = service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1');
+
+        await expect(call).rejects.toThrow(ConflictException);
+        expect(await codeOf(service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1'))).toBe(
+          CategoryErrorCode.MOVE_TARGET_HIDDEN,
+        );
+        expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+        expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+        expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+      });
+
       it('returns 404 when the category to delete does not exist (or is already deleted)', async () => {
         const call = service.delete('cat-gone', { moveToId: TARGET_ID }, 'admin-1');
 
@@ -1368,6 +1401,7 @@ describe('CategoryService', () => {
         expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith('cat-uuid-1', {
           kind: 'existing',
           id: TARGET_ID,
+          allowHidden: false,
         });
       });
 

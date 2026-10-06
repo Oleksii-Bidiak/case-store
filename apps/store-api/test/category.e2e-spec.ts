@@ -11,6 +11,7 @@ import { UserRepository } from '../src/user/user.repository';
 import { CategoryRepository } from '../src/category/category.repository';
 import {
   CategoryCycleError,
+  CategoryMoveTargetHiddenError,
   CategoryMoveTargetInSubtreeError,
   CategoryMoveTargetRequiredError,
   CategoryNotFoundError,
@@ -1353,6 +1354,52 @@ describe('CategoryController (e2e)', () => {
       expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(testCategory.id, {
         kind: 'existing',
         id: TARGET_ID,
+        allowHidden: false,
+      });
+    });
+
+    // TASK-1837: a hidden target takes the moved products off the storefront — the
+    // repository refuses it under the lock unless the request carries the consent flag.
+    describe('hidden move target', () => {
+      it('returns 409 CATEGORY_MOVE_TARGET_HIDDEN without allowHiddenTarget', async () => {
+        const token = generateAccessToken(testAdmin.id, 'ADMIN');
+        categoryRepositoryMock.deleteSubtreeWithMove.mockRejectedValue(
+          new CategoryMoveTargetHiddenError(),
+        );
+
+        const response = await request(app.getHttpServer())
+          .delete(url)
+          .set('Authorization', `Bearer ${token}`)
+          .send(moveToId)
+          .expect(409);
+        expect(response.body).toHaveProperty('error', 'CATEGORY_MOVE_TARGET_HIDDEN');
+        expect(response.body).toHaveProperty('statusCode', 409);
+      });
+
+      it('returns 204 with allowHiddenTarget: true and passes the consent on', async () => {
+        const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+        await request(app.getHttpServer())
+          .delete(url)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ ...moveToId, allowHiddenTarget: true })
+          .expect(204);
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(testCategory.id, {
+          kind: 'existing',
+          id: TARGET_ID,
+          allowHidden: true,
+        });
+      });
+
+      it('returns 400 for a non-boolean allowHiddenTarget — a string is not consent', async () => {
+        const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+        await request(app.getHttpServer())
+          .delete(url)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ ...moveToId, allowHiddenTarget: 'false' })
+          .expect(400);
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
       });
     });
 

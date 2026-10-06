@@ -435,6 +435,7 @@ export class CategoryService {
         return notFoundCategory(error.code, error.message);
       case CategoryErrorCode.TREE_STALE:
       case CategoryErrorCode.SLUG_CONFLICT:
+      case CategoryErrorCode.MOVE_TARGET_HIDDEN:
         return conflictCategory(error.code, error.message);
       default:
         return badCategory(error.code, error.message);
@@ -515,7 +516,9 @@ export class CategoryService {
    * The checks here are FAST-FAIL hints for clear messages; the authoritative ones run
    * under the tree advisory lock in the repository and surface through {@link toHttp}:
    * target in the subtree → 400 `CATEGORY_MOVE_TARGET_IN_SUBTREE`, target (or its
-   * parent) missing/deleted → 404 `CATEGORY_MOVE_TARGET_NOT_FOUND`, slug taken → 409.
+   * parent) missing/deleted → 404 `CATEGORY_MOVE_TARGET_NOT_FOUND`, slug taken → 409,
+   * a HIDDEN existing target without `allowHiddenTarget: true` → 409
+   * `CATEGORY_MOVE_TARGET_HIDDEN` (TASK-1837 — the moved products would leave the site).
    *
    * After the commit: the whole product cache namespace and the storefront catalogue
    * are purged (as a status change does — a deleted category withdraws pages and
@@ -608,7 +611,9 @@ export class CategoryService {
           'Move target category not found',
         );
       }
-      return { kind: 'existing', id: dto.moveToId };
+      // Whether the target is hidden is decided under the lock (TASK-1837) — a fast
+      // fail here would only duplicate a check that a concurrent hide can outdate.
+      return { kind: 'existing', id: dto.moveToId, allowHidden: dto.allowHiddenTarget === true };
     }
 
     const { name, parentId = null } = dto.moveToNew!;

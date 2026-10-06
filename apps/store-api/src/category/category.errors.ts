@@ -39,6 +39,14 @@ export const CategoryErrorCode = {
   MOVE_TARGET_NOT_FOUND: 'CATEGORY_MOVE_TARGET_NOT_FOUND',
   /** The slug a new move target would take is already held by another category. */
   SLUG_CONFLICT: 'CATEGORY_SLUG_CONFLICT',
+  /**
+   * The EXISTING move target of a delete is hidden (`isActive = false`) and the request
+   * did not carry `allowHiddenTarget: true` (TASK-1837). Moving there takes every moved
+   * product off the storefront, so it needs the operator's explicit consent; a 409
+   * because it is usually a state change underneath an open dialog (someone hid the
+   * target after it loaded) rather than bad input.
+   */
+  MOVE_TARGET_HIDDEN: 'CATEGORY_MOVE_TARGET_HIDDEN',
 } as const;
 
 export type CategoryErrorCode = (typeof CategoryErrorCode)[keyof typeof CategoryErrorCode];
@@ -127,6 +135,20 @@ export class CategoryMoveTargetNotFoundError extends CategoryDomainError {
 export class CategoryMoveTargetRequiredError extends CategoryDomainError {
   constructor(message = 'The category is not empty — name a move target (moveToId or moveToNew)') {
     super(CategoryErrorCode.MOVE_TARGET_REQUIRED, message);
+  }
+}
+
+/**
+ * The existing move target of a delete is hidden and the request did not consent to
+ * moving products there (`allowHiddenTarget`, TASK-1837). Decided under the tree advisory
+ * lock in `CategoryRepository.deleteSubtreeWithMove`; nothing is written.
+ */
+export class CategoryMoveTargetHiddenError extends CategoryDomainError {
+  constructor(
+    message = 'The move target category is hidden — its products would disappear from the ' +
+      'storefront; resend with allowHiddenTarget: true to confirm',
+  ) {
+    super(CategoryErrorCode.MOVE_TARGET_HIDDEN, message);
   }
 }
 

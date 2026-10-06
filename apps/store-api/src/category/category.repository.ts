@@ -14,6 +14,7 @@ import {
 } from './category-reorder.rules';
 import {
   CategoryCycleError,
+  CategoryMoveTargetHiddenError,
   CategoryMoveTargetInSubtreeError,
   CategoryMoveTargetNotFoundError,
   CategoryMoveTargetRequiredError,
@@ -232,7 +233,15 @@ export interface CategoryUpdateResult {
  * else is `CategoryMoveTargetRequiredError`.
  */
 export type CategoryDeletionTarget =
-  | { kind: 'existing'; id: string }
+  | {
+      kind: 'existing';
+      id: string;
+      /**
+       * The operator consented to a HIDDEN target (TASK-1837, `allowHiddenTarget`).
+       * Absent/false → a target with `isActive = false` is `CategoryMoveTargetHiddenError`.
+       */
+      allowHidden?: boolean;
+    }
   | { kind: 'new'; name: string; slug: string; parentId: string | null }
   | { kind: 'none' };
 
@@ -1283,7 +1292,9 @@ export class CategoryRepository {
    *      refused as `CategoryTreeStaleError` rather than leaving a live orphan.
    *   3. The target is validated AUTHORITATIVELY here — the service's checks were only
    *      fast-fail hints: it (or the new target's parent) must be live and outside the
-   *      subtree.
+   *      subtree. A HIDDEN existing target is refused (`CategoryMoveTargetHiddenError`,
+   *      TASK-1837) unless `target.allowHidden` — the moved products would leave the
+   *      storefront. A new target is created active, so its parent may be hidden.
    *   4. A new target is created at the end of its bucket (live rows only); a slug
    *      collision on the unique index is `CategorySlugConflictError`.
    *   5. `product.updateMany` — NO `deletedAt` filter: a soft-deleted product moves too,
@@ -1347,12 +1358,21 @@ export class CategoryRepository {
             }
             const live = await tx.category.findFirst({
               where: { id: target.id, deletedAt: null },
-              select: { id: true },
+              select: { id: true, isActive: true },
             });
             if (!live) {
               throw new CategoryMoveTargetNotFoundError(
                 `Move target category "${target.id}" not found`,
               );
+            }
+            // TASK-1837: a product is public only while its OWN category is active, so a
+            // hidden target takes every moved product off the storefront. That needs the
+            // operator's explicit consent, checked against the state read HERE — the
+            // dialog's warning may be older than a concurrent hide. (A hide committing
+            // after this read is equivalent to hiding the target right after the delete,
+            // which is the hider's own visible action — no row lock is needed.)
+            if (!live.isActive && target.allowHidden !== true) {
+              throw new CategoryMoveTargetHiddenError();
             }
             targetId = target.id;
           } else {

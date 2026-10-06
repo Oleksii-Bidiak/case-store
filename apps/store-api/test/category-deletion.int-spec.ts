@@ -7,6 +7,7 @@ import { CatalogLandingRepository } from '../src/catalog-landing/catalog-landing
 import { CatalogLandingService } from '../src/catalog-landing/catalog-landing.service';
 import { CategoryRepository } from '../src/category/category.repository';
 import {
+  CategoryMoveTargetHiddenError,
   CategoryMoveTargetInSubtreeError,
   CategoryMoveTargetNotFoundError,
   CategoryMoveTargetRequiredError,
@@ -18,6 +19,7 @@ import { acquireAdvisoryLocks } from '../src/common/reorder';
 import { DeviceRepository } from '../src/device/device.repository';
 import { PrismaService } from '../src/prisma';
 import { buildProductListWhere } from '../src/product/product-list-where';
+import { PUBLIC_PRODUCT_WHERE } from '../src/product/product-visibility';
 import { ProductRestoreCategoryGoneError } from '../src/product/product.errors';
 import { ProductRepository } from '../src/product/product.repository';
 import { SlugRedirectRepository } from '../src/slug-redirect';
@@ -584,6 +586,91 @@ describe('Category deletion (integration, TASK-652/653)', () => {
 
       await expectLive(parent, slug('empty-parent'));
       await expectLive(child, slug('empty-child'));
+    });
+  });
+
+  // ─── Hidden move target (TASK-1837) ─────────────────────────────────────────────
+  // A product is public only while its OWN category is active, so moving into a hidden
+  // target takes it off the storefront. That needs the operator's explicit consent,
+  // checked under the lock against the target's state at that moment.
+
+  describe('moving into a HIDDEN target (TASK-1837)', () => {
+    const publicCount = (ids: string[]) =>
+      prisma.product.count({ where: { id: { in: ids }, ...PUBLIC_PRODUCT_WHERE } });
+
+    it('refuses without consent — nothing moved, nothing tombstoned', async () => {
+      const doomed = await makeCategory('hidden-refused', anchor, 70);
+      const hidden = await makeCategory('hidden-target-1', anchor, 71);
+      await prisma.category.update({ where: { id: hidden }, data: { isActive: false } });
+      const pDoomed = await makeProduct('p-hidden-refused', doomed);
+
+      await expect(
+        categories.deleteSubtreeWithMove(doomed, { kind: 'existing', id: hidden }),
+      ).rejects.toBeInstanceOf(CategoryMoveTargetHiddenError);
+      await expect(
+        categories.deleteSubtreeWithMove(doomed, {
+          kind: 'existing',
+          id: hidden,
+          allowHidden: false,
+        }),
+      ).rejects.toBeInstanceOf(CategoryMoveTargetHiddenError);
+
+      const row = await prisma.category.findUnique({ where: { id: doomed } });
+      expect(row).toEqual(
+        expect.objectContaining({ deletedAt: null, isActive: true, slug: slug('hidden-refused') }),
+      );
+      const [state] = await productState([pDoomed]);
+      expect(state.categoryId).toBe(doomed);
+      expect(await publicCount([pDoomed])).toBe(1);
+    });
+
+    it('moves with consent — the products keep their own flags but leave the storefront', async () => {
+      const doomed = await makeCategory('hidden-allowed', anchor, 72);
+      const hidden = await makeCategory('hidden-target-2', anchor, 73);
+      await prisma.category.update({ where: { id: hidden }, data: { isActive: false } });
+      const pOne = await makeProduct('p-hidden-allowed-1', doomed);
+      const pTwo = await makeProduct('p-hidden-allowed-2', doomed);
+      expect(await publicCount([pOne, pTwo])).toBe(2);
+
+      const result = await categories.deleteSubtreeWithMove(doomed, {
+        kind: 'existing',
+        id: hidden,
+        allowHidden: true,
+      });
+
+      expect(result.targetId).toBe(hidden);
+      expect(result.movedProducts).toBe(2);
+      const state = await productState([pOne, pTwo]);
+      for (const row of state) {
+        expect(row.categoryId).toBe(hidden);
+        expect(row.isActive).toBe(true);
+        expect(row.deletedAt).toBeNull();
+      }
+      // Exactly what the dialog warns about: on the site again only once `hidden` is shown.
+      expect(await publicCount([pOne, pTwo])).toBe(0);
+      await prisma.category.update({ where: { id: hidden }, data: { isActive: true } });
+      expect(await publicCount([pOne, pTwo])).toBe(2);
+    });
+
+    // A new target is created active: its products stay public even under a hidden
+    // parent — only the category is unreachable from the storefront menu.
+    it('needs no consent for a NEW target under a hidden parent', async () => {
+      const doomed = await makeCategory('hidden-parent-doomed', anchor, 74);
+      const hiddenParent = await makeCategory('hidden-parent', anchor, 75);
+      await prisma.category.update({ where: { id: hiddenParent }, data: { isActive: false } });
+      const pMoved = await makeProduct('p-hidden-parent', doomed);
+
+      const result = await categories.deleteSubtreeWithMove(doomed, {
+        kind: 'new',
+        name: 'del under hidden',
+        slug: slug('under-hidden'),
+        parentId: hiddenParent,
+      });
+      createdCategoryIds.push(result.targetId!);
+
+      const created = await prisma.category.findUnique({ where: { id: result.targetId! } });
+      expect(created).toEqual(expect.objectContaining({ parentId: hiddenParent, isActive: true }));
+      expect(await publicCount([pMoved])).toBe(1);
     });
   });
 
