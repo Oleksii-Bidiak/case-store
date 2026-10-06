@@ -22,8 +22,12 @@ loadEnv({ path: path.resolve(__dirname, "../apps/store-api/.env") });
  * a stdin-token Playwright script — see .design-sync/NOTES.md).
  *
  *   E2E_API_PORT=3101 E2E_CLIENT_PORT=3100 E2E_ADMIN_PORT=3102 \
- *   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/store_test_185 \
+ *   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/store_pw_185 \
  *   SCREENS_185=1 npx playwright test e2e/admin-screens-185-restore.spec.ts
+ *
+ * Use a database of its own, never the one the regular suite runs on: the
+ * products this seeds stay behind and change catalogue counts
+ * (`catalog-in-stock.spec.ts` expects exactly the e2e seed's two products).
  *
  * The committed set is webp (sharp, quality 80), converted after the run.
  *

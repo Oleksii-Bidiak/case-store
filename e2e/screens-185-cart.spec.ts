@@ -23,8 +23,12 @@ loadEnv({ path: path.resolve(__dirname, "../apps/store-api/.env") });
  * `#unavailable-1`, `#cleaned`, «ЦІЛЬ · TASK-657 — шторка кошика»).
  *
  *   E2E_API_PORT=3101 E2E_CLIENT_PORT=3100 E2E_ADMIN_PORT=3102 \
- *   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/store_test_185 \
+ *   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/store_pw_185 \
  *   SCREENS_185=1 npx playwright test e2e/screens-185-cart.spec.ts
+ *
+ * Use a database of its own, never the one the regular suite runs on: the
+ * products this seeds stay behind and change catalogue counts
+ * (`catalog-in-stock.spec.ts` expects exactly the e2e seed's two products).
  *
  * The committed set is webp (sharp, quality 80) — the PNGs this writes were
  * converted after the run, next to `<name>-mockup-{1440,390}` shots of the
