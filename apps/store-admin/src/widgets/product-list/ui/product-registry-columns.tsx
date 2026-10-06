@@ -95,16 +95,27 @@ function deletedOnText(product: AdminProductListItemEntity): string {
  * than a made-up one.
  */
 function DeletedOnCell({ product }: { product: AdminProductListItemEntity }) {
+  const deletedBy = deletedByText(product);
   return (
     <span className="flex flex-col">
       <span className="whitespace-nowrap">{deletedOnText(product)}</span>
-      {product.deletedBy ? (
-        <span className="truncate text-xs" title={product.deletedBy.name}>
-          {product.deletedBy.name}
+      {deletedBy ? (
+        <span className="truncate text-xs" title={deletedBy}>
+          {deletedBy}
         </span>
       ) : null}
     </span>
   );
+}
+
+/**
+ * Who deleted it, as the row says it: the actor's name, or «співробітник» when
+ * a person is on record without one — the API never sends another employee's
+ * email in its place. `null` when nobody is on record (no second line).
+ */
+function deletedByText(product: AdminProductListItemEntity): string | null {
+  if (!product.deletedBy) return null;
+  return product.deletedBy.name ?? d.deletedByUnnamed;
 }
 
 /** «Видалено» — red, like the artboard's `bg-dst`: the row is not live. */
@@ -388,7 +399,7 @@ function ProductCard({
           // Т12: when — and by whom — it was deleted, as on the table row.
           <span className="text-xs text-muted-foreground tabular-nums">
             {product.deletedBy
-              ? `${deletedOnText(product)} · ${product.deletedBy.name}`
+              ? `${deletedOnText(product)} · ${deletedByText(product)}`
               : deletedOnText(product)}
           </span>
         ) : null}

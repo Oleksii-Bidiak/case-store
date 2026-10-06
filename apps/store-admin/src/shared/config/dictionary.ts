@@ -905,6 +905,10 @@ export const dict = {
     // 409 PRODUCT_CATEGORY_BUSY on restore — the same lock as a save.
     restoreErrorBusy:
       "Категорії саме змінюються — спробуйте відновити ще раз за мить. Нічого не змінилося.",
+    // Who deleted it has no name on record (or the account is gone): the API
+    // keeps another employee's email to itself, so the row says who in
+    // general rather than which address.
+    deletedByUnnamed: "співробітник",
   },
 
   // TASK-360: supplier-catalogue import.

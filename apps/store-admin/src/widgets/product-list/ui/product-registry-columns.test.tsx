@@ -100,6 +100,18 @@ describe("productColumns — when and by whom it was deleted (TASK-1830, Т8)", 
     expect(screen.getByText("Олена К.")).toBeInTheDocument();
   });
 
+  // The API sends no name (never an email) for an actor without one.
+  it("says «співробітник» for an actor on record without a name", () => {
+    render(
+      <>
+        {updatedColumn(true).cell(
+          row({ deletedBy: { id: "u-9", name: null } }),
+        )}
+      </>,
+    );
+    expect(screen.getByText(d.deletedByUnnamed)).toBeInTheDocument();
+  });
+
   it("draws no actor line while the log has none", () => {
     const { container } = render(<>{updatedColumn(true).cell(row({}))}</>);
     expect(container.textContent).toBe(
