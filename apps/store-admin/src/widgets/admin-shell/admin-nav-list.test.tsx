@@ -562,4 +562,28 @@ describe("AdminNavList — wave 198 shell", () => {
       screen.queryByRole("link", { name: dict.nav.categories }),
     ).not.toBeInTheDocument();
   });
+
+  // TASK-1781: «Категорії» is also where «Видалити…» lives — a manager holding
+  // only `categories:delete` must reach it; with neither key it stays hidden.
+  it.each([["categories:delete"], ["categories:write"]])(
+    "shows «Категорії» with %s alone",
+    async (key) => {
+      mockCounters({ newOrders: 0, pendingReviews: 0 });
+      renderNav({ isOwner: false, permissions: [key] });
+      expect(
+        await screen.findByRole("link", { name: dict.nav.categories }),
+      ).toHaveAttribute("href", "/categories");
+    },
+  );
+
+  it("hides «Категорії» without either categories key", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0 });
+    renderNav({ isOwner: false, permissions: ["brands:write"] });
+    expect(
+      await screen.findByRole("link", { name: dict.nav.brands }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: dict.nav.categories }),
+    ).not.toBeInTheDocument();
+  });
 });

@@ -65,6 +65,7 @@ import { cn } from "@/shared/lib/utils";
 import {
   Badge,
   Button,
+  Callout,
   Checkbox,
   DropHintPill,
   LiveAnnouncer,
@@ -273,8 +274,15 @@ function CategoryTreeView() {
   // TASK-655: the row whose delete dialog is open. The «Видалити…» item and
   // the dialog exist only for a session holding `categories:delete` — `can()`
   // answers false until the permissions have arrived, so nothing flashes in.
-  const { can } = useAuth();
+  const { can, arePermissionsLoading } = useAuth();
   const canDelete = can(PERM.categoriesDelete);
+  // TASK-1781: `categories:delete` alone reaches this screen too (it is where
+  // «Видалити…» lives), but writes nothing else — so every move, the
+  // selection and bulk bar and the status toggle exist only with
+  // `categories:write`. `can()` is false while the grants load: nothing
+  // flashes in that a 403 would then take away.
+  const canWrite = can(PERM.categoriesWrite);
+  const readOnlyNotice = !arePermissionsLoading && !canWrite;
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const focusRow = useCallback((id: string) => {
@@ -726,6 +734,7 @@ function CategoryTreeView() {
   /** Mode-free `Alt+Shift+arrow` accelerator: apply + commit in one keystroke. */
   const runAccelerator = useCallback(
     (movingId: string, intent: MoveIntent) => {
+      if (!canWrite) return;
       if (isLocked) {
         announcePolite(a.searchLocked);
         return;
@@ -743,6 +752,7 @@ function CategoryTreeView() {
     },
     [
       announcePolite,
+      canWrite,
       commitMove,
       expandedIds,
       isLocked,
@@ -753,6 +763,7 @@ function CategoryTreeView() {
 
   const pickUp = useCallback(
     (movingId: string) => {
+      if (!canWrite) return;
       if (isLocked) {
         announcePolite(a.searchLocked);
         return;
@@ -777,7 +788,7 @@ function CategoryTreeView() {
         );
       }
     },
-    [announcePolite, isLocked, reorder.isPending, reorder.items],
+    [announcePolite, canWrite, isLocked, reorder.isPending, reorder.items],
   );
 
   const stepMove = useCallback(
@@ -958,6 +969,7 @@ function CategoryTreeView() {
       // are matched below).
       if (ctrlKey && !altKey && key === " ") {
         event.preventDefault();
+        if (!canWrite) return;
         const row = rows.find((r) => r.item.id === id);
         if (row) toggleSelected(id, row.item.label);
         return;
@@ -969,7 +981,7 @@ function CategoryTreeView() {
         (key === "ArrowUp" || key === "ArrowDown")
       ) {
         event.preventDefault();
-        extendSelection(id, key === "ArrowDown" ? 1 : -1);
+        if (canWrite) extendSelection(id, key === "ArrowDown" ? 1 : -1);
         return;
       }
 
@@ -1054,6 +1066,7 @@ function CategoryTreeView() {
     },
     [
       announcePolite,
+      canWrite,
       cancelMove,
       collapseRow,
       commitMoveMode,
@@ -1128,6 +1141,7 @@ function CategoryTreeView() {
         onFocusRow={() => setFocusedId(row.item.id)}
         onMoveTo={setMoveToId}
         onDelete={canDelete ? setDeleteId : undefined}
+        canWrite={canWrite}
         registerRef={(node) => {
           rowRefs.current.set(row.item.id, node);
           props.setNodeRef(node);
@@ -1182,11 +1196,13 @@ function CategoryTreeView() {
               no focus and expires, and the commit announcement names this
               button — but as a quiet icon rather than a faded text button.
             */}
-            <CategoryReorderUndoButton
-              canUndo={reorder.canUndo}
-              onUndo={reorder.undo}
-              iconOnly
-            />
+            {canWrite ? (
+              <CategoryReorderUndoButton
+                canUndo={reorder.canUndo}
+                onUndo={reorder.undo}
+                iconOnly
+              />
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -1205,29 +1221,38 @@ function CategoryTreeView() {
         </div>
       </div>
 
-      {isLocked && (
+      {readOnlyNotice ? (
+        <Callout variant="muted">{dict.categories.readOnly.treeNotice}</Callout>
+      ) : null}
+
+      {isLocked && canWrite && (
         <p className="text-sm text-muted-foreground">{t.searchLockedHint}</p>
       )}
 
-      <CategoryBulkActionsBar
-        selectedCount={selectedIds.size}
-        isPending={bulk.isPending}
-        onActivate={() => bulk.setStatus([...selectedIds], true)}
-        onDeactivate={() => bulk.setStatus([...selectedIds], false)}
-        onClear={() => {
-          clearSelection();
-          announcePolite(b.announce.cleared);
-        }}
-      />
-      {/* TASK-812: the bulk-deactivate AlertDialog (portalled to <body>). */}
-      {bulk.confirmDialog}
+      {canWrite ? (
+        <>
+          <CategoryBulkActionsBar
+            selectedCount={selectedIds.size}
+            isPending={bulk.isPending}
+            onActivate={() => bulk.setStatus([...selectedIds], true)}
+            onDeactivate={() => bulk.setStatus([...selectedIds], false)}
+            onClear={() => {
+              clearSelection();
+              announcePolite(b.announce.cleared);
+            }}
+          />
+          {/* TASK-812: the bulk-deactivate AlertDialog (portalled to <body>). */}
+          {bulk.confirmDialog}
 
-      <div id={INSTRUCTIONS_LONG_ID} className="sr-only">
-        {dict.reorderTree.instructionsLong}
-      </div>
-      <div id={INSTRUCTIONS_SHORT_ID} className="sr-only">
-        {dict.reorderTree.instructionsShort}
-      </div>
+          {/* The move instructions describe what only a writer can do. */}
+          <div id={INSTRUCTIONS_LONG_ID} className="sr-only">
+            {dict.reorderTree.instructionsLong}
+          </div>
+          <div id={INSTRUCTIONS_SHORT_ID} className="sr-only">
+            {dict.reorderTree.instructionsShort}
+          </div>
+        </>
+      ) : null}
 
       {query.isLoading ? (
         <AdminCategoryTreeSkeleton />
@@ -1244,21 +1269,23 @@ function CategoryTreeView() {
           <Table
             role="treegrid"
             aria-label={t.label}
-            aria-describedby={INSTRUCTIONS_LONG_ID}
+            aria-describedby={canWrite ? INSTRUCTIONS_LONG_ID : undefined}
             aria-busy={reorder.isPending || bulk.isPending}
-            aria-multiselectable="true"
+            aria-multiselectable={canWrite ? "true" : undefined}
           >
             <TableHeader>
               <TableRow>
-                <TableHead className="w-10 max-md:px-3">
-                  <Checkbox
-                    checked={headerChecked}
-                    onCheckedChange={toggleSelectAll}
-                    disabled={bulk.isPending}
-                    aria-label={b.selectAll}
-                  />
-                  <span className="sr-only">{b.colSelect}</span>
-                </TableHead>
+                {canWrite ? (
+                  <TableHead className="w-10 max-md:px-3">
+                    <Checkbox
+                      checked={headerChecked}
+                      onCheckedChange={toggleSelectAll}
+                      disabled={bulk.isPending}
+                      aria-label={b.selectAll}
+                    />
+                    <span className="sr-only">{b.colSelect}</span>
+                  </TableHead>
+                ) : null}
                 <TableHead className="max-md:px-2">
                   {dict.categories.colName}
                 </TableHead>
@@ -1284,11 +1311,21 @@ function CategoryTreeView() {
               <SortableTree
                 items={rows.map((r) => ({
                   ...r.item,
-                  disabled: isLocked || reorder.isPending || moveState !== null,
+                  disabled:
+                    !canWrite ||
+                    isLocked ||
+                    reorder.isPending ||
+                    moveState !== null,
                 }))}
                 maxDepth={MAX_TREE_LEVELS}
-                disabled={isLocked || reorder.isPending || moveState !== null}
-                lineInset={LINE_INSET_PX}
+                disabled={
+                  !canWrite ||
+                  isLocked ||
+                  reorder.isPending ||
+                  moveState !== null
+                }
+                // Without the selection column the line starts at the name.
+                lineInset={canWrite ? LINE_INSET_PX : 0}
                 renderRow={renderRow}
                 onMove={handlePointerMove}
                 announcements={pointerAnnouncements(items)}
@@ -1367,6 +1404,11 @@ interface CategoryTreeRowProps {
   onMoveTo: (id: string) => void;
   /** `undefined` without `categories:delete` — the menu has no «Видалити…». */
   onDelete?: (id: string) => void;
+  /**
+   * `categories:write` (TASK-1781): without it the row has no checkbox, no
+   * grip and no status toggle — only the menu with «Відкрити» / «Видалити…».
+   */
+  canWrite: boolean;
   registerRef: (node: HTMLTableRowElement | null) => void;
   style: React.CSSProperties;
   handleProps: SortableTreeRowRenderProps["handleProps"];
@@ -1406,6 +1448,7 @@ function CategoryTreeRow({
   onFocusRow,
   onMoveTo,
   onDelete,
+  canWrite,
   registerRef,
   style,
   handleProps,
@@ -1445,13 +1488,13 @@ function CategoryTreeRow({
       ref={registerRef}
       id={`cat-row-${id}`}
       role="row"
-      aria-describedby={INSTRUCTIONS_SHORT_ID}
+      aria-describedby={canWrite ? INSTRUCTIONS_SHORT_ID : undefined}
       aria-level={level}
       aria-posinset={posinset}
       aria-setsize={setsize}
       {...(ariaExpanded === undefined ? {} : { "aria-expanded": ariaExpanded })}
       {...(illegal ? { "aria-disabled": true } : {})}
-      aria-selected={selected}
+      aria-selected={canWrite ? selected : undefined}
       tabIndex={isOwner ? 0 : -1}
       data-grabbed={grabbed}
       data-conflict={conflict || undefined}
@@ -1472,18 +1515,20 @@ function CategoryTreeRow({
                 : undefined
       }
     >
-      <TableCell role="gridcell" className="w-10 max-md:px-3">
-        {/* Owns its own `Space` (Radix), which the row's keydown handler ignores
-            because `event.target !== event.currentTarget` — so picking a row up
-            still works from the row itself. */}
-        <Checkbox
-          checked={selected}
-          onCheckedChange={onToggleSelect}
-          disabled={selectDisabled}
-          tabIndex={controlTabIndex}
-          aria-label={b.selectRow(name)}
-        />
-      </TableCell>
+      {canWrite ? (
+        <TableCell role="gridcell" className="w-10 max-md:px-3">
+          {/* Owns its own `Space` (Radix), which the row's keydown handler
+              ignores because `event.target !== event.currentTarget` — so
+              picking a row up still works from the row itself. */}
+          <Checkbox
+            checked={selected}
+            onCheckedChange={onToggleSelect}
+            disabled={selectDisabled}
+            tabIndex={controlTabIndex}
+            aria-label={b.selectRow(name)}
+          />
+        </TableCell>
+      ) : null}
       <TableCell
         role="gridcell"
         className="max-md:px-2 max-md:whitespace-normal"
@@ -1493,16 +1538,18 @@ function CategoryTreeRow({
           style={{ paddingInlineStart: (level - 1) * INDENT_PX }}
         >
           {/* КТ1: the grip leads, the twisty follows it. */}
-          <button
-            type="button"
-            {...handleProps}
-            tabIndex={controlTabIndex}
-            aria-label={dict.reorderTree.handleLabel(name)}
-            aria-disabled={locked || undefined}
-            className="inline-flex size-6 min-h-11 min-w-11 shrink-0 cursor-grab items-center justify-center text-muted-foreground md:min-h-0 md:min-w-0"
-          >
-            <GripVertical aria-hidden="true" className="size-4" />
-          </button>
+          {canWrite ? (
+            <button
+              type="button"
+              {...handleProps}
+              tabIndex={controlTabIndex}
+              aria-label={dict.reorderTree.handleLabel(name)}
+              aria-disabled={locked || undefined}
+              className="inline-flex size-6 min-h-11 min-w-11 shrink-0 cursor-grab items-center justify-center text-muted-foreground md:min-h-0 md:min-w-0"
+            >
+              <GripVertical aria-hidden="true" className="size-4" />
+            </button>
+          ) : null}
           {ariaExpanded === undefined ? (
             <span aria-hidden="true" className="inline-block size-6 shrink-0" />
           ) : (
@@ -1569,25 +1616,31 @@ function CategoryTreeRow({
       </TableCell>
       <TableCell role="gridcell" hideOnMobile>
         <div className="flex items-center gap-2">
-          <Button
-            ref={statusRef}
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="px-1"
-            tabIndex={controlTabIndex}
-            onClick={toggleStatus}
-            disabled={statusPending}
-            aria-label={
-              isActive
-                ? dict.statusToggle.categoryDeactivate
-                : dict.statusToggle.categoryActivate
-            }
-          >
+          {canWrite ? (
+            <Button
+              ref={statusRef}
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="px-1"
+              tabIndex={controlTabIndex}
+              onClick={toggleStatus}
+              disabled={statusPending}
+              aria-label={
+                isActive
+                  ? dict.statusToggle.categoryDeactivate
+                  : dict.statusToggle.categoryActivate
+              }
+            >
+              <Badge variant={shown ? "default" : "secondary"}>
+                {statusLabel}
+              </Badge>
+            </Button>
+          ) : (
             <Badge variant={shown ? "default" : "secondary"}>
               {statusLabel}
             </Badge>
-          </Button>
+          )}
           {/*
             Outside the toggle button on purpose: it is a statement about an
             ANCESTOR, not something this row's control can change.
@@ -1618,6 +1671,7 @@ function CategoryTreeRow({
             onMoveTo={onMoveTo}
             onToggleStatus={toggleStatus}
             onDelete={onDelete}
+            canWrite={canWrite}
           />
         </span>
       </TableCell>

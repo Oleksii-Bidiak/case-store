@@ -32,17 +32,20 @@ jest.mock("@/shared/ui/toast", () => ({
 const CATEGORY_ID = "11111111-1111-4111-8111-111111111111";
 const CHILD_ID = "22222222-2222-4222-8222-222222222222";
 
-function makeCategory(isActive: boolean) {
+function makeCategory(
+  isActive: boolean,
+  texts: { description?: string; metaTitle?: string } = {},
+) {
   return {
     id: CATEGORY_ID,
     name: "Чохли",
     slug: "chohly",
-    description: null,
+    description: texts.description ?? null,
     image: null,
     parentId: null,
     isActive,
     sortOrder: 0,
-    metaTitle: null,
+    metaTitle: texts.metaTitle ?? null,
     metaDescription: null,
     createdAt: "2026-06-01T09:00:00.000Z",
     updatedAt: "2026-06-01T09:00:00.000Z",
@@ -174,6 +177,8 @@ function stubCategory(
   return { calls, putCalls, addonCalls };
 }
 
+const WRITER = { permissions: ["categories:write"] };
+
 async function renderAndWaitForForm(
   category: ReturnType<typeof makeCategory>,
   options?: Parameters<typeof stubCategory>[1],
@@ -182,7 +187,8 @@ async function renderAndWaitForForm(
   const stubs = stubCategory(category, options);
   const { queryClient } = renderWithProviders(
     <EditCategoryView categoryId={CATEGORY_ID} />,
-    { auth },
+    // The form is the editor's — `categories:write` (TASK-1781).
+    { auth: auth ?? WRITER },
   );
   await waitFor(() =>
     expect(screen.getByLabelText(dict.categoryForm.slug)).toHaveValue(
@@ -419,7 +425,7 @@ describe("EditCategoryView — «Видалити…» on the card (TASK-655, Д
   const dd = dict.categories.delete;
 
   it("has no delete button without categories:delete", async () => {
-    // Default session: signed in, holding no key.
+    // A writer who may not delete.
     await renderAndWaitForForm(makeCategory(true));
 
     expect(
@@ -442,7 +448,7 @@ describe("EditCategoryView — «Видалити…» on the card (TASK-655, Д
       ),
     );
     await renderAndWaitForForm(makeCategory(true), undefined, {
-      permissions: ["categories:delete"],
+      permissions: ["categories:write", "categories:delete"],
     });
 
     await userEvent.click(screen.getByRole("button", { name: dd.action }));
@@ -457,5 +463,68 @@ describe("EditCategoryView — «Видалити…» on the card (TASK-655, Д
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/categories"));
     expect(bodies).toEqual([{}]);
     expect(toast.success).toHaveBeenCalledWith(dd.toastDone("Чохли"));
+  });
+});
+
+describe("EditCategoryView — categories:delete without categories:write (TASK-1781)", () => {
+  const ro = dict.categories.readOnly;
+
+  function renderDeleteOnly() {
+    const reads: string[] = [];
+    stubCategory(
+      makeCategory(true, {
+        description: "Чохли для смартфонів",
+        metaTitle: "Чохли — магазин",
+      }),
+    );
+    // The editor-only sections must not even be asked for.
+    server.use(
+      http.get(`*/api/categories/${CATEGORY_ID}/attribute-definitions`, () => {
+        reads.push("attributes");
+        return HttpResponse.json({ data: [] });
+      }),
+      http.get("*/api/addon-services/templates/category/:categoryId", () => {
+        reads.push("addons");
+        return HttpResponse.json({ data: { addonServiceIds: [] } });
+      }),
+    );
+    renderWithProviders(<EditCategoryView categoryId={CATEGORY_ID} />, {
+      auth: { permissions: ["categories:delete"] },
+    });
+    return { reads };
+  }
+
+  it("shows the card read-only — no form, no «Зберегти», one plain notice", async () => {
+    const { reads } = renderDeleteOnly();
+
+    expect(await screen.findByText(ro.cardNotice)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.common.save }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(dict.categoryForm.slug),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+
+    // What the category is, as definitions.
+    const term = (label: string) =>
+      screen.getByText(label, { selector: "dt" }).nextElementSibling;
+    expect(term(ro.fieldName)).toHaveTextContent("Чохли");
+    expect(term(ro.fieldAddress)).toHaveTextContent("/categories/chohly");
+    expect(term(ro.fieldParent)).toHaveTextContent(ro.fieldParentRoot);
+    expect(term(ro.fieldDescription)).toHaveTextContent("Чохли для смартфонів");
+    expect(term(ro.fieldMetaTitle)).toHaveTextContent("Чохли — магазин");
+    expect(term(ro.fieldMetaDescription)).toHaveTextContent(ro.empty);
+
+    expect(reads).toEqual([]);
+  });
+
+  it("keeps «Видалити» in the header", async () => {
+    renderDeleteOnly();
+    expect(
+      await screen.findByRole("button", {
+        name: dict.categories.delete.action,
+      }),
+    ).toBeInTheDocument();
   });
 });

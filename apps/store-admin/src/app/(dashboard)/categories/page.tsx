@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { AdminCategoryTree, AdminCategoryTreeSkeleton } from "@/widgets";
+import { PERM } from "@/entities/permission";
+import { PermissionGate } from "@/entities/session";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
@@ -26,9 +28,13 @@ export default function CategoriesPage() {
         <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
           {dict.categories.heading}
         </h2>
-        <Button asChild>
-          <Link href="/categories/new">{dict.categories.add}</Link>
-        </Button>
+        {/* TASK-1781: `categories:delete` alone reaches this page too — the
+            create button is for the writer only (the API answers 403). */}
+        <PermissionGate permission={PERM.categoriesWrite} fallback={null}>
+          <Button asChild>
+            <Link href="/categories/new">{dict.categories.add}</Link>
+          </Button>
+        </PermissionGate>
       </div>
 
       {/* TASK-291 (§3.11): the drag-and-drop treegrid replaces the flat table —

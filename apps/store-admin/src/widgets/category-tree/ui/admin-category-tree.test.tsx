@@ -180,8 +180,13 @@ const polite = () => screen.getByTestId("tree-live-polite").textContent ?? "";
 const assertive = () =>
   screen.getByTestId("tree-live-assertive").textContent ?? "";
 
+/** The tree's editor (TASK-1781): every move and toggle needs this key. */
+const WRITER = { permissions: ["categories:write"] };
+
 async function renderTree(auth?: RenderWithProvidersOptions["auth"]) {
-  const result = renderWithProviders(<AdminCategoryTree />, { auth });
+  const result = renderWithProviders(<AdminCategoryTree />, {
+    auth: auth ?? WRITER,
+  });
   await screen.findByRole("treegrid");
   await waitFor(() => expect(dataRows().length).toBeGreaterThan(0));
   return result;
@@ -1699,8 +1704,11 @@ describe("AdminCategoryTree — delete (TASK-655)", () => {
   async function openMenu(id: string) {
     rowEl(id).focus();
     fireEvent.keyDown(rowEl(id), { key: "F10", shiftKey: true });
+    // «Відкрити» / «Редагувати» is in every menu, writer or not.
     await screen.findByRole("menuitem", {
-      name: dict.categories.tree.moveUp,
+      name: new RegExp(
+        `^(${dict.categories.tree.edit}|${dict.categories.readOnly.open})$`,
+      ),
     });
   }
 
@@ -1779,5 +1787,85 @@ describe("AdminCategoryTree — delete (TASK-655)", () => {
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
     );
     expect(document.querySelector("[data-doomed]")).toBeNull();
+  });
+});
+
+/* ─────────── categories:delete without categories:write (TASK-1781) ─────────── */
+
+describe("AdminCategoryTree — delete-only manager (TASK-1781)", () => {
+  const ro = dict.categories.readOnly;
+  const tt = dict.categories.tree;
+  const DELETE_ONLY = { permissions: ["categories:delete"] };
+
+  it("reads the tree with no write control — no selection, grip, toggle or undo", async () => {
+    mockReorder();
+    await renderTree(DELETE_ONLY);
+
+    expect(screen.getByText(ro.treeNotice)).toBeInTheDocument();
+    const grid = screen.getByRole("treegrid");
+    expect(grid).not.toHaveAttribute("aria-multiselectable");
+    expect(within(grid).queryAllByRole("checkbox")).toHaveLength(0);
+    expect(
+      screen.queryByRole("button", {
+        name: dict.reorderTree.handleLabel("Чохли"),
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: dict.statusToggle.categoryDeactivate,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: tt.undo }),
+    ).not.toBeInTheDocument();
+    // The status is still said — as a plain badge.
+    expect(
+      within(rowEl(A1)).getAllByText(tt.statusShown).length,
+    ).toBeGreaterThan(0);
+    for (const row of dataRows()) {
+      expect(row).not.toHaveAttribute("aria-selected");
+    }
+  });
+
+  it("Space does not pick a row up and Ctrl+Space does not select it", async () => {
+    mockReorder();
+    await renderTree(DELETE_ONLY);
+
+    rowEl(A1).focus();
+    fireEvent.keyDown(rowEl(A1), { key: " " });
+    expect(rowEl(A1)).toHaveAttribute("data-grabbed", "false");
+    fireEvent.keyDown(rowEl(A1), { key: " ", ctrlKey: true });
+    fireEvent.keyDown(rowEl(A1), {
+      key: "ArrowDown",
+      altKey: true,
+      shiftKey: true,
+    });
+    expect(rowEl(A1)).not.toHaveAttribute("aria-selected");
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("«⋯» offers only «Відкрити» and «Видалити…»", async () => {
+    mockReorder();
+    await renderTree(DELETE_ONLY);
+
+    rowEl(A1).focus();
+    fireEvent.keyDown(rowEl(A1), { key: "F10", shiftKey: true });
+    await screen.findByRole("menuitem", { name: ro.open });
+    expect(
+      screen.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual([ro.open, dict.categories.delete.action]);
+    expect(screen.getByRole("menuitem", { name: ro.open })).toHaveAttribute(
+      "href",
+      `/categories/${A1}/edit`,
+    );
+  });
+
+  it("a writer gets no read-only notice", async () => {
+    mockReorder();
+    await renderTree();
+    expect(screen.queryByText(ro.treeNotice)).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("treegrid")).getAllByRole("checkbox").length,
+    ).toBeGreaterThan(0);
   });
 });

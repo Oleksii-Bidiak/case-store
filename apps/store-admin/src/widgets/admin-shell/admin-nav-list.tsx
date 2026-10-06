@@ -74,6 +74,13 @@ interface NavItem {
    */
   permission?: string | string[];
   /**
+   * Visible with ANY of these (TASK-1781) — for a section that serves two
+   * independent grants. «Категорії» is the editor's screen and also the only
+   * way to reach «Видалити…», so `categories:delete` alone must lead there; the
+   * screen itself keeps every write control behind `categories:write`.
+   */
+  anyPermission?: readonly string[];
+  /**
    * Visible to the ONE account that owns the shop, and not to a deputy admin
    * (TASK-475). Unused today — nothing in the nav is part of the owner's reserve
    * yet — and kept because ownership transfer (TASK-478) is. Do not reach for it
@@ -115,7 +122,7 @@ const navItems: readonly NavItem[] = [
     label: dict.nav.categories,
     href: "/categories",
     icon: Tag,
-    permission: PERM.categoriesWrite,
+    anyPermission: [PERM.categoriesWrite, PERM.categoriesDelete],
   },
   {
     label: dict.nav.brands,
@@ -376,6 +383,7 @@ export function AdminNavList({ onNavigate }: AdminNavListProps) {
 
   const isVisible = (item: NavItem): boolean => {
     if (item.ownerOnly) return isOwner;
+    if (item.anyPermission) return item.anyPermission.some(can);
     if (item.permission === undefined) return true;
     return Array.isArray(item.permission)
       ? canAll(item.permission)

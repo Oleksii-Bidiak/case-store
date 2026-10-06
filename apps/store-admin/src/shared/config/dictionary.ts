@@ -1596,6 +1596,31 @@ export const dict = {
       toastHiddenCarousels: (target: string, carousels: number) =>
         `${countLabel(carousels, ["карусель", "каруселі", "каруселей"])} головної ${pluralUk(carousels, ["порожня", "порожні", "порожні"])}, доки ви не покажете «${target}».`,
     },
+    // ── лише перегляд: право видаляти без права «Категорії» (TASK-1781) ──
+    // `categories:delete` reads the tree and the card (the API half of
+    // TASK-655) but writes nothing else, so those screens show no control
+    // whose only answer would be a 403 — and say so once, plainly.
+    readOnly: {
+      treeNotice:
+        "Ви можете переглядати категорії й видаляти їх. Створювати, переміщати, показувати й приховувати категорії може працівник із правом «Категорії».",
+      cardNotice:
+        "Ви можете переглянути цю категорію й видалити її. Змінювати категорії може працівник із правом «Категорії».",
+      open: "Відкрити",
+      sectionMain: "Основне",
+      sectionSeo: "SEO",
+      fieldName: "Назва",
+      fieldAddress: "Адреса",
+      fieldParent: "Батьківська категорія",
+      fieldParentRoot: "— (корінь каталогу)",
+      fieldDescription: "Опис",
+      fieldMetaTitle: "Meta title",
+      fieldMetaDescription: "Meta description",
+      empty: "—",
+      // /categories/new typed by hand without the right.
+      createForbidden: "Створювати категорії ви не можете.",
+      createForbiddenHint:
+        "Це може працівник із правом «Категорії» — попросіть власника.",
+    },
   },
 
   categoryForm: {
