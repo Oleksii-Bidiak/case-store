@@ -5042,6 +5042,9 @@ export const dict = {
       searchSynonyms: "Синоніми пошуку",
       // TASK-675: /admin/notifications/telegram/* → `notification.*`.
       notification: "Сповіщення",
+      // TASK-645: /admin/pickup-points/* → `pickupPoints.*`. Its own label, not a
+      // fold into `delivery`: a point edit is a different event from a switch flip.
+      pickupPoints: "Точки самовивозу",
     },
 
     // ── TASK-430: the log in Ukrainian ────────────────────────────────────────
