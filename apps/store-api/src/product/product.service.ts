@@ -946,6 +946,10 @@ export class ProductService {
    * stays deleted. The same mapping covers the race where the slot is taken between
    * this check and the write (P2002 → {@link ProductRestoreConflictError}).
    *
+   * Restored onto a NEW slug, the native address and the product's own old aliases
+   * redirect (301) to it — written by the repository in the restore's transaction
+   * (TASK-1828), except a native address another live product now holds.
+   *
    * Throws NotFoundException when no TOMBSTONE has this id (a live product included),
    * and BadRequestException when its category is gone (TASK-653 invariant).
    */
@@ -981,7 +985,7 @@ export class ProductService {
     }
 
     const restored = await this.productRepository
-      .restore(id, slug, sku)
+      .restore(id, slug, sku, nativeSlug)
       .catch((error: unknown) => this.rethrowRestoreRace(error, slug, sku));
 
     // Same side effects as delete(), in reverse: lists change (the product is back in
@@ -989,6 +993,10 @@ export class ProductService {
     // cached 404, and the search index is re-synced (inactive → removed).
     await this.invalidateProductLists();
     await this.evictProductDetail(id, restored.slug);
+    if (restored.slug !== nativeSlug) {
+      // The native address may now redirect (TASK-1828) — drop whatever it cached.
+      await this.cache.del(productDetailSlugKey(nativeSlug));
+    }
     await this.syncSearchIndex(restored);
 
     return ProductEntity.fromPrisma({

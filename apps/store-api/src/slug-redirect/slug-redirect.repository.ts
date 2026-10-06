@@ -104,4 +104,55 @@ export class SlugRedirectRepository {
       },
     });
   }
+
+  /**
+   * Re-home the addresses of an entity RESTORED from a tombstone onto a NEW slug
+   * (TASK-1828) — {@link recordRename} adapted to an address the entity gave up when it
+   * was deleted, and which someone else may have taken since. Bare slugs (empty scope)
+   * only: the one caller is the product restore.
+   *
+   * While the entity was deleted its native address `from` was free: another entity may
+   * have been created on it, renamed into it (adding its own aliases `x → from`) or
+   * renamed away from it (repointing every `x → from`, ours included, and adding
+   * `from → y`). So, against the caller's `tx`:
+   *
+   * 1. Repoint OUR aliases — rows targeting `from` last written at or before
+   *    `deletedAt`. Until then `from` was ours, so every row targeting it was our
+   *    history; a row written later belongs to whoever held `from` afterwards and is
+   *    left alone.
+   * 2. Record `from → to` only when `redirectFrom` (the caller found no live entity on
+   *    `from`) and no row for `from` exists yet — an existing one was written after our
+   *    delete by a later holder renaming away, and is theirs.
+   * 3. Drop the self-loop `to → to` step 1 can produce (restoring onto an old alias).
+   *
+   * Writes nothing when the address does not change.
+   */
+  async recordRestoreRename(
+    tx: Prisma.TransactionClient,
+    entity: SlugRedirectEntity,
+    from: string,
+    to: string,
+    { deletedAt, redirectFrom }: { deletedAt: Date; redirectFrom: boolean },
+  ): Promise<void> {
+    if (from === to) return;
+
+    // Step 1: our own aliases follow us to the new address.
+    await tx.slugRedirect.updateMany({
+      where: { entity, newScope: '', newSlug: from, updatedAt: { lte: deletedAt } },
+      data: { newScope: '', newSlug: to },
+    });
+
+    // Step 2: the native address itself, unless it now belongs to someone else.
+    if (redirectFrom) {
+      await tx.slugRedirect.createMany({
+        data: [{ entity, scope: '', oldSlug: from, newScope: '', newSlug: to }],
+        skipDuplicates: true,
+      });
+    }
+
+    // Step 3: remove the self-loop step 1 may have produced.
+    await tx.slugRedirect.deleteMany({
+      where: { entity, scope: '', oldSlug: to, newScope: '', newSlug: to },
+    });
+  }
 }

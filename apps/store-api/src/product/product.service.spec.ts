@@ -2226,6 +2226,7 @@ describe('ProductService', () => {
         mockProduct.id,
         mockProduct.slug,
         mockProduct.sku,
+        mockProduct.slug,
       );
       expect(productRepositoryMock.findBySlug).toHaveBeenCalledWith(mockProduct.slug);
       expect(productRepositoryMock.findBySku).toHaveBeenCalledWith(mockProduct.sku);
@@ -2255,6 +2256,7 @@ describe('ProductService', () => {
         mockProduct.id,
         mockProduct.slug,
         'IP15:CLR:01',
+        mockProduct.slug,
       );
     });
 
@@ -2268,6 +2270,7 @@ describe('ProductService', () => {
         mockProduct.id,
         mockProduct.slug,
         null,
+        mockProduct.slug,
       );
     });
 
@@ -2317,8 +2320,28 @@ describe('ProductService', () => {
         mockProduct.id,
         'clear-case-2',
         mockProduct.sku,
+        mockProduct.slug,
       );
       expect(result.slug).toBe('clear-case-2');
+    });
+
+    // TASK-1828: the repository re-homes the native address — the service hands it the
+    // native slug and drops whatever the native address had cached.
+    it('passes the native slug on and evicts its detail cache when restoring on a new slug', async () => {
+      productRepositoryMock.findBySlug.mockImplementation((slug: string) =>
+        Promise.resolve(slug === mockProduct.slug ? liveHolder : null),
+      );
+
+      await service.restore(mockProduct.id, { slug: 'clear-case-2' });
+
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        mockProduct.id,
+        'clear-case-2',
+        mockProduct.sku,
+        mockProduct.slug,
+      );
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey(mockProduct.slug));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey('clear-case-2'));
     });
 
     it('restores on an override sku', async () => {
@@ -2328,6 +2351,7 @@ describe('ProductService', () => {
         mockProduct.id,
         mockProduct.slug,
         'IP15-NEW',
+        mockProduct.slug,
       );
     });
 

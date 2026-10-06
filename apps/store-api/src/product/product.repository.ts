@@ -1565,25 +1565,56 @@ export class ProductRepository {
    * with the rest of the subtree. A deleted category throws
    * {@link ProductCategoryGoneError} and nothing is written. The lock is the shared one
    * every category-filing product write takes ({@link ProductRepository.lockLiveCategory}).
+   *
+   * Coming back on a slug other than its native one (`nativeSlug`, the address it was
+   * deleted from — TASK-1828), the old links follow it, in the same transaction:
+   * `SlugRedirectRepository.recordRestoreRename` repoints the product's own aliases and
+   * records `native → new` — unless another live product now lives on the native
+   * address, which is then that product's and gets no redirect. Recorded although the
+   * product comes back hidden: the redirect is what makes the old links work the moment
+   * it is published again (until then the new address 404s like any hidden product).
    */
-  async restore(id: string, slug: string, sku: string | null): Promise<Product> {
+  async restore(
+    id: string,
+    slug: string,
+    sku: string | null,
+    nativeSlug: string = slug,
+  ): Promise<Product> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.lockCategoryTree(tx);
 
         const tombstone = await tx.product.findFirst({
           where: { id, deletedAt: { not: null } },
-          select: { categoryId: true },
+          select: { categoryId: true, deletedAt: true },
         });
         // No tombstone: let the guarded update below answer P2025 → 404, as before.
         if (tombstone) {
           await this.assertCategoryLive(tx, tombstone.categoryId);
         }
 
-        return tx.product.update({
+        const restored = await tx.product.update({
           where: { id, deletedAt: { not: null } },
           data: { deletedAt: null, isActive: false, slug, sku },
         });
+
+        if (tombstone?.deletedAt && nativeSlug !== slug) {
+          // The restored row now holds `slug`, so any live holder of the native
+          // address is another product.
+          const nativeHolder = await tx.product.findFirst({
+            where: { slug: nativeSlug, deletedAt: null },
+            select: { id: true },
+          });
+          await this.slugRedirectRepository.recordRestoreRename(
+            tx,
+            SlugRedirectEntity.PRODUCT,
+            nativeSlug,
+            slug,
+            { deletedAt: tombstone.deletedAt, redirectFrom: nativeHolder === null },
+          );
+        }
+
+        return restored;
       }, CATEGORY_WRITE_TX_OPTIONS);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

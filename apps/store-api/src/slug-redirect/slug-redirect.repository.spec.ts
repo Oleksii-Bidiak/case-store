@@ -236,4 +236,85 @@ describe('SlugRedirectRepository', () => {
       expect(mockPrisma.slugRedirect.findUnique).not.toHaveBeenCalled();
     });
   });
+
+  // ─── recordRestoreRename (TASK-1828) ─────────────────────────────────────────
+
+  describe('recordRestoreRename', () => {
+    const deletedAt = new Date('2026-09-01T10:00:00.000Z');
+
+    const makeRestoreTx = () => {
+      const made = makeTx();
+      const createMany = jest.fn().mockImplementation(() => {
+        made.calls.push('createMany');
+        return Promise.resolve({ count: 1 });
+      });
+      Object.assign(made.raw.slugRedirect, { createMany });
+      return { ...made, createMany };
+    };
+
+    it('repoints only the aliases written while the native address was ours, then N → M, then the self-loop', async () => {
+      const { tx, raw, calls, createMany } = makeRestoreTx();
+
+      await repository.recordRestoreRename(tx, SlugRedirectEntity.PRODUCT, 'native', 'fresh', {
+        deletedAt,
+        redirectFrom: true,
+      });
+
+      expect(calls).toEqual(['updateMany', 'createMany', 'deleteMany']);
+      expect(raw.slugRedirect.updateMany).toHaveBeenCalledWith({
+        where: {
+          entity: SlugRedirectEntity.PRODUCT,
+          newScope: '',
+          newSlug: 'native',
+          updatedAt: { lte: deletedAt },
+        },
+        data: { newScope: '', newSlug: 'fresh' },
+      });
+      // Insert-only: a row a later holder of the native address wrote is theirs.
+      expect(createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            entity: SlugRedirectEntity.PRODUCT,
+            scope: '',
+            oldSlug: 'native',
+            newScope: '',
+            newSlug: 'fresh',
+          },
+        ],
+        skipDuplicates: true,
+      });
+      expect(raw.slugRedirect.deleteMany).toHaveBeenCalledWith({
+        where: {
+          entity: SlugRedirectEntity.PRODUCT,
+          scope: '',
+          oldSlug: 'fresh',
+          newScope: '',
+          newSlug: 'fresh',
+        },
+      });
+      expect(raw.slugRedirect.upsert).not.toHaveBeenCalled();
+    });
+
+    it('does not redirect a native address someone else now lives on', async () => {
+      const { tx, calls } = makeRestoreTx();
+
+      await repository.recordRestoreRename(tx, SlugRedirectEntity.PRODUCT, 'native', 'fresh', {
+        deletedAt,
+        redirectFrom: false,
+      });
+
+      expect(calls).toEqual(['updateMany', 'deleteMany']);
+    });
+
+    it('writes nothing when the product comes back on its native address', async () => {
+      const { tx, calls } = makeRestoreTx();
+
+      await repository.recordRestoreRename(tx, SlugRedirectEntity.PRODUCT, 'native', 'native', {
+        deletedAt,
+        redirectFrom: true,
+      });
+
+      expect(calls).toEqual([]);
+    });
+  });
 });

@@ -1292,6 +1292,7 @@ describe('ProductController (e2e)', () => {
         testProduct.id,
         testProduct.slug,
         testProduct.sku,
+        testProduct.slug, // the native slug (TASK-1828)
       );
       expect(response.body.data).toMatchObject({
         id: testProduct.id,
@@ -1362,6 +1363,7 @@ describe('ProductController (e2e)', () => {
         testProduct.id,
         `${testProduct.slug}-2`,
         testProduct.sku,
+        testProduct.slug, // native → new is redirected (TASK-1828)
       );
       expect(response.body.data.slug).toBe(`${testProduct.slug}-2`);
     });

@@ -42,6 +42,7 @@ const prismaMock = {
 
 const slugRedirectRepositoryMock = {
   recordRename: jest.fn(),
+  recordRestoreRename: jest.fn(),
 };
 
 describe('ProductRepository (soft-delete behaviour)', () => {
@@ -1035,7 +1036,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       );
       expect(txMock.product.findFirst).toHaveBeenCalledWith({
         where: { id: 'product-1', deletedAt: { not: null } },
-        select: { categoryId: true },
+        select: { categoryId: true, deletedAt: true },
       });
       expect(txMock.category.findFirst).toHaveBeenCalledWith({
         where: { id: 'cat-1', deletedAt: null },
@@ -1064,10 +1065,70 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(txMock.product.update).toHaveBeenCalledTimes(1);
     });
 
-    it('never records a slug redirect', async () => {
+    it('records no redirect when the product comes back on its native slug', async () => {
+      await repository.restore('product-1', 'clear-case', null, 'clear-case');
       await repository.restore('product-1', 'clear-case', null);
 
       expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+      expect(slugRedirectRepositoryMock.recordRestoreRename).not.toHaveBeenCalled();
+    });
+
+    // TASK-1828: restored on a NEW slug, the old links follow — in the same transaction.
+    describe('on a new slug (TASK-1828)', () => {
+      const deletedAt = new Date('2026-09-01T10:00:00.000Z');
+
+      beforeEach(() => {
+        txMock.product.findFirst.mockImplementation(({ where }: { where: { id?: string } }) =>
+          Promise.resolve(where.id ? { categoryId: 'cat-1', deletedAt } : null),
+        );
+      });
+
+      it('re-homes the native address after the write, as of the deletion time', async () => {
+        await repository.restore('product-1', 'clear-case-2', null, 'clear-case');
+
+        expect(slugRedirectRepositoryMock.recordRestoreRename).toHaveBeenCalledWith(
+          txMock,
+          SlugRedirectEntity.PRODUCT,
+          'clear-case',
+          'clear-case-2',
+          { deletedAt, redirectFrom: true },
+        );
+        expect(txMock.product.findFirst).toHaveBeenCalledWith({
+          where: { slug: 'clear-case', deletedAt: null },
+          select: { id: true },
+        });
+        const order = (fn: jest.Mock): number => fn.mock.invocationCallOrder[0];
+        expect(order(txMock.product.update)).toBeLessThan(
+          order(slugRedirectRepositoryMock.recordRestoreRename),
+        );
+        // Not the plain rename: that would steal rows a later holder of the address wrote.
+        expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+      });
+
+      it('does not redirect a native address another live product now holds', async () => {
+        txMock.product.findFirst.mockImplementation(({ where }: { where: { id?: string } }) =>
+          Promise.resolve(where.id ? { categoryId: 'cat-1', deletedAt } : { id: 'holder' }),
+        );
+
+        await repository.restore('product-1', 'clear-case-2', null, 'clear-case');
+
+        expect(slugRedirectRepositoryMock.recordRestoreRename).toHaveBeenCalledWith(
+          txMock,
+          SlugRedirectEntity.PRODUCT,
+          'clear-case',
+          'clear-case-2',
+          { deletedAt, redirectFrom: false },
+        );
+      });
+
+      it('writes no redirect when the restore is refused for a deleted category', async () => {
+        txMock.category.findFirst.mockResolvedValue(null);
+
+        await expect(
+          repository.restore('product-1', 'clear-case-2', null, 'clear-case'),
+        ).rejects.toBeInstanceOf(ProductCategoryGoneError);
+        expect(slugRedirectRepositoryMock.recordRestoreRename).not.toHaveBeenCalled();
+      });
     });
 
     it.each([
