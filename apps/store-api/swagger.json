@@ -1542,7 +1542,7 @@
             }
           },
           "403": {
-            "description": "Forbidden — admin access required"
+            "description": "Forbidden — needs categories:write or categories:delete"
           }
         },
         "security": [
@@ -1955,7 +1955,7 @@
             }
           },
           "403": {
-            "description": "Forbidden — admin access required"
+            "description": "Forbidden — needs categories:write or categories:delete"
           },
           "404": {
             "description": "Category not found"

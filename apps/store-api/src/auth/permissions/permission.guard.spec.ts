@@ -4,7 +4,11 @@ import { UserRole } from '@prisma/client';
 import { PermissionGuard } from './permission.guard';
 import { PermissionService } from './permission.service';
 import type { PermissionActor } from './permission.repository';
-import { OWNER_ONLY_KEY, REQUIRE_PERMISSION_KEY } from './require-permission.decorator';
+import {
+  ALSO_ACCEPTED_PERMISSIONS_KEY,
+  OWNER_ONLY_KEY,
+  REQUIRE_PERMISSION_KEY,
+} from './require-permission.decorator';
 
 /**
  * Guard-level unit tests (TASK-334, rewritten for the per-person model in
@@ -39,6 +43,9 @@ interface BuildContextOptions {
   handlerOwnerOnly?: boolean;
   classPermission?: string;
   classOwnerOnly?: boolean;
+  /** `@RequireAnyPermission` alternatives (TASK-655). */
+  handlerAlsoAccepted?: string[];
+  classAlsoAccepted?: string[];
 }
 
 function buildContext(options: BuildContextOptions): {
@@ -65,6 +72,9 @@ function buildContext(options: BuildContextOptions): {
       }
       if (key === OWNER_ONLY_KEY) {
         return onHandler ? options.handlerOwnerOnly : options.classOwnerOnly;
+      }
+      if (key === ALSO_ACCEPTED_PERMISSIONS_KEY) {
+        return onHandler ? options.handlerAlsoAccepted : options.classAlsoAccepted;
       }
       return undefined;
     },
@@ -244,6 +254,60 @@ describe('PermissionGuard (TASK-475)', () => {
 
       // Two requests, two reads. A cache between them is what invariant 8 forbids.
       expect(findActor).toHaveBeenCalledTimes(2);
+    });
+
+    // `@RequireAnyPermission` (TASK-655): a read route both capabilities depend on.
+    describe('on a route any one of several keys opens', () => {
+      const anyOf = {
+        handlerPermission: 'categories:write',
+        handlerAlsoAccepted: ['categories:delete'],
+      };
+
+      it('passes with the first key alone', async () => {
+        const { context, reflector } = buildContext(anyOf);
+        const guard = buildGuard(
+          reflector,
+          permissionServiceWith(actor({ permissions: new Set(['categories:write']) })),
+        );
+
+        await expect(guard.canActivate(context)).resolves.toBe(true);
+      });
+
+      it('passes with an alternative key alone', async () => {
+        const { context, reflector } = buildContext(anyOf);
+        const guard = buildGuard(
+          reflector,
+          permissionServiceWith(actor({ permissions: new Set(['categories:delete']) })),
+        );
+
+        await expect(guard.canActivate(context)).resolves.toBe(true);
+      });
+
+      it('is refused holding none of the keys', async () => {
+        const { context, reflector } = buildContext(anyOf);
+        const guard = buildGuard(
+          reflector,
+          permissionServiceWith(actor({ permissions: new Set(['products:write']) })),
+        );
+
+        await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+      });
+
+      it('does not let a handler-level @RequirePermission inherit the class alternatives', async () => {
+        // Class: write OR delete. Handler: its own single key, which replaces the
+        // class requirement as a unit — the class's alternative must not leak in.
+        const { context, reflector } = buildContext({
+          classPermission: 'categories:write',
+          classAlsoAccepted: ['categories:delete'],
+          handlerPermission: 'categories:write',
+        });
+        const guard = buildGuard(
+          reflector,
+          permissionServiceWith(actor({ permissions: new Set(['categories:delete']) })),
+        );
+
+        await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+      });
     });
   });
 

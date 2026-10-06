@@ -1,8 +1,10 @@
-import { SetMetadata } from '@nestjs/common';
+import { applyDecorators, SetMetadata } from '@nestjs/common';
 import type { Permission } from './permission.catalog';
 
 export const REQUIRE_PERMISSION_KEY = 'requirePermission';
 export const OWNER_ONLY_KEY = 'ownerOnly';
+/** Extra keys that ALSO open a route marked with {@link RequireAnyPermission}. */
+export const ALSO_ACCEPTED_PERMISSIONS_KEY = 'alsoAcceptedPermissions';
 
 /**
  * Marks an admin route as requiring a specific permission (TASK-334).
@@ -30,6 +32,33 @@ export const OWNER_ONLY_KEY = 'ownerOnly';
  */
 export const RequirePermission = (permission: Permission) =>
   SetMetadata(REQUIRE_PERMISSION_KEY, permission);
+
+/**
+ * Marks an admin route that ANY ONE of the listed permissions opens (TASK-655).
+ *
+ * ```ts
+ * @RequireAnyPermission('categories:write', 'categories:delete')
+ * @Get(':id')
+ * findById(...) {}
+ * ```
+ *
+ * For READ routes that two separately grantable capabilities both depend on: a
+ * manager who may delete categories but not edit them still has to see the tree
+ * and the card the delete dialog lives on. Never put it on a write route — there
+ * each capability gets its own key on its own handler, as category `DELETE` does.
+ *
+ * The first key is stored under {@link REQUIRE_PERMISSION_KEY} exactly as
+ * `@RequirePermission` stores it, so every reader of that key (the audit
+ * interceptor, the catalogue and audit-label specs) keeps seeing one string; the
+ * rest go under {@link ALSO_ACCEPTED_PERMISSIONS_KEY}, read only by
+ * `PermissionGuard` for a person holding granted rows. A handler-level annotation
+ * overrides the class-level one as a unit, alternatives included.
+ */
+export const RequireAnyPermission = (first: Permission, ...alsoAccepted: Permission[]) =>
+  applyDecorators(
+    SetMetadata(REQUIRE_PERMISSION_KEY, first),
+    SetMetadata(ALSO_ACCEPTED_PERMISSIONS_KEY, alsoAccepted),
+  );
 
 /**
  * Marks a route only THE owner (`User.isOwner`) may ever reach — not "an ADMIN".

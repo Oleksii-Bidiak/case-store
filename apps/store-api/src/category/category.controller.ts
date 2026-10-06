@@ -12,7 +12,7 @@ import { CategoryService } from './category.service';
 import { CategoryListQueryDto } from './dto';
 import { CategoryEntity, CategoryTreeNodeEntity, CategoryWithCountEntity } from './entities';
 import { AdminCategoryTreeResponse } from './admin-category.controller';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission } from '../auth/permissions';
 
 /**
  * Pagination metadata for paginated category responses.
@@ -118,10 +118,14 @@ export class CategoryController {
    * The payload is a strict superset of the public tree node, so the schema is the
    * SAME `AdminCategoryTreeResponse` the reorder endpoint returns — one schema, one
    * generated Orval model.
+   *
+   * Opened by `categories:write` OR `categories:delete` (TASK-655): the delete dialog's
+   * target picker and the tree the delete action is launched from both read it, so a
+   * manager trusted to delete but not to edit categories must be able to read it too.
    */
   @Get('admin/tree')
   @UseGuards(PermissionGuard)
-  @RequirePermission('categories:write')
+  @RequireAnyPermission('categories:write', 'categories:delete')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Get full category tree including inactive (admin)',
@@ -132,7 +136,10 @@ export class CategoryController {
     description: 'Full category tree (all statuses) for admin tooling',
     type: AdminCategoryTreeResponse,
   })
-  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — needs categories:write or categories:delete',
+  })
   async getCategoryTreeForAdmin(): Promise<AdminCategoryTreeResponse> {
     return { data: await this.categoryService.getCategoryTreeForAdmin() };
   }

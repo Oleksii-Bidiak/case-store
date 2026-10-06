@@ -32,7 +32,7 @@ import {
   BulkCategoryStatusDto,
   DeleteCategoryDto,
 } from './dto';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../auth/permissions';
 // The `auth/decorators` sub-barrel, NOT the `../auth` barrel: the barrel pulls in `auth.module` →
 // `auth.controller` → … → the `../category` barrel → this file, and that require cycle
 // leaves `CurrentUser` undefined at decorator-evaluation time ("CurrentUser is not a
@@ -126,7 +126,8 @@ export class AdminCategoryTreeResponse {
  * Admin endpoints (ADMIN role required):
  *   GET    /admin/categories                  — List all categories with product counts
  *   PATCH  /admin/categories/reorder          — Batch reorder / reparent (tree)
- *   GET    /admin/categories/:id              — Get category by ID
+ *   GET    /admin/categories/:id              — Get category by ID (`categories:write`
+ *                                               or `categories:delete`, TASK-655)
  *   POST   /admin/categories                  — Create a new category
  *   PUT    /admin/categories/:id              — Update a category
  *   PATCH  /admin/categories/:id/deactivate   — Deactivate a category
@@ -252,9 +253,14 @@ export class AdminCategoryController {
    * GET /api/admin/categories/:id
    *
    * Returns a category by ID.
-   * Admin-only endpoint.
+   *
+   * Opened by `categories:write` OR `categories:delete` (TASK-655): the card carries
+   * `deletionImpact` and the delete dialog lives on it, so a manager trusted to delete
+   * but not to edit must still be able to read it. Reading is all this grants — every
+   * write route keeps its own key.
    */
   @Get(':id')
+  @RequireAnyPermission('categories:write', 'categories:delete')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get category by ID (admin)' })
   @ApiParam({ name: 'id', description: 'Category UUID' })
@@ -264,7 +270,10 @@ export class AdminCategoryController {
     type: AdminCategoryDetailResponseEnvelope,
   })
   @ApiResponse({ status: 404, description: 'Category not found' })
-  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — needs categories:write or categories:delete',
+  })
   async findById(@Param('id') id: string): Promise<AdminCategoryDetailResponseEnvelope> {
     const category = await this.categoryService.findByIdForAdmin(id);
 

@@ -541,6 +541,117 @@ describe('CategoryController (e2e)', () => {
     });
   });
 
+  // ─── Reads a delete-only manager needs (TASK-655) ───────────────────────────
+  //
+  // The delete dialog lives on the admin card and picks its target from the admin
+  // tree, so `categories:delete` alone must open both reads — and nothing that writes.
+
+  describe('category reads for a manager holding only categories:delete', () => {
+    const managerId = 'manager-e2e-1';
+
+    afterEach(() => {
+      // Managers hold nothing again, as in every other suite of this file.
+      permissionRepositoryMock.setGrants('MANAGER', []);
+    });
+
+    it('opens GET /api/categories/admin/tree', async () => {
+      permissionRepositoryMock.setGrants('MANAGER', ['categories:delete']);
+      const token = generateAccessToken(managerId, 'MANAGER');
+      categoryRepositoryMock.findCategoryTreeForAdmin.mockResolvedValue([
+        { ...testCategory, children: [] },
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/categories/admin/tree')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data).toHaveLength(1);
+    });
+
+    it('opens GET /api/admin/categories/:id with the deletion preview', async () => {
+      permissionRepositoryMock.setGrants('MANAGER', ['categories:delete']);
+      const token = generateAccessToken(managerId, 'MANAGER');
+      categoryRepositoryMock.findById.mockResolvedValue(testCategory);
+      categoryRepositoryMock.countDeletionImpact.mockResolvedValue({
+        subcategoryCount: 0,
+        productCount: 2,
+        carouselCount: 0,
+        deletedProductCount: 0,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/categories/cat-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data.deletionImpact).toHaveProperty('productCount', 2);
+    });
+
+    it('still opens both reads for a manager holding only categories:write', async () => {
+      permissionRepositoryMock.setGrants('MANAGER', ['categories:write']);
+      const token = generateAccessToken(managerId, 'MANAGER');
+      categoryRepositoryMock.findCategoryTreeForAdmin.mockResolvedValue([]);
+      categoryRepositoryMock.findById.mockResolvedValue(testCategory);
+      categoryRepositoryMock.countDeletionImpact.mockResolvedValue({
+        subcategoryCount: 0,
+        productCount: 0,
+        carouselCount: 0,
+        deletedProductCount: 0,
+      });
+
+      await request(app.getHttpServer())
+        .get('/api/categories/admin/tree')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      await request(app.getHttpServer())
+        .get('/api/admin/categories/cat-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+    });
+
+    it('refuses both reads to a manager holding neither key', async () => {
+      permissionRepositoryMock.setGrants('MANAGER', ['products:write']);
+      const token = generateAccessToken(managerId, 'MANAGER');
+
+      await request(app.getHttpServer())
+        .get('/api/categories/admin/tree')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+      await request(app.getHttpServer())
+        .get('/api/admin/categories/cat-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    // Reading is all `categories:delete` buys: every write keeps `categories:write`.
+    it('keeps every category write closed', async () => {
+      permissionRepositoryMock.setGrants('MANAGER', ['categories:delete']);
+      const token = generateAccessToken(managerId, 'MANAGER');
+      const server = app.getHttpServer();
+      const auth = `Bearer ${token}`;
+
+      await request(server).get('/api/admin/categories').set('Authorization', auth).expect(403);
+      await request(server)
+        .post('/api/admin/categories')
+        .set('Authorization', auth)
+        .send({ name: 'New' })
+        .expect(403);
+      await request(server)
+        .put('/api/admin/categories/cat-e2e-1')
+        .set('Authorization', auth)
+        .send({ name: 'Renamed' })
+        .expect(403);
+      await request(server)
+        .patch('/api/admin/categories/cat-e2e-1/deactivate')
+        .set('Authorization', auth)
+        .expect(403);
+      expect(categoryRepositoryMock.create).not.toHaveBeenCalled();
+      expect(categoryRepositoryMock.update).not.toHaveBeenCalled();
+      expect(categoryRepositoryMock.deactivate).not.toHaveBeenCalled();
+    });
+  });
+
   // ─── POST /api/admin/categories (admin) ──────────────────────────────────────
 
   describe('POST /api/admin/categories', () => {
