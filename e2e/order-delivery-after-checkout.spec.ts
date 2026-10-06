@@ -215,7 +215,7 @@ test.describe("/orders/status names the real delivery method (TASK-1030)", () =>
     await expect(result).not.toContainText("Кур");
   });
 
-  test("an «інша доставка» order says the manager will price it", async ({
+  test("an «інша доставка» order says the operator will price it", async ({
     page,
   }) => {
     const result = await lookUp(page, {
