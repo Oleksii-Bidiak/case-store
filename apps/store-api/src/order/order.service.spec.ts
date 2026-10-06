@@ -1001,7 +1001,46 @@ describe('OrderService', () => {
           carrier: null,
           pickupPointName: 'Магазин на Хрещатику',
           pickupPointAddress: 'вул. Хрещатик, 1',
+          // TASK-647: what the letter and the order pages show — null when the
+          // point has none, so a reader never has to tell "absent" from "unset".
+          pickupPointHours: 'Пн–Пт 10:00–19:00',
+          pickupPointPhone: null,
+          pickupPointMapUrl: null,
         });
+      });
+
+      it('snapshots the point’s hours, phone and map link as they were at checkout (TASK-647)', async () => {
+        deliveryServiceMock.resolveActivePickupPoint.mockResolvedValue({
+          ...point,
+          phone: '+380441234567',
+          workingHours: 'Щодня 9–21',
+          mapUrl: 'https://maps.example/khreshchatyk',
+        });
+
+        await service.createOrder(userActor, {
+          shippingAddress: address,
+          deliveryMethod: 'PICKUP',
+          pickupPointId: POINT_ID,
+        });
+
+        expect(created().shippingAddress).toMatchObject({
+          pickupPointHours: 'Щодня 9–21',
+          pickupPointPhone: '+380441234567',
+          pickupPointMapUrl: 'https://maps.example/khreshchatyk',
+        });
+      });
+
+      it('never puts the pickup fields on a non-PICKUP snapshot', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue(allEnabled());
+
+        await service.createOrder(userActor, {
+          shippingAddress: address,
+          deliveryMethod: 'COURIER',
+        });
+
+        expect(created().shippingAddress).not.toHaveProperty('pickupPointHours');
+        expect(created().shippingAddress).not.toHaveProperty('pickupPointPhone');
+        expect(created().shippingAddress).not.toHaveProperty('pickupPointMapUrl');
       });
     });
 

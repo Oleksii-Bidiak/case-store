@@ -590,6 +590,11 @@ export class OrderService {
           carrier: null,
           pickupPointName: point.name,
           pickupPointAddress: point.address,
+          // TASK-647: what the letter and the order pages tell the shopper about
+          // collecting it — frozen like the rest, null when the point has none.
+          pickupPointHours: point.workingHours ?? null,
+          pickupPointPhone: point.phone ?? null,
+          pickupPointMapUrl: point.mapUrl ?? null,
         },
       };
     }
