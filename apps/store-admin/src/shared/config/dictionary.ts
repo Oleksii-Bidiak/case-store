@@ -644,8 +644,10 @@ export const dict = {
     // anywhere. The copy below has one job: say what the server actually does.
     // An operator who reads «видалити» as «стерти назавжди разом із
     // замовленнями» never touches the button; one who reads it as «приховати»
-    // clicks it instead of «Деактивувати» and then cannot get the товар back,
-    // because the slug and артикул have already been freed for a new position.
+    // clicks it instead of «Деактивувати» and is surprised that the slug and
+    // артикул were freed for a new position. Since TASK-656 the товар comes
+    // back from «Видалені» — on its own address and артикул while they are
+    // still free, on new ones otherwise (TASK-1829).
     deleteAction: "Видалити",
     deleteHeading: "Видалити товар?",
     deleteDescription: (name: string) =>
@@ -655,8 +657,8 @@ export const dict = {
       "саме для них, тому історія й звіти не постраждають.",
     deleteFrees:
       "Його адреса (slug) і артикул звільняться: їх зможе зайняти інший товар. " +
-      "Тому це не «приховати» — повернути товар у попередньому вигляді самотужки " +
-      "не вийде.",
+      "Повернути товар можна у виді «Видалені» кнопкою «Відновити» — з рідними " +
+      "адресою й артикулом, доки їх ніхто не зайняв; інакше доведеться дати нові.",
     deleteAlternative:
       "Якщо треба лише тимчасово прибрати товар із продажу — закрийте це вікно й " +
       "скористайтеся перемикачем статусу: деактивований товар можна увімкнути будь-коли.",

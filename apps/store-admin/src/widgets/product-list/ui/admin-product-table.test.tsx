@@ -859,6 +859,11 @@ describe("AdminProductTable — delete a product (TASK-427)", () => {
     expect(screen.getByText(d.deleteKeeps)).toBeInTheDocument();
     expect(screen.getByText(d.deleteFrees)).toBeInTheDocument();
     expect(screen.getByText(d.deleteAlternative)).toBeInTheDocument();
+    // TASK-1829: a deleted product CAN come back (TASK-656) — the copy says
+    // where and on what condition, not that it cannot.
+    expect(d.deleteFrees).toContain("«Видалені»");
+    expect(d.deleteFrees).toContain("«Відновити»");
+    expect(d.deleteFrees).not.toMatch(/не вийде/);
   });
 
   it("sends nothing while the confirm is open, and DELETEs once confirmed", async () => {
