@@ -56,7 +56,15 @@ const CLIENT_ROUTES = [
 ];
 
 /** Admin: the login page, the dashboard it redirects to and the deep links. */
-const ADMIN_ROUTES = ["/login", "/", "/orders", "/staff", "/users"];
+const ADMIN_ROUTES = [
+  "/login",
+  "/",
+  "/orders",
+  "/staff",
+  "/users",
+  // TASK-692: opened by deep link in admin-analytics.spec.ts.
+  "/analytics",
+];
 
 /** Mirrors `ADMIN_UI_SESSION_COOKIE` in store-admin's shared config. */
 const ADMIN_MARKER_COOKIE = "admin_ui_session=warm-up";
