@@ -252,7 +252,7 @@ describe('SlugRedirectRepository', () => {
       return { ...made, createMany };
     };
 
-    it('repoints only the aliases written while the native address was ours, then N → M, then the self-loop', async () => {
+    it('repoints only the aliases written while the native address was ours, clears every row on the new address, then N → M', async () => {
       const { tx, raw, calls, createMany } = makeRestoreTx();
 
       await repository.recordRestoreRename(tx, SlugRedirectEntity.PRODUCT, 'native', 'fresh', {
@@ -260,8 +260,8 @@ describe('SlugRedirectRepository', () => {
         redirectFrom: true,
       });
 
-      expect(calls).toEqual(['updateMany', 'createMany', 'deleteMany']);
-      expect(raw.slugRedirect.updateMany).toHaveBeenCalledWith({
+      expect(calls).toEqual(['updateMany', 'deleteMany', 'updateMany', 'createMany']);
+      expect(raw.slugRedirect.updateMany).toHaveBeenNthCalledWith(1, {
         where: {
           entity: SlugRedirectEntity.PRODUCT,
           newScope: '',
@@ -270,7 +270,21 @@ describe('SlugRedirectRepository', () => {
         },
         data: { newScope: '', newSlug: 'fresh' },
       });
-      // Insert-only: a row a later holder of the native address wrote is theirs.
+      // The new address never redirects — whoever wrote the row (no loop with N → M).
+      expect(raw.slugRedirect.deleteMany).toHaveBeenCalledWith({
+        where: { entity: SlugRedirectEntity.PRODUCT, scope: '', oldSlug: 'fresh' },
+      });
+      // A native-address row older than the delete is overwritten; a later holder's is not.
+      expect(raw.slugRedirect.updateMany).toHaveBeenNthCalledWith(2, {
+        where: {
+          entity: SlugRedirectEntity.PRODUCT,
+          scope: '',
+          oldSlug: 'native',
+          updatedAt: { lte: deletedAt },
+        },
+        data: { newScope: '', newSlug: 'fresh' },
+      });
+      // …and with no row at all, one is inserted.
       expect(createMany).toHaveBeenCalledWith({
         data: [
           {
@@ -282,15 +296,6 @@ describe('SlugRedirectRepository', () => {
           },
         ],
         skipDuplicates: true,
-      });
-      expect(raw.slugRedirect.deleteMany).toHaveBeenCalledWith({
-        where: {
-          entity: SlugRedirectEntity.PRODUCT,
-          scope: '',
-          oldSlug: 'fresh',
-          newScope: '',
-          newSlug: 'fresh',
-        },
       });
       expect(raw.slugRedirect.upsert).not.toHaveBeenCalled();
     });

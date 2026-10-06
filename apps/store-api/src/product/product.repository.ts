@@ -1568,7 +1568,8 @@ export class ProductRepository {
    *
    * Coming back on a slug other than its native one (`nativeSlug`, the address it was
    * deleted from — TASK-1828), the old links follow it, in the same transaction:
-   * `SlugRedirectRepository.recordRestoreRename` repoints the product's own aliases and
+   * `SlugRedirectRepository.recordRestoreRename` repoints the product's own aliases,
+   * drops any redirect off the new address (it is live now — no 301 loop) and
    * records `native → new` — unless another live product now lives on the native
    * address, which is then that product's and gets no redirect. Recorded although the
    * product comes back hidden: the redirect is what makes the old links work the moment

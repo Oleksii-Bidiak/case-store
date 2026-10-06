@@ -53,6 +53,31 @@ describe('Product restore onto a new slug — redirects (integration, TASK-1828)
   const target = async (oldSlug: string): Promise<string | null> =>
     (await redirects.findRedirect(P, oldSlug))?.newSlug ?? null;
 
+  /** A raw ledger row, as some other product's history could have left it. */
+  const row = async (from: string, to: string): Promise<void> => {
+    await prisma.slugRedirect.create({
+      data: { entity: P, scope: '', oldSlug: from, newScope: '', newSlug: to },
+    });
+  };
+
+  /**
+   * The addresses a visitor landing on `start` is sent through, `start` first — what
+   * the storefront's 301s would do hop by hop. Throws on a loop instead of spinning.
+   */
+  const walk = async (start: string): Promise<string[]> => {
+    const seen = [start];
+    for (let next = await target(start); next !== null; next = await target(next)) {
+      if (seen.includes(next)) {
+        throw new Error(`redirect loop: ${[...seen, next].join(' → ')}`);
+      }
+      seen.push(next);
+    }
+    return seen;
+  };
+
+  /** Keeps `updatedAt` of the rows written next strictly after the ones before. */
+  const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 15));
+
   beforeAll(async () => {
     const url = process.env.DATABASE_URL ?? '';
     if (!/test/i.test(url)) {
@@ -133,6 +158,60 @@ describe('Product restore onto a new slug — redirects (integration, TASK-1828)
     await products.restore(id, fresh, null, native);
 
     expect(await target(native)).toBe(slug('later-now'));
+  });
+
+  it('a stale row FROM the native address, older than the delete, is overwritten', async () => {
+    const native = slug('stale');
+    const fresh = slug('stale-new');
+    // Long before: some other product lived on the native address and renamed away from
+    // it, leaving `native → elsewhere` behind. Then ours took the free address.
+    await row(native, slug('stale-elsewhere'));
+    await tick();
+    const id = await makeProduct('stale', native);
+    await softDelete(id, native);
+
+    await products.restore(id, fresh, null, native);
+
+    expect(await target(native)).toBe(fresh);
+  });
+
+  it('another product’s alias ON the new address is dropped — no 301 loop', async () => {
+    const native = slug('cycle');
+    const fresh = slug('cycle-new');
+    const id = await makeProduct('cycle', native);
+    await softDelete(id, native);
+
+    // After our delete another product lived on `fresh`, renamed into the free native
+    // address (writing `fresh → native`), and was deleted in its turn.
+    const other = await makeProduct('cycle-other', fresh);
+    await prisma.product.update({ where: { id: other }, data: { slug: native } });
+    await alias(fresh, native);
+    await softDelete(other, native);
+
+    await products.restore(id, fresh, null, native);
+
+    expect(await target(fresh)).toBeNull(); // the address we live on never redirects
+    expect(await target(native)).toBe(fresh);
+    expect(await walk(native)).toEqual([native, fresh]);
+  });
+
+  it('a chain that runs through the new address into the native one cannot loop', async () => {
+    const native = slug('chain');
+    const fresh = slug('chain-new');
+    const mid = slug('chain-mid');
+    const id = await makeProduct('chain', native);
+    await softDelete(id, native);
+
+    // Rows of other, deleted products: `fresh → mid → native`.
+    await row(fresh, mid);
+    await row(mid, native);
+
+    await products.restore(id, fresh, null, native);
+
+    expect(await target(fresh)).toBeNull();
+    expect(await target(mid)).toBe(native); // theirs, written after our delete — kept
+    expect(await walk(mid)).toEqual([mid, native, fresh]);
+    expect(await walk(native)).toEqual([native, fresh]);
   });
 
   it('restoring onto one of its own old aliases leaves no self-loop behind', async () => {

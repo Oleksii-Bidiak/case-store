@@ -113,17 +113,28 @@ export class SlugRedirectRepository {
    *
    * While the entity was deleted its native address `from` was free: another entity may
    * have been created on it, renamed into it (adding its own aliases `x → from`) or
-   * renamed away from it (repointing every `x → from`, ours included, and adding
-   * `from → y`). So, against the caller's `tx`:
+   * renamed away from it (repointing every `x → from`, ours included, and writing
+   * `from → y`). The rule throughout: a row last written at or before `deletedAt` is
+   * OUR history (until then `from` was ours) or older still, and is ours to rewrite; a
+   * row written later belongs to whoever held `from` afterwards and is left alone. So,
+   * against the caller's `tx`:
    *
-   * 1. Repoint OUR aliases — rows targeting `from` last written at or before
-   *    `deletedAt`. Until then `from` was ours, so every row targeting it was our
-   *    history; a row written later belongs to whoever held `from` afterwards and is
-   *    left alone.
-   * 2. Record `from → to` only when `redirectFrom` (the caller found no live entity on
-   *    `from`) and no row for `from` exists yet — an existing one was written after our
-   *    delete by a later holder renaming away, and is theirs.
-   * 3. Drop the self-loop `to → to` step 1 can produce (restoring onto an old alias).
+   * 1. Repoint OUR aliases — rows targeting `from` last written at or before `deletedAt`.
+   * 2. Make the new address `to` a live one: delete EVERY row whose `oldSlug` is `to`,
+   *    whoever wrote it. The entity lives there now, so `to` must never redirect — a
+   *    leftover `to → from` (an alias of another, deleted entity; one of our own old
+   *    aliases became the self-loop `to → to` in step 1 and goes too) would otherwise
+   *    close a 301 loop with step 3's `from → to`, live while the restored entity is
+   *    still hidden. With no row left on `to`, no redirect cycle can pass through
+   *    `from → to` at all — a loop would need a way out of `to`.
+   * 3. Point the native address `from` at `to` when `redirectFrom` (the caller found no
+   *    live entity on `from`). An existing `from → X` last written at or before
+   *    `deletedAt` — left by an entity that renamed away from `from` before we held it —
+   *    is overwritten; one written later (a later holder renaming away) is theirs and is
+   *    kept; with no row, one is inserted. Two single statements rather than
+   *    read-then-write, so a concurrent insert of the same key cannot fail the restore:
+   *    the guarded update rewrites only a stale row, the `skipDuplicates` insert only
+   *    fills a gap.
    *
    * Writes nothing when the address does not change.
    */
@@ -142,17 +153,22 @@ export class SlugRedirectRepository {
       data: { newScope: '', newSlug: to },
     });
 
-    // Step 2: the native address itself, unless it now belongs to someone else.
+    // Step 2: the address we now live on never redirects (this also drops the self-loop
+    // step 1 produces when restoring onto one of our own old aliases).
+    await tx.slugRedirect.deleteMany({
+      where: { entity, scope: '', oldSlug: to },
+    });
+
+    // Step 3: the native address itself, unless it now belongs to someone else.
     if (redirectFrom) {
+      await tx.slugRedirect.updateMany({
+        where: { entity, scope: '', oldSlug: from, updatedAt: { lte: deletedAt } },
+        data: { newScope: '', newSlug: to },
+      });
       await tx.slugRedirect.createMany({
         data: [{ entity, scope: '', oldSlug: from, newScope: '', newSlug: to }],
         skipDuplicates: true,
       });
     }
-
-    // Step 3: remove the self-loop step 1 may have produced.
-    await tx.slugRedirect.deleteMany({
-      where: { entity, scope: '', oldSlug: to, newScope: '', newSlug: to },
-    });
   }
 }
