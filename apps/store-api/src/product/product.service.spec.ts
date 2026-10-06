@@ -634,6 +634,62 @@ describe('ProductService', () => {
       ]);
     });
 
+    // TASK-656 (Т8): «Видалені» reads newest-deletion-first — the product deleted
+    // by mistake a minute ago must be on page 1, not wherever its creation date
+    // puts it.
+    describe('sort resolution (TASK-656)', () => {
+      beforeEach(() => {
+        productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      });
+
+      it('defaults the deleted list to deletedAt, newest first', async () => {
+        await service.adminFindAll({ page: 1, limit: 20, deleted: true });
+
+        expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+          expect.objectContaining({ deleted: true, sortBy: 'deletedAt', sortOrder: 'desc' }),
+        );
+      });
+
+      it('keeps a column the operator picked on the deleted list', async () => {
+        await service.adminFindAll({ page: 1, limit: 20, deleted: true, sortBy: 'name' });
+
+        expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+          expect.objectContaining({ sortBy: 'name' }),
+        );
+      });
+
+      it('keeps createdAt as the default of the live admin list', async () => {
+        await service.adminFindAll({ page: 1, limit: 20 });
+
+        expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+          expect.objectContaining({ sortBy: 'createdAt' }),
+        );
+      });
+
+      it('falls back to createdAt for deletedAt on a live list (every row has none)', async () => {
+        await service.adminFindAll({ page: 1, limit: 20, sortBy: 'deletedAt' });
+
+        expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+          expect.objectContaining({ sortBy: 'createdAt' }),
+        );
+      });
+
+      it('collapses deletedAt to createdAt on the public list, cache key included', async () => {
+        cacheServiceMock.get.mockResolvedValue(null);
+
+        await service.findAll({ page: 1, limit: 20, sortBy: 'deletedAt' });
+
+        expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+          expect.objectContaining({ sortBy: 'createdAt' }),
+        );
+        const [plainKey] = cacheServiceMock.set.mock.calls[0] as [string];
+        cacheServiceMock.set.mockClear();
+        productRepositoryMock.findAll.mockClear();
+        await service.findAll({ page: 1, limit: 20 });
+        expect(cacheServiceMock.set.mock.calls[0][0]).toBe(plainKey);
+      });
+    });
+
     it('defaults reservedQty to 0 (physicalQty = stock) for a product with no reservations', async () => {
       productRepositoryMock.findAll.mockResolvedValue({ products: [mockProduct], total: 1 });
       // Default mock returns an empty map → no reservation for this product.

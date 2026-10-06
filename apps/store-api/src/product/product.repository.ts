@@ -584,7 +584,7 @@ export class ProductRepository {
     return rows.map((row) => row.id);
   }
 
-  /** Standard column-ordered page (createdAt / price / name). */
+  /** Standard column-ordered page (createdAt / price / name / stock / deletedAt). */
   private async findPageByColumn(
     where: Prisma.ProductWhereInput,
     skip: number,
@@ -599,6 +599,9 @@ export class ProductRepository {
       name: 'name',
       // Admin "Вільно" sort by available stock (TASK-254).
       stock: 'stock',
+      // Admin «Видалені»: the moment of deletion (TASK-656). Only the service's
+      // tombstone path sends it — every live row's `deletedAt` is NULL.
+      deletedAt: 'deletedAt',
     };
     const sortField = allowedSortFields[sortBy ?? 'createdAt'];
     if (!sortField) {

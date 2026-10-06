@@ -2713,9 +2713,8 @@
             "name": "sortBy",
             "required": false,
             "in": "query",
-            "description": "Sort field: createdAt, price, name, stock, or bestselling. `bestselling` orders by units sold across PAID orders (TASK-164); zero-sales products still appear, newest-first, at the tail. `stock` sorts by available (free-to-sell) stock — the admin list \"Вільно\" sort (TASK-254); harmless on the public list, which never exposes raw stock.",
+            "description": "Sort field: createdAt, price, name, stock, bestselling or deletedAt. `bestselling` orders by units sold across PAID orders (TASK-164); zero-sales products still appear, newest-first, at the tail. `stock` sorts by available (free-to-sell) stock — the admin list \"Вільно\" sort (TASK-254); harmless on the public list, which never exposes raw stock. `deletedAt` orders the admin «Видалені» list (`deleted=true`) by the moment each product was deleted (TASK-656). Absent = `deletedAt` on that list and `createdAt` everywhere else; on a live listing, where no row has a deletion date, an explicit `deletedAt` also falls back to `createdAt`.",
             "schema": {
-              "default": "createdAt",
               "example": "createdAt",
               "type": "string"
             }
@@ -2971,9 +2970,8 @@
             "name": "sortBy",
             "required": false,
             "in": "query",
-            "description": "Sort field: createdAt, price, name, stock, or bestselling. `bestselling` orders by units sold across PAID orders (TASK-164); zero-sales products still appear, newest-first, at the tail. `stock` sorts by available (free-to-sell) stock — the admin list \"Вільно\" sort (TASK-254); harmless on the public list, which never exposes raw stock.",
+            "description": "Sort field: createdAt, price, name, stock, bestselling or deletedAt. `bestselling` orders by units sold across PAID orders (TASK-164); zero-sales products still appear, newest-first, at the tail. `stock` sorts by available (free-to-sell) stock — the admin list \"Вільно\" sort (TASK-254); harmless on the public list, which never exposes raw stock. `deletedAt` orders the admin «Видалені» list (`deleted=true`) by the moment each product was deleted (TASK-656). Absent = `deletedAt` on that list and `createdAt` everywhere else; on a live listing, where no row has a deletion date, an explicit `deletedAt` also falls back to `createdAt`.",
             "schema": {
-              "default": "createdAt",
               "example": "createdAt",
               "type": "string"
             }

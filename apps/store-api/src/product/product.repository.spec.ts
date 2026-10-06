@@ -551,6 +551,25 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       ]);
     });
 
+    // TASK-656 (Т8): the «Видалені» list orders by the moment of deletion.
+    it('orders the tombstone list by deletedAt with the id tiebreaker', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({
+        page: 1,
+        limit: 20,
+        deleted: true,
+        sortBy: 'deletedAt',
+        sortOrder: 'desc',
+      });
+
+      expect(prismaMock.product.findMany.mock.calls[0][0].orderBy).toEqual([
+        { deletedAt: 'desc' },
+        { id: 'asc' },
+      ]);
+    });
+
     it('should keep deletedAt: null alongside other filters', async () => {
       prismaMock.product.findMany.mockResolvedValue([]);
       prismaMock.product.count.mockResolvedValue(0);

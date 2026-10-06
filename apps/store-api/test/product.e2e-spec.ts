@@ -481,6 +481,37 @@ describe('ProductController (e2e)', () => {
       );
     });
 
+    // TASK-656 (Т8): through the real ValidationPipe — a class-field default on
+    // `sortBy` would turn the absent value into `createdAt` before the service
+    // could pick the deleted list's own default.
+    it('lists the deleted products newest-deletion first by default', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/products/admin/list?deleted=true')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ deleted: true, sortBy: 'deletedAt', sortOrder: 'desc' }),
+      );
+    });
+
+    it('accepts sortBy=deletedAt and keeps the live list on createdAt', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/products/admin/list?sortBy=deletedAt')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ sortBy: 'createdAt' }),
+      );
+    });
+
     // The `enableImplicitConversion` trap (TASK-150 B5): `Boolean('false')` is
     // `true`, so without the DTO's `obj[key]` transform this request would list
     // ONLY the tombstones — the exact opposite of what it says.

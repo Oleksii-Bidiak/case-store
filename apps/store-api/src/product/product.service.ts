@@ -63,6 +63,18 @@ function stripTombstonePrefix(value: string, prefix: string): string {
 }
 
 /**
+ * The sort a listing actually runs (TASK-656). On the tombstone list an absent
+ * `sortBy` means newest deletion first; on every live listing it means newest
+ * creation first, and an explicit `deletedAt` — every live row's `deletedAt`
+ * is NULL, so it would order by nothing but the id tiebreaker — falls back to
+ * the same `createdAt`.
+ */
+function listSortBy(requested: string | undefined, tombstones: boolean): string {
+  if (tombstones) return requested ?? 'deletedAt';
+  return requested === undefined || requested === 'deletedAt' ? 'createdAt' : requested;
+}
+
+/**
  * A product together with the relations its detail page renders: category,
  * group (siblings + axes) and images. The public read carries the public-safe
  * {@link PublicProductEntity}; the admin preview (TASK-155) the full
@@ -233,6 +245,11 @@ export class ProductService {
       // `toListParams` is shared with the public storefront listing, which must
       // stay live-only whatever query string it is handed.
       deleted: query.deleted,
+      // TASK-656 (Т8): «Видалені» reads newest-DELETION-first unless the
+      // operator picked a column — the product deleted by mistake a minute ago
+      // is the one they came for, and by creation date it could sit on the
+      // last page. Overrides the live-listing default `toListParams` set.
+      sortBy: listSortBy(query.sortBy, query.deleted === true),
     };
     return this.listFromDbForAdmin(params);
   }
@@ -285,7 +302,10 @@ export class ProductService {
       specFilters: specFilters.length > 0 ? specFilters : undefined,
       inStock: query.inStock,
       onSale: query.onSale,
-      sortBy: query.sortBy ?? 'createdAt',
+      // Shared with the PUBLIC listing, which never shows tombstones — so the
+      // live-listing resolution: an explicit `deletedAt` collapses to the
+      // default here, and the cache key never fragments on a no-op sort.
+      sortBy: listSortBy(query.sortBy, false),
       sortOrder: query.sortOrder ?? 'desc',
     };
   }
