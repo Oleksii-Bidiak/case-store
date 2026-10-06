@@ -21,6 +21,8 @@ export {
   // DELETE /api/products/:id — the endpoint, its permission and its tombstone
   // logic were all in place, and the button was missing one export line.
   useDeleteProduct,
+  // TASK-656: bring a soft-deleted product back, hidden.
+  useRestoreProduct,
   // Bulk activate / deactivate over the on-screen selection (TASK-355)
   useProductControllerSetStatusMany,
   useProductControllerPreviewProductBySlug,
@@ -60,4 +62,9 @@ export type {
   ProductImageControllerUploadBody,
   ReorderImagesDto,
   ReorderImageDto,
+  // TASK-656
+  RestoreProductDto,
 } from "@/shared/api";
+
+// TASK-656: a deleted product's native slug / артикул, without `deleted:<id>:`.
+export { stripTombstonePrefix, tombstonePrefix } from "./lib/tombstone";

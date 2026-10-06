@@ -93,8 +93,14 @@ export interface DataRegistryProps<T> {
   rowClassName?: (row: T) => string | undefined;
   rowActions?: (row: T) => readonly RowActionItem[];
   rowActionsLabel?: (row: T) => string;
+  /** One inline control before «⋯» — see `RegistryTable.rowAction`. */
+  rowAction?: (row: T) => React.ReactNode;
   sort?: RegistrySort;
   totals?: boolean;
+  /** Replaces the totals label — see `RegistryTable.totalsLabel`. */
+  totalsLabel?: (count: number) => string;
+  /** Where the totals label starts — see `RegistryTable.totalsLabelFrom`. */
+  totalsLabelFrom?: string;
   renderCard?: (row: T, parts: RegistryCardParts) => React.ReactNode;
   /** Section headings between runs of rows — see `RegistryTable.groupBy`. */
   groupBy?: (row: T) => RegistryRowGroup | null;
@@ -170,8 +176,11 @@ export function DataRegistry<T>({
   rowClassName,
   rowActions,
   rowActionsLabel,
+  rowAction,
   sort,
   totals,
+  totalsLabel,
+  totalsLabelFrom,
   renderCard,
   groupBy,
   renderExpanded,
@@ -315,8 +324,11 @@ export function DataRegistry<T>({
           selection={selectable ? selection : undefined}
           rowActions={rowActions}
           rowActionsLabel={rowActionsLabel}
+          rowAction={rowAction}
           sort={sort}
           totals={totals}
+          totalsLabel={totalsLabel}
+          totalsLabelFrom={totalsLabelFrom}
           itemForms={itemForms}
           renderCard={renderCard}
           groupBy={groupBy}

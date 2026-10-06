@@ -671,10 +671,13 @@ export const dict = {
     // tombstones INSTEAD of the live rows (the API has no mixed mode — the row
     // entity carries no per-product deleted marker to tell them apart).
     filterDeleted: "Видалені",
-    deletedBadge: "видалено",
+    deletedBadge: "Видалено",
+    // TASK-656 (Т8): the view is no longer read-only — a deleted product can be
+    // restored, so the old «повернути їх не можна» promise is gone. The
+    // sentence about «Відновити» is `deletedNoticeRestore*` below, shown only
+    // to whoever actually has the button.
     deletedNotice:
-      "Показано видалені товари. Вони лише для довідки: редагувати, відкрити картку " +
-      "чи повернути їх із адмінки не можна — адресу й артикул уже звільнено.",
+      "Видалені товари не показуються ні на сайті, ні в пошуку, ні в інших списках адмінки.",
 
     // ── Картка товару, лише для перегляду (TASK-427) ────────────────────────
     metaTitleCard: "Картка товару — Адмін",
@@ -802,6 +805,94 @@ export const dict = {
     headerMoreAria: "Інші дії з товаром",
     menuCard: "Картка товару",
     menuPreview: "Прев'ю",
+
+    // ── відновлення видаленого товару (TASK-656, ProductsProposal Т8–Т12) ──
+    //
+    // POST /products/:id/restore brings a tombstone back HIDDEN, on its own
+    // address and артикул. When a live product took one of them meanwhile the
+    // API answers 409 with a code naming the field, and nothing is restored
+    // until the operator gives a new value — there is no silent suffix. The
+    // API does not say WHICH product holds the slot, so the copy says «інший
+    // товар» where the artboard names it (deliberate deviation).
+    restoreAction: "Відновити",
+    restoreActionAria: (name: string) => `Відновити «${name}»`,
+    deletedSummary: "Видалених товарів:",
+    deletedNoticeRestoreLead: "«Відновити» повертає товар у каталог",
+    deletedNoticeRestoreHidden: "прихованим",
+    deletedNoticeRestoreTail:
+      "— він зʼявиться на сайті, коли ви ввімкнете «Показувати на сайті».",
+    deletedNoticeNoRight:
+      "Повернути видалений товар може працівник із правом видаляти товари.",
+    restoreTitle: "Відновити товар?",
+    restoreLeadBefore: (name: string) => `«${name}» повернеться в каталог`,
+    restoreLeadHidden: "прихованим",
+    restoreLeadAfter:
+      ": на сайті його не буде, доки ви не ввімкнете «Показувати на сайті».",
+    restoreAddress: "Адреса",
+    restoreSku: "Артикул",
+    restoreNoSku: "без артикула",
+    restoreHint:
+      "Повертаємо рідні адресу й артикул. Ціна, залишок, фото й характеристики — як були до видалення.",
+    restoreConfirm: "Відновити",
+    restoreBusy: "Відновлюємо…",
+    restoreToastDone: (name: string) =>
+      `«${name}» відновлено — він прихований.`,
+    restoreToastOpen: "Відкрити картку",
+    restoreErrorTitle: "Товар не відновлено",
+    restoreErrorGone:
+      "Цього товару вже немає серед видалених — можливо, його щойно відновив хтось інший. Список оновлено.",
+    restoreErrorCategory:
+      "Категорію цього товару видалено, тож повертати його нікуди. Нічого не змінилося.",
+    restoreErrorForbidden:
+      "У вас немає права відновлювати товари. Нічого не змінилося.",
+    restoreErrorGeneric:
+      "Не вдалося відновити товар. Нічого не змінилося — спробуйте ще раз.",
+    conflictTitleSlug: "Адреса вже зайнята",
+    conflictTitleSku: "Артикул уже зайнятий",
+    conflictTitleBoth: "Адреса й артикул уже зайняті",
+    // The lead is split around the address / артикул, which Т10 sets in mono.
+    conflictLeadSlugBefore: "Поки товар був видалений, адресу",
+    conflictLeadSlugAfter:
+      "отримав інший товар. Дайте відновленому товару нову адресу.",
+    conflictLeadSkuBefore: "Поки товар був видалений, артикул",
+    conflictLeadSkuAfter:
+      "отримав інший товар. Дайте відновленому товару новий артикул.",
+    conflictLeadBothBefore: "Поки товар був видалений, адресу",
+    conflictLeadBothMiddle: "і артикул",
+    conflictLeadBothAfter:
+      "отримали інші товари. Дайте відновленому товару нову адресу й новий артикул.",
+    conflictStillDeleted: "Товар поки лишається видаленим.",
+    conflictNewSlug: "Нова адреса",
+    conflictNewSku: "Новий артикул",
+    conflictSlugUrl: (host: string, slug: string) => `${host}/products/${slug}`,
+    // Appended after « · » to the address hint — hence lowercase (Т10).
+    conflictSkuKept: (sku: string) =>
+      `артикул ${sku} вільний — лишиться як був.`,
+    conflictSlugKept: (slug: string) =>
+      `Адреса /products/${slug} вільна — лишиться як була.`,
+    conflictSlugRequired: "Вкажіть нову адресу",
+    conflictSlugPattern:
+      "Лише малі латинські літери, цифри й дефіси, без дефіса на початку чи в кінці",
+    conflictSlugMax: "Адреса має містити не більше 255 символів",
+    conflictSlugSame: "Цю адресу вже зайнято — вкажіть іншу",
+    conflictSkuRequired: "Вкажіть новий артикул",
+    conflictSkuMax: "Артикул має містити не більше 50 символів",
+    conflictSkuSame: "Цей артикул уже зайнято — вкажіть інший",
+    conflictConfirmSlug: "Відновити з новою адресою",
+    conflictConfirmSku: "Відновити з новим артикулом",
+    conflictConfirmBoth: "Відновити з новими даними",
+    // Т8: the totals row and the date cell of the deleted view. The list has
+    // no `deletedAt` yet; a tombstone cannot be edited, so its `updatedAt` is
+    // in practice the moment it was deleted (a stock return on a cancelled
+    // order may still bump it — exact once the API exposes `deletedAt`).
+    deletedTotalsOnPage: (count: number) => `Видалених на сторінці: ${count}`,
+    deletedOn: (date: string) => `видалено ${date}`,
+
+    // ── сортування «Видалених» за датою видалення (TASK-656) ──
+    // Т8 spells the default «дата видалення, нові вгорі» — the artboard's own
+    // wording, kept even though the older sort labels say «зверху».
+    sortDeletedDesc: "дата видалення, нові вгорі",
+    sortDeletedAsc: "дата видалення, старі вгорі",
   },
 
   // TASK-360: supplier-catalogue import.

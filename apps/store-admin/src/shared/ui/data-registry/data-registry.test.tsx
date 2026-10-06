@@ -12,6 +12,7 @@ import type { PluralForms } from "@/shared/lib/plural";
 import {
   DataRegistry,
   ExportMenu,
+  REGISTRY_ROW_ACTION_WIDTH,
   useDataRegistry,
   type DataRegistryProps,
   type RegistryColumn,
@@ -466,6 +467,22 @@ describe("DataRegistry — columns, density and their persistence", () => {
     expect(screen.queryByText(r.widthPx(260))).not.toBeInTheDocument();
   });
 
+  // TASK-656 (Т8): no resting line between the last column and the action
+  // cell — but the last column still resizes.
+  it("draws no resting separator after the last column, yet keeps it resizable", () => {
+    renderWithProviders(<Harness />);
+    const inner = screen.getByRole("separator", {
+      name: r.resizeColumnAria("Клієнт"),
+    });
+    const last = screen.getByRole("separator", {
+      name: r.resizeColumnAria("Сума"),
+    });
+    expect(inner.firstElementChild).toHaveClass("bg-muted-foreground/45");
+    expect(last.firstElementChild).toHaveClass("bg-transparent");
+    expect(last.firstElementChild).not.toHaveClass("bg-muted-foreground/45");
+    expect(last).toHaveAttribute("tabindex", "0");
+  });
+
   it("does not offer a resize handle on a non-resizable column", () => {
     const columns = COLUMNS.map((c) =>
       c.id === "total" ? { ...c, resizable: false } : c,
@@ -693,6 +710,57 @@ describe("DataRegistry — row navigation", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
+  // TASK-656 (ProductsProposal Т8): «Відновити» in a view of deleted records.
+  it("puts an inline rowAction in the trailing cell — not a column «Колонки» can hide", async () => {
+    const onRestore = jest.fn();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <Harness
+        rowAction={(o) =>
+          o.id === "a" ? (
+            <button type="button" onClick={() => onRestore(o.id)}>
+              Відновити
+            </button>
+          ) : null
+        }
+      />,
+    );
+
+    // One per row that has it, in the last cell of that row.
+    const buttons = screen.getAllByRole("button", { name: "Відновити" });
+    expect(buttons).toHaveLength(1);
+    const row = screen.getByText("Оксана").closest("tr")!;
+    expect(row.lastElementChild).toContainElement(buttons[0]);
+    expect(columnHeaders()).toEqual(["number", "customer", "total"]);
+
+    // A control: it acts, and the row does not navigate.
+    await user.click(buttons[0]);
+    expect(onRestore).toHaveBeenCalledWith("a");
+    expect(mockPush).not.toHaveBeenCalled();
+
+    // «Колонки» lists only the declared columns.
+    await user.click(screen.getByRole("button", { name: r.columns }));
+    expect(
+      screen.queryByRole("checkbox", { name: "Відновити" }),
+    ).not.toBeInTheDocument();
+  });
+
+  // Verifier, TASK-656: at 96 px the button's right border met the table's
+  // rounded edge and was clipped. The cell is now as wide as the constant the
+  // screens budget against, with a gutter on both sides of the button.
+  it("gives the inline rowAction a wider trailing cell with a gutter", () => {
+    renderWithProviders(
+      <Harness rowAction={() => <button type="button">Відновити</button>} />,
+    );
+    const row = screen.getByText("Оксана").closest("tr")!;
+    const cell = row.lastElementChild as HTMLElement;
+    expect(cell).toHaveClass("w-28", "pr-2", "pl-1");
+    expect(REGISTRY_ROW_ACTION_WIDTH).toBe(112);
+    const table = screen.getByRole("table");
+    const cols = table.querySelectorAll("col");
+    expect(cols[cols.length - 1]).toHaveClass("w-28");
+  });
+
   // Wave 198 (MessagesProposal З5): a record that opens in a side sheet.
   it("opens in place with onRowOpen — not from its controls — and tints rows", async () => {
     const onRowOpen = jest.fn();
@@ -747,6 +815,27 @@ describe("DataRegistry — mobile cards and totals", () => {
     expect(screen.getByText(dict.common.pageOf(1, 2))).toBeInTheDocument();
   });
 
+  it("hands a card its inline rowAction through parts.actions (TASK-656, Т12)", () => {
+    setViewport(true);
+    renderWithProviders(
+      <Harness
+        renderCard={(o, { actions }) => (
+          <div>
+            <span>{o.number}</span>
+            {actions}
+          </div>
+        )}
+        rowAction={(o) => (
+          <button type="button">{`Відновити ${o.number}`}</button>
+        )}
+      />,
+    );
+    const card = screen.getByRole("listitem", { name: "#A0000001" });
+    expect(
+      within(card).getByRole("button", { name: "Відновити #A0000001" }),
+    ).toBeInTheDocument();
+  });
+
   it("selects the whole page from the card list, as the table header does", async () => {
     setViewport(true);
     const user = userEvent.setup();
@@ -789,6 +878,44 @@ describe("DataRegistry — mobile cards and totals", () => {
     expect(footer).toHaveTextContent("350 ₴");
     // Hidden on phones: a totals line under a card list reads as a card.
     expect(footer).toHaveClass("hidden", "md:table-footer-group");
+  });
+
+  // TASK-656 (Т8): «Видалених на сторінці: 3» instead of «Разом …».
+  it("lets the screen name the totals row with totalsLabel", () => {
+    renderWithProviders(
+      <Harness
+        totals
+        totalsLabel={(count) => `Видалених на сторінці: ${count}`}
+      />,
+    );
+    const footer = document.querySelector("tfoot") as HTMLElement;
+    expect(footer).toHaveTextContent("Видалених на сторінці: 2");
+    expect(footer).not.toHaveTextContent(r.totalsOnPage("2 замовлення"));
+  });
+
+  // TASK-656 (Т1/Т8): the label starts under «Назва», not under «Фото».
+  it("starts the totals label under the column named by totalsLabelFrom", () => {
+    renderWithProviders(<Harness totals totalsLabelFrom="customer" />);
+    const cells = Array.from(
+      document.querySelectorAll("tfoot td"),
+    ) as HTMLTableCellElement[];
+    // «№» stays empty; the label covers «Клієнт»; «Сума» keeps its footer.
+    expect(cells).toHaveLength(3);
+    expect(cells[0]).toBeEmptyDOMElement();
+    expect(cells[0].colSpan).toBe(1);
+    expect(cells[1]).toHaveTextContent(r.totalsOnPage("2 замовлення"));
+    expect(cells[1].colSpan).toBe(1);
+    expect(cells[2]).toHaveTextContent("350 ₴");
+  });
+
+  it("ignores a totalsLabelFrom that comes after the first footer", () => {
+    renderWithProviders(<Harness totals totalsLabelFrom="total" />);
+    const cells = Array.from(
+      document.querySelectorAll("tfoot td"),
+    ) as HTMLTableCellElement[];
+    expect(cells[0]).toHaveTextContent(r.totalsOnPage("2 замовлення"));
+    expect(cells[0].colSpan).toBe(2);
+    expect(cells[1]).toHaveTextContent("350 ₴");
   });
 });
 

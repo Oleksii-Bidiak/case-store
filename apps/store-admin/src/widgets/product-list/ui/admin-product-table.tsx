@@ -21,11 +21,16 @@ import { useProductBulkColor } from "@/features/product-bulk-color";
 import { useProductBulkGroup } from "@/features/product-bulk-group";
 import { useProductBulkUndo } from "@/features/product-bulk-undo";
 import { ProductDeleteAction } from "@/features/product-delete";
+import {
+  ProductRestoreDialog,
+  type RestorableProduct,
+} from "@/features/product-restore";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { toast } from "@/shared/ui/toast";
 import {
   Button,
+  Callout,
   DataRegistry,
   LiveAnnouncer,
   SummaryValue,
@@ -46,7 +51,10 @@ import {
   useProductFilterDevices,
   type ProductFilters,
 } from "./product-filter-sheet";
-import { productColumns, renderProductCard } from "./product-registry-columns";
+import {
+  productCardRenderer,
+  productColumns,
+} from "./product-registry-columns";
 
 const d = dict.products;
 const t = d.bulk;
@@ -129,6 +137,8 @@ function sortLabel(sortBy: string, sortOrder: "asc" | "desc"): string {
       return asc ? d.sortPriceAsc : d.sortPriceDesc;
     case "stock":
       return asc ? d.sortStockAsc : d.sortStockDesc;
+    case "deletedAt":
+      return asc ? d.sortDeletedAsc : d.sortDeletedDesc;
     default:
       return asc ? d.sortCreatedAsc : d.sortCreatedDesc;
   }
@@ -155,6 +165,12 @@ const digitsOnly = (value: string | null) =>
  * Every bulk endpoint — and so the undo — needs `products:write`. Without it
  * there is no checkbox column, no bulk bar and no «Додати товар» (Т6).
  *
+ * «Видалені» (TASK-656, Т8–Т12) is a worklist of one action: an outline
+ * «Відновити» in the trailing cell (`products:delete`), no «⋯», no checkboxes,
+ * no bulk bar and no «Додати товар». The explanation above the summary says
+ * what a deleted product is and — to whoever has the button — that it comes
+ * back hidden.
+ *
  * The selection survives paging (registry rule). The undo snapshot therefore
  * reads every row the operator has SEEN this visit, not just the page on
  * screen — a product picked on page 1 and acted on from page 2 still gets its
@@ -174,11 +190,18 @@ export function AdminProductTable() {
 function AdminProductTableView() {
   const searchParams = useSearchParams();
   const updateParams = useUrlParams();
+  const deletedParam = searchParams.get("deleted") ?? "";
+  const isDeletedView = deletedParam === "only";
+  // Т8: «Видалені» reads newest-DELETION-first until a column is picked — the
+  // product removed by mistake a minute ago belongs on page 1 (TASK-656).
+  // Sent explicitly rather than left to the API's own default so the summary
+  // line can never name a sort the request did not ask for.
   const { sortBy, sortOrder, onSort } = useTableSort(
     searchParams,
     updateParams,
+    isDeletedView ? "deletedAt" : "createdAt",
   );
-  const { can } = useAuth();
+  const { can, arePermissionsLoading } = useAuth();
   const canWrite = can(PERM.productsWrite);
   const canDelete = can(PERM.productsDelete);
 
@@ -187,8 +210,6 @@ function AdminProductTableView() {
   const pageSize = pageSizeFrom(searchParams);
   const statusParam = searchParams.get("status") ?? "";
   const stockParam = searchParams.get("stock") ?? "";
-  const deletedParam = searchParams.get("deleted") ?? "";
-  const isDeletedView = deletedParam === "only";
   const categoryParam = searchParams.get("categoryId") ?? "";
   const brandParam = searchParams.get("brandId") ?? "";
   const deviceParam = searchParams.get("deviceModelId") ?? "";
@@ -255,6 +276,10 @@ function AdminProductTableView() {
   const columns = useMemo(
     () => productColumns({ isDeletedView, categoryNames }),
     [categoryNames, isDeletedView],
+  );
+  const renderCard = useMemo(
+    () => productCardRenderer({ isDeletedView }),
+    [isDeletedView],
   );
 
   const filterKey = [
@@ -408,6 +433,52 @@ function AdminProductTableView() {
     return items;
   };
 
+  /* ── «Видалені»: restore (TASK-656) ─────────────────────────────────── */
+
+  const [restoreTarget, setRestoreTarget] = useState<RestorableProduct | null>(
+    null,
+  );
+
+  // `can()` answers false until the permissions arrive, so the button never
+  // flashes in for a session that will turn out not to have it.
+  const restoreAction =
+    isDeletedView && canDelete
+      ? (product: ProductEntity) => (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="max-md:h-11"
+            aria-label={d.restoreActionAria(product.name)}
+            onClick={() =>
+              setRestoreTarget({
+                id: product.id,
+                name: product.name,
+                slug: product.slug,
+                sku: product.sku,
+              })
+            }
+          >
+            {d.restoreAction}
+          </Button>
+        )
+      : undefined;
+
+  const deletedNotice = isDeletedView ? (
+    <Callout>
+      {d.deletedNotice}{" "}
+      {canDelete ? (
+        <>
+          {d.deletedNoticeRestoreLead}{" "}
+          <b className="font-semibold">{d.deletedNoticeRestoreHidden}</b>{" "}
+          {d.deletedNoticeRestoreTail}
+        </>
+      ) : arePermissionsLoading ? null : (
+        d.deletedNoticeNoRight
+      )}
+    </Callout>
+  ) : null;
+
   /* ── filters, chips ────────────────────────────────────────────────── */
 
   const activeView = viewOf(statusParam, stockParam, deletedParam);
@@ -536,9 +607,9 @@ function AdminProductTableView() {
       <DataRegistry
         registry={registry}
         title={d.heading}
-        description={isDeletedView ? d.deletedNotice : undefined}
         headerActions={
-          canWrite ? (
+          // Т8: nothing is created from the list of deleted products.
+          canWrite && !isDeletedView ? (
             <Button asChild>
               <Link href="/products/new">{d.add}</Link>
             </Button>
@@ -592,6 +663,7 @@ function AdminProductTableView() {
         views={{ defaultName: d.viewDefault }}
         onRefresh={refreshAll}
         isRefreshing={isFetching}
+        notice={deletedNotice}
         chips={chips}
         onClearAllChips={() =>
           updateParams({
@@ -605,7 +677,11 @@ function AdminProductTableView() {
           })
         }
         summary={
-          total === undefined ? null : (
+          total === undefined ? null : isDeletedView ? (
+            <>
+              {d.deletedSummary} <SummaryValue>{total}</SummaryValue>
+            </>
+          ) : (
             <>
               {d.summaryFound}{" "}
               <SummaryValue>{countLabel(total, d.itemForms)}</SummaryValue>
@@ -620,9 +696,14 @@ function AdminProductTableView() {
           isDeletedView ? undefined : (product) => `/products/${product.id}`
         }
         rowActions={isDeletedView ? undefined : rowActions}
+        rowAction={restoreAction}
         sort={{ sortBy, sortOrder, onSort }}
         totals
-        renderCard={renderProductCard}
+        // Т8: «Видалених на сторінці: 3» — not «Разом … товари».
+        totalsLabel={isDeletedView ? d.deletedTotalsOnPage : undefined}
+        // Т1/Т8: the label lines up with the names, not under «Фото».
+        totalsLabelFrom="name"
+        renderCard={renderCard}
         selectable={selectable}
         bulk={{
           idleHint: d.bulkIdleHint,
@@ -733,6 +814,13 @@ function AdminProductTableView() {
           }}
         />
       ) : null}
+
+      <ProductRestoreDialog
+        product={restoreTarget}
+        onOpenChange={(open) => {
+          if (!open) setRestoreTarget(null);
+        }}
+      />
     </>
   );
 }

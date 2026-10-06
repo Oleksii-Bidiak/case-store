@@ -10,7 +10,7 @@ import { server } from "@/shared/test/msw-server";
 import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { dict } from "@/shared/config";
 import { countLabel } from "@/shared/lib/plural";
-import { formatCurrency, formatDateTime } from "@/shared/lib";
+import { formatCurrency, formatDate, formatDateTime } from "@/shared/lib";
 import { AdminProductTable } from "./admin-product-table";
 
 const mockReplace = jest.fn();
@@ -889,7 +889,14 @@ describe("AdminProductTable — delete a product (TASK-427)", () => {
   });
 });
 
-describe("AdminProductTable — the deleted view (TASK-427)", () => {
+/** A tombstone as the admin list returns it: slug and SKU mangled (TASK-427). */
+const DELETED_ROW = makeProductRow({
+  slug: "deleted:product-1:iphone-15-pro-case",
+  sku: "deleted:product-1:IP15-CASE",
+  isActive: false,
+});
+
+describe("AdminProductTable — the deleted view (TASK-427, TASK-656)", () => {
   it("asks for live products by default — the flag is absent, not false", async () => {
     const list = stubList();
     renderTable();
@@ -900,18 +907,82 @@ describe("AdminProductTable — the deleted view (TASK-427)", () => {
 
   it("switches the listing to tombstones on ?deleted=only", async () => {
     mockSearchParamsRef.current = new URLSearchParams("deleted=only");
-    const list = stubList();
+    const list = stubList([DELETED_ROW]);
     renderTable();
     await screen.findByText(P1);
 
     expect(list.main()[0].get("deleted")).toBe("true");
-    expect(screen.getByText(d.deletedNotice)).toBeInTheDocument();
     expect(screen.getByText(d.deletedBadge)).toBeInTheDocument();
+    // Т8: the summary counts deleted products, not «Знайдено».
+    expect(screen.getByText(d.deletedSummary)).toBeInTheDocument();
   });
 
-  it("offers no write on a tombstoned row — it accepts none", async () => {
+  // Т8: «Сортування: дата видалення, нові вгорі» — the product deleted by
+  // mistake a minute ago is on page 1, not wherever its creation date lands.
+  it("sorts the deleted view by deletion date, newest first, and says so", async () => {
     mockSearchParamsRef.current = new URLSearchParams("deleted=only");
-    stubList();
+    const list = stubList([DELETED_ROW]);
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(list.main()[0].get("sortBy")).toBe("deletedAt");
+    expect(list.main()[0].get("sortOrder")).toBe("desc");
+    expect(
+      screen.getByText(r.summarySort(d.sortDeletedDesc), {
+        exact: false,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(r.summarySort(d.sortCreatedDesc), {
+        exact: false,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps a column the operator picked in the deleted view", async () => {
+    mockSearchParamsRef.current = new URLSearchParams(
+      "deleted=only&sortBy=name&sortOrder=asc",
+    );
+    const list = stubList([DELETED_ROW]);
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(list.main()[0].get("sortBy")).toBe("name");
+  });
+
+  it("keeps the live list on creation date", async () => {
+    const list = stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(list.main()[0].get("sortBy")).toBe("createdAt");
+  });
+
+  it("explains the view and no longer promises it is read-only (Т8)", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList([DELETED_ROW]);
+    renderTable();
+    await screen.findByText(P1);
+
+    const notice = screen.getByText(d.deletedNotice, { exact: false });
+    expect(notice).toHaveTextContent(d.deletedNoticeRestoreLead);
+    expect(notice).toHaveTextContent(d.deletedNoticeRestoreHidden);
+    expect(notice).not.toHaveTextContent(/лише для довідки/);
+  });
+
+  it("shows the native артикул, not the tombstone's `deleted:<id>:` one", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList([DELETED_ROW]);
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(screen.getByText("IP15-CASE")).toBeInTheDocument();
+    expect(screen.queryByText(/deleted:product-1:/)).toBeNull();
+  });
+
+  it("offers no edit, no «⋯», no selection and no «Додати товар» — only «Відновити»", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList([DELETED_ROW]);
     renderTable();
     await screen.findByText(P1);
 
@@ -922,6 +993,284 @@ describe("AdminProductTable — the deleted view (TASK-427)", () => {
     expect(
       screen.queryByRole("checkbox", { name: r.selectRowAria(P1) }),
     ).toBeNull();
+    expect(screen.queryByRole("link", { name: d.add })).toBeNull();
+    expect(screen.queryByText(d.bulkIdleHint)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: d.restoreActionAria(P1) }),
+    ).toHaveTextContent(d.restoreAction);
+  });
+
+  it("dates the row «видалено 02.06.2026» — no time (Т8)", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList([DELETED_ROW]);
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(
+      document.querySelector('td[data-column-id="updated"]'),
+    ).toHaveTextContent(d.deletedOn(formatDate("2026-06-02T10:00:00.000Z")));
+    expect(
+      document.querySelector('td[data-column-id="updated"]'),
+    ).not.toHaveTextContent(formatDateTime("2026-06-02T10:00:00.000Z"));
+  });
+
+  it("counts the page as «Видалених на сторінці» with no free-stock sum (Т8)", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList([DELETED_ROW]);
+    renderTable();
+    await screen.findByText(P1);
+
+    const footer = document.querySelector("tfoot") as HTMLElement;
+    expect(footer).toHaveTextContent(d.deletedTotalsOnPage(1));
+    expect(footer).not.toHaveTextContent(r.totalsOnPage(countLabel(1, forms)));
+    expect(footer).not.toHaveTextContent(d.totalsFree(10));
+  });
+});
+
+/* ── restore (TASK-656, ProductsProposal Т8–Т12) ──────────────────────── */
+
+describe("AdminProductTable — restore a deleted product (TASK-656)", () => {
+  function stubRestorable(
+    answers: Array<{ status: number; body?: unknown }> = [{ status: 201 }],
+  ) {
+    const bodies: unknown[] = [];
+    const counts = { list: 0 };
+    server.use(
+      http.get("*/api/products/admin/list", ({ request }) => {
+        if (new URL(request.url).searchParams.get("limit") !== "1") {
+          counts.list += 1;
+        }
+        return HttpResponse.json({
+          data: [DELETED_ROW],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        });
+      }),
+      ...categoryTreeHandlers(),
+      http.post("*/api/products/product-1/restore", async ({ request }) => {
+        bodies.push(await request.json());
+        const answer = answers[Math.min(bodies.length, answers.length) - 1];
+        if (answer.status >= 400) {
+          return HttpResponse.json(answer.body ?? {}, {
+            status: answer.status,
+          });
+        }
+        return HttpResponse.json(
+          {
+            data: makeProductRow({ isActive: false }),
+          },
+          { status: answer.status },
+        );
+      }),
+    );
+    return { bodies, counts };
+  }
+
+  const openRestore = async () => {
+    await userEvent.click(
+      await screen.findByRole("button", { name: d.restoreActionAria(P1) }),
+    );
+    return screen.findByRole("alertdialog");
+  };
+
+  it("is offered only in «Видалені»", async () => {
+    stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(
+      screen.queryByRole("button", { name: d.restoreActionAria(P1) }),
+    ).toBeNull();
+  });
+
+  it("is not offered without products:delete — and the notice says who can", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList([DELETED_ROW]);
+    renderTable({ permissions: ["products:read", "products:write"] });
+    await screen.findByText(P1);
+
+    expect(
+      screen.queryByRole("button", { name: d.restoreActionAria(P1) }),
+    ).toBeNull();
+    const notice = screen.getByText(d.deletedNotice, { exact: false });
+    expect(notice).toHaveTextContent(d.deletedNoticeNoRight);
+    expect(notice).not.toHaveTextContent(d.deletedNoticeRestoreLead);
+  });
+
+  it("is offered to a manager who holds products:delete", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList([DELETED_ROW]);
+    renderTable({ permissions: ["products:read", "products:delete"] });
+    await screen.findByText(P1);
+
+    expect(
+      screen.getByRole("button", { name: d.restoreActionAria(P1) }),
+    ).toBeInTheDocument();
+  });
+
+  it("confirms with the native address and артикул, then POSTs an empty body (Т9)", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    const { bodies, counts } = stubRestorable();
+    renderTable();
+    await screen.findByText(P1);
+
+    const dialog = await openRestore();
+    expect(
+      within(dialog).getByRole("heading", { name: d.restoreTitle }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("/products/iphone-15-pro-case"),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("IP15-CASE")).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.restoreConfirm }),
+    );
+
+    await waitFor(() => expect(bodies).toEqual([{}]));
+    await waitFor(() => expect(counts.list).toBeGreaterThan(1));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("toasts «… відновлено — він прихований.» with «Відкрити картку» (Т11)", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubRestorable();
+    renderTable();
+    await screen.findByText(P1);
+
+    const dialog = await openRestore();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.restoreConfirm }),
+    );
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1));
+    const [message, options] = toastSuccess.mock.calls[0] as [
+      string,
+      { action: { label: string; onClick: () => void } },
+    ];
+    expect(message).toBe(d.restoreToastDone(P1));
+    expect(options.action.label).toBe(d.restoreToastOpen);
+
+    options.action.onClick();
+    expect(mockPush).toHaveBeenCalledWith("/products/product-1/edit");
+  });
+
+  it("asks for a new address on 409 PRODUCT_SLUG_CONFLICT and sends it on retry (Т10)", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    const { bodies } = stubRestorable([
+      {
+        status: 409,
+        body: { error: "PRODUCT_SLUG_CONFLICT", message: "taken" },
+      },
+      { status: 201 },
+    ]);
+    renderTable();
+    await screen.findByText(P1);
+
+    const confirm = await openRestore();
+    await userEvent.click(
+      within(confirm).getByRole("button", { name: d.restoreConfirm }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: d.conflictTitleSlug,
+    });
+    const slug = within(dialog).getByRole("textbox", {
+      name: d.conflictNewSlug,
+    });
+    expect(slug).toHaveValue("iphone-15-pro-case-2");
+    expect(
+      within(dialog).queryByRole("textbox", { name: d.conflictNewSku }),
+    ).toBeNull();
+    // Nothing restored yet — the toast waits for the retry.
+    expect(toastSuccess).not.toHaveBeenCalled();
+
+    await userEvent.clear(slug);
+    await userEvent.type(slug, "iphone-15-pro-case-clear");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.conflictConfirmSlug }),
+    );
+
+    await waitFor(() =>
+      expect(bodies).toEqual([{}, { slug: "iphone-15-pro-case-clear" }]),
+    );
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        d.restoreToastDone(P1),
+        expect.anything(),
+      ),
+    );
+  });
+
+  // The whole flow from the row: «Відновити» → Т9 → an empty body → 409 naming
+  // BOTH slots → Т10 with both fields prefilled → a retry carrying both → the
+  // list refetched, the dialog gone, one toast.
+  it("walks Відновити → 409 PRODUCT_SLUG_SKU_CONFLICT → retry with both (Т9–Т11)", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    const { bodies, counts } = stubRestorable([
+      {
+        status: 409,
+        body: { error: "PRODUCT_SLUG_SKU_CONFLICT", message: "taken" },
+      },
+      { status: 201 },
+    ]);
+    renderTable();
+    await screen.findByText(P1);
+
+    const confirm = await openRestore();
+    await userEvent.click(
+      within(confirm).getByRole("button", { name: d.restoreConfirm }),
+    );
+    await waitFor(() => expect(bodies).toEqual([{}]));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: d.conflictTitleBoth,
+    });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    // Т10 sets the taken values in mono inside the lead.
+    expect(
+      within(dialog).getByText("/products/iphone-15-pro-case"),
+    ).toHaveClass("font-mono");
+    expect(within(dialog).getByText("IP15-CASE")).toHaveClass("font-mono");
+    expect(
+      within(dialog).getByRole("textbox", { name: d.conflictNewSlug }),
+    ).toHaveValue("iphone-15-pro-case-2");
+    expect(
+      within(dialog).getByRole("textbox", { name: d.conflictNewSku }),
+    ).toHaveValue("IP15-CASE-2");
+    const listBefore = counts.list;
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.conflictConfirmBoth }),
+    );
+
+    await waitFor(() =>
+      expect(bodies).toEqual([
+        {},
+        { slug: "iphone-15-pro-case-2", sku: "IP15-CASE-2" },
+      ]),
+    );
+    await waitFor(() => expect(counts.list).toBeGreaterThan(listBefore));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(toastSuccess).toHaveBeenCalledTimes(1);
+    expect(toastSuccess).toHaveBeenCalledWith(
+      d.restoreToastDone(P1),
+      expect.anything(),
+    );
+  });
+
+  it("shows «Видалено» and «Відновити» on the card below md (Т12)", async () => {
+    setViewport(true);
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList([DELETED_ROW]);
+    renderTable();
+
+    const card = await screen.findByRole("listitem", { name: P1 });
+    expect(within(card).getByText(d.deletedBadge)).toBeInTheDocument();
+    expect(within(card).getByText("IP15-CASE")).toBeInTheDocument();
+    expect(
+      within(card).getByRole("button", { name: d.restoreActionAria(P1) }),
+    ).toBeInTheDocument();
   });
 });
 

@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { InfoIcon } from "lucide-react";
-import type { ProductEntity } from "@/entities/product";
+import { stripTombstonePrefix, type ProductEntity } from "@/entities/product";
 import {
   Badge,
+  REGISTRY_ROW_ACTION_WIDTH,
+  REGISTRY_TRAILING_WIDTH,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -13,12 +15,24 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
-import { formatCurrency, formatDateTime } from "@/shared/lib";
+import { formatCurrency, formatDate, formatDateTime } from "@/shared/lib";
 
 const d = dict.products;
 
+/** The 1440 content area: 1440 − 256 (sidebar) − 48 (padding). */
+const CONTENT_WIDTH_1440 = 1136;
+
 /** Width the default-visible columns may share at 1440 (see `productColumns`). */
-export const DEFAULT_WIDTH_BUDGET = 1136 - 36 - 44 - 2;
+export const DEFAULT_WIDTH_BUDGET =
+  CONTENT_WIDTH_1440 - 36 - REGISTRY_TRAILING_WIDTH - 2;
+
+/**
+ * The same budget in «Видалені» (TASK-656, Т8): no checkbox column, but the
+ * trailing cell holds the outline «Відновити» instead of «⋯». It is the
+ * tighter of the two, so the default widths are sized against it.
+ */
+export const DELETED_VIEW_WIDTH_BUDGET =
+  CONTENT_WIDTH_1440 - REGISTRY_ROW_ACTION_WIDTH - 2;
 
 /** Free stock at or below this reads as «мало» (the artboard's orange). */
 export const LOW_STOCK = 5;
@@ -43,11 +57,25 @@ export function ProductThumb({ product }: { product: ProductEntity }) {
   );
 }
 
+/**
+ * The артикул as the operator typed it. A deleted product's comes back from
+ * the list as `deleted:<id>:<sku>` — the view shows the native value, the one
+ * a restore gives back (Т8).
+ */
+function displaySku(product: ProductEntity): string | null {
+  return stripTombstonePrefix(product.sku, product.id);
+}
+
 function skuLine(product: ProductEntity): string {
   return (
-    [product.sku, product.brand?.name].filter(Boolean).join(" · ") ||
+    [displaySku(product), product.brand?.name].filter(Boolean).join(" · ") ||
     d.cardEmptyValue
   );
+}
+
+/** «Видалено» — red, like the artboard's `bg-dst`: the row is not live. */
+function DeletedBadge() {
+  return <Badge variant="destructive">{d.deletedBadge}</Badge>;
 }
 
 function freeText(stock: number): string {
@@ -156,7 +184,15 @@ interface ColumnOptions {
  * Default widths are budgeted to fit the 1440 layout without a sideways
  * scroll: content ≈ 1440 − 256 (sidebar) − 48 (padding) = 1136 px, of which
  * the checkbox (36) and «⋯» (44) columns take 80 — so the default-visible
- * columns share at most {@link DEFAULT_WIDTH_BUDGET}.
+ * columns share at most {@link DEFAULT_WIDTH_BUDGET}. «Видалені» trades both
+ * for the 112 px «Відновити» cell ({@link DELETED_VIEW_WIDTH_BUDGET}, the
+ * tighter one — hence «Назва» at 268, TASK-656; «Оновлено» at 164 keeps
+ * «видалено 15.09.2026» on one line). The widths are the SAME in
+ * both views on purpose: the registry persists one set per table, so a
+ * per-view default would be overwritten by the first resize in either.
+ *
+ * In «Видалені» (Т8) the «Оновлено» cell reads «видалено 03.10.2026» and the
+ * totals row carries no free-stock sum — a tombstone sells nothing.
  */
 export function productColumns({
   isDeletedView,
@@ -176,7 +212,7 @@ export function productColumns({
       label: d.colName,
       locked: true,
       sortField: "name",
-      defaultWidth: 296,
+      defaultWidth: 268,
       minWidth: 180,
       cell: (product) => (
         <span className="flex flex-col gap-0.5">
@@ -199,7 +235,7 @@ export function productColumns({
     {
       id: "category",
       label: d.colCategory,
-      defaultWidth: 150,
+      defaultWidth: 136,
       className: "text-muted-foreground",
       cell: (product) =>
         categoryNames.get(product.categoryId) ?? d.cardEmptyValue,
@@ -222,28 +258,36 @@ export function productColumns({
       sortHintAsTitle: false,
       defaultWidth: 160,
       cell: (product) => <StockCell product={product} />,
-      footer: (rows) =>
-        d.totalsFree(
-          rows.reduce((sum, row) => sum + Math.max(0, row.stock), 0),
-        ),
+      footer: isDeletedView
+        ? undefined
+        : (rows) =>
+            d.totalsFree(
+              rows.reduce((sum, row) => sum + Math.max(0, row.stock), 0),
+            ),
     },
     {
       id: "status",
       label: d.colStatus,
       defaultWidth: 124,
       cell: (product) =>
-        isDeletedView ? (
-          <Badge variant="secondary">{d.deletedBadge}</Badge>
-        ) : (
-          <StatusBadge product={product} />
-        ),
+        isDeletedView ? <DeletedBadge /> : <StatusBadge product={product} />,
     },
     {
       id: "updated",
       label: d.colUpdated,
-      defaultWidth: 150,
+      defaultWidth: 164,
       className: "text-muted-foreground tabular-nums",
-      cell: (product) => formatDateTime(product.updatedAt),
+      cell: (product) =>
+        isDeletedView ? (
+          // Т8: «видалено 03.10.2026» is one line — the date never breaks
+          // away from its verb. (The artboard's second line, who deleted it,
+          // needs a `deletedBy` the list does not return yet.)
+          <span className="whitespace-nowrap">
+            {d.deletedOn(formatDate(product.updatedAt))}
+          </span>
+        ) : (
+          formatDateTime(product.updatedAt)
+        ),
     },
     {
       id: "created",
@@ -257,11 +301,36 @@ export function productColumns({
   ];
 }
 
-/** One product below md (ProductsProposal Т7). */
-export function renderProductCard(
-  product: ProductEntity,
-  parts: RegistryCardParts,
-) {
+/**
+ * One product below md (ProductsProposal Т7; «Видалені» — Т12, where the
+ * status line is the red «Видалено» and `parts.actions` is «Відновити»).
+ */
+export function productCardRenderer({
+  isDeletedView,
+}: Pick<ColumnOptions, "isDeletedView">) {
+  return function renderProductCard(
+    product: ProductEntity,
+    parts: RegistryCardParts,
+  ) {
+    return (
+      <ProductCard
+        product={product}
+        parts={parts}
+        isDeletedView={isDeletedView}
+      />
+    );
+  };
+}
+
+function ProductCard({
+  product,
+  parts,
+  isDeletedView,
+}: {
+  product: ProductEntity;
+  parts: RegistryCardParts;
+  isDeletedView: boolean;
+}) {
   return (
     <div className="flex gap-3">
       {parts.select ? <div className="pt-0.5">{parts.select}</div> : null}
@@ -278,7 +347,7 @@ export function renderProductCard(
           <span className="font-medium text-foreground">{product.name}</span>
         )}
         <span className="text-xs break-all text-muted-foreground">
-          {product.sku || d.cardEmptyValue}
+          {displaySku(product) || d.cardEmptyValue}
         </span>
         <div className="flex items-baseline justify-between gap-2">
           <span className="font-semibold text-foreground tabular-nums">
@@ -294,7 +363,7 @@ export function renderProductCard(
           </span>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <StatusBadge product={product} />
+          {isDeletedView ? <DeletedBadge /> : <StatusBadge product={product} />}
           {parts.actions}
         </div>
       </div>
