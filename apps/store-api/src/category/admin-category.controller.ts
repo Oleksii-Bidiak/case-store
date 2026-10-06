@@ -279,7 +279,8 @@ export class AdminCategoryController {
    * subtree, all in one transaction. Products are never deleted or deactivated. The
    * body names the target: `moveToId` (an existing category) XOR `moveToNew` (create
    * one — which additionally needs `categories:write`, checked by the service because
-   * it depends on the body).
+   * it depends on the body). An empty body (TASK-655) deletes a truly empty category
+   * with no target at all.
    *
    * Its own permission (TASK-654): the route-level `categories:delete` REPLACES the
    * class-level `categories:write` (see `PermissionGuard.resolveRequirement`).
@@ -294,11 +295,16 @@ export class AdminCategoryController {
   })
   @ApiParam({ name: 'id', description: 'Category UUID' })
   @ApiBody({ type: DeleteCategoryDto })
-  @ApiResponse({ status: 204, description: 'Category subtree deleted, products moved' })
+  @ApiResponse({
+    status: 204,
+    description: 'Category subtree deleted, products moved (or a truly empty category deleted)',
+  })
   @ApiResponse({
     status: 400,
     description:
-      'Validation error; CATEGORY_MOVE_TARGET_REQUIRED (neither or both modes); ' +
+      'Validation error; CATEGORY_MOVE_TARGET_REQUIRED (both modes, or neither mode for a ' +
+      'category that is not truly empty — it has a subcategory, a product incl. a ' +
+      'soft-deleted one, or a carousel); ' +
       'CATEGORY_MOVE_TARGET_IN_SUBTREE (the target or its parent is inside the subtree)',
   })
   @ApiResponse({

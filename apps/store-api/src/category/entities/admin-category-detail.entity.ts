@@ -12,7 +12,9 @@ import { CategoryEntity } from './category.entity';
  * Soft-deleted products of the subtree move as well (so a product restored later does
  * not point at a tombstone) but are NOT counted here on purpose: the dialog talks about
  * the catalogue the operator can see, and `productCount` can therefore be lower than
- * the number the delete actually moves.
+ * the number the delete actually moves. They are reported separately as
+ * `deletedProductCount` (TASK-655), because they decide whether the category may be
+ * deleted without a move target.
  */
 export class CategoryDeletionImpactEntity {
   @ApiProperty({
@@ -34,6 +36,15 @@ export class CategoryDeletionImpactEntity {
     example: 1,
   })
   carouselCount!: number;
+
+  @ApiProperty({
+    description:
+      'Soft-deleted products filed anywhere in the subtree (TASK-655). Hidden from the ' +
+      'catalogue, but they still move with a delete — and they block a delete WITHOUT a ' +
+      'move target: only a category with all four counts at zero is truly empty',
+    example: 0,
+  })
+  deletedProductCount!: number;
 }
 
 /**
@@ -51,13 +62,19 @@ export class AdminCategoryDetailEntity extends CategoryEntity {
 
   static fromCategory(
     category: CategoryEntity,
-    impact: { subcategoryCount: number; productCount: number; carouselCount: number },
+    impact: {
+      subcategoryCount: number;
+      productCount: number;
+      carouselCount: number;
+      deletedProductCount: number;
+    },
   ): AdminCategoryDetailEntity {
     const entity = Object.assign(new AdminCategoryDetailEntity(), category);
     const deletionImpact = new CategoryDeletionImpactEntity();
     deletionImpact.subcategoryCount = impact.subcategoryCount;
     deletionImpact.productCount = impact.productCount;
     deletionImpact.carouselCount = impact.carouselCount;
+    deletionImpact.deletedProductCount = impact.deletedProductCount;
     entity.deletionImpact = deletionImpact;
     return entity;
   }

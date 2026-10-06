@@ -57,16 +57,19 @@ export class DeleteCategoryMoveToNewDto {
  * category outside that subtree. Products are never deleted or deactivated with
  * their category (decision B-2 of plan 178).
  *
- * EXACTLY ONE of `moveToId` / `moveToNew` must be sent. The exclusivity is checked
- * explicitly by `CategoryService.delete` (400 `CATEGORY_MOVE_TARGET_REQUIRED`) rather
- * than here, so the response carries the stable error code the admin panel keys its
- * announcement off.
+ * AT MOST ONE of `moveToId` / `moveToNew` may be sent. Sending NEITHER (an empty or
+ * absent body — TASK-655) deletes a truly empty category: no live subcategory, no
+ * product of any state (soft-deleted ones included) and no carousel; anything else is
+ * refused. Both rules are checked by `CategoryService` / `CategoryRepository` (400
+ * `CATEGORY_MOVE_TARGET_REQUIRED`) rather than here, so the response carries the stable
+ * error code the admin panel keys its announcement off.
  */
 export class DeleteCategoryDto {
   @ApiProperty({
     description:
       'Move the products into this EXISTING live category. Must be outside the subtree ' +
-      'being deleted. Mutually exclusive with `moveToNew`.',
+      'being deleted. Mutually exclusive with `moveToNew`; omit both only for a truly ' +
+      'empty category (no subcategory, no product — deleted ones included — no carousel).',
     example: '550e8400-e29b-41d4-a716-446655440000',
     required: false,
   })
@@ -77,7 +80,8 @@ export class DeleteCategoryDto {
   @ApiProperty({
     description:
       'Create a new category and move the products into it (requires `categories:write` ' +
-      'in addition to the delete permission). Mutually exclusive with `moveToId`.',
+      'in addition to the delete permission). Mutually exclusive with `moveToId`; omit ' +
+      'both only for a truly empty category.',
     type: () => DeleteCategoryMoveToNewDto,
     required: false,
   })

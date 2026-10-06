@@ -4,6 +4,7 @@ import { CategoryRepository } from './category.repository';
 import {
   CategoryMoveTargetInSubtreeError,
   CategoryMoveTargetNotFoundError,
+  CategoryMoveTargetRequiredError,
   CategoryNotFoundError,
   CategorySlugConflictError,
   CategoryTreeStaleError,
@@ -671,8 +672,8 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
       create: jest.fn(),
       update: jest.fn(),
     },
-    product: { updateMany: jest.fn() },
-    carousel: { updateMany: jest.fn() },
+    product: { updateMany: jest.fn(), count: jest.fn() },
+    carousel: { updateMany: jest.fn(), count: jest.fn() },
   };
 
   const NOW = new Date('2026-09-26T12:00:00.000Z');
@@ -895,11 +896,104 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
       expect(tx.product.updateMany).not.toHaveBeenCalled();
     });
   });
+
+  // TASK-655 (ДН-2.9): no target at all — only a TRULY empty leaf, decided under the lock.
+  describe('no target (kind "none")', () => {
+    const NONE = { kind: 'none' as const };
+
+    beforeEach(() => {
+      tx.$queryRaw.mockResolvedValue([{ id: 'node' }]);
+      tx.category.findMany.mockResolvedValue([{ id: 'node', slug: 'cases' }]);
+      tx.product.count.mockImplementation(() => {
+        calls.push('count-products');
+        return Promise.resolve(0);
+      });
+      tx.carousel.count.mockImplementation(() => {
+        calls.push('count-carousels');
+        return Promise.resolve(0);
+      });
+    });
+
+    it('tombstones the single empty leaf without moving anything', async () => {
+      const result = await repo.deleteSubtreeWithMove('node', NONE, NOW);
+
+      expect(result).toEqual({
+        targetId: null,
+        targetCreated: false,
+        subtreeIds: ['node'],
+        movedProducts: 0,
+        switchedCarousels: 0,
+      });
+      expect(tx.product.updateMany).not.toHaveBeenCalled();
+      expect(tx.carousel.updateMany).not.toHaveBeenCalled();
+      expect(tx.category.create).not.toHaveBeenCalled();
+      expect(tx.category.update).toHaveBeenCalledTimes(1);
+      expect(tx.category.update).toHaveBeenCalledWith({
+        where: { id: 'node' },
+        data: { deletedAt: NOW, isActive: false, slug: 'deleted:node:cases' },
+      });
+      // The emptiness checks run under the locks, before the tombstone.
+      expect(calls.lastIndexOf('lock')).toBeLessThan(calls.indexOf('count-products'));
+      expect(calls.indexOf('count-carousels')).toBeLessThan(calls.indexOf('tombstone'));
+    });
+
+    // Invariant I1: a soft-deleted product must not be left on a tombstone, so the count
+    // has NO deletedAt filter.
+    it('counts products of every state — no deletedAt filter', async () => {
+      await repo.deleteSubtreeWithMove('node', NONE, NOW);
+
+      expect(tx.product.count).toHaveBeenCalledWith({ where: { categoryId: 'node' } });
+      expect(tx.carousel.count).toHaveBeenCalledWith({ where: { categoryId: 'node' } });
+    });
+
+    it('refuses a category with a live subcategory', async () => {
+      tx.$queryRaw.mockResolvedValue(SUBTREE);
+
+      await expect(repo.deleteSubtreeWithMove('node', NONE, NOW)).rejects.toBeInstanceOf(
+        CategoryMoveTargetRequiredError,
+      );
+      expect(tx.category.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a category that still holds a product (even a soft-deleted one)', async () => {
+      tx.product.count.mockResolvedValue(1);
+
+      await expect(repo.deleteSubtreeWithMove('node', NONE, NOW)).rejects.toBeInstanceOf(
+        CategoryMoveTargetRequiredError,
+      );
+      expect(tx.category.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a category a carousel points at', async () => {
+      tx.carousel.count.mockResolvedValue(1);
+
+      await expect(repo.deleteSubtreeWithMove('node', NONE, NOW)).rejects.toBeInstanceOf(
+        CategoryMoveTargetRequiredError,
+      );
+      expect(tx.category.update).not.toHaveBeenCalled();
+    });
+
+    it('still refuses with TREE_STALE before checking emptiness', async () => {
+      tx.$queryRaw
+        .mockResolvedValueOnce([{ id: 'node' }])
+        .mockResolvedValueOnce([{ id: 'node' }, { id: 'new' }]);
+
+      await expect(repo.deleteSubtreeWithMove('node', NONE, NOW)).rejects.toBeInstanceOf(
+        CategoryTreeStaleError,
+      );
+      expect(tx.product.count).not.toHaveBeenCalled();
+      expect(tx.category.update).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('CategoryRepository — countDeletionImpact (TASK-652)', () => {
   it('counts the live subtree minus self, ALL non-deleted products and the carousels', async () => {
-    const productCount = jest.fn().mockResolvedValue(9);
+    const productCount = jest
+      .fn()
+      .mockImplementation(({ where }: { where: { deletedAt: unknown } }) =>
+        Promise.resolve(where.deletedAt === null ? 9 : 3),
+      );
     const carouselCount = jest.fn().mockResolvedValue(2);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -921,10 +1015,15 @@ describe('CategoryRepository — countDeletionImpact (TASK-652)', () => {
       subcategoryCount: 1,
       productCount: 9,
       carouselCount: 2,
+      deletedProductCount: 3,
     });
     // Inactive products move too, so the preview must not apply the public rule.
     expect(productCount).toHaveBeenCalledWith({
       where: { categoryId: { in: ['node', 'child'] }, deletedAt: null },
+    });
+    // TASK-655: the soft-deleted ones are counted apart — they block a target-less delete.
+    expect(productCount).toHaveBeenCalledWith({
+      where: { categoryId: { in: ['node', 'child'] }, deletedAt: { not: null } },
     });
     expect(carouselCount).toHaveBeenCalledWith({
       where: { categoryId: { in: ['node', 'child'] } },

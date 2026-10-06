@@ -505,9 +505,12 @@ export class CategoryService {
    * and move every product — and every carousel — filed in it into ONE target outside
    * the subtree, in one transaction. Products are never deleted or deactivated.
    *
-   * Exactly one mode: `moveToId` (an existing live category) or `moveToNew` (create one
+   * At most one mode: `moveToId` (an existing live category) or `moveToNew` (create one
    * in the same transaction — which additionally requires `categories:write`, checked
-   * BEFORE anything is read or written).
+   * BEFORE anything is read or written). Both → 400 `CATEGORY_MOVE_TARGET_REQUIRED`.
+   * Neither (TASK-655, decision ДН-2.9) → a target-less delete, allowed only for a truly
+   * empty leaf (no live subcategory, no product of any state, no carousel); the
+   * repository decides that under its locks and refuses with the same 400 otherwise.
    *
    * The checks here are FAST-FAIL hints for clear messages; the authoritative ones run
    * under the tree advisory lock in the repository and surface through {@link toHttp}:
@@ -526,10 +529,10 @@ export class CategoryService {
   ): Promise<CategoryDeletionResult> {
     const hasMoveTo = dto.moveToId !== undefined;
     const hasMoveToNew = dto.moveToNew !== undefined;
-    if (hasMoveTo === hasMoveToNew) {
+    if (hasMoveTo && hasMoveToNew) {
       throw badCategory(
         CategoryErrorCode.MOVE_TARGET_REQUIRED,
-        'Specify exactly one of moveToId or moveToNew — the products must move somewhere',
+        'Specify at most one of moveToId or moveToNew — the products move into one target',
       );
     }
 
@@ -544,7 +547,10 @@ export class CategoryService {
       throw new NotFoundException('Category not found');
     }
 
-    const target = await this.resolveDeletionTarget(id, dto);
+    // Neither mode (TASK-655): only a truly empty category may go without a target —
+    // the repository decides that under its locks (400 CATEGORY_MOVE_TARGET_REQUIRED).
+    const target: CategoryDeletionTarget =
+      hasMoveTo || hasMoveToNew ? await this.resolveDeletionTarget(id, dto) : { kind: 'none' };
 
     let result: CategoryDeletionResult;
     try {
@@ -554,7 +560,10 @@ export class CategoryService {
     }
 
     await this.purgeProductCaches(PRODUCT_CACHE_PREFIX);
-    this.reindexSubtreesInBackground([result.targetId]);
+    // A target-less delete moved nothing, so there is nothing to re-index.
+    if (result.targetId !== null) {
+      this.reindexSubtreesInBackground([result.targetId]);
+    }
 
     this.logger.info(
       {

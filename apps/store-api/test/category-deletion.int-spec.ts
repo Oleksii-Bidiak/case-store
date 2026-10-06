@@ -9,6 +9,7 @@ import { CategoryRepository } from '../src/category/category.repository';
 import {
   CategoryMoveTargetInSubtreeError,
   CategoryMoveTargetNotFoundError,
+  CategoryMoveTargetRequiredError,
   CategoryNotFoundError,
   CategorySlugConflictError,
 } from '../src/category/category.errors';
@@ -458,11 +459,13 @@ describe('Category deletion (integration, TASK-652/653)', () => {
         slug: slug('fresh-target'),
         parentId: anchor,
       });
-      createdCategoryIds.push(result.targetId);
+      // A `new` target always yields an id; `null` is only for a target-less delete.
+      const createdId = result.targetId!;
+      createdCategoryIds.push(createdId);
 
       expect(result.targetCreated).toBe(true);
       expect(result.movedProducts).toBe(2);
-      const created = await prisma.category.findUnique({ where: { id: result.targetId } });
+      const created = await prisma.category.findUnique({ where: { id: createdId } });
       expect(created).toEqual(
         expect.objectContaining({
           name: 'del fresh target',
@@ -474,7 +477,7 @@ describe('Category deletion (integration, TASK-652/653)', () => {
         }),
       );
       const moved = await productState([pRoot, pChild]);
-      expect(moved.map((row) => row.categoryId)).toEqual([result.targetId, result.targetId]);
+      expect(moved.map((row) => row.categoryId)).toEqual([createdId, createdId]);
       expect(moved.find((row) => row.id === pChild)!.isActive).toBe(false);
     });
 
@@ -489,6 +492,95 @@ describe('Category deletion (integration, TASK-652/653)', () => {
       expect(roots.total).toBe(
         (await prisma.category.count({ where: { parentId: null } })) - tombstonedRoots,
       );
+    });
+  });
+
+  // ─── No target (TASK-655, ДН-2.9) ──────────────────────────────────────────────
+
+  describe('deleting a truly empty leaf WITHOUT a target (TASK-655)', () => {
+    /** A live category's row exactly as the refusal must leave it. */
+    const expectLive = async (id: string, ownSlug: string) => {
+      const row = await prisma.category.findUnique({ where: { id } });
+      expect(row).toEqual(
+        expect.objectContaining({ deletedAt: null, isActive: true, slug: ownSlug }),
+      );
+    };
+
+    it('tombstones an empty leaf, moves nothing and frees its slug', async () => {
+      const empty = await makeCategory('empty-leaf', anchor, 80);
+      await expect(categories.countDeletionImpact(empty)).resolves.toEqual({
+        subcategoryCount: 0,
+        productCount: 0,
+        carouselCount: 0,
+        deletedProductCount: 0,
+      });
+
+      const result = await categories.deleteSubtreeWithMove(empty, { kind: 'none' });
+
+      expect(result).toEqual({
+        targetId: null,
+        targetCreated: false,
+        subtreeIds: [empty],
+        movedProducts: 0,
+        switchedCarousels: 0,
+      });
+      const row = await prisma.category.findUnique({ where: { id: empty } });
+      expect(row!.deletedAt).not.toBeNull();
+      expect(row!.isActive).toBe(false);
+      expect(row!.slug).toBe(`deleted:${empty}:${slug('empty-leaf')}`);
+      expect(await categories.findById(empty)).toBeNull();
+      expect(await categories.findBySlug(slug('empty-leaf'), { activeOnly: false })).toBeNull();
+    });
+
+    // Invariant I1: a soft-deleted product must not end up on a tombstone — TASK-656
+    // would restore it into a category that no longer exists.
+    it('refuses a leaf holding only a soft-deleted product — nothing written', async () => {
+      const ghost = await makeCategory('ghost-leaf', anchor, 81);
+      const pGhost = await makeProduct('p-ghost', ghost, { deletedAt: new Date('2026-01-01') });
+      await expect(categories.countDeletionImpact(ghost)).resolves.toEqual({
+        subcategoryCount: 0,
+        productCount: 0,
+        carouselCount: 0,
+        deletedProductCount: 1,
+      });
+
+      await expect(
+        categories.deleteSubtreeWithMove(ghost, { kind: 'none' }),
+      ).rejects.toBeInstanceOf(CategoryMoveTargetRequiredError);
+
+      await expectLive(ghost, slug('ghost-leaf'));
+      const [state] = await productState([pGhost]);
+      expect(state.categoryId).toBe(ghost);
+      expect(state.deletedAt).not.toBeNull();
+    });
+
+    it('refuses a leaf a carousel points at — nothing written', async () => {
+      const shown = await makeCategory('carousel-leaf', anchor, 82);
+      const carousel = await prisma.carousel.create({
+        data: { title: 'del shown', source: 'CATEGORY', categoryId: shown },
+      });
+      createdCarouselIds.push(carousel.id);
+
+      await expect(
+        categories.deleteSubtreeWithMove(shown, { kind: 'none' }),
+      ).rejects.toBeInstanceOf(CategoryMoveTargetRequiredError);
+
+      await expectLive(shown, slug('carousel-leaf'));
+      expect((await prisma.carousel.findUnique({ where: { id: carousel.id } }))!.categoryId).toBe(
+        shown,
+      );
+    });
+
+    it('refuses a category with a (product-less) child — nothing written', async () => {
+      const parent = await makeCategory('empty-parent', anchor, 83);
+      const child = await makeCategory('empty-child', parent);
+
+      await expect(
+        categories.deleteSubtreeWithMove(parent, { kind: 'none' }),
+      ).rejects.toBeInstanceOf(CategoryMoveTargetRequiredError);
+
+      await expectLive(parent, slug('empty-parent'));
+      await expectLive(child, slug('empty-child'));
     });
   });
 

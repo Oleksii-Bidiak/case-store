@@ -22,9 +22,11 @@ export const CategoryErrorCode = {
   /** A described bucket's child SET changed underneath the client (concurrent reparent). */
   TREE_STALE: 'CATEGORY_TREE_STALE',
   /**
-   * A delete request named neither or both move modes (TASK-652): exactly one of
-   * `moveToId` / `moveToNew` is required, because products are never deleted with
-   * their category (decision B-2 of plan 178).
+   * A delete request named BOTH move modes (TASK-652), or named none for a category
+   * that is not truly empty (TASK-655). Products are never deleted with their category
+   * (decision B-2 of plan 178), so a target is required unless the category has no live
+   * subcategory, no product at all (soft-deleted ones included — invariant I1) and no
+   * carousel pointing at it.
    */
   MOVE_TARGET_REQUIRED: 'CATEGORY_MOVE_TARGET_REQUIRED',
   /**
@@ -113,6 +115,18 @@ export class CategoryMoveTargetInSubtreeError extends CategoryDomainError {
 export class CategoryMoveTargetNotFoundError extends CategoryDomainError {
   constructor(message = 'Move target category not found') {
     super(CategoryErrorCode.MOVE_TARGET_NOT_FOUND, message);
+  }
+}
+
+/**
+ * A delete without a move target (TASK-655) hit a category that is not truly empty: it
+ * has a live subcategory, a product (a soft-deleted one counts — a product restored
+ * later must not point at a tombstone, invariant I1) or a carousel. Decided under the
+ * tree advisory lock in `CategoryRepository.deleteSubtreeWithMove`.
+ */
+export class CategoryMoveTargetRequiredError extends CategoryDomainError {
+  constructor(message = 'The category is not empty — name a move target (moveToId or moveToNew)') {
+    super(CategoryErrorCode.MOVE_TARGET_REQUIRED, message);
   }
 }
 

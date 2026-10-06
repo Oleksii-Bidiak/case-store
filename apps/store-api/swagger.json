@@ -1996,10 +1996,10 @@
         },
         "responses": {
           "204": {
-            "description": "Category subtree deleted, products moved"
+            "description": "Category subtree deleted, products moved (or a truly empty category deleted)"
           },
           "400": {
-            "description": "Validation error; CATEGORY_MOVE_TARGET_REQUIRED (neither or both modes); CATEGORY_MOVE_TARGET_IN_SUBTREE (the target or its parent is inside the subtree)"
+            "description": "Validation error; CATEGORY_MOVE_TARGET_REQUIRED (both modes, or neither mode for a category that is not truly empty — it has a subcategory, a product incl. a soft-deleted one, or a carousel); CATEGORY_MOVE_TARGET_IN_SUBTREE (the target or its parent is inside the subtree)"
           },
           "403": {
             "description": "Forbidden — needs categories:delete (and categories:write for moveToNew)"
@@ -16828,12 +16828,18 @@
             "type": "number",
             "description": "Homepage carousels pointing into the subtree — they switch to the target",
             "example": 1
+          },
+          "deletedProductCount": {
+            "type": "number",
+            "description": "Soft-deleted products filed anywhere in the subtree (TASK-655). Hidden from the catalogue, but they still move with a delete — and they block a delete WITHOUT a move target: only a category with all four counts at zero is truly empty",
+            "example": 0
           }
         },
         "required": [
           "subcategoryCount",
           "productCount",
-          "carouselCount"
+          "carouselCount",
+          "deletedProductCount"
         ]
       },
       "AdminCategoryDetailEntity": {
@@ -16979,11 +16985,11 @@
         "properties": {
           "moveToId": {
             "type": "string",
-            "description": "Move the products into this EXISTING live category. Must be outside the subtree being deleted. Mutually exclusive with `moveToNew`.",
+            "description": "Move the products into this EXISTING live category. Must be outside the subtree being deleted. Mutually exclusive with `moveToNew`; omit both only for a truly empty category (no subcategory, no product — deleted ones included — no carousel).",
             "example": "550e8400-e29b-41d4-a716-446655440000"
           },
           "moveToNew": {
-            "description": "Create a new category and move the products into it (requires `categories:write` in addition to the delete permission). Mutually exclusive with `moveToId`.",
+            "description": "Create a new category and move the products into it (requires `categories:write` in addition to the delete permission). Mutually exclusive with `moveToId`; omit both only for a truly empty category.",
             "allOf": [
               {
                 "$ref": "#/components/schemas/DeleteCategoryMoveToNewDto"

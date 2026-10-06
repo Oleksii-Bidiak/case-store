@@ -12,6 +12,7 @@ import { CategoryRepository } from '../src/category/category.repository';
 import {
   CategoryCycleError,
   CategoryMoveTargetInSubtreeError,
+  CategoryMoveTargetRequiredError,
   CategoryNotFoundError,
 } from '../src/category/category.errors';
 import { HttpExceptionFilter } from '../src/common/filters';
@@ -506,6 +507,7 @@ describe('CategoryController (e2e)', () => {
         subcategoryCount: 1,
         productCount: 7,
         carouselCount: 2,
+        deletedProductCount: 1,
       });
 
       const response = await request(app.getHttpServer())
@@ -522,6 +524,7 @@ describe('CategoryController (e2e)', () => {
         subcategoryCount: 1,
         productCount: 7,
         carouselCount: 2,
+        deletedProductCount: 1,
       });
       expect(categoryRepositoryMock.countDeletionImpact).toHaveBeenCalledWith('cat-e2e-1');
     });
@@ -1282,19 +1285,70 @@ describe('CategoryController (e2e)', () => {
       expect(response.text).toBe('');
     });
 
-    it.each([
-      ['neither mode', {}],
-      ['both modes', { ...moveToId, ...moveToNew }],
-    ])('returns 400 CATEGORY_MOVE_TARGET_REQUIRED for %s', async (_label, body) => {
+    it('returns 400 CATEGORY_MOVE_TARGET_REQUIRED for both modes', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
       const response = await request(app.getHttpServer())
         .delete(url)
         .set('Authorization', `Bearer ${token}`)
-        .send(body)
+        .send({ ...moveToId, ...moveToNew })
         .expect(400);
       expect(response.body).toHaveProperty('error', 'CATEGORY_MOVE_TARGET_REQUIRED');
       expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+    });
+
+    // TASK-655 (ДН-2.9): neither mode is a target-less delete of a truly empty category.
+    // Emptiness is decided by the repository under its locks.
+    describe('neither mode (target-less delete)', () => {
+      beforeEach(() => {
+        categoryRepositoryMock.deleteSubtreeWithMove.mockResolvedValue({
+          targetId: null,
+          targetCreated: false,
+          subtreeIds: [testCategory.id],
+          movedProducts: 0,
+          switchedCarousels: 0,
+        });
+      });
+
+      it.each([
+        ['an empty JSON body', (req: request.Test) => req.send({})],
+        ['no body at all', (req: request.Test) => req],
+      ])('returns 204 for %s and passes kind "none"', async (_label, withBody) => {
+        const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+        await withBody(
+          request(app.getHttpServer()).delete(url).set('Authorization', `Bearer ${token}`),
+        ).expect(204);
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(testCategory.id, {
+          kind: 'none',
+        });
+      });
+
+      // Nothing is created, so `categories:delete` alone is enough.
+      it('returns 204 for a manager holding only categories:delete', async () => {
+        permissionRepositoryMock.setGrants('MANAGER', ['categories:delete']);
+        const token = generateAccessToken(managerId, 'MANAGER');
+
+        await request(app.getHttpServer())
+          .delete(url)
+          .set('Authorization', `Bearer ${token}`)
+          .send({})
+          .expect(204);
+      });
+
+      it('returns 400 CATEGORY_MOVE_TARGET_REQUIRED when the category is not empty', async () => {
+        const token = generateAccessToken(testAdmin.id, 'ADMIN');
+        categoryRepositoryMock.deleteSubtreeWithMove.mockRejectedValue(
+          new CategoryMoveTargetRequiredError(),
+        );
+
+        const response = await request(app.getHttpServer())
+          .delete(url)
+          .set('Authorization', `Bearer ${token}`)
+          .send({})
+          .expect(400);
+        expect(response.body).toHaveProperty('error', 'CATEGORY_MOVE_TARGET_REQUIRED');
+      });
     });
 
     it('returns 400 CATEGORY_MOVE_TARGET_IN_SUBTREE when the target is inside the subtree', async () => {

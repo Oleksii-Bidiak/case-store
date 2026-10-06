@@ -30,6 +30,7 @@ import {
   CategoryMaxDepthError,
   CategoryMoveTargetInSubtreeError,
   CategoryMoveTargetNotFoundError,
+  CategoryMoveTargetRequiredError,
   CategoryNotFoundError,
   CategorySelfParentError,
   CategorySlugConflictError,
@@ -1189,17 +1190,76 @@ describe('CategoryService', () => {
       permissionServiceMock.actorHasPermission.mockReturnValue(true);
     });
 
-    describe('exactly one move mode', () => {
-      it.each([
-        ['neither', {}],
-        ['both', { moveToId: TARGET_ID, moveToNew: { name: 'Інше' } }],
-      ])('rejects %s with 400 CATEGORY_MOVE_TARGET_REQUIRED and writes nothing', async (_, dto) => {
+    describe('at most one move mode', () => {
+      it('rejects both modes with 400 CATEGORY_MOVE_TARGET_REQUIRED and writes nothing', async () => {
+        const dto = { moveToId: TARGET_ID, moveToNew: { name: 'Інше' } };
         const call = service.delete('cat-uuid-1', dto, 'admin-1');
 
         await expect(call).rejects.toThrow(BadRequestException);
         expect(await codeOf(service.delete('cat-uuid-1', dto, 'admin-1'))).toBe(
           CategoryErrorCode.MOVE_TARGET_REQUIRED,
         );
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+      });
+    });
+
+    // TASK-655 (ДН-2.9): a truly empty category goes without a target. Whether it IS
+    // empty is decided by the repository under its locks, not here.
+    describe('neither mode (target-less delete)', () => {
+      const emptyResult = {
+        targetId: null,
+        targetCreated: false,
+        subtreeIds: ['cat-uuid-1'],
+        movedProducts: 0,
+        switchedCarousels: 0,
+      };
+
+      beforeEach(() => {
+        categoryRepositoryMock.deleteSubtreeWithMove.mockResolvedValue(emptyResult);
+      });
+
+      it('passes kind "none" through without asking for categories:write', async () => {
+        const result = await service.delete('cat-uuid-1', {}, 'manager-1');
+
+        expect(result).toEqual(emptyResult);
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith('cat-uuid-1', {
+          kind: 'none',
+        });
+        expect(permissionServiceMock.findActor).not.toHaveBeenCalled();
+        expect(categoryRepositoryMock.findBySlug).not.toHaveBeenCalled();
+        // Only the category itself is read — there is no target to resolve.
+        expect(categoryRepositoryMock.findById).toHaveBeenCalledTimes(1);
+      });
+
+      it('purges the caches but re-indexes nothing — nothing moved', async () => {
+        await service.delete('cat-uuid-1', {}, 'admin-1');
+
+        expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
+        expect(revalidationMock.revalidate).toHaveBeenCalledWith(CATALOGUE_REVALIDATE_TARGET);
+        expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+        expect(pinoLoggerMock.info).toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'category.deleted', targetId: null, deletedCount: 1 }),
+          expect.any(String),
+        );
+      });
+
+      it('maps a non-empty category (decided under the lock) to 400 CATEGORY_MOVE_TARGET_REQUIRED', async () => {
+        categoryRepositoryMock.deleteSubtreeWithMove.mockRejectedValue(
+          new CategoryMoveTargetRequiredError(),
+        );
+
+        const call = service.delete('cat-uuid-1', {}, 'admin-1');
+
+        await expect(call).rejects.toThrow(BadRequestException);
+        expect(await codeOf(service.delete('cat-uuid-1', {}, 'admin-1'))).toBe(
+          CategoryErrorCode.MOVE_TARGET_REQUIRED,
+        );
+        expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+        expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+      });
+
+      it('returns 404 when the category to delete does not exist', async () => {
+        await expect(service.delete('cat-gone', {}, 'admin-1')).rejects.toThrow(NotFoundException);
         expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
       });
     });
@@ -1425,6 +1485,7 @@ describe('CategoryService', () => {
         subcategoryCount: 2,
         productCount: 7,
         carouselCount: 1,
+        deletedProductCount: 3,
       });
 
       const result = await service.findByIdForAdmin('cat-uuid-1');
@@ -1435,6 +1496,7 @@ describe('CategoryService', () => {
         subcategoryCount: 2,
         productCount: 7,
         carouselCount: 1,
+        deletedProductCount: 3,
       });
     });
 

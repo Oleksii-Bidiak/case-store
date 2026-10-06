@@ -16,6 +16,7 @@ import {
   CategoryCycleError,
   CategoryMoveTargetInSubtreeError,
   CategoryMoveTargetNotFoundError,
+  CategoryMoveTargetRequiredError,
   CategoryNotFoundError,
   CategorySelfParentError,
   CategorySlugConflictError,
@@ -231,10 +232,15 @@ export interface CategoryUpdateResult {
  * products (TASK-652): an EXISTING live category, or a NEW one created in the same
  * transaction. The new target's slug is generated and pre-checked by the service; the
  * unique index is the authoritative guard and surfaces as `CategorySlugConflictError`.
+ *
+ * `none` (TASK-655) — no target at all: allowed only for a TRULY EMPTY category (no live
+ * subcategory, no product of any state, no carousel), decided under the lock; anything
+ * else is `CategoryMoveTargetRequiredError`.
  */
 export type CategoryDeletionTarget =
   | { kind: 'existing'; id: string }
-  | { kind: 'new'; name: string; slug: string; parentId: string | null };
+  | { kind: 'new'; name: string; slug: string; parentId: string | null }
+  | { kind: 'none' };
 
 /**
  * Result of {@link CategoryRepository.deleteSubtreeWithMove} (TASK-652) — everything
@@ -242,7 +248,8 @@ export type CategoryDeletionTarget =
  * line, computed inside the transaction that did the work.
  */
 export interface CategoryDeletionResult {
-  targetId: string;
+  /** The category the products moved into; `null` for a target-less delete (TASK-655). */
+  targetId: string | null;
   targetCreated: boolean;
   /** The tombstoned ids — the deleted category itself plus every live descendant. */
   subtreeIds: string[];
@@ -260,6 +267,8 @@ export interface CategoryDeletionImpact {
   subcategoryCount: number;
   productCount: number;
   carouselCount: number;
+  /** Soft-deleted products of the subtree (TASK-655) — they still block a target-less delete. */
+  deletedProductCount: number;
 }
 
 @Injectable()
@@ -1291,6 +1300,10 @@ export class CategoryRepository {
    *   7. Each subtree row: `deletedAt = now`, `isActive = false`, slug mangled to
    *      `deleted:<id>:<slug>` so the address is free for a new category (I3).
    *
+   * A `none` target (TASK-655) replaces steps 3-6 with
+   * {@link CategoryRepository.assertDeletableWithoutTarget} — the category must be a
+   * truly empty leaf — and tombstones the single row; `targetId` is then `null`.
+   *
    * Throws the domain errors of `category.errors.ts`; any throw rolls everything back.
    */
   deleteSubtreeWithMove(
@@ -1328,33 +1341,41 @@ export class CategoryRepository {
           throw new CategoryTreeStaleError();
         }
 
-        let targetId: string;
-        if (target.kind === 'existing') {
-          if (subtree.has(target.id)) {
-            throw new CategoryMoveTargetInSubtreeError();
-          }
-          const live = await tx.category.findFirst({
-            where: { id: target.id, deletedAt: null },
-            select: { id: true },
-          });
-          if (!live) {
-            throw new CategoryMoveTargetNotFoundError(
-              `Move target category "${target.id}" not found`,
-            );
-          }
-          targetId = target.id;
+        let targetId: string | null = null;
+        let movedProducts = 0;
+        let switchedCarousels = 0;
+        if (target.kind === 'none') {
+          await this.assertDeletableWithoutTarget(tx, id, subtreeIds);
         } else {
-          targetId = await this.createDeletionTarget(tx, target, subtree);
-        }
+          if (target.kind === 'existing') {
+            if (subtree.has(target.id)) {
+              throw new CategoryMoveTargetInSubtreeError();
+            }
+            const live = await tx.category.findFirst({
+              where: { id: target.id, deletedAt: null },
+              select: { id: true },
+            });
+            if (!live) {
+              throw new CategoryMoveTargetNotFoundError(
+                `Move target category "${target.id}" not found`,
+              );
+            }
+            targetId = target.id;
+          } else {
+            targetId = await this.createDeletionTarget(tx, target, subtree);
+          }
 
-        const moved = await tx.product.updateMany({
-          where: { categoryId: { in: subtreeIds } },
-          data: { categoryId: targetId },
-        });
-        const switched = await tx.carousel.updateMany({
-          where: { categoryId: { in: subtreeIds } },
-          data: { categoryId: targetId },
-        });
+          const moved = await tx.product.updateMany({
+            where: { categoryId: { in: subtreeIds } },
+            data: { categoryId: targetId },
+          });
+          const switched = await tx.carousel.updateMany({
+            where: { categoryId: { in: subtreeIds } },
+            data: { categoryId: targetId },
+          });
+          movedProducts = moved.count;
+          switchedCarousels = switched.count;
+        }
 
         const rows = await tx.category.findMany({
           where: { id: { in: subtreeIds } },
@@ -1371,13 +1392,45 @@ export class CategoryRepository {
           targetId,
           targetCreated: target.kind === 'new',
           subtreeIds,
-          movedProducts: moved.count,
-          switchedCarousels: switched.count,
+          movedProducts,
+          switchedCarousels,
         };
       },
       // Lock waits count against `timeout` — same budget as `runTreeMoves`.
       { timeout: 15_000, maxWait: 10_000 },
     );
+  }
+
+  /**
+   * The authoritative "truly empty" check of a target-less delete (TASK-655), run under
+   * the caller's tree + bucket locks after the stale re-check: the category has NO live
+   * subcategory, NO product in ANY state and NO carousel pointing at it. The product
+   * count deliberately has no `deletedAt` filter — a soft-deleted product left on a
+   * tombstone would break invariant I1 the moment TASK-656 restores it.
+   */
+  private async assertDeletableWithoutTarget(
+    tx: Prisma.TransactionClient,
+    id: string,
+    subtreeIds: string[],
+  ): Promise<void> {
+    if (subtreeIds.length !== 1) {
+      throw new CategoryMoveTargetRequiredError(
+        'The category has subcategories — name a move target for its products',
+      );
+    }
+    // Sequential on purpose: one interactive-transaction connection runs them in turn.
+    const products = await tx.product.count({ where: { categoryId: id } });
+    if (products > 0) {
+      throw new CategoryMoveTargetRequiredError(
+        'The category still holds products (deleted ones included) — name a move target',
+      );
+    }
+    const carousels = await tx.carousel.count({ where: { categoryId: id } });
+    if (carousels > 0) {
+      throw new CategoryMoveTargetRequiredError(
+        'Homepage carousels point at the category — name a move target for them',
+      );
+    }
   }
 
   /**
@@ -1439,18 +1492,29 @@ export class CategoryRepository {
    *     would under-report). Soft-deleted products move too (step 5 of
    *     {@link CategoryRepository.deleteSubtreeWithMove}) but are deliberately left out
    *     of this count — the dialog describes the catalogue the operator can see;
-   *   - `carouselCount` — carousels pointing into the subtree, which switch too.
+   *   - `carouselCount` — carousels pointing into the subtree, which switch too;
+   *   - `deletedProductCount` (TASK-655) — the soft-deleted products of the subtree.
+   *     They are invisible in the catalogue but still block a target-less delete, so
+   *     the dialog needs them to tell a TRULY empty branch (all four counts zero).
    */
   async countDeletionImpact(id: string): Promise<CategoryDeletionImpact> {
     const subtreeIds = await this.findSubtreeIds(id);
-    const [productCount, carouselCount] = await Promise.all([
+    const [productCount, deletedProductCount, carouselCount] = await Promise.all([
       this.prisma.product.count({
         where: { categoryId: { in: subtreeIds }, deletedAt: null },
+      }),
+      this.prisma.product.count({
+        where: { categoryId: { in: subtreeIds }, deletedAt: { not: null } },
       }),
       this.prisma.carousel.count({ where: { categoryId: { in: subtreeIds } } }),
     ]);
 
-    return { subcategoryCount: subtreeIds.length - 1, productCount, carouselCount };
+    return {
+      subcategoryCount: subtreeIds.length - 1,
+      productCount,
+      carouselCount,
+      deletedProductCount,
+    };
   }
 
   /**
