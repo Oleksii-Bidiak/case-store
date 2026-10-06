@@ -8,7 +8,7 @@ import {
   CreateProductInput,
   UpdateProductInput,
 } from './product.repository';
-import { ProductRestoreConflictError } from './product.errors';
+import { ProductRestoreCategoryGoneError, ProductRestoreConflictError } from './product.errors';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
 import { ProductSpecRepository } from './product-spec.repository';
 import { CategoryRepository } from '../category';
@@ -2306,6 +2306,14 @@ describe('ProductService', () => {
       await expect(service.restore(mockProduct.id)).rejects.toThrow(BadRequestException);
       expect(categoryRepositoryMock.findById).toHaveBeenCalledWith(mockProduct.categoryId);
       expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+    });
+
+    it('maps a category deleted before the locked write to the same 400, with no side effects', async () => {
+      productRepositoryMock.restore.mockRejectedValue(new ProductRestoreCategoryGoneError());
+
+      await expect(service.restore(mockProduct.id)).rejects.toThrow(BadRequestException);
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.remove).not.toHaveBeenCalled();
     });
 
     it('maps a lost race on the write (P2002 on slug) to the same 409', async () => {

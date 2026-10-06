@@ -14,7 +14,14 @@ import { PRE_SHIPMENT_STATUSES } from '../order/order.constants';
 import { COUNTS_TOWARD_RATING } from '../review/review.constants';
 import { COLOR_SPEC_KEY, isColorAxis, withColorAxis } from '../common/color-axis';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
-import { ProductRestoreConflictError, uniqueClashFromPrismaMeta } from './product.errors';
+import {
+  ProductRestoreCategoryGoneError,
+  ProductRestoreConflictError,
+  uniqueClashFromPrismaMeta,
+} from './product.errors';
+import { acquireAdvisoryLocks } from '../common/reorder';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: category barrel > category.module > ... > product barrel > this file; a dependency-free leaf
+import { CATEGORY_TREE_LOCK_KEY } from '../category/category-locks';
 
 /**
  * Interactive-transaction budget for the bulk colour write (TASK-487). See the
@@ -1476,12 +1483,39 @@ export class ProductRepository {
    * violation — another product took the slug or SKU after the service checked them —
    * is re-thrown as {@link ProductRestoreConflictError}, naming the column(s) when
    * Prisma's metadata says which; the product stays deleted.
+   *
+   * Invariant I1 (a product never points at a deleted category) is checked HERE, under
+   * the category tree lock that `CategoryRepository.deleteSubtreeWithMove` holds for the
+   * whole delete: the check and the write run in one transaction, so a category delete
+   * either committed before it (the row's CURRENT category is read, never the one the
+   * service saw) or waits until the restore commits — and then moves the now-live product
+   * with the rest of the subtree. A deleted category throws
+   * {@link ProductRestoreCategoryGoneError} and nothing is written.
    */
   async restore(id: string, slug: string, sku: string | null): Promise<Product> {
     try {
-      return await this.prisma.product.update({
-        where: { id, deletedAt: { not: null } },
-        data: { deletedAt: null, isActive: false, slug, sku },
+      return await this.prisma.$transaction(async (tx) => {
+        await acquireAdvisoryLocks(tx, [CATEGORY_TREE_LOCK_KEY]);
+
+        const tombstone = await tx.product.findFirst({
+          where: { id, deletedAt: { not: null } },
+          select: { categoryId: true },
+        });
+        // No tombstone: let the guarded update below answer P2025 → 404, as before.
+        if (tombstone) {
+          const category = await tx.category.findFirst({
+            where: { id: tombstone.categoryId, deletedAt: null },
+            select: { id: true },
+          });
+          if (!category) {
+            throw new ProductRestoreCategoryGoneError();
+          }
+        }
+
+        return tx.product.update({
+          where: { id, deletedAt: { not: null } },
+          data: { deletedAt: null, isActive: false, slug, sku },
+        });
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

@@ -22,12 +22,8 @@ import {
   CategorySlugConflictError,
   CategoryTreeStaleError,
 } from './category.errors';
-import {
-  acquireAdvisoryLocks,
-  applySortOrderWrites,
-  lockKey,
-  treeLockKey,
-} from '../common/reorder';
+import { acquireAdvisoryLocks, applySortOrderWrites, lockKey } from '../common/reorder';
+import { CATEGORY_LOCK_RESOURCE, CATEGORY_TREE_LOCK_KEY } from './category-locks';
 
 /**
  * Any Prisma client the read helpers accept: the injected singleton or an
@@ -45,17 +41,15 @@ export type CategoryDbClient = PrismaService | Prisma.TransactionClient;
 const MAX_CATEGORY_DEPTH = 50;
 
 /**
- * Advisory-lock resource namespace (plan 158 §3.8). The key helpers themselves live in
- * `common/reorder/sibling-order.util.ts` so the flat sortable admins (banners /
- * blog-categories / device-brands) reuse the exact same recipe: advisory locks are
- * DATABASE-GLOBAL and every resource has a `__root__` bucket, so without the resource
- * prefix a banner reorder would serialise against a root-category reorder.
+ * Advisory-lock resource namespace (plan 158 §3.8) — defined in `./category-locks`, a
+ * leaf the product repository shares (see there).
  */
-const LOCK_RESOURCE = 'categories';
+const LOCK_RESOURCE = CATEGORY_LOCK_RESOURCE;
 
 /**
  * The TREE-SCOPED lock key. Taken by ANY write that changes a node's `parentId`
- * (`applyTreeMoves` with at least one reparent, and `update`'s parent-change path).
+ * (`applyTreeMoves` with at least one reparent, and `update`'s parent-change path), by
+ * the whole category delete, and by `ProductRepository.restore` (TASK-656).
  *
  * Non-negotiable (§3.8): cycle and depth are WHOLE-TREE invariants and per-bucket locks
  * do not serialise the operations that violate them — admin A moving X under Y locks
@@ -63,7 +57,7 @@ const LOCK_RESOURCE = 'categories';
  * sets; at READ COMMITTED both snapshot before the other commits, both guards see only
  * committed rows, and an `X → Y → X` cycle lands in the table (textbook write skew).
  */
-const TREE_LOCK_KEY = treeLockKey(LOCK_RESOURCE);
+const TREE_LOCK_KEY = CATEGORY_TREE_LOCK_KEY;
 
 /** Per-bucket lock key. `null` (the root bucket) has no row to lock — hence the sentinel. */
 const bucketLockKey = (parentId: string | null): string => lockKey(LOCK_RESOURCE, parentId);

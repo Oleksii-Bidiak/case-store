@@ -45,6 +45,20 @@ export class ProductRestoreConflictError extends Error {
 }
 
 /**
+ * A restore found the product's category deleted once it held the category tree lock
+ * (TASK-656, invariant I1). The service's up-front check reads the category outside the
+ * lock; a category delete committing in between would otherwise leave the restored
+ * product filed under a tombstone. Thrown by `ProductRepository.restore`; the service
+ * maps it onto the same 400 the up-front check gives. The product stays deleted.
+ */
+export class ProductRestoreCategoryGoneError extends Error {
+  constructor() {
+    super('Category not found');
+    this.name = 'ProductRestoreCategoryGoneError';
+  }
+}
+
+/**
  * Identify the unique column(s) a Prisma `P2002` names. Prisma has spelled this two
  * ways: `meta.target` (column names, or the constraint name such as
  * `products_slug_key`) and, through a driver adapter, `meta.driverAdapterError.cause

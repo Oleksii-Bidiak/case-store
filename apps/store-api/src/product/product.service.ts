@@ -16,6 +16,7 @@ import {
 } from './product.repository';
 import {
   ProductErrorCode,
+  ProductRestoreCategoryGoneError,
   ProductRestoreConflictError,
   type ProductUniqueClash,
   conflictProduct,
@@ -942,7 +943,10 @@ export class ProductService {
 
     // Deleting a category moves its soft-deleted products out too (invariant I1),
     // so this is a guard, not an expected path — but a product must never come back
-    // into a tombstoned category, where no public read would ever show it.
+    // into a tombstoned category, where no public read would ever show it. This early
+    // read only orders the answers (a gone category is reported before a slug clash);
+    // the authoritative check runs again inside the write, under the category tree
+    // lock, and surfaces as ProductRestoreCategoryGoneError → the same 400.
     await this.ensureCategoryIsLive(tombstone.categoryId);
 
     const clash = await this.findUniqueClash(slug, sku);
@@ -973,12 +977,18 @@ export class ProductService {
    * up-front check gives. When Prisma did not say which constraint fired, re-read
    * which slot is held; a violation nobody can be found holding any more still was
    * one, so it names every field being written and the dialog asks for all of them.
+   *
+   * A category deleted between the up-front check and the locked write is the same
+   * 400 that check gives.
    */
   private async rethrowRestoreRace(
     error: unknown,
     slug: string,
     sku: string | null,
   ): Promise<never> {
+    if (error instanceof ProductRestoreCategoryGoneError) {
+      throw new BadRequestException('Category not found');
+    }
     if (!(error instanceof ProductRestoreConflictError)) {
       throw error;
     }

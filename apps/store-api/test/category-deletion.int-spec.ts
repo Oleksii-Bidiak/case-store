@@ -13,9 +13,12 @@ import {
   CategoryNotFoundError,
   CategorySlugConflictError,
 } from '../src/category/category.errors';
+import { CATEGORY_TREE_LOCK_KEY } from '../src/category/category-locks';
+import { acquireAdvisoryLocks } from '../src/common/reorder';
 import { DeviceRepository } from '../src/device/device.repository';
 import { PrismaService } from '../src/prisma';
 import { buildProductListWhere } from '../src/product/product-list-where';
+import { ProductRestoreCategoryGoneError } from '../src/product/product.errors';
 import { ProductRepository } from '../src/product/product.repository';
 import { SlugRedirectRepository } from '../src/slug-redirect';
 
@@ -681,6 +684,87 @@ describe('Category deletion (integration, TASK-652/653)', () => {
 
       expect(await prisma.category.count({ where: { slug: slug('late-target') } })).toBe(0);
       await expectUntouched(fixture);
+    });
+  });
+
+  // ─── Restore × delete: one tree lock (TASK-656, invariant I1) ─────────────────
+  // The service checks the category before the write, outside any lock. These prove
+  // the write itself re-checks under the tree lock the delete holds for its whole run.
+
+  describe('product restore × category delete — one tree lock', () => {
+    it('waits for a tree-lock holder, then refuses a category tombstoned under that lock', async () => {
+      const doomed = await makeCategory('restore-doomed', anchor, 95);
+      const pGone = await makeProduct('p-restore-doomed', doomed, {
+        isActive: false,
+        deletedAt: new Date('2026-01-01'),
+      });
+
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let signalLocked!: () => void;
+      const lockHeld = new Promise<void>((resolve) => (signalLocked = resolve));
+      // Holds the delete's tree key and tombstones `doomed` under it WITHOUT moving the
+      // product: exactly the window the service's early, unlocked check cannot see.
+      const holder = prisma.$transaction(
+        async (tx) => {
+          await acquireAdvisoryLocks(tx, [CATEGORY_TREE_LOCK_KEY]);
+          signalLocked();
+          await gate;
+          await tx.category.update({
+            where: { id: doomed },
+            data: {
+              deletedAt: new Date(),
+              isActive: false,
+              slug: `deleted:${doomed}:${slug('restore-doomed')}`,
+            },
+          });
+        },
+        { timeout: 20_000 },
+      );
+      await lockHeld;
+
+      let settled = false;
+      const restore = products.restore(pGone, slug('p-restore-doomed'), null);
+      restore.finally(() => (settled = true)).catch(() => undefined);
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(settled).toBe(false); // blocked on the tree lock
+
+      release();
+      await holder;
+
+      await expect(restore).rejects.toBeInstanceOf(ProductRestoreCategoryGoneError);
+      const [state] = await productState([pGone]);
+      expect(state.deletedAt).not.toBeNull();
+      expect(state.categoryId).toBe(doomed);
+    });
+
+    it('a restore racing a real delete always ends live, in the live target', async () => {
+      const doomed = await makeCategory('race-doomed', anchor, 96);
+      const raceTarget = await makeCategory('race-target', anchor, 97);
+      const pRace = await makeProduct('p-race', doomed, {
+        isActive: false,
+        deletedAt: new Date('2026-01-01'),
+      });
+
+      const [restored, deleted] = await Promise.allSettled([
+        products.restore(pRace, slug('p-race'), null),
+        categories.deleteSubtreeWithMove(doomed, { kind: 'existing', id: raceTarget }),
+      ]);
+
+      // Whichever commits first, the other sees its result: the delete moves the
+      // (live or tombstoned) product, and the restore reads the row's CURRENT category.
+      expect(deleted.status).toBe('fulfilled');
+      expect(restored.status).toBe('fulfilled');
+      const row = await prisma.product.findUnique({
+        where: { id: pRace },
+        select: { categoryId: true, deletedAt: true, category: { select: { deletedAt: true } } },
+      });
+      expect(row).toEqual({
+        categoryId: raceTarget,
+        deletedAt: null,
+        category: { deletedAt: null },
+      });
     });
   });
 });

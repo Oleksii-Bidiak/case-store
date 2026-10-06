@@ -1,6 +1,6 @@
 import { OrderStatus, Prisma, SlugRedirectEntity } from '@prisma/client';
 import { ProductRepository } from './product.repository';
-import { ProductRestoreConflictError } from './product.errors';
+import { ProductRestoreCategoryGoneError, ProductRestoreConflictError } from './product.errors';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
@@ -8,8 +8,13 @@ import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
 // ─── Mock PrismaService ──────────────────────────────────────────────────────
 
 const txMock = {
+  $executeRaw: jest.fn(),
   product: {
+    findFirst: jest.fn(),
     update: jest.fn(),
+  },
+  category: {
+    findFirst: jest.fn(),
   },
 };
 
@@ -909,20 +914,62 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       });
     }
 
-    it('clears deletedAt, keeps the product hidden and writes the given slug/sku, tombstones only', async () => {
-      prismaMock.product.update.mockResolvedValue({ id: 'product-1' });
+    beforeEach(() => {
+      txMock.$executeRaw.mockResolvedValue(1);
+      txMock.product.findFirst.mockResolvedValue({ categoryId: 'cat-1' });
+      txMock.category.findFirst.mockResolvedValue({ id: 'cat-1' });
+      txMock.product.update.mockResolvedValue({ id: 'product-1' });
+    });
 
+    it('clears deletedAt, keeps the product hidden and writes the given slug/sku, tombstones only', async () => {
       await repository.restore('product-1', 'clear-case', 'SKU-1');
 
-      expect(prismaMock.product.update).toHaveBeenCalledWith({
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.product.update).not.toHaveBeenCalled();
+      expect(txMock.product.update).toHaveBeenCalledWith({
         where: { id: 'product-1', deletedAt: { not: null } },
         data: { deletedAt: null, isActive: false, slug: 'clear-case', sku: 'SKU-1' },
       });
     });
 
-    it('never records a slug redirect', async () => {
-      prismaMock.product.update.mockResolvedValue({ id: 'product-1' });
+    it('checks the CURRENT category of the row under the category tree lock, before writing', async () => {
+      await repository.restore('product-1', 'clear-case', 'SKU-1');
 
+      // The same tree key CategoryRepository.deleteSubtreeWithMove holds for a delete.
+      const [, lockedKey] = txMock.$executeRaw.mock.calls[0];
+      expect(lockedKey).toBe('categories:__tree__');
+      expect(txMock.product.findFirst).toHaveBeenCalledWith({
+        where: { id: 'product-1', deletedAt: { not: null } },
+        select: { categoryId: true },
+      });
+      expect(txMock.category.findFirst).toHaveBeenCalledWith({
+        where: { id: 'cat-1', deletedAt: null },
+        select: { id: true },
+      });
+      const order = (fn: jest.Mock): number => fn.mock.invocationCallOrder[0];
+      expect(order(txMock.$executeRaw)).toBeLessThan(order(txMock.product.findFirst));
+      expect(order(txMock.category.findFirst)).toBeLessThan(order(txMock.product.update));
+    });
+
+    it('refuses with ProductRestoreCategoryGoneError and writes nothing when the category is deleted', async () => {
+      txMock.category.findFirst.mockResolvedValue(null);
+
+      await expect(repository.restore('product-1', 'clear-case', 'SKU-1')).rejects.toBeInstanceOf(
+        ProductRestoreCategoryGoneError,
+      );
+      expect(txMock.product.update).not.toHaveBeenCalled();
+    });
+
+    it('leaves a missing tombstone to the guarded update (P2025 → 404, as before)', async () => {
+      txMock.product.findFirst.mockResolvedValue(null);
+
+      await repository.restore('product-1', 'clear-case', null);
+
+      expect(txMock.category.findFirst).not.toHaveBeenCalled();
+      expect(txMock.product.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('never records a slug redirect', async () => {
       await repository.restore('product-1', 'clear-case', null);
 
       expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
@@ -938,7 +985,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       ],
       ['unidentifiable metadata', { modelName: 'Product' }, null],
     ])('maps a P2002 named by %s onto ProductRestoreConflictError', async (_label, meta, clash) => {
-      prismaMock.product.update.mockRejectedValue(uniqueViolation(meta));
+      txMock.product.update.mockRejectedValue(uniqueViolation(meta));
 
       const error = await repository.restore('product-1', 'clear-case', 'SKU-1').catch((e) => e);
 
@@ -951,7 +998,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
         code: 'P2025',
         clientVersion: 'test',
       });
-      prismaMock.product.update.mockRejectedValue(notFound);
+      txMock.product.update.mockRejectedValue(notFound);
 
       await expect(repository.restore('product-1', 'clear-case', null)).rejects.toBe(notFound);
     });
