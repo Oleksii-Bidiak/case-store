@@ -594,6 +594,48 @@ describe('OrderController (e2e)', () => {
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
+    // ── TASK-1097: the manual-city fallback while NP is down ────────────────
+    // The storefront omits `deliveryMethod` on exactly that path; the request
+    // carries a hand-typed city and no npCityRef, so the server infers OTHER.
+    describe('«Інша доставка» switched off (TASK-1097)', () => {
+      beforeEach(() => {
+        prismaServiceMock.deliverySetting.findUnique.mockResolvedValue({
+          ...allMethodsRow,
+          otherEnabled: false,
+        });
+      });
+
+      it('an INFERRED OTHER (manual city, no method sent) still → 201, quoted later', async () => {
+        await placeOrder({ shippingAddress: validAddress }).expect(201);
+
+        expect(createdParams()).toMatchObject({ deliveryMethod: 'OTHER', shippingCost: 0 });
+        expect(createdParams().shippingAddress).toMatchObject({
+          deliveryMethod: 'OTHER',
+          shippingCostPending: true,
+        });
+      });
+
+      it('an INFERRED OTHER paid ONLINE → 400 DELIVERY_PAYMENT_NOT_ALLOWED (the matrix still applies)', async () => {
+        const res = await placeOrder({
+          shippingAddress: validAddress,
+          paymentMethod: 'ONLINE',
+        }).expect(400);
+
+        expect(res.body.error).toBe('DELIVERY_PAYMENT_NOT_ALLOWED');
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      });
+
+      it('an EXPLICIT OTHER → 400 DELIVERY_METHOD_UNAVAILABLE', async () => {
+        const res = await placeOrder({
+          shippingAddress: validAddress,
+          deliveryMethod: 'OTHER',
+        }).expect(400);
+
+        expect(res.body.error).toBe('DELIVERY_METHOD_UNAVAILABLE');
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      });
+    });
+
     it.each([
       ['an unknown delivery method', { deliveryMethod: 'DRONE' }],
       ['a malformed pickup point id', { deliveryMethod: 'PICKUP', pickupPointId: 'not-a-uuid' }],

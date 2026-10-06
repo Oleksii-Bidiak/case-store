@@ -875,13 +875,45 @@ describe('OrderService', () => {
         },
       );
 
-      it('refuses a DERIVED OTHER (legacy free-text checkout) while OTHER is off', async () => {
+      // TASK-1097 (owner decision 2026-10-05): a city typed by hand because Nova
+      // Poshta was unreachable is not the shopper choosing «Інша доставка» — it is
+      // the storefront's fallback, and switching OTHER off must not close it.
+      it('ACCEPTS a DERIVED OTHER (manual city, NP unavailable) while OTHER is off — TASK-1097', async () => {
         deliveryServiceMock.getMethodSettings.mockResolvedValue({
           ...DEFAULT_METHOD_SETTINGS,
           enabledMethods: ['NOVA_POSHTA'],
         });
 
-        const err = await rejectionOf(service.createOrder(userActor, createDto));
+        await service.createOrder(userActor, createDto);
+
+        expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
+        expect(created()).toMatchObject({ deliveryMethod: 'OTHER', shippingCost: 0 });
+        // Still an operator-quoted order, said so on the record.
+        expect(created().shippingAddress).toMatchObject({ shippingCostPending: true });
+      });
+
+      it('still runs the payment matrix on a DERIVED OTHER while OTHER is off — TASK-1097', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue({
+          ...DEFAULT_METHOD_SETTINGS,
+          enabledMethods: ['NOVA_POSHTA'],
+        });
+
+        const err = await rejectionOf(
+          service.createOrder(userActor, { shippingAddress: address, paymentMethod: 'ONLINE' }),
+        );
+
+        expectDelivery400(err, 'DELIVERY_PAYMENT_NOT_ALLOWED');
+      });
+
+      it('still refuses an EXPLICIT OTHER while OTHER is off — TASK-1097', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue({
+          ...DEFAULT_METHOD_SETTINGS,
+          enabledMethods: ['NOVA_POSHTA'],
+        });
+
+        const err = await rejectionOf(
+          service.createOrder(userActor, { shippingAddress: address, deliveryMethod: 'OTHER' }),
+        );
 
         expectDelivery400(err, 'DELIVERY_METHOD_UNAVAILABLE');
       });

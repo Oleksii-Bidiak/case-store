@@ -192,12 +192,15 @@ const UNAVAILABLE_MESSAGE: Record<DeliveryMethod, string> = {
   NOVA_POSHTA: 'Доставка Новою Поштою зараз недоступна — оберіть інший спосіб доставки',
   PICKUP: 'Самовивіз зараз недоступний — оберіть інший спосіб доставки',
   COURIER: 'Кур’єрська доставка зараз недоступна — оберіть інший спосіб доставки',
-  OTHER:
-    'Доставка за адресою без вибору міста Нової Пошти зараз недоступна — ' +
-    'оберіть місто зі списку або інший спосіб доставки',
+  // Only an EXPLICIT OTHER reaches this since TASK-1097: the inferred one (a
+  // city typed by hand while NP is down) is let through whatever the switch.
+  OTHER: '«Інша доставка» зараз недоступна — оберіть інший спосіб доставки',
 };
 
-/** 400 for a method the shop has switched off (explicit or derived). */
+/**
+ * 400 for a method the shop has switched off — explicit, or a derived
+ * NOVA_POSHTA. A derived OTHER never gets here (TASK-1097).
+ */
 export function deliveryMethodUnavailableError(method: DeliveryMethod): BadRequestException {
   return new BadRequestException({
     error: DeliveryOrderErrorCode.METHOD_UNAVAILABLE,

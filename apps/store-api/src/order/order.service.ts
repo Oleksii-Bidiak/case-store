@@ -544,8 +544,10 @@ export class OrderService {
    *  1. **Resolve.** An explicit `dto.deliveryMethod` is used as is; absent, the
    *     address decides (`npCityRef` → NOVA_POSHTA, else OTHER). That keeps every
    *     pre-TASK-643 client working, with the same NP total as before the wave.
-   *  2. **Validate.** The method must be enabled in the shop's settings — the
-   *     derived one too — and the delivery × payment matrix must admit the
+   *  2. **Validate.** The method must be enabled in the shop's settings — a
+   *     derived NOVA_POSHTA too, but NOT a derived OTHER (the manual-city
+   *     fallback while NP is down, TASK-1097) — and the delivery × payment matrix
+   *     must admit the
    *     payment method. Then the method's own requirements: NP needs a city ref
    *     (never a silent 0), PICKUP an active point.
    *  3. **Price.** NOVA_POSHTA → the carrier estimate ({@link estimateNpShipping});
@@ -569,8 +571,21 @@ export class OrderService {
       npCityRef,
     });
 
+    // TASK-1097 (owner decision 2026-10-05): an INFERRED OTHER skips the
+    // `otherEnabled` switch. Since plan 184 part U the storefront sends
+    // `deliveryMethod` explicitly for every choice the shopper makes on the
+    // method step — and OMITS it on exactly one path: Nova Poshta is unreachable
+    // and the shopper typed the city by hand (no `npCityRef`). That is the
+    // storefront's fallback for a carrier outage, not «Інша доставка» chosen from
+    // the list, so the owner switching OTHER off must not close it. It is still
+    // booked as OTHER (shipping quoted by the operator, `shippingCostPending`),
+    // and the delivery × payment matrix below still applies: manual city + card
+    // → 400 DELIVERY_PAYMENT_NOT_ALLOWED. An EXPLICIT `deliveryMethod: 'OTHER'`
+    // and an inferred NOVA_POSHTA keep the switch check.
+    const inferredOther = !dto.deliveryMethod && deliveryMethod === DeliveryMethod.OTHER;
+
     const { enabledMethods, courier } = await this.deliveryService.getMethodSettings();
-    if (!enabledMethods.includes(deliveryMethod)) {
+    if (!inferredOther && !enabledMethods.includes(deliveryMethod)) {
       throw deliveryMethodUnavailableError(deliveryMethod);
     }
     if (!isPaymentAllowedForDelivery(deliveryMethod, paymentMethod)) {
