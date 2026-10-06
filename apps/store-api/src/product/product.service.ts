@@ -16,7 +16,7 @@ import {
 } from './product.repository';
 import {
   ProductErrorCode,
-  ProductRestoreCategoryGoneError,
+  ProductCategoryGoneError,
   ProductRestoreConflictError,
   type ProductUniqueClash,
   conflictProduct,
@@ -73,6 +73,22 @@ function stripTombstonePrefix(value: string, prefix: string): string {
 function listSortBy(requested: string | undefined, tombstones: boolean): string {
   if (tombstones) return requested ?? 'deletedAt';
   return requested === undefined || requested === 'deletedAt' ? 'createdAt' : requested;
+}
+
+/** The 400 every "this product's category is gone" path answers with (invariant I1). */
+function categoryGone(): BadRequestException {
+  return new BadRequestException('Category not found');
+}
+
+/**
+ * Map the repository's under-lock category check ({@link ProductCategoryGoneError}) onto
+ * the same 400 the service's early check gives (TASK-1772); anything else re-throws.
+ */
+function rethrowCategoryGone(error: unknown): never {
+  if (error instanceof ProductCategoryGoneError) {
+    throw categoryGone();
+  }
+  throw error;
 }
 
 /**
@@ -544,14 +560,19 @@ export class ProductService {
 
     // Reject an unknown brand id up front (TASK-189).
     await this.ensureBrandExists(input.brandId);
+    // A fast fail only: the authoritative check runs again inside the insert, under the
+    // category tree lock a category delete holds (TASK-1772), and surfaces as
+    // ProductCategoryGoneError → the same 400.
     await this.ensureCategoryIsLive(input.categoryId);
 
-    const product = await this.productRepository.create({
-      ...input,
-      slug,
-      description: this.sanitizeDescription(input.description),
-      isActive: input.isActive ?? false,
-    });
+    const product = await this.productRepository
+      .create({
+        ...input,
+        slug,
+        description: this.sanitizeDescription(input.description),
+        isActive: input.isActive ?? false,
+      })
+      .catch(rethrowCategoryGone);
 
     // A new product may appear on any list page — bust every list cache entry.
     await this.invalidateProductLists();
@@ -599,7 +620,9 @@ export class ProductService {
     }
 
     // Only when the category CHANGES: a product already filed in a category keeps
-    // saving even while an unrelated edit re-sends its current `categoryId`.
+    // saving even while an unrelated edit re-sends its current `categoryId`. A fast
+    // fail only — whenever `categoryId` is written at all, the repository re-checks it
+    // under the category tree lock (TASK-1772) → ProductCategoryGoneError → same 400.
     if (input.categoryId !== undefined && input.categoryId !== product.categoryId) {
       await this.ensureCategoryIsLive(input.categoryId);
     }
@@ -615,20 +638,22 @@ export class ProductService {
         ? { oldSlug: product.slug, newSlug: input.slug }
         : undefined;
 
-    const updatedProduct = await this.productRepository.update(
-      id,
-      {
-        ...input,
-        // `description` is rich text since TASK-361 — sanitize on the write path,
-        // exactly as Page.content and BlogPost.content already do. `undefined`
-        // means "not being updated" and must stay undefined, or a partial update
-        // would blank the description.
-        ...(input.description !== undefined
-          ? { description: this.sanitizeDescription(input.description) }
-          : {}),
-      },
-      slugRename,
-    );
+    const updatedProduct = await this.productRepository
+      .update(
+        id,
+        {
+          ...input,
+          // `description` is rich text since TASK-361 — sanitize on the write path,
+          // exactly as Page.content and BlogPost.content already do. `undefined`
+          // means "not being updated" and must stay undefined, or a partial update
+          // would blank the description.
+          ...(input.description !== undefined
+            ? { description: this.sanitizeDescription(input.description) }
+            : {}),
+        },
+        slugRename,
+      )
+      .catch(rethrowCategoryGone);
 
     // Evict list pages and both detail variants. The slug may have changed, so
     // evict the OLD slug captured above; if it changed, also evict the new one.
@@ -946,7 +971,7 @@ export class ProductService {
     // into a tombstoned category, where no public read would ever show it. This early
     // read only orders the answers (a gone category is reported before a slug clash);
     // the authoritative check runs again inside the write, under the category tree
-    // lock, and surfaces as ProductRestoreCategoryGoneError → the same 400.
+    // lock, and surfaces as ProductCategoryGoneError → the same 400.
     await this.ensureCategoryIsLive(tombstone.categoryId);
 
     const clash = await this.findUniqueClash(slug, sku);
@@ -986,8 +1011,8 @@ export class ProductService {
     slug: string,
     sku: string | null,
   ): Promise<never> {
-    if (error instanceof ProductRestoreCategoryGoneError) {
-      throw new BadRequestException('Category not found');
+    if (error instanceof ProductCategoryGoneError) {
+      throw categoryGone();
     }
     if (!(error instanceof ProductRestoreConflictError)) {
       throw error;
@@ -1041,7 +1066,7 @@ export class ProductService {
   private async ensureCategoryIsLive(categoryId: string): Promise<void> {
     const category = await this.categoryRepository.findById(categoryId);
     if (!category) {
-      throw new BadRequestException('Category not found');
+      throw categoryGone();
     }
   }
 

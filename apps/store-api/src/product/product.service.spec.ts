@@ -8,7 +8,7 @@ import {
   CreateProductInput,
   UpdateProductInput,
 } from './product.repository';
-import { ProductRestoreCategoryGoneError, ProductRestoreConflictError } from './product.errors';
+import { ProductCategoryGoneError, ProductRestoreConflictError } from './product.errors';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
 import { ProductSpecRepository } from './product-spec.repository';
 import { CategoryRepository } from '../category';
@@ -1050,6 +1050,21 @@ describe('ProductService', () => {
       expect(categoryRepositoryMock.findById).toHaveBeenCalledWith('category-uuid-1');
       expect(productRepositoryMock.create).not.toHaveBeenCalled();
     });
+
+    // TASK-1772: the early check is outside any lock — a category delete committing
+    // before the insert is caught by the repository's under-lock re-check instead.
+    it('maps a category deleted before the locked insert to the same 400, with no side effects', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockRejectedValueOnce(new ProductCategoryGoneError());
+
+      const error = await service.create(createInput).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe('Category not found');
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
   });
 
   // ─── update (admin) ───────────────────────────────────────────────────────────
@@ -1112,6 +1127,22 @@ describe('ProductService', () => {
 
       expect(categoryRepositoryMock.findById).not.toHaveBeenCalled();
       expect(productRepositoryMock.update).toHaveBeenCalled();
+    });
+
+    // TASK-1772: whenever `categoryId` is written the repository re-checks it under the
+    // category tree lock — including a re-sent, unchanged one a delete has just emptied.
+    it('maps a category deleted before the locked write to the same 400, with no side effects', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockRejectedValueOnce(new ProductCategoryGoneError());
+
+      const error = await service
+        .update('product-uuid-1', { categoryId: mockProduct.categoryId, price: 1 })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe('Category not found');
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
     });
 
     it('sanitizes the description on update (TASK-361)', async () => {
@@ -2309,7 +2340,7 @@ describe('ProductService', () => {
     });
 
     it('maps a category deleted before the locked write to the same 400, with no side effects', async () => {
-      productRepositoryMock.restore.mockRejectedValue(new ProductRestoreCategoryGoneError());
+      productRepositoryMock.restore.mockRejectedValue(new ProductCategoryGoneError());
 
       await expect(service.restore(mockProduct.id)).rejects.toThrow(BadRequestException);
       expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();

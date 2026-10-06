@@ -45,16 +45,17 @@ export class ProductRestoreConflictError extends Error {
 }
 
 /**
- * A restore found the product's category deleted once it held the category tree lock
- * (TASK-656, invariant I1). The service's up-front check reads the category outside the
- * lock; a category delete committing in between would otherwise leave the restored
- * product filed under a tombstone. Thrown by `ProductRepository.restore`; the service
- * maps it onto the same 400 the up-front check gives. The product stays deleted.
+ * A product write found the category it files the product under deleted (or missing)
+ * once it held the category tree lock (invariant I1): `ProductRepository.restore`
+ * (TASK-656/1835) and `create` / a category-writing `update` (TASK-1772). The service's
+ * up-front check reads the category outside the lock; a category delete committing in
+ * between would otherwise leave the product filed under a tombstone. The service maps it
+ * onto the same 400 the up-front check gives. Nothing is written.
  */
-export class ProductRestoreCategoryGoneError extends Error {
+export class ProductCategoryGoneError extends Error {
   constructor() {
     super('Category not found');
-    this.name = 'ProductRestoreCategoryGoneError';
+    this.name = 'ProductCategoryGoneError';
   }
 }
 

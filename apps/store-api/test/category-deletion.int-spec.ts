@@ -20,7 +20,7 @@ import { DeviceRepository } from '../src/device/device.repository';
 import { PrismaService } from '../src/prisma';
 import { buildProductListWhere } from '../src/product/product-list-where';
 import { PUBLIC_PRODUCT_WHERE } from '../src/product/product-visibility';
-import { ProductRestoreCategoryGoneError } from '../src/product/product.errors';
+import { ProductCategoryGoneError } from '../src/product/product.errors';
 import { ProductRepository } from '../src/product/product.repository';
 import { SlugRedirectRepository } from '../src/slug-redirect';
 
@@ -820,7 +820,7 @@ describe('Category deletion (integration, TASK-652/653)', () => {
       release();
       await holder;
 
-      await expect(restore).rejects.toBeInstanceOf(ProductRestoreCategoryGoneError);
+      await expect(restore).rejects.toBeInstanceOf(ProductCategoryGoneError);
       const [state] = await productState([pGone]);
       expect(state.deletedAt).not.toBeNull();
       expect(state.categoryId).toBe(doomed);
@@ -852,6 +852,186 @@ describe('Category deletion (integration, TASK-652/653)', () => {
         deletedAt: null,
         category: { deletedAt: null },
       });
+    });
+  });
+
+  // ─── Create / update × delete: the same tree lock (TASK-1772, invariant I1) ────
+  // The service checks the category before the write, outside any lock. These prove the
+  // insert / update re-checks it under the tree key the delete holds exclusively.
+
+  describe('product create / update × category delete — one tree lock (TASK-1772)', () => {
+    /**
+     * Hold the delete's tree key EXCLUSIVELY (as `deleteSubtreeWithMove` does) and, once
+     * released, tombstone `categoryId` under it — without moving anything: exactly the
+     * window the service's early, unlocked check cannot see.
+     */
+    const holdTreeLockThenTombstone = async (categoryId: string, oldSlug: string) => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let signalLocked!: () => void;
+      const lockHeld = new Promise<void>((resolve) => (signalLocked = resolve));
+      const holder = prisma.$transaction(
+        async (tx) => {
+          await acquireAdvisoryLocks(tx, [CATEGORY_TREE_LOCK_KEY]);
+          signalLocked();
+          await gate;
+          await tx.category.update({
+            where: { id: categoryId },
+            data: {
+              deletedAt: new Date(),
+              isActive: false,
+              slug: `deleted:${categoryId}:${oldSlug}`,
+            },
+          });
+        },
+        { timeout: 20_000 },
+      );
+      await lockHeld;
+      return { release, holder };
+    };
+
+    /** Track whether `promise` has settled, without letting a rejection go unhandled. */
+    const watch = (promise: Promise<unknown>): { settled: () => boolean } => {
+      let settled = false;
+      promise.finally(() => (settled = true)).catch(() => undefined);
+      return { settled: () => settled };
+    };
+
+    const createInto = (name: string, categoryId: string) =>
+      products
+        .create({ name: `del ${name}`, slug: slug(name), price: 9.99, categoryId })
+        .then((row) => {
+          createdProductIds.push(row.id);
+          return row;
+        });
+
+    it('create waits for a tree-lock holder, then refuses a category tombstoned under it', async () => {
+      const doomed = await makeCategory('create-doomed', anchor, 110);
+      const { release, holder } = await holdTreeLockThenTombstone(doomed, slug('create-doomed'));
+
+      const create = createInto('p-create-doomed', doomed);
+      const state = watch(create);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(state.settled()).toBe(false); // blocked on the tree lock
+
+      release();
+      await holder;
+
+      await expect(create).rejects.toBeInstanceOf(ProductCategoryGoneError);
+      expect(await prisma.product.count({ where: { slug: slug('p-create-doomed') } })).toBe(0);
+    });
+
+    it('update into a category waits, then refuses one tombstoned under the lock', async () => {
+      const home = await makeCategory('update-home', anchor, 111);
+      const doomed = await makeCategory('update-doomed', anchor, 112);
+      const pMove = await makeProduct('p-update-move', home);
+      const { release, holder } = await holdTreeLockThenTombstone(doomed, slug('update-doomed'));
+
+      const update = products.update(pMove, { categoryId: doomed, name: 'del moved' });
+      const state = watch(update);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(state.settled()).toBe(false);
+
+      release();
+      await holder;
+
+      await expect(update).rejects.toBeInstanceOf(ProductCategoryGoneError);
+      const [row] = await productState([pMove]);
+      expect(row.categoryId).toBe(home); // nothing written — the name did not change either
+      expect((await prisma.product.findUnique({ where: { id: pMove } }))?.name).toBe(
+        'del p-update-move',
+      );
+    });
+
+    // The form re-sends the category it loaded; a delete has moved the product out
+    // meanwhile. Writing the stale id would put it straight back into the tombstone.
+    it('update re-sending an UNCHANGED category refuses once a delete has run', async () => {
+      const doomed = await makeCategory('resend-doomed', anchor, 113);
+      const resendTarget = await makeCategory('resend-target', anchor, 114);
+      const pResend = await makeProduct('p-resend', doomed);
+
+      await categories.deleteSubtreeWithMove(doomed, { kind: 'existing', id: resendTarget });
+
+      await expect(
+        products.update(pResend, { categoryId: doomed, price: 1 }),
+      ).rejects.toBeInstanceOf(ProductCategoryGoneError);
+      const [row] = await productState([pResend]);
+      expect(row.categoryId).toBe(resendTarget);
+    });
+
+    it('a create racing a real delete never commits into the tombstone', async () => {
+      const doomed = await makeCategory('create-race-doomed', anchor, 115);
+      const raceTarget = await makeCategory('create-race-target', anchor, 116);
+
+      const [created, deleted] = await Promise.allSettled([
+        createInto('p-create-race', doomed),
+        categories.deleteSubtreeWithMove(doomed, { kind: 'existing', id: raceTarget }),
+      ]);
+
+      expect(deleted.status).toBe('fulfilled');
+      const row = await prisma.product.findFirst({
+        where: { slug: slug('p-create-race') },
+        select: { categoryId: true, category: { select: { deletedAt: true } } },
+      });
+      if (created.status === 'fulfilled') {
+        // The insert committed first; the delete then moved it with the subtree.
+        expect(row).toEqual({ categoryId: raceTarget, category: { deletedAt: null } });
+      } else {
+        expect(created.reason).toBeInstanceOf(ProductCategoryGoneError);
+        expect(row).toBeNull();
+      }
+    });
+
+    it('an update racing a real delete always ends in a live category', async () => {
+      const home = await makeCategory('update-race-home', anchor, 117);
+      const doomed = await makeCategory('update-race-doomed', anchor, 118);
+      const raceTarget = await makeCategory('update-race-target', anchor, 119);
+      const pRace = await makeProduct('p-update-race', home);
+
+      const [updated, deleted] = await Promise.allSettled([
+        products.update(pRace, { categoryId: doomed }),
+        categories.deleteSubtreeWithMove(doomed, { kind: 'existing', id: raceTarget }),
+      ]);
+
+      expect(deleted.status).toBe('fulfilled');
+      const row = await prisma.product.findUnique({
+        where: { id: pRace },
+        select: { categoryId: true, category: { select: { deletedAt: true } } },
+      });
+      expect(row?.category.deletedAt).toBeNull();
+      if (updated.status === 'fulfilled') {
+        expect(row?.categoryId).toBe(raceTarget);
+      } else {
+        expect(updated.reason).toBeInstanceOf(ProductCategoryGoneError);
+        expect(row?.categoryId).toBe(home);
+      }
+    });
+
+    // Shared, not exclusive: product saves are ordered against a delete, not against
+    // each other — a second product write must not queue behind a first one.
+    it('two product writes holding the tree key do not block each other', async () => {
+      const home = await makeCategory('shared-home', anchor, 120);
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let signalLocked!: () => void;
+      const lockHeld = new Promise<void>((resolve) => (signalLocked = resolve));
+      const sharedHolder = prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(hashtextextended(${CATEGORY_TREE_LOCK_KEY}::text, 0))`;
+          signalLocked();
+          await gate;
+        },
+        { timeout: 20_000 },
+      );
+      await lockHeld;
+
+      try {
+        const created = await createInto('p-shared', home);
+        expect(created.categoryId).toBe(home);
+      } finally {
+        release();
+        await sharedHolder;
+      }
     });
   });
 });

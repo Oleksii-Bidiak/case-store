@@ -15,11 +15,11 @@ import { COUNTS_TOWARD_RATING } from '../review/review.constants';
 import { COLOR_SPEC_KEY, isColorAxis, withColorAxis } from '../common/color-axis';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
 import {
-  ProductRestoreCategoryGoneError,
+  ProductCategoryGoneError,
   ProductRestoreConflictError,
   uniqueClashFromPrismaMeta,
 } from './product.errors';
-import { acquireAdvisoryLocks } from '../common/reorder';
+import { acquireSharedAdvisoryLocks } from '../common/reorder';
 // eslint-disable-next-line local/no-deep-module-import -- cycle: category barrel > category.module > ... > product barrel > this file; a dependency-free leaf
 import { CATEGORY_TREE_LOCK_KEY } from '../category/category-locks';
 
@@ -28,6 +28,14 @@ import { CATEGORY_TREE_LOCK_KEY } from '../category/category-locks';
  * note at the end of {@link ProductRepository.setColorMany}.
  */
 const TX_OPTIONS = { timeout: 30_000, maxWait: 10_000 } as const;
+
+/**
+ * Interactive-transaction budget of a write that files a product under a category
+ * (TASK-1772). It waits on the category tree lock, and lock waits count against
+ * `timeout` — the same budget `CategoryRepository.deleteSubtreeWithMove` gives itself,
+ * so a save queued behind a delete does not time out before the delete could.
+ */
+const CATEGORY_WRITE_TX_OPTIONS = { timeout: 15_000, maxWait: 10_000 } as const;
 
 /**
  * Slugs of a rename being persisted by this update — when present, the write
@@ -1062,9 +1070,61 @@ export class ProductRepository {
    * Create a new product.
    * Slug is required — the service must generate it if not provided by the client.
    * Returns the created product record.
+   *
+   * Invariant I1 (TASK-1772): the category is re-checked under the category tree lock in
+   * the same transaction as the insert — see {@link ProductRepository.lockLiveCategory}.
+   * A deleted (or missing) category throws {@link ProductCategoryGoneError}; nothing is
+   * written.
    */
   create(data: CreateProductInput & { slug: string }): Promise<Product> {
-    return this.prisma.product.create({
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockLiveCategory(tx, data.categoryId);
+      return this.insertProduct(tx, data);
+    }, CATEGORY_WRITE_TX_OPTIONS);
+  }
+
+  /**
+   * The category check every product write that sets `categoryId` runs inside its own
+   * transaction (invariant I1 — a product never points at a deleted category).
+   *
+   * Takes the category TREE key in SHARED mode, then reads the category. A category
+   * delete holds the same key EXCLUSIVELY for its whole transaction
+   * (`CategoryRepository.deleteSubtreeWithMove`), so the two cannot interleave: either
+   * the delete committed first — this read (a fresh READ COMMITTED snapshot, taken after
+   * the lock) sees the tombstone and throws {@link ProductCategoryGoneError} — or the
+   * delete waits until this write commits and then moves the product with the rest of
+   * the subtree. Shared, not exclusive: product saves only need ordering against the
+   * delete, not against each other.
+   */
+  private async lockLiveCategory(tx: Prisma.TransactionClient, categoryId: string): Promise<void> {
+    await this.lockCategoryTree(tx);
+    await this.assertCategoryLive(tx, categoryId);
+  }
+
+  /** The SHARED half of {@link ProductRepository.lockLiveCategory} — take it FIRST. */
+  private lockCategoryTree(tx: Prisma.TransactionClient): Promise<void> {
+    return acquireSharedAdvisoryLocks(tx, [CATEGORY_TREE_LOCK_KEY]);
+  }
+
+  /** The read half of {@link ProductRepository.lockLiveCategory} — only under the lock. */
+  private async assertCategoryLive(
+    tx: Prisma.TransactionClient,
+    categoryId: string,
+  ): Promise<void> {
+    const category = await tx.category.findFirst({
+      where: { id: categoryId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!category) {
+      throw new ProductCategoryGoneError();
+    }
+  }
+
+  private insertProduct(
+    tx: Prisma.TransactionClient,
+    data: CreateProductInput & { slug: string },
+  ): Promise<Product> {
+    return tx.product.create({
       data: {
         name: data.name,
         slug: data.slug,
@@ -1098,6 +1158,13 @@ export class ProductRepository {
    * write commit in ONE transaction. When absent, the behavior is the
    * pre-TASK-285 single-statement update (no transaction on the hot,
    * no-rename path).
+   *
+   * When `data.categoryId` is present the write runs in a transaction that first
+   * re-checks the category under the category tree lock (TASK-1772, invariant I1 —
+   * {@link ProductRepository.lockLiveCategory}); a deleted category throws
+   * {@link ProductCategoryGoneError} and nothing is written. That covers an UNCHANGED
+   * `categoryId` too: a form re-sending the category it loaded would otherwise write a
+   * product a concurrent delete has just moved straight back into the tombstone.
    */
   update(id: string, data: UpdateProductInput, slugRename?: SlugRenameInput): Promise<Product> {
     const { attributes, ...rest } = data;
@@ -1107,21 +1174,27 @@ export class ProductRepository {
         ? { attributes: (attributes ?? {}) as Prisma.InputJsonValue }
         : {}),
     };
+    const filesCategory = data.categoryId !== undefined;
 
-    if (!slugRename) {
+    if (!slugRename && !filesCategory) {
       return this.prisma.product.update({ where: { id }, data: updateData });
     }
 
     return this.prisma.$transaction(async (tx) => {
+      if (data.categoryId !== undefined) {
+        await this.lockLiveCategory(tx, data.categoryId);
+      }
       const updated = await tx.product.update({ where: { id }, data: updateData });
-      await this.slugRedirectRepository.recordRename(
-        tx,
-        SlugRedirectEntity.PRODUCT,
-        slugRename.oldSlug,
-        slugRename.newSlug,
-      );
+      if (slugRename) {
+        await this.slugRedirectRepository.recordRename(
+          tx,
+          SlugRedirectEntity.PRODUCT,
+          slugRename.oldSlug,
+          slugRename.newSlug,
+        );
+      }
       return updated;
-    });
+    }, CATEGORY_WRITE_TX_OPTIONS);
   }
 
   /**
@@ -1490,12 +1563,13 @@ export class ProductRepository {
    * either committed before it (the row's CURRENT category is read, never the one the
    * service saw) or waits until the restore commits — and then moves the now-live product
    * with the rest of the subtree. A deleted category throws
-   * {@link ProductRestoreCategoryGoneError} and nothing is written.
+   * {@link ProductCategoryGoneError} and nothing is written. The lock is the shared one
+   * every category-filing product write takes ({@link ProductRepository.lockLiveCategory}).
    */
   async restore(id: string, slug: string, sku: string | null): Promise<Product> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await acquireAdvisoryLocks(tx, [CATEGORY_TREE_LOCK_KEY]);
+        await this.lockCategoryTree(tx);
 
         const tombstone = await tx.product.findFirst({
           where: { id, deletedAt: { not: null } },
@@ -1503,20 +1577,14 @@ export class ProductRepository {
         });
         // No tombstone: let the guarded update below answer P2025 → 404, as before.
         if (tombstone) {
-          const category = await tx.category.findFirst({
-            where: { id: tombstone.categoryId, deletedAt: null },
-            select: { id: true },
-          });
-          if (!category) {
-            throw new ProductRestoreCategoryGoneError();
-          }
+          await this.assertCategoryLive(tx, tombstone.categoryId);
         }
 
         return tx.product.update({
           where: { id, deletedAt: { not: null } },
           data: { deletedAt: null, isActive: false, slug, sku },
         });
-      });
+      }, CATEGORY_WRITE_TX_OPTIONS);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ProductRestoreConflictError(uniqueClashFromPrismaMeta(error.meta));

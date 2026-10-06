@@ -50,7 +50,8 @@ const LOCK_RESOURCE = CATEGORY_LOCK_RESOURCE;
 /**
  * The TREE-SCOPED lock key. Taken by ANY write that changes a node's `parentId`
  * (`applyTreeMoves` with at least one reparent, and `update`'s parent-change path), by
- * the whole category delete, and by `ProductRepository.restore` (TASK-656).
+ * the whole category delete, and — in SHARED mode — by every product write that files a
+ * product under a category (`ProductRepository` create / update / restore, TASK-1772).
  *
  * Non-negotiable (§3.8): cycle and depth are WHOLE-TREE invariants and per-bucket locks
  * do not serialise the operations that violate them — admin A moving X under Y locks
