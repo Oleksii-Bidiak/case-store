@@ -20,6 +20,7 @@ export {
   // Pickup points (`settings:delivery`).
   useListAdminPickupPoints,
   getListAdminPickupPointsQueryKey,
+  getListAdminPickupPointsQueryOptions,
   useCreatePickupPoint,
   useUpdatePickupPoint,
   useDeletePickupPoint,
@@ -28,10 +29,12 @@ export {
 
 export type {
   AdminPickupPointDto,
+  AdminPickupPointListResponse,
   CreatePickupPointDto,
   DeliverySettingDto,
   NpCityDto,
   NpWarehouseDto,
+  ReorderPickupPointsDto,
   UpdateDeliverySettingDto,
   UpdatePickupPointDto,
 } from "@/shared/api";

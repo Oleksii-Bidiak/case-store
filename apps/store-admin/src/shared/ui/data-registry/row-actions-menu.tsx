@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { EllipsisIcon } from "lucide-react";
+import { EllipsisIcon, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/shared/lib/utils";
 import { Button } from "../button";
@@ -32,6 +32,11 @@ export interface RowActionItem {
    */
   groupLabel?: string;
   disabled?: boolean;
+  /**
+   * A leading icon (SettingsDelivery ДН-1.3, TASK-645). Decorative: the label
+   * names the action. Menus without icons keep their text-only look.
+   */
+  icon?: LucideIcon;
 }
 
 export interface RowActionsMenuProps {
@@ -81,7 +86,7 @@ export function RowActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align={align} className="w-60">
-        {items.map((item) => (
+        {items.map(({ icon: Icon, ...item }) => (
           <React.Fragment key={item.label}>
             {item.separatorBefore ? <DropdownMenuSeparator /> : null}
             {item.groupLabel ? (
@@ -101,6 +106,7 @@ export function RowActionsMenu({
                     ? { target: "_blank", rel: "noopener noreferrer" }
                     : {})}
                 >
+                  {Icon ? <Icon aria-hidden="true" /> : null}
                   {item.label}
                 </Link>
               </DropdownMenuItem>
@@ -110,6 +116,7 @@ export function RowActionsMenu({
                 variant={item.destructive ? "destructive" : "default"}
                 onSelect={() => item.onSelect?.()}
               >
+                {Icon ? <Icon aria-hidden="true" /> : null}
                 {item.label}
               </DropdownMenuItem>
             )}

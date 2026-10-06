@@ -1,5 +1,11 @@
 import { http, HttpResponse, delay } from "msw";
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+  within,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { DeliverySettingsView } from "./delivery-settings-view";
@@ -110,6 +116,50 @@ describe("DeliverySettingsView (TASK-644)", () => {
       await screen.findByRole("switch", { name: f.npTitle }),
     ).toBeChecked();
     expect(await screen.findByText(f.previewPickup(2))).toBeInTheDocument();
+  });
+
+  it("warns when pickup is on but no point is active, and drops pickup from the preview (ДН-1.7, TASK-645)", async () => {
+    let points = [point("a", true), point("b", false)];
+    server.use(
+      http.get("*/api/admin/delivery-settings", () =>
+        HttpResponse.json(settingsResponse()),
+      ),
+      http.get("*/api/admin/pickup-points", () =>
+        HttpResponse.json({ data: points }),
+      ),
+      http.put("*/api/admin/pickup-points/:id", async ({ request, params }) => {
+        const body = (await request.json()) as { isActive: boolean };
+        points = points.map((p) =>
+          p.id === params.id ? { ...p, isActive: body.isActive } : p,
+        );
+        return HttpResponse.json({
+          data: points.find((p) => p.id === params.id),
+        });
+      }),
+    );
+
+    renderWithProviders(<DeliverySettingsView />, ADMIN);
+
+    const preview = await screen.findByTestId("delivery-preview");
+    expect(await within(preview).findByText(f.pickupTitle)).toBeInTheDocument();
+    expect(screen.queryByText(f.pickupNoActive)).not.toBeInTheDocument();
+
+    // Deactivate the only active point from its «⋯» menu.
+    const pt = dict.pickupPoints;
+    await userEvent.click(
+      await screen.findByRole("button", { name: pt.rowActionsAria("Точка a") }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: pt.deactivate }),
+    );
+
+    // The list is refetched; the warning and the preview follow it.
+    expect(await screen.findByText(f.pickupNoActive)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(preview).queryByText(f.pickupTitle),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("offers «Повторити» when the settings fail to load, and refetches", async () => {

@@ -34,3 +34,9 @@ export {
   useCarouselReorder,
   type UseCarouselReorderOptions,
 } from "./model/use-carousel-reorder";
+// TASK-645: the pickup points on /settings/delivery.
+export {
+  pickupPointsToItems,
+  usePickupPointReorder,
+  type UsePickupPointReorderOptions,
+} from "./model/use-pickup-point-reorder";

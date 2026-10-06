@@ -13,6 +13,7 @@ import {
   DeliverySettingsHeading,
   DeliverySettingsSkeleton,
 } from "./delivery-settings-skeleton";
+import { PickupPointsPanel } from "./pickup-points-panel";
 
 /**
  * /settings/delivery (TASK-644, mockup Д-н2 SettingsDelivery).
@@ -64,6 +65,9 @@ function DeliverySettingsContent() {
     <DeliverySettingsForm
       settings={settings.data.data}
       activePickupPoints={activePickupPoints}
+      // TASK-645: the point list lives in the pickup card. A slot, because
+      // the form and the point editor are sibling features.
+      pickupPoints={<PickupPointsPanel />}
     />
   );
 }
