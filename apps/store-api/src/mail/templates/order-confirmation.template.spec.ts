@@ -322,7 +322,11 @@ describe('buildOrderConfirmationEmail', () => {
       expect(html).not.toContain('уточнить оператор');
     });
 
-    it('Nova Poshta at cost 0 reads «Безкоштовно» in green, not «0 ₴»', () => {
+    // A Nova Poshta 0 is never free: it is the fallback OrderService books when
+    // the NP estimate failed at checkout (no pending flag), or a phone order
+    // (TASK-1019). TASK-647: no path shows a 0 / «free» where the cost was not
+    // computed — only pickup and courier can be «Безкоштовно».
+    it('Nova Poshta at cost 0 with no flag reads «уточнить оператор», never «Безкоштовно» or «0 ₴»', () => {
       const { html, text } = render({
         deliveryMethod: 'NOVA_POSHTA',
         shippingAddress: {
@@ -334,11 +338,14 @@ describe('buildOrderConfirmationEmail', () => {
       });
 
       expect(html).toContain(
-        '<td style="padding:4px 8px;text-align:right;color:#15803d;font-weight:bold;">Безкоштовно</td>',
+        '<td style="padding:4px 8px;text-align:right;color:#64748b;font-style:italic;">уточнить оператор</td>',
       );
-      expect(text).toContain('Доставка: Безкоштовно');
-      expect(plain(html)).not.toContain('>0 ₴');
-      expect(plain(text)).not.toContain('Доставка: 0');
+      expect(html).toContain('Без доставки — її вартість уточнить оператор, коли зателефонує.');
+      expect(text).toContain('Доставка: уточнить оператор');
+      expect(html).not.toContain('Безкоштовно');
+      expect(text).not.toContain('Безкоштовно');
+      expect(plain(html)).not.toMatch(/>0 ₴|0,00/);
+      expect(plain(text)).not.toMatch(/Доставка: 0|0,00/);
     });
 
     it('Pickup: point name, address, hours, phone, recipient, map link and note', () => {
@@ -541,7 +548,9 @@ describe('buildOrderConfirmationEmail', () => {
       });
 
       expect(html).toContain('<p style="margin:0 0 4px;font-weight:bold;">Нова Пошта</p>');
-      expect(html).toContain('>Безкоштовно</td>');
+      // Cost 0 on Nova Poshta is a placeholder, not free delivery.
+      expect(html).toContain('>уточнить оператор</td>');
+      expect(html).not.toContain('Безкоштовно');
     });
 
     it('falls back to the snapshot method when the payload has none', () => {

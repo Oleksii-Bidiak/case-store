@@ -206,11 +206,18 @@ export function resolveDeliveryMethod(order: OrderConfirmationParams['order']): 
  * was skipped at 0, an OTHER order's «Разом» read as final although the
  * operator had yet to add the delivery (B-6 §4).
  *
- * - `amount` — a real, booked cost;
- * - `pending` — the 0 is a placeholder: the snapshot says so, or the order is
- *   OTHER (a backfilled pre-TASK-643 order carries no flag). A non-zero cost
- *   wins over the flag: once there is an amount, it has been quoted;
- * - `free` — 0 and final (pickup, courier over the free threshold).
+ * - `amount` — a real, booked cost. A non-zero cost wins over the snapshot
+ *   flag: once there is an amount, it has been quoted;
+ * - `free` — 0 and final. Only PICKUP (always free) and COURIER (above the free
+ *   threshold) can be free, and only when the snapshot does not say pending;
+ * - `pending` — every other 0 is a placeholder, never «Безкоштовно»: the
+ *   snapshot says so; or the order is OTHER (a backfilled pre-TASK-643 order
+ *   carries no flag); or it is NOVA_POSHTA, where 0 is the fallback booked when
+ *   the NP estimate failed (`OrderService.estimateNpShipping`, no flag) or the
+ *   order was taken by phone (TASK-1019). TASK-647 acceptance: no path shows a
+ *   0 / «free» where the cost was not computed.
+ *
+ * The public order lookup applies the same rule (`isShippingCostPending`).
  */
 type ShippingCostKind = 'amount' | 'pending' | 'free';
 
@@ -219,8 +226,8 @@ function shippingCostKind(
   method: DeliveryMethod,
 ): ShippingCostKind {
   if (parseFloat(order.shippingCost) > 0) return 'amount';
-  if (order.shippingAddress?.shippingCostPending === true || method === 'OTHER') return 'pending';
-  return 'free';
+  if (order.shippingAddress?.shippingCostPending === true) return 'pending';
+  return method === 'PICKUP' || method === 'COURIER' ? 'free' : 'pending';
 }
 
 const PENDING_TOTAL_NOTE = 'Без доставки — її вартість уточнить оператор, коли зателефонує.';

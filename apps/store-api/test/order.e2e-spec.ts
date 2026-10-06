@@ -2490,10 +2490,26 @@ describe('OrderController (e2e)', () => {
             shippingCostPending: true,
           },
         },
+        {
+          // TASK-647: the 0 OrderService books when the NP estimate failed — no
+          // flag in the snapshot, and still not "free".
+          ...base,
+          id: '94f5f971-0000-0000-0000-000000000004',
+          deliveryMethod: 'NOVA_POSHTA',
+          shippingAddress: {
+            firstName: 'Olena',
+            lastName: 'Shevchenko',
+            address1: 'Відділення №12',
+            city: 'Київ',
+            npWarehouseName: 'Відділення №12',
+            deliveryMethod: 'NOVA_POSHTA',
+            carrier: 'NOVA_POSHTA',
+          },
+        },
       ]);
 
       const response = await post({ number: validNumber, phone }).expect(200);
-      const [pickup, courier, other] = response.body.data;
+      const [pickup, courier, other, novaPoshtaAtZero] = response.body.data;
 
       expect(pickup.deliveryMethod).toBe('PICKUP');
       expect(pickup.delivery).toEqual({
@@ -2513,6 +2529,8 @@ describe('OrderController (e2e)', () => {
       });
       expect(other.deliveryMethod).toBe('OTHER');
       expect(other.delivery.shippingCostPending).toBe(true);
+      expect(novaPoshtaAtZero.deliveryMethod).toBe('NOVA_POSHTA');
+      expect(novaPoshtaAtZero.delivery.shippingCostPending).toBe(true);
 
       const body = JSON.stringify(response.body);
       for (const secret of ['Olena', 'Shevchenko', '380501112233', 'Січових', 'Корзо']) {

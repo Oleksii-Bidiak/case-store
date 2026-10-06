@@ -174,6 +174,14 @@ describe('PublicOrderEntity.fromRow — delivery (TASK-1023 / TASK-1030)', () =>
     expect(entity.delivery.shippingCostPending).toBe(true);
   });
 
+  // TASK-647: a Nova Poshta 0 is the fallback booked when the NP estimate failed
+  // (or a phone order) — never "free".
+  it('treats a Nova Poshta order at cost 0 with no flag as pending, not free', () => {
+    const entity = PublicOrderEntity.fromRow(makeRow({ shippingCost: money('0.00') }));
+
+    expect(entity.delivery.shippingCostPending).toBe(true);
+  });
+
   it('defaults to NOVA_POSHTA when the row carries no method (fixtures before TASK-1023)', () => {
     const row = makeRow();
     delete row.deliveryMethod;
@@ -208,6 +216,12 @@ describe('isShippingCostPending', () => {
   it('is false for a free pickup or courier order', () => {
     expect(isShippingCostPending(DeliveryMethod.PICKUP, null, money('0.00'))).toBe(false);
     expect(isShippingCostPending(DeliveryMethod.COURIER, null, money('0'))).toBe(false);
+  });
+
+  it('is true for a Nova Poshta or OTHER order at 0 with no snapshot flag', () => {
+    expect(isShippingCostPending(DeliveryMethod.NOVA_POSHTA, null, money('0.00'))).toBe(true);
+    expect(isShippingCostPending(DeliveryMethod.NOVA_POSHTA, {}, money('0'))).toBe(true);
+    expect(isShippingCostPending(DeliveryMethod.OTHER, null, money('0.00'))).toBe(true);
   });
 
   it('follows the snapshot flag whatever the method', () => {

@@ -127,11 +127,16 @@ export class PublicOrderDeliveryEntity {
  * Whether an order's shipping cost is still to be quoted by the operator
  * (TASK-647 / TASK-1030).
  *
- * The snapshot flag (TASK-643) is the primary signal. The fallback covers the
- * orders the TASK-642 migration backfilled to OTHER — free-text-city orders
- * from before the delivery methods existed: they carry no flag, booked 0, and
- * that 0 was never "free delivery" either. A non-zero cost wins over both: once
- * there is an amount, it has been quoted (the snapshot flag is never rewritten).
+ * The snapshot flag (TASK-643) is the primary signal, but a booked 0 is "free"
+ * only for the two methods that can actually be free: PICKUP (always) and
+ * COURIER (above the free threshold). For NOVA_POSHTA and OTHER a 0 means the
+ * cost was never computed: the NP estimate failed at checkout
+ * (`OrderService.estimateNpShipping` books 0 and sets no flag), the order was
+ * taken by phone (TASK-1019 books 0), or it is a free-text-city order the
+ * TASK-642 migration backfilled to OTHER. None of those is free delivery
+ * (TASK-647 acceptance: no path shows a 0 where the cost was not computed).
+ * A non-zero cost wins over everything: once there is an amount, it has been
+ * quoted (the snapshot flag is never rewritten).
  * The order-confirmation letter applies the same rule (`shippingCostKind`).
  */
 export function isShippingCostPending(
@@ -140,7 +145,8 @@ export function isShippingCostPending(
   shippingCost: { toString(): string },
 ): boolean {
   if (toCents(shippingCost) !== 0) return false;
-  return address?.shippingCostPending === true || method === DeliveryMethod.OTHER;
+  if (address?.shippingCostPending === true) return true;
+  return method !== DeliveryMethod.PICKUP && method !== DeliveryMethod.COURIER;
 }
 
 /**
