@@ -2730,6 +2730,64 @@ describe('OrderService', () => {
       expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
     });
 
+    // TASK-1021: the delivery × payment matrix holds for a phone order too — the
+    // operator could otherwise send a card link for an OTHER order whose shipping
+    // is still to be quoted, i.e. charge an amount known to be wrong.
+    describe('the delivery × payment matrix (TASK-1021)', () => {
+      it.each(['ONLINE', 'INSTALLMENTS'] as const)(
+        'refuses a free-text (OTHER) phone order paid %s with 400 DELIVERY_PAYMENT_NOT_ALLOWED',
+        async (paymentMethod) => {
+          let caught: unknown;
+          try {
+            await service.adminCreateOrder({ ...dto, paymentMethod }, ADMIN_ID);
+          } catch (err) {
+            caught = err;
+          }
+
+          expect(caught).toBeInstanceOf(BadRequestException);
+          const body = (caught as BadRequestException).getResponse() as {
+            error: string;
+            message: unknown;
+          };
+          expect(body.error).toBe('DELIVERY_PAYMENT_NOT_ALLOWED');
+          // One Ukrainian sentence for the operator, like the checkout's.
+          expect(typeof body.message).toBe('string');
+          expect(body.message).toMatch(/[а-щьюяєіїґ]/i);
+          // Refused before anything was reserved or written.
+          expect(orderRepositoryMock.findOrderableProducts).not.toHaveBeenCalled();
+          expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+        },
+      );
+
+      it('lets a free-text phone order be paid on delivery', async () => {
+        await service.adminCreateOrder({ ...dto, paymentMethod: 'ON_DELIVERY' }, ADMIN_ID);
+
+        expect(orderRepositoryMock.createManual).toHaveBeenCalled();
+      });
+
+      it('lets a free-text phone order with no payment method through (it means on delivery)', async () => {
+        await service.adminCreateOrder(dto, ADMIN_ID);
+
+        expect(orderRepositoryMock.createManual).toHaveBeenCalled();
+      });
+
+      it('lets a Nova Poshta phone order be paid ONLINE', async () => {
+        await service.adminCreateOrder(
+          {
+            ...dto,
+            shippingAddress: { ...address, npCityRef: 'city-ref-1' },
+            paymentMethod: 'ONLINE',
+          },
+          ADMIN_ID,
+        );
+
+        expect(orderRepositoryMock.createManual).toHaveBeenCalledWith(
+          expect.objectContaining({ deliveryMethod: 'NOVA_POSHTA', paymentMethod: 'ONLINE' }),
+          ADMIN_ID,
+        );
+      });
+    });
+
     it('records a free-text phone order as OTHER', async () => {
       await service.adminCreateOrder(dto, ADMIN_ID);
 

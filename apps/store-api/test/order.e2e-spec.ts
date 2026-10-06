@@ -2717,6 +2717,45 @@ describe('OrderController (e2e)', () => {
       expect(guestArg().email).toBeUndefined();
     });
 
+    // TASK-1021: the delivery × payment matrix holds on the operator's door too.
+    it('refuses a free-text (OTHER) phone order paid ONLINE with 400 DELIVERY_PAYMENT_NOT_ALLOWED', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      const res = await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          ...manualBody({ name: 'Олена Шевченко', phone: '050 123 4567' }),
+          paymentMethod: 'ONLINE',
+        })
+        .expect(400);
+
+      expect(res.body.error).toBe('DELIVERY_PAYMENT_NOT_ALLOWED');
+      expect(res.body.message).toMatch(/при отриманні/);
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+
+    it('accepts a Nova Poshta phone order paid ONLINE (TASK-1021)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          ...manualBody({ name: 'Олена Шевченко', phone: '050 123 4567' }),
+          shippingAddress: { ...validAddress, npCityRef: 'city-ref-1' },
+          paymentMethod: 'ONLINE',
+        })
+        .expect(201);
+
+      expect(orderRepositoryMock.createManual).toHaveBeenCalledWith(
+        expect.objectContaining({ deliveryMethod: 'NOVA_POSHTA', paymentMethod: 'ONLINE' }),
+        expect.anything(),
+      );
+    });
+
     it('never pings the shop for an order staff took by phone (TASK-677)', async () => {
       const token = generateAccessToken(admin.id, admin.role);
       armCatalogue();

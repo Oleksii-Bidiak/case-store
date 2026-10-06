@@ -221,6 +221,26 @@ export function deliveryPaymentNotAllowedError(method: DeliveryMethod): BadReque
   });
 }
 
+/**
+ * The same refusal on the OPERATOR's door — a phone order (TASK-1021). Same
+ * code, so the admin panel keys the same behaviour off it, but worded for the
+ * person taking the call: a phone order's method is read off its address, so
+ * the two repairs are "take the money on delivery" or "pick an NP city".
+ */
+export function manualOrderDeliveryPaymentNotAllowedError(
+  method: DeliveryMethod,
+): BadRequestException {
+  return new BadRequestException({
+    error: DeliveryOrderErrorCode.PAYMENT_NOT_ALLOWED,
+    message:
+      method === DeliveryMethod.OTHER
+        ? 'Для адреси без міста зі списку Нової Пошти вартість доставки ще не відома, тому ' +
+          'онлайн-оплата й оплата частинами недоступні — оберіть оплату при отриманні або ' +
+          'вкажіть місто Нової Пошти'
+        : 'Обраний спосіб оплати недоступний для цього способу доставки — оберіть інший',
+  });
+}
+
 /** 400 for an explicit NOVA_POSHTA that carries no NP city to price it by. */
 export function deliveryNpCityRequiredError(): BadRequestException {
   return new BadRequestException({

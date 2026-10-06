@@ -51,6 +51,7 @@ import {
   deliveryPickupPointRequiredError,
   deliveryPickupPointUnavailableError,
   invalidPaymentTransitionError,
+  manualOrderDeliveryPaymentNotAllowedError,
   paymentCorrectionProviderRefundError,
   invalidTransitionError,
   refundRequiresClosedOrderError,
@@ -1427,6 +1428,18 @@ export class OrderService {
       }
     }
 
+    // TASK-643: classified by the same rule as a legacy checkout and the
+    // TASK-642 backfill. Pricing of a phone order is deliberately unchanged.
+    const deliveryMethod = resolveDeliveryMethod({ npCityRef: dto.shippingAddress.npCityRef });
+    const paymentMethod = dto.paymentMethod ?? PaymentMethod.ON_DELIVERY;
+    // TASK-1021: the delivery × payment matrix is a money invariant, not a
+    // checkout nicety — an OTHER phone order paid online would send the customer
+    // a link for an amount whose shipping nobody has quoted yet. Checked before
+    // anything is read or reserved.
+    if (!isPaymentAllowedForDelivery(deliveryMethod, paymentMethod)) {
+      throw manualOrderDeliveryPaymentNotAllowedError(deliveryMethod);
+    }
+
     const productIds = [...new Set(dto.items.map((item) => item.productId))];
     const products = await this.orderRepository.findOrderableProducts(productIds);
     const byId = new Map(products.map((product) => [product.id, product]));
@@ -1468,18 +1481,14 @@ export class OrderService {
         accessTokenHash: hashGuestToken(accessToken),
         items,
         shippingAddress: dto.shippingAddress,
-        // TASK-643: classified by the same rule as a legacy checkout and the
-        // TASK-642 backfill. Pricing of a phone order is deliberately unchanged.
-        deliveryMethod: resolveDeliveryMethod({ npCityRef: dto.shippingAddress.npCityRef }),
+        deliveryMethod,
         ...(dto.notes ? { notes: dto.notes } : {}),
         ...(dto.internalNotes ? { internalNotes: dto.internalNotes } : {}),
         ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
         // An operator can take a phone order and send a payment link, so a manual
         // order needs the same reservation deadline as a storefront one — its
         // stock must expire rather than be held forever by a link nobody opened.
-        reservationExpiresAt: this.resolveReservationDeadline(
-          dto.paymentMethod ?? PaymentMethod.ON_DELIVERY,
-        ),
+        reservationExpiresAt: this.resolveReservationDeadline(paymentMethod),
       },
       adminUserId,
     );
