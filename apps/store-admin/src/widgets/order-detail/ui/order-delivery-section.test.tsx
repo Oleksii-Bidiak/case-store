@@ -146,6 +146,8 @@ describe("OrderDeliverySection — one block for four methods (TASK-648, ДН-1.
       "Київ, вул. Січових Стрільців, 5, кв. 12",
     );
     expect(row(d.deliveryCost)).toHaveTextContent(plain(formatCurrency("150")));
+    // The waybill is a Nova Poshta one — the shop's courier has none.
+    expect(screen.queryByText(d.trackingNumber)).not.toBeInTheDocument();
   });
 
   it("Курʼєр free: names the threshold for a session with settings:delivery", async () => {
@@ -215,6 +217,39 @@ describe("OrderDeliverySection — one block for four methods (TASK-648, ДН-1.
     expect(within(block).queryByText(/0 ₴/)).not.toBeInTheDocument();
   });
 
+  it("Інша доставка quoted (90 ₴ booked): the cost, plain tone, no warning", () => {
+    renderWithProviders(
+      <OrderDeliverySection
+        order={makeOrder({
+          deliveryMethod: "OTHER",
+          shippingCost: "90",
+          shippingAddress: {
+            ...RECIPIENT,
+            city: "Ужгород",
+            address1: "Укрпошта, 88000, вул. Корзо, 5",
+            deliveryMethod: "OTHER",
+            // The checkout snapshot still says pending; the booked cost wins.
+            shippingCostPending: true,
+          },
+        })}
+      />,
+    );
+
+    const block = section();
+    expect(block).not.toHaveClass("border-warning/50");
+    expect(within(block).getByText("Інша доставка")).not.toHaveClass(
+      "bg-warning",
+    );
+    expect(row(d.deliveryBuyerWrote)).toHaveTextContent(
+      "Укрпошта, 88000, вул. Корзо, 5, Ужгород",
+    );
+    expect(row(d.deliveryCost)).toHaveTextContent(plain(formatCurrency("90")));
+    expect(
+      screen.queryByText(d.deliveryCostNotCalculated),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(d.deliveryOtherWarning)).not.toBeInTheDocument();
+  });
+
   it("falls back to Нова Пошта for a payload with no method at all", () => {
     renderWithProviders(
       <OrderDeliverySection
@@ -252,5 +287,31 @@ describe("OrderDetailView — the totals for an OTHER order (TASK-648)", () => {
     expect(
       within(totals).getByText(d.shipping).nextElementSibling,
     ).toHaveTextContent(d.deliveryCostNotCalculated);
+  });
+
+  it("shows the booked cost once quoted — the same 90 ₴ «Разом» includes", async () => {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: makeOrder({
+            deliveryMethod: "OTHER",
+            shippingCost: "90",
+            total: "1389",
+            shippingAddress: {
+              ...RECIPIENT,
+              city: "Ужгород",
+              address1: "Укрпошта",
+              shippingCostPending: true,
+            },
+          }),
+        }),
+      ),
+    );
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    const totals = await screen.findByRole("group", { name: d.summary });
+    expect(
+      within(totals).getByText(d.shipping).nextElementSibling,
+    ).toHaveTextContent(plain(formatCurrency("90")));
   });
 });

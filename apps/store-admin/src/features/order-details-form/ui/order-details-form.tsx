@@ -37,7 +37,7 @@ interface OrderDetailsFormProps {
   order: OrderEntity;
   /**
    * Draw the waybill field (default). The order card passes `false` for a
-   * pickup order with no waybill — «ТТН не потрібна» (TASK-648, ДН-1.13). The
+   * pickup or courier order with no waybill (TASK-648, ДН-1.13). The
    * value stays in the form either way, and an unchanged waybill is never sent.
    */
   showWaybill?: boolean;

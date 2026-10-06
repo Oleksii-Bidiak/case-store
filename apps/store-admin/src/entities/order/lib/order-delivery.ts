@@ -31,12 +31,26 @@ export function deliveryMethodLabel(method: string): string {
 
 /**
  * True when the booked shipping cost is a placeholder the operator will
- * replace — an OTHER order. Read from the method as well as the snapshot flag:
- * a phone order carries no `shippingCostPending` (TASK-1021), only its method.
+ * replace — an OTHER order still at 0. Read from the method as well as the
+ * snapshot flag: a phone order carries no `shippingCostPending` (TASK-1021),
+ * only its method.
+ *
+ * A booked non-zero cost always wins, whatever the method or the flag — the
+ * API's own rule (`isShippingCostPending` in `public-order.entity.ts`, applied
+ * by the buyer's order page and the confirmation letter too). Otherwise an
+ * OTHER order quoted at 90 ₴ read «не розрахована» here while «Разом» already
+ * included the 90 ₴, and the buyer's page showed 90 ₴ for the same order.
+ *
+ * Unlike the API, a Nova Poshta order at 0 with no flag is NOT pending here:
+ * the card reads it as «За тарифом НП» — the buyer pays the carrier.
  */
 export function isShippingCostPending(
-  order: Pick<OrderEntity, "deliveryMethod" | "shippingAddress">,
+  order: Pick<
+    OrderEntity,
+    "deliveryMethod" | "shippingAddress" | "shippingCost"
+  >,
 ): boolean {
+  if (Number(order.shippingCost) !== 0) return false;
   return (
     orderDeliveryMethod(order) === "OTHER" ||
     order.shippingAddress?.shippingCostPending === true

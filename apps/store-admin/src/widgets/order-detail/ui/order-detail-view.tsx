@@ -384,7 +384,8 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 }
                 value={formatCurrency(order.discount)}
               />
-              {/* TASK-648: an OTHER order's 0 is a placeholder, not free. */}
+              {/* TASK-648: an OTHER order's 0 is a placeholder, not free; a
+                  booked cost is shown as booked — «Разом» includes it. */}
               <SummaryRow
                 label={d.shipping}
                 value={

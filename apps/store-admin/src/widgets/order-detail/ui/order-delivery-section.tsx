@@ -65,9 +65,12 @@ interface Row {
  *                (unless the order somehow carries one — then it stays visible).
  *  - Курʼєр      Отримувач · Адреса · Вартість «150 ₴» or «Безкоштовно (від
  *                2 000 ₴)». The threshold is the CURRENT setting, read only
- *                with `settings:delivery`; the order snapshots none.
- *  - Інша        the whole section in the warning tone; «Що вказав покупець»,
- *                Вартість «не розрахована», and what the operator has to do.
+ *                with `settings:delivery`; the order snapshots none. No ТТН
+ *                field (unless one is set) — the shop's courier has none.
+ *  - Інша        at 0 the whole section in the warning tone; «Що вказав
+ *                покупець», Вартість «не розрахована», and what the operator
+ *                has to do. Once a cost is booked it is the API's rule
+ *                (`isShippingCostPending`): plain tone, Вартість «90 ₴».
  *
  * The rows come from the delivery snapshot written at checkout — the pickup
  * point's name, address and hours as the buyer saw them — never from the
@@ -101,6 +104,15 @@ export function OrderDeliverySection({ order }: { order: OrderEntity }) {
         value: joined(snap.address1, snap.city) || "—",
       },
       { label: d.deliveryCost, value: d.deliveryCostNotCalculated },
+    );
+  } else if (method === "OTHER") {
+    // Quoted: the operator booked a cost, so it is a fact now, not a warning.
+    rows.push(
+      {
+        label: d.deliveryBuyerWrote,
+        value: joined(snap.address1, snap.city) || "—",
+      },
+      { label: d.deliveryCost, value: formatCurrency(order.shippingCost) },
     );
   } else if (method === "PICKUP") {
     rows.push(
@@ -170,11 +182,16 @@ export function OrderDeliverySection({ order }: { order: OrderEntity }) {
         </Badge>
       </div>
 
-      {/* A 140 px label column (ДН-1.13): `w-35` on the scale, not a value. */}
-      <dl className="flex flex-col gap-2 text-sm">
+      {/* A 140 px label column (ДН-1.13): `w-35` on the scale, not a value —
+          once the block is at least 28rem wide. The card's side column at 1440
+          is ~360 px, where 140 px of labels left ~170 px for the values and
+          split «2 000 ₴)» over lines; there each label sits over its value. */}
+      <dl className="@container flex flex-col gap-2 text-sm">
         {rows.map((row) => (
-          <div key={row.label} className="flex gap-3">
-            <dt className="w-35 shrink-0 text-muted-foreground">{row.label}</dt>
+          <div key={row.label} className="flex flex-col @md:flex-row @md:gap-3">
+            <dt className="shrink-0 text-muted-foreground @md:w-35">
+              {row.label}
+            </dt>
             <dd className="min-w-0 flex-1 break-words text-foreground">
               {row.value}
             </dd>
@@ -192,11 +209,17 @@ export function OrderDeliverySection({ order }: { order: OrderEntity }) {
       {/* TASK-341: correctable until the parcel is with the courier. */}
       <OrderAddressForm order={order} />
       <Separator />
-      {/* TASK-335 / 336: waybill + operator-only notes. A pickup needs no
-          waybill — the field is left out unless one was typed anyway. */}
+      {/* TASK-335 / 336: waybill + operator-only notes. The waybill is a
+          Nova Poshta one (14 digits, NP tracking link): a pickup and the
+          shop's own courier need none, so the field is left out there unless
+          one was typed anyway. OTHER keeps it — an address outside the NP
+          list is often sent by NP address delivery once quoted. */}
       <OrderDetailsForm
         order={order}
-        showWaybill={method !== "PICKUP" || Boolean(order.trackingNumber)}
+        showWaybill={
+          (method !== "PICKUP" && method !== "COURIER") ||
+          Boolean(order.trackingNumber)
+        }
       />
     </section>
   );

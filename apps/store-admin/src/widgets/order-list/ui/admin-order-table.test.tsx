@@ -1216,6 +1216,27 @@ describe("AdminOrderTable — delivery (TASK-648, ДН-1.11)", () => {
     expect(screen.queryByText(d.ttnMissing)).not.toBeInTheDocument();
   });
 
+  it("shows a quoted OTHER order's booked cost, not «Уточнити…» (the API's rule)", async () => {
+    serveRows([
+      makeOrderRow(null, {
+        id: "ffffffff-0000-0000-0000-000000000006",
+        deliveryMethod: "OTHER",
+        shippingCost: "90",
+        shippingAddress: {
+          city: "Ужгород",
+          address1: "Укрпошта, 88000",
+          // The checkout flag stays; the booked cost wins over it.
+          shippingCostPending: true,
+        },
+      }),
+    ]);
+    renderWithProviders(<AdminOrderTable />);
+
+    const detail = await screen.findByText(`Ужгород · ${formatCurrency("90")}`);
+    expect(detail).not.toHaveClass("text-warning");
+    expect(screen.queryByText(d.deliveryCostToQuote)).not.toBeInTheDocument();
+  });
+
   it("quotes the courier's free-from threshold for a session with settings:delivery", async () => {
     serveRows(DELIVERY_ROWS);
     server.use(

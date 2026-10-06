@@ -157,7 +157,8 @@ export interface DeliveryContext {
  *  - Нова Пошта   «Київ · Відділення №1»
  *  - Самовивіз    «Магазин на Хрещатику» (the snapshot's point name)
  *  - Курʼєр       «Київ · 150 ₴», at 0 «Київ · безкоштовно (від 2 000 ₴)»
- *  - Інша         «Уточнити вартість доставки», in the warning tone
+ *  - Інша         «Уточнити вартість доставки», in the warning tone, while
+ *                 the cost is 0; once booked, «Ужгород · 90 ₴»
  */
 export function deliveryShort(
   order: OrderEntity,
@@ -169,8 +170,16 @@ export function deliveryShort(
     parts.filter(Boolean).join(" · ") || "—";
   const label = deliveryMethodLabel(method);
 
-  if (method === "OTHER" || isShippingCostPending(order)) {
+  if (isShippingCostPending(order)) {
     return { method: label, detail: d.deliveryCostToQuote, toQuote: true };
+  }
+  if (method === "OTHER") {
+    // Quoted already (the cost is booked): the city and what was agreed.
+    return {
+      method: label,
+      detail: join(snap.city, formatCurrency(order.shippingCost)),
+      toQuote: false,
+    };
   }
   if (method === "PICKUP") {
     return {
@@ -371,7 +380,7 @@ export function buildColumns(
     {
       id: "client",
       label: d.colCustomer,
-      defaultWidth: 200,
+      defaultWidth: 176,
       minWidth: 140,
       cell: (order) => <ClientCell order={order} />,
     },
@@ -379,7 +388,7 @@ export function buildColumns(
       id: "status",
       label: d.colStatus,
       sortField: "status",
-      defaultWidth: 190,
+      defaultWidth: 170,
       minWidth: 140,
       cell: (order) => <StatusCell order={order} now={now} />,
     },
@@ -399,7 +408,10 @@ export function buildColumns(
     {
       id: "delivery",
       label: d.colDelivery,
-      defaultWidth: 180,
+      // TASK-648 (ДН-1.11): wide enough for «Київ · безкоштовно (від 2 000 ₴)»
+      // and «Уточнити вартість доставки» on one line; the 44 px come out of
+      // «Клієнт» and «Статус», whose content wraps gracefully. Budget unchanged.
+      defaultWidth: 224,
       minWidth: 140,
       cell: (order) => <DeliveryCell order={order} context={delivery} />,
     },
