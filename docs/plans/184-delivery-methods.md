@@ -366,3 +366,8 @@ TASK-650 переїхала в план [190](190-red-wave-ci-security-money.md)
 
 У BACKLOG — TASK-1848…1854; доповнено TASK-1803 (текст 403 у `facets`) і TASK-1020 (правка
 адреси стирає знімок точки).
+
+**Перевірено перед мержем (2026-10-07):** `typecheck`, `lint`, unit `--runInBand` по workspace
+(API 5463, вітрина 2518, адмінка 3474 — усе зелене); Playwright повністю — 108 passed, 17 skipped
+(`screens-190`, вимкнена за замовчуванням); усі 12 тестів хвилі, включно з уперше прогнаними
+`checkout-delivery`, `admin-settings-delivery`, `admin-orders-delivery`, — зелені.
