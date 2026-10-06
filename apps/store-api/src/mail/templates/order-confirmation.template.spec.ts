@@ -1,7 +1,22 @@
 import {
   buildOrderConfirmationEmail,
+  displayPhone,
   type OrderConfirmationParams,
 } from './order-confirmation.template';
+
+describe('displayPhone', () => {
+  it.each([
+    ['380501234567', '+380 50 123 4567'],
+    ['0501234567', '+380 50 123 4567'],
+    ['+380 50 123 4567', '+380 50 123 4567'],
+  ])('masks the Ukrainian number %s as %s', (raw, shown) => {
+    expect(displayPhone(raw)).toBe(shown);
+  });
+
+  it('prints a non-Ukrainian number as stored instead of cutting it', () => {
+    expect(displayPhone('+12345678901')).toBe('+12345678901');
+  });
+});
 
 // ─── Test fixtures ──────────────────────────────────────────────────────────
 
@@ -276,7 +291,8 @@ describe('buildOrderConfirmationEmail', () => {
   describe('delivery (TASK-647)', () => {
     // Intl groups with NBSP or narrow NBSP depending on the ICU build.
     const plain = (value: string) => value.replace(/[  ]/g, ' ');
-    const recipient = { firstName: 'Олена', lastName: 'Коваль', phone: '+380 50 123 4567' };
+    // Snapshots store digits only (`normalizePhone`); the letter re-masks them.
+    const recipient = { firstName: 'Олена', lastName: 'Коваль', phone: '380501234567' };
 
     const render = (order: Partial<OrderConfirmationParams['order']>) =>
       buildOrderConfirmationEmail(baseParams({ order: { ...baseParams().order, ...order } }));
@@ -433,7 +449,7 @@ describe('buildOrderConfirmationEmail', () => {
       expect(text).not.toContain('javascript:');
     });
 
-    it("Courier: «Кур'єр», then name / street / city / phone", () => {
+    it("Courier: «Кур'єр · <city>», then name / street / city / phone", () => {
       const { html, text } = render({
         deliveryMethod: 'COURIER',
         shippingAddress: {
@@ -446,14 +462,14 @@ describe('buildOrderConfirmationEmail', () => {
         },
       });
 
-      expect(html).toContain('<p style="margin:0 0 4px;font-weight:bold;">Кур\'єр</p>');
+      expect(html).toContain('<p style="margin:0 0 4px;font-weight:bold;">Кур\'єр · Київ</p>');
       expect(html).toContain(
         'Олена Коваль<br />вул. Січових Стрільців, 37, кв. 12<br />Київ<br />+380 50 123 4567',
       );
       expect(text).toContain(
         [
           'Доставка:',
-          "Кур'єр",
+          "Кур'єр · Київ",
           'Олена Коваль',
           'вул. Січових Стрільців, 37, кв. 12',
           'Київ',
@@ -558,7 +574,7 @@ describe('buildOrderConfirmationEmail', () => {
         shippingAddress: { ...recipient, address1: 'x', city: 'Київ', deliveryMethod: 'COURIER' },
       });
 
-      expect(html).toContain('<p style="margin:0 0 4px;font-weight:bold;">Кур\'єр</p>');
+      expect(html).toContain('<p style="margin:0 0 4px;font-weight:bold;">Кур\'єр · Київ</p>');
     });
 
     it('escapes every dynamic delivery value (XSS)', () => {

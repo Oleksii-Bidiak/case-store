@@ -155,6 +155,22 @@ export function formatMoney(value: string): string {
   return Number.isFinite(amount) ? `${MONEY_FORMAT.format(amount)} ₴` : `${value} ₴`;
 }
 
+/**
+ * A stored buyer phone, shown back in the letter: `380501234567` →
+ * «+380 50 123 4567», the mask the storefront and the admin use. Snapshots are
+ * digits-only (`normalizePhone`), but an operator's order can carry a roaming
+ * number — anything that is not a Ukrainian number is printed as stored rather
+ * than cut into a wrong one. Twin of `displayPhone` (store-client), pinned by
+ * an exact-string test.
+ */
+export function displayPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  const normalized = digits.startsWith('0') ? `38${digits}` : digits;
+  if (!/^380\d{9}$/.test(normalized)) return raw;
+  const local = normalized.slice(3);
+  return `+380 ${local.slice(0, 2)} ${local.slice(2, 5)} ${local.slice(5)}`;
+}
+
 function fullName(address: OrderConfirmationAddress): string {
   return `${address.firstName} ${address.lastName}`.trim();
 }
@@ -173,7 +189,7 @@ function addressLines(address: OrderConfirmationAddress): string[] {
   // country to UA (TASK-229), so «UA» on its own line says nothing the buyer
   // needs — the approved mockup has no country line. Any other value is kept.
   if (address.country && address.country !== 'UA') lines.push(address.country);
-  if (address.phone) lines.push(address.phone);
+  if (address.phone) lines.push(displayPhone(address.phone));
   return lines;
 }
 
@@ -261,7 +277,7 @@ function deliveryBlock(address: OrderConfirmationAddress, method: DeliveryMethod
   switch (method) {
     case 'NOVA_POSHTA': {
       const lines = [fullName(address), address.npWarehouseName || address.address1, address.city];
-      if (address.phone) lines.push(address.phone);
+      if (address.phone) lines.push(displayPhone(address.phone));
       return { method: 'Нова Пошта', lines: lines.filter(Boolean) };
     }
     case 'PICKUP': {
@@ -271,7 +287,9 @@ function deliveryBlock(address: OrderConfirmationAddress, method: DeliveryMethod
       const street = address.pickupPointAddress || address.address1;
       const where =
         address.city && !street.startsWith(address.city) ? `${address.city}, ${street}` : street;
-      const recipient = [fullName(address), address.phone].filter(Boolean).join(', ');
+      const recipient = [fullName(address), address.phone && displayPhone(address.phone)]
+        .filter(Boolean)
+        .join(', ');
       const lines = [where, address.pickupPointHours, address.pickupPointPhone].filter(
         (line): line is string => Boolean(line),
       );
@@ -287,8 +305,13 @@ function deliveryBlock(address: OrderConfirmationAddress, method: DeliveryMethod
     case 'COURIER':
       // The mockup reads «Кур'єр по Києву» — the city in the locative case.
       // Declining arbitrary Ukrainian city names is not something to do with a
-      // suffix rule, so the line is just «Кур'єр» and the city follows below.
-      return { method: "Кур'єр", lines: addressLines(address) };
+      // suffix rule, so — as on the checkout card (owner decision 2026-10-06) —
+      // the line reads «Кур'єр · Київ».
+      return {
+        method: "Кур'єр",
+        methodDetail: address.city || undefined,
+        lines: addressLines(address),
+      };
     case 'OTHER':
     default:
       return { method: 'Інша доставка', lines: addressLines(address), note: OTHER_NOTE };
