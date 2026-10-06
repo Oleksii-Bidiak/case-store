@@ -196,11 +196,22 @@ function AdminProductTableView() {
   // product removed by mistake a minute ago belongs on page 1 (TASK-656).
   // Sent explicitly rather than left to the API's own default so the summary
   // line can never name a sort the request did not ask for.
-  const { sortBy, sortOrder, onSort } = useTableSort(
+  const {
+    sortBy: requestedSortBy,
+    sortOrder,
+    onSort,
+  } = useTableSort(
     searchParams,
     updateParams,
     isDeletedView ? "deletedAt" : "createdAt",
   );
+  // A `?sortBy=deletedAt` carried over from «Видалені» means nothing on a live
+  // list — the API falls back to `createdAt`, so the request and the summary
+  // line say so too instead of naming a sort that did not happen.
+  const sortBy =
+    !isDeletedView && requestedSortBy === "deletedAt"
+      ? "createdAt"
+      : requestedSortBy;
   const { can, arePermissionsLoading } = useAuth();
   const canWrite = can(PERM.productsWrite);
   const canDelete = can(PERM.productsDelete);
@@ -462,7 +473,11 @@ function AdminProductTableView() {
             {d.restoreAction}
           </Button>
         )
-      : undefined;
+      : isDeletedView && arePermissionsLoading
+        ? // Keep the wide trailing cell reserved while the rights load, so the
+          // columns do not jump when the button arrives.
+          () => null
+        : undefined;
 
   const deletedNotice = isDeletedView ? (
     <Callout>

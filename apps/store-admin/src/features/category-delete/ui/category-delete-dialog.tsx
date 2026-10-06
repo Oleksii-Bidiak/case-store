@@ -476,6 +476,10 @@ function CategoryDeleteForm({
                 },
               },
             });
+          } else if (!isEmpty && impact.deletedProductCount > 0) {
+            toast.success(
+              d.toastMovedDeleted(name, impact.deletedProductCount, movedTo),
+            );
           } else {
             toast.success(d.toastDone(name));
           }

@@ -532,6 +532,31 @@ describe("CategoryDeleteDialog — the target picker", () => {
       expect(mockPush).toHaveBeenCalledWith(`/products?categoryId=${AUDIO}`),
     );
   });
+
+  it("names the deleted products that moved, without «Показати товари» (TASK-1836)", async () => {
+    const user = userEvent.setup();
+    stub({
+      impacts: {
+        [HEAD]: {
+          subcategoryCount: 0,
+          productCount: 0,
+          carouselCount: 0,
+          deletedProductCount: 2,
+        },
+      },
+    });
+    const { onDeleted } = renderDialog();
+    await ready();
+    await pickTarget(user, "Аудіоаксесуари");
+    await user.click(screen.getByRole("button", { name: d.confirm }));
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+    expect(bodies).toEqual([{ moveToId: AUDIO }]);
+    expect(successToast).toHaveBeenCalledTimes(1);
+    const [message, options] = successToast.mock.calls[0];
+    expect(message).toBe(d.toastMovedDeleted("Навушники", 2, "Аудіоаксесуари"));
+    expect(options?.action).toBeUndefined();
+  });
 });
 
 describe("CategoryDeleteDialog — in flight and after (ДН-2.7 / ДН-2.11)", () => {
