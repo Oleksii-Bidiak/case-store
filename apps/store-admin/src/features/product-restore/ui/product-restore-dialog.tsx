@@ -176,7 +176,7 @@ function ProductRestoreFlow({
             return;
           }
           onRefused(error);
-          setConfirmError(restoreErrorMessage(error, { withOverrides: false }));
+          setConfirmError(restoreErrorMessage(error));
         },
       },
     );
@@ -357,7 +357,7 @@ function RestoreConflictDialog({
               : null;
           if (!named) {
             onRefused(error);
-            setServerError(restoreErrorMessage(error, { withOverrides: true }));
+            setServerError(restoreErrorMessage(error));
             return;
           }
           // Taken meanwhile too: remember the refused value(s), say so under

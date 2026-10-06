@@ -843,8 +843,10 @@ export const dict = {
     restoreErrorTitle: "Товар не відновлено",
     restoreErrorGone:
       "Цього товару вже немає серед видалених — можливо, його щойно відновив хтось інший. Список оновлено.",
+    // TASK-1831: answered by the API's PRODUCT_CATEGORY_GONE, not guessed.
+    // The dialog cannot re-file a tombstone, so it says what CAN be done.
     restoreErrorCategory:
-      "Категорію цього товару видалено, тож повертати його нікуди. Нічого не змінилося.",
+      "Категорію цього товару видалено, тож повернути його нікуди. Перенести видалений товар в іншу категорію звідси не можна — якщо він потрібен, створіть його заново в потрібній категорії. Нічого не змінилося.",
     restoreErrorForbidden:
       "У вас немає права відновлювати товари. Нічого не змінилося.",
     restoreErrorGeneric:

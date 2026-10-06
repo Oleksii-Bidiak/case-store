@@ -323,17 +323,45 @@ describe("ProductRestoreDialog (TASK-656)", () => {
   });
 
   it.each([
-    [404, d.restoreErrorGone],
-    [400, d.restoreErrorCategory],
-    [403, d.restoreErrorForbidden],
-    [500, d.restoreErrorGeneric],
-  ])("explains a %i in the dialog, without restoring", async (status, text) => {
-    stubRestore([{ status }]);
+    [404, undefined, d.restoreErrorGone],
+    [400, "PRODUCT_CATEGORY_GONE", d.restoreErrorCategory],
+    // TASK-1831: a 400 WITHOUT the code is not guessed to be the category.
+    [400, undefined, d.restoreErrorGeneric],
+    [403, undefined, d.restoreErrorForbidden],
+    [500, undefined, d.restoreErrorGeneric],
+  ])(
+    "explains a %i %s in the dialog, without restoring",
+    async (status, error, text) => {
+      stubRestore([{ status, error }]);
+      renderDialog();
+      await confirm();
+
+      const dialog = await screen.findByRole("alertdialog");
+      expect(await within(dialog).findByText(text)).toBeInTheDocument();
+      expect(successToast).not.toHaveBeenCalled();
+    },
+  );
+
+  it("names a gone category on the new-address retry too (TASK-1831)", async () => {
+    // The category was deleted between the first answer and the retry.
+    const bodies = stubRestore([
+      { status: 409, error: "PRODUCT_SLUG_CONFLICT" },
+      { status: 400, error: "PRODUCT_CATEGORY_GONE" },
+    ]);
     renderDialog();
     await confirm();
 
-    const dialog = await screen.findByRole("alertdialog");
-    expect(await within(dialog).findByText(text)).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", {
+      name: d.conflictTitleSlug,
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.conflictConfirmSlug }),
+    );
+
+    expect(
+      await within(dialog).findByText(d.restoreErrorCategory),
+    ).toBeInTheDocument();
+    expect(bodies).toHaveLength(2);
     expect(successToast).not.toHaveBeenCalled();
   });
 
