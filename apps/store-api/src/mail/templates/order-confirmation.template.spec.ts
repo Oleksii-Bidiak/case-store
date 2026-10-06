@@ -270,4 +270,309 @@ describe('buildOrderConfirmationEmail', () => {
       expect(text).not.toContain('undefined');
     });
   });
+
+  // ─── TASK-647: the «Доставка» total and block, per method ───────────────────
+
+  describe('delivery (TASK-647)', () => {
+    // Intl groups with NBSP or narrow NBSP depending on the ICU build.
+    const plain = (value: string) => value.replace(/[  ]/g, ' ');
+    const recipient = { firstName: 'Олена', lastName: 'Коваль', phone: '+380 50 123 4567' };
+
+    const render = (order: Partial<OrderConfirmationParams['order']>) =>
+      buildOrderConfirmationEmail(baseParams({ order: { ...baseParams().order, ...order } }));
+
+    it('Nova Poshta: amount row, method, branch, city and phone in both parts', () => {
+      const { html, text } = render({
+        deliveryMethod: 'NOVA_POSHTA',
+        shippingCost: '85.00',
+        total: '154.97',
+        shippingAddress: {
+          ...recipient,
+          address1: 'Відділення №1: вул. Пилипа Орлика, 1',
+          city: 'Київ',
+          npCityRef: 'city-ref',
+          npWarehouseRef: 'wh-ref',
+          npWarehouseName: 'Відділення №1: вул. Пилипа Орлика, 1',
+          deliveryMethod: 'NOVA_POSHTA',
+          carrier: 'NOVA_POSHTA',
+        },
+      });
+
+      expect(html).toContain('<h3 style="margin:0 0 8px;font-size:16px;">Доставка</h3>');
+      expect(html).toContain('<p style="margin:0 0 4px;font-weight:bold;">Нова Пошта</p>');
+      expect(html).toContain(
+        'Олена Коваль<br />Відділення №1: вул. Пилипа Орлика, 1<br />Київ<br />+380 50 123 4567',
+      );
+      expect(html).not.toContain('Адреса доставки');
+      expect(plain(html)).toContain('85 ₴');
+      expect(plain(text)).toContain(
+        [
+          'Сума: 69,97 ₴',
+          'Доставка: 85 ₴',
+          'Разом: 154,97 ₴',
+          '',
+          'Доставка:',
+          'Нова Пошта',
+          'Олена Коваль',
+          'Відділення №1: вул. Пилипа Орлика, 1',
+          'Київ',
+          '+380 50 123 4567',
+        ].join('\n'),
+      );
+      expect(html).not.toContain('уточнить оператор');
+    });
+
+    it('Nova Poshta at cost 0 reads «Безкоштовно» in green, not «0 ₴»', () => {
+      const { html, text } = render({
+        deliveryMethod: 'NOVA_POSHTA',
+        shippingAddress: {
+          ...recipient,
+          address1: 'Відділення №12',
+          city: 'Київ',
+          npWarehouseName: 'Відділення №12',
+        },
+      });
+
+      expect(html).toContain(
+        '<td style="padding:4px 8px;text-align:right;color:#15803d;font-weight:bold;">Безкоштовно</td>',
+      );
+      expect(text).toContain('Доставка: Безкоштовно');
+      expect(plain(html)).not.toContain('>0 ₴');
+      expect(plain(text)).not.toContain('Доставка: 0');
+    });
+
+    it('Pickup: point name, address, hours, phone, recipient, map link and note', () => {
+      const { html, text } = render({
+        deliveryMethod: 'PICKUP',
+        shippingAddress: {
+          ...recipient,
+          address1: 'вул. Хрещатик, 22',
+          city: 'Київ',
+          deliveryMethod: 'PICKUP',
+          carrier: null,
+          pickupPointName: 'Магазин на Хрещатику',
+          pickupPointAddress: 'вул. Хрещатик, 22',
+          pickupPointHours: 'Пн–Сб 10:00–20:00, Нд 11:00–18:00',
+          pickupPointPhone: '+380 44 123 45 67',
+          pickupPointMapUrl: 'https://maps.google.com/?q=Хрещатик+22',
+        },
+      });
+
+      expect(html).toContain(
+        '<p style="margin:0 0 4px;font-weight:bold;">Самовивіз · Магазин на Хрещатику</p>',
+      );
+      expect(html).toContain(
+        'Київ, вул. Хрещатик, 22<br />Пн–Сб 10:00–20:00, Нд 11:00–18:00<br />+380 44 123 45 67<br />Отримувач: Олена Коваль, +380 50 123 4567',
+      );
+      expect(html).toContain(
+        '<a href="https://maps.google.com/?q=Хрещатик+22" style="color:#0f172a;">Як дістатися — відкрити на мапі</a>',
+      );
+      expect(html).toContain('background:#f1f5f9;');
+      expect(html).toContain(
+        'Зателефонуємо, коли замовлення буде готове до видачі. Візьміть із собою номер замовлення.',
+      );
+      expect(html).toContain('>Безкоштовно</td>');
+      expect(text).toContain(
+        [
+          'Доставка:',
+          'Самовивіз · Магазин на Хрещатику',
+          'Київ, вул. Хрещатик, 22',
+          'Пн–Сб 10:00–20:00, Нд 11:00–18:00',
+          '+380 44 123 45 67',
+          'Отримувач: Олена Коваль, +380 50 123 4567',
+          'Мапа: https://maps.google.com/?q=Хрещатик+22',
+          'Зателефонуємо, коли замовлення буде готове до видачі. Візьміть із собою номер замовлення.',
+        ].join('\n'),
+      );
+      expect(text).toContain('Доставка: Безкоштовно');
+    });
+
+    it('Pickup without hours, point phone or map renders none of them (and no "undefined")', () => {
+      const { html, text } = render({
+        deliveryMethod: 'PICKUP',
+        shippingAddress: {
+          ...recipient,
+          address1: 'вул. Хрещатик, 22',
+          city: 'Київ',
+          pickupPointName: 'Магазин',
+          pickupPointAddress: 'вул. Хрещатик, 22',
+          pickupPointHours: null,
+          pickupPointPhone: null,
+          pickupPointMapUrl: null,
+        },
+      });
+
+      expect(html).not.toContain('Як дістатися');
+      expect(text).not.toContain('Мапа:');
+      expect(html).not.toContain('undefined');
+      expect(text).not.toContain('undefined');
+      expect(html).not.toContain('null');
+      expect(text).not.toContain('null');
+    });
+
+    it('never turns a non-http map link into an href', () => {
+      const { html, text } = render({
+        deliveryMethod: 'PICKUP',
+        shippingAddress: {
+          ...recipient,
+          address1: 'вул. Хрещатик, 22',
+          city: 'Київ',
+          pickupPointName: 'Магазин',
+          pickupPointMapUrl: 'javascript:alert(1)',
+        },
+      });
+
+      expect(html).not.toContain('javascript:');
+      expect(text).not.toContain('javascript:');
+    });
+
+    it("Courier: «Кур'єр», then name / street / city / phone", () => {
+      const { html, text } = render({
+        deliveryMethod: 'COURIER',
+        shippingAddress: {
+          ...recipient,
+          address1: 'вул. Січових Стрільців, 37, кв. 12',
+          city: 'Київ',
+          country: 'UA',
+          deliveryMethod: 'COURIER',
+          carrier: null,
+        },
+      });
+
+      expect(html).toContain('<p style="margin:0 0 4px;font-weight:bold;">Кур\'єр</p>');
+      expect(html).toContain(
+        'Олена Коваль<br />вул. Січових Стрільців, 37, кв. 12<br />Київ<br />+380 50 123 4567',
+      );
+      expect(text).toContain(
+        [
+          'Доставка:',
+          "Кур'єр",
+          'Олена Коваль',
+          'вул. Січових Стрільців, 37, кв. 12',
+          'Київ',
+          '+380 50 123 4567',
+        ].join('\n'),
+      );
+      expect(text).toContain('Доставка: Безкоштовно');
+      expect(html).not.toContain('background:#f1f5f9;');
+    });
+
+    it('Other: «уточнить оператор», the pending note under «Разом» and the operator note', () => {
+      const { html, text } = render({
+        deliveryMethod: 'OTHER',
+        shippingAddress: {
+          ...recipient,
+          address1: 'Укрпошта, індекс 88000, вул. Корзо, 5',
+          city: 'Ужгород',
+          deliveryMethod: 'OTHER',
+          carrier: null,
+          shippingCostPending: true,
+        },
+      });
+
+      expect(html).toContain(
+        '<td style="padding:4px 8px;text-align:right;color:#64748b;font-style:italic;">уточнить оператор</td>',
+      );
+      expect(html).toContain('Без доставки — її вартість уточнить оператор, коли зателефонує.');
+      expect(html).toContain('<p style="margin:0 0 4px;font-weight:bold;">Інша доставка</p>');
+      expect(html).toContain(
+        'Вартість доставки уточнить оператор, коли зателефонує підтвердити замовлення. Її додадуть до суми при отриманні.',
+      );
+      expect(plain(text)).toContain(
+        [
+          'Доставка: уточнить оператор',
+          'Разом: 69,97 ₴',
+          'Без доставки — її вартість уточнить оператор, коли зателефонує.',
+        ].join('\n'),
+      );
+      expect(text).toContain(
+        [
+          'Доставка:',
+          'Інша доставка',
+          'Олена Коваль',
+          'Укрпошта, індекс 88000, вул. Корзо, 5',
+          'Ужгород',
+          '+380 50 123 4567',
+          'Вартість доставки уточнить оператор, коли зателефонує підтвердити замовлення. Її додадуть до суми при отриманні.',
+        ].join('\n'),
+      );
+      // The 0 is a placeholder — it must not be printed as a price anywhere.
+      expect(plain(html)).not.toMatch(/>0 ₴|0,00/);
+      expect(plain(text)).not.toMatch(/Доставка: 0|0,00/);
+      expect(html).not.toContain('Безкоштовно');
+    });
+
+    it('a quoted OTHER order (cost > 0) shows the amount and no pending note', () => {
+      const { html, text } = render({
+        deliveryMethod: 'OTHER',
+        shippingCost: '120.00',
+        total: '189.97',
+        shippingAddress: { ...recipient, address1: 'x', city: 'Львів', shippingCostPending: true },
+      });
+
+      expect(plain(text)).toContain('Доставка: 120 ₴');
+      expect(text).not.toContain('Без доставки');
+      expect(html).not.toContain('Без доставки');
+    });
+
+    it('renders a legacy outbox payload (no method, no snapshot fields) without "undefined"', () => {
+      // Exactly the shape queued before TASK-643/647: no deliveryMethod anywhere,
+      // no np refs, cost 0. Inferred as OTHER — the same rule the TASK-642
+      // migration used to backfill the order column.
+      const { html, text } = buildOrderConfirmationEmail(baseParams());
+
+      expect(html).not.toContain('undefined');
+      expect(text).not.toContain('undefined');
+      expect(html).toContain('Інша доставка');
+      expect(text).toContain('Доставка: уточнить оператор');
+      expect(plain(text)).not.toMatch(/Доставка: 0|0,00/);
+    });
+
+    it('infers Nova Poshta for a legacy payload that carries NP refs', () => {
+      const { html } = render({
+        shippingAddress: {
+          ...recipient,
+          address1: 'Відділення №3',
+          city: 'Київ',
+          npCityRef: 'c',
+          npWarehouseRef: 'w',
+          npWarehouseName: 'Відділення №3',
+        },
+      });
+
+      expect(html).toContain('<p style="margin:0 0 4px;font-weight:bold;">Нова Пошта</p>');
+      expect(html).toContain('>Безкоштовно</td>');
+    });
+
+    it('falls back to the snapshot method when the payload has none', () => {
+      const { html } = render({
+        shippingAddress: { ...recipient, address1: 'x', city: 'Київ', deliveryMethod: 'COURIER' },
+      });
+
+      expect(html).toContain('<p style="margin:0 0 4px;font-weight:bold;">Кур\'єр</p>');
+    });
+
+    it('escapes every dynamic delivery value (XSS)', () => {
+      const evil = '<script>alert(1)</script>';
+      const { html } = render({
+        deliveryMethod: 'PICKUP',
+        shippingAddress: {
+          firstName: evil,
+          lastName: 'B',
+          phone: evil,
+          address1: evil,
+          city: evil,
+          pickupPointName: evil,
+          pickupPointAddress: evil,
+          pickupPointHours: evil,
+          pickupPointPhone: evil,
+          pickupPointMapUrl: 'https://maps.example.com/?q="><script>',
+        },
+      });
+
+      expect(html).not.toContain('<script>');
+      expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+      expect(html).toContain('href="https://maps.example.com/?q=&quot;&gt;&lt;script&gt;"');
+    });
+  });
 });
