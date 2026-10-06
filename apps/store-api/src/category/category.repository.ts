@@ -270,7 +270,14 @@ export interface CategoryDeletionResult {
 export interface CategoryDeletionImpact {
   subcategoryCount: number;
   productCount: number;
+  /** `carousels.length` — kept for the consumers that only need the number. */
   carouselCount: number;
+  /**
+   * Every carousel pointing into the subtree, i.e. every one the delete switches to the
+   * target (TASK-1776), ordered by name — so the dialog can name them. `name` is the
+   * carousel's `title`.
+   */
+  carousels: Array<{ id: string; name: string }>;
   /** Soft-deleted products of the subtree (TASK-655) — they still block a target-less delete. */
   deletedProductCount: number;
 }
@@ -1507,27 +1514,35 @@ export class CategoryRepository {
    *     would under-report). Soft-deleted products move too (step 5 of
    *     {@link CategoryRepository.deleteSubtreeWithMove}) but are deliberately left out
    *     of this count — the dialog describes the catalogue the operator can see;
-   *   - `carouselCount` — carousels pointing into the subtree, which switch too;
+   *   - `carousels` / `carouselCount` — carousels pointing into the subtree, which
+   *     switch too; named (TASK-1776) so the dialog can say WHICH ones. Same `where` as
+   *     the switch in {@link CategoryRepository.deleteSubtreeWithMove}, no status
+   *     filter: a draft carousel is switched as well;
    *   - `deletedProductCount` (TASK-655) — the soft-deleted products of the subtree.
    *     They are invisible in the catalogue but still block a target-less delete, so
    *     the dialog needs them to tell a TRULY empty branch (all four counts zero).
    */
   async countDeletionImpact(id: string): Promise<CategoryDeletionImpact> {
     const subtreeIds = await this.findSubtreeIds(id);
-    const [productCount, deletedProductCount, carouselCount] = await Promise.all([
+    const [productCount, deletedProductCount, carouselRows] = await Promise.all([
       this.prisma.product.count({
         where: { categoryId: { in: subtreeIds }, deletedAt: null },
       }),
       this.prisma.product.count({
         where: { categoryId: { in: subtreeIds }, deletedAt: { not: null } },
       }),
-      this.prisma.carousel.count({ where: { categoryId: { in: subtreeIds } } }),
+      this.prisma.carousel.findMany({
+        where: { categoryId: { in: subtreeIds } },
+        select: { id: true, title: true },
+        orderBy: [{ title: 'asc' }, { id: 'asc' }],
+      }),
     ]);
 
     return {
       subcategoryCount: subtreeIds.length - 1,
       productCount,
-      carouselCount,
+      carouselCount: carouselRows.length,
+      carousels: carouselRows.map((row) => ({ id: row.id, name: row.title })),
       deletedProductCount,
     };
   }

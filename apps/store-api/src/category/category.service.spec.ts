@@ -1519,6 +1519,7 @@ describe('CategoryService', () => {
         subcategoryCount: 2,
         productCount: 7,
         carouselCount: 1,
+        carousels: [{ id: 'car-1', name: 'Навушники тижня' }],
         deletedProductCount: 3,
       });
 
@@ -1530,6 +1531,7 @@ describe('CategoryService', () => {
         subcategoryCount: 2,
         productCount: 7,
         carouselCount: 1,
+        carousels: [{ id: 'car-1', name: 'Навушники тижня' }],
         deletedProductCount: 3,
       });
     });

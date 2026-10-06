@@ -1,6 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { CategoryEntity } from './category.entity';
 
+/** A carousel a category delete would switch to the target (TASK-1776). */
+export class CategoryDeletionCarouselEntity {
+  @ApiProperty({ description: 'Carousel id', example: '550e8400-e29b-41d4-a716-446655440000' })
+  id!: string;
+
+  @ApiProperty({ description: 'Carousel title as the admin shows it', example: 'Навушники тижня' })
+  name!: string;
+}
+
 /**
  * What deleting a category would touch (TASK-652) — the numbers the admin delete
  * dialog shows BEFORE the operator confirms, so nothing moves silently.
@@ -39,6 +48,14 @@ export class CategoryDeletionImpactEntity {
 
   @ApiProperty({
     description:
+      'Every homepage carousel pointing into the subtree, by name (TASK-1776) — exactly the ' +
+      'ones the delete switches to the target. carouselCount is its length',
+    type: [CategoryDeletionCarouselEntity],
+  })
+  carousels!: CategoryDeletionCarouselEntity[];
+
+  @ApiProperty({
+    description:
       'Soft-deleted products filed anywhere in the subtree (TASK-655). Hidden from the ' +
       'catalogue, but they still move with a delete — and they block a delete WITHOUT a ' +
       'move target: only a category with all four counts at zero is truly empty',
@@ -66,6 +83,7 @@ export class AdminCategoryDetailEntity extends CategoryEntity {
       subcategoryCount: number;
       productCount: number;
       carouselCount: number;
+      carousels: Array<{ id: string; name: string }>;
       deletedProductCount: number;
     },
   ): AdminCategoryDetailEntity {
@@ -74,6 +92,9 @@ export class AdminCategoryDetailEntity extends CategoryEntity {
     deletionImpact.subcategoryCount = impact.subcategoryCount;
     deletionImpact.productCount = impact.productCount;
     deletionImpact.carouselCount = impact.carouselCount;
+    deletionImpact.carousels = impact.carousels.map((carousel) =>
+      Object.assign(new CategoryDeletionCarouselEntity(), { id: carousel.id, name: carousel.name }),
+    );
     deletionImpact.deletedProductCount = impact.deletedProductCount;
     entity.deletionImpact = deletionImpact;
     return entity;

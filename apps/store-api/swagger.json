@@ -16875,6 +16875,25 @@
           "data"
         ]
       },
+      "CategoryDeletionCarouselEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Carousel id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Carousel title as the admin shows it",
+            "example": "Навушники тижня"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
       "CategoryDeletionImpactEntity": {
         "type": "object",
         "properties": {
@@ -16893,6 +16912,13 @@
             "description": "Homepage carousels pointing into the subtree — they switch to the target",
             "example": 1
           },
+          "carousels": {
+            "description": "Every homepage carousel pointing into the subtree, by name (TASK-1776) — exactly the ones the delete switches to the target. carouselCount is its length",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CategoryDeletionCarouselEntity"
+            }
+          },
           "deletedProductCount": {
             "type": "number",
             "description": "Soft-deleted products filed anywhere in the subtree (TASK-655). Hidden from the catalogue, but they still move with a delete — and they block a delete WITHOUT a move target: only a category with all four counts at zero is truly empty",
@@ -16903,6 +16929,7 @@
           "subcategoryCount",
           "productCount",
           "carouselCount",
+          "carousels",
           "deletedProductCount"
         ]
       },

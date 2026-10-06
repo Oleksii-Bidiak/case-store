@@ -517,6 +517,7 @@ describe('Category deletion (integration, TASK-652/653)', () => {
         subcategoryCount: 0,
         productCount: 0,
         carouselCount: 0,
+        carousels: [],
         deletedProductCount: 0,
       });
 
@@ -546,6 +547,7 @@ describe('Category deletion (integration, TASK-652/653)', () => {
         subcategoryCount: 0,
         productCount: 0,
         carouselCount: 0,
+        carousels: [],
         deletedProductCount: 1,
       });
 
@@ -771,6 +773,34 @@ describe('Category deletion (integration, TASK-652/653)', () => {
 
       expect(await prisma.category.count({ where: { slug: slug('late-target') } })).toBe(0);
       await expectUntouched(fixture);
+    });
+  });
+
+  // ─── The preview names the carousels it switches (TASK-1776) ─────────────────
+
+  describe('deletion preview — named carousels (TASK-1776)', () => {
+    it('lists every carousel of the subtree by name, drafts included, and nothing else', async () => {
+      const top = await makeCategory('preview-top', anchor, 100);
+      const child = await makeCategory('preview-child', top);
+      const outside = await makeCategory('preview-outside', anchor, 101);
+      const carousel = async (title: string, categoryId: string) => {
+        const row = await prisma.carousel.create({
+          data: { title, source: 'CATEGORY', categoryId },
+        });
+        createdCarouselIds.push(row.id);
+        return row.id;
+      };
+      const onChild = await carousel(`del Навушники тижня ${s}`, child);
+      const onTop = await carousel(`del Аксесуари ${s}`, top);
+      await carousel(`del Поза гілкою ${s}`, outside);
+
+      const impact = await categories.countDeletionImpact(top);
+
+      expect(impact.carousels).toEqual([
+        { id: onTop, name: `del Аксесуари ${s}` },
+        { id: onChild, name: `del Навушники тижня ${s}` },
+      ]);
+      expect(impact.carouselCount).toBe(2);
     });
   });
 

@@ -1045,13 +1045,16 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
 });
 
 describe('CategoryRepository — countDeletionImpact (TASK-652)', () => {
-  it('counts the live subtree minus self, ALL non-deleted products and the carousels', async () => {
+  it('counts the live subtree minus self, ALL non-deleted products and names the carousels', async () => {
     const productCount = jest
       .fn()
       .mockImplementation(({ where }: { where: { deletedAt: unknown } }) =>
         Promise.resolve(where.deletedAt === null ? 9 : 3),
       );
-    const carouselCount = jest.fn().mockResolvedValue(2);
+    const carouselFindMany = jest.fn().mockResolvedValue([
+      { id: 'car-1', title: 'Навушники тижня' },
+      { id: 'car-2', title: 'Чохли' },
+    ]);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CategoryRepository,
@@ -1060,7 +1063,7 @@ describe('CategoryRepository — countDeletionImpact (TASK-652)', () => {
           useValue: {
             $queryRaw: jest.fn().mockResolvedValue([{ id: 'node' }, { id: 'child' }]),
             product: { count: productCount },
-            carousel: { count: carouselCount },
+            carousel: { findMany: carouselFindMany },
           },
         },
         { provide: SlugRedirectRepository, useValue: slugRedirectRepositoryMock },
@@ -1072,6 +1075,11 @@ describe('CategoryRepository — countDeletionImpact (TASK-652)', () => {
       subcategoryCount: 1,
       productCount: 9,
       carouselCount: 2,
+      // TASK-1776: the dialog names them — carouselCount stays their number.
+      carousels: [
+        { id: 'car-1', name: 'Навушники тижня' },
+        { id: 'car-2', name: 'Чохли' },
+      ],
       deletedProductCount: 3,
     });
     // Inactive products move too, so the preview must not apply the public rule.
@@ -1082,8 +1090,11 @@ describe('CategoryRepository — countDeletionImpact (TASK-652)', () => {
     expect(productCount).toHaveBeenCalledWith({
       where: { categoryId: { in: ['node', 'child'] }, deletedAt: { not: null } },
     });
-    expect(carouselCount).toHaveBeenCalledWith({
+    // The same where as the switch in deleteSubtreeWithMove — no status filter.
+    expect(carouselFindMany).toHaveBeenCalledWith({
       where: { categoryId: { in: ['node', 'child'] } },
+      select: { id: true, title: true },
+      orderBy: [{ title: 'asc' }, { id: 'asc' }],
     });
   });
 });

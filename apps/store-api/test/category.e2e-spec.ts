@@ -508,6 +508,10 @@ describe('CategoryController (e2e)', () => {
         subcategoryCount: 1,
         productCount: 7,
         carouselCount: 2,
+        carousels: [
+          { id: 'car-1', name: 'Навушники тижня' },
+          { id: 'car-2', name: 'Чохли' },
+        ],
         deletedProductCount: 1,
       });
 
@@ -525,6 +529,11 @@ describe('CategoryController (e2e)', () => {
         subcategoryCount: 1,
         productCount: 7,
         carouselCount: 2,
+        // TASK-1776: named, so the dialog can say which carousels switch.
+        carousels: [
+          { id: 'car-1', name: 'Навушники тижня' },
+          { id: 'car-2', name: 'Чохли' },
+        ],
         deletedProductCount: 1,
       });
       expect(categoryRepositoryMock.countDeletionImpact).toHaveBeenCalledWith('cat-e2e-1');
@@ -578,6 +587,7 @@ describe('CategoryController (e2e)', () => {
         subcategoryCount: 0,
         productCount: 2,
         carouselCount: 0,
+        carousels: [],
         deletedProductCount: 0,
       });
 
@@ -598,6 +608,7 @@ describe('CategoryController (e2e)', () => {
         subcategoryCount: 0,
         productCount: 0,
         carouselCount: 0,
+        carousels: [],
         deletedProductCount: 0,
       });
 
