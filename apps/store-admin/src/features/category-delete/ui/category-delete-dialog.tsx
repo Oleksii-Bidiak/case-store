@@ -534,6 +534,9 @@ function CategoryDeleteForm({
             deletedOnly:
               impact.productCount === 0 &&
               result.movedProducts <= impact.deletedProductCount,
+            // TASK-1841: the consent sent is exactly the warning the operator
+            // saw — the toast repeats it once the move is done.
+            hidden: body.allowHiddenTarget === true,
           });
 
           onClose();
@@ -579,16 +582,23 @@ function CategoryDeleteForm({
     result,
     targetId: resultTargetId,
     deletedOnly,
+    hidden,
   }: {
     name: string;
     target: string;
     result: CategoryDeletionResultEntity;
     targetId: string | null;
     deletedOnly: boolean;
+    /** Moved into a HIDDEN target (TASK-1837/1841): off the site till shown. */
+    hidden: boolean;
   }) => {
     const moved = result.movedProducts;
+    const carousels = result.switchedCarousels;
     if (moved > 0 && !deletedOnly) {
-      toast.success(d.toastMoved(deletedName, moved, target), {
+      const message = hidden
+        ? `${d.toastMoved(deletedName, moved, target)} ${d.toastHiddenTail(target, carousels)}`
+        : d.toastMoved(deletedName, moved, target);
+      toast.success(message, {
         duration: UNDO_TOAST_DURATION_MS,
         ...(resultTargetId
           ? {
@@ -605,10 +615,17 @@ function CategoryDeleteForm({
       });
       return;
     }
+    // Nothing visible moved, but carousels may now point at a hidden target.
+    const carouselTail =
+      hidden && carousels > 0
+        ? ` ${d.toastHiddenCarousels(target, carousels)}`
+        : "";
     if (moved > 0) {
-      toast.success(d.toastMovedDeleted(deletedName, moved, target));
+      toast.success(
+        `${d.toastMovedDeleted(deletedName, moved, target)}${carouselTail}`,
+      );
     } else {
-      toast.success(d.toastDone(deletedName));
+      toast.success(`${d.toastDone(deletedName)}${carouselTail}`);
     }
   };
 
@@ -857,6 +874,8 @@ function CategoryDeleteForm({
               ) : null}
               {impact.carouselCount > 0 ? (
                 <ConsequenceRow
+                  // TASK-1841: a hidden target leaves the carousel empty.
+                  tone={hiddenTargetName !== null ? "warning" : "neutral"}
                   icon={<GalleryHorizontalEndIcon />}
                   count={d.carouselsCount(impact.carouselCount)}
                   text={d.carouselsText(
@@ -866,7 +885,11 @@ function CategoryDeleteForm({
                       .map((c) => c.name),
                     target,
                   )}
-                  sub={d.carouselsSub(impact.carouselCount)}
+                  sub={
+                    hiddenTargetName !== null
+                      ? d.carouselsSubHidden(impact.carouselCount)
+                      : d.carouselsSub(impact.carouselCount)
+                  }
                 />
               ) : null}
             </>
@@ -884,7 +907,11 @@ function CategoryDeleteForm({
 
       {!isEmpty && hiddenTargetName !== null ? (
         <Callout variant="warning">
-          {d.hiddenTargetWarning(hiddenTargetName, impact.productCount)}
+          {d.hiddenTargetWarning(
+            hiddenTargetName,
+            impact.productCount,
+            impact.carouselCount,
+          )}
         </Callout>
       ) : null}
 

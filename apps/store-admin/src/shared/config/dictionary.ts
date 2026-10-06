@@ -1547,10 +1547,18 @@ export const dict = {
       parentOptionHidden: "прихована",
       productsSubHidden:
         "Жоден товар не видаляється: адреси, ціни, залишки — без змін. Але в прихованій категорії на сайті їх не видно.",
-      hiddenTargetWarning: (name: string, count: number) =>
-        count > 0
-          ? `«${name}» прихована: після переїзду ${countLabel(count, ["товар", "товари", "товарів"])} ${pluralUk(count, ["зникне", "зникнуть", "зникнуть"])} із сайту, доки ви не покажете «${name}».`
-          : `«${name}» прихована: те, що переїде туди, не показуватиметься на сайті, доки ви не покажете «${name}».`,
+      // TASK-1841: the carousels switched along show nothing either.
+      hiddenTargetWarning: (name: string, count: number, carousels = 0) => {
+        const lead =
+          count > 0
+            ? `«${name}» прихована: після переїзду ${countLabel(count, ["товар", "товари", "товарів"])} ${pluralUk(count, ["зникне", "зникнуть", "зникнуть"])} із сайту`
+            : `«${name}» прихована: те, що переїде туди, не показуватиметься на сайті`;
+        const tail =
+          carousels > 0
+            ? `, а ${countLabel(carousels, ["карусель", "каруселі", "каруселей"])} головної ${pluralUk(carousels, ["нічого не показуватиме", "нічого не показуватимуть", "нічого не показуватимуть"])}`
+            : "";
+        return `${lead}${tail}, доки ви не покажете «${name}».`;
+      },
       newParentHiddenNote: (name: string) =>
         `«${name}» прихована — нова категорія не зʼявиться в меню сайту, доки «${name}» не покажуть. Товари лишаться на сайті.`,
       errorTargetHidden: (name: string) =>
@@ -1572,6 +1580,21 @@ export const dict = {
                 : `${quoted[0]} `;
         return `${list}${pluralUk(count, ["перемкнеться", "перемкнуться", "перемкнуться"])} на ${target}`;
       },
+      // ── каруселі й тост прихованої цілі (TASK-1841) ──
+      // A hidden category shows nothing in a carousel, so «інакше лишилася б
+      // без товарів» would be a promise the switch does not keep.
+      carouselsSubHidden: (count: number) =>
+        count === 1
+          ? "Але поки категорія прихована, карусель нічого не покаже."
+          : "Але поки категорія прихована, каруселі нічого не покажуть.",
+      // Appended to `toastMoved` after a move the operator agreed to.
+      toastHiddenTail: (target: string, carousels: number) =>
+        carousels > 0
+          ? `На сайті їх не видно, а ${countLabel(carousels, ["карусель", "каруселі", "каруселей"])} головної ${pluralUk(carousels, ["порожня", "порожні", "порожні"])}, доки ви не покажете «${target}».`
+          : `На сайті їх не видно, доки ви не покажете «${target}».`,
+      // No live product moved, but carousels now point at the hidden target.
+      toastHiddenCarousels: (target: string, carousels: number) =>
+        `${countLabel(carousels, ["карусель", "каруселі", "каруселей"])} головної ${pluralUk(carousels, ["порожня", "порожні", "порожні"])}, доки ви не покажете «${target}».`,
     },
   },
 

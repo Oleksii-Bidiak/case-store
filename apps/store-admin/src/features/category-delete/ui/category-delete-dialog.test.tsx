@@ -960,21 +960,75 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
     );
 
     expect(
-      screen.getByText(d.hiddenTargetWarning("Аудіоаксесуари", 15)),
+      screen.getByText(d.hiddenTargetWarning("Аудіоаксесуари", 15, 1)),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "«Аудіоаксесуари» прихована: після переїзду 15 товарів зникнуть із сайту, доки ви не покажете «Аудіоаксесуари».",
+        // TASK-1841: the switched carousel is named in the warning too.
+        "«Аудіоаксесуари» прихована: після переїзду 15 товарів зникнуть із сайту, а 1 карусель головної нічого не показуватиме, доки ви не покажете «Аудіоаксесуари».",
       ),
     ).toBeInTheDocument();
     // The «не ховається» promise is gone; the products row says what is true.
     expect(screen.queryByText(d.productsSub)).not.toBeInTheDocument();
     const row = screen.getByText(d.productsSubHidden).closest("li");
     expect(row).toHaveAttribute("data-tone", "warning");
+    // …and so does the carousels row (TASK-1841).
+    expect(screen.queryByText(d.carouselsSub(1))).not.toBeInTheDocument();
+    const carouselRow = screen.getByText(d.carouselsSubHidden(1)).closest("li");
+    expect(carouselRow).toHaveAttribute("data-tone", "warning");
 
     await user.click(confirm());
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());
     expect(bodies).toEqual([{ moveToId: AUDIO, allowHiddenTarget: true }]);
+    // The toast repeats that the products are off the site (TASK-1841).
+    const [message, options] = successToast.mock.calls[0];
+    expect(message).toBe(
+      "Категорію «Навушники» видалено. 15 товарів тепер у «Аудіоаксесуари». На сайті їх не видно, а 1 карусель головної порожня, доки ви не покажете «Аудіоаксесуари».",
+    );
+    expect(options.action.label).toBe(d.toastShowProducts);
+  });
+
+  it("without carousels the warning and the toast speak of the products only (TASK-1841)", async () => {
+    const user = userEvent.setup();
+    stub({
+      impacts: {
+        [HEAD]: { ...HEAD_IMPACT, carouselCount: 0, carousels: [] },
+      },
+    });
+    serveTree(() => treeHiding([AUDIO]));
+    const { onDeleted } = renderDialog();
+    await ready();
+    await user.click(targetBox());
+    await user.click(
+      await screen.findByRole("option", {
+        name: hiddenOptionName("Аудіоаксесуари"),
+      }),
+    );
+
+    expect(
+      screen.getByText(
+        "«Аудіоаксесуари» прихована: після переїзду 15 товарів зникнуть із сайту, доки ви не покажете «Аудіоаксесуари».",
+      ),
+    ).toBeInTheDocument();
+    await user.click(confirm());
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+    expect(successToast.mock.calls[0][0]).toBe(
+      "Категорію «Навушники» видалено. 15 товарів тепер у «Аудіоаксесуари». На сайті їх не видно, доки ви не покажете «Аудіоаксесуари».",
+    );
+  });
+
+  it("a move into a visible target keeps the plain toast", async () => {
+    const user = userEvent.setup();
+    stub();
+    const { onDeleted } = renderDialog();
+    await ready();
+    await pickTarget(user, "Аудіоаксесуари");
+    expect(screen.getByText(d.carouselsSub(1))).toBeInTheDocument();
+    await user.click(confirm());
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+    expect(successToast.mock.calls[0][0]).toBe(
+      d.toastMoved("Навушники", 15, "Аудіоаксесуари"),
+    );
   });
 
   it("a visible target gets no warning and no consent — also after a hidden one was picked first", async () => {
@@ -991,7 +1045,7 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
       }),
     );
     expect(
-      screen.getByText(d.hiddenTargetWarning("Аудіоаксесуари", 15)),
+      screen.getByText(d.hiddenTargetWarning("Аудіоаксесуари", 15, 1)),
     ).toBeInTheDocument();
 
     // Still focused after the pick — ArrowDown reopens the list.
@@ -1051,7 +1105,7 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
     // The choice is kept, and now the warning is there.
     expect(targetBox()).toHaveValue(AUDIO_PATH);
     expect(
-      await screen.findByText(d.hiddenTargetWarning("Аудіоаксесуари", 15)),
+      await screen.findByText(d.hiddenTargetWarning("Аудіоаксесуари", 15, 1)),
     ).toBeInTheDocument();
 
     await user.click(confirm());
@@ -1090,7 +1144,7 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
       d.errorTargetHidden("Аудіоаксесуари"),
     );
     expect(
-      await screen.findByText(d.hiddenTargetWarning("Аудіоаксесуари", 15)),
+      await screen.findByText(d.hiddenTargetWarning("Аудіоаксесуари", 15, 1)),
     ).toBeInTheDocument();
 
     await user.click(confirm());
