@@ -750,6 +750,253 @@ describe("CategoryDeleteDialog — an empty category (ДН-2.9)", () => {
   });
 });
 
+/* ─────────────────────── a hidden target (TASK-1837) ───────────────────── */
+
+type TreeNode = ReturnType<typeof node>;
+
+/** TREE with these categories hidden (their own `isActive = false`). */
+function treeHiding(hidden: string[], nodes: unknown[] = TREE): TreeNode[] {
+  return (nodes as TreeNode[]).map((n) => ({
+    ...n,
+    isActive: !hidden.includes(n.id),
+    children: treeHiding(hidden, n.children),
+  }));
+}
+
+/** A hidden target's option: its label, «прихована», then its figure. */
+function hiddenOptionName(name: string) {
+  return new RegExp(`^${name}\\s*прихована · \\d+ тов\\.$`);
+}
+
+describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
+  /** Serve this tree to every read from now on. */
+  const serveTree = (tree: () => unknown) =>
+    server.use(
+      http.get("*/api/categories/admin/tree", () => {
+        treeGets += 1;
+        return HttpResponse.json({ data: tree() });
+      }),
+    );
+
+  const confirm = () =>
+    screen.getByRole("button", { name: "Видалити й перенести 15 товарів" });
+
+  it("marks a hidden target, warns with the count, and sends the consent", async () => {
+    const user = userEvent.setup();
+    stub();
+    serveTree(() => treeHiding([AUDIO]));
+    const { onDeleted } = renderDialog();
+    await ready();
+
+    await user.click(targetBox());
+    const listbox = await screen.findByRole("listbox");
+    // Still selectable — only marked.
+    expect(
+      within(listbox).getByRole("option", { name: optionName("Аксесуари") }),
+    ).toBeInTheDocument();
+    await user.click(
+      within(listbox).getByRole("option", {
+        name: hiddenOptionName("Аудіоаксесуари"),
+      }),
+    );
+
+    expect(
+      screen.getByText(d.hiddenTargetWarning("Аудіоаксесуари", 15)),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "«Аудіоаксесуари» прихована: після переїзду 15 товарів зникнуть із сайту, доки ви не покажете «Аудіоаксесуари».",
+      ),
+    ).toBeInTheDocument();
+    // The «не ховається» promise is gone; the products row says what is true.
+    expect(screen.queryByText(d.productsSub)).not.toBeInTheDocument();
+    const row = screen.getByText(d.productsSubHidden).closest("li");
+    expect(row).toHaveAttribute("data-tone", "warning");
+
+    await user.click(confirm());
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+    expect(bodies).toEqual([{ moveToId: AUDIO, allowHiddenTarget: true }]);
+  });
+
+  it("a visible target gets no warning and no consent — also after a hidden one was picked first", async () => {
+    const user = userEvent.setup();
+    stub();
+    serveTree(() => treeHiding([AUDIO]));
+    const { onDeleted } = renderDialog();
+    await ready();
+
+    await user.click(targetBox());
+    await user.click(
+      await screen.findByRole("option", {
+        name: hiddenOptionName("Аудіоаксесуари"),
+      }),
+    );
+    expect(
+      screen.getByText(d.hiddenTargetWarning("Аудіоаксесуари", 15)),
+    ).toBeInTheDocument();
+
+    // Still focused after the pick — ArrowDown reopens the list.
+    await user.keyboard("{ArrowDown}");
+    await user.click(
+      await screen.findByRole("option", {
+        name: optionName("Чохли для Pixel"),
+      }),
+    );
+    expect(
+      screen.queryByText(/прихована: після переїзду/),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(d.productsSub)).toBeInTheDocument();
+
+    await user.click(confirm());
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+    expect(bodies).toEqual([{ moveToId: PIXEL }]);
+  });
+
+  it("409 CATEGORY_MOVE_TARGET_HIDDEN: says so, keeps the choice, and the second confirm consents", async () => {
+    const user = userEvent.setup();
+    let hidden = false;
+    let refusals = 0;
+    stub({
+      respond: () => {
+        if (refusals > 0) return new HttpResponse(null, { status: 204 });
+        refusals += 1;
+        // Someone hid the target while the dialog was open.
+        hidden = true;
+        return HttpResponse.json(
+          {
+            statusCode: 409,
+            error: "CATEGORY_MOVE_TARGET_HIDDEN",
+            message: "hidden",
+          },
+          { status: 409 },
+        );
+      },
+    });
+    serveTree(() => (hidden ? treeHiding([AUDIO]) : TREE));
+    const { onDeleted } = renderDialog();
+    await ready();
+    await pickTarget(user, "Аудіоаксесуари");
+    expect(
+      screen.queryByText(/прихована: після переїзду/),
+    ).not.toBeInTheDocument();
+    const before = treeGets;
+
+    await user.click(confirm());
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(d.errorTitle);
+    expect(alert).toHaveTextContent(d.errorTargetHidden("Аудіоаксесуари"));
+    expect(onDeleted).not.toHaveBeenCalled();
+    await waitFor(() => expect(treeGets).toBeGreaterThan(before));
+    // The choice is kept, and now the warning is there.
+    expect(targetBox()).toHaveValue(AUDIO_PATH);
+    expect(
+      await screen.findByText(d.hiddenTargetWarning("Аудіоаксесуари", 15)),
+    ).toBeInTheDocument();
+
+    await user.click(confirm());
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+    expect(bodies).toEqual([
+      { moveToId: AUDIO },
+      { moveToId: AUDIO, allowHiddenTarget: true },
+    ]);
+  });
+
+  it("trusts the 409 until the re-read tree says otherwise — the warning shows at once", async () => {
+    const user = userEvent.setup();
+    let refusals = 0;
+    stub({
+      respond: () => {
+        if (refusals > 0) return new HttpResponse(null, { status: 204 });
+        refusals += 1;
+        return HttpResponse.json(
+          {
+            statusCode: 409,
+            error: "CATEGORY_MOVE_TARGET_HIDDEN",
+            message: "hidden",
+          },
+          { status: 409 },
+        );
+      },
+    });
+    // The tree keeps answering «shown» (the re-read raced the hide).
+    const { onDeleted } = renderDialog();
+    await ready();
+    await pickTarget(user, "Аудіоаксесуари");
+
+    await user.click(confirm());
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      d.errorTargetHidden("Аудіоаксесуари"),
+    );
+    expect(
+      await screen.findByText(d.hiddenTargetWarning("Аудіоаксесуари", 15)),
+    ).toBeInTheDocument();
+
+    await user.click(confirm());
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+    expect(bodies).toEqual([
+      { moveToId: AUDIO },
+      { moveToId: AUDIO, allowHiddenTarget: true },
+    ]);
+  });
+
+  it("«Створити нову» under a hidden parent: a light note, products stay, no consent", async () => {
+    const user = userEvent.setup();
+    stub();
+    serveTree(() => treeHiding([ACC]));
+    const { onDeleted } = renderDialog();
+    await ready();
+
+    await user.click(screen.getByRole("radio", { name: d.modeNew }));
+    await user.type(
+      screen.getByRole("textbox", { name: /Назва нової/ }),
+      "Аудіо",
+    );
+    await user.click(screen.getByRole("combobox", { name: d.newParent }));
+    const listbox = await screen.findByRole("listbox");
+    // The hidden parent is offered, and marked; the visible child is not.
+    expect(
+      within(listbox).getByRole("option", { name: "Аудіоаксесуари" }),
+    ).toBeInTheDocument();
+    await user.click(
+      within(listbox).getByRole("option", { name: /^Аксесуари\s*прихована$/ }),
+    );
+
+    expect(
+      screen.getByText(d.newParentHiddenNote("Аксесуари")),
+    ).toBeInTheDocument();
+    // Its products stay on the site: no hidden-target warning, the usual promise.
+    expect(
+      screen.queryByText(/прихована: після переїзду/),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(d.productsSub)).toBeInTheDocument();
+
+    await user.click(confirm());
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+    expect(bodies).toEqual([{ moveToNew: { name: "Аудіо", parentId: ACC } }]);
+  });
+
+  it("names the hidden ANCESTOR when the parent itself is shown", async () => {
+    const user = userEvent.setup();
+    stub();
+    serveTree(() => treeHiding([ACC]));
+    renderDialog();
+    await ready();
+
+    await user.click(screen.getByRole("radio", { name: d.modeNew }));
+    await user.click(screen.getByRole("combobox", { name: d.newParent }));
+    await user.click(
+      within(await screen.findByRole("listbox")).getByRole("option", {
+        name: "Аудіоаксесуари",
+      }),
+    );
+
+    expect(
+      screen.getByText(d.newParentHiddenNote("Аксесуари")),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("CategoryDeleteDialog — refusals keep the choice (ДН-2.8)", () => {
   const cases: [string, number, string, string][] = [
     [

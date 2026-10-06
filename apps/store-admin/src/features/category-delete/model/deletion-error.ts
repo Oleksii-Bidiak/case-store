@@ -21,7 +21,16 @@ export type DeletionMode = "existing" | "new" | "none";
  */
 export function deletionErrorMessage(
   error: unknown,
-  { mode, slug }: { mode: DeletionMode; slug: string },
+  {
+    mode,
+    slug,
+    target,
+  }: {
+    mode: DeletionMode;
+    slug: string;
+    /** The existing target's name — the hidden-target refusal names it. */
+    target: string;
+  },
 ): string {
   const status = apiErrorStatus(error);
   const code = apiErrorCode(error);
@@ -43,13 +52,19 @@ export function deletionErrorMessage(
   if (status === 409) {
     if (code === "CATEGORY_SLUG_CONFLICT") return d.errorSlugConflict(slug);
     if (code === "CATEGORY_TREE_STALE") return d.errorTreeStale;
+    // TASK-1837: the target was hidden after the dialog loaded (or the
+    // warning was never shown) — the API wants the operator's consent.
+    if (code === "CATEGORY_MOVE_TARGET_HIDDEN") {
+      return d.errorTargetHidden(target);
+    }
   }
   return d.errorGeneric;
 }
 
 /**
  * Refusals after which the dialog's own numbers may be out of date: the
- * category gained products (REQUIRED) or the tree moved under it. The caller
+ * category gained products (REQUIRED), the tree moved under it, or the target
+ * was hidden (TASK-1837 — the re-read tree then shows the warning). The caller
  * re-reads the preview and the tree — WITHOUT touching the operator's choice.
  */
 export function deletionErrorIsStale(error: unknown): boolean {
@@ -58,6 +73,15 @@ export function deletionErrorIsStale(error: unknown): boolean {
     code === "CATEGORY_MOVE_TARGET_REQUIRED" ||
     code === "CATEGORY_MOVE_TARGET_IN_SUBTREE" ||
     code === "CATEGORY_MOVE_TARGET_NOT_FOUND" ||
-    code === "CATEGORY_TREE_STALE"
+    code === "CATEGORY_TREE_STALE" ||
+    code === "CATEGORY_MOVE_TARGET_HIDDEN"
+  );
+}
+
+/** The refusal that asks for `allowHiddenTarget` (TASK-1837). */
+export function deletionErrorIsHiddenTarget(error: unknown): boolean {
+  return (
+    apiErrorStatus(error) === 409 &&
+    apiErrorCode(error) === "CATEGORY_MOVE_TARGET_HIDDEN"
   );
 }

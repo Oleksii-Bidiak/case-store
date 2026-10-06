@@ -87,13 +87,23 @@ export function makeCategoryDeleteSchema(isEmpty: boolean) {
 /**
  * The request body for the chosen mode. An empty category sends `{}` — the
  * target-less delete of TASK-655 (ДН-2.9); the root parent is simply omitted.
+ *
+ * `allowHiddenTarget` (TASK-1837) is the operator's consent to move into a
+ * HIDDEN existing target. The caller passes `true` only when the dialog showed
+ * the «зникнуть із сайту» warning for exactly this target; without it the API
+ * refuses a hidden target with 409 `CATEGORY_MOVE_TARGET_HIDDEN`.
  */
 export function toDeleteCategoryDto(
   values: CategoryDeleteFormValues,
   isEmpty: boolean,
+  { allowHiddenTarget = false }: { allowHiddenTarget?: boolean } = {},
 ): DeleteCategoryDto {
   if (isEmpty) return {};
-  if (values.mode === "existing") return { moveToId: values.targetId };
+  if (values.mode === "existing") {
+    return allowHiddenTarget
+      ? { moveToId: values.targetId, allowHiddenTarget: true }
+      : { moveToId: values.targetId };
+  }
   const name = values.name.trim();
   return {
     moveToNew: values.parentId ? { name, parentId: values.parentId } : { name },

@@ -66,6 +66,7 @@ import {
   type DeleteMode,
 } from "../model/delete-schema";
 import {
+  deletionErrorIsHiddenTarget,
   deletionErrorIsStale,
   deletionErrorMessage,
 } from "../model/deletion-error";
@@ -357,6 +358,16 @@ function CategoryDeleteForm({
   const canCreate = can(PERM.categoriesWrite);
   const baseId = useId();
   const [serverError, setServerError] = useState<string | null>(null);
+  /**
+   * TASK-1837: the API refused `id` as HIDDEN while the tree in hand (`items`)
+   * still showed it as shown. Until the re-read tree arrives the server's word
+   * stands, so the warning — and with it the consent — is there at once; once
+   * `items` is a new array, the fresh tree speaks for itself.
+   */
+  const [refusedHidden, setRefusedHidden] = useState<{
+    id: string;
+    items: CategoryTreeItem[];
+  } | null>(null);
 
   const isEmpty = isEmptyBranch(impact);
   const schema = useMemo(() => makeCategoryDeleteSchema(isEmpty), [isEmpty]);
@@ -388,23 +399,43 @@ function CategoryDeleteForm({
     const nested = flattenNested(items);
     return treeComboboxItems(nested).filter((i) => !doomed.has(i.value));
   }, [doomed, items]);
+  /**
+   * Is this category itself hidden (TASK-1837)? Its OWN flag only: a product
+   * is on the site while its own category is shown, whatever the ancestors
+   * say — exactly the rule the API checks for a move target.
+   */
+  const isHidden = (id: string) =>
+    byId.get(id)?.isActive === false ||
+    (refusedHidden?.id === id && refusedHidden.items === items);
   // ДН-2.3: each target says how many products it already holds, so the
-  // operator sees where the moved ones will land among.
+  // operator sees where the moved ones will land among. A hidden one stays
+  // selectable but says so (TASK-1837) — the tree's «Приховано» in short.
   const targetItems = useMemo(
     () =>
-      pickerItems.map((i) => ({
-        ...i,
-        meta: d.targetOptionCount(byId.get(i.value)?.subtreeProductCount ?? 0),
-      })),
+      pickerItems.map((i) => {
+        const node = byId.get(i.value);
+        const count = node?.subtreeProductCount ?? 0;
+        return {
+          ...i,
+          meta:
+            node?.isActive === false
+              ? d.targetOptionHidden(count)
+              : d.targetOptionCount(count),
+        };
+      }),
     [byId, pickerItems],
   );
   // A new category is created ONE level below its parent, so a parent already
   // at the structural cap would be refused by the tree rules — never offered.
   const parentItems = useMemo(
     () =>
-      pickerItems.filter(
-        (i) => (byId.get(i.value)?.depth ?? 1) < MAX_TREE_LEVELS,
-      ),
+      pickerItems
+        .filter((i) => (byId.get(i.value)?.depth ?? 1) < MAX_TREE_LEVELS)
+        .map((i) =>
+          byId.get(i.value)?.isActive === false
+            ? { ...i, meta: d.parentOptionHidden }
+            : i,
+        ),
     [byId, pickerItems],
   );
 
@@ -426,13 +457,33 @@ function CategoryDeleteForm({
     .filter((i) => descendants.has(i.id))
     .map((i) => i.label);
 
+  // TASK-1837: the picked existing target is hidden — the moved products leave
+  // the site. The warning below says so, and ONLY then does the request carry
+  // `allowHiddenTarget` (computed in the same render the operator confirms).
+  const hiddenTargetName =
+    mode === "existing" && targetId && byId.has(targetId) && isHidden(targetId)
+      ? byId.get(targetId)!.label
+      : null;
+  // A new category under a hidden parent (or ancestor) is created shown and
+  // its products stay on the site — only the menu will not lead to it.
+  const hiddenParentName =
+    mode === "new" && parentId ? nearestHidden(byId, parentId) : null;
+
   /* ── submit ─────────────────────────────────────────────────────────── */
 
   const busy = remove.isPending;
 
   const onValid = (values: CategoryDeleteFormValues) => {
     setServerError(null);
-    const body = toDeleteCategoryDto(values, isEmpty);
+    const body = toDeleteCategoryDto(values, isEmpty, {
+      // `hiddenTargetName` is what this render shows for THIS target — the
+      // consent is given only for a warning the operator has seen.
+      allowHiddenTarget:
+        !isEmpty &&
+        values.mode === "existing" &&
+        values.targetId === targetId &&
+        hiddenTargetName !== null,
+    });
     const requestMode = isEmpty ? "none" : values.mode;
     const newSlug = slugify(values.name.trim());
     const movedTo =
@@ -493,8 +544,16 @@ function CategoryDeleteForm({
         onError: (error) => {
           // The choice stays exactly as it was — only the box appears.
           setServerError(
-            deletionErrorMessage(error, { mode: requestMode, slug: newSlug }),
+            deletionErrorMessage(error, {
+              mode: requestMode,
+              slug: newSlug,
+              target: movedTo,
+            }),
           );
+          if (body.moveToId && deletionErrorIsHiddenTarget(error)) {
+            // The warning shows at once; the tree re-read below confirms it.
+            setRefusedHidden({ id: body.moveToId, items });
+          }
           if (deletionErrorIsStale(error)) {
             void queryClient.invalidateQueries({
               queryKey: getCategoryControllerGetAdminTreeQueryKey(),
@@ -752,14 +811,21 @@ function CategoryDeleteForm({
             <>
               {impact.productCount > 0 ? (
                 <ConsequenceRow
+                  // TASK-1837: «не ховається» would be false for a hidden target.
+                  tone={hiddenTargetName !== null ? "warning" : "neutral"}
                   icon={<PackageIcon />}
                   count={d.productsCount(impact.productCount)}
                   text={d.productsText(impact.productCount, target)}
-                  sub={
+                  sub={[
+                    hiddenTargetName !== null
+                      ? d.productsSubHidden
+                      : d.productsSub,
                     impact.deletedProductCount > 0
-                      ? `${d.productsSub} ${d.productsDeletedToo(impact.deletedProductCount)}`
-                      : d.productsSub
-                  }
+                      ? d.productsDeletedToo(impact.deletedProductCount)
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                 />
               ) : impact.deletedProductCount > 0 ? (
                 <ConsequenceRow
@@ -790,6 +856,18 @@ function CategoryDeleteForm({
         </ul>
       </div>
 
+      {!isEmpty && hiddenTargetName !== null ? (
+        <Callout variant="warning">
+          {d.hiddenTargetWarning(hiddenTargetName, impact.productCount)}
+        </Callout>
+      ) : null}
+
+      {!isEmpty && hiddenParentName !== null ? (
+        <Callout variant="muted">
+          {d.newParentHiddenNote(hiddenParentName)}
+        </Callout>
+      ) : null}
+
       {!isEmpty && target !== null ? (
         <Callout variant="warning">{d.templatesWarning(target)}</Callout>
       ) : null}
@@ -807,19 +885,26 @@ function ConsequenceRow({
   text,
   sub,
 }: {
-  tone?: "neutral" | "danger";
+  tone?: "neutral" | "danger" | "warning";
   icon: ReactNode;
   count: string;
   text: string;
   sub: string;
 }) {
   return (
-    <li className="flex items-start gap-2.5 border-t border-border px-3 py-2.5 text-sm text-foreground first:border-t-0">
+    <li
+      data-tone={tone}
+      className="flex items-start gap-2.5 border-t border-border px-3 py-2.5 text-sm text-foreground first:border-t-0"
+    >
       <span
         aria-hidden="true"
         className={cn(
           "mt-0.5 shrink-0 [&_svg]:size-4",
-          tone === "danger" ? "text-destructive" : "text-muted-foreground",
+          tone === "danger"
+            ? "text-destructive"
+            : tone === "warning"
+              ? "text-warning"
+              : "text-muted-foreground",
         )}
       >
         {icon}
@@ -830,6 +915,25 @@ function ConsequenceRow({
       </span>
     </li>
   );
+}
+
+/**
+ * The name of `id` or of its nearest ancestor that is hidden (TASK-1837), or
+ * `null` when the whole chain is shown. A category under a hidden ancestor is
+ * unreachable from the storefront menu even while its own flag is on.
+ */
+function nearestHidden(
+  byId: Map<string, CategoryTreeItem>,
+  id: string,
+): string | null {
+  const seen = new Set<string>();
+  let node = byId.get(id);
+  while (node && !seen.has(node.id)) {
+    if (!node.isActive) return node.label;
+    seen.add(node.id);
+    node = node.parentId ? byId.get(node.parentId) : undefined;
+  }
+  return null;
 }
 
 /**

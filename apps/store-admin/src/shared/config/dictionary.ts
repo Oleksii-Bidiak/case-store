@@ -1541,6 +1541,22 @@ export const dict = {
       // list does not show them, so no «Показати товари».
       toastMovedDeleted: (name: string, count: number, target: string) =>
         `Категорію «${name}» видалено. ${countLabel(count, ["видалений товар", "видалені товари", "видалених товарів"])} тепер у «${target}» — їх видно у виді «Видалені».`,
+      // ── прихована ціль (TASK-1837) ──
+      // Owner's decision 2026-10-06: a HIDDEN category may receive the
+      // products, but the dialog warns — a product is on the site only while
+      // its own category is shown — and the API wants explicit consent.
+      targetOptionHidden: (count: number) => `прихована · ${count} тов.`,
+      parentOptionHidden: "прихована",
+      productsSubHidden:
+        "Жоден товар не видаляється: адреси, ціни, залишки — без змін. Але в прихованій категорії на сайті їх не видно.",
+      hiddenTargetWarning: (name: string, count: number) =>
+        count > 0
+          ? `«${name}» прихована: після переїзду ${countLabel(count, ["товар", "товари", "товарів"])} ${pluralUk(count, ["зникне", "зникнуть", "зникнуть"])} із сайту, доки ви не покажете «${name}».`
+          : `«${name}» прихована: те, що переїде туди, не показуватиметься на сайті, доки ви не покажете «${name}».`,
+      newParentHiddenNote: (name: string) =>
+        `«${name}» прихована — нова категорія не зʼявиться в меню сайту, доки «${name}» не покажуть. Товари лишаться на сайті.`,
+      errorTargetHidden: (name: string) =>
+        `Категорію «${name}» щойно приховали — товари, перенесені туди, зникнуть із сайту. Перевірте попередження й підтвердьте ще раз. Нічого не змінилося.`,
     },
   },
 
