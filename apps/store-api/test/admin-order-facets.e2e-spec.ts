@@ -35,7 +35,9 @@ describe('Admin orders — delivery filters, facets and CSV (e2e, TASK-648)', ()
     order: {
       count: jest.fn(async () => 0),
       findMany: jest.fn(async (): Promise<unknown[]> => []),
-      groupBy: jest.fn(async (): Promise<unknown[]> => []),
+      groupBy: jest.fn(
+        async (_args: { by: string[]; where: Record<string, any> }): Promise<unknown[]> => [],
+      ),
     },
   };
 
@@ -158,7 +160,7 @@ describe('Admin orders — delivery filters, facets and CSV (e2e, TASK-648)', ()
         data: { deliveryMethod: { NOVA_POSHTA: 7, PICKUP: 3, COURIER: 0, OTHER: 0 } },
       });
 
-      const call = prismaServiceMock.order.groupBy.mock.calls[0][0];
+      const call = prismaServiceMock.order.groupBy.mock.calls[0]![0];
       expect(call.by).toEqual(['deliveryMethod']);
       // Honours the other filters…
       expect(call.where.deletedAt).toBeNull();
