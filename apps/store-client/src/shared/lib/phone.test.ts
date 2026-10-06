@@ -1,4 +1,5 @@
 import {
+  displayPhone,
   formatUAPhone,
   isValidUAPhone,
   normalizeUAPhone,
@@ -76,6 +77,19 @@ describe("isValidUAPhone", () => {
 
   it("keeps the local length at 9 digits", () => {
     expect(UA_PHONE_LOCAL_LENGTH).toBe(9);
+  });
+});
+
+describe("displayPhone (TASK-647)", () => {
+  it.each([
+    ["380501234567", "+380 50 123 4567"],
+    ["+380501234567", "+380 50 123 4567"],
+    ["0501234567", "+380 50 123 4567"],
+    // Not a UA number: shown as stored, never truncated into a wrong one.
+    ["+48 600 123 456", "+48 600 123 456"],
+    ["12345", "12345"],
+  ])("shows %s as %s", (input, expected) => {
+    expect(displayPhone(input)).toBe(expected);
   });
 });
 

@@ -59,7 +59,7 @@ export function NpWarehouseField({
 
   return (
     <div className="flex flex-col gap-1.5 sm:col-span-2">
-      <Label htmlFor={id}>{dict.checkout.fields.deliveryAddress}</Label>
+      <Label htmlFor={id}>{dict.checkout.delivery.npWarehouseLabel}</Label>
       <Combobox
         id={id}
         value={field.value ?? ""}

@@ -7,7 +7,9 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
-import { useCheckout } from "./use-checkout";
+import { toDeliveryPayload, useCheckout } from "./use-checkout";
+import { toDeliveryOptions } from "./delivery";
+import { makeDeliveryMethods } from "@/shared/test/msw-handlers";
 import type { CheckoutFormValues } from "./checkout-schema";
 
 // next/navigation is unavailable under jsdom — mock the router. Names are
@@ -25,6 +27,7 @@ const VALUES: CheckoutFormValues = {
   firstName: "Олег",
   lastName: "Коваль",
   phone: "+380501234567",
+  deliveryMethod: "NOVA_POSHTA",
   city: "м. Київ, Київська обл.",
   npCityRef: "city-ref-1",
   deliveryAddress: "Відділення №1",
@@ -132,6 +135,101 @@ describe("useCheckout — order-creation failures (TASK-402)", () => {
       await screen.findByText(dict.common.genericError),
     ).toBeInTheDocument();
     expect(screen.queryByText("Internal server error")).toBeNull();
+  });
+});
+
+// TASK-646 / TASK-1097. What each delivery branch puts on `CreateOrderDto`.
+describe("toDeliveryPayload — the delivery half of the order, by method", () => {
+  const options = toDeliveryOptions(makeDeliveryMethods());
+
+  it("sends Nova Poshta with the directory refs", () => {
+    expect(toDeliveryPayload(VALUES, options)).toEqual({
+      deliveryMethod: "NOVA_POSHTA",
+      shippingAddress: expect.objectContaining({
+        city: "м. Київ, Київська обл.",
+        address1: "Відділення №1",
+        country: "UA",
+        npCityRef: "city-ref-1",
+        npWarehouseRef: "wh-ref-1",
+        npWarehouseName: "Відділення №1",
+      }),
+    });
+  });
+
+  it("omits deliveryMethod and every NP ref on the manual path, so the server infers OTHER", () => {
+    const payload = toDeliveryPayload(
+      {
+        ...VALUES,
+        npManual: true,
+        city: "Ромни",
+        npCityRef: "",
+        npWarehouseRef: "",
+        deliveryAddress: "вул. Соборна, 5",
+      },
+      options,
+    );
+    expect(payload).not.toHaveProperty("deliveryMethod");
+    expect(payload.shippingAddress).toEqual({
+      firstName: "Олег",
+      lastName: "Коваль",
+      phone: "+380501234567",
+      country: "UA",
+      city: "Ромни",
+      address1: "вул. Соборна, 5",
+    });
+  });
+
+  it("sends the pickup point id with the point's own city and address", () => {
+    expect(
+      toDeliveryPayload(
+        { ...VALUES, deliveryMethod: "PICKUP", pickupPointId: "pp-1" },
+        options,
+      ),
+    ).toEqual({
+      deliveryMethod: "PICKUP",
+      pickupPointId: "pp-1",
+      shippingAddress: expect.objectContaining({
+        city: "Київ",
+        address1: "вул. Хрещатик, 22",
+      }),
+    });
+  });
+
+  it("sends the courier's city and «вулиця, буд, кв.» as address1, without NP refs", () => {
+    const payload = toDeliveryPayload(
+      {
+        ...VALUES,
+        deliveryMethod: "COURIER",
+        courierStreet: "вул. Велика Васильківська",
+        courierHouse: "10",
+        courierApartment: "4",
+      },
+      options,
+    );
+    expect(payload.deliveryMethod).toBe("COURIER");
+    expect(payload.shippingAddress).toMatchObject({
+      city: "Київ",
+      address1: "вул. Велика Васильківська, 10, кв. 4",
+    });
+    expect(payload.shippingAddress).not.toHaveProperty("npCityRef");
+  });
+
+  it("sends «інша доставка» with the typed city and address", () => {
+    const payload = toDeliveryPayload(
+      {
+        ...VALUES,
+        deliveryMethod: "OTHER",
+        city: "Ужгород",
+        deliveryAddress: "Укрпошта, індекс 88000",
+      },
+      options,
+    );
+    expect(payload.deliveryMethod).toBe("OTHER");
+    expect(payload.shippingAddress).toMatchObject({
+      city: "Ужгород",
+      address1: "Укрпошта, індекс 88000",
+    });
+    expect(payload.shippingAddress).not.toHaveProperty("npCityRef");
   });
 });
 

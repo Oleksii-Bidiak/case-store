@@ -215,6 +215,9 @@ const orderRepositoryMock = {
   // about and writes the whole application in one go.
   findPaymentWithOrder: jest.fn(),
   applyPaymentOutcome: jest.fn(),
+  // TASK-648: the CSV export and the delivery-method facet counts.
+  findAllForExport: jest.fn(),
+  countByDeliveryMethod: jest.fn(),
 };
 
 // TASK-827: checkout reads the cart through CartService, the one method it uses.
@@ -872,13 +875,60 @@ describe('OrderService', () => {
         },
       );
 
-      it('refuses a DERIVED OTHER (legacy free-text checkout) while OTHER is off', async () => {
+      // TASK-1097 (owner decision 2026-10-05): a city typed by hand because Nova
+      // Poshta was unreachable is not the shopper choosing «Інша доставка» — it is
+      // the storefront's fallback, and switching OTHER off must not close it.
+      it('ACCEPTS a DERIVED OTHER (manual city, NP unavailable) while OTHER is off — TASK-1097', async () => {
         deliveryServiceMock.getMethodSettings.mockResolvedValue({
           ...DEFAULT_METHOD_SETTINGS,
           enabledMethods: ['NOVA_POSHTA'],
         });
 
+        await service.createOrder(userActor, createDto);
+
+        expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
+        expect(created()).toMatchObject({ deliveryMethod: 'OTHER', shippingCost: 0 });
+        // Still an operator-quoted order, said so on the record.
+        expect(created().shippingAddress).toMatchObject({ shippingCostPending: true });
+      });
+
+      it('still runs the payment matrix on a DERIVED OTHER while OTHER is off — TASK-1097', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue({
+          ...DEFAULT_METHOD_SETTINGS,
+          enabledMethods: ['NOVA_POSHTA'],
+        });
+
+        const err = await rejectionOf(
+          service.createOrder(userActor, { shippingAddress: address, paymentMethod: 'ONLINE' }),
+        );
+
+        expectDelivery400(err, 'DELIVERY_PAYMENT_NOT_ALLOWED');
+      });
+
+      // The fallback exists for a Nova Poshta OUTAGE — with NP switched off there
+      // is no outage to fall back from, and a request without a method must not
+      // become a way to book a method the owner closed.
+      it('refuses a DERIVED OTHER while both NP and OTHER are off — TASK-1097', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue({
+          ...allEnabled(),
+          enabledMethods: ['PICKUP', 'COURIER'],
+        });
+
         const err = await rejectionOf(service.createOrder(userActor, createDto));
+
+        expectDelivery400(err, 'DELIVERY_METHOD_UNAVAILABLE');
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      });
+
+      it('still refuses an EXPLICIT OTHER while OTHER is off — TASK-1097', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue({
+          ...DEFAULT_METHOD_SETTINGS,
+          enabledMethods: ['NOVA_POSHTA'],
+        });
+
+        const err = await rejectionOf(
+          service.createOrder(userActor, { shippingAddress: address, deliveryMethod: 'OTHER' }),
+        );
 
         expectDelivery400(err, 'DELIVERY_METHOD_UNAVAILABLE');
       });
@@ -1001,7 +1051,46 @@ describe('OrderService', () => {
           carrier: null,
           pickupPointName: 'Магазин на Хрещатику',
           pickupPointAddress: 'вул. Хрещатик, 1',
+          // TASK-647: what the letter and the order pages show — null when the
+          // point has none, so a reader never has to tell "absent" from "unset".
+          pickupPointHours: 'Пн–Пт 10:00–19:00',
+          pickupPointPhone: null,
+          pickupPointMapUrl: null,
         });
+      });
+
+      it('snapshots the point’s hours, phone and map link as they were at checkout (TASK-647)', async () => {
+        deliveryServiceMock.resolveActivePickupPoint.mockResolvedValue({
+          ...point,
+          phone: '+380441234567',
+          workingHours: 'Щодня 9–21',
+          mapUrl: 'https://maps.example/khreshchatyk',
+        });
+
+        await service.createOrder(userActor, {
+          shippingAddress: address,
+          deliveryMethod: 'PICKUP',
+          pickupPointId: POINT_ID,
+        });
+
+        expect(created().shippingAddress).toMatchObject({
+          pickupPointHours: 'Щодня 9–21',
+          pickupPointPhone: '+380441234567',
+          pickupPointMapUrl: 'https://maps.example/khreshchatyk',
+        });
+      });
+
+      it('never puts the pickup fields on a non-PICKUP snapshot', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue(allEnabled());
+
+        await service.createOrder(userActor, {
+          shippingAddress: address,
+          deliveryMethod: 'COURIER',
+        });
+
+        expect(created().shippingAddress).not.toHaveProperty('pickupPointHours');
+        expect(created().shippingAddress).not.toHaveProperty('pickupPointPhone');
+        expect(created().shippingAddress).not.toHaveProperty('pickupPointMapUrl');
       });
     });
 
@@ -2688,6 +2777,64 @@ describe('OrderService', () => {
       expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
     });
 
+    // TASK-1021: the delivery × payment matrix holds for a phone order too — the
+    // operator could otherwise send a card link for an OTHER order whose shipping
+    // is still to be quoted, i.e. charge an amount known to be wrong.
+    describe('the delivery × payment matrix (TASK-1021)', () => {
+      it.each(['ONLINE', 'INSTALLMENTS'] as const)(
+        'refuses a free-text (OTHER) phone order paid %s with 400 DELIVERY_PAYMENT_NOT_ALLOWED',
+        async (paymentMethod) => {
+          let caught: unknown;
+          try {
+            await service.adminCreateOrder({ ...dto, paymentMethod }, ADMIN_ID);
+          } catch (err) {
+            caught = err;
+          }
+
+          expect(caught).toBeInstanceOf(BadRequestException);
+          const body = (caught as BadRequestException).getResponse() as {
+            error: string;
+            message: unknown;
+          };
+          expect(body.error).toBe('DELIVERY_PAYMENT_NOT_ALLOWED');
+          // One Ukrainian sentence for the operator, like the checkout's.
+          expect(typeof body.message).toBe('string');
+          expect(body.message).toMatch(/[а-щьюяєіїґ]/i);
+          // Refused before anything was reserved or written.
+          expect(orderRepositoryMock.findOrderableProducts).not.toHaveBeenCalled();
+          expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+        },
+      );
+
+      it('lets a free-text phone order be paid on delivery', async () => {
+        await service.adminCreateOrder({ ...dto, paymentMethod: 'ON_DELIVERY' }, ADMIN_ID);
+
+        expect(orderRepositoryMock.createManual).toHaveBeenCalled();
+      });
+
+      it('lets a free-text phone order with no payment method through (it means on delivery)', async () => {
+        await service.adminCreateOrder(dto, ADMIN_ID);
+
+        expect(orderRepositoryMock.createManual).toHaveBeenCalled();
+      });
+
+      it('lets a Nova Poshta phone order be paid ONLINE', async () => {
+        await service.adminCreateOrder(
+          {
+            ...dto,
+            shippingAddress: { ...address, npCityRef: 'city-ref-1' },
+            paymentMethod: 'ONLINE',
+          },
+          ADMIN_ID,
+        );
+
+        expect(orderRepositoryMock.createManual).toHaveBeenCalledWith(
+          expect.objectContaining({ deliveryMethod: 'NOVA_POSHTA', paymentMethod: 'ONLINE' }),
+          ADMIN_ID,
+        );
+      });
+    });
+
     it('records a free-text phone order as OTHER', async () => {
       await service.adminCreateOrder(dto, ADMIN_ID);
 
@@ -3756,7 +3903,14 @@ describe('OrderService', () => {
         },
       ]);
       expect(order.total).toBe('139.97');
-      expect(order.delivery).toEqual({ city: 'Київ', warehouse: 'Відділення №12' });
+      // TASK-1023/1030: the block also names the pickup point and the pending flag.
+      expect(order.delivery).toEqual({
+        city: 'Київ',
+        warehouse: 'Відділення №12',
+        pickupPointName: null,
+        pickupPointAddress: null,
+        shippingCostPending: false,
+      });
       expect(order.trackingNumber).toBe('20450000000001');
     });
 
@@ -3799,7 +3953,13 @@ describe('OrderService', () => {
         phone: '+380671112233',
       });
 
-      expect(order.delivery).toEqual({ city: 'Київ', warehouse: null });
+      expect(order.delivery).toEqual({
+        city: 'Київ',
+        warehouse: null,
+        pickupPointName: null,
+        pickupPointAddress: null,
+        shippingCostPending: false,
+      });
       expect(JSON.stringify(order)).not.toContain('Хрещатик');
     });
   });
@@ -4729,6 +4889,80 @@ describe('OrderService', () => {
         expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
         expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  // ─── TASK-648: delivery facets + the CSV column ─────────────────────────────
+
+  describe('adminGetOrderFacets (TASK-648)', () => {
+    it('answers the per-method counts the repository computed for the query', async () => {
+      const counts = { NOVA_POSHTA: 4, PICKUP: 1, COURIER: 0, OTHER: 2 };
+      orderRepositoryMock.countByDeliveryMethod.mockResolvedValue(counts);
+      const query = { deliveryMethod: ['PICKUP' as const], paymentMethod: 'ONLINE' as const };
+
+      await expect(service.adminGetOrderFacets(query)).resolves.toEqual({
+        deliveryMethod: counts,
+      });
+      expect(orderRepositoryMock.countByDeliveryMethod).toHaveBeenCalledWith(query);
+    });
+  });
+
+  describe('adminExportOrdersCsv — delivery method column (TASK-648)', () => {
+    const exportRow = (deliveryMethod: string) => ({
+      id: 'abcdef12-0000-4000-8000-000000000001',
+      createdAt: new Date('2026-10-01T10:00:00Z'),
+      status: 'PENDING',
+      paymentStatus: 'PENDING',
+      paymentMethod: 'ON_DELIVERY',
+      deliveryMethod,
+      paidAt: null,
+      subtotal: '100.00',
+      discount: '0.00',
+      discountCode: null,
+      addonsTotal: '0.00',
+      shippingCost: '0.00',
+      tax: '0.00',
+      total: '100.00',
+      trackingNumber: null,
+      guestEmail: 'g@example.com',
+      guestPhone: '380501112233',
+      guestName: 'Гість',
+      shippingAddress: { city: 'Київ' },
+      user: null,
+      _count: { items: 1 },
+    });
+
+    /** Split the BOM-prefixed CSV into header cells and data lines. */
+    const parse = (csv: string) => {
+      const lines = csv.replace(/^﻿/, '').split('\r\n').filter(Boolean);
+      return { header: lines[0].split(','), rows: lines.slice(1).map((l) => l.split(',')) };
+    };
+
+    it('adds a «Спосіб доставки» column right after the payment method', async () => {
+      orderRepositoryMock.findAllForExport.mockResolvedValue([exportRow('PICKUP')]);
+
+      const csv = await service.adminExportOrdersCsv({});
+
+      expect(csv.startsWith('﻿')).toBe(true);
+      const { header } = parse(csv);
+      const at = header.indexOf('Спосіб доставки');
+      expect(at).toBe(header.indexOf('paymentMethod') + 1);
+    });
+
+    it.each([
+      ['NOVA_POSHTA', 'Нова Пошта'],
+      ['PICKUP', 'Самовивіз'],
+      // U+02BC, the apostrophe the admin panel spells «Курʼєр» with.
+      ['COURIER', 'Курʼєр'],
+      ['OTHER', 'Інша доставка'],
+    ])('labels %s as «%s»', async (method, label) => {
+      orderRepositoryMock.findAllForExport.mockResolvedValue([exportRow(method)]);
+
+      const { header, rows } = parse(await service.adminExportOrdersCsv({}));
+
+      expect(rows[0][header.indexOf('Спосіб доставки')]).toBe(label);
+      // Every row keeps the header's width.
+      expect(rows[0]).toHaveLength(header.length);
     });
   });
 

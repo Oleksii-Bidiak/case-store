@@ -66,4 +66,25 @@ describe("readCreateOrderRefusal — a 400 placed where it can be fixed (Н3)", 
   it("is not about a 400 when it is not one", () => {
     expect(readCreateOrderRefusal(refusal(500, "boom"), LINES)).toBeNull();
   });
+
+  // TASK-1021: the delivery × payment matrix answers in Ukrainian, for the
+  // operator, under a stable code — that sentence is the summary.
+  it("shows a DELIVERY_* refusal in the server's own words", () => {
+    const message =
+      "Для адреси без міста зі списку Нової Пошти вартість доставки ще не відома — оберіть оплату при отриманні";
+    const result = readCreateOrderRefusal(
+      {
+        response: {
+          status: 400,
+          data: {
+            statusCode: 400,
+            error: "DELIVERY_PAYMENT_NOT_ALLOWED",
+            message,
+          },
+        },
+      },
+      LINES,
+    );
+    expect(result).toEqual({ lines: {}, fields: {}, summary: message });
+  });
 });

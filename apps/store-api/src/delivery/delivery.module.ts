@@ -5,6 +5,8 @@ import { PickupPointRepository } from './pickup-point.repository';
 import { DeliveryService } from './delivery.service';
 import { DeliveryController } from './delivery.controller';
 import { AdminDeliveryController } from './admin-delivery.controller';
+import { AdminPickupPointsController } from './admin-pickup-points.controller';
+import { PickupPointService } from './pickup-point.service';
 
 /**
  * DeliveryModule — Nova Poshta delivery proxy + the admin dispatch-origin settings.
@@ -16,10 +18,17 @@ import { AdminDeliveryController } from './admin-delivery.controller';
  * validate and price every delivery method there.
  */
 @Module({
-  controllers: [DeliveryController, AdminDeliveryController],
+  controllers: [DeliveryController, AdminDeliveryController, AdminPickupPointsController],
   // TASK-643: PickupPointRepository backs the public methods list and the
   // order-time pickup check (through DeliveryService, never exported directly).
-  providers: [NovaPoshtaClient, DeliveryRepository, PickupPointRepository, DeliveryService],
+  // TASK-645: PickupPointService is the admin CRUD over the same repository.
+  providers: [
+    NovaPoshtaClient,
+    DeliveryRepository,
+    PickupPointRepository,
+    DeliveryService,
+    PickupPointService,
+  ],
   exports: [DeliveryService],
 })
 export class DeliveryModule {}

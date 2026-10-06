@@ -6,6 +6,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
@@ -279,8 +280,11 @@ describe("OrderDetailView — the summary adds up (TASK-425)", () => {
         .replace(",", "."),
     );
 
+  // Within the totals: «Доставка» is also the delivery block's title (TASK-648).
   const rowValue = (label: string): number => {
-    const valueNode = screen.getByText(label).nextElementSibling;
+    const valueNode = within(
+      screen.getByRole("group", { name: dict.orders.summary }),
+    ).getByText(label).nextElementSibling;
     return parseMoney(valueNode?.textContent ?? "");
   };
 

@@ -7,6 +7,7 @@ import { CopyIcon } from "lucide-react";
 import {
   formatOrderNumber,
   isPreShipmentStatus,
+  isShippingCostPending,
   OrderEntityPaymentStatus,
   orderDerivedMarks,
   orderStatusBadgeVariant,
@@ -21,11 +22,9 @@ import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { OrderStatusSelect } from "@/features/order-status-update";
 import { PaymentStatusSelect } from "@/features/order-payment-update";
-import { OrderDetailsForm } from "@/features/order-details-form";
 // TASK-484: "give the buyer a link to their own order" — a mutation with its own
 // one-shot state, so it lives in features, not here.
 import { OrderAccessLinkCard } from "@/features/order-access-link";
-import { OrderAddressForm } from "@/features/order-address-edit";
 import {
   Badge,
   Button,
@@ -52,6 +51,7 @@ import {
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import { useNow } from "@/shared/lib/use-now";
 import { orderPath } from "../model/order-path";
+import { OrderDeliverySection } from "./order-delivery-section";
 import { OrderDetailSkeleton } from "./order-detail-skeleton";
 import { OrderPaymentAttempts } from "./order-payment-attempts";
 import { OrderReturnsSection } from "./order-returns-section";
@@ -63,13 +63,6 @@ const d = dict.orders;
 const ORDER_REFETCH_MS = 60_000;
 /** The «Очікує оплати · N хв» count is in minutes — tick once a minute. */
 const MARK_TICK_MS = 60_000;
-
-const DELIVERY_METHOD_LABELS: Record<string, string> = {
-  NOVA_POSHTA: d.deliveryMethodLabels.NOVA_POSHTA,
-  PICKUP: d.deliveryMethodLabels.PICKUP,
-  COURIER: d.deliveryMethodLabels.COURIER,
-  OTHER: d.deliveryMethodLabels.OTHER,
-};
 
 const card = "flex flex-col gap-3 rounded-lg border border-border p-4";
 
@@ -391,9 +384,15 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 }
                 value={formatCurrency(order.discount)}
               />
+              {/* TASK-648: an OTHER order's 0 is a placeholder, not free; a
+                  booked cost is shown as booked — «Разом» includes it. */}
               <SummaryRow
                 label={d.shipping}
-                value={formatCurrency(order.shippingCost)}
+                value={
+                  isShippingCostPending(order)
+                    ? d.deliveryCostNotCalculated
+                    : formatCurrency(order.shippingCost)
+                }
               />
               <SummaryRow label={d.tax} value={formatCurrency(order.tax)} />
               <Separator className="my-1" />
@@ -472,27 +471,10 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
         <div className="flex min-w-0 flex-col gap-6">
           <CustomerCard order={order} />
 
-          {/* «Доставка і дані для оператора»: the address and its correction,
-              the waybill and the internal notes — two forms, one card. */}
-          <section className={card}>
-            <h3 className="text-sm font-semibold text-foreground">
-              {d.detailsHeading}
-            </h3>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">
-                {d.shippingAddress}
-                {DELIVERY_METHOD_LABELS[order.deliveryMethod]
-                  ? ` · ${DELIVERY_METHOD_LABELS[order.deliveryMethod]}`
-                  : null}
-              </span>
-              <AddressLines address={shipping} />
-            </div>
-            {/* TASK-341: correctable until the parcel is with the courier. */}
-            <OrderAddressForm order={order} />
-            <Separator />
-            {/* TASK-335 / 336: waybill + operator-only notes. */}
-            <OrderDetailsForm order={order} />
-          </section>
+          {/* «Доставка» (TASK-648, ДН-1.13): one block for the four methods,
+              with the address correction, the waybill and the internal notes
+              — two forms, one card, as before. */}
+          <OrderDeliverySection order={order} />
 
           {order.notes ? (
             // TASK-336: the CUSTOMER's own note, read-only and labelled as such.

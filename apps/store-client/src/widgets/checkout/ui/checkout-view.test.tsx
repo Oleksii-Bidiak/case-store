@@ -17,7 +17,15 @@ import {
   markSessionActive,
   setAccessToken,
 } from "@/shared/api";
-import { makeCart, makeOrder, makeUser } from "@/shared/test/msw-handlers";
+import {
+  makeCart,
+  makeCity,
+  makeDeliveryMethods,
+  makeOrder,
+  makePickupPoint,
+  makeUser,
+  makeWarehouse,
+} from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
 import { CheckoutView } from "./checkout-view";
 
@@ -45,24 +53,23 @@ function setupBlankProfile() {
   );
 }
 
-/** Fill all required delivery (step-1) fields. Types city before the address
- *  because editing the city clears the dependent warehouse field. */
-async function fillDelivery(
+/** The city and branch the default MSW directory answers with. */
+const NP_CITY = makeCity().name;
+const NP_WAREHOUSE = makeWarehouse().description;
+
+/** Name and phone — the recipient half of step 1, the same for every method. */
+async function fillRecipient(
   user: ReturnType<typeof userEvent.setup>,
   overrides: Partial<{
     firstName: string;
     lastName: string;
     phone: string;
-    city: string;
-    address: string;
   }> = {},
 ) {
   const v = {
     firstName: "Олег",
     lastName: "Коваль",
     phone: "501234567",
-    city: "Київ",
-    address: "Відділення №1",
     ...overrides,
   };
   await user.type(
@@ -74,11 +81,28 @@ async function fillDelivery(
     v.lastName,
   );
   await user.type(screen.getByLabelText(dict.checkout.fields.phone), v.phone);
-  await user.type(screen.getByLabelText(dict.checkout.fields.city), v.city);
+}
+
+/** Fill all required delivery (step-1) fields for Nova Poshta — the default
+ *  method. The city and the branch are PICKED from the directory: since
+ *  TASK-646 a typed city is refused (the server needs the NP ref). City first,
+ *  because editing the city clears the dependent warehouse field. */
+async function fillDelivery(
+  user: ReturnType<typeof userEvent.setup>,
+  overrides: Partial<{
+    firstName: string;
+    lastName: string;
+    phone: string;
+  }> = {},
+) {
+  await fillRecipient(user, overrides);
+  await user.type(screen.getByLabelText(dict.checkout.fields.city), "Київ");
+  await user.click(await screen.findByText(NP_CITY));
   await user.type(
-    screen.getByLabelText(dict.checkout.fields.deliveryAddress),
-    v.address,
+    screen.getByLabelText(dict.checkout.delivery.npWarehouseLabel),
+    "1",
   );
+  await user.click(await screen.findByText(NP_WAREHOUSE));
 }
 
 /** Tick the offer + privacy consent the confirm step requires (TASK-882). */
@@ -150,24 +174,9 @@ describe("CheckoutView", () => {
 
     await screen.findByRole("heading", { name: dict.checkout.title });
 
-    await user.type(
-      screen.getByLabelText(dict.checkout.fields.firstName),
-      "Олег",
-    );
-    await user.type(
-      screen.getByLabelText(dict.checkout.fields.lastName),
-      "Коваль",
-    );
-    // PhoneInput already shows the `+380` prefix; type the 9-digit local part.
-    await user.type(
-      screen.getByLabelText(dict.checkout.fields.phone),
-      "501234567",
-    );
-    await user.type(screen.getByLabelText(dict.checkout.fields.city), "Київ");
-    await user.type(
-      screen.getByLabelText(dict.checkout.fields.deliveryAddress),
-      "Відділення №1",
-    );
+    // PhoneInput already shows the `+380` prefix; the helper types the 9-digit
+    // local part, then picks the city and branch from the NP directory.
+    await fillDelivery(user);
 
     // Advance to the review step, then place the order from there (TASK-146).
     await user.click(
@@ -232,7 +241,7 @@ describe("CheckoutView", () => {
     );
     expect(screen.getByLabelText(dict.checkout.fields.city)).toHaveValue("");
     expect(
-      screen.getByLabelText(dict.checkout.fields.deliveryAddress),
+      screen.getByLabelText(dict.checkout.delivery.npWarehouseLabel),
     ).toHaveValue("");
   });
 
@@ -460,8 +469,6 @@ describe("CheckoutView", () => {
     await fillDelivery(user, {
       firstName: "Тарас",
       lastName: "Шевченко",
-      city: "Харків",
-      address: "Відділення №5",
     });
     await user.click(
       screen.getByRole("button", { name: dict.checkout.nextStep }),
@@ -471,8 +478,8 @@ describe("CheckoutView", () => {
       await screen.findByRole("heading", { name: dict.checkout.reviewHeading })
     ).closest("section") as HTMLElement;
     expect(review).toHaveTextContent("Тарас Шевченко");
-    expect(review).toHaveTextContent("Харків");
-    expect(review).toHaveTextContent("Відділення №5");
+    expect(review).toHaveTextContent(NP_CITY);
+    expect(review).toHaveTextContent(NP_WAREHOUSE);
   });
 
   // ── TASK-882: complete read-back + the offer consent ──────────────────────
@@ -498,13 +505,17 @@ describe("CheckoutView", () => {
         screen.getByLabelText(dict.checkout.guest.emailLabel),
         "olena@example.com",
       );
-      await fillDelivery(user, { city: "Київ", address: "Відділення №1" });
+      await fillDelivery(user);
       const review = await toReview(user);
 
       expect(review).toHaveTextContent(dict.checkout.review.email);
       expect(review).toHaveTextContent("olena@example.com");
+      // TASK-646: the method, then the place under a label that fits it.
       expect(review).toHaveTextContent(
-        `${dict.checkout.review.delivery}Київ, Відділення №1`,
+        `${dict.checkout.delivery.reviewMethod}${dict.checkout.delivery.short.NOVA_POSHTA}`,
+      );
+      expect(review).toHaveTextContent(
+        `${dict.checkout.delivery.reviewWarehouse}${NP_CITY}, ${NP_WAREHOUSE}`,
       );
       expect(review).toHaveTextContent(
         `${dict.checkout.review.payment}${dict.checkout.payment.onDeliveryTitle}`,
@@ -863,6 +874,8 @@ describe("CheckoutView", () => {
       expect(current?.closest("li")).toHaveTextContent(
         dict.checkout.stepConfirm,
       );
+      // TASK-1098: «Готово», not a second «Підтвердження».
+      expect(current?.closest("li")).toHaveTextContent("Готово");
     });
   });
 
@@ -999,6 +1012,612 @@ describe("CheckoutView", () => {
         expect(mockPush).toHaveBeenCalledWith("/orders/order-1/confirmation"),
       );
     });
+  });
+});
+
+// ── TASK-646 / TASK-1097: the delivery method on step 1 ──────────────────────
+describe("CheckoutView — delivery method (TASK-646)", () => {
+  beforeEach(() => {
+    mockReplace.mockClear();
+    mockPush.mockClear();
+    delete process.env.NEXT_PUBLIC_PAYMENT_METHODS;
+  });
+
+  /** The shop's delivery offer for this test. */
+  function offer(overrides: Parameters<typeof makeDeliveryMethods>[0] = {}) {
+    server.use(
+      http.get("*/api/delivery/methods", () =>
+        HttpResponse.json({ data: makeDeliveryMethods(overrides) }),
+      ),
+    );
+  }
+
+  /** Capture the create-order body. */
+  function captureOrder() {
+    const captured: { body: Record<string, unknown> | null } = { body: null };
+    server.use(
+      http.post("*/api/orders", async ({ request }) => {
+        captured.body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(makeOrder(), { status: 201 });
+      }),
+    );
+    return captured;
+  }
+
+  async function placeOrder(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+    await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
+    await user.click(
+      screen.getByRole("checkbox", { name: dict.checkout.consent.prefix }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.placeOrder }),
+    );
+  }
+
+  const methodRadio = (title: string | RegExp) =>
+    screen.getByRole("radio", {
+      name: typeof title === "string" ? new RegExp(title) : title,
+    });
+
+  const summary = () =>
+    screen
+      .getByRole("heading", { name: dict.checkout.summaryHeading })
+      .closest("div") as HTMLElement;
+
+  it("offers every method in a labelled radiogroup, Nova Poshta first and preselected", async () => {
+    setupBlankProfile();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    const group = screen.getByRole("radiogroup", {
+      name: dict.checkout.delivery.methodHeading,
+    });
+    expect(within(group).getAllByRole("radio")).toHaveLength(4);
+    expect(
+      methodRadio(dict.checkout.delivery.titles.NOVA_POSHTA),
+    ).toBeChecked();
+    // Each says what it costs before it is chosen.
+    expect(
+      methodRadio(dict.checkout.delivery.titles.NOVA_POSHTA),
+    ).toHaveAccessibleDescription(dict.checkout.delivery.npTariff);
+    // `formatMoney` groups with a non-breaking space — `\s` matches it.
+    expect(methodRadio("Кур'єр · Київ")).toHaveAccessibleDescription(
+      /^150\s₴ · безкоштовно від 2\s000\s₴$/,
+    );
+    expect(
+      methodRadio(dict.checkout.delivery.titles.PICKUP),
+    ).toHaveAccessibleDescription(dict.checkout.delivery.free);
+    expect(
+      methodRadio(dict.checkout.delivery.titles.OTHER),
+    ).toHaveAccessibleDescription(dict.checkout.delivery.operatorQuotes);
+  });
+
+  it("draws no method card when the shop offers one method (#np-only)", async () => {
+    offer({ methods: ["NOVA_POSHTA"] });
+    setupBlankProfile();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    expect(
+      screen.queryByRole("radiogroup", {
+        name: dict.checkout.delivery.methodHeading,
+      }),
+    ).toBeNull();
+    // Straight to the fields.
+    expect(
+      screen.getByLabelText(dict.checkout.delivery.npWarehouseLabel),
+    ).toBeInTheDocument();
+  });
+
+  it("selects the first offered method when Nova Poshta is switched off", async () => {
+    offer({ methods: ["PICKUP", "OTHER"] });
+    setupBlankProfile();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    expect(methodRadio(dict.checkout.delivery.titles.PICKUP)).toBeChecked();
+    expect(
+      screen.getByRole("radiogroup", {
+        name: dict.checkout.delivery.pickupGroupAria,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(dict.checkout.fields.city)).toBeNull();
+  });
+
+  it("pickup: the single point is preselected, free in the summary, and its id travels", async () => {
+    setupBlankProfile();
+    const order = captureOrder();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await user.click(methodRadio(dict.checkout.delivery.titles.PICKUP));
+    expect(
+      await screen.findByRole("radio", { name: /Магазин на Хрещатику/ }),
+    ).toBeChecked();
+    expect(summary()).toHaveTextContent(
+      `${dict.checkout.delivery.summaryLine(dict.checkout.delivery.short.PICKUP)}${dict.checkout.delivery.free}`,
+    );
+
+    await fillRecipient(user);
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+    const review = (
+      await screen.findByRole("heading", { name: dict.checkout.reviewHeading })
+    ).closest("section") as HTMLElement;
+    expect(review).toHaveTextContent(
+      `${dict.checkout.delivery.reviewPickup}Магазин на Хрещатику, вул. Хрещатик, 22`,
+    );
+    expect(review).toHaveTextContent(
+      `${dict.checkout.delivery.reviewCost}${dict.checkout.delivery.free}`,
+    );
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.prevStep }),
+    );
+    await screen.findByRole("button", { name: dict.checkout.nextStep });
+    await placeOrder(user);
+
+    await waitFor(() => expect(order.body).not.toBeNull());
+    expect(order.body).toMatchObject({
+      deliveryMethod: "PICKUP",
+      pickupPointId: "pp-1",
+      shippingAddress: { city: "Київ", address1: "вул. Хрещатик, 22" },
+    });
+  });
+
+  it("pickup: the first of several points is preselected, with its city, and another can be chosen", async () => {
+    offer({
+      pickupPoints: [
+        makePickupPoint(),
+        makePickupPoint({
+          id: "pp-2",
+          name: "Магазин на Оболоні",
+          address: "просп. Оболонський, 1",
+        }),
+      ],
+    });
+    setupBlankProfile();
+    const order = captureOrder();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await user.click(methodRadio(dict.checkout.delivery.titles.PICKUP));
+    // As drawn (#pickup): the first point already chosen, city first.
+    expect(
+      await screen.findByRole("radio", { name: /Магазин на Хрещатику/ }),
+    ).toBeChecked();
+    expect(screen.getByText("Київ, вул. Хрещатик, 22")).toBeVisible();
+    expect(
+      screen.queryByText(dict.checkout.delivery.validation.pickupPoint),
+    ).toBeNull();
+
+    await user.click(screen.getByRole("radio", { name: /Магазин на Оболоні/ }));
+    await fillRecipient(user);
+    await placeOrder(user);
+
+    await waitFor(() => expect(order.body).not.toBeNull());
+    expect(order.body).toMatchObject({
+      deliveryMethod: "PICKUP",
+      pickupPointId: "pp-2",
+      shippingAddress: { city: "Київ", address1: "просп. Оболонський, 1" },
+    });
+  });
+
+  it("a refused order returns to step 1 with the reason on top, and the offer is refetched (#error)", async () => {
+    const refusal =
+      "Кур’єрська доставка зараз недоступна — оберіть інший спосіб доставки";
+    // The shop switched the courier off while the shopper was on the page; the
+    // API learns it at the order, and says so from then on.
+    let switchedOff = false;
+    let fetchesAfterRefusal = 0;
+    server.use(
+      http.get("*/api/delivery/methods", () => {
+        if (switchedOff) fetchesAfterRefusal += 1;
+        return HttpResponse.json({
+          data: makeDeliveryMethods(
+            switchedOff ? { methods: ["NOVA_POSHTA", "PICKUP"] } : {},
+          ),
+        });
+      }),
+      http.post("*/api/orders", () => {
+        switchedOff = true;
+        return HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "DELIVERY_METHOD_UNAVAILABLE",
+            message: refusal,
+          },
+          { status: 400 },
+        );
+      }),
+    );
+    setupBlankProfile();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await user.click(methodRadio("Кур'єр · Київ"));
+    await fillRecipient(user);
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.courierStreet),
+      "вул. Дерибасівська",
+    );
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.courierHouse),
+      "10",
+    );
+    await placeOrder(user);
+
+    // Back on step 1 — the only place the delivery can be changed.
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      `${dict.checkout.orderErrorTitle}${refusal}`,
+    );
+    expect(
+      screen.queryByRole("heading", { name: dict.checkout.reviewHeading }),
+    ).toBeNull();
+    await waitFor(() => expect(alert).toHaveFocus());
+    // Above the method card, not under it.
+    const group = screen.getByRole("radiogroup", {
+      name: dict.checkout.delivery.methodHeading,
+    });
+    expect(
+      alert.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // The offer is fetched again: the courier is gone, the first method holds.
+    await waitFor(() => expect(fetchesAfterRefusal).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.queryByRole("radio", { name: /Кур'єр/ })).toBeNull(),
+    );
+    expect(
+      methodRadio(dict.checkout.delivery.titles.NOVA_POSHTA),
+    ).toBeChecked();
+
+    // Moving on drops the refusal — it must not greet the shopper again.
+    await user.click(methodRadio(dict.checkout.delivery.titles.PICKUP));
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+    await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.prevStep }),
+    );
+    await screen.findByRole("button", { name: dict.checkout.nextStep });
+    expect(screen.queryByText(dict.checkout.orderErrorTitle)).toBeNull();
+  });
+
+  it("a failure that is not a refusal keeps the shopper on step 2, the alert on top", async () => {
+    server.use(
+      http.post("*/api/orders", () =>
+        HttpResponse.json({ statusCode: 500 }, { status: 500 }),
+      ),
+    );
+    setupBlankProfile();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await fillDelivery(user);
+    await placeOrder(user);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      `${dict.checkout.orderErrorTitle}${dict.common.genericError}`,
+    );
+    // Still on step 2, above the read-back — not under the mobile bar.
+    const heading = screen.getByRole("heading", {
+      name: dict.checkout.reviewHeading,
+    });
+    expect(
+      alert.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("courier with no city from the shop: the shopper types it, and it travels", async () => {
+    offer({ courier: { price: "150.00", freeFrom: null, cityName: null } });
+    setupBlankProfile();
+    const order = captureOrder();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await user.click(methodRadio(dict.checkout.delivery.titles.COURIER));
+    await fillRecipient(user);
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.courierStreet),
+      "вул. Соборна",
+    );
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.courierHouse),
+      "5",
+    );
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+    // Blocked on the missing city, and focus lands on it.
+    const city = screen.getByLabelText(dict.checkout.fields.city);
+    await waitFor(() => expect(city).toHaveFocus());
+    expect(city).toHaveAttribute("aria-invalid", "true");
+
+    await user.type(city, "Біла Церква");
+    await placeOrder(user);
+
+    await waitFor(() => expect(order.body).not.toBeNull());
+    expect(order.body).toMatchObject({
+      deliveryMethod: "COURIER",
+      shippingAddress: { city: "Біла Церква", address1: "вул. Соборна, 5" },
+    });
+  });
+
+  it("courier: the price joins the total, and street + house become address1", async () => {
+    setupBlankProfile();
+    const order = captureOrder();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await user.click(methodRadio("Кур'єр · Київ"));
+    // 998 ₴ of goods + 150 ₴ courier.
+    await waitFor(() =>
+      expect(summary().textContent?.replace(/\s/g, "")).toContain("1148₴"),
+    );
+    expect(
+      screen.getByRole("progressbar", {
+        name: dict.checkout.delivery.courierProgressAria,
+      }),
+    ).toHaveAttribute("aria-valuenow", "50");
+
+    await fillRecipient(user);
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.courierStreet),
+      "вул. Велика Васильківська",
+    );
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.courierHouse),
+      "10",
+    );
+    await user.type(
+      screen.getByLabelText(
+        new RegExp(dict.checkout.delivery.courierApartment),
+      ),
+      "4",
+    );
+    await placeOrder(user);
+
+    await waitFor(() => expect(order.body).not.toBeNull());
+    expect(order.body).toMatchObject({
+      deliveryMethod: "COURIER",
+      shippingAddress: {
+        city: "Київ",
+        address1: "вул. Велика Васильківська, 10, кв. 4",
+      },
+    });
+    expect(order.body).not.toHaveProperty("pickupPointId");
+  });
+
+  it("other: card payment is off with the delivery reason, and a card choice falls back to cash", async () => {
+    process.env.NEXT_PUBLIC_PAYMENT_METHODS = "ONLINE,INSTALLMENTS";
+    setupBlankProfile();
+    const order = captureOrder();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    const online = screen.getByRole("radio", {
+      name: new RegExp(dict.checkout.payment.onlineTitle),
+    });
+    await user.click(online);
+    expect(online).toBeChecked();
+
+    await user.click(methodRadio(dict.checkout.delivery.titles.OTHER));
+
+    await waitFor(() => expect(online).toBeDisabled());
+    expect(online).toHaveAccessibleDescription(
+      dict.checkout.delivery.paymentBlockedOther,
+    );
+    expect(
+      screen.getByRole("radio", {
+        name: new RegExp(dict.checkout.payment.onDeliveryTitle),
+      }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("radio", {
+        name: new RegExp(dict.checkout.payment.onDeliveryTitle),
+      }),
+    ).toHaveAccessibleDescription(dict.checkout.delivery.onDeliveryNote.OTHER);
+    // Nobody priced it: the total is goods only, and says so.
+    expect(summary()).toHaveTextContent(
+      dict.checkout.delivery.summaryWithoutShipping,
+    );
+
+    await fillRecipient(user);
+    await user.type(
+      screen.getByLabelText(dict.checkout.fields.city),
+      "Ужгород",
+    );
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.otherAddressLabel),
+      "Укрпошта, індекс 88000",
+    );
+    await placeOrder(user);
+
+    await waitFor(() => expect(order.body).not.toBeNull());
+    expect(order.body).toMatchObject({
+      deliveryMethod: "OTHER",
+      paymentMethod: "ON_DELIVERY",
+      shippingAddress: { city: "Ужгород", address1: "Укрпошта, індекс 88000" },
+    });
+  });
+
+  it("a guest on «інша доставка» is told about the delivery, not offered a sign-in", async () => {
+    process.env.NEXT_PUBLIC_PAYMENT_METHODS = "ONLINE";
+    server.use(http.get("*/api/cart", () => HttpResponse.json(makeCart())));
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, guest);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    const online = screen.getByRole("radio", {
+      name: new RegExp(dict.checkout.payment.onlineTitle),
+    });
+    expect(online).toHaveAccessibleDescription(
+      dict.checkout.payment.accountRequired,
+    );
+
+    await user.click(methodRadio(dict.checkout.delivery.titles.OTHER));
+
+    await waitFor(() =>
+      expect(online).toHaveAccessibleDescription(
+        dict.checkout.delivery.paymentBlockedOther,
+      ),
+    );
+    // Scoped to «Оплата»: the promo field in the summary has its own sign-in.
+    const payment = screen
+      .getByRole("radiogroup", { name: dict.checkout.payment.groupAria })
+      .closest("section") as HTMLElement;
+    expect(
+      within(payment).queryByRole("link", {
+        name: dict.checkout.payment.signIn,
+      }),
+    ).toBeNull();
+  });
+
+  it("Nova Poshta down: the order goes without deliveryMethod or refs, card is off (TASK-1097)", async () => {
+    process.env.NEXT_PUBLIC_PAYMENT_METHODS = "ONLINE";
+    // OTHER switched off: the manual path must still go through.
+    offer({ methods: ["NOVA_POSHTA", "PICKUP"] });
+    server.use(
+      http.get("*/api/delivery/cities", () =>
+        HttpResponse.json({ statusCode: 503 }, { status: 503 }),
+      ),
+    );
+    setupBlankProfile();
+    const order = captureOrder();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await fillRecipient(user);
+    await user.type(screen.getByLabelText(dict.checkout.fields.city), "Ромни");
+    expect(
+      await screen.findByText(dict.checkout.delivery.npDownNotice),
+    ).toBeInTheDocument();
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.manualAddressLabel),
+      "вул. Соборна, 5",
+    );
+
+    const online = screen.getByRole("radio", {
+      name: new RegExp(dict.checkout.payment.onlineTitle),
+    });
+    expect(online).toBeDisabled();
+    expect(online).toHaveAccessibleDescription(
+      dict.checkout.delivery.paymentBlockedNpDown,
+    );
+    // Booked as OTHER, but the cash still changes hands at the carrier's
+    // branch — the note follows the method the shopper chose (#np-down).
+    expect(
+      screen.getByRole("radio", {
+        name: new RegExp(dict.checkout.payment.onDeliveryTitle),
+      }),
+    ).toHaveAccessibleDescription(
+      dict.checkout.delivery.onDeliveryNote.NOVA_POSHTA,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+    const review = (
+      await screen.findByRole("heading", { name: dict.checkout.reviewHeading })
+    ).closest("section") as HTMLElement;
+    expect(review).toHaveTextContent(
+      `${dict.checkout.delivery.reviewAddress}Ромни, вул. Соборна, 5 ${dict.checkout.delivery.reviewManual}`,
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: dict.checkout.consent.prefix }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.placeOrder }),
+    );
+
+    await waitFor(() => expect(order.body).not.toBeNull());
+    expect(order.body).not.toHaveProperty("deliveryMethod");
+    expect(order.body!.shippingAddress).toEqual({
+      firstName: "Олег",
+      lastName: "Коваль",
+      phone: "+380 50 123 4567",
+      country: "UA",
+      city: "Ромни",
+      address1: "вул. Соборна, 5",
+    });
+  });
+
+  it("Nova Poshta: sends the method with the picked refs", async () => {
+    setupBlankProfile();
+    const order = captureOrder();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await fillDelivery(user);
+    // The NP line turns into the real quote once a city is picked.
+    await waitFor(() =>
+      expect(
+        methodRadio(dict.checkout.delivery.titles.NOVA_POSHTA),
+      ).toHaveAccessibleDescription(/60/),
+    );
+    await placeOrder(user);
+
+    await waitFor(() => expect(order.body).not.toBeNull());
+    expect(order.body).toMatchObject({
+      deliveryMethod: "NOVA_POSHTA",
+      shippingAddress: {
+        city: NP_CITY,
+        address1: NP_WAREHOUSE,
+        npCityRef: "city-ref-1",
+        npWarehouseRef: "wh-ref-1",
+      },
+    });
+  });
+
+  it("a city retyped under «інша доставка» does not ride back to Nova Poshta on the old refs", async () => {
+    setupBlankProfile();
+    const order = captureOrder();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await fillDelivery(user);
+    await user.click(methodRadio(dict.checkout.delivery.titles.OTHER));
+    // The NP branch's address does not land in the free-text field…
+    expect(
+      screen.getByLabelText(dict.checkout.delivery.otherAddressLabel),
+    ).toHaveValue("");
+    const city = screen.getByLabelText(dict.checkout.fields.city);
+    await user.clear(city);
+    await user.type(city, "Львів");
+
+    await user.click(methodRadio(dict.checkout.delivery.titles.NOVA_POSHTA));
+    // …and back on NP the branch is empty and Lviv has no Kyiv ref behind it.
+    expect(
+      screen.getByLabelText(dict.checkout.delivery.npWarehouseLabel),
+    ).toHaveValue("");
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+
+    expect(
+      await screen.findByText(dict.checkout.delivery.validation.npCity),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: dict.checkout.reviewHeading }),
+    ).not.toBeInTheDocument();
+    expect(order.body).toBeNull();
   });
 });
 

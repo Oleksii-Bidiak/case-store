@@ -1,6 +1,7 @@
 import {
   EMPTY_FILTERS,
   activeQuickView,
+  hasNonStatusFilters,
   orderFilterChips,
   orderFiltersToQuery,
   orderFiltersToUrl,
@@ -23,6 +24,8 @@ describe("order-filters — the URL contract", () => {
       status: ["CONFIRMED", "PROCESSING"],
       paymentStatus: "PAID",
       paymentMethod: "ONLINE",
+      deliveryMethod: [],
+      pickupPointId: "",
       signals: ["hasDebt", "unpaidInTransit"],
     });
     expect(orderFiltersToUrl(filters)).toMatchObject({
@@ -121,5 +124,87 @@ describe("order-filters — chips", () => {
     });
     expect(chip.label).toBe("Період: 01.09 – 24.09.2026");
     expect(chip.clear).toEqual({ dateFrom: undefined, dateTo: undefined });
+  });
+});
+
+describe("order-filters — delivery (TASK-648)", () => {
+  const POINT = "0b0c6f2e-3a6d-4a43-9f0e-4c1b2f6a7d10";
+
+  it("round-trips the delivery methods and the pickup point through the URL", () => {
+    const params = new URLSearchParams(
+      `deliveryMethod=OTHER,PICKUP&pickupPointId=${POINT}&status=PENDING`,
+    );
+    const filters = readOrderFilters(params);
+
+    expect(filters.deliveryMethod).toEqual(["OTHER", "PICKUP"]);
+    expect(filters.pickupPointId).toBe(POINT);
+
+    const url = orderFiltersToUrl(filters);
+    // Written in the settings' order, so one selection is one URL.
+    expect(url.deliveryMethod).toBe("PICKUP,OTHER");
+    expect(url.pickupPointId).toBe(POINT);
+
+    const back = readOrderFilters(
+      new URLSearchParams(
+        Object.entries(url).filter(
+          (entry): entry is [string, string] => entry[1] !== undefined,
+        ),
+      ),
+    );
+    expect(back).toEqual({ ...filters, deliveryMethod: ["PICKUP", "OTHER"] });
+  });
+
+  it("drops both params from the URL when they are cleared", () => {
+    const url = orderFiltersToUrl(EMPTY_FILTERS);
+    expect(url).toHaveProperty("deliveryMethod", undefined);
+    expect(url).toHaveProperty("pickupPointId", undefined);
+  });
+
+  it("sends them to the API as the list's CSV and id", () => {
+    expect(
+      orderFiltersToQuery(
+        {
+          ...EMPTY_FILTERS,
+          deliveryMethod: ["COURIER", "NOVA_POSHTA"],
+          pickupPointId: POINT,
+        },
+        "",
+      ),
+    ).toMatchObject({
+      deliveryMethod: "NOVA_POSHTA,COURIER",
+      pickupPointId: POINT,
+    });
+  });
+
+  it("names the methods in one chip, and the point by name when it is known", () => {
+    const chips = orderFilterChips(
+      {
+        ...EMPTY_FILTERS,
+        deliveryMethod: ["OTHER", "COURIER"],
+        pickupPointId: POINT,
+      },
+      { [POINT]: "Магазин на Хрещатику" },
+    );
+
+    expect(chips.map((chip) => chip.label)).toEqual([
+      "Доставка: Курʼєр по місту, Інша доставка",
+      "Точка: Магазин на Хрещатику",
+    ]);
+    expect(chips[0].clear).toEqual({ deliveryMethod: undefined });
+    expect(chips[1].clear).toEqual({ pickupPointId: undefined });
+  });
+
+  it("says «Точка самовивозу» when the point's name is not known", () => {
+    const [chip] = orderFilterChips({ ...EMPTY_FILTERS, pickupPointId: POINT });
+    expect(chip.label).toBe("Точка самовивозу");
+  });
+
+  it("counts as a non-status filter for the empty state", () => {
+    expect(
+      hasNonStatusFilters({ ...EMPTY_FILTERS, deliveryMethod: ["PICKUP"] }),
+    ).toBe(true);
+    expect(
+      hasNonStatusFilters({ ...EMPTY_FILTERS, pickupPointId: POINT }),
+    ).toBe(true);
   });
 });

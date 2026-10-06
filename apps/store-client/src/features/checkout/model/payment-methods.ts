@@ -1,5 +1,11 @@
 import { CreateOrderDtoPaymentMethod } from "@/entities/order";
+import type { DeliveryPaymentMatrixDto } from "@/entities/delivery";
 import { dict } from "@/shared/config";
+import {
+  bookedDeliveryMethod,
+  deliveryMethodShortTitle,
+  type CheckoutDeliveryMethod,
+} from "./delivery";
 
 /**
  * The payment methods the storefront can offer, and the rules that decide which
@@ -47,6 +53,14 @@ import { dict } from "@/shared/config";
  *
  * The right long-term fix is a `GET /api/payments/methods` endpoint so the server
  * stays the single source of truth; until it exists this flag is the seam.
+ *
+ * ── Delivery × payment (TASK-646) ─────────────────────────────────────────────
+ * The delivery method narrows the list further: «інша доставка» has no price
+ * yet, so it can only be paid on receipt. That rule is NOT copied here — the
+ * allowed methods per delivery come from the server's own matrix
+ * (`GET /api/delivery/methods` → `paymentMatrix`), which is the same table the
+ * order service enforces. A method the matrix rules out is drawn disabled with
+ * the delivery reason ({@link PaymentMethodBlocker} `delivery-matrix`).
  */
 
 /** Every method the storefront knows how to carry out. Mirrors `PaymentMethod`. */
@@ -104,8 +118,13 @@ export function toOrderPaymentMethod(
  * so a guest literally cannot open a payment attempt. Rather than let a guest pick
  * card and dead-end on a 401, the option is shown disabled with the reason. Guest
  * checkout itself is unaffected: cash on delivery needs no account (TASK-338).
+ *
+ * `delivery-matrix` (TASK-646): the chosen delivery does not admit this method —
+ * the server's `paymentMatrix` says so, and it would refuse the order with a
+ * 400. It wins over `account-required`: signing in would not unlock it, so
+ * offering «Увійти» there would send the shopper on a pointless errand.
  */
-export type PaymentMethodBlocker = "account-required";
+export type PaymentMethodBlocker = "account-required" | "delivery-matrix";
 
 export interface PaymentMethodOption {
   method: CheckoutPaymentMethod;
@@ -114,6 +133,8 @@ export interface PaymentMethodOption {
   /** False when the shopper cannot complete this method as they are right now. */
   enabled: boolean;
   blockedBy?: PaymentMethodBlocker;
+  /** The sentence a disabled option shows instead of its note, verbatim. */
+  blockedReason?: string;
 }
 
 const COPY: Record<CheckoutPaymentMethod, { title: string; note: string }> = {
@@ -173,6 +194,32 @@ export interface ResolvePaymentMethodsInput {
   configured: CheckoutPaymentMethod[];
   /** Whether the shopper is signed in (guests cannot open a payment attempt). */
   isAuthenticated: boolean;
+  /**
+   * The chosen delivery and the server's delivery × payment matrix (TASK-646).
+   * Omitted ⇒ no delivery restriction, and the Nova Poshta on-delivery note.
+   */
+  delivery?: DeliveryPaymentContext;
+}
+
+export interface DeliveryPaymentContext {
+  method: CheckoutDeliveryMethod;
+  /** The Nova Poshta manual path — booked as OTHER (TASK-1097). */
+  npManual?: boolean;
+  matrix: DeliveryPaymentMatrixDto;
+}
+
+/** Why the delivery rules a method out — verbatim from the mockup. */
+function deliveryBlockReason({
+  method,
+  npManual = false,
+}: DeliveryPaymentContext): string {
+  if (method === "NOVA_POSHTA" && npManual) {
+    return dict.checkout.delivery.paymentBlockedNpDown;
+  }
+  if (method === "OTHER") return dict.checkout.delivery.paymentBlockedOther;
+  return dict.checkout.delivery.paymentBlocked(
+    deliveryMethodShortTitle(method),
+  );
 }
 
 /**
@@ -184,15 +231,42 @@ export interface ResolvePaymentMethodsInput {
 export function resolvePaymentMethods({
   configured,
   isAuthenticated,
+  delivery,
 }: ResolvePaymentMethodsInput): PaymentMethodOption[] {
-  return configured.map((method) => {
-    const needsAccount = requiresPaymentHandoff(method) && !isAuthenticated;
-    return {
-      method,
-      ...COPY[method],
-      enabled: !needsAccount,
-      ...(needsAccount ? { blockedBy: "account-required" as const } : {}),
-    };
+  const booked = delivery
+    ? bookedDeliveryMethod(delivery.method, delivery.npManual ?? false)
+    : undefined;
+  const allowed = delivery && booked ? delivery.matrix[booked] : undefined;
+
+  return configured.map((method): PaymentMethodOption => {
+    // Where the cash changes hands depends on the delivery (TASK-646) — the
+    // one the shopper CHOSE. The Nova Poshta manual path is booked as OTHER,
+    // but the parcel still goes to a carrier's branch, so it keeps the Nova
+    // Poshta note (CheckoutDelivery.dc.html #np-down).
+    const note =
+      method === "ON_DELIVERY" && delivery
+        ? dict.checkout.delivery.onDeliveryNote[delivery.method]
+        : COPY[method].note;
+    const option = { method, title: COPY[method].title, note };
+
+    // The delivery reason first — it is the one signing in cannot fix.
+    if (delivery && allowed && !allowed.includes(method)) {
+      return {
+        ...option,
+        enabled: false,
+        blockedBy: "delivery-matrix",
+        blockedReason: deliveryBlockReason(delivery),
+      };
+    }
+    if (requiresPaymentHandoff(method) && !isAuthenticated) {
+      return {
+        ...option,
+        enabled: false,
+        blockedBy: "account-required",
+        blockedReason: dict.checkout.payment.accountRequired,
+      };
+    }
+    return { ...option, enabled: true };
   });
 }
 
@@ -208,7 +282,13 @@ export function coercePaymentMethod(
   const match = options.find(
     (option) => option.method === selected && option.enabled,
   );
-  return match?.method ?? DEFAULT_PAYMENT_METHOD;
+  // Prefer the default, then anything still usable — a matrix could, in
+  // principle, rule cash on delivery out for some delivery.
+  const fallback =
+    options.find(
+      (option) => option.method === DEFAULT_PAYMENT_METHOD && option.enabled,
+    ) ?? options.find((option) => option.enabled);
+  return match?.method ?? fallback?.method ?? DEFAULT_PAYMENT_METHOD;
 }
 
 /**

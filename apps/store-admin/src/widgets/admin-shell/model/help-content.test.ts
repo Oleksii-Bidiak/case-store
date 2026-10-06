@@ -30,6 +30,7 @@ const NAV_ROUTES = [
   "/settings/contact",
   "/settings/seo",
   "/settings/search",
+  "/settings/delivery",
   "/faq",
   "/audit-log",
   "/profile",

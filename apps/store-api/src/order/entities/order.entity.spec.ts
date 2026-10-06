@@ -1,6 +1,7 @@
-import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
+import { DeliveryMethod, OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
 import { OrderEntity } from './order.entity';
-import type { OrderItemRow, OrderWithItems } from '../order.types';
+import { OrderShippingAddressEntity } from './order-shipping-address.entity';
+import type { OrderItemRow, OrderWithItems, ShippingAddressData } from '../order.types';
 
 /**
  * The derived marks of owner decision B-1, as the ENTITY answers them
@@ -186,5 +187,69 @@ describe('OrderEntity.fromPrisma — unavailableItemIds (TASK-470)', () => {
     );
 
     expect(entity.unavailableItemIds).toEqual(['item-2']);
+  });
+});
+
+describe('OrderEntity — address snapshot contract (TASK-1023)', () => {
+  it('documents every key of the stored snapshot on OrderShippingAddressEntity', () => {
+    // Compile-time: a key added to `ShippingAddressData` but not declared on the
+    // Swagger class makes this assignment a type error, so the generated client
+    // can never silently lag behind the snapshot.
+    type Undocumented = Exclude<keyof ShippingAddressData, keyof OrderShippingAddressEntity>;
+    const everyKeyDocumented: [Undocumented] extends [never] ? true : false = true;
+    expect(everyKeyDocumented).toBe(true);
+  });
+
+  it('points both address fields at the named schema, not a free-form object', () => {
+    for (const field of ['shippingAddress', 'billingAddress']) {
+      const meta = Reflect.getMetadata(
+        'swagger/apiModelProperties',
+        OrderEntity.prototype,
+        field,
+      ) as {
+        type: () => unknown;
+        nullable: boolean;
+      };
+      expect(meta.type()).toBe(OrderShippingAddressEntity);
+      expect(meta.nullable).toBe(true);
+    }
+  });
+
+  it('passes the snapshot through unchanged, delivery fields included', () => {
+    const snapshot = {
+      firstName: 'Олена',
+      lastName: 'Коваль',
+      address1: 'вул. Хрещатик, 22',
+      city: 'Київ',
+      deliveryMethod: DeliveryMethod.PICKUP,
+      carrier: null,
+      pickupPointName: 'Магазин на Хрещатику',
+      pickupPointAddress: 'вул. Хрещатик, 22',
+    };
+    const entity = OrderEntity.fromPrisma(buildOrder({ shippingAddress: snapshot }));
+
+    expect(entity.shippingAddress).toEqual(snapshot);
+  });
+
+  it('keeps a legacy snapshot without delivery fields as it was', () => {
+    const legacy = { firstName: 'A', lastName: 'B', address1: 'x', city: 'Київ' };
+    const entity = OrderEntity.fromPrisma(buildOrder({ shippingAddress: legacy }));
+
+    expect(entity.shippingAddress).toEqual(legacy);
+    expect(entity.billingAddress).toBeNull();
+  });
+});
+
+describe('OrderEntity.fromPrisma — pickupPointId (TASK-1023)', () => {
+  it('surfaces the pickup point id from the row', () => {
+    const row = { ...buildOrder(), pickupPointId: 'point-1' } as OrderWithItems;
+
+    expect(OrderEntity.fromPrisma(row).pickupPointId).toBe('point-1');
+  });
+
+  it('is null — not absent — for a row without one (or a fixture predating TASK-642)', () => {
+    const entity = OrderEntity.fromPrisma(buildOrder());
+
+    expect(entity).toHaveProperty('pickupPointId', null);
   });
 });

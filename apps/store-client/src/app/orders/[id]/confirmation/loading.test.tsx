@@ -28,6 +28,8 @@ describe("/orders/[id]/confirmation loading boundary (TASK-869)", () => {
       .getAllByRole("listitem")
       .find((li) => li.querySelector('[aria-current="step"]'));
     expect(current).toHaveTextContent(dict.checkout.stepConfirm);
+    // TASK-1098: the outcome, not a second «confirm» after «Підтвердити».
+    expect(dict.checkout.stepConfirm).toBe("Готово");
   });
 
   it("lays the skeleton on the page's three-column grid, hidden from AT", () => {

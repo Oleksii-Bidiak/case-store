@@ -35,6 +35,12 @@ import {
 
 interface OrderDetailsFormProps {
   order: OrderEntity;
+  /**
+   * Draw the waybill field (default). The order card passes `false` for a
+   * pickup or courier order with no waybill (TASK-648, ДН-1.13). The
+   * value stays in the form either way, and an unchanged waybill is never sent.
+   */
+  showWaybill?: boolean;
 }
 
 /**
@@ -72,36 +78,46 @@ interface OrderDetailsFormProps {
  * false in that window for everyone, and choosing the text view on it flashed a
  * read-only card at every writer (the owner too) before swapping in the form.
  */
-export function OrderDetailsForm({ order }: OrderDetailsFormProps) {
+export function OrderDetailsForm({
+  order,
+  showWaybill = true,
+}: OrderDetailsFormProps) {
   const { can, arePermissionsLoading } = useAuth();
   if (arePermissionsLoading) return null;
-  if (!can(PERM.ordersWrite)) return <OrderDetailsReadOnly order={order} />;
-  return <OrderDetailsEditor order={order} />;
+  if (!can(PERM.ordersWrite)) {
+    return <OrderDetailsReadOnly order={order} showWaybill={showWaybill} />;
+  }
+  return <OrderDetailsEditor order={order} showWaybill={showWaybill} />;
 }
 
 /** The same two values, as text — for a session that may read but not write. */
-function OrderDetailsReadOnly({ order }: OrderDetailsFormProps) {
+function OrderDetailsReadOnly({
+  order,
+  showWaybill = true,
+}: OrderDetailsFormProps) {
   const { trackingNumber, internalNotes } = mapOrderToDetailsValues(order);
   return (
     <dl className="flex flex-col gap-3 text-sm">
-      <div className="flex flex-col gap-1">
-        <dt className="font-medium text-foreground">
-          {dict.orders.trackingNumber}
-        </dt>
-        <dd className="flex flex-col gap-1 text-muted-foreground">
-          <span>{trackingNumber || dict.orders.detailsValueEmpty}</span>
-          {isValidWaybill(trackingNumber) ? (
-            <a
-              href={npTrackingUrl(trackingNumber)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="self-start rounded-xs text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              {dict.orders.trackOnNp}
-            </a>
-          ) : null}
-        </dd>
-      </div>
+      {showWaybill ? (
+        <div className="flex flex-col gap-1">
+          <dt className="font-medium text-foreground">
+            {dict.orders.trackingNumber}
+          </dt>
+          <dd className="flex flex-col gap-1 text-muted-foreground">
+            <span>{trackingNumber || dict.orders.detailsValueEmpty}</span>
+            {isValidWaybill(trackingNumber) ? (
+              <a
+                href={npTrackingUrl(trackingNumber)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="self-start rounded-xs text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                {dict.orders.trackOnNp}
+              </a>
+            ) : null}
+          </dd>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-1">
         <dt className="font-medium text-foreground">
           {dict.orders.internalNotes}
@@ -119,7 +135,10 @@ function OrderDetailsReadOnly({ order }: OrderDetailsFormProps) {
   );
 }
 
-function OrderDetailsEditor({ order }: OrderDetailsFormProps) {
+function OrderDetailsEditor({
+  order,
+  showWaybill = true,
+}: OrderDetailsFormProps) {
   const queryClient = useQueryClient();
   const updateDetails = useAdminOrderControllerUpdateDetails();
 
@@ -263,48 +282,52 @@ function OrderDetailsEditor({ order }: OrderDetailsFormProps) {
       className="flex flex-col gap-4"
       noValidate
     >
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="order-tracking-number">
-          {dict.orders.trackingNumber}
-        </Label>
-        <Input
-          id="order-tracking-number"
-          inputMode="numeric"
-          autoComplete="off"
-          placeholder={dict.orders.trackingNumberPlaceholder}
-          aria-describedby="order-tracking-number-hint"
-          aria-invalid={form.formState.errors.trackingNumber ? true : undefined}
-          {...form.register("trackingNumber")}
-        />
-        <p
-          id="order-tracking-number-hint"
-          className="text-xs text-muted-foreground"
-        >
-          {dict.orders.trackingNumberHint}
-        </p>
-        {form.formState.errors.trackingNumber ? (
-          <p role="alert" className="text-xs text-destructive">
-            {form.formState.errors.trackingNumber.message}
-            {/* К3: say how far off it is — «Зараз 13.» — so a dropped digit
-                is found without counting by hand. */}
-            {trackingDigits > 0 ? (
-              <span>
-                {" "}
-                {dict.orders.trackingNumberDigitsNow(trackingDigits)}
-              </span>
-            ) : null}
-          </p>
-        ) : trackingValid ? (
-          <a
-            href={npTrackingUrl(trackingValue)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="self-start rounded-xs text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+      {showWaybill ? (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="order-tracking-number">
+            {dict.orders.trackingNumber}
+          </Label>
+          <Input
+            id="order-tracking-number"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder={dict.orders.trackingNumberPlaceholder}
+            aria-describedby="order-tracking-number-hint"
+            aria-invalid={
+              form.formState.errors.trackingNumber ? true : undefined
+            }
+            {...form.register("trackingNumber")}
+          />
+          <p
+            id="order-tracking-number-hint"
+            className="text-xs text-muted-foreground"
           >
-            {dict.orders.trackOnNp}
-          </a>
-        ) : null}
-      </div>
+            {dict.orders.trackingNumberHint}
+          </p>
+          {form.formState.errors.trackingNumber ? (
+            <p role="alert" className="text-xs text-destructive">
+              {form.formState.errors.trackingNumber.message}
+              {/* К3: say how far off it is — «Зараз 13.» — so a dropped digit
+                is found without counting by hand. */}
+              {trackingDigits > 0 ? (
+                <span>
+                  {" "}
+                  {dict.orders.trackingNumberDigitsNow(trackingDigits)}
+                </span>
+              ) : null}
+            </p>
+          ) : trackingValid ? (
+            <a
+              href={npTrackingUrl(trackingValue)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="self-start rounded-xs text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {dict.orders.trackOnNp}
+            </a>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="order-internal-notes">

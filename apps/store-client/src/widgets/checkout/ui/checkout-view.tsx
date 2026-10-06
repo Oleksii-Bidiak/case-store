@@ -6,8 +6,10 @@ import {
   useRef,
   useState,
   type BaseSyntheticEvent,
+  type Ref,
 } from "react";
 import Link from "next/link";
+import { CircleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,7 +20,10 @@ import {
   CheckoutConsent,
   CheckoutContactFields,
   CheckoutReviewStep,
+  DeliveryMethodPicker,
+  resolveDeliveryMethod,
   useCheckout,
+  useDeliveryOptions,
   useCheckoutPrefill,
   useCheckoutSteps,
   checkoutSchemaFor,
@@ -50,6 +55,37 @@ import { CheckoutGuestSuccess } from "./checkout-guest-success";
  */
 const MOBILE_BAR_CTA =
   "h-11 w-full rounded-cta font-bold md:h-10 md:w-auto md:self-start md:rounded-md md:font-medium";
+
+/**
+ * The server's refusal of the last order attempt (CheckoutDelivery.dc.html
+ * #error): a title, then the server's own sentence word for word. Focusable so
+ * the return from step 2 can land on it.
+ */
+function OrderErrorAlert({
+  message,
+  ref,
+}: {
+  message: string;
+  ref?: Ref<HTMLDivElement>;
+}) {
+  return (
+    <div
+      ref={ref}
+      role="alert"
+      tabIndex={-1}
+      className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <CircleAlert
+        className="mt-0.5 size-5 shrink-0 text-destructive"
+        aria-hidden
+      />
+      <div className="flex min-w-0 flex-col gap-0.5 text-sm text-foreground">
+        <b className="font-semibold">{dict.checkout.orderErrorTitle}</b>
+        <span>{message}</span>
+      </div>
+    </div>
+  );
+}
 
 /**
  * CheckoutView — client orchestrator for the `/checkout` route.
@@ -89,22 +125,16 @@ export function CheckoutView() {
     isPending,
     isError,
     errorMessage,
+    clearError,
     isOrderSubmitted,
     placedOrder,
     handoffMessage,
   } = useCheckout({ isGuest });
 
-  // Which payment methods this deployment offers, narrowed to what THIS shopper
-  // can actually complete. Recomputed when the session settles: the online
-  // options need an account, the payment endpoint being behind a JWT guard.
-  const paymentOptions = useMemo(
-    () =>
-      resolvePaymentMethods({
-        configured: readConfiguredMethods(),
-        isAuthenticated,
-      }),
-    [isAuthenticated],
-  );
+  // The shop's delivery offer (TASK-646): which methods, the courier's terms,
+  // the pickup points and the delivery × payment matrix.
+  const { options: deliveryOptions, isLoading: isDeliveryLoading } =
+    useDeliveryOptions();
 
   const {
     register,
@@ -115,9 +145,14 @@ export function CheckoutView() {
     setFocus,
     formState: { errors, isSubmitting },
   } = useForm<CheckoutFormValues>({
-    // Guests validate one extra field. RHF reassigns `control._options` on every
-    // render, so swapping the resolver once the auth probe settles takes effect.
-    resolver: zodResolver(checkoutSchemaFor(isGuest)),
+    // Guests validate one extra field, and a courier whose city the shop never
+    // named asks the shopper for it. RHF reassigns `control._options` on every
+    // render, so swapping the resolver once either settles takes effect.
+    resolver: zodResolver(
+      checkoutSchemaFor(isGuest, {
+        courierCityFixed: Boolean(deliveryOptions.courier.cityName?.trim()),
+      }),
+    ),
     defaultValues: CHECKOUT_DEFAULT_VALUES,
   });
 
@@ -132,6 +167,10 @@ export function CheckoutView() {
   // The invalid field a blocked step-2 submit sends the shopper back to — see
   // `focusFirstError`. Consumed by the step-transition effect below.
   const pendingErrorFocus = useRef<keyof CheckoutFormValues | null>(null);
+  // Set when the server refused the order: the return to step 1 lands on the
+  // refusal alert at its top instead of the first field.
+  const pendingAlertFocus = useRef(false);
+  const orderErrorRef = useRef<HTMLDivElement>(null);
 
   // Offer + privacy consent on the confirm step (TASK-882). Plain state, not a
   // form field: the zod schema also runs on the step-1 «Далі», where an
@@ -153,6 +192,11 @@ export function CheckoutView() {
       reviewHeadingRef.current?.focus();
       return;
     }
+    if (pendingAlertFocus.current) {
+      pendingAlertFocus.current = false;
+      orderErrorRef.current?.focus();
+      return;
+    }
     const target = pendingErrorFocus.current ?? "firstName";
     pendingErrorFocus.current = null;
     setFocus(target);
@@ -163,11 +207,63 @@ export function CheckoutView() {
   const npCityRef = useWatch({ control, name: "npCityRef" });
   const guestEmail = useWatch({ control, name: "email" }) ?? "";
   const paymentMethod = useWatch({ control, name: "paymentMethod" });
+  const selectedDelivery = useWatch({ control, name: "deliveryMethod" });
+  const npManual = useWatch({ control, name: "npManual" }) ?? false;
+  const pickupPointId = useWatch({ control, name: "pickupPointId" }) ?? "";
+
+  // The method to draw: the selection while the shop offers it, otherwise the
+  // first offered method. Resolved during render so a pickup-only shop never
+  // flashes Nova Poshta fields for the frame before the effect below lands.
+  const deliveryMethod = resolveDeliveryMethod(
+    selectedDelivery,
+    deliveryOptions.methods,
+  );
+
+  // …and the form value follows. Also re-asserts itself after the profile
+  // prefill's `reset()`, which restores the static default.
+  useEffect(() => {
+    if (isDeliveryLoading || selectedDelivery === deliveryMethod) return;
+    setValue("deliveryMethod", deliveryMethod, { shouldValidate: true });
+  }, [isDeliveryLoading, selectedDelivery, deliveryMethod, setValue]);
+
+  // The first pickup point is preselected, as the mockup draws it (#pickup) —
+  // the method's own default works the same way. A point the shop has since
+  // deactivated gives way to the first one still offered, never submitted.
+  const pointIds = deliveryOptions.pickupPoints.map((point) => point.id);
+  const resolvedPointId = pointIds.includes(pickupPointId)
+    ? pickupPointId
+    : (pointIds[0] ?? "");
+  useEffect(() => {
+    if (isDeliveryLoading || resolvedPointId === pickupPointId) return;
+    setValue("pickupPointId", resolvedPointId, {
+      shouldValidate: resolvedPointId !== "",
+    });
+  }, [isDeliveryLoading, resolvedPointId, pickupPointId, setValue]);
+
+  // Which payment methods this deployment offers, narrowed to what THIS shopper
+  // can actually complete. Recomputed when the session settles — the online
+  // options need an account, the payment endpoint being behind a JWT guard —
+  // and when the delivery changes: the server's matrix rules some out
+  // (TASK-646), and the on-delivery note names where the money changes hands.
+  const paymentOptions = useMemo(
+    () =>
+      resolvePaymentMethods({
+        configured: readConfiguredMethods(),
+        isAuthenticated,
+        delivery: {
+          method: deliveryMethod,
+          npManual,
+          matrix: deliveryOptions.paymentMatrix,
+        },
+      }),
+    [isAuthenticated, deliveryMethod, npManual, deliveryOptions.paymentMatrix],
+  );
 
   // A session that expires mid-checkout (TASK-773) disables the online methods
   // under a choice already made. Nothing would then be checked, and the order
   // would go out as a guest with a method guests cannot complete — fall back to
-  // the method this shopper can still use.
+  // the method this shopper can still use. The same holds when the delivery
+  // changes to one the matrix restricts (TASK-646): card → «інша доставка».
   useEffect(() => {
     const allowed = coercePaymentMethod(paymentMethod, paymentOptions);
     if (allowed !== paymentMethod) setValue("paymentMethod", allowed);
@@ -214,6 +310,24 @@ export function CheckoutView() {
   //
   // The step-2 submit is gated on the offer consent first (TASK-882): the box is
   // on screen, so its message is the one the shopper can act on right away.
+  // Step 1 → 2. A refusal still on record from the last attempt is dropped:
+  // the shopper has acted on it, and it must not greet them a second time.
+  const advance = () => {
+    clearError();
+    goToReview();
+  };
+
+  // A refused order goes back to step 1 (CheckoutDelivery.dc.html #error): the
+  // refusal is usually about the delivery — a method or a point the shop has
+  // just switched off — and step 1 is the only place it can be changed. Any
+  // other failure (network, 5xx, a lapsed session) leaves the shopper on step 2
+  // to retry, with the same alert at the top of the card.
+  const placeOrder = async (values: CheckoutFormValues) => {
+    if ((await submitOrder(values)) !== "refused") return;
+    pendingAlertFocus.current = true;
+    goToDelivery();
+  };
+
   const onStepSubmit = (event?: BaseSyntheticEvent) => {
     if (step === 2 && !consentAccepted) {
       event?.preventDefault();
@@ -222,7 +336,7 @@ export function CheckoutView() {
       return;
     }
     return handleSubmit(
-      step === 1 ? goToReview : submitOrder,
+      step === 1 ? advance : placeOrder,
       focusFirstError,
     )(event);
   };
@@ -233,7 +347,16 @@ export function CheckoutView() {
   };
 
   // The same «До сплати» the order summary prints (TASK-864), for the bar.
-  const { totalText } = useCheckoutTotal(npCityRef);
+  const { totalText, excludesShipping } = useCheckoutTotal({
+    method: deliveryMethod,
+    npManual,
+    npCityRef,
+  });
+  // TASK-647: the bar says what the summary says under «До сплати» — a total
+  // that leaves an unpriced delivery out must not pass for the bill.
+  const payBarNote = excludesShipping
+    ? dict.checkout.delivery.payBarWithoutShipping
+    : undefined;
 
   const items = data?.data?.items ?? [];
   const cartIsEmpty = !isInitializing && !isCartLoading && items.length === 0;
@@ -273,7 +396,14 @@ export function CheckoutView() {
     );
   }
 
-  if (isInitializing || isCartLoading || (cartIsEmpty && !isOrderSubmitted)) {
+  // The delivery list gates the form too: drawing it before the list arrives
+  // would show Nova Poshta fields to a shop that only does pickup.
+  if (
+    isInitializing ||
+    isCartLoading ||
+    isDeliveryLoading ||
+    (cartIsEmpty && !isOrderSubmitted)
+  ) {
     return <CheckoutSkeleton />;
   }
 
@@ -315,6 +445,22 @@ export function CheckoutView() {
         >
           {step === 1 && (
             <>
+              {/* The server's refusal of the last attempt, word for word,
+                  above everything it may be about (#error). Focused on the
+                  way back from step 2. */}
+              {isError && errorMessage && (
+                <OrderErrorAlert ref={orderErrorRef} message={errorMessage} />
+              )}
+
+              {/* The method first (CheckoutDelivery.dc.html): it decides
+                  which fields follow. Absent when the shop offers one. */}
+              <DeliveryMethodPicker
+                control={control}
+                setValue={setValue}
+                options={deliveryOptions}
+                npCityRef={npCityRef}
+              />
+
               {isGuest && (
                 <section className="rounded-card border border-border bg-card p-6 shadow-card">
                   <CheckoutContactFields register={register} errors={errors} />
@@ -323,11 +469,13 @@ export function CheckoutView() {
 
               <section className="rounded-card border border-border bg-card p-6 shadow-card">
                 <CheckoutAddressForm
-                  legend={dict.checkout.shippingAddress}
+                  legend={dict.checkout.delivery.recipientHeading}
                   register={register}
                   control={control}
                   setValue={setValue}
                   errors={errors}
+                  method={deliveryMethod}
+                  options={deliveryOptions}
                 />
 
                 <div className="mt-4 flex flex-col gap-1">
@@ -370,7 +518,11 @@ export function CheckoutView() {
               {/* Below md the step's primary rides in the fixed «До сплати»
                   bar (TASK-864); from md up the bar dissolves and the button
                   sits here, under the form, as before. */}
-              <MobilePayBar label={dict.checkout.totalLine} amount={totalText}>
+              <MobilePayBar
+                label={dict.checkout.totalLine}
+                amount={totalText}
+                amountNote={payBarNote}
+              >
                 <Button
                   type="submit"
                   size="lg"
@@ -388,6 +540,12 @@ export function CheckoutView() {
             // (Checkout.dc.html «ЦІЛЬ · TASK-882»), so the box sits right above
             // the button it unlocks.
             <section className="flex flex-col gap-4 rounded-card border border-border bg-card p-6 shadow-card">
+              {/* A failure that is not a refusal keeps the shopper here — at
+                  the top of the card, never under the fixed mobile bar. */}
+              {isError && errorMessage && (
+                <OrderErrorAlert message={errorMessage} />
+              )}
+
               <CheckoutReviewStep
                 ref={reviewHeadingRef}
                 control={control}
@@ -400,12 +558,6 @@ export function CheckoutView() {
                 onCheckedChange={onConsentChange}
                 showError={consentError}
               />
-
-              {isError && errorMessage && (
-                <p role="alert" className="text-sm text-destructive">
-                  {errorMessage}
-                </p>
-              )}
 
               {/* The order exists but the provider handoff never started. Speaks
                   about the handoff — never about the money. */}
@@ -429,6 +581,7 @@ export function CheckoutView() {
                 <MobilePayBar
                   label={dict.checkout.totalLine}
                   amount={totalText}
+                  amountNote={payBarNote}
                 >
                   <Button
                     type="submit"
@@ -449,7 +602,11 @@ export function CheckoutView() {
         {/* STICKY_ASIDE_TOP clears the z-50 site header so the stuck summary
             never sits under it (TASK-206 / TASK-234). */}
         <aside className={`flex flex-col gap-4 lg:sticky ${STICKY_ASIDE_TOP}`}>
-          <CheckoutOrderSummary npCityRef={npCityRef} />
+          <CheckoutOrderSummary
+            method={deliveryMethod}
+            npManual={npManual}
+            npCityRef={npCityRef}
+          />
           {/* Trust strip under the summary at every width (TASK-864). */}
           <OrderTrustStrip />
         </aside>

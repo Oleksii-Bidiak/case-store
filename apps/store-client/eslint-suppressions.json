@@ -219,11 +219,6 @@
       "count": 12
     }
   },
-  "src/widgets/checkout/ui/checkout-payment.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/widgets/checkout/ui/checkout-step-indicator.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 2

@@ -115,6 +115,11 @@ const DYNAMIC_ACCESS: Record<string, string> = {
     "features/product-image-manager/model/use-product-image-upload-queue.ts — imageUploadErrorMessage(error, dict.productImages)",
   "productImages.errorGeneric":
     "features/product-image-manager/model/use-product-image-upload-queue.ts — imageUploadErrorMessage(error, dict.productImages)",
+  // TASK-648: the delivery method, by its enum value.
+  "orders.deliveryMethodLabels":
+    "entities/order/lib/order-delivery.ts — deliveryMethodLabel(method)",
+  "orders.deliveryFilterLabels":
+    "widgets/order-list/model/order-filters.ts — deliveryFilterLabel(method)",
   // Not listed, because the scan sees through them: `reorderList` (read via the
   // `a = dict.reorderList.announce` / `rejected` aliases in shared/lib/list-reorder)
   // and every `*.errors` block the zod schemas alias as `e`.

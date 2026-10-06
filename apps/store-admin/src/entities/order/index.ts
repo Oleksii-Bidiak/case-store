@@ -42,6 +42,10 @@ export {
   CreateManualOrderDtoPaymentMethod,
   // TASK-620: the two states a mistaken REFUNDED mark may be corrected to.
   PaymentCorrectionTarget,
+  // TASK-648: how the order travels, and the per-method counts the registry's
+  // «Спосіб доставки» filter shows (same query as the list, minus the method).
+  OrderEntityDeliveryMethod,
+  useAdminOrderControllerFacets,
 } from "@/shared/api";
 
 export type {
@@ -69,6 +73,9 @@ export type {
   AdminOrderAccessLink,
   AdminOrderAccessLinkResponse,
   AdminOrderCreatedResponseEnvelope,
+  // TASK-648: the typed delivery snapshot and the facets query.
+  OrderShippingAddressEntity,
+  AdminOrderControllerFacetsParams,
 } from "@/shared/api";
 
 export {
@@ -95,3 +102,12 @@ export {
 // TASK-1038 (wave 198): «#7C1E9A42» — the one way an order is named on screen.
 export { formatOrderNumber } from "./lib/format-order-number";
 export { OrderNumber, type OrderNumberProps } from "./ui/order-number";
+
+// TASK-648: the delivery method and its snapshot, read one way for the registry
+// row and the order card.
+export {
+  deliveryMethodLabel,
+  deliverySnapshot,
+  isShippingCostPending,
+  orderDeliveryMethod,
+} from "./lib/order-delivery";

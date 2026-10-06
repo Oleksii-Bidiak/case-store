@@ -41,6 +41,15 @@ export interface FlatShippingInput {
  * anything else is free text (`OTHER`). An empty string counts as absent. This is
  * the same rule the TASK-642 backfill applied to historical orders, so a legacy
  * checkout and an old order agree about what they were.
+ *
+ * The storefront contract since plan 184 part U (TASK-646/1097): the checkout
+ * sends `deliveryMethod` explicitly for every method the shopper picks, and
+ * OMITS it on one path only — Nova Poshta is unavailable and the shopper typed
+ * the city by hand. That request has no `npCityRef`, so it resolves here to
+ * OTHER, and `OrderService.resolveDelivery` lets such an INFERRED OTHER through
+ * even while «Інша доставка» is switched off (the payment matrix still applies).
+ * Callers that need to tell the two apart compare against the request's own
+ * `deliveryMethod`, not against this result.
  */
 export function resolveDeliveryMethod(input: {
   deliveryMethod?: DeliveryMethod | null;
