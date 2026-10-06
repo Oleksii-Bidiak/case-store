@@ -1254,7 +1254,13 @@ function CategoryTreeView() {
         </>
       ) : null}
 
-      {query.isLoading ? (
+      {/*
+        Until the grants are known the tree's own shape is not: the selection
+        column, the grips and the status toggles exist only for a writer. So
+        the skeleton holds — as on the category card — rather than drawing a
+        read-only grid that then jumps sideways when the columns arrive.
+      */}
+      {query.isLoading || arePermissionsLoading ? (
         <AdminCategoryTreeSkeleton />
       ) : query.isError ? (
         <p role="alert" className="text-sm text-destructive">

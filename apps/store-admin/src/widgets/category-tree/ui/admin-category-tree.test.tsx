@@ -29,6 +29,7 @@ import { dict } from "@/shared/config";
 import { resetReorderLock } from "@/shared/lib/reorder-lock";
 import { getCategoryControllerGetAdminTreeQueryKey } from "@/entities/category";
 import { toast } from "@/shared/ui/toast";
+import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { AdminCategoryTree } from "./admin-category-tree";
 import {
   EXPANDED_STORAGE_KEY,
@@ -1867,5 +1868,56 @@ describe("AdminCategoryTree — delete-only manager (TASK-1781)", () => {
     expect(
       within(screen.getByRole("treegrid")).getAllByRole("checkbox").length,
     ).toBeGreaterThan(0);
+  });
+});
+
+/* ───────────── grants still loading (ревʼю хвостів 185 U) ───────────── */
+
+describe("AdminCategoryTree — while the grants load", () => {
+  /** The real provider answers `can()` false until the grants arrive. */
+  const LOADING = { permissions: [], arePermissionsLoading: true };
+
+  it("holds the skeleton until the grants are known, then draws the writer's grid", async () => {
+    let served = false;
+    server.use(
+      http.get("*/api/categories/admin/tree", () => {
+        served = true;
+        return HttpResponse.json(treeResponse());
+      }),
+    );
+
+    const { rerender } = renderWithProviders(
+      <WithAuth {...LOADING}>
+        <AdminCategoryTree />
+      </WithAuth>,
+    );
+    await waitFor(() => expect(served).toBe(true));
+    // Let the tree response settle: the data is in, only the grants are not.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    // No grid without its selection column and grips, and no read-only
+    // notice that the grants would then take back.
+    expect(screen.queryByRole("treegrid")).not.toBeInTheDocument();
+    expect(dataRows()).toHaveLength(0);
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(
+      screen.queryByText(dict.categories.readOnly.treeNotice),
+    ).not.toBeInTheDocument();
+    // The skeleton keeps the grid's columns, selection included.
+    expect(
+      screen.getByText(dict.categories.tree.bulk.colSelect),
+    ).toBeInTheDocument();
+
+    rerender(
+      <WithAuth {...WRITER}>
+        <AdminCategoryTree />
+      </WithAuth>,
+    );
+
+    const grid = await screen.findByRole("treegrid");
+    expect(grid).toHaveAttribute("aria-multiselectable", "true");
+    expect(within(grid).getAllByRole("checkbox").length).toBeGreaterThan(0);
   });
 });
