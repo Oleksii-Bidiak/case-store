@@ -305,6 +305,14 @@ async function routeDelete(
   });
 }
 
+/** Every visible toast's text, for the run log (TASK-1775 / TASK-1841). */
+async function toastText(page: Page): Promise<string> {
+  return page
+    .locator("[data-sonner-toast]")
+    .allInnerTexts()
+    .then((texts) => texts.map((t) => t.replace(/\s+/g, " ")).join(" | "));
+}
+
 const confirmButton = (page: Page) =>
   page.getByRole("alertdialog").getByRole("button", { name: /^Видалити/ });
 
@@ -341,6 +349,7 @@ for (const [size, viewport] of VIEWPORTS) {
       await targetOption(page, "Аудіоаксесуари").click();
       await expect(dialog.getByText(/переїдуть у/)).toBeVisible();
       await page.waitForTimeout(200);
+      note(`${size} target-picked dialog: ${await dialog.innerText()}`);
       await shot(page, `target-picked-page-${size}`);
       if (size === "390") {
         await dialog.evaluate((el) => el.scrollTo(0, el.scrollHeight));
@@ -433,7 +442,36 @@ for (const [size, viewport] of VIEWPORTS) {
       await expect(page.getByRole("alertdialog")).toHaveCount(0);
       await expect(rowMenu(page, "Навушники")).toHaveCount(0);
       await page.waitForTimeout(500);
+      note(`${size} toast: ${await toastText(page)}`);
       await shot(page, `after-delete-page-${size}`);
+    });
+
+    test(`TASK-1837/1841 — hidden target with a carousel (${size})`, async ({
+      page,
+    }) => {
+      await seedTree();
+      await loginAsAdmin(page);
+      await openTree(page);
+      const dialog = await openDialog(page, "Навушники");
+      await pickTarget(page, "Чохли для Pixel");
+      await expect(dialog.getByText(/прихована: після переїзду/)).toBeVisible();
+      await page.waitForTimeout(200);
+      note(`${size} hidden-target dialog: ${await dialog.innerText()}`);
+      await shot(page, `hidden-target-page-${size}`);
+      if (size === "390") {
+        await dialog.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+        await page.waitForTimeout(200);
+        await shot(page, `hidden-target-bottom-page-${size}`);
+        await dialog.evaluate((el) => el.scrollTo(0, 0));
+      }
+      await confirmButton(page).click();
+      await expect(
+        page.getByText(/Категорію «Навушники» видалено/),
+      ).toBeVisible({ timeout: RENDER_TIMEOUT_MS });
+      await expect(page.getByRole("alertdialog")).toHaveCount(0);
+      await page.waitForTimeout(500);
+      note(`${size} hidden-target toast: ${await toastText(page)}`);
+      await shot(page, `hidden-target-after-page-${size}`);
     });
 
     test(`ДН-2.12 — card trigger (${size})`, async ({ page }) => {

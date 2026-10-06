@@ -307,6 +307,55 @@ for (const [size, viewport] of VIEWPORTS) {
         return { focused: a.toJSON(), toast: b.toJSON(), overlap };
       });
       note(`${size} toast vs focused CTA: ${JSON.stringify(covered)}`);
+      // TASK-1771: at 390 the toast must sit above the fixed pay bar and the
+      // focused «Оформити замовлення» must be fully on screen and uncovered.
+      const geometry = await page.evaluate(() => {
+        const box = (el: Element | null) =>
+          el ? (el.getBoundingClientRect().toJSON() as DOMRect) : null;
+        const focused = document.activeElement;
+        return {
+          viewport: { w: window.innerWidth, h: window.innerHeight },
+          inset: getComputedStyle(document.documentElement).getPropertyValue(
+            "--mobile-bar-inset",
+          ),
+          toasts: [...document.querySelectorAll("[data-sonner-toast]")].map(
+            (t) => ({
+              box: box(t),
+              text: (t.textContent ?? "").trim().slice(0, 60),
+            }),
+          ),
+          bar: box(document.querySelector('[data-testid="mobile-pay-bar"]')),
+          barDisplay: (() => {
+            const b = document.querySelector('[data-testid="mobile-pay-bar"]');
+            return b ? getComputedStyle(b).display : null;
+          })(),
+          focused:
+            focused && focused !== document.body
+              ? {
+                  tag: focused.tagName.toLowerCase(),
+                  text: (focused.textContent ?? "").trim().slice(0, 40),
+                  box: box(focused),
+                  // What is painted at the focused control's corners/centre.
+                  hits: (() => {
+                    const r = focused.getBoundingClientRect();
+                    const pts: [number, number][] = [
+                      [r.left + 2, r.top + 2],
+                      [r.right - 2, r.top + 2],
+                      [r.left + r.width / 2, r.top + r.height / 2],
+                      [r.left + 2, r.bottom - 2],
+                      [r.right - 2, r.bottom - 2],
+                    ];
+                    return pts.map(([x, y]) => {
+                      const hit = document.elementFromPoint(x, y);
+                      return hit === focused || (hit && focused.contains(hit));
+                    });
+                  })(),
+                }
+              : null,
+        };
+      });
+      note(`${size} TASK-1771 geometry: ${JSON.stringify(geometry)}`);
+      await shot(page, `cleaned-focus-page-${size}`, false);
       await page.evaluate(() => window.scrollTo(0, 0));
       await shot(page, `cleaned-page-${size}`, false);
     });

@@ -59,6 +59,12 @@ interface DeletedRow {
   price: string;
   stock: number;
   deletedAt: string;
+  /**
+   * TASK-1830: who deleted it — a staff user behind a `product.remove` row of
+   * the action log. Omitted for the artboard's «Імпорт» row: a system delete
+   * has no actor on record, so the list shows no second line there.
+   */
+  deletedBy?: { firstName: string; lastName: string; email: string };
 }
 
 /** The artboard's `DEL` rows, newest deletion first. */
@@ -72,6 +78,11 @@ const DELETED: DeletedRow[] = [
     price: "799.00",
     stock: 0,
     deletedAt: "2026-10-03T09:12:00Z",
+    deletedBy: {
+      firstName: "Олена",
+      lastName: "Коваленко",
+      email: "s656-olena@store.test",
+    },
   },
   {
     name: "Захисне скло Nillkin для Galaxy S23",
@@ -82,6 +93,11 @@ const DELETED: DeletedRow[] = [
     price: "349.00",
     stock: 14,
     deletedAt: "2026-09-28T14:30:00Z",
+    deletedBy: {
+      firstName: "Андрій",
+      lastName: "Мельник",
+      email: "s656-andrii@store.test",
+    },
   },
   {
     name: "Кабель Baseus USB-C — Lightning 1 м",
@@ -123,6 +139,7 @@ function slugOf(label: string): string {
 async function seedDeleted({ squatter = false } = {}): Promise<void> {
   await withPrisma(async (prisma) => {
     await prisma.product.deleteMany({ where: { description: FIXTURE_MARK } });
+    await prisma.auditLog.deleteMany({ where: { summary: FIXTURE_MARK } });
 
     const ensureCategory = async (name: string) => {
       const slug = slugOf(name);
@@ -171,6 +188,27 @@ async function seedDeleted({ squatter = false } = {}): Promise<void> {
           sku: `deleted:${created.id}:${row.sku}`,
         },
       });
+      if (row.deletedBy) {
+        // TASK-1830: the list names the actor of the latest `product.remove`.
+        const { email, firstName, lastName } = row.deletedBy;
+        const actor = await prisma.user.upsert({
+          where: { email },
+          update: { firstName, lastName },
+          create: { email, firstName, lastName, role: "MANAGER" },
+        });
+        await prisma.auditLog.create({
+          data: {
+            actorId: actor.id,
+            actorEmail: email,
+            actorRole: "MANAGER",
+            action: "product.remove",
+            entityType: "product",
+            entityId: created.id,
+            summary: FIXTURE_MARK,
+            createdAt: at,
+          },
+        });
+      }
     }
 
     if (squatter) {
@@ -252,6 +290,17 @@ for (const [size, viewport] of VIEWPORTS) {
       await loginAsAdmin(page);
       await openDeletedView(page);
       await page.waitForTimeout(300);
+      // TASK-1832 / TASK-1830: the view button's label and each row's date line.
+      const viewButton = page.getByRole("button", { name: /Вид/ }).first();
+      note(
+        `${size} view button: «${(await viewButton.innerText()).trim()}» aria=${await viewButton.getAttribute("aria-label")}`,
+      );
+      const deletedLines = await page
+        .getByText(/^видалено \d\d\.\d\d\.\d{4}/)
+        .evaluateAll((els) =>
+          els.map((el) => (el.parentElement?.textContent ?? "").trim()),
+        );
+      note(`${size} deleted lines: ${JSON.stringify(deletedLines)}`);
       await shot(page, `deleted-view-page-${size}`);
 
       await openConfirm(page);
