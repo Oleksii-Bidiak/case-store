@@ -100,7 +100,10 @@ function DeletedOnCell({ product }: { product: AdminProductListItemEntity }) {
     <span className="flex flex-col">
       <span className="whitespace-nowrap">{deletedOnText(product)}</span>
       {deletedBy ? (
-        <span className="truncate text-xs" title={deletedBy}>
+        <span
+          className="truncate text-xs"
+          title={product.deletedBy?.name ?? deletedBy}
+        >
           {deletedBy}
         </span>
       ) : null}
@@ -115,7 +118,20 @@ function DeletedOnCell({ product }: { product: AdminProductListItemEntity }) {
  */
 function deletedByText(product: AdminProductListItemEntity): string | null {
   if (!product.deletedBy) return null;
-  return product.deletedBy.name ?? d.deletedByUnnamed;
+  const name = product.deletedBy.name;
+  return name ? shortPersonName(name) : d.deletedByUnnamed;
+}
+
+/**
+ * Т8 writes the deleter as «Олена К.»: first name and the surname's initial,
+ * so the column stays narrow; the full name rides along in the cell's `title`.
+ * A single-word name is shown as it is.
+ */
+export function shortPersonName(full: string): string {
+  const parts = full.trim().split(/\s+/);
+  if (parts.length < 2) return full.trim();
+  const last = parts[parts.length - 1];
+  return `${parts[0]} ${last.charAt(0).toUpperCase()}.`;
 }
 
 /** «Видалено» — red, like the artboard's `bg-dst`: the row is not live. */

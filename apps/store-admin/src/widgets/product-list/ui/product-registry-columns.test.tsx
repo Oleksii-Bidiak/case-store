@@ -100,6 +100,19 @@ describe("productColumns — when and by whom it was deleted (TASK-1830, Т8)", 
     expect(screen.getByText("Олена К.")).toBeInTheDocument();
   });
 
+  it("shortens a full name to the Т8 form and keeps it whole in the title", () => {
+    render(
+      <>
+        {updatedColumn(true).cell(
+          row({ deletedBy: { id: "u-2", name: "Олена Коваленко" } }),
+        )}
+      </>,
+    );
+    const line = screen.getByText("Олена К.");
+    expect(line).toHaveAttribute("title", "Олена Коваленко");
+    expect(screen.queryByText("Олена Коваленко")).not.toBeInTheDocument();
+  });
+
   // The API sends no name (never an email) for an actor without one.
   it("says «співробітник» for an actor on record without a name", () => {
     render(
