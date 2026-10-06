@@ -1169,33 +1169,190 @@ describe("CheckoutView — delivery method (TASK-646)", () => {
     });
   });
 
-  it("pickup: asks for a point when there are several and none is picked", async () => {
+  it("pickup: the first of several points is preselected, with its city, and another can be chosen", async () => {
     offer({
       pickupPoints: [
         makePickupPoint(),
-        makePickupPoint({ id: "pp-2", name: "Магазин на Оболоні" }),
+        makePickupPoint({
+          id: "pp-2",
+          name: "Магазин на Оболоні",
+          address: "просп. Оболонський, 1",
+        }),
       ],
     });
     setupBlankProfile();
+    const order = captureOrder();
     const user = userEvent.setup();
     renderWithProviders(<CheckoutView />, authed);
     await screen.findByRole("heading", { name: dict.checkout.title });
 
     await user.click(methodRadio(dict.checkout.delivery.titles.PICKUP));
+    // As drawn (#pickup): the first point already chosen, city first.
+    expect(
+      await screen.findByRole("radio", { name: /Магазин на Хрещатику/ }),
+    ).toBeChecked();
+    expect(screen.getByText("Київ, вул. Хрещатик, 22")).toBeVisible();
+    expect(
+      screen.queryByText(dict.checkout.delivery.validation.pickupPoint),
+    ).toBeNull();
+
+    await user.click(screen.getByRole("radio", { name: /Магазин на Оболоні/ }));
     await fillRecipient(user);
+    await placeOrder(user);
+
+    await waitFor(() => expect(order.body).not.toBeNull());
+    expect(order.body).toMatchObject({
+      deliveryMethod: "PICKUP",
+      pickupPointId: "pp-2",
+      shippingAddress: { city: "Київ", address1: "просп. Оболонський, 1" },
+    });
+  });
+
+  it("a refused order returns to step 1 with the reason on top, and the offer is refetched (#error)", async () => {
+    const refusal =
+      "Кур’єрська доставка зараз недоступна — оберіть інший спосіб доставки";
+    // The shop switched the courier off while the shopper was on the page; the
+    // API learns it at the order, and says so from then on.
+    let switchedOff = false;
+    let fetchesAfterRefusal = 0;
+    server.use(
+      http.get("*/api/delivery/methods", () => {
+        if (switchedOff) fetchesAfterRefusal += 1;
+        return HttpResponse.json({
+          data: makeDeliveryMethods(
+            switchedOff ? { methods: ["NOVA_POSHTA", "PICKUP"] } : {},
+          ),
+        });
+      }),
+      http.post("*/api/orders", () => {
+        switchedOff = true;
+        return HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "DELIVERY_METHOD_UNAVAILABLE",
+            message: refusal,
+          },
+          { status: 400 },
+        );
+      }),
+    );
+    setupBlankProfile();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await user.click(methodRadio("Кур'єр · Київ"));
+    await fillRecipient(user);
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.courierStreet),
+      "вул. Дерибасівська",
+    );
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.courierHouse),
+      "10",
+    );
+    await placeOrder(user);
+
+    // Back on step 1 — the only place the delivery can be changed.
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      `${dict.checkout.orderErrorTitle}${refusal}`,
+    );
+    expect(
+      screen.queryByRole("heading", { name: dict.checkout.reviewHeading }),
+    ).toBeNull();
+    await waitFor(() => expect(alert).toHaveFocus());
+    // Above the method card, not under it.
+    const group = screen.getByRole("radiogroup", {
+      name: dict.checkout.delivery.methodHeading,
+    });
+    expect(
+      alert.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // The offer is fetched again: the courier is gone, the first method holds.
+    await waitFor(() => expect(fetchesAfterRefusal).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.queryByRole("radio", { name: /Кур'єр/ })).toBeNull(),
+    );
+    expect(
+      methodRadio(dict.checkout.delivery.titles.NOVA_POSHTA),
+    ).toBeChecked();
+
+    // Moving on drops the refusal — it must not greet the shopper again.
+    await user.click(methodRadio(dict.checkout.delivery.titles.PICKUP));
     await user.click(
       screen.getByRole("button", { name: dict.checkout.nextStep }),
     );
-
-    expect(
-      await screen.findByText(dict.checkout.delivery.validation.pickupPoint),
-    ).toBeInTheDocument();
-    // The blocked submit lands on the group, not on nothing.
-    await waitFor(() =>
-      expect(
-        screen.getByRole("radio", { name: /Магазин на Хрещатику/ }),
-      ).toHaveFocus(),
+    await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.prevStep }),
     );
+    await screen.findByRole("button", { name: dict.checkout.nextStep });
+    expect(screen.queryByText(dict.checkout.orderErrorTitle)).toBeNull();
+  });
+
+  it("a failure that is not a refusal keeps the shopper on step 2, the alert on top", async () => {
+    server.use(
+      http.post("*/api/orders", () =>
+        HttpResponse.json({ statusCode: 500 }, { status: 500 }),
+      ),
+    );
+    setupBlankProfile();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await fillDelivery(user);
+    await placeOrder(user);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      `${dict.checkout.orderErrorTitle}${dict.common.genericError}`,
+    );
+    // Still on step 2, above the read-back — not under the mobile bar.
+    const heading = screen.getByRole("heading", {
+      name: dict.checkout.reviewHeading,
+    });
+    expect(
+      alert.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("courier with no city from the shop: the shopper types it, and it travels", async () => {
+    offer({ courier: { price: "150.00", freeFrom: null, cityName: null } });
+    setupBlankProfile();
+    const order = captureOrder();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await user.click(methodRadio(dict.checkout.delivery.titles.COURIER));
+    await fillRecipient(user);
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.courierStreet),
+      "вул. Соборна",
+    );
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.courierHouse),
+      "5",
+    );
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+    // Blocked on the missing city, and focus lands on it.
+    const city = screen.getByLabelText(dict.checkout.fields.city);
+    await waitFor(() => expect(city).toHaveFocus());
+    expect(city).toHaveAttribute("aria-invalid", "true");
+
+    await user.type(city, "Біла Церква");
+    await placeOrder(user);
+
+    await waitFor(() => expect(order.body).not.toBeNull());
+    expect(order.body).toMatchObject({
+      deliveryMethod: "COURIER",
+      shippingAddress: { city: "Біла Церква", address1: "вул. Соборна, 5" },
+    });
   });
 
   it("courier: the price joins the total, and street + house become address1", async () => {
@@ -1361,6 +1518,15 @@ describe("CheckoutView — delivery method (TASK-646)", () => {
     expect(online).toBeDisabled();
     expect(online).toHaveAccessibleDescription(
       dict.checkout.delivery.paymentBlockedNpDown,
+    );
+    // Booked as OTHER, but the cash still changes hands at the carrier's
+    // branch — the note follows the method the shopper chose (#np-down).
+    expect(
+      screen.getByRole("radio", {
+        name: new RegExp(dict.checkout.payment.onDeliveryTitle),
+      }),
+    ).toHaveAccessibleDescription(
+      dict.checkout.delivery.onDeliveryNote.NOVA_POSHTA,
     );
 
     await user.click(

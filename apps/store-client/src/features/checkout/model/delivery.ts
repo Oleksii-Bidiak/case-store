@@ -137,6 +137,17 @@ export function courierAddressLine(values: {
   );
 }
 
+/**
+ * The courier's city: the shop's own, or — when the shop switched the courier
+ * on without naming one — what the shopper typed into `courierCity`.
+ */
+export function courierCity(
+  cityName: string | null | undefined,
+  typed: string | undefined,
+): string {
+  return cityName?.trim() || (typed ?? "").trim();
+}
+
 /** Decimal-string money → integer kopecks (NaN-safe). */
 export function toCents(value: string | null | undefined): number {
   const amount = Number(value ?? "0");

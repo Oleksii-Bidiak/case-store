@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { Check, CircleHelp, Package, Store, Truck } from "lucide-react";
+import { Bike, Check, MapPin, Package, Truck } from "lucide-react";
 import { Controller, type Control } from "react-hook-form";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
@@ -20,10 +20,12 @@ const ICONS: Record<
   CheckoutDeliveryMethod,
   ComponentType<{ className?: string; "aria-hidden"?: boolean }>
 > = {
-  NOVA_POSHTA: Package,
-  PICKUP: Store,
-  COURIER: Truck,
-  OTHER: CircleHelp,
+  // The mockup's icons (CheckoutDelivery.dc.html): a carrier's truck, a place
+  // to collect from, a city courier's bike, a parcel sent some other way.
+  NOVA_POSHTA: Truck,
+  PICKUP: MapPin,
+  COURIER: Bike,
+  OTHER: Package,
 };
 
 interface DeliveryMethodPickerProps {

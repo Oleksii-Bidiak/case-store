@@ -1556,6 +1556,9 @@ export const dict = {
         otherAddress: "Вкажіть адресу або спосіб доставки",
       },
     },
+    // The title of the refusal alert at the top of step 1; the server's own
+    // sentence follows it verbatim (CheckoutDelivery.dc.html #error).
+    orderErrorTitle: "Не вдалося оформити замовлення",
   },
 
   order: {

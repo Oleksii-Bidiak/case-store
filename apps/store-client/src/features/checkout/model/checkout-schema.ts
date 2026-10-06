@@ -25,7 +25,8 @@ import { CHECKOUT_DELIVERY_METHODS, DEFAULT_DELIVERY_METHOD } from "./delivery";
  *                   branch (`deliveryAddress`). Or, when the directory is down
  *                   (`npManual`, TASK-1097), a typed city and address.
  *   - PICKUP      — a pickup point (`pickupPointId`).
- *   - COURIER     — street and house; the city is the courier's own.
+ *   - COURIER     — street and house; the city is the courier's own, or
+ *                   typed (`courierCity`) when the shop named none.
  *   - OTHER       — a city and a free-text address / carrier.
  *
  * The flat fields are mapped onto the backend `AddressDto` in `useCheckout`.
@@ -66,6 +67,12 @@ const checkoutFields = z.object({
   courierStreet: z.string().optional(),
   courierHouse: z.string().optional(),
   courierApartment: z.string().optional(),
+  /**
+   * The courier's city, typed by the shopper — only when the shop switched the
+   * courier on without naming its city (the API allows that; only the admin
+   * screen insists). Otherwise the city is the shop's and this stays empty.
+   */
+  courierCity: z.string().optional(),
   notes: z.string().max(500, dict.checkout.validation.notesMax).optional(),
   /**
    * Guest contact email (TASK-338). Optional here and required by
@@ -87,8 +94,23 @@ export type CheckoutFormValues = z.infer<typeof checkoutFields>;
 
 const isBlank = (value: string | undefined) => !(value ?? "").trim();
 
+/** What the per-method rules need to know about the shop's offer. */
+export interface CheckoutSchemaOptions {
+  /**
+   * The shop named the courier's city (`GET /api/delivery/methods` →
+   * `courier.cityName`). When it did not, the shopper types it, and the courier
+   * branch requires it — `AddressDto.city` is `@IsNotEmpty`. Default `true`,
+   * the normal case.
+   */
+  courierCityFixed?: boolean;
+}
+
 /** The per-method requirements — see the schema's own comment. */
-function refineDelivery(values: CheckoutFormValues, ctx: z.RefinementCtx) {
+function refineDelivery(
+  values: CheckoutFormValues,
+  ctx: z.RefinementCtx,
+  { courierCityFixed = true }: CheckoutSchemaOptions = {},
+) {
   const require = (
     field: keyof CheckoutFormValues,
     value: string | undefined,
@@ -106,6 +128,9 @@ function refineDelivery(values: CheckoutFormValues, ctx: z.RefinementCtx) {
       require("pickupPointId", values.pickupPointId, dv.pickupPoint);
       return;
     case "COURIER":
+      if (!courierCityFixed) {
+        require("courierCity", values.courierCity, v.city);
+      }
       require("courierStreet", values.courierStreet, dv.courierStreet);
       require("courierHouse", values.courierHouse, dv.courierHouse);
       return;
@@ -126,17 +151,8 @@ function refineDelivery(values: CheckoutFormValues, ctx: z.RefinementCtx) {
   }
 }
 
-export const checkoutSchema = checkoutFields.superRefine(refineDelivery);
-
-/**
- * Guest variant: the same shape with `email` actually required.
- *
- * Expressed as a refinement of the base schema rather than a second `z.object`
- * so both schemas infer the **same** `CheckoutFormValues`. That keeps one form
- * type and one `useForm<CheckoutFormValues>` while letting the resolver be
- * swapped once we know whether the visitor is a guest.
- */
-export const guestCheckoutSchema = checkoutSchema.superRefine((values, ctx) => {
+/** The guest's email: required, and an email. */
+function refineGuestEmail(values: CheckoutFormValues, ctx: z.RefinementCtx) {
   const email = values.email?.trim() ?? "";
 
   if (!email) {
@@ -155,11 +171,39 @@ export const guestCheckoutSchema = checkoutSchema.superRefine((values, ctx) => {
       message: dict.checkout.guest.validationEmail,
     });
   }
-});
+}
 
-/** Pick the schema that matches the visitor. */
-export function checkoutSchemaFor(isGuest: boolean) {
-  return isGuest ? guestCheckoutSchema : checkoutSchema;
+/**
+ * The signed-in and the guest schema for one shape of the shop's offer.
+ *
+ * The guest variant is a refinement of the base schema rather than a second
+ * `z.object`, so both infer the **same** `CheckoutFormValues`. That keeps one
+ * form type and one `useForm<CheckoutFormValues>` while letting the resolver be
+ * swapped once we know whether the visitor is a guest.
+ */
+function buildSchemas(options: CheckoutSchemaOptions) {
+  const signedIn = checkoutFields.superRefine((values, ctx) =>
+    refineDelivery(values, ctx, options),
+  );
+  return { signedIn, guest: signedIn.superRefine(refineGuestEmail) };
+}
+
+// Built once each: the resolver is re-read on every render.
+const COURIER_CITY_FIXED = buildSchemas({ courierCityFixed: true });
+const COURIER_CITY_TYPED = buildSchemas({ courierCityFixed: false });
+
+export const checkoutSchema = COURIER_CITY_FIXED.signedIn;
+
+/** Guest variant: the same shape with `email` actually required. */
+export const guestCheckoutSchema = COURIER_CITY_FIXED.guest;
+
+/** Pick the schema that matches the visitor and the shop's offer. */
+export function checkoutSchemaFor(
+  isGuest: boolean,
+  { courierCityFixed = true }: CheckoutSchemaOptions = {},
+) {
+  const schemas = courierCityFixed ? COURIER_CITY_FIXED : COURIER_CITY_TYPED;
+  return isGuest ? schemas.guest : schemas.signedIn;
 }
 
 /**
@@ -186,6 +230,7 @@ export const CHECKOUT_DEFAULT_VALUES = {
   courierStreet: "",
   courierHouse: "",
   courierApartment: "",
+  courierCity: "",
   notes: "",
   paymentMethod: DEFAULT_PAYMENT_METHOD,
 } satisfies CheckoutFormValues;

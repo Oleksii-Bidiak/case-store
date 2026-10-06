@@ -1,6 +1,7 @@
 import {
   CHECKOUT_DEFAULT_VALUES,
   checkoutSchema,
+  checkoutSchemaFor,
   guestCheckoutSchema,
 } from "./checkout-schema";
 import { dict } from "@/shared/config";
@@ -293,6 +294,42 @@ describe("checkoutSchema — delivery branches (TASK-646)", () => {
       courierStreet: d.courierStreet,
       courierHouse: d.courierHouse,
     });
+  });
+
+  it("courier asks for a typed city only when the shop named none", () => {
+    const courier = {
+      ...base,
+      deliveryMethod: "COURIER",
+      courierStreet: "вул. Соборна",
+      courierHouse: "5",
+      courierCity: "",
+    };
+    // The shop's city (the default): nothing to type.
+    expect(checkoutSchemaFor(false).safeParse(courier).success).toBe(true);
+    // No city from the shop: required, for guests too.
+    for (const isGuest of [false, true]) {
+      const schema = checkoutSchemaFor(isGuest, { courierCityFixed: false });
+      const result = schema.safeParse({ ...courier, email: "a@b.ua" });
+      expect(result.success).toBe(false);
+      expect(result.error?.flatten().fieldErrors.courierCity).toEqual([
+        dict.checkout.validation.city,
+      ]);
+      expect(
+        schema.safeParse({
+          ...courier,
+          email: "a@b.ua",
+          courierCity: "Біла Церква",
+        }).success,
+      ).toBe(true);
+    }
+    // Other methods never ask for it.
+    expect(
+      checkoutSchemaFor(false, { courierCityFixed: false }).safeParse({
+        ...base,
+        deliveryMethod: "PICKUP",
+        pickupPointId: "pp-1",
+      }).success,
+    ).toBe(true);
   });
 
   it("other requires a city and a free-text address, with no directory ref", () => {

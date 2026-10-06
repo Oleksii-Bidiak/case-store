@@ -193,8 +193,9 @@ describe("resolvePaymentMethods — delivery × payment matrix (TASK-646)", () =
       blockedBy: "delivery-matrix",
       blockedReason: dict.checkout.delivery.paymentBlockedNpDown,
     });
+    // …but the cash still changes hands at the carrier's branch (#np-down).
     expect(byMethod.ON_DELIVERY.note).toBe(
-      dict.checkout.delivery.onDeliveryNote.OTHER,
+      dict.checkout.delivery.onDeliveryNote.NOVA_POSHTA,
     );
   });
 

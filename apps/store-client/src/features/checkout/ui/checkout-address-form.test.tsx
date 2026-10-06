@@ -13,7 +13,7 @@ import { makeCart, makeDeliveryMethods } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
 import {
   CHECKOUT_DEFAULT_VALUES,
-  checkoutSchema,
+  checkoutSchemaFor,
   type CheckoutFormValues,
 } from "../model/checkout-schema";
 import {
@@ -71,9 +71,13 @@ function renderBranch(
   method: CheckoutDeliveryMethod,
   options: CheckoutDeliveryOptions = OPTIONS,
 ) {
+  // The same choice the view makes: a courier without a city asks for one.
+  const schema = checkoutSchemaFor(false, {
+    courierCityFixed: Boolean(options.courier.cityName?.trim()),
+  });
   function Harness() {
     const form = useForm<CheckoutFormValues>({
-      resolver: zodResolver(checkoutSchema),
+      resolver: zodResolver(schema),
       defaultValues: { ...CHECKOUT_DEFAULT_VALUES, deliveryMethod: method },
     });
     const npManual = useWatch({ control: form.control, name: "npManual" });
@@ -200,6 +204,15 @@ describe("CheckoutAddressForm — delivery branches (TASK-646)", () => {
 
     const notice = await screen.findByText(dict.checkout.delivery.npDownNotice);
     expect(notice.closest("[role=status]")).not.toBeNull();
+    // Still the Nova Poshta section — only the lookup is down (#np-down).
+    expect(
+      screen.getByRole("heading", { name: dict.checkout.delivery.npHeading }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", {
+        name: dict.checkout.delivery.otherHeading,
+      }),
+    ).toBeNull();
     expect(screen.getByTestId("npManual")).toHaveTextContent("true");
     const city = screen.getByLabelText(dict.checkout.fields.city);
     expect(city).toHaveValue("Ромни");
@@ -260,6 +273,9 @@ describe("CheckoutAddressForm — delivery branches (TASK-646)", () => {
       name: dict.checkout.delivery.pickupGroupAria,
     });
     expect(group).toHaveTextContent("Пн–Сб 10:00–20:00 · +380441234567");
+    // The address names the city first, as drawn: «Київ, вул. Хрещатик, 22».
+    expect(screen.getByText("Київ, вул. Хрещатик, 22")).toBeVisible();
+    expect(screen.getByText("Київ, просп. Оболонський, 1")).toBeVisible();
     expect(screen.getAllByRole("radio")).toHaveLength(2);
     expect(screen.queryByLabelText(dict.checkout.fields.city)).toBeNull();
     // One map link — the second point has none.
@@ -344,6 +360,41 @@ describe("CheckoutAddressForm — delivery branches (TASK-646)", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("courier without a city from the shop: the city is typed, and required", async () => {
+    const user = userEvent.setup();
+    renderBranch(
+      "COURIER",
+      toDeliveryOptions(
+        makeDeliveryMethods({
+          courier: { price: "150.00", freeFrom: null, cityName: null },
+        }),
+      ),
+    );
+
+    const city = screen.getByLabelText(dict.checkout.fields.city);
+    expect(city).not.toHaveAttribute("readonly");
+    expect(city).toHaveValue("");
+
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.courierStreet),
+      "вул. Соборна",
+    );
+    await user.type(
+      screen.getByLabelText(dict.checkout.delivery.courierHouse),
+      "5",
+    );
+    await user.click(screen.getByRole("button", { name: "submit" }));
+    expect(
+      await screen.findByText(dict.checkout.validation.city),
+    ).toBeInTheDocument();
+    expect(city).toHaveAttribute("aria-invalid", "true");
+
+    // Typing it clears the message (re-validation on change after a submit).
+    await user.type(city, "Біла Церква");
+    await waitFor(() => expect(city).not.toHaveAttribute("aria-invalid"));
+    expect(screen.queryByText(dict.checkout.validation.city)).toBeNull();
   });
 
   it("other: a city and a free-text address with its hint and the operator note", async () => {

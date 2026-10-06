@@ -9,16 +9,21 @@ import {
   type OrderEntity,
 } from "@/entities/order";
 import { getGetCartQueryKey } from "@/entities/cart";
+import { getGetDeliveryMethodsQueryKey } from "@/entities/delivery";
 import { useAppliedDiscount, clearAppliedDiscount } from "@/entities/discount";
 import { dict } from "@/shared/config";
-import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { apiErrorCode, apiErrorMessage, apiErrorStatus } from "@/shared/lib";
 import type { CheckoutFormValues } from "./checkout-schema";
 import {
   requiresPaymentHandoff,
   toOrderPaymentMethod,
 } from "./payment-methods";
 import { checkoutHandoffMessage, useOrderPayment } from "./use-order-payment";
-import { courierAddressLine, type CheckoutDeliveryOptions } from "./delivery";
+import {
+  courierAddressLine,
+  courierCity,
+  type CheckoutDeliveryOptions,
+} from "./delivery";
 import { useDeliveryOptions } from "./use-delivery-options";
 
 type DeliveryPayload = Pick<
@@ -72,7 +77,9 @@ export function toDeliveryPayload(
         deliveryMethod: "COURIER",
         shippingAddress: {
           ...recipient,
-          city: options.courier.cityName ?? values.city,
+          // The shop's city, or the one typed when it named none — never an
+          // empty string, which `AddressDto` refuses with a 400.
+          city: courierCity(options.courier.cityName, values.courierCity),
           address1: courierAddressLine(values),
         },
       };
@@ -111,6 +118,9 @@ export function toDeliveryPayload(
       };
   }
 }
+
+/** How an order attempt ended — see `submitOrder`. */
+export type SubmitOrderOutcome = "placed" | "refused" | "failed";
 
 export interface UseCheckoutOptions {
   /**
@@ -170,7 +180,21 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
   // cached `GET /api/delivery/methods` the form was drawn from.
   const { options: deliveryOptions } = useDeliveryOptions();
 
-  const submitOrder = async (values: CheckoutFormValues) => {
+  /**
+   * Place the order, and say how it went:
+   *
+   *   - `placed`  — created; one of the three endings above followed.
+   *   - `refused` — a 400: the server named what it will not accept (a delivery
+   *                 method or point switched off, a product gone). The caller
+   *                 takes the shopper back to step 1, where the reason is shown
+   *                 and the delivery can be changed (CheckoutDelivery.dc.html
+   *                 #error).
+   *   - `failed`  — anything else (network, 5xx, an expired session): nothing
+   *                 the shopper entered is wrong, so they stay put and retry.
+   */
+  const submitOrder = async (
+    values: CheckoutFormValues,
+  ): Promise<SubmitOrderOutcome> => {
     const dto: CreateOrderDto = {
       ...toDeliveryPayload(values, deliveryOptions),
       notes: values.notes || undefined,
@@ -194,11 +218,23 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
         : {}),
     };
 
-    const response = await mutation
-      .mutateAsync({ data: dto })
-      .catch(() => null);
-    const order = response?.data;
-    if (!order) return; // `mutation.isError` drives the message.
+    // `mutation.isError` drives the message; this only decides where it shows.
+    let order: OrderEntity | undefined;
+    try {
+      order = (await mutation.mutateAsync({ data: dto }))?.data;
+    } catch (error) {
+      // A refusal over the delivery (`DELIVERY_*`, TASK-643) usually means the
+      // shop changed its offer after this page loaded — a method or a pickup
+      // point switched off. Refetch the offer, so the picker the shopper
+      // returns to no longer proposes what was just refused.
+      if (apiErrorCode(error)?.startsWith("DELIVERY_")) {
+        void queryClient.invalidateQueries({
+          queryKey: getGetDeliveryMethodsQueryKey(),
+        });
+      }
+      return apiErrorStatus(error) === 400 ? "refused" : "failed";
+    }
+    if (!order) return "failed";
 
     setIsOrderSubmitted(true);
     clearAppliedDiscount();
@@ -208,23 +244,24 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
       const failure = await startPayment(order.id);
       // On success the browser is already leaving for the provider's page, so
       // anything after this line only runs when the handoff did NOT happen.
-      if (!failure) return;
+      if (!failure) return "placed";
 
       setHandoffMessage(checkoutHandoffMessage(failure));
       if (!isGuest) {
         router.push(`/orders/${order.id}/confirmation`);
-        return;
+        return "placed";
       }
       setPlacedOrder(order);
-      return;
+      return "placed";
     }
 
     if (isGuest) {
       setPlacedOrder(order);
-      return;
+      return "placed";
     }
 
     router.push(`/orders/${order.id}/confirmation`);
+    return "placed";
   };
 
   // A 400 from `createOrder` is never generic: it names the exact line that
@@ -248,6 +285,8 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
     isPending: mutation.isPending || isStarting,
     isError: mutation.isError,
     errorMessage,
+    /** Forget a shown refusal — the shopper has moved on to try again. */
+    clearError: mutation.reset,
     isOrderSubmitted,
     placedOrder,
     handoffMessage,

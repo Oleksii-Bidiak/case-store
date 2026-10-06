@@ -6,8 +6,10 @@ import {
   useRef,
   useState,
   type BaseSyntheticEvent,
+  type Ref,
 } from "react";
 import Link from "next/link";
+import { CircleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -55,6 +57,37 @@ const MOBILE_BAR_CTA =
   "h-11 w-full rounded-cta font-bold md:h-10 md:w-auto md:self-start md:rounded-md md:font-medium";
 
 /**
+ * The server's refusal of the last order attempt (CheckoutDelivery.dc.html
+ * #error): a title, then the server's own sentence word for word. Focusable so
+ * the return from step 2 can land on it.
+ */
+function OrderErrorAlert({
+  message,
+  ref,
+}: {
+  message: string;
+  ref?: Ref<HTMLDivElement>;
+}) {
+  return (
+    <div
+      ref={ref}
+      role="alert"
+      tabIndex={-1}
+      className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <CircleAlert
+        className="mt-0.5 size-5 shrink-0 text-destructive"
+        aria-hidden
+      />
+      <div className="flex min-w-0 flex-col gap-0.5 text-sm text-foreground">
+        <b className="font-semibold">{dict.checkout.orderErrorTitle}</b>
+        <span>{message}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
  * CheckoutView — client orchestrator for the `/checkout` route.
  *
  * Guards in order:
@@ -92,6 +125,7 @@ export function CheckoutView() {
     isPending,
     isError,
     errorMessage,
+    clearError,
     isOrderSubmitted,
     placedOrder,
     handoffMessage,
@@ -111,9 +145,14 @@ export function CheckoutView() {
     setFocus,
     formState: { errors, isSubmitting },
   } = useForm<CheckoutFormValues>({
-    // Guests validate one extra field. RHF reassigns `control._options` on every
-    // render, so swapping the resolver once the auth probe settles takes effect.
-    resolver: zodResolver(checkoutSchemaFor(isGuest)),
+    // Guests validate one extra field, and a courier whose city the shop never
+    // named asks the shopper for it. RHF reassigns `control._options` on every
+    // render, so swapping the resolver once either settles takes effect.
+    resolver: zodResolver(
+      checkoutSchemaFor(isGuest, {
+        courierCityFixed: Boolean(deliveryOptions.courier.cityName?.trim()),
+      }),
+    ),
     defaultValues: CHECKOUT_DEFAULT_VALUES,
   });
 
@@ -128,6 +167,10 @@ export function CheckoutView() {
   // The invalid field a blocked step-2 submit sends the shopper back to — see
   // `focusFirstError`. Consumed by the step-transition effect below.
   const pendingErrorFocus = useRef<keyof CheckoutFormValues | null>(null);
+  // Set when the server refused the order: the return to step 1 lands on the
+  // refusal alert at its top instead of the first field.
+  const pendingAlertFocus = useRef(false);
+  const orderErrorRef = useRef<HTMLDivElement>(null);
 
   // Offer + privacy consent on the confirm step (TASK-882). Plain state, not a
   // form field: the zod schema also runs on the step-1 «Далі», where an
@@ -147,6 +190,11 @@ export function CheckoutView() {
     }
     if (step === 2) {
       reviewHeadingRef.current?.focus();
+      return;
+    }
+    if (pendingAlertFocus.current) {
+      pendingAlertFocus.current = false;
+      orderErrorRef.current?.focus();
       return;
     }
     const target = pendingErrorFocus.current ?? "firstName";
@@ -178,14 +226,13 @@ export function CheckoutView() {
     setValue("deliveryMethod", deliveryMethod, { shouldValidate: true });
   }, [isDeliveryLoading, selectedDelivery, deliveryMethod, setValue]);
 
-  // A single pickup point is preselected — a choice of one is not a choice. A
-  // point the shop has since deactivated is dropped rather than submitted.
+  // The first pickup point is preselected, as the mockup draws it (#pickup) —
+  // the method's own default works the same way. A point the shop has since
+  // deactivated gives way to the first one still offered, never submitted.
   const pointIds = deliveryOptions.pickupPoints.map((point) => point.id);
   const resolvedPointId = pointIds.includes(pickupPointId)
     ? pickupPointId
-    : pointIds.length === 1
-      ? pointIds[0]
-      : "";
+    : (pointIds[0] ?? "");
   useEffect(() => {
     if (isDeliveryLoading || resolvedPointId === pickupPointId) return;
     setValue("pickupPointId", resolvedPointId, {
@@ -263,6 +310,24 @@ export function CheckoutView() {
   //
   // The step-2 submit is gated on the offer consent first (TASK-882): the box is
   // on screen, so its message is the one the shopper can act on right away.
+  // Step 1 → 2. A refusal still on record from the last attempt is dropped:
+  // the shopper has acted on it, and it must not greet them a second time.
+  const advance = () => {
+    clearError();
+    goToReview();
+  };
+
+  // A refused order goes back to step 1 (CheckoutDelivery.dc.html #error): the
+  // refusal is usually about the delivery — a method or a point the shop has
+  // just switched off — and step 1 is the only place it can be changed. Any
+  // other failure (network, 5xx, a lapsed session) leaves the shopper on step 2
+  // to retry, with the same alert at the top of the card.
+  const placeOrder = async (values: CheckoutFormValues) => {
+    if ((await submitOrder(values)) !== "refused") return;
+    pendingAlertFocus.current = true;
+    goToDelivery();
+  };
+
   const onStepSubmit = (event?: BaseSyntheticEvent) => {
     if (step === 2 && !consentAccepted) {
       event?.preventDefault();
@@ -271,7 +336,7 @@ export function CheckoutView() {
       return;
     }
     return handleSubmit(
-      step === 1 ? goToReview : submitOrder,
+      step === 1 ? advance : placeOrder,
       focusFirstError,
     )(event);
   };
@@ -375,6 +440,13 @@ export function CheckoutView() {
         >
           {step === 1 && (
             <>
+              {/* The server's refusal of the last attempt, word for word,
+                  above everything it may be about (#error). Focused on the
+                  way back from step 2. */}
+              {isError && errorMessage && (
+                <OrderErrorAlert ref={orderErrorRef} message={errorMessage} />
+              )}
+
               {/* The method first (CheckoutDelivery.dc.html): it decides
                   which fields follow. Absent when the shop offers one. */}
               <DeliveryMethodPicker
@@ -458,6 +530,12 @@ export function CheckoutView() {
             // (Checkout.dc.html «ЦІЛЬ · TASK-882»), so the box sits right above
             // the button it unlocks.
             <section className="flex flex-col gap-4 rounded-card border border-border bg-card p-6 shadow-card">
+              {/* A failure that is not a refusal keeps the shopper here — at
+                  the top of the card, never under the fixed mobile bar. */}
+              {isError && errorMessage && (
+                <OrderErrorAlert message={errorMessage} />
+              )}
+
               <CheckoutReviewStep
                 ref={reviewHeadingRef}
                 control={control}
@@ -470,12 +548,6 @@ export function CheckoutView() {
                 onCheckedChange={onConsentChange}
                 showError={consentError}
               />
-
-              {isError && errorMessage && (
-                <p role="alert" className="text-sm text-destructive">
-                  {errorMessage}
-                </p>
-              )}
 
               {/* The order exists but the provider handoff never started. Speaks
                   about the handoff — never about the money. */}

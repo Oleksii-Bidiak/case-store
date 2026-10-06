@@ -104,11 +104,13 @@ test.describe("checkout delivery methods (TASK-646)", () => {
     await expect(methods.getByRole("radio")).toHaveCount(4);
     await methods.getByRole("radio", { name: /Самовивіз з магазину/ }).check();
 
-    // The only point is preselected; its map link opens in a new tab.
+    // The first point is preselected, its address led by the city; its map
+    // link opens in a new tab.
     const points = main.getByRole("radiogroup", { name: "Пункт самовивозу" });
     await expect(
       points.getByRole("radio", { name: /Магазин на Хрещатику/ }),
     ).toBeChecked();
+    await expect(points.getByText("Київ, вул. Хрещатик, 22")).toBeVisible();
     await expect(main.getByRole("link", { name: /Як дістатися/ })).toHaveAttribute(
       "href",
       PICKUP_POINT.mapUrl,

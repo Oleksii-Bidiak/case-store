@@ -239,10 +239,13 @@ export function resolvePaymentMethods({
   const allowed = delivery && booked ? delivery.matrix[booked] : undefined;
 
   return configured.map((method): PaymentMethodOption => {
-    // Where the cash changes hands depends on the delivery (TASK-646).
+    // Where the cash changes hands depends on the delivery (TASK-646) — the
+    // one the shopper CHOSE. The Nova Poshta manual path is booked as OTHER,
+    // but the parcel still goes to a carrier's branch, so it keeps the Nova
+    // Poshta note (CheckoutDelivery.dc.html #np-down).
     const note =
-      method === "ON_DELIVERY" && booked
-        ? dict.checkout.delivery.onDeliveryNote[booked]
+      method === "ON_DELIVERY" && delivery
+        ? dict.checkout.delivery.onDeliveryNote[delivery.method]
         : COPY[method].note;
     const option = { method, title: COPY[method].title, note };
 

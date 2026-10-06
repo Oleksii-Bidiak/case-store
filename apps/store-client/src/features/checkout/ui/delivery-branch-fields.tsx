@@ -144,7 +144,9 @@ export function NpManualBranch({
   }, []);
 
   return (
-    <DeliveryBranch heading={dict.checkout.delivery.otherHeading}>
+    // Still the Nova Poshta section — the shopper chose Nova Poshta; only the
+    // lookup is down (#np-down keeps the «Відділення Нової Пошти» heading).
+    <DeliveryBranch heading={dict.checkout.delivery.npHeading}>
       <p
         role="status"
         className="flex items-start gap-2 rounded-lg bg-warning/15 px-3.5 py-3 text-sm text-foreground"
@@ -174,10 +176,17 @@ export function NpManualBranch({
           autoComplete="street-address"
           register={register}
           errors={errors}
+          // The city takes half a row, the address the whole one below it.
+          wrapperClassName="sm:col-span-2"
         />
       </div>
     </DeliveryBranch>
   );
+}
+
+/** «Київ, вул. Хрещатик, 22» — the point's city, then its street address. */
+function pointAddress(point: PickupPointPublicDto): string {
+  return [point.city, point.address].filter(Boolean).join(", ");
 }
 
 /** «години · телефон» — whichever of the two the shop filled in. */
@@ -224,7 +233,7 @@ export function PickupBranch({
                     <div
                       key={point.id}
                       className={[
-                        "flex flex-col gap-2 rounded-xl border-[1.5px] p-4 transition-colors sm:flex-row sm:items-start",
+                        "flex items-start gap-2 rounded-xl border-[1.5px] p-4 transition-colors",
                         "has-focus-visible:ring-2 has-focus-visible:ring-ring",
                         checked
                           ? "border-primary bg-primary/6"
@@ -249,7 +258,7 @@ export function PickupBranch({
                         <span className="flex min-w-0 flex-col gap-0.5 text-sm">
                           <b className="text-foreground">{point.name}</b>
                           <span className="text-foreground">
-                            {point.address}
+                            {pointAddress(point)}
                           </span>
                           {schedule && (
                             <span className="text-muted-foreground">
@@ -263,7 +272,10 @@ export function PickupBranch({
                           href={point.mapUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex min-h-11 shrink-0 items-center self-start rounded text-sm font-medium text-primary underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-0 sm:ps-2"
+                          // Beside the name at every width, as drawn. The
+                          // 44px touch target reaches into the card's padding
+                          // (-my-3) instead of pushing the text down.
+                          className="-my-3 inline-flex min-h-11 shrink-0 items-center rounded ps-2 text-sm font-medium text-primary underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           {dict.checkout.delivery.pickupMapLink}
                           <span aria-hidden="true">&nbsp;↗</span>
@@ -289,7 +301,7 @@ export function PickupBranch({
           );
         }}
       />
-      <p id="checkout-pickup-note" className="text-sm text-muted-foreground">
+      <p id="checkout-pickup-note" className="text-xs text-muted-foreground">
         {dict.checkout.delivery.pickupNote}
       </p>
     </DeliveryBranch>
@@ -298,7 +310,8 @@ export function PickupBranch({
 
 /**
  * #courier / #courier-free — «Адреса для кур'єра». The city is the courier's
- * own and read-only; street, house and an optional flat become `address1`.
+ * own and read-only (typed, only when the shop named none); street, house and
+ * an optional flat become `address1`.
  * Below, how far the cart is from a free courier, counted on the product
  * subtotal like the server does.
  */
@@ -316,6 +329,18 @@ export function CourierBranch({
 
   return (
     <DeliveryBranch heading={dict.checkout.delivery.courierHeading}>
+      {/* A shop that switched the courier on without naming its city (the
+          API allows it) — the shopper types the city instead. */}
+      {!city && (
+        <TextField
+          name="courierCity"
+          label={dict.checkout.fields.city}
+          autoComplete="address-level2"
+          register={register}
+          errors={errors}
+          wrapperClassName="sm:max-w-1/2"
+        />
+      )}
       {city && (
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="checkout-courier-city">

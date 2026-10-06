@@ -10,6 +10,7 @@ import {
 } from "../model/payment-methods";
 import {
   courierAddressLine,
+  courierCity,
   deliveryMethodShortTitle,
   deliveryQuoteText,
   resolveDeliveryMethod,
@@ -51,7 +52,10 @@ function deliveryPlace(
     case "COURIER":
       return {
         label: d.reviewAddress,
-        value: join(options.courier.cityName, courierAddressLine(values)),
+        value: join(
+          courierCity(options.courier.cityName, values.courierCity),
+          courierAddressLine(values),
+        ),
       };
     case "OTHER":
       return {
