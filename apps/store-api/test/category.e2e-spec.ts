@@ -1313,6 +1313,7 @@ describe('CategoryController (e2e)', () => {
         targetCreated: false,
         subtreeIds: [testCategory.id],
         movedProducts: 3,
+        movedLiveProducts: 2,
         switchedCarousels: 0,
       });
       // The post-commit subtree re-index is best-effort; give it something to walk.
@@ -1364,7 +1365,7 @@ describe('CategoryController (e2e)', () => {
         .expect(200);
       // TASK-1775: what the delete did, counted in its own transaction — nothing else.
       expect(response.body).toEqual({
-        data: { targetId: TARGET_ID, movedProducts: 3, switchedCarousels: 0 },
+        data: { targetId: TARGET_ID, movedProducts: 3, movedLiveProducts: 2, switchedCarousels: 0 },
       });
       expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(testCategory.id, {
         kind: 'existing',
@@ -1456,6 +1457,7 @@ describe('CategoryController (e2e)', () => {
         targetCreated: true,
         subtreeIds: [testCategory.id, 'child-id'],
         movedProducts: 7,
+        movedLiveProducts: 6,
         switchedCarousels: 2,
       });
 
@@ -1464,9 +1466,14 @@ describe('CategoryController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .send(moveToNew)
         .expect(200);
-      // Exactly the three fields — the tombstoned ids and targetCreated stay internal.
+      // Exactly these four fields — the tombstoned ids and targetCreated stay internal.
       expect(response.body).toEqual({
-        data: { targetId: 'created-target-id', movedProducts: 7, switchedCarousels: 2 },
+        data: {
+          targetId: 'created-target-id',
+          movedProducts: 7,
+          movedLiveProducts: 6,
+          switchedCarousels: 2,
+        },
       });
     });
 
@@ -1491,6 +1498,7 @@ describe('CategoryController (e2e)', () => {
           targetCreated: false,
           subtreeIds: [testCategory.id],
           movedProducts: 0,
+          movedLiveProducts: 0,
           switchedCarousels: 0,
         });
       });
@@ -1506,7 +1514,7 @@ describe('CategoryController (e2e)', () => {
         ).expect(200);
         // Nothing moved, so there is no target (TASK-1775).
         expect(response.body).toEqual({
-          data: { targetId: null, movedProducts: 0, switchedCarousels: 0 },
+          data: { targetId: null, movedProducts: 0, movedLiveProducts: 0, switchedCarousels: 0 },
         });
         expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(testCategory.id, {
           kind: 'none',

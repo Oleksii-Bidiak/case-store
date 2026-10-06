@@ -259,6 +259,8 @@ export interface CategoryDeletionResult {
   subtreeIds: string[];
   /** Products re-filed into the target (active, inactive and soft-deleted alike). */
   movedProducts: number;
+  /** Of {@link movedProducts}, the ones NOT soft-deleted (active or hidden). */
+  movedLiveProducts: number;
   /** Carousels switched from a subtree category to the target. */
   switchedCarousels: number;
 }
@@ -1356,6 +1358,7 @@ export class CategoryRepository {
 
         let targetId: string | null = null;
         let movedProducts = 0;
+        let movedLiveProducts = 0;
         let switchedCarousels = 0;
         if (target.kind === 'none') {
           await this.assertDeletableWithoutTarget(tx, id, subtreeIds);
@@ -1387,15 +1390,25 @@ export class CategoryRepository {
             targetId = await this.createDeletionTarget(tx, target, subtree);
           }
 
-          const moved = await tx.product.updateMany({
-            where: { categoryId: { in: subtreeIds } },
+          // EVERY product moves — live and soft-deleted alike (invariant I1) — in two
+          // statements so the answer can say how many of them were live: the admin
+          // toast offers «Показати товари» only for those, and a count taken from the
+          // dialog's preview would be stale if products arrived in between. The tree
+          // lock keeps product writes out meanwhile, so the two halves are exact.
+          const movedLive = await tx.product.updateMany({
+            where: { categoryId: { in: subtreeIds }, deletedAt: null },
+            data: { categoryId: targetId },
+          });
+          const movedDeleted = await tx.product.updateMany({
+            where: { categoryId: { in: subtreeIds }, deletedAt: { not: null } },
             data: { categoryId: targetId },
           });
           const switched = await tx.carousel.updateMany({
             where: { categoryId: { in: subtreeIds } },
             data: { categoryId: targetId },
           });
-          movedProducts = moved.count;
+          movedLiveProducts = movedLive.count;
+          movedProducts = movedLive.count + movedDeleted.count;
           switchedCarousels = switched.count;
         }
 
@@ -1415,6 +1428,7 @@ export class CategoryRepository {
           targetCreated: target.kind === 'new',
           subtreeIds,
           movedProducts,
+          movedLiveProducts,
           switchedCarousels,
         };
       },

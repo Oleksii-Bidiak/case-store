@@ -577,6 +577,7 @@ export class CategoryService {
         deletedIds: result.subtreeIds,
         deletedCount: result.subtreeIds.length,
         movedProducts: result.movedProducts,
+        movedLiveProducts: result.movedLiveProducts,
         switchedCarousels: result.switchedCarousels,
         actorId,
       },

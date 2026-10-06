@@ -1165,6 +1165,7 @@ describe('CategoryService', () => {
       targetCreated: false,
       subtreeIds: ['cat-uuid-1', 'cat-uuid-2'],
       movedProducts: 5,
+      movedLiveProducts: 4,
       switchedCarousels: 1,
     };
     const actor = { id: 'manager-1' };
@@ -1212,6 +1213,7 @@ describe('CategoryService', () => {
         targetCreated: false,
         subtreeIds: ['cat-uuid-1'],
         movedProducts: 0,
+        movedLiveProducts: 0,
         switchedCarousels: 0,
       };
 
@@ -1480,6 +1482,7 @@ describe('CategoryService', () => {
             targetId: TARGET_ID,
             deletedCount: 2,
             movedProducts: 5,
+            movedLiveProducts: 4,
             switchedCarousels: 1,
             actorId: 'admin-1',
           }),

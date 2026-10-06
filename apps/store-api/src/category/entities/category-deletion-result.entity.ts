@@ -27,6 +27,15 @@ export class CategoryDeletionResultEntity {
   movedProducts!: number;
 
   @ApiProperty({
+    description:
+      'Of `movedProducts`, the ones that are NOT soft-deleted (active or hidden) — the ' +
+      'products the admin product list shows. `movedProducts - movedLiveProducts` is the ' +
+      'number of soft-deleted ones that moved along. Counted in the same transaction',
+    example: 40,
+  })
+  movedLiveProducts!: number;
+
+  @ApiProperty({
     description: 'Homepage carousels switched from the deleted subtree to the target',
     example: 1,
   })
@@ -35,11 +44,13 @@ export class CategoryDeletionResultEntity {
   static fromResult(result: {
     targetId: string | null;
     movedProducts: number;
+    movedLiveProducts: number;
     switchedCarousels: number;
   }): CategoryDeletionResultEntity {
     const entity = new CategoryDeletionResultEntity();
     entity.targetId = result.targetId;
     entity.movedProducts = result.movedProducts;
+    entity.movedLiveProducts = result.movedLiveProducts;
     entity.switchedCarousels = result.switchedCarousels;
     return entity;
   }

@@ -17071,6 +17071,11 @@
             "description": "Products re-filed into the target — active, inactive AND soft-deleted ones, so it can be higher than `deletionImpact.productCount` in the preview",
             "example": 42
           },
+          "movedLiveProducts": {
+            "type": "number",
+            "description": "Of `movedProducts`, the ones that are NOT soft-deleted (active or hidden) — the products the admin product list shows. `movedProducts - movedLiveProducts` is the number of soft-deleted ones that moved along. Counted in the same transaction",
+            "example": 40
+          },
           "switchedCarousels": {
             "type": "number",
             "description": "Homepage carousels switched from the deleted subtree to the target",
@@ -17080,6 +17085,7 @@
         "required": [
           "targetId",
           "movedProducts",
+          "movedLiveProducts",
           "switchedCarousels"
         ]
       },

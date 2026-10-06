@@ -226,6 +226,8 @@ describe('Category deletion (integration, TASK-652/653)', () => {
       expect(new Set(result.subtreeIds)).toEqual(new Set([branch, middle, leaf]));
       // Every product of the subtree — the inactive and the soft-deleted one too.
       expect(result.movedProducts).toBe(5);
+      // …of which every one but pCdel is live (pBoff is hidden, not deleted).
+      expect(result.movedLiveProducts).toBe(4);
       expect(result.switchedCarousels).toBe(1);
     });
 
@@ -470,6 +472,7 @@ describe('Category deletion (integration, TASK-652/653)', () => {
 
       expect(result.targetCreated).toBe(true);
       expect(result.movedProducts).toBe(2);
+      expect(result.movedLiveProducts).toBe(2);
       const created = await prisma.category.findUnique({ where: { id: createdId } });
       expect(created).toEqual(
         expect.objectContaining({
@@ -528,6 +531,7 @@ describe('Category deletion (integration, TASK-652/653)', () => {
         targetCreated: false,
         subtreeIds: [empty],
         movedProducts: 0,
+        movedLiveProducts: 0,
         switchedCarousels: 0,
       });
       const row = await prisma.category.findUnique({ where: { id: empty } });

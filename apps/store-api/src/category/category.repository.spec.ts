@@ -702,9 +702,10 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
       { id: 'child', slug: 'iphone-cases' },
       { id: 'grandchild', slug: 'iphone-15-cases' },
     ]);
-    tx.product.updateMany.mockImplementation(() => {
+    // 3 live products and 1 soft-deleted one in the subtree.
+    tx.product.updateMany.mockImplementation(({ where }: { where: { deletedAt: unknown } }) => {
       calls.push('products');
-      return Promise.resolve({ count: 4 });
+      return Promise.resolve({ count: where.deletedAt === null ? 3 : 1 });
     });
     tx.carousel.updateMany.mockImplementation(() => {
       calls.push('carousels');
@@ -744,10 +745,12 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
       targetCreated: false,
       subtreeIds: ['node', 'child', 'grandchild'],
       movedProducts: 4,
+      movedLiveProducts: 3,
       switchedCarousels: 1,
     });
-    // Locks first, then the moves, then the three tombstones.
+    // Locks first, then the moves (live, then soft-deleted), then the three tombstones.
     expect(calls.filter((c) => c !== 'lock')).toEqual([
+      'products',
       'products',
       'carousels',
       'tombstone',
@@ -758,13 +761,18 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
   });
 
   // The hardest condition of decision B-2: no product is deleted or deactivated, and a
-  // soft-deleted one moves too (no deletedAt filter), so a later restore never points at
-  // a tombstone.
+  // soft-deleted one moves too (the two statements together cover every deletedAt), so a
+  // later restore never points at a tombstone.
   it('re-files EVERY product of the subtree and touches nothing but categoryId', async () => {
     await repo.deleteSubtreeWithMove('node', { kind: 'existing', id: 'target' }, NOW);
 
-    expect(tx.product.updateMany).toHaveBeenCalledWith({
-      where: { categoryId: { in: ['node', 'child', 'grandchild'] } },
+    expect(tx.product.updateMany).toHaveBeenCalledTimes(2);
+    expect(tx.product.updateMany).toHaveBeenNthCalledWith(1, {
+      where: { categoryId: { in: ['node', 'child', 'grandchild'] }, deletedAt: null },
+      data: { categoryId: 'target' },
+    });
+    expect(tx.product.updateMany).toHaveBeenNthCalledWith(2, {
+      where: { categoryId: { in: ['node', 'child', 'grandchild'] }, deletedAt: { not: null } },
       data: { categoryId: 'target' },
     });
     expect(tx.carousel.updateMany).toHaveBeenCalledWith({
@@ -865,8 +873,9 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
 
       expect(result.targetId).toBe('target');
       expect(result.movedProducts).toBe(4);
+      expect(result.movedLiveProducts).toBe(3);
       expect(tx.product.updateMany).toHaveBeenCalledWith({
-        where: { categoryId: { in: ['node', 'child', 'grandchild'] } },
+        where: { categoryId: { in: ['node', 'child', 'grandchild'] }, deletedAt: null },
         data: { categoryId: 'target' },
       });
       expect(tx.category.update).toHaveBeenCalledTimes(3);
@@ -979,6 +988,7 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
         targetCreated: false,
         subtreeIds: ['node'],
         movedProducts: 0,
+        movedLiveProducts: 0,
         switchedCarousels: 0,
       });
       expect(tx.product.updateMany).not.toHaveBeenCalled();
