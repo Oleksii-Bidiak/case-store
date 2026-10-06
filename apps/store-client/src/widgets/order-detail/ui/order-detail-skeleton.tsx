@@ -1,8 +1,10 @@
 import { Skeleton } from "@/shared/ui";
+import { OrderDetailBackLink } from "./order-detail-back-link";
 
 /**
  * OrderDetailSkeleton — `/account/orders/[id]` before the order lands
- * (TASK-217, AccountOrders.dc.html detail «Скелетон»): the back link, the h1
+ * (TASK-217, AccountOrders.dc.html detail «Скелетон»): the real back link (it
+ * needs no data, and the mockup keeps it outside the skeleton), then the h1
  * slot at H1_CLASS line heights with a 280×36 bar, the 180×18 date line, the
  * 84px timeline card, then the two columns — 300px of items beside a 220px
  * summary from `xl`, stacked below it.
@@ -14,22 +16,20 @@ import { Skeleton } from "@/shared/ui";
  */
 export function OrderDetailSkeleton() {
   return (
-    <div
-      aria-hidden="true"
-      data-testid="order-detail-skeleton"
-      className="flex flex-col gap-5"
-    >
-      <Skeleton className="h-5 w-36" />
-      <div className="flex flex-col gap-2.5">
-        <div className="flex h-9 items-center md:h-10">
-          <Skeleton className="h-9 w-70 max-w-full" />
+    <div data-testid="order-detail-skeleton" className="flex flex-col gap-5">
+      <OrderDetailBackLink />
+      <div aria-hidden="true" className="flex flex-col gap-5">
+        <div className="flex flex-col gap-2.5">
+          <div className="flex h-9 items-center md:h-10">
+            <Skeleton className="h-9 w-70 max-w-full" />
+          </div>
+          <Skeleton className="h-4.5 w-45" />
         </div>
-        <Skeleton className="h-4.5 w-45" />
-      </div>
-      <Skeleton className="h-21 w-full rounded-card" />
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
-        <Skeleton className="h-75 w-full rounded-card xl:min-w-0 xl:flex-1" />
-        <Skeleton className="h-55 w-full rounded-card xl:w-80 xl:shrink-0" />
+        <Skeleton className="h-21 w-full rounded-card" />
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
+          <Skeleton className="h-75 w-full rounded-card xl:min-w-0 xl:flex-1" />
+          <Skeleton className="h-55 w-full rounded-card xl:w-80 xl:shrink-0" />
+        </div>
       </div>
     </div>
   );

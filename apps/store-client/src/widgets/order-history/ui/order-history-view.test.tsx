@@ -14,6 +14,7 @@ import {
   type OrderEntity,
   type OrderEntityStatus,
 } from "@/entities/order";
+import { CALLBACK_WAIT_MS, rememberPaymentAttempt } from "@/features/checkout";
 import { dict } from "@/shared/config";
 import { OrderHistoryView } from "./order-history-view";
 import { OrderHistorySkeleton } from "./order-history-skeleton";
@@ -29,6 +30,7 @@ jest.mock("next/navigation", () => ({
 }));
 
 beforeEach(() => {
+  sessionStorage.clear();
   push.mockClear();
   replace.mockClear();
   params = new URLSearchParams();
@@ -420,6 +422,32 @@ describe("OrderHistoryView — the card (TASK-217)", () => {
     expect(calls).toBe(1);
   });
 
+  it("hides «Оплатити» while a payment this browser just started is confirmed", async () => {
+    // Back from the bank before its callback landed: the order still reads
+    // PENDING, and a second «Оплатити» would open a second payment.
+    rememberPaymentAttempt("order-1", "payment-1");
+    serveOrders([
+      order({
+        id: "order-1",
+        status: "PENDING",
+        paymentMethod: "ONLINE",
+        paymentStatus: "PENDING",
+        reservationExpiresAt: new Date(Date.now() + 600_000).toISOString(),
+      }),
+    ]);
+
+    renderHistory();
+
+    expect(
+      await screen.findByText(dict.order.payment.pendingTitle),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("order-awaiting-payment")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Оплатити/ })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: dict.cancelOrder.trigger }),
+    ).toBeInTheDocument();
+  });
+
   it("copies the ТТН of a shipped order and links to Nova Poshta tracking", async () => {
     const user = userEvent.setup();
     const write = jest.spyOn(navigator.clipboard, "writeText");
@@ -514,6 +542,34 @@ describe("OrderHistoryView — awaiting payment countdown (TASK-217)", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers «Оплатити» again once the callback wait is over", async () => {
+    rememberPaymentAttempt("order-1", "payment-1", START);
+    serveOrders([
+      order({
+        id: "order-1",
+        status: "PENDING",
+        paymentMethod: "ONLINE",
+        paymentStatus: "PENDING",
+        reservationExpiresAt: new Date(START + 20 * 60_000).toISOString(),
+      }),
+    ]);
+
+    renderHistory();
+
+    expect(
+      await screen.findByText(dict.order.payment.pendingTitle),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Оплатити/ })).toBeNull();
+
+    await act(async () => {
+      jest.advanceTimersByTime(CALLBACK_WAIT_MS);
+    });
+    expect(screen.queryByText(dict.order.payment.pendingTitle)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /^Оплатити/ }),
+    ).toBeInTheDocument();
+  });
+
   it("does not count down a cash-on-delivery order", async () => {
     serveOrders([
       order({
@@ -605,11 +661,18 @@ describe("OrderHistoryView — states (TASK-217, TASK-870)", () => {
 });
 
 describe("OrderHistorySkeleton (TASK-217)", () => {
-  it("mirrors the list: heading slot, tab bar, three cards with three thumbs", () => {
+  it("mirrors the list: real heading and tab labels, three cards with three thumbs", () => {
     renderWithProviders(<OrderHistorySkeleton />);
 
-    const root = screen.getByTestId("order-history-skeleton");
-    expect(root).toHaveAttribute("aria-hidden", "true");
+    // AccountOrders.dc.html «Скелетон»: what needs no data is real.
+    expect(
+      screen.getByRole("heading", { level: 1, name: h.title }),
+    ).toBeInTheDocument();
+    const tabs = screen.getByTestId("order-tabs-skeleton");
+    expect(tabs.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(tabs).toHaveTextContent(
+      [h.tabs.all, h.tabs.active, h.tabs.delivered, h.tabs.cancelled].join(""),
+    );
     const cards = screen.getAllByTestId("order-card-skeleton");
     expect(cards).toHaveLength(3);
     expect(cards[0].querySelectorAll(".size-13")).toHaveLength(3);

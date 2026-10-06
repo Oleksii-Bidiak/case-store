@@ -411,5 +411,10 @@ describe("OrderDetailView (TASK-217)", () => {
     serve();
     renderWithProviders(<OrderDetailView orderId="order-1" />, authed);
     expect(screen.getByTestId("order-detail-skeleton")).toBeInTheDocument();
+    // The way back is a real link even before the order lands (the mockup
+    // keeps it outside the skeleton).
+    expect(
+      screen.getByRole("link", { name: dict.account.dashboard.nav.orders }),
+    ).toHaveAttribute("href", "/account/orders");
   });
 });

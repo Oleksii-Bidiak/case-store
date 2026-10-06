@@ -20,6 +20,10 @@ import {
 import { dict, H1_CLASS } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
 import { Button } from "@/shared/ui";
+import {
+  markPurchaseReported,
+  wasPurchaseReported,
+} from "../model/purchase-reported";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
@@ -81,6 +85,10 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
     const loaded = data?.data;
     if (!loaded || purchaseTracked.current === loaded.id) return;
     purchaseTracked.current = loaded.id;
+    // A later visit — a return from paying out of the account — is not a new
+    // purchase (TASK-217).
+    if (wasPurchaseReported(loaded.id)) return;
+    markPurchaseReported(loaded.id);
     trackEvent("purchase", { orderId: loaded.id, amount: loaded.total });
   }, [data?.data]);
 

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
 import { useAuth } from "@/entities/session";
 import {
   OrderStatusBadge,
@@ -31,10 +30,12 @@ import {
   OrderDetailItems,
   OrderDetailNotes,
 } from "./order-detail-sections";
+import {
+  ACCOUNT_ORDERS_HREF,
+  OrderDetailBackLink,
+} from "./order-detail-back-link";
 import { OrderDetailSkeleton } from "./order-detail-skeleton";
 import { OrderClosedStrip, OrderStatusTimeline } from "./order-status-timeline";
-
-export const ACCOUNT_ORDERS_HREF = "/account/orders";
 
 /** AccountOrders.dc.html `.ao-btn`, full width in the summary column. */
 const ACTION_CLASS = "h-11 w-full rounded-cta px-4.5 font-semibold";
@@ -46,18 +47,12 @@ const MESSAGE_CTA_CLASS = "h-11 rounded-cta px-4.5 font-semibold";
 const MESSAGE_CARD_CLASS =
   "flex flex-col items-start gap-3.5 rounded-card border border-border bg-card p-6 shadow-card sm:p-8";
 
-/** «← Історія замовлень» — a 44px hit area on a 20px text line. */
-function BackLink() {
-  return (
-    <Link
-      href={ACCOUNT_ORDERS_HREF}
-      className="-my-3 inline-flex items-center gap-2 self-start rounded-sm py-3 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <ChevronLeft className="size-4.5" aria-hidden="true" />
-      {dict.account.dashboard.nav.orders}
-    </Link>
-  );
-}
+/**
+ * The card's h1: 24px in the mockup (`.ao-box h1`), not the page H1 — the
+ * card is a message, not a page heading of its own.
+ */
+const MESSAGE_HEADING_CLASS =
+  "font-display text-2xl font-bold tracking-tight text-foreground";
 
 /**
  * OrderDetailView — one order inside the account, `/account/orders/[id]`
@@ -90,10 +85,12 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   useForgetSettledPaymentAttempt(orderId, data?.data?.paymentStatus);
 
   const order = data?.data;
-  // The countdown clock runs only while the order can still be paid online.
+  // The countdown clock runs only while the order can still be paid online —
+  // the same test as `awaitingPaymentMinutes`, so an instalment order (no
+  // countdown to show) does not tick for nothing.
   const now = useNow(
     !!order &&
-      order.paymentMethod !== "ON_DELIVERY" &&
+      order.paymentMethod === "ONLINE" &&
       order.paymentStatus === "PENDING" &&
       order.status === "PENDING",
   );
@@ -108,11 +105,9 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   if (isError && status !== 404) {
     return (
       <div className="flex flex-col gap-5">
-        <BackLink />
+        <OrderDetailBackLink />
         <div role="alert" className={MESSAGE_CARD_CLASS}>
-          <h1 className={`${H1_CLASS} text-foreground`}>
-            {dict.order.somethingWrong}
-          </h1>
+          <h1 className={MESSAGE_HEADING_CLASS}>{dict.order.somethingWrong}</h1>
           <p className="text-muted-foreground">{dict.order.loadErrorBody}</p>
           <Button
             type="button"
@@ -130,9 +125,9 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
   if (!order) {
     return (
       <div className="flex flex-col gap-5">
-        <BackLink />
+        <OrderDetailBackLink />
         <div role="alert" className={MESSAGE_CARD_CLASS}>
-          <h1 className={`${H1_CLASS} text-foreground`}>
+          <h1 className={MESSAGE_HEADING_CLASS}>
             {dict.order.notFoundHeading}
           </h1>
           <p className="text-muted-foreground">{dict.order.notFoundBody}</p>
@@ -181,7 +176,7 @@ function OrderDetailContent({
 
   return (
     <div className="flex flex-col gap-5">
-      <BackLink />
+      <OrderDetailBackLink />
 
       <header className="flex flex-col gap-2.5">
         <h1 className={`${H1_CLASS} text-foreground`}>

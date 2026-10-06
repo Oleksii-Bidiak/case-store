@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Clock } from "lucide-react";
+import { ChevronRight, Clock, Loader2 } from "lucide-react";
 import {
   OrderItemThumb,
   OrderStatusBadge,
@@ -14,6 +14,7 @@ import { CancelOrderButton } from "@/features/cancel-order";
 import {
   retryHandoffMessage,
   useOrderPayment,
+  usePaymentAttemptWatch,
   type PaymentStartFailure,
 } from "@/features/checkout";
 import { ReturnRequestButton } from "@/features/return-request";
@@ -87,7 +88,13 @@ export function OrderCard({
   const headingId = `order-${order.id}-title`;
   const href = `/account/orders/${order.id}`;
   const total = formatMoney(order.total);
-  const awaiting = awaitingMinutes > 0;
+  // This browser went off to pay moments ago and the bank's callback has not
+  // landed yet: say we are confirming, and hold «Оплатити» back — a click now
+  // would open a second payment for the same order. Once the wait window is
+  // over the button returns, as the detail's panel offers its retry.
+  const { isAwaitingCallback } = usePaymentAttemptWatch(order.id);
+  const confirming = awaitingMinutes > 0 && isAwaitingCallback;
+  const awaiting = awaitingMinutes > 0 && !confirming;
   const strip = thumbStrip(order.items);
 
   const { startPayment, isStarting } = useOrderPayment();
@@ -206,6 +213,20 @@ export function OrderCard({
             {dict.orderHistory.awaitingPayment(awaitingMinutes)}
           </b>
           <span>{dict.orderHistory.awaitingPaymentNote}</span>
+        </div>
+      )}
+
+      {confirming && (
+        <div
+          data-testid="order-confirming-payment"
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-menu bg-muted px-3.5 py-2.5 text-sm text-foreground"
+        >
+          <Loader2
+            className="size-4.5 shrink-0 animate-spin motion-reduce:animate-none"
+            aria-hidden="true"
+          />
+          <b className="font-semibold">{dict.order.payment.pendingTitle}</b>
+          <span>{dict.order.payment.pendingNote}</span>
         </div>
       )}
 

@@ -1,9 +1,19 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import {
   AccountShell,
   OrderDetailSkeleton,
   OrderHistorySkeleton,
 } from "@/widgets";
+
+/**
+ * Every account page is private. robots.txt only asks crawlers not to fetch
+ * `/account`; a page linked from elsewhere can still be indexed by its URL, and
+ * `?section=` (TASK-867) mints a new URL per section. Pages inherit this.
+ */
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 /**
  * Every account route — `/account` and its `?section=`s, `/account/orders`,

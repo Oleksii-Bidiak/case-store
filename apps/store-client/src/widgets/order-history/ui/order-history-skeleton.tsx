@@ -1,4 +1,6 @@
+import { dict, H1_CLASS } from "@/shared/config";
 import { Skeleton } from "@/shared/ui";
+import { ORDER_TABS } from "../model/order-history-params";
 import { ORDER_CARD_CLASS, ORDER_LIST_CLASS } from "./order-card-class";
 
 /**
@@ -43,25 +45,44 @@ export function OrderCardsSkeleton() {
 /**
  * OrderHistorySkeleton — the whole `/account/orders` content column before the
  * view mounts: `app/account/orders/loading.tsx`, the page's `<Suspense>`
- * fallback and the account shell's own loading branch (TASK-217). The h1 slot
- * at H1_CLASS line heights, the 36px tab list, then three cards. Content-only:
- * the frame is AccountShell. Server-compatible.
+ * fallback and the account shell's own loading branch (TASK-217).
+ *
+ * As AccountOrders.dc.html draws it: the real h1 and the real tab labels —
+ * neither needs data — with only the counters and the cards blanked out. The
+ * tabs are a static copy of `TabsList`, none of them active: the selected tab
+ * lives in `?status=`, which a server-rendered skeleton does not read.
+ * Content-only: the frame is AccountShell. Server-compatible.
  */
 export function OrderHistorySkeleton() {
   return (
-    <div
-      aria-hidden="true"
-      data-testid="order-history-skeleton"
-      className="flex flex-col gap-5"
-    >
-      <div className="flex h-9 items-center md:h-10">
-        <Skeleton className="h-7 w-56 md:h-8 md:w-72" />
+    <div data-testid="order-history-skeleton" className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
+        <h1 className={`${H1_CLASS} text-foreground`}>
+          {dict.orderHistory.title}
+        </h1>
       </div>
-      <Skeleton className="h-9 w-80 max-w-full rounded-lg" />
-      <div className={ORDER_LIST_CLASS}>
-        {Array.from({ length: 3 }).map((_, i) => (
-          <OrderCardSkeleton key={i} />
-        ))}
+      <div aria-hidden="true" className="flex flex-col gap-5">
+        <div className="-mx-4 overflow-x-auto px-4 scrollbar-none sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
+          <div
+            data-testid="order-tabs-skeleton"
+            className="inline-flex h-9 w-fit items-center rounded-lg bg-muted p-1 text-muted-foreground"
+          >
+            {ORDER_TABS.map((key) => (
+              <span
+                key={key}
+                className="inline-flex flex-none items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium whitespace-nowrap"
+              >
+                {dict.orderHistory.tabs[key]}
+                <Skeleton className="h-3 w-3.5" />
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className={ORDER_LIST_CLASS}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <OrderCardSkeleton key={i} />
+          ))}
+        </div>
       </div>
     </div>
   );
