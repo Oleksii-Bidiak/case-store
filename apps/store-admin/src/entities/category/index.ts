@@ -46,5 +46,7 @@ export type {
   BulkCategoryStatusDto,
   AdminCategoryDetailEntity,
   CategoryDeletionImpactEntity,
+  // TASK-1775: what a delete did — the target's id and the real counts.
+  CategoryDeletionResultEntity,
   DeleteCategoryDto,
 } from "@/shared/api";

@@ -134,6 +134,32 @@ function detail(id: string, impact: Impact) {
   };
 }
 
+/** The id the server gives a category created by `moveToNew`. */
+const CREATED = "44444444-4444-4444-8444-444444444444";
+
+interface DeleteResult {
+  targetId: string | null;
+  movedProducts: number;
+  switchedCarousels: number;
+}
+
+/** The 200 answer of a delete (TASK-1775): what the server DID. */
+function deleted(result: Partial<DeleteResult> = {}) {
+  return HttpResponse.json({
+    data: {
+      targetId: null,
+      movedProducts: 0,
+      switchedCarousels: 0,
+      ...result,
+    },
+  });
+}
+
+interface DeleteBody {
+  moveToId?: string;
+  moveToNew?: { name: string; parentId?: string };
+}
+
 /** Every DELETE body the dialog sent, in order. */
 let bodies: unknown[] = [];
 /** How many times the tree and the preview were read. */
@@ -142,10 +168,10 @@ let detailGets = 0;
 
 function stub({
   impacts = { [HEAD]: HEAD_IMPACT, [PIXEL]: EMPTY_IMPACT },
-  respond = () => new HttpResponse(null, { status: 204 }),
+  respond,
 }: {
   impacts?: Record<string, Impact>;
-  respond?: () => Response | Promise<Response>;
+  respond?: (body: DeleteBody) => Response | Promise<Response>;
 } = {}) {
   server.use(
     http.get("*/api/categories/admin/tree", () => {
@@ -158,9 +184,20 @@ function stub({
         detail(params.id as string, impacts[params.id as string]),
       );
     }),
-    http.delete("*/api/admin/categories/:id", async ({ request }) => {
-      bodies.push(await request.json());
-      return respond();
+    http.delete("*/api/admin/categories/:id", async ({ request, params }) => {
+      const body = (await request.json()) as DeleteBody;
+      bodies.push(body);
+      if (respond) return respond(body);
+      // By default the server moves exactly what its preview counted.
+      const impact = impacts[params.id as string];
+      const targetId = body.moveToId ?? (body.moveToNew ? CREATED : null);
+      return deleted({
+        targetId,
+        movedProducts: targetId
+          ? impact.productCount + impact.deletedProductCount
+          : 0,
+        switchedCarousels: targetId ? impact.carouselCount : 0,
+      });
     }),
   );
 }
@@ -533,6 +570,61 @@ describe("CategoryDeleteDialog — the target picker", () => {
     );
   });
 
+  it("the toast states what the server moved, not the preview's number (TASK-1775)", async () => {
+    const user = userEvent.setup();
+    // Two products were filed in the branch after the dialog loaded.
+    stub({
+      respond: () =>
+        deleted({ targetId: AUDIO, movedProducts: 17, switchedCarousels: 1 }),
+    });
+    const { onDeleted } = renderDialog();
+    await ready();
+    await pickTarget(user, "Аудіоаксесуари");
+    await user.click(
+      screen.getByRole("button", { name: "Видалити й перенести 15 товарів" }),
+    );
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+    const [message] = successToast.mock.calls[0];
+    expect(message).toBe(d.toastMoved("Навушники", 17, "Аудіоаксесуари"));
+    expect(message).toBe(
+      "Категорію «Навушники» видалено. 17 товарів тепер у «Аудіоаксесуари».",
+    );
+  });
+
+  it("«Показати товари» opens the category created here by the id in the answer — no tree re-read (TASK-1775)", async () => {
+    const user = userEvent.setup();
+    stub();
+    const { onDeleted, queryClient } = renderDialog();
+    const invalidate = jest.spyOn(queryClient, "invalidateQueries");
+    await ready();
+    await user.click(screen.getByRole("radio", { name: d.modeNew }));
+    await user.type(
+      screen.getByRole("textbox", { name: /Назва нової/ }),
+      "Аудіо",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Видалити й перенести 15 товарів" }),
+    );
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+    // The created target's card is refreshed too — it is known by id now.
+    expect(
+      invalidate.mock.calls.map(([filters]) =>
+        JSON.stringify(filters?.queryKey),
+      ),
+    ).toContain(
+      JSON.stringify(getAdminCategoryControllerFindByIdQueryKey(CREATED)),
+    );
+    const [message, options] = successToast.mock.calls[0];
+    expect(message).toBe(d.toastMoved("Навушники", 15, "Аудіо"));
+    const treeReadsBefore = treeGets;
+    options.action.onClick();
+    expect(mockPush).toHaveBeenCalledWith(`/products?categoryId=${CREATED}`);
+    // Nothing is looked up by a guessed slug any more.
+    expect(treeGets).toBe(treeReadsBefore);
+  });
+
   it("names the deleted products that moved, without «Показати товари» (TASK-1836)", async () => {
     const user = userEvent.setup();
     stub({
@@ -565,7 +657,7 @@ describe("CategoryDeleteDialog — in flight and after (ДН-2.7 / ДН-2.11)", 
     stub({
       respond: async () => {
         await delay("infinite");
-        return new HttpResponse(null, { status: 204 });
+        return deleted({ targetId: AUDIO, movedProducts: 15 });
       },
     });
     const { onOpenChange } = renderDialog();
@@ -858,7 +950,8 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
     let refusals = 0;
     stub({
       respond: () => {
-        if (refusals > 0) return new HttpResponse(null, { status: 204 });
+        if (refusals > 0)
+          return deleted({ targetId: AUDIO, movedProducts: 15 });
         refusals += 1;
         // Someone hid the target while the dialog was open.
         hidden = true;
@@ -907,7 +1000,8 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
     let refusals = 0;
     stub({
       respond: () => {
-        if (refusals > 0) return new HttpResponse(null, { status: 204 });
+        if (refusals > 0)
+          return deleted({ targetId: AUDIO, movedProducts: 15 });
         refusals += 1;
         return HttpResponse.json(
           {

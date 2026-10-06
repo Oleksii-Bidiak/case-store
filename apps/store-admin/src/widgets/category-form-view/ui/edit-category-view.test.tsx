@@ -433,7 +433,10 @@ describe("EditCategoryView — «Видалити…» on the card (TASK-655, Д
         `*/api/admin/categories/${CATEGORY_ID}`,
         async ({ request }) => {
           bodies.push(await request.json());
-          return new HttpResponse(null, { status: 204 });
+          // TASK-1775: the delete answers with what it did.
+          return HttpResponse.json({
+            data: { targetId: null, movedProducts: 0, switchedCarousels: 0 },
+          });
         },
       ),
     );

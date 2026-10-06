@@ -22,11 +22,11 @@ import {
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   getAdminCategoryControllerFindByIdQueryKey,
   getCategoryControllerGetAdminTreeQueryKey,
-  getCategoryControllerGetAdminTreeQueryOptions,
   useAdminCategoryControllerDelete,
   useAdminCategoryControllerFindById,
   useCategoryControllerGetAdminTree,
   type CategoryDeletionImpactEntity,
+  type CategoryDeletionResultEntity,
   type CategoryTreeItem,
 } from "@/entities/category";
 import { getProductControllerAdminFindAllQueryKey } from "@/entities/product";
@@ -494,7 +494,12 @@ function CategoryDeleteForm({
     remove.mutate(
       { id: categoryId, data: body },
       {
-        onSuccess: () => {
+        onSuccess: (response) => {
+          // TASK-1775: the server says what it DID — the target's id (also of
+          // a category created here) and the real counts, which may differ
+          // from the preview if products arrived in between.
+          const result = response.data;
+          const resultTargetId = result.targetId ?? body.moveToId ?? null;
           void queryClient.invalidateQueries({
             queryKey: getCategoryControllerGetAdminTreeQueryKey(),
           });
@@ -502,12 +507,11 @@ function CategoryDeleteForm({
             queryKey:
               getAdminCategoryControllerFindAllWithProductCountQueryKey(),
           });
-          if (body.moveToId) {
+          if (resultTargetId) {
             // The target's card shows counts and its own deletion preview.
             void queryClient.invalidateQueries({
-              queryKey: getAdminCategoryControllerFindByIdQueryKey(
-                body.moveToId,
-              ),
+              queryKey:
+                getAdminCategoryControllerFindByIdQueryKey(resultTargetId),
             });
           }
           // The products did not change — their category did, and the list
@@ -516,24 +520,19 @@ function CategoryDeleteForm({
             queryKey: getProductControllerAdminFindAllQueryKey(),
           });
 
-          const moved = !isEmpty && impact.productCount > 0;
-          if (moved) {
-            toast.success(d.toastMoved(name, impact.productCount, movedTo), {
-              duration: UNDO_TOAST_DURATION_MS,
-              action: {
-                label: d.toastShowProducts,
-                onClick: () => {
-                  void showProducts(body.moveToId ?? null, newSlug);
-                },
-              },
-            });
-          } else if (!isEmpty && impact.deletedProductCount > 0) {
-            toast.success(
-              d.toastMovedDeleted(name, impact.deletedProductCount, movedTo),
-            );
-          } else {
-            toast.success(d.toastDone(name));
-          }
+          toastResult({
+            name,
+            target: movedTo,
+            result,
+            targetId: resultTargetId,
+            // Only live products were in the preview's «N товарів»: when it
+            // had none and no more moved than the soft-deleted ones it named,
+            // only those moved (TASK-1836) — and the product list does not
+            // show them, so no «Показати товари».
+            deletedOnly:
+              impact.productCount === 0 &&
+              result.movedProducts <= impact.deletedProductCount,
+          });
 
           onClose();
           onDeleted?.();
@@ -568,28 +567,47 @@ function CategoryDeleteForm({
   };
 
   /**
-   * «Показати товари» (ДН-2.11): the product list filtered by the target. A
-   * target created in the dialog has no id in the 204 answer, so it is found
-   * in the refreshed tree by the slug the server derived from its name.
+   * ДН-2.11, from the server's answer (TASK-1775). «Показати товари» opens
+   * the product list filtered by the target — its id comes back in the
+   * answer, also for a category created in this dialog.
    */
-  const showProducts = async (existingId: string | null, newSlug: string) => {
-    let id = existingId;
-    if (!id) {
-      try {
-        const fresh = await queryClient.fetchQuery({
-          ...getCategoryControllerGetAdminTreeQueryOptions(),
-          staleTime: 0,
-        });
-        id =
-          flattenAdminCategoryTree(fresh.data).find((i) => i.slug === newSlug)
-            ?.id ?? null;
-      } catch {
-        id = null;
-      }
+  const toastResult = ({
+    name: deletedName,
+    target,
+    result,
+    targetId: resultTargetId,
+    deletedOnly,
+  }: {
+    name: string;
+    target: string;
+    result: CategoryDeletionResultEntity;
+    targetId: string | null;
+    deletedOnly: boolean;
+  }) => {
+    const moved = result.movedProducts;
+    if (moved > 0 && !deletedOnly) {
+      toast.success(d.toastMoved(deletedName, moved, target), {
+        duration: UNDO_TOAST_DURATION_MS,
+        ...(resultTargetId
+          ? {
+              action: {
+                label: d.toastShowProducts,
+                onClick: () => {
+                  router.push(
+                    `/products?categoryId=${encodeURIComponent(resultTargetId)}`,
+                  );
+                },
+              },
+            }
+          : {}),
+      });
+      return;
     }
-    router.push(
-      id ? `/products?categoryId=${encodeURIComponent(id)}` : "/products",
-    );
+    if (moved > 0) {
+      toast.success(d.toastMovedDeleted(deletedName, moved, target));
+    } else {
+      toast.success(d.toastDone(deletedName));
+    }
   };
 
   const targetInputId = `${baseId}-target`;
