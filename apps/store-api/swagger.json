@@ -2780,7 +2780,7 @@
             }
           },
           "400": {
-            "description": "Invalid input data"
+            "description": "Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing category (TASK-1831)"
           },
           "403": {
             "description": "Forbidden — admin access required"
@@ -3214,7 +3214,7 @@
             }
           },
           "400": {
-            "description": "Invalid input data"
+            "description": "Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing category (TASK-1831)"
           },
           "403": {
             "description": "Forbidden — admin access required"
@@ -3696,7 +3696,7 @@
             }
           },
           "400": {
-            "description": "Validation error (slug pattern, length caps), or the product category is gone"
+            "description": "Validation error (slug pattern, length caps); or PRODUCT_CATEGORY_GONE — the category the product was filed under is deleted, so it cannot come back (TASK-1831); the product stays deleted"
           },
           "403": {
             "description": "Forbidden — needs products:delete"

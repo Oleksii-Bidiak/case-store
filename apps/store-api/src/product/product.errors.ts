@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 
 /**
  * Stable, machine-readable error codes for product failures the admin panel has to
@@ -17,9 +17,23 @@ export const ProductErrorCode = {
   SKU_CONFLICT: 'PRODUCT_SKU_CONFLICT',
   /** Both the slug and the SKU are held by live products. */
   SLUG_SKU_CONFLICT: 'PRODUCT_SLUG_SKU_CONFLICT',
+  /**
+   * The category the product would be filed under is deleted or does not exist
+   * (TASK-1831) — a 400. Restoring a product whose category is gone answers it, from
+   * the early check and from the under-lock one alike, so the restore dialog can tell
+   * it from a malformed request; create / update share the same check and answer it
+   * too (invariant I1).
+   */
+  CATEGORY_GONE: 'PRODUCT_CATEGORY_GONE',
 } as const;
 
 export type ProductErrorCode = (typeof ProductErrorCode)[keyof typeof ProductErrorCode];
+
+/** The 409 codes — the ones naming which unique field a restore collided on. */
+export type ProductConflictCode =
+  | typeof ProductErrorCode.SLUG_CONFLICT
+  | typeof ProductErrorCode.SKU_CONFLICT
+  | typeof ProductErrorCode.SLUG_SKU_CONFLICT;
 
 /** Which of a product's unique columns a write collided on. */
 export interface ProductUniqueClash {
@@ -95,14 +109,14 @@ export function uniqueClashFromPrismaMeta(meta: unknown): ProductUniqueClash | n
 }
 
 /** The code that names exactly the fields in `clash`, or `null` when nothing clashed. */
-export function restoreConflictCode(clash: ProductUniqueClash): ProductErrorCode | null {
+export function restoreConflictCode(clash: ProductUniqueClash): ProductConflictCode | null {
   if (clash.slug && clash.sku) return ProductErrorCode.SLUG_SKU_CONFLICT;
   if (clash.slug) return ProductErrorCode.SLUG_CONFLICT;
   if (clash.sku) return ProductErrorCode.SKU_CONFLICT;
   return null;
 }
 
-const CONFLICT_MESSAGES: Record<ProductErrorCode, string> = {
+const CONFLICT_MESSAGES: Record<ProductConflictCode, string> = {
   [ProductErrorCode.SLUG_CONFLICT]: 'Another product already uses this slug — choose a new one',
   [ProductErrorCode.SKU_CONFLICT]: 'Another product already uses this SKU — choose a new one',
   [ProductErrorCode.SLUG_SKU_CONFLICT]:
@@ -110,6 +124,18 @@ const CONFLICT_MESSAGES: Record<ProductErrorCode, string> = {
 };
 
 /** Build a 409 Conflict carrying a stable product error code. */
-export function conflictProduct(code: ProductErrorCode): ConflictException {
+export function conflictProduct(code: ProductConflictCode): ConflictException {
   return new ConflictException({ error: code, message: CONFLICT_MESSAGES[code] });
+}
+
+/**
+ * The 400 every "the category this product is filed under is gone" path answers with
+ * (TASK-1831): the early checks and the under-lock re-checks of create / update /
+ * restore (invariant I1). The message stays the one these paths always gave.
+ */
+export function categoryGoneProduct(): BadRequestException {
+  return new BadRequestException({
+    error: ProductErrorCode.CATEGORY_GONE,
+    message: 'Category not found',
+  });
 }

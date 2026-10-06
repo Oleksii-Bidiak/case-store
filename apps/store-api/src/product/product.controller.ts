@@ -433,7 +433,12 @@ export class ProductController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Create a product (admin)' })
   @ApiResponse({ status: 201, description: 'Product created', type: ProductResponseEnvelope })
-  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing ' +
+      'category (TASK-1831)',
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async create(@Body() dto: CreateProductDto): Promise<ProductResponse> {
     const product = await this.productService.create(dto);
@@ -454,7 +459,12 @@ export class ProductController {
   @ApiOperation({ summary: 'Update a product (admin)' })
   @ApiParam({ name: 'id', description: 'Product UUID' })
   @ApiResponse({ status: 200, description: 'Product updated', type: ProductResponseEnvelope })
-  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing ' +
+      'category (TASK-1831)',
+  })
   @ApiResponse({ status: 404, description: 'Product not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async update(@Param('id') id: string, @Body() dto: UpdateProductDto): Promise<ProductResponse> {
@@ -789,7 +799,10 @@ export class ProductController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Validation error (slug pattern, length caps), or the product category is gone',
+    description:
+      'Validation error (slug pattern, length caps); or PRODUCT_CATEGORY_GONE — the category ' +
+      'the product was filed under is deleted, so it cannot come back (TASK-1831); the ' +
+      'product stays deleted',
   })
   @ApiResponse({ status: 403, description: 'Forbidden — needs products:delete' })
   @ApiResponse({ status: 404, description: 'No deleted product with this id' })

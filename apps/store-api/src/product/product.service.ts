@@ -19,6 +19,7 @@ import {
   ProductCategoryGoneError,
   ProductRestoreConflictError,
   type ProductUniqueClash,
+  categoryGoneProduct,
   conflictProduct,
   restoreConflictCode,
 } from './product.errors';
@@ -79,18 +80,13 @@ function listSortBy(requested: string | undefined, tombstones: boolean): string 
   return requested === undefined || requested === 'deletedAt' ? 'createdAt' : requested;
 }
 
-/** The 400 every "this product's category is gone" path answers with (invariant I1). */
-function categoryGone(): BadRequestException {
-  return new BadRequestException('Category not found');
-}
-
 /**
  * Map the repository's under-lock category check ({@link ProductCategoryGoneError}) onto
  * the same 400 the service's early check gives (TASK-1772); anything else re-throws.
  */
 function rethrowCategoryGone(error: unknown): never {
   if (error instanceof ProductCategoryGoneError) {
-    throw categoryGone();
+    throw categoryGoneProduct();
   }
   throw error;
 }
@@ -981,7 +977,8 @@ export class ProductService {
    * (TASK-1828), except a native address another live product now holds.
    *
    * Throws NotFoundException when no TOMBSTONE has this id (a live product included),
-   * and BadRequestException when its category is gone (TASK-653 invariant).
+   * and a 400 `PRODUCT_CATEGORY_GONE` when its category is gone (TASK-653 invariant,
+   * TASK-1831) — from the early check and from the repository's under-lock one alike.
    */
   async restore(
     id: string,
@@ -1050,7 +1047,7 @@ export class ProductService {
     sku: string | null,
   ): Promise<never> {
     if (error instanceof ProductCategoryGoneError) {
-      throw categoryGone();
+      throw categoryGoneProduct();
     }
     if (!(error instanceof ProductRestoreConflictError)) {
       throw error;
@@ -1104,7 +1101,7 @@ export class ProductService {
   private async ensureCategoryIsLive(categoryId: string): Promise<void> {
     const category = await this.categoryRepository.findById(categoryId);
     if (!category) {
-      throw categoryGone();
+      throw categoryGoneProduct();
     }
   }
 

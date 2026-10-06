@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { ProductRepository, ProductsNotFoundError } from '../src/product/product.repository';
+import { ProductCategoryGoneError } from '../src/product/product.errors';
 import { CategoryRepository } from '../src/category/category.repository';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -1430,6 +1431,38 @@ describe('ProductController (e2e)', () => {
         testProduct.slug, // native → new is redirected (TASK-1828)
       );
       expect(response.body.data.slug).toBe(`${testProduct.slug}-2`);
+    });
+
+    // TASK-1831: the category is gone — a stable code instead of a bare 400 the
+    // dialog had to interpret from the status and an empty body.
+    it('should return 400 PRODUCT_CATEGORY_GONE when the category is deleted (early check)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      categoryRepositoryMock.findById.mockResolvedValueOnce(null);
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/products/${testProduct.id}/restore`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        error: 'PRODUCT_CATEGORY_GONE',
+        message: 'Category not found',
+      });
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+    });
+
+    it('should return the same 400 PRODUCT_CATEGORY_GONE from the under-lock check', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.restore.mockRejectedValueOnce(new ProductCategoryGoneError());
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/products/${testProduct.id}/restore`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(400);
+
+      expect(response.body).toHaveProperty('error', 'PRODUCT_CATEGORY_GONE');
     });
 
     it('should return 400 for a malformed slug or an unknown field', async () => {

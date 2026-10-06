@@ -182,6 +182,11 @@ const configServiceMock = {
 // Both methods resolve by default; individual tests override to simulate a
 // failing indexer and assert it never breaks the product write.
 
+/** The stable `error` code an HttpException carries to the client (TASK-1831). */
+function errorCodeOf(error: unknown): string | undefined {
+  return ((error as BadRequestException).getResponse() as { error?: string }).error;
+}
+
 // TASK-1830: who deleted a product comes from the action log.
 const auditServiceMock = {
   findLatestActors: jest.fn(),
@@ -1112,6 +1117,7 @@ describe('ProductService', () => {
 
       expect(error).toBeInstanceOf(BadRequestException);
       expect((error as BadRequestException).message).toBe('Category not found');
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_GONE');
       expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
       expect(productIndexerMock.index).not.toHaveBeenCalled();
     });
@@ -1191,6 +1197,7 @@ describe('ProductService', () => {
 
       expect(error).toBeInstanceOf(BadRequestException);
       expect((error as BadRequestException).message).toBe('Category not found');
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_GONE');
       expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
       expect(productIndexerMock.index).not.toHaveBeenCalled();
     });
@@ -2405,10 +2412,14 @@ describe('ProductService', () => {
       );
     });
 
-    it('refuses (400) to restore into a deleted category and writes nothing', async () => {
+    it('refuses (400 PRODUCT_CATEGORY_GONE) to restore into a deleted category and writes nothing', async () => {
       categoryRepositoryMock.findById.mockResolvedValue(null);
 
-      await expect(service.restore(mockProduct.id)).rejects.toThrow(BadRequestException);
+      const error = await service.restore(mockProduct.id).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      // TASK-1831: a stable code, so the dialog need not guess from the status.
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_GONE');
       expect(categoryRepositoryMock.findById).toHaveBeenCalledWith(mockProduct.categoryId);
       expect(productRepositoryMock.restore).not.toHaveBeenCalled();
     });
@@ -2416,7 +2427,11 @@ describe('ProductService', () => {
     it('maps a category deleted before the locked write to the same 400, with no side effects', async () => {
       productRepositoryMock.restore.mockRejectedValue(new ProductCategoryGoneError());
 
-      await expect(service.restore(mockProduct.id)).rejects.toThrow(BadRequestException);
+      const error = await service.restore(mockProduct.id).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      // TASK-1831: the under-lock check answers with the same code as the early one.
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_GONE');
       expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
       expect(productIndexerMock.remove).not.toHaveBeenCalled();
     });
