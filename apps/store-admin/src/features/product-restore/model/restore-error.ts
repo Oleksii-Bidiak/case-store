@@ -15,7 +15,10 @@ const d = dict.products;
  * - 400 `PRODUCT_CATEGORY_GONE` — the product's category was deleted
  *   (TASK-1831: the API names it now, so nothing is guessed from the status
  *   or from whether the body was empty); any other 400 is the DTO, which the
- *   dialog validates with the same rules first — the generic text is honest.
+ *   dialog validates with the same rules first — the generic text is honest;
+ * - 409 `PRODUCT_CATEGORY_BUSY` — a category delete held the category tree
+ *   lock longer than the restore may wait: try again in a moment. (The slot
+ *   conflicts are 409s too, but `conflictFromCode` takes those first.)
  *
  * A restore is one write, so every text can say «нічого не змінилося».
  */
@@ -25,6 +28,9 @@ export function restoreErrorMessage(error: unknown): string {
   if (status === 404) return d.restoreErrorGone;
   if (status === 400 && apiErrorCode(error) === "PRODUCT_CATEGORY_GONE") {
     return d.restoreErrorCategory;
+  }
+  if (status === 409 && apiErrorCode(error) === "PRODUCT_CATEGORY_BUSY") {
+    return d.restoreErrorBusy;
   }
   return d.restoreErrorGeneric;
 }

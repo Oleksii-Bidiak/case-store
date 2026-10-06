@@ -900,6 +900,11 @@ export const dict = {
     // In «Видалені» the «Оновлено» column shows — and sorts by — the
     // deletion date; the sort button says so.
     colDeletedSortHint: "У виді «Видалені» — дата видалення товару.",
+
+    // ── ревʼю хвостів 185 U ──
+    // 409 PRODUCT_CATEGORY_BUSY on restore — the same lock as a save.
+    restoreErrorBusy:
+      "Категорії саме змінюються — спробуйте відновити ще раз за мить. Нічого не змінилося.",
   },
 
   // TASK-360: supplier-catalogue import.
@@ -1230,6 +1235,12 @@ export const dict = {
     savedPartly: (sections: string) =>
       `Решту вже збережено: ${sections}. Виправте розділ і натисніть «Зберегти» ще раз.`,
     saveFailedGeneric: "сервер не прийняв зміни",
+
+    // ── ревʼю хвостів 185 U ──
+    // 409 PRODUCT_CATEGORY_BUSY: a category delete held the tree lock longer
+    // than a save may wait. Nothing was written; the same save can be repeated.
+    errorCategoryBusy:
+      "Категорії саме змінюються — спробуйте зберегти ще раз за мить. Нічого не змінилося.",
   },
 
   // --- Categories (TASK-115) --------------------------------------------------

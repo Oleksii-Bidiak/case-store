@@ -405,6 +405,34 @@ describe("CreateProductView — replaying the staged areas onto the new product"
     // Nothing was staged away: the photo is still there to try again with.
     expect(screen.getByText("a.png")).toBeInTheDocument();
   });
+
+  it("says in Ukrainian that categories are busy, and keeps the form for a retry", async () => {
+    arrange();
+    server.use(
+      http.post("*/api/products", () =>
+        HttpResponse.json(
+          {
+            statusCode: 409,
+            message:
+              "Categories are being changed right now — try again in a moment",
+            error: "PRODUCT_CATEGORY_BUSY",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    renderWithProviders(<CreateProductView />);
+    await fillRequiredFields();
+    await submit();
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        dict.productForm.errorCategoryBusy,
+      ),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+  });
 });
 
 /**

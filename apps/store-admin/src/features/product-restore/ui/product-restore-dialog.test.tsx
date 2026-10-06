@@ -329,6 +329,8 @@ describe("ProductRestoreDialog (TASK-656)", () => {
     [400, undefined, d.restoreErrorGeneric],
     [403, undefined, d.restoreErrorForbidden],
     [500, undefined, d.restoreErrorGeneric],
+    // A category delete held the tree lock past the wait: a retry, not a slot.
+    [409, "PRODUCT_CATEGORY_BUSY", d.restoreErrorBusy],
   ])(
     "explains a %i %s in the dialog, without restoring",
     async (status, error, text) => {
