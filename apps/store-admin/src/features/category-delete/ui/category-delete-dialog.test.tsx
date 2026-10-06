@@ -1051,6 +1051,11 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
         "«Аудіоаксесуари» прихована: після переїзду 15 товарів зникнуть із сайту, а 1 карусель головної нічого не показуватиме, доки ви не покажете «Аудіоаксесуари».",
       ),
     ).toBeInTheDocument();
+    // The closed picker keeps the mark next to the choice, and the field's
+    // description carries it to a screen reader.
+    expect(targetBox()).toHaveAccessibleDescription(
+      expect.stringContaining(d.targetSelectedHidden),
+    );
     // The «не ховається» promise is gone; the products row says what is true.
     expect(screen.queryByText(d.productsSub)).not.toBeInTheDocument();
     const row = screen.getByText(d.productsSubHidden).closest("li");
@@ -1137,6 +1142,9 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
       await screen.findByRole("option", {
         name: optionName("Чохли для Pixel"),
       }),
+    );
+    expect(targetBox()).not.toHaveAccessibleDescription(
+      expect.stringContaining(d.targetSelectedHidden),
     );
     expect(
       screen.queryByText(/прихована: після переїзду/),

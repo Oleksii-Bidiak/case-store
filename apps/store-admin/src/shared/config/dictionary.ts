@@ -1622,6 +1622,9 @@ export const dict = {
       // the answer's `movedLiveProducts`) when soft-deleted ones moved too.
       toastAlsoDeleted: (count: number) =>
         `Разом із ними — ${countLabel(count, ["видалений товар", "видалені товари", "видалених товарів"])}: їх видно у виді «Видалені».`,
+      // The closed picker shows only the path; the badge keeps «прихована»
+      // next to the choice itself, not only in the warning further down.
+      targetSelectedHidden: "прихована",
     },
     // ── лише перегляд: право видаляти без права «Категорії» (TASK-1781) ──
     // `categories:delete` reads the tree and the card (the API half of

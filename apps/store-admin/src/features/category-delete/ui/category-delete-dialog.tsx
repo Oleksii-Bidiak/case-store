@@ -43,6 +43,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  Badge,
   Button,
   Callout,
   ErrorState,
@@ -744,6 +745,13 @@ function CategoryDeleteForm({
                 {errors.targetId?.message}
               </FieldError>
               <p id={targetHintId} className="text-xs text-muted-foreground">
+                {hiddenTargetName !== null ? (
+                  <>
+                    <Badge variant="secondary" className="mr-1.5">
+                      {d.targetSelectedHidden}
+                    </Badge>{" "}
+                  </>
+                ) : null}
                 {d.targetExcluded(name, hasChildren)}
               </p>
             </div>
