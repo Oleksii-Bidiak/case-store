@@ -3655,6 +3655,65 @@
         ]
       }
     },
+    "/api/products/{id}/restore": {
+      "post": {
+        "operationId": "restoreProduct",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Product UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreProductDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Product restored, inactive (isActive = false)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (slug pattern, length caps), or the product category is gone"
+          },
+          "403": {
+            "description": "Forbidden — needs products:delete"
+          },
+          "404": {
+            "description": "No deleted product with this id"
+          },
+          "409": {
+            "description": "PRODUCT_SLUG_CONFLICT, PRODUCT_SKU_CONFLICT or PRODUCT_SLUG_SKU_CONFLICT — a live product holds the slug / SKU / both; resend with a new value. Nothing was written"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Restore a soft-deleted product, hidden (admin)",
+        "tags": [
+          "Products"
+        ]
+      }
+    },
     "/api/products/{productId}/images": {
       "get": {
         "operationId": "productImageControllerList",
@@ -18868,6 +18927,21 @@
         "required": [
           "data"
         ]
+      },
+      "RestoreProductDto": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "A new slug — send it only after a 409 PRODUCT_SLUG_CONFLICT / PRODUCT_SLUG_SKU_CONFLICT; omitted = the slug the product had before it was deleted",
+            "example": "iphone-15-pro-case-clear-magsafe-2"
+          },
+          "sku": {
+            "type": "string",
+            "description": "A new SKU — send it only after a 409 PRODUCT_SKU_CONFLICT / PRODUCT_SLUG_SKU_CONFLICT; omitted = the SKU the product had before it was deleted",
+            "example": "IP15-PRO-CASE-CLR-2"
+          }
+        }
       },
       "ProductImageListEnvelope": {
         "type": "object",

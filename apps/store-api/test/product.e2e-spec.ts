@@ -72,6 +72,9 @@ describe('ProductController (e2e)', () => {
     // TASK-427: DELETE /api/products/:id finally has a caller in the panel, so
     // the soft-delete path is exercised here too.
     softDelete: jest.fn(),
+    // TASK-656: POST /api/products/:id/restore reads the tombstone and writes it back.
+    findDeletedById: jest.fn(),
+    restore: jest.fn(),
     // TASK-254: adminFindAll/findById/preview enrich with the derived reserved
     // aggregate; default to an empty map (no reservations) for these mocked reads.
     getReservedQtyByProductId: jest.fn().mockResolvedValue(new Map<string, number>()),
@@ -1187,6 +1190,166 @@ describe('ProductController (e2e)', () => {
         .expect(404);
 
       expect(productRepositoryMock.softDelete).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── POST /api/products/:id/restore (admin, TASK-656) ────────────────────────
+  //
+  // The inverse of DELETE, under the same `products:delete` key. The product comes
+  // back HIDDEN on its native slug/SKU; a slot a live product now holds is a 409
+  // whose `error` names the field, and nothing is written.
+  describe('POST /api/products/:id/restore', () => {
+    const prefix = `deleted:${testProduct.id}:`;
+    const tombstone = {
+      ...testProduct,
+      isActive: false,
+      slug: `${prefix}${testProduct.slug}`,
+      sku: `${prefix}${testProduct.sku}`,
+      deletedAt: new Date('2026-09-12T10:00:00.000Z'),
+    };
+    const liveHolder = { ...testProduct, id: 'product-e2e-new' };
+
+    beforeEach(() => {
+      productRepositoryMock.findDeletedById.mockResolvedValue(tombstone);
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.restore.mockImplementation(
+        (id: string, slug: string, sku: string | null) =>
+          Promise.resolve({ ...tombstone, id, slug, sku, isActive: false, deletedAt: null }),
+      );
+    });
+
+    it('should return 401 without auth token', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/products/${testProduct.id}/restore`)
+        .send({})
+        .expect(401);
+    });
+
+    it('should return 403 for a customer', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${testProduct.id}/restore`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(403);
+    });
+
+    it('should return 403 for a manager without products:delete', async () => {
+      const token = generateAccessToken('manager-e2e-1', 'MANAGER');
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${testProduct.id}/restore`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(403);
+
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+    });
+
+    it('restores hidden on the native slug and sku, answering 200 { data }', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/products/${testProduct.id}/restore`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(200);
+
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        testProduct.id,
+        testProduct.slug,
+        testProduct.sku,
+      );
+      expect(response.body.data).toMatchObject({
+        id: testProduct.id,
+        slug: testProduct.slug,
+        sku: testProduct.sku,
+        isActive: false,
+      });
+      expect(response.body.data).not.toHaveProperty('deletedAt');
+    });
+
+    it('accepts a request with no body at all', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${testProduct.id}/restore`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+    });
+
+    it('should return 404 for a live or unknown id, writing nothing', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findDeletedById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post('/api/products/nonexistent-id/restore')
+        .set('Authorization', `Bearer ${token}`)
+        .send({})
+        .expect(404);
+
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['slug', true, false, 'PRODUCT_SLUG_CONFLICT'],
+      ['sku', false, true, 'PRODUCT_SKU_CONFLICT'],
+      ['slug and sku', true, true, 'PRODUCT_SLUG_SKU_CONFLICT'],
+    ])(
+      'should return 409 naming the taken %s and leave the product deleted',
+      async (_label, slugTaken, skuTaken, code) => {
+        const token = generateAccessToken(testAdmin.id, 'ADMIN');
+        productRepositoryMock.findBySlug.mockResolvedValue(slugTaken ? liveHolder : null);
+        productRepositoryMock.findBySku.mockResolvedValue(skuTaken ? liveHolder : null);
+
+        const response = await request(app.getHttpServer())
+          .post(`/api/products/${testProduct.id}/restore`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({})
+          .expect(409);
+
+        expect(response.body.error).toBe(code);
+        expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+      },
+    );
+
+    it('restores on a new slug sent after a 409', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findBySlug.mockImplementation((slug: string) =>
+        Promise.resolve(slug === testProduct.slug ? liveHolder : null),
+      );
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/products/${testProduct.id}/restore`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ slug: `${testProduct.slug}-2` })
+        .expect(200);
+
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        testProduct.id,
+        `${testProduct.slug}-2`,
+        testProduct.sku,
+      );
+      expect(response.body.data.slug).toBe(`${testProduct.slug}-2`);
+    });
+
+    it('should return 400 for a malformed slug or an unknown field', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${testProduct.id}/restore`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ slug: 'Not A Slug' })
+        .expect(400);
+      await request(app.getHttpServer())
+        .post(`/api/products/${testProduct.id}/restore`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ isActive: true })
+        .expect(400);
+
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
     });
   });
 });

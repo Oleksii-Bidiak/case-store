@@ -8,6 +8,7 @@ import {
   CreateProductInput,
   UpdateProductInput,
 } from './product.repository';
+import { ProductRestoreConflictError } from './product.errors';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
 import { ProductSpecRepository } from './product-spec.repository';
 import { CategoryRepository } from '../category';
@@ -84,6 +85,9 @@ const productRepositoryMock = {
   findCategoriesForBulk: jest.fn(),
   setColorMany: jest.fn(),
   softDelete: jest.fn(),
+  // TASK-656: restore reads ONLY tombstones and writes the restored row.
+  findDeletedById: jest.fn(),
+  restore: jest.fn(),
   // TASK-254: derived reserved-qty aggregate. Defaults to an empty map (no
   // reservations); individual tests override to assert the enrichment.
   getReservedQtyByProductId: jest.fn().mockResolvedValue(new Map<string, number>()),
@@ -2085,6 +2089,196 @@ describe('ProductService', () => {
       });
 
       const result = await service.delete('product-uuid-1');
+
+      expect(result).not.toHaveProperty('deletedAt');
+    });
+  });
+
+  // ─── restore (TASK-656) ──────────────────────────────────────────────────────
+  // The inverse of delete(): the tombstone comes back HIDDEN on its native
+  // slug/SKU (the exact `deleted:<id>:` prefix removed), or answers 409 with a
+  // code naming the taken field — and then nothing is written.
+
+  describe('restore', () => {
+    const prefix = `deleted:${mockProduct.id}:`;
+    const tombstone = {
+      ...mockProduct,
+      isActive: false,
+      slug: `${prefix}${mockProduct.slug}`,
+      sku: `${prefix}${mockProduct.sku}`,
+      deletedAt: new Date('2026-09-12T10:00:00.000Z'),
+    };
+    const liveHolder = { ...mockProduct, id: 'someone-else' };
+
+    /** The `error` code a thrown 409 carries to the client. */
+    async function conflictCodeOf(promise: Promise<unknown>): Promise<string> {
+      const error = await promise.then(
+        () => {
+          throw new Error('expected a ConflictException');
+        },
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(ConflictException);
+      return ((error as ConflictException).getResponse() as { error: string }).error;
+    }
+
+    beforeEach(() => {
+      productRepositoryMock.findDeletedById.mockResolvedValue(tombstone);
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.restore.mockImplementation(
+        (id: string, slug: string, sku: string | null) =>
+          Promise.resolve({ ...tombstone, id, slug, sku, isActive: false, deletedAt: null }),
+      );
+    });
+
+    it('brings the product back on its native slug and sku, with the exact prefix removed', async () => {
+      const result = await service.restore(mockProduct.id);
+
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        mockProduct.id,
+        mockProduct.slug,
+        mockProduct.sku,
+      );
+      expect(productRepositoryMock.findBySlug).toHaveBeenCalledWith(mockProduct.slug);
+      expect(productRepositoryMock.findBySku).toHaveBeenCalledWith(mockProduct.sku);
+      expect(result).toBeInstanceOf(ProductEntity);
+      expect(result.slug).toBe(mockProduct.slug);
+      expect(result.sku).toBe(mockProduct.sku);
+    });
+
+    it('comes back hidden — the restored product is inactive', async () => {
+      const result = await service.restore(mockProduct.id);
+
+      expect(result.isActive).toBe(false);
+      // Inactive → removed from (never added to) the search index.
+      expect(productIndexerMock.remove).toHaveBeenCalledWith(mockProduct.id);
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
+
+    it('strips only the prefix, so a native value containing ":" survives intact', async () => {
+      productRepositoryMock.findDeletedById.mockResolvedValue({
+        ...tombstone,
+        sku: `${prefix}IP15:CLR:01`,
+      });
+
+      await service.restore(mockProduct.id);
+
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        mockProduct.id,
+        mockProduct.slug,
+        'IP15:CLR:01',
+      );
+    });
+
+    it('keeps a null sku null and never looks it up', async () => {
+      productRepositoryMock.findDeletedById.mockResolvedValue({ ...tombstone, sku: null });
+
+      await service.restore(mockProduct.id);
+
+      expect(productRepositoryMock.findBySku).not.toHaveBeenCalled();
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        mockProduct.id,
+        mockProduct.slug,
+        null,
+      );
+    });
+
+    it('reads the tombstone only — a live or unknown id is 404 and nothing is written', async () => {
+      productRepositoryMock.findDeletedById.mockResolvedValue(null);
+
+      await expect(service.restore('live-or-unknown')).rejects.toThrow(NotFoundException);
+      expect(productRepositoryMock.findDeletedById).toHaveBeenCalledWith('live-or-unknown');
+      expect(productRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 PRODUCT_SLUG_CONFLICT on a taken slug and leaves the product deleted', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(liveHolder);
+
+      expect(await conflictCodeOf(service.restore(mockProduct.id))).toBe('PRODUCT_SLUG_CONFLICT');
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 PRODUCT_SKU_CONFLICT on a taken sku', async () => {
+      productRepositoryMock.findBySku.mockResolvedValue(liveHolder);
+
+      expect(await conflictCodeOf(service.restore(mockProduct.id))).toBe('PRODUCT_SKU_CONFLICT');
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 PRODUCT_SLUG_SKU_CONFLICT when both are taken', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(liveHolder);
+      productRepositoryMock.findBySku.mockResolvedValue(liveHolder);
+
+      expect(await conflictCodeOf(service.restore(mockProduct.id))).toBe(
+        'PRODUCT_SLUG_SKU_CONFLICT',
+      );
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+    });
+
+    it('restores on an override slug, checking the override rather than the native one', async () => {
+      productRepositoryMock.findBySlug.mockImplementation((slug: string) =>
+        Promise.resolve(slug === mockProduct.slug ? liveHolder : null),
+      );
+
+      const result = await service.restore(mockProduct.id, { slug: 'clear-case-2' });
+
+      expect(productRepositoryMock.findBySlug).toHaveBeenCalledWith('clear-case-2');
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        mockProduct.id,
+        'clear-case-2',
+        mockProduct.sku,
+      );
+      expect(result.slug).toBe('clear-case-2');
+    });
+
+    it('restores on an override sku', async () => {
+      await service.restore(mockProduct.id, { sku: 'IP15-NEW' });
+
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        mockProduct.id,
+        mockProduct.slug,
+        'IP15-NEW',
+      );
+    });
+
+    it('refuses (400) to restore into a deleted category and writes nothing', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.restore(mockProduct.id)).rejects.toThrow(BadRequestException);
+      expect(categoryRepositoryMock.findById).toHaveBeenCalledWith(mockProduct.categoryId);
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+    });
+
+    it('maps a lost race on the write (P2002 on slug) to the same 409', async () => {
+      productRepositoryMock.restore.mockRejectedValue(
+        new ProductRestoreConflictError({ slug: true, sku: false }),
+      );
+
+      expect(await conflictCodeOf(service.restore(mockProduct.id))).toBe('PRODUCT_SLUG_CONFLICT');
+    });
+
+    it('re-reads which slot is taken when the violated constraint was not identified', async () => {
+      productRepositoryMock.restore.mockRejectedValue(new ProductRestoreConflictError(null));
+      // The up-front check saw both free; by the re-read the sku has been taken.
+      productRepositoryMock.findBySku.mockResolvedValueOnce(null).mockResolvedValueOnce(liveHolder);
+
+      expect(await conflictCodeOf(service.restore(mockProduct.id))).toBe('PRODUCT_SKU_CONFLICT');
+    });
+
+    it('evicts the lists and the restored slug detail entry, like delete()', async () => {
+      await service.restore(mockProduct.id);
+
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailIdKey(mockProduct.id));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey(mockProduct.slug));
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(CATALOGUE_REVALIDATE_TARGET);
+    });
+
+    it('does not expose deletedAt on the returned entity', async () => {
+      const result = await service.restore(mockProduct.id);
 
       expect(result).not.toHaveProperty('deletedAt');
     });

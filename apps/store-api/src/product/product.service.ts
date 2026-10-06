@@ -14,6 +14,13 @@ import {
   UpdateProductInput,
   FindAllParams,
 } from './product.repository';
+import {
+  ProductErrorCode,
+  ProductRestoreConflictError,
+  type ProductUniqueClash,
+  conflictProduct,
+  restoreConflictCode,
+} from './product.errors';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
 import { ProductSpecRepository, SpecValueWrite } from './product-spec.repository';
 import { CategoryRepository } from '../category';
@@ -45,6 +52,15 @@ import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing
 
 /** Fallback TTL (seconds) when REDIS_CACHE_TTL_SECONDS is not configured. */
 const DEFAULT_CACHE_TTL_SECONDS = 300;
+
+/**
+ * Undo the `deleted:<id>:` mangling of a tombstone's slug/SKU (TASK-656). Only the
+ * EXACT prefix is removed — a value that itself contains `:` survives intact. A value
+ * without the prefix is returned as-is.
+ */
+function stripTombstonePrefix(value: string, prefix: string): string {
+  return value.startsWith(prefix) ? value.slice(prefix.length) : value;
+}
 
 /**
  * A product together with the relations its detail page renders: category,
@@ -866,6 +882,100 @@ export class ProductService {
       ...deleted,
       reservedQty: await this.reservedQtyFor(deleted.id),
     });
+  }
+
+  /**
+   * Restore a soft-deleted product (admin-only, TASK-656) — the inverse of
+   * {@link ProductService.delete}.
+   *
+   * The product comes back HIDDEN (`isActive = false`): it went off the storefront
+   * when it was deleted, and putting it back on sale is the operator's separate call.
+   * Its native slug/SKU are recovered by removing the exact `deleted:<id>:` prefix
+   * `delete()` added — never by splitting on `:`, which would corrupt a value that
+   * itself contains a colon. `overrides` replaces either one; the restore dialog sends
+   * it after a 409 told the operator which address is taken.
+   *
+   * There is no silent suffix: when a live product now holds the slug or SKU, this
+   * answers 409 with a code naming the field(s) and writes nothing — the product
+   * stays deleted. The same mapping covers the race where the slot is taken between
+   * this check and the write (P2002 → {@link ProductRestoreConflictError}).
+   *
+   * Throws NotFoundException when no TOMBSTONE has this id (a live product included),
+   * and BadRequestException when its category is gone (TASK-653 invariant).
+   */
+  async restore(
+    id: string,
+    overrides: { slug?: string; sku?: string } = {},
+  ): Promise<ProductEntity> {
+    const tombstone = await this.productRepository.findDeletedById(id);
+
+    if (!tombstone) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const tombstonePrefix = `deleted:${tombstone.id}:`;
+    const nativeSlug = stripTombstonePrefix(tombstone.slug, tombstonePrefix);
+    const nativeSku =
+      tombstone.sku === null ? null : stripTombstonePrefix(tombstone.sku, tombstonePrefix);
+    const slug = overrides.slug ?? nativeSlug;
+    const sku = overrides.sku ?? nativeSku;
+
+    // Deleting a category moves its soft-deleted products out too (invariant I1),
+    // so this is a guard, not an expected path — but a product must never come back
+    // into a tombstoned category, where no public read would ever show it.
+    await this.ensureCategoryIsLive(tombstone.categoryId);
+
+    const clash = await this.findUniqueClash(slug, sku);
+    const code = restoreConflictCode(clash);
+    if (code) {
+      throw conflictProduct(code);
+    }
+
+    const restored = await this.productRepository
+      .restore(id, slug, sku)
+      .catch((error: unknown) => this.rethrowRestoreRace(error, slug, sku));
+
+    // Same side effects as delete(), in reverse: lists change (the product is back in
+    // the admin's live view), the restored slug's detail entry must not serve a
+    // cached 404, and the search index is re-synced (inactive → removed).
+    await this.invalidateProductLists();
+    await this.evictProductDetail(id, restored.slug);
+    await this.syncSearchIndex(restored);
+
+    return ProductEntity.fromPrisma({
+      ...restored,
+      reservedQty: await this.reservedQtyFor(restored.id),
+    });
+  }
+
+  /**
+   * Map a restore write that lost the race for a unique slot onto the same 409 the
+   * up-front check gives. When Prisma did not say which constraint fired, re-read
+   * which slot is held; a violation nobody can be found holding any more still was
+   * one, so it names every field being written and the dialog asks for all of them.
+   */
+  private async rethrowRestoreRace(
+    error: unknown,
+    slug: string,
+    sku: string | null,
+  ): Promise<never> {
+    if (!(error instanceof ProductRestoreConflictError)) {
+      throw error;
+    }
+    const clash = error.clash ?? (await this.findUniqueClash(slug, sku));
+    throw conflictProduct(
+      restoreConflictCode(clash) ??
+        (sku === null ? ProductErrorCode.SLUG_CONFLICT : ProductErrorCode.SLUG_SKU_CONFLICT),
+    );
+  }
+
+  /** Which of `slug`/`sku` a LIVE product already holds (a null SKU never clashes). */
+  private async findUniqueClash(slug: string, sku: string | null): Promise<ProductUniqueClash> {
+    const [slugHolder, skuHolder] = await Promise.all([
+      this.productRepository.findBySlug(slug),
+      sku === null ? Promise.resolve(null) : this.productRepository.findBySku(sku),
+    ]);
+    return { slug: slugHolder !== null, sku: skuHolder !== null };
   }
 
   /**

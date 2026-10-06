@@ -14,6 +14,7 @@ import { PRE_SHIPMENT_STATUSES } from '../order/order.constants';
 import { COUNTS_TOWARD_RATING } from '../review/review.constants';
 import { COLOR_SPEC_KEY, isColorAxis, withColorAxis } from '../common/color-axis';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
+import { ProductRestoreConflictError, uniqueClashFromPrismaMeta } from './product.errors';
 
 /**
  * Interactive-transaction budget for the bulk colour write (TASK-487). See the
@@ -1451,5 +1452,39 @@ export class ProductRepository {
         sku: mangledSku,
       },
     });
+  }
+
+  /**
+   * Find a SOFT-DELETED product by id (TASK-656) — the one read that looks only at
+   * tombstones. Every other read hides them; restore needs exactly the opposite, so a
+   * live id answers null here just as an unknown one does.
+   */
+  findDeletedById(id: string): Promise<Product | null> {
+    return this.prisma.product.findFirst({ where: { id, deletedAt: { not: null } } });
+  }
+
+  /**
+   * Bring a tombstoned product back (TASK-656): clear `deletedAt`, put back the given
+   * `slug`/`sku`, and leave it HIDDEN (`isActive = false`) — re-publishing is a separate,
+   * deliberate act, so a restored product cannot reappear on the storefront unasked.
+   *
+   * The `deletedAt: { not: null }` guard makes a concurrent double restore a P2025
+   * (→ 404 via the global Prisma translator) instead of a second write. A unique
+   * violation — another product took the slug or SKU after the service checked them —
+   * is re-thrown as {@link ProductRestoreConflictError}, naming the column(s) when
+   * Prisma's metadata says which; the product stays deleted.
+   */
+  async restore(id: string, slug: string, sku: string | null): Promise<Product> {
+    try {
+      return await this.prisma.product.update({
+        where: { id, deletedAt: { not: null } },
+        data: { deletedAt: null, isActive: false, slug, sku },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ProductRestoreConflictError(uniqueClashFromPrismaMeta(error.meta));
+      }
+      throw error;
+    }
   }
 }

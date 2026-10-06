@@ -5259,6 +5259,10 @@ export const dict = {
       uploadBrandLogo: "завантажено логотип бренду",
       uploadCategoryImage: "завантажено зображення категорії",
       uploadLogo: "завантажено логотип",
+      // ── відновлення товару (TASK-656) ──
+      // `POST /api/products/:id/restore` derives `product.restore`: a deleted
+      // product brought back, hidden.
+      restore: "відновлено",
     },
 
     /** How the two halves are joined: «Замовлення — змінено статус». */

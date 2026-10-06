@@ -1,5 +1,6 @@
-import { OrderStatus, SlugRedirectEntity } from '@prisma/client';
+import { OrderStatus, Prisma, SlugRedirectEntity } from '@prisma/client';
 import { ProductRepository } from './product.repository';
+import { ProductRestoreConflictError } from './product.errors';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
@@ -863,6 +864,77 @@ describe('ProductRepository (soft-delete behaviour)', () => {
 
       const updateArgs = prismaMock.product.update.mock.calls[0][0];
       expect(updateArgs.data.sku).toBeNull();
+    });
+  });
+
+  // ─── restore (TASK-656) ─────────────────────────────────────────────────────
+
+  describe('findDeletedById', () => {
+    it('reads ONLY tombstones — the inverse of every other read', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+
+      await repository.findDeletedById('product-1');
+
+      expect(prismaMock.product.findFirst).toHaveBeenCalledWith({
+        where: { id: 'product-1', deletedAt: { not: null } },
+      });
+    });
+  });
+
+  describe('restore', () => {
+    function uniqueViolation(meta: Record<string, unknown>): Prisma.PrismaClientKnownRequestError {
+      return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+        meta,
+      });
+    }
+
+    it('clears deletedAt, keeps the product hidden and writes the given slug/sku, tombstones only', async () => {
+      prismaMock.product.update.mockResolvedValue({ id: 'product-1' });
+
+      await repository.restore('product-1', 'clear-case', 'SKU-1');
+
+      expect(prismaMock.product.update).toHaveBeenCalledWith({
+        where: { id: 'product-1', deletedAt: { not: null } },
+        data: { deletedAt: null, isActive: false, slug: 'clear-case', sku: 'SKU-1' },
+      });
+    });
+
+    it('never records a slug redirect', async () => {
+      prismaMock.product.update.mockResolvedValue({ id: 'product-1' });
+
+      await repository.restore('product-1', 'clear-case', null);
+
+      expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['meta.target column list', { target: ['slug'] }, { slug: true, sku: false }],
+      ['meta.target constraint name', { target: 'products_sku_key' }, { slug: false, sku: true }],
+      [
+        'driver-adapter constraint fields',
+        { driverAdapterError: { cause: { constraint: { fields: ['slug', 'sku'] } } } },
+        { slug: true, sku: true },
+      ],
+      ['unidentifiable metadata', { modelName: 'Product' }, null],
+    ])('maps a P2002 named by %s onto ProductRestoreConflictError', async (_label, meta, clash) => {
+      prismaMock.product.update.mockRejectedValue(uniqueViolation(meta));
+
+      const error = await repository.restore('product-1', 'clear-case', 'SKU-1').catch((e) => e);
+
+      expect(error).toBeInstanceOf(ProductRestoreConflictError);
+      expect((error as ProductRestoreConflictError).clash).toEqual(clash);
+    });
+
+    it('re-throws any other error untouched', async () => {
+      const notFound = new Prisma.PrismaClientKnownRequestError('Record not found', {
+        code: 'P2025',
+        clientVersion: 'test',
+      });
+      prismaMock.product.update.mockRejectedValue(notFound);
+
+      await expect(repository.restore('product-1', 'clear-case', null)).rejects.toBe(notFound);
     });
   });
 

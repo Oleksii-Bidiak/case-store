@@ -20,6 +20,7 @@ import {
   ApiParam,
   ApiExtraModels,
   ApiProperty,
+  ApiBody,
 } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import {
@@ -32,6 +33,7 @@ import {
   BulkProductStatusDto,
   BulkProductGroupDto,
   BulkProductColorDto,
+  RestoreProductDto,
 } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import {
@@ -753,5 +755,50 @@ export class ProductController {
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async remove(@Param('id') id: string): Promise<void> {
     await this.productService.delete(id);
+  }
+
+  /**
+   * POST /api/products/:id/restore
+   *
+   * Restores a soft-deleted product (TASK-656) — the inverse of DELETE. It comes
+   * back HIDDEN (`isActive = false`) on the slug and SKU it had before deletion;
+   * the body may name a new `slug`/`sku` after a 409 said which one is taken.
+   * Nothing is written on a 409 — the product stays deleted.
+   *
+   * Same permission as DELETE: whoever may delete a product may undo it, so there
+   * is no separate key to grant.
+   */
+  @Post(':id/restore')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:delete')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Restore a soft-deleted product, hidden (admin)',
+    operationId: 'restoreProduct',
+  })
+  @ApiParam({ name: 'id', description: 'Product UUID' })
+  @ApiBody({ type: RestoreProductDto, required: false })
+  @ApiResponse({
+    status: 200,
+    description: 'Product restored, inactive (isActive = false)',
+    type: ProductResponseEnvelope,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error (slug pattern, length caps), or the product category is gone',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — needs products:delete' })
+  @ApiResponse({ status: 404, description: 'No deleted product with this id' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'PRODUCT_SLUG_CONFLICT, PRODUCT_SKU_CONFLICT or PRODUCT_SLUG_SKU_CONFLICT — a live ' +
+      'product holds the slug / SKU / both; resend with a new value. Nothing was written',
+  })
+  async restore(@Param('id') id: string, @Body() dto: RestoreProductDto): Promise<ProductResponse> {
+    const product = await this.productService.restore(id, { slug: dto.slug, sku: dto.sku });
+
+    return { data: product };
   }
 }
