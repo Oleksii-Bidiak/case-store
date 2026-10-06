@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   OrderTotalsBreakdown,
+  OrderDeliveryBlock,
   orderDeliveryDetails,
   useGetGuestOrder,
 } from "@/entities/order";
@@ -10,7 +11,7 @@ import { dict, H1_CLASS } from "@/shared/config";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
-import { OrderAddressSummary } from "./order-address-summary";
+import { OrderBillingAddress } from "./order-billing-address";
 
 interface GuestOrderViewProps {
   /** Opaque access token from the confirmation email. */
@@ -83,7 +84,8 @@ export function GuestOrderView({ token }: GuestOrderViewProps) {
       <div className="flex flex-col gap-8 lg:grid lg:grid-cols-3">
         <div className="flex flex-col gap-8 lg:col-span-2">
           <OrderItemList items={order.items} />
-          <OrderAddressSummary
+          <OrderDeliveryBlock order={order} />
+          <OrderBillingAddress
             shippingAddress={order.shippingAddress}
             billingAddress={order.billingAddress}
           />

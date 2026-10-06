@@ -35,9 +35,26 @@ describe("CheckoutOrderSummary", () => {
   it("asks the shopper to select a city before anything is estimated", async () => {
     renderWithProviders(<CheckoutOrderSummary />, authed);
 
+    const hint = await screen.findByText(dict.checkout.shippingSelectCity);
+    // TASK-647: a neutral hint, not a figure — muted, never mono, no note.
+    expect(hint).toHaveClass("text-muted-foreground");
+    expect(hint).not.toHaveClass("font-mono");
     expect(
-      await screen.findByText(dict.checkout.shippingSelectCity),
-    ).toBeInTheDocument();
+      screen.queryByText(dict.checkout.delivery.summaryWithoutShipping),
+    ).toBeNull();
+  });
+
+  // TASK-1097: a city typed by hand is not an NP city still to be chosen.
+  it("never asks a manually typed city to be selected", async () => {
+    renderWithProviders(
+      <CheckoutOrderSummary method="NOVA_POSHTA" npManual />,
+      authed,
+    );
+
+    expect(
+      await screen.findByText(dict.checkout.shippingCostUnknown),
+    ).not.toHaveClass("font-mono");
+    expect(screen.queryByText(dict.checkout.shippingSelectCity)).toBeNull();
   });
 
   it("says an operator will confirm the cost when the estimate fails", async () => {

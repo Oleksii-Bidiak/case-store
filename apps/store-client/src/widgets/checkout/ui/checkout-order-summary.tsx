@@ -41,8 +41,10 @@ function ShippingValue({ quote }: { quote: DeliveryQuote }) {
         </span>
       );
     case "select-city":
+      // Nova Poshta before a city is picked: a neutral hint, not a price —
+      // never on the manual path (TASK-1097), which quotes «pending».
       return (
-        <span className="text-right text-foreground">
+        <span className="text-right text-muted-foreground">
           {dict.checkout.shippingSelectCity}
         </span>
       );

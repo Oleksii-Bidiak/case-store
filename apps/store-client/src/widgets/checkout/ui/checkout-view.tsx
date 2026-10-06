@@ -347,11 +347,16 @@ export function CheckoutView() {
   };
 
   // The same «До сплати» the order summary prints (TASK-864), for the bar.
-  const { totalText } = useCheckoutTotal({
+  const { totalText, excludesShipping } = useCheckoutTotal({
     method: deliveryMethod,
     npManual,
     npCityRef,
   });
+  // TASK-647: the bar says what the summary says under «До сплати» — a total
+  // that leaves an unpriced delivery out must not pass for the bill.
+  const payBarNote = excludesShipping
+    ? dict.checkout.delivery.payBarWithoutShipping
+    : undefined;
 
   const items = data?.data?.items ?? [];
   const cartIsEmpty = !isInitializing && !isCartLoading && items.length === 0;
@@ -512,7 +517,11 @@ export function CheckoutView() {
               {/* Below md the step's primary rides in the fixed «До сплати»
                   bar (TASK-864); from md up the bar dissolves and the button
                   sits here, under the form, as before. */}
-              <MobilePayBar label={dict.checkout.totalLine} amount={totalText}>
+              <MobilePayBar
+                label={dict.checkout.totalLine}
+                amount={totalText}
+                amountNote={payBarNote}
+              >
                 <Button
                   type="submit"
                   size="lg"
@@ -571,6 +580,7 @@ export function CheckoutView() {
                 <MobilePayBar
                   label={dict.checkout.totalLine}
                   amount={totalText}
+                  amountNote={payBarNote}
                 >
                   <Button
                     type="submit"

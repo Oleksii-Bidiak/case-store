@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import {
+  OrderDeliveryMapLink,
+  OrderDeliveryNote,
   OrderItemRow,
   OrderTrackingNumber,
   orderDeliveryDetails,
@@ -83,10 +85,21 @@ function DeliveryRow({
  * snapshot has nothing for are left out rather than printed empty. The «ТТН»
  * row is for a Nova Poshta parcel (or any order an operator gave a waybill):
  * the number with copy / track, or «Ще не передано перевізнику».
+ *
+ * TASK-647: the same facts as the confirmation page's `OrderDeliveryBlock` —
+ * a pickup point with its hours, phone and «Як дістатися ↗» as they were at
+ * checkout; an unpriced «інша доставка» with the note that an operator will
+ * quote it.
  */
 export function OrderDetailDelivery({ order }: { order: OrderEntity }) {
   const t = dict.order.detail;
   const delivery = orderDeliveryDetails(order);
+  const pickupHours = delivery.pickup
+    ? [delivery.pickup.hours, delivery.pickup.phone].filter(Boolean).join(" · ")
+    : "";
+  const mapUrl = delivery.pickup?.mapUrl ?? null;
+  const otherPending =
+    order.deliveryMethod === "OTHER" && delivery.shippingCostPending;
   const placeTerm = delivery.place
     ? {
         warehouse: t.deliveryWarehouse,
@@ -119,7 +132,15 @@ export function OrderDetailDelivery({ order }: { order: OrderEntity }) {
           <DeliveryRow term={t.deliveryCity}>{delivery.city}</DeliveryRow>
         )}
         {delivery.place && placeTerm && (
-          <DeliveryRow term={placeTerm}>{delivery.place.value}</DeliveryRow>
+          <DeliveryRow term={placeTerm}>
+            <span className="block">{delivery.place.value}</span>
+            {mapUrl && <OrderDeliveryMapLink href={mapUrl} />}
+          </DeliveryRow>
+        )}
+        {pickupHours && (
+          <DeliveryRow term={dict.order.deliveryBlock.hoursTerm}>
+            {pickupHours}
+          </DeliveryRow>
         )}
         {showTracking && (
           <DeliveryRow term={t.deliveryTracking}>
@@ -134,6 +155,13 @@ export function OrderDetailDelivery({ order }: { order: OrderEntity }) {
           </DeliveryRow>
         )}
       </dl>
+      {otherPending && (
+        <div className="mt-3.5">
+          <OrderDeliveryNote>
+            {dict.order.deliveryBlock.otherNote}
+          </OrderDeliveryNote>
+        </div>
+      )}
     </DetailCard>
   );
 }

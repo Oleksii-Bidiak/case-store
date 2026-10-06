@@ -4,6 +4,7 @@ import {
   screen,
   waitFor,
   userEvent,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { makeOrder } from "@/shared/test/msw-handlers";
@@ -150,13 +151,117 @@ describe("OrderConfirmationView", () => {
 
   it("localizes the country code instead of rendering the raw ISO value", async () => {
     server.use(
-      http.get("*/api/orders/:id", () => HttpResponse.json(makeOrder())),
+      http.get("*/api/orders/:id", () =>
+        HttpResponse.json(
+          makeOrder({
+            billingAddress: {
+              firstName: "ТОВ",
+              lastName: "Ромашка",
+              address1: "вул. Банкова, 1",
+              city: "Київ",
+              country: "UA",
+            },
+          }),
+        ),
+      ),
     );
 
     renderWithProviders(<OrderConfirmationView orderId="order-1" />, authed);
 
     expect(await screen.findByText("Україна")).toBeInTheDocument();
     expect(screen.queryByText("UA")).not.toBeInTheDocument();
+  });
+
+  // ── TASK-647 / TASK-1022: «Доставка» instead of «Адреса доставки» ─────────
+  describe("delivery block", () => {
+    const t = dict.order.deliveryBlock;
+
+    async function renderWith(
+      overrides: Parameters<typeof makeOrder>[0],
+    ): Promise<void> {
+      server.use(
+        http.get("*/api/orders/:id", () =>
+          HttpResponse.json(makeOrder(overrides)),
+        ),
+      );
+      renderWithProviders(<OrderConfirmationView orderId="order-1" />, authed);
+      await screen.findByRole("heading", { name: dict.order.thankYou });
+    }
+
+    const totals = () => within(screen.getByTestId("order-totals"));
+
+    it("pickup — the point, its hours and map, and a free delivery", async () => {
+      await renderWith({
+        deliveryMethod: "PICKUP",
+        shippingCost: "0.00",
+        shippingAddress: {
+          firstName: "Олег",
+          lastName: "Коваль",
+          city: "Київ",
+          address1: "вул. Хрещатик, 22",
+          pickupPointName: "Магазин на Хрещатику",
+          pickupPointAddress: "вул. Хрещатик, 22",
+          pickupPointHours: "Пн–Сб 10:00–20:00",
+          pickupPointMapUrl: "https://maps.app.goo.gl/abc",
+        },
+      });
+
+      const block = within(screen.getByTestId("order-delivery"));
+      expect(
+        block.getByText(t.pickupTitle("Магазин на Хрещатику")),
+      ).toBeInTheDocument();
+      expect(block.getByText("Пн–Сб 10:00–20:00")).toBeInTheDocument();
+      expect(
+        block.getByRole("link", { name: new RegExp(t.mapLink) }),
+      ).toBeInTheDocument();
+      expect(block.getByText(t.pickupNote)).toBeInTheDocument();
+      expect(totals().getByText(dict.order.shippingFree)).toBeInTheDocument();
+    });
+
+    it("other — the operator note, «Уточнить оператор» and the note under «Разом»", async () => {
+      await renderWith({
+        deliveryMethod: "OTHER",
+        shippingCost: "0.00",
+        shippingAddress: {
+          firstName: "Олег",
+          lastName: "Коваль",
+          city: "Ужгород",
+          address1: "Укрпошта, індекс 88000",
+          shippingCostPending: true,
+        },
+      });
+
+      const block = within(screen.getByTestId("order-delivery"));
+      expect(block.getByText(t.methods.OTHER)).toBeInTheDocument();
+      expect(block.getByText(t.otherNote)).toBeInTheDocument();
+      expect(
+        totals().getByText(dict.order.shippingPending),
+      ).toBeInTheDocument();
+      expect(totals().getByText(t.totalWithoutShipping)).toBeInTheDocument();
+    });
+
+    it("drops the billing block when there is none, or it repeats the delivery", async () => {
+      await renderWith({ billingAddress: null });
+      expect(screen.queryByTestId("order-billing-address")).toBeNull();
+      expect(
+        screen.queryByRole("heading", { name: dict.order.billingAddress }),
+      ).toBeNull();
+    });
+
+    it("drops a billing copy identical to the delivery address", async () => {
+      // makeOrder's default delivery address, repeated as billing.
+      await renderWith({
+        billingAddress: {
+          firstName: "Олег",
+          lastName: "Коваль",
+          phone: "+380501234567",
+          city: "Київ",
+          address1: "Відділення №1",
+          country: "UA",
+        },
+      });
+      expect(screen.queryByTestId("order-billing-address")).toBeNull();
+    });
   });
 
   it("redirects unauthenticated visitors to login with a return path", async () => {

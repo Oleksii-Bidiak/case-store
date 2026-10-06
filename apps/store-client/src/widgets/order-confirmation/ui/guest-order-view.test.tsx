@@ -45,6 +45,39 @@ describe("GuestOrderView", () => {
     expect(screen.getByText("olena@example.com")).toBeInTheDocument();
   });
 
+  // TASK-647: the same «Доставка» block as the confirmation page.
+  it("names the delivery method and an unpriced delivery honestly", async () => {
+    server.use(
+      http.get("*/api/orders/guest/:token", () =>
+        HttpResponse.json(
+          makeOrder({
+            userId: null,
+            deliveryMethod: "OTHER",
+            shippingCost: "0.00",
+            shippingAddress: {
+              firstName: "Олена",
+              lastName: "Шевченко",
+              city: "Ужгород",
+              address1: "Укрпошта, індекс 88000",
+              shippingCostPending: true,
+            },
+          }),
+        ),
+      ),
+    );
+
+    renderWithProviders(<GuestOrderView token="token-1" />);
+
+    expect(
+      await screen.findByText(dict.order.deliveryBlock.methods.OTHER),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.order.deliveryBlock.otherNote),
+    ).toBeInTheDocument();
+    expect(screen.getByText(dict.order.shippingPending)).toBeInTheDocument();
+    expect(screen.queryByText(dict.order.shippingFree)).toBeNull();
+  });
+
   it("shows the real payment status rather than assuming anything", async () => {
     server.use(
       http.get("*/api/orders/guest/:token", () =>

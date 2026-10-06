@@ -280,9 +280,25 @@ describe("OrderDetailView (TASK-217)", () => {
       expect(rows.getByText(/^3\s200\s₴$/)).toBeInTheDocument();
     });
 
-    it("reads a zero delivery as «Безкоштовно»", async () => {
-      await renderDetail({ shippingCost: "0.00" });
+    it("reads a free pickup as «Безкоштовно»", async () => {
+      await renderDetail({ deliveryMethod: "PICKUP", shippingCost: "0.00" });
       expect(totals().getByText(dict.order.shippingFree)).toBeInTheDocument();
+    });
+
+    // TASK-647: a legacy Nova Poshta order booked at 0 was never priced (the
+    // estimate failed, or it was taken by phone) — the API's own rule.
+    it("never reads a Nova Poshta order at 0 as «Безкоштовно»", async () => {
+      await renderDetail({
+        deliveryMethod: "NOVA_POSHTA",
+        shippingCost: "0.00",
+      });
+      expect(
+        totals().getByText(dict.order.shippingPending),
+      ).toBeInTheDocument();
+      expect(totals().queryByText(dict.order.shippingFree)).toBeNull();
+      expect(
+        totals().getByText(dict.order.deliveryBlock.totalWithoutShipping),
+      ).toBeInTheDocument();
     });
 
     it.each([
@@ -330,6 +346,58 @@ describe("OrderDetailView (TASK-217)", () => {
       expect(block.getByText("+380501234567")).toBeInTheDocument();
       expect(block.getByText("Київ")).toBeInTheDocument();
       expect(block.getByText("Відділення №1")).toBeInTheDocument();
+    });
+
+    // TASK-647: the same facts the confirmation page shows.
+    it("shows the pickup point with its hours, phone and map link", async () => {
+      await renderDetail({
+        deliveryMethod: "PICKUP",
+        shippingAddress: {
+          firstName: "Олег",
+          lastName: "Коваль",
+          phone: "+380501234567",
+          city: "Київ",
+          address1: "вул. Хрещатик, 22",
+          pickupPointName: "Магазин на Хрещатику",
+          pickupPointAddress: "вул. Хрещатик, 22",
+          pickupPointHours: "Пн–Сб 10:00–20:00",
+          pickupPointPhone: "+380441234567",
+          pickupPointMapUrl: "https://maps.app.goo.gl/abc",
+        },
+      });
+      const block = within(screen.getByTestId("order-detail-delivery"));
+      expect(
+        block.getByText("Магазин на Хрещатику, вул. Хрещатик, 22"),
+      ).toBeInTheDocument();
+      expect(
+        block.getByText("Пн–Сб 10:00–20:00 · +380441234567"),
+      ).toBeInTheDocument();
+      expect(
+        block.getByRole("link", {
+          name: new RegExp(dict.order.deliveryBlock.mapLink),
+        }),
+      ).toHaveAttribute("href", "https://maps.app.goo.gl/abc");
+      // No carrier, no waybill row.
+      expect(block.queryByText(d.trackingNone)).toBeNull();
+    });
+
+    it("tells an unpriced «інша доставка» that an operator will quote it", async () => {
+      await renderDetail({
+        deliveryMethod: "OTHER",
+        shippingCost: "0.00",
+        shippingAddress: {
+          firstName: "Олег",
+          lastName: "Коваль",
+          city: "Ужгород",
+          address1: "Укрпошта, індекс 88000",
+          shippingCostPending: true,
+        },
+      });
+      const block = within(screen.getByTestId("order-detail-delivery"));
+      expect(block.getByText("Укрпошта, індекс 88000")).toBeInTheDocument();
+      expect(
+        block.getByText(dict.order.deliveryBlock.otherNote),
+      ).toBeInTheDocument();
     });
 
     it("shows the customer's notes in their own card", async () => {

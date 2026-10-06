@@ -71,7 +71,15 @@ export {
   orderDeliveryDetails,
   type OrderDeliveryDetails,
   type OrderDeliveryPlaceKind,
+  type OrderPickupPointSnapshot,
 } from "./lib/order-delivery";
+// TASK-647: «Доставка» after checkout — the confirmation page and the guest
+// order page render the block; the account detail reuses the link and note.
+export {
+  OrderDeliveryBlock,
+  OrderDeliveryMapLink,
+  OrderDeliveryNote,
+} from "./ui/order-delivery-block";
 // Shared by the confirmation page and the account order detail — moved down
 // from `widgets/order-confirmation`, which another widget may not import.
 export { OrderItemRow } from "./ui/order-item-row";

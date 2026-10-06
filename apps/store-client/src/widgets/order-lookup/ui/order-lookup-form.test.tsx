@@ -98,7 +98,9 @@ describe("OrderLookupForm (TASK-483)", () => {
         (_, el) => el?.textContent?.replace(/\s/g, "") === total,
       ).length,
     ).toBeGreaterThan(0);
-    expect(screen.getByText("Відділення №12")).toBeInTheDocument();
+    expect(
+      screen.getByText(d.deliveryNovaPoshta("Відділення №12")),
+    ).toBeInTheDocument();
     expect(screen.getByText(order.trackingNumber!)).toBeInTheDocument();
   });
 
@@ -176,14 +178,30 @@ describe("OrderLookupForm (TASK-483)", () => {
   });
 
   // TASK-868: a <dl> may hold only dt/dd groups. The two delivery sentences
-  // used to be bare <p>s inside it.
+  // used to be bare <p>s inside it. TASK-1030: the method line is one of them.
   it.each([
-    ["no city", { city: null, warehouse: null }, d.deliveryUnknown],
-    ["a courier", { city: "Київ", warehouse: null }, d.deliveryCourier],
+    [
+      "no city",
+      "NOVA_POSHTA",
+      { city: null, warehouse: null },
+      d.deliveryUnknown,
+    ],
+    [
+      "a courier",
+      "COURIER",
+      { city: "Київ", warehouse: null },
+      d.deliveryCourierMethod,
+    ],
   ] as const)(
     "keeps the delivery list valid with %s",
-    async (_case, delivery, sentence) => {
-      respondWith([{ ...order, delivery: { ...order.delivery, ...delivery } }]);
+    async (_case, deliveryMethod, delivery, sentence) => {
+      respondWith([
+        {
+          ...order,
+          deliveryMethod,
+          delivery: { ...order.delivery, ...delivery },
+        },
+      ]);
       const user = userEvent.setup();
 
       renderWithProviders(<OrderLookupForm />);

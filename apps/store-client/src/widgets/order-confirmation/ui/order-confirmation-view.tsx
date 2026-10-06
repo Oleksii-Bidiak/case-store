@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/entities/session";
 import {
   OrderTotalsBreakdown,
+  OrderDeliveryBlock,
   orderDeliveryDetails,
   useGetOrder,
 } from "@/entities/order";
@@ -27,7 +28,7 @@ import {
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
-import { OrderAddressSummary } from "./order-address-summary";
+import { OrderBillingAddress } from "./order-billing-address";
 
 interface OrderConfirmationViewProps {
   orderId: string;
@@ -166,7 +167,8 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
       <div className="flex flex-col gap-8 lg:grid lg:grid-cols-3">
         <div className="flex flex-col gap-8 lg:col-span-2">
           <OrderItemList items={order.items} />
-          <OrderAddressSummary
+          <OrderDeliveryBlock order={order} />
+          <OrderBillingAddress
             shippingAddress={order.shippingAddress}
             billingAddress={order.billingAddress}
           />
