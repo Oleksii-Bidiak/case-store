@@ -43,6 +43,9 @@ export {
 
 export type {
   ProductEntity,
+  // TASK-1830: a row of the admin list — + when and by whom it was deleted.
+  AdminProductListItemEntity,
+  ProductActorEntity,
   CreateProductDto,
   UpdateProductDto,
   ProductControllerAdminFindAllParams,

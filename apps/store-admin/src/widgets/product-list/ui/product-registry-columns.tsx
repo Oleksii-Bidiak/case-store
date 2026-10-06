@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { InfoIcon } from "lucide-react";
-import { stripTombstonePrefix, type ProductEntity } from "@/entities/product";
+import {
+  stripTombstonePrefix,
+  type AdminProductListItemEntity,
+  type ProductEntity,
+} from "@/entities/product";
 import {
   Badge,
   REGISTRY_ROW_ACTION_WIDTH,
@@ -70,6 +74,36 @@ function skuLine(product: ProductEntity): string {
   return (
     [displaySku(product), product.brand?.name].filter(Boolean).join(" · ") ||
     d.cardEmptyValue
+  );
+}
+
+/**
+ * «видалено 03.10.2026» from the tombstone's own `deletedAt` (TASK-1830) —
+ * `updatedAt` can move after the delete (a cancelled order returning stock),
+ * `deletedAt` is what «Видалені» is ordered by.
+ */
+function deletedOnText(product: AdminProductListItemEntity): string {
+  return product.deletedAt
+    ? d.deletedOn(formatDate(product.deletedAt))
+    : d.cardEmptyValue;
+}
+
+/**
+ * Т8: the date on one line — it never breaks away from its verb — and who
+ * deleted it under it. `deletedBy` is null when the log has no staff actor
+ * (or not yet, right after the delete): then there is no second line rather
+ * than a made-up one.
+ */
+function DeletedOnCell({ product }: { product: AdminProductListItemEntity }) {
+  return (
+    <span className="flex flex-col">
+      <span className="whitespace-nowrap">{deletedOnText(product)}</span>
+      {product.deletedBy ? (
+        <span className="truncate text-xs" title={product.deletedBy.name}>
+          {product.deletedBy.name}
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -179,7 +213,9 @@ interface ColumnOptions {
  * The registry's columns (ProductsProposal Т1). Sortable only where
  * `GET /products/admin/list` sorts: name, price, stock and creation date —
  * «Оновлено» is shown, not sorted (the API has no `updatedAt` sort), and
- * «Створено» keeps its sort behind «Колонки».
+ * «Створено» keeps its sort behind «Колонки». In «Видалені» the same column
+ * shows the deletion date and sorts by it (`deletedAt`, TASK-1830) — the
+ * view's own default order, now visible.
  *
  * Default widths are budgeted to fit the 1440 layout without a sideways
  * scroll: content ≈ 1440 − 256 (sidebar) − 48 (padding) = 1136 px, of which
@@ -191,13 +227,14 @@ interface ColumnOptions {
  * both views on purpose: the registry persists one set per table, so a
  * per-view default would be overwritten by the first resize in either.
  *
- * In «Видалені» (Т8) the «Оновлено» cell reads «видалено 03.10.2026» and the
- * totals row carries no free-stock sum — a tombstone sells nothing.
+ * In «Видалені» (Т8) the «Оновлено» cell reads «видалено 03.10.2026» over
+ * who deleted it, and the totals row carries no free-stock sum — a tombstone
+ * sells nothing.
  */
 export function productColumns({
   isDeletedView,
   categoryNames,
-}: ColumnOptions): RegistryColumn<ProductEntity>[] {
+}: ColumnOptions): RegistryColumn<AdminProductListItemEntity>[] {
   return [
     {
       id: "photo",
@@ -275,16 +312,14 @@ export function productColumns({
     {
       id: "updated",
       label: d.colUpdated,
+      ...(isDeletedView
+        ? { sortField: "deletedAt", sortHint: d.colDeletedSortHint }
+        : {}),
       defaultWidth: 164,
       className: "text-muted-foreground tabular-nums",
       cell: (product) =>
         isDeletedView ? (
-          // Т8: «видалено 03.10.2026» is one line — the date never breaks
-          // away from its verb. (The artboard's second line, who deleted it,
-          // needs a `deletedBy` the list does not return yet.)
-          <span className="whitespace-nowrap">
-            {d.deletedOn(formatDate(product.updatedAt))}
-          </span>
+          <DeletedOnCell product={product} />
         ) : (
           formatDateTime(product.updatedAt)
         ),
@@ -309,7 +344,7 @@ export function productCardRenderer({
   isDeletedView,
 }: Pick<ColumnOptions, "isDeletedView">) {
   return function renderProductCard(
-    product: ProductEntity,
+    product: AdminProductListItemEntity,
     parts: RegistryCardParts,
   ) {
     return (
@@ -327,7 +362,7 @@ function ProductCard({
   parts,
   isDeletedView,
 }: {
-  product: ProductEntity;
+  product: AdminProductListItemEntity;
   parts: RegistryCardParts;
   isDeletedView: boolean;
 }) {
@@ -349,6 +384,14 @@ function ProductCard({
         <span className="text-xs break-all text-muted-foreground">
           {displaySku(product) || d.cardEmptyValue}
         </span>
+        {isDeletedView ? (
+          // Т12: when — and by whom — it was deleted, as on the table row.
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {product.deletedBy
+              ? `${deletedOnText(product)} · ${product.deletedBy.name}`
+              : deletedOnText(product)}
+          </span>
+        ) : null}
         <div className="flex items-baseline justify-between gap-2">
           <span className="font-semibold text-foreground tabular-nums">
             {formatCurrency(product.price)}

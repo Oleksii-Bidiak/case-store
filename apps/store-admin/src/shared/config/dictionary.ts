@@ -883,10 +883,8 @@ export const dict = {
     conflictConfirmSlug: "Відновити з новою адресою",
     conflictConfirmSku: "Відновити з новим артикулом",
     conflictConfirmBoth: "Відновити з новими даними",
-    // Т8: the totals row and the date cell of the deleted view. The list has
-    // no `deletedAt` yet; a tombstone cannot be edited, so its `updatedAt` is
-    // in practice the moment it was deleted (a stock return on a cancelled
-    // order may still bump it — exact once the API exposes `deletedAt`).
+    // Т8: the totals row and the date cell of the deleted view — the date
+    // is the tombstone's `deletedAt` (TASK-1830).
     deletedTotalsOnPage: (count: number) => `Видалених на сторінці: ${count}`,
     deletedOn: (date: string) => `видалено ${date}`,
 
@@ -895,6 +893,11 @@ export const dict = {
     // wording, kept even though the older sort labels say «зверху».
     sortDeletedDesc: "дата видалення, нові вгорі",
     sortDeletedAsc: "дата видалення, старі вгорі",
+
+    // ── дата й автор видалення (TASK-1830) ──
+    // In «Видалені» the «Оновлено» column shows — and sorts by — the
+    // deletion date; the sort button says so.
+    colDeletedSortHint: "У виді «Видалені» — дата видалення товару.",
   },
 
   // TASK-360: supplier-catalogue import.

@@ -895,10 +895,16 @@ describe("AdminProductTable — delete a product (TASK-427)", () => {
 });
 
 /** A tombstone as the admin list returns it: slug and SKU mangled (TASK-427). */
+/** When the row was deleted — later than its `updatedAt` on purpose. */
+const DELETED_AT = "2026-06-05T10:00:00.000Z";
+
 const DELETED_ROW = makeProductRow({
   slug: "deleted:product-1:iphone-15-pro-case",
   sku: "deleted:product-1:IP15-CASE",
   isActive: false,
+  // TASK-1830: the admin list says when and by whom.
+  deletedAt: DELETED_AT,
+  deletedBy: { id: "user-1", name: "Олена К." },
 });
 
 describe("AdminProductTable — the deleted view (TASK-427, TASK-656)", () => {
@@ -1005,18 +1011,61 @@ describe("AdminProductTable — the deleted view (TASK-427, TASK-656)", () => {
     ).toHaveTextContent(d.restoreAction);
   });
 
-  it("dates the row «видалено 02.06.2026» — no time (Т8)", async () => {
+  it("dates the row «видалено 05.06.2026» from deletedAt — no time (Т8, TASK-1830)", async () => {
     mockSearchParamsRef.current = new URLSearchParams("deleted=only");
     stubList([DELETED_ROW]);
     renderTable();
     await screen.findByText(P1);
 
+    const cell = document.querySelector('td[data-column-id="updated"]');
+    expect(cell).toHaveTextContent(d.deletedOn(formatDate(DELETED_AT)));
+    expect(cell).not.toHaveTextContent(formatDateTime(DELETED_AT));
+    // Not the `updatedAt` a later stock return could have moved.
+    expect(cell).not.toHaveTextContent(
+      d.deletedOn(formatDate("2026-06-02T10:00:00.000Z")),
+    );
+    // Т8: who deleted it, under the date.
+    expect(cell).toHaveTextContent("Олена К.");
+  });
+
+  it("draws no «who» line when the log names no staff actor (TASK-1830)", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList([{ ...DELETED_ROW, deletedBy: null }]);
+    renderTable();
+    await screen.findByText(P1);
+
     expect(
       document.querySelector('td[data-column-id="updated"]'),
-    ).toHaveTextContent(d.deletedOn(formatDate("2026-06-02T10:00:00.000Z")));
+    ).toHaveTextContent(new RegExp(`^${d.deletedOn(formatDate(DELETED_AT))}$`));
+  });
+
+  it("sorts «Оновлено» by deletion date in «Видалені» — the view's default, shown (TASK-1830)", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList([DELETED_ROW]);
+    renderTable();
+    await screen.findByText(P1);
+
+    const sortButton = screen.getByRole("button", {
+      name: dict.common.sortByAria(d.colUpdated),
+    });
+    expect(sortButton).toHaveAccessibleDescription(d.colDeletedSortHint);
+    expect(sortButton.closest("th")).toHaveAttribute("aria-sort", "descending");
+
+    await userEvent.click(sortButton);
+    expect(lastUrl()).toContain("sortBy=deletedAt");
+    expect(lastUrl()).toContain("sortOrder=asc");
+  });
+
+  it("does not sort «Оновлено» on the live list", async () => {
+    stubList();
+    renderTable();
+    await screen.findByText(P1);
+
     expect(
-      document.querySelector('td[data-column-id="updated"]'),
-    ).not.toHaveTextContent(formatDateTime("2026-06-02T10:00:00.000Z"));
+      screen.queryByRole("button", {
+        name: dict.common.sortByAria(d.colUpdated),
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("counts the page as «Видалених на сторінці» with no free-stock sum (Т8)", async () => {
@@ -1823,6 +1872,20 @@ describe("AdminProductTable — cards below md (Т7)", () => {
     ).toBeInTheDocument();
     expect(
       within(card).getByRole("checkbox", { name: r.selectRowAria(P1) }),
+    ).toBeInTheDocument();
+  });
+
+  it("dates a deleted card and names who deleted it (Т12, TASK-1830)", async () => {
+    setViewport(true);
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList([DELETED_ROW]);
+    renderTable();
+
+    const card = await screen.findByRole("listitem", { name: P1 });
+    expect(
+      within(card).getByText(
+        `${d.deletedOn(formatDate(DELETED_AT))} · Олена К.`,
+      ),
     ).toBeInTheDocument();
   });
 

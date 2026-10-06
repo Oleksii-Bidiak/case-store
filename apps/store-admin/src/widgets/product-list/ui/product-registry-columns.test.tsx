@@ -1,5 +1,7 @@
 import { render, screen } from "@/shared/test/render";
-import type { ProductEntity } from "@/entities/product";
+import type { AdminProductListItemEntity } from "@/entities/product";
+import { dict } from "@/shared/config";
+import { formatDate } from "@/shared/lib";
 import {
   DEFAULT_WIDTH_BUDGET,
   DELETED_VIEW_WIDTH_BUDGET,
@@ -53,10 +55,61 @@ describe("productColumns — default widths (wave 198, Т1 at 1440)", () => {
     render(
       <>
         {updated?.cell({
-          updatedAt: "2026-09-15T10:00:00.000Z",
-        } as unknown as ProductEntity)}
+          updatedAt: "2026-09-20T10:00:00.000Z",
+          deletedAt: "2026-09-15T10:00:00.000Z",
+          deletedBy: null,
+        } as unknown as AdminProductListItemEntity)}
       </>,
     );
     expect(screen.getByText(/^видалено /)).toHaveClass("whitespace-nowrap");
+  });
+});
+
+describe("productColumns — when and by whom it was deleted (TASK-1830, Т8)", () => {
+  const d = dict.products;
+  const updatedColumn = (isDeletedView: boolean) =>
+    productColumns({ isDeletedView, categoryNames: new Map() }).find(
+      (column) => column.id === "updated",
+    )!;
+  const row = (extra: Partial<AdminProductListItemEntity>) =>
+    ({
+      updatedAt: "2026-09-20T10:00:00.000Z",
+      deletedAt: "2026-09-15T10:00:00.000Z",
+      deletedBy: null,
+      ...extra,
+    }) as unknown as AdminProductListItemEntity;
+
+  it("dates the row by deletedAt — not by updatedAt, which may move later", () => {
+    render(<>{updatedColumn(true).cell(row({}))}</>);
+    expect(
+      screen.getByText(d.deletedOn(formatDate("2026-09-15T10:00:00.000Z"))),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(d.deletedOn(formatDate("2026-09-20T10:00:00.000Z"))),
+    ).not.toBeInTheDocument();
+  });
+
+  it("names who deleted it on a second line", () => {
+    render(
+      <>
+        {updatedColumn(true).cell(
+          row({ deletedBy: { id: "u-1", name: "Олена К." } }),
+        )}
+      </>,
+    );
+    expect(screen.getByText("Олена К.")).toBeInTheDocument();
+  });
+
+  it("draws no actor line while the log has none", () => {
+    const { container } = render(<>{updatedColumn(true).cell(row({}))}</>);
+    expect(container.textContent).toBe(
+      d.deletedOn(formatDate("2026-09-15T10:00:00.000Z")),
+    );
+  });
+
+  it("sorts by deletedAt in «Видалені» only", () => {
+    expect(updatedColumn(true).sortField).toBe("deletedAt");
+    expect(updatedColumn(true).sortHint).toBe(d.colDeletedSortHint);
+    expect(updatedColumn(false).sortField).toBeUndefined();
   });
 });
