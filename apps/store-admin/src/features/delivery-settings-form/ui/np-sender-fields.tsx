@@ -140,6 +140,10 @@ export function NpSenderFields({
               setValue("senderCityRef", "", { shouldDirty: true });
               setValue("senderWarehouseRef", "", { shouldDirty: true });
               setValue("senderWarehouseName", "", { shouldDirty: true });
+              // …and so does the branch search: a term typed under the old
+              // city would filter the new city's list behind an empty field.
+              debouncedWarehouseQuery.cancel();
+              setWarehouseQuery("");
               cityField.onChange(text);
               debouncedCityQuery(text);
             }}

@@ -267,6 +267,55 @@ describe("DeliverySettingsForm (TASK-644, ДН-1.1)", () => {
     });
   });
 
+  it("does not filter the new city's branches by a term typed under the old one", async () => {
+    const searches: { cityRef: string | null; q: string | null }[] = [];
+    server.use(
+      http.get("*/api/delivery/cities", () =>
+        HttpResponse.json({
+          data: [
+            {
+              ref: "ref-lviv",
+              name: "Львів",
+              area: "Львівська",
+              warehouses: 90,
+            },
+          ],
+        }),
+      ),
+      http.get("*/api/delivery/warehouses", ({ request }) => {
+        const url = new URL(request.url);
+        searches.push({
+          cityRef: url.searchParams.get("cityRef"),
+          q: url.searchParams.get("q"),
+        });
+        return HttpResponse.json({ data: [] });
+      }),
+    );
+    renderForm(
+      makeSettings({ senderCityRef: "ref-kyiv", senderCityName: "Київ" }),
+    );
+
+    await userEvent.type(
+      screen.getByRole("combobox", { name: t.senderWarehouse }),
+      "5",
+    );
+    await waitFor(() =>
+      expect(searches).toContainEqual({ cityRef: "ref-kyiv", q: "5" }),
+    );
+
+    const city = screen.getByRole("combobox", { name: t.senderCity });
+    await userEvent.clear(city);
+    await userEvent.type(city, "Льв");
+    await userEvent.click(await screen.findByRole("option", { name: /Львів/ }));
+
+    await waitFor(() =>
+      expect(searches.some((s) => s.cityRef === "ref-lviv")).toBe(true),
+    );
+    expect(searches.filter((s) => s.cityRef === "ref-lviv")).toEqual([
+      { cityRef: "ref-lviv", q: null },
+    ]);
+  });
+
   it("refuses a typed dispatch city that was never picked", async () => {
     const bodies = stubUpdate();
     server.use(
