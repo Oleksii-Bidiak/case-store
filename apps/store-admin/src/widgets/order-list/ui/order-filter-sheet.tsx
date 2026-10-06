@@ -15,6 +15,7 @@ import {
   useFilterDraft,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { kyivToday } from "@/shared/lib/format";
 import {
   EMPTY_FILTERS,
   PAYMENT_METHOD_LABELS,
@@ -23,7 +24,6 @@ import {
   SIGNAL_LABELS,
   SIGNAL_PARAMS,
   STATUS_OPTIONS,
-  kyivToday,
   orderFiltersToQuery,
   periodRange,
   presetOf,

@@ -7,3 +7,33 @@
 export { useGetTrafficSummary } from "@/shared/api";
 
 export type { TrafficSummaryEntity } from "@/shared/api";
+
+// TASK-692 — the /analytics reports (plan 188A). Every report takes the same
+// period query (`preset`, and `from`/`to` for `custom`) and answers with the
+// server's resolved `period`; every number in them is a `ComparedValueEntity`.
+export {
+  useGetSalesReport,
+  useGetCategoryReport,
+  useGetBrandReport,
+  useGetProductsReport,
+  useGetRegistrationsReport,
+  useGetFunnelReport,
+  ReportPreset,
+} from "@/shared/api";
+
+export type {
+  ComparedValueEntity,
+  ReportPeriodEntity,
+  GetSalesReportParams,
+  GetCategoryReportParams,
+  GetBrandReportParams,
+  GetProductsReportParams,
+  GetRegistrationsReportParams,
+  GetFunnelReportParams,
+  SalesReportEntity,
+  CategoryReportEntity,
+  BrandReportEntity,
+  ProductsReportEntity,
+  RegistrationsReportEntity,
+  FunnelReportEntity,
+} from "@/shared/api";

@@ -14,11 +14,11 @@ import {
   type PillOption,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { kyivToday } from "@/shared/lib/format";
 import {
   EMPTY_AUDIT_FILTERS,
   PERIOD_PRESETS,
   auditFiltersToQuery,
-  kyivToday,
   periodRange,
   presetOf,
   type AuditFilters,

@@ -83,6 +83,9 @@ export const dict = {
     faq: "FAQ",
     // TASK-318 — gated by `audit:read`, a key nobody can be granted (TASK-475).
     auditLog: "Журнал дій",
+    // TASK-692 — звіти за період (план 188). Гейтиться `analytics:read`; гроші
+    // в них — окремо, правом `analytics:revenue`.
+    analytics: "Звіти",
   },
 
   header: {
@@ -6784,6 +6787,56 @@ export const dict = {
       "Сервер не відповів. Перевірте з'єднання й спробуйте ще раз.",
     retry: "Спробувати ще раз",
     toList: "До списку товарів",
+  },
+
+  // TASK-692 — /analytics (план 188, макет Д-н2 «Analytics»). Один період на всі
+  // п'ять звітів; кожне число — з порівнянням із попереднім таким самим
+  // відрізком; доба — київська.
+  analytics: {
+    metaTitle: "Звіти — Адмін",
+    heading: "Звіти",
+    intro:
+      "Скільки продали й заробили, що купують і хто приходить. Усі звіти — за одним періодом, кожне число — з порівнянням із попереднім таким самим відрізком.",
+    forbidden: "У вас немає доступу до звітів.",
+    forbiddenHint:
+      "Попросіть власника видати вам право «Дашборд і показники» — він робить це в розділі «Співробітники» → ваша картка → вкладка «Права».",
+
+    // Рядок періоду.
+    periodAria: "Період звітів",
+    preset7d: "7 днів",
+    preset30d: "30 днів",
+    preset90d: "90 днів",
+    presetThisMonth: "Цей місяць",
+    presetLastMonth: "Минулий місяць",
+    presetCustom: "Довільно…",
+    rangeDays: (days: number) => countLabel(days, ["день", "дні", "днів"]),
+    comparedWith: (range: string) =>
+      `порівнюємо з ${range} · доба — за київським часом`,
+    kyivDay: "Доба — за київським часом",
+
+    // «Довільно…» — діапазон.
+    customTitle: "Довільний період",
+    customFrom: "З",
+    customTo: "По",
+    customCompare: (days: number, range: string) =>
+      `Порівняємо з ${countLabel(days, ["днем", "днями", "днями"])} перед ним: ${range}.`,
+    customShare:
+      "Посилання на звіт з цим періодом можна переслати — він зберігається в адресі.",
+    customCancel: "Скасувати",
+    customApply: "Показати",
+    rangeErrorMissing: "Вкажіть обидві дати.",
+    rangeErrorOrder: "Дата «З» пізніша за дату «По».",
+    rangeErrorFuture: "Період не може закінчуватися пізніше за сьогодні.",
+    rangeErrorTooLong: "Найдовший період — 366 днів.",
+
+    // Зміна до попереднього відрізка.
+    deltaPercent: (value: string) => `${value}%`,
+    deltaPoints: (value: string) => `${value} п. п.`,
+    deltaUp: (value: string) => `зростання на ${value} до попереднього періоду`,
+    deltaDown: (value: string) => `спад на ${value} до попереднього періоду`,
+    deltaFlat: "без змін до попереднього періоду",
+    deltaNone: "у попередньому періоді — нуль, порівнювати нема з чим",
+    was: (value: string) => `було ${value}`,
   },
 } as const;
 

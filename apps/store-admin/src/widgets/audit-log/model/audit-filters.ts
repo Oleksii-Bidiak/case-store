@@ -1,8 +1,10 @@
 import { type GetAuditLogParams } from "@/entities/audit";
 import { dict } from "@/shared/config";
+// TASK-692: `shiftDay` moved to shared/lib (the report period needs it too).
 import {
   fromKyivDateEnd,
   fromKyivDateStart,
+  shiftDay,
   toKyivDateInput,
 } from "@/shared/lib";
 
@@ -83,19 +85,6 @@ export const PERIOD_PRESETS: ReadonlyArray<{ id: string; label: string }> = [
   { id: "30d", label: d.period30Days },
   { id: "custom", label: d.periodCustom },
 ];
-
-/** `YYYY-MM-DD` ± days, in calendar arithmetic (no zone involved). */
-export function shiftDay(day: string, delta: number): string {
-  const [year, month, date] = day.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, date + delta))
-    .toISOString()
-    .slice(0, 10);
-}
-
-/** The Kyiv calendar day of `now`. */
-export function kyivToday(now: number = Date.now()): string {
-  return toKyivDateInput(now);
-}
 
 /** The range a preset stands for, counted from Kyiv's `today`. */
 export function periodRange(

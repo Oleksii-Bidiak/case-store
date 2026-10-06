@@ -33,6 +33,27 @@ export const handlers = [
     }),
   ),
 
+  // Registrations report (TASK-692) — the default 30-day period; /analytics
+  // reads the period bar's label off this response. Override per-test.
+  http.get("*/api/admin/analytics/reports/registrations", () =>
+    HttpResponse.json({
+      data: {
+        period: {
+          preset: "30d",
+          from: "2026-09-06",
+          to: "2026-10-05",
+          days: 30,
+          previousFrom: "2026-08-07",
+          previousTo: "2026-09-05",
+          previousDays: 30,
+        },
+        registrations: { current: 48, previous: 40, changePct: 20 },
+        fromGuest: { current: 11, previous: 11, changePct: 0 },
+        daily: [],
+      },
+    }),
+  ),
+
   // Needs-action counters (TASK-248, +pendingOver48h TASK-251) — all-clear by
   // default; override per-test.
   http.get("*/api/admin/dashboard/needs-action", () =>

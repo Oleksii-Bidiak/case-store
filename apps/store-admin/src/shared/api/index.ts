@@ -57,6 +57,11 @@ export * from "./generated/search/search";
 // TASK-380 — storefront traffic, proxied through our API so the analytics
 // credential never lands in this bundle.
 export * from "./generated/analytics/analytics";
+// TASK-692 — the /analytics reports (plan 188A): sales, categories, brands,
+// products, registrations and the Umami funnel, all over one report period.
+// `*`: every operation in the file is an admin read, there is nothing in it the
+// panel must not reach.
+export * from "./generated/admin-analytics-reports/admin-analytics-reports";
 // TASK-441 — the internal media library.
 export * from "./generated/media/media";
 // TASK-371 — the admin payment card: attempt history + refund. Named, not `*`:

@@ -6,7 +6,8 @@ import {
   auditSentence,
   auditValue,
 } from "./audit-sentence";
-import { dayGroup, periodLabel, presetOf, shiftDay } from "./audit-filters";
+import { shiftDay } from "@/shared/lib";
+import { dayGroup, periodLabel, presetOf } from "./audit-filters";
 
 const d = dict.auditLog;
 

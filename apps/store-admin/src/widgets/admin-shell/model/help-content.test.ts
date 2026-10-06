@@ -6,6 +6,8 @@ import { HELP_SECTIONS, joinPhrases, resolveHelpSection } from "./help-content";
  * falls back to the dashboard's text.
  */
 const NAV_ROUTES = [
+  // TASK-692.
+  "/analytics",
   "/products",
   "/catalog-import",
   "/product-groups",

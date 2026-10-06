@@ -76,6 +76,24 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       { permission: PERM.ordersRead, phrase: "бачити останні замовлення" },
     ],
   },
+  // TASK-692 — /analytics. Without its own entry the «?» there fell back to the
+  // dashboard's text (TASK-1035).
+  {
+    prefix: "/analytics",
+    title: dict.nav.analytics,
+    what: [
+      "Продажі, категорії й бренди, лідери й товари без продажів, конверсія кошика й реєстрації — за одним періодом.",
+      "Кожне число — з порівнянням із попереднім таким самим відрізком; доба — за київським часом.",
+      "Період зберігається в адресі: посилання на звіт можна переслати.",
+    ],
+    rights: [
+      { permission: PERM.analyticsRead, phrase: "переглядати звіти" },
+      {
+        permission: RAW.analyticsRevenue,
+        phrase: "бачити виторг і суми в звітах",
+      },
+    ],
+  },
   {
     prefix: "/products",
     title: dict.nav.products,
