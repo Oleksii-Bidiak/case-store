@@ -532,6 +532,9 @@ describe("OrderCreateForm — by mockup (TASK-1047)", () => {
   it("chooses the payment method with pills", async () => {
     const user = userEvent.setup();
     renderWithProviders(<OrderCreateForm />);
+    // Card and instalments need a Nova Poshta city from the directory
+    // (TASK-1021) — see the matrix block below.
+    await pickKyivFromDirectory(user);
 
     const group = within(
       screen.getByRole("group", { name: t.paymentMethodAria }),
@@ -544,5 +547,140 @@ describe("OrderCreateForm — by mockup (TASK-1047)", () => {
       "aria-pressed",
       "true",
     );
+  });
+});
+
+const KYIV_REF = "db5c88e0-391c-11dd-90d9-001a92567626";
+
+/** Type «Київ» into the city and pick it from the (mocked) NP directory. */
+async function pickKyivFromDirectory(user: ReturnType<typeof userEvent.setup>) {
+  server.use(
+    http.get("*/api/delivery/cities", () =>
+      HttpResponse.json({
+        data: [
+          { ref: KYIV_REF, name: "Київ", area: "Київська", warehouses: 1 },
+        ],
+      }),
+    ),
+    http.get("*/api/delivery/warehouses", () =>
+      HttpResponse.json({ data: [] }),
+    ),
+  );
+  await user.type(field("city"), "Київ");
+  await user.click(
+    await screen.findByRole("button", { name: /Вибрати «Київ»/i }),
+  );
+}
+
+describe("OrderCreateForm — delivery × payment (TASK-1021)", () => {
+  const t = dict.orderCreate;
+
+  it("disables card and instalments while no NP city is picked, and says why", () => {
+    renderWithProviders(<OrderCreateForm />);
+
+    const group = within(
+      screen.getByRole("group", { name: t.paymentMethodAria }),
+    );
+    const reason = screen.getByText(t.paymentNeedsNpCity);
+    for (const label of [t.methodOnline, t.methodInstallments]) {
+      const pill = group.getByRole("button", { name: label });
+      expect(pill).toBeDisabled();
+      expect(pill).toHaveAccessibleDescription(t.paymentNeedsNpCity);
+    }
+    expect(reason).toHaveAttribute("id", "order-create-payment-reason");
+    expect(
+      group.getByRole("button", { name: t.methodOnDelivery }),
+    ).toBeEnabled();
+  });
+
+  it("enables them once a city is picked from the directory", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+
+    await pickKyivFromDirectory(user);
+
+    const group = within(
+      screen.getByRole("group", { name: t.paymentMethodAria }),
+    );
+    expect(group.getByRole("button", { name: t.methodOnline })).toBeEnabled();
+    expect(
+      group.getByRole("button", { name: t.methodInstallments }),
+    ).toBeEnabled();
+    expect(screen.queryByText(t.paymentNeedsNpCity)).not.toBeInTheDocument();
+  });
+
+  it("falls back to «Оплата при отриманні» when the city is retyped by hand", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+    await pickKyivFromDirectory(user);
+    const group = within(
+      screen.getByRole("group", { name: t.paymentMethodAria }),
+    );
+    await user.click(group.getByRole("button", { name: t.methodOnline }));
+
+    // Editing the city drops its directory ref — the order becomes OTHER.
+    await user.type(field("city"), "щина");
+
+    await waitFor(() =>
+      expect(
+        group.getByRole("button", { name: t.methodOnDelivery }),
+      ).toHaveAttribute("aria-pressed", "true"),
+    );
+    expect(group.getByRole("button", { name: t.methodOnline })).toBeDisabled();
+  });
+
+  it("shows the server's delivery refusal as it came", async () => {
+    const user = userEvent.setup();
+    const message =
+      "Для адреси без міста зі списку Нової Пошти вартість доставки ще не відома — оберіть оплату при отриманні або вкажіть місто Нової Пошти";
+    server.use(
+      http.post("*/api/admin/orders", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "DELIVERY_PAYMENT_NOT_ALLOWED",
+            message,
+          },
+          { status: 400 },
+        ),
+      ),
+      http.get("*/api/products/admin/list", () =>
+        HttpResponse.json({
+          data: [
+            {
+              id: "p-1",
+              name: "Силіконовий чохол",
+              price: "1299",
+              sku: "SC-IP15",
+              stock: 8,
+              reservedQty: 0,
+            },
+          ],
+          meta: { total: 1, page: 1, limit: 8, totalPages: 1 },
+        }),
+      ),
+    );
+    renderWithProviders(<OrderCreateForm />);
+    await user.type(field("contactPhone"), "+380 50 318 22 47");
+    await user.type(field("contactName"), "Оксана Шевченко");
+    await pickKyivFromDirectory(user);
+    await user.type(field("address1"), "Відділення №12");
+    await user.type(
+      screen.getByRole("searchbox", { name: t.itemsSearchAria }),
+      "чохол",
+    );
+    await user.click(
+      await screen.findByRole("button", {
+        name: t.itemsAddAria("Силіконовий чохол"),
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    const summary = within(
+      screen.getByRole("complementary", { name: t.summaryHeading }),
+    );
+    expect(await summary.findByText(message)).toBeInTheDocument();
+    expect(summary.getByText(t.serverErrorTitle)).toBeInTheDocument();
   });
 });

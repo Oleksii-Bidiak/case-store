@@ -1,5 +1,5 @@
 import { dict } from "@/shared/config";
-import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { apiErrorCode, apiErrorMessage, apiErrorStatus } from "@/shared/lib";
 import type { DraftLine } from "./create-order-schema";
 
 const t = dict.orderCreate;
@@ -32,6 +32,14 @@ export function readCreateOrderRefusal(
 ): CreateOrderRefusal | null {
   if (apiErrorStatus(error) !== 400) return null;
   const message = apiErrorMessage(error) ?? "";
+
+  // TASK-1021: the delivery refusals are the exception to "never shown" — the
+  // API words them in Ukrainian for the person on the phone («…оберіть оплату
+  // при отриманні або вкажіть місто Нової Пошти»), under a stable `DELIVERY_*`
+  // code, so the sentence is shown as it came.
+  if (apiErrorCode(error)?.startsWith("DELIVERY_") && message) {
+    return { lines: {}, fields: {}, summary: message };
+  }
 
   const refusal: CreateOrderRefusal = {
     lines: {},
