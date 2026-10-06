@@ -29,6 +29,9 @@ import { loginAsAdmin, loginAsStaff } from "./fixtures/admin-session";
 
 const PAGE_URL = "/analytics";
 
+// Matched exactly: the dashboard's traffic card links here too (TASK-693), and
+// its accessible name «Детальніше про відвідуваність — звіти за 7 днів»
+// contains the word, so a substring match finds two links.
 const NAV_REPORTS = "Звіти";
 const SALES = "Продажі";
 const CATALOGUE = "Категорії й бренди";
@@ -144,7 +147,9 @@ test.describe("/analytics (TASK-692)", () => {
       email: E2E_MANAGER_ANALYTICS_EMAIL,
       password: E2E_MANAGER_ANALYTICS_PASSWORD,
     });
-    await expect(page.getByRole("link", { name: NAV_REPORTS })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: NAV_REPORTS, exact: true }),
+    ).toBeVisible();
 
     const categoriesAnswered = page.waitForResponse(isGet(CATEGORIES_REQUEST));
     await page.goto(PAGE_URL);
@@ -185,7 +190,9 @@ test.describe("/analytics (TASK-692)", () => {
 
     await page.goto(PAGE_URL);
     await expect(page.getByText(FORBIDDEN)).toBeVisible();
-    await expect(page.getByRole("link", { name: NAV_REPORTS })).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: NAV_REPORTS, exact: true }),
+    ).toHaveCount(0);
     await expect(page.getByRole("region", { name: SALES })).toHaveCount(0);
   });
 });
