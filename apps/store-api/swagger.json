@@ -18463,14 +18463,251 @@
           "meta"
         ]
       },
+      "ProductActorEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "User id of the actor (the action-log `actorId`)",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name: «first last» from the user record when it has one, otherwise the email the action log recorded (a soft-deleted account shows its original address)",
+            "example": "Олена Коваль"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "AdminProductListItemEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Product unique identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name",
+            "example": "iPhone 15 Pro Case — Clear MagSafe"
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL-friendly slug",
+            "example": "iphone-15-pro-case-clear-magsafe"
+          },
+          "description": {
+            "type": "string",
+            "description": "Product description (markdown)",
+            "example": "Premium clear case...",
+            "nullable": true
+          },
+          "price": {
+            "type": "string",
+            "description": "Product price as string (avoids float precision)",
+            "example": "29.99"
+          },
+          "compareAtPrice": {
+            "type": "string",
+            "description": "Original price for discount display",
+            "example": "39.99",
+            "nullable": true
+          },
+          "sku": {
+            "type": "string",
+            "description": "Stock Keeping Unit",
+            "example": "IP15-PRO-CASE-CLR",
+            "nullable": true
+          },
+          "stock": {
+            "type": "number",
+            "description": "Available (free-to-sell) stock quantity for this position",
+            "example": 150
+          },
+          "reservedQty": {
+            "type": "number",
+            "description": "Reserved quantity — units tied up in unshipped (PENDING/CONFIRMED/PROCESSING) orders, derived on read (TASK-254). Admin-only informational figure; `stock` already had these units subtracted at order creation. Optional on the input, always present on the output (defaults to 0 on mutation-echo reads).",
+            "example": 5
+          },
+          "physicalQty": {
+            "type": "number",
+            "description": "Physical on-shelf quantity = stock + reservedQty (derived arithmetic, TASK-254). Admin-only informational figure. Always present on the output.",
+            "example": 155
+          },
+          "categoryId": {
+            "type": "string",
+            "description": "Category ID the product belongs to",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "groupId": {
+            "type": "string",
+            "description": "Group this position belongs to (siblings share a group), or null when standalone",
+            "example": "550e8400-e29b-41d4-a716-446655440000",
+            "nullable": true
+          },
+          "brand": {
+            "description": "Manufacturer / brand summary, or null when the product has no brand",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProductBrandEntity"
+              }
+            ]
+          },
+          "attributes": {
+            "type": "object",
+            "description": "Attribute values for this position within its group (keyed by group axis names)",
+            "example": {
+              "color": "blue",
+              "pack": "single"
+            },
+            "additionalProperties": true
+          },
+          "positionOrder": {
+            "type": "number",
+            "description": "Sort order of this position within its group",
+            "example": 0
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the product is active",
+            "example": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "SEO meta title override (falls back to name when empty)",
+            "example": "iPhone 15 Pro Clear MagSafe Case | Store",
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "SEO meta description override (falls back to the product description when empty)",
+            "example": "Shop the clear MagSafe-compatible case for iPhone 15 Pro.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). NOT rendered as `<meta name=\"keywords\">` — see IsKeywordsField. Empty array when the admin set none.",
+            "example": [
+              "magsafe",
+              "ударостійкий"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image chosen for this product; wins over its first photo and over the global default (TASK-437). Null = use the automatic chain.",
+            "example": "https://cdn.example.com/og/iphone-15-case.jpg",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp",
+            "example": "2024-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Last update timestamp",
+            "example": "2024-01-01T00:00:00.000Z"
+          },
+          "ratingAverage": {
+            "type": "number",
+            "description": "Average approved-review rating (1–5), or null when there are no reviews",
+            "example": 4.5,
+            "nullable": true
+          },
+          "ratingCount": {
+            "type": "number",
+            "description": "Number of approved reviews this product has",
+            "example": 128
+          },
+          "primaryImage": {
+            "description": "Primary (cover) image for list/card rendering, or null when the product has no images",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProductImageEntity"
+              }
+            ]
+          },
+          "compatibleDeviceModels": {
+            "description": "Device models this position is compatible with (TASK-190)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductCompatibleDeviceEntity"
+            }
+          },
+          "specs": {
+            "description": "Structured specifications (TASK-191). Empty unless the caller hydrated them.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductSpecEntity"
+            }
+          },
+          "highlights": {
+            "description": "The isFilterable subset of specs (capped) — PDP highlights strip.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductSpecEntity"
+            }
+          },
+          "deletedAt": {
+            "type": "string",
+            "description": "When the product was deleted (TASK-1830): set on the `deleted=true` list, null on every live row. This is what `sortBy=deletedAt` orders by — `updatedAt` can move after the delete (a cancelled order returning stock), so it is no substitute",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2026-10-01T09:30:00.000Z"
+          },
+          "deletedBy": {
+            "description": "Who deleted it (TASK-1830): the actor of the latest `product.remove` entry in the action log. Resolved only on the `deleted=true` list; null on live rows and on a tombstone whose delete has no staff actor on record",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProductActorEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "price",
+          "stock",
+          "reservedQty",
+          "physicalQty",
+          "categoryId",
+          "positionOrder",
+          "isActive",
+          "createdAt",
+          "updatedAt",
+          "ratingAverage",
+          "ratingCount",
+          "specs",
+          "highlights",
+          "deletedAt",
+          "deletedBy"
+        ]
+      },
       "AdminProductListResponseEnvelope": {
         "type": "object",
         "properties": {
           "data": {
-            "description": "Products for the current page (admin, all statuses)",
+            "description": "Products for the current page (admin, all statuses); on deleted=true each row also says when and by whom it was deleted (TASK-1830)",
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ProductEntity"
+              "$ref": "#/components/schemas/AdminProductListItemEntity"
             }
           },
           "meta": {

@@ -1,4 +1,6 @@
 export { ProductEntity } from './product.entity';
+export { ProductActorEntity } from './product-actor.entity';
+export { AdminProductListItemEntity } from './admin-product-list-item.entity';
 export { PublicProductEntity } from './public-product.entity';
 export { ProductImageEntity } from './product-image.entity';
 export { ProductCategoryEntity } from './product-category.entity';

@@ -38,6 +38,7 @@ import {
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import {
   ProductEntity,
+  AdminProductListItemEntity,
   PublicProductEntity,
   ProductGroupEntity,
   ProductImageEntity,
@@ -90,10 +91,12 @@ class ProductListResponseEnvelope {
  */
 class AdminProductListResponseEnvelope {
   @ApiProperty({
-    type: [ProductEntity],
-    description: 'Products for the current page (admin, all statuses)',
+    type: [AdminProductListItemEntity],
+    description:
+      'Products for the current page (admin, all statuses); on deleted=true each row also ' +
+      'says when and by whom it was deleted (TASK-1830)',
   })
-  data!: ProductEntity[];
+  data!: AdminProductListItemEntity[];
 
   @ApiProperty({ type: PaginationMeta })
   meta!: PaginationMeta;
@@ -213,7 +216,7 @@ class GroupDeviceCompatResponseEnvelope {
 type ProductResponse = { data: ProductEntity };
 type GroupDeviceCompatResponse = { data: { updatedCount: number } };
 type ProductListResponse = { data: PublicProductEntity[]; meta: PaginationMeta };
-type AdminProductListResponse = { data: ProductEntity[]; meta: PaginationMeta };
+type AdminProductListResponse = { data: AdminProductListItemEntity[]; meta: PaginationMeta };
 type ProductCardsResponse = { data: PublicProductEntity[] };
 type ProductDetailResponse = {
   data: PublicProductEntity;

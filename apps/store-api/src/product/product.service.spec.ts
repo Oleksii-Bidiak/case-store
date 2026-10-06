@@ -10,6 +10,7 @@ import {
 } from './product.repository';
 import { ProductCategoryGoneError, ProductRestoreConflictError } from './product.errors';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
+import { AuditService } from '../audit';
 import { ProductSpecRepository } from './product-spec.repository';
 import { CategoryRepository } from '../category';
 import { BrandRepository } from '../brand';
@@ -181,6 +182,11 @@ const configServiceMock = {
 // Both methods resolve by default; individual tests override to simulate a
 // failing indexer and assert it never breaks the product write.
 
+// TASK-1830: who deleted a product comes from the action log.
+const auditServiceMock = {
+  findLatestActors: jest.fn(),
+};
+
 const productIndexerMock = {
   index: jest.fn().mockResolvedValue(undefined),
   remove: jest.fn().mockResolvedValue(undefined),
@@ -245,6 +251,7 @@ describe('ProductService', () => {
     specRepositoryMock.setSpecs.mockResolvedValue(undefined);
     attributeDefinitionRepositoryMock.findEffectiveForCategory.mockResolvedValue([]);
     productRepositoryMock.getReservedQtyByProductId.mockResolvedValue(new Map<string, number>());
+    auditServiceMock.findLatestActors.mockResolvedValue(new Map());
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -263,6 +270,7 @@ describe('ProductService', () => {
           useValue: attributeDefinitionRepositoryMock,
         },
         { provide: RevalidationNotifier, useValue: revalidationMock },
+        { provide: AuditService, useValue: auditServiceMock },
         // The REAL resolver (TASK-420), wired to the repository mocks above —
         // slug → id is part of what `findAll` promises, so stubbing it out would
         // leave the promise untested.
@@ -632,6 +640,48 @@ describe('ProductService', () => {
       expect(productRepositoryMock.getReservedQtyByProductId).toHaveBeenCalledWith([
         'product-uuid-1',
       ]);
+    });
+
+    // TASK-1830 (Т8): the «Видалені» row says WHEN and BY WHOM — the real deletedAt
+    // (not updatedAt) and the actor of the latest product.remove in the action log.
+    describe('deletedAt / deletedBy (TASK-1830)', () => {
+      const deletedAt = new Date('2026-10-01T09:30:00.000Z');
+      const tombstones = [
+        { ...mockProduct, id: 'gone-1', isActive: false, deletedAt },
+        { ...mockProduct, id: 'gone-2', isActive: false, deletedAt },
+      ];
+
+      it('hydrates the deleted list with deletedAt and the actor from the action log', async () => {
+        productRepositoryMock.findAll.mockResolvedValue({ products: tombstones, total: 2 });
+        auditServiceMock.findLatestActors.mockResolvedValue(
+          new Map([['gone-1', { id: 'user-1', name: 'Олена Коваль' }]]),
+        );
+
+        const result = await service.adminFindAll({ page: 1, limit: 20, deleted: true });
+
+        expect(auditServiceMock.findLatestActors).toHaveBeenCalledWith(
+          'product.remove',
+          'product',
+          ['gone-1', 'gone-2'],
+        );
+        expect(result.items[0].deletedAt).toEqual(deletedAt);
+        expect(result.items[0].deletedBy).toEqual({ id: 'user-1', name: 'Олена Коваль' });
+        // No person on record → null, not a guess.
+        expect(result.items[1].deletedBy).toBeNull();
+      });
+
+      it('never reads the action log for the live list — deletedAt and deletedBy are null', async () => {
+        productRepositoryMock.findAll.mockResolvedValue({
+          products: [{ ...mockProduct, deletedAt: null }],
+          total: 1,
+        });
+
+        const result = await service.adminFindAll({ page: 1, limit: 20 });
+
+        expect(auditServiceMock.findLatestActors).not.toHaveBeenCalled();
+        expect(result.items[0].deletedAt).toBeNull();
+        expect(result.items[0].deletedBy).toBeNull();
+      });
     });
 
     // TASK-656 (Т8): «Видалені» reads newest-deletion-first — the product deleted

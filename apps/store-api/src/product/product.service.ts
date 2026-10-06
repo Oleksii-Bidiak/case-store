@@ -23,6 +23,7 @@ import {
   restoreConflictCode,
 } from './product.errors';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
+import { PRODUCT_DELETE_AUDIT } from './product.constants';
 import { ProductSpecRepository, SpecValueWrite } from './product-spec.repository';
 import { CategoryRepository } from '../category';
 import { BrandRepository } from '../brand';
@@ -34,6 +35,8 @@ import {
   ProductGroupEntity,
   ProductImageEntity,
   ProductCategoryEntity,
+  ProductActorEntity,
+  AdminProductListItemEntity,
 } from './entities';
 import { ProductListQueryDto, parseSpecFilters, serializeSpecFilters } from './dto';
 import { generateSlug } from '../common/utils';
@@ -50,6 +53,7 @@ import {
 import { CatalogueFilterResolver, type ResolvedCatalogueFilters } from '../catalog-filter';
 import { ProductIndexer } from '../search';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
+import { AuditService } from '../audit';
 
 /** Fallback TTL (seconds) when REDIS_CACHE_TTL_SECONDS is not configured. */
 const DEFAULT_CACHE_TTL_SECONDS = 300;
@@ -98,7 +102,7 @@ function rethrowCategoryGone(error: unknown): never {
  * {@link ProductEntity} with raw `stock` and `isActive`.
  *
  * Lists are `Paginated<PublicProductEntity>` (public) and
- * `Paginated<ProductEntity>` (admin, TASK-254 — raw `stock`, `isActive` and the
+ * `Paginated<AdminProductListItemEntity>` (admin, TASK-254 — raw `stock`, `isActive` and the
  * derived `reservedQty`/`physicalQty`, which the public list never exposes).
  */
 export interface ProductDetail<
@@ -135,6 +139,7 @@ export class ProductService {
     private readonly attributeDefinitionRepository: AttributeDefinitionRepository,
     private readonly revalidation: RevalidationNotifier,
     private readonly catalogueFilters: CatalogueFilterResolver,
+    private readonly audit: AuditService,
   ) {
     this.cacheTtlSeconds =
       this.config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
@@ -244,7 +249,7 @@ export class ProductService {
    * read in the system that can return soft-deleted rows, and it returns them
    * INSTEAD of the live ones, never mixed in.
    */
-  async adminFindAll(query: ProductListQueryDto): Promise<Paginated<ProductEntity>> {
+  async adminFindAll(query: ProductListQueryDto): Promise<Paginated<AdminProductListItemEntity>> {
     // The admin table addresses categories/brands/devices by id, but it binds
     // the SAME DTO, so it goes through the same resolver (TASK-420) — which
     // accepts either spelling and leaves an id untouched when it resolves.
@@ -369,19 +374,23 @@ export class ProductService {
    * The reserved aggregate is fetched once for the whole page (one `groupBy`),
    * never per-row.
    */
-  private async listFromDbForAdmin(params: FindAllParams): Promise<Paginated<ProductEntity>> {
+  private async listFromDbForAdmin(
+    params: FindAllParams,
+  ): Promise<Paginated<AdminProductListItemEntity>> {
     const { products, total } = await this.productRepository.findAll(params);
-    const reservedByProductId = await this.productRepository.getReservedQtyByProductId(
-      products.map((product) => product.id),
-    );
+    const productIds = products.map((product) => product.id);
+    const reservedByProductId = await this.productRepository.getReservedQtyByProductId(productIds);
+    const deletedByProductId = params.deleted
+      ? await this.findDeleters(productIds)
+      : new Map<string, ProductActorEntity>();
     const totalPages = Math.ceil(total / params.limit);
 
     return {
       items: products.map((product) =>
-        ProductEntity.fromPrisma({
-          ...product,
-          reservedQty: reservedByProductId.get(product.id) ?? 0,
-        }),
+        AdminProductListItemEntity.fromListRow(
+          { ...product, reservedQty: reservedByProductId.get(product.id) ?? 0 },
+          deletedByProductId.get(product.id) ?? null,
+        ),
       ),
       meta: {
         total,
@@ -390,6 +399,27 @@ export class ProductService {
         totalPages,
       },
     };
+  }
+
+  /**
+   * Who deleted each of `productIds` (TASK-1830) — the actor of the latest
+   * `product.remove` entry in the action log, one read for the whole page. Read from
+   * the log rather than a new column: the log already records every delete with its
+   * actor (`AuditInterceptor`), so no migration and no backfill — tombstones deleted
+   * before this task get their actor too. A product with no logged staff actor is
+   * absent (→ `deletedBy: null`).
+   */
+  private async findDeleters(productIds: string[]): Promise<Map<string, ProductActorEntity>> {
+    const actors = await this.audit.findLatestActors(
+      PRODUCT_DELETE_AUDIT.action,
+      PRODUCT_DELETE_AUDIT.entityType,
+      productIds,
+    );
+    const result = new Map<string, ProductActorEntity>();
+    for (const [productId, actor] of actors) {
+      result.set(productId, Object.assign(new ProductActorEntity(), actor));
+    }
+    return result;
   }
 
   /**

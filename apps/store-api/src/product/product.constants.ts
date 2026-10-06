@@ -30,3 +30,10 @@ export const MAX_HIGHLIGHTS = 4;
  * Shared by the create and update DTOs so the two can never drift.
  */
 export const MAX_DESCRIPTION_LENGTH = 20_000;
+
+/**
+ * The action-log entry of a product delete (TASK-1830): `AuditInterceptor` names it
+ * `<entity>.<handler>` — `ProductController.remove` → `product.remove`, entity type
+ * `product`. `product-audit-action.spec.ts` fails if the handler is renamed.
+ */
+export const PRODUCT_DELETE_AUDIT = { action: 'product.remove', entityType: 'product' } as const;

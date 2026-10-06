@@ -18,6 +18,16 @@ export interface CreateAuditLogInput {
   userAgent?: string | null;
 }
 
+/** The person behind the latest entry of an action on an entity (TASK-1830). */
+export interface LatestAuditActor {
+  actorId: string;
+  /** The email the entry recorded — the fallback display name. */
+  actorEmail: string | null;
+  /** From the user record as it is now; null when unset or the user is gone. */
+  firstName: string | null;
+  lastName: string | null;
+}
+
 /** Filters for the admin log viewer. */
 export interface FindAuditLogsParams {
   page: number;
@@ -107,6 +117,58 @@ export class AuditRepository {
     // A soft-deleted user's `email` is mangled to `deleted:<id>:<address>`;
     // `originalEmail` holds the readable one.
     return { email: user.originalEmail ?? user.email, role: user.role };
+  }
+
+  /**
+   * For each of `entityIds`, the actor of the LATEST `action` entry on it (TASK-1830) —
+   * e.g. who deleted each product of the «Видалені» list. Entries without an actor
+   * (system actions) are skipped, so an entity is missing from the result when no
+   * person is on record. One indexed read (`entityType, entityId`) for the whole page,
+   * plus one user read for the display names.
+   *
+   * The name comes from the user record as it is NOW («first last»); the email the
+   * entry recorded is the fallback when the user has no name or no longer exists — the
+   * log deliberately survives the account (see {@link findActorSnapshot}).
+   */
+  async findLatestActors(
+    action: string,
+    entityType: string,
+    entityIds: string[],
+  ): Promise<Map<string, LatestAuditActor>> {
+    const result = new Map<string, LatestAuditActor>();
+    if (entityIds.length === 0) {
+      return result;
+    }
+
+    const entries = await this.prisma.auditLog.findMany({
+      where: { action, entityType, entityId: { in: entityIds }, actorId: { not: null } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { entityId: true, actorId: true, actorEmail: true },
+    });
+    const latest = new Map<string, { actorId: string; actorEmail: string | null }>();
+    for (const entry of entries) {
+      if (entry.entityId && entry.actorId && !latest.has(entry.entityId)) {
+        latest.set(entry.entityId, { actorId: entry.actorId, actorEmail: entry.actorEmail });
+      }
+    }
+    if (latest.size === 0) {
+      return result;
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: [...new Set([...latest.values()].map((e) => e.actorId))] } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const userById = new Map(users.map((user) => [user.id, user]));
+    for (const [entityId, entry] of latest) {
+      const user = userById.get(entry.actorId);
+      result.set(entityId, {
+        ...entry,
+        firstName: user?.firstName ?? null,
+        lastName: user?.lastName ?? null,
+      });
+    }
+    return result;
   }
 
   async findMany(params: FindAuditLogsParams): Promise<{ entries: AuditLog[]; total: number }> {

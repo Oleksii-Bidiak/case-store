@@ -105,6 +105,12 @@ describe('ProductController (e2e)', () => {
     user: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      // TASK-1830: the deleted list names who deleted each product.
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    // TASK-1830: the action log the deleted list reads its actors from.
+    auditLog: {
+      findMany: jest.fn().mockResolvedValue([]),
     },
     refreshToken: {
       findUnique: jest.fn(),
@@ -479,6 +485,64 @@ describe('ProductController (e2e)', () => {
       expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ deleted: true }),
       );
+    });
+
+    // TASK-1830 (Т8): each deleted row says WHEN (the real deletedAt) and BY WHOM (the
+    // actor of the latest product.remove in the action log).
+    it('answers the deleted list with deletedAt and deletedBy on every row', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      const deletedAt = new Date('2026-10-01T09:30:00.000Z');
+      productRepositoryMock.findAll.mockResolvedValue({
+        products: [
+          { ...testProduct, id: 'gone-1', isActive: false, deletedAt },
+          { ...testProduct, id: 'gone-2', isActive: false, deletedAt },
+        ],
+        total: 2,
+      });
+      prismaServiceMock.auditLog.findMany.mockResolvedValueOnce([
+        { entityId: 'gone-1', actorId: testAdmin.id, actorEmail: testAdmin.email },
+      ]);
+      prismaServiceMock.user.findMany.mockResolvedValueOnce([
+        { id: testAdmin.id, firstName: 'Олена', lastName: 'Коваль' },
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/products/admin/list?deleted=true')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(prismaServiceMock.auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            action: 'product.remove',
+            entityType: 'product',
+            entityId: { in: ['gone-1', 'gone-2'] },
+          }),
+        }),
+      );
+      expect(response.body.data[0]).toMatchObject({
+        id: 'gone-1',
+        deletedAt: deletedAt.toISOString(),
+        deletedBy: { id: testAdmin.id, name: 'Олена Коваль' },
+      });
+      expect(response.body.data[1]).toMatchObject({ id: 'gone-2', deletedBy: null });
+    });
+
+    it('answers the live list with deletedAt and deletedBy null, without reading the log', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findAll.mockResolvedValue({
+        products: [{ ...testProduct, deletedAt: null }],
+        total: 1,
+      });
+      prismaServiceMock.auditLog.findMany.mockClear();
+
+      const response = await request(app.getHttpServer())
+        .get('/api/products/admin/list')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data[0]).toMatchObject({ deletedAt: null, deletedBy: null });
+      expect(prismaServiceMock.auditLog.findMany).not.toHaveBeenCalled();
     });
 
     // TASK-656 (Т8): through the real ValidationPipe — a class-field default on
