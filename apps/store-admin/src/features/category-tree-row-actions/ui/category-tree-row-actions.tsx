@@ -13,7 +13,7 @@
  */
 
 import Link from "next/link";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Trash2Icon } from "lucide-react";
 import {
   MAX_TREE_LEVELS,
   applyIntent,
@@ -86,6 +86,12 @@ export interface CategoryTreeRowActionsProps {
   onMoveTo: (categoryId: string) => void;
   /** Activate/deactivate — owned by `features/category-status-toggle` (blast radius). */
   onToggleStatus: () => void;
+  /**
+   * Open the delete dialog for this row (TASK-655, ДН-2.1). `undefined` = the
+   * session may not delete categories, and the item is not rendered at all —
+   * the caller decides with `can(PERM.categoriesDelete)`.
+   */
+  onDelete?: (categoryId: string) => void;
 }
 
 export function CategoryTreeRowActions({
@@ -98,6 +104,7 @@ export function CategoryTreeRowActions({
   onMove,
   onMoveTo,
   onToggleStatus,
+  onDelete,
 }: CategoryTreeRowActionsProps) {
   const self = items.find((i) => i.id === categoryId);
   const isRoot = self?.parentId === undefined || self?.parentId === null;
@@ -194,6 +201,22 @@ export function CategoryTreeRowActions({
         <DropdownMenuItem onSelect={() => onToggleStatus()}>
           {isActive ? t.deactivate : t.activate}
         </DropdownMenuItem>
+
+        {/* ДН-2.1: the one irreversible item — last, after its own separator,
+            in the destructive colour. Not disabled by a search filter or a
+            PATCH in flight: it is not a move. */}
+        {onDelete ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={() => onDelete(categoryId)}
+            >
+              <Trash2Icon aria-hidden="true" />
+              {dict.categories.delete.action}
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

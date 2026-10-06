@@ -50,6 +50,77 @@ describe("SegmentedControl (wave 198)", () => {
       screen.getByRole("radio", { name: "Опубліковано" }),
     ).not.toBeChecked();
   });
+
+  it("locks a single option: not choosable, and it says why (TASK-655)", async () => {
+    function Locked() {
+      const [value, setValue] = useState("a");
+      return (
+        <>
+          <SegmentedControl
+            aria-label="Куди"
+            value={value}
+            onValueChange={setValue}
+            options={[
+              { value: "a", label: "В існуючу" },
+              {
+                value: "b",
+                label: "Створити нову",
+                disabled: true,
+                describedBy: "why",
+              },
+            ]}
+          />
+          <p id="why">Потрібне право «Редагувати категорії».</p>
+        </>
+      );
+    }
+    render(<Locked />);
+
+    const locked = screen.getByRole("radio", { name: "Створити нову" });
+    expect(locked).toBeDisabled();
+    expect(locked).toHaveAccessibleDescription(
+      "Потрібне право «Редагувати категорії».",
+    );
+    // The lock is drawn, and hidden from the accessible name.
+    expect(locked.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+
+    await userEvent.click(locked);
+    expect(locked).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "В існуючу" })).toBeChecked();
+  });
+
+  it("`pill`: a white pill on a muted track, segments sized to their words (ДН-2.2)", () => {
+    render(
+      <SegmentedControl
+        aria-label="Куди"
+        variant="pill"
+        value="a"
+        onValueChange={() => {}}
+        options={[
+          { value: "a", label: "В існуючу категорію" },
+          { value: "b", label: "Створити нову" },
+        ]}
+      />,
+    );
+    const group = screen.getByRole("radiogroup", { name: "Куди" });
+    expect(group).toHaveClass("bg-muted", "flex");
+    expect(group).not.toHaveClass("border");
+    const picked = screen.getByRole("radio", { name: "В існуючу категорію" });
+    expect(picked).toHaveClass(
+      "flex-auto",
+      "data-[state=checked]:bg-background",
+    );
+    expect(picked).not.toHaveClass("data-[state=checked]:bg-primary");
+    // Still a 44 px touch target on a phone.
+    expect(picked).toHaveClass("min-h-11");
+  });
+
+  it("defaults to `solid`: the primary fill the banner form relies on", () => {
+    render(<Segmented />);
+    expect(screen.getByRole("radio", { name: "Опубліковано" })).toHaveClass(
+      "data-[state=checked]:bg-primary",
+    );
+  });
 });
 
 describe("SwatchPicker (wave 198)", () => {

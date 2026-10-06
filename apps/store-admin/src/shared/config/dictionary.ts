@@ -1312,6 +1312,140 @@ export const dict = {
       saved
         ? `Збережено: ${saved}. Не вдалося зберегти: ${failed} — спробуйте ще раз.`
         : `Не вдалося зберегти: ${failed} — спробуйте ще раз.`,
+
+    // ── видалення (TASK-655) ──
+    // CategoryDelete.dc.html ДН-2.1…2.12 (Д-н2). The dialog says, BEFORE the
+    // click, what disappears, where the products go and that nothing comes back
+    // — the numbers come from `deletionImpact` of `GET /admin/categories/:id`.
+    delete: {
+      action: "Видалити…",
+      title: (name: string) => `Видалити категорію «${name}»?`,
+      lead: "Категорія разом із підкатегоріями зникне з адмінки й сайту. Товари не видаляються — вони переїдуть туди, куди ви скажете. Відновити категорію не можна.",
+      leadLeaf:
+        "Категорія зникне з адмінки й сайту. Товари не видаляються — вони переїдуть туди, куди ви скажете. Відновити категорію не можна.",
+      leadEmpty:
+        "Порожню категорію буде прибрано з адмінки й сайту. Відновити її не можна.",
+      // While `deletionImpact` is loading or failed: nothing is claimed yet.
+      leadUnknown:
+        "Категорія зникне з адмінки й сайту. Відновити її не можна. Товари не видаляються ніколи.",
+      loading: "Рахуємо, що зачепить видалення…",
+      loadError:
+        "Не вдалося порахувати, що зачепить видалення. Без цих чисел видаляти не будемо — спробуйте ще раз.",
+      goneError: "Цієї категорії вже немає — її видалив хтось інший.",
+      retry: "Спробувати ще раз",
+      modeLabel: "Куди перенести товари",
+      modeExisting: "В існуючу категорію",
+      modeNew: "Створити нову",
+      modeNewLocked:
+        "Створити нову категорію тут може лише той, хто має ще й право «Редагувати категорії». Виберіть існуючу або попросіть власника.",
+      targetLabel: "Категорія, куди перенести товари",
+      targetPlaceholder: "Виберіть категорію…",
+      targetEmpty: "Такої категорії немає.",
+      targetExcluded: (name: string, hasChildren: boolean) =>
+        hasChildren
+          ? `Категорія «${name}» та її підкатегорії тут не показуються: переносити товари в те, що видаляється, не можна.`
+          : `Категорія «${name}» тут не показується: переносити товари в те, що видаляється, не можна.`,
+      targetRequired: "Виберіть категорію, куди перенести товари.",
+      newName: "Назва нової категорії",
+      newNameHint: (slug: string) =>
+        slug
+          ? `Адреса: /categories/${slug} — з назви, як при звичайному створенні.`
+          : "Адресу буде створено з назви, як при звичайному створенні.",
+      newNameRequired: "Вкажіть назву нової категорії.",
+      newNameNoLetters: "Назва має містити хоча б одну літеру чи цифру.",
+      newNameTooLong: "Назва — не довше за 255 символів.",
+      newParent: "Де розмістити",
+      newParentRoot: "Корінь каталогу",
+      newParentHint: (name: string) =>
+        `Батьком не може бути категорія «${name}» чи її підкатегорії.`,
+      // How the target reads inside a sentence.
+      targetExisting: (name: string) => `«${name}»`,
+      targetNewRoot: (name: string) => `«${name}» (нова, у корені каталогу)`,
+      targetNewUnder: (name: string, parent: string) =>
+        `«${name}» (нова, у «${parent}»)`,
+      consequences: "Що станеться",
+      goneCount: (count: number) =>
+        countLabel(count, ["категорія", "категорії", "категорій"]),
+      goneText: (count: number, name: string, subcategories: number) =>
+        subcategories > 0
+          ? `${pluralUk(count, ["зникне", "зникнуть", "зникнуть"])} — «${name}» і ${countLabel(subcategories, ["підкатегорія", "підкатегорії", "підкатегорій"])}`
+          : `${pluralUk(count, ["зникне", "зникнуть", "зникнуть"])} — «${name}»`,
+      goneSubNames: (names: string, more: number) =>
+        more > 0
+          ? `${names} і ще ${more}. Відновити їх не можна.`
+          : `${names}. Відновити їх не можна.`,
+      goneSubOne: "Відновити її не можна.",
+      goneSubEmpty: "Товарів і підкатегорій у ній немає — переносити нічого.",
+      productsCount: (count: number) =>
+        countLabel(count, ["товар", "товари", "товарів"]),
+      productsText: (count: number, target: string) =>
+        `${pluralUk(count, ["переїде", "переїдуть", "переїдуть"])} у ${target}`,
+      productsSub:
+        "Жоден товар не видаляється й не ховається: адреси, ціни, залишки — без змін.",
+      // Soft-deleted products move too (invariant I1: a restored product must
+      // not point at a tombstone), so the dialog says so rather than hiding it.
+      productsDeletedToo: (count: number) =>
+        `Також переїдуть видалені товари (${count}) — щоб їх можна було відновити.`,
+      deletedOnlyCount: (count: number) =>
+        countLabel(count, [
+          "видалений товар",
+          "видалені товари",
+          "видалених товарів",
+        ]),
+      deletedOnlySub:
+        "Їх немає в каталозі, але їх можна відновити — тому вони теж переїжджають.",
+      carouselsCount: (count: number) =>
+        `${countLabel(count, ["карусель", "каруселі", "каруселей"])} головної`,
+      carouselsText: (count: number, target: string) =>
+        `${pluralUk(count, ["перемкнеться", "перемкнуться", "перемкнуться"])} на ${target}`,
+      carouselsSub: (count: number) =>
+        count === 1
+          ? "Інакше вона лишилася б без товарів."
+          : "Інакше вони лишилися б без товарів.",
+      address: "Адреса",
+      addressText: (slug: string) => `/categories/${slug} звільниться`,
+      addressSub:
+        "Старі посилання на неї відкриватимуть «Сторінку не знайдено».",
+      addressSubEmpty: "Її можна одразу дати новій категорії.",
+      templatesWarning: (target: string) =>
+        `Після переїзду до товарів застосуються шаблони характеристик і додаткових послуг категорії ${target}. Власні значення товарів збережуться, але в картці товару може зʼявитися інший набір полів.`,
+      confirmMove: (count: number) =>
+        `Видалити й перенести ${countLabel(count, ["товар", "товари", "товарів"])}`,
+      confirm: "Видалити",
+      busy: "Видаляємо…",
+      // The red box (ДН-2.8): one per error code the API really returns. Each
+      // says that nothing changed — the operator's choice is kept as it was.
+      errorTitle: "Не вдалося видалити.",
+      errorInSubtree:
+        "Вибрана категорія тепер усередині гілки, що видаляється, — дерево щойно змінилося. Виберіть іншу ціль. Нічого не змінилося.",
+      errorTargetGone:
+        "Вибраної категорії вже немає — її щойно видалили. Виберіть іншу ціль. Нічого не змінилося.",
+      errorParentGone:
+        "Категорії, у якій ви хотіли розмістити нову, вже немає. Виберіть інше місце. Нічого не змінилося.",
+      errorSlugConflict: (slug: string) =>
+        `Категорія з адресою /categories/${slug} уже існує. Дайте новій категорії іншу назву або виберіть існуючу. Нічого не змінилося.`,
+      errorTreeStale:
+        "Дерево категорій щойно змінилося — ми оновили дані в цьому вікні. Перевірте вибір і спробуйте ще раз. Нічого не змінилося.",
+      errorForbidden:
+        "Права «Видаляти категорії» у вас уже немає — попросіть власника. Нічого не змінилося.",
+      errorForbiddenNew:
+        "Створювати нову категорію ви не можете — потрібне ще й право «Редагувати категорії». Виберіть існуючу. Нічого не змінилося.",
+      errorTargetRequired:
+        "У категорії щойно зʼявилися товари, підкатегорії чи каруселі — їх треба кудись перенести. Виберіть, куди. Нічого не змінилося.",
+      errorGeneric: "Спробуйте ще раз. Нічого не змінилося.",
+      // ДН-2.11
+      toastDone: (name: string) => `Категорію «${name}» видалено.`,
+      toastMoved: (name: string, count: number, target: string) =>
+        `Категорію «${name}» видалено. ${countLabel(count, ["товар", "товари", "товарів"])} тепер у «${target}».`,
+      toastShowProducts: "Показати товари",
+      // The tree read failed: there is nothing to pick from, and «Такої
+      // категорії немає» under an empty list would be a lie.
+      treeLoadError:
+        "Не вдалося завантажити список категорій, тож вибрати, куди перенести товари, поки нема з чого.",
+      // ДН-2.3: beside each target — active products in its whole subtree,
+      // the same figure the «Товарів» column of the tree shows.
+      targetOptionCount: (count: number) => `${count} тов.`,
+    },
   },
 
   categoryForm: {

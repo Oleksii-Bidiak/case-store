@@ -5,6 +5,7 @@ import {
   userEvent,
   waitFor,
   within,
+  type RenderWithProvidersOptions,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict, STOREFRONT_URL } from "@/shared/config";
@@ -45,6 +46,14 @@ function makeCategory(isActive: boolean) {
     metaDescription: null,
     createdAt: "2026-06-01T09:00:00.000Z",
     updatedAt: "2026-06-01T09:00:00.000Z",
+    // TASK-655: the delete dialog's preview. Empty here, so the card's delete
+    // test runs the target-less variant (ДН-2.9).
+    deletionImpact: {
+      subcategoryCount: 0,
+      productCount: 0,
+      carouselCount: 0,
+      deletedProductCount: 0,
+    },
   };
 }
 
@@ -167,10 +176,12 @@ function stubCategory(
 async function renderAndWaitForForm(
   category: ReturnType<typeof makeCategory>,
   options?: Parameters<typeof stubCategory>[1],
+  auth?: RenderWithProvidersOptions["auth"],
 ) {
   const stubs = stubCategory(category, options);
   const { queryClient } = renderWithProviders(
     <EditCategoryView categoryId={CATEGORY_ID} />,
+    { auth },
   );
   await waitFor(() =>
     expect(screen.getByLabelText(dict.categoryForm.slug)).toHaveValue(
@@ -400,5 +411,47 @@ describe("EditCategoryView — CategoriesProposal КТ5 (wave 198)", () => {
     expect(mockPush).not.toHaveBeenCalled();
     // The add-on edit is still on screen, still unsaved.
     expect(screen.getByLabelText("Гарантія")).toBeChecked();
+  });
+});
+
+describe("EditCategoryView — «Видалити…» on the card (TASK-655, ДН-2.12)", () => {
+  const dd = dict.categories.delete;
+
+  it("has no delete button without categories:delete", async () => {
+    // Default session: signed in, holding no key.
+    await renderAndWaitForForm(makeCategory(true));
+
+    expect(
+      screen.queryByRole("button", { name: dd.action }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("deletes through the same dialog and goes back to /categories", async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.delete(
+        `*/api/admin/categories/${CATEGORY_ID}`,
+        async ({ request }) => {
+          bodies.push(await request.json());
+          return new HttpResponse(null, { status: 204 });
+        },
+      ),
+    );
+    await renderAndWaitForForm(makeCategory(true), undefined, {
+      permissions: ["categories:delete"],
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: dd.action }));
+    const alert = await screen.findByRole("alertdialog");
+    expect(
+      within(alert).getByRole("heading", { name: dd.title("Чохли") }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      await within(alert).findByRole("button", { name: dd.confirm }),
+    );
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/categories"));
+    expect(bodies).toEqual([{}]);
+    expect(toast.success).toHaveBeenCalledWith(dd.toastDone("Чохли"));
   });
 });

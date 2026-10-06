@@ -12,6 +12,7 @@ import {
   type CategoryFormValues,
 } from "@/features/category-form";
 import { AttributeDefinitionEditor } from "@/features/attribute-definition-editor";
+import { CategoryDeleteAction } from "@/features/category-delete";
 import {
   CategoryAddonTemplatePicker,
   useCategoryAddonTemplate,
@@ -210,17 +211,25 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
             ) : null}
           </div>
           {category ? (
-            <RowActionsMenu
-              label={dict.categories.headerMenuAria}
-              className="size-9 border"
-              items={[
-                {
-                  label: dict.categories.openOnSite,
-                  href: `${STOREFRONT_URL}/categories/${category.slug}`,
-                  newTab: true,
-                },
-              ]}
-            />
+            <div className="flex shrink-0 items-center gap-2">
+              <RowActionsMenu
+                label={dict.categories.headerMenuAria}
+                className="size-9 border"
+                items={[
+                  {
+                    label: dict.categories.openOnSite,
+                    href: `${STOREFRONT_URL}/categories/${category.slug}`,
+                    newTab: true,
+                  },
+                ]}
+              />
+              {/* ДН-2.12: the destructive action last, outlined in red, and
+                  only for a session holding `categories:delete`. */}
+              <CategoryDeleteAction
+                categoryId={categoryId}
+                onDeleted={() => router.push("/categories")}
+              />
+            </div>
           ) : null}
         </div>
       </div>

@@ -22,6 +22,7 @@ import {
   userEvent,
   waitFor,
   within,
+  type RenderWithProvidersOptions,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
@@ -179,8 +180,8 @@ const polite = () => screen.getByTestId("tree-live-polite").textContent ?? "";
 const assertive = () =>
   screen.getByTestId("tree-live-assertive").textContent ?? "";
 
-async function renderTree() {
-  const result = renderWithProviders(<AdminCategoryTree />);
+async function renderTree(auth?: RenderWithProvidersOptions["auth"]) {
+  const result = renderWithProviders(<AdminCategoryTree />, { auth });
   await screen.findByRole("treegrid");
   await waitFor(() => expect(dataRows().length).toBeGreaterThan(0));
   return result;
@@ -1657,5 +1658,125 @@ describe("AdminCategoryTree — CategoriesProposal КТ1–КТ4 (wave 198)", ()
       "href",
       `/categories/${A1}/edit`,
     );
+  });
+});
+
+/* ──────────────── «Видалити…» in «⋯» (TASK-655, ДН-2.1) ──────────────── */
+
+describe("AdminCategoryTree — delete (TASK-655)", () => {
+  const dd = dict.categories.delete;
+
+  function stubDetail() {
+    server.use(
+      http.get("*/api/admin/categories/:id", ({ params }) =>
+        HttpResponse.json({
+          data: {
+            id: params.id,
+            name: NAMES[params.id as string],
+            slug: "slug",
+            description: null,
+            image: null,
+            parentId: null,
+            isActive: true,
+            sortOrder: 0,
+            metaTitle: null,
+            metaDescription: null,
+            createdAt: "2026-10-01T00:00:00.000Z",
+            updatedAt: "2026-10-01T00:00:00.000Z",
+            deletionImpact: {
+              subcategoryCount: 1,
+              productCount: 4,
+              carouselCount: 0,
+              deletedProductCount: 0,
+            },
+          },
+        }),
+      ),
+    );
+  }
+
+  async function openMenu(id: string) {
+    rowEl(id).focus();
+    fireEvent.keyDown(rowEl(id), { key: "F10", shiftKey: true });
+    await screen.findByRole("menuitem", {
+      name: dict.categories.tree.moveUp,
+    });
+  }
+
+  it("has no «Видалити…» without categories:delete", async () => {
+    mockReorder();
+    await renderTree({ permissions: ["categories:write"] });
+    await openMenu(A1);
+
+    expect(
+      screen.queryByRole("menuitem", { name: dd.action }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("puts «Видалити…» LAST in «⋯» and opens the delete dialog for that row", async () => {
+    mockReorder();
+    stubDetail();
+    await renderTree({ permissions: ["categories:delete"] });
+    await openMenu(A1);
+
+    const items = screen.getAllByRole("menuitem");
+    const last = items[items.length - 1];
+    expect(last).toHaveAccessibleName(dd.action);
+    expect(last).toHaveAttribute("data-variant", "destructive");
+
+    fireEvent.click(last);
+    const alert = await screen.findByRole("alertdialog");
+    expect(
+      within(alert).getByRole("heading", { name: dd.title("Чохли") }),
+    ).toBeInTheDocument();
+  });
+
+  it("tints the branch the open dialog would remove — and only it (ДН-2.2)", async () => {
+    mockReorder();
+    stubDetail();
+    await renderTree({ permissions: ["categories:delete"] });
+    expect(document.querySelector("[data-doomed]")).toBeNull();
+
+    // Deleting the ROOT «Аксесуари»: its visible children are tinted too.
+    await openMenu(A);
+    fireEvent.click(screen.getByRole("menuitem", { name: dd.action }));
+    await screen.findByRole("alertdialog");
+    for (const id of [A, A1, A2]) {
+      expect(rowEl(id)).toHaveAttribute("data-doomed", "true");
+    }
+    for (const id of [B, C]) {
+      expect(rowEl(id)).not.toHaveAttribute("data-doomed");
+    }
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: dict.common.cancel,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+
+    await openMenu(A1);
+    fireEvent.click(screen.getByRole("menuitem", { name: dd.action }));
+    await screen.findByRole("alertdialog");
+
+    // Чохли (its collapsed Силіконові is not drawn at all); not the parent,
+    // not the sibling.
+    expect(rowEl(A1)).toHaveAttribute("data-doomed", "true");
+    expect(rowEl(A1)).toHaveClass("bg-destructive/6");
+    for (const id of [A, A2, B, C]) {
+      expect(rowEl(id)).not.toHaveAttribute("data-doomed");
+    }
+
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: dict.common.cancel,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    expect(document.querySelector("[data-doomed]")).toBeNull();
   });
 });

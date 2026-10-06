@@ -34,6 +34,8 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, GripVertical, RefreshCwIcon } from "lucide-react";
 import { flattenAdminCategoryTree } from "@/entities/category";
+import { useAuth } from "@/entities/session";
+import { PERM } from "@/entities/permission";
 import {
   CategoryReorderUndoButton,
   useAdminCategoryTreeQuery,
@@ -42,6 +44,7 @@ import {
 } from "@/features/category-tree-reorder";
 import { CategoryTreeRowActions } from "@/features/category-tree-row-actions";
 import { CategoryMoveToDialog } from "@/features/category-move-to-dialog";
+import { CategoryDeleteDialog } from "@/features/category-delete";
 import { useCategoryStatusToggle } from "@/features/category-status-toggle";
 import {
   CategoryBulkActionsBar,
@@ -267,6 +270,12 @@ function CategoryTreeView() {
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [moveState, setMoveState] = useState<MoveState | null>(null);
   const [moveToId, setMoveToId] = useState<string | null>(null);
+  // TASK-655: the row whose delete dialog is open. The «Видалити…» item and
+  // the dialog exist only for a session holding `categories:delete` — `can()`
+  // answers false until the permissions have arrived, so nothing flashes in.
+  const { can } = useAuth();
+  const canDelete = can(PERM.categoriesDelete);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const focusRow = useCallback((id: string) => {
     setFocusedId(id);
@@ -592,6 +601,19 @@ function CategoryTreeView() {
         ? descendantsOf(moveState.preview, moveState.movingId)
         : new Set<string>(),
     [moveState],
+  );
+
+  /**
+   * ДН-2.2…2.8: while the delete dialog is open, the branch it would remove —
+   * the row and every descendant — is tinted red behind it, so the operator
+   * sees the loss on the tree itself, not only as «4 категорії» in the text.
+   */
+  const doomedIds = useMemo(
+    () =>
+      deleteId
+        ? new Set([deleteId, ...descendantsOf(items, deleteId)])
+        : new Set<string>(),
+    [deleteId, items],
   );
 
   /**
@@ -1091,6 +1113,7 @@ function CategoryTreeView() {
         search={search}
         grabbed={moveState?.movingId === row.item.id}
         illegal={illegalIds.has(row.item.id)}
+        doomed={doomedIds.has(row.item.id)}
         conflict={reorder.conflictIds.has(row.item.id)}
         isOwner={ownerId === row.item.id}
         locked={isLocked}
@@ -1104,6 +1127,7 @@ function CategoryTreeView() {
         onBlur={(event) => onRowBlur(event, row.item.id)}
         onFocusRow={() => setFocusedId(row.item.id)}
         onMoveTo={setMoveToId}
+        onDelete={canDelete ? setDeleteId : undefined}
         registerRef={(node) => {
           rowRefs.current.set(row.item.id, node);
           props.setNodeRef(node);
@@ -1283,6 +1307,15 @@ function CategoryTreeView() {
           reorder.move(next, movingId, options)
         }
       />
+
+      {canDelete ? (
+        <CategoryDeleteDialog
+          categoryId={deleteId}
+          onOpenChange={(open) => {
+            if (!open) setDeleteId(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1317,6 +1350,8 @@ interface CategoryTreeRowProps {
   search: string;
   grabbed: boolean;
   illegal: boolean;
+  /** In the branch the open delete dialog would remove (TASK-655). */
+  doomed: boolean;
   conflict: boolean;
   isOwner: boolean;
   locked: boolean;
@@ -1330,6 +1365,8 @@ interface CategoryTreeRowProps {
   onBlur: (event: ReactFocusEvent<HTMLTableRowElement>) => void;
   onFocusRow: () => void;
   onMoveTo: (id: string) => void;
+  /** `undefined` without `categories:delete` — the menu has no «Видалити…». */
+  onDelete?: (id: string) => void;
   registerRef: (node: HTMLTableRowElement | null) => void;
   style: React.CSSProperties;
   handleProps: SortableTreeRowRenderProps["handleProps"];
@@ -1354,6 +1391,7 @@ function CategoryTreeRow({
   search,
   grabbed,
   illegal,
+  doomed,
   conflict,
   isOwner,
   locked,
@@ -1367,6 +1405,7 @@ function CategoryTreeRow({
   onBlur,
   onFocusRow,
   onMoveTo,
+  onDelete,
   registerRef,
   style,
   handleProps,
@@ -1416,6 +1455,7 @@ function CategoryTreeRow({
       tabIndex={isOwner ? 0 : -1}
       data-grabbed={grabbed}
       data-conflict={conflict || undefined}
+      data-doomed={doomed || undefined}
       style={style}
       onKeyDown={onKeyDown}
       onBlur={onBlur}
@@ -1423,11 +1463,13 @@ function CategoryTreeRow({
       className={
         grabbed
           ? "outline outline-2 outline-ring"
-          : conflict
-            ? "bg-accent"
-            : !matched
-              ? "opacity-60"
-              : undefined
+          : doomed
+            ? "bg-destructive/6 hover:bg-destructive/6"
+            : conflict
+              ? "bg-accent"
+              : !matched
+                ? "opacity-60"
+                : undefined
       }
     >
       <TableCell role="gridcell" className="w-10 max-md:px-3">
@@ -1575,6 +1617,7 @@ function CategoryTreeRow({
             onMove={reorder.move}
             onMoveTo={onMoveTo}
             onToggleStatus={toggleStatus}
+            onDelete={onDelete}
           />
         </span>
       </TableCell>
