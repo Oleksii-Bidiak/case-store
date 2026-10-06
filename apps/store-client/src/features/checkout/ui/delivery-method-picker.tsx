@@ -2,7 +2,11 @@
 
 import type { ComponentType } from "react";
 import { Bike, Check, MapPin, Package, Truck } from "lucide-react";
-import { Controller, type Control } from "react-hook-form";
+import {
+  Controller,
+  type Control,
+  type UseFormSetValue,
+} from "react-hook-form";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
 import type { CheckoutFormValues } from "../model/checkout-schema";
@@ -30,9 +34,26 @@ const ICONS: Record<
 
 interface DeliveryMethodPickerProps {
   control: Control<CheckoutFormValues>;
+  setValue: UseFormSetValue<CheckoutFormValues>;
   options: CheckoutDeliveryOptions;
   /** The picked Nova Poshta city — turns the NP line into a real quote. */
   npCityRef?: string;
+}
+
+/**
+ * The fields a move into or out of Nova Poshta must not carry over. `city` and
+ * `deliveryAddress` are shared by every branch, but only the NP autocompletes
+ * keep their directory refs in step with the text: a city retyped under
+ * «Інша доставка» left the old `npCityRef` behind (back on NP the order went
+ * out with one city's name and another's ref and quote), and a free-text
+ * address landed in the NP branch field with no `npWarehouseRef`. The city's
+ * text stays — without its ref the schema asks to pick it from the list again.
+ */
+function clearNpCarryOver(setValue: UseFormSetValue<CheckoutFormValues>) {
+  const opts = { shouldDirty: true, shouldValidate: false } as const;
+  setValue("npCityRef", "", opts);
+  setValue("npWarehouseRef", "", opts);
+  setValue("deliveryAddress", "", opts);
 }
 
 /**
@@ -49,6 +70,7 @@ interface DeliveryMethodPickerProps {
  */
 export function DeliveryMethodPicker({
   control,
+  setValue,
   options,
   npCityRef,
 }: DeliveryMethodPickerProps) {
@@ -144,7 +166,16 @@ export function DeliveryMethodPicker({
                         // RHF focuses the first radio on a blocked submit.
                         ref={index === 0 ? field.ref : undefined}
                         onBlur={field.onBlur}
-                        onChange={() => field.onChange(method)}
+                        onChange={() => {
+                          if (
+                            method !== selected &&
+                            (method === "NOVA_POSHTA" ||
+                              selected === "NOVA_POSHTA")
+                          ) {
+                            clearNpCarryOver(setValue);
+                          }
+                          field.onChange(method);
+                        }}
                       />
                       <span className="inline-flex size-9.5 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                         <Icon className="size-5" aria-hidden />

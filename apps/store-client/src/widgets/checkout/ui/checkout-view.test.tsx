@@ -1584,6 +1584,41 @@ describe("CheckoutView — delivery method (TASK-646)", () => {
       },
     });
   });
+
+  it("a city retyped under «інша доставка» does not ride back to Nova Poshta on the old refs", async () => {
+    setupBlankProfile();
+    const order = captureOrder();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    await fillDelivery(user);
+    await user.click(methodRadio(dict.checkout.delivery.titles.OTHER));
+    // The NP branch's address does not land in the free-text field…
+    expect(
+      screen.getByLabelText(dict.checkout.delivery.otherAddressLabel),
+    ).toHaveValue("");
+    const city = screen.getByLabelText(dict.checkout.fields.city);
+    await user.clear(city);
+    await user.type(city, "Львів");
+
+    await user.click(methodRadio(dict.checkout.delivery.titles.NOVA_POSHTA));
+    // …and back on NP the branch is empty and Lviv has no Kyiv ref behind it.
+    expect(
+      screen.getByLabelText(dict.checkout.delivery.npWarehouseLabel),
+    ).toHaveValue("");
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+
+    expect(
+      await screen.findByText(dict.checkout.delivery.validation.npCity),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: dict.checkout.reviewHeading }),
+    ).not.toBeInTheDocument();
+    expect(order.body).toBeNull();
+  });
 });
 
 // ── TASK-773 + TASK-794: a session that expires mid-checkout ─────────────────

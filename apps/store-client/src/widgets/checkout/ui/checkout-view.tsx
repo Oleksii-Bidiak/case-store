@@ -456,6 +456,7 @@ export function CheckoutView() {
                   which fields follow. Absent when the shop offers one. */}
               <DeliveryMethodPicker
                 control={control}
+                setValue={setValue}
                 options={deliveryOptions}
                 npCityRef={npCityRef}
               />
