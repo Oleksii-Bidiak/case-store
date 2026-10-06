@@ -141,6 +141,13 @@ describe("CheckoutPayment (TASK-330-B)", () => {
         dict.checkout.delivery.paymentBlockedOther,
       );
     }
+    // The reason is the one thing to read on a disabled option: nothing
+    // between it and the card fades it below AA contrast.
+    for (const reason of screen.getAllByText(
+      dict.checkout.delivery.paymentBlockedOther,
+    )) {
+      expect(reason.closest(".opacity-60")).toBeNull();
+    }
     expect(
       screen.queryByRole("link", { name: dict.checkout.payment.signIn }),
     ).toBeNull();

@@ -85,13 +85,13 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
                     checked ? "border-primary bg-primary/6" : "border-border",
                     option.enabled
                       ? "cursor-pointer hover:border-primary/60"
-                      : "cursor-not-allowed opacity-60",
+                      : "cursor-not-allowed",
                   ].join(" ")}
                 >
                   <input
                     id={id}
                     type="radio"
-                    className="size-4 shrink-0 accent-primary"
+                    className="size-4 shrink-0 accent-primary disabled:opacity-60"
                     value={option.method}
                     checked={checked}
                     disabled={!option.enabled}
@@ -102,12 +102,25 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
                     onChange={() => field.onChange(option.method)}
                   />
 
-                  <span className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-primary bg-primary/10">
+                  {/* Only the icon and the title fade on a disabled option —
+                      the reason under them is what the shopper must read, so
+                      it keeps the full muted-text contrast (AA). */}
+                  <span
+                    className={[
+                      "inline-flex size-9.5 shrink-0 items-center justify-center rounded-md text-primary bg-primary/10",
+                      option.enabled ? "" : "opacity-60",
+                    ].join(" ")}
+                  >
                     <Icon className="size-5" />
                   </span>
 
                   <span className="min-w-0 flex-1">
-                    <b className="block text-sm text-foreground">
+                    <b
+                      className={[
+                        "block text-sm text-foreground",
+                        option.enabled ? "" : "opacity-60",
+                      ].join(" ")}
+                    >
                       {option.title}
                     </b>
                     {/* A disabled option says why — the delivery matrix
