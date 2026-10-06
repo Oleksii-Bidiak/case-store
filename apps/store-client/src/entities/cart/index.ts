@@ -26,4 +26,8 @@ export {
   // Add-on selection (TASK-174) — consumed by features/cart-addon-toggle.
   useSelectCartItemAddon,
   useDeselectCartItemAddon,
+  // The raw DELETE (TASK-657) — features/cart-remove-unavailable awaits it once
+  // per withdrawn line in a plain loop, so N lines make one refetch and one
+  // toast instead of N mutation observers each invalidating on its own.
+  removeCartItem,
 } from "@/shared/api/generated/cart/cart";

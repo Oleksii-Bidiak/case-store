@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ShoppingBag } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetCartQueryKey, useClearCart, useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
+import { useRemoveUnavailableItems } from "@/features/cart-remove-unavailable";
 import { dict, STICKY_ASIDE_TOP, H1_CLASS } from "@/shared/config";
 import {
   Button,
@@ -21,6 +22,7 @@ import {
 import { CartItemRow } from "./cart-item-row";
 import { CartSummary } from "./cart-summary";
 import { CartSkeleton } from "./cart-skeleton";
+import { useFocusWhenReady } from "../model/use-focus-when-ready";
 
 /**
  * CartView — client orchestrator for the cart page (Cart.dc.html redesign).
@@ -54,6 +56,35 @@ export function CartView() {
     },
   });
 
+  // «Прибрати недоступні» (TASK-657): one action for every withdrawn line.
+  const removeUnavailable = useRemoveUnavailableItems();
+
+  const cart = data?.data;
+  const items = cart?.items ?? [];
+  // A line the API withdrew from sale (TASK-403) blocks checkout until it is
+  // removed — the summary explains why, each row carries the badge.
+  const unavailableIds = items
+    .filter((item) => !item.isActive)
+    .map((item) => item.id);
+  const hasUnavailableItems = unavailableIds.length > 0;
+
+  // When EVERY line was withdrawn, the cleanup empties the cart and the
+  // summary — with its CTA, the summary's own focus target — unmounts. Focus
+  // then goes to the empty state's heading instead of falling to <body>.
+  const emptyHeadingRef = useRef<HTMLHeadingElement>(null);
+  const focusEmptyAfterCleanup = useFocusWhenReady(
+    items.length === 0,
+    emptyHeadingRef,
+  );
+
+  const handleRemoveUnavailable = async () => {
+    const clearsAll = unavailableIds.length === items.length;
+    if (clearsAll) focusEmptyAfterCleanup.arm();
+    const result = await removeUnavailable.removeAll(unavailableIds);
+    if (result.failed > 0) focusEmptyAfterCleanup.disarm();
+    return result;
+  };
+
   if (isInitializing || isLoading) {
     return <CartSkeleton />;
   }
@@ -75,12 +106,6 @@ export function CartView() {
     );
   }
 
-  const cart = data?.data;
-  const items = cart?.items ?? [];
-  // A line the API withdrew from sale (TASK-403) blocks checkout until it is
-  // removed — the summary explains why, each row carries the badge.
-  const hasUnavailableItems = items.some((item) => !item.isActive);
-
   if (items.length === 0) {
     return (
       <section
@@ -92,7 +117,14 @@ export function CartView() {
         </span>
         {/* The empty cart is still the /cart page, so its title is the page h1
             (TASK-751) — same role and scale as the wishlist's empty state. */}
-        <h1 id="empty-cart-heading" className={`${H1_CLASS} text-foreground`}>
+        {/* `tabIndex={-1}`: focus lands here after «Прибрати недоступні»
+            emptied the cart (TASK-657). */}
+        <h1
+          ref={emptyHeadingRef}
+          id="empty-cart-heading"
+          tabIndex={-1}
+          className={`${H1_CLASS} text-foreground focus:outline-none`}
+        >
           {dict.cart.emptyHeading}
         </h1>
         <p className="text-muted-foreground">{dict.cart.emptySubtitle}</p>
@@ -170,6 +202,9 @@ export function CartView() {
             <CartSummary
               totals={cart.totals}
               hasUnavailableItems={hasUnavailableItems}
+              unavailableCount={unavailableIds.length}
+              onRemoveUnavailable={handleRemoveUnavailable}
+              isRemovingUnavailable={removeUnavailable.isPending}
             />
             {/* Trust strip under the summary at every width (TASK-864). */}
             <OrderTrustStrip />
