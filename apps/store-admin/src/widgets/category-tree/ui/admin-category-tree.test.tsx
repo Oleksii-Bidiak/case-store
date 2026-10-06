@@ -1687,6 +1687,7 @@ describe("AdminCategoryTree — delete (TASK-655)", () => {
               subcategoryCount: 1,
               productCount: 4,
               carouselCount: 0,
+              carousels: [],
               deletedProductCount: 0,
             },
           },

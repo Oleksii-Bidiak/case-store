@@ -89,6 +89,7 @@ interface Impact {
   subcategoryCount: number;
   productCount: number;
   carouselCount: number;
+  carousels: { id: string; name: string }[];
   deletedProductCount: number;
 }
 
@@ -96,12 +97,14 @@ const HEAD_IMPACT: Impact = {
   subcategoryCount: 2,
   productCount: 15,
   carouselCount: 1,
+  carousels: [{ id: "c-1", name: "Навушники тижня" }],
   deletedProductCount: 0,
 };
 const EMPTY_IMPACT: Impact = {
   subcategoryCount: 0,
   productCount: 0,
   carouselCount: 0,
+  carousels: [],
   deletedProductCount: 0,
 };
 
@@ -385,9 +388,15 @@ describe("CategoryDeleteDialog — the server's numbers, never guessed", () => {
     expect(
       screen.getByText("переїдуть у «Аудіоаксесуари»", { exact: false }),
     ).toBeInTheDocument();
+    // TASK-1776: the carousel is named, as ДН-2.4 draws it.
     expect(screen.getByText("1 карусель головної")).toBeInTheDocument();
     expect(
-      screen.getByText("перемкнеться на «Аудіоаксесуари»", { exact: false }),
+      screen.getByText("«Навушники тижня» перемкнеться на «Аудіоаксесуари»", {
+        exact: false,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Інакше вона лишилася б без товарів."),
     ).toBeInTheDocument();
     expect(
       screen.getByText("/categories/headphones звільниться", { exact: false }),
@@ -405,6 +414,11 @@ describe("CategoryDeleteDialog — the server's numbers, never guessed", () => {
           subcategoryCount: 2,
           productCount: 1,
           carouselCount: 3,
+          carousels: [
+            { id: "c-1", name: "Навушники тижня" },
+            { id: "c-2", name: "Хіти" },
+            { id: "c-3", name: "Новинки" },
+          ],
           deletedProductCount: 2,
         },
       },
@@ -419,7 +433,13 @@ describe("CategoryDeleteDialog — the server's numbers, never guessed", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("3 каруселі головної")).toBeInTheDocument();
     expect(
-      screen.getByText("перемкнуться на «Аудіоаксесуари»", { exact: false }),
+      screen.getByText(
+        "«Навушники тижня», «Хіти» і «Новинки» перемкнуться на «Аудіоаксесуари»",
+        { exact: false },
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Інакше вони лишилися б без товарів."),
     ).toBeInTheDocument();
     expect(
       screen.getByText(d.productsDeletedToo(2), { exact: false }),
@@ -427,6 +447,52 @@ describe("CategoryDeleteDialog — the server's numbers, never guessed", () => {
     expect(
       screen.getByRole("button", { name: "Видалити й перенести 1 товар" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("CategoryDeleteDialog — the carousels by name (TASK-1776)", () => {
+  const carousels = (names: string[]) =>
+    names.map((name, i) => ({ id: `c-${i}`, name }));
+
+  async function renderWithCarousels(names: string[]) {
+    const user = userEvent.setup();
+    stub({
+      impacts: {
+        [HEAD]: {
+          ...HEAD_IMPACT,
+          carouselCount: names.length,
+          carousels: carousels(names),
+        },
+      },
+    });
+    renderDialog();
+    await ready();
+    await pickTarget(user, "Аудіоаксесуари");
+  }
+
+  it("names two with «і»", async () => {
+    await renderWithCarousels(["Навушники тижня", "Хіти"]);
+    expect(screen.getByText("2 каруселі головної")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "«Навушники тижня» і «Хіти» перемкнуться на «Аудіоаксесуари»",
+        { exact: false },
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names the first three and counts the rest", async () => {
+    await renderWithCarousels(["А", "Б", "В", "Г", "Ґ"]);
+    expect(screen.getByText("5 каруселей головної")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "«А», «Б», «В» і ще 2 перемкнуться на «Аудіоаксесуари»",
+        {
+          exact: false,
+        },
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/«Г»/)).not.toBeInTheDocument();
   });
 });
 
@@ -633,6 +699,7 @@ describe("CategoryDeleteDialog — the target picker", () => {
           subcategoryCount: 0,
           productCount: 0,
           carouselCount: 0,
+          carousels: [],
           deletedProductCount: 2,
         },
       },

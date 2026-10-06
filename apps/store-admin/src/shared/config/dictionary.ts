@@ -1487,8 +1487,6 @@ export const dict = {
         "Їх немає в каталозі, але їх можна відновити — тому вони теж переїжджають.",
       carouselsCount: (count: number) =>
         `${countLabel(count, ["карусель", "каруселі", "каруселей"])} головної`,
-      carouselsText: (count: number, target: string) =>
-        `${pluralUk(count, ["перемкнеться", "перемкнуться", "перемкнуться"])} на ${target}`,
       carouselsSub: (count: number) =>
         count === 1
           ? "Інакше вона лишилася б без товарів."
@@ -1557,6 +1555,23 @@ export const dict = {
         `«${name}» прихована — нова категорія не зʼявиться в меню сайту, доки «${name}» не покажуть. Товари лишаться на сайті.`,
       errorTargetHidden: (name: string) =>
         `Категорію «${name}» щойно приховали — товари, перенесені туди, зникнуть із сайту. Перевірте попередження й підтвердьте ще раз. Нічого не змінилося.`,
+      // ── каруселі на ім'я (TASK-1776) ──
+      // ДН-2.4: «1 карусель головної «Навушники тижня» перемкнеться на «X»».
+      // `names` is what the row spells out (the first few); `count` is all of
+      // them, so the rest reads «і ще N» and the verb agrees with the total.
+      carouselsText: (count: number, names: string[], target: string) => {
+        const quoted = names.map((n) => `«${n}»`);
+        const more = count - quoted.length;
+        const list =
+          quoted.length === 0
+            ? ""
+            : more > 0
+              ? `${quoted.join(", ")} і ще ${more} `
+              : quoted.length > 1
+                ? `${quoted.slice(0, -1).join(", ")} і ${quoted[quoted.length - 1]} `
+                : `${quoted[0]} `;
+        return `${list}${pluralUk(count, ["перемкнеться", "перемкнуться", "перемкнуться"])} на ${target}`;
+      },
     },
   },
 

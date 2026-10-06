@@ -75,6 +75,8 @@ const d = dict.categories.delete;
 
 /** How many subcategory names the «зникне» row spells out before «і ще N». */
 const NAMED_SUBCATEGORIES = 5;
+/** How many carousel names the carousels row spells out (TASK-1776). */
+const NAMED_CAROUSELS = 3;
 
 export interface CategoryDeleteDialogProps {
   /** The category to delete; `null` closes the dialog. */
@@ -857,7 +859,13 @@ function CategoryDeleteForm({
                 <ConsequenceRow
                   icon={<GalleryHorizontalEndIcon />}
                   count={d.carouselsCount(impact.carouselCount)}
-                  text={d.carouselsText(impact.carouselCount, target)}
+                  text={d.carouselsText(
+                    impact.carouselCount,
+                    impact.carousels
+                      .slice(0, NAMED_CAROUSELS)
+                      .map((c) => c.name),
+                    target,
+                  )}
                   sub={d.carouselsSub(impact.carouselCount)}
                 />
               ) : null}

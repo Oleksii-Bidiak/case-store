@@ -52,6 +52,7 @@ function makeCategory(isActive: boolean) {
       subcategoryCount: 0,
       productCount: 0,
       carouselCount: 0,
+      carousels: [],
       deletedProductCount: 0,
     },
   };
