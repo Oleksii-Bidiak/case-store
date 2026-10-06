@@ -90,7 +90,7 @@ export function HeaderAuth() {
       <AccountDropdownItem href="/account">
         {dict.header.myAccount}
       </AccountDropdownItem>
-      <AccountDropdownItem href="/orders">
+      <AccountDropdownItem href="/account/orders">
         {dict.account.ordersLink}
       </AccountDropdownItem>
       <AccountDropdownSeparator />

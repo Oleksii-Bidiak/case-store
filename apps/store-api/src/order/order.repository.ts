@@ -646,7 +646,8 @@ export class OrderRepository {
 
   /**
    * Find all orders for a user, newest first, with an optional status filter
-   * and pagination. Runs the count and page query in a single transaction.
+   * (one or more statuses, TASK-217) and pagination. Runs the count and page
+   * query in a single transaction.
    */
   async findByUserId(
     userId: string,
@@ -657,7 +658,7 @@ export class OrderRepository {
     const where: Prisma.OrderWhereInput = {
       userId,
       deletedAt: null,
-      ...(query.status ? { status: query.status } : {}),
+      ...(query.status?.length ? { status: { in: query.status } } : {}),
     };
 
     const [total, orders] = await this.prisma.$transaction([

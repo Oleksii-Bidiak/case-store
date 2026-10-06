@@ -395,6 +395,27 @@
   grid-template-columns: minmax(0, 1fr) 380px;
 }
 
+/* The 1.5px outline of chips and toolbar controls (SiteHeader/Catalog
+   `.chip`, the account sections strip). Tailwind v4 has no border-width
+   theme namespace, so the token is a utility; pair it with a colour
+   (`border-chip border-border`). The older call sites still spell it
+   `border-[1.5px]` under suppressions and can move over one by one. */
+@utility border-chip {
+  border-width: 1.5px;
+}
+
+/* A horizontal chip strip that scrolls without a visible bar (the account
+   sections strip below lg, TASK-217). Only for rows whose overflow is
+   obvious from a half-clipped chip at the edge; every item stays a focusable
+   link, so keyboard users scroll it with Tab. The WebKit rule is for Safari
+   < 18.2, which ignores `scrollbar-width`. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* ─────────────────────────────────────────────
    Base Styles
    These are element defaults, so they live in `@layer base` (after Tailwind's

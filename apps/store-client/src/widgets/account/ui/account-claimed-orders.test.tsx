@@ -35,9 +35,27 @@ describe("AccountClaimedOrders", () => {
 
     expect(screen.getByText(d.claimedOrdersHeading)).toBeInTheDocument();
     expect(screen.getByText(d.claimedOrdersBody(3))).toBeInTheDocument();
+    // TASK-217: to the account's order list, carrying the count so the list
+    // shows the same notice above its tabs.
     expect(
       screen.getByRole("link", { name: d.claimedOrdersCta }),
-    ).toHaveAttribute("href", "/orders");
+    ).toHaveAttribute("href", "/account/orders?claimed=3");
+  });
+
+  it("drops the link on the order list itself, keeping «Зрозуміло» (TASK-217)", () => {
+    params = new URLSearchParams("claimed=2");
+
+    renderWithProviders(
+      <AccountClaimedOrders ordersLink={false} className="mb-0" />,
+    );
+
+    expect(screen.getByRole("status")).toHaveClass("mb-0");
+    expect(screen.getByRole("status")).not.toHaveClass("mb-4");
+    expect(screen.getByText(d.claimedOrdersBody(2))).toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: d.claimedOrdersDismiss }),
+    ).toBeInTheDocument();
   });
 
   it("leaves the profile's «Зберегти» the only primary — outline + ghost (TASK-865)", () => {

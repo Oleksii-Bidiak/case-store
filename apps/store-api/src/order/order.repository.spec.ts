@@ -2188,6 +2188,49 @@ describe('OrderRepository', () => {
     });
   });
 
+  describe('findByUserId — multi-status filter (TASK-217)', () => {
+    it('maps several statuses to status: { in: [...] } on count and page query', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findByUserId('user-1', {
+        status: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
+      });
+
+      const expected = expect.objectContaining({
+        userId: 'user-1',
+        status: { in: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+      });
+      expect(prismaMock.order.count).toHaveBeenCalledWith({ where: expected });
+      expect(prismaMock.order.findMany.mock.calls[0][0].where).toEqual(expected);
+    });
+
+    it('maps a single-status array to status: { in: [...] }', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findByUserId('user-1', { status: [OrderStatus.PENDING] });
+
+      expect(prismaMock.order.findMany.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({ status: { in: [OrderStatus.PENDING] } }),
+      );
+    });
+
+    it('omits the status key entirely when status is absent', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findByUserId('user-1', {});
+
+      expect(prismaMock.order.findMany.mock.calls[0][0].where).not.toHaveProperty('status');
+    });
+
+    it('omits the status key entirely when status is an empty array', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findByUserId('user-1', { status: [] });
+
+      expect(prismaMock.order.findMany.mock.calls[0][0].where).not.toHaveProperty('status');
+    });
+  });
+
   describe('findAll — multi-status filter (TASK-250)', () => {
     it('maps a single-status array to status: { in: [...] }', async () => {
       prismaMock.$transaction.mockResolvedValue([0, []]);

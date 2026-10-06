@@ -14,7 +14,7 @@ import {
 } from 'class-validator';
 import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
 import { PENDING_STALE_HOURS } from '../../dashboard';
-import { OrderListQueryDto } from './order-list-query.dto';
+import { OrderListQueryDto, toOrderStatusList } from './order-list-query.dto';
 
 /**
  * Query parameters for the admin order list.
@@ -23,13 +23,16 @@ import { OrderListQueryDto } from './order-list-query.dto';
  * filters: an arbitrary `userId` (admins see every user's orders), an optional
  * created-at date range, and sorting.
  *
- * Unlike the customer DTO the `status` filter here is **multi-value** (TASK-250)
- * to power the lifecycle preset tabs — notably "В обробці" (CONFIRMED +
- * PROCESSING), an OR a single-value param cannot express. The customer
- * `OrderListQueryDto` / `GET /api/orders` contract is untouched: this DTO
- * `OmitType`s the narrow scalar `status` off the base and redeclares its own
- * widened `OrderStatus[]` field (a covariant property override would fail to
- * compile — `OrderStatus[]` is not a subtype of `OrderStatus`).
+ * The `status` filter is **multi-value** (TASK-250) to power the lifecycle
+ * preset tabs — notably "В обробці" (CONFIRMED + PROCESSING), an OR a
+ * single-value param cannot express. Since TASK-217 the customer
+ * `OrderListQueryDto` / `GET /api/orders` filter is multi-value too, and both
+ * parse it with the same {@link toOrderStatusList} transform and validators.
+ * This DTO still `OmitType`s the base `status` and redeclares its own because
+ * the two OpenAPI contracts differ on purpose: here `status` is documented as
+ * one CSV string (the admin panel's generated hooks send exactly that), while
+ * the customer route documents an enum array. Inheriting the base declaration
+ * would silently retype the admin's generated `status` param.
  */
 export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status'] as const) {
   @ApiProperty({
@@ -40,21 +43,9 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
     required: false,
     example: 'CONFIRMED,PROCESSING',
   })
-  // Read the ORIGINAL query value from `obj`, not the coerced `value` argument —
-  // the global ValidationPipe runs with `enableImplicitConversion: true`, which
-  // may coerce the raw value before this transform runs (same defensive pattern
-  // as ProductCardsQueryDto.ids / ProductListQueryDto.isActive). Returns
-  // undefined when nothing remains so "no filter" still means "all statuses".
-  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
-    const raw = obj[key];
-    const parts = Array.isArray(raw) ? raw : [raw];
-    const values = parts
-      .filter((part): part is string => typeof part === 'string')
-      .flatMap((part) => part.split(','))
-      .map((status) => status.trim())
-      .filter((status) => status !== '');
-    return values.length > 0 ? values : undefined;
-  })
+  // Shared with the customer DTO (TASK-217) — reads the ORIGINAL value from
+  // `obj` because of `enableImplicitConversion`; see its docblock.
+  @Transform(toOrderStatusList)
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(Object.keys(OrderStatus).length)

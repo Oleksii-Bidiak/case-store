@@ -39,6 +39,23 @@ export {
   type PaymentStartFailure,
 } from "./model/use-order-payment";
 export { submitPaymentHandoff } from "./lib/payment-handoff";
+
+// What an order screen says about the money, and the callback wait behind it
+// (TASK-330-B) — shared by the confirmation page and the account order detail
+// (TASK-217). The panel lives here, beside `useOrderPayment`, because a widget
+// may not import another widget.
+export {
+  OrderPaymentPanel,
+  offersPaymentRetry,
+  type AwaitingPayment,
+} from "./ui/order-payment-panel";
+export {
+  usePaymentAttemptWatch,
+  useForgetSettledPaymentAttempt,
+  CALLBACK_WAIT_MS,
+  CALLBACK_POLL_MS,
+  type PaymentAttemptWatch,
+} from "./model/use-payment-attempt-watch";
 export {
   readPaymentAttempt,
   rememberPaymentAttempt,

@@ -48,6 +48,36 @@ export {
 } from "./lib/status-badge";
 export { OrderStatusBadge } from "./ui/order-status-badge";
 
+// TASK-217: the account order screens (history card now, detail next).
+export type {
+  GetOrdersParams,
+  GetOrdersStatusItem,
+} from "@/shared/api/generated/models";
+export {
+  reservationMinutesLeft,
+  awaitingPaymentMinutes,
+} from "./lib/payment-countdown";
+export { useNow, NOW_TICK_MS } from "./lib/use-now";
+export { novaPoshtaTrackingUrl } from "./lib/tracking";
+export { OrderTrackingNumber } from "./ui/order-tracking-number";
+export { OrderItemThumb } from "./ui/order-item-thumb";
+export { orderUnitCount } from "./lib/order-units";
+export {
+  ORDER_TIMELINE_LENGTH,
+  orderTimelineIndex,
+  orderTimelineStates,
+  type OrderTimelineStepState,
+} from "./lib/order-timeline";
+export {
+  orderDeliveryDetails,
+  type OrderDeliveryDetails,
+  type OrderDeliveryPlaceKind,
+} from "./lib/order-delivery";
+// Shared by the confirmation page and the account order detail — moved down
+// from `widgets/order-confirmation`, which another widget may not import.
+export { OrderItemRow } from "./ui/order-item-row";
+export { OrderTotalsBreakdown } from "./ui/order-totals-breakdown";
+
 export {
   useCreateOrder,
   useGetOrders,

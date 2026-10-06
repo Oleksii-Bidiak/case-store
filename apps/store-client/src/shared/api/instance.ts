@@ -10,6 +10,9 @@ import Axios, {
  * - baseURL: reads from NEXT_PUBLIC_API_URL env var (defaults to http://localhost:3001)
  * - withCredentials: enabled for cookie-based auth (refresh + cart tokens)
  * - Content-Type: application/json by default
+ * - paramsSerializer: arrays go out as repeated keys (`status=A&status=B`). Axios's
+ *   default `status[]=A` reaches Express 5 as a literal `status[]` key, which the
+ *   API's whitelist validation rejects with 400 (TASK-217, `GET /api/orders`).
  */
 export const api = Axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001",
@@ -17,6 +20,7 @@ export const api = Axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  paramsSerializer: { indexes: null },
 });
 
 // ─── In-memory access token ──────────────────────────────────────────────────

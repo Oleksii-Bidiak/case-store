@@ -47,6 +47,14 @@ const FORMATTERS = {
   dayMonth: formatter("long", false),
 } as const;
 
+// "14:52" — 24-hour Kyiv wall-clock time (TASK-217: «тримаємо товари до 14:52»).
+const TIME_FORMATTER = new Intl.DateTimeFormat("uk-UA", {
+  timeZone: TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 /** Parse any accepted input into a valid Date, or `null` when it is unusable. */
 function toDate(value: DateInput): Date | null {
   const date = value instanceof Date ? value : new Date(value);
@@ -88,4 +96,18 @@ export function formatDayMonth(value: DateInput): string {
   return date
     ? assemble(FORMATTERS.dayMonth.formatToParts(date))
     : String(value);
+}
+
+/**
+ * Format a timestamp as Kyiv wall-clock time, 24-hour: "14:52". For a deadline
+ * the shopper reads against their own clock — the stock reservation of an
+ * unpaid order (TASK-217). Same zone rule as {@link formatDate}.
+ */
+export function formatTime(value: DateInput): string {
+  const date = toDate(value);
+  if (!date) return String(value);
+  const parts = TIME_FORMATTER.formatToParts(date);
+  const hour = parts.find((part) => part.type === "hour")?.value ?? "";
+  const minute = parts.find((part) => part.type === "minute")?.value ?? "";
+  return `${hour}:${minute}`;
 }

@@ -173,8 +173,39 @@ describe("OrderConfirmationView", () => {
 
   // ── TASK-261: purchase analytics ───────────────────────────────────────────
   describe("purchase analytics", () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
     afterEach(() => {
       delete window.umami;
+    });
+
+    it("does not report purchase again when the shopper comes back to pay (TASK-217)", async () => {
+      // «Оплатити» in the account hands off to the provider, whose result_url
+      // is this page again. The order was bought once; the funnel counts once.
+      const track = jest.fn();
+      window.umami = { track };
+      server.use(
+        http.get("*/api/orders/:id", () => HttpResponse.json(makeOrder())),
+      );
+
+      const first = renderWithProviders(
+        <OrderConfirmationView orderId="order-1" />,
+        authed,
+      );
+      await screen.findByRole("heading", { name: dict.order.thankYou });
+      await waitFor(() =>
+        expect(track).toHaveBeenCalledWith("purchase", expect.anything()),
+      );
+      first.unmount();
+
+      renderWithProviders(<OrderConfirmationView orderId="order-1" />, authed);
+      await screen.findByRole("heading", { name: dict.order.thankYou });
+
+      expect(
+        track.mock.calls.filter(([name]) => name === "purchase"),
+      ).toHaveLength(1);
     });
 
     it("reports purchase once with the order id and amount after the order loads", async () => {

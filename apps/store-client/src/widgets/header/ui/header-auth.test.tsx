@@ -139,7 +139,7 @@ describe("HeaderAuth", () => {
     ).toHaveAttribute("href", "/account");
     expect(
       screen.getByRole("menuitem", { name: dict.account.ordersLink }),
-    ).toHaveAttribute("href", "/orders");
+    ).toHaveAttribute("href", "/account/orders");
   });
 
   it("logs out via the auth mutation and clears local tokens", async () => {

@@ -33,8 +33,14 @@ export {
   OrderConfirmationSkeleton,
   GuestOrderView,
 } from "./order-confirmation";
-export { AccountView, AccountSkeleton } from "./account";
+export {
+  AccountView,
+  AccountShell,
+  AccountProfileSkeleton,
+  AccountClaimedOrders,
+} from "./account";
 export { OrderHistoryView, OrderHistorySkeleton } from "./order-history";
+export { OrderDetailView, OrderDetailSkeleton } from "./order-detail";
 // TASK-483: the public "number + phone" form — the way back to an order that
 // does not depend on still having the confirmation email.
 export { OrderLookupView } from "./order-lookup";

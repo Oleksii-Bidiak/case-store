@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { dict } from "@/shared/config";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui";
+import { ACCOUNT_ORDERS_PATH } from "./account-nav";
 
 /**
  * AccountClaimedOrders — "we found the orders you placed before you signed up"
@@ -29,8 +31,24 @@ import { Button } from "@/shared/ui";
  * Nothing renders for the overwhelming majority — no parameter, a zero, or a
  * value that is not a positive whole number (a hand-edited URL) all mean "say
  * nothing", never a mangled sentence.
+ *
+ * ── Where it shows (TASK-217) ────────────────────────────────────────────────
+ * The verification page still lands on `/account?claimed=N`, where the profile
+ * shows the banner with «Переглянути замовлення». That link now goes to the
+ * account's order list and carries the count along, and the list shows the
+ * same banner above its tabs (AccountOrders.dc.html) — without the link, since
+ * the shopper is already looking at the orders. «Зрозуміло» strips only
+ * `claimed`, so the list keeps its tab and page.
  */
-export function AccountClaimedOrders() {
+export function AccountClaimedOrders({
+  ordersLink = true,
+  className,
+}: {
+  /** Offer «Переглянути замовлення» — off on the order list itself. */
+  ordersLink?: boolean;
+  /** Outer spacing; defaults to the profile's `mb-4`. */
+  className?: string;
+} = {}) {
   const d = dict.account.dashboard;
   const router = useRouter();
   const pathname = usePathname();
@@ -56,7 +74,10 @@ export function AccountClaimedOrders() {
   return (
     <div
       role="status"
-      className="mb-4 rounded-2xl border border-border bg-card p-6 shadow-card"
+      className={cn(
+        "mb-4 rounded-2xl border border-border bg-card p-6 shadow-card",
+        className,
+      )}
     >
       <h2 className="mb-1.5 text-lg font-semibold text-foreground">
         {d.claimedOrdersHeading}
@@ -68,9 +89,13 @@ export function AccountClaimedOrders() {
       <div className="flex flex-wrap items-center gap-3">
         {/* Outline + ghost (TASK-865): «Зберегти» in the profile form below
             is the page's one primary action (design-system §1). */}
-        <Button asChild variant="outline" className="h-11 rounded-cta px-5">
-          <Link href="/orders">{d.claimedOrdersCta}</Link>
-        </Button>
+        {ordersLink && (
+          <Button asChild variant="outline" className="h-11 rounded-cta px-5">
+            <Link href={`${ACCOUNT_ORDERS_PATH}?claimed=${claimed}`}>
+              {d.claimedOrdersCta}
+            </Link>
+          </Button>
+        )}
         <Button
           type="button"
           variant="ghost"

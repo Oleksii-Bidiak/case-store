@@ -115,7 +115,8 @@ describe("sticky aside offset (TASK-519)", () => {
     const unpaired = consumers
       .filter(
         (file) =>
-          !/\b(?:md|lg):sticky \$\{STICKY_ASIDE_TOP\}/.test(
+          // `xl`: the account order detail's summary column (TASK-217).
+          !/\b(?:md|lg|xl):sticky \$\{STICKY_ASIDE_TOP\}/.test(
             readFileSync(file, "utf8"),
           ),
       )

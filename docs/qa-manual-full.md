@@ -548,7 +548,10 @@
       успішною оплатою — у проді це означало б, що будь-хто, хто знає наш `public_key`,
       може позначати замовлення оплаченими.
 
-### SF-ACC — Кабінет і замовлення покупця (сторі П1, П3 · `/account`, `/orders`, `/orders/[id]/confirmation`, `/orders/guest/[token]`)
+### SF-ACC — Кабінет і замовлення покупця (сторі П1, П3 · `/account`, `/account/orders`, `/account/orders/[id]`, `/orders/[id]/confirmation`, `/orders/guest/[token]`)
+
+> З TASK-217 (2026-10-06) історія й деталі — розділи кабінету; `/orders` і `/orders/<id>`
+> відповідають 308 туди. Вкладки, деталі, ТТН, редіректи — чеки SF-ACC-49…56 у `qa-recheck.md`.
 
 - [ ] **SF-ACC-01 — `/account` під захистом.** **Зроби:** розлогіненим відкрий `/account`.
       **Має бути:** редірект на логін із поверненням назад після входу.
@@ -582,14 +585,14 @@
 - [ ] **SF-ACC-12 — ⚠️ Перемикачі сповіщень не зберігаються.** **Зроби:** переключи будь-який
       і онови сторінку. **Має бути (цільово):** стан зберігся. **Насправді:** повертається
       як було — вони не персистяться (TASK-175 🅿️).
-- [ ] **SF-ACC-13 — Історія замовлень.** **Зроби:** відкрий `/orders`. **Має бути:** список
+- [ ] **SF-ACC-13 — Історія замовлень.** **Зроби:** відкрий `/account/orders`. **Має бути:** список
       замовлень із номером, датою, сумою і статусом.
 - [ ] **SF-ACC-14 — Статуси українською.** **Зроби:** подивись на статуси. **Має бути:**
       «Очікує», «Підтверджено», «Відправлено» тощо — не `PENDING`/`SHIPPED`.
 - [ ] **SF-ACC-15 — Скасувати нове замовлення.** **Зроби:** скасуй свіже замовлення в статусі
       «Очікує». **Має бути:** статус змінюється без F5; склад в адмінці повернувся.
 - [ ] **SF-ACC-16 — Не можна скасувати підтверджене.** **Зроби:** в адмінці переведи
-      замовлення в «Підтверджено», відкрий `/orders`. **Має бути:** кнопки скасування
+      замовлення в «Підтверджено», відкрий `/account/orders`. **Має бути:** кнопки скасування
       **немає** — це свідоме обмеження, далі телефоном оператору (E-18).
 - [ ] **SF-ACC-17 — Сторінка підтвердження.** **Зроби:** відкрий `/orders/{id}/confirmation`.
       **Має бути:** номер, склад замовлення, суми, адреса доставки.
@@ -605,14 +608,14 @@
 - [ ] **SF-ACC-21 — Зіпсований токен.** **Зроби:** зміни кілька символів у токені. **Має
       бути:** 404, без натяку на існування замовлення.
 - [ ] **SF-ACC-22 — ⚠️ Гість зареєструвався на той самий email.** **Зроби:** оформи
-      замовлення гостем, потім зареєструй акаунт на **той самий** email і відкрий `/orders`.
+      замовлення гостем, потім зареєструй акаунт на **той самий** email і відкрий `/account/orders`.
       **Має бути (цільово):** замовлення в історії. **Насправді:** його там немає — прив'язка
       не викликається (E-20, TASK-338 🔄). Доступ за посиланням із листа при цьому
       лишається.
-- [ ] **SF-ACC-23 — ⚠️ ТТН у кабінеті.** **Зроби:** після того як оператор поставив ТТН і
-      статус «Відправлено», відкрий `/orders`. **Має бути (цільово):** номер накладної видно
-      і його можна скопіювати. **Насправді:** ТТН на вітрині не показується ніде — тільки в
-      листі (`user-stories.md` §5.3).
+- [ ] **SF-ACC-23 — ТТН у кабінеті.** **Зроби:** після того як оператор поставив ТТН і
+      статус «Відправлено», відкрий `/account/orders`, потім деталі замовлення. **Має бути:**
+      номер накладної видно в картці й у блоці «Доставка», «Копіювати» кладе його в буфер,
+      «Відстежити» відкриває трекінг Нової Пошти (TASK-217).
 - [ ] **SF-ACC-24 — Подати заяву на повернення.** **Зроби:** у «Моїх замовленнях» на
       замовленні зі статусом «Доставлено» натисни «Подати заяву на повернення», вкажи
       кількість і причину, надішли. **Має бути:** тост про надсилання, діалог закривається;
@@ -1741,41 +1744,43 @@
 
 26 сторінок (`page.tsx`) + 7 машинних маршрутів.
 
-| Маршрут                     | Файл                                    | Перевірки                                     |
-| --------------------------- | --------------------------------------- | --------------------------------------------- |
-| `/`                         | `app/page.tsx`                          | SF-HOME-01…16                                 |
-| `/products`                 | `app/products/page.tsx`                 | SF-CAT-01…17, SF-CAT-24…30                    |
-| `/products/[slug]`          | `app/products/[slug]/page.tsx`          | SF-PDP-01…32                                  |
-| `/categories`               | `app/categories/page.tsx`               | SF-CAT-18, SF-CAT-19                          |
-| `/categories/[slug]`        | `app/categories/[slug]/page.tsx`        | SF-CAT-20…23                                  |
-| `/search`                   | `app/search/page.tsx`                   | SF-SRCH-01…12                                 |
-| `/cart`                     | `app/cart/page.tsx`                     | SF-CART-01…18, SF-CART-22                     |
-| `/wishlist`                 | `app/wishlist/page.tsx`                 | SF-CART-19, SF-CART-20, SF-CART-21            |
-| `/checkout`                 | `app/checkout/page.tsx`                 | SF-CHK-01…25, SF-PAY-01, SF-PAY-02            |
-| `/orders`                   | `app/orders/page.tsx`                   | SF-ACC-13…16, SF-ACC-22, SF-ACC-23, SF-ACC-25 |
-| `/orders/[id]/confirmation` | `app/orders/[id]/confirmation/page.tsx` | SF-ACC-17, SF-ACC-18, SF-CHK-17, SF-PAY-03    |
-| `/orders/guest/[token]`     | `app/orders/guest/[token]/page.tsx`     | SF-ACC-19, SF-ACC-20, SF-ACC-21, SF-OST-18    |
-| `/orders/status`            | `app/orders/status/page.tsx`            | SF-OST-01…18                                  |
-| `/account`                  | `app/account/page.tsx`                  | SF-ACC-01…12, SF-ACC-24, SF-ACC-26            |
-| `/login`                    | `app/(auth)/login/page.tsx`             | SF-AUTH-08…20                                 |
-| `/register`                 | `app/(auth)/register/page.tsx`          | SF-AUTH-01…05                                 |
-| `/forgot-password`          | `app/(auth)/forgot-password/page.tsx`   | SF-AUTH-21, SF-AUTH-22                        |
-| `/reset-password`           | `app/(auth)/reset-password/page.tsx`    | SF-AUTH-23                                    |
-| `/verify-email`             | `app/(auth)/verify-email/page.tsx`      | SF-AUTH-06, SF-AUTH-07                        |
-| `/blog`                     | `app/blog/page.tsx`                     | SF-CNT-01…05                                  |
-| `/blog/[slug]`              | `app/blog/[slug]/page.tsx`              | SF-CNT-06…09                                  |
-| `/legal`                    | `app/legal/page.tsx`                    | SF-CNT-10                                     |
-| `/legal/[slug]`             | `app/legal/[slug]/page.tsx`             | SF-CNT-11…15                                  |
-| `/info`                     | `app/info/page.tsx`                     | SF-CNT-16, SF-CNT-17, SF-CNT-21               |
-| `/contact`                  | `app/contact/page.tsx`                  | SF-CNT-18…21                                  |
-| `/promo`                    | `app/promo/page.tsx`                    | SF-CNT-23, SF-CNT-24                          |
-| `/sitemap.xml`              | `app/sitemap.ts`                        | SF-SEO-01, SF-SEO-02, SF-SEO-03               |
-| `/robots.txt`               | `app/robots.ts`                         | SF-SEO-04, SF-SEO-05                          |
-| `/manifest.webmanifest`     | `app/manifest.ts`                       | SF-SEO-06, SF-SEO-07                          |
-| `/merchant-feed.xml`        | `app/merchant-feed.xml/route.ts`        | SF-SEO-08, SF-SEO-09                          |
-| `/llms.txt`                 | `app/llms.txt/route.ts`                 | SF-SEO-10                                     |
-| `/indexnow.txt`             | `app/indexnow.txt/route.ts`             | SF-SEO-11                                     |
-| `/api/revalidate`           | `app/api/revalidate/route.ts`           | SF-SEO-12, SF-SEO-13, AD-PUB-01, AD-PUB-02    |
+| Маршрут                     | Файл                                     | Перевірки                                     |
+| --------------------------- | ---------------------------------------- | --------------------------------------------- |
+| `/`                         | `app/page.tsx`                           | SF-HOME-01…16                                 |
+| `/products`                 | `app/products/page.tsx`                  | SF-CAT-01…17, SF-CAT-24…30                    |
+| `/products/[slug]`          | `app/products/[slug]/page.tsx`           | SF-PDP-01…32                                  |
+| `/categories`               | `app/categories/page.tsx`                | SF-CAT-18, SF-CAT-19                          |
+| `/categories/[slug]`        | `app/categories/[slug]/page.tsx`         | SF-CAT-20…23                                  |
+| `/search`                   | `app/search/page.tsx`                    | SF-SRCH-01…12                                 |
+| `/cart`                     | `app/cart/page.tsx`                      | SF-CART-01…18, SF-CART-22                     |
+| `/wishlist`                 | `app/wishlist/page.tsx`                  | SF-CART-19, SF-CART-20, SF-CART-21            |
+| `/checkout`                 | `app/checkout/page.tsx`                  | SF-CHK-01…25, SF-PAY-01, SF-PAY-02            |
+| `/account/orders`           | `app/account/orders/page.tsx`            | SF-ACC-13…16, SF-ACC-22, SF-ACC-23, SF-ACC-25 |
+| `/account/orders/[id]`      | `app/account/orders/[id]/page.tsx`       | `qa-recheck.md` SF-ACC-52, SF-ACC-53          |
+| `/orders`, `/orders/[id]`   | 308 → `/account/orders…` (`next.config`) | `qa-recheck.md` SF-ACC-54                     |
+| `/orders/[id]/confirmation` | `app/orders/[id]/confirmation/page.tsx`  | SF-ACC-17, SF-ACC-18, SF-CHK-17, SF-PAY-03    |
+| `/orders/guest/[token]`     | `app/orders/guest/[token]/page.tsx`      | SF-ACC-19, SF-ACC-20, SF-ACC-21, SF-OST-18    |
+| `/orders/status`            | `app/orders/status/page.tsx`             | SF-OST-01…18                                  |
+| `/account`                  | `app/account/page.tsx`                   | SF-ACC-01…12, SF-ACC-24, SF-ACC-26            |
+| `/login`                    | `app/(auth)/login/page.tsx`              | SF-AUTH-08…20                                 |
+| `/register`                 | `app/(auth)/register/page.tsx`           | SF-AUTH-01…05                                 |
+| `/forgot-password`          | `app/(auth)/forgot-password/page.tsx`    | SF-AUTH-21, SF-AUTH-22                        |
+| `/reset-password`           | `app/(auth)/reset-password/page.tsx`     | SF-AUTH-23                                    |
+| `/verify-email`             | `app/(auth)/verify-email/page.tsx`       | SF-AUTH-06, SF-AUTH-07                        |
+| `/blog`                     | `app/blog/page.tsx`                      | SF-CNT-01…05                                  |
+| `/blog/[slug]`              | `app/blog/[slug]/page.tsx`               | SF-CNT-06…09                                  |
+| `/legal`                    | `app/legal/page.tsx`                     | SF-CNT-10                                     |
+| `/legal/[slug]`             | `app/legal/[slug]/page.tsx`              | SF-CNT-11…15                                  |
+| `/info`                     | `app/info/page.tsx`                      | SF-CNT-16, SF-CNT-17, SF-CNT-21               |
+| `/contact`                  | `app/contact/page.tsx`                   | SF-CNT-18…21                                  |
+| `/promo`                    | `app/promo/page.tsx`                     | SF-CNT-23, SF-CNT-24                          |
+| `/sitemap.xml`              | `app/sitemap.ts`                         | SF-SEO-01, SF-SEO-02, SF-SEO-03               |
+| `/robots.txt`               | `app/robots.ts`                          | SF-SEO-04, SF-SEO-05                          |
+| `/manifest.webmanifest`     | `app/manifest.ts`                        | SF-SEO-06, SF-SEO-07                          |
+| `/merchant-feed.xml`        | `app/merchant-feed.xml/route.ts`         | SF-SEO-08, SF-SEO-09                          |
+| `/llms.txt`                 | `app/llms.txt/route.ts`                  | SF-SEO-10                                     |
+| `/indexnow.txt`             | `app/indexnow.txt/route.ts`              | SF-SEO-11                                     |
+| `/api/revalidate`           | `app/api/revalidate/route.ts`            | SF-SEO-12, SF-SEO-13, AD-PUB-01, AD-PUB-02    |
 
 Наскрізні перевірки, які не належать одному маршруту: SF-UX-01…16 (теми, адаптив,
 доступність, 404, помилки), SF-SEO-14…16 (метадані на кількох сторінках), SF-PAY-03…16

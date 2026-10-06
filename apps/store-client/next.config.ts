@@ -2,6 +2,7 @@ import path from "node:path";
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 import { buildContentSecurityPolicy } from "./src/shared/config/content-security-policy";
+import { LEGACY_ORDER_REDIRECTS } from "./src/shared/config/legacy-order-redirects";
 
 // Product images are served by store-api from `${PUBLIC_BASE_URL}/uploads/...`,
 // which mirrors NEXT_PUBLIC_API_URL on the client. `next/image` refuses any
@@ -224,6 +225,11 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
+  },
+  // The order history and order detail live in the account now (TASK-217);
+  // which `/orders/*` routes stay and why is on the constant.
+  async redirects() {
+    return [...LEGACY_ORDER_REDIRECTS];
   },
 };
 

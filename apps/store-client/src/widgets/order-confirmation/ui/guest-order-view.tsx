@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useGetGuestOrder } from "@/entities/order";
+import {
+  OrderTotalsBreakdown,
+  orderDeliveryDetails,
+  useGetGuestOrder,
+} from "@/entities/order";
 import { dict, H1_CLASS } from "@/shared/config";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
 import { OrderAddressSummary } from "./order-address-summary";
-import { OrderTotalsBreakdown } from "./order-totals-breakdown";
 
 interface GuestOrderViewProps {
   /** Opaque access token from the confirmation email. */
@@ -108,10 +111,14 @@ export function GuestOrderView({ token }: GuestOrderViewProps) {
         <aside className="flex flex-col gap-6 lg:col-span-1 lg:self-start">
           <OrderTotalsBreakdown
             subtotal={order.subtotal}
+            addonsTotal={order.addonsTotal}
             discount={order.discount}
+            discountCode={order.discountCode}
             shippingCost={order.shippingCost}
+            shippingPending={orderDeliveryDetails(order).shippingCostPending}
             tax={order.tax}
             total={order.total}
+            className="p-6 shadow-none"
           />
 
           {notes && (

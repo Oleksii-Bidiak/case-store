@@ -7,6 +7,8 @@
 // If multi-locale is ever required, this object's shape already matches a
 // next-intl message catalog, so migration is mechanical.
 
+import { pluralUk } from "./plural";
+
 // Ukrainian labels for the order/payment status enums (TASK-129). Keyed by the
 // raw API enum string with a `?? status` fallback at call sites. `PENDING` and
 // `REFUNDED` exist in both enums but carry different customer-facing meanings,
@@ -1491,6 +1493,19 @@ export const dict = {
     notFoundHeading: "Не вдалося знайти це замовлення",
     notFoundBody: "Замовлення не існує або належить іншому акаунту.",
 
+    // Nova Poshta waybill with copy + track (TASK-217): the order history card
+    // and the account order detail render the same `OrderTrackingNumber`.
+    tracking: {
+      label: "ТТН Нової Пошти",
+      copy: "Копіювати",
+      copyAria: (ttn: string) => `Копіювати ТТН ${ttn}`,
+      copied: "Скопійовано",
+      copiedLive: (ttn: string) => `ТТН ${ttn} скопійовано`,
+      track: "Відстежити",
+      trackAria:
+        "Відстежити посилку на сайті Нової Пошти (відкривається в новій вкладці)",
+    },
+
     // ── Online payment (TASK-330-B) ─────────────────────────────────────────
     // The shopper arrives here from the provider's `result_url`. That redirect
     // is unauthenticated and trivially forgeable, and the money is confirmed by
@@ -1531,6 +1546,55 @@ export const dict = {
       orderClosedTitle: "Замовлення вже виконано",
       orderClosedBody:
         "Замовлення доставлено, тож онлайн-оплата для нього недоступна. Якщо є питання щодо оплати — зателефонуйте нам.",
+      // TASK-217: an unpaid ONLINE order still holding its reservation, on the
+      // account order detail. The title is `orderHistory.awaitingPayment(N)`,
+      // the button `orderHistory.pay(total)` — one wording on both screens.
+      awaitingBody: (time: string) =>
+        `Ми тримаємо товари за вами до ${time}. Якщо оплата не надійде, резерв знімемо, а замовлення скасуємо.`,
+    },
+
+    // ── Totals rows (TASK-217) ──────────────────────────────────────────────
+    // The confirmation page and the account order detail share one breakdown.
+    addons: "Послуги",
+    discountWithCode: (code: string) => `Знижка · ${code}`,
+    shippingFree: "Безкоштовно",
+    // `shippingAddress.shippingCostPending` (delivery OTHER): the 0 booked at
+    // checkout is not a price, the operator quotes it later (B-6 §4).
+    shippingPending: "Уточнить оператор",
+    paymentMethodLabel: "Спосіб оплати",
+    // The confirmation page's way into the account copy of the same order.
+    viewInAccount: "Деталі замовлення",
+
+    // ── Account order detail `/account/orders/[id]` (TASK-217) ──────────────
+    // AccountOrders.dc.html `#detail`. The h1 is
+    // `account.dashboard.orderHeading`, the back link `account.dashboard.nav.orders`.
+    detail: {
+      placedOn: (date: string) => `Оформлено ${date}`,
+      stepsAria: "Етапи замовлення",
+      // The API keeps no per-stage dates, so only «Оформлено» carries one.
+      steps: ["Оформлено", "Підтверджено", "Відправлено", "Доставлено"],
+      // A screen reader hears the state the colour shows.
+      stepDoneSr: "виконано",
+      stepNextSr: "ще попереду",
+      closedCancelled: "Замовлення скасовано",
+      closedRefunded: "Повернення коштів",
+      deliveryHeading: "Доставка",
+      deliveryMethod: "Спосіб",
+      deliveryRecipient: "Отримувач",
+      deliveryCity: "Місто",
+      deliveryWarehouse: "Відділення",
+      deliveryPickupPoint: "Пункт видачі",
+      deliveryAddress: "Адреса",
+      deliveryTracking: "ТТН",
+      trackingNone: "Ще не передано перевізнику",
+      // `OrderEntity.deliveryMethod`; the label says how the parcel travels.
+      deliveryMethods: {
+        NOVA_POSHTA: "Нова Пошта, відділення",
+        PICKUP: "Самовивіз із магазину",
+        COURIER: "Курʼєр додому",
+        OTHER: "Інша доставка",
+      } as Record<string, string>,
+      backToList: "До історії замовлень",
     },
 
     // ── Guest order status page (TASK-338) ──────────────────────────────────
@@ -1618,7 +1682,7 @@ export const dict = {
     saving: "Збереження…",
     saved: "Профіль оновлено",
     updateError: "Не вдалося оновити профіль. Спробуйте ще раз.",
-    ordersLink: "Мої замовлення",
+    ordersLink: "Історія замовлень",
     ordersLinkDesc: "Переглянути історію замовлень",
     signOut: "Вийти",
     loadError: "Не вдалося завантажити профіль.",
@@ -1641,6 +1705,8 @@ export const dict = {
         settings: "Налаштування",
       },
       navAria: "Розділи кабінету",
+      // TASK-217 — the order detail's h1 (`#` + the first 8 id chars).
+      orderHeading: (ref: string) => `Замовлення #${ref}`,
       // Profile section
       profileHeading: "Особисті дані",
       contactHeading: "Контактна інформація",
@@ -1722,16 +1788,40 @@ export const dict = {
   },
 
   orderHistory: {
-    title: "Мої замовлення",
+    // TASK-217: the same words as the account menu entry
+    // (`account.dashboard.nav.orders`) — the list is a section of the account.
+    title: "Історія замовлень",
+    // The header counter of the SELECTED tab: 1 замовлення, 2–4 замовлення,
+    // 5+ / 11–14 замовлень.
+    count: (n: number) =>
+      `${n} ${pluralUk(n, "замовлення", "замовлення", "замовлень")}`,
     empty: "У вас ще немає замовлень.",
-    emptyCta: "До каталогу",
+    emptyCta: "Перейти до товарів",
+    // A tab other than «Усі» with nothing in it — a line, not the big card.
+    tabEmpty: "Тут поки немає замовлень.",
     orderNumber: "Замовлення",
     placedOn: "Дата",
     total: "Разом",
     statusSr: "Статус замовлення",
     view: "Деталі",
+    viewAria: (ref: string) => `Деталі замовлення #${ref}`,
+    // Units on the card's meta line: Σ quantity, so «2 × кабель» is 2 товари.
+    itemCount: (n: number) =>
+      `${n} ${pluralUk(n, "товар", "товари", "товарів")}`,
     loadError: "Не вдалося завантажити замовлення. Спробуйте ще раз.",
     backToAccount: "До акаунту",
+    tabsAria: "Статус замовлень",
+    tabs: {
+      all: "Усі",
+      active: "Активні",
+      delivered: "Доставлені",
+      cancelled: "Скасовані",
+    },
+    // An unpaid ONLINE order still holding its reservation (TASK-471).
+    awaitingPayment: (minutes: number) => `Очікує оплати · ${minutes} хв`,
+    awaitingPaymentNote:
+      "Після цього резерв товарів знімемо, а замовлення скасуємо.",
+    pay: (total: string) => `Оплатити ${total}`,
   },
 
   // --- Заява на повернення (TASK-373) ------------------------------------------
@@ -1776,7 +1866,9 @@ export const dict = {
       REFUNDED: "Кошти повернено",
       REJECTED: "У поверненні відмовлено",
     } as Record<string, string>,
-    statusAria: (label: string) => `Статус заяви на повернення: ${label}`,
+    // Plain sr-only prefix before the badge label (design-system §2: a <span>
+    // without a role is not named by aria-label).
+    statusSr: "Статус заяви на повернення",
   },
 
   auth: {
@@ -2082,8 +2174,10 @@ export const dict = {
     revertEmailChangeDescription: "Скасуйте зміну адреси для входу.",
     accountTitle: "Мій акаунт | CaseStore",
     accountDescription: "Керуйте профілем та переглядайте свої замовлення.",
-    ordersTitle: "Мої замовлення | CaseStore",
     ordersDescription: "Історія ваших замовлень.",
+    // TASK-217 — the order history as a section of the account.
+    accountOrdersTitle: "Історія замовлень | CaseStore",
+    accountOrderTitle: (ref: string) => `Замовлення ${ref} | CaseStore`,
     blogTitle: "Блог",
     blogDescription:
       "Огляди, гайди та поради про смартфони, аксесуари й техніку — від команди CaseStore.",

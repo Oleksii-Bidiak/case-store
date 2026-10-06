@@ -1,68 +1,68 @@
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import { renderWithProviders, screen } from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import { AccountView } from "./account-view";
 
-// next/navigation is not available under jsdom — mock the router. The profile
-// section also reads the URL since TASK-485 (the claimed-guest-orders banner),
-// so the search params and pathname have to be answerable too; an empty query
-// is the ordinary case and keeps that banner silent.
+// next/navigation is not available under jsdom — mock it. The section comes
+// from `?section=` (TASK-867), and the profile section's claimed-orders banner
+// (TASK-485) reads the URL too, so the query is mutable per test.
+let mockSearch = "";
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
   usePathname: () => "/account",
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(mockSearch),
 }));
 
 const d = dict.account.dashboard;
 
+beforeEach(() => {
+  mockSearch = "";
+});
+
 describe("AccountView", () => {
-  it("renders the profile section by default and links orders/favorites to their pages", async () => {
+  it("renders the profile section when no section is given", async () => {
     renderWithProviders(<AccountView />, { auth: { isAuthenticated: true } });
 
     expect(
       await screen.findByRole("heading", { level: 1, name: d.profileHeading }),
     ).toBeInTheDocument();
-
-    expect(screen.getByRole("link", { name: d.nav.orders })).toHaveAttribute(
-      "href",
-      "/orders",
-    );
-    expect(screen.getByRole("link", { name: d.nav.favorites })).toHaveAttribute(
-      "href",
-      "/wishlist",
-    );
   });
 
-  it("switches to a stub section when its sidebar item is clicked", async () => {
-    const user = userEvent.setup();
+  it("renders the section named by ?section= (TASK-867)", async () => {
+    mockSearch = "section=settings";
     renderWithProviders(<AccountView />, { auth: { isAuthenticated: true } });
 
-    await screen.findByRole("heading", { level: 1, name: d.profileHeading });
-
-    await user.click(screen.getByRole("button", { name: d.nav.settings }));
     expect(
-      screen.getByRole("heading", { level: 1, name: d.settingsHeading }),
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: d.nav.bonuses }));
-    expect(
-      screen.getByRole("heading", { level: 1, name: d.bonusesHeading }),
+      await screen.findByRole("heading", { level: 1, name: d.settingsHeading }),
     ).toBeInTheDocument();
   });
 
-  it("tints the active menu item with a token utility, not an inline colour (TASK-879)", async () => {
-    const user = userEvent.setup();
+  it("falls back to the profile for an unknown section", async () => {
+    mockSearch = "section=bogus";
+    renderWithProviders(<AccountView />, { auth: { isAuthenticated: true } });
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: d.profileHeading }),
+    ).toBeInTheDocument();
+  });
+
+  it("points the purchases placeholder at the order history inside the account", async () => {
+    mockSearch = "section=purchases";
+    renderWithProviders(<AccountView />, { auth: { isAuthenticated: true } });
+
+    expect(
+      await screen.findByRole("link", { name: d.purchasesCta }),
+    ).toHaveAttribute("href", "/account/orders");
+  });
+
+  it("renders only the content column — the frame is AccountShell", async () => {
     renderWithProviders(<AccountView />, { auth: { isAuthenticated: true } });
 
     await screen.findByRole("heading", { level: 1, name: d.profileHeading });
-    await user.click(screen.getByRole("button", { name: d.nav.settings }));
-
-    const active = screen.getByRole("button", { name: d.nav.settings });
-    expect(active).toHaveAttribute("aria-current", "page");
-    expect(active).toHaveClass("bg-primary/10", "text-primary");
-    expect(active).not.toHaveAttribute("style");
-
-    const idle = screen.getByRole("button", { name: d.nav.bonuses });
-    expect(idle).not.toHaveAttribute("aria-current");
-    expect(idle).not.toHaveClass("bg-primary/10");
+    expect(
+      screen.queryByRole("navigation", { name: d.navAria }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: d.backHome }),
+    ).not.toBeInTheDocument();
   });
 });

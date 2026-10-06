@@ -91,7 +91,7 @@ var(--color-card))`. Decoration with no meaning (the hero category-rail dots, an
   `bg-clip-text text-transparent`) is `bg-brand-gradient`. `shared/config/color-tokens.test.ts`
   fails on any palette utility, `color-mix(` or `oklch(` in `src` outside the files it tracks by
   backlog row.
-- **Order & payment status colours** — one map, rendered with `Badge` everywhere (`/orders`,
+- **Order & payment status colours** — one map, rendered with `Badge` everywhere (`/account/orders`,
   order confirmation, `/orders/status`, guest order view):
 
   | Status group                                          | Colour                       |
@@ -178,14 +178,14 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
 - **Inner widths** are not containers. They sit inside the page container, centred with
   `mx-auto`, so the outer gutter stays the same on every page:
 
-  | Content                            | Width       |
-  | ---------------------------------- | ----------- |
-  | Article prose                      | 760px       |
-  | Legal / info document (TOC + text) | `max-w-6xl` |
-  | Legal hub (`/legal`)               | `max-w-5xl` |
-  | Auth forms                         | `max-w-md`  |
-  | Order lists (`/orders`, …)         | `max-w-3xl` |
-  | 404 block                          | 560px       |
+  | Content                            | Width                                                       |
+  | ---------------------------------- | ----------------------------------------------------------- |
+  | Article prose                      | 760px                                                       |
+  | Legal / info document (TOC + text) | `max-w-6xl`                                                 |
+  | Legal hub (`/legal`)               | `max-w-5xl`                                                 |
+  | Auth forms                         | `max-w-md`                                                  |
+  | Account sections (`/account/*`)    | the shell’s content column (264px menu beside it from `lg`) |
+  | 404 block                          | 560px                                                       |
 
 - **Section vertical rhythm:** `py-12 md:py-16` (hero may go `py-20 md:py-28`).
 - **Grid gaps:** cards `gap-4 md:gap-6`; form fields `gap-4`.
@@ -277,6 +277,15 @@ Override a component's default radius through `cn` (`shared/lib/utils.ts`), whic
 `card` / `cta` / `menu` with tailwind-merge and drops the default. Never join class strings by
 hand when a radius can come from both sides.
 
+**Chip outline:** the 1.5px border of chips and toolbar controls is `border-chip` (a `@utility`
+in `globals.css`, TASK-217; Tailwind v4 has no border-width theme namespace), paired with a
+colour: `border-chip border-border`, active `border-primary`. `cn` registers it as a border
+**width** — unregistered, tailwind-merge reads `border-<word>` as a colour and silently drops it
+beside `border-border`. Older call sites still spell `border-[1.5px]` under lint suppressions;
+move them over when you touch them. A horizontally scrolling chip row hides its bar with
+`scrollbar-none` and bleeds to the screen edge (`-mx-4 px-4 sm:-mx-6 sm:px-6`), so the
+half-clipped last chip says "scrolls".
+
 | Shadow            | Use                                                           |
 | ----------------- | ------------------------------------------------------------- |
 | `shadow-card`     | Resting product/info cards                                    |
@@ -351,9 +360,13 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
   count reflows the page when the content lands (parity fixes: TASK-869). A client view's own
   loading branch is the third path to the same screen: it renders the **same skeleton component**,
   and when the view owns its container the skeleton carries it too, so `loading.tsx` and the
-  fallback add no wrapper (`AccountSkeleton`: one component for all three). When a block's height
+  fallback add no wrapper. When a **layout** owns the frame, the split follows it: the account
+  routes render inside `app/account/layout.tsx`'s `AccountShell` (TASK-217), which draws
+  `AccountShellSkeleton` (container, back line, chip strip below `lg`, 264px menu from `lg`)
+  while the session loads, and every `loading.tsx` / fallback under that layout is the content
+  column only (`AccountProfileSkeleton`, no container). When a block's height
   depends on data the skeleton cannot have, reserve one state **on purpose** and name the cost:
-  `AccountSkeleton` reserves the «Адресу не підтверджено» card (new registrations and the seeded
+  `AccountProfileSkeleton` reserves the «Адресу не підтверджено» card (new registrations and the seeded
   customer start there), so for a verified address the contact and security cards rise by 138px
   (158px at 390) when the profile lands. A grid cell is drawn as the **card it stands in for**,
   block for block (frame, image, title lines, price, action row), not an image and two bars — the
@@ -380,7 +393,7 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
   (TASK-870): `rounded-card` + `shadow-card`, a `size-18` `bg-muted` disc with the glyph
   (`aria-hidden`), a `text-xl` display line, one muted helper line, a 44 px primary
   (`features/product-filters` `ListingEmptyState` for product listings; the content hubs
-  `/blog`, `/legal`, `/categories` and `/orders` draw the same card locally). The action is the
+  `/blog`, `/legal`, `/categories` and `/account/orders` draw the same card locally). The action is the
   way on from _this_ emptiness: a reset only when a filter or a query narrowed the list,
   otherwise a link out (the catalogue, page 1, support). The page keeps its crumbs and H1 above
   the card. If the page already has a primary with the same job (the `/legal` support card),
