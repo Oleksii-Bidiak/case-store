@@ -280,9 +280,9 @@ function PickupPointsGrid() {
           <colgroup>
             <col className="w-10" />
             <col />
-            <col className="w-52" />
+            <col className="w-56" />
             <col className="w-24" />
-            <col className="w-32" />
+            <col className="w-28" />
             <col className="w-12" />
           </colgroup>
           <TableHeader className="max-md:hidden">
@@ -415,7 +415,7 @@ function PickupPointRow({
       data-active={point.isActive}
       style={style}
       className={cn(
-        "max-md:flex max-md:flex-col max-md:rounded-lg max-md:border max-md:bg-card max-md:px-4 max-md:py-1 max-md:shadow-card md:last:border-b-0",
+        "group/row max-md:flex max-md:flex-col max-md:rounded-lg max-md:border max-md:bg-card max-md:px-4 max-md:py-1 max-md:shadow-card md:last:border-b-0",
         row.grabbed
           ? "outline outline-2 outline-ring"
           : row.conflict
@@ -490,7 +490,16 @@ function PickupPointRow({
 
       <TableCell role="gridcell" className={CELL}>
         <CellCaption>{t.colCheckout}</CellCaption>
-        <Badge variant={point.isActive ? "default" : "secondary"}>
+        <Badge
+          variant={point.isActive ? "default" : "secondary"}
+          // The row's hover / open-menu fill is the same tone as the secondary
+          // badge; lift the pill onto the card colour so it keeps its shape.
+          className={
+            inactive
+              ? "md:group-hover/row:bg-card md:group-has-aria-expanded/row:bg-card"
+              : undefined
+          }
+        >
           {point.isActive ? t.statusActive : t.statusInactive}
         </Badge>
       </TableCell>
@@ -505,6 +514,9 @@ function PickupPointRow({
           items={actions}
           tabIndex={tabIndex}
           className="max-md:-mr-1.5 max-md:size-11"
+          // Wide enough for «Замовлення з цією точкою (N)» on one line, never
+          // wider than the screen lets it be.
+          contentClassName="w-auto min-w-60 max-w-(--radix-dropdown-menu-content-available-width)"
         />
       </TableCell>
     </TableRow>

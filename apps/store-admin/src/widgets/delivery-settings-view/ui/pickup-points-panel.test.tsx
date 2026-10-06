@@ -211,7 +211,9 @@ describe("PickupPointsPanel (TASK-645)", () => {
       name: t.deleteTitle(BASE[A].name),
     });
     expect(dialog).toHaveTextContent(t.deleteOrders(38));
-    expect(t.deleteOrders(38)).toMatch(/^На неї посилаються 38 замовлень\./);
+    expect(t.deleteOrders(38)).toMatch(
+      /^На неї посилаються 38 замовлень\. Вони збережуть /,
+    );
     expect(deletes).toHaveLength(0);
 
     await userEvent.click(
@@ -301,5 +303,21 @@ describe("PickupPointsPanel (TASK-645)", () => {
         }),
       ).toHaveValue(BASE[B].name),
     );
+  });
+});
+
+describe("dict.pickupPoints.deleteOrders — agreement with the count", () => {
+  it.each([
+    [1, "На неї посилається 1 замовлення. Воно збереже "],
+    [21, "На неї посилається 21 замовлення. Воно збереже "],
+    [4, "На неї посилаються 4 замовлення. Вони збережуть "],
+    [11, "На неї посилаються 11 замовлень. Вони збережуть "],
+    [38, "На неї посилаються 38 замовлень. Вони збережуть "],
+  ])("%i order(s)", (count, start) => {
+    expect(t.deleteOrders(count).startsWith(start)).toBe(true);
+  });
+
+  it("says there are none for 0", () => {
+    expect(t.deleteOrders(0)).toBe("Замовлень на неї немає.");
   });
 });

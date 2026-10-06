@@ -52,6 +52,11 @@ export interface RowActionsMenuProps {
    * controls are in the tab order. Default: the button's own.
    */
   tabIndex?: number;
+  /**
+   * Classes for the popover. Default `w-60`; a menu whose label carries a
+   * count («Замовлення з цією точкою (N)», ДН-1.3) widens it to stay on one line.
+   */
+  contentClassName?: string;
 }
 
 /**
@@ -65,6 +70,7 @@ export function RowActionsMenu({
   align = "end",
   className,
   tabIndex,
+  contentClassName,
 }: RowActionsMenuProps) {
   if (items.length === 0) return null;
   return (
@@ -85,7 +91,10 @@ export function RowActionsMenu({
           <EllipsisIcon aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} className="w-60">
+      <DropdownMenuContent
+        align={align}
+        className={cn("w-60", contentClassName)}
+      >
         {items.map(({ icon: Icon, ...item }) => (
           <React.Fragment key={item.label}>
             {item.separatorBefore ? <DropdownMenuSeparator /> : null}
