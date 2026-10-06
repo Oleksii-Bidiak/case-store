@@ -1172,6 +1172,88 @@ describe("DataRegistry — saved views", () => {
   });
 });
 
+describe("DataRegistry — «Вид» names the active quick view (TASK-1832)", () => {
+  const QUICK = [
+    { id: "new", label: "Нові" },
+    { id: "deleted", label: "Видалені" },
+    { id: "all", label: "Усі" },
+  ];
+  const renderOn = (
+    activeId: string,
+    views: { defaultName: string; defaultQuickViewId?: string },
+    store = memoryStore(),
+  ) =>
+    renderWithProviders(
+      <Harness
+        store={store}
+        quickViews={{ items: QUICK, activeId, onChange: jest.fn() }}
+        views={views}
+      />,
+    );
+
+  it("says «Вид: Видалені» on a quick view that is not the default", async () => {
+    const user = userEvent.setup();
+    renderOn("deleted", {
+      defaultName: "Усі товари",
+      defaultQuickViewId: "all",
+    });
+
+    const button = screen.getByRole("button", { name: r.view("Видалені") });
+    await user.click(button);
+    // The list on screen is neither «Мої види» entry — nothing is checked,
+    // and the built-in view is still there to go back to.
+    expect(
+      screen.getByRole("menuitemradio", { name: "Усі товари" }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("keeps the built-in name on the default quick view", async () => {
+    const user = userEvent.setup();
+    renderOn("all", { defaultName: "Усі товари", defaultQuickViewId: "all" });
+
+    await user.click(
+      screen.getByRole("button", { name: r.view("Усі товари") }),
+    );
+    expect(
+      screen.getByRole("menuitemradio", { name: "Усі товари" }),
+    ).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("keeps «Стандартний» on every tab where the screen names no default quick view", () => {
+    renderOn("deleted", { defaultName: "Стандартний" });
+    expect(
+      screen.getByRole("button", { name: r.view("Стандартний") }),
+    ).toBeInTheDocument();
+  });
+
+  it("lets an active saved view win over the quick view", () => {
+    const store = memoryStore({
+      version: 1,
+      columns: [],
+      density: "comfortable",
+      views: [
+        {
+          id: "v1",
+          name: "Мої видалені",
+          query: "deleted=only",
+          columns: [],
+          sort: null,
+          density: "comfortable",
+        },
+      ],
+      activeViewId: "v1",
+    });
+    renderOn(
+      "deleted",
+      { defaultName: "Усі товари", defaultQuickViewId: "all" },
+      store,
+    );
+    expect(
+      screen.getByRole("button", { name: r.view("Мої видалені") }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("ExportMenu", () => {
   it("exports what is found, in the visible column order, in the formats on offer only", async () => {
     const onExport = jest.fn();

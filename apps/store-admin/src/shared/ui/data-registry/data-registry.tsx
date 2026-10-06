@@ -62,8 +62,14 @@ export interface DataRegistryProps<T> {
       onOpenChange: (open: boolean) => void;
     }) => React.ReactNode;
   };
-  /** «Вид»: saved views. Omit on a screen that does not offer them. */
-  views?: { defaultName: string };
+  /**
+   * «Вид»: saved views. Omit on a screen that does not offer them.
+   * `defaultQuickViewId` (TASK-1832) is the quick view `defaultName` names
+   * («Усі товари» = `all`): on any OTHER quick view the button says that
+   * view's name («Вид: Видалені»). Omit it where `defaultName` is not a
+   * filter («Стандартний» — the settings baseline, whatever the tab).
+   */
+  views?: { defaultName: string; defaultQuickViewId?: string };
   /** «Колонки». Default `true`. */
   columnsMenu?: boolean;
   onRefresh?: () => void;
@@ -270,6 +276,7 @@ export function DataRegistry<T>({
               views ? (
                 <ViewsMenu
                   defaultName={views.defaultName}
+                  quickViewName={activeQuickViewName(quickViews, views)}
                   views={settings.settings.views}
                   activeViewId={settings.settings.activeViewId}
                   onApply={(id) => {
@@ -361,4 +368,18 @@ export function DataRegistry<T>({
       })}
     </div>
   );
+}
+
+/**
+ * The name «Вид» shows for the active quick view (TASK-1832), or `null` when
+ * that view is the default one — or the screen did not say which one that is.
+ */
+function activeQuickViewName(
+  quickViews: { items: readonly QuickView[]; activeId: string } | undefined,
+  views: { defaultQuickViewId?: string },
+): string | null {
+  if (!quickViews || views.defaultQuickViewId === undefined) return null;
+  const { activeId, items } = quickViews;
+  if (!activeId || activeId === views.defaultQuickViewId) return null;
+  return items.find((item) => item.id === activeId)?.label ?? null;
 }

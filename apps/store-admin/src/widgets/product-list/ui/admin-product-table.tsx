@@ -675,7 +675,7 @@ function AdminProductTableView() {
             />
           ),
         }}
-        views={{ defaultName: d.viewDefault }}
+        views={{ defaultName: d.viewDefault, defaultQuickViewId: "all" }}
         onRefresh={refreshAll}
         isRefreshing={isFetching}
         notice={deletedNotice}

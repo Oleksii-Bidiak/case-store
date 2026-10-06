@@ -950,6 +950,20 @@ describe("AdminProductTable — the deleted view (TASK-427, TASK-656)", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("names the view «Вид: Видалені», not «Усі товари» (TASK-1832, Т8)", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList([DELETED_ROW]);
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(
+      screen.getByRole("button", { name: r.view(d.filterDeleted) }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: r.view(d.viewDefault) }),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps a column the operator picked in the deleted view", async () => {
     mockSearchParamsRef.current = new URLSearchParams(
       "deleted=only&sortBy=name&sortOrder=asc",
