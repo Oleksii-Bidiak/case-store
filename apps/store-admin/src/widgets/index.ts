@@ -143,5 +143,10 @@ export { ReturnDetailView, ReturnDetailSkeleton } from "./return-detail";
 export { CatalogImportView } from "./catalog-import-view";
 // Search-index maintenance (TASK-377)
 export { SearchIndexView } from "./search-index-view";
+// Delivery methods, courier price, NP dispatch origin (TASK-644)
+export {
+  DeliverySettingsView,
+  DeliverySettingsPageSkeleton,
+} from "./delivery-settings-view";
 // Internal media library (TASK-441)
 export { MediaLibraryView, MediaLibrarySkeleton } from "./media-library-view";

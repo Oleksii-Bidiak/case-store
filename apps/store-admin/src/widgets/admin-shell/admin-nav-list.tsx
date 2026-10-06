@@ -28,6 +28,7 @@ import {
   HelpCircle,
   Map,
   ScrollText,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -267,6 +268,14 @@ const bottomNavItems: readonly NavItem[] = [
     href: "/settings/search",
     icon: RefreshCw,
     permission: PERM.settingsSearch,
+  },
+  // TASK-644 — which delivery methods the checkout offers and what the courier
+  // costs. Right after «Пошук», as in the Д-н2 mockup.
+  {
+    label: dict.nav.delivery,
+    href: "/settings/delivery",
+    icon: Truck,
+    permission: PERM.settingsDelivery,
   },
   {
     label: dict.nav.faq,

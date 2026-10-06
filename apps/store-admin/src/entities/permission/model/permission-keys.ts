@@ -113,6 +113,10 @@ export const PERM = {
   settingsSeo: "settings:seo",
   settingsContacts: "settings:contacts",
   settingsSearch: "settings:search",
+  // TASK-644 — /settings/delivery: the four checkout methods, the courier price
+  // and the pickup points. One key for the whole screen, as on the API
+  // (`AdminDeliveryController` and `AdminPickupPointsController`).
+  settingsDelivery: "settings:delivery",
 
   analyticsRead: "analytics:read",
   // TASK-684: the money on the dashboard and in the reports. The API cuts the
