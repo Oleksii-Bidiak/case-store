@@ -48,13 +48,6 @@ const MESSAGE_CARD_CLASS =
   "flex flex-col items-start gap-3.5 rounded-card border border-border bg-card p-6 shadow-card sm:p-8";
 
 /**
- * The card's h1: 24px in the mockup (`.ao-box h1`), not the page H1 — the
- * card is a message, not a page heading of its own.
- */
-const MESSAGE_HEADING_CLASS =
-  "font-display text-2xl font-bold tracking-tight text-foreground";
-
-/**
  * OrderDetailView — one order inside the account, `/account/orders/[id]`
  * (TASK-217, AccountOrders.dc.html `#detail`).
  *
@@ -107,7 +100,9 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       <div className="flex flex-col gap-5">
         <OrderDetailBackLink />
         <div role="alert" className={MESSAGE_CARD_CLASS}>
-          <h1 className={MESSAGE_HEADING_CLASS}>{dict.order.somethingWrong}</h1>
+          <h1 className={`${H1_CLASS} text-foreground`}>
+            {dict.order.somethingWrong}
+          </h1>
           <p className="text-muted-foreground">{dict.order.loadErrorBody}</p>
           <Button
             type="button"
@@ -127,7 +122,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       <div className="flex flex-col gap-5">
         <OrderDetailBackLink />
         <div role="alert" className={MESSAGE_CARD_CLASS}>
-          <h1 className={MESSAGE_HEADING_CLASS}>
+          <h1 className={`${H1_CLASS} text-foreground`}>
             {dict.order.notFoundHeading}
           </h1>
           <p className="text-muted-foreground">{dict.order.notFoundBody}</p>
