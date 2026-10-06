@@ -117,6 +117,17 @@ export const handlers = [
     }),
   ),
 
+  // Per-method counts for the order registry's «Спосіб доставки» filter
+  // (TASK-648) — asked whenever «Фільтри» opens, so every suite that opens the
+  // sheet stays off onUnhandledRequest. Zeros by default; override per-test.
+  http.get("*/api/admin/orders/facets", () =>
+    HttpResponse.json({
+      data: {
+        deliveryMethod: { NOVA_POSHTA: 0, PICKUP: 0, COURIER: 0, OTHER: 0 },
+      },
+    }),
+  ),
+
   // Admin returns queue — empty by default. Since TASK-613 the dashboard's
   // «Нові заявки на повернення» tile reads `meta.total` of
   // `?status=REQUESTED&limit=1` from here for any session with `returns:read`,

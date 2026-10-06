@@ -3,7 +3,9 @@
 import {
   orderStatusLabel,
   paymentStatusLabel,
+  useAdminOrderControllerFacets,
   useAdminOrderControllerFindAll,
+  type AdminOrderControllerFacetsParams,
 } from "@/entities/order";
 import { countLabel } from "@/shared/lib";
 import {
@@ -16,6 +18,7 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
+  DELIVERY_METHOD_OPTIONS,
   EMPTY_FILTERS,
   PAYMENT_METHOD_LABELS,
   PAYMENT_STATUS_OPTIONS,
@@ -23,6 +26,7 @@ import {
   SIGNAL_LABELS,
   SIGNAL_PARAMS,
   STATUS_OPTIONS,
+  deliveryFilterLabel,
   kyivToday,
   orderFiltersToQuery,
   periodRange,
@@ -50,8 +54,17 @@ interface OrderFilterSheetProps {
  * and the six signal toggles; plus the period, which the API always filtered by
  * (`dateFrom`/`dateTo`, Kyiv days) and nothing on screen offered.
  *
+ * «Спосіб доставки» (TASK-648, ДН-1.11) sits right after «Оплата»: a checkbox
+ * per method with its count from `GET /admin/orders/facets`, asked with the
+ * DRAFT — so ticking a status or a period moves the numbers before anything is
+ * applied. The facets count every filter except the method itself, which is why
+ * the method is left out of that request (and its cache key). The pickup point
+ * (`?pickupPointId=`) is not a control here: it comes from the settings screen's
+ * «Замовлення з цією точкою» and leaves by its chip — the draft carries it, so
+ * applying the sheet keeps it.
+ *
  * Not drawn, because `GET /admin/orders` cannot filter by them yet (API tails
- * of TASK-1045): the sum range, the customer type, delivery, «Без ТТН» and the
+ * of TASK-1045): the sum range, the customer type, «Без ТТН» and the
  * dashboard's new signals, and per-status counts.
  *
  * «Показати N замовлень» is the API's own count for the DRAFT — one `limit=1`
@@ -69,11 +82,22 @@ export function OrderFilterSheet({
   const today = kyivToday();
   const preset = presetOf(draft.dateFrom, draft.dateTo, today);
 
+  const draftQuery = orderFiltersToQuery(draft, search);
   const probe = useAdminOrderControllerFindAll(
-    { ...orderFiltersToQuery(draft, search), page: 1, limit: 1 },
+    { ...draftQuery, page: 1, limit: 1 },
     { query: { enabled: open } },
   );
   const found = probe.data?.meta?.total;
+
+  const facets = useAdminOrderControllerFacets(
+    {
+      ...draftQuery,
+      deliveryMethod: undefined,
+    } as AdminOrderControllerFacetsParams,
+    { query: { enabled: open } },
+  );
+  const deliveryCounts = facets.data?.data?.deliveryMethod as
+    Record<string, number> | undefined;
 
   return (
     <FilterSheet
@@ -143,6 +167,19 @@ export function OrderFilterSheet({
               label,
             })),
           ]}
+        />
+      </FilterSection>
+
+      <FilterSection title={d.filterDelivery}>
+        <CheckList
+          label={d.filterDeliveryAria}
+          items={DELIVERY_METHOD_OPTIONS.map((method) => ({
+            value: method,
+            label: deliveryFilterLabel(method),
+            count: deliveryCounts?.[method],
+          }))}
+          value={draft.deliveryMethod}
+          onChange={(deliveryMethod) => update({ deliveryMethod })}
         />
       </FilterSection>
 

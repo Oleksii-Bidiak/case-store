@@ -9,7 +9,7 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { OrderEntityPaymentStatus, paymentStatusLabel } from "@/entities/order";
-import { toKyivDateInput } from "@/shared/lib";
+import { formatCurrency, toKyivDateInput } from "@/shared/lib";
 import { AdminOrderTable } from "./admin-order-table";
 
 const d = dict.orders;
@@ -295,9 +295,11 @@ describe("AdminOrderTable — the number, delivery and payment cells", () => {
     ]);
     renderWithProviders(<AdminOrderTable />);
 
-    expect(await screen.findByText("Київ, Відділення №12")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Київ · Відділення №12"),
+    ).toBeInTheDocument();
     expect(screen.getByText(d.ttnValue("20450912345676"))).toBeInTheDocument();
-    expect(screen.getByText("Львів, Відділення №3")).toBeInTheDocument();
+    expect(screen.getByText("Львів · Відділення №3")).toBeInTheDocument();
     expect(screen.getByText(d.ttnMissing)).toBeInTheDocument();
   });
 });
@@ -1080,7 +1082,10 @@ describe("AdminOrderTable — cards below md (П7)", () => {
     expect(inCard.getByText(d.guestBadge)).toBeInTheDocument();
     expect(inCard.getByText(/35\s?647 ₴/)).toBeInTheDocument();
     expect(inCard.getByText("Очікує оплати")).toBeInTheDocument();
-    expect(inCard.getByText("Львів, Відділення №3")).toBeInTheDocument();
+    // ДН-1.12: the delivery under its «Доставка» caption.
+    expect(inCard.getByText(d.colDelivery)).toBeInTheDocument();
+    expect(inCard.getByText("Нова Пошта")).toBeInTheDocument();
+    expect(inCard.getByText("Львів · Відділення №3")).toBeInTheDocument();
     expect(
       inCard.getByRole("button", {
         name: r.rowActionsAria(d.rowAria(ROW_NUMBER)),
@@ -1122,6 +1127,234 @@ describe("AdminOrderTable — header actions", () => {
     );
     expect(
       screen.getByRole("heading", { name: d.heading }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("AdminOrderTable — delivery (TASK-648, ДН-1.11)", () => {
+  const POINT = "0b0c6f2e-3a6d-4a43-9f0e-4c1b2f6a7d10";
+
+  const DELIVERY_ROWS = [
+    makeOrderRow(null, {
+      id: "aaaaaaaa-0000-0000-0000-000000000001",
+      deliveryMethod: "NOVA_POSHTA",
+      shippingAddress: {
+        city: "Київ",
+        address1: "Відділення №1",
+        npWarehouseName: "Відділення №1",
+      },
+    }),
+    makeOrderRow(null, {
+      id: "bbbbbbbb-0000-0000-0000-000000000002",
+      deliveryMethod: "PICKUP",
+      status: "CONFIRMED",
+      shippingAddress: {
+        city: "Київ",
+        address1: "вул. Хрещатик, 1",
+        pickupPointName: "Магазин на Хрещатику",
+      },
+    }),
+    makeOrderRow(null, {
+      id: "cccccccc-0000-0000-0000-000000000003",
+      deliveryMethod: "COURIER",
+      shippingCost: "150",
+      shippingAddress: { city: "Київ", address1: "вул. Січових Стрільців, 5" },
+    }),
+    makeOrderRow(null, {
+      id: "dddddddd-0000-0000-0000-000000000004",
+      deliveryMethod: "COURIER",
+      shippingCost: "0",
+      shippingAddress: { city: "Львів", address1: "пл. Ринок, 1" },
+    }),
+    makeOrderRow(null, {
+      id: "eeeeeeee-0000-0000-0000-000000000005",
+      deliveryMethod: "OTHER",
+      status: "CONFIRMED",
+      shippingAddress: {
+        city: "Ужгород",
+        address1: "Укрпошта, 88000",
+        shippingCostPending: true,
+      },
+    }),
+  ];
+
+  const SETTINGS = {
+    senderCityRef: null,
+    senderCityName: null,
+    senderWarehouseRef: null,
+    defaultWeightKg: 1,
+    npEnabled: true,
+    pickupEnabled: true,
+    courierEnabled: true,
+    otherEnabled: true,
+    courierCityName: "Київ",
+    courierPrice: "150",
+    courierFreeFrom: "2000",
+    updatedAt: null,
+  };
+
+  it("draws the method over one detail line for each of the four methods", async () => {
+    serveRows(DELIVERY_ROWS);
+    renderWithProviders(<AdminOrderTable />);
+
+    expect(await screen.findByText("Київ · Відділення №1")).toBeInTheDocument();
+    expect(screen.getByText("Магазин на Хрещатику")).toBeInTheDocument();
+    expect(
+      screen.getByText(`Київ · ${formatCurrency("150")}`),
+    ).toBeInTheDocument();
+    // No `settings:delivery` → no threshold to quote, just «безкоштовно».
+    expect(
+      screen.getByText(`Львів · ${d.deliveryFreeShort}`),
+    ).toBeInTheDocument();
+    const toQuote = screen.getByText(d.deliveryCostToQuote);
+    expect(toQuote).toHaveClass("text-warning");
+    for (const label of ["Нова Пошта", "Самовивіз", "Інша доставка"]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    expect(screen.getAllByText("Курʼєр")).toHaveLength(2);
+    // A confirmed pickup / OTHER order is not «due» a Nova Poshta waybill.
+    expect(screen.queryByText(d.ttnMissing)).not.toBeInTheDocument();
+  });
+
+  it("quotes the courier's free-from threshold for a session with settings:delivery", async () => {
+    serveRows(DELIVERY_ROWS);
+    server.use(
+      http.get("*/api/admin/delivery-settings", () =>
+        HttpResponse.json({ data: SETTINGS }),
+      ),
+    );
+    renderWithProviders(<AdminOrderTable />, {
+      auth: { permissions: ["orders:read", "settings:delivery"] },
+    });
+
+    // The DOM text is whitespace-normalised, the matcher is not: the NBSP of
+    // «2 000» is spelled as a plain space.
+    expect(
+      await screen.findByText(
+        `Львів · ${d.deliveryFreeFromShort(formatCurrency("2000"))}`.replace(
+          /\s/g,
+          " ",
+        ),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("offers «Спосіб доставки» with the facets' counts, which follow the draft", async () => {
+    const facetQueries: URLSearchParams[] = [];
+    server.use(
+      http.get("*/api/admin/orders/facets", ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        facetQueries.push(params);
+        const cancelled = params.get("status") === "CANCELLED";
+        return HttpResponse.json({
+          data: {
+            deliveryMethod: cancelled
+              ? { NOVA_POSHTA: 2, PICKUP: 0, COURIER: 1, OTHER: 0 }
+              : { NOVA_POSHTA: 41, PICKUP: 7, COURIER: 5, OTHER: 3 },
+          },
+        });
+      }),
+    );
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(d.empty);
+
+    const sheet = await openFilters();
+    const group = within(
+      within(sheet).getByRole("group", { name: d.filterDeliveryAria }),
+    );
+    for (const label of [
+      "Нова Пошта",
+      "Самовивіз",
+      "Курʼєр по місту",
+      "Інша доставка",
+    ]) {
+      expect(group.getByRole("checkbox", { name: label })).toBeInTheDocument();
+    }
+    expect(await group.findByText("41")).toBeInTheDocument();
+    expect(group.getByText("7")).toBeInTheDocument();
+
+    // Another filter in the DRAFT moves the counts before anything is applied.
+    await userEvent.click(
+      within(
+        within(sheet).getByRole("group", { name: d.filterStatusAria }),
+      ).getByRole("checkbox", { name: "Скасовано" }),
+    );
+    expect(await group.findByText("2")).toBeInTheDocument();
+    expect(group.queryByText("41")).not.toBeInTheDocument();
+
+    // Ticking a method does not re-ask: the facets ignore the method itself.
+    const asked = facetQueries.length;
+    await userEvent.click(group.getByRole("checkbox", { name: "Самовивіз" }));
+    await userEvent.click(
+      group.getByRole("checkbox", { name: "Інша доставка" }),
+    );
+    expect(facetQueries).toHaveLength(asked);
+    expect(facetQueries.every((params) => !params.has("deliveryMethod"))).toBe(
+      true,
+    );
+
+    await applyFilters(sheet);
+    expect(decodeURIComponent(mockReplace.mock.lastCall?.[0])).toBe(
+      "/orders?status=CANCELLED&deliveryMethod=PICKUP,OTHER",
+    );
+  });
+
+  it("sends ?deliveryMethod= and ?pickupPointId= to the list and names the point's chip", async () => {
+    const seen = serveRows([]);
+    server.use(
+      http.get("*/api/admin/pickup-points", () =>
+        HttpResponse.json({
+          data: [
+            {
+              id: POINT,
+              name: "Магазин на Хрещатику",
+              city: "Київ",
+              address: "вул. Хрещатик, 1",
+              phone: null,
+              workingHours: null,
+              mapUrl: null,
+              isActive: true,
+              sortOrder: 0,
+              ordersCount: 4,
+            },
+          ],
+        }),
+      ),
+    );
+    mockSearchParams = new URLSearchParams(
+      `deliveryMethod=PICKUP&pickupPointId=${POINT}`,
+    );
+    renderWithProviders(<AdminOrderTable />, {
+      auth: { permissions: ["orders:read", "settings:delivery"] },
+    });
+
+    const chip = await screen.findByRole("button", {
+      name: r.removeChipAria(d.chipPickupPoint("Магазин на Хрещатику")),
+    });
+    expect(
+      screen.getByRole("button", {
+        name: r.removeChipAria(d.chipDelivery("Самовивіз")),
+      }),
+    ).toBeInTheDocument();
+    const params = pageRequest(seen)?.searchParams;
+    expect(params?.get("deliveryMethod")).toBe("PICKUP");
+    expect(params?.get("pickupPointId")).toBe(POINT);
+
+    await userEvent.click(chip);
+    expect(mockReplace).toHaveBeenLastCalledWith(
+      "/orders?deliveryMethod=PICKUP",
+    );
+  });
+
+  it("names the point's chip generically without settings:delivery", async () => {
+    serveRows([]);
+    mockSearchParams = new URLSearchParams(`pickupPointId=${POINT}`);
+    renderWithProviders(<AdminOrderTable />);
+
+    expect(
+      await screen.findByRole("button", {
+        name: r.removeChipAria(d.chipPickupPointUnknown),
+      }),
     ).toBeInTheDocument();
   });
 });

@@ -3170,7 +3170,6 @@ export const dict = {
     shipping: "Доставка",
     tax: "Податок",
     total: "Разом",
-    shippingAddress: "Адреса доставки",
     billingAddress: "Платіжна адреса",
     notes: "Примітка клієнта",
     loadOneError: "Не вдалося завантажити замовлення. Спробуйте ще раз.",
@@ -3189,7 +3188,6 @@ export const dict = {
     searchAria: "Пошук замовлень",
 
     // --- Operator-editable fields (TASK-335 / TASK-336) -----------------------
-    detailsHeading: "Доставка і дані для оператора",
     trackingNumber: "ТТН (Нова Пошта)",
     trackingNumberPlaceholder: "20450000000001",
     // Says out loud that we do NOT create the waybill: creating one needs a
@@ -3439,7 +3437,6 @@ export const dict = {
     ttnValue: (number: string) => `ТТН ${number}`,
     // Лише на підтвердженому й «в обробці»: саме тоді ТТН уже мала б бути.
     ttnMissing: "ТТН не вказано",
-    deliveryPickup: "Самовивіз",
     rowOpen: "Відкрити",
     rowOpenNewTab: "Відкрити в новій вкладці",
     rowCopyNumber: "Скопіювати номер",
@@ -3488,12 +3485,51 @@ export const dict = {
     deliveryMethodLabels: {
       NOVA_POSHTA: "Нова Пошта",
       PICKUP: "Самовивіз",
-      COURIER: "Кур'єр",
+      COURIER: "Курʼєр",
       OTHER: "Інша доставка",
     },
     trackOnNp: "Відстежити на сайті НП ↗",
     // Під полем ТТН, після правила: скільки цифр зараз.
     trackingNumberDigitsNow: (count: number) => `Зараз ${count}.`,
+
+    // --- Спосіб доставки в реєстрі й картці (план 184 U, TASK-648,
+    // макети ДН-1.11…1.13). Апостроф адмінки — ʼ (U+02BC).
+    filterDelivery: "Спосіб доставки",
+    filterDeliveryAria: "Фільтр за способом доставки",
+    deliveryFilterLabels: {
+      NOVA_POSHTA: "Нова Пошта",
+      PICKUP: "Самовивіз",
+      COURIER: "Курʼєр по місту",
+      OTHER: "Інша доставка",
+    },
+    chipDelivery: (labels: string) => `Доставка: ${labels}`,
+    // Назва точки відома лише з правом «Доставка» (settings:delivery).
+    chipPickupPoint: (name: string) => `Точка: ${name}`,
+    chipPickupPointUnknown: "Точка самовивозу",
+    // Рядок під способом у колонці «Доставка».
+    deliveryFreeShort: "безкоштовно",
+    deliveryFreeFromShort: (threshold: string) =>
+      `безкоштовно (від ${threshold})`,
+    deliveryCostToQuote: "Уточнити вартість доставки",
+    // Блок «Доставка» в картці (ДН-1.13).
+    deliveryHeading: "Доставка",
+    deliveryRecipient: "Отримувач",
+    deliveryWhere: "Куди",
+    deliveryPoint: "Точка",
+    deliveryAddress: "Адреса",
+    deliveryHours: "Години",
+    deliveryCost: "Вартість",
+    deliveryBuyerWrote: "Що вказав покупець",
+    deliveryCostNp: (amount: string) => `${amount} — за тарифом НП`,
+    deliveryFree: "Безкоштовно",
+    deliveryFreeFrom: (threshold: string) => `Безкоштовно (від ${threshold})`,
+    deliveryCostNotCalculated: "не розрахована",
+    deliveryPickupHint:
+      "Назва й адреса — знімок на момент замовлення: якщо точку потім перейменують чи видалять, тут лишиться те, що бачив покупець. ТТН не потрібна.",
+    deliveryOtherWarning:
+      "Вартість доставки треба уточнити: зателефонуйте покупцю й погодьте перевізника та суму. Покупець оплачує при отриманні.",
+    // НП із нульовою вартістю в замовленні: покупець платить перевізнику.
+    deliveryCostNpTariff: "За тарифом НП",
   },
 
   reviews: {
