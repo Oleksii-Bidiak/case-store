@@ -126,6 +126,10 @@ describe("OrderLookupResult — delivery (TASK-1030)", () => {
     expect(shippingCell()).toHaveTextContent(d.shippingPending);
     expect(shippingCell()).toHaveClass("italic");
     expect(screen.queryByText(d.shippingFree)).toBeNull();
+    // «Разом» says it leaves delivery out, as on the confirmation page.
+    expect(
+      screen.getByText(dict.order.deliveryBlock.totalWithoutShipping),
+    ).toBeInTheDocument();
   });
 
   it("other, once priced — a neutral line that does not contradict the amount", () => {
@@ -147,6 +151,9 @@ describe("OrderLookupResult — delivery (TASK-1030)", () => {
 
     expect(screen.getByText(d.deliveryOtherPriced)).toBeInTheDocument();
     expect(screen.queryByText(d.deliveryOther)).toBeNull();
+    expect(
+      screen.queryByText(dict.order.deliveryBlock.totalWithoutShipping),
+    ).toBeNull();
     expect(shippingCell().textContent?.replace(/\s/g, "")).toBe("95₴");
   });
 

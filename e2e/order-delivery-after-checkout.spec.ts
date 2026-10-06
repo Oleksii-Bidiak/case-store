@@ -233,7 +233,7 @@ test.describe("/orders/status names the real delivery method (TASK-1030)", () =>
     });
 
     await expect(result).toContainText(
-      "Інший спосіб — вартість уточнить менеджер",
+      "Інший спосіб — вартість уточнить оператор",
     );
     await expect(result).toContainText("Уточнить оператор");
     await expect(result).not.toContainText("Безкоштовно");

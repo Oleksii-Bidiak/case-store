@@ -143,7 +143,7 @@ describe("OrderDeliveryBlock (TASK-647)", () => {
     expect(block().queryByRole("link")).toBeNull();
   });
 
-  it("courier — recipient, street, city and phone", () => {
+  it("courier — «Кур'єр · <місто>», recipient, street, city and phone", () => {
     renderWithProviders(
       <OrderDeliveryBlock
         order={{
@@ -157,7 +157,7 @@ describe("OrderDeliveryBlock (TASK-647)", () => {
       />,
     );
 
-    expect(block().getByText(t.methods.COURIER)).toBeInTheDocument();
+    expect(block().getByText(t.courierTitle("Київ"))).toBeInTheDocument();
     expect(block().getByText("Олег Коваль")).toBeInTheDocument();
     expect(block().getByText("вул. Хрещатик, 1, кв. 5")).toBeInTheDocument();
     expect(block().getByText("Київ")).toBeInTheDocument();

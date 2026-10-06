@@ -1726,6 +1726,8 @@ export const dict = {
         OTHER: "Інша доставка",
       } as Record<string, string>,
       pickupTitle: (name: string) => `Самовивіз · ${name}`,
+      // Owner decision 2026-10-06: the city is not declined — «Кур'єр · Київ».
+      courierTitle: (city: string) => `Кур'єр · ${city}`,
       mapLink: "Як дістатися",
       newTab: "(відкривається в новій вкладці)",
       hoursTerm: "Години",
@@ -1800,7 +1802,7 @@ export const dict = {
     deliveryPickup: (point: string) =>
       point ? `Самовивіз: ${point}` : "Самовивіз",
     deliveryCourierMethod: "Кур'єр",
-    deliveryOther: "Інший спосіб — вартість уточнить менеджер",
+    deliveryOther: "Інший спосіб — вартість уточнить оператор",
     shippingFree: "Безкоштовно",
     shippingPending: "Уточнить оператор",
     // TASK-647 fix: OTHER once the operator has priced it.

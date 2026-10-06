@@ -39,21 +39,27 @@ export function OrderDeliveryMapLink({
   );
 }
 
-/** A muted note with an info glyph — what happens next with this delivery. */
+/** A note on a muted panel with an info glyph (`oc-dnote`) — what happens next. */
 export function OrderDeliveryNote({ children }: { children: ReactNode }) {
   return (
-    <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 text-sm text-muted-foreground">
-      <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+    <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 text-sm text-foreground">
+      <Info
+        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+        aria-hidden
+      />
       <span>{children}</span>
     </p>
   );
 }
 
-/** The bold first line: the method, or «Самовивіз · <точка>». */
+/** The bold first line: the method, «Самовивіз · <точка>» or «Кур'єр · <місто>». */
 function methodLine(details: OrderDeliveryDetails): string {
   const t = dict.order.deliveryBlock;
   if (details.method === "PICKUP" && details.pickup?.name) {
     return t.pickupTitle(details.pickup.name);
+  }
+  if (details.method === "COURIER" && details.city) {
+    return t.courierTitle(details.city);
   }
   return t.methods[details.method] ?? details.method;
 }

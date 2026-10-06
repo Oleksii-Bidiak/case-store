@@ -123,6 +123,14 @@ export function OrderLookupResult({ order }: { order: PublicOrderEntity }) {
             </dd>
           </div>
         </dl>
+        {/* The same note the confirmation page puts under «Разом» — without
+            it, a total that leaves delivery out reads as the final sum. Kept
+            outside the <dl>: a <p> is not valid content there (TASK-868). */}
+        {!hasShipping && order.delivery.shippingCostPending && (
+          <p className="text-right text-xs text-muted-foreground">
+            {dict.order.deliveryBlock.totalWithoutShipping}
+          </p>
+        )}
       </section>
 
       <section className="flex flex-col gap-1.5">

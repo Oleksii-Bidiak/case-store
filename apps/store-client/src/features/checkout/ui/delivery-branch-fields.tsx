@@ -49,11 +49,14 @@ export function DeliveryBranch({
   );
 }
 
-/** A muted note with a leading icon — the info / phone notes of the mockup. */
+/** A note on a muted panel with a leading icon — the mockup's `co-note`. */
 function Note({ children }: { children: ReactNode }) {
   return (
-    <p className="flex items-start gap-2 rounded-lg bg-muted px-3.5 py-3 text-sm text-muted-foreground">
-      <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+    <p className="flex items-start gap-2 rounded-lg bg-muted px-3.5 py-3 text-sm text-foreground">
+      <Info
+        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+        aria-hidden
+      />
       <span>{children}</span>
     </p>
   );
@@ -149,7 +152,7 @@ export function NpManualBranch({
     <DeliveryBranch heading={dict.checkout.delivery.npHeading}>
       <p
         role="status"
-        className="flex items-start gap-2 rounded-lg bg-warning/15 px-3.5 py-3 text-sm text-foreground"
+        className="flex items-start gap-2 rounded-lg border border-warning/45 bg-warning/10 px-3.5 py-3 text-sm text-foreground"
       >
         <TriangleAlert
           className="mt-0.5 size-4 shrink-0 text-warning"
