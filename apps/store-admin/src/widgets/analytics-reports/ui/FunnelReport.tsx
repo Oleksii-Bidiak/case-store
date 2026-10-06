@@ -11,7 +11,9 @@ import { formatTime } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui";
 import { formatCount, formatRate } from "../lib/format";
+import { funnelCsv } from "../lib/csv";
 import type { ReportQuery } from "../model/report-period";
+import { CsvButton } from "./CsvButton";
 import { DeltaBadge } from "./DeltaBadge";
 import { ReportCard } from "./ReportCard";
 import { NoticeBox, ReportBodySkeleton, ReportLoadError } from "./report-parts";
@@ -40,9 +42,21 @@ const transitionText = (to: FunnelEventName) =>
 export function FunnelReport({ query }: { query: ReportQuery }) {
   const report = useGetFunnelReport(query);
   const data = report.data?.data;
+  const file = data && !report.isError ? funnelCsv(data) : null;
+  // CSV only of numbers: hidden when Umami is off or silent (ДН-8.5/8.6),
+  // disabled while the report loads or after it failed.
+  const offerCsv = !data || report.isError || file !== null;
 
   return (
-    <ReportCard title={d.funnelTitle} subtitle={d.funnelSubtitle}>
+    <ReportCard
+      title={d.funnelTitle}
+      subtitle={d.funnelSubtitle}
+      actions={
+        offerCsv ? (
+          <CsvButton title={d.funnelTitle} build={file ? () => file : null} />
+        ) : undefined
+      }
+    >
       {report.isError ? (
         <ReportLoadError
           onRetry={() => void report.refetch()}

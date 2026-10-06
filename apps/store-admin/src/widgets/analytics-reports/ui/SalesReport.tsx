@@ -12,7 +12,9 @@ import {
   formatCount,
   formatMoney,
 } from "../lib/format";
+import { salesCsv } from "../lib/csv";
 import type { ReportQuery } from "../model/report-period";
+import { CsvButton } from "./CsvButton";
 import { DailyBarChart } from "./DailyBarChart";
 import { KpiTile } from "./KpiTile";
 import { ReportCard } from "./ReportCard";
@@ -52,7 +54,15 @@ export function SalesReport({ query, enabled = true }: SalesReportProps) {
   const data = report.data?.data;
 
   return (
-    <ReportCard title={d.salesTitle}>
+    <ReportCard
+      title={d.salesTitle}
+      actions={
+        <CsvButton
+          title={d.salesTitle}
+          build={data && !report.isError ? () => salesCsv(data) : null}
+        />
+      }
+    >
       {report.isError ? (
         <ReportLoadError
           onRetry={() => void report.refetch()}

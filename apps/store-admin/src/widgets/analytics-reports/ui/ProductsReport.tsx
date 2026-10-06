@@ -17,8 +17,10 @@ import {
 } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui";
+import { productsCsv } from "../lib/csv";
 import { formatCount } from "../lib/format";
 import type { ReportQuery } from "../model/report-period";
+import { CsvButton } from "./CsvButton";
 import { ReportCard } from "./ReportCard";
 import { ReportBodySkeleton, ReportLoadError } from "./report-parts";
 
@@ -77,7 +79,17 @@ export function ProductsReport({ query }: { query: ReportQuery }) {
   const data = report.data?.data;
 
   return (
-    <ReportCard title={d.productsTitle}>
+    <ReportCard
+      title={d.productsTitle}
+      actions={
+        <CsvButton
+          title={d.productsTitle}
+          // The rows on screen: the top five, and the outsiders as listed
+          // (five, or the expanded list).
+          build={data && !report.isError ? () => productsCsv(data, TOP) : null}
+        />
+      }
+    >
       {report.isError ? (
         <ReportLoadError
           onRetry={() => void report.refetch()}

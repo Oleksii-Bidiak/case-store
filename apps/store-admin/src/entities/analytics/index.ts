@@ -19,12 +19,16 @@ export {
   useGetRegistrationsReport,
   useGetFunnelReport,
   ReportPreset,
+  // TASK-691: the CSV reads an open category's children from the cache entry
+  // its rows render from.
+  getGetCategoryReportQueryKey,
 } from "@/shared/api";
 
 export type {
   ComparedValueEntity,
   ReportPeriodEntity,
   CategoryReportRowEntity,
+  CategoryReportEnvelope,
   BrandReportRowEntity,
   GetSalesReportParams,
   GetCategoryReportParams,

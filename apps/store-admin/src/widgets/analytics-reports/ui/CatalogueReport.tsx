@@ -2,13 +2,16 @@
 
 import { useCallback, useId, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 
 import {
+  getGetCategoryReportQueryKey,
   useGetBrandReport,
   useGetCategoryReport,
   type BrandReportEntity,
   type CategoryReportEntity,
+  type CategoryReportEnvelope,
   type CategoryReportRowEntity,
   type ComparedValueEntity,
 } from "@/entities/analytics";
@@ -31,8 +34,10 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/shared/ui";
+import { brandsCsv, categoriesCsv, categoryLabel } from "../lib/csv";
 import { formatCount } from "../lib/format";
 import type { ReportQuery } from "../model/report-period";
+import { CsvButton } from "./CsvButton";
 import { ReportCard } from "./ReportCard";
 import { ReportBodySkeleton, ReportLoadError } from "./report-parts";
 
@@ -77,6 +82,54 @@ export function CatalogueReport({ query }: { query: ReportQuery }) {
     view === "categories"
       ? categories.data?.data.basis
       : brands.data?.data.basis;
+  const categoriesRevenue = useShowRevenue(categories.data?.data.rows);
+  const brandsRevenue = useShowRevenue(brands.data?.data.rows);
+
+  // Which categories are open — local, not in the URL, and closed again when
+  // the period changes (forms.md 1a: a render-time reset, no remount). Held
+  // here, above the table, because the CSV exports exactly the open rows.
+  const periodKey = JSON.stringify(query);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const [expandedFor, setExpandedFor] = useState(periodKey);
+  if (expandedFor !== periodKey) {
+    setExpandedFor(periodKey);
+    setExpanded(new Set());
+  }
+  const toggle = useCallback((categoryId: string) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(categoryId)) next.delete(categoryId);
+      else next.add(categoryId);
+      return next;
+    });
+  }, []);
+
+  // The CSV of the visible tab, built from the same data the table draws —
+  // the open children read from the very cache entries their rows render.
+  const queryClient = useQueryClient();
+  const categoriesData = categories.data?.data;
+  const brandsData = brands.data?.data;
+  const build =
+    view === "categories"
+      ? categoriesData && !categories.isError
+        ? () =>
+            categoriesCsv({
+              period: categoriesData.period,
+              rows: categoriesData.rows,
+              showRevenue: categoriesRevenue,
+              expanded,
+              childrenOf: (categoryId) =>
+                queryClient.getQueryData<CategoryReportEnvelope>(
+                  getGetCategoryReportQueryKey({
+                    ...query,
+                    parentId: categoryId,
+                  }),
+                )?.data.rows,
+            })
+        : null
+      : brandsData && !brands.isError
+        ? () => brandsCsv(brandsData, brandsRevenue)
+        : null;
 
   return (
     <Tabs
@@ -90,17 +143,26 @@ export function CatalogueReport({ query }: { query: ReportQuery }) {
         title={d.catalogueTitle}
         subtitle={basis === "current-catalogue" ? d.catalogueBasis : undefined}
         actions={
-          <TabsList aria-label={d.catalogueTitle}>
-            <TabsTrigger value="categories">{d.tabCategories}</TabsTrigger>
-            <TabsTrigger value="brands">{d.tabBrands}</TabsTrigger>
-          </TabsList>
+          <>
+            <TabsList aria-label={d.catalogueTitle}>
+              <TabsTrigger value="categories">{d.tabCategories}</TabsTrigger>
+              <TabsTrigger value="brands">{d.tabBrands}</TabsTrigger>
+            </TabsList>
+            <CsvButton title={d.catalogueTitle} build={build} />
+          </>
         }
       >
         <TabsContent value="categories">
-          <CategoryTable report={categories} query={query} />
+          <CategoryTable
+            report={categories}
+            query={query}
+            showRevenue={categoriesRevenue}
+            expanded={expanded}
+            toggle={toggle}
+          />
         </TabsContent>
         <TabsContent value="brands">
-          <BrandTable report={brands} />
+          <BrandTable report={brands} showRevenue={brandsRevenue} />
         </TabsContent>
       </ReportCard>
     </Tabs>
@@ -235,30 +297,17 @@ interface TreeContext {
 function CategoryTable({
   report,
   query,
+  showRevenue,
+  expanded,
+  toggle,
 }: {
   report: CategoryQueryResult;
   query: ReportQuery;
+  showRevenue: boolean;
+  expanded: ReadonlySet<string>;
+  toggle: (categoryId: string) => void;
 }) {
   const rows = report.data?.data.rows;
-  const showRevenue = useShowRevenue(rows);
-
-  // Which roots are open — local, not in the URL, and closed again when the
-  // period changes (forms.md 1a: a render-time reset, no remount).
-  const periodKey = JSON.stringify(query);
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const [expandedFor, setExpandedFor] = useState(periodKey);
-  if (expandedFor !== periodKey) {
-    setExpandedFor(periodKey);
-    setExpanded(new Set());
-  }
-  const toggle = useCallback((categoryId: string) => {
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(categoryId)) next.delete(categoryId);
-      else next.add(categoryId);
-      return next;
-    });
-  }, []);
 
   if (report.isError) {
     return (
@@ -335,7 +384,8 @@ function CategoryRowGroup({
       : statusId
     : undefined;
   const padding = DEPTH_PADDING[Math.min(depth, DEPTH_PADDING.length - 1)];
-  const label = row.direct ? d.directRow(row.name) : row.name;
+  // The same words the CSV writes for this row.
+  const label = categoryLabel(row);
 
   return (
     <>
@@ -428,9 +478,14 @@ function CategoryRowGroup({
 
 /* ── Brands ────────────────────────────────────────────────────────────── */
 
-function BrandTable({ report }: { report: ReportState<BrandReportEntity> }) {
+function BrandTable({
+  report,
+  showRevenue,
+}: {
+  report: ReportState<BrandReportEntity>;
+  showRevenue: boolean;
+}) {
   const rows = report.data?.data.rows;
-  const showRevenue = useShowRevenue(rows);
 
   if (report.isError) {
     return (

@@ -8,7 +8,9 @@ import {
 import { dict } from "@/shared/config";
 import { formatDayWithWeekday } from "@/shared/lib/format";
 import { formatCount } from "../lib/format";
+import { registrationsCsv } from "../lib/csv";
 import type { ReportQuery } from "../model/report-period";
+import { CsvButton } from "./CsvButton";
 import { DailyBarChart } from "./DailyBarChart";
 import { DeltaBadge } from "./DeltaBadge";
 import { ReportCard } from "./ReportCard";
@@ -33,7 +35,15 @@ export function RegistrationsReport({ query }: { query: ReportQuery }) {
   const data = report.data?.data;
 
   return (
-    <ReportCard title={d.registrationsTitle}>
+    <ReportCard
+      title={d.registrationsTitle}
+      actions={
+        <CsvButton
+          title={d.registrationsTitle}
+          build={data && !report.isError ? () => registrationsCsv(data) : null}
+        />
+      }
+    >
       {report.isError ? (
         <ReportLoadError
           onRetry={() => void report.refetch()}
