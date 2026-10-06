@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import {
   Prisma,
+  DeliveryMethod,
   OrderStatus,
   PaymentStatus,
   PaymentMethod,
@@ -194,6 +195,8 @@ const ORDER_EXPORT_SELECT = {
   status: true,
   paymentStatus: true,
   paymentMethod: true,
+  // TASK-648: the «Спосіб доставки» column.
+  deliveryMethod: true,
   paidAt: true,
   subtotal: true,
   discount: true,
@@ -223,6 +226,7 @@ export interface AdminOrderExportRow {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod | null;
+  deliveryMethod: DeliveryMethod;
   paidAt: Date | null;
   subtotal: { toString(): string };
   discount: { toString(): string };
@@ -807,6 +811,13 @@ export class OrderRepository {
     // payment method, and "has this been sitting too long".
     if (query.paymentStatus) and.push({ paymentStatus: query.paymentStatus });
     if (query.paymentMethod) and.push({ paymentMethod: query.paymentMethod });
+    // TASK-648: how the order travels, and — for pickup — from where. The method
+    // filter is multi-value (an operator reads "everything I hand over myself" as
+    // PICKUP + COURIER); `countByDeliveryMethod` drops exactly this arm.
+    if (query.deliveryMethod?.length) {
+      and.push({ deliveryMethod: { in: [...query.deliveryMethod] } });
+    }
+    if (query.pickupPointId) and.push({ pickupPointId: query.pickupPointId });
     if (query.pendingOverdue) {
       // Same condition as DashboardRepository.pendingOver48hWhere() — PENDING,
       // not soft-deleted (already on `where`), created before the cut-off — so
@@ -867,6 +878,40 @@ export class OrderRepository {
     if (and.length > 0) where.AND = and;
 
     return where;
+  }
+
+  /**
+   * Admin — how many orders of each delivery method match the CURRENT filters
+   * (TASK-648), for the counters on the list's method chips.
+   *
+   * Standard facet semantics: every active filter applies EXCEPT the method
+   * filter itself. Otherwise picking «Самовивіз» would zero every other chip and
+   * the operator could no longer see what switching to it would show. The WHERE
+   * is {@link buildAdminWhere} with that one key removed — never a hand-built
+   * copy — so the counts and the rows cannot disagree on any other filter.
+   *
+   * All four methods are always present (0 when nothing matches): the chips are
+   * fixed, and a missing key would read as "unknown", not "none".
+   */
+  async countByDeliveryMethod(
+    query: AdminOrderExportQueryDto,
+  ): Promise<Record<DeliveryMethod, number>> {
+    const groups = await this.prisma.order.groupBy({
+      by: ['deliveryMethod'],
+      where: this.buildAdminWhere({ ...query, deliveryMethod: undefined }),
+      _count: { _all: true },
+    });
+
+    const counts: Record<DeliveryMethod, number> = {
+      NOVA_POSHTA: 0,
+      PICKUP: 0,
+      COURIER: 0,
+      OTHER: 0,
+    };
+    for (const group of groups) {
+      counts[group.deliveryMethod] = group._count._all;
+    }
+    return counts;
   }
 
   /**

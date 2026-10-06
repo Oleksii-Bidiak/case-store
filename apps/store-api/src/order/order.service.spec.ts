@@ -215,6 +215,9 @@ const orderRepositoryMock = {
   // about and writes the whole application in one go.
   findPaymentWithOrder: jest.fn(),
   applyPaymentOutcome: jest.fn(),
+  // TASK-648: the CSV export and the delivery-method facet counts.
+  findAllForExport: jest.fn(),
+  countByDeliveryMethod: jest.fn(),
 };
 
 // TASK-827: checkout reads the cart through CartService, the one method it uses.
@@ -3795,7 +3798,14 @@ describe('OrderService', () => {
         },
       ]);
       expect(order.total).toBe('139.97');
-      expect(order.delivery).toEqual({ city: 'Київ', warehouse: 'Відділення №12' });
+      // TASK-1023/1030: the block also names the pickup point and the pending flag.
+      expect(order.delivery).toEqual({
+        city: 'Київ',
+        warehouse: 'Відділення №12',
+        pickupPointName: null,
+        pickupPointAddress: null,
+        shippingCostPending: false,
+      });
       expect(order.trackingNumber).toBe('20450000000001');
     });
 
@@ -3838,7 +3848,13 @@ describe('OrderService', () => {
         phone: '+380671112233',
       });
 
-      expect(order.delivery).toEqual({ city: 'Київ', warehouse: null });
+      expect(order.delivery).toEqual({
+        city: 'Київ',
+        warehouse: null,
+        pickupPointName: null,
+        pickupPointAddress: null,
+        shippingCostPending: false,
+      });
       expect(JSON.stringify(order)).not.toContain('Хрещатик');
     });
   });
@@ -4768,6 +4784,80 @@ describe('OrderService', () => {
         expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
         expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  // ─── TASK-648: delivery facets + the CSV column ─────────────────────────────
+
+  describe('adminGetOrderFacets (TASK-648)', () => {
+    it('answers the per-method counts the repository computed for the query', async () => {
+      const counts = { NOVA_POSHTA: 4, PICKUP: 1, COURIER: 0, OTHER: 2 };
+      orderRepositoryMock.countByDeliveryMethod.mockResolvedValue(counts);
+      const query = { deliveryMethod: ['PICKUP' as const], paymentMethod: 'ONLINE' as const };
+
+      await expect(service.adminGetOrderFacets(query)).resolves.toEqual({
+        deliveryMethod: counts,
+      });
+      expect(orderRepositoryMock.countByDeliveryMethod).toHaveBeenCalledWith(query);
+    });
+  });
+
+  describe('adminExportOrdersCsv — delivery method column (TASK-648)', () => {
+    const exportRow = (deliveryMethod: string) => ({
+      id: 'abcdef12-0000-4000-8000-000000000001',
+      createdAt: new Date('2026-10-01T10:00:00Z'),
+      status: 'PENDING',
+      paymentStatus: 'PENDING',
+      paymentMethod: 'ON_DELIVERY',
+      deliveryMethod,
+      paidAt: null,
+      subtotal: '100.00',
+      discount: '0.00',
+      discountCode: null,
+      addonsTotal: '0.00',
+      shippingCost: '0.00',
+      tax: '0.00',
+      total: '100.00',
+      trackingNumber: null,
+      guestEmail: 'g@example.com',
+      guestPhone: '380501112233',
+      guestName: 'Гість',
+      shippingAddress: { city: 'Київ' },
+      user: null,
+      _count: { items: 1 },
+    });
+
+    /** Split the BOM-prefixed CSV into header cells and data lines. */
+    const parse = (csv: string) => {
+      const lines = csv.replace(/^﻿/, '').split('\r\n').filter(Boolean);
+      return { header: lines[0].split(','), rows: lines.slice(1).map((l) => l.split(',')) };
+    };
+
+    it('adds a «Спосіб доставки» column right after the payment method', async () => {
+      orderRepositoryMock.findAllForExport.mockResolvedValue([exportRow('PICKUP')]);
+
+      const csv = await service.adminExportOrdersCsv({});
+
+      expect(csv.startsWith('﻿')).toBe(true);
+      const { header } = parse(csv);
+      const at = header.indexOf('Спосіб доставки');
+      expect(at).toBe(header.indexOf('paymentMethod') + 1);
+    });
+
+    it.each([
+      ['NOVA_POSHTA', 'Нова Пошта'],
+      ['PICKUP', 'Самовивіз'],
+      // U+02BC, the apostrophe the admin panel spells «Курʼєр» with.
+      ['COURIER', 'Курʼєр'],
+      ['OTHER', 'Інша доставка'],
+    ])('labels %s as «%s»', async (method, label) => {
+      orderRepositoryMock.findAllForExport.mockResolvedValue([exportRow(method)]);
+
+      const { header, rows } = parse(await service.adminExportOrdersCsv({}));
+
+      expect(rows[0][header.indexOf('Спосіб доставки')]).toBe(label);
+      // Every row keeps the header's width.
+      expect(rows[0]).toHaveLength(header.length);
     });
   });
 

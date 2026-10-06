@@ -1284,6 +1284,8 @@ describe('OrderController (e2e)', () => {
       status: OrderStatus.PENDING,
       paymentStatus: PaymentStatus.PENDING,
       paymentMethod: 'ON_DELIVERY',
+      // TASK-648: the «Спосіб доставки» column.
+      deliveryMethod: 'NOVA_POSHTA',
       paidAt: null,
       subtotal: { toString: () => '1000.00' },
       discount: { toString: () => '100.00' },
@@ -1331,6 +1333,7 @@ describe('OrderController (e2e)', () => {
         'status',
         'paymentStatus',
         'paymentMethod',
+        'Спосіб доставки',
         'paidAt',
         'customerType',
         'customerName',
@@ -1350,6 +1353,7 @@ describe('OrderController (e2e)', () => {
       // The order NUMBER is the uppercased id prefix the customer reads off their
       // email, and the full uuid is beside it for support.
       expect(row).toContain('ABC12345,abc12345-0000-0000-0000-000000000001');
+      expect(row).toContain('ON_DELIVERY,Нова Пошта,');
       expect(row).toContain('ACCOUNT');
       expect(row).toContain('buyer@example.com');
       expect(row).toContain('SUMMER10');

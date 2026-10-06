@@ -12,7 +12,7 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
-import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
+import { DeliveryMethod, OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
 import { PENDING_STALE_HOURS } from '../../dashboard';
 import { OrderListQueryDto, toOrderStatusList } from './order-list-query.dto';
 
@@ -175,6 +175,40 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
     message: `paymentMethod must be one of: ${Object.values(PaymentMethod).join(', ')}`,
   })
   paymentMethod?: PaymentMethod;
+
+  @ApiProperty({
+    description:
+      'Filter by one or more delivery methods (comma-separated, TASK-648) — the same CSV ' +
+      'shape as `status`: `PICKUP` or `PICKUP,COURIER`; absent means every method.',
+    type: String,
+    required: false,
+    example: 'PICKUP,COURIER',
+  })
+  // The `status` list parser, shared rather than re-typed: it is a generic
+  // "CSV / repeated param → trimmed string[]" that reads the ORIGINAL value from
+  // `obj` (enableImplicitConversion would coerce it first). Unknown values pass
+  // through to `@IsEnum`, which answers 400.
+  @Transform(toOrderStatusList)
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(Object.keys(DeliveryMethod).length)
+  @IsEnum(DeliveryMethod, {
+    each: true,
+    message: `deliveryMethod must be one of: ${Object.values(DeliveryMethod).join(', ')}`,
+  })
+  deliveryMethod?: DeliveryMethod[];
+
+  @ApiProperty({
+    description:
+      'Filter to orders collected at one pickup point (TASK-648). Orders whose point was ' +
+      'deleted no longer carry its id (the FK is SetNull) and do not match.',
+    required: false,
+    format: 'uuid',
+  })
+  @IsOptional()
+  // 'loose' like `userId` above: seeded ids are not RFC-4122 v4 (wave 193).
+  @IsUUID('loose')
+  pickupPointId?: string;
 
   @ApiProperty({
     description:

@@ -133,6 +133,10 @@ const ORDER_EXPORT_HEADER = [
   'status',
   'paymentStatus',
   'paymentMethod',
+  // TASK-648. The one translated column, by the plan's decision: an operator
+  // reads it in a spreadsheet, and its four values filter back just as well as
+  // the enum would. Labels in DELIVERY_METHOD_EXPORT_LABEL below.
+  'Спосіб доставки',
   'paidAt',
   'customerType',
   'customerName',
@@ -149,6 +153,24 @@ const ORDER_EXPORT_HEADER = [
   'total',
   'trackingNumber',
 ] as const;
+
+/**
+ * The «Спосіб доставки» CSV cell for each method (TASK-648), spelled as the
+ * admin panel spells them — «Курʼєр» with U+02BC, the panel's apostrophe. A
+ * `Record`, so a fifth method fails to compile until it has a label.
+ */
+const DELIVERY_METHOD_EXPORT_LABEL: Readonly<Record<DeliveryMethod, string>> = {
+  NOVA_POSHTA: 'Нова Пошта',
+  PICKUP: 'Самовивіз',
+  COURIER: 'Курʼєр',
+  OTHER: 'Інша доставка',
+};
+
+/** What `GET /admin/orders/facets` answers (TASK-648). */
+export interface AdminOrderFacets {
+  /** Orders per delivery method under every filter but the method one; all four keys. */
+  deliveryMethod: Record<DeliveryMethod, number>;
+}
 
 /**
  * How long a guest's order-status link stays usable when
@@ -939,6 +961,16 @@ export class OrderService {
   }
 
   /**
+   * Admin — facet counts for the order list's filter chips (TASK-648): how many
+   * orders of each delivery method match every active filter except the method
+   * filter itself (see `OrderRepository.countByDeliveryMethod`). All four keys
+   * are always present.
+   */
+  async adminGetOrderFacets(query: AdminOrderExportQueryDto): Promise<AdminOrderFacets> {
+    return { deliveryMethod: await this.orderRepository.countByDeliveryMethod(query) };
+  }
+
+  /**
    * Admin — build the order CSV for the CURRENT filter set (TASK-425).
    *
    * Same filters as the list, no pagination, capped at
@@ -979,6 +1011,7 @@ export class OrderService {
         row.status,
         row.paymentStatus,
         row.paymentMethod ?? '',
+        DELIVERY_METHOD_EXPORT_LABEL[row.deliveryMethod] ?? '',
         row.paidAt ? row.paidAt.toISOString() : '',
         isGuest ? 'GUEST' : 'ACCOUNT',
         isGuest ? (row.guestName ?? '') : accountName,
