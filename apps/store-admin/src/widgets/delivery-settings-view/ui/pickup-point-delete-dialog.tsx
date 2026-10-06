@@ -56,7 +56,9 @@ export function PickupPointDeleteDialog({
             <AlertDialogDescription asChild>
               <div className="flex flex-col gap-2">
                 <p>{t.deleteOrders(point.ordersCount)}</p>
-                <p>{t.deleteAdvice}</p>
+                {/* «deactivate it instead» is advice only for a point that
+                    is still active — the button beside it hides likewise. */}
+                {point.isActive ? <p>{t.deleteAdvice}</p> : null}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>

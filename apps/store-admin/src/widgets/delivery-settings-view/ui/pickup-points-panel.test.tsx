@@ -211,6 +211,7 @@ describe("PickupPointsPanel (TASK-645)", () => {
       name: t.deleteTitle(BASE[A].name),
     });
     expect(dialog).toHaveTextContent(t.deleteOrders(38));
+    expect(dialog).toHaveTextContent(t.deleteAdvice);
     expect(t.deleteOrders(38)).toMatch(
       /^На неї посилаються 38 замовлень\. Вони збережуть /,
     );
@@ -254,6 +255,8 @@ describe("PickupPointsPanel (TASK-645)", () => {
     expect(
       within(dialog).queryByRole("button", { name: t.deleteInstead }),
     ).not.toBeInTheDocument();
+    // …nor the advice to deactivate it.
+    expect(dialog).not.toHaveTextContent(t.deleteAdvice);
     await userEvent.click(
       within(dialog).getByRole("button", { name: dict.common.cancel }),
     );
