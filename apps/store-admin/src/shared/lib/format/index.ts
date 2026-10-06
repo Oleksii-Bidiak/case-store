@@ -5,6 +5,9 @@ export {
   formatTime,
   formatRelative,
   formatDayLong,
+  formatDayShort,
+  formatDayWithWeekday,
+  formatMonthGenitive,
 } from "./formatDate";
 export type { DateInput } from "./formatDate";
 // The `<input type="datetime-local">` half of the same Kyiv pinning — see the

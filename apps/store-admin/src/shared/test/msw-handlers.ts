@@ -1,4 +1,12 @@
 import { http, HttpResponse } from "msw";
+import {
+  brandReport,
+  categoryReport,
+  funnelReport,
+  productsReport,
+  registrationsReport,
+  salesReport,
+} from "./analytics-report-fixtures";
 
 /**
  * Default MSW handlers for store-admin component tests. Patterns use a leading
@@ -33,25 +41,33 @@ export const handlers = [
     }),
   ),
 
-  // Registrations report (TASK-692) — the default 30-day period; /analytics
-  // reads the period bar's label off this response. Override per-test.
-  http.get("*/api/admin/analytics/reports/registrations", () =>
+  // The /analytics reports (TASK-692) — the owner's view of a 30-day period
+  // (money included). /analytics reads the period bar's label off the
+  // registrations report. Categories honour `parentId`, products `limit`, like
+  // the API. Override per-test (the fixtures have no-revenue variants).
+  http.get("*/api/admin/analytics/reports/sales", () =>
+    HttpResponse.json({ data: salesReport() }),
+  ),
+  http.get("*/api/admin/analytics/reports/categories", ({ request }) =>
     HttpResponse.json({
-      data: {
-        period: {
-          preset: "30d",
-          from: "2026-09-06",
-          to: "2026-10-05",
-          days: 30,
-          previousFrom: "2026-08-07",
-          previousTo: "2026-09-05",
-          previousDays: 30,
-        },
-        registrations: { current: 48, previous: 40, changePct: 20 },
-        fromGuest: { current: 11, previous: 11, changePct: 0 },
-        daily: [],
-      },
+      data: categoryReport(new URL(request.url).searchParams.get("parentId")),
     }),
+  ),
+  http.get("*/api/admin/analytics/reports/brands", () =>
+    HttpResponse.json({ data: brandReport() }),
+  ),
+  http.get("*/api/admin/analytics/reports/products", ({ request }) =>
+    HttpResponse.json({
+      data: productsReport(
+        Number(new URL(request.url).searchParams.get("limit") ?? 10),
+      ),
+    }),
+  ),
+  http.get("*/api/admin/analytics/reports/funnel", () =>
+    HttpResponse.json({ data: funnelReport() }),
+  ),
+  http.get("*/api/admin/analytics/reports/registrations", () =>
+    HttpResponse.json({ data: registrationsReport() }),
   ),
 
   // Needs-action counters (TASK-248, +pendingOver48h TASK-251) — all-clear by

@@ -24,6 +24,8 @@ export {
 export type {
   ComparedValueEntity,
   ReportPeriodEntity,
+  CategoryReportRowEntity,
+  BrandReportRowEntity,
   GetSalesReportParams,
   GetCategoryReportParams,
   GetBrandReportParams,

@@ -1,6 +1,10 @@
 import {
   formatDate,
   formatDateTime,
+  formatDayLong,
+  formatDayShort,
+  formatDayWithWeekday,
+  formatMonthGenitive,
   formatRelative,
   formatTime,
 } from "./formatDate";
@@ -116,5 +120,34 @@ describe("formatRelative", () => {
 
   it("returns the input unchanged when it is not a usable date", () => {
     expect(formatRelative("whenever", now)).toBe("whenever");
+  });
+});
+
+// TASK-692 — calendar days (`YYYY-MM-DD`) in words, for the report screen.
+describe("calendar-day formats", () => {
+  it("says a day long, with or without the year", () => {
+    expect(formatDayLong("2026-09-06")).toBe("6 вересня");
+    expect(formatDayLong("2026-09-06", true)).toBe("6 вересня 2026");
+  });
+
+  it("abbreviates a day for a chart axis without Intl's dot", () => {
+    expect(formatDayShort("2026-09-07")).toBe("7 вер");
+    expect(formatDayShort("2026-10-06")).not.toMatch(/\.$/);
+  });
+
+  it("adds the weekday for a tooltip", () => {
+    expect(formatDayWithWeekday("2026-09-12")).toBe("12 вересня, сб");
+  });
+
+  it("puts a month in the genitive «з …» takes", () => {
+    expect(formatMonthGenitive("2026-03-10T09:00:00.000Z")).toBe("березня");
+    expect(formatMonthGenitive("2025-03-10T09:00:00.000Z", true)).toBe(
+      "березня 2025",
+    );
+  });
+
+  it("returns a non-day unchanged", () => {
+    expect(formatDayShort("whenever")).toBe("whenever");
+    expect(formatDayLong("whenever")).toBe("whenever");
   });
 });

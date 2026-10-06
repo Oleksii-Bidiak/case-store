@@ -6837,6 +6837,94 @@ export const dict = {
     deltaFlat: "без змін до попереднього періоду",
     deltaNone: "у попередньому періоді — нуль, порівнювати нема з чим",
     was: (value: string) => `було ${value}`,
+
+    // Крок 2: п'ять звітів. Спільні стани.
+    reportError: "Не вдалося завантажити звіт.",
+    revenueLocked:
+      "Суми в гривнях не показуються: для них потрібне право «Виторг і фінансові показники». Решта звітів — у штуках і відсотках.",
+    thousands: (value: string) => `${value} тис.`,
+
+    // «Продажі».
+    salesTitle: "Продажі",
+    salesTile: "Продажі",
+    refundsTile: "Повернення",
+    netTile: "Чистий",
+    ordersTile: "Замовлень",
+    aovTile: "Середній чек",
+    salesLegendNet: "Чистий за день",
+    salesLegendNegative: "Нижче нуля — повернули більше, ніж продали",
+    salesChartSummary: (days: string, min: string, max: string) =>
+      `Чистий виторг по днях, ${days}: найменший за день ${min}, найбільший ${max}.`,
+    salesEmptyTitle: "За цей період оплачених замовлень немає",
+    salesEmptyText:
+      "Нулі — це справжні нулі, а не помилка: дані за ці дні є, просто продажів не було.",
+    salesFootnote:
+      "Продажі — за датою замовлення (оплачені, включно з тими, що потім повернули). Повернення — за датою, коли гроші пішли назад. Тому повернення у вересні за покупку з серпня зменшує вересень, а серпень лишається таким, яким ви його вже бачили. Середній чек = чистий ÷ замовлення.",
+
+    // «Категорії й бренди».
+    catalogueTitle: "Категорії й бренди",
+    catalogueBasis:
+      "За нинішньою структурою каталогу: товар, який перенесли в іншу категорію, рахується там, де він зараз.",
+    tabCategories: "Категорії",
+    tabBrands: "Бренди",
+    colCategory: "Категорія",
+    colBrand: "Бренд",
+    colUnits: "Продано, шт",
+    colOrders: "Замовлень",
+    colRevenue: "Виторг",
+    directRow: (name: string) => `Прямо в «${name}», без підкатегорії`,
+    childrenLoading: "Завантажуємо підкатегорії…",
+    childrenError: "Не вдалося завантажити підкатегорії.",
+    noBrand: "Без бренду",
+    nothingSold: "За період нічого не продано",
+    grossNote:
+      "Виторг тут — сума рядків замовлень до знижок на замовлення й доставки, тому разом він не дорівнює «Продажам».",
+
+    // «Лідери й аутсайдери».
+    productsTitle: "Лідери й аутсайдери",
+    leadersByRevenue: "Топ-5 за виторгом",
+    leadersByUnits: "Топ-5 за кількістю",
+    pieces: (count: string) => `${count} шт`,
+    outsidersTitle: (total: number) =>
+      `Без жодного продажу за період · ${countLabel(total, ["товар", "товари", "товарів"])}`,
+    outsiderSince: (month: string) => `з ${month}`,
+    outsidersHint:
+      "Лише показані на сайті товари; найдовше без продажів — угорі.",
+    outsidersShowAll: (total: number) => `Показати всі ${total}`,
+    outsidersCapped: (shown: number, total: number) =>
+      `Показано перші ${shown} із ${total}`,
+    outsidersNone: "Кожен показаний товар мав продажі за період",
+
+    // «Конверсія кошик → покупка».
+    funnelTitle: "Конверсія кошик → покупка",
+    funnelSubtitle:
+      "Рахує Umami за діями відвідувачів на сайті — з нашими замовленнями ці числа не змішуються.",
+    funnelOffTitle: "Аналітику відвідувань не підключено",
+    funnelOffText:
+      "Без Umami конверсію порахувати нема з чого — тому тут не «0%», а цей рядок. Підключає розробник: крок «Аналітика» в посібнику з розгортання.",
+    funnelDownTitle: (time: string) => `Umami не відповів о ${time}`,
+    funnelDownText:
+      "Дані є, але зараз їх не вдалося отримати. Інші звіти від цього не залежать.",
+    funnelRetry: "Спробувати ще раз",
+    funnelConversion: "Конверсія",
+    funnelWas: (value: string) =>
+      `було ${value} · купили з тих, хто додав у кошик`,
+    stepAddToCart: "Додали в кошик",
+    stepBeginCheckout: "Почали оформлення",
+    stepPurchase: "Купили",
+    toCheckout: (rate: string, previous: string) =>
+      `${rate} дійшли до оформлення · було ${previous}`,
+    toPurchase: (rate: string, previous: string) =>
+      `${rate} купили · було ${previous}`,
+    biggestLoss: " — найбільше губимо тут",
+    funnelEventsNote: "Кількість подій, не людей.",
+
+    // «Реєстрації».
+    registrationsTitle: "Реєстрації",
+    registrationsNew: "Нових акаунтів",
+    registrationsFromGuest: "З них раніше купували як гості",
+    registrationsChartSummary: (days: string, total: number, max: number) =>
+      `Нові акаунти по днях, ${days}: усього ${total}, найбільше за день — ${max}.`,
   },
 } as const;
 

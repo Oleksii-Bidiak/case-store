@@ -1,11 +1,12 @@
 import type { ReportPeriodEntity } from "@/entities/analytics";
 import { dict } from "@/shared/config";
-import { formatDayLong } from "@/shared/lib/format";
+import { formatCurrency, formatDayLong } from "@/shared/lib/format";
 
 const d = dict.analytics;
 
 // Money is `formatCurrency` from `@/shared/lib` («412 300 ₴», TASK-801) — the
-// one hryvnia formatter of the panel; nothing here re-implements it.
+// one hryvnia formatter of the panel; `formatMoney` below only puts a true
+// minus in front of it.
 
 /** U+2212 — a true minus, the width of the plus, not the hyphen «-». */
 export const MINUS = "−";
@@ -24,6 +25,38 @@ export function formatSigned(value: number): string {
   const magnitude = formatMagnitude(value);
   if (magnitude === "0") return magnitude;
   return `${value > 0 ? "+" : MINUS}${magnitude}`;
+}
+
+/**
+ * Money that may be below zero — a day's net, the net of a bad period:
+ * «−1 299 ₴» with a true minus. `formatCurrency` itself prints Intl's hyphen
+ * («-1 299 ₴»), which in a column of figures reads as a dash.
+ */
+export function formatMoney(value: number): string {
+  const magnitude = formatCurrency(Math.abs(value));
+  return value < 0 ? `${MINUS}${magnitude}` : magnitude;
+}
+
+/** «1 240» — a count, uk-UA grouping. */
+export function formatCount(value: number): string {
+  return value.toLocaleString("uk-UA");
+}
+
+/** A 0…1 share as a percent: 0.142 → «14,2%»; `null` → «—». */
+export function formatRate(value: number | null): string {
+  return value === null ? "—" : d.deltaPercent(formatMagnitude(value * 100));
+}
+
+/**
+ * A money axis tick: «30 тис.», «−10 тис.», «500». Thousands because the
+ * axis is a scale, not a figure — the exact sum is in the tooltip.
+ */
+export function formatAxisMoney(value: number): string {
+  const sign = value < 0 ? MINUS : "";
+  const magnitude = Math.abs(value);
+  return magnitude >= 1000
+    ? `${sign}${d.thousands(formatMagnitude(magnitude / 1000))}`
+    : `${sign}${formatMagnitude(magnitude)}`;
 }
 
 const yearOf = (day: string) => day.slice(0, 4);
