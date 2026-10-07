@@ -11,3 +11,5 @@ export {
   MAX_LOGO_BYTES,
   SVG_MIME,
 } from './store-logo.constants';
+// TASK-668: the preview-token generation lives on this singleton row.
+export { SINGLETON_ID as SEO_SETTINGS_SINGLETON_ID } from './seo-settings.repository';

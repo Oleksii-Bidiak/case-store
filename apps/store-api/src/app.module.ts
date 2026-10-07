@@ -35,6 +35,7 @@ import { BlogModule } from './blog';
 import { BannersModule } from './banners';
 import { CarouselsModule } from './carousels';
 import { HomeBlockModule } from './home-block';
+import { PreviewTokenModule } from './preview-token';
 import { SiteContactModule } from './site-contact';
 import { SeoSettingsModule } from './seo-settings';
 import { FaqModule } from './faq';
@@ -227,6 +228,8 @@ import { buildPinoHttpOptions, validateEnv } from './config';
     CarouselsModule,
     // The homepage as a list of blocks (TASK-660/661, plan 186)
     HomeBlockModule,
+    // Signed draft previews (TASK-668, plan 186)
+    PreviewTokenModule,
 
     // Admin-managed site contact settings (TASK-154)
     SiteContactModule,

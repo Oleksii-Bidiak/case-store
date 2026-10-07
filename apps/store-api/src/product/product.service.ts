@@ -482,6 +482,34 @@ export class ProductService {
   }
 
   /**
+   * The storefront product page of a signed preview (TASK-668): the product at `slug`
+   * EVEN WHEN it is hidden (`isActive = false` — the product draft state), but only if
+   * it is exactly the product the token was issued for. Returns null otherwise, and the
+   * caller then serves the ordinary public read — a token for another product opens
+   * nothing.
+   *
+   * Never touches the Redis detail cache, in either direction: a cached public copy
+   * must not answer a preview, and above all a draft must never be written where the
+   * public read would find it.
+   */
+  async findBySlugForPreview(slug: string, productId: string): Promise<ProductDetail | null> {
+    const product = await this.productRepository.findBySlugWithRelations(slug, {
+      activeOnly: false,
+    });
+    if (!product || product.id !== productId) {
+      return null;
+    }
+
+    const compatibleDeviceModels = await this.deviceCompatRepository.getDeviceCompat(product.id);
+    return {
+      product: PublicProductEntity.fromPrisma({ ...product, compatibleDeviceModels }),
+      category: ProductCategoryEntity.fromPrisma(product.category),
+      group: product.group ? ProductGroupEntity.fromPrisma(product.group) : null,
+      images: product.images.map((img) => ProductImageEntity.fromPrisma(img)),
+    };
+  }
+
+  /**
    * Get a product by ID (admin-only).
    * Cache-aside; throws NotFoundException if the product is not found.
    */

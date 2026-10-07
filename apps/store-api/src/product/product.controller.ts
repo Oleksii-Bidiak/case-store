@@ -11,7 +11,10 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Headers,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -21,7 +24,9 @@ import {
   ApiExtraModels,
   ApiProperty,
   ApiBody,
+  ApiHeader,
 } from '@nestjs/swagger';
+import { PREVIEW_TOKEN_HEADER, PreviewTokenService, markPreviewResponse } from '../preview-token';
 import { ProductService } from './product.service';
 import {
   CreateProductDto,
@@ -265,7 +270,10 @@ type AdminProductPreviewResponse = {
 )
 @Controller('products')
 export class ProductController {
-  constructor(private readonly productService: ProductService) {}
+  constructor(
+    private readonly productService: ProductService,
+    private readonly previewTokenService: PreviewTokenService,
+  ) {}
 
   /**
    * GET /api/products
@@ -358,7 +366,29 @@ export class ProductController {
     type: ProductDetailResponseEnvelope,
   })
   @ApiResponse({ status: 404, description: 'Product not found' })
-  async findBySlug(@Param('slug') slug: string): Promise<ProductDetailResponse> {
+  @ApiHeader({
+    name: 'X-Preview-Token',
+    required: false,
+    description:
+      'A signed preview token for THIS product (TASK-668) — serves it even while hidden, uncached',
+  })
+  async findBySlug(
+    @Param('slug') slug: string,
+    @Headers(PREVIEW_TOKEN_HEADER) previewToken: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ProductDetailResponse> {
+    // A signed preview of exactly this product (TASK-668) bypasses the active-only
+    // gate AND the Redis cache. Any other token — invalid, expired, revoked, or for
+    // another product — falls through to the ordinary read, unchanged.
+    const scope = await this.previewTokenService.validScope(previewToken);
+    if (scope?.type === 'product' && scope.id) {
+      const preview = await this.productService.findBySlugForPreview(slug, scope.id);
+      if (preview) {
+        markPreviewResponse(response);
+        const { product, ...relations } = preview;
+        return { data: product, ...relations };
+      }
+    }
     const { product, ...relations } = await this.productService.findBySlug(slug);
     return { data: product, ...relations };
   }

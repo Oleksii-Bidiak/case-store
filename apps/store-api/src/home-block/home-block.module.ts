@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { CarouselsModule } from '../carousels';
 import { PUBLISHABLE_REPOSITORY } from '../publishing';
+import { PreviewTokenModule } from '../preview-token';
 import { HomeBlockRepository } from './home-block.repository';
 import { HomeBlockService } from './home-block.service';
 import { HomeBlockController } from './home-block.controller';
@@ -10,7 +11,7 @@ import { AdminHomeBlockController } from './admin-home-block.controller';
  * The homepage as a list of blocks (TASK-660 / TASK-661, plan 186).
  */
 @Module({
-  imports: [CarouselsModule],
+  imports: [CarouselsModule, PreviewTokenModule],
   controllers: [HomeBlockController, AdminHomeBlockController],
   providers: [
     HomeBlockRepository,

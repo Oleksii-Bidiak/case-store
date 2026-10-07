@@ -5,9 +5,10 @@ import { PageController } from './pages.controller';
 import { AdminPageController } from './admin-pages.controller';
 import { PUBLISHABLE_REPOSITORY } from '../publishing';
 import { SlugRedirectModule } from '../slug-redirect';
+import { PreviewTokenModule } from '../preview-token';
 
 @Module({
-  imports: [SlugRedirectModule],
+  imports: [SlugRedirectModule, PreviewTokenModule],
   controllers: [PageController, AdminPageController],
   providers: [
     PageRepository,

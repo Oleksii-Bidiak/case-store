@@ -4,8 +4,11 @@ import { BannerService } from './banners.service';
 import { BannerController } from './banners.controller';
 import { AdminBannerController } from './admin-banners.controller';
 import { PUBLISHABLE_REPOSITORY } from '../publishing';
+import { PreviewTokenModule } from '../preview-token';
 
 @Module({
+  // Signed homepage previews also show draft banners (TASK-668).
+  imports: [PreviewTokenModule],
   controllers: [BannerController, AdminBannerController],
   providers: [
     BannerRepository,

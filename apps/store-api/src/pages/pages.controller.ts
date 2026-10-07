@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Headers, Param, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -6,7 +7,9 @@ import {
   ApiParam,
   ApiProperty,
   ApiExtraModels,
+  ApiHeader,
 } from '@nestjs/swagger';
+import { PREVIEW_TOKEN_HEADER, PreviewTokenService, markPreviewResponse } from '../preview-token';
 import { PageService } from './pages.service';
 import { PageListQueryDto, PageDetailQueryDto } from './dto';
 import { PageEntity } from './entities';
@@ -57,7 +60,10 @@ class PageResponseEnvelope {
 @ApiExtraModels(PageEntity, PagePaginationMeta, PageListResponse, PageResponseEnvelope)
 @Controller('pages')
 export class PageController {
-  constructor(private readonly pageService: PageService) {}
+  constructor(
+    private readonly pageService: PageService,
+    private readonly previewTokenService: PreviewTokenService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List published pages' })
@@ -81,10 +87,27 @@ export class PageController {
     status: 404,
     description: 'Page not found, not published, or not of the requested kind',
   })
+  @ApiHeader({
+    name: 'X-Preview-Token',
+    required: false,
+    description: 'A signed preview token for THIS page (TASK-668) — serves its draft, uncached',
+  })
   async findBySlug(
     @Param('slug') slug: string,
     @Query() query: PageDetailQueryDto,
+    @Headers(PREVIEW_TOKEN_HEADER) previewToken: string | undefined,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<PageResponseEnvelope> {
+    // A signed preview of exactly this page (TASK-668) serves it in any status; any
+    // other token falls through to the ordinary published-only read, unchanged.
+    const scope = await this.previewTokenService.validScope(previewToken);
+    if (scope?.type === 'page' && scope.id) {
+      const preview = await this.pageService.findPreviewBySlug(slug, query.kind, scope.id);
+      if (preview) {
+        markPreviewResponse(response);
+        return { data: preview };
+      }
+    }
     const page = await this.pageService.findPublishedBySlug(slug, query.kind);
 
     return { data: page };

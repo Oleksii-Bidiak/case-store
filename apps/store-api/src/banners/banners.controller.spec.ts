@@ -4,6 +4,7 @@ import { BannerPlacement, PublishStatus } from '@prisma/client';
 import { BannerController } from './banners.controller';
 import { AdminBannerController } from './admin-banners.controller';
 import { BannerService } from './banners.service';
+import { PreviewTokenService } from '../preview-token';
 import { BannerEntity } from './entities';
 
 const entity = Object.assign(new BannerEntity(), {
@@ -45,7 +46,11 @@ describe('Banner controllers', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [BannerController, AdminBannerController],
-      providers: [{ provide: BannerService, useValue: serviceMock }],
+      providers: [
+        { provide: BannerService, useValue: serviceMock },
+        // No preview token on these requests (TASK-668).
+        { provide: PreviewTokenService, useValue: { validScope: () => Promise.resolve(null) } },
+      ],
     })
       .overrideGuard(PermissionGuard)
       .useValue({ canActivate: () => true })
@@ -59,12 +64,21 @@ describe('Banner controllers', () => {
     it('wraps the published banner list in a { data } envelope', async () => {
       serviceMock.findAllPublished.mockResolvedValue([entity]);
 
-      const result = await publicController.findAll({ placement: BannerPlacement.HERO_SLIDE });
+      const response = { setHeader: jest.fn() } as unknown as Parameters<
+        BannerController['findAll']
+      >[2];
+      const result = await publicController.findAll(
+        { placement: BannerPlacement.HERO_SLIDE },
+        undefined,
+        response,
+      );
 
       expect(result).toEqual({ data: [entity] });
       expect(serviceMock.findAllPublished).toHaveBeenCalledWith({
         placement: BannerPlacement.HERO_SLIDE,
       });
+      // No token → the ordinary read, no preview headers.
+      expect(response.setHeader).not.toHaveBeenCalled();
     });
   });
 

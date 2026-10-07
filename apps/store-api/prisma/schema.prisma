@@ -1214,6 +1214,11 @@ model SeoSettings {
   /// Google Business/Wikipedia, ...) — merged into Organization `sameAs`
   /// alongside SiteContactSettings' viber/telegram/instagram. See Decision 4.
   additionalSameAsLinks  String[] @default([]) @map("additional_sameas_links")
+  /// Generation of the signed preview links (TASK-668, plan 186). Every preview
+  /// token carries the version it was issued under; «Відкликати всі прев'ю» bumps
+  /// this, and every older token stops working at once — no table of issued tokens
+  /// to walk. Never shown on the storefront (the entity maps fields explicitly).
+  previewTokenVersion    Int      @default(0) @map("preview_token_version")
   createdAt              DateTime @default(now()) @map("created_at")
   updatedAt              DateTime @updatedAt @map("updated_at")
 

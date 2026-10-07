@@ -5407,6 +5407,8 @@ export const dict = {
       pickupPoints: "Точки самовивозу",
       // TASK-661: /admin/home-blocks/* → `homeBlock.*` (the «Головна» screen).
       homeBlock: "Блоки головної",
+      // TASK-668: /admin/preview-tokens → `previewToken.*` (signed draft previews).
+      previewToken: "Прев'ю чернеток",
     },
 
     // ── TASK-430: the log in Ukrainian ────────────────────────────────────────
@@ -5536,6 +5538,8 @@ export const dict = {
       // `POST /api/products/:id/restore` derives `product.restore`: a deleted
       // product brought back, hidden.
       restore: "відновлено",
+      // TASK-668: DELETE /admin/preview-tokens — «Відкликати всі прев'ю».
+      revokeAll: "відкликано всі прев'ю",
     },
 
     /** How the two halves are joined: «Замовлення — змінено статус». */

@@ -6,6 +6,7 @@ import { BlogController } from './blog.controller';
 import { AdminBlogController } from './admin-blog.controller';
 import { PUBLISHABLE_REPOSITORY } from '../publishing';
 import { SlugRedirectModule } from '../slug-redirect';
+import { PreviewTokenModule } from '../preview-token';
 import { SearchModule } from '../search/search.module';
 
 @Module({
@@ -14,7 +15,7 @@ import { SearchModule } from '../search/search.module';
   // and to ask it a query. The edge is one-directional on purpose: SearchModule
   // provides its OWN BlogRepository instance rather than importing BlogModule,
   // so this import cannot close a module cycle.
-  imports: [SlugRedirectModule, SearchModule],
+  imports: [SlugRedirectModule, SearchModule, PreviewTokenModule],
   controllers: [BlogController, AdminBlogController],
   providers: [
     BlogRepository,

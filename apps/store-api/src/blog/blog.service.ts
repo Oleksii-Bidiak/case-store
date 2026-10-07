@@ -194,6 +194,19 @@ export class BlogService {
     return BlogPostEntity.fromPrisma(post);
   }
 
+  /**
+   * The post a signed preview opens (TASK-668): post `postId` in ANY status, but only
+   * when it really lives at this slug. Null otherwise — the caller then serves the
+   * ordinary published-only read.
+   */
+  async findPreviewBySlug(slug: string, postId: string): Promise<BlogPostEntity | null> {
+    const post = await this.blogRepository.findById(postId);
+    if (!post || post.slug !== slug) {
+      return null;
+    }
+    return BlogPostEntity.fromPrisma(post);
+  }
+
   // ─── posts: admin ───────────────────────────────────────────────────────────
 
   /** List all posts (any status) with an optional status filter (admin). */
