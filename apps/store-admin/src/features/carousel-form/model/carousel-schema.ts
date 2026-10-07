@@ -20,16 +20,6 @@ export const CAROUSEL_STATUS = ["DRAFT", "SCHEDULED", "PUBLISHED"] as const;
 export type CarouselStatusValue = (typeof CAROUSEL_STATUS)[number];
 
 /**
- * Where the carousel renders on the storefront home page (TASK-288) — mirror of
- * the API's CarouselPlacement enum. Declared locally rather than imported from
- * the generated models because Orval emits a SEPARATE enum per schema
- * (`CreateCarouselDtoPlacement`, `CarouselEntityPlacement`, …) with no shared
- * union — the same reason `CAROUSEL_SOURCE`/`CAROUSEL_STATUS` are local consts.
- */
-export const CAROUSEL_PLACEMENT = ["HOME_TABS", "HOME_RAILS"] as const;
-export type CarouselPlacementValue = (typeof CAROUSEL_PLACEMENT)[number];
-
-/**
  * Validation schema for the admin carousel form.
  *
  * Mirrors `bannerSchema`'s conventions: the numeric field (`itemLimit`) is
@@ -44,8 +34,6 @@ export const carouselSchema = z
     title: z.string().trim().min(1, e.titleRequired).max(255, e.titleMax),
 
     source: z.enum(CAROUSEL_SOURCE),
-
-    placement: z.enum(CAROUSEL_PLACEMENT),
 
     // Selected category UUID, or empty string when unset. Only meaningful (and
     // required — see superRefine) when `source` is CATEGORY.
@@ -65,8 +53,9 @@ export const carouselSchema = z
       .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
 
     // No `sortOrder` (TASK-428, removed from the schema by TASK-729): the order is
-    // set by dragging rows inside a placement in the carousel list, and a new
-    // carousel is appended to its placement bucket by the server.
+    // set by dragging rows in the carousel list, and a new carousel is appended to
+    // the end of the list by the server. Where it shows on the homepage is not a
+    // carousel field at all since TASK-660 — the «Головна» screen's blocks decide.
 
     status: z.enum(CAROUSEL_STATUS),
 
@@ -114,14 +103,13 @@ export function carouselFormValuesToCreateDto(
   return {
     title: values.title,
     source: values.source,
-    placement: values.placement,
     categoryId:
       values.source === "CATEGORY" && values.categoryId
         ? values.categoryId
         : undefined,
     itemLimit: values.itemLimit,
     // `sortOrder` is deliberately NOT sent (TASK-428). On create its absence is what
-    // makes the server append the carousel to the END of its placement bucket; on update
+    // makes the server append the carousel to the END of the list; on update
     // its absence leaves the position the operator dragged the row to untouched.
     status: values.status,
     scheduledAt,

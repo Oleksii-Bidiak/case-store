@@ -3069,6 +3069,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-Preview-Token",
+            "in": "header",
+            "description": "A signed preview token for THIS product (TASK-668) — serves it even while hidden, uncached",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -5710,6 +5719,108 @@
         "summary": "List a category's filterable spec facets with product counts",
         "tags": [
           "Categories"
+        ]
+      }
+    },
+    "/api/admin/preview-tokens": {
+      "post": {
+        "operationId": "AdminPreviewTokenController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePreviewTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewTokenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body (id missing, or id given for home)"
+          },
+          "403": {
+            "description": "No right to see this kind of thing"
+          },
+          "404": {
+            "description": "The thing does not exist (or has no page)"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Issue a 24-hour signed preview link to one draft (admin)",
+        "tags": [
+          "Preview tokens"
+        ]
+      },
+      "delete": {
+        "operationId": "AdminPreviewTokenController_revokeAll",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "All previous links stop working"
+          },
+          "403": {
+            "description": "Forbidden — needs settings:seo"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Revoke every preview link issued so far (admin)",
+        "tags": [
+          "Preview tokens"
+        ]
+      }
+    },
+    "/api/preview-tokens/resolve": {
+      "get": {
+        "operationId": "PreviewTokenController_resolve",
+        "parameters": [
+          {
+            "name": "X-Preview-Token",
+            "in": "header",
+            "description": "The preview token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolvedPreviewTokenResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invalid, expired or revoked — or its target is gone"
+          }
+        },
+        "summary": "Check a preview token and get the path it opens",
+        "tags": [
+          "Preview tokens"
         ]
       }
     },
@@ -9186,6 +9297,15 @@
                 "HUB"
               ]
             }
+          },
+          {
+            "name": "X-Preview-Token",
+            "in": "header",
+            "description": "A signed preview token for THIS page (TASK-668) — serves its draft, uncached",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -9770,6 +9890,15 @@
             "required": true,
             "in": "path",
             "description": "Post URL slug",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Preview-Token",
+            "in": "header",
+            "description": "A signed preview token for THIS post (TASK-668) — serves its draft, uncached",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -10422,6 +10551,15 @@
                 "ANNOUNCEMENT_BAR"
               ]
             }
+          },
+          {
+            "name": "X-Preview-Token",
+            "in": "header",
+            "description": "A signed `home` preview token — also returns draft and scheduled banners",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -10844,25 +10982,10 @@
     "/api/carousels": {
       "get": {
         "operationId": "CarouselController_findAll",
-        "parameters": [
-          {
-            "name": "placement",
-            "required": false,
-            "in": "query",
-            "description": "Filter by homepage placement (HOME_TABS = \"Популярне\" tabs, HOME_RAILS = rails)",
-            "schema": {
-              "example": "HOME_TABS",
-              "type": "string",
-              "enum": [
-                "HOME_TABS",
-                "HOME_RAILS"
-              ]
-            }
-          }
-        ],
+        "parameters": [],
         "responses": {
           "200": {
-            "description": "Published carousels of the requested placement (all placements when omitted) ordered by sort order; each carries its resolved, ordered product list (possibly empty — the storefront hides empty sections)",
+            "description": "Published carousels ordered by sort order; each carries its resolved, ordered product list (possibly empty — the storefront hides empty sections)",
             "content": {
               "application/json": {
                 "schema": {
@@ -10872,7 +10995,7 @@
             }
           }
         },
-        "summary": "List published recommendation carousels with resolved products, optionally filtered by placement",
+        "summary": "List published recommendation carousels with resolved products",
         "tags": [
           "Carousels"
         ]
@@ -10882,20 +11005,6 @@
       "get": {
         "operationId": "AdminCarouselController_findAll",
         "parameters": [
-          {
-            "name": "placement",
-            "required": false,
-            "in": "query",
-            "description": "Filter by homepage placement (HOME_TABS = \"Популярне\" tabs, HOME_RAILS = rails)",
-            "schema": {
-              "example": "HOME_TABS",
-              "type": "string",
-              "enum": [
-                "HOME_TABS",
-                "HOME_RAILS"
-              ]
-            }
-          },
           {
             "name": "status",
             "required": false,
@@ -10962,7 +11071,7 @@
             "access-token": []
           }
         ],
-        "summary": "List all carousels — all statuses, optional placement / status filters, search and pagination (admin)",
+        "summary": "List all carousels — all statuses, optional status filter, search and pagination (admin)",
         "tags": [
           "Carousels"
         ]
@@ -11028,7 +11137,7 @@
         },
         "responses": {
           "200": {
-            "description": "The full refreshed admin carousel list (all placements)",
+            "description": "The full refreshed admin carousel list",
             "content": {
               "application/json": {
                 "schema": {
@@ -11038,16 +11147,16 @@
             }
           },
           "400": {
-            "description": "Validation error, an unknown placement, or REORDER_DUPLICATE_ID"
+            "description": "Validation error or REORDER_DUPLICATE_ID"
           },
           "403": {
             "description": "Forbidden — admin access required"
           },
           "404": {
-            "description": "REORDER_NOT_FOUND — an id is not in this bucket"
+            "description": "REORDER_NOT_FOUND — an id is not a carousel"
           },
           "409": {
-            "description": "REORDER_STALE — another admin changed this placement first"
+            "description": "REORDER_STALE — another admin changed the list first"
           }
         },
         "security": [
@@ -11055,7 +11164,7 @@
             "access-token": []
           }
         ],
-        "summary": "Reorder carousels within one placement (admin)",
+        "summary": "Reorder the carousel list (admin)",
         "tags": [
           "Carousels"
         ]
@@ -11372,6 +11481,381 @@
         "summary": "Full-replace a carousel's hand-picked items (admin)",
         "tags": [
           "Carousels"
+        ]
+      }
+    },
+    "/api/home-blocks": {
+      "get": {
+        "operationId": "HomeBlockController_findAll",
+        "parameters": [
+          {
+            "name": "X-Preview-Token",
+            "in": "header",
+            "description": "A signed `home` preview token — also returns draft and scheduled blocks",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PUBLISHED blocks in page order. A CAROUSEL block whose carousel is not published is left out; a TABS block keeps only its published tabs and is returned even with none.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicHomeBlockListResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The homepage: visible blocks in page order, with carousels and tabs resolved",
+        "tags": [
+          "Home blocks"
+        ]
+      }
+    },
+    "/api/admin/home-blocks": {
+      "get": {
+        "operationId": "AdminHomeBlockController_findAll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminHomeBlockListResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — needs home:read or home:write"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List every homepage block in page order (admin)",
+        "tags": [
+          "Home blocks"
+        ]
+      },
+      "post": {
+        "operationId": "AdminHomeBlockController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateHomeBlockDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminHomeBlockResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input (e.g. a field of the other type)"
+          },
+          "403": {
+            "description": "Forbidden — needs home:write"
+          },
+          "404": {
+            "description": "A named carousel does not exist"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Add a CAROUSEL or TABS block to the homepage (admin)",
+        "tags": [
+          "Home blocks"
+        ]
+      }
+    },
+    "/api/admin/home-blocks/reorder": {
+      "patch": {
+        "operationId": "adminHomeBlockControllerReorder",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderHomeBlocksDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminHomeBlockListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or REORDER_DUPLICATE_ID"
+          },
+          "403": {
+            "description": "Forbidden — needs home:write"
+          },
+          "404": {
+            "description": "REORDER_NOT_FOUND — an id is not a block"
+          },
+          "409": {
+            "description": "REORDER_STALE — the page changed since it was loaded"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Rewrite the homepage block order (admin)",
+        "tags": [
+          "Home blocks"
+        ]
+      }
+    },
+    "/api/admin/home-blocks/{id}": {
+      "get": {
+        "operationId": "AdminHomeBlockController_findById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Block UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminHomeBlockResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — needs home:read or home:write"
+          },
+          "404": {
+            "description": "Block not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get one homepage block (admin)",
+        "tags": [
+          "Home blocks"
+        ]
+      },
+      "put": {
+        "operationId": "AdminHomeBlockController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Block UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHomeBlockDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminHomeBlockResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or HOME_BLOCK_FIELD_NOT_ALLOWED for a field of another type"
+          },
+          "403": {
+            "description": "Forbidden — needs home:write"
+          },
+          "404": {
+            "description": "Block (or a named carousel) not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Edit a homepage block (admin)",
+        "tags": [
+          "Home blocks"
+        ]
+      },
+      "delete": {
+        "operationId": "AdminHomeBlockController_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Block UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed (its carousels stay in «Каруселі»)"
+          },
+          "403": {
+            "description": "Forbidden — needs home:write"
+          },
+          "404": {
+            "description": "Block not found"
+          },
+          "409": {
+            "description": "HOME_BLOCK_SYSTEM — a singleton block cannot be removed"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Remove a CAROUSEL or TABS block from the homepage (admin)",
+        "tags": [
+          "Home blocks"
+        ]
+      }
+    },
+    "/api/admin/home-blocks/{id}/publish": {
+      "patch": {
+        "operationId": "AdminHomeBlockController_publish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Block UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminHomeBlockResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — needs home:write"
+          },
+          "404": {
+            "description": "Block not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Show a homepage block now (admin)",
+        "tags": [
+          "Home blocks"
+        ]
+      }
+    },
+    "/api/admin/home-blocks/{id}/unpublish": {
+      "patch": {
+        "operationId": "AdminHomeBlockController_unpublish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Block UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminHomeBlockResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — needs home:write"
+          },
+          "404": {
+            "description": "Block not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Hide a homepage block (back to draft) (admin)",
+        "tags": [
+          "Home blocks"
         ]
       }
     },
@@ -21087,6 +21571,106 @@
           "data"
         ]
       },
+      "PreviewTokenEntity": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The signed token. The storefront opens `/preview?token=<token>`; the token is good for one thing (its scope) until `expiresAt`, or until every preview is revoked."
+          },
+          "path": {
+            "type": "string",
+            "description": "Storefront path of the previewed thing (`/`, `/products/<slug>`, …)",
+            "example": "/products/spigen-liquid-air-15"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the link stops working"
+          }
+        },
+        "required": [
+          "token",
+          "path",
+          "expiresAt"
+        ]
+      },
+      "PreviewTokenResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PreviewTokenEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "PreviewTokenType": {
+        "type": "string",
+        "enum": [
+          "home",
+          "product",
+          "page",
+          "post"
+        ]
+      },
+      "CreatePreviewTokenDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "example": "home",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PreviewTokenType"
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "Product / page / blog-post id — required unless type = home",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "ResolvedPreviewTokenEntity": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "description": "The scope: `home`, `product:<id>`, `page:<id>` or `post:<id>`",
+            "example": "home"
+          },
+          "path": {
+            "type": "string",
+            "description": "Storefront path to land on, from the CURRENT slug",
+            "example": "/"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "scope",
+          "path",
+          "expiresAt"
+        ]
+      },
+      "ResolvedPreviewTokenResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ResolvedPreviewTokenEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "MediaAssetEntity": {
         "type": "object",
         "properties": {
@@ -25881,7 +26465,7 @@
           },
           "title": {
             "type": "string",
-            "description": "Carousel heading shown on the homepage",
+            "description": "Carousel heading — the rail title, or the tab label inside a TABS block",
             "example": "Хіти продажів"
           },
           "source": {
@@ -25896,18 +26480,19 @@
             ],
             "example": "BESTSELLING"
           },
-          "placement": {
+          "status": {
             "type": "string",
-            "description": "Where the carousel surfaces on the homepage — HOME_TABS feeds one tab of the \"Популярне\" section (title = tab label), HOME_RAILS is a standalone rail",
+            "description": "Publish state. Always PUBLISHED on a public read; a signed homepage preview also returns DRAFT / SCHEDULED carousels so the owner sees the page before publishing.",
             "enum": [
-              "HOME_TABS",
-              "HOME_RAILS"
+              "DRAFT",
+              "SCHEDULED",
+              "PUBLISHED"
             ],
-            "example": "HOME_RAILS"
+            "example": "PUBLISHED"
           },
           "sortOrder": {
             "type": "number",
-            "description": "Display order WITHIN the placement (lower = first)",
+            "description": "Position in the admin carousel list (not the homepage order)",
             "example": 0
           },
           "products": {
@@ -25922,7 +26507,7 @@
           "id",
           "title",
           "source",
-          "placement",
+          "status",
           "sortOrder",
           "products"
         ]
@@ -25978,18 +26563,9 @@
             "description": "Max products to show for a rule-based source (ignored for MANUAL)",
             "example": 12
           },
-          "placement": {
-            "type": "string",
-            "description": "Where the carousel surfaces on the homepage — HOME_TABS feeds one tab of the \"Популярне\" section, HOME_RAILS is a standalone rail",
-            "enum": [
-              "HOME_TABS",
-              "HOME_RAILS"
-            ],
-            "example": "HOME_RAILS"
-          },
           "sortOrder": {
             "type": "number",
-            "description": "Display order WITHIN the placement (lower = first)",
+            "description": "Position in the admin carousel list (lower = first). The homepage order belongs to the homepage blocks.",
             "example": 0
           },
           "status": {
@@ -26034,7 +26610,6 @@
           "title",
           "source",
           "itemLimit",
-          "placement",
           "sortOrder",
           "status",
           "createdAt",
@@ -26196,20 +26771,10 @@
             "items": {
               "type": "string"
             }
-          },
-          "placement": {
-            "type": "string",
-            "description": "The placement bucket whose complete ordering `orderedIds` describes",
-            "enum": [
-              "HOME_TABS",
-              "HOME_RAILS"
-            ],
-            "example": "HOME_RAILS"
           }
         },
         "required": [
-          "orderedIds",
-          "placement"
+          "orderedIds"
         ]
       },
       "CreateCarouselDto": {
@@ -26253,16 +26818,6 @@
             "description": "Category to pull products from — required when source = CATEGORY",
             "example": "550e8400-e29b-41d4-a716-446655440000"
           },
-          "placement": {
-            "type": "string",
-            "description": "Where the carousel surfaces on the homepage — HOME_TABS feeds one tab of the \"Популярне\" section (title = tab label), HOME_RAILS is a standalone rail",
-            "enum": [
-              "HOME_TABS",
-              "HOME_RAILS"
-            ],
-            "example": "HOME_RAILS",
-            "default": "HOME_RAILS"
-          },
           "itemLimit": {
             "type": "number",
             "description": "Max products to show for a rule-based source (ignored for MANUAL)",
@@ -26273,7 +26828,7 @@
           },
           "sortOrder": {
             "type": "number",
-            "description": "Display order WITHIN the placement (lower values appear first). OMIT IT (TASK-428): the carousel is then appended to the end of its placement bucket and the order is changed by dragging rows.",
+            "description": "Position in the admin carousel list (lower values appear first). OMIT IT (TASK-428): the carousel is then appended to the end of the list and the order is changed by dragging rows. The homepage order belongs to the homepage blocks.",
             "example": 0
           }
         },
@@ -26323,15 +26878,6 @@
             "description": "Category to pull products from — meaningful only when source = CATEGORY",
             "example": "550e8400-e29b-41d4-a716-446655440000"
           },
-          "placement": {
-            "type": "string",
-            "description": "Where the carousel surfaces on the homepage — HOME_TABS feeds one tab of the \"Популярне\" section, HOME_RAILS is a standalone rail",
-            "enum": [
-              "HOME_TABS",
-              "HOME_RAILS"
-            ],
-            "example": "HOME_TABS"
-          },
           "itemLimit": {
             "type": "number",
             "description": "Max products to show for a rule-based source (ignored for MANUAL)",
@@ -26379,6 +26925,395 @@
         "required": [
           "items"
         ]
+      },
+      "HomeBlockType": {
+        "type": "string",
+        "enum": [
+          "HERO",
+          "TRUST",
+          "CATEGORY_NAV",
+          "TABS",
+          "CAROUSEL",
+          "PROMO_BANNER",
+          "RECENTLY_VIEWED",
+          "NEWSLETTER"
+        ],
+        "description": "Which section this is"
+      },
+      "PublicHomeBlockEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Block id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "type": {
+            "description": "Which section this is",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HomeBlockType"
+              }
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "Section heading — TABS only, null for every other type",
+            "example": "Популярне",
+            "nullable": true
+          },
+          "sortOrder": {
+            "type": "number",
+            "description": "Position on the page (lower = higher)",
+            "example": 3
+          },
+          "status": {
+            "type": "string",
+            "description": "Publish state. Always PUBLISHED on a public read; a signed homepage preview also returns DRAFT and SCHEDULED blocks so the owner sees the page before it goes live.",
+            "enum": [
+              "DRAFT",
+              "SCHEDULED",
+              "PUBLISHED"
+            ]
+          },
+          "carousel": {
+            "description": "The carousel a CAROUSEL block shows, with its products (null otherwise)",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PublicCarouselEntity"
+              }
+            ]
+          },
+          "tabs": {
+            "description": "The tabs of a TABS block, in order, each with its products (empty otherwise)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicCarouselEntity"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "sortOrder",
+          "status",
+          "carousel",
+          "tabs"
+        ]
+      },
+      "PublicHomeBlockListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicHomeBlockEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "HomeBlockCarouselSummaryEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Carousel id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "title": {
+            "type": "string",
+            "description": "Carousel title",
+            "example": "Редакція обирає"
+          },
+          "source": {
+            "type": "string",
+            "description": "How the carousel picks its products",
+            "enum": [
+              "BESTSELLING",
+              "NEWEST",
+              "ON_SALE",
+              "CATEGORY",
+              "MANUAL"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Carousel publish state — a block hides on the site while this is not PUBLISHED",
+            "enum": [
+              "DRAFT",
+              "SCHEDULED",
+              "PUBLISHED"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "source",
+          "status"
+        ]
+      },
+      "HomeBlockTabEntity": {
+        "type": "object",
+        "properties": {
+          "sortOrder": {
+            "type": "number",
+            "description": "Tab position inside the block (0 = first)",
+            "example": 0
+          },
+          "carousel": {
+            "description": "The carousel this tab shows (its title is the tab label)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HomeBlockCarouselSummaryEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "sortOrder",
+          "carousel"
+        ]
+      },
+      "HomeBlockEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Block id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "type": {
+            "description": "Which section this is",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HomeBlockType"
+              }
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "Section heading — TABS only",
+            "nullable": true,
+            "example": "Популярне"
+          },
+          "sortOrder": {
+            "type": "number",
+            "description": "Position on the page (lower = higher)",
+            "example": 3
+          },
+          "status": {
+            "type": "string",
+            "description": "Publish lifecycle state",
+            "enum": [
+              "DRAFT",
+              "SCHEDULED",
+              "PUBLISHED"
+            ]
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "scheduledAt": {
+            "type": "string",
+            "description": "Future auto-publish instant while SCHEDULED",
+            "format": "date-time",
+            "nullable": true
+          },
+          "carousel": {
+            "description": "The carousel a CAROUSEL block shows (null for other types, and when deleted)",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HomeBlockCarouselSummaryEntity"
+              }
+            ]
+          },
+          "tabs": {
+            "description": "Tabs of a TABS block, in order",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeBlockTabEntity"
+            }
+          },
+          "isSystem": {
+            "type": "boolean",
+            "description": "A singleton block (slider, trust strip, categories, promo banner, «Ви переглядали», newsletter) — can be hidden, scheduled and moved, never deleted"
+          },
+          "isOrphaned": {
+            "type": "boolean",
+            "description": "A CAROUSEL block whose carousel was deleted — it shows nothing until repointed"
+          },
+          "isEmpty": {
+            "type": "boolean",
+            "description": "Shows nothing of its own on the site right now: a CAROUSEL block whose carousel is not published (or deleted), or a TABS block with no published tab (the site then falls back to its automatic tabs)"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "sortOrder",
+          "status",
+          "carousel",
+          "tabs",
+          "isSystem",
+          "isOrphaned",
+          "isEmpty",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AdminHomeBlockListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Every block of every status, in page order",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeBlockEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "AdminHomeBlockResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/HomeBlockEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ReorderHomeBlocksDto": {
+        "type": "object",
+        "properties": {
+          "orderedIds": {
+            "description": "The complete, final ordering of the list. The index becomes `sortOrder`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "orderedIds"
+        ]
+      },
+      "CreateHomeBlockDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Publish lifecycle state. Omitted on create defaults to DRAFT.",
+            "enum": [
+              "DRAFT",
+              "SCHEDULED",
+              "PUBLISHED"
+            ],
+            "example": "PUBLISHED"
+          },
+          "scheduledAt": {
+            "type": "string",
+            "description": "ISO-8601 instant to auto-publish at (only meaningful with status = SCHEDULED). A past/absent date collapses to immediate PUBLISHED.",
+            "example": "2026-08-01T09:00:00.000Z",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "description": "Block type — only CAROUSEL and TABS can be created",
+            "enum": [
+              "CAROUSEL",
+              "TABS"
+            ],
+            "example": "CAROUSEL"
+          },
+          "carouselId": {
+            "type": "string",
+            "description": "The carousel a CAROUSEL block shows — required for CAROUSEL, rejected otherwise",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "title": {
+            "type": "string",
+            "description": "Section heading shown above the tabs — required for TABS, rejected otherwise",
+            "example": "Аксесуари"
+          },
+          "tabs": {
+            "description": "Carousel ids of the tabs, in tab order (tab label = carousel title) — required for TABS, rejected otherwise",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "position": {
+            "type": "number",
+            "description": "Where to insert the block, as a 0-based position in the page (later blocks move down). Omit it to append the block at the end.",
+            "example": 4
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "UpdateHomeBlockDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Publish lifecycle state. Omitted on create defaults to DRAFT.",
+            "enum": [
+              "DRAFT",
+              "SCHEDULED",
+              "PUBLISHED"
+            ],
+            "example": "PUBLISHED"
+          },
+          "scheduledAt": {
+            "type": "string",
+            "description": "ISO-8601 instant to auto-publish at (only meaningful with status = SCHEDULED). A past/absent date collapses to immediate PUBLISHED.",
+            "example": "2026-08-01T09:00:00.000Z",
+            "format": "date-time"
+          },
+          "carouselId": {
+            "type": "string",
+            "description": "Point a CAROUSEL block at another carousel (CAROUSEL only)",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "title": {
+            "type": "string",
+            "description": "Section heading (TABS only)",
+            "example": "Аксесуари"
+          },
+          "tabs": {
+            "description": "The complete new tab list, carousel ids in tab order (TABS only)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "SiteContactSettingsEntity": {
         "type": "object",

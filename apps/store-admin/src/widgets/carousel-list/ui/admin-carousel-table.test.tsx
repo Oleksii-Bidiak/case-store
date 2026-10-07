@@ -2,9 +2,9 @@
  * `AdminCarouselTable` — the sortable carousel view (TASK-139/288; reordering added in
  * TASK-428).
  *
- * ONE PLACEMENT = ONE GRID, because a carousel's `sortOrder` is only meaningful inside its
- * own placement. The suite therefore renders both buckets and asserts that a move inside
- * one names only that bucket's ids and carries its `placement`.
+ * ONE LIST = ONE GRID since TASK-660: `Carousel.placement` is gone (the homepage blocks
+ * decide where a carousel shows), so every carousel lives in one grid and a move names
+ * every id — and no placement.
  *
  * KEYBOARD-ONLY moves, by design: jsdom has no layout, so dnd-kit's collision detection
  * cannot run. Pointer correctness rests on the pointer path sharing ONE `applyMove()`
@@ -27,8 +27,8 @@ import { AdminCarouselTable } from "./admin-carousel-table";
 
 /* ─────────────────────────────── fixtures ──────────────────────────────── */
 
-// Two rails + one tab: the rail bucket is the one being reordered, and TAB exists to
-// prove a rail move never names it.
+// Three carousels in ONE list (TASK-660). TAB keeps its name from the placement era —
+// it is now just the first row, and a move must name it too.
 const R1 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"; // Хіти тижня (rail, published)
 const R2 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"; // Редакція обирає (rail, draft)
 const TAB = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"; // Популярне (tab, published)
@@ -40,15 +40,15 @@ const TITLES: Record<string, string> = {
 };
 
 const RAILS = [R1, R2];
+/** The whole list as the server orders it: TAB first, then the RAILS order. */
+const ALL = [TAB, ...RAILS];
 
 function row(id: string) {
-  const isTab = id === TAB;
   const isDraft = id === R2;
   return {
     id,
     title: TITLES[id],
     source: isDraft ? "MANUAL" : "BESTSELLING",
-    placement: isTab ? "HOME_TABS" : "HOME_RAILS",
     categoryId: null,
     itemLimit: 12,
     sortOrder: 0,
@@ -76,7 +76,7 @@ let bodies: unknown[] = [];
 /** GET count — the "resyncs from the response alone" assertion reads it. */
 let listCalls = 0;
 
-/** The endpoint returns the FULL refreshed list (both placements), as the real one does. */
+/** The endpoint returns the FULL refreshed list, as the real one does. */
 function mockReorder(
   respond: () => Response | Promise<Response> = () =>
     HttpResponse.json(listResponse([R2, R1])),
@@ -107,11 +107,9 @@ const rowEl = (id: string): HTMLTableRowElement => {
   return el as HTMLTableRowElement;
 };
 
-/** Row ids of ONE placement's grid, in rendered order. */
+/** Row ids of THE grid, in rendered order. */
 const railIds = (): string[] => {
-  const grid = screen.getByRole("grid", {
-    name: dict.carousels.gridLabel(dict.carousels.placementLabels.HOME_RAILS),
-  });
+  const grid = screen.getByRole("grid", { name: dict.carousels.gridLabel });
   return Array.from(
     grid.querySelectorAll<HTMLTableRowElement>("tr[id^='carousel-row-']"),
   ).map((r) => r.id.replace("carousel-row-", ""));
@@ -137,10 +135,8 @@ async function openRowMenu(title: string) {
 
 async function renderGrids() {
   const result = renderTable();
-  await screen.findByRole("grid", {
-    name: dict.carousels.gridLabel(dict.carousels.placementLabels.HOME_RAILS),
-  });
-  await waitFor(() => expect(railIds()).toHaveLength(2));
+  await screen.findByRole("grid", { name: dict.carousels.gridLabel });
+  await waitFor(() => expect(railIds()).toHaveLength(3));
   return result;
 }
 
@@ -155,13 +151,6 @@ function keyboardMoveUp(id: string) {
 /* ──────────────────────────────── the suite ────────────────────────────── */
 
 describe("AdminCarouselTable — rendering", () => {
-  // TASK-720: the list and the form name one place one way.
-  it("names each placement section exactly as the carousel form does", () => {
-    expect(dict.carousels.placementLabels).toEqual(
-      dict.carouselForm.placementOptions,
-    );
-  });
-
   it("says where the source comes from in words, with the count and status", async () => {
     mockReorder();
     await renderGrids();
@@ -228,39 +217,14 @@ describe("AdminCarouselTable — rendering", () => {
     ).toBeInTheDocument();
   });
 
-  /**
-   * TASK-288 gave every row a placement BADGE so a tab could be told from a rail.
-   * TASK-428 replaced it with a stronger signal: the placement is now the SECTION a row
-   * lives in, which is also the unit of reordering. Wave 198 adds where on the
-   * home page that section is.
-   */
-  it("groups the rows into one section per placement, each saying where it is", async () => {
+  // TASK-660: no placement sections any more — one grid holds every carousel.
+  it("renders ONE grid with every carousel and no placement sections", async () => {
     mockReorder();
     await renderGrids();
 
-    expect(
-      screen.getByRole("heading", {
-        name: dict.carousels.placementLabels.HOME_TABS,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", {
-        name: dict.carousels.placementLabels.HOME_RAILS,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(dict.carousels.placementWhere.HOME_TABS),
-    ).toBeInTheDocument();
-    // No placement column — the section IS the placement.
-    expect(
-      screen.queryAllByRole("columnheader").map((header) => header.textContent),
-    ).not.toContain("Місце на сайті");
-    // The tab bucket renders its own grid, with only its own row.
-    const tabGrid = screen.getByRole("grid", {
-      name: dict.carousels.gridLabel(dict.carousels.placementLabels.HOME_TABS),
-    });
-    expect(within(tabGrid).getByText("Популярне")).toBeInTheDocument();
-    expect(within(tabGrid).queryByText("Хіти тижня")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("grid")).toHaveLength(1);
+    expect(railIds()).toEqual(ALL);
+    expect(screen.queryByRole("heading", { level: 3 })).not.toBeInTheDocument();
   });
 
   it("has NO sort-order column any more — the row order IS the order", async () => {
@@ -381,7 +345,6 @@ describe("AdminCarouselTable — row «⋯» (publish toggle, duplicate, delete)
     expect(created[0]).toEqual({
       title: dict.carousels.duplicateTitle("Редакція обирає"),
       source: "MANUAL",
-      placement: "HOME_RAILS",
       itemLimit: 12,
       status: "DRAFT",
     });
@@ -413,11 +376,8 @@ describe("AdminCarouselTable — row «⋯» (publish toggle, duplicate, delete)
     expect(
       within(dialog).getByText(dict.carousels.deleteTitle("Популярне")),
     ).toBeInTheDocument();
-    // A tab and a rail disappear from different places — the text says which.
     expect(
-      within(dialog).getByText(
-        dict.carousels.deleteDescriptionTab("Популярне"),
-      ),
+      within(dialog).getByText(dict.carousels.deleteDescription("Популярне")),
     ).toBeInTheDocument();
     await userEvent.click(
       within(dialog).getByRole("button", { name: dict.common.cancel }),
@@ -470,29 +430,25 @@ describe("AdminCarouselTable — without carousels:write (КР3)", () => {
 });
 
 describe("AdminCarouselTable — keyboard reorder", () => {
-  it("Space ↑ Space sends ONE PATCH naming the bucket and only its ids", async () => {
+  it("Space ↑ Space sends ONE PATCH naming every id and no placement", async () => {
     mockReorder();
     await renderGrids();
 
     rowEl(R2).focus();
     fireEvent.keyDown(rowEl(R2), { key: " " });
     expect(polite()).toBe(
-      dict.reorderList.announce.grabbed("Редакція обирає", 2, 2),
+      dict.reorderList.announce.grabbed("Редакція обирає", 3, 3),
     );
 
     fireEvent.keyDown(rowEl(R2), { key: "ArrowUp" });
-    expect(railIds()).toEqual([R2, R1]);
+    expect(railIds()).toEqual([TAB, R2, R1]);
     expect(bodies).toHaveLength(0); // nothing committed yet
 
     fireEvent.keyDown(rowEl(R2), { key: " " });
 
     await waitFor(() => expect(bodies).toHaveLength(1));
-    // The HOME_TABS row is NOT in the payload: a bucket is reordered on its own, and the
-    // server scopes every write to that placement.
-    expect(bodies[0]).toEqual({
-      placement: "HOME_RAILS",
-      orderedIds: [R2, R1],
-    });
+    // One list: the payload names EVERY carousel, and carries no placement.
+    expect(bodies[0]).toEqual({ orderedIds: [TAB, R2, R1] });
   });
 
   it("resyncs the list from the PATCH RESPONSE alone — no refetch", async () => {
@@ -503,26 +459,23 @@ describe("AdminCarouselTable — keyboard reorder", () => {
     keyboardMoveUp(R2);
 
     await waitFor(() => expect(bodies).toHaveLength(1));
-    await waitFor(() => expect(railIds()).toEqual([R2, R1]));
+    await waitFor(() => expect(railIds()).toEqual([TAB, R2, R1]));
     expect(listCalls).toBe(before);
   });
 
-  it("the Undo control of that section sends the INVERSE order", async () => {
+  it("the Undo control sends the INVERSE order", async () => {
     mockReorder();
     await renderGrids();
 
     keyboardMoveUp(R2);
     await waitFor(() => expect(bodies).toHaveLength(1));
 
-    // One Undo per section — the rails section's is the second in the DOM.
-    const undo = screen.getAllByRole("button", {
-      name: dict.reorderList.undo,
-    })[1];
+    const undo = screen.getByRole("button", { name: dict.reorderList.undo });
     await waitFor(() => expect(undo).toHaveAttribute("aria-disabled", "false"));
     fireEvent.click(undo);
 
     await waitFor(() => expect(bodies).toHaveLength(2));
-    expect(bodies[1]).toEqual({ placement: "HOME_RAILS", orderedIds: RAILS });
+    expect(bodies[1]).toEqual({ orderedIds: ALL });
   });
 });
 
@@ -544,7 +497,7 @@ describe("AdminCarouselTable — server rejections", () => {
       expect(assertive()).toBe(dict.reorderList.rejected.REORDER_STALE),
     );
     await waitFor(() => expect(listCalls).toBeGreaterThan(before));
-    expect(railIds()).toEqual(RAILS);
+    expect(railIds()).toEqual(ALL);
   });
 });
 
@@ -590,7 +543,7 @@ describe("AdminCarouselTable — the payload can never be partial", () => {
     );
 
     renderTable();
-    await waitFor(() => expect(railIds()).toHaveLength(2));
+    await waitFor(() => expect(railIds()).toHaveLength(3));
     expect(urls).toHaveLength(1);
 
     await userEvent.click(
@@ -617,7 +570,7 @@ describe("AdminCarouselTable — the payload can never be partial", () => {
     );
 
     renderTable();
-    await waitFor(() => expect(railIds()).toHaveLength(2));
+    await waitFor(() => expect(railIds()).toHaveLength(3));
 
     await userEvent.type(
       screen.getByRole("searchbox", { name: dict.reorderList.searchLabel }),

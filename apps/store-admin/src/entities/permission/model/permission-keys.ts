@@ -153,6 +153,11 @@ export const PERM = {
   staffRead: "staff:read",
   staffWrite: "staff:write",
   auditRead: "audit:read",
+
+  // Plan 186 (TASK-665): the homepage as a list of blocks. home:write arrived
+  // backfilled from carousels:write / banners:write, home:read from home:write.
+  homeRead: "home:read",
+  homeWrite: "home:write",
 } as const;
 
 export type PermissionKey = (typeof PERM)[keyof typeof PERM];

@@ -151,10 +151,7 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
   const handleDelete = async (source: CarouselEntity) => {
     const confirmed = await confirm({
       title: d.deleteTitle(source.title),
-      description:
-        source.placement === "HOME_TABS"
-          ? d.deleteDescriptionTab(source.title)
-          : d.deleteDescriptionRail(source.title),
+      description: d.deleteDescription(source.title),
       confirmLabel: d.deleteConfirmLabel,
       destructive: true,
     });
@@ -195,9 +192,6 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
           {carousel && (
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge carousel={carousel} />
-              <span className="text-xs text-muted-foreground">
-                {d.placementLabels[carousel.placement]}
-              </span>
             </div>
           )}
         </div>
@@ -281,7 +275,6 @@ function mapCarouselToFormValues(
   return {
     title: carousel.title,
     source: carousel.source,
-    placement: carousel.placement,
     categoryId: carousel.categoryId ?? "",
     itemLimit: String(carousel.itemLimit),
     status: carousel.status,

@@ -80,5 +80,9 @@ export {
   getCatalogLandingControllerFindCompatPagesQueryKey,
 } from "./generated/catalog/catalog";
 
+// Plan 186 (TASK-660/661/668): the homepage blocks and the signed draft previews.
+export * from "./generated/home-blocks/home-blocks";
+export * from "./generated/preview-tokens/preview-tokens";
+
 // Generated DTO / entity types
 export * from "./generated/models";

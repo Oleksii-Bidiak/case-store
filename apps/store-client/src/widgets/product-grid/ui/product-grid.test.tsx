@@ -71,7 +71,7 @@ function makeTabCarousel(
     id,
     title,
     source: "BESTSELLING",
-    placement: "HOME_TABS",
+    status: "PUBLISHED",
     sortOrder: 0,
     products,
   } as unknown as PublicCarouselEntity;

@@ -1,5 +1,4 @@
 import { BannerEntityPlacement } from "@/entities/banner";
-import { CarouselEntityPlacement } from "@/entities/carousel";
 import { PageEntityKind } from "@/entities/page";
 import { dict } from "@/shared/config";
 
@@ -33,13 +32,17 @@ export type ContentMapZoneId =
 
 /**
  * Where a zone's live state comes from. Typed against the real enums
- * ({@link BannerEntityPlacement}, {@link CarouselEntityPlacement},
- * {@link PageEntityKind}) so a renamed placement or a new kind surfaces as a
- * compile error here rather than silently miscounting.
+ * ({@link BannerEntityPlacement}, {@link PageEntityKind}) so a renamed placement
+ * or a new kind surfaces as a compile error here rather than silently miscounting.
+ *
+ * `home-carousels` (TASK-660): carousels have no placement any more — what shows on
+ * the homepage, and where, is the homepage blocks' answer. `tabs` = the tabs of the
+ * TABS blocks, `rails` = the CAROUSEL blocks. The full «Головна» zone pointing at
+ * `/home` is TASK-664's.
  */
 export type ContentMapZoneSource =
   | { kind: "banner"; placement: BannerEntityPlacement }
-  | { kind: "carousel"; placement: CarouselEntityPlacement }
+  | { kind: "home-carousels"; slot: HomeCarouselSlot }
   | { kind: "faq" }
   | { kind: "pages"; pageKind: PageEntityKind }
   | { kind: "blog" }
@@ -47,6 +50,9 @@ export type ContentMapZoneSource =
   | { kind: "seo" }
   | { kind: "promo-codes" }
   | { kind: "sale-products" };
+
+/** Which carousels of the homepage blocks a zone counts (TASK-660). */
+export type HomeCarouselSlot = "tabs" | "rails";
 
 export interface ContentMapZone {
   id: ContentMapZoneId;
@@ -108,7 +114,7 @@ export const CONTENT_MAP_ZONES: readonly ContentMapZone[] = [
     targetHref: "/carousels",
     appliesTo: z.carouselTabs.appliesTo,
     sitePath: "/",
-    source: { kind: "carousel", placement: CarouselEntityPlacement.HOME_TABS },
+    source: { kind: "home-carousels", slot: "tabs" },
     later: true,
   },
   {
@@ -127,10 +133,7 @@ export const CONTENT_MAP_ZONES: readonly ContentMapZone[] = [
     targetHref: "/carousels",
     appliesTo: z.carouselRails.appliesTo,
     sitePath: "/",
-    source: {
-      kind: "carousel",
-      placement: CarouselEntityPlacement.HOME_RAILS,
-    },
+    source: { kind: "home-carousels", slot: "rails" },
     later: true,
   },
   {

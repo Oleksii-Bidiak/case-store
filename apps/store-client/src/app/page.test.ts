@@ -94,7 +94,7 @@ describe("home page — the first HTML carries links (TASK-563)", () => {
         {
           id: "c1",
           title: "Хіти",
-          placement: "HOME_TABS",
+          status: "PUBLISHED",
           products: [{ id: "p1" }],
         },
       ],

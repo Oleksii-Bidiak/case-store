@@ -4,11 +4,10 @@
  * Admin carousels view (TASK-139/288; drag/keyboard reordering added in TASK-428;
  * CarouselsProposal КР1–КР4 in wave 198, TASK-1074).
  *
- * A carousel's `sortOrder` is only meaningful WITHIN its placement — the tab order inside
- * the homepage «Популярне» section for HOME_TABS, the rail order for HOME_RAILS — so each
- * placement is its own `role="grid"` with its own reorder lifecycle. Hooks cannot be
- * called in a loop, which is exactly why `CarouselPlacementSection` exists as a child
- * component. Same shape as `widgets/banner-list`.
+ * ONE list since TASK-660 (plan 186): `Carousel.placement` is gone — where a carousel
+ * shows on the homepage belongs to the homepage blocks — so the two placement sections
+ * collapsed into a single `role="grid"` with one reorder lifecycle. This order is the
+ * admin list's only. The «На головній» column is TASK-664's.
  *
  * TWO RULES MAKE THAT SAFE, and they are the same two the banner / blog-category /
  * device-brand grids follow:
@@ -16,7 +15,7 @@
  * 1. THE LIST IS NOT PAGINATED. TASK-357 gave this table server paging (`?page=`); a page
  *    is a PARTIAL view, and a reorder computed on a partial view is a partial ordering —
  *    the server rejects it as a lost update (409). The endpoint still accepts
- *    `page`/`limit`; this view asks for the complete list and splits it per placement.
+ *    `page`/`limit`; this view asks for the complete list.
  * 2. THE SEARCH IS LOCAL AND LOCKS REORDERING. A needle hides ROWS, so the visible order
  *    is not the real one — dragging inside it would write the wrong `sortOrder`. The
  *    search therefore moved out of the URL (`mode="local"`) and sets `locked`.
@@ -38,7 +37,6 @@ import { toast } from "@/shared/ui/toast";
 import { formatDate } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import {
-  CarouselEntityPlacement,
   getAdminCarouselControllerFindAllQueryKey,
   useAdminCarouselControllerFindAll,
   useAdminCarouselControllerPublish,
@@ -81,12 +79,6 @@ import { dict } from "@/shared/config";
 import { AdminCarouselTableSkeleton } from "./admin-carousel-table-skeleton";
 
 const d = dict.carousels;
-
-/** Placement rendering order — mirrors the storefront top-to-bottom layout. */
-const PLACEMENT_ORDER = [
-  CarouselEntityPlacement.HOME_TABS,
-  CarouselEntityPlacement.HOME_RAILS,
-] as const;
 
 export const CAROUSEL_INSTRUCTIONS_LONG_ID = "carousel-grid-instructions-long";
 export const CAROUSEL_INSTRUCTIONS_SHORT_ID =
@@ -197,10 +189,7 @@ function AdminCarouselView() {
   const handleDelete = async (carousel: CarouselEntity) => {
     const confirmed = await confirm({
       title: d.deleteTitle(carousel.title),
-      description:
-        carousel.placement === "HOME_TABS"
-          ? d.deleteDescriptionTab(carousel.title)
-          : d.deleteDescriptionRail(carousel.title),
+      description: d.deleteDescription(carousel.title),
       confirmLabel: d.deleteConfirmLabel,
       destructive: true,
     });
@@ -321,18 +310,14 @@ function AdminCarouselView() {
           {dict.reorderList.emptyMatch(search.trim())}
         </div>
       ) : (
-        PLACEMENT_ORDER.map((placement) => (
-          <CarouselPlacementSection
-            key={placement}
-            placement={placement}
-            carousels={carousels}
-            locked={searchActive}
-            matches={matches}
-            names={names}
-            canWrite={canWrite}
-            rowActions={rowActions}
-          />
-        ))
+        <CarouselListSection
+          carousels={carousels}
+          locked={searchActive}
+          matches={matches}
+          names={names}
+          canWrite={canWrite}
+          rowActions={rowActions}
+        />
       )}
 
       {confirmDialog}
@@ -340,9 +325,8 @@ function AdminCarouselView() {
   );
 }
 
-interface CarouselPlacementSectionProps {
-  placement: CarouselEntityPlacement;
-  /** The UNFILTERED admin carousel list (all placements). */
+interface CarouselListSectionProps {
+  /** The UNFILTERED admin carousel list. */
   carousels: CarouselEntity[];
   /** A search is hiding rows — reordering is off. */
   locked: boolean;
@@ -353,22 +337,18 @@ interface CarouselPlacementSectionProps {
 }
 
 /**
- * ONE placement = ONE grid = ONE reorder lifecycle. Its items are the placement's
- * COMPLETE bucket (never the filtered rows), because the payload has to name all of them.
+ * ONE grid = ONE reorder lifecycle. Its items are the COMPLETE list (never the filtered
+ * rows), because the payload has to name all of them.
  */
-function CarouselPlacementSection({
-  placement,
+function CarouselListSection({
   carousels,
   locked,
   matches,
   names,
   canWrite,
   rowActions,
-}: CarouselPlacementSectionProps) {
-  const items = useMemo(
-    () => carouselsToItems(carousels, placement),
-    [carousels, placement],
-  );
+}: CarouselListSectionProps) {
+  const items = useMemo(() => carouselsToItems(carousels), [carousels]);
   const byId = useMemo(
     () => new Map(carousels.map((carousel) => [carousel.id, carousel])),
     [carousels],
@@ -376,7 +356,6 @@ function CarouselPlacementSection({
 
   const focus = useRowFocus();
   const reorder = useCarouselReorder({
-    placement,
     items,
     onFocusRow: focus.focusRow,
   });
@@ -400,9 +379,6 @@ function CarouselPlacementSection({
   });
 
   if (items.length === 0 || grid.rows.length === 0) return null;
-
-  const placementName = d.placementLabels[placement];
-  const headingId = `carousel-section-${placement}`;
 
   const renderRow = (props: SortableTreeRowRenderProps) => {
     const row = grid.rows.find((r) => r.item.id === props.item.id);
@@ -428,40 +404,21 @@ function CarouselPlacementSection({
   };
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <div className="flex items-center gap-2">
-            <h3
-              id={headingId}
-              className="text-base font-semibold text-foreground"
-            >
-              {placementName}
-            </h3>
-            <span
-              aria-hidden="true"
-              className="inline-flex min-w-5 justify-center rounded-full bg-muted px-1.5 text-xs leading-4.5 tabular-nums text-foreground"
-            >
-              {items.length}
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {d.placementWhere[placement]}
-          </p>
-        </div>
-        {canWrite && (
+    <section className="flex flex-col gap-2">
+      {canWrite && (
+        <div className="flex justify-end">
           <ReorderUndoButton
             canUndo={reorder.canUndo}
             onUndo={reorder.undo}
             label={dict.reorderList.undo}
             iconOnly
           />
-        )}
-      </div>
+        </div>
+      )}
       <div className="overflow-hidden rounded-lg border border-border bg-card shadow-card">
         <Table
           role="grid"
-          aria-label={d.gridLabel(placementName)}
+          aria-label={d.gridLabel}
           aria-describedby={CAROUSEL_INSTRUCTIONS_LONG_ID}
           aria-busy={reorder.isPending}
           className="max-md:block"

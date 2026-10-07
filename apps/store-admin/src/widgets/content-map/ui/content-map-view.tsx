@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ChevronDownIcon } from "lucide-react";
 import { useAdminBannerControllerFindAll } from "@/entities/banner";
-import { useAdminCarouselControllerFindAll } from "@/entities/carousel";
+import { useAdminHomeBlockControllerFindAll } from "@/shared/api";
 import {
   useAdminListDiscounts,
   useListActiveDiscounts,
@@ -31,7 +31,7 @@ import {
 } from "../model/content-map-zones";
 import {
   bannerZoneState,
-  carouselZoneState,
+  homeCarouselZoneState,
   contactsZoneState,
   promoCodesZoneState,
   seoZoneState,
@@ -97,9 +97,10 @@ export function ContentMapView() {
   });
   const blog = useAdminBlogControllerFindAll({ status: "PUBLISHED", limit: 1 });
 
-  const canCarousels = can(PERM.carouselsWrite);
-  const carousels = useAdminCarouselControllerFindAll(undefined, {
-    query: { enabled: canCarousels },
+  // TASK-660: what the homepage shows is the homepage blocks' answer.
+  const canHome = can(PERM.homeRead) || can(PERM.homeWrite);
+  const homeBlocks = useAdminHomeBlockControllerFindAll({
+    query: { enabled: canHome },
   });
   const contacts = useSiteContactControllerGetSettings();
   const seoSettings = useSeoSettingsControllerGetSettings();
@@ -126,14 +127,14 @@ export function ContentMapView() {
           { allowed: true, ...pick(banners), data: banners.data?.data },
           (data) => bannerZoneState(data, source.placement, now),
         );
-      case "carousel":
+      case "home-carousels":
         return fromSource(
           {
-            allowed: canCarousels,
-            ...pick(carousels),
-            data: carousels.data?.data,
+            allowed: canHome,
+            ...pick(homeBlocks),
+            data: homeBlocks.data?.data,
           },
-          (data) => carouselZoneState(data, source.placement),
+          (data) => homeCarouselZoneState(data, source.slot),
         );
       case "faq":
         return fromSource(

@@ -14,7 +14,6 @@ const SOURCE = {
   id: "src-1",
   title: "Редакція обирає",
   source: "MANUAL",
-  placement: "HOME_RAILS",
   categoryId: null,
   itemLimit: 12,
   sortOrder: 0,

@@ -11,7 +11,6 @@ const UUID = "550e8400-e29b-41d4-a716-446655440000";
 const baseInput: CarouselFormInput = {
   title: "Хіти продажів",
   source: "BESTSELLING",
-  placement: "HOME_RAILS",
   categoryId: "",
   itemLimit: "12",
   status: "DRAFT",
@@ -22,7 +21,6 @@ const baseInput: CarouselFormInput = {
 const baseValues: CarouselFormValues = {
   title: "Хіти продажів",
   source: "BESTSELLING",
-  placement: "HOME_RAILS",
   categoryId: "",
   itemLimit: 12,
   status: "DRAFT",
@@ -91,18 +89,6 @@ describe("carouselSchema", () => {
     }
   });
 
-  // TASK-288 — placement decides whether the carousel becomes a tab in the home
-  // "Популярне" section or its own rail below.
-  it.each([
-    ["HOME_TABS", true],
-    ["HOME_RAILS", true],
-    ["HOME_HERO", false],
-    ["", false],
-  ])("placement %s → valid: %s", (placement, valid) => {
-    const result = carouselSchema.safeParse({ ...baseInput, placement });
-    expect(result.success).toBe(valid);
-  });
-
   it("requires scheduledAt when status is SCHEDULED", () => {
     const result = carouselSchema.safeParse({
       ...baseInput,
@@ -160,7 +146,7 @@ describe("carouselFormValuesToCreateDto", () => {
   });
 
   // TASK-428: the absence of the key IS the contract. On create the server appends the
-  // carousel to the END of its placement bucket; on update it leaves the position the
+  // carousel to the END of the list; on update it leaves the position the
   // operator dragged the row to untouched. Sending `0` — which the old form did for every
   // new carousel — put them all in slot 0 and left the homepage order to the database.
   it("does NOT send sortOrder", () => {
@@ -168,14 +154,10 @@ describe("carouselFormValuesToCreateDto", () => {
     expect(dto).not.toHaveProperty("sortOrder");
   });
 
-  it("always sends the selected placement (TASK-288)", () => {
-    expect(
-      carouselFormValuesToCreateDto({ ...baseValues, placement: "HOME_TABS" })
-        .placement,
-    ).toBe("HOME_TABS");
-    expect(
-      carouselFormValuesToCreateDto({ ...baseValues, placement: "HOME_RAILS" })
-        .placement,
-    ).toBe("HOME_RAILS");
+  // TASK-660: the carousel has no placement — the homepage blocks decide.
+  it("sends no placement", () => {
+    expect(carouselFormValuesToCreateDto(baseValues)).not.toHaveProperty(
+      "placement",
+    );
   });
 });

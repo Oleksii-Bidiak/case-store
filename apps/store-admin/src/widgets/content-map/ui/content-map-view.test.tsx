@@ -89,22 +89,38 @@ function stubAll(
         meta: { total: opts.blogTotal ?? 0, page: 1, limit: 1, totalPages: 1 },
       });
     }),
-    http.get("*/api/admin/carousels", ({ request }) => {
+    // TASK-660: the carousel zones read the homepage blocks — a carousel has no
+    // placement any more.
+    http.get("*/api/admin/home-blocks", ({ request }) => {
       track(request);
+      const carousel = (title: string) => ({
+        id: title,
+        title,
+        source: "NEWEST",
+        status: "PUBLISHED",
+      });
       return HttpResponse.json({
         data: [
-          ["Хіти", "HOME_TABS", 0],
-          ["Новинки", "HOME_TABS", 1],
-          ["Акційні", "HOME_TABS", 2],
-          ["Чохли для смартфонів", "HOME_RAILS", 0],
-        ].map(([title, placement, sortOrder]) => ({
-          id: String(title),
-          title,
-          placement,
-          sortOrder,
-          status: "PUBLISHED",
-        })),
-        meta: { total: 4, page: 1, limit: 100, totalPages: 1 },
+          {
+            id: "tabs",
+            type: "TABS",
+            sortOrder: 3,
+            status: "PUBLISHED",
+            carousel: null,
+            tabs: ["Хіти", "Новинки", "Акційні"].map((title, sortOrder) => ({
+              sortOrder,
+              carousel: carousel(title),
+            })),
+          },
+          {
+            id: "rail",
+            type: "CAROUSEL",
+            sortOrder: 4,
+            status: "PUBLISHED",
+            carousel: carousel("Чохли для смартфонів"),
+            tabs: [],
+          },
+        ],
       });
     }),
     http.get("*/api/site-contact", ({ request }) => {
@@ -533,7 +549,7 @@ describe("ContentMapView — permissions", () => {
         expect.arrayContaining(["/api/admin/banners", "/api/admin/pages"]),
       ),
     );
-    expect(requests).not.toContain("/api/admin/carousels");
+    expect(requests).not.toContain("/api/admin/home-blocks");
     expect(requests).not.toContain("/api/admin/discounts");
     expect(requests).not.toContain("/api/products/admin/list");
     expect(requests).not.toContain("/api/admin/seo-settings/health");

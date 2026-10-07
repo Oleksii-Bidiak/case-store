@@ -27,7 +27,6 @@ function carousel(source: string, status = "PUBLISHED") {
     id: carouselId,
     title: "Популярне",
     source,
-    placement: "HOME_RAILS",
     categoryId: null,
     itemLimit: 12,
     sortOrder: 0,
@@ -161,7 +160,7 @@ describe("EditCarouselView — «Зараз на сайті» (КР7)", () => {
               id: carouselId,
               title: "Популярне",
               source: "BESTSELLING",
-              placement: "HOME_RAILS",
+              status: "PUBLISHED",
               sortOrder: 0,
               products: [
                 { id: "a", name: "Навушники AirPods", price: "10999.00" },
@@ -265,9 +264,7 @@ describe("EditCarouselView — header «⋯» (КР5)", () => {
     );
     const dialog = await screen.findByRole("alertdialog");
     expect(
-      within(dialog).getByText(
-        dict.carousels.deleteDescriptionRail("Популярне"),
-      ),
+      within(dialog).getByText(dict.carousels.deleteDescription("Популярне")),
     ).toBeInTheDocument();
     await userEvent.click(
       within(dialog).getByRole("button", {

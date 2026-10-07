@@ -6502,12 +6502,6 @@ export const dict = {
     empty: "Каруселей ще немає. Створіть свою першу карусель.",
     colTitle: "Заголовок",
     colStatus: "Статус",
-    // TASK-720: the same words as carouselForm.placementOptions and its hint — the
-    // list and the form used to name one place two ways.
-    placementLabels: {
-      HOME_TABS: "Вкладка в блоці «Популярне»",
-      HOME_RAILS: "Окремий рядок нижче",
-    },
     sourceLabels: {
       BESTSELLING: "Хіти продажів",
       NEWEST: "Новинки",
@@ -6539,38 +6533,34 @@ export const dict = {
     toastDeleted: "Карусель видалено",
     toastDeleteFailed: "Не вдалося видалити карусель",
 
-    // TASK-428: each placement is its own drag-reorderable grid — the hand-typed
-    // «Порядок» column and its form field are gone.
-    gridLabel: (placement: string) => `Каруселі: ${placement} — порядок`,
+    // TASK-428: a drag-reorderable grid — the hand-typed «Порядок» column and its
+    // form field are gone. ONE list since TASK-660: the homepage order belongs to
+    // the homepage blocks, so this order is the list's only.
+    gridLabel: "Каруселі — порядок",
     reorderHint:
-      "Порядок рядків у блоці = порядок на головній. Перетягніть рядок за ⠿.",
+      "Порядок у цьому списку — лише для зручності. Де карусель стоїть на головній, вирішують блоки головної. Перетягніть рядок за ⠿.",
 
     // Wave 198 (TASK-1074, CarouselsProposal КР1–КР4).
     searchPlaceholder: "Назва каруселі…",
-    // Where each placement sits on the home page — under the section heading.
-    placementWhere: {
-      HOME_TABS: "Вгорі головної; покупець перемикає вкладки.",
-      HOME_RAILS: "Власний рядок товарів нижче на головній.",
-    },
     sourceAuto: (source: string) => `${source} · автоматично`,
     sourceCategory: (name: string) => `Категорія «${name}»`,
     shows: (count: number) => `показує ${count}`,
     colShows: "Скільки показує",
     duplicate: "Дублювати",
     duplicateTitle: (title: string) => `${title} (копія)`,
-    toastDuplicated: "Копію збережено як чернетку — вона в кінці свого блоку",
+    toastDuplicated: "Копію збережено як чернетку — вона в кінці списку",
     toastDuplicateFailed: "Не вдалося продублювати карусель",
     toastDuplicateItemsFailed:
       "Копію створено чернеткою, але без списку товарів. Відкрийте її й додайте товари — повторне «Дублювати» створить ще одну копію.",
     deleteAction: "Видалити…",
     deleteTitle: (title: string) => `Видалити карусель «${title}»?`,
-    deleteDescriptionTab: (title: string) =>
-      `Цю дію не можна скасувати. Вкладка «${title}» зникне з блоку «Популярне» на головній. Якщо карусель ще знадобиться — краще «Зняти з публікації».`,
-    deleteDescriptionRail: (title: string) =>
-      `Цю дію не можна скасувати. Рядок «${title}» зникне з головної. Якщо карусель ще знадобиться — краще «Зняти з публікації».`,
     deleteConfirmLabel: "Видалити карусель",
     toastItemsFailed:
       "Карусель збережено, але список товарів — ні. Відкрийте її й спробуйте ще раз.",
+    // TASK-660: one text instead of the tab / rail pair — a carousel no longer
+    // knows where it stands; the homepage blocks pointing at it do.
+    deleteDescription: (title: string) =>
+      `Цю дію не можна скасувати. Карусель «${title}» зникне з головної — з усіх блоків і вкладок, де вона стоїть. Якщо вона ще знадобиться — краще «Зняти з публікації».`,
   },
 
   // --- Recommendation carousel form (TASK-139) --------------------------------
@@ -6584,13 +6574,6 @@ export const dict = {
       CATEGORY: "Категорія",
       MANUAL: "Вибрані вручну",
     },
-    placement: "Місце на головній",
-    placementOptions: {
-      HOME_TABS: "Вкладка в блоці «Популярне»",
-      HOME_RAILS: "Окремий рядок нижче",
-    },
-    placementHint:
-      "Порядок вкладок і рядків задається перетягуванням у списку каруселей — окремо для кожного блоку.",
     category: "Категорія",
     categoryPlaceholder: "Оберіть категорію",
     itemLimit: "Скільки товарів показувати",

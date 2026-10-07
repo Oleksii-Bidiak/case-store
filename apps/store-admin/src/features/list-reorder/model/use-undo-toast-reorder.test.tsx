@@ -287,11 +287,7 @@ describe("flat-list reorder — the «Скасувати» toast (wave 198, TASK
       "banners",
       ({ items }) => useBannerReorder({ placement: "HERO_SLIDE", items }),
     ],
-    [
-      "carousels",
-      "carousels",
-      ({ items }) => useCarouselReorder({ placement: "HOME_RAILS", items }),
-    ],
+    ["carousels", "carousels", ({ items }) => useCarouselReorder({ items })],
   ])(
     "%s: a move posts the undo toast with no widget change",
     async (_, path, useAdapter) => {
