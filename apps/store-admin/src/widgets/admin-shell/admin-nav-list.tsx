@@ -2,6 +2,7 @@
 
 import {
   LayoutDashboard,
+  ChartColumn,
   Package,
   FileUp,
   Layers,
@@ -101,6 +102,14 @@ const navItems: readonly NavItem[] = [
   // No permission: the dashboard is every staff member's landing page. Its
   // revenue/PII tiles are gated individually inside the page itself.
   { label: dict.nav.dashboard, href: "/", icon: LayoutDashboard },
+  // TASK-692 — the reports, right under the dashboard they deepen (Д-н2). The
+  // same key as the dashboard's figures; the money in them is cut by the API.
+  {
+    label: dict.nav.analytics,
+    href: "/analytics",
+    icon: ChartColumn,
+    permission: PERM.analyticsRead,
+  },
   {
     label: dict.nav.products,
     href: "/products",

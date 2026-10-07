@@ -21,6 +21,8 @@ loadEnv({ path: path.resolve(__dirname, "../../apps/store-api/.env") });
  *   - admin login:    `e2e-admin@test.com` / `E2eAdminPassword1!`
  *   - read-only mgr:  `e2e-manager-ro@test.com` / `E2eManagerRo1!` — MANAGER
  *                     holding ONLY `orders:read` (TASK-715)
+ *   - analytics mgr: `e2e-manager-analytics@test.com` / `E2eManagerAnalytics1!`
+ *                     — MANAGER holding ONLY `analytics:read` (TASK-692)
  *   - orders:        one PROCESSING + one PENDING (ids below)
  *   - paid order:    one ONLINE + CONFIRMED + PAID order with a SUCCEEDED LiqPay
  *                    attempt of 1299.00 (TASK-371, the payment card)
@@ -50,6 +52,17 @@ export const E2E_ADMIN_PASSWORD = "E2eAdminPassword1!";
 export const E2E_MANAGER_RO_EMAIL = "e2e-manager-ro@test.com";
 export const E2E_MANAGER_RO_PASSWORD = "E2eManagerRo1!";
 const E2E_MANAGER_RO_PERMISSIONS = ["orders:read"];
+
+/**
+ * A MANAGER who may read the reports and nothing else (TASK-692) — above all
+ * NOT `analytics:revenue`. The /analytics spec uses it to show the money is
+ * absent end to end: no «Продажі» card, no request for it, no `revenue` key in
+ * the API's answer. Its grant set is reset to exactly `analytics:read` on
+ * every run, like the reader's above.
+ */
+export const E2E_MANAGER_ANALYTICS_EMAIL = "e2e-manager-analytics@test.com";
+export const E2E_MANAGER_ANALYTICS_PASSWORD = "E2eManagerAnalytics1!";
+const E2E_MANAGER_ANALYTICS_PERMISSIONS = ["analytics:read"];
 
 /**
  * Order fixtures for the admin order-filter specs (TASK-405).
@@ -171,39 +184,60 @@ export default async function globalSetup(): Promise<void> {
 
     // TASK-715: a MANAGER's rights are exactly its `user_permissions` rows
     // (plan 181 — no role matrix any more), so the grant set is replaced, not
-    // merged: every other row is removed before the one right is written.
-    const managerPasswordHash = await argon2.hash(E2E_MANAGER_RO_PASSWORD);
-    const manager = await prisma.user.upsert({
-      where: { email: E2E_MANAGER_RO_EMAIL },
-      update: {
-        passwordHash: managerPasswordHash,
-        role: "MANAGER",
-        isActive: true,
-        deletedAt: null,
-      },
-      create: {
-        email: E2E_MANAGER_RO_EMAIL,
-        passwordHash: managerPasswordHash,
-        firstName: "E2E",
-        lastName: "Reader",
-        role: "MANAGER",
-        isActive: true,
-        emailVerifiedAt: new Date(),
-      },
-    });
-    await prisma.userPermission.deleteMany({
-      where: {
-        userId: manager.id,
-        permission: { notIn: E2E_MANAGER_RO_PERMISSIONS },
-      },
-    });
-    for (const permission of E2E_MANAGER_RO_PERMISSIONS) {
-      await prisma.userPermission.upsert({
-        where: { userId_permission: { userId: manager.id, permission } },
-        update: {},
-        create: { userId: manager.id, permission },
+    // merged: every other row is removed before the rights are written.
+    // TASK-692: the same for every seeded manager, hence the helper.
+    const seedManager = async (
+      email: string,
+      password: string,
+      lastName: string,
+      permissions: readonly string[],
+    ) => {
+      const managerPasswordHash = await argon2.hash(password);
+      const manager = await prisma.user.upsert({
+        where: { email },
+        update: {
+          passwordHash: managerPasswordHash,
+          role: "MANAGER",
+          isActive: true,
+          deletedAt: null,
+        },
+        create: {
+          email,
+          passwordHash: managerPasswordHash,
+          firstName: "E2E",
+          lastName,
+          role: "MANAGER",
+          isActive: true,
+          emailVerifiedAt: new Date(),
+        },
       });
-    }
+      await prisma.userPermission.deleteMany({
+        where: {
+          userId: manager.id,
+          permission: { notIn: [...permissions] },
+        },
+      });
+      for (const permission of permissions) {
+        await prisma.userPermission.upsert({
+          where: { userId_permission: { userId: manager.id, permission } },
+          update: {},
+          create: { userId: manager.id, permission },
+        });
+      }
+    };
+
+    await seedManager(
+      E2E_MANAGER_RO_EMAIL,
+      E2E_MANAGER_RO_PASSWORD,
+      "Reader",
+      E2E_MANAGER_RO_PERMISSIONS,
+    );
+    await seedManager(
+      E2E_MANAGER_ANALYTICS_EMAIL,
+      E2E_MANAGER_ANALYTICS_PASSWORD,
+      "Analyst",
+      E2E_MANAGER_ANALYTICS_PERMISSIONS,
+    );
 
     // Two orders that differ only in status — the minimum needed to prove a
     // status filter actually filters. `createdAt` is stamped on every run (the

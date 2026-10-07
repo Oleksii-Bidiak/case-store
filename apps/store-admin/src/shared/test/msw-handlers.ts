@@ -1,4 +1,12 @@
 import { http, HttpResponse } from "msw";
+import {
+  brandReport,
+  categoryReport,
+  funnelReport,
+  productsReport,
+  registrationsReport,
+  salesReport,
+} from "./analytics-report-fixtures";
 
 /**
  * Default MSW handlers for store-admin component tests. Patterns use a leading
@@ -31,6 +39,35 @@ export const handlers = [
         previousVisitors: null,
       },
     }),
+  ),
+
+  // The /analytics reports (TASK-692) — the owner's view of a 30-day period
+  // (money included). /analytics reads the period bar's label off the
+  // registrations report. Categories honour `parentId`, products `limit`, like
+  // the API. Override per-test (the fixtures have no-revenue variants).
+  http.get("*/api/admin/analytics/reports/sales", () =>
+    HttpResponse.json({ data: salesReport() }),
+  ),
+  http.get("*/api/admin/analytics/reports/categories", ({ request }) =>
+    HttpResponse.json({
+      data: categoryReport(new URL(request.url).searchParams.get("parentId")),
+    }),
+  ),
+  http.get("*/api/admin/analytics/reports/brands", () =>
+    HttpResponse.json({ data: brandReport() }),
+  ),
+  http.get("*/api/admin/analytics/reports/products", ({ request }) =>
+    HttpResponse.json({
+      data: productsReport(
+        Number(new URL(request.url).searchParams.get("limit") ?? 10),
+      ),
+    }),
+  ),
+  http.get("*/api/admin/analytics/reports/funnel", () =>
+    HttpResponse.json({ data: funnelReport() }),
+  ),
+  http.get("*/api/admin/analytics/reports/registrations", () =>
+    HttpResponse.json({ data: registrationsReport() }),
   ),
 
   // Needs-action counters (TASK-248, +pendingOver48h TASK-251) — all-clear by

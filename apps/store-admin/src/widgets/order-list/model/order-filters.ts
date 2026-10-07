@@ -8,7 +8,8 @@ import {
   type AdminOrderControllerFindAllParams,
 } from "@/entities/order";
 import { dict } from "@/shared/config";
-import { toKyivDateInput } from "@/shared/lib/format";
+// TASK-692: the day arithmetic moved to shared/lib (the report period needs it).
+import { shiftDay } from "@/shared/lib/format";
 
 const d = dict.orders;
 
@@ -256,19 +257,6 @@ export const PERIOD_PRESETS: ReadonlyArray<{ id: string; label: string }> = [
   { id: "month", label: d.periodMonth },
   { id: "custom", label: d.periodCustom },
 ];
-
-/** `YYYY-MM-DD` ± days, in calendar arithmetic (no zone involved). */
-function shiftDay(day: string, delta: number): string {
-  const [year, month, date] = day.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, date + delta))
-    .toISOString()
-    .slice(0, 10);
-}
-
-/** The Kyiv calendar day of `now`. */
-export function kyivToday(now: number = Date.now()): string {
-  return toKyivDateInput(now);
-}
 
 /** The range a preset stands for, counted from Kyiv's `today`. */
 export function periodRange(

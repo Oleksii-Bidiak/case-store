@@ -151,3 +151,98 @@ export function formatRelative(
   // Under a second apart — "зараз".
   return relativeFormatter.format(0, "second");
 }
+
+// TASK-692: a calendar DAY in words — «6 вересня», «6 вересня 2026». Built from
+// `formatToParts`, because uk-UA's own long date appends « р.» after the year,
+// which the report period's «6 вересня — 5 жовтня 2026» does not say.
+const dayLongFormatter = new Intl.DateTimeFormat("uk-UA", {
+  timeZone: TIME_ZONE,
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
+/**
+ * Format a Kyiv calendar day (`YYYY-MM-DD`, what the report API returns) in
+ * words: "6 вересня" or, with `withYear`, "6 вересня 2026".
+ *
+ * The day is pinned at 12:00 UTC before formatting in Kyiv, which is the same
+ * calendar day whatever the offset (UTC+2 / +3), so no instant can slip across
+ * midnight. Returns the input unchanged when it is not a `YYYY-MM-DD` day.
+ */
+export function formatDayLong(day: string, withYear = false): string {
+  const noon = kyivDayNoon(day);
+  if (!noon) return day;
+  const part = partsOf(dayLongFormatter, noon);
+  const dayMonth = `${part("day")} ${part("month")}`;
+  return withYear ? `${dayMonth} ${part("year")}` : dayMonth;
+}
+
+/** 12:00 UTC of a `YYYY-MM-DD` day — the same calendar day in Kyiv. */
+function kyivDayNoon(day: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!match) return null;
+  return new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12),
+  );
+}
+
+function partsOf(formatter: Intl.DateTimeFormat, date: Date) {
+  const parts = formatter.formatToParts(date);
+  return (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+}
+
+// TASK-692: the report charts' axis («12 вер.») and tooltip («12 вересня, сб»).
+const dayShortFormatter = new Intl.DateTimeFormat("uk-UA", {
+  timeZone: TIME_ZONE,
+  day: "numeric",
+  month: "short",
+});
+
+const weekdayFormatter = new Intl.DateTimeFormat("uk-UA", {
+  timeZone: TIME_ZONE,
+  weekday: "short",
+});
+
+/**
+ * A Kyiv calendar day, short: "12 вер", "5 жовт". Intl's abbreviation dot
+ * («вер.») is dropped: under a chart it is noise, and a label clipped at the
+ * edge lost it anyway, so the axis read «7 вер.» … «6 жовт». Input unchanged
+ * when not a day.
+ */
+export function formatDayShort(day: string): string {
+  const noon = kyivDayNoon(day);
+  return noon ? dayShortFormatter.format(noon).replace(/\.$/, "") : day;
+}
+
+/** A Kyiv calendar day with its weekday: "12 вересня, сб". */
+export function formatDayWithWeekday(day: string): string {
+  const noon = kyivDayNoon(day);
+  if (!noon) return day;
+  return `${formatDayLong(day)}, ${weekdayFormatter.format(noon)}`;
+}
+
+// TASK-692: «з березня» — the month an instant fell in, in the genitive the
+// Ukrainian «з …» takes. Read off a day+month format, where uk-UA's month is
+// genitive; a month-only format gives the nominative («березень»).
+const monthGenitiveFormatter = new Intl.DateTimeFormat("uk-UA", {
+  timeZone: TIME_ZONE,
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
+/**
+ * The Kyiv month of a timestamp in the genitive: "березня", or with `withYear`
+ * "березня 2025". Returns the input unchanged when it is not a usable date.
+ */
+export function formatMonthGenitive(
+  value: DateInput,
+  withYear = false,
+): string {
+  const date = toDate(value);
+  if (!date) return String(value);
+  const part = partsOf(monthGenitiveFormatter, date);
+  return withYear ? `${part("month")} ${part("year")}` : part("month");
+}

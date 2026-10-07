@@ -83,6 +83,9 @@ export const dict = {
     faq: "FAQ",
     // TASK-318 — gated by `audit:read`, a key nobody can be granted (TASK-475).
     auditLog: "Журнал дій",
+    // TASK-692 — звіти за період (план 188). Гейтиться `analytics:read`; гроші
+    // в них — окремо, правом `analytics:revenue`.
+    analytics: "Звіти",
     // TASK-644 — гейтиться правом `settings:delivery`.
     delivery: "Доставка",
   },
@@ -275,6 +278,8 @@ export const dict = {
     trafficUnavailable:
       "Дані аналітики зараз недоступні. Перевірте, чи працює Umami.",
     trafficLoading: "Завантажуємо дані…",
+    // TASK-693 (ревʼю): не відповів наш власний API — це не «не підключено».
+    trafficLoadError: "Не вдалося завантажити відвідуваність.",
     trafficDeltaUp: (percent: number) => `+${percent}% до попередніх 7 днів`,
     trafficDeltaDown: (percent: number) => `${percent}% до попередніх 7 днів`,
     trafficSeconds: (seconds: number) => `${seconds} с`,
@@ -295,6 +300,10 @@ export const dict = {
     lastOrdersLoadError: "Не вдалося завантажити замовлення.",
     allOrdersLink: "Усі замовлення",
     allLowStockLink: "Усі з низьким залишком",
+    // TASK-693: картка відвідуваності веде на «Звіти» з тим самим вікном
+    // (7 днів), щоб два числа на двох екранах збігалися.
+    trafficMore: "Детальніше",
+    trafficMoreAria: "Детальніше про відвідуваність — звіти за 7 днів",
   },
 
   common: {
@@ -7178,6 +7187,172 @@ export const dict = {
       "Сервер не відповів. Перевірте з'єднання й спробуйте ще раз.",
     retry: "Спробувати ще раз",
     toList: "До списку товарів",
+  },
+
+  // TASK-692 — /analytics (план 188, макет Д-н2 «Analytics»). Один період на всі
+  // п'ять звітів; кожне число — з порівнянням із попереднім таким самим
+  // відрізком; доба — київська.
+  analytics: {
+    metaTitle: "Звіти — Адмін",
+    heading: "Звіти",
+    intro:
+      "Скільки продали й заробили, що купують і хто приходить. Усі звіти — за одним періодом, кожне число — з порівнянням із попереднім таким самим відрізком.",
+    forbidden: "У вас немає доступу до звітів.",
+    forbiddenHint:
+      "Попросіть власника видати вам право «Дашборд і показники» — він робить це в розділі «Співробітники» → ваша картка → вкладка «Права».",
+
+    // Рядок періоду.
+    periodAria: "Період звітів",
+    preset7d: "7 днів",
+    preset30d: "30 днів",
+    preset90d: "90 днів",
+    presetThisMonth: "Цей місяць",
+    presetLastMonth: "Минулий місяць",
+    presetCustom: "Довільно…",
+    rangeDays: (days: number) => countLabel(days, ["день", "дні", "днів"]),
+    comparedWith: (range: string) =>
+      `порівнюємо з ${range} · доба — за київським часом`,
+    kyivDay: "Доба — за київським часом",
+
+    // «Довільно…» — діапазон.
+    customTitle: "Довільний період",
+    customFrom: "З",
+    customTo: "По",
+    customCompare: (days: number, range: string) =>
+      `Порівняємо з ${countLabel(days, ["днем", "днями", "днями"])} перед ним: ${range}.`,
+    customShare:
+      "Посилання на звіт з цим періодом можна переслати — він зберігається в адресі.",
+    customCancel: "Скасувати",
+    customApply: "Показати",
+    rangeErrorMissing: "Вкажіть обидві дати.",
+    rangeErrorOrder: "Дата «З» пізніша за дату «По».",
+    rangeErrorFuture: "Період не може закінчуватися пізніше за сьогодні.",
+    rangeErrorTooLong: "Найдовший період — 366 днів.",
+
+    // Зміна до попереднього відрізка.
+    deltaPercent: (value: string) => `${value}%`,
+    deltaPoints: (value: string) => `${value} п. п.`,
+    deltaUp: (value: string) => `зростання на ${value} до попереднього періоду`,
+    deltaDown: (value: string) => `спад на ${value} до попереднього періоду`,
+    deltaFlat: "без змін до попереднього періоду",
+    deltaNone: "у попередньому періоді — нуль, порівнювати нема з чим",
+    was: (value: string) => `було ${value}`,
+
+    // Крок 2: п'ять звітів. Спільні стани.
+    reportError: "Не вдалося завантажити звіт.",
+    revenueLocked:
+      "Суми в гривнях не показуються: для них потрібне право «Виторг і фінансові показники». Решта звітів — у штуках і відсотках.",
+    thousands: (value: string) => `${value} тис.`,
+
+    // «Продажі».
+    salesTitle: "Продажі",
+    salesTile: "Продажі",
+    refundsTile: "Повернення",
+    netTile: "Чистий",
+    ordersTile: "Замовлень",
+    aovTile: "Середній чек",
+    salesLegendNet: "Чистий за день",
+    salesLegendNegative: "Нижче нуля — повернули більше, ніж продали",
+    salesChartSummary: (days: string, min: string, max: string) =>
+      `Чистий виторг по днях, ${days}: найменший за день ${min}, найбільший ${max}.`,
+    salesEmptyTitle: "За цей період оплачених замовлень немає",
+    salesEmptyText:
+      "Нулі — це справжні нулі, а не помилка: дані за ці дні є, просто продажів не було.",
+    salesFootnote:
+      "Продажі — за датою замовлення (оплачені, включно з тими, що потім повернули). Повернення — за датою, коли гроші пішли назад. Тому повернення у вересні за покупку з серпня зменшує вересень, а серпень лишається таким, яким ви його вже бачили. Середній чек = чистий ÷ замовлення.",
+
+    // «Категорії й бренди».
+    catalogueTitle: "Категорії й бренди",
+    catalogueBasis:
+      "За нинішньою структурою каталогу: товар, який перенесли в іншу категорію, рахується там, де він зараз.",
+    tabCategories: "Категорії",
+    tabBrands: "Бренди",
+    colCategory: "Категорія",
+    colBrand: "Бренд",
+    colUnits: "Продано, шт",
+    colOrders: "Замовлень",
+    colRevenue: "Виторг",
+    directRow: (name: string) => `Прямо в «${name}», без підкатегорії`,
+    childrenLoading: "Завантажуємо підкатегорії…",
+    childrenError: "Не вдалося завантажити підкатегорії.",
+    noBrand: "Без бренду",
+    nothingSold: "За період нічого не продано",
+    grossNote:
+      "Виторг тут — сума рядків замовлень до знижок на замовлення й доставки, тому разом він не дорівнює «Продажам».",
+
+    // «Лідери й аутсайдери».
+    productsTitle: "Лідери й аутсайдери",
+    leadersByRevenue: "Топ-5 за виторгом",
+    leadersByUnits: "Топ-5 за кількістю",
+    pieces: (count: string) => `${count} шт`,
+    outsidersTitle: (total: number) =>
+      `Без жодного продажу за період · ${countLabel(total, ["товар", "товари", "товарів"])}`,
+    outsiderSince: (month: string) => `з ${month}`,
+    outsidersHint:
+      "Лише показані на сайті товари; найдовше без продажів — угорі.",
+    outsidersShowAll: (total: number) => `Показати всі ${total}`,
+    outsidersCapped: (shown: number, total: number) =>
+      `Показано перші ${shown} із ${total}`,
+    outsidersNone: "Кожен показаний товар мав продажі за період",
+
+    // «Конверсія кошик → покупка».
+    funnelTitle: "Конверсія кошик → покупка",
+    funnelSubtitle:
+      "Рахує Umami за діями відвідувачів на сайті — з нашими замовленнями ці числа не змішуються.",
+    funnelOffTitle: "Аналітику відвідувань не підключено",
+    funnelOffText:
+      "Без Umami конверсію порахувати нема з чого — тому тут не «0%», а цей рядок. Підключає розробник: крок «Аналітика» в посібнику з розгортання.",
+    funnelDownTitle: (time: string) => `Umami не відповів о ${time}`,
+    funnelDownText:
+      "Дані є, але зараз їх не вдалося отримати. Інші звіти від цього не залежать.",
+    funnelRetry: "Спробувати ще раз",
+    funnelConversion: "Конверсія",
+    funnelWas: (value: string) =>
+      `було ${value} · купили з тих, хто додав у кошик`,
+    stepAddToCart: "Додали в кошик",
+    stepBeginCheckout: "Почали оформлення",
+    stepPurchase: "Купили",
+    toCheckout: (rate: string, previous: string) =>
+      `${rate} дійшли до оформлення · було ${previous}`,
+    toPurchase: (rate: string, previous: string) =>
+      `${rate} купили · було ${previous}`,
+    biggestLoss: " — найбільше губимо тут",
+    funnelEventsNote: "Кількість подій, не людей.",
+
+    // «Реєстрації».
+    registrationsTitle: "Реєстрації",
+    registrationsNew: "Нових акаунтів",
+    registrationsFromGuest: "З них раніше купували як гості",
+    registrationsChartSummary: (days: string, total: number, max: number) =>
+      `Нові акаунти по днях, ${days}: усього ${total}, найбільше за день — ${max}.`,
+
+    // Крок 3 (TASK-691): CSV — рівно те, що на екрані.
+    csvButton: "CSV",
+    csvAria: (title: string) => `Завантажити CSV: ${title}`,
+    csvError: "Не вдалося сформувати CSV. Спробуйте ще раз.",
+    csvMetric: "Показник",
+    csvCurrent: "Поточний",
+    csvPrevious: "Попередній",
+    csvChange: "Зміна, %",
+    csvDate: "Дата",
+    csvParent: "Батьківська категорія",
+    csvLeaders: "Лідери",
+    csvRank: "Місце",
+    csvProduct: "Товар",
+    csvUnits: "Шт",
+    csvOutsiders: "Без продажів",
+    csvStock: "Залишок, шт",
+    csvAdded: "Додано",
+    csvOutsidersTotal: "Усього без продажів",
+    csvStep: "Крок",
+    csvTransitions: "Переходи",
+    csvFrom: "Від",
+    csvTo: "До",
+    csvShare: "Частка, %",
+    csvShareWas: "Була, %",
+    csvConversionCurrent: "Поточна, %",
+    csvConversionPrevious: "Попередня, %",
+    csvRegistrationsDay: "Реєстрацій",
   },
 
   // Налаштування доставки `/settings/delivery` (план 184 U, TASK-644; макет

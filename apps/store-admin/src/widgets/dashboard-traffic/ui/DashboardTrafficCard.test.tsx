@@ -1,6 +1,11 @@
 import { http, HttpResponse } from "msw";
 import { server } from "@/shared/test/msw-server";
-import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import { DashboardTrafficCard } from "./DashboardTrafficCard";
 
@@ -89,6 +94,47 @@ describe("DashboardTrafficCard — numbers (TASK-380)", () => {
   });
 });
 
+describe("DashboardTrafficCard — our API failing (TASK-693 review)", () => {
+  it.each([
+    ["with the Umami link", UMAMI_URL],
+    ["without the Umami link", ""],
+  ])("offers a retry, never «не підключено» — %s", async (_label, url) => {
+    server.use(
+      http.get(TRAFFIC_URL, () =>
+        HttpResponse.json({ message: "boom" }, { status: 500 }),
+      ),
+    );
+    renderWithProviders(<DashboardTrafficCard dashboardUrl={url} />);
+
+    expect(await screen.findByText(d.trafficLoadError)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.canon.retry }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(d.trafficNotConfigured)).not.toBeInTheDocument();
+    expect(screen.queryByText(d.trafficUnavailable)).not.toBeInTheDocument();
+  });
+
+  it("shows the numbers once the retry succeeds", async () => {
+    let fail = true;
+    server.use(
+      http.get(TRAFFIC_URL, () =>
+        fail
+          ? HttpResponse.json({ message: "boom" }, { status: 500 })
+          : HttpResponse.json({ data: LIVE_SUMMARY }),
+      ),
+    );
+    renderWithProviders(<DashboardTrafficCard dashboardUrl={UMAMI_URL} />);
+
+    await screen.findByText(d.trafficLoadError);
+    fail = false;
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.canon.retry }),
+    );
+
+    expect(await screen.findByText("380")).toBeInTheDocument();
+  });
+});
+
 describe("DashboardTrafficCard — link-only states (TASK-262)", () => {
   it("keeps the outbound link when analytics is not wired up", async () => {
     // Default handler answers `configured: false`.
@@ -109,9 +155,79 @@ describe("DashboardTrafficCard — link-only states (TASK-262)", () => {
   ])("renders the muted copy and no link — %s", async (_label, url) => {
     renderWithProviders(<DashboardTrafficCard dashboardUrl={url} />);
 
-    expect(screen.getByText(d.trafficHeading)).toBeInTheDocument();
+    // TASK-693: the heading now carries its window, «Відвідуваність · за 7 днів».
+    expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
     expect(await screen.findByText(d.trafficNotConfigured)).toBeInTheDocument();
     // No dead href="" link in the unconfigured state.
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+});
+
+const UNAVAILABLE = {
+  configured: true,
+  available: false,
+  rangeDays: 7,
+  pageviews: null,
+  visitors: null,
+  visits: null,
+  bounceRate: null,
+  avgVisitSeconds: null,
+  previousVisitors: null,
+};
+
+/** «Відвідуваність · за 7 днів» — the title with its window. */
+const heading = `${d.trafficHeading} · ${d.trafficRange}`;
+const READER = { auth: { permissions: ["analytics:read"] } };
+
+describe("DashboardTrafficCard — the window and «Детальніше» (TASK-693)", () => {
+  it("says «за 7 днів» in the title while loading", () => {
+    renderWithProviders(<DashboardTrafficCard dashboardUrl={UMAMI_URL} />);
+    expect(screen.getByText(d.trafficLoading)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["not configured", null, d.trafficOpenLink],
+    ["unavailable", UNAVAILABLE, d.trafficUnavailable],
+    ["with numbers", LIVE_SUMMARY, d.trafficVisitors],
+  ])(
+    "says «за 7 днів» in the title, once — %s",
+    async (_label, summary, marker) => {
+      if (summary) respondWith(summary);
+      renderWithProviders(<DashboardTrafficCard dashboardUrl={UMAMI_URL} />);
+
+      expect(await screen.findByText(marker)).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: heading }),
+      ).toBeInTheDocument();
+      // Not repeated above the numbers, where it used to live.
+      expect(screen.getAllByText(new RegExp(d.trafficRange))).toHaveLength(1);
+    },
+  );
+
+  it("links to the reports on the same seven days", async () => {
+    respondWith(LIVE_SUMMARY);
+    renderWithProviders(
+      <DashboardTrafficCard dashboardUrl={UMAMI_URL} />,
+      READER,
+    );
+
+    const more = await screen.findByRole("link", { name: d.trafficMoreAria });
+    expect(more).toHaveAttribute("href", "/analytics?preset=7d");
+    expect(more).toHaveTextContent(d.trafficMore);
+    // The outbound Umami link is still there.
+    expect(
+      screen.getByRole("link", { name: d.trafficOpenLinkAria }),
+    ).toHaveAttribute("href", UMAMI_URL);
+  });
+
+  it("offers no «Детальніше» without analytics:read", async () => {
+    respondWith(LIVE_SUMMARY);
+    renderWithProviders(<DashboardTrafficCard dashboardUrl={UMAMI_URL} />);
+
+    expect(await screen.findByText("380")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: d.trafficMoreAria }),
+    ).not.toBeInTheDocument();
   });
 });

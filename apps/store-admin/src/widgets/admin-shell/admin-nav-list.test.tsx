@@ -262,6 +262,36 @@ describe("AdminNavList — permission filtering (TASK-334)", () => {
     ).not.toBeInTheDocument();
   });
 
+  // TASK-692 — «Звіти» right under «Панель», behind the dashboard's own key.
+  it("shows «Звіти» to a manager holding analytics:read, right after «Панель»", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    renderNav({ isOwner: false, permissions: ["analytics:read"] });
+
+    const reports = await screen.findByRole("link", {
+      name: dict.nav.analytics,
+    });
+    expect(reports).toHaveAttribute("href", "/analytics");
+    const links = screen.getAllByRole("link");
+    const dashboardAt = links.findIndex(
+      (link) => link.getAttribute("href") === "/",
+    );
+    expect(links[dashboardAt + 1]).toBe(reports);
+  });
+
+  it("hides «Звіти» from a manager without analytics:read", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    renderNav({ isOwner: false, permissions: ["orders:read"] });
+
+    expect(
+      await screen.findByRole("link", { name: dict.nav.orders }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: dict.nav.analytics }),
+    ).not.toBeInTheDocument();
+  });
+
   // TASK-370. The queue itself has existed since TASK-340; what never existed was
   // a way in. And the permission behind it had never been granted to anybody
   // either, so the first version of this entry would have been visible to the
