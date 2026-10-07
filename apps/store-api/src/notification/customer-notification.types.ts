@@ -44,6 +44,11 @@ export interface CustomerOrderConfirmationInput {
    * gone out; at checkout the order is new by definition.
    */
   status?: string | null;
+  /**
+   * The waybill — only the guest summary of an order already SHIPPED sets it:
+   * the «відправлено» notice went out before the guest's chat existed.
+   */
+  trackingNumber?: string | null;
 }
 
 /** What an order event gives the notifier for «відправлено». */
@@ -70,6 +75,8 @@ export type CustomerOrderConfirmationPayload = RecipientOwnerPayload & {
   deliveryMethod: string | null;
   /** Null for a confirmation queued at checkout (the order is new). */
   status: string | null;
+  /** Present only on the guest summary of a SHIPPED order. */
+  trackingNumber?: string;
 };
 
 /** Payload of a TELEGRAM {@link CUSTOMER_ORDER_SHIPPED_TYPE} row. */

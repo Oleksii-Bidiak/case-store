@@ -139,6 +139,35 @@ describe('Telegram customer messages (TASK-680)', () => {
         expect(text).not.toContain('Зателефонуємо');
       },
     );
+
+    it('gives a guest who connects after shipment the copyable waybill, escaped', () => {
+      const text = renderOrderConfirmation(
+        row('order-confirmation', {
+          ...payload,
+          deliveryMethod: 'NOVA_POSHTA',
+          status: 'SHIPPED',
+          trackingNumber: '2045<0001>',
+        }),
+        withStore,
+      );
+
+      expect(text.split('\n')).toEqual([
+        '✅ <b>Замовлення #AB12CD34 прийнято</b>',
+        expect.stringContaining('Сума:'),
+        'Посилка вже вирушила.',
+        'ТТН: <code>2045&lt;0001&gt;</code>',
+        '<a href="https://shop.example.com/orders/status">Статус замовлення</a>',
+      ]);
+    });
+
+    it('has no ТТН line when the payload carries no waybill', () => {
+      const text = renderOrderConfirmation(
+        row('order-confirmation', { ...payload, deliveryMethod: 'NOVA_POSHTA', status: 'SHIPPED' }),
+        withoutStore,
+      );
+
+      expect(text).not.toContain('ТТН');
+    });
   });
 
   describe('order-shipped', () => {

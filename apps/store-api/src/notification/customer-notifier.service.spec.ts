@@ -118,6 +118,8 @@ describe('CustomerNotifier (TASK-680)', () => {
           event: 'notification.customer.skipped',
           customerEvent: CUSTOMER_ORDER_CONFIRMATION_TYPE,
           reason: 'no-binding',
+          // The one line grepped when a buyer asks why no message came.
+          orderId: ORDER_ID,
         },
         expect.any(String),
       );
@@ -317,5 +319,42 @@ describe('CustomerNotifier (TASK-680)', () => {
         expect.objectContaining({ status: 'SHIPPED', deliveryMethod: 'NOVA_POSHTA' }),
       );
     });
+
+    it('carries the waybill of a SHIPPED order — its «відправлено» went out before the chat', async () => {
+      bindings.findOrderSummary.mockResolvedValue({
+        id: ORDER_ID,
+        userId: null,
+        total: '499.00',
+        itemsCount: 3,
+        deliveryMethod: 'NOVA_POSHTA',
+        status: 'SHIPPED',
+        trackingNumber: ' 20450000000001 ',
+      });
+
+      await notifier.onBindingCreated(guestBinding, tx);
+
+      expect(outbox.enqueue.mock.calls[0][0].payload).toEqual(
+        expect.objectContaining({ trackingNumber: '20450000000001' }),
+      );
+    });
+
+    it.each(['CONFIRMED', 'DELIVERED'])(
+      'puts no waybill in the summary of a %s order',
+      async (status) => {
+        bindings.findOrderSummary.mockResolvedValue({
+          id: ORDER_ID,
+          userId: null,
+          total: '499.00',
+          itemsCount: 3,
+          deliveryMethod: 'NOVA_POSHTA',
+          status,
+          trackingNumber: '20450000000001',
+        });
+
+        await notifier.onBindingCreated(guestBinding, tx);
+
+        expect(outbox.enqueue.mock.calls[0][0].payload).not.toHaveProperty('trackingNumber');
+      },
+    );
   });
 });

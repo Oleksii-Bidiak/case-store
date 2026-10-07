@@ -23,7 +23,8 @@ import { orderStatusLinkLine } from './customer-template.helpers';
  *   promise as the letter's pickup note;
  * - the guest summary (owner decision 3) is queued when the chat connects, which
  *   may be after the order went out — then it says so instead of promising news
- *   that already happened. A cancelled order gets no summary at all
+ *   that already happened, and a SHIPPED parcel's summary adds its ТТН (the
+ *   «відправлено» notice went out before the chat). A cancelled order gets no summary at all
  *   (`CustomerNotifier.onBindingCreated`).
  */
 export function renderOrderConfirmation(
@@ -45,8 +46,18 @@ export function renderOrderConfirmation(
       itemsCount !== null && `${itemsCount} шт.`,
     ),
     nextStepLine(text(payload, 'deliveryMethod'), text(payload, 'status')),
+    waybillLine(text(payload, 'trackingNumber')),
     orderStatusLinkLine(context),
   );
+}
+
+/**
+ * The guest summary of an order already SHIPPED carries the waybill (as
+ * `<code>`, so a tap copies it): the «відправлено» notice was queued before the
+ * guest's chat existed.
+ */
+function waybillLine(trackingNumber: string | null): string | null {
+  return trackingNumber ? `ТТН: <code>${escapeHtml(trackingNumber)}</code>` : null;
 }
 
 /** What happens next, worded by how the order is delivered and where it stands. */

@@ -73,6 +73,8 @@ export interface CustomerOrderSummary {
   deliveryMethod: string;
   /** `OrderStatus` value NOW — the guest may connect long after checkout. */
   status: string;
+  /** The waybill, when the operator has entered one. */
+  trackingNumber: string | null;
 }
 
 /** The chat that sent `/start <token>`. */
@@ -396,6 +398,7 @@ export class NotificationBindingRepository {
         total: true,
         deliveryMethod: true,
         status: true,
+        trackingNumber: true,
         items: { select: { quantity: true } },
       },
     });
@@ -407,6 +410,7 @@ export class NotificationBindingRepository {
       itemsCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
       deliveryMethod: order.deliveryMethod,
       status: order.status,
+      trackingNumber: order.trackingNumber,
     };
   }
 

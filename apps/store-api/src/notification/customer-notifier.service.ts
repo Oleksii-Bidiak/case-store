@@ -73,7 +73,12 @@ export class CustomerNotifier {
     owner: CustomerBindingOwner,
     tx?: Prisma.TransactionClient,
   ): Promise<number> {
-    const recipients = await this.recipients(CUSTOMER_ORDER_CONFIRMATION_TYPE, owner, tx);
+    const recipients = await this.recipients(
+      CUSTOMER_ORDER_CONFIRMATION_TYPE,
+      order.orderId,
+      owner,
+      tx,
+    );
     for (const chat of recipients) {
       await this.enqueue(
         CUSTOMER_ORDER_CONFIRMATION_TYPE,
@@ -91,7 +96,7 @@ export class CustomerNotifier {
     owner: CustomerBindingOwner,
     tx?: Prisma.TransactionClient,
   ): Promise<number> {
-    const recipients = await this.recipients(CUSTOMER_ORDER_SHIPPED_TYPE, owner, tx);
+    const recipients = await this.recipients(CUSTOMER_ORDER_SHIPPED_TYPE, order.orderId, owner, tx);
     const payload: CustomerOrderShippedPayload = {
       orderId: order.orderId,
       orderNumber: orderNumber(order.orderId),
@@ -173,6 +178,9 @@ export class CustomerNotifier {
           // The renderer words the next step by it: an order already shipped
           // gets no «we will tell you when it ships».
           status: order.status,
+          // The «відправлено» notice was queued before this chat existed: a
+          // guest who connects after shipment would never see the waybill.
+          trackingNumber: order.status === OrderStatus.SHIPPED ? order.trackingNumber : null,
         },
         { userId: binding.userId, orderId: binding.orderId },
       ),
@@ -191,13 +199,20 @@ export class CustomerNotifier {
 
   private async recipients(
     type: CustomerNotificationType,
+    orderId: string,
     owner: CustomerBindingOwner,
     tx?: Prisma.TransactionClient,
   ): Promise<NotificationBindingEntity[]> {
     const recipients = await this.bindings.findActiveForCustomer(TELEGRAM, owner, tx);
     if (recipients.length === 0) {
       this.logger.info(
-        { event: 'notification.customer.skipped', customerEvent: type, reason: 'no-binding' },
+        // The orderId ties «why did no Telegram message come?» to an order.
+        {
+          event: 'notification.customer.skipped',
+          customerEvent: type,
+          reason: 'no-binding',
+          orderId,
+        },
         'No customer chat is connected — Telegram notification not queued',
       );
     }
@@ -225,6 +240,8 @@ function confirmationPayload(
     itemsCount: order.itemsCount,
     deliveryMethod: order.deliveryMethod ?? null,
     status: order.status ?? null,
+    // Only the guest summary of a shipped order carries it; absent otherwise.
+    ...(order.trackingNumber?.trim() ? { trackingNumber: order.trackingNumber.trim() } : {}),
     recipientOwner,
   };
 }
