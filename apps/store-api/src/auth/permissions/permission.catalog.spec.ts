@@ -7,6 +7,9 @@ import {
   ANALYTICS_REVENUE_BACKFILL_SOURCE_PERMISSIONS,
   ANALYTICS_REVENUE_PERMISSIONS,
   GRANTABLE_PERMISSIONS,
+  HOME_BACKFILL_SOURCE_PERMISSIONS,
+  HOME_PERMISSIONS,
+  READ_BACKFILL_PAIRS,
   CUSTOMERS_CARD_BACKFILL_SOURCE_PERMISSIONS,
   CUSTOMERS_CARD_PERMISSIONS,
   MANAGER_BACKFILL_TEMPLATE_NAME,
@@ -1053,5 +1056,142 @@ describe('analytics:revenue permission backfill migration (TASK-684)', () => {
 
   it('is idempotent in BOTH halves, so a restore-then-migrate cannot fail', () => {
     expect(statement.match(/ON CONFLICT[\s\S]*?DO NOTHING/g) ?? []).toHaveLength(2);
+  });
+});
+
+/**
+ * `home:write` and the `:read` keys (TASK-665 / TASK-666, plan 186).
+ *
+ * Every `:read` key is paired with the `:write` it is backfilled from, and the pair
+ * table is the contract the migration below must say back. A `:read` with no pair is
+ * the dangerous direction: the day the nav and the GET routes move to `:read`, the
+ * section silently disappears for everybody who edited it yesterday.
+ */
+describe('home:write and the :read keys (TASK-665 / TASK-666)', () => {
+  const byKey = new Map(
+    (PERMISSIONS as ReadonlyArray<{ key: string; zone: string; label: string }>).map(
+      (permission) => [permission.key, permission] as const,
+    ),
+  );
+
+  it('declares every paired key, grantable, in the same zone as its :write', () => {
+    for (const [write, read] of READ_BACKFILL_PAIRS) {
+      expect(isKnownPermission(write)).toBe(true);
+      expect(isGrantablePermission(read)).toBe(true);
+      expect(byKey.get(read)?.zone).toBe(byKey.get(write)?.zone);
+      expect(read).toBe(write.replace(/:write$/, ':read'));
+    }
+  });
+
+  it('pairs EVERY :read key that has a :write sibling except the pre-existing ones', () => {
+    // products/orders/returns/customers/media/staff/messages/newsletter :read existed
+    // before this wave and are not part of it.
+    const preExisting = new Set([
+      'products:read',
+      'orders:read',
+      'returns:read',
+      'customers:read',
+      'media:read',
+      'staff:read',
+      'messages:read',
+    ]);
+    const paired = new Set(READ_BACKFILL_PAIRS.map(([, read]) => read as string));
+    const unpaired = PERMISSIONS.map((permission) => permission.key as string).filter(
+      (key) =>
+        key.endsWith(':read') &&
+        isKnownPermission(key.replace(/:read$/, ':write')) &&
+        !preExisting.has(key) &&
+        !paired.has(key),
+    );
+    expect(unpaired).toEqual([]);
+  });
+
+  it('puts the homepage keys in the content zone and backfills home:write from carousels + banners', () => {
+    expect(byKey.get('home:write')?.zone).toBe(PERMISSION_ZONES.CONTENT);
+    expect(byKey.get('home:read')?.zone).toBe(PERMISSION_ZONES.CONTENT);
+    expect([...HOME_BACKFILL_SOURCE_PERMISSIONS]).toEqual(['carousels:write', 'banners:write']);
+    expect([...HOME_PERMISSIONS]).toEqual(['home:write']);
+  });
+
+  it('lists home:write → home:read LAST, so it reads the rows the home:write step wrote', () => {
+    expect(READ_BACKFILL_PAIRS[READ_BACKFILL_PAIRS.length - 1]).toEqual([
+      'home:write',
+      'home:read',
+    ]);
+  });
+});
+
+/**
+ * The `home:write` + `:read` backfill migration (TASK-665 / TASK-666).
+ *
+ * Pinned like the per-person media, returns and revenue backfills above, plus the
+ * one property only this file has: ORDER. `home:read` is derived from `home:write`,
+ * which is itself being backfilled in the same file, so the `home:write` step must
+ * come first or a content manager gets the right to edit the homepage and not the
+ * right to look at it.
+ */
+describe('home:write + :read permission backfill migration (TASK-665 / TASK-666)', () => {
+  const MIGRATIONS_ROOT = resolve(SRC_ROOT, '../prisma/migrations');
+
+  const sql = (() => {
+    const dir = readdirSync(MIGRATIONS_ROOT).find((entry) =>
+      entry.endsWith('_backfill_home_and_read_permissions'),
+    );
+    if (!dir) {
+      throw new Error(
+        `No *_backfill_home_and_read_permissions migration under ${MIGRATIONS_ROOT}. ` +
+          'Without it the homepage and every reference section disappear for the ' +
+          'managers who edit them today.',
+      );
+    }
+    return readFileSync(join(MIGRATIONS_ROOT, dir, 'migration.sql'), 'utf8');
+  })();
+
+  const statement = sql
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+
+  it('names exactly the declared keys and no other', () => {
+    const declared = [
+      ...HOME_PERMISSIONS,
+      ...HOME_BACKFILL_SOURCE_PERMISSIONS,
+      ...READ_BACKFILL_PAIRS.flat(),
+    ];
+    for (const key of declared) {
+      expect(statement).toContain(`'${key}'`);
+    }
+    const quoted = new Set(statement.match(/'[a-z]+:[a-z]+'/g) ?? []);
+    const allowed = new Set(declared.map((key) => `'${key}'`));
+    expect([...quoted].filter((token) => !allowed.has(token))).toEqual([]);
+  });
+
+  it('maps every :write to its own :read, pair for pair, in both halves', () => {
+    for (const [write, read] of READ_BACKFILL_PAIRS) {
+      const pair = new RegExp(`\\('${write}', '${read}'\\)`, 'g');
+      expect(statement.match(pair) ?? []).toHaveLength(2);
+    }
+  });
+
+  it('writes home:write BEFORE deriving any :read from it', () => {
+    const homeWriteGrant = statement.indexOf("VALUES ('home:write')");
+    const homeReadPair = statement.indexOf("('home:write', 'home:read')");
+    expect(homeWriteGrant).toBeGreaterThan(-1);
+    expect(homeReadPair).toBeGreaterThan(homeWriteGrant);
+  });
+
+  it('grants to a PERSON and to TEMPLATES, never to a role', () => {
+    expect(statement).toContain('"user_permissions"');
+    expect(statement).toContain('"user_id"');
+    expect(statement).toContain('"permission_template_items"');
+    expect(statement).toContain('"template_id"');
+    expect(statement).not.toContain('role_permissions');
+    expect(statement).not.toContain('"allowed"');
+    expect(statement).not.toContain('ADMIN');
+    expect(statement).not.toContain('MANAGER');
+  });
+
+  it('is idempotent in all four statements, so a restore-then-migrate cannot fail', () => {
+    expect(statement.match(/ON CONFLICT[\s\S]*?DO NOTHING/g) ?? []).toHaveLength(4);
   });
 });

@@ -131,10 +131,26 @@ export const PERMISSIONS = [
   // (`PermissionService.actorHasPermission`) — and a manager gets it only when the
   // owner ticks it deliberately on the permissions screen.
   { key: 'categories:delete', zone: PERMISSION_ZONES.CATALOG, label: 'Видаляти категорії' },
+  // The `:read` keys of the reference and content sections (TASK-666, plan 186,
+  // decision B-9 №5). Until now each of these sections had ONE key, and the admin
+  // nav rendered on it — so a role either EDITED banners or did not see the
+  // section at all. A `:read` key lets the owner give «look, do not touch».
+  // Every one ships backfilled from its `:write` (READ_BACKFILL_PAIRS below): the
+  // write key has always implied the right to look, and a default-denied `:read`
+  // would make the section vanish for everybody the day the nav switches to it.
+  { key: 'categories:read', zone: PERMISSION_ZONES.CATALOG, label: 'Переглядати категорії' },
   { key: 'brands:write', zone: PERMISSION_ZONES.CATALOG, label: 'Бренди' },
+  { key: 'brands:read', zone: PERMISSION_ZONES.CATALOG, label: 'Переглядати бренди' },
   { key: 'devices:write', zone: PERMISSION_ZONES.CATALOG, label: 'Пристрої та сумісність' },
+  {
+    key: 'devices:read',
+    zone: PERMISSION_ZONES.CATALOG,
+    label: 'Переглядати пристрої та сумісність',
+  },
   { key: 'attributes:write', zone: PERMISSION_ZONES.CATALOG, label: 'Характеристики' },
+  { key: 'attributes:read', zone: PERMISSION_ZONES.CATALOG, label: 'Переглядати характеристики' },
   { key: 'addons:write', zone: PERMISSION_ZONES.CATALOG, label: 'Додаткові послуги' },
+  { key: 'addons:read', zone: PERMISSION_ZONES.CATALOG, label: 'Переглядати додаткові послуги' },
   // Its own permission rather than a fold into `products:write` (TASK-360): one
   // confirmed import rewrites the whole catalogue and creates categories,
   // brands, devices and characteristics along the way. That is a different
@@ -147,10 +163,22 @@ export const PERMISSIONS = [
 
   // ── Контент і блог ────────────────────────────────────────────────────────
   { key: 'blog:write', zone: PERMISSION_ZONES.CONTENT, label: 'Блог' },
+  { key: 'blog:read', zone: PERMISSION_ZONES.CONTENT, label: 'Переглядати блог' },
   { key: 'pages:write', zone: PERMISSION_ZONES.CONTENT, label: 'Сторінки' },
+  { key: 'pages:read', zone: PERMISSION_ZONES.CONTENT, label: 'Переглядати сторінки' },
   { key: 'banners:write', zone: PERMISSION_ZONES.CONTENT, label: 'Банери' },
+  { key: 'banners:read', zone: PERMISSION_ZONES.CONTENT, label: 'Переглядати банери' },
   { key: 'carousels:write', zone: PERMISSION_ZONES.CONTENT, label: 'Каруселі головної' },
+  { key: 'carousels:read', zone: PERMISSION_ZONES.CONTENT, label: 'Переглядати каруселі' },
+  // The homepage as a list of blocks (TASK-665, plan 186): which sections stand on
+  // `/`, in what order, shown or hidden. Until this wave that WAS «Банери» +
+  // «Каруселі» — the order was code and the content was theirs — so the key ships
+  // backfilled to everyone holding either (HOME_BACKFILL_SOURCE_PERMISSIONS):
+  // whoever could change the homepage yesterday still can.
+  { key: 'home:write', zone: PERMISSION_ZONES.CONTENT, label: 'Головна: блоки та їх порядок' },
+  { key: 'home:read', zone: PERMISSION_ZONES.CONTENT, label: 'Переглядати блоки головної' },
   { key: 'faq:write', zone: PERMISSION_ZONES.CONTENT, label: 'FAQ' },
+  { key: 'faq:read', zone: PERMISSION_ZONES.CONTENT, label: 'Переглядати FAQ' },
   { key: 'reviews:moderate', zone: PERMISSION_ZONES.CONTENT, label: 'Модерувати відгуки' },
   // Deliberately NOT folded into `reviews:moderate` (TASK-591). Moderating is a
   // judgement about somebody ELSE's sentence — publish it or do not. Replying is
@@ -177,6 +205,11 @@ export const PERMISSIONS = [
 
   // ── Знижки та маркетинг ───────────────────────────────────────────────────
   { key: 'discounts:write', zone: PERMISSION_ZONES.MARKETING, label: 'Промокоди та знижки' },
+  {
+    key: 'discounts:read',
+    zone: PERMISSION_ZONES.MARKETING,
+    label: 'Переглядати промокоди та знижки',
+  },
   { key: 'newsletter:read', zone: PERMISSION_ZONES.MARKETING, label: 'Підписники розсилки' },
 
   // ── Клієнти ───────────────────────────────────────────────────────────────
@@ -568,6 +601,68 @@ export const RETURNS_PERMISSIONS = [
   'returns:read',
   'returns:write',
 ] as const satisfies ReadonlyArray<Permission>;
+
+/**
+ * The permissions whose holders were granted `home:write` by the TASK-665 backfill
+ * (`…_backfill_home_and_read_permissions`, plan 186).
+ *
+ * THE SAME NARROW SHAPE AS THE CARD AND REVENUE SPLITS ABOVE: the key carves a
+ * capability OUT of keys people already hold. Before the homepage became data, the
+ * only things an operator could change on `/` were its banners and its carousels —
+ * `carousels:write` even decided which carousel was a «Популярне» tab and which a
+ * rail, which is exactly what a homepage block decides now. Shipping `home:write`
+ * default-denied would silently take the homepage away from every content manager
+ * who arranged it yesterday. So it follows those two keys one-for-one and adds no
+ * reach; the owner can take it back by unticking one box.
+ *
+ * PER PERSON AND PER TEMPLATE, never per role (wave 180: a conditional backfill
+ * against the role matrix granted nobody). No liveness filter, like the others.
+ *
+ * This list is the code half of the contract; the SQL is the other half, and
+ * `permission.catalog.spec.ts` asserts the two say the same thing.
+ */
+export const HOME_BACKFILL_SOURCE_PERMISSIONS = [
+  'carousels:write',
+  'banners:write',
+] as const satisfies ReadonlyArray<Permission>;
+
+/** The key that backfill grants. */
+export const HOME_PERMISSIONS = ['home:write'] as const satisfies ReadonlyArray<Permission>;
+
+/**
+ * `x:write → x:read` — every `:read` key added by TASK-666 (plan 186, decision B-9 №5),
+ * paired with the `:write` it is backfilled from, in the SAME migration as the
+ * `home:write` backfill above (`…_backfill_home_and_read_permissions`).
+ *
+ * WHY EVERY ONE IS BACKFILLED. Until now the `:write` key was also the right to LOOK:
+ * the admin nav rendered the section on it and its GET routes required it. The wave
+ * that switches both to `:read` (cluster H2) would, without these rows, make every
+ * one of these sections disappear for every manager on the morning after the deploy.
+ * The copy preserves exactly yesterday's reach — the right to look was always part of
+ * the right to edit — and adds none.
+ *
+ * `home:write → home:read` is LAST on purpose and the migration runs this step AFTER
+ * the `home:write` backfill: somebody who gets `home:write` from `carousels:write`
+ * must come out holding `home:read` as well, in the same deploy.
+ *
+ * ONE MIGRATION FOR BOTH BACKFILLS (plan 186 §«Порядок і гілки»): in waves 180/181
+ * two migrations of one wave answered the same question in opposite ways. One file,
+ * ordered statements, one answer.
+ */
+export const READ_BACKFILL_PAIRS = [
+  ['categories:write', 'categories:read'],
+  ['brands:write', 'brands:read'],
+  ['devices:write', 'devices:read'],
+  ['attributes:write', 'attributes:read'],
+  ['addons:write', 'addons:read'],
+  ['discounts:write', 'discounts:read'],
+  ['pages:write', 'pages:read'],
+  ['blog:write', 'blog:read'],
+  ['banners:write', 'banners:read'],
+  ['carousels:write', 'carousels:read'],
+  ['faq:write', 'faq:read'],
+  ['home:write', 'home:read'],
+] as const satisfies ReadonlyArray<readonly [Permission, Permission]>;
 
 /** Fast membership test for validating rows read out of the database. */
 export const PERMISSION_KEYS: ReadonlySet<string> = new Set(PERMISSIONS.map((p) => p.key));
