@@ -276,6 +276,8 @@ export const dict = {
     trafficUnavailable:
       "Дані аналітики зараз недоступні. Перевірте, чи працює Umami.",
     trafficLoading: "Завантажуємо дані…",
+    // TASK-693 (ревʼю): не відповів наш власний API — це не «не підключено».
+    trafficLoadError: "Не вдалося завантажити відвідуваність.",
     trafficDeltaUp: (percent: number) => `+${percent}% до попередніх 7 днів`,
     trafficDeltaDown: (percent: number) => `${percent}% до попередніх 7 днів`,
     trafficSeconds: (seconds: number) => `${seconds} с`,

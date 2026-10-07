@@ -6,6 +6,7 @@ import { useGetTrafficSummary } from "@/entities/analytics";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { dict, UMAMI_DASHBOARD_URL } from "@/shared/config";
+import { ErrorState } from "@/shared/ui";
 
 const d = dict.dashboard;
 
@@ -46,11 +47,15 @@ function Metric({ label, value }: { label: string; value: string | null }) {
  * - not configured → the original muted "ask your developer" copy;
  * - configured but unreachable → says so, rather than drawing zeroes;
  * - configured and answering → the numbers.
+ *
+ * Plus our own API failing (TASK-693 review): that says nothing about Umami,
+ * so it is neither «не підключено» nor an empty card — it offers a retry.
  */
 export function DashboardTrafficCard({
   dashboardUrl = UMAMI_DASHBOARD_URL,
 }: DashboardTrafficCardProps) {
-  const { data, isLoading } = useGetTrafficSummary();
+  const { data, isLoading, isError, isFetching, refetch } =
+    useGetTrafficSummary();
   // The dashboard renders this card only under `analytics:read` already; the
   // guard stays here too, so the link never outlives a change of that rule.
   const canSeeReports = useAuth().can(PERM.analyticsRead);
@@ -73,7 +78,8 @@ export function DashboardTrafficCard({
       {/* TASK-693 (ДН-8.10): the window is part of the title, in every state —
           the card's «за 7 днів» and the reports' period must never be read as
           one number disagreeing with another. «Детальніше» opens the reports
-          on the SAME seven days, so the two screens agree. */}
+          on the 7-day preset — Kyiv calendar days there, a rolling 7×24 h
+          here (TASK-1865), which is why both screens name their window. */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h3 className="text-sm font-medium text-muted-foreground">
           {d.trafficHeading}{" "}
@@ -96,6 +102,15 @@ export function DashboardTrafficCard({
 
       {isLoading ? (
         <p className="mt-3 text-sm text-muted-foreground">{d.trafficLoading}</p>
+      ) : isError ? (
+        <div className="mt-3">
+          <ErrorState
+            variant="inline"
+            message={d.trafficLoadError}
+            onRetry={() => void refetch()}
+            isRetrying={isFetching}
+          />
+        </div>
       ) : summary?.configured && summary.available ? (
         <>
           <dl className="mt-3 grid grid-cols-2 gap-4">
@@ -151,7 +166,8 @@ export function DashboardTrafficCard({
         </a>
       ) : (
         !summary?.configured &&
-        !isLoading && (
+        !isLoading &&
+        !isError && (
           <p className="mt-3 text-sm text-muted-foreground">
             {d.trafficNotConfigured}
           </p>

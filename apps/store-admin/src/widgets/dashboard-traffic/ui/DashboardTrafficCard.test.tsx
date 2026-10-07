@@ -1,6 +1,11 @@
 import { http, HttpResponse } from "msw";
 import { server } from "@/shared/test/msw-server";
-import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import { DashboardTrafficCard } from "./DashboardTrafficCard";
 
@@ -86,6 +91,47 @@ describe("DashboardTrafficCard — numbers (TASK-380)", () => {
 
     expect(await screen.findByText(d.trafficUnavailable)).toBeInTheDocument();
     expect(screen.queryByText(d.trafficVisitors)).not.toBeInTheDocument();
+  });
+});
+
+describe("DashboardTrafficCard — our API failing (TASK-693 review)", () => {
+  it.each([
+    ["with the Umami link", UMAMI_URL],
+    ["without the Umami link", ""],
+  ])("offers a retry, never «не підключено» — %s", async (_label, url) => {
+    server.use(
+      http.get(TRAFFIC_URL, () =>
+        HttpResponse.json({ message: "boom" }, { status: 500 }),
+      ),
+    );
+    renderWithProviders(<DashboardTrafficCard dashboardUrl={url} />);
+
+    expect(await screen.findByText(d.trafficLoadError)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.canon.retry }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(d.trafficNotConfigured)).not.toBeInTheDocument();
+    expect(screen.queryByText(d.trafficUnavailable)).not.toBeInTheDocument();
+  });
+
+  it("shows the numbers once the retry succeeds", async () => {
+    let fail = true;
+    server.use(
+      http.get(TRAFFIC_URL, () =>
+        fail
+          ? HttpResponse.json({ message: "boom" }, { status: 500 })
+          : HttpResponse.json({ data: LIVE_SUMMARY }),
+      ),
+    );
+    renderWithProviders(<DashboardTrafficCard dashboardUrl={UMAMI_URL} />);
+
+    await screen.findByText(d.trafficLoadError);
+    fail = false;
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.canon.retry }),
+    );
+
+    expect(await screen.findByText("380")).toBeInTheDocument();
   });
 });
 
