@@ -30,6 +30,7 @@ import {
   Map,
   ScrollText,
   Truck,
+  Bell,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -292,6 +293,14 @@ const bottomNavItems: readonly NavItem[] = [
     href: "/settings/delivery",
     icon: Truck,
     permission: PERM.settingsDelivery,
+  },
+  // TASK-676 — where the shop's Telegram notifications go: the bot's state and
+  // the connected chats. In the settings group, right after «Доставка».
+  {
+    label: dict.nav.notifications,
+    href: "/settings/notifications",
+    icon: Bell,
+    permission: PERM.settingsNotifications,
   },
   {
     label: dict.nav.faq,

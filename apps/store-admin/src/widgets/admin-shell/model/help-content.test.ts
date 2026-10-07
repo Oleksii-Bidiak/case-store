@@ -33,6 +33,8 @@ const NAV_ROUTES = [
   "/settings/seo",
   "/settings/search",
   "/settings/delivery",
+  // TASK-676.
+  "/settings/notifications",
   "/faq",
   "/audit-log",
   "/profile",

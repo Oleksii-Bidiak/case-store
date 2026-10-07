@@ -366,4 +366,11 @@ export const handlers = [
       });
     },
   ),
+
+  // The shop's Telegram channel (TASK-676) — what the e2e stand has: no bot
+  // token, so `unconfigured` and no chats. Suites that need a working bot or
+  // connected chats override it.
+  http.get("*/api/admin/notifications/telegram", () =>
+    HttpResponse.json({ data: { state: "unconfigured", bindings: [] } }),
+  ),
 ];

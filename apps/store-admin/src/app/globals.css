@@ -75,6 +75,13 @@
   /* Overlay */
   --color-overlay: rgba(0, 0, 0, 0.8);
 
+  /* Machine-read code (TASK-676) — the Telegram connect QR. Deliberately NOT
+     overridden in dark mode: phone cameras read dark modules on a light field
+     reliably and an inverted code often not at all, so the code keeps the
+     light-theme pair whatever the panel's scheme. */
+  --color-code-surface: #ffffff;
+  --color-code-ink: #0f172a;
+
   /* Radius — softened for a modern retail feel (was 0.5rem) */
   --radius: 0.75rem;
 
@@ -196,6 +203,8 @@
   --color-input: var(--color-input);
   --color-ring: var(--color-ring);
   --color-overlay: var(--color-overlay);
+  --color-code-surface: var(--color-code-surface);
+  --color-code-ink: var(--color-code-ink);
 
   /* Elevation */
   --shadow-card: var(--shadow-card);

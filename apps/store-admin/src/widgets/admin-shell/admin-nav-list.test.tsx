@@ -656,3 +656,43 @@ describe("AdminNavList — «Доставка» (TASK-644)", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("AdminNavList — «Сповіщення» (TASK-676)", () => {
+  it("shows «Сповіщення» right after «Доставка», linking to /settings/notifications", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    renderNav();
+
+    const link = await screen.findByRole("link", {
+      name: dict.nav.notifications,
+    });
+    expect(link).toHaveAttribute("href", "/settings/notifications");
+    const delivery = screen.getByRole("link", { name: dict.nav.delivery });
+    const links = screen.getAllByRole("link");
+    expect(links.indexOf(link)).toBe(links.indexOf(delivery) + 1);
+  });
+
+  it("shows it to a manager holding settings:notifications", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    renderNav({ isOwner: false, permissions: ["settings:notifications"] });
+
+    expect(
+      await screen.findByRole("link", { name: dict.nav.notifications }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides it from a manager without settings:notifications", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    renderNav({
+      isOwner: false,
+      permissions: ["settings:delivery", "orders:read"],
+    });
+
+    await screen.findByRole("link", { name: dict.nav.delivery });
+    expect(
+      screen.queryByRole("link", { name: dict.nav.notifications }),
+    ).not.toBeInTheDocument();
+  });
+});

@@ -88,6 +88,8 @@ export const dict = {
     analytics: "Звіти",
     // TASK-644 — гейтиться правом `settings:delivery`.
     delivery: "Доставка",
+    // TASK-676 — гейтиться правом `settings:notifications`.
+    notifications: "Сповіщення",
   },
 
   header: {
@@ -7542,6 +7544,143 @@ export const dict = {
       mapUrlInvalid:
         "Вставте посилання, що починається з http:// або https://.",
     },
+  },
+
+  // Сповіщення магазину в Telegram `/settings/notifications` (план 187 U,
+  // TASK-676; макет Д-н2 SettingsNotifications ДН-7.1…7.12). Канал, який не
+  // працює, мусить це казати (обмеження плану 187), тож стан бота — словами.
+  notificationSettings: {
+    metaTitle: "Сповіщення — Адмін",
+    heading: "Сповіщення",
+    subheading:
+      "Куди магазин повідомляє вас про нові замовлення, звернення й заявки на повернення — щоб не треба було весь час тримати адмінку відкритою.",
+    loadError: "Не вдалося завантажити налаштування сповіщень.",
+    loadingAria: "Завантажуємо налаштування сповіщень",
+    noAccessTitle: "Немає доступу до сповіщень",
+    noAccessHint:
+      "Розділ відкривається з правом «Сповіщення» (settings:notifications): у ньому видно, які чати отримують кожне замовлення. Попросіть власника додати право в розділі «Співробітники».",
+    // ── Картка бота (ДН-7.1 / 7.10 / 7.11) ────────────────────────────────────
+    botTitle: "Telegram-бот магазину",
+    stateOk: "Працює",
+    stateFailed: "Не відповідає",
+    stateUnconfigured: "Не налаштований",
+    checkedToday: (time: string) => `сьогодні о ${time}`,
+    checkedOn: (date: string, time: string) => `${date} о ${time}`,
+    okTitle: (bot: string) => `Бот @${bot} готовий надсилати`,
+    okText: (when: string) => `Перевірено ${when}, коли сервер запускався.`,
+    failedTitle: "Бот не відповідає — сповіщення не надходять",
+    // `when` — null, коли перевірка ще не відповіла жодного разу.
+    failedText: (when: string | null) =>
+      `${when ? `Перевірка ${when} не вдалася.` : "Перевірка не вдалася."} Це виправляє розробник на сервері; тут нічого натискати не треба. Передайте йому текст нижче.`,
+    failedReasonLabel: "Що відповів Telegram",
+    unconfiguredTitle: "Бота ще не налаштовано",
+    unconfiguredText:
+      "На сервері не задано токен бота, тож підключити чати поки не можна. Це налаштовує розробник — крок «Сповіщення» в посібнику з розгортання.",
+    // ── Чати (ДН-7.1 / 7.9) ───────────────────────────────────────────────────
+    chatsTitle: "Куди надходять сповіщення",
+    chatsCount: (count: number) => countLabel(count, ["чат", "чати", "чатів"]),
+    kindPrivate: "Особистий чат",
+    kindGroup: "Група",
+    // Без роду дієслова: API не знає, хто підключив — він чи вона.
+    chatMeta: (kind: string, date: string, who: string | null) =>
+      who
+        ? `${kind} · підключено ${date} (${who})`
+        : `${kind} · підключено ${date}`,
+    disconnect: "Відключити",
+    disconnectAria: (label: string) => `Відключити «${label}»`,
+    emptyTitle: "Жоден чат не підключено",
+    emptyText:
+      "Про нове замовлення ви дізнаєтесь, лише відкривши адмінку. Підключіть свій Telegram або робочу групу — це дві хвилини.",
+    connect: "Підключити Telegram",
+    sendTest: "Надіслати тестове",
+    lockedHint:
+      "Поки бот не працює, підключати чати й надсилати тестове немає сенсу — кнопки вимкнено.",
+    // ── «Надіслати тестове» (ДН-7.7) ──────────────────────────────────────────
+    testDelivered: "Доставлено",
+    testFailed: (reason: string) => `Не доставлено: ${reason}`,
+    testRevoked: (reason: string) =>
+      `Не доставлено: ${reason} — чат відключено`,
+    testUnknownReason: "Telegram не пояснив причину",
+    testSummary: (delivered: number, total: number) =>
+      `Тестове надіслано в ${delivered} ${pluralUk(delivered, ["чат", "чати", "чатів"])} із ${total}`,
+    testAllDeliveredHint: "Перевірте, що повідомлення прийшло в кожен чат.",
+    testFailedGroupHint: (label: string, reason: string) =>
+      `«${label}»: Telegram відповів «${reason}». Додайте бота в групу знову або відключіть цей чат — інакше туди нічого не дійде.`,
+    testFailedPrivateHint: (label: string, reason: string) =>
+      `«${label}»: Telegram відповів «${reason}». Попросіть власника чату знову натиснути «Старт» у боті або відключіть цей чат — інакше туди нічого не дійде.`,
+    testRevokedHint: (label: string, reason: string) =>
+      `«${label}»: Telegram відповів «${reason}», тож чат відключено. Щоб сповіщення знову туди надходили, підключіть його заново.`,
+    toastTestFailed: "Не вдалося надіслати тестове",
+    toastTestConflict:
+      "Тестове не надіслано: бот не відповідає або жоден чат не підключено.",
+    // ── «Відключити» (ДН-7.8) ─────────────────────────────────────────────────
+    disconnectTitle: (label: string) => `Відключити «${label}»?`,
+    disconnectGroupText: "Сповіщення в цю групу перестануть надходити одразу.",
+    disconnectPrivateText: "Сповіщення в цей чат перестануть надходити одразу.",
+    disconnectOthersOne: (label: string) =>
+      `«${label}» і далі отримуватиме їх.`,
+    disconnectOthersMany: (count: number) =>
+      `Інші ${countLabel(count, ["чат", "чати", "чатів"])} і далі отримуватимуть їх.`,
+    disconnectLast:
+      "Інших чатів немає — про нові замовлення ви дізнаватиметесь лише з адмінки.",
+    disconnectAgainGroup: "Підключити групу знову можна будь-коли.",
+    disconnectAgainPrivate: "Підключити чат знову можна будь-коли.",
+    toastDisconnected: (label: string) => `«${label}» відключено`,
+    toastDisconnectFailed: "Не вдалося відключити чат",
+    // ── Діалог «Підключити Telegram» (ДН-7.3…7.6) ─────────────────────────────
+    dialogTitle: "Підключити Telegram",
+    dialogDescription: "Куди надсилати сповіщення магазину?",
+    tabPrivate: "Мій Telegram",
+    tabGroup: "Робоча група",
+    privateStep1: "Відскануйте код камерою телефона або натисніть кнопку.",
+    privateStep2: (bot: string) =>
+      `У Telegram відкриється чат із ботом @${bot} — натисніть «Старт».`,
+    privateStep3: "Бот напише, що підключився. Готово.",
+    groupStep1: "Відскануйте код телефоном або натисніть кнопку.",
+    groupStep2:
+      "Telegram запропонує вибрати групу — виберіть робочу групу магазину й додайте бота.",
+    groupStep3:
+      "Бот напише в групу, що підключився. Сповіщення бачитимуть усі її учасники.",
+    openPrivate: "Відкрити Telegram",
+    openGroup: "Додати бота в групу",
+    opensInNewTab: "(відкриється в новій вкладці)",
+    qrLabel: "QR-код посилання для Telegram",
+    expiry: (time: string) =>
+      `Посилання одноразове й діє до ${time} — 15 хвилин`,
+    linkLoading: "Створюємо посилання…",
+    waiting:
+      "Чекаємо на «Старт» у Telegram… Вікно можна не закривати — щойно чат підключиться, ви побачите це тут.",
+    linkConflict:
+      "Бот зараз не відповідає, тож посилання не створено. Закрийте вікно — стан бота на сторінці оновиться.",
+    linkError: "Не вдалося створити посилання.",
+    doneTitle: (label: string, kind: string) =>
+      `Підключено: ${label} (${kind})`,
+    doneKindPrivate: "особистий чат",
+    doneKindGroup: "група",
+    doneText:
+      "Бот уже надіслав туди підтвердження. Перевірте, що воно прийшло, — або натисніть «Надіслати тестове».",
+    done: "Готово",
+    // ── «Що приходить» — тексти з telegram/templates API (187A) ───────────────
+    eventsTitle: "Що приходить",
+    eventsHint:
+      "Лише ці три події: на них чекає людина, і іншого сигналу немає. Поштою магазину нічого не дублюємо. Покупці отримують свої листи як і раніше.",
+    previewAria: (event: string) => `Приклад повідомлення: ${event}`,
+    previewOpen: "Відкрити в адмінці",
+    eventOrder: "Нове замовлення",
+    eventOrderHint:
+      "Онлайн-оплата — коли гроші надійшли, а не коли покупець натиснув «Оформити».",
+    previewOrderTitle: "Нове замовлення #A1B2C3D4",
+    previewOrderSum: (sum: string) => `Сума: ${sum} · 2 шт.`,
+    previewOrderDelivery: "Оплата: післяплата · Доставка: Нова Пошта",
+    previewOrderBuyer: "Покупець: Олена Коваль · Київ",
+    eventMessage: "Нове звернення",
+    previewMessageTitle: "Нове повідомлення",
+    previewMessageFrom: "від Андрій",
+    previewMessageSubject: "Тема: Замовлення · Замовлення: #B7E2F019",
+    previewMessageText: "«Чи можна забрати сьогодні після 19:00?»",
+    eventReturn: "Заявка на повернення",
+    previewReturnTitle: "Заявка на повернення",
+    previewReturnOrder: "до замовлення #C33D9A20",
   },
 } as const;
 
