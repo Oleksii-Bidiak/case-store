@@ -81,7 +81,7 @@ export function CartView() {
     const clearsAll = unavailableIds.length === items.length;
     if (clearsAll) focusEmptyAfterCleanup.arm();
     const result = await removeUnavailable.removeAll(unavailableIds);
-    if (result.failed > 0) focusEmptyAfterCleanup.disarm();
+    if (result.failed > 0 || !result.refreshed) focusEmptyAfterCleanup.disarm();
     return result;
   };
 

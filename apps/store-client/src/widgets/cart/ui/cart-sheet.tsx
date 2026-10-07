@@ -64,7 +64,9 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
   const handleRemoveUnavailable = async () => {
     focusAfterCleanup.arm();
     const result = await removeUnavailable.removeAll(unavailableIds);
-    if (result.failed > 0 || result.removed === 0) focusAfterCleanup.disarm();
+    if (result.failed > 0 || result.removed === 0 || !result.refreshed) {
+      focusAfterCleanup.disarm();
+    }
   };
 
   const loading = isInitializing || isLoading;

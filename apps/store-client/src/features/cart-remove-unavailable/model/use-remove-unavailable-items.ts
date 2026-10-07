@@ -10,6 +10,12 @@ import { dict } from "@/shared/config";
 export interface RemoveUnavailableResult {
   removed: number;
   failed: number;
+  /**
+   * The cart was re-read after the removals. When that refetch fails the
+   * cache keeps the old cart, so whatever waits for the cleaned cart (the
+   * focus hand-off) must stand down — or it fires later, on some other change.
+   */
+  refreshed: boolean;
 }
 
 interface UseRemoveUnavailableItemsOptions {
@@ -55,13 +61,14 @@ export function useRemoveUnavailableItems({
     itemIds: readonly string[],
   ): Promise<RemoveUnavailableResult> => {
     if (runningRef.current || itemIds.length === 0) {
-      return { removed: 0, failed: 0 };
+      return { removed: 0, failed: 0, refreshed: false };
     }
     runningRef.current = true;
     setIsPending(true);
 
     let removed = 0;
     let failed = 0;
+    let refreshed = false;
     try {
       for (const itemId of itemIds) {
         try {
@@ -73,7 +80,10 @@ export function useRemoveUnavailableItems({
         }
       }
       // Awaited so the caller resumes with the refreshed cart in the cache.
+      // `invalidateQueries` swallows a failed refetch — the state tells.
       await queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
+      refreshed =
+        queryClient.getQueryState(getGetCartQueryKey())?.status !== "error";
     } finally {
       runningRef.current = false;
       setIsPending(false);
@@ -85,7 +95,7 @@ export function useRemoveUnavailableItems({
     } else {
       toast.success(dict.cart.removeUnavailableDone(removed), options);
     }
-    return { removed, failed };
+    return { removed, failed, refreshed };
   };
 
   return { removeAll, isPending };

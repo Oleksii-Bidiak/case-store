@@ -71,7 +71,9 @@ export function CartSummary({
     if (!onRemoveUnavailable) return;
     focusAfterCleanup.arm();
     const result = await onRemoveUnavailable();
-    if (result.failed > 0 || result.removed === 0) focusAfterCleanup.disarm();
+    if (result.failed > 0 || result.removed === 0 || !result.refreshed) {
+      focusAfterCleanup.disarm();
+    }
   };
 
   const subtotalCents = Math.round(parseFloat(totals.subtotal) * 100);

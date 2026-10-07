@@ -10,6 +10,7 @@ import { server } from "@/shared/test/msw-server";
 import { makeCart, makeCartItem } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
 import { Toaster } from "@/shared/ui";
+import { getGetCartQueryKey } from "@/entities/cart";
 import { CartView } from "./cart-view";
 import { CartSheet } from "./cart-sheet";
 
@@ -202,6 +203,47 @@ describe("CartView — «Прибрати недоступні» (TASK-657)", ()
     ).not.toBeInTheDocument();
     // The same control, now naming what is left — focus stayed on it.
     expect(retry).toHaveFocus();
+  });
+
+  it("does not steal focus later when the cart re-read after the cleanup failed", async () => {
+    const user = userEvent.setup();
+    const calls = setupCart({ withLiveLine: false });
+    const { queryClient } = renderWithProviders(
+      <>
+        <button type="button">Пошук</button>
+        <CartView />
+        <Toaster />
+      </>,
+    );
+
+    const button = await screen.findByRole("button", {
+      name: "Прибрати 3 недоступні товари",
+    });
+    // The lines go, but the one re-read of the cart fails.
+    server.use(
+      http.get(
+        "*/api/cart",
+        () => HttpResponse.json({ message: "boom" }, { status: 500 }),
+        { once: true },
+      ),
+    );
+    await user.click(button);
+    await waitFor(() => expect(calls.deleted).toHaveLength(3));
+    await screen.findByText("Прибрано 3 недоступні товари з кошика");
+
+    // Later the shopper is elsewhere on the page when the cart is read again
+    // in the background (a tab refocus): the empty cart shows, focus stays.
+    const elsewhere = screen.getByRole("button", { name: "Пошук" });
+    elsewhere.focus();
+    await queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
+    const heading = await screen.findByRole("heading", {
+      level: 1,
+      name: dict.cart.emptyHeading,
+    });
+    // Let the commit's effects run — a stale hand-off would fire there.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(heading).not.toHaveFocus();
+    expect(elsewhere).toHaveFocus();
   });
 
   it("moves focus to the empty cart's heading when the cleanup empties it", async () => {
