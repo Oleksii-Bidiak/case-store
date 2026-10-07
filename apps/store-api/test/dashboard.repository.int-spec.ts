@@ -16,6 +16,7 @@ import { lastKyivDays } from '../src/analytics/reports/report-period';
 import { SalesRepository } from '../src/analytics/reports/sales.repository';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { LOW_STOCK_THRESHOLD } from '../src/dashboard/dashboard.types';
+import { SHOP_NEW_ORDER_TYPE } from '../src/notification/shop-notification.types';
 import { PrismaService } from '../src/prisma';
 
 /**
@@ -707,7 +708,7 @@ describe('DashboardRepository (integration)', () => {
       ]) {
         await prisma.notificationOutbox.create({
           data: {
-            type: 'shop-order-created',
+            type: SHOP_NEW_ORDER_TYPE,
             channel: NotificationChannel.TELEGRAM,
             recipientAddress: '-1001234567890',
             payload: {},
