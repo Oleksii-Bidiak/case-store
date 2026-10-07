@@ -19,6 +19,14 @@ import { CategoryRepository } from '../category';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
 import { reorderErrorToHttp } from '../common/reorder';
 import type { Paginated, PaginationMeta } from '../common/pagination';
+import { mapWithConcurrency } from '../common/utils';
+
+/**
+ * How many carousels `resolvePublic` resolves at once (TASK-1894). Each resolution is a
+ * catalog query on the shared Prisma pool; four keeps a cold homepage fast without
+ * letting one page render take the pool over.
+ */
+export const RESOLVE_CONCURRENCY = 4;
 
 /**
  * The admin carousel list is a `Paginated` page even for an unpaginated read: the
@@ -66,19 +74,29 @@ export class CarouselService {
    * Status is NOT checked here: the caller decides what may be shown (a signed preview
    * resolves draft carousels too). Each distinct carousel id is resolved once, so a
    * carousel that two blocks point at costs one resolution, not two.
+   *
+   * The distinct carousels resolve in parallel, at most {@link RESOLVE_CONCURRENCY} at a
+   * time (TASK-1894): on a cold cache a homepage of N carousels used to pay N catalog
+   * queries back to back, while an unbounded fan-out would take N pool connections at
+   * once. The result keeps the INPUT order whatever finishes first.
    */
   async resolvePublic(carousels: readonly Carousel[]): Promise<PublicCarouselEntity[]> {
-    const resolved = new Map<string, PublicProductEntity[]>();
-    const result: PublicCarouselEntity[] = [];
+    const distinct = new Map<string, Carousel>();
     for (const carousel of carousels) {
-      let products = resolved.get(carousel.id);
-      if (!products) {
-        products = await this.resolveProducts(carousel);
-        resolved.set(carousel.id, products);
-      }
-      result.push(PublicCarouselEntity.fromEntity(carousel, products));
+      if (!distinct.has(carousel.id)) distinct.set(carousel.id, carousel);
     }
-    return result;
+
+    const productLists = await mapWithConcurrency(
+      [...distinct.values()],
+      RESOLVE_CONCURRENCY,
+      (carousel) => this.resolveProducts(carousel),
+    );
+    const resolved = new Map<string, PublicProductEntity[]>();
+    [...distinct.keys()].forEach((id, index) => resolved.set(id, productLists[index]));
+
+    return carousels.map((carousel) =>
+      PublicCarouselEntity.fromEntity(carousel, resolved.get(carousel.id) ?? []),
+    );
   }
 
   /**

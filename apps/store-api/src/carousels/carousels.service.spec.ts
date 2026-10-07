@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { CarouselSource, PublishStatus } from '@prisma/client';
 import { CarouselRepository } from './carousels.repository';
-import { CarouselService } from './carousels.service';
+import { CarouselService, RESOLVE_CONCURRENCY } from './carousels.service';
 import { CarouselEntity, CarouselItemEntity, PublicCarouselEntity } from './entities';
 import { ProductService } from '../product/product.service';
 import { ProductListQueryDto } from '../product/dto';
@@ -243,6 +243,35 @@ describe('CarouselService', () => {
 
       expect(result).toHaveLength(2);
       expect(productServiceMock.findAll).toHaveBeenCalledTimes(1);
+    });
+
+    // TASK-1894: distinct carousels resolve in parallel, bounded, in input order.
+    it('resolves at most RESOLVE_CONCURRENCY carousels at once and keeps the input order', async () => {
+      const ids = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5'];
+      const rows = ids.map((id) => ({ ...baseCarousel, id, source: CarouselSource.MANUAL }));
+      let inFlight = 0;
+      let peak = 0;
+      carouselRepositoryMock.findItemIds.mockImplementation(async (id: string) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        // Later carousels finish first.
+        await new Promise((resolve) => setTimeout(resolve, (ids.length - ids.indexOf(id)) * 2));
+        inFlight -= 1;
+        return [{ productId: `p-${id}`, sortOrder: 0 }];
+      });
+      productServiceMock.getCardsByIds.mockImplementation(async ([productId]: string[]) => [
+        { id: productId },
+      ]);
+
+      const result = await service.resolvePublic([...rows, rows[0]]);
+
+      expect(peak).toBe(RESOLVE_CONCURRENCY);
+      expect(carouselRepositoryMock.findItemIds).toHaveBeenCalledTimes(ids.length);
+      expect(result.map((carousel) => carousel.id)).toEqual([...ids, 'c0']);
+      expect(result.map((carousel) => carousel.products[0]?.id)).toEqual([
+        ...ids.map((id) => `p-${id}`),
+        'p-c0',
+      ]);
     });
 
     it('resolves products identically to the public list (one code path)', async () => {
