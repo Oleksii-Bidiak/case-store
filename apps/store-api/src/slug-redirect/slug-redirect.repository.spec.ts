@@ -311,15 +311,18 @@ describe('SlugRedirectRepository', () => {
       expect(calls).toEqual(['updateMany', 'deleteMany']);
     });
 
-    it('writes nothing when the product comes back on its native address', async () => {
-      const { tx, calls } = makeRestoreTx();
+    it('back on its native address, only drops a redirect a later holder left on it', async () => {
+      const { tx, raw, calls } = makeRestoreTx();
 
       await repository.recordRestoreRename(tx, SlugRedirectEntity.PRODUCT, 'native', 'native', {
         deletedAt,
         redirectFrom: true,
       });
 
-      expect(calls).toEqual([]);
+      expect(calls).toEqual(['deleteMany']);
+      expect(raw.slugRedirect.deleteMany).toHaveBeenCalledWith({
+        where: { entity: SlugRedirectEntity.PRODUCT, scope: '', oldSlug: 'native' },
+      });
     });
   });
 });

@@ -1166,7 +1166,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(txMock.product.update).toHaveBeenCalledTimes(1);
     });
 
-    it('records no redirect when the product comes back on its native slug', async () => {
+    it('records no redirect when the tombstone carries no deletion time', async () => {
       await repository.restore('product-1', 'clear-case', null, 'clear-case');
       await repository.restore('product-1', 'clear-case', null);
 
@@ -1204,6 +1204,21 @@ describe('ProductRepository (soft-delete behaviour)', () => {
         );
         // Not the plain rename: that would steal rows a later holder of the address wrote.
         expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+      });
+
+      it('back on the native slug, clears the address without looking for a holder', async () => {
+        await repository.restore('product-1', 'clear-case', null, 'clear-case');
+
+        expect(slugRedirectRepositoryMock.recordRestoreRename).toHaveBeenCalledWith(
+          txMock,
+          SlugRedirectEntity.PRODUCT,
+          'clear-case',
+          'clear-case',
+          { deletedAt, redirectFrom: true },
+        );
+        expect(txMock.product.findFirst).not.toHaveBeenCalledWith(
+          expect.objectContaining({ where: { slug: 'clear-case', deletedAt: null } }),
+        );
       });
 
       it('does not redirect a native address another live product now holds', async () => {

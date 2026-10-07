@@ -238,4 +238,20 @@ describe('Product restore onto a new slug — redirects (integration, TASK-1828)
     expect(await target(native)).toBeNull();
     expect(await target(slug('home-older'))).toBe(native);
   });
+
+  it('back on the native slug, a redirect a later holder left on it is dropped', async () => {
+    const native = slug('home-again');
+    const id = await makeProduct('home-again', native);
+    await softDelete(id, native);
+
+    // A later product lived on the free native address and renamed away from it.
+    const later = await makeProduct('home-later', native);
+    await prisma.product.update({ where: { id: later }, data: { slug: slug('home-later-now') } });
+    await alias(native, slug('home-later-now'));
+
+    await products.restore(id, native, null, native);
+
+    // The restored product lives on `native` again — it must not send it elsewhere.
+    expect(await target(native)).toBeNull();
+  });
 });

@@ -136,7 +136,9 @@ export class SlugRedirectRepository {
    *    the guarded update rewrites only a stale row, the `skipDuplicates` insert only
    *    fills a gap.
    *
-   * Writes nothing when the address does not change.
+   * Back on the native address (`from === to`) only step 2 runs: a later holder of
+   * `from` that renamed away from it left `from → y`, and an entity living on `from`
+   * again must not send its own address to someone else's page.
    */
   async recordRestoreRename(
     tx: Prisma.TransactionClient,
@@ -145,19 +147,21 @@ export class SlugRedirectRepository {
     to: string,
     { deletedAt, redirectFrom }: { deletedAt: Date; redirectFrom: boolean },
   ): Promise<void> {
-    if (from === to) return;
-
-    // Step 1: our own aliases follow us to the new address.
-    await tx.slugRedirect.updateMany({
-      where: { entity, newScope: '', newSlug: from, updatedAt: { lte: deletedAt } },
-      data: { newScope: '', newSlug: to },
-    });
+    if (from !== to) {
+      // Step 1: our own aliases follow us to the new address.
+      await tx.slugRedirect.updateMany({
+        where: { entity, newScope: '', newSlug: from, updatedAt: { lte: deletedAt } },
+        data: { newScope: '', newSlug: to },
+      });
+    }
 
     // Step 2: the address we now live on never redirects (this also drops the self-loop
     // step 1 produces when restoring onto one of our own old aliases).
     await tx.slugRedirect.deleteMany({
       where: { entity, scope: '', oldSlug: to },
     });
+
+    if (from === to) return;
 
     // Step 3: the native address itself, unless it now belongs to someone else.
     if (redirectFrom) {

@@ -1639,6 +1639,7 @@ export class ProductRepository {
    * address, which is then that product's and gets no redirect. Recorded although the
    * product comes back hidden: the redirect is what makes the old links work the moment
    * it is published again (until then the new address 404s like any hidden product).
+   * Back on the native slug, only a redirect a later holder left on it is dropped.
    */
   async restore(
     id: string,
@@ -1664,13 +1665,17 @@ export class ProductRepository {
           data: { deletedAt: null, isActive: false, slug, sku },
         });
 
-        if (tombstone?.deletedAt && nativeSlug !== slug) {
+        if (tombstone?.deletedAt) {
           // The restored row now holds `slug`, so any live holder of the native
-          // address is another product.
-          const nativeHolder = await tx.product.findFirst({
-            where: { slug: nativeSlug, deletedAt: null },
-            select: { id: true },
-          });
+          // address is another product. Back on the native slug there is none, and
+          // the call only drops a redirect a later holder left on it.
+          const nativeHolder =
+            nativeSlug === slug
+              ? null
+              : await tx.product.findFirst({
+                  where: { slug: nativeSlug, deletedAt: null },
+                  select: { id: true },
+                });
           await this.slugRedirectRepository.recordRestoreRename(
             tx,
             SlugRedirectEntity.PRODUCT,
