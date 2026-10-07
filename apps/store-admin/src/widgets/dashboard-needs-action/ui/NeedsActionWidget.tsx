@@ -174,11 +174,14 @@ export function NeedsActionWidget() {
       {/* Nine cards since TASK-1090 (3 × 3); ten with the returns tile
           (TASK-613), which only a `returns:read` session sees. A lone card on
           the last row is the "reads as an afterthought" problem TASK-470 moved
-          away from, so nine lay out 3 × 3 and ten 5 × 2. */}
+          away from, so nine lay out 3 × 3 and ten 5 × 2. Ten wait for `xl`
+          for their five columns: at `lg` beside the sidebar a fifth of the row
+          is ~130px and the labels wrap to three lines, and three columns would
+          leave the tenth card alone — so ten stay 2 × 5 until `xl`. */}
       <div
         className={cn(
           "mt-4 grid grid-cols-2 gap-4",
-          canReadReturns ? "lg:grid-cols-5" : "lg:grid-cols-3",
+          canReadReturns ? "xl:grid-cols-5" : "lg:grid-cols-3",
         )}
       >
         <NeedsActionCard

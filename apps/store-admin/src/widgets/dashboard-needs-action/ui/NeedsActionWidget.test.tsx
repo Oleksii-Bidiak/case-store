@@ -697,7 +697,8 @@ describe("NeedsActionWidgetSkeleton (TASK-1037)", () => {
       "[data-slot='needs-action-skeleton']",
     );
     expect(cards).toHaveLength(10);
-    expect(cards[0].parentElement).toHaveClass("lg:grid-cols-5");
+    expect(cards[0].parentElement).toHaveClass("xl:grid-cols-5");
+    expect(cards[0].parentElement).not.toHaveClass("lg:grid-cols-5");
   });
 
   it("draws nine cards in three columns without it", () => {
