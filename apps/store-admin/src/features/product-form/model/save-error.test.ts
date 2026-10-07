@@ -20,6 +20,18 @@ describe("productSaveErrorMessage", () => {
     ).toBe(dict.productForm.errorCategoryBusy);
   });
 
+  it("words a 400 PRODUCT_CATEGORY_GONE itself — pick another category", () => {
+    expect(
+      productSaveErrorMessage(
+        apiError(400, {
+          error: "PRODUCT_CATEGORY_GONE",
+          message: "Category not found",
+          statusCode: 400,
+        }),
+      ),
+    ).toBe(dict.productForm.errorCategoryGone);
+  });
+
   it("keeps the server's own words for any other refusal (TASK-397)", () => {
     expect(
       productSaveErrorMessage(

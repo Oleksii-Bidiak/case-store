@@ -14,13 +14,18 @@ import { dict } from "@/shared/config";
  *   save can simply be repeated, which the API's English text does not say to
  *   a Ukrainian operator. The STATUS decides, the code refines
  *   (`api-error-message.ts`).
+ * - 400 `PRODUCT_CATEGORY_GONE` (TASK-1831) — the picked category was deleted
+ *   while the form was open; the API's «Category not found» says neither that
+ *   nor what to do.
  */
 export function productSaveErrorMessage(error: unknown): string | undefined {
-  if (
-    apiErrorStatus(error) === 409 &&
-    apiErrorCode(error) === "PRODUCT_CATEGORY_BUSY"
-  ) {
+  const status = apiErrorStatus(error);
+  const code = apiErrorCode(error);
+  if (status === 409 && code === "PRODUCT_CATEGORY_BUSY") {
     return dict.productForm.errorCategoryBusy;
+  }
+  if (status === 400 && code === "PRODUCT_CATEGORY_GONE") {
+    return dict.productForm.errorCategoryGone;
   }
   return apiErrorMessage(error);
 }

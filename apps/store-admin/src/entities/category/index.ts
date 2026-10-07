@@ -23,6 +23,7 @@ export {
   getAdminCategoryControllerFindByIdQueryKey,
   getCategoryControllerGetAdminTreeQueryKey,
   getCategoryControllerGetAdminTreeQueryOptions,
+  getCategoryControllerGetCategoryTreeQueryKey,
 } from "@/shared/api";
 
 export {

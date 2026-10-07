@@ -22,6 +22,7 @@ import {
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   getAdminCategoryControllerFindByIdQueryKey,
   getCategoryControllerGetAdminTreeQueryKey,
+  getCategoryControllerGetCategoryTreeQueryKey,
   useAdminCategoryControllerDelete,
   useAdminCategoryControllerFindById,
   useCategoryControllerGetAdminTree,
@@ -29,7 +30,8 @@ import {
   type CategoryDeletionResultEntity,
   type CategoryTreeItem,
 } from "@/entities/category";
-import { getProductControllerAdminFindAllQueryKey } from "@/entities/product";
+import { getAdminCarouselControllerFindAllQueryKey } from "@/entities/carousel";
+import { getProductControllerFindByIdQueryKey } from "@/entities/product";
 import { useAuth } from "@/entities/session";
 import { PERM } from "@/entities/permission";
 import { MAX_TREE_LEVELS, descendantsOf } from "@/shared/lib/sortable-tree";
@@ -78,6 +80,11 @@ const d = dict.categories.delete;
 const NAMED_SUBCATEGORIES = 5;
 /** How many carousel names the carousels row spells out (TASK-1776). */
 const NAMED_CAROUSELS = 3;
+
+/** The reads a delete changes beyond the tree — matched by their URL key. */
+const PRODUCT_ADMIN_URL = getProductControllerFindByIdQueryKey("")[0];
+/** The carousel list (any params) and every carousel card. */
+const CAROUSELS_URL = getAdminCarouselControllerFindAllQueryKey()[0];
 
 export interface CategoryDeleteDialogProps {
   /** The category to delete; `null` closes the dialog. */
@@ -149,7 +156,11 @@ function CategoryDeleteContent({
   const detail = useAdminCategoryControllerFindById(categoryId, {
     query: { staleTime: 0, refetchOnMount: "always" },
   });
-  const treeQuery = useCategoryControllerGetAdminTree();
+  // The same for the tree: the branch kept out of the pickers is computed
+  // from it, so a subcategory a colleague added a minute ago must be in it.
+  const treeQuery = useCategoryControllerGetAdminTree({
+    query: { refetchOnMount: "always" },
+  });
   const items = useMemo(
     () => flattenAdminCategoryTree(treeQuery.data?.data),
     [treeQuery.data],
@@ -157,7 +168,13 @@ function CategoryDeleteContent({
   const remove = useAdminCategoryControllerDelete();
   const contentId = useId();
 
-  const category = detail.data?.data;
+  // `refetchOnMount` does not take the cached card off the screen: until a
+  // read made for THIS dialog lands, its numbers are not shown and the
+  // confirm button does not exist (the loading or error state stands instead).
+  // A failed later re-read keeps the numbers this dialog already got.
+  const [cachedAt] = useState(() => detail.dataUpdatedAt);
+  const category =
+    detail.dataUpdatedAt > cachedAt ? detail.data?.data : undefined;
   const impact = category?.deletionImpact;
   const name = category?.name ?? items.find((i) => i.id === categoryId)?.label;
   const gone = apiErrorStatus(detail.error) === 404;
@@ -201,7 +218,11 @@ function CategoryDeleteContent({
           slug={category.slug}
           impact={impact}
           items={items}
-          treeLoading={treeQuery.isLoading}
+          // A cached tree waits for the re-read made on opening, like the numbers.
+          treeLoading={
+            treeQuery.isLoading ||
+            (treeQuery.isFetching && !treeQuery.isFetchedAfterMount)
+          }
           // Only a failure with nothing cached is a dead end: a failed
           // background refetch still leaves the last good tree to pick from.
           treeFailed={treeQuery.isError && !treeQuery.data}
@@ -517,10 +538,22 @@ function CategoryDeleteForm({
                 getAdminCategoryControllerFindByIdQueryKey(resultTargetId),
             });
           }
-          // The products did not change — their category did, and the list
-          // shows it in a column and filters by it.
+          // The products did not change — their category did: the list shows
+          // it in a column and filters by it, and a cached card would save the
+          // product back with a tombstoned category id.
           void queryClient.invalidateQueries({
-            queryKey: getProductControllerAdminFindAllQueryKey(),
+            // `/api/products/admin/` — the list (`…/list`) and every card.
+            predicate: ({ queryKey: [url] }) =>
+              typeof url === "string" && url.startsWith(PRODUCT_ADMIN_URL),
+          });
+          // The carousels that pointed into the branch now point at the target
+          // (TASK-1776); the carousel table names them from the public tree.
+          void queryClient.invalidateQueries({
+            predicate: ({ queryKey: [url] }) =>
+              typeof url === "string" && url.startsWith(CAROUSELS_URL),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: getCategoryControllerGetCategoryTreeQueryKey(),
           });
 
           toastResult({
@@ -930,7 +963,12 @@ function CategoryDeleteForm({
         </Callout>
       ) : null}
 
-      {!isEmpty && target !== null ? (
+      {/* Templates speak to products: a branch of empty subcategories (or
+          one only carousels point into) still needs a target, but has no
+          product a template could reshape. */}
+      {!isEmpty &&
+      target !== null &&
+      impact.productCount + impact.deletedProductCount > 0 ? (
         <Callout variant="warning">{d.templatesWarning(target)}</Callout>
       ) : null}
 

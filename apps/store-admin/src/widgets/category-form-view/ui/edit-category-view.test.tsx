@@ -319,15 +319,14 @@ describe("EditCategoryView — CategoriesProposal КТ5 (wave 198)", () => {
     );
   });
 
-  it("«⋯» offers the category on the site, in a new tab", async () => {
+  it("offers the category on the site as a button, in a new tab (ДН-2.12)", async () => {
     await renderAndWaitForForm(makeCategory(true));
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.categories.headerMenuAria }),
-    );
-    expect(
-      await screen.findByRole("menuitem", { name: dict.categories.openOnSite }),
-    ).toHaveAttribute("href", `${STOREFRONT_URL}/categories/chohly`);
+    const link = screen.getByRole("link", {
+      name: dict.categories.openOnSite,
+    });
+    expect(link).toHaveAttribute("href", `${STOREFRONT_URL}/categories/chohly`);
+    expect(link).toHaveAttribute("target", "_blank");
   });
 
   it("puts every section in one form: characteristics and add-on services included", async () => {

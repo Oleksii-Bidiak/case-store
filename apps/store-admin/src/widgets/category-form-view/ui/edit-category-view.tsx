@@ -17,11 +17,12 @@ import {
   CategoryAddonTemplatePicker,
   useCategoryAddonTemplate,
 } from "@/features/category-addon-template-picker";
+import { ExternalLinkIcon } from "lucide-react";
 import {
   AdminFormSkeleton,
   Badge,
+  Button,
   Callout,
-  RowActionsMenu,
   Separator,
   useConfirmDialog,
 } from "@/shared/ui";
@@ -57,7 +58,8 @@ interface EditCategoryViewProps {
  *
  * Header: «← Категорії», the name, the SITE status («Показується / Приховано»,
  * «через батьківську» when an ancestor hides it), the counts and the public
- * address, and «⋯». Body: one sectioned form with ONE sticky «Зберегти».
+ * address, «Відкрити на сайті» and «Видалити…». Body: one sectioned form with
+ * ONE sticky «Зберегти».
  *
  * The save runs the sections in a FIXED order and stops at the first that
  * fails, saying what did save:
@@ -158,17 +160,20 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
           </div>
           {category ? (
             <div className="flex shrink-0 items-center gap-2">
-              <RowActionsMenu
-                label={dict.categories.headerMenuAria}
-                className="size-9 border"
-                items={[
-                  {
-                    label: dict.categories.openOnSite,
-                    href: `${STOREFRONT_URL}/categories/${category.slug}`,
-                    newTab: true,
-                  },
-                ]}
-              />
+              {/* ДН-2.12: «Відкрити на сайті» is a visible button, as on the
+                  page card — not tucked into a «⋯» with nothing else in it. */}
+              <Button asChild variant="outline">
+                <a
+                  href={`${STOREFRONT_URL}/categories/${category.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLinkIcon aria-hidden="true" />
+                  <span className="max-md:sr-only">
+                    {dict.categories.openOnSite}
+                  </span>
+                </a>
+              </Button>
               {/* ДН-2.12: the destructive action last, outlined in red, and
                   only for a session holding `categories:delete`. */}
               <CategoryDeleteAction

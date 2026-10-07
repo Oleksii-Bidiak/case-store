@@ -15,9 +15,11 @@ export type DeletionMode = "existing" | "new" | "none";
  * «has a code» proves nothing. The codes are the stable ones from the API's
  * `category.errors.ts` — the strings are pinned there, not here.
  *
- * Every text ends with «Нічого не змінилося»: the delete is ONE transaction
+ * Every refusal ends with «Нічого не змінилося»: the delete is ONE transaction
  * (TASK-652), so a refusal really did leave the tree, the products and the
- * carousels as they were — and the dialog keeps the operator's choice.
+ * carousels as they were — and the dialog keeps the operator's choice. No
+ * answer at all (or a 5xx) is not a refusal: the transaction may have
+ * committed before the answer was lost, so that text says so instead.
  */
 export function deletionErrorMessage(
   error: unknown,
@@ -58,16 +60,28 @@ export function deletionErrorMessage(
       return d.errorTargetHidden(target);
     }
   }
+  if (deletionOutcomeUnknown(error)) return d.errorOutcomeUnknown;
   return d.errorGeneric;
+}
+
+/** No HTTP answer, or the server failed mid-way: the delete may have happened. */
+function deletionOutcomeUnknown(error: unknown): boolean {
+  const status = apiErrorStatus(error);
+  return status === undefined || status >= 500;
 }
 
 /**
  * Refusals after which the dialog's own numbers may be out of date: the
- * category gained products (REQUIRED), the tree moved under it, or the target
- * was hidden (TASK-1837 — the re-read tree then shows the warning). The caller
- * re-reads the preview and the tree — WITHOUT touching the operator's choice.
+ * category gained products (REQUIRED), the tree moved under it, the target
+ * was hidden (TASK-1837 — the re-read tree then shows the warning), the
+ * category itself is already gone (any 404), or the outcome is unknown. The
+ * caller re-reads the preview and the tree — WITHOUT touching the operator's
+ * choice — so a branch someone else deleted leaves the tree under the dialog.
  */
 export function deletionErrorIsStale(error: unknown): boolean {
+  if (apiErrorStatus(error) === 404 || deletionOutcomeUnknown(error)) {
+    return true;
+  }
   const code = apiErrorCode(error);
   return (
     code === "CATEGORY_MOVE_TARGET_REQUIRED" ||

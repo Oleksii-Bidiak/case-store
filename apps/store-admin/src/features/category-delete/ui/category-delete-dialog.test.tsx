@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { QueryClient } from "@tanstack/react-query";
 import { http, HttpResponse, delay } from "msw";
 import {
   renderWithProviders,
@@ -15,8 +16,16 @@ import {
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   getAdminCategoryControllerFindByIdQueryKey,
   getCategoryControllerGetAdminTreeQueryKey,
+  getCategoryControllerGetCategoryTreeQueryKey,
 } from "@/entities/category";
-import { getProductControllerAdminFindAllQueryKey } from "@/entities/product";
+import {
+  getProductControllerAdminFindAllQueryKey,
+  getProductControllerFindByIdQueryKey,
+} from "@/entities/product";
+import {
+  getAdminCarouselControllerFindAllQueryKey,
+  getAdminCarouselControllerFindByIdQueryKey,
+} from "@/entities/carousel";
 import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { CategoryDeleteDialog } from "./category-delete-dialog";
 
@@ -218,6 +227,7 @@ const DELETE_ONLY = { permissions: ["categories:delete"] };
 function renderDialog(
   categoryId: string | null = HEAD,
   auth: RenderWithProvidersOptions["auth"] = ADMIN,
+  queryClient?: QueryClient,
 ) {
   const onOpenChange = jest.fn();
   const onDeleted = jest.fn();
@@ -227,7 +237,7 @@ function renderDialog(
       onOpenChange={onOpenChange}
       onDeleted={onDeleted}
     />,
-    { auth },
+    { auth, queryClient },
   );
   return { ...result, onOpenChange, onDeleted };
 }
@@ -457,6 +467,107 @@ describe("CategoryDeleteDialog — the server's numbers, never guessed", () => {
   });
 });
 
+describe("CategoryDeleteDialog — read afresh on opening (review of 185 U)", () => {
+  /** The app's own default: a cached read stays «fresh» for five minutes. */
+  const appClient = () =>
+    new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, staleTime: 5 * 60_000 },
+        mutations: { retry: false },
+      },
+    });
+
+  it("never offers to confirm on the cached numbers of the card the operator came from", async () => {
+    const queryClient = appClient();
+    queryClient.setQueryData(
+      getAdminCategoryControllerFindByIdQueryKey(HEAD),
+      detail(HEAD, { ...HEAD_IMPACT, productCount: 3 }),
+    );
+    let answer: () => void = () => {};
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    server.use(
+      http.get("*/api/categories/admin/tree", () =>
+        HttpResponse.json({ data: TREE }),
+      ),
+      http.get("*/api/admin/categories/:id", async ({ params }) => {
+        await answered;
+        return HttpResponse.json(detail(params.id as string, HEAD_IMPACT));
+      }),
+    );
+    renderDialog(HEAD, ADMIN, queryClient);
+
+    expect(await screen.findByText(d.loading)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Видалити/ }),
+    ).not.toBeInTheDocument();
+
+    answer();
+    expect(
+      await screen.findByRole("button", {
+        name: "Видалити й перенести 15 товарів",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps out of the picker a subcategory added since the tree was cached", async () => {
+    const user = userEvent.setup();
+    const queryClient = appClient();
+    queryClient.setQueryData(getCategoryControllerGetAdminTreeQueryKey(), {
+      data: TREE,
+    });
+    // Since then a colleague moved «Аудіоаксесуари» under «Навушники».
+    const moved = [
+      node(HEAD, "Навушники", "headphones", null, 1, [
+        node(TWS, "Бездротові вкладиші (TWS)", "tws", HEAD, 2),
+        node(WIRED, "Дротові", "wired", HEAD, 2),
+        node(AUDIO, "Аудіоаксесуари", "audio-accessories", HEAD, 2),
+      ]),
+      node(ACC, "Аксесуари", "accessories", null, 1),
+      node(PIXEL, "Чохли для Pixel", "pixel-cases", null, 1),
+    ];
+    stub();
+    server.use(
+      http.get("*/api/categories/admin/tree", () => {
+        treeGets += 1;
+        return HttpResponse.json({ data: moved });
+      }),
+    );
+    renderDialog(HEAD, ADMIN, queryClient);
+    await ready();
+
+    await waitFor(() => expect(treeGets).toBeGreaterThan(0));
+    await user.click(targetBox());
+    await waitFor(() => {
+      expect(
+        screen.getByRole("option", { name: optionName("Аксесуари") }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("option", { name: optionName("Аудіоаксесуари") }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("says nothing about templates when the branch holds no product", async () => {
+    const user = userEvent.setup();
+    stub({
+      impacts: {
+        [HEAD]: {
+          ...EMPTY_IMPACT,
+          // Empty subcategories still need a target — but nothing to reshape.
+          subcategoryCount: 2,
+        },
+      },
+    });
+    renderDialog();
+    await ready();
+    await pickTarget(user, "Аудіоаксесуари");
+
+    expect(
+      screen.queryByText(d.templatesWarning("«Аудіоаксесуари»")),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("CategoryDeleteDialog — the carousels by name (TASK-1776)", () => {
   const carousels = (names: string[]) =>
     names.map((name, i) => ({ id: `c-${i}`, name }));
@@ -628,10 +739,27 @@ describe("CategoryDeleteDialog — the target picker", () => {
       getCategoryControllerGetAdminTreeQueryKey(),
       getAdminCategoryControllerFindAllWithProductCountQueryKey(),
       getAdminCategoryControllerFindByIdQueryKey(AUDIO),
-      getProductControllerAdminFindAllQueryKey(),
+      getCategoryControllerGetCategoryTreeQueryKey(),
     ]) {
       expect(keys).toContain(JSON.stringify(key));
     }
+    // Review of 185 U: what the move changed beyond the tree — the product
+    // list AND every cached product card (it would save a tombstoned category
+    // back), the carousel list and every carousel card.
+    const predicates = invalidate.mock.calls
+      .map(([filters]) => filters?.predicate)
+      .filter((p): p is NonNullable<typeof p> => p !== undefined);
+    const hit = (queryKey: readonly unknown[]) =>
+      predicates.some((p) => p({ queryKey } as never));
+    for (const key of [
+      getProductControllerAdminFindAllQueryKey({ page: 2 } as never),
+      getProductControllerFindByIdQueryKey("p-1"),
+      getAdminCarouselControllerFindAllQueryKey(),
+      getAdminCarouselControllerFindByIdQueryKey("c-1"),
+    ]) {
+      expect(hit(key)).toBe(true);
+    }
+    expect(hit(["/api/admin/brands"])).toBe(false);
 
     expect(successToast).toHaveBeenCalledTimes(1);
     const [message, options] = successToast.mock.calls[0];
@@ -1322,7 +1450,9 @@ describe("CategoryDeleteDialog — refusals keep the choice (ДН-2.8)", () => {
     ],
     // An uncoded 404 is the category itself: someone deleted it first.
     ["category itself gone", 404, "Not Found", d.goneError],
-    ["anything else", 500, "Internal Server Error", d.errorGeneric],
+    ["anything else", 422, "Unprocessable Entity", d.errorGeneric],
+    // No promise that nothing changed: the transaction may have committed.
+    ["a server failure", 500, "Internal Server Error", d.errorOutcomeUnknown],
   ];
 
   /** Answer every DELETE with this refusal. */
@@ -1339,6 +1469,15 @@ describe("CategoryDeleteDialog — refusals keep the choice (ДН-2.8)", () => {
       400,
       "CATEGORY_MOVE_TARGET_REQUIRED",
       d.errorTargetRequired,
+    ],
+    // Review of 185 U: someone else deleted it — the tree under the dialog
+    // must lose the branch, not keep a ghost row for five minutes.
+    ["404 category itself gone", 404, "Not Found", d.goneError],
+    [
+      "500 outcome unknown",
+      500,
+      "Internal Server Error",
+      d.errorOutcomeUnknown,
     ],
   ] as const)(
     "%s re-reads the tree and the numbers, keeping the operator's choice",

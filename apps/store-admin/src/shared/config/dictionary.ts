@@ -1245,6 +1245,9 @@ export const dict = {
     // than a save may wait. Nothing was written; the same save can be repeated.
     errorCategoryBusy:
       "Категорії саме змінюються — спробуйте зберегти ще раз за мить. Нічого не змінилося.",
+    // 400 PRODUCT_CATEGORY_GONE: the picked category was deleted meanwhile.
+    errorCategoryGone:
+      "Вибраної категорії вже немає — її щойно видалили. Виберіть іншу й збережіть ще раз. Нічого не змінилося.",
   },
 
   // --- Categories (TASK-115) --------------------------------------------------
@@ -1417,7 +1420,6 @@ export const dict = {
       subcategories > 0
         ? `${countLabel(products, ["товар", "товари", "товарів"])} у ${countLabel(subcategories, ["підкатегорії", "підкатегоріях", "підкатегоріях"])}`
         : countLabel(products, ["товар", "товари", "товарів"]),
-    headerMenuAria: "Дії з категорією",
     openOnSite: "Відкрити на сайті",
     // One «Зберегти» saves the sections in order and stops at the first that
     // fails — saying what DID save, so nobody re-enters it.
@@ -1456,8 +1458,8 @@ export const dict = {
       targetEmpty: "Такої категорії немає.",
       targetExcluded: (name: string, hasChildren: boolean) =>
         hasChildren
-          ? `Категорія «${name}» та її підкатегорії тут не показуються: переносити товари в те, що видаляється, не можна.`
-          : `Категорія «${name}» тут не показується: переносити товари в те, що видаляється, не можна.`,
+          ? `«${name}» та їхні підкатегорії тут не показуються: переносити товари в те, що видаляється, не можна.`
+          : `«${name}» тут не показується: переносити товари в те, що видаляється, не можна.`,
       targetRequired: "Виберіть категорію, куди перенести товари.",
       newName: "Назва нової категорії",
       newNameHint: (slug: string) =>
@@ -1470,7 +1472,7 @@ export const dict = {
       newParent: "Де розмістити",
       newParentRoot: "Корінь каталогу",
       newParentHint: (name: string) =>
-        `Батьком не може бути категорія «${name}» чи її підкатегорії.`,
+        `Батьком не може бути «${name}» чи їхні підкатегорії.`,
       // How the target reads inside a sentence.
       targetExisting: (name: string) => `«${name}»`,
       targetNewRoot: (name: string) => `«${name}» (нова, у корені каталогу)`,
@@ -1544,6 +1546,10 @@ export const dict = {
       errorTargetRequired:
         "У категорії щойно зʼявилися товари, підкатегорії чи каруселі — їх треба кудись перенести. Виберіть, куди. Нічого не змінилося.",
       errorGeneric: "Спробуйте ще раз. Нічого не змінилося.",
+      // No answer or a 5xx: the transaction may have committed before the
+      // answer was lost — the one refusal that cannot promise «nothing changed».
+      errorOutcomeUnknown:
+        "Сервер не відповів, тож видалення могло й відбутися. Ми оновили дерево — перевірте його, перш ніж пробувати ще раз.",
       // ДН-2.11
       toastDone: (name: string) => `Категорію «${name}» видалено.`,
       toastMoved: (name: string, count: number, target: string) =>
