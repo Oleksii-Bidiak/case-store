@@ -21,11 +21,11 @@ const row = {
 const homeBlock = {
   findMany: jest.fn(),
   findUnique: jest.fn(),
-  aggregate: jest.fn(),
+  findUniqueOrThrow: jest.fn(),
   create: jest.fn(),
   update: jest.fn(),
   updateMany: jest.fn(),
-  delete: jest.fn(),
+  deleteMany: jest.fn(),
 };
 const homeBlockTab = { deleteMany: jest.fn(), createMany: jest.fn() };
 const tx = { homeBlock, homeBlockTab, $executeRaw: jest.fn() };
@@ -66,28 +66,52 @@ describe('HomeBlockRepository (TASK-661)', () => {
     expect(homeBlock.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: {} }));
   });
 
-  it('appends under the page lock: lock BEFORE the max read, max + 1, tabs in order', async () => {
-    homeBlock.aggregate.mockResolvedValue({ _max: { sortOrder: 8 } });
+  const newBlock = {
+    type: HomeBlockType.CAROUSEL,
+    title: null,
+    carouselId: 'c1',
+    tabCarouselIds: [] as string[],
+    status: PublishStatus.DRAFT,
+    publishedAt: null,
+    scheduledAt: null,
+  };
+
+  /** The sortOrder writes the renumbering made, as `[id, sortOrder]`. */
+  const sortOrderWrites = () =>
+    homeBlock.updateMany.mock.calls.map(
+      ([args]: [{ where: { id: string }; data: { sortOrder: number } }]) => [
+        args.where.id,
+        args.data.sortOrder,
+      ],
+    );
+
+  it('appends under the page lock: lock BEFORE the page read, slot = n, tabs in order', async () => {
+    homeBlock.findMany.mockResolvedValue([
+      { id: 'a', sortOrder: 0 },
+      { id: 'b', sortOrder: 1 },
+    ]);
 
     await repository.create({
+      ...newBlock,
       type: HomeBlockType.TABS,
       title: 'X',
       carouselId: null,
       tabCarouselIds: ['a', 'b'],
-      status: PublishStatus.DRAFT,
-      publishedAt: null,
-      scheduledAt: null,
     });
 
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
-      homeBlock.aggregate.mock.invocationCallOrder[0],
+      homeBlock.findMany.mock.invocationCallOrder[0],
     );
+    expect(homeBlock.findMany).toHaveBeenCalledWith({
+      select: { id: true, sortOrder: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    });
     expect(homeBlock.updateMany).not.toHaveBeenCalled();
     expect(homeBlock.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          sortOrder: 9,
+          sortOrder: 2,
           tabs: {
             create: [
               { carouselId: 'a', sortOrder: 0 },
@@ -99,42 +123,57 @@ describe('HomeBlockRepository (TASK-661)', () => {
     );
   });
 
-  it('inserts at a position by moving every later block down one, under the same lock', async () => {
-    homeBlock.aggregate.mockResolvedValue({ _max: { sortOrder: 8 } });
+  // W3: `position` is an index into the page, whatever the stored numbers are.
+  it('inserts at a 0-based INDEX of the page order, not at a raw sortOrder, and renumbers densely', async () => {
+    // Gaps and a tie, as an old page could carry them.
+    homeBlock.findMany.mockResolvedValue([
+      { id: 'a', sortOrder: 0 },
+      { id: 'b', sortOrder: 5 },
+      { id: 'c', sortOrder: 5 },
+      { id: 'd', sortOrder: 9 },
+    ]);
+    homeBlock.create.mockResolvedValue({ ...row, id: 'new' });
 
-    await repository.create({
-      type: HomeBlockType.CAROUSEL,
-      title: null,
-      carouselId: 'c1',
-      tabCarouselIds: [],
-      position: 4,
-      status: PublishStatus.PUBLISHED,
-      publishedAt: null,
-      scheduledAt: null,
-    });
+    await repository.create({ ...newBlock, position: 2 });
 
-    expect(homeBlock.updateMany).toHaveBeenCalledWith({
-      where: { sortOrder: { gte: 4 } },
-      data: { sortOrder: { increment: 1 } },
-    });
     expect(homeBlock.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ sortOrder: 4 }) }),
+      expect.objectContaining({ data: expect.objectContaining({ sortOrder: 2 }) }),
     );
+    // a stays at 0, new is created AT 2; only the rows off their index are written.
+    expect(sortOrderWrites()).toEqual([
+      ['b', 1],
+      ['c', 3],
+      ['d', 4],
+    ]);
+  });
+
+  it('inserts at position 0 as the first block', async () => {
+    homeBlock.findMany.mockResolvedValue([
+      { id: 'a', sortOrder: 0 },
+      { id: 'b', sortOrder: 1 },
+    ]);
+    homeBlock.create.mockResolvedValue({ ...row, id: 'new' });
+
+    await repository.create({ ...newBlock, position: 0 });
+
+    expect(homeBlock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ sortOrder: 0 }) }),
+    );
+    expect(sortOrderWrites()).toEqual([
+      ['a', 1],
+      ['b', 2],
+    ]);
   });
 
   it('treats a position past the end as an append', async () => {
-    homeBlock.aggregate.mockResolvedValue({ _max: { sortOrder: 2 } });
+    homeBlock.findMany.mockResolvedValue([
+      { id: 'a', sortOrder: 0 },
+      { id: 'b', sortOrder: 1 },
+      { id: 'c', sortOrder: 2 },
+    ]);
+    homeBlock.create.mockResolvedValue({ ...row, id: 'new' });
 
-    await repository.create({
-      type: HomeBlockType.CAROUSEL,
-      title: null,
-      carouselId: 'c1',
-      tabCarouselIds: [],
-      position: 40,
-      status: PublishStatus.DRAFT,
-      publishedAt: null,
-      scheduledAt: null,
-    });
+    await repository.create({ ...newBlock, position: 40 });
 
     expect(homeBlock.updateMany).not.toHaveBeenCalled();
     expect(homeBlock.create).toHaveBeenCalledWith(
@@ -142,9 +181,19 @@ describe('HomeBlockRepository (TASK-661)', () => {
     );
   });
 
-  it('replaces the tab list in the same transaction as the block edit', async () => {
+  it('replaces the tab list under the page lock, AFTER writing the block row', async () => {
+    homeBlock.findUniqueOrThrow.mockResolvedValue(row);
+
     await repository.update('block', { tabCarouselIds: ['b', 'a'] });
 
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      homeBlockTab.deleteMany.mock.invocationCallOrder[0],
+    );
+    // The block row first: a block deleted underneath answers P2025 (404), not an FK error.
+    expect(homeBlock.update.mock.invocationCallOrder[0]).toBeLessThan(
+      homeBlockTab.deleteMany.mock.invocationCallOrder[0],
+    );
     expect(homeBlockTab.deleteMany).toHaveBeenCalledWith({ where: { homeBlockId: 'block' } });
     expect(homeBlockTab.createMany).toHaveBeenCalledWith({
       data: [
@@ -154,9 +203,58 @@ describe('HomeBlockRepository (TASK-661)', () => {
     });
   });
 
-  it('leaves the tabs alone when the edit does not name them', async () => {
+  it('leaves the tabs and the lock alone when the edit does not name them', async () => {
+    homeBlock.findUniqueOrThrow.mockResolvedValue(row);
+
     await repository.update('block', { title: 'Y' });
+
     expect(homeBlockTab.deleteMany).not.toHaveBeenCalled();
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('never writes null for a field it was handed as null (defence in depth)', async () => {
+    homeBlock.findUniqueOrThrow.mockResolvedValue(row);
+
+    await repository.update('block', {
+      title: null,
+      carouselId: null,
+      tabCarouselIds: null,
+    } as unknown as Parameters<HomeBlockRepository['update']>[1]);
+
+    expect(homeBlock.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ title: undefined, carouselId: undefined }),
+      }),
+    );
+    expect(homeBlockTab.deleteMany).not.toHaveBeenCalled();
+  });
+
+  // W3: delete compacts the page so `position` and the stored order agree.
+  it('deletes under the page lock and compacts the page to 0..n-1', async () => {
+    homeBlock.deleteMany.mockResolvedValue({ count: 1 });
+    homeBlock.findMany.mockResolvedValue([
+      { id: 'a', sortOrder: 0 },
+      { id: 'c', sortOrder: 2 },
+      { id: 'd', sortOrder: 3 },
+    ]);
+
+    await expect(repository.delete('b')).resolves.toBe(true);
+
+    expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      homeBlock.deleteMany.mock.invocationCallOrder[0],
+    );
+    expect(homeBlock.deleteMany).toHaveBeenCalledWith({ where: { id: 'b' } });
+    expect(sortOrderWrites()).toEqual([
+      ['c', 1],
+      ['d', 2],
+    ]);
+  });
+
+  it('reports a block that was already gone instead of throwing', async () => {
+    homeBlock.deleteMany.mockResolvedValue({ count: 0 });
+
+    await expect(repository.delete('gone')).resolves.toBe(false);
+    expect(homeBlock.findMany).not.toHaveBeenCalled();
   });
 
   it('flips due SCHEDULED blocks live', async () => {

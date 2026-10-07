@@ -3,16 +3,16 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
-  IsOptional,
   IsString,
   IsUUID,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { PublishFieldsDto } from '../../publishing';
 import { MAX_HOME_BLOCK_TABS } from './create-home-block.dto';
+import { HomeBlockPublishFieldsDto, whenSent } from './home-block-publish-fields.dto';
 
 /** Trim leading/trailing whitespace from string inputs (leave non-strings as-is). */
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -23,15 +23,21 @@ const trim = ({ value }: { value: unknown }): unknown =>
  * fields are written. The type is not sent (it cannot change), so the service checks
  * each field against the STORED type: `carouselId` only for CAROUSEL, `title` / `tabs`
  * only for TABS (400 otherwise). `tabs` REPLACES the whole tab list, in the order
- * given. Publish control (show / draft / schedule) comes from {@link PublishFieldsDto}.
+ * given. Publish control (show / draft / schedule) comes from
+ * {@link HomeBlockPublishFieldsDto}.
+ *
+ * Every field is validated whenever it is SENT (`@ValidateIf(whenSent)`, not
+ * `@IsOptional()`): `null` is a 400, never "leave as is". With `@IsOptional()` a
+ * `{ tabs: null }` reached the repository and answered 500, and a `{ carouselId: null }`
+ * silently orphaned the block.
  */
-export class UpdateHomeBlockDto extends PublishFieldsDto {
+export class UpdateHomeBlockDto extends HomeBlockPublishFieldsDto {
   @ApiProperty({
     description: 'Point a CAROUSEL block at another carousel (CAROUSEL only)',
     example: '550e8400-e29b-41d4-a716-446655440000',
     required: false,
   })
-  @IsOptional()
+  @ValidateIf(whenSent)
   @IsUUID('loose', { message: 'carouselId must be a valid UUID' })
   carouselId?: string;
 
@@ -40,7 +46,7 @@ export class UpdateHomeBlockDto extends PublishFieldsDto {
     example: 'Аксесуари',
     required: false,
   })
-  @IsOptional()
+  @ValidateIf(whenSent)
   @Transform(trim)
   @IsString()
   @MinLength(1, { message: 'Title must not be empty' })
@@ -52,7 +58,7 @@ export class UpdateHomeBlockDto extends PublishFieldsDto {
     type: [String],
     required: false,
   })
-  @IsOptional()
+  @ValidateIf(whenSent)
   @IsArray()
   @ArrayMinSize(1, { message: 'A tabs block needs at least one tab' })
   @ArrayMaxSize(MAX_HOME_BLOCK_TABS)

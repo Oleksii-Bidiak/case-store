@@ -51,7 +51,12 @@ export class HomeBlockEntity {
   })
   title!: string | null;
 
-  @ApiProperty({ description: 'Position on the page (lower = higher)', example: 3 })
+  @ApiProperty({
+    description:
+      'Position on the page (lower = higher), kept dense 0..n-1 by create, delete and ' +
+      'reorder — the same index `position` takes on create',
+    example: 3,
+  })
   sortOrder!: number;
 
   @ApiProperty({ description: 'Publish lifecycle state', enum: PublishStatus })
@@ -87,15 +92,21 @@ export class HomeBlockEntity {
   isSystem!: boolean;
 
   @ApiProperty({
-    description: 'A CAROUSEL block whose carousel was deleted — it shows nothing until repointed',
+    description:
+      'A CAROUSEL block whose carousel was DELETED (carousel = null) — it shows nothing ' +
+      'until it is pointed at another carousel. Always false for other types. An orphaned ' +
+      'block is also isEmpty.',
   })
   isOrphaned!: boolean;
 
   @ApiProperty({
     description:
-      'Shows nothing of its own on the site right now: a CAROUSEL block whose carousel is ' +
-      'not published (or deleted), or a TABS block with no published tab (the site then ' +
-      'falls back to its automatic tabs)',
+      'The block would draw nothing of its own on the storefront right now, whatever its ' +
+      'own status: a CAROUSEL block whose carousel is deleted, not PUBLISHED, or PUBLISHED ' +
+      'but resolving to 0 products (e.g. «Розпродаж» with nothing on sale); a TABS block ' +
+      'with no PUBLISHED tab that resolves to at least one product (the site then falls ' +
+      'back to its automatic tabs). Products are resolved exactly as the homepage resolves ' +
+      'them. Always false for singleton blocks (isSystem).',
   })
   isEmpty!: boolean;
 

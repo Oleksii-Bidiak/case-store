@@ -5,7 +5,6 @@ import {
   IsArray,
   IsIn,
   IsInt,
-  IsOptional,
   IsString,
   IsUUID,
   MaxLength,
@@ -16,9 +15,9 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { HomeBlockType } from '@prisma/client';
-import { PublishFieldsDto } from '../../publishing';
 import { CREATABLE_HOME_BLOCK_TYPES, type CreatableHomeBlockType } from '../home-block.rules';
 import { OnlyForBlockType } from './only-for-block-type.validator';
+import { HomeBlockPublishFieldsDto, whenSent } from './home-block-publish-fields.dto';
 
 /** Trim leading/trailing whitespace from string inputs (leave non-strings as-is). */
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -37,9 +36,10 @@ export const MAX_HOME_BLOCK_TABS = 20;
  *   - TABS: `title` + `tabs` (carousel ids, in tab order) required; `carouselId`
  *     rejected.
  *
- * Publish control comes from {@link PublishFieldsDto} — show now / draft / schedule.
+ * Publish control comes from {@link HomeBlockPublishFieldsDto} — show now / draft /
+ * schedule. `null` is a 400 on every field, never "absent".
  */
-export class CreateHomeBlockDto extends PublishFieldsDto {
+export class CreateHomeBlockDto extends HomeBlockPublishFieldsDto {
   @ApiProperty({
     description: 'Block type — only CAROUSEL and TABS can be created',
     enum: CREATABLE_HOME_BLOCK_TYPES,
@@ -92,12 +92,14 @@ export class CreateHomeBlockDto extends PublishFieldsDto {
 
   @ApiProperty({
     description:
-      'Where to insert the block, as a 0-based position in the page (later blocks move down). ' +
-      'Omit it to append the block at the end.',
+      'Where to insert the block: a 0-based index into the CURRENT page order (0 = the ' +
+      'first block; the block now at that index and every one after it move down one). ' +
+      'An index at or past the number of blocks, or no position at all, appends the ' +
+      'block at the end. `null` is rejected.',
     example: 4,
     required: false,
   })
-  @IsOptional()
+  @ValidateIf(whenSent)
   @Type(() => Number)
   @IsInt({ message: 'Position must be an integer' })
   @Min(0, { message: 'Position must be at least 0' })

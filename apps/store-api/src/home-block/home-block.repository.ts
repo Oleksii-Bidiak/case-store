@@ -2,7 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { Carousel, HomeBlockType, Prisma, PublishStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import type { PublishablePort, RevalidateTarget } from '../publishing';
-import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
+import {
+  ReorderTx,
+  acquireAdvisoryLocks,
+  lockKey,
+  reorderBucket,
+  writeSiblingOrder,
+} from '../common/reorder';
 
 /**
  * Advisory-lock namespace for homepage blocks. MANDATORY prefix: advisory locks are
@@ -67,7 +73,10 @@ export interface CreateHomeBlockInput {
   carouselId: string | null;
   /** Carousel ids of the tabs, in order (TABS only). */
   tabCarouselIds: readonly string[];
-  /** 0-based slot to insert at; absent = append. */
+  /**
+   * 0-based index into the CURRENT page order to insert at (clamped to the end);
+   * absent = append. Translated to `sortOrder` under the page lock.
+   */
   position?: number;
   status: PublishStatus;
   publishedAt: Date | null;
@@ -134,32 +143,31 @@ export class HomeBlockRepository implements PublishablePort {
   }
 
   /**
-   * Add a block — APPENDED (`max + 1`) or inserted at `position` (every block at or
-   * after it moves down one) — together with its tabs, in ONE transaction holding the
-   * page's advisory lock. Same shape as `BannerRepository.create`: the `max` read and
-   * the shift happen under the lock, so a concurrent add or reorder cannot hand out
-   * the same slot twice.
+   * Add a block together with its tabs, in ONE transaction holding the page's advisory
+   * lock, at `position` — a 0-based index into the CURRENT page order (W3). The page is
+   * read in page order under the lock, the new block is spliced in at that index
+   * (clamped to the end; absent = append), and the whole page is renumbered densely
+   * `0..n-1` — rows already at their index are not written (`writeSiblingOrder`).
+   *
+   * An index, not a raw `sortOrder`: `sortOrder` may carry gaps or ties (a block was
+   * deleted before compaction existed, the migration's backfill), and "insert at 4" must
+   * mean "become the 5th block" whatever the stored numbers are. Reading and renumbering
+   * under the lock means a concurrent add, delete or reorder cannot hand out the same
+   * slot twice.
    */
   create(input: CreateHomeBlockInput): Promise<HomeBlockRecord> {
     return this.prisma.$transaction(async (tx) => {
       await acquireAdvisoryLocks(tx, [PAGE_LOCK_KEY]);
 
-      const next = await this.nextSortOrder(tx);
-      let sortOrder = next;
-      if (input.position !== undefined && input.position < next) {
-        sortOrder = input.position;
-        await tx.homeBlock.updateMany({
-          where: { sortOrder: { gte: sortOrder } },
-          data: { sortOrder: { increment: 1 } },
-        });
-      }
+      const page = await this.readPageOrder(tx);
+      const slot = input.position == null ? page.length : Math.min(input.position, page.length);
 
       const created = await tx.homeBlock.create({
         data: {
           type: input.type,
           title: input.title,
           carouselId: input.carouselId,
-          sortOrder,
+          sortOrder: slot,
           status: input.status,
           publishedAt: input.publishedAt,
           scheduledAt: input.scheduledAt,
@@ -172,24 +180,58 @@ export class HomeBlockRepository implements PublishablePort {
         },
         include: WITH_CONTENT,
       });
+
+      const orderedIds = page.map((row) => row.id);
+      orderedIds.splice(slot, 0, created.id);
+      // The new row already sits at `slot`, so only the blocks after it are written.
+      await writeSiblingOrder(tx.homeBlock, orderedIds, {}, [
+        ...page,
+        { id: created.id, sortOrder: slot },
+      ]);
       return toRecord(created);
     });
   }
 
-  /** The append slot of the page: `max(sortOrder) + 1`, or 0 when it is empty. */
-  private async nextSortOrder(tx: ReorderTx): Promise<number> {
-    const { _max } = await tx.homeBlock.aggregate({ _max: { sortOrder: true } });
-    return _max.sortOrder === null ? 0 : _max.sortOrder + 1;
+  /** The page as it stands, in page order — ids and current `sortOrder` (under the lock). */
+  private readPageOrder(tx: ReorderTx): Promise<{ id: string; sortOrder: number }[]> {
+    return tx.homeBlock.findMany({ select: { id: true, sortOrder: true }, orderBy: PAGE_ORDER });
   }
 
   /**
    * Edit a block in place; `tabCarouselIds` replaces the tab list in the same
    * transaction (delete + recreate in order). The position does not change here — that
    * is the reorder endpoint's job.
+   *
+   * A tab replacement takes the page's advisory lock first (S2): two concurrent PUTs of
+   * the same tabs would otherwise both delete, then both insert, and the second insert
+   * dies on the `(homeBlockId, carouselId)` unique index — a 500 for a perfectly valid
+   * edit. The block row is written BEFORE the tabs, so a block deleted underneath the
+   * edit surfaces as Prisma P2025 (→ 404 through the global filter) rather than as a
+   * foreign-key failure on the tab insert. A carousel deleted between the service's
+   * existence check and the insert is P2003 → 409 the same way.
+   *
+   * `!= null` guards are defence in depth: the DTO already rejects `null`.
    */
   update(id: string, input: UpdateHomeBlockInput): Promise<HomeBlockRecord> {
     return this.prisma.$transaction(async (tx) => {
-      if (input.tabCarouselIds !== undefined) {
+      const replaceTabs = input.tabCarouselIds != null;
+      if (replaceTabs) {
+        await acquireAdvisoryLocks(tx, [PAGE_LOCK_KEY]);
+      }
+
+      await tx.homeBlock.update({
+        where: { id },
+        data: {
+          title: input.title ?? undefined,
+          carouselId: input.carouselId ?? undefined,
+          status: input.status ?? undefined,
+          publishedAt: input.publishedAt,
+          scheduledAt: input.scheduledAt,
+        },
+        select: { id: true },
+      });
+
+      if (replaceTabs && input.tabCarouselIds) {
         await tx.homeBlockTab.deleteMany({ where: { homeBlockId: id } });
         if (input.tabCarouselIds.length > 0) {
           await tx.homeBlockTab.createMany({
@@ -201,15 +243,9 @@ export class HomeBlockRepository implements PublishablePort {
           });
         }
       }
-      const updated = await tx.homeBlock.update({
+
+      const updated = await tx.homeBlock.findUniqueOrThrow({
         where: { id },
-        data: {
-          title: input.title,
-          carouselId: input.carouselId,
-          status: input.status,
-          publishedAt: input.publishedAt,
-          scheduledAt: input.scheduledAt,
-        },
         include: WITH_CONTENT,
       });
       return toRecord(updated);
@@ -236,9 +272,28 @@ export class HomeBlockRepository implements PublishablePort {
     return toRecord(row);
   }
 
-  /** Remove a block; its tabs cascade. The carousels themselves are untouched. */
-  async delete(id: string): Promise<void> {
-    await this.prisma.homeBlock.delete({ where: { id } });
+  /**
+   * Remove a block (its tabs cascade; the carousels themselves are untouched) and
+   * compact the page back to `0..n-1`, under the page's advisory lock — so the next
+   * `position` index and the stored order never drift apart (W3). Returns `false` when
+   * the block was already gone (a concurrent delete), which the service turns into 404.
+   */
+  delete(id: string): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
+      await acquireAdvisoryLocks(tx, [PAGE_LOCK_KEY]);
+
+      const { count } = await tx.homeBlock.deleteMany({ where: { id } });
+      if (count === 0) return false;
+
+      const page = await this.readPageOrder(tx);
+      await writeSiblingOrder(
+        tx.homeBlock,
+        page.map((row) => row.id),
+        {},
+        page,
+      );
+      return true;
+    });
   }
 
   /**

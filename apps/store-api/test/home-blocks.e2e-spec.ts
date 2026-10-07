@@ -360,6 +360,91 @@ describe('Home blocks (e2e)', () => {
       expect(response.body.error).toBe('HOME_BLOCK_FIELD_NOT_ALLOWED');
     });
 
+    // W1: `null` is a 400 on every field — never "absent", never a 500.
+    it.each([
+      ['carouselId', { carouselId: null }],
+      ['tabs', { tabs: null }],
+      ['title', { title: null }],
+      ['status', { status: null }],
+      ['scheduledAt', { status: 'SCHEDULED', scheduledAt: null }],
+    ])('PUT with %s: null → 400 before the service runs', async (_field, body) => {
+      await request(app.getHttpServer())
+        .put(`/api/admin/home-blocks/${B1}`)
+        .set('Authorization', admin())
+        .send(body)
+        .expect(400);
+      expect(homeBlockRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(homeBlockRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['position', { position: null }],
+      ['status', { status: null }],
+    ])('POST with %s: null → 400', async (_field, extra) => {
+      await request(app.getHttpServer())
+        .post('/api/admin/home-blocks')
+        .set('Authorization', admin())
+        .send({ type: 'CAROUSEL', carouselId: C1, ...extra })
+        .expect(400);
+      expect(homeBlockRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    // S3: a date without SCHEDULED was dropped silently with a 200.
+    it('400 for scheduledAt without status SCHEDULED, on create and on update', async () => {
+      const future = '2099-01-01T09:00:00.000Z';
+      await request(app.getHttpServer())
+        .post('/api/admin/home-blocks')
+        .set('Authorization', admin())
+        .send({ type: 'CAROUSEL', carouselId: C1, scheduledAt: future })
+        .expect(400);
+      await request(app.getHttpServer())
+        .put(`/api/admin/home-blocks/${B1}`)
+        .set('Authorization', admin())
+        .send({ status: 'DRAFT', scheduledAt: future })
+        .expect(400);
+      expect(homeBlockRepositoryMock.create).not.toHaveBeenCalled();
+      expect(homeBlockRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    // W2: a published carousel with nothing to show is flagged, resolved like the homepage.
+    it('flags a published carousel that resolves to 0 products as isEmpty', async () => {
+      homeBlockRepositoryMock.findAll.mockResolvedValue([
+        block({
+          id: B1,
+          type: HomeBlockType.CAROUSEL,
+          carouselId: C1,
+          carousel: carousel(C1, 'Розпродаж', PublishStatus.PUBLISHED),
+        }),
+        block({
+          id: B2,
+          type: HomeBlockType.CAROUSEL,
+          sortOrder: 1,
+          carouselId: C2,
+          carousel: carousel(C2, 'Новинки', PublishStatus.PUBLISHED),
+        }),
+      ]);
+      // C1 resolves first (input order), C2 second.
+      productServiceMock.findAll
+        .mockResolvedValueOnce({ items: [], meta: {} })
+        .mockResolvedValueOnce({ items: [{ id: 'p1' }], meta: {} });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/home-blocks')
+        .set('Authorization', admin())
+        .expect(200);
+
+      expect(
+        response.body.data.map((b: { id: string; isEmpty: boolean; isOrphaned: boolean }) => [
+          b.id,
+          b.isEmpty,
+          b.isOrphaned,
+        ]),
+      ).toEqual([
+        [B1, true, false],
+        [B2, false, false],
+      ]);
+    });
+
     it('reorder is matched by its own handler and returns the refreshed list', async () => {
       homeBlockRepositoryMock.reorder.mockResolvedValue([block({ id: B2 }), block({ id: B1 })]);
 

@@ -92,12 +92,11 @@ export class HomeBlockService {
 
   /** Every block of every status, in page order, with the flags the admin screen shows. */
   async findAllAdmin(): Promise<HomeBlockEntity[]> {
-    const rows = await this.homeBlockRepository.findAll();
-    return rows.map(toAdminEntity);
+    return this.toAdminEntities(await this.homeBlockRepository.findAll());
   }
 
   async findByIdAdmin(id: string): Promise<HomeBlockEntity> {
-    return toAdminEntity(await this.requireBlock(id));
+    return this.toAdminEntity(await this.requireBlock(id));
   }
 
   /**
@@ -121,13 +120,13 @@ export class HomeBlockService {
       title: dto.type === HomeBlockType.TABS ? (dto.title ?? null) : null,
       carouselId,
       tabCarouselIds,
-      position: dto.position,
+      position: dto.position ?? undefined,
       ...publishState,
     });
     if (created.status === PublishStatus.PUBLISHED) {
       await this.notifyRevalidation();
     }
-    return toAdminEntity(created);
+    return this.toAdminEntity(created);
   }
 
   /**
@@ -138,10 +137,12 @@ export class HomeBlockService {
     const block = await this.requireBlock(id);
     this.assertFieldsFitType(block.type, dto);
 
+    // `?? undefined` / `!= null`: defence in depth — the DTO already rejects `null`, and
+    // a `null` reaching here must mean "leave as is", never "clear" (W1).
     const input: UpdateHomeBlockInput = {
-      title: dto.title,
-      carouselId: dto.carouselId,
-      tabCarouselIds: dto.tabs,
+      title: dto.title ?? undefined,
+      carouselId: dto.carouselId ?? undefined,
+      tabCarouselIds: dto.tabs ?? undefined,
     };
     await this.assertCarouselsExist([
       ...(dto.carouselId ? [dto.carouselId] : []),
@@ -149,7 +150,7 @@ export class HomeBlockService {
     ]);
 
     const wasPublished = block.status === PublishStatus.PUBLISHED;
-    if (dto.status !== undefined) {
+    if (dto.status != null) {
       const resolved = resolvePublishState(
         { status: dto.status, scheduledAt: parseDate(dto.scheduledAt) },
         new Date(),
@@ -167,15 +168,22 @@ export class HomeBlockService {
     if (wasPublished || updated.status === PublishStatus.PUBLISHED) {
       await this.notifyRevalidation();
     }
-    return toAdminEntity(updated);
+    return this.toAdminEntity(updated);
   }
 
-  /** Show now. */
+  /**
+   * Show now. Idempotent: an already PUBLISHED block is returned as it is — a second
+   * click must not move `publishedAt` (when it went live) to now, nor purge the cache
+   * for a page that did not change.
+   */
   async publish(id: string): Promise<HomeBlockEntity> {
-    await this.requireBlock(id);
+    const current = await this.requireBlock(id);
+    if (current.status === PublishStatus.PUBLISHED) {
+      return this.toAdminEntity(current);
+    }
     const block = await this.homeBlockRepository.publish(id);
     await this.notifyRevalidation();
-    return toAdminEntity(block);
+    return this.toAdminEntity(block);
   }
 
   /** Hide (back to draft) — the block keeps its place on the page. */
@@ -183,7 +191,7 @@ export class HomeBlockService {
     await this.requireBlock(id);
     const block = await this.homeBlockRepository.unpublish(id);
     await this.notifyRevalidation();
-    return toAdminEntity(block);
+    return this.toAdminEntity(block);
   }
 
   /**
@@ -199,7 +207,11 @@ export class HomeBlockService {
           'This block is part of every homepage and cannot be removed — hide it or move it instead',
       });
     }
-    await this.homeBlockRepository.delete(id);
+    // The repository compacts the page order under its lock; `false` = a concurrent
+    // delete got there first.
+    if (!(await this.homeBlockRepository.delete(id))) {
+      throw new NotFoundException('Home block not found');
+    }
     if (block.status === PublishStatus.PUBLISHED) {
       await this.notifyRevalidation();
     }
@@ -216,7 +228,7 @@ export class HomeBlockService {
     if (rows.some((row) => row.status === PublishStatus.PUBLISHED)) {
       await this.notifyRevalidation();
     }
-    return rows.map(toAdminEntity);
+    return this.toAdminEntities(rows);
   }
 
   // ─── helpers ──────────────────────────────────────────────────────────────
@@ -255,6 +267,42 @@ export class HomeBlockService {
   private async notifyRevalidation(): Promise<void> {
     await this.revalidation.revalidate(this.homeBlockRepository.revalidateTarget);
   }
+
+  private async toAdminEntity(block: HomeBlockRecord): Promise<HomeBlockEntity> {
+    const [entity] = await this.toAdminEntities([block]);
+    return entity;
+  }
+
+  /**
+   * Admin entities with their flags. `isEmpty` needs to know whether each PUBLISHED
+   * carousel the blocks point at resolves to any product right now (W2) — a published
+   * «Розпродаж» with nothing on sale draws nothing on the storefront. Those carousels
+   * are resolved through `CarouselService.resolvePublic`, the SAME code the homepage
+   * runs (so "empty here" cannot disagree with "empty on the site"): each distinct
+   * carousel once, with bounded concurrency — never one query per block. Unpublished
+   * carousels are not resolved at all; the site does not show them anyway.
+   */
+  private async toAdminEntities(blocks: readonly HomeBlockRecord[]): Promise<HomeBlockEntity[]> {
+    const published = new Map<string, Carousel>();
+    const take = (carousel: Carousel | null) => {
+      if (carousel?.status === PublishStatus.PUBLISHED) published.set(carousel.id, carousel);
+    };
+    for (const block of blocks) {
+      if (block.type === HomeBlockType.CAROUSEL) take(block.carousel);
+      if (block.type === HomeBlockType.TABS) block.tabs.forEach((tab) => take(tab.carousel));
+    }
+
+    const productCount = new Map<string, number>();
+    if (published.size > 0) {
+      for (const carousel of await this.carouselService.resolvePublic([...published.values()])) {
+        productCount.set(carousel.id, carousel.products.length);
+      }
+    }
+    const showsSomething = (carousel: Carousel | null): boolean =>
+      carousel?.status === PublishStatus.PUBLISHED && (productCount.get(carousel.id) ?? 0) > 0;
+
+    return blocks.map((block) => toAdminEntity(block, showsSomething));
+  }
 }
 
 function parseDate(value?: string | null): Date | null {
@@ -270,7 +318,15 @@ function toCarouselSummary(carousel: Carousel): HomeBlockCarouselSummaryEntity {
   return summary;
 }
 
-function toAdminEntity(block: HomeBlockRecord): HomeBlockEntity {
+/**
+ * Map one record to the admin entity. `showsSomething(carousel)` answers whether the
+ * carousel is PUBLISHED and resolves to at least one product — see
+ * `HomeBlockService.toAdminEntities`.
+ */
+function toAdminEntity(
+  block: HomeBlockRecord,
+  showsSomething: (carousel: Carousel | null) => boolean,
+): HomeBlockEntity {
   const entity = new HomeBlockEntity();
   entity.id = block.id;
   entity.type = block.type;
@@ -289,9 +345,8 @@ function toAdminEntity(block: HomeBlockRecord): HomeBlockEntity {
   entity.isSystem = isSystemHomeBlockType(block.type);
   entity.isOrphaned = block.type === HomeBlockType.CAROUSEL && block.carousel === null;
   entity.isEmpty =
-    (block.type === HomeBlockType.CAROUSEL && block.carousel?.status !== PublishStatus.PUBLISHED) ||
-    (block.type === HomeBlockType.TABS &&
-      !block.tabs.some((tab) => tab.carousel.status === PublishStatus.PUBLISHED));
+    (block.type === HomeBlockType.CAROUSEL && !showsSomething(block.carousel)) ||
+    (block.type === HomeBlockType.TABS && !block.tabs.some((tab) => showsSomething(tab.carousel)));
   entity.createdAt = block.createdAt;
   entity.updatedAt = block.updatedAt;
   return entity;

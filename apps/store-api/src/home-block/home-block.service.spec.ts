@@ -1,10 +1,12 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Carousel, CarouselSource, HomeBlockType, PublishStatus } from '@prisma/client';
 import { CarouselService, PublicCarouselEntity } from '../carousels';
+import type { PublicProductEntity } from '../product';
 import { RevalidationNotifier } from '../publishing';
 import { ReorderStaleError } from '../common/reorder';
 import { HomeBlockRecord, HomeBlockRepository } from './home-block.repository';
 import { HomeBlockService } from './home-block.service';
+import type { UpdateHomeBlockDto } from './dto';
 
 const at = new Date('2026-10-01T00:00:00.000Z');
 
@@ -55,14 +57,25 @@ describe('HomeBlockService', () => {
   };
   const carouselService = { resolvePublic: jest.fn(), findByIds: jest.fn() };
   const revalidation = { revalidate: jest.fn() };
+  const emptyIds = new Set<string>();
   let service: HomeBlockService;
 
   beforeEach(() => {
     jest.resetAllMocks();
     revalidation.revalidate.mockResolvedValue(undefined);
+    // By default every carousel resolves to one product; `emptyIds` resolve to none.
     carouselService.resolvePublic.mockImplementation((rows: Carousel[]) =>
-      Promise.resolve(rows.map((row) => PublicCarouselEntity.fromEntity(row, []))),
+      Promise.resolve(
+        rows.map((row) =>
+          PublicCarouselEntity.fromEntity(
+            row,
+            emptyIds.has(row.id) ? [] : [{ id: `product-of-${row.id}` } as PublicProductEntity],
+          ),
+        ),
+      ),
     );
+    emptyIds.clear();
+    repository.delete.mockResolvedValue(true);
     service = new HomeBlockService(
       repository as unknown as HomeBlockRepository,
       carouselService as unknown as CarouselService,
@@ -156,6 +169,68 @@ describe('HomeBlockService', () => {
       expect(orphan).toMatchObject({ isSystem: false, isOrphaned: true, isEmpty: true });
       expect(emptyTabs).toMatchObject({ isEmpty: true, tabs: [{ carousel: { id: 'd' } }] });
       expect(ok).toMatchObject({ isOrphaned: false, isEmpty: false, carousel: { id: 'p' } });
+    });
+
+    // W2: «shows nothing» means nothing on the storefront, not just "unpublished".
+    it('flags a published carousel that resolves to 0 products, and a TABS block whose published tabs are all empty', async () => {
+      emptyIds.add('sale');
+      emptyIds.add('empty-tab');
+      repository.findAll.mockResolvedValue([
+        record({
+          id: 'empty-rail',
+          type: HomeBlockType.CAROUSEL,
+          carouselId: 'sale',
+          carousel: carousel('sale'),
+        }),
+        record({
+          id: 'empty-tabs',
+          type: HomeBlockType.TABS,
+          title: 'X',
+          tabs: [
+            { carouselId: 'empty-tab', sortOrder: 0, carousel: carousel('empty-tab') },
+            { carouselId: 'd', sortOrder: 1, carousel: carousel('d', PublishStatus.DRAFT) },
+          ],
+        }),
+        record({
+          id: 'one-good-tab',
+          type: HomeBlockType.TABS,
+          title: 'Y',
+          tabs: [
+            { carouselId: 'empty-tab', sortOrder: 0, carousel: carousel('empty-tab') },
+            { carouselId: 'full', sortOrder: 1, carousel: carousel('full') },
+          ],
+        }),
+        record({ id: 'no-tabs', type: HomeBlockType.TABS, title: 'Z', tabs: [] }),
+        record({
+          id: 'draft-rail',
+          type: HomeBlockType.CAROUSEL,
+          carouselId: 'd',
+          carousel: carousel('d', PublishStatus.DRAFT),
+        }),
+      ]);
+
+      const result = await service.findAllAdmin();
+
+      expect(result.map((block) => [block.id, block.isEmpty, block.isOrphaned])).toEqual([
+        ['empty-rail', true, false],
+        ['empty-tabs', true, false],
+        ['one-good-tab', false, false],
+        ['no-tabs', true, false],
+        ['draft-rail', true, false],
+      ]);
+      // Each PUBLISHED carousel resolved once, in ONE call; drafts never resolved.
+      expect(carouselService.resolvePublic).toHaveBeenCalledTimes(1);
+      expect(carouselService.resolvePublic.mock.calls[0][0].map((row: Carousel) => row.id)).toEqual(
+        ['sale', 'empty-tab', 'full'],
+      );
+    });
+
+    it('does not resolve anything when no block points at a published carousel', async () => {
+      repository.findAll.mockResolvedValue([record({ id: 'hero', type: HomeBlockType.HERO })]);
+
+      await service.findAllAdmin();
+
+      expect(carouselService.resolvePublic).not.toHaveBeenCalled();
     });
   });
 
@@ -251,6 +326,25 @@ describe('HomeBlockService', () => {
       repository.findById.mockResolvedValue(null);
       await expect(service.update('missing', {})).rejects.toBeInstanceOf(NotFoundException);
     });
+
+    // W1 defence in depth: a null that slipped past the DTO means "leave as is".
+    it('never forwards null as a value to write', async () => {
+      const block = record({ type: HomeBlockType.TABS, title: 'X' });
+      repository.findById.mockResolvedValue(block);
+      repository.update.mockResolvedValue(block);
+
+      await service.update('block', {
+        title: null,
+        tabs: null,
+        status: null,
+      } as unknown as UpdateHomeBlockDto);
+
+      expect(repository.update).toHaveBeenCalledWith('block', {
+        title: undefined,
+        carouselId: undefined,
+        tabCarouselIds: undefined,
+      });
+    });
   });
 
   describe('delete', () => {
@@ -265,6 +359,14 @@ describe('HomeBlockService', () => {
       expect(repository.delete).not.toHaveBeenCalled();
     });
 
+    it('404s when the block vanished between the read and the delete', async () => {
+      repository.findById.mockResolvedValue(record({ type: HomeBlockType.CAROUSEL }));
+      repository.delete.mockResolvedValue(false);
+
+      await expect(service.delete('block')).rejects.toBeInstanceOf(NotFoundException);
+      expect(revalidation.revalidate).not.toHaveBeenCalled();
+    });
+
     it('deletes a CAROUSEL block and revalidates when it was live', async () => {
       repository.findById.mockResolvedValue(record({ type: HomeBlockType.CAROUSEL }));
 
@@ -276,8 +378,19 @@ describe('HomeBlockService', () => {
   });
 
   describe('publish / unpublish / reorder', () => {
+    // S3: a second «show now» must not move publishedAt.
+    it('publish on an already published block writes nothing and keeps publishedAt', async () => {
+      repository.findById.mockResolvedValue(record({ publishedAt: at }));
+
+      const result = await service.publish('block');
+
+      expect(repository.publish).not.toHaveBeenCalled();
+      expect(revalidation.revalidate).not.toHaveBeenCalled();
+      expect(result.publishedAt).toEqual(at);
+    });
+
     it('publish and unpublish revalidate', async () => {
-      repository.findById.mockResolvedValue(record({}));
+      repository.findById.mockResolvedValue(record({ status: PublishStatus.DRAFT }));
       repository.publish.mockResolvedValue(record({}));
       repository.unpublish.mockResolvedValue(record({ status: PublishStatus.DRAFT }));
 

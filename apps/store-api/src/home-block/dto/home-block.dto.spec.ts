@@ -55,12 +55,59 @@ describe('CreateHomeBlockDto — fields per type (TASK-661)', () => {
   });
 });
 
+const updateErrorsOf = async (body: Record<string, unknown>) =>
+  (
+    await validate(plainToInstance(UpdateHomeBlockDto, body, { enableImplicitConversion: true }))
+  ).map((error) => error.property);
+
+const FUTURE = '2099-01-01T09:00:00.000Z';
+
 describe('UpdateHomeBlockDto', () => {
   it('accepts an empty body and partial fields', async () => {
-    const toDto = (body: Record<string, unknown>) =>
-      plainToInstance(UpdateHomeBlockDto, body, { enableImplicitConversion: true });
-    expect(await validate(toDto({}))).toHaveLength(0);
-    expect(await validate(toDto({ status: 'DRAFT' }))).toHaveLength(0);
-    expect(await validate(toDto({ tabs: [] }))).not.toHaveLength(0);
+    expect(await updateErrorsOf({})).toEqual([]);
+    expect(await updateErrorsOf({ status: 'DRAFT' })).toEqual([]);
+    expect(await updateErrorsOf({ tabs: [] })).toContain('tabs');
+  });
+
+  // W1: `@IsOptional()` treated `null` as "absent" — `{ tabs: null }` answered 500.
+  it.each(['carouselId', 'title', 'tabs', 'status', 'scheduledAt'])(
+    'rejects null for %s',
+    async (field) => {
+      expect(await updateErrorsOf({ [field]: null })).toContain(field);
+    },
+  );
+
+  // S3: a date without SCHEDULED used to be dropped silently.
+  it('accepts scheduledAt only together with status SCHEDULED', async () => {
+    expect(await updateErrorsOf({ status: 'SCHEDULED', scheduledAt: FUTURE })).toEqual([]);
+    expect(await updateErrorsOf({ scheduledAt: FUTURE })).toContain('scheduledAt');
+    expect(await updateErrorsOf({ status: 'DRAFT', scheduledAt: FUTURE })).toContain('scheduledAt');
+    expect(await updateErrorsOf({ status: 'PUBLISHED', scheduledAt: FUTURE })).toContain(
+      'scheduledAt',
+    );
+  });
+});
+
+describe('CreateHomeBlockDto — null and schedule (TASK-661)', () => {
+  const carouselBlock = { type: 'CAROUSEL', carouselId: UUID };
+
+  it.each(['position', 'status', 'scheduledAt'])('rejects null for %s', async (field) => {
+    expect(await errorsOf({ ...carouselBlock, [field]: null })).toContain(field);
+  });
+
+  it('rejects null for carouselId, title and tabs', async () => {
+    expect(await errorsOf({ type: 'CAROUSEL', carouselId: null })).toContain('carouselId');
+    expect(await errorsOf({ type: 'TABS', title: null, tabs: [UUID] })).toContain('title');
+    expect(await errorsOf({ type: 'TABS', title: 'X', tabs: null })).toContain('tabs');
+  });
+
+  it('accepts scheduledAt only together with status SCHEDULED', async () => {
+    expect(await errorsOf({ ...carouselBlock, status: 'SCHEDULED', scheduledAt: FUTURE })).toEqual(
+      [],
+    );
+    expect(await errorsOf({ ...carouselBlock, scheduledAt: FUTURE })).toContain('scheduledAt');
+    expect(await errorsOf({ ...carouselBlock, status: 'DRAFT', scheduledAt: FUTURE })).toContain(
+      'scheduledAt',
+    );
   });
 });

@@ -2129,8 +2129,9 @@ model HomeBlock {
   type        HomeBlockType
   /// Section heading — TABS only.
   title       String?
-  /// Position on the page (lower = higher). One global list, appended under the
-  /// `home-blocks` advisory lock (`max + 1`), rewritten by the reorder endpoint.
+  /// Position on the page (lower = higher). One global list kept dense `0..n-1`
+  /// under the `home-blocks` advisory lock: create inserts at an index, delete
+  /// compacts, the reorder endpoint rewrites it.
   sortOrder   Int           @default(0) @map("sort_order")
   /// Publish lifecycle — the single source of truth for public visibility.
   status      PublishStatus @default(DRAFT)
