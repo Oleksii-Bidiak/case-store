@@ -167,6 +167,14 @@ export class NotificationBindingService {
     return this.repository.findActiveForCustomer(channel, owner, tx);
   }
 
+  /** The owner's most recently connected active customer row, or null (TASK-679). */
+  findLatestActiveForCustomer(
+    owner: CustomerBindingOwner,
+    channel: NotificationChannel = NotificationChannel.TELEGRAM,
+  ): Promise<NotificationBindingEntity | null> {
+    return this.repository.findLatestActiveForCustomer(channel, owner);
+  }
+
   /**
    * Disconnect the customer chats of exactly ONE owner the caller has proved —
    * an account or a guest order, not both (a mixed owner would let one proof

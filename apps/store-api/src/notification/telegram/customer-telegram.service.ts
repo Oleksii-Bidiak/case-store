@@ -53,14 +53,13 @@ export class CustomerTelegramService {
   ) {}
 
   async status(owner: CustomerTelegramOwner): Promise<CustomerTelegramStatus> {
-    const [snapshot, chats] = await Promise.all([
+    const [snapshot, latest] = await Promise.all([
       this.state.ensureFresh(),
-      this.bindings.findActiveForCustomer(owner),
+      this.bindings.findLatestActiveForCustomer(owner),
     ]);
-    const latest = chats.length > 0 ? chats[chats.length - 1] : undefined;
     return {
       available: snapshot.state === 'ok',
-      connected: latest !== undefined,
+      connected: latest !== null,
       ...(latest?.label ? { label: latest.label } : {}),
       ...(latest ? { createdAt: latest.createdAt } : {}),
       ...(snapshot.state === 'ok' ? { botUsername: snapshot.botUsername } : {}),

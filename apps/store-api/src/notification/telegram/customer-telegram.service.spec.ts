@@ -24,7 +24,7 @@ describe('CustomerTelegramService (TASK-679)', () => {
   let snapshot: TelegramChannelSnapshot;
   const state = { ensureFresh: jest.fn(() => Promise.resolve(snapshot)) };
   const bindings = {
-    findActiveForCustomer: jest.fn(),
+    findLatestActiveForCustomer: jest.fn(),
     issueToken: jest.fn(),
     revokeForCustomer: jest.fn(),
   };
@@ -36,7 +36,7 @@ describe('CustomerTelegramService (TASK-679)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     snapshot = { state: 'ok', botUsername: 'shop_bot', checkedAt: new Date() };
-    bindings.findActiveForCustomer.mockResolvedValue([]);
+    bindings.findLatestActiveForCustomer.mockResolvedValue(null);
     bindings.issueToken.mockResolvedValue({ token: 'tok_en-123', expiresAt: EXPIRES });
     bindings.revokeForCustomer.mockResolvedValue(1);
   });
@@ -48,14 +48,13 @@ describe('CustomerTelegramService (TASK-679)', () => {
         connected: false,
         botUsername: 'shop_bot',
       });
-      expect(bindings.findActiveForCustomer).toHaveBeenCalledWith({ userId: 'user-1' });
+      expect(bindings.findLatestActiveForCustomer).toHaveBeenCalledWith({ userId: 'user-1' });
     });
 
-    it('connected: the most recent chat names the connection', async () => {
-      bindings.findActiveForCustomer.mockResolvedValue([
-        chat('1', '@old', '2026-10-01T00:00:00.000Z'),
+    it('connected: the most recent connection names the chat', async () => {
+      bindings.findLatestActiveForCustomer.mockResolvedValue(
         chat('2', '@olena', '2026-10-07T10:00:00.000Z'),
-      ]);
+      );
 
       await expect(service.status({ orderId: 'order-a' })).resolves.toEqual({
         available: true,
@@ -64,7 +63,7 @@ describe('CustomerTelegramService (TASK-679)', () => {
         createdAt: new Date('2026-10-07T10:00:00.000Z'),
         botUsername: 'shop_bot',
       });
-      expect(bindings.findActiveForCustomer).toHaveBeenCalledWith({ orderId: 'order-a' });
+      expect(bindings.findLatestActiveForCustomer).toHaveBeenCalledWith({ orderId: 'order-a' });
     });
 
     it.each<TelegramChannelSnapshot>([
@@ -84,9 +83,9 @@ describe('CustomerTelegramService (TASK-679)', () => {
 
     it('a chat stays reported as connected while the bot is down', async () => {
       snapshot = { state: 'unconfigured' };
-      bindings.findActiveForCustomer.mockResolvedValue([
+      bindings.findLatestActiveForCustomer.mockResolvedValue(
         chat('1', null, '2026-10-07T10:00:00.000Z'),
-      ]);
+      );
 
       await expect(service.status({ userId: 'user-1' })).resolves.toEqual({
         available: false,

@@ -551,6 +551,48 @@ describe('Notification bindings (integration, TASK-675)', () => {
       }
     });
 
+    it('the profile status names the NEWEST connection, even when its chat also holds an older row', async () => {
+      // Chat X: the account at t1, then a claimed guest order at t3; chat Y: the account at t2.
+      // The recipient list keeps X's OLDEST row (t1), so its last element is Y —
+      // the status must not take it from there.
+      const x = chat('latest-x');
+      const y = chat('latest-y');
+      const latestEmail = `int-${run}-latest@example.com`;
+      const owner = (await prisma.user.create({ data: { email: latestEmail, passwordHash: 'x' } }))
+        .id;
+      const claimed = await prisma.order.create({
+        data: { subtotal: 5, total: 5, shippingAddress: {}, userId: owner },
+      });
+      const base = { channel: NotificationChannel.TELEGRAM, audience: CUSTOMER };
+      try {
+        await prisma.notificationBinding.create({
+          data: { ...base, externalId: x, userId: owner, createdAt: new Date('2026-10-01') },
+        });
+        await prisma.notificationBinding.create({
+          data: { ...base, externalId: y, userId: owner, createdAt: new Date('2026-10-02') },
+        });
+        const newest = await prisma.notificationBinding.create({
+          data: { ...base, externalId: x, orderId: claimed.id, createdAt: new Date('2026-10-03') },
+        });
+
+        const recipients = await service.findActiveForCustomer({ userId: owner });
+        expect(recipients.map((r) => r.externalId)).toEqual([x, y]);
+
+        const latest = await service.findLatestActiveForCustomer({ userId: owner });
+        expect(latest).toMatchObject({
+          id: newest.id,
+          externalId: x,
+          createdAt: new Date('2026-10-03'),
+        });
+      } finally {
+        await prisma.notificationBinding.deleteMany({
+          where: { OR: [{ userId: owner }, { orderId: claimed.id }] },
+        });
+        await prisma.order.delete({ where: { id: claimed.id } });
+        await prisma.user.delete({ where: { id: owner } });
+      }
+    });
+
     it('a CUSTOMER link sent from a group binds nothing and is spent; a SHOP link from a group binds', async () => {
       const group = chat('group');
       const token = await issue({ audience: CUSTOMER, orderId: orderB });

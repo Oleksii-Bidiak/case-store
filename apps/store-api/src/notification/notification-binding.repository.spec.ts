@@ -269,6 +269,41 @@ describe('NotificationBindingRepository', () => {
     });
   });
 
+  describe('findLatestActiveForCustomer', () => {
+    it('an owner with neither id is null and asks nothing', async () => {
+      await expect(repository.findLatestActiveForCustomer(TELEGRAM, {})).resolves.toBeNull();
+      expect(prisma.notificationBinding.findMany).not.toHaveBeenCalled();
+    });
+
+    it('the newest active CUSTOMER row of the owner — every row, not one per chat', async () => {
+      prisma.notificationBinding.findMany.mockResolvedValue([
+        row({ id: 'claimed-order-t3', userId: null, orderId: 'order-a' }),
+      ]);
+
+      const latest = await repository.findLatestActiveForCustomer(TELEGRAM, { userId: 'user-1' });
+
+      expect(latest?.id).toBe('claimed-order-t3');
+      expect(prisma.notificationBinding.findMany).toHaveBeenCalledWith({
+        where: {
+          channel: TELEGRAM,
+          audience: CUSTOMER,
+          revokedAt: null,
+          OR: [{ userId: 'user-1' }, { order: { is: { userId: 'user-1' } } }],
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 1,
+      });
+    });
+
+    it('nothing connected is null', async () => {
+      prisma.notificationBinding.findMany.mockResolvedValue([]);
+
+      await expect(
+        repository.findLatestActiveForCustomer(TELEGRAM, { orderId: 'order-a' }),
+      ).resolves.toBeNull();
+    });
+  });
+
   describe('revokeForCustomer', () => {
     it('reaches only CUSTOMER rows of the proven owner', async () => {
       prisma.notificationBinding.updateMany.mockResolvedValue({ count: 2 });

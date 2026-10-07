@@ -301,6 +301,26 @@ export class NotificationBindingRepository {
   }
 
   /**
+   * The owner's most recently connected active CUSTOMER row, or null (TASK-679).
+   * A separate read from {@link findActiveForCustomer}: that one keeps the OLDEST
+   * row of each chat (one recipient per chat), so its last element is not the
+   * newest connection when one chat holds several rows (account + claimed order).
+   */
+  async findLatestActiveForCustomer(
+    channel: NotificationChannel,
+    owner: CustomerBindingOwner,
+  ): Promise<NotificationBindingEntity | null> {
+    const or = ownerFilter(owner);
+    if (or.length === 0) return null;
+    const [row] = await this.prisma.notificationBinding.findMany({
+      where: { channel, audience: NotificationAudience.CUSTOMER, revokedAt: null, OR: or },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 1,
+    });
+    return row ? toEntity(row) : null;
+  }
+
+  /**
    * Disconnect every active CUSTOMER chat of an owner (TASK-679). Scoped by
    * construction: `audience = CUSTOMER` and the owner the caller proved — never
    * a SHOP chat, never another customer's. Returns how many rows were revoked.

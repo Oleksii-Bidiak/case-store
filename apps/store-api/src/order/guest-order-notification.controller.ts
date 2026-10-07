@@ -39,6 +39,13 @@ import { OrderService } from './order.service';
  * Both routes check a credential carried in the path, so both are fail-CLOSED
  * like `GET /orders/guest/:token` (TASK-606): with Redis down a throttle that
  * failed open would answer an unlimited stream of guesses.
+ *
+ * Each route has its own per-IP bucket, so the combined budget for checking one
+ * guest token is the sum: GET order 20 + GET status 20 + POST link 5 = 45 a
+ * minute per IP, not the 20 of the order read alone. Accepted deliberately: the
+ * token is 256 bits, so 45 guesses a minute is as hopeless as 20, and the status
+ * GET keeps a budget of its own so the success page can poll «connected?» while
+ * the guest is in Telegram without starving the order read beside it.
  */
 @ApiTags('Notifications')
 @ApiExtraModels(
