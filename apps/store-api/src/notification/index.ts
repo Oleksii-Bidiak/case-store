@@ -1,6 +1,6 @@
 // Notification Module — public API (plan 187)
 export { NotificationModule } from './notification.module';
-export { adminUrl } from './notification-links';
+export { adminUrl, storeUrl } from './notification-links';
 export { ShopNotifier } from './shop-notifier.service';
 export {
   SHOP_NEW_ORDER_TYPE,
@@ -14,6 +14,16 @@ export {
   type ShopReturnRequestedPayload,
 } from './shop-notification.types';
 export { recipientScopeOf, type RecipientOwnerPayload } from './recipient-scope';
+export { CustomerNotifier } from './customer-notifier.service';
+export {
+  CUSTOMER_ORDER_CONFIRMATION_TYPE,
+  CUSTOMER_ORDER_SHIPPED_TYPE,
+  type CustomerNotificationType,
+  type CustomerOrderConfirmationInput,
+  type CustomerOrderConfirmationPayload,
+  type CustomerOrderShippedInput,
+  type CustomerOrderShippedPayload,
+} from './customer-notification.types';
 export {
   NotificationBindingService,
   BINDING_TOKEN_TTL_MS,

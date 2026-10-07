@@ -4,6 +4,7 @@ import { CustomerNotificationController } from './customer-notification.controll
 import { NotificationBindingRepository } from './notification-binding.repository';
 import { NotificationBindingService } from './notification-binding.service';
 import { ShopNotifier } from './shop-notifier.service';
+import { CustomerNotifier } from './customer-notifier.service';
 import { TelegramClient } from './telegram/telegram.client';
 import { TelegramChannelState } from './telegram/telegram-channel.state';
 import { TelegramAdapter } from './telegram/telegram.adapter';
@@ -42,6 +43,7 @@ import { TelegramUpdatesWorker } from './telegram/telegram-updates.worker';
     NotificationBindingRepository,
     NotificationBindingService,
     ShopNotifier,
+    CustomerNotifier,
     TelegramClient,
     TelegramChannelState,
     TelegramRendererRegistry,
@@ -53,6 +55,8 @@ import { TelegramUpdatesWorker } from './telegram/telegram-updates.worker';
   exports: [
     NotificationBindingService,
     ShopNotifier,
+    // TASK-680: OrderService queues the buyer's own Telegram messages through it.
+    CustomerNotifier,
     TelegramClient,
     TelegramChannelState,
     TelegramRendererRegistry,

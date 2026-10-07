@@ -10,6 +10,10 @@ import {
   SHOP_NOTIFICATION_TYPES,
   SHOP_RETURN_REQUESTED_TYPE,
 } from '../shop-notification.types';
+import {
+  CUSTOMER_ORDER_CONFIRMATION_TYPE,
+  CUSTOMER_ORDER_SHIPPED_TYPE,
+} from '../customer-notification.types';
 import { PermanentDeliveryError } from '../../notification-outbox/channels/notification-channel-adapter';
 import { TelegramAdapter } from './telegram.adapter';
 import { TelegramApiError, type TelegramClient } from './telegram.client';
@@ -181,6 +185,51 @@ describe('TelegramAdapter', () => {
       },
     );
 
+    // ── TASK-680: the real customer types ride the same gate ──────────────────
+
+    it.each([CUSTOMER_ORDER_CONFIRMATION_TYPE, CUSTOMER_ORDER_SHIPPED_TYPE])(
+      'a %s row never reaches a chat whose CUSTOMER binding was revoked while its SHOP binding stays',
+      async (type) => {
+        // The chat is still the shop's chat, but no longer this customer's.
+        bindings.hasActiveRecipient.mockImplementation(
+          (_channel: unknown, _chat: unknown, scope: { audience: NotificationAudience }) =>
+            Promise.resolve(scope.audience === NotificationAudience.SHOP),
+        );
+
+        const sent = adapter.send(
+          makeRow({
+            type,
+            payload: {
+              orderId: 'ab12cd34-0000-4000-8000-000000000001',
+              orderNumber: 'AB12CD34',
+              total: '100.00',
+              itemsCount: 1,
+              trackingNumber: null,
+              deliveryMethod: 'NOVA_POSHTA',
+              recipientOwner: { userId: 'user-1', orderId: 'ab12cd34-0000-4000-8000-000000000001' },
+            },
+          }),
+        );
+
+        await expect(sent).rejects.toBeInstanceOf(PermanentDeliveryError);
+        await expect(sent).rejects.toThrow('binding revoked');
+        expect(bindings.hasActiveRecipient).toHaveBeenCalledWith(
+          NotificationChannel.TELEGRAM,
+          '-1001234567890',
+          {
+            audience: NotificationAudience.CUSTOMER,
+            owner: { userId: 'user-1', orderId: 'ab12cd34-0000-4000-8000-000000000001' },
+          },
+        );
+        expect(client.sendMessage).not.toHaveBeenCalled();
+      },
+    );
+
+    it('a customer type is never mistaken for a shop type', () => {
+      expect(SHOP_NOTIFICATION_TYPES.has(CUSTOMER_ORDER_CONFIRMATION_TYPE)).toBe(false);
+      expect(SHOP_NOTIFICATION_TYPES.has(CUSTOMER_ORDER_SHIPPED_TYPE)).toBe(false);
+    });
+
     it('knows every shop type: a missing one would be gated as a customer row', () => {
       expect([...SHOP_NOTIFICATION_TYPES].sort()).toEqual(
         [SHOP_CONTACT_MESSAGE_TYPE, SHOP_NEW_ORDER_TYPE, SHOP_RETURN_REQUESTED_TYPE].sort(),
@@ -336,13 +385,31 @@ describe('TelegramRendererRegistry', () => {
     );
   });
 
-  it('ships the three shop pings (TASK-677) and nothing for the customer letters', () => {
+  it('ships the three shop pings (TASK-677) and the two customer messages (TASK-680) — no other letter', () => {
     const registry = new TelegramRendererRegistry(new ConfigService({}));
 
     expect(registry.has('shop-new-order')).toBe(true);
     expect(registry.has('shop-contact-message')).toBe(true);
     expect(registry.has('shop-return-requested')).toBe(true);
-    expect(registry.has('order-confirmation')).toBe(false);
+    expect(registry.has(CUSTOMER_ORDER_CONFIRMATION_TYPE)).toBe(true);
+    expect(registry.has(CUSTOMER_ORDER_SHIPPED_TYPE)).toBe(true);
+    // Account letters stay e-mail only.
+    expect(registry.has('password-reset')).toBe(false);
+    expect(registry.has('order-payment-expired')).toBe(false);
+  });
+
+  it('hands a renderer the storefront link built from STORE_CLIENT_URL at render time (TASK-680)', () => {
+    const registry = new TelegramRendererRegistry({
+      get: (key: string) => (key === 'STORE_CLIENT_URL' ? 'https://shop.example.com/' : undefined),
+    } as unknown as ConfigService);
+    registry.register(
+      'store-link-ping',
+      (_row, context) => context.storeUrl('/orders/status') ?? 'none',
+    );
+
+    expect(registry.render({ type: 'store-link-ping' } as NotificationOutbox)).toBe(
+      'https://shop.example.com/orders/status',
+    );
   });
 
   it('hands a renderer the admin link built from STORE_ADMIN_URL at render time', () => {

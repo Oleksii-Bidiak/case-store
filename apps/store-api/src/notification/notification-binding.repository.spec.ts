@@ -154,6 +154,96 @@ describe('NotificationBindingRepository', () => {
         repository.consumeToken('h', { externalId: '-100500', isPrivate: false }, NOW),
       ).resolves.toEqual({ ok: false, reason: 'invalid' });
     });
+
+    // ── TASK-680: the creation hook (the guest's order summary) ───────────────
+
+    it('runs the hook with the new binding and the SAME tx when the exchange created it', async () => {
+      tx.notificationBindingToken.findUnique.mockResolvedValue(
+        token({ audience: CUSTOMER, orderId: 'order-a' }),
+      );
+      const onCreated = jest.fn().mockResolvedValue(1);
+
+      await expect(
+        repository.consumeToken('h', { externalId: '777', isPrivate: true }, NOW, onCreated),
+      ).resolves.toMatchObject({ ok: true, created: true });
+
+      expect(onCreated).toHaveBeenCalledTimes(1);
+      expect(onCreated).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'b-1', orderId: 'order-a', externalId: '777' }),
+        tx,
+      );
+    });
+
+    it('does NOT run the hook on a re-press that only met the existing row', async () => {
+      tx.notificationBindingToken.findUnique.mockResolvedValue(
+        token({ audience: CUSTOMER, orderId: 'order-a' }),
+      );
+      tx.notificationBinding.createMany.mockResolvedValue({ count: 0 });
+      const onCreated = jest.fn();
+
+      await expect(
+        repository.consumeToken('h', { externalId: '777', isPrivate: true }, NOW, onCreated),
+      ).resolves.toMatchObject({ ok: true, created: false });
+      expect(onCreated).not.toHaveBeenCalled();
+    });
+
+    it('does NOT run the hook for a refused exchange', async () => {
+      tx.notificationBindingToken.findUnique.mockResolvedValue(
+        token({ audience: CUSTOMER, orderId: 'order-a' }),
+      );
+      const onCreated = jest.fn();
+
+      await repository.consumeToken(
+        'h',
+        { externalId: '-100500', isPrivate: false },
+        NOW,
+        onCreated,
+      );
+
+      expect(onCreated).not.toHaveBeenCalled();
+    });
+
+    it('a failing hook fails the exchange — the transaction rolls the binding back', async () => {
+      tx.notificationBindingToken.findUnique.mockResolvedValue(
+        token({ audience: CUSTOMER, orderId: 'order-a' }),
+      );
+      const onCreated = jest.fn().mockRejectedValue(new Error('outbox down'));
+
+      await expect(
+        repository.consumeToken('h', { externalId: '777', isPrivate: true }, NOW, onCreated),
+      ).rejects.toThrow('outbox down');
+    });
+  });
+
+  describe('findOrderSummary (TASK-680)', () => {
+    it('reads a live order through the given client and counts its units', async () => {
+      const client = {
+        order: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'order-a',
+            userId: null,
+            total: { toString: () => '499.00' },
+            items: [{ quantity: 2 }, { quantity: 1 }],
+          }),
+        },
+      };
+
+      await expect(repository.findOrderSummary('order-a', client as never)).resolves.toEqual({
+        id: 'order-a',
+        userId: null,
+        total: '499.00',
+        itemsCount: 3,
+      });
+      expect(client.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'order-a', deletedAt: null } }),
+      );
+    });
+
+    it('is null for a missing or soft-deleted order', async () => {
+      const client = { order: { findFirst: jest.fn().mockResolvedValue(null) } };
+
+      await expect(repository.findOrderSummary('gone', client as never)).resolves.toBeNull();
+    });
   });
 
   describe('hasActive — the send gate (audience and owner, not just the chat)', () => {

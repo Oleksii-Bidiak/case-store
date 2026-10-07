@@ -10,6 +10,7 @@ import type {
   ConsumeTokenResult,
   NotificationBindingEntity,
 } from './entities/notification-binding.entity';
+import { CustomerNotifier } from './customer-notifier.service';
 
 /** How long a deep link stays usable. Long enough to find the phone, short enough to leak little. */
 export const BINDING_TOKEN_TTL_MS = 15 * 60 * 1000;
@@ -68,7 +69,12 @@ export function hashBindingToken(token: string): string {
  */
 @Injectable()
 export class NotificationBindingService {
-  constructor(private readonly repository: NotificationBindingRepository) {}
+  constructor(
+    private readonly repository: NotificationBindingRepository,
+    // TASK-680: a guest's freshly connected chat gets the order summary, queued
+    // inside the token exchange (owner decision 3, 2026-10-07).
+    private readonly customerNotifier: CustomerNotifier,
+  ) {}
 
   async issueToken(params: IssueTokenParams): Promise<IssuedToken> {
     const token = randomBytes(32).toString('base64url');
@@ -88,6 +94,11 @@ export class NotificationBindingService {
    * Exchange `token` for a binding of `chat`. One-time and atomic — see
    * {@link NotificationBindingRepository.consumeToken}. A chat that is already
    * bound for the token's audience keeps its existing row (`created: false`).
+   *
+   * A CUSTOMER binding this exchange CREATES for a guest order also queues that
+   * order's summary for the chat, in the same transaction (TASK-680, see
+   * {@link CustomerNotifier.onBindingCreated}): the binding and its first
+   * message commit together, and a re-press that creates nothing sends nothing.
    */
   consumeToken(token: string, chat: StartingChat): Promise<ConsumeTokenResult> {
     if (!BINDING_TOKEN_PATTERN.test(token)) {
@@ -98,6 +109,7 @@ export class NotificationBindingService {
       hashBindingToken(token),
       { externalId: String(chat.id), label, isPrivate: chat.isPrivate },
       new Date(Date.now()),
+      (binding, tx) => this.customerNotifier.onBindingCreated(binding, tx),
     );
   }
 

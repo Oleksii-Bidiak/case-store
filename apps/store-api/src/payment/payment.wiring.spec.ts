@@ -8,6 +8,7 @@ import { OrderService } from '../order';
 import { CacheService } from '../cache';
 import { NotificationOutboxService } from '../notification-outbox';
 import { ShopNotifier } from '../notification/shop-notifier.service';
+import { CustomerNotifier } from '../notification/customer-notifier.service';
 import { CustomerTelegramService } from '../notification/telegram/customer-telegram.service';
 import { LiqPayAdapter } from './adapters/liqpay/liqpay.adapter';
 import { PaymentReconcileWorker } from './payment-reconcile.worker';
@@ -43,6 +44,8 @@ const prismaStub = {
     { provide: NotificationOutboxService, useValue: { enqueue: jest.fn() } },
     // TASK-677: provided app-wide by the @Global NotificationModule.
     { provide: ShopNotifier, useValue: { enqueueNewOrder: jest.fn() } },
+    // TASK-680: the buyer's Telegram messages, from the same @Global module.
+    { provide: CustomerNotifier, useValue: {} },
     // TASK-679: the guest's Telegram routes in OrderModule act through it.
     { provide: CustomerTelegramService, useValue: {} },
   ],
@@ -51,6 +54,7 @@ const prismaStub = {
     CacheService,
     NotificationOutboxService,
     ShopNotifier,
+    CustomerNotifier,
     CustomerTelegramService,
   ],
 })

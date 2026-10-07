@@ -49,6 +49,28 @@ export type RecipientScope =
   | { audience: typeof NotificationAudience.SHOP }
   | { audience: typeof NotificationAudience.CUSTOMER; owner: CustomerBindingOwner };
 
+/**
+ * Runs inside {@link NotificationBindingRepository.consumeToken}'s transaction,
+ * right after the exchange CREATED a binding (never for a chat that was already
+ * bound). The service layer supplies it — TASK-680 queues the guest's order
+ * summary through it — so this repository never learns about the outbox. A
+ * throw rolls the whole exchange back, token included, and the poller retries.
+ */
+export type BindingCreatedHook = (
+  binding: NotificationBindingEntity,
+  tx: Prisma.TransactionClient,
+) => Promise<unknown>;
+
+/** The few order fields a customer notification is built from (TASK-680). */
+export interface CustomerOrderSummary {
+  id: string;
+  userId: string | null;
+  /** `Order.total` as stored — a 2-dp decimal string. */
+  total: string;
+  /** Units across all lines. */
+  itemsCount: number;
+}
+
 /** The chat that sent `/start <token>`. */
 export interface BindingChat {
   externalId: string;
@@ -117,7 +139,12 @@ export class NotificationBindingRepository {
    * racing for the same chat still leave one active row — and, unlike catching
    * P2002, it does not abort the surrounding transaction.
    */
-  consumeToken(tokenHash: string, chat: BindingChat, now: Date): Promise<ConsumeTokenResult> {
+  consumeToken(
+    tokenHash: string,
+    chat: BindingChat,
+    now: Date,
+    onCreated?: BindingCreatedHook,
+  ): Promise<ConsumeTokenResult> {
     return this.prisma.$transaction(async (tx) => {
       const { count } = await tx.notificationBindingToken.updateMany({
         where: { tokenHash, consumedAt: null, expiresAt: { gt: now } },
@@ -182,7 +209,13 @@ export class NotificationBindingRepository {
         throw new Error('Notification binding vanished inside its own transaction');
       }
 
-      return { ok: true, binding: toEntity(binding), created: created === 1 } as const;
+      const entity = toEntity(binding);
+      // Only a binding THIS exchange created: a re-press of a link for a chat
+      // that is already bound keeps the old row and triggers nothing (TASK-680).
+      if (created === 1 && onCreated) {
+        await onCreated(entity, tx);
+      }
+      return { ok: true, binding: entity, created: created === 1 } as const;
     });
   }
 
@@ -337,6 +370,30 @@ export class NotificationBindingRepository {
       data: { revokedAt: now },
     });
     return count;
+  }
+
+  /**
+   * The order a customer notification is about (TASK-680): its sum, its units
+   * and its account. Null for an order that does not exist or is soft-deleted —
+   * nothing is announced about it. `tx`-aware so the guest's summary is read
+   * inside the token exchange that triggered it.
+   */
+  async findOrderSummary(
+    orderId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<CustomerOrderSummary | null> {
+    const client = tx ?? this.prisma;
+    const order = await client.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      select: { id: true, userId: true, total: true, items: { select: { quantity: true } } },
+    });
+    if (order === null) return null;
+    return {
+      id: order.id,
+      userId: order.userId,
+      total: order.total.toString(),
+      itemsCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
+    };
   }
 
   /** The stored poller offset; 0 when the channel has never been polled. */

@@ -6,7 +6,9 @@ import {
   NotificationChannel,
   NotificationOutboxStatus,
 } from '@prisma/client';
-import type { PinoLogger } from 'nestjs-pino';
+import { PinoLogger } from 'nestjs-pino';
+import { CustomerNotifier } from '../src/notification/customer-notifier.service';
+import { NotificationOutboxRepository } from '../src/notification-outbox/notification-outbox.repository';
 import { PermanentDeliveryError } from '../src/notification-outbox/channels/notification-channel-adapter';
 import { SHOP_NEW_ORDER_TYPE } from '../src/notification/shop-notification.types';
 import { TelegramAdapter } from '../src/notification/telegram/telegram.adapter';
@@ -85,7 +87,18 @@ describe('Notification bindings (integration, TASK-675)', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
-      providers: [PrismaService, NotificationBindingRepository, NotificationBindingService],
+      providers: [
+        PrismaService,
+        NotificationBindingRepository,
+        NotificationBindingService,
+        // TASK-680: a guest-order binding queues the order summary on creation.
+        CustomerNotifier,
+        NotificationOutboxRepository,
+        {
+          provide: PinoLogger,
+          useValue: { setContext: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+        },
+      ],
     }).compile();
 
     app = moduleRef.createNestApplication();
@@ -101,6 +114,10 @@ describe('Notification bindings (integration, TASK-675)', () => {
 
   afterAll(async () => {
     if (prisma) {
+      // TASK-680: the order summaries the guest-order bindings queued.
+      await prisma.notificationOutbox.deleteMany({
+        where: { recipientAddress: { startsWith: `int-${run}-` } },
+      });
       await prisma.notificationBinding.deleteMany({
         where: { externalId: { startsWith: `int-${run}-` } },
       });

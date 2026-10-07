@@ -8,6 +8,7 @@ import {
   NotificationBindingService,
 } from './notification-binding.service';
 import type { NotificationBindingRepository } from './notification-binding.repository';
+import type { CustomerNotifier } from './customer-notifier.service';
 
 const NOW = new Date('2026-10-01T12:00:00.000Z');
 
@@ -25,6 +26,7 @@ describe('NotificationBindingService', () => {
     getOffset: jest.fn(),
     saveOffset: jest.fn(),
   };
+  const customerNotifier = { onBindingCreated: jest.fn() };
   let service: NotificationBindingService;
 
   beforeEach(() => {
@@ -32,6 +34,7 @@ describe('NotificationBindingService', () => {
     jest.spyOn(Date, 'now').mockReturnValue(NOW.getTime());
     service = new NotificationBindingService(
       repository as unknown as NotificationBindingRepository,
+      customerNotifier as unknown as CustomerNotifier,
     );
   });
 
@@ -102,6 +105,7 @@ describe('NotificationBindingService', () => {
         hashBindingToken(token),
         { externalId: '-1001234567890', label: 'Магазин', isPrivate: false },
         NOW,
+        expect.any(Function),
       );
     });
 
@@ -114,7 +118,28 @@ describe('NotificationBindingService', () => {
         expect.any(String),
         { externalId: '42', label: null, isPrivate: true },
         NOW,
+        expect.any(Function),
       );
+    });
+
+    // TASK-680, owner decision 3: a guest's freshly connected chat gets the order
+    // summary in the exchange's own transaction. The repository runs the hook
+    // only for a binding it CREATED; the service routes it to CustomerNotifier.
+    it('hands the repository a creation hook that queues through CustomerNotifier in the same tx', async () => {
+      repository.consumeToken.mockResolvedValue({ ok: false, reason: 'invalid' });
+      customerNotifier.onBindingCreated.mockResolvedValue(1);
+
+      await service.consumeToken(token, { id: 42, isPrivate: true });
+
+      const hook = repository.consumeToken.mock.calls[0][3] as (
+        binding: unknown,
+        tx: unknown,
+      ) => Promise<unknown>;
+      const binding = { id: 'b-1', orderId: 'order-1' };
+      const tx = { marker: 'consume-tx' };
+      await hook(binding, tx);
+
+      expect(customerNotifier.onBindingCreated).toHaveBeenCalledWith(binding, tx);
     });
 
     it.each([

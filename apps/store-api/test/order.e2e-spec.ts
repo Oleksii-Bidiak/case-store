@@ -73,6 +73,8 @@ describe('OrderController (e2e)', () => {
     findAllForExport: jest.fn(),
     // TASK-484 / TASK-623: the operator re-issues a buyer link.
     rotateAccessToken: jest.fn(),
+    // TASK-335: who the «відправлено» letter goes to.
+    findRecipient: jest.fn(),
   };
 
   // TASK-483: the public "check my order" form has its own narrow repository, so
@@ -132,6 +134,8 @@ describe('OrderController (e2e)', () => {
   // dispatchDue so a stray worker tick is a harmless no-op.
   const mailOutboxServiceMock = {
     enqueueOrderConfirmation: jest.fn().mockResolvedValue(undefined),
+    // TASK-335: the «відправлено» letter.
+    enqueueOrderShipped: jest.fn(),
     dispatchDue: jest.fn().mockResolvedValue({ sent: 0, retried: 0, failed: 0 }),
   };
 
@@ -157,6 +161,10 @@ describe('OrderController (e2e)', () => {
     // settings singleton and, for PICKUP, the point through these.
     deliverySetting: { findUnique: jest.fn() },
     pickupPoint: { findMany: jest.fn(), findFirst: jest.fn() },
+    // TASK-680: «відправлено» picks the buyer's chats and queues their rows on
+    // the base client — after the shipment committed, like the letter.
+    notificationBinding: { findMany: jest.fn() },
+    notificationOutbox: { create: jest.fn() },
   };
 
   // TASK-643: the Nova Poshta client is the network edge — mocked like
@@ -2592,24 +2600,34 @@ describe('OrderController (e2e)', () => {
   describe('POST /api/orders — shop ping (TASK-677)', () => {
     const SHOP_CHAT_ID = '-1001234567890';
 
+    // TASK-680: the buyer's own chats are read through the same tx now, so the
+    // stub answers by audience — these SHOP chats are nobody's customer chat.
     const makeTxStub = (bindings: Array<{ externalId: string }>) => ({
       notificationOutbox: { create: jest.fn().mockResolvedValue({}) },
       notificationBinding: {
-        findMany: jest.fn().mockResolvedValue(
-          bindings.map((binding, index) => ({
-            id: `binding-${index}`,
-            channel: 'TELEGRAM',
-            audience: 'SHOP',
-            externalId: binding.externalId,
-            label: null,
-            userId: null,
-            orderId: null,
-            createdAt: new Date('2026-10-01T00:00:00.000Z'),
-            revokedAt: null,
-          })),
+        findMany: jest.fn(async (args: { where: { audience: string } }) =>
+          args.where.audience !== 'SHOP'
+            ? []
+            : bindings.map((binding, index) => ({
+                id: `binding-${index}`,
+                channel: 'TELEGRAM',
+                audience: 'SHOP',
+                externalId: binding.externalId,
+                label: null,
+                userId: null,
+                orderId: null,
+                createdAt: new Date('2026-10-01T00:00:00.000Z'),
+                revokedAt: null,
+              })),
         ),
       },
     });
+
+    /** The binding reads that asked for SHOP chats (the buyer's own are asked for too). */
+    const shopQueries = (txStub: ReturnType<typeof makeTxStub>) =>
+      txStub.notificationBinding.findMany.mock.calls.filter(
+        ([args]) => args.where.audience === 'SHOP',
+      );
 
     const armCheckout = (txStub: ReturnType<typeof makeTxStub>) => {
       userRepositoryMock.findById.mockResolvedValue({
@@ -2676,7 +2694,7 @@ describe('OrderController (e2e)', () => {
         .send({ shippingAddress: validAddress })
         .expect(201);
 
-      expect(txStub.notificationBinding.findMany).toHaveBeenCalledTimes(1);
+      expect(shopQueries(txStub)).toHaveLength(1);
       expect(txStub.notificationOutbox.create).not.toHaveBeenCalled();
     });
 
@@ -2698,7 +2716,7 @@ describe('OrderController (e2e)', () => {
           })
           .expect(201);
 
-        expect(txStub.notificationBinding.findMany).not.toHaveBeenCalled();
+        expect(shopQueries(txStub)).toHaveLength(0);
         expect(txStub.notificationOutbox.create).not.toHaveBeenCalled();
         expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
           expect.anything(),
@@ -2722,6 +2740,233 @@ describe('OrderController (e2e)', () => {
         data: expect.objectContaining({ type: 'shop-new-order', channel: 'TELEGRAM' }),
       });
     });
+  });
+
+  // ─── TASK-680: the buyer's own Telegram ─────────────────────────────────────
+  //
+  // Real CustomerNotifier → NotificationBindingRepository → outbox repository;
+  // NotificationOutboxService (the LETTERS) is mocked, so every outbox insert
+  // seen on the tx stub is a Telegram row.
+
+  describe('POST /api/orders — customer Telegram (TASK-680)', () => {
+    const BUYER_CHAT = '424242';
+
+    const customerRow = (externalId: string) => ({
+      id: `cbinding-${externalId}`,
+      channel: 'TELEGRAM',
+      audience: 'CUSTOMER',
+      externalId,
+      label: '@buyer',
+      userId: userA.id,
+      orderId: null,
+      createdAt: new Date('2026-10-01T00:00:00.000Z'),
+      revokedAt: null,
+    });
+
+    /** No SHOP chat; the buyer's chats as given. */
+    const makeTxStub = (buyerChats: string[]) => ({
+      notificationOutbox: { create: jest.fn().mockResolvedValue({}) },
+      notificationBinding: {
+        findMany: jest.fn(async (args: { where: { audience: string } }) =>
+          args.where.audience === 'CUSTOMER' ? buyerChats.map(customerRow) : [],
+        ),
+      },
+    });
+
+    const armCheckout = (txStub: ReturnType<typeof makeTxStub>) => {
+      userRepositoryMock.findById.mockResolvedValue({
+        id: userA.id,
+        email: 'usera@example.com',
+        firstName: 'User',
+        lastName: 'A',
+        isActive: true,
+      });
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      const createdOrder = makeOrder();
+      orderRepositoryMock.createFromCart.mockImplementation(
+        async (
+          _params: unknown,
+          afterCreate?: (tx: unknown, created: OrderWithItems) => Promise<void>,
+        ) => {
+          if (afterCreate) await afterCreate(txStub, createdOrder);
+          return createdOrder;
+        },
+      );
+    };
+
+    it('a logged-in buyer with a chat gets the letter AND a Telegram row, both in the order tx', async () => {
+      const txStub = makeTxStub([BUYER_CHAT]);
+      armCheckout(txStub);
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${generateAccessToken(userA.id, userA.role)}`)
+        .send({ shippingAddress: validAddress })
+        .expect(201);
+
+      // The letter, through the order's tx — unchanged.
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'usera@example.com' }),
+        txStub,
+      );
+      // The buyer's chats were read through the same tx, by the ACCOUNT only…
+      expect(txStub.notificationBinding.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            channel: 'TELEGRAM',
+            audience: 'CUSTOMER',
+            revokedAt: null,
+            OR: [{ userId: userA.id }, { order: { is: { userId: userA.id } } }],
+          }),
+        }),
+      );
+      // …and the Telegram row went through it as well.
+      expect(txStub.notificationOutbox.create).toHaveBeenCalledTimes(1);
+      const { data } = txStub.notificationOutbox.create.mock.calls[0][0];
+      expect(data).toEqual({
+        type: 'order-confirmation',
+        channel: 'TELEGRAM',
+        recipientAddress: BUYER_CHAT,
+        payload: {
+          orderId: 'order-e2e-1',
+          orderNumber: 'ORDER-E2',
+          total: '59.98',
+          itemsCount: 2,
+          recipientOwner: { userId: userA.id, orderId: 'order-e2e-1' },
+        },
+      });
+      // Small and safe: nothing from the letter travels to the chat.
+      expect(JSON.stringify(data.payload)).not.toContain('usera@example.com');
+    });
+
+    it('a buyer with no chat gets the letter alone', async () => {
+      const txStub = makeTxStub([]);
+      armCheckout(txStub);
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${generateAccessToken(userA.id, userA.role)}`)
+        .send({ shippingAddress: validAddress })
+        .expect(201);
+
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+      expect(txStub.notificationOutbox.create).not.toHaveBeenCalled();
+    });
+
+    it('a failed Telegram insert fails the checkout — it shares the order transaction', async () => {
+      const txStub = makeTxStub([BUYER_CHAT]);
+      txStub.notificationOutbox.create.mockRejectedValue(new Error('insert failed'));
+      armCheckout(txStub);
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${generateAccessToken(userA.id, userA.role)}`)
+        .send({ shippingAddress: validAddress })
+        .expect(500);
+    });
+  });
+
+  describe('PATCH /api/admin/orders/:orderId/status — «відправлено» on Telegram (TASK-680)', () => {
+    const ACCOUNT_CHAT = '111111';
+    const ORDER_CHAT = '222222';
+
+    beforeEach(() => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PROCESSING, paymentStatus: PaymentStatus.PAID }),
+      );
+      orderRepositoryMock.updateStatus.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.SHIPPED,
+          paymentStatus: PaymentStatus.PAID,
+          trackingNumber: '20450000000001',
+          deliveryMethod: 'NOVA_POSHTA',
+        } as never),
+      );
+      orderRepositoryMock.findRecipient.mockResolvedValue({
+        email: 'usera@example.com',
+        name: 'User',
+      });
+      mailOutboxServiceMock.enqueueOrderShipped.mockResolvedValue(undefined);
+      prismaServiceMock.notificationOutbox.create.mockResolvedValue({});
+    });
+
+    it('reaches the account chat and the order chat once each — a chat on both gets one', async () => {
+      // The repository de-duplicates by chat: ACCOUNT_CHAT is bound to the
+      // account AND to the order, so it appears twice in the raw rows.
+      prismaServiceMock.notificationBinding.findMany.mockResolvedValue([
+        { ...shippedRow(ACCOUNT_CHAT), userId: userA.id },
+        { ...shippedRow(ORDER_CHAT), orderId: 'order-e2e-1' },
+        { ...shippedRow(ACCOUNT_CHAT), id: 'dup', orderId: 'order-e2e-1' },
+      ]);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${generateAccessToken(admin.id, admin.role)}`)
+        .send({ status: OrderStatus.SHIPPED })
+        .expect(200);
+
+      // Asked for the account's chats OR the order's.
+      expect(prismaServiceMock.notificationBinding.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            audience: 'CUSTOMER',
+            OR: [
+              { userId: userA.id },
+              { order: { is: { userId: userA.id } } },
+              { orderId: 'order-e2e-1' },
+            ],
+          }),
+        }),
+      );
+      const rows = prismaServiceMock.notificationOutbox.create.mock.calls.map(
+        ([args]) => args.data,
+      );
+      expect(rows.map((row) => row.recipientAddress)).toEqual([ACCOUNT_CHAT, ORDER_CHAT]);
+      for (const row of rows) {
+        expect(row).toEqual(
+          expect.objectContaining({
+            type: 'order-shipped',
+            channel: 'TELEGRAM',
+            payload: {
+              orderId: 'order-e2e-1',
+              orderNumber: 'ORDER-E2',
+              trackingNumber: '20450000000001',
+              deliveryMethod: 'NOVA_POSHTA',
+              recipientOwner: { userId: userA.id, orderId: 'order-e2e-1' },
+            },
+          }),
+        );
+      }
+      // The letter as before.
+      expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledTimes(1);
+    });
+
+    it('a Telegram failure never fails the shipment', async () => {
+      prismaServiceMock.notificationBinding.findMany.mockRejectedValue(new Error('db down'));
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${generateAccessToken(admin.id, admin.role)}`)
+        .send({ status: OrderStatus.SHIPPED })
+        .expect(200);
+
+      expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledTimes(1);
+    });
+
+    function shippedRow(externalId: string) {
+      return {
+        id: `sbinding-${externalId}`,
+        channel: 'TELEGRAM',
+        audience: 'CUSTOMER',
+        externalId,
+        label: null,
+        userId: null,
+        orderId: null,
+        createdAt: new Date('2026-10-01T00:00:00.000Z'),
+        revokedAt: null,
+      };
+    }
   });
 
   describe('POST /api/admin/orders', () => {

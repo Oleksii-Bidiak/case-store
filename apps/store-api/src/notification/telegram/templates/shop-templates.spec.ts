@@ -32,9 +32,10 @@ const row = (type: string, payload: Prisma.JsonValue): NotificationOutbox => ({
 /** STORE_ADMIN_URL set: the link is the admin origin plus the path. */
 const withAdmin: TelegramRenderContext = {
   adminUrl: (path) => `https://admin.example.com${path}`,
+  storeUrl: () => null,
 };
 /** STORE_ADMIN_URL unset (a dev box): no link at all. */
-const withoutAdmin: TelegramRenderContext = { adminUrl: () => null };
+const withoutAdmin: TelegramRenderContext = { adminUrl: () => null, storeUrl: () => null };
 
 /** uk-UA grouping uses a no-break space; compare on ordinary spaces. */
 const plain = (value: string): string => value.replace(/[  ]/g, ' ');

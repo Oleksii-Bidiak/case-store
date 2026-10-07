@@ -9,6 +9,7 @@ import { NotificationBindingRepository } from '../src/notification/notification-
 import { NotificationBindingService } from '../src/notification/notification-binding.service';
 import { NotificationOutboxRepository } from '../src/notification-outbox/notification-outbox.repository';
 import { ShopNotifier } from '../src/notification/shop-notifier.service';
+import { CustomerNotifier } from '../src/notification/customer-notifier.service';
 
 type Tx = Prisma.TransactionClient;
 
@@ -103,6 +104,8 @@ describe('ShopNotifier (integration, TASK-677)', () => {
         NotificationBindingService,
         NotificationOutboxRepository,
         ShopNotifier,
+        // TASK-680: NotificationBindingService queues a guest's order summary through it.
+        CustomerNotifier,
         {
           provide: PinoLogger,
           useValue: { setContext: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
