@@ -55,10 +55,21 @@ export class NeedsActionDto {
 
   @ApiProperty({
     type: Number,
-    description: 'Outbound emails permanently failed (NotificationOutbox status = FAILED)',
+    description:
+      'Outbound EMAILS permanently failed (NotificationOutbox status = FAILED, channel = EMAIL). ' +
+      'Telegram rows are not counted here since TASK-1090 — see failedTelegram',
     example: 1,
   })
   failedMails!: number;
+
+  @ApiProperty({
+    type: Number,
+    description:
+      'Telegram notifications permanently failed (NotificationOutbox status = FAILED, ' +
+      'channel = TELEGRAM, TASK-1090) — the card links to /settings/notifications',
+    example: 0,
+  })
+  failedTelegram!: number;
 
   @ApiProperty({
     type: Number,

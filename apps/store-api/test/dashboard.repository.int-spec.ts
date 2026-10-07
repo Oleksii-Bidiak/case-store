@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import {
+  NotificationChannel,
   NotificationOutboxStatus,
   OrderStatus,
   PaymentStatus,
@@ -697,6 +698,23 @@ describe('DashboardRepository (integration)', () => {
           status: NotificationOutboxStatus.SENT,
         },
       });
+      // Telegram outbox (TASK-1090): 2 FAILED (counted as failedTelegram, NOT as
+      // failedMails), 1 SENT (excluded from both).
+      for (const status of [
+        NotificationOutboxStatus.FAILED,
+        NotificationOutboxStatus.FAILED,
+        NotificationOutboxStatus.SENT,
+      ]) {
+        await prisma.notificationOutbox.create({
+          data: {
+            type: 'shop-order-created',
+            channel: NotificationChannel.TELEGRAM,
+            recipientAddress: '-1001234567890',
+            payload: {},
+            status,
+          },
+        });
+      }
     });
 
     afterAll(async () => {
@@ -714,8 +732,11 @@ describe('DashboardRepository (integration)', () => {
       expect(needsAction.pendingReviews).toBe(1);
       // PENDING + CONFIRMED-unpaid; the CANCELLED order is excluded.
       expect(needsAction.unpaidInTransit).toBe(2);
-      // Only the FAILED outbox row; the SENT row is excluded.
+      // Only the FAILED EMAIL outbox row; the SENT row and the FAILED Telegram
+      // rows are excluded (TASK-1090 — before it this said 3).
       expect(needsAction.failedMails).toBe(1);
+      // Only the two FAILED Telegram rows.
+      expect(needsAction.failedTelegram).toBe(2);
     });
   });
 

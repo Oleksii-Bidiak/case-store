@@ -30216,8 +30216,13 @@
           },
           "failedMails": {
             "type": "number",
-            "description": "Outbound emails permanently failed (NotificationOutbox status = FAILED)",
+            "description": "Outbound EMAILS permanently failed (NotificationOutbox status = FAILED, channel = EMAIL). Telegram rows are not counted here since TASK-1090 — see failedTelegram",
             "example": 1
+          },
+          "failedTelegram": {
+            "type": "number",
+            "description": "Telegram notifications permanently failed (NotificationOutbox status = FAILED, channel = TELEGRAM, TASK-1090) — the card links to /settings/notifications",
+            "example": 0
           },
           "pendingOver48h": {
             "type": "number",
@@ -30253,6 +30258,7 @@
           "pendingReviews",
           "unpaidInTransit",
           "failedMails",
+          "failedTelegram",
           "pendingOver48h",
           "ratingAbuse",
           "ratingAbuseSignals",
@@ -31067,6 +31073,14 @@
         ],
         "description": "`unconfigured` — TELEGRAM_BOT_TOKEN is not set; `failed` — a token is set but the last getMe did not succeed (see `reason`); `ok` — the bot answered (see `botUsername`)"
       },
+      "TelegramChatKind": {
+        "type": "string",
+        "enum": [
+          "PRIVATE",
+          "GROUP"
+        ],
+        "description": "`PRIVATE` — a personal chat with the bot; `GROUP` — a group or supergroup the bot was added to. Derived from the chat id: Telegram gives groups negative ids."
+      },
       "NotificationBindingUserDto": {
         "type": "object",
         "properties": {
@@ -31108,6 +31122,15 @@
             "description": "Chat title, or @username / first name for a private chat, as it was when connected",
             "example": "Магазин — замовлення"
           },
+          "kind": {
+            "description": "`PRIVATE` — a personal chat with the bot; `GROUP` — a group or supergroup the bot was added to. Derived from the chat id: Telegram gives groups negative ids.",
+            "example": "GROUP",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TelegramChatKind"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -31124,6 +31147,7 @@
         },
         "required": [
           "id",
+          "kind",
           "createdAt"
         ]
       },

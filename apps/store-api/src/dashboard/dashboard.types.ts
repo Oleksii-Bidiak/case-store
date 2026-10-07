@@ -143,8 +143,17 @@ export interface NeedsAction {
   pendingReviews: number;
   /** Active orders not yet paid (`paymentStatus != PAID` AND `status NOT IN (CANCELLED, REFUNDED)`). */
   unpaidInTransit: number;
-  /** Outbound emails permanently failed (`NotificationOutbox.status = FAILED`). */
+  /**
+   * Outbound EMAILS permanently failed (`NotificationOutbox.status = FAILED AND
+   * channel = EMAIL`). EMAIL only since TASK-1090 — Telegram rows share the outbox.
+   */
   failedMails: number;
+  /**
+   * Telegram notifications permanently failed (`NotificationOutbox.status = FAILED
+   * AND channel = TELEGRAM`, TASK-1090). The card links to the «Сповіщення» screen,
+   * where the bot state and the connected chats are.
+   */
+  failedTelegram: number;
   /**
    * Orders sitting in PENDING for more than {@link PENDING_STALE_HOURS} hours
    * (TASK-251). A subset of `newOrders` (not mutually exclusive) — of the new

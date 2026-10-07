@@ -101,6 +101,8 @@ describe('Admin Dashboard (e2e)', () => {
     pendingReviews: 2,
     unpaidInTransit: 7,
     failedMails: 1,
+    // TASK-1090: failed Telegram rows are their own counter, not part of failedMails.
+    failedTelegram: 6,
     pendingOver48h: 1,
     // TASK-589. Counted here for the same reason as the other five: the envelope
     // is what the admin widget reads, and a counter the repository computes but
@@ -415,6 +417,7 @@ describe('Admin Dashboard (e2e)', () => {
           pendingReviews: 2,
           unpaidInTransit: 7,
           failedMails: 1,
+          failedTelegram: 6,
           pendingOver48h: 1,
           ratingAbuse: 2,
           ratingAbuseSignals: { productIds: ['p-burst'], createdIps: ['203.0.113.42'] },
@@ -435,6 +438,7 @@ describe('Admin Dashboard (e2e)', () => {
         pendingReviews: 0,
         unpaidInTransit: 0,
         failedMails: 0,
+        failedTelegram: 0,
         pendingOver48h: 0,
         ratingAbuse: 0,
         ratingAbuseSignals: { productIds: [], createdIps: [] },

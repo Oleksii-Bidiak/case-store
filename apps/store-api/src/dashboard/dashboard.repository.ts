@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+  NotificationChannel,
   NotificationOutboxStatus,
   OrderHistoryNote,
   OrderStatus,
@@ -368,7 +369,12 @@ export class DashboardRepository {
    *                         which is what `textStatus = PENDING` alone did until
    *                         TASK-598, because star-only rows are written PENDING too
    *   - `unpaidInTransit` — active-but-unpaid orders ({@link unrealizedOrderWhere})
-   *   - `failedMails`     — outbox rows permanently failed (`status = FAILED`)
+   *   - `failedMails`     — EMAIL outbox rows permanently failed (`status = FAILED`).
+   *                         EMAIL only since TASK-1090: plan 187 put Telegram rows in
+   *                         the same outbox, and a dead bot counted as unsent mail
+   *                         would send the operator to the wrong screen
+   *   - `failedTelegram`  — TELEGRAM outbox rows permanently failed; the card links
+   *                         to `/settings/notifications` (TASK-1090)
    *   - `ratingAbuse`     — bursts and one-star runs, each situation once
    *                         ({@link getRatingAbuseSignals}); `ratingAbuseSignals`
    *                         names them so the card can link to the series (TASK-601)
@@ -387,6 +393,7 @@ export class DashboardRepository {
       pendingReviews,
       unpaidInTransit,
       failedMails,
+      failedTelegram,
       pendingOver48h,
       ratingAbuseSignals,
       unavailableItems,
@@ -395,7 +402,12 @@ export class DashboardRepository {
       this.prisma.order.count({ where: { status: OrderStatus.PENDING, deletedAt: null } }),
       this.prisma.review.count({ where: moderationQueueWhere(ReviewTextStatus.PENDING) }),
       this.prisma.order.count({ where: this.unrealizedOrderWhere() }),
-      this.prisma.notificationOutbox.count({ where: { status: NotificationOutboxStatus.FAILED } }),
+      this.prisma.notificationOutbox.count({
+        where: { status: NotificationOutboxStatus.FAILED, channel: NotificationChannel.EMAIL },
+      }),
+      this.prisma.notificationOutbox.count({
+        where: { status: NotificationOutboxStatus.FAILED, channel: NotificationChannel.TELEGRAM },
+      }),
       this.prisma.order.count({ where: this.pendingOver48hWhere() }),
       this.getRatingAbuseSignals(),
       this.prisma.order.count({ where: this.unavailableItemsOrderWhere() }),
@@ -406,6 +418,7 @@ export class DashboardRepository {
       pendingReviews,
       unpaidInTransit,
       failedMails,
+      failedTelegram,
       pendingOver48h,
       ratingAbuse: ratingAbuseSignals.productIds.length + ratingAbuseSignals.createdIps.length,
       ratingAbuseSignals,
