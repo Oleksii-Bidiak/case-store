@@ -421,6 +421,18 @@ describe("AdminOrderTable — toolbar", () => {
     ).toBeInTheDocument();
   });
 
+  it("names the quick view in «Вид» on a tab other than «Усі» (TASK-1832)", async () => {
+    mockSearchParams = new URLSearchParams("status=PENDING");
+    renderWithProviders(<AdminOrderTable />);
+
+    expect(
+      await screen.findByRole("button", { name: r.view(d.tabNew) }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: r.view(d.viewDefault) }),
+    ).not.toBeInTheDocument();
+  });
+
   it("refetches the queue when Оновити is pressed (TASK-354)", async () => {
     const seen = serveRows([makeOrderRow(null)]);
 

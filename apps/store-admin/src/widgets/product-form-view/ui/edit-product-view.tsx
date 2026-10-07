@@ -10,6 +10,7 @@ import {
   ProductForm,
   productFormSectionLabel,
   productFormValuesToDto,
+  productSaveErrorMessage,
   type ProductFormInput,
   type ProductFormSubmitContext,
   type ProductFormSubmitResult,
@@ -44,7 +45,7 @@ import {
 import { formatKeywords } from "@/shared/lib/seo";
 import type { SectionSaveController } from "@/shared/lib/section-save";
 import { dict, STOREFRONT_URL } from "@/shared/config";
-import { apiErrorMessage, formatDate } from "@/shared/lib";
+import { formatDate } from "@/shared/lib";
 import {
   clearCreateCarryover,
   readCreateCarryover,
@@ -168,7 +169,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
       toast.success(dict.products.toastUpdated);
     } catch (saveError) {
       // TASK-397: the server's own words whenever it sends any.
-      const message = apiErrorMessage(saveError);
+      const message = productSaveErrorMessage(saveError);
       if (!mainSaved && writeMain) {
         toast.error(message ?? dict.products.toastUpdateFailed);
       } else {

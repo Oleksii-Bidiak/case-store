@@ -1248,6 +1248,16 @@ export const dict = {
     // appears rather than promising «Безкоштовно» the checkout then contradicts.
     deliveryAtCheckout: "Розрахуємо на наступному кроці",
     sheetDeliveryNote: "Вартість доставки розрахуємо під час оформлення",
+    // ── Прибрати недоступні (TASK-657) ──
+    // One action under the «приберіть недоступні» reason that clears every
+    // withdrawn line at once. N counts LINES, not units: two pieces of one
+    // withdrawn case are one thing to remove.
+    removeUnavailable: (n: number) =>
+      `Прибрати ${n} ${pluralUk(n, "недоступний товар", "недоступні товари", "недоступних товарів")}`,
+    removeUnavailableDone: (n: number) =>
+      `Прибрано ${n} ${pluralUk(n, "недоступний товар", "недоступні товари", "недоступних товарів")} з кошика`,
+    removeUnavailableError: (n: number) =>
+      `Не вдалося прибрати ${n} ${pluralUk(n, "недоступний товар", "недоступні товари", "недоступних товарів")}. Спробуйте ще раз.`,
   },
 
   // Promo code / discount (TASK-079)

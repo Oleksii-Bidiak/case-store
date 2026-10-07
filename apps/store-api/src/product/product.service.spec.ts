@@ -8,7 +8,13 @@ import {
   CreateProductInput,
   UpdateProductInput,
 } from './product.repository';
+import {
+  ProductCategoryBusyError,
+  ProductCategoryGoneError,
+  ProductRestoreConflictError,
+} from './product.errors';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
+import { AuditService } from '../audit';
 import { ProductSpecRepository } from './product-spec.repository';
 import { CategoryRepository } from '../category';
 import { BrandRepository } from '../brand';
@@ -84,6 +90,9 @@ const productRepositoryMock = {
   findCategoriesForBulk: jest.fn(),
   setColorMany: jest.fn(),
   softDelete: jest.fn(),
+  // TASK-656: restore reads ONLY tombstones and writes the restored row.
+  findDeletedById: jest.fn(),
+  restore: jest.fn(),
   // TASK-254: derived reserved-qty aggregate. Defaults to an empty map (no
   // reservations); individual tests override to assert the enrichment.
   getReservedQtyByProductId: jest.fn().mockResolvedValue(new Map<string, number>()),
@@ -177,6 +186,16 @@ const configServiceMock = {
 // Both methods resolve by default; individual tests override to simulate a
 // failing indexer and assert it never breaks the product write.
 
+/** The stable `error` code an HttpException carries to the client (TASK-1831). */
+function errorCodeOf(error: unknown): string | undefined {
+  return ((error as BadRequestException).getResponse() as { error?: string }).error;
+}
+
+// TASK-1830: who deleted a product comes from the action log.
+const auditServiceMock = {
+  findLatestActors: jest.fn(),
+};
+
 const productIndexerMock = {
   index: jest.fn().mockResolvedValue(undefined),
   remove: jest.fn().mockResolvedValue(undefined),
@@ -241,6 +260,7 @@ describe('ProductService', () => {
     specRepositoryMock.setSpecs.mockResolvedValue(undefined);
     attributeDefinitionRepositoryMock.findEffectiveForCategory.mockResolvedValue([]);
     productRepositoryMock.getReservedQtyByProductId.mockResolvedValue(new Map<string, number>());
+    auditServiceMock.findLatestActors.mockResolvedValue(new Map());
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -259,6 +279,7 @@ describe('ProductService', () => {
           useValue: attributeDefinitionRepositoryMock,
         },
         { provide: RevalidationNotifier, useValue: revalidationMock },
+        { provide: AuditService, useValue: auditServiceMock },
         // The REAL resolver (TASK-420), wired to the repository mocks above —
         // slug → id is part of what `findAll` promises, so stubbing it out would
         // leave the promise untested.
@@ -630,6 +651,115 @@ describe('ProductService', () => {
       ]);
     });
 
+    // TASK-1830 (Т8): the «Видалені» row says WHEN and BY WHOM — the real deletedAt
+    // (not updatedAt) and the actor of the latest product.remove in the action log.
+    describe('deletedAt / deletedBy (TASK-1830)', () => {
+      const deletedAt = new Date('2026-10-01T09:30:00.000Z');
+      const tombstones = [
+        { ...mockProduct, id: 'gone-1', isActive: false, deletedAt },
+        { ...mockProduct, id: 'gone-2', isActive: false, deletedAt },
+      ];
+
+      it('hydrates the deleted list with deletedAt and the actor from the action log', async () => {
+        productRepositoryMock.findAll.mockResolvedValue({ products: tombstones, total: 2 });
+        auditServiceMock.findLatestActors.mockResolvedValue(
+          new Map([['gone-1', { id: 'user-1', name: 'Олена Коваль' }]]),
+        );
+
+        const result = await service.adminFindAll({ page: 1, limit: 20, deleted: true });
+
+        expect(auditServiceMock.findLatestActors).toHaveBeenCalledWith(
+          'product.remove',
+          'product',
+          ['gone-1', 'gone-2'],
+        );
+        expect(result.items[0].deletedAt).toEqual(deletedAt);
+        expect(result.items[0].deletedBy).toEqual({ id: 'user-1', name: 'Олена Коваль' });
+        // No person on record → null, not a guess.
+        expect(result.items[1].deletedBy).toBeNull();
+      });
+
+      it('passes a nameless actor on by id with name null — the admin labels it', async () => {
+        productRepositoryMock.findAll.mockResolvedValue({ products: tombstones, total: 2 });
+        auditServiceMock.findLatestActors.mockResolvedValue(
+          new Map([['gone-1', { id: 'user-9', name: null }]]),
+        );
+
+        const result = await service.adminFindAll({ page: 1, limit: 20, deleted: true });
+
+        expect(result.items[0].deletedBy).toEqual({ id: 'user-9', name: null });
+      });
+
+      it('never reads the action log for the live list — deletedAt and deletedBy are null', async () => {
+        productRepositoryMock.findAll.mockResolvedValue({
+          products: [{ ...mockProduct, deletedAt: null }],
+          total: 1,
+        });
+
+        const result = await service.adminFindAll({ page: 1, limit: 20 });
+
+        expect(auditServiceMock.findLatestActors).not.toHaveBeenCalled();
+        expect(result.items[0].deletedAt).toBeNull();
+        expect(result.items[0].deletedBy).toBeNull();
+      });
+    });
+
+    // TASK-656 (Т8): «Видалені» reads newest-deletion-first — the product deleted
+    // by mistake a minute ago must be on page 1, not wherever its creation date
+    // puts it.
+    describe('sort resolution (TASK-656)', () => {
+      beforeEach(() => {
+        productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      });
+
+      it('defaults the deleted list to deletedAt, newest first', async () => {
+        await service.adminFindAll({ page: 1, limit: 20, deleted: true });
+
+        expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+          expect.objectContaining({ deleted: true, sortBy: 'deletedAt', sortOrder: 'desc' }),
+        );
+      });
+
+      it('keeps a column the operator picked on the deleted list', async () => {
+        await service.adminFindAll({ page: 1, limit: 20, deleted: true, sortBy: 'name' });
+
+        expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+          expect.objectContaining({ sortBy: 'name' }),
+        );
+      });
+
+      it('keeps createdAt as the default of the live admin list', async () => {
+        await service.adminFindAll({ page: 1, limit: 20 });
+
+        expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+          expect.objectContaining({ sortBy: 'createdAt' }),
+        );
+      });
+
+      it('falls back to createdAt for deletedAt on a live list (every row has none)', async () => {
+        await service.adminFindAll({ page: 1, limit: 20, sortBy: 'deletedAt' });
+
+        expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+          expect.objectContaining({ sortBy: 'createdAt' }),
+        );
+      });
+
+      it('collapses deletedAt to createdAt on the public list, cache key included', async () => {
+        cacheServiceMock.get.mockResolvedValue(null);
+
+        await service.findAll({ page: 1, limit: 20, sortBy: 'deletedAt' });
+
+        expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+          expect.objectContaining({ sortBy: 'createdAt' }),
+        );
+        const [plainKey] = cacheServiceMock.set.mock.calls[0] as [string];
+        cacheServiceMock.set.mockClear();
+        productRepositoryMock.findAll.mockClear();
+        await service.findAll({ page: 1, limit: 20 });
+        expect(cacheServiceMock.set.mock.calls[0][0]).toBe(plainKey);
+      });
+    });
+
     it('defaults reservedQty to 0 (physicalQty = stock) for a product with no reservations', async () => {
       productRepositoryMock.findAll.mockResolvedValue({ products: [mockProduct], total: 1 });
       // Default mock returns an empty map → no reservation for this product.
@@ -990,6 +1120,36 @@ describe('ProductService', () => {
       expect(categoryRepositoryMock.findById).toHaveBeenCalledWith('category-uuid-1');
       expect(productRepositoryMock.create).not.toHaveBeenCalled();
     });
+
+    // TASK-1772: the early check is outside any lock — a category delete committing
+    // before the insert is caught by the repository's under-lock re-check instead.
+    it('maps a category deleted before the locked insert to the same 400, with no side effects', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockRejectedValueOnce(new ProductCategoryGoneError());
+
+      const error = await service.create(createInput).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe('Category not found');
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_GONE');
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
+
+    // A category delete held the tree lock past the save's wait: a retryable 409.
+    it('maps a busy category tree to 409 PRODUCT_CATEGORY_BUSY, with no side effects', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.create.mockRejectedValueOnce(new ProductCategoryBusyError());
+
+      const error = await service.create(createInput).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_BUSY');
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
   });
 
   // ─── update (admin) ───────────────────────────────────────────────────────────
@@ -1052,6 +1212,37 @@ describe('ProductService', () => {
 
       expect(categoryRepositoryMock.findById).not.toHaveBeenCalled();
       expect(productRepositoryMock.update).toHaveBeenCalled();
+    });
+
+    // TASK-1772: whenever `categoryId` is written the repository re-checks it under the
+    // category tree lock — including a re-sent, unchanged one a delete has just emptied.
+    it('maps a category deleted before the locked write to the same 400, with no side effects', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockRejectedValueOnce(new ProductCategoryGoneError());
+
+      const error = await service
+        .update('product-uuid-1', { categoryId: mockProduct.categoryId, price: 1 })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).message).toBe('Category not found');
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_GONE');
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
+
+    it('maps a busy category tree to 409 PRODUCT_CATEGORY_BUSY, with no side effects', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockRejectedValueOnce(new ProductCategoryBusyError());
+
+      const error = await service
+        .update('product-uuid-1', { categoryId: mockProduct.categoryId, price: 1 })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_BUSY');
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
     });
 
     it('sanitizes the description on update (TASK-361)', async () => {
@@ -2085,6 +2276,247 @@ describe('ProductService', () => {
       });
 
       const result = await service.delete('product-uuid-1');
+
+      expect(result).not.toHaveProperty('deletedAt');
+    });
+  });
+
+  // ─── restore (TASK-656) ──────────────────────────────────────────────────────
+  // The inverse of delete(): the tombstone comes back HIDDEN on its native
+  // slug/SKU (the exact `deleted:<id>:` prefix removed), or answers 409 with a
+  // code naming the taken field — and then nothing is written.
+
+  describe('restore', () => {
+    const prefix = `deleted:${mockProduct.id}:`;
+    const tombstone = {
+      ...mockProduct,
+      isActive: false,
+      slug: `${prefix}${mockProduct.slug}`,
+      sku: `${prefix}${mockProduct.sku}`,
+      deletedAt: new Date('2026-09-12T10:00:00.000Z'),
+    };
+    const liveHolder = { ...mockProduct, id: 'someone-else' };
+
+    /** The `error` code a thrown 409 carries to the client. */
+    async function conflictCodeOf(promise: Promise<unknown>): Promise<string> {
+      const error = await promise.then(
+        () => {
+          throw new Error('expected a ConflictException');
+        },
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(ConflictException);
+      return ((error as ConflictException).getResponse() as { error: string }).error;
+    }
+
+    beforeEach(() => {
+      productRepositoryMock.findDeletedById.mockResolvedValue(tombstone);
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      productRepositoryMock.restore.mockImplementation(
+        (id: string, slug: string, sku: string | null) =>
+          Promise.resolve({ ...tombstone, id, slug, sku, isActive: false, deletedAt: null }),
+      );
+    });
+
+    it('brings the product back on its native slug and sku, with the exact prefix removed', async () => {
+      const result = await service.restore(mockProduct.id);
+
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        mockProduct.id,
+        mockProduct.slug,
+        mockProduct.sku,
+        mockProduct.slug,
+      );
+      expect(productRepositoryMock.findBySlug).toHaveBeenCalledWith(mockProduct.slug);
+      expect(productRepositoryMock.findBySku).toHaveBeenCalledWith(mockProduct.sku);
+      expect(result).toBeInstanceOf(ProductEntity);
+      expect(result.slug).toBe(mockProduct.slug);
+      expect(result.sku).toBe(mockProduct.sku);
+    });
+
+    it('comes back hidden — the restored product is inactive', async () => {
+      const result = await service.restore(mockProduct.id);
+
+      expect(result.isActive).toBe(false);
+      // Inactive → removed from (never added to) the search index.
+      expect(productIndexerMock.remove).toHaveBeenCalledWith(mockProduct.id);
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
+
+    it('strips only the prefix, so a native value containing ":" survives intact', async () => {
+      productRepositoryMock.findDeletedById.mockResolvedValue({
+        ...tombstone,
+        sku: `${prefix}IP15:CLR:01`,
+      });
+
+      await service.restore(mockProduct.id);
+
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        mockProduct.id,
+        mockProduct.slug,
+        'IP15:CLR:01',
+        mockProduct.slug,
+      );
+    });
+
+    it('keeps a null sku null and never looks it up', async () => {
+      productRepositoryMock.findDeletedById.mockResolvedValue({ ...tombstone, sku: null });
+
+      await service.restore(mockProduct.id);
+
+      expect(productRepositoryMock.findBySku).not.toHaveBeenCalled();
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        mockProduct.id,
+        mockProduct.slug,
+        null,
+        mockProduct.slug,
+      );
+    });
+
+    it('reads the tombstone only — a live or unknown id is 404 and nothing is written', async () => {
+      productRepositoryMock.findDeletedById.mockResolvedValue(null);
+
+      await expect(service.restore('live-or-unknown')).rejects.toThrow(NotFoundException);
+      expect(productRepositoryMock.findDeletedById).toHaveBeenCalledWith('live-or-unknown');
+      expect(productRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 PRODUCT_SLUG_CONFLICT on a taken slug and leaves the product deleted', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(liveHolder);
+
+      expect(await conflictCodeOf(service.restore(mockProduct.id))).toBe('PRODUCT_SLUG_CONFLICT');
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 PRODUCT_SKU_CONFLICT on a taken sku', async () => {
+      productRepositoryMock.findBySku.mockResolvedValue(liveHolder);
+
+      expect(await conflictCodeOf(service.restore(mockProduct.id))).toBe('PRODUCT_SKU_CONFLICT');
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 PRODUCT_SLUG_SKU_CONFLICT when both are taken', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(liveHolder);
+      productRepositoryMock.findBySku.mockResolvedValue(liveHolder);
+
+      expect(await conflictCodeOf(service.restore(mockProduct.id))).toBe(
+        'PRODUCT_SLUG_SKU_CONFLICT',
+      );
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+    });
+
+    it('restores on an override slug, checking the override rather than the native one', async () => {
+      productRepositoryMock.findBySlug.mockImplementation((slug: string) =>
+        Promise.resolve(slug === mockProduct.slug ? liveHolder : null),
+      );
+
+      const result = await service.restore(mockProduct.id, { slug: 'clear-case-2' });
+
+      expect(productRepositoryMock.findBySlug).toHaveBeenCalledWith('clear-case-2');
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        mockProduct.id,
+        'clear-case-2',
+        mockProduct.sku,
+        mockProduct.slug,
+      );
+      expect(result.slug).toBe('clear-case-2');
+    });
+
+    // TASK-1828: the repository re-homes the native address — the service hands it the
+    // native slug and drops whatever the native address had cached.
+    it('passes the native slug on and evicts its detail cache when restoring on a new slug', async () => {
+      productRepositoryMock.findBySlug.mockImplementation((slug: string) =>
+        Promise.resolve(slug === mockProduct.slug ? liveHolder : null),
+      );
+
+      await service.restore(mockProduct.id, { slug: 'clear-case-2' });
+
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        mockProduct.id,
+        'clear-case-2',
+        mockProduct.sku,
+        mockProduct.slug,
+      );
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey(mockProduct.slug));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey('clear-case-2'));
+    });
+
+    it('restores on an override sku', async () => {
+      await service.restore(mockProduct.id, { sku: 'IP15-NEW' });
+
+      expect(productRepositoryMock.restore).toHaveBeenCalledWith(
+        mockProduct.id,
+        mockProduct.slug,
+        'IP15-NEW',
+        mockProduct.slug,
+      );
+    });
+
+    it('refuses (400 PRODUCT_CATEGORY_GONE) to restore into a deleted category and writes nothing', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(null);
+
+      const error = await service.restore(mockProduct.id).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      // TASK-1831: a stable code, so the dialog need not guess from the status.
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_GONE');
+      expect(categoryRepositoryMock.findById).toHaveBeenCalledWith(mockProduct.categoryId);
+      expect(productRepositoryMock.restore).not.toHaveBeenCalled();
+    });
+
+    it('maps a category deleted before the locked write to the same 400, with no side effects', async () => {
+      productRepositoryMock.restore.mockRejectedValue(new ProductCategoryGoneError());
+
+      const error = await service.restore(mockProduct.id).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      // TASK-1831: the under-lock check answers with the same code as the early one.
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_GONE');
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.remove).not.toHaveBeenCalled();
+    });
+
+    it('maps a busy category tree to 409 PRODUCT_CATEGORY_BUSY — the product stays deleted', async () => {
+      productRepositoryMock.restore.mockRejectedValue(new ProductCategoryBusyError());
+
+      const error = await service.restore(mockProduct.id).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(errorCodeOf(error)).toBe('PRODUCT_CATEGORY_BUSY');
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+      expect(productIndexerMock.remove).not.toHaveBeenCalled();
+    });
+
+    it('maps a lost race on the write (P2002 on slug) to the same 409', async () => {
+      productRepositoryMock.restore.mockRejectedValue(
+        new ProductRestoreConflictError({ slug: true, sku: false }),
+      );
+
+      expect(await conflictCodeOf(service.restore(mockProduct.id))).toBe('PRODUCT_SLUG_CONFLICT');
+    });
+
+    it('re-reads which slot is taken when the violated constraint was not identified', async () => {
+      productRepositoryMock.restore.mockRejectedValue(new ProductRestoreConflictError(null));
+      // The up-front check saw both free; by the re-read the sku has been taken.
+      productRepositoryMock.findBySku.mockResolvedValueOnce(null).mockResolvedValueOnce(liveHolder);
+
+      expect(await conflictCodeOf(service.restore(mockProduct.id))).toBe('PRODUCT_SKU_CONFLICT');
+    });
+
+    it('evicts the lists and the restored slug detail entry, like delete()', async () => {
+      await service.restore(mockProduct.id);
+
+      expect(cacheServiceMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailIdKey(mockProduct.id));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey(mockProduct.slug));
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(CATALOGUE_REVALIDATE_TARGET);
+    });
+
+    it('does not expose deletedAt on the returned entity', async () => {
+      const result = await service.restore(mockProduct.id);
 
       expect(result).not.toHaveProperty('deletedAt');
     });

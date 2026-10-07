@@ -646,8 +646,10 @@ export const dict = {
     // anywhere. The copy below has one job: say what the server actually does.
     // An operator who reads «видалити» as «стерти назавжди разом із
     // замовленнями» never touches the button; one who reads it as «приховати»
-    // clicks it instead of «Деактивувати» and then cannot get the товар back,
-    // because the slug and артикул have already been freed for a new position.
+    // clicks it instead of «Деактивувати» and is surprised that the slug and
+    // артикул were freed for a new position. Since TASK-656 the товар comes
+    // back from «Видалені» — on its own address and артикул while they are
+    // still free, on new ones otherwise (TASK-1829).
     deleteAction: "Видалити",
     deleteHeading: "Видалити товар?",
     deleteDescription: (name: string) =>
@@ -657,8 +659,8 @@ export const dict = {
       "саме для них, тому історія й звіти не постраждають.",
     deleteFrees:
       "Його адреса (slug) і артикул звільняться: їх зможе зайняти інший товар. " +
-      "Тому це не «приховати» — повернути товар у попередньому вигляді самотужки " +
-      "не вийде.",
+      "Повернути товар можна у виді «Видалені» кнопкою «Відновити» — з рідними " +
+      "адресою й артикулом, доки їх ніхто не зайняв; інакше доведеться дати нові.",
     deleteAlternative:
       "Якщо треба лише тимчасово прибрати товар із продажу — закрийте це вікно й " +
       "скористайтеся перемикачем статусу: деактивований товар можна увімкнути будь-коли.",
@@ -673,10 +675,13 @@ export const dict = {
     // tombstones INSTEAD of the live rows (the API has no mixed mode — the row
     // entity carries no per-product deleted marker to tell them apart).
     filterDeleted: "Видалені",
-    deletedBadge: "видалено",
+    deletedBadge: "Видалено",
+    // TASK-656 (Т8): the view is no longer read-only — a deleted product can be
+    // restored, so the old «повернути їх не можна» promise is gone. The
+    // sentence about «Відновити» is `deletedNoticeRestore*` below, shown only
+    // to whoever actually has the button.
     deletedNotice:
-      "Показано видалені товари. Вони лише для довідки: редагувати, відкрити картку " +
-      "чи повернути їх із адмінки не можна — адресу й артикул уже звільнено.",
+      "Видалені товари не показуються ні на сайті, ні в пошуку, ні в інших списках адмінки.",
 
     // ── Картка товару, лише для перегляду (TASK-427) ────────────────────────
     metaTitleCard: "Картка товару — Адмін",
@@ -804,6 +809,108 @@ export const dict = {
     headerMoreAria: "Інші дії з товаром",
     menuCard: "Картка товару",
     menuPreview: "Прев'ю",
+
+    // ── відновлення видаленого товару (TASK-656, ProductsProposal Т8–Т12) ──
+    //
+    // POST /products/:id/restore brings a tombstone back HIDDEN, on its own
+    // address and артикул. When a live product took one of them meanwhile the
+    // API answers 409 with a code naming the field, and nothing is restored
+    // until the operator gives a new value — there is no silent suffix. The
+    // API does not say WHICH product holds the slot, so the copy says «інший
+    // товар» where the artboard names it (deliberate deviation).
+    restoreAction: "Відновити",
+    restoreActionAria: (name: string) => `Відновити «${name}»`,
+    deletedSummary: "Видалених товарів:",
+    deletedNoticeRestoreLead: "«Відновити» повертає товар у каталог",
+    deletedNoticeRestoreHidden: "прихованим",
+    deletedNoticeRestoreTail:
+      "— він зʼявиться на сайті, коли ви ввімкнете «Показувати на сайті».",
+    deletedNoticeNoRight:
+      "Повернути видалений товар може працівник із правом видаляти товари.",
+    restoreTitle: "Відновити товар?",
+    restoreLeadBefore: (name: string) => `«${name}» повернеться в каталог`,
+    restoreLeadHidden: "прихованим",
+    restoreLeadAfter:
+      ": на сайті його не буде, доки ви не ввімкнете «Показувати на сайті».",
+    restoreAddress: "Адреса",
+    restoreSku: "Артикул",
+    restoreNoSku: "без артикула",
+    restoreHint:
+      "Повертаємо рідні адресу й артикул. Ціна, залишок, фото й характеристики — як були до видалення.",
+    restoreConfirm: "Відновити",
+    restoreBusy: "Відновлюємо…",
+    restoreToastDone: (name: string) =>
+      `«${name}» відновлено — він прихований.`,
+    restoreToastOpen: "Відкрити картку",
+    restoreErrorTitle: "Товар не відновлено",
+    restoreErrorGone:
+      "Цього товару вже немає серед видалених — можливо, його щойно відновив хтось інший. Список оновлено.",
+    // TASK-1831: answered by the API's PRODUCT_CATEGORY_GONE, not guessed.
+    // The dialog cannot re-file a tombstone, so it says what CAN be done.
+    restoreErrorCategory:
+      "Категорію цього товару видалено, тож повернути його нікуди. Перенести видалений товар в іншу категорію звідси не можна — якщо він потрібен, створіть його заново в потрібній категорії. Нічого не змінилося.",
+    restoreErrorForbidden:
+      "У вас немає права відновлювати товари. Нічого не змінилося.",
+    restoreErrorGeneric:
+      "Не вдалося відновити товар. Нічого не змінилося — спробуйте ще раз.",
+    conflictTitleSlug: "Адреса вже зайнята",
+    conflictTitleSku: "Артикул уже зайнятий",
+    conflictTitleBoth: "Адреса й артикул уже зайняті",
+    // The lead is split around the address / артикул, which Т10 sets in mono.
+    conflictLeadSlugBefore: "Поки товар був видалений, адресу",
+    conflictLeadSlugAfter:
+      "отримав інший товар. Дайте відновленому товару нову адресу.",
+    conflictLeadSkuBefore: "Поки товар був видалений, артикул",
+    conflictLeadSkuAfter:
+      "отримав інший товар. Дайте відновленому товару новий артикул.",
+    conflictLeadBothBefore: "Поки товар був видалений, адресу",
+    conflictLeadBothMiddle: "і артикул",
+    conflictLeadBothAfter:
+      "отримали інші товари. Дайте відновленому товару нову адресу й новий артикул.",
+    conflictStillDeleted: "Товар поки лишається видаленим.",
+    conflictNewSlug: "Нова адреса",
+    conflictNewSku: "Новий артикул",
+    conflictSlugUrl: (host: string, slug: string) => `${host}/products/${slug}`,
+    // Appended after « · » to the address hint — hence lowercase (Т10).
+    conflictSkuKept: (sku: string) =>
+      `артикул ${sku} вільний — лишиться як був.`,
+    conflictSlugKept: (slug: string) =>
+      `Адреса /products/${slug} вільна — лишиться як була.`,
+    conflictSlugRequired: "Вкажіть нову адресу",
+    conflictSlugPattern:
+      "Лише малі латинські літери, цифри й дефіси, без дефіса на початку чи в кінці",
+    conflictSlugMax: "Адреса має містити не більше 255 символів",
+    conflictSlugSame: "Цю адресу вже зайнято — вкажіть іншу",
+    conflictSkuRequired: "Вкажіть новий артикул",
+    conflictSkuMax: "Артикул має містити не більше 50 символів",
+    conflictSkuSame: "Цей артикул уже зайнято — вкажіть інший",
+    conflictConfirmSlug: "Відновити з новою адресою",
+    conflictConfirmSku: "Відновити з новим артикулом",
+    conflictConfirmBoth: "Відновити з новими даними",
+    // Т8: the totals row and the date cell of the deleted view — the date
+    // is the tombstone's `deletedAt` (TASK-1830).
+    deletedTotalsOnPage: (count: number) => `Видалених на сторінці: ${count}`,
+    deletedOn: (date: string) => `видалено ${date}`,
+
+    // ── сортування «Видалених» за датою видалення (TASK-656) ──
+    // Т8 spells the default «дата видалення, нові вгорі» — the artboard's own
+    // wording, kept even though the older sort labels say «зверху».
+    sortDeletedDesc: "дата видалення, нові вгорі",
+    sortDeletedAsc: "дата видалення, старі вгорі",
+
+    // ── дата й автор видалення (TASK-1830) ──
+    // In «Видалені» the «Оновлено» column shows — and sorts by — the
+    // deletion date; the sort button says so.
+    colDeletedSortHint: "У виді «Видалені» — дата видалення товару.",
+
+    // ── ревʼю хвостів 185 U ──
+    // 409 PRODUCT_CATEGORY_BUSY on restore — the same lock as a save.
+    restoreErrorBusy:
+      "Категорії саме змінюються — спробуйте відновити ще раз за мить. Нічого не змінилося.",
+    // Who deleted it has no name on record (or the account is gone): the API
+    // keeps another employee's email to itself, so the row says who in
+    // general rather than which address.
+    deletedByUnnamed: "співробітник",
   },
 
   // TASK-360: supplier-catalogue import.
@@ -1134,6 +1241,15 @@ export const dict = {
     savedPartly: (sections: string) =>
       `Решту вже збережено: ${sections}. Виправте розділ і натисніть «Зберегти» ще раз.`,
     saveFailedGeneric: "сервер не прийняв зміни",
+
+    // ── ревʼю хвостів 185 U ──
+    // 409 PRODUCT_CATEGORY_BUSY: a category delete held the tree lock longer
+    // than a save may wait. Nothing was written; the same save can be repeated.
+    errorCategoryBusy:
+      "Категорії саме змінюються — спробуйте зберегти ще раз за мить. Нічого не змінилося.",
+    // 400 PRODUCT_CATEGORY_GONE: the picked category was deleted meanwhile.
+    errorCategoryGone:
+      "Вибраної категорії вже немає — її щойно видалили. Виберіть іншу й збережіть ще раз. Нічого не змінилося.",
   },
 
   // --- Categories (TASK-115) --------------------------------------------------
@@ -1306,7 +1422,6 @@ export const dict = {
       subcategories > 0
         ? `${countLabel(products, ["товар", "товари", "товарів"])} у ${countLabel(subcategories, ["підкатегорії", "підкатегоріях", "підкатегоріях"])}`
         : countLabel(products, ["товар", "товари", "товарів"]),
-    headerMenuAria: "Дії з категорією",
     openOnSite: "Відкрити на сайті",
     // One «Зберегти» saves the sections in order and stops at the first that
     // fails — saying what DID save, so nobody re-enters it.
@@ -1314,6 +1429,236 @@ export const dict = {
       saved
         ? `Збережено: ${saved}. Не вдалося зберегти: ${failed} — спробуйте ще раз.`
         : `Не вдалося зберегти: ${failed} — спробуйте ще раз.`,
+
+    // ── видалення (TASK-655) ──
+    // CategoryDelete.dc.html ДН-2.1…2.12 (Д-н2). The dialog says, BEFORE the
+    // click, what disappears, where the products go and that nothing comes back
+    // — the numbers come from `deletionImpact` of `GET /admin/categories/:id`.
+    delete: {
+      action: "Видалити…",
+      title: (name: string) => `Видалити категорію «${name}»?`,
+      lead: "Категорія разом із підкатегоріями зникне з адмінки й сайту. Товари не видаляються — вони переїдуть туди, куди ви скажете. Відновити категорію не можна.",
+      leadLeaf:
+        "Категорія зникне з адмінки й сайту. Товари не видаляються — вони переїдуть туди, куди ви скажете. Відновити категорію не можна.",
+      leadEmpty:
+        "Порожню категорію буде прибрано з адмінки й сайту. Відновити її не можна.",
+      // While `deletionImpact` is loading or failed: nothing is claimed yet.
+      leadUnknown:
+        "Категорія зникне з адмінки й сайту. Відновити її не можна. Товари не видаляються ніколи.",
+      loading: "Рахуємо, що зачепить видалення…",
+      loadError:
+        "Не вдалося порахувати, що зачепить видалення. Без цих чисел видаляти не будемо — спробуйте ще раз.",
+      goneError: "Цієї категорії вже немає — її видалив хтось інший.",
+      retry: "Спробувати ще раз",
+      modeLabel: "Куди перенести товари",
+      modeExisting: "В існуючу категорію",
+      modeNew: "Створити нову",
+      modeNewLocked:
+        "Створити нову категорію тут може лише той, хто має ще й право «Категорії» (редагування категорій). Виберіть існуючу або попросіть власника.",
+      targetLabel: "Категорія, куди перенести товари",
+      targetPlaceholder: "Виберіть категорію…",
+      targetEmpty: "Такої категорії немає.",
+      targetExcluded: (name: string, hasChildren: boolean) =>
+        hasChildren
+          ? `«${name}» та їхні підкатегорії тут не показуються: переносити товари в те, що видаляється, не можна.`
+          : `«${name}» тут не показується: переносити товари в те, що видаляється, не можна.`,
+      targetRequired: "Виберіть категорію, куди перенести товари.",
+      newName: "Назва нової категорії",
+      newNameHint: (slug: string) =>
+        slug
+          ? `Адреса: /categories/${slug} — з назви, як при звичайному створенні.`
+          : "Адресу буде створено з назви, як при звичайному створенні.",
+      newNameRequired: "Вкажіть назву нової категорії.",
+      newNameNoLetters: "Назва має містити хоча б одну літеру чи цифру.",
+      newNameTooLong: "Назва — не довше за 255 символів.",
+      newParent: "Де розмістити",
+      newParentRoot: "Корінь каталогу",
+      newParentHint: (name: string) =>
+        `Батьком не може бути «${name}» чи їхні підкатегорії.`,
+      // How the target reads inside a sentence.
+      targetExisting: (name: string) => `«${name}»`,
+      targetNewRoot: (name: string) => `«${name}» (нова, у корені каталогу)`,
+      targetNewUnder: (name: string, parent: string) =>
+        `«${name}» (нова, у «${parent}»)`,
+      consequences: "Що станеться",
+      goneCount: (count: number) =>
+        countLabel(count, ["категорія", "категорії", "категорій"]),
+      goneText: (count: number, name: string, subcategories: number) =>
+        subcategories > 0
+          ? `${pluralUk(count, ["зникне", "зникнуть", "зникнуть"])} — «${name}» і ${countLabel(subcategories, ["підкатегорія", "підкатегорії", "підкатегорій"])}`
+          : `${pluralUk(count, ["зникне", "зникнуть", "зникнуть"])} — «${name}»`,
+      goneSubNames: (names: string, more: number) =>
+        more > 0
+          ? `${names} і ще ${more}. Відновити їх не можна.`
+          : `${names}. Відновити їх не можна.`,
+      goneSubOne: "Відновити її не можна.",
+      goneSubEmpty: "Товарів і підкатегорій у ній немає — переносити нічого.",
+      productsCount: (count: number) =>
+        countLabel(count, ["товар", "товари", "товарів"]),
+      productsText: (count: number, target: string) =>
+        `${pluralUk(count, ["переїде", "переїдуть", "переїдуть"])} у ${target}`,
+      productsSub:
+        "Жоден товар не видаляється й не ховається: адреси, ціни, залишки — без змін.",
+      // Soft-deleted products move too (invariant I1: a restored product must
+      // not point at a tombstone), so the dialog says so rather than hiding it.
+      productsDeletedToo: (count: number) =>
+        `Також переїдуть видалені товари (${count}) — щоб їх можна було відновити.`,
+      deletedOnlyCount: (count: number) =>
+        countLabel(count, [
+          "видалений товар",
+          "видалені товари",
+          "видалених товарів",
+        ]),
+      deletedOnlySub:
+        "Їх немає в каталозі, але їх можна відновити — тому вони теж переїжджають.",
+      carouselsCount: (count: number) =>
+        `${countLabel(count, ["карусель", "каруселі", "каруселей"])} головної`,
+      carouselsSub: (count: number) =>
+        count === 1
+          ? "Інакше вона лишилася б без товарів."
+          : "Інакше вони лишилися б без товарів.",
+      address: "Адреса",
+      addressText: (slug: string) => `/categories/${slug} звільниться`,
+      addressSub:
+        "Старі посилання на неї відкриватимуть «Сторінку не знайдено».",
+      addressSubEmpty: "Її можна одразу дати новій категорії.",
+      templatesWarning: (target: string) =>
+        `Після переїзду до товарів застосуються шаблони характеристик і додаткових послуг категорії ${target}. Власні значення товарів збережуться, але в картці товару може зʼявитися інший набір полів.`,
+      confirmMove: (count: number) =>
+        `Видалити й перенести ${countLabel(count, ["товар", "товари", "товарів"])}`,
+      confirm: "Видалити",
+      busy: "Видаляємо…",
+      // The red box (ДН-2.8): one per error code the API really returns. Each
+      // says that nothing changed — the operator's choice is kept as it was.
+      errorTitle: "Не вдалося видалити.",
+      errorInSubtree:
+        "Вибрана категорія тепер усередині гілки, що видаляється, — дерево щойно змінилося. Виберіть іншу ціль. Нічого не змінилося.",
+      errorTargetGone:
+        "Вибраної категорії вже немає — її щойно видалили. Виберіть іншу ціль. Нічого не змінилося.",
+      errorParentGone:
+        "Категорії, у якій ви хотіли розмістити нову, вже немає. Виберіть інше місце. Нічого не змінилося.",
+      errorSlugConflict: (slug: string) =>
+        `Категорія з адресою /categories/${slug} уже існує. Дайте новій категорії іншу назву або виберіть існуючу. Нічого не змінилося.`,
+      errorTreeStale:
+        "Дерево категорій щойно змінилося — ми оновили дані в цьому вікні. Перевірте вибір і спробуйте ще раз. Нічого не змінилося.",
+      errorForbidden:
+        "Права «Видаляти категорії» у вас уже немає — попросіть власника. Нічого не змінилося.",
+      errorForbiddenNew:
+        "Створювати нову категорію ви не можете — потрібне ще й право «Категорії» (редагування категорій). Виберіть існуючу. Нічого не змінилося.",
+      errorTargetRequired:
+        "У категорії щойно зʼявилися товари, підкатегорії чи каруселі — їх треба кудись перенести. Виберіть, куди. Нічого не змінилося.",
+      errorGeneric: "Спробуйте ще раз. Нічого не змінилося.",
+      // No answer or a 5xx: the transaction may have committed before the
+      // answer was lost — the one refusal that cannot promise «nothing changed».
+      errorOutcomeUnknown:
+        "Сервер не відповів, тож видалення могло й відбутися. Ми оновили дерево — перевірте його, перш ніж пробувати ще раз.",
+      // ДН-2.11
+      toastDone: (name: string) => `Категорію «${name}» видалено.`,
+      toastMoved: (name: string, count: number, target: string) =>
+        `Категорію «${name}» видалено. ${countLabel(count, ["товар", "товари", "товарів"])} тепер у «${target}».`,
+      toastShowProducts: "Показати товари",
+      // The tree read failed: there is nothing to pick from, and «Такої
+      // категорії немає» under an empty list would be a lie.
+      treeLoadError:
+        "Не вдалося завантажити список категорій, тож вибрати, куди перенести товари, поки нема з чого.",
+      // ДН-2.3: beside each target — active products in its whole subtree,
+      // the same figure the «Товарів» column of the tree shows.
+      targetOptionCount: (count: number) => `${count} тов.`,
+      // ── ревʼю 185 U (TASK-1836) ──
+      // Only soft-deleted products moved: they did move (I1), but the products
+      // list does not show them, so no «Показати товари».
+      toastMovedDeleted: (name: string, count: number, target: string) =>
+        `Категорію «${name}» видалено. ${countLabel(count, ["видалений товар", "видалені товари", "видалених товарів"])} тепер у «${target}» — їх видно у виді «Видалені».`,
+      // ── прихована ціль (TASK-1837) ──
+      // Owner's decision 2026-10-06: a HIDDEN category may receive the
+      // products, but the dialog warns — a product is on the site only while
+      // its own category is shown — and the API wants explicit consent.
+      targetOptionHidden: (count: number) => `прихована · ${count} тов.`,
+      parentOptionHidden: "прихована",
+      productsSubHidden:
+        "Жоден товар не видаляється: адреси, ціни, залишки — без змін. Але в прихованій категорії на сайті їх не видно.",
+      // TASK-1841: the carousels switched along show nothing either.
+      hiddenTargetWarning: (name: string, count: number, carousels = 0) => {
+        const lead =
+          count > 0
+            ? `«${name}» прихована: після переїзду ${countLabel(count, ["товар", "товари", "товарів"])} ${pluralUk(count, ["зникне", "зникнуть", "зникнуть"])} із сайту`
+            : `«${name}» прихована: те, що переїде туди, не показуватиметься на сайті`;
+        const tail =
+          carousels > 0
+            ? `, а ${countLabel(carousels, ["карусель", "каруселі", "каруселей"])} головної ${pluralUk(carousels, ["нічого не показуватиме", "нічого не показуватимуть", "нічого не показуватимуть"])}`
+            : "";
+        return `${lead}${tail}, доки ви не покажете «${name}».`;
+      },
+      newParentHiddenNote: (name: string) =>
+        `«${name}» прихована — нова категорія не зʼявиться в меню сайту, доки «${name}» не покажуть. Товари лишаться на сайті.`,
+      errorTargetHidden: (name: string) =>
+        `Категорію «${name}» щойно приховали — товари, перенесені туди, зникнуть із сайту. Перевірте попередження й підтвердьте ще раз. Нічого не змінилося.`,
+      // ── каруселі на ім'я (TASK-1776) ──
+      // ДН-2.4: «1 карусель головної «Навушники тижня» перемкнеться на «X»».
+      // `names` is what the row spells out (the first few); `count` is all of
+      // them, so the rest reads «і ще N» and the verb agrees with the total.
+      carouselsText: (count: number, names: string[], target: string) => {
+        const quoted = names.map((n) => `«${n}»`);
+        const more = count - quoted.length;
+        const list =
+          quoted.length === 0
+            ? ""
+            : more > 0
+              ? `${quoted.join(", ")} і ще ${more} `
+              : quoted.length > 1
+                ? `${quoted.slice(0, -1).join(", ")} і ${quoted[quoted.length - 1]} `
+                : `${quoted[0]} `;
+        return `${list}${pluralUk(count, ["перемкнеться", "перемкнуться", "перемкнуться"])} на ${target}`;
+      },
+      // ── каруселі й тост прихованої цілі (TASK-1841) ──
+      // A hidden category shows nothing in a carousel, so «інакше лишилася б
+      // без товарів» would be a promise the switch does not keep.
+      carouselsSubHidden: (count: number) =>
+        count === 1
+          ? "Але поки категорія прихована, карусель нічого не покаже."
+          : "Але поки категорія прихована, каруселі нічого не покажуть.",
+      // Appended to `toastMoved` after a move the operator agreed to.
+      toastHiddenTail: (target: string, carousels: number) =>
+        carousels > 0
+          ? `На сайті їх не видно, а ${countLabel(carousels, ["карусель", "каруселі", "каруселей"])} головної ${pluralUk(carousels, ["порожня", "порожні", "порожні"])}, доки ви не покажете «${target}».`
+          : `На сайті їх не видно, доки ви не покажете «${target}».`,
+      // No live product moved, but carousels now point at the hidden target.
+      toastHiddenCarousels: (target: string, carousels: number) =>
+        `${countLabel(carousels, ["карусель", "каруселі", "каруселей"])} головної ${pluralUk(carousels, ["порожня", "порожні", "порожні"])}, доки ви не покажете «${target}».`,
+      // ── ревʼю хвостів 185 U ──
+      // Appended to `toastMoved` (which counts only the LIVE products, from
+      // the answer's `movedLiveProducts`) when soft-deleted ones moved too.
+      toastAlsoDeleted: (count: number) =>
+        `Разом із ними — ${countLabel(count, ["видалений товар", "видалені товари", "видалених товарів"])}: їх видно у виді «Видалені».`,
+      // The closed picker shows only the path; the badge keeps «прихована»
+      // next to the choice itself, not only in the warning further down.
+      targetSelectedHidden: "прихована",
+    },
+    // ── лише перегляд: право видаляти без права «Категорії» (TASK-1781) ──
+    // `categories:delete` reads the tree and the card (the API half of
+    // TASK-655) but writes nothing else, so those screens show no control
+    // whose only answer would be a 403 — and say so once, plainly.
+    readOnly: {
+      treeNotice:
+        "Ви можете переглядати категорії й видаляти їх. Створювати, переміщати, показувати й приховувати категорії може працівник із правом «Категорії».",
+      cardNotice:
+        "Ви можете переглянути цю категорію й видалити її. Змінювати категорії може працівник із правом «Категорії».",
+      open: "Відкрити",
+      sectionMain: "Основне",
+      sectionSeo: "SEO",
+      fieldName: "Назва",
+      fieldAddress: "Адреса",
+      fieldParent: "Батьківська категорія",
+      fieldParentRoot: "— (корінь каталогу)",
+      fieldDescription: "Опис",
+      fieldMetaTitle: "Meta title",
+      fieldMetaDescription: "Meta description",
+      empty: "—",
+      // /categories/new typed by hand without the right.
+      createForbidden: "Створювати категорії ви не можете.",
+      createForbiddenHint:
+        "Це може працівник із правом «Категорії» — попросіть власника.",
+    },
   },
 
   categoryForm: {
@@ -5170,6 +5515,10 @@ export const dict = {
       uploadBrandLogo: "завантажено логотип бренду",
       uploadCategoryImage: "завантажено зображення категорії",
       uploadLogo: "завантажено логотип",
+      // ── відновлення товару (TASK-656) ──
+      // `POST /api/products/:id/restore` derives `product.restore`: a deleted
+      // product brought back, hidden.
+      restore: "відновлено",
     },
 
     /** How the two halves are joined: «Замовлення — змінено статус». */

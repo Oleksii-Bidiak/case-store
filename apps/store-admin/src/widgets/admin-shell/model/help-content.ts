@@ -48,7 +48,6 @@ export interface HelpSection {
  * catalogue) does not carry them.
  */
 const RAW = {
-  categoriesDelete: "categories:delete",
   attributesWrite: "attributes:write",
   analyticsRevenue: "analytics:revenue",
 } as const;
@@ -129,7 +128,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         permission: PERM.categoriesWrite,
         phrase: "створювати й змінювати категорії",
       },
-      { permission: RAW.categoriesDelete, phrase: "видаляти категорії" },
+      { permission: PERM.categoriesDelete, phrase: "видаляти категорії" },
       {
         permission: RAW.attributesWrite,
         phrase: "змінювати шаблони характеристик",

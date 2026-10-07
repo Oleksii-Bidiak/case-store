@@ -1,0 +1,174 @@
+import { BadRequestException, ConflictException } from '@nestjs/common';
+
+/**
+ * Stable, machine-readable error codes for product failures the admin panel has to
+ * tell apart (TASK-656).
+ *
+ * These travel to the client in the HTTP error envelope's `error` field (see
+ * {@link HttpExceptionFilter}, which surfaces ONLY `resp.error` and `resp.message` —
+ * any extra property on the thrown body is silently discarded). So the code itself
+ * has to say WHICH unique field is taken: the restore dialog keys off it to show the
+ * «Нова адреса» field, the «Новий артикул» field, or both. Keep the values stable.
+ */
+export const ProductErrorCode = {
+  /** Restoring would put the product back on a slug a live product now holds. */
+  SLUG_CONFLICT: 'PRODUCT_SLUG_CONFLICT',
+  /** Restoring would put the product back on a SKU a live product now holds. */
+  SKU_CONFLICT: 'PRODUCT_SKU_CONFLICT',
+  /** Both the slug and the SKU are held by live products. */
+  SLUG_SKU_CONFLICT: 'PRODUCT_SLUG_SKU_CONFLICT',
+  /**
+   * The category the product would be filed under is deleted or does not exist
+   * (TASK-1831) — a 400. Restoring a product whose category is gone answers it, from
+   * the early check and from the under-lock one alike, so the restore dialog can tell
+   * it from a malformed request; create / update share the same check and answer it
+   * too (invariant I1).
+   */
+  CATEGORY_GONE: 'PRODUCT_CATEGORY_GONE',
+  /**
+   * The category tree is being restructured right now (a category delete holds its lock)
+   * and a write that files the product under a category gave up waiting for it — a 409.
+   * Nothing was written; the same request can simply be sent again in a moment.
+   */
+  CATEGORY_BUSY: 'PRODUCT_CATEGORY_BUSY',
+} as const;
+
+export type ProductErrorCode = (typeof ProductErrorCode)[keyof typeof ProductErrorCode];
+
+/** The 409 codes — the ones naming which unique field a restore collided on. */
+export type ProductConflictCode =
+  | typeof ProductErrorCode.SLUG_CONFLICT
+  | typeof ProductErrorCode.SKU_CONFLICT
+  | typeof ProductErrorCode.SLUG_SKU_CONFLICT;
+
+/** Which of a product's unique columns a write collided on. */
+export interface ProductUniqueClash {
+  slug: boolean;
+  sku: boolean;
+}
+
+/**
+ * A restore write lost the race for a unique slot (TASK-656): the service checked the
+ * slug/SKU were free, and another product took one of them before the update landed,
+ * so Postgres answered with a unique violation (Prisma `P2002`).
+ *
+ * Thrown by `ProductRepository.restore`, which is the only layer that sees Prisma's
+ * error; the service maps it onto the 409 below. `clash` is `null` when the violated
+ * constraint could not be identified from the error metadata — the service then
+ * re-reads which slot is taken instead of guessing.
+ */
+export class ProductRestoreConflictError extends Error {
+  constructor(readonly clash: ProductUniqueClash | null) {
+    super('A product with this slug or SKU already exists');
+    this.name = 'ProductRestoreConflictError';
+  }
+}
+
+/**
+ * A product write found the category it files the product under deleted (or missing)
+ * once it held the category tree lock (invariant I1): `ProductRepository.restore`
+ * (TASK-656/1835) and `create` / a category-writing `update` (TASK-1772). The service's
+ * up-front check reads the category outside the lock; a category delete committing in
+ * between would otherwise leave the product filed under a tombstone. The service maps it
+ * onto the same 400 the up-front check gives. Nothing is written.
+ */
+export class ProductCategoryGoneError extends Error {
+  constructor() {
+    super('Category not found');
+    this.name = 'ProductCategoryGoneError';
+  }
+}
+
+/**
+ * A product write that files the product under a category could not get the category
+ * tree lock in time (TASK-1772 review): a category delete — or another tree operation
+ * holding the key exclusively — ran longer than the lock wait allows, or the write's
+ * transaction ran out of time behind it. `ProductRepository` raises it in place of the
+ * raw Postgres lock timeout / Prisma `P2028`, which would otherwise surface as a 500;
+ * the service maps it onto the 409 {@link categoryBusyProduct}. Nothing is written.
+ */
+export class ProductCategoryBusyError extends Error {
+  constructor() {
+    super('The category tree is being changed — try again');
+    this.name = 'ProductCategoryBusyError';
+  }
+}
+
+/**
+ * Identify the unique column(s) a Prisma `P2002` names. Prisma has spelled this two
+ * ways: `meta.target` (column names, or the constraint name such as
+ * `products_slug_key`) and, through a driver adapter, `meta.driverAdapterError.cause
+ * .constraint` (`fields` or `index`). Both are read; `null` when neither names a
+ * column this module knows.
+ */
+export function uniqueClashFromPrismaMeta(meta: unknown): ProductUniqueClash | null {
+  const names: string[] = [];
+  const collect = (value: unknown): void => {
+    if (typeof value === 'string') {
+      names.push(value);
+    } else if (Array.isArray(value)) {
+      value.forEach(collect);
+    }
+  };
+
+  if (meta && typeof meta === 'object') {
+    const record = meta as Record<string, unknown>;
+    collect(record.target);
+    const adapterError = record.driverAdapterError as
+      { cause?: { constraint?: { fields?: unknown; index?: unknown } } } | undefined;
+    const constraint = adapterError?.cause?.constraint;
+    collect(constraint?.fields);
+    collect(constraint?.index);
+  }
+
+  const lowered = names.map((name) => name.toLowerCase());
+  const clash: ProductUniqueClash = {
+    slug: lowered.some((name) => name.includes('slug')),
+    sku: lowered.some((name) => name.includes('sku')),
+  };
+  return clash.slug || clash.sku ? clash : null;
+}
+
+/** The code that names exactly the fields in `clash`, or `null` when nothing clashed. */
+export function restoreConflictCode(clash: ProductUniqueClash): ProductConflictCode | null {
+  if (clash.slug && clash.sku) return ProductErrorCode.SLUG_SKU_CONFLICT;
+  if (clash.slug) return ProductErrorCode.SLUG_CONFLICT;
+  if (clash.sku) return ProductErrorCode.SKU_CONFLICT;
+  return null;
+}
+
+const CONFLICT_MESSAGES: Record<ProductConflictCode, string> = {
+  [ProductErrorCode.SLUG_CONFLICT]: 'Another product already uses this slug — choose a new one',
+  [ProductErrorCode.SKU_CONFLICT]: 'Another product already uses this SKU — choose a new one',
+  [ProductErrorCode.SLUG_SKU_CONFLICT]:
+    'Other products already use this slug and this SKU — choose new ones',
+};
+
+/** Build a 409 Conflict carrying a stable product error code. */
+export function conflictProduct(code: ProductConflictCode): ConflictException {
+  return new ConflictException({ error: code, message: CONFLICT_MESSAGES[code] });
+}
+
+/**
+ * The 400 every "the category this product is filed under is gone" path answers with
+ * (TASK-1831): the early checks and the under-lock re-checks of create / update /
+ * restore (invariant I1). The message stays the one these paths always gave.
+ */
+export function categoryGoneProduct(): BadRequestException {
+  return new BadRequestException({
+    error: ProductErrorCode.CATEGORY_GONE,
+    message: 'Category not found',
+  });
+}
+
+/**
+ * The 409 a category-filing product write answers when the category tree stayed locked
+ * longer than it may wait ({@link ProductCategoryBusyError}): categories are being
+ * changed right now, nothing was written, and the same request can be retried.
+ */
+export function categoryBusyProduct(): ConflictException {
+  return new ConflictException({
+    error: ProductErrorCode.CATEGORY_BUSY,
+    message: 'Categories are being changed right now — try again in a moment',
+  });
+}

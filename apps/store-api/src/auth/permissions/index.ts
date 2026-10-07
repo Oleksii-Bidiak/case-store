@@ -19,9 +19,11 @@ export {
 } from './permission.catalog';
 export {
   RequirePermission,
+  RequireAnyPermission,
   OwnerOnly,
   REQUIRE_PERMISSION_KEY,
   OWNER_ONLY_KEY,
+  ALSO_ACCEPTED_PERMISSIONS_KEY,
 } from './require-permission.decorator';
 export { PermissionGuard } from './permission.guard';
 export { CurrentActor } from './current-actor.decorator';

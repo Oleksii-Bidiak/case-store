@@ -4,6 +4,7 @@ export {
   lockKey,
   treeLockKey,
   acquireAdvisoryLocks,
+  acquireSharedAdvisoryLocks,
   applySortOrderWrites,
   resolveSiblingOrderWrites,
   writeSiblingOrder,

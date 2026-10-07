@@ -248,7 +248,7 @@ function AdminBrandRegistry() {
           placeholder: d.searchPlaceholder,
           label: d.searchAria,
         }}
-        views={{ defaultName: d.viewDefault }}
+        views={{ defaultName: d.viewDefault, defaultQuickViewId: ALL_VIEW }}
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         notice={

@@ -1,5 +1,10 @@
-import { OrderStatus, SlugRedirectEntity } from '@prisma/client';
+import { OrderStatus, Prisma, SlugRedirectEntity } from '@prisma/client';
 import { ProductRepository } from './product.repository';
+import {
+  ProductCategoryBusyError,
+  ProductCategoryGoneError,
+  ProductRestoreConflictError,
+} from './product.errors';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
@@ -7,8 +12,14 @@ import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
 // ─── Mock PrismaService ──────────────────────────────────────────────────────
 
 const txMock = {
+  $executeRaw: jest.fn(),
   product: {
+    findFirst: jest.fn(),
+    create: jest.fn(),
     update: jest.fn(),
+  },
+  category: {
+    findFirst: jest.fn(),
   },
 };
 
@@ -33,8 +44,37 @@ const prismaMock = {
   $transaction: jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
 };
 
+/** The SQL text of one `$executeRaw` tagged-template call. */
+const rawSql = (call: unknown[]): string => (call[0] as TemplateStringsArray).join('?');
+
+/**
+ * The advisory-lock statement among the transaction's raw calls — the bounded-wait
+ * `lock_timeout` settings bracket it (TASK-1772 review), so it is not the first one.
+ */
+const advisoryLockCall = (): unknown[] => {
+  const call = txMock.$executeRaw.mock.calls.find((c: unknown[]) =>
+    rawSql(c).includes('pg_advisory'),
+  );
+  if (!call) throw new Error('no advisory lock was taken');
+  return call;
+};
+
+/** A Prisma known-request error as the client would throw it. */
+const prismaError = (code: string, meta: Record<string, unknown> = {}) =>
+  new Prisma.PrismaClientKnownRequestError(code, { code, clientVersion: 'test', meta });
+
+/** Postgres `lock_timeout` firing on a raw statement, as the pg driver adapter reports it. */
+const lockTimeout = () =>
+  prismaError('P2010', {
+    driverAdapterError: {
+      name: 'DriverAdapterError',
+      cause: { originalCode: '55P03', kind: 'postgres', code: '55P03' },
+    },
+  });
+
 const slugRedirectRepositoryMock = {
   recordRename: jest.fn(),
+  recordRestoreRename: jest.fn(),
 };
 
 describe('ProductRepository (soft-delete behaviour)', () => {
@@ -95,6 +135,153 @@ describe('ProductRepository (soft-delete behaviour)', () => {
 
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
       expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── invariant I1 under the category tree lock (TASK-1772) ──────────────────
+
+  describe('create / update — category re-checked under the tree lock (TASK-1772)', () => {
+    const order = (fn: jest.Mock): number => fn.mock.invocationCallOrder[0];
+    const lockSql = (): string => (advisoryLockCall()[0] as TemplateStringsArray).join('?');
+
+    beforeEach(() => {
+      txMock.$executeRaw.mockResolvedValue(1);
+      txMock.category.findFirst.mockResolvedValue({ id: 'cat-1' });
+      txMock.product.create.mockResolvedValue({ id: 'product-1' });
+      txMock.product.update.mockResolvedValue({ id: 'product-1' });
+    });
+
+    it('create: SHARED tree lock → live-category read → insert, in one transaction', async () => {
+      await repository.create({ name: 'Case', slug: 'case', price: 9.99, categoryId: 'cat-1' });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.product.create).not.toHaveBeenCalled();
+      // The same tree key CategoryRepository.deleteSubtreeWithMove holds exclusively.
+      expect(advisoryLockCall()[1]).toBe('categories:__tree__');
+      expect(lockSql()).toContain('pg_advisory_xact_lock_shared(');
+      expect(txMock.category.findFirst).toHaveBeenCalledWith({
+        where: { id: 'cat-1', deletedAt: null },
+        select: { id: true },
+      });
+      expect(order(txMock.$executeRaw)).toBeLessThan(order(txMock.category.findFirst));
+      expect(order(txMock.category.findFirst)).toBeLessThan(order(txMock.product.create));
+    });
+
+    it('create: a deleted category → ProductCategoryGoneError, nothing inserted', async () => {
+      txMock.category.findFirst.mockResolvedValue(null);
+
+      await expect(
+        repository.create({ name: 'Case', slug: 'case', price: 9.99, categoryId: 'cat-gone' }),
+      ).rejects.toBeInstanceOf(ProductCategoryGoneError);
+      expect(txMock.product.create).not.toHaveBeenCalled();
+    });
+
+    it('update with a categoryId: lock → check → write, in one transaction', async () => {
+      await repository.update('product-1', { categoryId: 'cat-1', name: 'Moved' });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.product.update).not.toHaveBeenCalled();
+      expect(advisoryLockCall()[1]).toBe('categories:__tree__');
+      expect(lockSql()).toContain('pg_advisory_xact_lock_shared(');
+      expect(order(txMock.$executeRaw)).toBeLessThan(order(txMock.category.findFirst));
+      expect(order(txMock.category.findFirst)).toBeLessThan(order(txMock.product.update));
+      expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+    });
+
+    // A form re-sending the category it loaded must not put a product a concurrent
+    // delete just moved back into the tombstone — so the check is not "only on change".
+    it('update re-checks an UNCHANGED categoryId too, and refuses a deleted one', async () => {
+      txMock.category.findFirst.mockResolvedValue(null);
+
+      await expect(
+        repository.update('product-1', { categoryId: 'cat-gone' }),
+      ).rejects.toBeInstanceOf(ProductCategoryGoneError);
+      expect(txMock.product.update).not.toHaveBeenCalled();
+    });
+
+    it('update with a categoryId AND a slug rename: one transaction, lock first', async () => {
+      await repository.update(
+        'product-1',
+        { categoryId: 'cat-1', slug: 'new-slug' },
+        { oldSlug: 'old-slug', newSlug: 'new-slug' },
+      );
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(order(txMock.$executeRaw)).toBeLessThan(order(txMock.product.update));
+      expect(slugRedirectRepositoryMock.recordRename).toHaveBeenCalledWith(
+        txMock,
+        SlugRedirectEntity.PRODUCT,
+        'old-slug',
+        'new-slug',
+      );
+    });
+
+    it('bounds the wait: lock_timeout set just for the lock statement, then back to default', async () => {
+      await repository.create({ name: 'Case', slug: 'case', price: 9.99, categoryId: 'cat-1' });
+
+      const sql = txMock.$executeRaw.mock.calls.map((call: unknown[]) => rawSql(call));
+      expect(sql).toHaveLength(3);
+      expect(sql[0]).toContain("set_config('lock_timeout'");
+      expect(txMock.$executeRaw.mock.calls[0][1]).toBe('5s');
+      expect(sql[0]).toMatch(/, true\)$/); // transaction-local
+      expect(sql[1]).toContain('pg_advisory_xact_lock_shared(');
+      expect(sql[2]).toBe('SET LOCAL lock_timeout TO DEFAULT');
+    });
+
+    it.each([
+      ['create', () => repository.create({ name: 'C', slug: 'c', price: 1, categoryId: 'cat-1' })],
+      ['update', () => repository.update('product-1', { categoryId: 'cat-1' })],
+    ])(
+      '%s: a lock wait that times out (55P03) → ProductCategoryBusyError, nothing written',
+      async (_name, write) => {
+        txMock.$executeRaw.mockImplementation((sql: TemplateStringsArray) =>
+          sql.join('?').includes('pg_advisory')
+            ? Promise.reject(lockTimeout())
+            : Promise.resolve(1),
+        );
+
+        await expect(write()).rejects.toBeInstanceOf(ProductCategoryBusyError);
+        expect(txMock.category.findFirst).not.toHaveBeenCalled();
+        expect(txMock.product.create).not.toHaveBeenCalled();
+        expect(txMock.product.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('a transaction that outlived its budget (P2028) is busy too', async () => {
+      prismaMock.$transaction.mockRejectedValueOnce(prismaError('P2028', { operation: 'commit' }));
+
+      await expect(repository.update('product-1', { categoryId: 'cat-1' })).rejects.toBeInstanceOf(
+        ProductCategoryBusyError,
+      );
+    });
+
+    it('a slug rename alone takes no lock and is never reported busy', async () => {
+      const expired = prismaError('P2028', { operation: 'commit' });
+      prismaMock.$transaction.mockRejectedValueOnce(expired);
+
+      await expect(
+        repository.update('product-1', { slug: 'new' }, { oldSlug: 'old', newSlug: 'new' }),
+      ).rejects.toBe(expired);
+    });
+
+    it('any other error passes through untouched', async () => {
+      const broken = prismaError('P2010', { driverAdapterError: { cause: { code: '42P01' } } });
+      txMock.$executeRaw.mockImplementation((sql: TemplateStringsArray) =>
+        sql.join('?').includes('pg_advisory') ? Promise.reject(broken) : Promise.resolve(1),
+      );
+
+      await expect(
+        repository.create({ name: 'C', slug: 'c', price: 1, categoryId: 'cat-1' }),
+      ).rejects.toBe(broken);
+    });
+
+    it('update without a categoryId takes no lock (the hot, single-statement path)', async () => {
+      prismaMock.product.update.mockResolvedValue({ id: 'product-1' });
+
+      await repository.update('product-1', { price: 10 });
+
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(txMock.$executeRaw).not.toHaveBeenCalled();
     });
   });
 
@@ -550,6 +737,25 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       ]);
     });
 
+    // TASK-656 (Т8): the «Видалені» list orders by the moment of deletion.
+    it('orders the tombstone list by deletedAt with the id tiebreaker', async () => {
+      prismaMock.product.findMany.mockResolvedValue([]);
+      prismaMock.product.count.mockResolvedValue(0);
+
+      await repository.findAll({
+        page: 1,
+        limit: 20,
+        deleted: true,
+        sortBy: 'deletedAt',
+        sortOrder: 'desc',
+      });
+
+      expect(prismaMock.product.findMany.mock.calls[0][0].orderBy).toEqual([
+        { deletedAt: 'desc' },
+        { id: 'asc' },
+      ]);
+    });
+
     it('should keep deletedAt: null alongside other filters', async () => {
       prismaMock.product.findMany.mockResolvedValue([]);
       prismaMock.product.count.mockResolvedValue(0);
@@ -866,6 +1072,210 @@ describe('ProductRepository (soft-delete behaviour)', () => {
     });
   });
 
+  // ─── restore (TASK-656) ─────────────────────────────────────────────────────
+
+  describe('findDeletedById', () => {
+    it('reads ONLY tombstones — the inverse of every other read', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+
+      await repository.findDeletedById('product-1');
+
+      expect(prismaMock.product.findFirst).toHaveBeenCalledWith({
+        where: { id: 'product-1', deletedAt: { not: null } },
+      });
+    });
+  });
+
+  describe('restore', () => {
+    function uniqueViolation(meta: Record<string, unknown>): Prisma.PrismaClientKnownRequestError {
+      return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+        meta,
+      });
+    }
+
+    beforeEach(() => {
+      txMock.$executeRaw.mockResolvedValue(1);
+      txMock.product.findFirst.mockResolvedValue({ categoryId: 'cat-1' });
+      txMock.category.findFirst.mockResolvedValue({ id: 'cat-1' });
+      txMock.product.update.mockResolvedValue({ id: 'product-1' });
+    });
+
+    it('clears deletedAt, keeps the product hidden and writes the given slug/sku, tombstones only', async () => {
+      await repository.restore('product-1', 'clear-case', 'SKU-1');
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.product.update).not.toHaveBeenCalled();
+      expect(txMock.product.update).toHaveBeenCalledWith({
+        where: { id: 'product-1', deletedAt: { not: null } },
+        data: { deletedAt: null, isActive: false, slug: 'clear-case', sku: 'SKU-1' },
+      });
+    });
+
+    it('checks the CURRENT category of the row under the category tree lock, before writing', async () => {
+      await repository.restore('product-1', 'clear-case', 'SKU-1');
+
+      // The same tree key CategoryRepository.deleteSubtreeWithMove holds for a delete.
+      const [lockSql, lockedKey] = advisoryLockCall();
+      expect(lockedKey).toBe('categories:__tree__');
+      // Shared, like every category-filing product write (TASK-1772): the delete holds
+      // it exclusively, so the two still cannot interleave.
+      expect((lockSql as TemplateStringsArray).join('?')).toContain(
+        'pg_advisory_xact_lock_shared(',
+      );
+      expect(txMock.product.findFirst).toHaveBeenCalledWith({
+        where: { id: 'product-1', deletedAt: { not: null } },
+        select: { categoryId: true, deletedAt: true },
+      });
+      expect(txMock.category.findFirst).toHaveBeenCalledWith({
+        where: { id: 'cat-1', deletedAt: null },
+        select: { id: true },
+      });
+      const order = (fn: jest.Mock): number => fn.mock.invocationCallOrder[0];
+      expect(order(txMock.$executeRaw)).toBeLessThan(order(txMock.product.findFirst));
+      expect(order(txMock.category.findFirst)).toBeLessThan(order(txMock.product.update));
+    });
+
+    it('a tree lock held past the wait → ProductCategoryBusyError, the product stays deleted', async () => {
+      txMock.$executeRaw.mockImplementation((sql: TemplateStringsArray) =>
+        sql.join('?').includes('pg_advisory') ? Promise.reject(lockTimeout()) : Promise.resolve(1),
+      );
+
+      await expect(repository.restore('product-1', 'clear-case', null)).rejects.toBeInstanceOf(
+        ProductCategoryBusyError,
+      );
+      expect(txMock.product.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses with ProductCategoryGoneError and writes nothing when the category is deleted', async () => {
+      txMock.category.findFirst.mockResolvedValue(null);
+
+      await expect(repository.restore('product-1', 'clear-case', 'SKU-1')).rejects.toBeInstanceOf(
+        ProductCategoryGoneError,
+      );
+      expect(txMock.product.update).not.toHaveBeenCalled();
+    });
+
+    it('leaves a missing tombstone to the guarded update (P2025 → 404, as before)', async () => {
+      txMock.product.findFirst.mockResolvedValue(null);
+
+      await repository.restore('product-1', 'clear-case', null);
+
+      expect(txMock.category.findFirst).not.toHaveBeenCalled();
+      expect(txMock.product.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('records no redirect when the tombstone carries no deletion time', async () => {
+      await repository.restore('product-1', 'clear-case', null, 'clear-case');
+      await repository.restore('product-1', 'clear-case', null);
+
+      expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+      expect(slugRedirectRepositoryMock.recordRestoreRename).not.toHaveBeenCalled();
+    });
+
+    // TASK-1828: restored on a NEW slug, the old links follow — in the same transaction.
+    describe('on a new slug (TASK-1828)', () => {
+      const deletedAt = new Date('2026-09-01T10:00:00.000Z');
+
+      beforeEach(() => {
+        txMock.product.findFirst.mockImplementation(({ where }: { where: { id?: string } }) =>
+          Promise.resolve(where.id ? { categoryId: 'cat-1', deletedAt } : null),
+        );
+      });
+
+      it('re-homes the native address after the write, as of the deletion time', async () => {
+        await repository.restore('product-1', 'clear-case-2', null, 'clear-case');
+
+        expect(slugRedirectRepositoryMock.recordRestoreRename).toHaveBeenCalledWith(
+          txMock,
+          SlugRedirectEntity.PRODUCT,
+          'clear-case',
+          'clear-case-2',
+          { deletedAt, redirectFrom: true },
+        );
+        expect(txMock.product.findFirst).toHaveBeenCalledWith({
+          where: { slug: 'clear-case', deletedAt: null },
+          select: { id: true },
+        });
+        const order = (fn: jest.Mock): number => fn.mock.invocationCallOrder[0];
+        expect(order(txMock.product.update)).toBeLessThan(
+          order(slugRedirectRepositoryMock.recordRestoreRename),
+        );
+        // Not the plain rename: that would steal rows a later holder of the address wrote.
+        expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+      });
+
+      it('back on the native slug, clears the address without looking for a holder', async () => {
+        await repository.restore('product-1', 'clear-case', null, 'clear-case');
+
+        expect(slugRedirectRepositoryMock.recordRestoreRename).toHaveBeenCalledWith(
+          txMock,
+          SlugRedirectEntity.PRODUCT,
+          'clear-case',
+          'clear-case',
+          { deletedAt, redirectFrom: true },
+        );
+        expect(txMock.product.findFirst).not.toHaveBeenCalledWith(
+          expect.objectContaining({ where: { slug: 'clear-case', deletedAt: null } }),
+        );
+      });
+
+      it('does not redirect a native address another live product now holds', async () => {
+        txMock.product.findFirst.mockImplementation(({ where }: { where: { id?: string } }) =>
+          Promise.resolve(where.id ? { categoryId: 'cat-1', deletedAt } : { id: 'holder' }),
+        );
+
+        await repository.restore('product-1', 'clear-case-2', null, 'clear-case');
+
+        expect(slugRedirectRepositoryMock.recordRestoreRename).toHaveBeenCalledWith(
+          txMock,
+          SlugRedirectEntity.PRODUCT,
+          'clear-case',
+          'clear-case-2',
+          { deletedAt, redirectFrom: false },
+        );
+      });
+
+      it('writes no redirect when the restore is refused for a deleted category', async () => {
+        txMock.category.findFirst.mockResolvedValue(null);
+
+        await expect(
+          repository.restore('product-1', 'clear-case-2', null, 'clear-case'),
+        ).rejects.toBeInstanceOf(ProductCategoryGoneError);
+        expect(slugRedirectRepositoryMock.recordRestoreRename).not.toHaveBeenCalled();
+      });
+    });
+
+    it.each([
+      ['meta.target column list', { target: ['slug'] }, { slug: true, sku: false }],
+      ['meta.target constraint name', { target: 'products_sku_key' }, { slug: false, sku: true }],
+      [
+        'driver-adapter constraint fields',
+        { driverAdapterError: { cause: { constraint: { fields: ['slug', 'sku'] } } } },
+        { slug: true, sku: true },
+      ],
+      ['unidentifiable metadata', { modelName: 'Product' }, null],
+    ])('maps a P2002 named by %s onto ProductRestoreConflictError', async (_label, meta, clash) => {
+      txMock.product.update.mockRejectedValue(uniqueViolation(meta));
+
+      const error = await repository.restore('product-1', 'clear-case', 'SKU-1').catch((e) => e);
+
+      expect(error).toBeInstanceOf(ProductRestoreConflictError);
+      expect((error as ProductRestoreConflictError).clash).toEqual(clash);
+    });
+
+    it('re-throws any other error untouched', async () => {
+      const notFound = new Prisma.PrismaClientKnownRequestError('Record not found', {
+        code: 'P2025',
+        clientVersion: 'test',
+      });
+      txMock.product.update.mockRejectedValue(notFound);
+
+      await expect(repository.restore('product-1', 'clear-case', null)).rejects.toBe(notFound);
+    });
+  });
+
   // ─── Reserved-qty derivation (TASK-254) ─────────────────────────────────────
   // Reserved = Σ OrderItem.quantity across orders in PRE_SHIPMENT_STATUSES
   // (PENDING/CONFIRMED/PROCESSING), non-deleted. Critical inventory module — TDD.
@@ -1053,8 +1463,13 @@ describe('ProductRepository (soft-delete behaviour)', () => {
   // ─── SEO meta pass-through (TASK-241) ───────────────────────────────────────
 
   describe('SEO meta (TASK-241)', () => {
+    beforeEach(() => {
+      // create() re-checks the category under the tree lock (TASK-1772).
+      txMock.category.findFirst.mockResolvedValue({ id: 'cat-1' });
+    });
+
     it('create persists metaTitle/metaDescription when provided', async () => {
-      prismaMock.product.create.mockResolvedValue({ id: 'product-1' });
+      txMock.product.create.mockResolvedValue({ id: 'product-1' });
 
       await repository.create({
         name: 'Clear Case',
@@ -1065,13 +1480,13 @@ describe('ProductRepository (soft-delete behaviour)', () => {
         metaDescription: 'A crystal-clear protective case.',
       });
 
-      const createArgs = prismaMock.product.create.mock.calls[0][0];
+      const createArgs = txMock.product.create.mock.calls[0][0];
       expect(createArgs.data.metaTitle).toBe('Clear Case | Store');
       expect(createArgs.data.metaDescription).toBe('A crystal-clear protective case.');
     });
 
     it('create defaults metaTitle/metaDescription to null when omitted', async () => {
-      prismaMock.product.create.mockResolvedValue({ id: 'product-2' });
+      txMock.product.create.mockResolvedValue({ id: 'product-2' });
 
       await repository.create({
         name: 'Plain Case',
@@ -1080,14 +1495,14 @@ describe('ProductRepository (soft-delete behaviour)', () => {
         categoryId: 'cat-1',
       });
 
-      const createArgs = prismaMock.product.create.mock.calls[0][0];
+      const createArgs = txMock.product.create.mock.calls[0][0];
       expect(createArgs.data.metaTitle).toBeNull();
       expect(createArgs.data.metaDescription).toBeNull();
     });
 
     // TASK-437 — the same pass-through for the two fields added alongside them.
     it('create persists keywords/ogImage, defaulting to [] and null', async () => {
-      prismaMock.product.create.mockResolvedValue({ id: 'product-5' });
+      txMock.product.create.mockResolvedValue({ id: 'product-5' });
 
       await repository.create({
         name: 'Tagged Case',
@@ -1104,11 +1519,11 @@ describe('ProductRepository (soft-delete behaviour)', () => {
         categoryId: 'cat-1',
       });
 
-      const tagged = prismaMock.product.create.mock.calls[0][0];
+      const tagged = txMock.product.create.mock.calls[0][0];
       expect(tagged.data.keywords).toEqual(['magsafe']);
       expect(tagged.data.ogImage).toBe('https://cdn.example.com/og/tagged-case.jpg');
 
-      const untagged = prismaMock.product.create.mock.calls[1][0];
+      const untagged = txMock.product.create.mock.calls[1][0];
       expect(untagged.data.keywords).toEqual([]);
       expect(untagged.data.ogImage).toBeNull();
     });

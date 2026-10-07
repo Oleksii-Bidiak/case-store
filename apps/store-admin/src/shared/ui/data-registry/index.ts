@@ -84,6 +84,8 @@ export {
 } from "./registry-bulk-bar";
 export {
   REGISTRY_CARD_QUERY,
+  REGISTRY_ROW_ACTION_WIDTH,
+  REGISTRY_TRAILING_WIDTH,
   RegistryTable,
   type RegistryCardParts,
   type RegistryRowGroup,

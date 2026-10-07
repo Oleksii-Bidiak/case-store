@@ -236,4 +236,93 @@ describe('SlugRedirectRepository', () => {
       expect(mockPrisma.slugRedirect.findUnique).not.toHaveBeenCalled();
     });
   });
+
+  // ─── recordRestoreRename (TASK-1828) ─────────────────────────────────────────
+
+  describe('recordRestoreRename', () => {
+    const deletedAt = new Date('2026-09-01T10:00:00.000Z');
+
+    const makeRestoreTx = () => {
+      const made = makeTx();
+      const createMany = jest.fn().mockImplementation(() => {
+        made.calls.push('createMany');
+        return Promise.resolve({ count: 1 });
+      });
+      Object.assign(made.raw.slugRedirect, { createMany });
+      return { ...made, createMany };
+    };
+
+    it('repoints only the aliases written while the native address was ours, clears every row on the new address, then N → M', async () => {
+      const { tx, raw, calls, createMany } = makeRestoreTx();
+
+      await repository.recordRestoreRename(tx, SlugRedirectEntity.PRODUCT, 'native', 'fresh', {
+        deletedAt,
+        redirectFrom: true,
+      });
+
+      expect(calls).toEqual(['updateMany', 'deleteMany', 'updateMany', 'createMany']);
+      expect(raw.slugRedirect.updateMany).toHaveBeenNthCalledWith(1, {
+        where: {
+          entity: SlugRedirectEntity.PRODUCT,
+          newScope: '',
+          newSlug: 'native',
+          updatedAt: { lte: deletedAt },
+        },
+        data: { newScope: '', newSlug: 'fresh' },
+      });
+      // The new address never redirects — whoever wrote the row (no loop with N → M).
+      expect(raw.slugRedirect.deleteMany).toHaveBeenCalledWith({
+        where: { entity: SlugRedirectEntity.PRODUCT, scope: '', oldSlug: 'fresh' },
+      });
+      // A native-address row older than the delete is overwritten; a later holder's is not.
+      expect(raw.slugRedirect.updateMany).toHaveBeenNthCalledWith(2, {
+        where: {
+          entity: SlugRedirectEntity.PRODUCT,
+          scope: '',
+          oldSlug: 'native',
+          updatedAt: { lte: deletedAt },
+        },
+        data: { newScope: '', newSlug: 'fresh' },
+      });
+      // …and with no row at all, one is inserted.
+      expect(createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            entity: SlugRedirectEntity.PRODUCT,
+            scope: '',
+            oldSlug: 'native',
+            newScope: '',
+            newSlug: 'fresh',
+          },
+        ],
+        skipDuplicates: true,
+      });
+      expect(raw.slugRedirect.upsert).not.toHaveBeenCalled();
+    });
+
+    it('does not redirect a native address someone else now lives on', async () => {
+      const { tx, calls } = makeRestoreTx();
+
+      await repository.recordRestoreRename(tx, SlugRedirectEntity.PRODUCT, 'native', 'fresh', {
+        deletedAt,
+        redirectFrom: false,
+      });
+
+      expect(calls).toEqual(['updateMany', 'deleteMany']);
+    });
+
+    it('back on its native address, only drops a redirect a later holder left on it', async () => {
+      const { tx, raw, calls } = makeRestoreTx();
+
+      await repository.recordRestoreRename(tx, SlugRedirectEntity.PRODUCT, 'native', 'native', {
+        deletedAt,
+        redirectFrom: true,
+      });
+
+      expect(calls).toEqual(['deleteMany']);
+      expect(raw.slugRedirect.deleteMany).toHaveBeenCalledWith({
+        where: { entity: SlugRedirectEntity.PRODUCT, scope: '', oldSlug: 'native' },
+      });
+    });
+  });
 });

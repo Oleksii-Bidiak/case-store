@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { CheckIcon } from "lucide-react";
 
 import { cn } from "@/shared/lib/utils";
 import { Input } from "./input";
@@ -14,6 +15,11 @@ export interface ComboboxOption {
   description?: string;
   /** Tree level, 0-based — indents the option (wave 198, category trees). */
   depth?: number;
+  /**
+   * A short figure at the option's end, in muted text — «29 тов.» beside a
+   * category (CategoryDelete ДН-2.3, TASK-655).
+   */
+  meta?: string;
   /**
    * Shown but not pickable — a tree branch heading among selectable leaves
    * (wave 198). Arrow keys skip it; click and Enter ignore it.
@@ -30,6 +36,12 @@ export interface ComboboxProps {
   /** Fired when the user picks an option (click or Enter). */
   onSelect: (option: ComboboxOption) => void;
   options: ComboboxOption[];
+  /**
+   * The value already chosen, when the caller has one: its option carries a
+   * check mark (and `aria-checked`), so an open list shows what is picked
+   * while `aria-selected` keeps meaning «highlighted by the keyboard».
+   */
+  selectedValue?: string;
   isLoading?: boolean;
   disabled?: boolean;
   placeholder?: string;
@@ -55,7 +67,8 @@ export interface ComboboxProps {
  *
  * ── Why store-admin has its own copy (TASK-423) ─────────────────────────────
  * A port of `apps/store-client/src/shared/ui/combobox.tsx`, verbatim apart from
- * this note: the two apps keep independent UI kits and must not import across
+ * this note and two admin-only additions (TASK-655: an option's `meta` figure
+ * and the `selectedValue` check mark, for tree pickers): the two apps keep independent UI kits and must not import across
  * the app boundary (the same rule `use-debounced-callback` follows).
  *
  * It is here because the admin forms' long `Select`s were unusable — the product
@@ -72,6 +85,7 @@ export function Combobox({
   onInputChange,
   onSelect,
   options,
+  selectedValue,
   isLoading = false,
   disabled = false,
   placeholder,
@@ -198,40 +212,63 @@ export function Combobox({
           )}
 
           {!isLoading &&
-            options.map((option, i) => (
-              <li
-                key={option.value || option.label}
-                id={optionId(i)}
-                role="option"
-                aria-selected={i === activeIndex}
-                aria-disabled={option.disabled || undefined}
-                className={cn(
-                  "px-3 py-2 text-sm",
-                  option.disabled
-                    ? "cursor-default font-medium text-muted-foreground"
-                    : "cursor-pointer",
-                  i === activeIndex && "bg-accent text-accent-foreground",
-                )}
-                // Prevent the input's blur from firing before the click selects.
-                onMouseDown={(e) => e.preventDefault()}
-                onMouseEnter={() => {
-                  if (!option.disabled) setActiveIndex(i);
-                }}
-                onClick={() => select(option)}
-                style={
-                  option.depth
-                    ? { paddingInlineStart: 12 + option.depth * 16 }
-                    : undefined
-                }
-              >
-                <span className="block">{option.label}</span>
-                {option.description && (
-                  <span className="block text-xs text-muted-foreground">
-                    {option.description}
+            options.map((option, i) => {
+              const picked =
+                selectedValue !== undefined && option.value === selectedValue;
+              return (
+                <li
+                  key={option.value || option.label}
+                  id={optionId(i)}
+                  role="option"
+                  aria-selected={i === activeIndex}
+                  aria-checked={picked || undefined}
+                  aria-disabled={option.disabled || undefined}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 text-sm",
+                    option.disabled
+                      ? "cursor-default font-medium text-muted-foreground"
+                      : "cursor-pointer",
+                    i === activeIndex && "bg-accent text-accent-foreground",
+                  )}
+                  // Prevent the input's blur from firing before the click selects.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => {
+                    if (!option.disabled) setActiveIndex(i);
+                  }}
+                  onClick={() => select(option)}
+                  style={
+                    option.depth
+                      ? { paddingInlineStart: 12 + option.depth * 16 }
+                      : undefined
+                  }
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block">{option.label}</span>
+                    {option.description && (
+                      <span className="block text-xs text-muted-foreground">
+                        {option.description}
+                      </span>
+                    )}
                   </span>
-                )}
-              </li>
-            ))}
+                  {option.meta ? (
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                      {option.meta}
+                    </span>
+                  ) : null}
+                  {selectedValue !== undefined ? (
+                    // A fixed slot, so the figures stay aligned whether or not
+                    // the row is the picked one.
+                    <CheckIcon
+                      aria-hidden="true"
+                      className={cn(
+                        "size-4 shrink-0 text-foreground",
+                        picked ? "visible" : "invisible",
+                      )}
+                    />
+                  ) : null}
+                </li>
+              );
+            })}
         </ul>
       )}
     </div>

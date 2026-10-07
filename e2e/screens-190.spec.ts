@@ -9,6 +9,7 @@ import {
 } from "./fixtures/seed-e2e";
 import { addSeededProductToCart } from "./fixtures/cart";
 import { loginAsAdmin } from "./fixtures/admin-session";
+import { ADMIN_ORIGIN } from "./fixtures/ports";
 
 /**
  * Plan 190 screenshot harness — evidence, not a regression gate.
@@ -49,7 +50,7 @@ const ENABLED = MODE === "before" || MODE === "after";
 const OUT_DIR = path.resolve(__dirname, "../docs/images/190", MODE ?? "off");
 const MEASUREMENTS_FILE = path.join(OUT_DIR, "measurements.json");
 
-const ADMIN_BASE_URL = "http://localhost:3002";
+const ADMIN_BASE_URL = ADMIN_ORIGIN;
 const DESKTOP = { width: 1440, height: 900 } as const;
 const PHONE = { width: 390, height: 844 } as const;
 /** TASK-510 reproduces at 900px: the burger menu and filter drawer are `lg:hidden`. */

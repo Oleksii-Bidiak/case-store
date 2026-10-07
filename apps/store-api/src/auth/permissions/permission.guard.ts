@@ -4,7 +4,11 @@ import { PinoLogger } from 'nestjs-pino';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { PermissionService } from './permission.service';
-import { OWNER_ONLY_KEY, REQUIRE_PERMISSION_KEY } from './require-permission.decorator';
+import {
+  ALSO_ACCEPTED_PERMISSIONS_KEY,
+  OWNER_ONLY_KEY,
+  REQUIRE_PERMISSION_KEY,
+} from './require-permission.decorator';
 import type { PermissionActor } from './permission.repository';
 
 /**
@@ -40,7 +44,8 @@ export interface RequestWithActor {
  *   5. `isOwner` → allowed, whatever the route asks for.
  *   6. `@OwnerOnly` → refused for everybody else.
  *   7. `role === ADMIN` → allowed, without a single granted row.
- *   8. Otherwise: does this person hold this permission?
+ *   8. Otherwise: does this person hold this permission (or, on a route marked
+ *      `@RequireAnyPermission`, any one of its keys)?
  *
  * STEPS 6 AND 7 ARE IN THAT ORDER ON PURPOSE. An admin passes every permission
  * that exists, so the only thing between a deputy and the owner's reserve — the
@@ -88,7 +93,7 @@ export class PermissionGuard extends JwtAuthGuard {
       throw new ForbiddenException(ACCESS_DENIED_MESSAGE);
     }
 
-    const { ownerOnly, permission } = this.resolveRequirement(context);
+    const { ownerOnly, permission, alsoAccepted } = this.resolveRequirement(context);
 
     if (!ownerOnly && !permission) {
       // An unannotated guarded route. Refused rather than allowed — see the
@@ -144,8 +149,11 @@ export class PermissionGuard extends JwtAuthGuard {
       this.deny(context, userId, 'unannotated');
     }
 
-    if (!this.permissionService.actorHasPermission(actor, permission)) {
-      this.deny(context, userId, `missing:${permission}`);
+    // `@RequireAnyPermission` (TASK-655): any one of the listed keys opens the
+    // route. `alsoAccepted` is empty for a plain `@RequirePermission`.
+    const accepted = [permission, ...alsoAccepted];
+    if (!accepted.some((key) => this.permissionService.actorHasPermission(actor, key))) {
+      this.deny(context, userId, `missing:${accepted.join('|')}`);
     }
 
     return true;
@@ -159,10 +167,15 @@ export class PermissionGuard extends JwtAuthGuard {
    * leak through onto a method marked `@OwnerOnly()` and the two would have to
    * be reconciled at every call site. `Reflector.getAllAndOverride` cannot
    * express that on its own because the two keys are independent.
+   *
+   * `alsoAccepted` (`@RequireAnyPermission`, TASK-655) is read from the SAME
+   * target the permission came from, so a handler-level `@RequirePermission`
+   * never inherits the class's alternatives.
    */
   private resolveRequirement(context: ExecutionContext): {
     ownerOnly: boolean;
     permission?: string;
+    alsoAccepted: string[];
   } {
     const handler = context.getHandler();
     const controller = context.getClass();
@@ -174,13 +187,22 @@ export class PermissionGuard extends JwtAuthGuard {
     );
 
     if (handlerOwnerOnly || handlerPermission) {
-      return { ownerOnly: Boolean(handlerOwnerOnly), permission: handlerPermission };
+      return {
+        ownerOnly: Boolean(handlerOwnerOnly),
+        permission: handlerPermission,
+        alsoAccepted: this.alsoAcceptedOn(handler),
+      };
     }
 
     return {
       ownerOnly: Boolean(this.reflector.get<boolean | undefined>(OWNER_ONLY_KEY, controller)),
       permission: this.reflector.get<string | undefined>(REQUIRE_PERMISSION_KEY, controller),
+      alsoAccepted: this.alsoAcceptedOn(controller),
     };
+  }
+
+  private alsoAcceptedOn(target: Parameters<Reflector['get']>[1]): string[] {
+    return this.reflector.get<string[] | undefined>(ALSO_ACCEPTED_PERMISSIONS_KEY, target) ?? [];
   }
 
   /** Log the real reason server-side, tell the caller nothing. Never returns. */

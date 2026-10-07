@@ -29,6 +29,30 @@ describe("FormAlert", () => {
     const { container } = render(<FormAlert>{null}</FormAlert>);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("with a title: bold title, the explanation in body text (ДН-2.8)", () => {
+    render(
+      <FormAlert title="Не вдалося видалити.">
+        Дерево щойно змінилося. Нічого не змінилося.
+      </FormAlert>,
+    );
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Не вдалося видалити. Дерево щойно змінилося. Нічого не змінилося.",
+    );
+    expect(alert).toHaveClass("bg-destructive/6", "text-foreground");
+    expect(alert).not.toHaveClass("text-destructive");
+    expect(
+      screen.getByText("Не вдалося видалити.", { selector: "strong" }),
+    ).toBeInTheDocument();
+  });
+
+  it("with a title but no message still renders nothing", () => {
+    const { container } = render(
+      <FormAlert title="Не вдалося видалити.">{null}</FormAlert>,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
 });
 
 describe("Callout", () => {

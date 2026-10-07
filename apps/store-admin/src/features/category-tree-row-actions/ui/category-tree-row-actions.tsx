@@ -13,7 +13,7 @@
  */
 
 import Link from "next/link";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Trash2Icon } from "lucide-react";
 import {
   MAX_TREE_LEVELS,
   applyIntent,
@@ -86,6 +86,19 @@ export interface CategoryTreeRowActionsProps {
   onMoveTo: (categoryId: string) => void;
   /** Activate/deactivate — owned by `features/category-status-toggle` (blast radius). */
   onToggleStatus: () => void;
+  /**
+   * Open the delete dialog for this row (TASK-655, ДН-2.1). `undefined` = the
+   * session may not delete categories, and the item is not rendered at all —
+   * the caller decides with `can(PERM.categoriesDelete)`.
+   */
+  onDelete?: (categoryId: string) => void;
+  /**
+   * The session may write categories (TASK-1781). `false` = a manager holding
+   * only `categories:delete`: every move and the status toggle are left out
+   * (the API would answer 403), the card link reads «Відкрити» — the card is
+   * read-only for them — and «Видалити…» stays.
+   */
+  canWrite?: boolean;
 }
 
 export function CategoryTreeRowActions({
@@ -98,6 +111,8 @@ export function CategoryTreeRowActions({
   onMove,
   onMoveTo,
   onToggleStatus,
+  onDelete,
+  canWrite = true,
 }: CategoryTreeRowActionsProps) {
   const self = items.find((i) => i.id === categoryId);
   const isRoot = self?.parentId === undefined || self?.parentId === null;
@@ -141,59 +156,85 @@ export function CategoryTreeRowActions({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          disabled={disabled || up.kind !== "moved"}
-          onSelect={() => run(up)}
-        >
-          {t.moveUp}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={disabled || down.kind !== "moved"}
-          onSelect={() => run(down)}
-        >
-          {t.moveDown}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          disabled={disabled || indent.kind !== "moved"}
-          onSelect={() => run(indent)}
-        >
-          {previousSibling ? t.indentUnder(previousSibling.label) : t.indent}
-        </DropdownMenuItem>
-        {/* Hidden (not merely disabled) at root — there is no level above.
+        {canWrite ? (
+          <>
+            <DropdownMenuItem
+              disabled={disabled || up.kind !== "moved"}
+              onSelect={() => run(up)}
+            >
+              {t.moveUp}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={disabled || down.kind !== "moved"}
+              onSelect={() => run(down)}
+            >
+              {t.moveDown}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={disabled || indent.kind !== "moved"}
+              onSelect={() => run(indent)}
+            >
+              {previousSibling
+                ? t.indentUnder(previousSibling.label)
+                : t.indent}
+            </DropdownMenuItem>
+            {/* Hidden (not merely disabled) at root — there is no level above.
             «Зробити кореневою» hides on the same condition and for the same
             reason: at the root it is not an action that is currently
             unavailable, it is an action that has already happened. */}
-        {!isRoot && (
-          <>
+            {!isRoot && (
+              <>
+                <DropdownMenuItem
+                  disabled={disabled || outdent.kind !== "moved"}
+                  onSelect={() => run(outdent)}
+                >
+                  {t.outdent}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={disabled || toRoot.kind !== "moved"}
+                  onSelect={() => run(toRoot)}
+                >
+                  {t.makeRoot}
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuItem
-              disabled={disabled || outdent.kind !== "moved"}
-              onSelect={() => run(outdent)}
+              disabled={disabled}
+              onSelect={() => onMoveTo(categoryId)}
             >
-              {t.outdent}
+              {t.moveTo}
             </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={disabled || toRoot.kind !== "moved"}
-              onSelect={() => run(toRoot)}
-            >
-              {t.makeRoot}
-            </DropdownMenuItem>
-          </>
-        )}
-        <DropdownMenuItem
-          disabled={disabled}
-          onSelect={() => onMoveTo(categoryId)}
-        >
-          {t.moveTo}
-        </DropdownMenuItem>
 
-        <DropdownMenuSeparator />
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
 
         <DropdownMenuItem asChild>
-          <Link href={`/categories/${categoryId}/edit`}>{t.edit}</Link>
+          <Link href={`/categories/${categoryId}/edit`}>
+            {canWrite ? t.edit : dict.categories.readOnly.open}
+          </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onToggleStatus()}>
-          {isActive ? t.deactivate : t.activate}
-        </DropdownMenuItem>
+        {canWrite ? (
+          <DropdownMenuItem onSelect={() => onToggleStatus()}>
+            {isActive ? t.deactivate : t.activate}
+          </DropdownMenuItem>
+        ) : null}
+
+        {/* ДН-2.1: the one irreversible item — last, after its own separator,
+            in the destructive colour. Not disabled by a search filter or a
+            PATCH in flight: it is not a move. */}
+        {onDelete ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={() => onDelete(categoryId)}
+            >
+              <Trash2Icon aria-hidden="true" />
+              {dict.categories.delete.action}
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

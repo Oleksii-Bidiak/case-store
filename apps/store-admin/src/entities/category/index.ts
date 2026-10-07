@@ -12,6 +12,8 @@ export {
   useAdminCategoryControllerActivate,
   useAdminCategoryControllerReorder,
   useAdminCategoryControllerSetStatusMany,
+  // TASK-655: delete a subtree, moving its products (TASK-652/654).
+  useAdminCategoryControllerDelete,
   useCategoryControllerGetAdminTree,
   useCategoryControllerGetCategoryTree,
   // Wave 198 (TASK-1087): the PUBLIC read by slug — 404 for a hidden category,
@@ -21,6 +23,7 @@ export {
   getAdminCategoryControllerFindByIdQueryKey,
   getCategoryControllerGetAdminTreeQueryKey,
   getCategoryControllerGetAdminTreeQueryOptions,
+  getCategoryControllerGetCategoryTreeQueryKey,
 } from "@/shared/api";
 
 export {
@@ -42,4 +45,9 @@ export type {
   ReorderCategoriesDto,
   ReorderGroupDto,
   BulkCategoryStatusDto,
+  AdminCategoryDetailEntity,
+  CategoryDeletionImpactEntity,
+  // TASK-1775: what a delete did — the target's id and the real counts.
+  CategoryDeletionResultEntity,
+  DeleteCategoryDto,
 } from "@/shared/api";

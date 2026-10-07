@@ -37,6 +37,18 @@ const r = dict.common.registry;
 /** Mirror of Tailwind's `max-md:` — below it the caller's cards replace rows. */
 export const REGISTRY_CARD_QUERY = "(max-width: 47.999rem)";
 
+/** Width of the trailing cell when it holds only «⋯» / the expand toggle. */
+export const REGISTRY_TRAILING_WIDTH = 44;
+
+/**
+ * Width of the trailing cell when it also holds an inline `rowAction` — room
+ * for one small outline button («Відновити» ≈ 94 px, ProductsProposal Т8) plus
+ * a gutter before the table's rounded edge, which would otherwise clip the
+ * button's border. Matches `w-28`. A screen that offers one budgets its
+ * default column widths against this.
+ */
+export const REGISTRY_ROW_ACTION_WIDTH = 112;
+
 /** Arrow-key step of a resize handle; Shift multiplies it by five. */
 const RESIZE_STEP = 10;
 
@@ -48,7 +60,7 @@ const INTERACTIVE =
   "a,button,input,select,textarea,label,[role=checkbox],[role=menuitem],[role=separator],[data-registry-interactive]";
 
 export interface RegistryCardParts {
-  /** The row's «⋯» menu, or `null`. */
+  /** The row's inline action (`rowAction`) and/or «⋯» menu, or `null`. */
   actions: React.ReactNode;
   /** The row's selection checkbox, or `null`. */
   select: React.ReactNode;
@@ -97,9 +109,32 @@ export interface RegistryTableProps<T> {
   selection?: RegistrySelection;
   rowActions?: (row: T) => readonly RowActionItem[];
   rowActionsLabel?: (row: T) => string;
+  /**
+   * One inline control in the trailing cell, before «⋯» — e.g. the outline
+   * «Відновити» of a view of deleted records (ProductsProposal Т8), where a
+   * menu of one item would hide the only thing the row is for.
+   *
+   * Deliberately NOT a column: «Колонки» can hide or reorder a column, and a
+   * hidden action column is an action nobody can reach (the class of defect
+   * wave 198 kept finding). The trailing cell is always there. `null` for a
+   * row that has none; on a card it joins `parts.actions`.
+   */
+  rowAction?: (row: T) => React.ReactNode;
   sort?: RegistrySort;
   /** Adds the «Разом на сторінці» row; columns supply `footer`. */
   totals?: boolean;
+  /**
+   * Replaces the totals row's «Разом на сторінці: N …» label — e.g.
+   * «Видалених на сторінці: 3» in a view of deleted records (Т8).
+   */
+  totalsLabel?: (count: number) => string;
+  /**
+   * Id of the column the totals label starts under; the columns before it
+   * stay empty — e.g. «Назва», so the label lines up with the names rather
+   * than with a thumbnail column (ProductsProposal Т1/Т8). Ignored when that
+   * column comes after the first one with a `footer`. Default: the first.
+   */
+  totalsLabelFrom?: string;
   itemForms: PluralForms;
   /** Below md: the caller's card instead of a row. */
   renderCard?: (row: T, parts: RegistryCardParts) => React.ReactNode;
@@ -170,8 +205,11 @@ export function RegistryTable<T>({
   selection,
   rowActions,
   rowActionsLabel,
+  rowAction,
   sort,
   totals = false,
+  totalsLabel,
+  totalsLabelFrom,
   itemForms,
   renderCard,
   isLoading = false,
@@ -200,8 +238,16 @@ export function RegistryTable<T>({
 
   const widthOf = (id: string) =>
     live?.id === id ? live.width : (widths[id] ?? DEFAULT_MIN_COLUMN_WIDTH);
-  // The trailing column holds «⋯» and/or the expand toggle.
-  const hasActions = Boolean(rowActions) || Boolean(renderExpanded);
+  // The trailing column holds the inline action, «⋯» and/or the expand toggle.
+  const hasActions =
+    Boolean(rowActions) || Boolean(renderExpanded) || Boolean(rowAction);
+  const trailingWidth = rowAction
+    ? REGISTRY_ROW_ACTION_WIDTH
+    : REGISTRY_TRAILING_WIDTH;
+  const trailingClass = rowAction ? "w-28" : "w-11";
+  // With an inline action the cell keeps a gutter on both sides, so the
+  // button's border never meets the table's rounded edge.
+  const trailingPad = rowAction ? "pr-2 pl-1" : "pr-1.5 pl-0";
   const pad = cellPadding[density];
 
   const toggleExpanded = (id: string) =>
@@ -307,18 +353,33 @@ export function RegistryTable<T>({
     );
   };
 
+  /** The inline action and «⋯» — what a card gets as `parts.actions`. */
+  const rowControls = (row: T) => {
+    const inline = rowAction?.(row) ?? null;
+    const menu = actionsControl(row);
+    if (inline && menu) {
+      return (
+        <span className="inline-flex items-center gap-1">
+          {inline}
+          {menu}
+        </span>
+      );
+    }
+    return inline ?? menu;
+  };
+
   const trailingControls = (row: T) => {
     const toggle = expandControl(row);
-    const menu = actionsControl(row);
-    if (toggle && menu) {
+    const controls = rowControls(row);
+    if (toggle && controls) {
       return (
         <span className="inline-flex items-center">
-          {menu}
+          {controls}
           {toggle}
         </span>
       );
     }
-    return toggle ?? menu;
+    return toggle ?? controls;
   };
 
   /** Consecutive rows with the same group key share one heading. */
@@ -340,6 +401,7 @@ export function RegistryTable<T>({
         widthOf={widthOf}
         selectable={Boolean(selection)}
         hasActions={hasActions}
+        trailingClass={trailingClass}
         className={className}
       />
     );
@@ -446,7 +508,7 @@ export function RegistryTable<T>({
                   )}
                 >
                   {renderCard(row, {
-                    actions: actionsControl(row),
+                    actions: rowControls(row),
                     select: selectControl(row),
                     href,
                     expand: expandControl(row),
@@ -475,15 +537,18 @@ export function RegistryTable<T>({
   const tableWidth =
     columns.reduce((sum, column) => sum + widthOf(column.id), 0) +
     (selection ? 36 : 0) +
-    (hasActions ? 44 : 0);
+    (hasActions ? trailingWidth : 0);
 
-  // The totals label spans from the first column up to the first one that
-  // has a footer of its own.
+  // The totals label spans from `totalsLabelFrom` (else the first column) up
+  // to the first one that has a footer of its own.
   const firstFooter = columns.findIndex((column) => column.footer);
-  const labelSpan = Math.max(
-    1,
-    firstFooter === -1 ? columns.length : firstFooter,
-  );
+  const labelLimit = firstFooter === -1 ? columns.length : firstFooter;
+  const requestedStart = totalsLabelFrom
+    ? columns.findIndex((column) => column.id === totalsLabelFrom)
+    : -1;
+  const labelStart =
+    requestedStart > 0 && requestedStart < labelLimit ? requestedStart : 0;
+  const labelSpan = Math.max(labelStart + 1, labelLimit);
 
   return (
     <div
@@ -505,7 +570,7 @@ export function RegistryTable<T>({
           {columns.map((column) => (
             <col key={column.id} style={{ width: widthOf(column.id) }} />
           ))}
-          {hasActions ? <col className="w-11" /> : null}
+          {hasActions ? <col className={trailingClass} /> : null}
         </colgroup>
         <TableHeader className="sticky top-0 z-2 bg-muted">
           <TableRow className="hover:bg-transparent">
@@ -518,7 +583,7 @@ export function RegistryTable<T>({
                 />
               </TableHead>
             ) : null}
-            {columns.map((column) => {
+            {columns.map((column, index) => {
               const width = widthOf(column.id);
               const handle =
                 onResize && column.resizable !== false ? (
@@ -532,6 +597,7 @@ export function RegistryTable<T>({
                       )
                     }
                     onCommit={(next) => onResize(column.id, next)}
+                    edge={index === columns.length - 1}
                   />
                 ) : null;
               const headProps = {
@@ -576,7 +642,9 @@ export function RegistryTable<T>({
                 </TableHead>
               );
             })}
-            {hasActions ? <TableHead className="w-11 px-0" /> : null}
+            {hasActions ? (
+              <TableHead className={cn(trailingClass, "px-0")} />
+            ) : null}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -646,7 +714,13 @@ export function RegistryTable<T>({
                     </TableCell>
                   ))}
                   {hasActions ? (
-                    <td className="w-11 py-1 pr-1.5 pl-0 text-right align-top">
+                    <td
+                      className={cn(
+                        trailingClass,
+                        trailingPad,
+                        "py-1 text-right align-top",
+                      )}
+                    >
                       {trailingControls(row)}
                     </td>
                   ) : null}
@@ -673,8 +747,18 @@ export function RegistryTable<T>({
           <TableFooter className="hidden border-t-2 bg-muted font-semibold md:table-footer-group">
             <TableRow className="hover:bg-transparent">
               {selection ? <td /> : null}
-              <td colSpan={labelSpan} className="px-3 py-2.5 whitespace-nowrap">
-                {r.totalsOnPage(countLabel(rows.length, itemForms))}
+              {labelStart > 0 ? <td colSpan={labelStart} /> : null}
+              <td
+                colSpan={labelSpan - labelStart}
+                className={cn(
+                  "py-2.5 whitespace-nowrap",
+                  // Under a named column the label sits on its text edge.
+                  labelStart > 0 && density === "comfortable" ? "px-2" : "px-3",
+                )}
+              >
+                {totalsLabel
+                  ? totalsLabel(rows.length)
+                  : r.totalsOnPage(countLabel(rows.length, itemForms))}
               </td>
               {columns.slice(labelSpan).map((column) => (
                 <td
@@ -706,6 +790,12 @@ interface ResizeHandleProps {
   /** The width while dragging (`null` when the drag ends). */
   onLive: (width: number | null) => void;
   onCommit: (width: number) => void;
+  /**
+   * The last data column: nothing to separate it from but the trailing
+   * action cell or the table's edge, so no resting line (the artboards draw
+   * none there). Hover, focus and drag still show the primary bar.
+   */
+  edge?: boolean;
 }
 
 /**
@@ -720,6 +810,7 @@ function ResizeHandle({
   minWidth,
   onLive,
   onCommit,
+  edge = false,
 }: ResizeHandleProps) {
   const [drag, setDrag] = React.useState<{
     startX: number;
@@ -784,7 +875,9 @@ function ResizeHandle({
       <span
         aria-hidden="true"
         className={cn(
-          "my-2 w-px bg-muted-foreground/45 transition-all group-hover/resize:my-0 group-hover/resize:w-0.75 group-hover/resize:bg-primary group-focus-visible/resize:my-0 group-focus-visible/resize:w-0.75 group-focus-visible/resize:bg-primary motion-reduce:transition-none",
+          "my-2 w-px transition-all",
+          edge ? "bg-transparent" : "bg-muted-foreground/45",
+          "group-hover/resize:my-0 group-hover/resize:w-0.75 group-hover/resize:bg-primary group-focus-visible/resize:my-0 group-focus-visible/resize:w-0.75 group-focus-visible/resize:bg-primary motion-reduce:transition-none",
           drag && "my-0 w-0.75 bg-primary",
         )}
       />
@@ -805,6 +898,7 @@ function RegistrySkeleton<T>({
   widthOf,
   selectable,
   hasActions,
+  trailingClass,
   className,
 }: {
   label: string;
@@ -812,6 +906,8 @@ function RegistrySkeleton<T>({
   widthOf: (id: string) => number;
   selectable: boolean;
   hasActions: boolean;
+  /** The trailing cell's width class — see `REGISTRY_ROW_ACTION_WIDTH`. */
+  trailingClass: string;
   className?: string;
 }) {
   const bar =
@@ -840,7 +936,7 @@ function RegistrySkeleton<T>({
                 {column.label}
               </th>
             ))}
-            {hasActions ? <th className="w-11" /> : null}
+            {hasActions ? <th className={trailingClass} /> : null}
           </tr>
         </thead>
         <tbody>

@@ -9,6 +9,7 @@ import { toast } from "@/shared/ui/toast";
 import {
   ProductForm,
   productFormValuesToDto,
+  productSaveErrorMessage,
   type ProductFormValues,
 } from "@/features/product-form";
 import {
@@ -31,7 +32,6 @@ import {
 } from "@/features/product-addon-delta-panel";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
-import { apiErrorMessage } from "@/shared/lib";
 import {
   hasCarryoverFailures,
   stashCreateCarryover,
@@ -136,7 +136,9 @@ export function CreateProductView() {
       // Nothing was created, so nothing is half-done: back to the untouched
       // form with the server's own words (TASK-397).
       setReplay(null);
-      toast.error(apiErrorMessage(error) ?? dict.products.toastCreateFailed);
+      toast.error(
+        productSaveErrorMessage(error) ?? dict.products.toastCreateFailed,
+      );
       return;
     }
     setStep("product", "done");

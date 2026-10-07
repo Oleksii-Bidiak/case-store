@@ -467,6 +467,29 @@
       padding-bottom: --spacing(24);
     }
   }
+
+  /* Toasts clear a fixed bottom bar (TASK-1771, WCAG 2.4.11 Focus Not
+     Obscured). The global <Toaster clearMobileBar /> sets sonner's bottom
+     offsets to these two properties: desktop (`offset`, ≥600px) and phone
+     (`mobileOffset`, <600px) — sonner's own defaults, 24px and 16px, expressed
+     on the spacing scale. A mounted MobilePayBar / MobileAtcBar publishes its
+     measured height as `--mobile-bar-inset` on <html> (`useMobileBarInset`);
+     below `md` — where the bar is drawn — the toast stacks that much higher, so
+     it sits above the bar instead of over the action focus was just sent to.
+     From `md` up the bar dissolves and the inset is ignored here, so desktop
+     placement never moves. The cart sheet's own toaster does not opt in. */
+  :root {
+    --toast-offset-bottom: --spacing(6);
+    --toast-mobile-offset-bottom: --spacing(4);
+  }
+  :root {
+    @variant max-md {
+      --toast-offset-bottom: calc(--spacing(6) + var(--mobile-bar-inset, 0px));
+      --toast-mobile-offset-bottom: calc(
+        --spacing(4) + var(--mobile-bar-inset, 0px)
+      );
+    }
+  }
 }
 
 /* ─────────────────────────────────────────────

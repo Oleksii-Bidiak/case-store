@@ -44,6 +44,17 @@ export const PERM = {
   // is not automatically a manager who may retire a position.
   productsDelete: "products:delete",
   categoriesWrite: "categories:write",
+  // TASK-655 — «Видалити…» in the category tree «⋯» and on the category card
+  // (`DELETE /api/admin/categories/:id`, TASK-654). Its own key and NOT folded
+  // into `categories:write`: a delete tombstones a whole branch and moves every
+  // product in it, which is more reach than renaming a category.
+  //
+  // NO BACKFILL, on purpose (see the comment beside the key in the API's
+  // `permission.catalog.ts`): on deploy only the owner and admins hold it, and
+  // the menu item and the card button stay hidden for every manager until the
+  // owner ticks the box. Creating the move target inside the dialog asks for
+  // `categoriesWrite` on top of this one.
+  categoriesDelete: "categories:delete",
   brandsWrite: "brands:write",
   devicesWrite: "devices:write",
   addonsWrite: "addons:write",
