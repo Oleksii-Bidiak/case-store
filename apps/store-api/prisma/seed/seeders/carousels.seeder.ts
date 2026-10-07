@@ -4,8 +4,9 @@ import { deterministicUuid } from '../lib/ids';
 
 /**
  * The order of the homepage sections as the old hard-coded `page.tsx` had it — the
- * same order the `…_home_blocks` migration backfills (TASK-660). Used only to place
- * blocks this seeder had to CREATE; an existing page is never reshuffled.
+ * same order the `…_home_blocks` migration backfills (TASK-660). Used ONLY to place
+ * blocks this seeder had to CREATE (see `placeCreatedBlocks`): blocks that already
+ * existed keep their order, so an admin's arrangement survives a re-seed.
  */
 const PAGE_RANK: Record<HomeBlockType, number> = {
   HERO: 0,
@@ -122,14 +123,14 @@ async function seedHomeBlocks(
   carousels: ReturnType<typeof buildCarousels>,
   now: Date,
 ): Promise<number> {
-  let created = 0;
+  const createdIds: string[] = [];
   const published = { status: 'PUBLISHED' as const, publishedAt: now, scheduledAt: null };
 
   for (const type of SYSTEM_BLOCKS) {
     const exists = await prisma.homeBlock.findFirst({ where: { type } });
     if (!exists) {
-      await prisma.homeBlock.create({ data: { type, ...published } });
-      created += 1;
+      const block = await prisma.homeBlock.create({ data: { type, ...published } });
+      createdIds.push(block.id);
     }
   }
 
@@ -141,7 +142,7 @@ async function seedHomeBlocks(
     tabsBlock = await prisma.homeBlock.create({
       data: { type: 'TABS', title: 'Популярне', ...published },
     });
-    created += 1;
+    createdIds.push(tabsBlock.id);
   }
 
   const tabs = carousels.filter((c) => c.home === 'tab');
@@ -158,25 +159,52 @@ async function seedHomeBlocks(
     const carouselId = deterministicUuid(`carousel:${c.slug}`);
     const shown = await prisma.homeBlock.findFirst({ where: { type: 'CAROUSEL', carouselId } });
     if (!shown) {
-      await prisma.homeBlock.create({ data: { type: 'CAROUSEL', carouselId, ...published } });
-      created += 1;
+      const block = await prisma.homeBlock.create({
+        data: { type: 'CAROUSEL', carouselId, ...published },
+      });
+      createdIds.push(block.id);
     }
   }
 
-  // Place what was created where the old page.tsx had it: a stable sort by section rank
-  // keeps the relative order of everything that already existed.
-  if (created > 0) {
-    const blocks = await prisma.homeBlock.findMany({
-      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-      select: { id: true, type: true, sortOrder: true },
+  if (createdIds.length > 0) {
+    await placeCreatedBlocks(prisma, createdIds);
+  }
+  return createdIds.length;
+}
+
+/**
+ * Slot the blocks this seeder just CREATED into the page where the old page.tsx had
+ * their kind of section, WITHOUT moving any block that already existed: the existing
+ * blocks keep exactly the order they had (an admin may have rearranged the page), and
+ * each new block goes right after the last block whose section rank is not greater
+ * than its own (`PAGE_RANK`) — at the top when there is none. The page is then
+ * renumbered densely `0..n-1`, writing only rows whose number changed.
+ */
+async function placeCreatedBlocks(prisma: PrismaClient, createdIds: string[]): Promise<void> {
+  const created = new Set(createdIds);
+  const blocks = await prisma.homeBlock.findMany({
+    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+    select: { id: true, type: true, sortOrder: true },
+  });
+
+  const page = blocks.filter((block) => !created.has(block.id));
+  // New blocks in section order; same rank keeps creation order (a stable sort).
+  const fresh = createdIds
+    .map((id) => blocks.find((block) => block.id === id))
+    .filter((block): block is (typeof blocks)[number] => block !== undefined)
+    .sort((a, b) => PAGE_RANK[a.type] - PAGE_RANK[b.type]);
+
+  for (const block of fresh) {
+    let at = 0;
+    page.forEach((existing, index) => {
+      if (PAGE_RANK[existing.type] <= PAGE_RANK[block.type]) at = index + 1;
     });
-    const ordered = [...blocks].sort((a, b) => PAGE_RANK[a.type] - PAGE_RANK[b.type]);
-    for (const [index, block] of ordered.entries()) {
-      if (block.sortOrder !== index) {
-        await prisma.homeBlock.update({ where: { id: block.id }, data: { sortOrder: index } });
-      }
-    }
+    page.splice(at, 0, block);
   }
 
-  return created;
+  for (const [index, block] of page.entries()) {
+    if (block.sortOrder !== index) {
+      await prisma.homeBlock.update({ where: { id: block.id }, data: { sortOrder: index } });
+    }
+  }
 }
