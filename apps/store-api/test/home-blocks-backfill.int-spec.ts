@@ -85,6 +85,35 @@ function legacyHomeSections(carousels: readonly LegacyCarousel[]): Section[] {
   ];
 }
 
+/**
+ * The ids of one placement's carousels of EVERY status, in the old per-placement order
+ * (`sortOrder, createdAt, id`) — what the old admin list showed inside that bucket.
+ */
+function legacyPlacementOrder(
+  carousels: readonly LegacyCarousel[],
+  placement: Placement,
+): string[] {
+  return carousels
+    .filter((c) => c.placement === placement)
+    .sort(
+      (a, b) =>
+        a.sortOrder - b.sortOrder ||
+        a.createdAt.getTime() - b.createdAt.getTime() ||
+        a.id.localeCompare(b.id),
+    )
+    .map((c) => c.id);
+}
+
+/** What the migration left in the tables, read inside the same transaction. */
+interface MigratedRows {
+  /** Carousels in `sort_order` order. */
+  carousels: { id: string; sortOrder: number }[];
+  /** Every tab row, in `sort_order` order. */
+  tabs: { carouselId: string; sortOrder: number }[];
+  /** Every block (any status), in page order, with its tab count. */
+  blocks: { type: HomeBlockType; sortOrder: number; tabCount: number }[];
+}
+
 describe('home blocks backfill (TASK-660) — the homepage is unchanged by the migration', () => {
   let prisma: PrismaService;
 
@@ -171,6 +200,15 @@ describe('home blocks backfill (TASK-660) — the homepage is unchanged by the m
       return { type: block.type };
     });
 
+  interface ReplayResult {
+    legacy: Section[];
+    migrated: Section[];
+    after?: { legacy: Section[]; migrated: Section[] };
+    /** The carousels as they stood BEFORE the migration (with their placement). */
+    legacyRows: LegacyCarousel[];
+    rows: MigratedRows;
+  }
+
   /**
    * Rebuild the pre-migration world, seed `fixture`, migrate, and hand back what the old
    * and the new page show — plus a hook to act after the migration.
@@ -181,18 +219,8 @@ describe('home blocks backfill (TASK-660) — the homepage is unchanged by the m
       tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
       ids: Record<string, string>,
     ) => Promise<LegacyCarousel[]>,
-  ): Promise<{
-    legacy: Section[];
-    migrated: Section[];
-    after?: { legacy: Section[]; migrated: Section[] };
-  }> {
-    let result:
-      | {
-          legacy: Section[];
-          migrated: Section[];
-          after?: { legacy: Section[]; migrated: Section[] };
-        }
-      | undefined;
+  ): Promise<ReplayResult> {
+    let result: ReplayResult | undefined;
 
     try {
       await prisma.$transaction(
@@ -246,6 +274,27 @@ describe('home blocks backfill (TASK-660) — the homepage is unchanged by the m
           );
           const migrated = toSections(await service.findPublic());
 
+          const rows: MigratedRows = {
+            carousels: await tx.carousel.findMany({
+              select: { id: true, sortOrder: true },
+              orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+            }),
+            tabs: await tx.homeBlockTab.findMany({
+              select: { carouselId: true, sortOrder: true },
+              orderBy: [{ sortOrder: 'asc' }, { carouselId: 'asc' }],
+            }),
+            blocks: (
+              await tx.homeBlock.findMany({
+                orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+                include: { _count: { select: { tabs: true } } },
+              })
+            ).map((block) => ({
+              type: block.type,
+              sortOrder: block.sortOrder,
+              tabCount: block._count.tabs,
+            })),
+          };
+
           let after: { legacy: Section[]; migrated: Section[] } | undefined;
           if (afterMigration) {
             const nextLegacyRows = await afterMigration(tx, ids);
@@ -255,7 +304,7 @@ describe('home blocks backfill (TASK-660) — the homepage is unchanged by the m
             };
           }
 
-          result = { legacy, migrated, after };
+          result = { legacy, migrated, after, legacyRows, rows };
           throw new Rollback();
         },
         { timeout: 30_000, maxWait: 10_000 },
@@ -275,6 +324,51 @@ describe('home blocks backfill (TASK-660) — the homepage is unchanged by the m
     expect(legacy.find((s) => s.type === HomeBlockType.TABS)?.tabIds).toHaveLength(3);
     expect(legacy.filter((s) => s.type === HomeBlockType.CAROUSEL)).toHaveLength(3);
 
+    expect(migrated).toEqual(legacy);
+  });
+
+  it('renumbers the carousels into ONE dense list: former HOME_TABS first, then HOME_RAILS, each in its old order', async () => {
+    const { legacyRows, rows } = await replay(FIXTURE);
+
+    const expected = [
+      ...legacyPlacementOrder(legacyRows, 'HOME_TABS'),
+      ...legacyPlacementOrder(legacyRows, 'HOME_RAILS'),
+    ];
+    expect(rows.carousels.map((c) => c.sortOrder)).toEqual(expected.map((_, index) => index));
+    expect(rows.carousels.map((c) => c.id)).toEqual(expected);
+    // Every status took part: the drafts and the scheduled ones are in the list too.
+    expect(rows.carousels).toHaveLength(FIXTURE.length);
+  });
+
+  it('turns every HOME_TABS carousel (every status) into a tab, numbered 0..k-1 in the old order', async () => {
+    const { legacyRows, rows } = await replay(FIXTURE);
+
+    const expected = legacyPlacementOrder(legacyRows, 'HOME_TABS');
+    expect(rows.tabs).toEqual(
+      expected.map((carouselId, index) => ({ carouselId, sortOrder: index })),
+    );
+    // All of them in the ONE TABS block.
+    expect(rows.blocks.filter((b) => b.type === HomeBlockType.TABS)).toEqual([
+      expect.objectContaining({ tabCount: expected.length }),
+    ]);
+    // The blocks themselves are dense 0..n-1 as well.
+    expect(rows.blocks.map((b) => b.sortOrder)).toEqual(rows.blocks.map((_, index) => index));
+  });
+
+  it('with no carousels at all: exactly the seven singleton-and-tabs blocks, the TABS block without tabs', async () => {
+    const { legacy, migrated, rows } = await replay([]);
+
+    expect(rows.carousels).toEqual([]);
+    expect(rows.tabs).toEqual([]);
+    expect(rows.blocks).toEqual([
+      { type: HomeBlockType.HERO, sortOrder: 0, tabCount: 0 },
+      { type: HomeBlockType.TRUST, sortOrder: 1, tabCount: 0 },
+      { type: HomeBlockType.CATEGORY_NAV, sortOrder: 2, tabCount: 0 },
+      { type: HomeBlockType.TABS, sortOrder: 3, tabCount: 0 },
+      { type: HomeBlockType.PROMO_BANNER, sortOrder: 4, tabCount: 0 },
+      { type: HomeBlockType.RECENTLY_VIEWED, sortOrder: 5, tabCount: 0 },
+      { type: HomeBlockType.NEWSLETTER, sortOrder: 6, tabCount: 0 },
+    ]);
     expect(migrated).toEqual(legacy);
   });
 
