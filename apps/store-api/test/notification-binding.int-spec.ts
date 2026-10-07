@@ -1,14 +1,27 @@
 import { INestApplication } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotificationAudience, NotificationChannel } from '@prisma/client';
+import {
+  NotificationAudience,
+  NotificationChannel,
+  NotificationOutboxStatus,
+} from '@prisma/client';
+import type { PinoLogger } from 'nestjs-pino';
+import { PermanentDeliveryError } from '../src/notification-outbox/channels/notification-channel-adapter';
+import { SHOP_NEW_ORDER_TYPE } from '../src/notification/shop-notification.types';
+import { TelegramAdapter } from '../src/notification/telegram/telegram.adapter';
+import type { TelegramChannelState } from '../src/notification/telegram/telegram-channel.state';
+import type { TelegramClient } from '../src/notification/telegram/telegram.client';
+import { TelegramRendererRegistry } from '../src/notification/telegram/telegram-renderers';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../src/prisma';
 import { NotificationBindingRepository } from '../src/notification/notification-binding.repository';
 import {
   hashBindingToken,
   NotificationBindingService,
+  type StartingChat,
 } from '../src/notification/notification-binding.service';
+import type { ConsumeTokenResult } from '../src/notification/entities/notification-binding.entity';
 
 /**
  * Chat bindings and their one-time tokens on a REAL Postgres (TASK-675).
@@ -46,6 +59,16 @@ describe('Notification bindings (integration, TASK-675)', () => {
     tokens.push(token);
     return token;
   }
+
+  /** `/start <token>` from a chat. A private chat unless the test says otherwise. */
+  function consume(
+    token: string,
+    from: Omit<StartingChat, 'isPrivate'> & { isPrivate?: boolean },
+  ): Promise<ConsumeTokenResult> {
+    return service.consumeToken(token, { isPrivate: true, ...from });
+  }
+
+  const SHOP_SCOPE = { audience: NotificationAudience.SHOP } as const;
 
   async function rowsFor(externalId: string) {
     return prisma.notificationBinding.findMany({
@@ -102,8 +125,8 @@ describe('Notification bindings (integration, TASK-675)', () => {
     const token = await issue();
     const id = chat('once');
 
-    const first = await service.consumeToken(token, { id, label: 'Магазин' });
-    const second = await service.consumeToken(token, { id, label: 'Магазин' });
+    const first = await consume(token, { id, label: 'Магазин' });
+    const second = await consume(token, { id, label: 'Магазин' });
 
     expect(first).toMatchObject({ ok: true, created: true });
     expect(second).toEqual({ ok: false, reason: 'invalid' });
@@ -126,10 +149,7 @@ describe('Notification bindings (integration, TASK-675)', () => {
     const a = chat('race-a');
     const b = chat('race-b');
 
-    const results = await Promise.all([
-      service.consumeToken(token, { id: a }),
-      service.consumeToken(token, { id: b }),
-    ]);
+    const results = await Promise.all([consume(token, { id: a }), consume(token, { id: b })]);
 
     expect(results.filter((r) => r.ok)).toHaveLength(1);
     expect(results.filter((r) => !r.ok)).toEqual([{ ok: false, reason: 'invalid' }]);
@@ -141,10 +161,7 @@ describe('Notification bindings (integration, TASK-675)', () => {
     const token = await issue();
     const id = chat('race-same');
 
-    const results = await Promise.all([
-      service.consumeToken(token, { id }),
-      service.consumeToken(token, { id }),
-    ]);
+    const results = await Promise.all([consume(token, { id }), consume(token, { id })]);
 
     expect(results.filter((r) => r.ok)).toHaveLength(1);
     expect(await rowsFor(id)).toHaveLength(1);
@@ -154,10 +171,7 @@ describe('Notification bindings (integration, TASK-675)', () => {
     const [t1, t2] = [await issue(), await issue()];
     const id = chat('race-two-tokens');
 
-    const results = await Promise.all([
-      service.consumeToken(t1, { id }),
-      service.consumeToken(t2, { id }),
-    ]);
+    const results = await Promise.all([consume(t1, { id }), consume(t2, { id })]);
 
     expect(results.every((r) => r.ok)).toBe(true);
     const ids = results.map((r) => (r.ok ? r.binding.id : null));
@@ -173,7 +187,7 @@ describe('Notification bindings (integration, TASK-675)', () => {
     });
     const id = chat('expired');
 
-    await expect(service.consumeToken(token, { id })).resolves.toEqual({
+    await expect(consume(token, { id })).resolves.toEqual({
       ok: false,
       reason: 'expired',
     });
@@ -181,7 +195,7 @@ describe('Notification bindings (integration, TASK-675)', () => {
   });
 
   it('an unknown token is refused', async () => {
-    await expect(service.consumeToken('n'.repeat(43), { id: chat('unknown') })).resolves.toEqual({
+    await expect(consume('n'.repeat(43), { id: chat('unknown') })).resolves.toEqual({
       ok: false,
       reason: 'invalid',
     });
@@ -191,7 +205,7 @@ describe('Notification bindings (integration, TASK-675)', () => {
     const token = await issue({ audience: NotificationAudience.CUSTOMER });
     const id = chat('orphan-customer');
 
-    await expect(service.consumeToken(token, { id })).resolves.toEqual({
+    await expect(consume(token, { id })).resolves.toEqual({
       ok: false,
       reason: 'invalid',
     });
@@ -200,8 +214,8 @@ describe('Notification bindings (integration, TASK-675)', () => {
 
   it('the same chat bound again while active keeps its one row', async () => {
     const id = chat('rebind-active');
-    const first = await service.consumeToken(await issue(), { id, label: 'Перша назва' });
-    const second = await service.consumeToken(await issue(), { id, label: 'Друга назва' });
+    const first = await consume(await issue(), { id, label: 'Перша назва' });
+    const second = await consume(await issue(), { id, label: 'Друга назва' });
 
     expect(first).toMatchObject({ ok: true, created: true });
     expect(second).toMatchObject({ ok: true, created: false });
@@ -214,22 +228,22 @@ describe('Notification bindings (integration, TASK-675)', () => {
 
   it('a revoked binding is excluded from the recipients, and the chat can be connected anew', async () => {
     const id = chat('revoke');
-    const bound = await service.consumeToken(await issue(), { id });
+    const bound = await consume(await issue(), { id });
     if (!bound.ok) throw new Error('bind failed');
 
     const before = await service.findActiveRecipients(SHOP.channel, SHOP.audience);
     expect(before.map((b) => b.externalId)).toContain(id);
-    await expect(service.hasActiveRecipient(SHOP.channel, id)).resolves.toBe(true);
+    await expect(service.hasActiveRecipient(SHOP.channel, id, SHOP_SCOPE)).resolves.toBe(true);
 
     await service.revoke(bound.binding.id, SHOP);
 
     const after = await service.findActiveRecipients(SHOP.channel, SHOP.audience);
     expect(after.map((b) => b.externalId)).not.toContain(id);
-    await expect(service.hasActiveRecipient(SHOP.channel, id)).resolves.toBe(false);
+    await expect(service.hasActiveRecipient(SHOP.channel, id, SHOP_SCOPE)).resolves.toBe(false);
     await expect(service.revoke(bound.binding.id, SHOP)).rejects.toThrow();
 
     // The partial unique index ignores the revoked row: a new active one is allowed.
-    const again = await service.consumeToken(await issue(), { id });
+    const again = await consume(await issue(), { id });
     expect(again).toMatchObject({ ok: true, created: true });
     const rows = await rowsFor(id);
     expect(rows).toHaveLength(2);
@@ -242,7 +256,7 @@ describe('Notification bindings (integration, TASK-675)', () => {
       data: { subtotal: 100, total: 100, shippingAddress: {} },
     });
     try {
-      const bound = await service.consumeToken(
+      const bound = await consume(
         await issue({ audience: NotificationAudience.CUSTOMER, orderId: order.id }),
         { id },
       );
@@ -250,7 +264,14 @@ describe('Notification bindings (integration, TASK-675)', () => {
       expect(bound.binding.orderId).toBe(order.id);
 
       await expect(service.revoke(bound.binding.id, SHOP)).rejects.toThrow();
-      await expect(service.hasActiveRecipient(SHOP.channel, id)).resolves.toBe(true);
+      await expect(
+        service.hasActiveRecipient(SHOP.channel, id, {
+          audience: NotificationAudience.CUSTOMER,
+          owner: { orderId: order.id },
+        }),
+      ).resolves.toBe(true);
+      // …and the customer row never makes the chat a SHOP recipient.
+      await expect(service.hasActiveRecipient(SHOP.channel, id, SHOP_SCOPE)).resolves.toBe(false);
     } finally {
       await prisma.notificationBinding.deleteMany({ where: { orderId: order.id } });
       await prisma.order.delete({ where: { id: order.id } });
@@ -263,14 +284,19 @@ describe('Notification bindings (integration, TASK-675)', () => {
       data: { subtotal: 100, total: 100, shippingAddress: {} },
     });
     try {
-      await service.consumeToken(await issue(), { id });
-      await service.consumeToken(
-        await issue({ audience: NotificationAudience.CUSTOMER, orderId: order.id }),
-        { id },
-      );
+      await consume(await issue(), { id });
+      await consume(await issue({ audience: NotificationAudience.CUSTOMER, orderId: order.id }), {
+        id,
+      });
 
       await expect(service.revokeByExternalId(SHOP.channel, id)).resolves.toBe(2);
-      await expect(service.hasActiveRecipient(SHOP.channel, id)).resolves.toBe(false);
+      await expect(service.hasActiveRecipient(SHOP.channel, id, SHOP_SCOPE)).resolves.toBe(false);
+      await expect(
+        service.hasActiveRecipient(SHOP.channel, id, {
+          audience: NotificationAudience.CUSTOMER,
+          owner: { orderId: order.id },
+        }),
+      ).resolves.toBe(false);
     } finally {
       await prisma.notificationBinding.deleteMany({ where: { orderId: order.id } });
       await prisma.order.delete({ where: { id: order.id } });
@@ -310,15 +336,15 @@ describe('Notification bindings (integration, TASK-675)', () => {
     it('one chat bound to order A, order B and an account at once: three active rows, each read back as its own', async () => {
       const id = chat('customer-many');
 
-      const a = await service.consumeToken(await issue({ audience: CUSTOMER, orderId: orderA }), {
+      const a = await consume(await issue({ audience: CUSTOMER, orderId: orderA }), {
         id,
         label: '@olena',
       });
-      const b = await service.consumeToken(await issue({ audience: CUSTOMER, orderId: orderB }), {
+      const b = await consume(await issue({ audience: CUSTOMER, orderId: orderB }), {
         id,
         label: '@olena',
       });
-      const u = await service.consumeToken(await issue({ audience: CUSTOMER, userId }), { id });
+      const u = await consume(await issue({ audience: CUSTOMER, userId }), { id });
 
       expect([a, b, u].map((r) => r.ok && r.created)).toEqual([true, true, true]);
       if (!a.ok || !b.ok || !u.ok) throw new Error('unreachable');
@@ -340,14 +366,8 @@ describe('Notification bindings (integration, TASK-675)', () => {
     it('the same order connected again from the same chat keeps its one row', async () => {
       const id = chat('customer-again');
 
-      const first = await service.consumeToken(
-        await issue({ audience: CUSTOMER, orderId: orderA }),
-        { id },
-      );
-      const second = await service.consumeToken(
-        await issue({ audience: CUSTOMER, orderId: orderA }),
-        { id },
-      );
+      const first = await consume(await issue({ audience: CUSTOMER, orderId: orderA }), { id });
+      const second = await consume(await issue({ audience: CUSTOMER, orderId: orderA }), { id });
 
       expect(first).toMatchObject({ ok: true, created: true });
       expect(second).toMatchObject({ ok: true, created: false });
@@ -360,8 +380,8 @@ describe('Notification bindings (integration, TASK-675)', () => {
       const id = chat('customer-token-twice');
       const token = await issue({ audience: CUSTOMER, userId });
 
-      await expect(service.consumeToken(token, { id })).resolves.toMatchObject({ ok: true });
-      await expect(service.consumeToken(token, { id })).resolves.toEqual({
+      await expect(consume(token, { id })).resolves.toMatchObject({ ok: true });
+      await expect(consume(token, { id })).resolves.toEqual({
         ok: false,
         reason: 'invalid',
       });
@@ -402,16 +422,16 @@ describe('Notification bindings (integration, TASK-675)', () => {
       ).rejects.toMatchObject({ code: 'P2002' });
       // A CUSTOMER row for the same chat is a different thing and coexists.
       await expect(
-        service.consumeToken(await issue({ audience: CUSTOMER, orderId: orderB }), { id }),
+        consume(await issue({ audience: CUSTOMER, orderId: orderB }), { id }),
       ).resolves.toMatchObject({ ok: true, created: true });
     });
 
     it('revokeForCustomer reaches only the proven owner — not the other order, not the account, not SHOP', async () => {
       const id = chat('customer-revoke');
-      await service.consumeToken(await issue(), { id }); // SHOP
-      await service.consumeToken(await issue({ audience: CUSTOMER, orderId: orderA }), { id });
-      await service.consumeToken(await issue({ audience: CUSTOMER, orderId: orderB }), { id });
-      await service.consumeToken(await issue({ audience: CUSTOMER, userId }), { id });
+      await consume(await issue(), { id }); // SHOP
+      await consume(await issue({ audience: CUSTOMER, orderId: orderA }), { id });
+      await consume(await issue({ audience: CUSTOMER, orderId: orderB }), { id });
+      await consume(await issue({ audience: CUSTOMER, userId }), { id });
 
       // Earlier tests left order A connected in other chats too; all of them go.
       const ofOrderA = await prisma.notificationBinding.count({
@@ -426,6 +446,130 @@ describe('Notification bindings (integration, TASK-675)', () => {
       expect(active.some((r) => r.audience === NotificationAudience.SHOP)).toBe(true);
       const ofAccount = await service.findActiveForCustomer({ userId });
       expect(ofAccount.map((r) => r.externalId)).toContain(id);
+    });
+
+    // ── The send gate is not audience-blind (verifier finding on TASK-679) ────
+
+    it('a chat bound SHOP + CUSTOMER: once SHOP is revoked, a queued shop row is refused', async () => {
+      const id = chat('gate-shop-customer');
+      const shop = await consume(await issue(), { id });
+      await consume(await issue({ audience: CUSTOMER, orderId: orderB }), { id });
+      if (!shop.ok) throw new Error('bind failed');
+
+      await service.revoke(shop.binding.id, SHOP);
+
+      // The CUSTOMER row keeps the chat bound. That is no reason to send it a shop ping.
+      await expect(service.hasActiveRecipient(SHOP.channel, id, SHOP_SCOPE)).resolves.toBe(false);
+      const adapter = new TelegramAdapter(
+        { sendMessage: jest.fn() } as unknown as TelegramClient,
+        {} as TelegramChannelState,
+        new TelegramRendererRegistry(new ConfigService({})),
+        service,
+        { setContext: jest.fn() } as unknown as PinoLogger,
+      );
+      const queued = {
+        id: randomUUID(),
+        type: SHOP_NEW_ORDER_TYPE,
+        channel: NotificationChannel.TELEGRAM,
+        recipientAddress: id,
+        payload: { orderId: orderB, total: '2.00', itemsCount: 1, customerName: 'Олена' },
+        status: NotificationOutboxStatus.PENDING,
+        attempts: 0,
+        maxAttempts: 5,
+        lastError: null,
+        nextAttemptAt: new Date(),
+        createdAt: new Date(),
+        sentAt: null,
+      };
+      const sent = adapter.send(queued);
+      await expect(sent).rejects.toBeInstanceOf(PermanentDeliveryError);
+      await expect(sent).rejects.toThrow('binding revoked');
+    });
+
+    it('a customer gate follows the OWNER: revoking the account leaves only the other order deliverable', async () => {
+      const id = chat('gate-owner');
+      const orderOfUser = await prisma.order.create({
+        data: { subtotal: 3, total: 3, shippingAddress: {}, userId },
+      });
+      try {
+        await consume(await issue({ audience: CUSTOMER, userId }), { id });
+        await consume(await issue({ audience: CUSTOMER, orderId: orderB }), { id });
+        const forUsersOrder = {
+          audience: CUSTOMER,
+          owner: { userId, orderId: orderOfUser.id },
+        } as const;
+        await expect(service.hasActiveRecipient(SHOP.channel, id, forUsersOrder)).resolves.toBe(
+          true,
+        );
+
+        await service.revokeForCustomer({ userId });
+
+        // The guest-order row of order B is still there — and is not the account's.
+        await expect(service.hasActiveRecipient(SHOP.channel, id, forUsersOrder)).resolves.toBe(
+          false,
+        );
+        await expect(
+          service.hasActiveRecipient(SHOP.channel, id, {
+            audience: CUSTOMER,
+            owner: { orderId: orderB },
+          }),
+        ).resolves.toBe(true);
+      } finally {
+        await prisma.order.delete({ where: { id: orderOfUser.id } });
+      }
+    });
+
+    it('a guest order the account later claims: its chat shows on the profile and the profile can disconnect it', async () => {
+      const id = chat('claimed');
+      const guestOrder = await prisma.order.create({
+        data: { subtotal: 4, total: 4, shippingAddress: {} },
+      });
+      try {
+        const bound = await consume(await issue({ audience: CUSTOMER, orderId: guestOrder.id }), {
+          id,
+        });
+        if (!bound.ok) throw new Error('bind failed');
+        // Not the account's yet.
+        expect((await service.findActiveForCustomer({ userId })).map((r) => r.id)).not.toContain(
+          bound.binding.id,
+        );
+
+        // claimGuestOrders sets the owner on the order; the binding row is untouched.
+        await prisma.order.update({ where: { id: guestOrder.id }, data: { userId } });
+
+        expect((await service.findActiveForCustomer({ userId })).map((r) => r.id)).toContain(
+          bound.binding.id,
+        );
+        await expect(service.revokeForCustomer({ userId })).resolves.toBeGreaterThanOrEqual(1);
+        const row = await prisma.notificationBinding.findUnique({
+          where: { id: bound.binding.id },
+        });
+        expect(row?.revokedAt).not.toBeNull();
+      } finally {
+        await prisma.notificationBinding.deleteMany({ where: { orderId: guestOrder.id } });
+        await prisma.order.delete({ where: { id: guestOrder.id } });
+      }
+    });
+
+    it('a CUSTOMER link sent from a group binds nothing and is spent; a SHOP link from a group binds', async () => {
+      const group = chat('group');
+      const token = await issue({ audience: CUSTOMER, orderId: orderB });
+
+      await expect(consume(token, { id: group, isPrivate: false })).resolves.toEqual({
+        ok: false,
+        reason: 'private-only',
+      });
+      expect(await rowsFor(group)).toHaveLength(0);
+      // Spent: every member of the group saw it.
+      await expect(consume(token, { id: chat('group-member') })).resolves.toEqual({
+        ok: false,
+        reason: 'invalid',
+      });
+
+      await expect(consume(await issue(), { id: group, isPrivate: false })).resolves.toMatchObject({
+        ok: true,
+        binding: { audience: NotificationAudience.SHOP },
+      });
     });
   });
 

@@ -280,7 +280,8 @@ describe('Customer Telegram notifications (e2e)', () => {
             channel: NotificationChannel.TELEGRAM,
             audience: NotificationAudience.CUSTOMER,
             revokedAt: null,
-            OR: [{ userId: userA.id }],
+            // Its own rows, and those of guest orders it has claimed — both by the session's id.
+            OR: [{ userId: userA.id }, { order: { is: { userId: userA.id } } }],
           },
         }),
       );
@@ -375,7 +376,7 @@ describe('Customer Telegram notifications (e2e)', () => {
         channel: NotificationChannel.TELEGRAM,
         audience: NotificationAudience.CUSTOMER,
         revokedAt: null,
-        OR: [{ userId: userB.id }],
+        OR: [{ userId: userB.id }, { order: { is: { userId: userB.id } } }],
       });
       expect(JSON.stringify(where)).not.toContain(userA.id);
     });

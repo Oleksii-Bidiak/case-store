@@ -167,7 +167,11 @@ describe('TelegramUpdatesWorker', () => {
 
       await worker.tick();
 
-      expect(bindings.consumeToken).toHaveBeenCalledWith(TOKEN, { id: '777', label: 'Олена' });
+      expect(bindings.consumeToken).toHaveBeenCalledWith(TOKEN, {
+        id: '777',
+        label: 'Олена',
+        isPrivate: true,
+      });
       expect(client.sendMessage).toHaveBeenCalledWith('777', TELEGRAM_REPLIES.boundShop);
       expect(bindings.saveOffset).toHaveBeenCalledWith(NotificationChannel.TELEGRAM, 101);
     });
@@ -193,7 +197,48 @@ describe('TelegramUpdatesWorker', () => {
       expect(bindings.consumeToken).toHaveBeenCalledWith(TOKEN, {
         id: String(chat.id),
         label: expected,
+        isPrivate: chat.type === 'private',
       });
+    });
+
+    // TASK-679: customer links are for a private chat only (plan 187).
+    it.each([
+      ['a group', 'group'],
+      ['a supergroup', 'supergroup'],
+      ['a channel', 'channel'],
+    ])('tells the repository that %s is not a private chat', async (_label, type) => {
+      client.getUpdates.mockResolvedValue([
+        update(100, `/start@shop_bot ${TOKEN}`, { id: -100, type, title: 'Сім’я' }),
+      ]);
+
+      await worker.tick();
+
+      expect(bindings.consumeToken).toHaveBeenCalledWith(
+        TOKEN,
+        expect.objectContaining({ id: '-100', isPrivate: false }),
+      );
+    });
+
+    it('answers a customer link sent from a group with the private-chat hint, and logs no token', async () => {
+      bindings.consumeToken.mockResolvedValue({ ok: false, reason: 'private-only' });
+      client.getUpdates.mockResolvedValue([
+        update(100, `/start@shop_bot ${TOKEN}`, { id: -100, type: 'group', title: 'Сім’я' }),
+      ]);
+
+      await worker.tick();
+
+      expect(client.sendMessage).toHaveBeenCalledWith('-100', TELEGRAM_REPLIES.privateOnly);
+      expect(client.sendMessage).not.toHaveBeenCalledWith('-100', TELEGRAM_REPLIES.boundCustomer);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'telegram.binding.refused', reason: 'private-only' }),
+        expect.any(String),
+      );
+      expect(everythingLogged()).not.toContain(TOKEN);
+    });
+
+    it('the private-chat hint sends the customer back to the site for a new link', () => {
+      expect(TELEGRAM_REPLIES.privateOnly).toMatch(/особистий чат/);
+      expect(TELEGRAM_REPLIES.privateOnly).toMatch(/на сайті/);
     });
 
     it.each(['invalid', 'expired'] as const)(

@@ -1,4 +1,15 @@
-import { NotificationChannel, NotificationOutbox, NotificationOutboxStatus } from '@prisma/client';
+import {
+  NotificationAudience,
+  NotificationChannel,
+  NotificationOutbox,
+  NotificationOutboxStatus,
+} from '@prisma/client';
+import {
+  SHOP_CONTACT_MESSAGE_TYPE,
+  SHOP_NEW_ORDER_TYPE,
+  SHOP_NOTIFICATION_TYPES,
+  SHOP_RETURN_REQUESTED_TYPE,
+} from '../shop-notification.types';
 import { PermanentDeliveryError } from '../../notification-outbox/channels/notification-channel-adapter';
 import { TelegramAdapter } from './telegram.adapter';
 import { TelegramApiError, type TelegramClient } from './telegram.client';
@@ -14,7 +25,8 @@ const makeRow = (overrides: Partial<NotificationOutbox> = {}): NotificationOutbo
   type: 'test-ping',
   channel: NotificationChannel.TELEGRAM,
   recipientAddress: '-1001234567890',
-  payload: { name: 'Олена <script>' },
+  // A customer row by default, so it carries the owner it was queued for.
+  payload: { name: 'Олена <script>', recipientOwner: { userId: 'user-1', orderId: null } },
   status: NotificationOutboxStatus.PENDING,
   attempts: 0,
   maxAttempts: 5,
@@ -95,8 +107,84 @@ describe('TelegramAdapter', () => {
       expect(bindings.hasActiveRecipient).toHaveBeenCalledWith(
         NotificationChannel.TELEGRAM,
         '-1001234567890',
+        { audience: NotificationAudience.CUSTOMER, owner: { userId: 'user-1', orderId: null } },
       );
       expect(client.sendMessage).not.toHaveBeenCalled();
+    });
+
+    // ── The gate checks audience and owner, not just the chat (TASK-679) ──────
+
+    it('a shop type is gated on a SHOP binding of the chat, never on a customer one', async () => {
+      await adapter.send(
+        makeRow({
+          type: SHOP_NEW_ORDER_TYPE,
+          payload: { orderId: 'o-1', total: '100.00', itemsCount: 1 },
+        }),
+      );
+
+      expect(bindings.hasActiveRecipient).toHaveBeenCalledWith(
+        NotificationChannel.TELEGRAM,
+        '-1001234567890',
+        { audience: NotificationAudience.SHOP },
+      );
+    });
+
+    it('a revoked SHOP binding fails a queued shop row even while the chat is a customer chat', async () => {
+      // The chat still has a CUSTOMER binding; only the SHOP scope is asked about.
+      bindings.hasActiveRecipient.mockImplementation(
+        (_channel: unknown, _chat: unknown, scope: { audience: NotificationAudience }) =>
+          Promise.resolve(scope.audience === NotificationAudience.CUSTOMER),
+      );
+
+      const sent = adapter.send(
+        makeRow({
+          type: SHOP_CONTACT_MESSAGE_TYPE,
+          payload: { messageId: 'm-1', name: 'Олена', phone: '+380' },
+        }),
+      );
+
+      await expect(sent).rejects.toBeInstanceOf(PermanentDeliveryError);
+      await expect(sent).rejects.toThrow('binding revoked');
+      expect(client.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('a customer row is gated on the owner it was queued for', async () => {
+      await adapter.send(
+        makeRow({
+          payload: { name: 'Олена', recipientOwner: { userId: 'user-9', orderId: 'order-9' } },
+        }),
+      );
+
+      expect(bindings.hasActiveRecipient).toHaveBeenCalledWith(
+        NotificationChannel.TELEGRAM,
+        '-1001234567890',
+        {
+          audience: NotificationAudience.CUSTOMER,
+          owner: { userId: 'user-9', orderId: 'order-9' },
+        },
+      );
+    });
+
+    it.each([
+      ['no recipientOwner', { name: 'Олена' }],
+      ['an empty owner', { name: 'Олена', recipientOwner: { userId: null, orderId: '' } }],
+      ['an owner that is not an object', { name: 'Олена', recipientOwner: 'user-1' }],
+    ])(
+      'a customer row with %s fails permanently without asking the bindings or Telegram',
+      async (_label, payload) => {
+        const sent = adapter.send(makeRow({ payload }));
+
+        await expect(sent).rejects.toBeInstanceOf(PermanentDeliveryError);
+        await expect(sent).rejects.toThrow('recipient owner missing');
+        expect(bindings.hasActiveRecipient).not.toHaveBeenCalled();
+        expect(client.sendMessage).not.toHaveBeenCalled();
+      },
+    );
+
+    it('knows every shop type: a missing one would be gated as a customer row', () => {
+      expect([...SHOP_NOTIFICATION_TYPES].sort()).toEqual(
+        [SHOP_CONTACT_MESSAGE_TYPE, SHOP_NEW_ORDER_TYPE, SHOP_RETURN_REQUESTED_TYPE].sort(),
+      );
     });
 
     it.each([

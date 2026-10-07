@@ -13,6 +13,7 @@ export {
   type ShopReturnRequestedInput,
   type ShopReturnRequestedPayload,
 } from './shop-notification.types';
+export { recipientScopeOf, type RecipientOwnerPayload } from './recipient-scope';
 export {
   NotificationBindingService,
   BINDING_TOKEN_TTL_MS,

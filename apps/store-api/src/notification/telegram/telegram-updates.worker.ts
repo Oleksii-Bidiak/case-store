@@ -38,6 +38,8 @@ export const TELEGRAM_REPLIES = {
     'Посилання недійсне або прострочене. Відкрийте його ще раз на сайті чи в адмінці, щоб отримати нове.',
   bareStart:
     'Щоб отримувати сповіщення в цей чат, відкрийте посилання підключення на сайті магазину чи в адмінці.',
+  privateOnly:
+    'Сповіщення про замовлення надходять лише в особистий чат із ботом. Це посилання вже не діє: отримайте нове на сайті й відкрийте його в особистому чаті.',
 } as const;
 
 /**
@@ -168,14 +170,23 @@ export class TelegramUpdatesWorker implements OnModuleInit, OnModuleDestroy {
     const chat = message.chat;
     const label = chat.title ?? (chat.username ? `@${chat.username}` : (chat.first_name ?? null));
     // A database failure here propagates: the update is retried next tick.
-    const result = await this.bindings.consumeToken(token, { id: chatId, label });
+    // A customer token binds only a one-to-one chat (plan 187). Telegram's own
+    // `chat.type` decides, not the sign of the id.
+    const result = await this.bindings.consumeToken(token, {
+      id: chatId,
+      label,
+      isPrivate: chat.type === 'private',
+    });
 
     if (!result.ok) {
       this.logger.warn(
         { event: 'telegram.binding.refused', chatId, tokenRef, reason: result.reason },
         `Telegram /start refused (${result.reason})`,
       );
-      await this.reply(chatId, TELEGRAM_REPLIES.invalid);
+      await this.reply(
+        chatId,
+        result.reason === 'private-only' ? TELEGRAM_REPLIES.privateOnly : TELEGRAM_REPLIES.invalid,
+      );
       return;
     }
 

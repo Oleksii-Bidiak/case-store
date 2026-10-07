@@ -47,7 +47,9 @@ export class CustomerNotificationController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Whether the bot can be connected, and whether a chat is connected',
+    description:
+      'Whether the bot can be connected, and whether a chat is connected (to the account, or ' +
+      'to a guest order the account has claimed)',
     type: CustomerTelegramStatusResponse,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized — authentication required' })
@@ -84,7 +86,8 @@ export class CustomerNotificationController {
     summary: 'Disconnect every Telegram chat of the current account',
     description:
       'Idempotent: nothing connected is not an error. E-mail notifications are unaffected. ' +
-      'Chats connected from a guest order are that order’s, not the account’s, and stay.',
+      'Includes chats connected from guest orders this account has since claimed: once ' +
+      'claimed, such an order can no longer be managed through its guest link.',
     operationId: 'revokeMyTelegramNotifications',
   })
   @ApiResponse({ status: 204, description: 'Disconnected (or nothing was connected)' })

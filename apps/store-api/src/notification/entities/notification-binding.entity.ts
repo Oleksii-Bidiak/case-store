@@ -27,8 +27,13 @@ export interface NotificationBindingEntity {
   connectedBy?: NotificationBindingUser | null;
 }
 
-/** Why a token exchange was refused. Both answer the chat the same way. */
-export type ConsumeTokenFailure = 'invalid' | 'expired';
+/**
+ * Why a token exchange was refused. `invalid` and `expired` answer the chat the
+ * same way. `private-only` means a CUSTOMER token was sent from a group: the
+ * token is spent (every member saw it) and the chat is told to get a new link
+ * and open it in a private chat with the bot.
+ */
+export type ConsumeTokenFailure = 'invalid' | 'expired' | 'private-only';
 
 /** Outcome of exchanging a `/start` token for a binding. */
 export type ConsumeTokenResult =

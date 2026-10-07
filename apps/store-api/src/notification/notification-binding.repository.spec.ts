@@ -34,7 +34,7 @@ describe('NotificationBindingRepository', () => {
   };
   const prisma = {
     $transaction: jest.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
-    notificationBinding: { findMany: jest.fn(), updateMany: jest.fn() },
+    notificationBinding: { findMany: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },
   };
   const repository = new NotificationBindingRepository(prisma as unknown as PrismaService);
 
@@ -66,7 +66,7 @@ describe('NotificationBindingRepository', () => {
         token({ audience: CUSTOMER, orderId: 'order-b' }),
       );
 
-      await repository.consumeToken('h', { externalId: '777' }, NOW);
+      await repository.consumeToken('h', { externalId: '777', isPrivate: true }, NOW);
 
       expect(tx.notificationBinding.findFirst).toHaveBeenCalledWith({
         where: {
@@ -85,7 +85,7 @@ describe('NotificationBindingRepository', () => {
         token({ audience: CUSTOMER, userId: 'user-1' }),
       );
 
-      await repository.consumeToken('h', { externalId: '777' }, NOW);
+      await repository.consumeToken('h', { externalId: '777', isPrivate: true }, NOW);
 
       expect(tx.notificationBinding.findFirst).toHaveBeenCalledWith({
         where: expect.objectContaining({ userId: 'user-1', orderId: null }),
@@ -100,7 +100,7 @@ describe('NotificationBindingRepository', () => {
         row({ audience: NotificationAudience.SHOP }),
       );
 
-      await repository.consumeToken('h', { externalId: '777' }, NOW);
+      await repository.consumeToken('h', { externalId: '777', isPrivate: true }, NOW);
 
       expect(tx.notificationBinding.findFirst).toHaveBeenCalledWith({
         where: {
@@ -110,6 +110,108 @@ describe('NotificationBindingRepository', () => {
           revokedAt: null,
         },
       });
+    });
+
+    it('CUSTOMER token from a group: refused as private-only, spent, binds nothing', async () => {
+      tx.notificationBindingToken.findUnique.mockResolvedValue(
+        token({ audience: CUSTOMER, orderId: 'order-a' }),
+      );
+
+      await expect(
+        repository.consumeToken('h', { externalId: '-100500', isPrivate: false }, NOW),
+      ).resolves.toEqual({ ok: false, reason: 'private-only' });
+
+      // Spent by the same conditional update as any exchange: a link posted in a
+      // group is seen by every member.
+      expect(tx.notificationBindingToken.updateMany).toHaveBeenCalledWith({
+        where: { tokenHash: 'h', consumedAt: null, expiresAt: { gt: NOW } },
+        data: { consumedAt: NOW },
+      });
+      expect(tx.notificationBinding.createMany).not.toHaveBeenCalled();
+    });
+
+    it('SHOP token from a group still binds — a shop chat may be a group', async () => {
+      tx.notificationBindingToken.findUnique.mockResolvedValue(
+        token({ audience: NotificationAudience.SHOP, userId: 'admin-1' }),
+      );
+      tx.notificationBinding.findFirst.mockResolvedValue(
+        row({ audience: NotificationAudience.SHOP, externalId: '-100500' }),
+      );
+
+      await expect(
+        repository.consumeToken('h', { externalId: '-100500', isPrivate: false }, NOW),
+      ).resolves.toMatchObject({ ok: true });
+      expect(tx.notificationBinding.createMany).toHaveBeenCalled();
+    });
+
+    it('a spent CUSTOMER token from a group is plain invalid, not private-only', async () => {
+      tx.notificationBindingToken.updateMany.mockResolvedValue({ count: 0 });
+      tx.notificationBindingToken.findUnique.mockResolvedValue(
+        token({ audience: CUSTOMER, orderId: 'order-a' }),
+      );
+
+      await expect(
+        repository.consumeToken('h', { externalId: '-100500', isPrivate: false }, NOW),
+      ).resolves.toEqual({ ok: false, reason: 'invalid' });
+    });
+  });
+
+  describe('hasActive — the send gate (audience and owner, not just the chat)', () => {
+    beforeEach(() => {
+      prisma.notificationBinding.findFirst.mockResolvedValue({ id: 'b-1' });
+    });
+
+    it('SHOP: an active SHOP row of the chat, nothing else', async () => {
+      await expect(
+        repository.hasActive(TELEGRAM, '777', { audience: NotificationAudience.SHOP }),
+      ).resolves.toBe(true);
+
+      expect(prisma.notificationBinding.findFirst).toHaveBeenCalledWith({
+        where: {
+          channel: TELEGRAM,
+          externalId: '777',
+          audience: NotificationAudience.SHOP,
+          revokedAt: null,
+        },
+        select: { id: true },
+      });
+    });
+
+    it('CUSTOMER: an active CUSTOMER row of the chat AND of the owner', async () => {
+      await repository.hasActive(TELEGRAM, '777', {
+        audience: CUSTOMER,
+        owner: { userId: 'user-1', orderId: 'order-a' },
+      });
+
+      expect(prisma.notificationBinding.findFirst).toHaveBeenCalledWith({
+        where: {
+          channel: TELEGRAM,
+          externalId: '777',
+          audience: CUSTOMER,
+          revokedAt: null,
+          OR: [
+            { userId: 'user-1' },
+            { order: { is: { userId: 'user-1' } } },
+            { orderId: 'order-a' },
+          ],
+        },
+        select: { id: true },
+      });
+    });
+
+    it('CUSTOMER with no owner: false, and the database is not asked', async () => {
+      await expect(
+        repository.hasActive(TELEGRAM, '777', { audience: CUSTOMER, owner: {} }),
+      ).resolves.toBe(false);
+      expect(prisma.notificationBinding.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('no matching row: false', async () => {
+      prisma.notificationBinding.findFirst.mockResolvedValue(null);
+
+      await expect(
+        repository.hasActive(TELEGRAM, '777', { audience: NotificationAudience.SHOP }),
+      ).resolves.toBe(false);
     });
   });
 
@@ -132,7 +234,11 @@ describe('NotificationBindingRepository', () => {
           channel: TELEGRAM,
           audience: CUSTOMER,
           revokedAt: null,
-          OR: [{ userId: 'user-1' }, { orderId: 'order-a' }],
+          OR: [
+            { userId: 'user-1' },
+            { order: { is: { userId: 'user-1' } } },
+            { orderId: 'order-a' },
+          ],
         },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       });
@@ -176,7 +282,7 @@ describe('NotificationBindingRepository', () => {
           channel: TELEGRAM,
           audience: CUSTOMER,
           revokedAt: null,
-          OR: [{ userId: 'user-1' }],
+          OR: [{ userId: 'user-1' }, { order: { is: { userId: 'user-1' } } }],
         },
         data: { revokedAt: NOW },
       });

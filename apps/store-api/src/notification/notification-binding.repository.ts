@@ -26,16 +26,39 @@ export interface CreateBindingTokenParams {
  * Whose customer notifications are meant (TASK-679): an account, a guest order,
  * or — for the recipients of one order's event — both at once. An owner with
  * neither matches nothing.
+ *
+ * An account also owns the chats connected from guest orders it has since
+ * CLAIMED (`order.userId` = the account). Once the order belongs to the account,
+ * the guest route refuses it (404), so the profile is the only place left to see
+ * and disconnect that chat. Without this arm the chat would stay connected and
+ * be invisible.
  */
 export interface CustomerBindingOwner {
   userId?: string | null;
   orderId?: string | null;
 }
 
+/**
+ * Whose binding must still be active for a queued message to go out (the
+ * Telegram send gate). A SHOP row needs an active SHOP binding of the chat. A
+ * CUSTOMER row needs an active CUSTOMER binding of the chat that belongs to the
+ * owner the row was queued for. A chat that is bound for something ELSE (a shop
+ * chat that is also somebody's customer chat) never lets the row through.
+ */
+export type RecipientScope =
+  | { audience: typeof NotificationAudience.SHOP }
+  | { audience: typeof NotificationAudience.CUSTOMER; owner: CustomerBindingOwner };
+
 /** The chat that sent `/start <token>`. */
 export interface BindingChat {
   externalId: string;
   label?: string | null;
+  /**
+   * A one-to-one chat with the bot. A CUSTOMER token is accepted only from such
+   * a chat (plan 187: a customer's order updates go to their private chat). From
+   * a group it is refused and spent (`private-only`).
+   */
+  isPrivate: boolean;
 }
 
 const CONNECTED_BY_SELECT = {
@@ -105,6 +128,14 @@ export class NotificationBindingRepository {
       if (count !== 1 || token === null) {
         const expired = token !== null && token.consumedAt === null && token.expiresAt <= now;
         return { ok: false, reason: expired ? 'expired' : 'invalid' } as const;
+      }
+
+      // A customer link sent from a group is refused, and it is SPENT: a link
+      // that has been posted in a group is seen by every member, and any of
+      // them could open it in their own private chat. The customer asks for a
+      // new one on the site.
+      if (token.audience === NotificationAudience.CUSTOMER && !chat.isPrivate) {
+        return { ok: false, reason: 'private-only' } as const;
       }
 
       // A CUSTOMER token whose account and order were both deleted since it was
@@ -185,12 +216,28 @@ export class NotificationBindingRepository {
     }));
   }
 
-  /** Is this chat still an active recipient of this channel, for any audience? */
-  async hasActive(channel: NotificationChannel, externalId: string): Promise<boolean> {
-    const row = await this.prisma.notificationBinding.findFirst({
-      where: { channel, externalId, revokedAt: null },
-      select: { id: true },
-    });
+  /**
+   * Is this chat still an active recipient on this channel FOR THIS SCOPE: an
+   * active SHOP binding, or an active CUSTOMER binding of the given owner? A
+   * CUSTOMER scope with no owner matches nothing.
+   */
+  async hasActive(
+    channel: NotificationChannel,
+    externalId: string,
+    scope: RecipientScope,
+  ): Promise<boolean> {
+    const where: Prisma.NotificationBindingWhereInput = {
+      channel,
+      externalId,
+      audience: scope.audience,
+      revokedAt: null,
+    };
+    if (scope.audience === NotificationAudience.CUSTOMER) {
+      const or = ownerFilter(scope.owner);
+      if (or.length === 0) return false;
+      where.OR = or;
+    }
+    const row = await this.prisma.notificationBinding.findFirst({ where, select: { id: true } });
     return row !== null;
   }
 
@@ -292,10 +339,17 @@ export class NotificationBindingRepository {
 /**
  * The owner as `OR` arms. An absent or empty id contributes nothing — never a
  * `{ userId: null }` arm, which would match every orphaned row.
+ *
+ * An account contributes two arms: its own rows, and the rows of guest orders it
+ * has claimed (see {@link CustomerBindingOwner}). Both come from the one proved
+ * id. The second is a join on `orders.user_id`, never an id taken from a request.
  */
 function ownerFilter(owner: CustomerBindingOwner): Prisma.NotificationBindingWhereInput[] {
   const or: Prisma.NotificationBindingWhereInput[] = [];
-  if (owner.userId) or.push({ userId: owner.userId });
+  if (owner.userId) {
+    or.push({ userId: owner.userId });
+    or.push({ order: { is: { userId: owner.userId } } });
+  }
   if (owner.orderId) or.push({ orderId: owner.orderId });
   return or;
 }

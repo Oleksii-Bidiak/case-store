@@ -125,6 +125,24 @@ describe('buildPinoHttpOptions', () => {
       expect(out).not.toHaveProperty('headers');
     });
 
+    // TASK-679: the guest order token is a credential that lives in the PATH.
+    it.each([
+      '/api/orders/guest/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6',
+      '/api/orders/guest/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6/notifications/telegram',
+      '/api/orders/guest/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6/notifications/telegram/link',
+    ])('req masks the guest order token in %s', (url) => {
+      const out = pinoHttp().serializers.req({ id: 'req-1', method: 'GET', url });
+
+      expect(out.url).not.toContain('a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6');
+      expect(out.url).toMatch(/^\/api\/orders\/guest\/\[token:[0-9a-f]{8}\]/);
+    });
+
+    it('req leaves an ordinary url alone', () => {
+      const out = pinoHttp().serializers.req({ id: 'req-1', method: 'GET', url: '/api/products' });
+
+      expect(out.url).toBe('/api/products');
+    });
+
     it('res emits exactly statusCode', () => {
       const out = pinoHttp().serializers.res({ statusCode: 204, headers: { 'set-cookie': 'x' } });
 

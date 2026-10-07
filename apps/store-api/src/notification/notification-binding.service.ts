@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'crypto';
 import {
   NotificationBindingRepository,
   type CustomerBindingOwner,
+  type RecipientScope,
 } from './notification-binding.repository';
 import type {
   ConsumeTokenResult,
@@ -39,6 +40,12 @@ export interface IssuedToken {
 export interface StartingChat {
   id: string | number;
   label?: string | null;
+  /**
+   * A one-to-one chat with the bot, as the channel reports it. Required, so a
+   * caller cannot forget it: a CUSTOMER token from a non-private chat is refused
+   * and spent (`private-only`).
+   */
+  isPrivate: boolean;
 }
 
 /** SHA-256 hex — the only form in which a token is stored or logged (prefix only). */
@@ -89,7 +96,7 @@ export class NotificationBindingService {
     const label = chat.label?.trim() ? chat.label.trim() : null;
     return this.repository.consumeToken(
       hashBindingToken(token),
-      { externalId: String(chat.id), label },
+      { externalId: String(chat.id), label, isPrivate: chat.isPrivate },
       new Date(Date.now()),
     );
   }
@@ -111,9 +118,17 @@ export class NotificationBindingService {
     return this.repository.listActiveWithUser(channel, audience);
   }
 
-  /** Is this chat still an active recipient on this channel (any audience)? */
-  hasActiveRecipient(channel: NotificationChannel, externalId: string): Promise<boolean> {
-    return this.repository.hasActive(channel, externalId);
+  /**
+   * Is this chat still an active recipient on this channel for this scope (an
+   * active SHOP binding, or an active CUSTOMER binding of the given owner)? The
+   * send gate: a chat bound for one audience never satisfies the other.
+   */
+  hasActiveRecipient(
+    channel: NotificationChannel,
+    externalId: string,
+    scope: RecipientScope,
+  ): Promise<boolean> {
+    return this.repository.hasActive(channel, externalId, scope);
   }
 
   /**

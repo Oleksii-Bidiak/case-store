@@ -11,6 +11,7 @@ import { TelegramApiError, TelegramClient } from './telegram.client';
 import { TelegramChannelState } from './telegram-channel.state';
 import { TelegramRendererRegistry } from './telegram-renderers';
 import { NotificationBindingService } from '../notification-binding.service';
+import { recipientScopeOf } from '../recipient-scope';
 import { isTelegramChatGone, revokeGoneTelegramChat } from './telegram-chat-gone';
 
 /** Telegram codes that mean the BOT is gone, not that this one recipient is unreachable. */
@@ -24,10 +25,13 @@ const TOKEN_REJECTED_CODES = new Set([401, 404]);
  * Until TASK-677 nothing enqueues a TELEGRAM row, so registering the adapter
  * changes no behaviour for anyone.
  *
- * A row is only ever sent to a chat that is still BOUND (TASK-675): the binding
- * is checked before Telegram is contacted, so a chat disconnected in the admin
- * after the row was queued is FAILED with `binding revoked` instead of receiving
- * one last message.
+ * A row is only ever sent to a chat that is still BOUND FOR THAT ROW (TASK-675,
+ * TASK-679). The binding is checked before Telegram is contacted, so a chat
+ * disconnected after the row was queued is FAILED with `binding revoked`
+ * instead of receiving one last message. "Bound for that row" means a SHOP
+ * binding for a shop type, and a CUSTOMER binding of the row's
+ * `recipientOwner` for anything else. A chat that is still bound for the other
+ * audience does not count.
  *
  * Failure mapping onto the outbox contract:
  * - 403, or 400 "chat not found" (bot blocked or kicked, chat deleted) → every
@@ -91,11 +95,20 @@ export class TelegramAdapter implements NotificationChannelAdapter {
   }
 
   async send(row: NotificationOutbox): Promise<void> {
-    if (!(await this.bindings.hasActiveRecipient(this.channel, row.recipientAddress))) {
+    // First, and pure: throws a plain Error for an unknown type, which is
+    // transient by design. A type this worker does not know yet (a newer
+    // instance queued it) must wait for a worker that does, not be failed below
+    // because its audience could not be told.
+    const text = this.renderers.render(row);
+    // Gated by audience and owner, not just by chat: one chat may be a SHOP chat
+    // and a customer's chat at once (TASK-679). See recipientScopeOf.
+    const scope = recipientScopeOf(row);
+    if (scope === null) {
+      throw new PermanentDeliveryError('recipient owner missing');
+    }
+    if (!(await this.bindings.hasActiveRecipient(this.channel, row.recipientAddress, scope))) {
       throw new PermanentDeliveryError('binding revoked');
     }
-    // Throws a plain Error for an unknown type — transient, by design.
-    const text = this.renderers.render(row);
     try {
       await this.client.sendMessage(row.recipientAddress, text, {
         parseMode: 'HTML',

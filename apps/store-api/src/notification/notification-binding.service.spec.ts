@@ -92,11 +92,15 @@ describe('NotificationBindingService', () => {
     it('passes the hash, the chat id as a string and the trimmed label to the repository', async () => {
       repository.consumeToken.mockResolvedValue({ ok: false, reason: 'invalid' });
 
-      await service.consumeToken(token, { id: -1001234567890, label: '  Магазин  ' });
+      await service.consumeToken(token, {
+        id: -1001234567890,
+        label: '  Магазин  ',
+        isPrivate: false,
+      });
 
       expect(repository.consumeToken).toHaveBeenCalledWith(
         hashBindingToken(token),
-        { externalId: '-1001234567890', label: 'Магазин' },
+        { externalId: '-1001234567890', label: 'Магазин', isPrivate: false },
         NOW,
       );
     });
@@ -104,11 +108,11 @@ describe('NotificationBindingService', () => {
     it('stores an empty label as null', async () => {
       repository.consumeToken.mockResolvedValue({ ok: false, reason: 'invalid' });
 
-      await service.consumeToken(token, { id: 42, label: '   ' });
+      await service.consumeToken(token, { id: 42, label: '   ', isPrivate: true });
 
       expect(repository.consumeToken).toHaveBeenCalledWith(
         expect.any(String),
-        { externalId: '42', label: null },
+        { externalId: '42', label: null, isPrivate: true },
         NOW,
       );
     });
@@ -119,7 +123,7 @@ describe('NotificationBindingService', () => {
       'x'.repeat(65),
       'тільки-кирилиця-що-довша-за-двадцять',
     ])('refuses %p without asking the database — no token of ours looks like that', async (bad) => {
-      await expect(service.consumeToken(bad, { id: 1 })).resolves.toEqual({
+      await expect(service.consumeToken(bad, { id: 1, isPrivate: true })).resolves.toEqual({
         ok: false,
         reason: 'invalid',
       });
@@ -130,7 +134,22 @@ describe('NotificationBindingService', () => {
       const outcome = { ok: false, reason: 'expired' };
       repository.consumeToken.mockResolvedValue(outcome);
 
-      await expect(service.consumeToken(token, { id: 1 })).resolves.toBe(outcome);
+      await expect(service.consumeToken(token, { id: 1, isPrivate: true })).resolves.toBe(outcome);
+    });
+  });
+
+  describe('hasActiveRecipient', () => {
+    it('passes the scope through: the gate is never audience-blind (TASK-679)', async () => {
+      repository.hasActive.mockResolvedValue(false);
+      const scope = {
+        audience: NotificationAudience.CUSTOMER,
+        owner: { userId: 'user-1', orderId: 'order-1' },
+      } as const;
+
+      await expect(
+        service.hasActiveRecipient(NotificationChannel.TELEGRAM, '777', scope),
+      ).resolves.toBe(false);
+      expect(repository.hasActive).toHaveBeenCalledWith(NotificationChannel.TELEGRAM, '777', scope);
     });
   });
 
