@@ -5405,6 +5405,8 @@ export const dict = {
       // TASK-645: /admin/pickup-points/* → `pickupPoints.*`. Its own label, not a
       // fold into `delivery`: a point edit is a different event from a switch flip.
       pickupPoints: "Точки самовивозу",
+      // TASK-661: /admin/home-blocks/* → `homeBlock.*` (the «Головна» screen).
+      homeBlock: "Блоки головної",
     },
 
     // ── TASK-430: the log in Ukrainian ────────────────────────────────────────

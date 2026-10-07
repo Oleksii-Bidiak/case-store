@@ -34,6 +34,7 @@ import { PagesModule } from './pages';
 import { BlogModule } from './blog';
 import { BannersModule } from './banners';
 import { CarouselsModule } from './carousels';
+import { HomeBlockModule } from './home-block';
 import { SiteContactModule } from './site-contact';
 import { SeoSettingsModule } from './seo-settings';
 import { FaqModule } from './faq';
@@ -224,6 +225,8 @@ import { buildPinoHttpOptions, validateEnv } from './config';
     BannersModule,
     // Admin-managed recommendation carousels (TASK-139)
     CarouselsModule,
+    // The homepage as a list of blocks (TASK-660/661, plan 186)
+    HomeBlockModule,
 
     // Admin-managed site contact settings (TASK-154)
     SiteContactModule,
