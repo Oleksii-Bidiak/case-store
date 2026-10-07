@@ -674,6 +674,7 @@ describe("AdminReviewTable — «Сигнали накрутки» (В3)", () =>
             pendingReviews: 0,
             unpaidInTransit: 0,
             failedMails: 0,
+            failedTelegram: 0,
             pendingOver48h: 0,
             ratingAbuse: productIds.length + createdIps.length,
             ratingAbuseSignals: { productIds, createdIps },

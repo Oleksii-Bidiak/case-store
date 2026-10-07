@@ -1,7 +1,7 @@
 import { cn } from "@/shared/lib";
 
-/** Eight tiles from the needs-action payload; the ninth is the returns tile. */
-const BASE_CARDS = 8;
+/** Nine tiles from the needs-action payload (TASK-1090); the tenth is the returns tile. */
+const BASE_CARDS = 9;
 
 interface NeedsActionWidgetSkeletonProps {
   /** Whether the session sees the returns tile (`returns:read`, TASK-613). */
@@ -10,8 +10,8 @@ interface NeedsActionWidgetSkeletonProps {
 
 /**
  * Loading placeholder matching the {@link NeedsActionWidget} layout: the
- * heading line, then the SAME number of cards in the SAME columns — nine in
- * three with the returns tile, eight in four without it.
+ * heading line, then the SAME number of cards in the SAME columns — ten in
+ * five with the returns tile, nine in three without it (TASK-1090).
  *
  * The count and the column class have to track the widget's, and this one had
  * drifted twice: four cards for six at TASK-446, six for nine at TASK-613. A
@@ -28,7 +28,7 @@ export function NeedsActionWidgetSkeleton({
       <div
         className={cn(
           "mt-4 grid grid-cols-2 gap-4",
-          withReturns ? "lg:grid-cols-3" : "lg:grid-cols-4",
+          withReturns ? "lg:grid-cols-5" : "lg:grid-cols-3",
         )}
       >
         {Array.from({ length: cards }).map((_, index) => (

@@ -79,6 +79,8 @@ export const handlers = [
         pendingReviews: 0,
         unpaidInTransit: 0,
         failedMails: 0,
+        // TASK-1090: FAILED Telegram rows, counted apart from mail.
+        failedTelegram: 0,
         pendingOver48h: 0,
         // TASK-446: the 6th counter. It has to be in the DEFAULT payload — MSW
         // runs with `onUnhandledRequest: "error"` and several suites mount

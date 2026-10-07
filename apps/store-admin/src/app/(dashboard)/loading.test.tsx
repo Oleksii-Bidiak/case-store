@@ -30,12 +30,12 @@ describe("dashboard loading.tsx (TASK-1037)", () => {
     ).toBeInTheDocument();
   });
 
-  it("draws the owner's layout: nine needs-action cards, ten stat cards, two charts", () => {
+  it("draws the owner's layout: ten needs-action cards, ten stat cards, two charts", () => {
     const { container } = renderWithProviders(<Loading />, {
       auth: { permissions: OWNER },
     });
 
-    expect(count(container, "needs-action-skeleton")).toBe(9);
+    expect(count(container, "needs-action-skeleton")).toBe(10);
     expect(count(container, "stat-skeleton")).toBe(10);
     expect(count(container, "chart-skeleton")).toBe(2);
   });
@@ -45,7 +45,7 @@ describe("dashboard loading.tsx (TASK-1037)", () => {
       auth: { permissions: ["analytics:read", "orders:read"] },
     });
 
-    expect(count(container, "needs-action-skeleton")).toBe(8);
+    expect(count(container, "needs-action-skeleton")).toBe(9);
     expect(count(container, "stat-skeleton")).toBe(5);
     expect(count(container, "chart-skeleton")).toBe(1);
   });

@@ -304,6 +304,10 @@ export const dict = {
     // (7 днів), щоб два числа на двох екранах збігалися.
     trafficMore: "Детальніше",
     trafficMoreAria: "Детальніше про відвідуваність — звіти за 7 днів",
+    // TASK-1090: сповіщення в Telegram, які так і не дійшли, — окремо від
+    // пошти. Плитка веде на /settings/notifications, де видно, який чат
+    // відпав.
+    needsActionFailedTelegram: "Telegram не доставив",
   },
 
   common: {

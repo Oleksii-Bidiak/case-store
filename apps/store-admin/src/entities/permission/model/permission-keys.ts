@@ -128,6 +128,11 @@ export const PERM = {
   // and the pickup points. One key for the whole screen, as on the API
   // (`AdminDeliveryController` and `AdminPickupPointsController`).
   settingsDelivery: "settings:delivery",
+  // TASK-676 — /settings/notifications: the shop's Telegram bot state, the
+  // connected chats, connect / test / disconnect. One key for the whole screen,
+  // as on the API (`AdminNotificationController`). Also decides whether the
+  // dashboard's «Telegram не доставив» tile links there (TASK-1090).
+  settingsNotifications: "settings:notifications",
 
   analyticsRead: "analytics:read",
   // TASK-684: the money on the dashboard and in the reports. The API cuts the
