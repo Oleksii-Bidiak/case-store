@@ -1,5 +1,7 @@
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { http, HttpResponse } from "msw";
+import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
 import { makeOrder } from "@/shared/test/msw-handlers";
+import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
 import { CheckoutGuestSuccess } from "./checkout-guest-success";
@@ -83,5 +85,100 @@ describe("CheckoutGuestSuccess (TASK-610)", () => {
     expect(
       screen.getByRole("link", { name: dict.common.continueShopping }),
     ).toHaveAttribute("href", "/");
+  });
+});
+
+/**
+ * TASK-679 — «Стежте за замовленням у Telegram». Offered only with the guest's
+ * own order token and only while the shop's bot is available; the e-mail is
+ * named as still coming either way.
+ */
+describe("CheckoutGuestSuccess — Telegram card (TASK-679)", () => {
+  const tg = dict.telegramNotifications;
+  const TOKEN = "f".repeat(64);
+  const STATUS = "*/api/orders/guest/:token/notifications/telegram";
+
+  function serveStatus(state: { available: boolean; connected: boolean }) {
+    const tokens: string[] = [];
+    server.use(
+      http.get(STATUS, ({ params }) => {
+        tokens.push(String(params.token));
+        return HttpResponse.json({
+          data: {
+            ...state,
+            botUsername: state.available ? "casestore_bot" : undefined,
+          },
+        });
+      }),
+    );
+    return tokens;
+  }
+
+  function renderSuccess(token: string | null) {
+    return renderWithProviders(
+      <CheckoutGuestSuccess
+        order={order}
+        email={email}
+        guestAccessToken={token}
+        telegramPollIntervalMs={30}
+      />,
+    );
+  }
+
+  it("offers the card with the order number when the bot is available", async () => {
+    const tokens = serveStatus({ available: true, connected: false });
+    renderSuccess(TOKEN);
+
+    expect(
+      await screen.findByRole("heading", { name: tg.guest.heading }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(tg.guest.body("94F5F971"))).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: tg.connectGuest }),
+    ).toBeInTheDocument();
+    expect(tokens).toEqual([TOKEN]);
+    // The card sits between the order and the account offer.
+    const headings = screen.getAllByRole("heading").map((h) => h.textContent);
+    expect(headings.indexOf(tg.guest.heading)).toBeLessThan(
+      headings.indexOf(d.accountOfferHeading),
+    );
+  });
+
+  it("is not offered without the guest's order token — and asks nothing", async () => {
+    const tokens = serveStatus({ available: true, connected: false });
+    renderSuccess(null);
+
+    // Give a stray request the chance to land before asserting there was none.
+    await screen.findByRole("heading", { name: d.successHeading });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(
+      screen.queryByRole("heading", { name: tg.guest.heading }),
+    ).not.toBeInTheDocument();
+    expect(tokens).toEqual([]);
+  });
+
+  it("is hidden when the shop's bot is not available", async () => {
+    const tokens = serveStatus({ available: false, connected: false });
+    renderSuccess(TOKEN);
+
+    await waitFor(() => expect(tokens).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(
+      screen.queryByRole("heading", { name: tg.guest.heading }),
+    ).not.toBeInTheDocument();
+    // The rest of the success panel is untouched.
+    expect(screen.getByText(d.successEmail(email))).toBeInTheDocument();
+  });
+
+  it("connected: says both Telegram and the e-mail will carry the news", async () => {
+    serveStatus({ available: true, connected: true });
+    renderSuccess(TOKEN);
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      tg.guest.connected(email),
+    );
+    expect(
+      screen.queryByRole("button", { name: tg.connectGuest }),
+    ).not.toBeInTheDocument();
   });
 });

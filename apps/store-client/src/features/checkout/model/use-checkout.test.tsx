@@ -279,3 +279,64 @@ describe("useCheckout — the payment method travels on the create call (TASK-65
     },
   );
 });
+
+describe("useCheckout — the guest's order token (TASK-679)", () => {
+  function GuestHarness() {
+    const { submitOrder, placedOrder, guestAccessToken } = useCheckout({
+      isGuest: true,
+    });
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() =>
+            void submitOrder({ ...VALUES, email: "guest@example.com" })
+          }
+        >
+          submit
+        </button>
+        {placedOrder && <p data-testid="placed">{placedOrder.id}</p>}
+        <p data-testid="token">{guestAccessToken ?? "none"}</p>
+      </div>
+    );
+  }
+
+  afterEach(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+
+  it("keeps the token the create call returns — in memory, nowhere else", async () => {
+    const token = "a".repeat(64);
+    server.use(
+      http.post("*/api/orders", () =>
+        HttpResponse.json(
+          { data: { id: "order-9", guestAccessToken: token } },
+          { status: 201 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<GuestHarness />);
+
+    await user.click(screen.getByRole("button", { name: "submit" }));
+
+    expect(await screen.findByTestId("placed")).toHaveTextContent("order-9");
+    expect(screen.getByTestId("token")).toHaveTextContent(token);
+    const stored = [
+      ...Object.values({ ...window.localStorage }),
+      ...Object.values({ ...window.sessionStorage }),
+    ].join("|");
+    expect(stored).not.toContain(token);
+  });
+
+  it("has no token when the create response carries none", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<GuestHarness />);
+
+    await user.click(screen.getByRole("button", { name: "submit" }));
+
+    expect(await screen.findByTestId("placed")).toBeInTheDocument();
+    expect(screen.getByTestId("token")).toHaveTextContent("none");
+  });
+});

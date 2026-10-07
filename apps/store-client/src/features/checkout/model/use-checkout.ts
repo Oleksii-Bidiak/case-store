@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useCreateOrder,
   type CreateOrderDto,
+  type CreatedOrderEntity,
   type OrderEntity,
 } from "@/entities/order";
 import { getGetCartQueryKey } from "@/entities/cart";
@@ -166,6 +167,12 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
   // The created order, kept only for the guest success panel (ending 3).
   const [placedOrder, setPlacedOrder] = useState<OrderEntity | null>(null);
 
+  // The guest's own order access token (TASK-679) — the one the confirmation
+  // e-mail carries, returned ONCE by the create call. It is the guest's proof
+  // of ownership for the Telegram routes on the success panel. Memory only, on
+  // purpose: never localStorage / sessionStorage — it opens the order.
+  const [guestAccessToken, setGuestAccessToken] = useState<string | null>(null);
+
   // Set when the order was created but the provider handoff was not. Describes
   // the handoff, never the money.
   const [handoffMessage, setHandoffMessage] = useState<string | null>(null);
@@ -219,7 +226,7 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
     };
 
     // `mutation.isError` drives the message; this only decides where it shows.
-    let order: OrderEntity | undefined;
+    let order: CreatedOrderEntity | undefined;
     try {
       order = (await mutation.mutateAsync({ data: dto }))?.data;
     } catch (error) {
@@ -251,11 +258,13 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
         router.push(`/orders/${order.id}/confirmation`);
         return "placed";
       }
+      setGuestAccessToken(order.guestAccessToken ?? null);
       setPlacedOrder(order);
       return "placed";
     }
 
     if (isGuest) {
+      setGuestAccessToken(order.guestAccessToken ?? null);
       setPlacedOrder(order);
       return "placed";
     }
@@ -289,6 +298,8 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
     clearError: mutation.reset,
     isOrderSubmitted,
     placedOrder,
+    /** The guest's order access token from the create call; `null` otherwise. */
+    guestAccessToken,
     handoffMessage,
   };
 }
