@@ -40,6 +40,18 @@ export {
 } from './telegram/telegram-channel.state';
 export { TelegramAdapter } from './telegram/telegram.adapter';
 export {
+  CustomerTelegramService,
+  type CustomerTelegramOwner,
+  type CustomerTelegramStatus,
+  type CustomerTelegramLink,
+} from './telegram/customer-telegram.service';
+export {
+  CustomerTelegramStatusDto,
+  CustomerTelegramStatusResponse,
+  CustomerTelegramLinkDto,
+  CustomerTelegramLinkResponse,
+} from './dto/customer-telegram.dto';
+export {
   TelegramRendererRegistry,
   DEFAULT_TELEGRAM_RENDERERS,
   type TelegramRenderer,

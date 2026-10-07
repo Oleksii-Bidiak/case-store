@@ -12280,7 +12280,7 @@
         },
         "responses": {
           "201": {
-            "description": "Order created",
+            "description": "Order created. For a guest order `data.guestAccessToken` carries the order access token (TASK-679); it is absent for an account order.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12291,7 +12291,7 @@
                     {
                       "properties": {
                         "data": {
-                          "$ref": "#/components/schemas/OrderEntity"
+                          "$ref": "#/components/schemas/CreatedOrderEntity"
                         }
                       }
                     }
@@ -12587,6 +12587,80 @@
         "summary": "Cancel a pending order",
         "tags": [
           "Orders"
+        ]
+      }
+    },
+    "/api/orders/guest/{token}/notifications/telegram": {
+      "get": {
+        "operationId": "getGuestOrderTelegramNotifications",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "description": "The guest order access token",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Whether the bot can be connected, and whether a chat follows this order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerTelegramStatusResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No guest order for this token, the token has expired, or the order belongs to an account (deliberately indistinguishable)"
+          }
+        },
+        "summary": "Read a guest order's Telegram notifications",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/orders/guest/{token}/notifications/telegram/link": {
+      "post": {
+        "description": "Valid for 15 minutes from this call and works once. The private chat in which «Старт» is pressed receives this order’s notifications, in addition to e-mail.",
+        "operationId": "createGuestOrderTelegramLink",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "description": "The guest order access token",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Link created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerTelegramLinkResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No guest order for this token, the token has expired, or the order belongs to an account (deliberately indistinguishable)"
+          },
+          "409": {
+            "description": "The bot is not configured or not answering — a link would lead nowhere"
+          }
+        },
+        "summary": "Create a one-time link that connects a Telegram chat to a guest order",
+        "tags": [
+          "Notifications"
         ]
       }
     },
@@ -15461,6 +15535,92 @@
           }
         ],
         "summary": "Disconnect one shop chat from Telegram notifications (admin)",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/users/me/notifications/telegram": {
+      "get": {
+        "operationId": "getMyTelegramNotifications",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Whether the bot can be connected, and whether a chat is connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerTelegramStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Read the current account's Telegram notifications",
+        "tags": [
+          "Notifications"
+        ]
+      },
+      "delete": {
+        "description": "Idempotent: nothing connected is not an error. E-mail notifications are unaffected. Chats connected from a guest order are that order’s, not the account’s, and stay.",
+        "operationId": "revokeMyTelegramNotifications",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "Disconnected (or nothing was connected)"
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Disconnect every Telegram chat of the current account",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/users/me/notifications/telegram/link": {
+      "post": {
+        "description": "Valid for 15 minutes from this call and works once. The private chat in which «Старт» is pressed receives the order notifications of this account, in addition to e-mail.",
+        "operationId": "createMyTelegramLink",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Link created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerTelegramLinkResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "409": {
+            "description": "The bot is not configured or not answering — a link would lead nowhere"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create a one-time link that connects a Telegram chat to the current account",
         "tags": [
           "Notifications"
         ]
@@ -27643,6 +27803,253 @@
           "trackingNumber"
         ]
       },
+      "CreatedOrderEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Order unique identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "userId": {
+            "type": "string",
+            "description": "Owning user ID, or null for a guest order (TASK-338). A null `userId` always comes with a `guest` block; the reverse does not hold — an order placed as a guest and later claimed by a registering account carries both, and keeps its contact snapshot.",
+            "nullable": true,
+            "example": "550e8400-e29b-41d4-a716-446655440001"
+          },
+          "guest": {
+            "description": "Contact details captured at guest checkout (TASK-338); absent on account orders. Kept as a snapshot of what was actually typed, even after an account later claims the order.",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderGuestData"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Order status",
+            "enum": [
+              "PENDING",
+              "CONFIRMED",
+              "PROCESSING",
+              "SHIPPED",
+              "DELIVERED",
+              "CANCELLED",
+              "REFUNDED"
+            ],
+            "example": "PENDING"
+          },
+          "paymentStatus": {
+            "type": "string",
+            "description": "Payment status",
+            "enum": [
+              "PENDING",
+              "PAID",
+              "FAILED",
+              "PARTIALLY_REFUNDED",
+              "REFUNDED"
+            ],
+            "example": "PENDING"
+          },
+          "paymentMethod": {
+            "type": "string",
+            "description": "How the shopper chose to pay",
+            "enum": [
+              "ONLINE",
+              "ON_DELIVERY",
+              "INSTALLMENTS"
+            ],
+            "example": "ON_DELIVERY"
+          },
+          "deliveryMethod": {
+            "type": "string",
+            "description": "How the order ships",
+            "enum": [
+              "NOVA_POSHTA",
+              "PICKUP",
+              "COURIER",
+              "OTHER"
+            ],
+            "example": "NOVA_POSHTA"
+          },
+          "paidAt": {
+            "type": "string",
+            "description": "When the payment settled; null while unpaid",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reservationExpiresAt": {
+            "type": "string",
+            "description": "Deadline on an unpaid ONLINE order's stock reservation (TASK-330); null when the order holds no timed reservation. The «Очікує оплати · N хв» / «Резерв сплив» marks are derived from it (TASK-471).",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2026-01-01T00:30:00.000Z"
+          },
+          "subtotal": {
+            "type": "string",
+            "description": "Sum of all line totals as string",
+            "example": "149.97"
+          },
+          "discount": {
+            "type": "string",
+            "description": "Discount applied as string",
+            "example": "0.00"
+          },
+          "discountCode": {
+            "type": "string",
+            "description": "Promo code applied to the order (TASK-079), or null",
+            "nullable": true,
+            "example": "SUMMER10"
+          },
+          "shippingCost": {
+            "type": "string",
+            "description": "Shipping cost as string",
+            "example": "0.00"
+          },
+          "tax": {
+            "type": "string",
+            "description": "Tax as string",
+            "example": "0.00"
+          },
+          "addonsTotal": {
+            "type": "string",
+            "description": "Sum of the frozen add-on-service snapshots across all lines (TASK-174). Like `shippingCost`, it is NEVER part of the discount base: `total = subtotal + shippingCost + addonsTotal - discount`, with `discount` clamped against `subtotal` alone.",
+            "example": "499.00"
+          },
+          "total": {
+            "type": "string",
+            "description": "Grand total as string",
+            "example": "149.97"
+          },
+          "refundedTotal": {
+            "type": "string",
+            "description": "Total refunded across this order's return requests, as a string (\"X\" of \"X of Y\", with Y = `total`). Derived at read time from Σ `Return.refundedAmount`; present on admin responses only.",
+            "example": "499.00"
+          },
+          "unavailableItemIds": {
+            "description": "Ids of the order lines whose product is no longer orderable — deleted, unpublished, oversold, or holding a reservation the TTL worker has released (TASK-470). Derived at read time; present on admin responses only, and absent (never empty) elsewhere.",
+            "example": [
+              "550e8400-e29b-41d4-a716-446655440002"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pickupPointId": {
+            "type": "string",
+            "description": "Pickup point id for a PICKUP order (TASK-642); null otherwise, and null once the point is deleted — the point details as they were at checkout stay in `shippingAddress`.",
+            "nullable": true,
+            "example": null
+          },
+          "shippingAddress": {
+            "description": "Shipping address snapshot, including the delivery snapshot written at checkout (TASK-643): method, carrier, pickup point details, `shippingCostPending`",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderShippingAddressEntity"
+              }
+            ]
+          },
+          "billingAddress": {
+            "description": "Billing address snapshot (falls back to shipping address, and may then carry the same delivery snapshot fields — TASK-1022)",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderShippingAddressEntity"
+              }
+            ]
+          },
+          "notes": {
+            "type": "string",
+            "description": "Customer notes",
+            "nullable": true,
+            "example": "Leave at the door"
+          },
+          "items": {
+            "description": "Order line items",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderItemEntity"
+            }
+          },
+          "customer": {
+            "description": "Customer account data — present only on admin order responses",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderCustomerData"
+              }
+            ]
+          },
+          "restockedAt": {
+            "type": "string",
+            "description": "When reserved stock was auto-returned to inventory on cancellation (TASK-228), or null while the order still holds stock / was never restocked. Set once when a pre-shipment order is cancelled and cleared back to null if the order is revived. With ORDER_RESERVATION_EXPIRY=release (TASK-627) it is also set on a LIVE unpaid order whose reservation deadline passed (stock returned, order kept open) and cleared when a payment or the operator re-reserves the stock.",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2024-01-01T00:00:00.000Z"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp",
+            "example": "2024-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Last update timestamp",
+            "example": "2024-01-01T00:00:00.000Z"
+          },
+          "trackingNumber": {
+            "type": "string",
+            "description": "Nova Poshta waybill (ТТН) entered by the operator (TASK-335), or null. Shown to the customer so they can track the parcel.",
+            "nullable": true,
+            "example": "20450000000001"
+          },
+          "internalNotes": {
+            "type": "string",
+            "description": "Operator-only notes (TASK-336). Present ONLY on admin responses — distinct from `notes`, which is what the customer typed and is shown back to them.",
+            "nullable": true
+          },
+          "guestAccessToken": {
+            "type": "string",
+            "description": "GUEST orders only, and only in this create response: the raw order access token — the same one the confirmation e-mail carries. It opens `GET /orders/guest/{token}` and the guest's Telegram routes (`/orders/guest/{token}/notifications/telegram`). Absent for an account order. Never returned again by any read; keep it client-side for this session.",
+            "example": "9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "status",
+          "paymentStatus",
+          "paymentMethod",
+          "deliveryMethod",
+          "paidAt",
+          "reservationExpiresAt",
+          "subtotal",
+          "discount",
+          "discountCode",
+          "shippingCost",
+          "tax",
+          "addonsTotal",
+          "total",
+          "pickupPointId",
+          "shippingAddress",
+          "billingAddress",
+          "notes",
+          "items",
+          "restockedAt",
+          "createdAt",
+          "updatedAt",
+          "trackingNumber"
+        ]
+      },
       "StorefrontPaginationMeta": {
         "type": "object",
         "properties": {
@@ -28115,6 +28522,82 @@
         "required": [
           "number",
           "phone"
+        ]
+      },
+      "CustomerTelegramStatusDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "The bot can be connected right now. `false` when the shop has not configured the bot or it is not answering — show that the option is unavailable; `POST …/link` answers 409.",
+            "example": true
+          },
+          "connected": {
+            "type": "boolean",
+            "description": "At least one Telegram chat receives these notifications",
+            "example": true
+          },
+          "label": {
+            "type": "string",
+            "description": "The most recently connected chat: @username or first name, as it was when connected",
+            "example": "@olena"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When that chat was connected; present when `connected`",
+            "format": "date-time",
+            "example": "2026-10-07T12:00:00.000Z"
+          },
+          "botUsername": {
+            "type": "string",
+            "description": "Bot username without the @, present when `available`",
+            "example": "casestore_bot"
+          }
+        },
+        "required": [
+          "available",
+          "connected"
+        ]
+      },
+      "CustomerTelegramStatusResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CustomerTelegramStatusDto"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CustomerTelegramLinkDto": {
+        "type": "object",
+        "properties": {
+          "deepLink": {
+            "type": "string",
+            "description": "Open on the phone (or scan as a QR code) and press «Старт»: that private chat is connected. One-time; expires at `expiresAt` (15 minutes from issue).",
+            "example": "https://t.me/casestore_bot?start=Zm9vYmFyYmF6cXV4cXV1eHF1dXhxdXV4cXV1eHF1dXg"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-07T12:15:00.000Z"
+          }
+        },
+        "required": [
+          "deepLink",
+          "expiresAt"
+        ]
+      },
+      "CustomerTelegramLinkResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CustomerTelegramLinkDto"
+          }
+        },
+        "required": [
+          "data"
         ]
       },
       "OrderStatusHistoryEntity": {

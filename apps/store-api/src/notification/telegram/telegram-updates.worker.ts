@@ -25,13 +25,19 @@ export const TELEGRAM_UPDATES_BATCH = 50;
 /** `/start`, optionally addressed (`/start@ShopBot` — how it arrives in a group), and its payload. */
 const START_COMMAND = /^\/start(?:@\w+)?(?:\s+(\S+))?\s*$/;
 
-/** What the bot answers. Plain text — nothing here is HTML-escaped because nothing is interpolated. */
+/**
+ * What the bot answers. Plain text — nothing here is HTML-escaped because nothing is interpolated.
+ *
+ * `invalid` and `bareStart` cannot know who is writing — a shop operator or a
+ * customer (TASK-679) — so they name both places a link comes from.
+ */
 export const TELEGRAM_REPLIES = {
   boundShop: '✅ Готово: цей чат отримуватиме сповіщення магазину.',
   boundCustomer: '✅ Готово: сюди надходитимуть сповіщення про ваші замовлення.',
-  invalid: 'Посилання недійсне або прострочене. Створіть нове в адмінці.',
+  invalid:
+    'Посилання недійсне або прострочене. Відкрийте його ще раз на сайті чи в адмінці, щоб отримати нове.',
   bareStart:
-    'Щоб отримувати сповіщення в цей чат, відкрийте посилання підключення, створене в адмінці магазину.',
+    'Щоб отримувати сповіщення в цей чат, відкрийте посилання підключення на сайті магазину чи в адмінці.',
 } as const;
 
 /**

@@ -20,6 +20,8 @@ describe('NotificationBindingService', () => {
     hasActive: jest.fn(),
     revoke: jest.fn(),
     revokeByExternalId: jest.fn(),
+    findActiveForCustomer: jest.fn(),
+    revokeForCustomer: jest.fn(),
     getOffset: jest.fn(),
     saveOffset: jest.fn(),
   };
@@ -176,5 +178,31 @@ describe('NotificationBindingService', () => {
       NotificationAudience.SHOP,
       tx,
     );
+  });
+
+  describe('customer bindings (TASK-679)', () => {
+    it('findActiveForCustomer defaults to TELEGRAM and forwards the owner and the tx', async () => {
+      const tx = { marker: true };
+      repository.findActiveForCustomer.mockResolvedValue([]);
+
+      await service.findActiveForCustomer({ userId: 'user-1', orderId: 'order-1' }, tx as never);
+
+      expect(repository.findActiveForCustomer).toHaveBeenCalledWith(
+        NotificationChannel.TELEGRAM,
+        { userId: 'user-1', orderId: 'order-1' },
+        tx,
+      );
+    });
+
+    it('revokeForCustomer stamps now, scoped to the one owner, and is idempotent', async () => {
+      repository.revokeForCustomer.mockResolvedValue(0);
+
+      await expect(service.revokeForCustomer({ userId: 'user-1' })).resolves.toBe(0);
+      expect(repository.revokeForCustomer).toHaveBeenCalledWith(
+        NotificationChannel.TELEGRAM,
+        { userId: 'user-1' },
+        NOW,
+      );
+    });
   });
 });

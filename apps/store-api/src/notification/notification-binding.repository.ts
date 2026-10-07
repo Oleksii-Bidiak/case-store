@@ -22,6 +22,16 @@ export interface CreateBindingTokenParams {
   expiresAt: Date;
 }
 
+/**
+ * Whose customer notifications are meant (TASK-679): an account, a guest order,
+ * or — for the recipients of one order's event — both at once. An owner with
+ * neither matches nothing.
+ */
+export interface CustomerBindingOwner {
+  userId?: string | null;
+  orderId?: string | null;
+}
+
 /** The chat that sent `/start <token>`. */
 export interface BindingChat {
   externalId: string;
@@ -39,13 +49,22 @@ const CONNECTED_BY_SELECT = {
  * NotificationBindingRepository — every query on `notification_bindings`,
  * `notification_binding_tokens` and `notification_channel_state` (TASK-675).
  *
- * ## Never select a binding through its unique index
+ * ## Never select a binding through its unique indexes
  *
- * `@@unique([channel, audience, externalId], where: revokedAt IS NULL)` is a
- * PARTIAL index, so Prisma offers it as a `WhereUniqueInput` that is unique only
- * on the active side. Every read here is `findFirst`/`findMany` with an explicit
- * `revokedAt: null`, and every write is by `id` or `updateMany` — the
- * `User.isOwner` lesson (TASK-634).
+ * The three `@@unique` of the model (one active SHOP row per chat; one active
+ * CUSTOMER row per chat and account, and per chat and guest order — TASK-1091)
+ * are PARTIAL indexes, so Prisma offers them as `WhereUniqueInput`s that are
+ * unique only on the active side. Every read here is `findFirst`/`findMany` with
+ * an explicit `revokedAt: null`, and every write is by `id` or `updateMany` —
+ * the `User.isOwner` lesson (TASK-634).
+ *
+ * ## A customer only ever reaches their own rows
+ *
+ * The customer reads and the customer revoke take an {@link CustomerBindingOwner}
+ * — an account id or a guest order id that the CALLER proved (a session, a guest
+ * access token) — and always filter on `audience = CUSTOMER` plus that owner.
+ * There is no by-id customer path: an id typed into a request can never reach
+ * somebody else's chat or a shop chat.
  */
 @Injectable()
 export class NotificationBindingRepository {
@@ -112,12 +131,19 @@ export class NotificationBindingRepository {
         skipDuplicates: true,
       });
 
+      // The row the insert either created or collided with. A CUSTOMER chat may
+      // hold several active rows — one per account and one per guest order
+      // (TASK-1091) — so the owner of THIS token is part of the key; without it
+      // a chat connected to order A and then to order B would read back A's row.
       const binding = await tx.notificationBinding.findFirst({
         where: {
           channel: token.channel,
           audience: token.audience,
           externalId: chat.externalId,
           revokedAt: null,
+          ...(token.audience === NotificationAudience.CUSTOMER
+            ? { userId: token.userId, orderId: token.orderId }
+            : {}),
         },
       });
       if (binding === null) {
@@ -198,6 +224,54 @@ export class NotificationBindingRepository {
     return count;
   }
 
+  /**
+   * Active CUSTOMER chats of an owner, oldest first (TASK-679). With both an
+   * account and an order (the recipients of one order's event, TASK-680) it is
+   * the union — de-duplicated by chat, because a chat connected to the account
+   * AND to the order must still get one message, not two. `tx`-aware so an event
+   * can pick its recipients inside its own transaction (plan 187 constraint #2).
+   */
+  async findActiveForCustomer(
+    channel: NotificationChannel,
+    owner: CustomerBindingOwner,
+    tx?: Prisma.TransactionClient,
+  ): Promise<NotificationBindingEntity[]> {
+    const or = ownerFilter(owner);
+    if (or.length === 0) return [];
+    const client = tx ?? this.prisma;
+    const rows = await client.notificationBinding.findMany({
+      where: { channel, audience: NotificationAudience.CUSTOMER, revokedAt: null, OR: or },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    const seen = new Set<string>();
+    const unique: NotificationBindingEntity[] = [];
+    for (const row of rows) {
+      if (seen.has(row.externalId)) continue;
+      seen.add(row.externalId);
+      unique.push(toEntity(row));
+    }
+    return unique;
+  }
+
+  /**
+   * Disconnect every active CUSTOMER chat of an owner (TASK-679). Scoped by
+   * construction: `audience = CUSTOMER` and the owner the caller proved — never
+   * a SHOP chat, never another customer's. Returns how many rows were revoked.
+   */
+  async revokeForCustomer(
+    channel: NotificationChannel,
+    owner: CustomerBindingOwner,
+    now: Date,
+  ): Promise<number> {
+    const or = ownerFilter(owner);
+    if (or.length === 0) return 0;
+    const { count } = await this.prisma.notificationBinding.updateMany({
+      where: { channel, audience: NotificationAudience.CUSTOMER, revokedAt: null, OR: or },
+      data: { revokedAt: now },
+    });
+    return count;
+  }
+
   /** The stored poller offset; 0 when the channel has never been polled. */
   async getOffset(channel: NotificationChannel): Promise<number> {
     const row = await this.prisma.notificationChannelState.findUnique({ where: { channel } });
@@ -213,6 +287,17 @@ export class NotificationBindingRepository {
       update: { updateOffset },
     });
   }
+}
+
+/**
+ * The owner as `OR` arms. An absent or empty id contributes nothing — never a
+ * `{ userId: null }` arm, which would match every orphaned row.
+ */
+function ownerFilter(owner: CustomerBindingOwner): Prisma.NotificationBindingWhereInput[] {
+  const or: Prisma.NotificationBindingWhereInput[] = [];
+  if (owner.userId) or.push({ userId: owner.userId });
+  if (owner.orderId) or.push({ orderId: owner.orderId });
+  return or;
 }
 
 function toEntity(row: NotificationBinding): NotificationBindingEntity {

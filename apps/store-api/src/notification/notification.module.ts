@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { AdminNotificationController } from './admin-notification.controller';
+import { CustomerNotificationController } from './customer-notification.controller';
 import { NotificationBindingRepository } from './notification-binding.repository';
 import { NotificationBindingService } from './notification-binding.service';
 import { ShopNotifier } from './shop-notifier.service';
@@ -7,6 +8,7 @@ import { TelegramClient } from './telegram/telegram.client';
 import { TelegramChannelState } from './telegram/telegram-channel.state';
 import { TelegramAdapter } from './telegram/telegram.adapter';
 import { TelegramAdminService } from './telegram/telegram-admin.service';
+import { CustomerTelegramService } from './telegram/customer-telegram.service';
 import { TelegramRendererRegistry } from './telegram/telegram-renderers';
 import { TelegramUpdatesWorker } from './telegram/telegram-updates.worker';
 
@@ -14,7 +16,8 @@ import { TelegramUpdatesWorker } from './telegram/telegram-updates.worker';
  * NotificationModule — messenger channels of the notification outbox (plan 187,
  * TASK-674 onwards): the Telegram client and its channel state with the start-up
  * `getMe`, the TELEGRAM adapter, chat bindings with their one-time tokens and the
- * `getUpdates` poller that exchanges them (TASK-675), and the admin endpoints.
+ * `getUpdates` poller that exchanges them (TASK-675), the admin endpoints, and
+ * an account's own Telegram endpoints under `/users/me/notifications` (TASK-679).
  *
  * ## Wiring (why `@Global()`, and who imports whom)
  *
@@ -34,7 +37,7 @@ import { TelegramUpdatesWorker } from './telegram/telegram-updates.worker';
  */
 @Global()
 @Module({
-  controllers: [AdminNotificationController],
+  controllers: [AdminNotificationController, CustomerNotificationController],
   providers: [
     NotificationBindingRepository,
     NotificationBindingService,
@@ -44,6 +47,7 @@ import { TelegramUpdatesWorker } from './telegram/telegram-updates.worker';
     TelegramRendererRegistry,
     TelegramAdapter,
     TelegramAdminService,
+    CustomerTelegramService,
     TelegramUpdatesWorker,
   ],
   exports: [
@@ -53,6 +57,9 @@ import { TelegramUpdatesWorker } from './telegram/telegram-updates.worker';
     TelegramChannelState,
     TelegramRendererRegistry,
     TelegramAdapter,
+    // TASK-679: the guest's routes live in OrderModule (they resolve the order by
+    // its access token through OrderService) and act through this service.
+    CustomerTelegramService,
   ],
 })
 export class NotificationModule {}

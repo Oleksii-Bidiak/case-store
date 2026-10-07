@@ -91,6 +91,7 @@ import type {
   OrderWithItems,
   PaymentApplyPlan,
   PaymentWithOrderRow,
+  PlacedOrder,
   ShippingAddressData,
 } from './order.types';
 import type { PaymentApplyResult, PaymentEventInput } from '../payment';
@@ -299,12 +300,31 @@ export class OrderService {
   /**
    * Create an order from the user's current cart.
    *
+   * The order alone — see {@link placeOrder} for the variant that also hands a
+   * guest their access token.
+   *
    * @throws ForbiddenException when the placing account is deactivated (banned).
    * @throws NotFoundException when the user has no cart.
    * @throws BadRequestException when the cart is empty or a variant has
    *   insufficient stock at order-creation time.
    */
   async createOrder(actor: OrderActor, dto: CreateOrderDto): Promise<OrderEntity> {
+    return (await this.placeOrder(actor, dto)).order;
+  }
+
+  /**
+   * Create an order, and give a guest the raw access token of it (TASK-679,
+   * owner decision 2026-10-07).
+   *
+   * The token is the same one the confirmation letter carries — the guest's
+   * proof that this order is theirs. The success page needs it to offer the
+   * Telegram link before the letter has even arrived, and it is the person who
+   * just placed the order asking, through the very request that minted it, so
+   * nothing is disclosed that the letter does not disclose anyway. Only the
+   * create response carries it; no read ever returns it — only the hash is
+   * stored. `null` for an account order: an account proves itself by its session.
+   */
+  async placeOrder(actor: OrderActor, dto: CreateOrderDto): Promise<PlacedOrder> {
     // ─── TASK-338: resolve who is buying, and from which cart ──────────────────
     // The two arms differ in exactly three things — the ban check, which cart to
     // load, and where the confirmation email is addressed. Everything after this
@@ -533,7 +553,7 @@ export class OrderService {
       'Order created',
     );
 
-    return OrderEntity.fromPrisma(order);
+    return { order: OrderEntity.fromPrisma(order), guestAccessToken: guestToken };
   }
 
   /**
@@ -848,6 +868,25 @@ export class OrderService {
     }
 
     return OrderEntity.fromPrisma(order);
+  }
+
+  /**
+   * The id of a GUEST order, proven by its access token (TASK-679) — what the
+   * guest's Telegram routes act on.
+   *
+   * The same lookup, hashing and expiry as {@link getGuestOrder}, plus one more
+   * refusal: an order that belongs to an account (claimed after checkout, or
+   * placed signed-in and issued a token by an operator). Its notifications are
+   * the account's to manage from the profile, behind a session; letting a link
+   * that may have been forwarded attach a chat to it would bypass that. Every
+   * refusal is the same 404, so the route tells a stranger nothing.
+   */
+  async resolveGuestOnlyOrderId(rawToken: string): Promise<string> {
+    const order = await this.getGuestOrder(rawToken);
+    if (order.userId !== null) {
+      throw new NotFoundException('Order not found');
+    }
+    return order.id;
   }
 
   /**

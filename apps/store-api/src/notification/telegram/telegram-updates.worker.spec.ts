@@ -214,6 +214,16 @@ describe('TelegramUpdatesWorker', () => {
       },
     );
 
+    // TASK-679: a customer gets the same two replies as an operator — neither may
+    // send them to an admin panel they have never seen.
+    it.each(['invalid', 'bareStart'] as const)(
+      'the %s reply serves customers too: it names the site, not only the admin',
+      (key) => {
+        expect(TELEGRAM_REPLIES[key]).toMatch(/на сайті/);
+        expect(TELEGRAM_REPLIES[key]).not.toMatch(/Створіть нове в адмінці/);
+      },
+    );
+
     it('answers a bare /start with a hint and exchanges nothing', async () => {
       client.getUpdates.mockResolvedValue([update(100, '/start')]);
 

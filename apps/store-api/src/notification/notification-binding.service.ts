@@ -1,7 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { NotificationAudience, NotificationChannel, Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'crypto';
-import { NotificationBindingRepository } from './notification-binding.repository';
+import {
+  NotificationBindingRepository,
+  type CustomerBindingOwner,
+} from './notification-binding.repository';
 import type {
   ConsumeTokenResult,
   NotificationBindingEntity,
@@ -134,6 +137,32 @@ export class NotificationBindingService {
    */
   revokeByExternalId(channel: NotificationChannel, externalId: string): Promise<number> {
     return this.repository.revokeByExternalId(channel, externalId, new Date(Date.now()));
+  }
+
+  /**
+   * Active customer chats of an account and/or a guest order, one per chat,
+   * oldest first (TASK-679). With one owner it answers «is this account / order
+   * connected?»; with both, «who hears about this order?» (TASK-680). `tx`-aware.
+   */
+  findActiveForCustomer(
+    owner: CustomerBindingOwner,
+    tx?: Prisma.TransactionClient,
+    channel: NotificationChannel = NotificationChannel.TELEGRAM,
+  ): Promise<NotificationBindingEntity[]> {
+    return this.repository.findActiveForCustomer(channel, owner, tx);
+  }
+
+  /**
+   * Disconnect the customer chats of exactly ONE owner the caller has proved —
+   * an account or a guest order, not both (a mixed owner would let one proof
+   * reach the other's chats). Idempotent: nothing connected is not an error, the
+   * end state is the same. Returns how many chats were disconnected.
+   */
+  revokeForCustomer(
+    owner: { userId: string; orderId?: never } | { orderId: string; userId?: never },
+    channel: NotificationChannel = NotificationChannel.TELEGRAM,
+  ): Promise<number> {
+    return this.repository.revokeForCustomer(channel, owner, new Date(Date.now()));
   }
 
   getOffset(channel: NotificationChannel): Promise<number> {

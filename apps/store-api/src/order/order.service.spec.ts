@@ -3638,6 +3638,72 @@ describe('OrderService', () => {
       const params = orderRepositoryMock.createFromCart.mock.calls[0][0] as { guest?: unknown };
       expect(params.guest).toBeUndefined();
     });
+
+    // TASK-679 (owner decision 2026-10-07): the guest's proof of ownership for
+    // the Telegram offer on the success page — the letter's token, handed back
+    // by the very request that minted it.
+    it('placeOrder hands the guest the raw token whose hash it stored (and the letter carries)', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
+
+      const { order, guestAccessToken } = await service.placeOrder(guestActor, createDto);
+
+      expect(order).toBeInstanceOf(OrderEntity);
+      expect(guestAccessToken).toMatch(/^[a-f0-9]{64}$/);
+      const params = orderRepositoryMock.createFromCart.mock.calls[0][0] as {
+        guest: { accessTokenHash: string };
+      };
+      expect(params.guest.accessTokenHash).toBe(
+        createHash('sha256').update(guestAccessToken!).digest('hex'),
+      );
+      const mail = mailOutboxServiceMock.enqueueOrderConfirmation.mock.calls[0][0] as unknown as {
+        orderStatusUrl: string;
+      };
+      expect(mail.orderStatusUrl).toBe(`https://shop.example.com/orders/guest/${guestAccessToken}`);
+    });
+
+    it('placeOrder gives an account order no token', async () => {
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
+      resolveCreateWithHook();
+
+      await expect(service.placeOrder(userActor, createDto)).resolves.toEqual(
+        expect.objectContaining({ guestAccessToken: null }),
+      );
+    });
+  });
+
+  // ─── resolveGuestOnlyOrderId (TASK-679) ─────────────────────────────────────
+  describe('resolveGuestOnlyOrderId', () => {
+    const RAW_TOKEN = 'b'.repeat(64);
+
+    it('the id of a guest order whose token is valid', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ id: 'guest-order-1', userId: null, createdAt: new Date() }),
+      );
+
+      await expect(service.resolveGuestOnlyOrderId(RAW_TOKEN)).resolves.toBe('guest-order-1');
+      expect(orderRepositoryMock.findByAccessTokenHash).toHaveBeenCalledWith(
+        createHash('sha256').update(RAW_TOKEN).digest('hex'),
+      );
+    });
+
+    it('404s for an order that belongs to an account — the profile manages that one', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ userId: USER_ID, createdAt: new Date() }),
+      );
+
+      await expect(service.resolveGuestOnlyOrderId(RAW_TOKEN)).rejects.toThrow(NotFoundException);
+    });
+
+    it('404s for an unknown or expired token, exactly like the guest read', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValueOnce(null);
+      await expect(service.resolveGuestOnlyOrderId(RAW_TOKEN)).rejects.toThrow(NotFoundException);
+
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValueOnce(
+        makeOrder({ userId: null, createdAt: new Date(Date.now() - 61 * 24 * 60 * 60 * 1000) }),
+      );
+      await expect(service.resolveGuestOnlyOrderId(RAW_TOKEN)).rejects.toThrow(NotFoundException);
+    });
   });
 
   // ─── getGuestOrder (TASK-338) ────────────────────────────────────────────────
