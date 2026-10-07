@@ -52,6 +52,9 @@ coverage/
 .nyc_output/
 test-results/
 playwright-report/
+# Raw output of the plan 187 screenshot specs (`SCREENS_187=1`); the curated
+# copies that docs cite live in docs/images/187/.
+.screens-187/
 # Saved admin browser session for the Playwright admin project (TASK-405) —
 # a live session for the seeded staff account, never committed.
 e2e/.auth/
