@@ -99,6 +99,57 @@ describe('PageService', () => {
     });
   });
 
+  // TASK-668: the page a signed preview token opens.
+  describe('findPreviewBySlug', () => {
+    it('returns the page in ANY status when the token id lives at this slug', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(draftPage);
+
+      const result = await service.findPreviewBySlug('faq', undefined, 'page-uuid-2');
+
+      expect(pageRepositoryMock.findById).toHaveBeenCalledWith('page-uuid-2');
+      expect(result).toBeInstanceOf(PageEntity);
+      expect(result?.status).toBe(PublishStatus.DRAFT);
+      // Never the published-only read.
+      expect(pageRepositoryMock.findBySlug).not.toHaveBeenCalled();
+    });
+
+    it('returns the page when the requested kind matches', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage);
+
+      await expect(
+        service.findPreviewBySlug('privacy-policy', PageKind.LEGAL, 'page-uuid-1'),
+      ).resolves.toBeInstanceOf(PageEntity);
+    });
+
+    it('returns null for a token of a page at ANOTHER slug', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(draftPage);
+
+      await expect(
+        service.findPreviewBySlug('privacy-policy', undefined, 'page-uuid-2'),
+      ).resolves.toBeNull();
+    });
+
+    it('returns null for a HUB row, even at its own slug', async () => {
+      pageRepositoryMock.findById.mockResolvedValue({ ...draftPage, kind: PageKind.HUB });
+
+      await expect(service.findPreviewBySlug('faq', undefined, 'page-uuid-2')).resolves.toBeNull();
+    });
+
+    it('returns null when the storefront asked for a different kind', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage); // LEGAL
+
+      await expect(
+        service.findPreviewBySlug('privacy-policy', PageKind.INFO, 'page-uuid-1'),
+      ).resolves.toBeNull();
+    });
+
+    it('returns null when the page no longer exists', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.findPreviewBySlug('faq', undefined, 'gone')).resolves.toBeNull();
+    });
+  });
+
   describe('findAllAdmin', () => {
     it('forwards the status filter and returns drafts + published', async () => {
       pageRepositoryMock.findAllAdmin.mockResolvedValue({ pages: [mockPage, draftPage], total: 2 });

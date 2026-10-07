@@ -9,6 +9,8 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { HomeBlockRepository } from '../src/home-block/home-block.repository';
 import { BannerRepository } from '../src/banners/banners.repository';
+import { PageRepository } from '../src/pages/pages.repository';
+import { BlogRepository } from '../src/blog/blog.repository';
 import { ProductService } from '../src/product/product.service';
 import { PreviewTokenRepository } from '../src/preview-token/preview-token.repository';
 import { derivePreviewKey, signPreviewToken } from '../src/preview-token/preview-token.util';
@@ -41,7 +43,68 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
 const PRODUCT_ID = '550e8400-e29b-41d4-a716-446655440001';
 const OTHER_PRODUCT_ID = '550e8400-e29b-41d4-a716-446655440002';
 const PAGE_ID = '550e8400-e29b-41d4-a716-446655440003';
+const OTHER_PAGE_ID = '550e8400-e29b-41d4-a716-446655440004';
+const POST_ID = '550e8400-e29b-41d4-a716-446655440005';
+const OTHER_POST_ID = '550e8400-e29b-41d4-a716-446655440006';
 const at = new Date('2026-10-01T00:00:00.000Z');
+
+/** A page row as `PageEntity.fromPrisma` reads it. */
+const pageRow = (id: string, slug: string, status: PublishStatus) => ({
+  id,
+  slug,
+  kind: PageKind.LEGAL,
+  title: `Title of ${slug}`,
+  content: '<p>Body</p>',
+  excerpt: null,
+  metaTitle: null,
+  metaDescription: null,
+  keywords: [],
+  ogImage: null,
+  status,
+  publishedAt: status === PublishStatus.PUBLISHED ? at : null,
+  scheduledAt: null,
+  isActive: true,
+  sortOrder: 0,
+  createdAt: at,
+  updatedAt: at,
+});
+
+/** A blog post row as `BlogPostEntity.fromPrisma` reads it. */
+const postRow = (id: string, slug: string, status: PublishStatus) => ({
+  id,
+  slug,
+  title: `Title of ${slug}`,
+  excerpt: 'Excerpt',
+  content: '<p>Body</p>',
+  coverImageUrl: null,
+  coverBlurDataUrl: null,
+  authorName: 'Автор',
+  readingMinutes: 3,
+  featured: false,
+  listed: true,
+  metaTitle: null,
+  metaDescription: null,
+  keywords: [],
+  ogImage: null,
+  status,
+  publishedAt: status === PublishStatus.PUBLISHED ? at : null,
+  scheduledAt: null,
+  createdAt: at,
+  updatedAt: at,
+  category: { id: 'cat-1', slug: 'news', name: 'Новини' },
+  author: null,
+});
+
+/** The draft page `offer` (PAGE_ID) and the published page `terms` (OTHER_PAGE_ID). */
+const PAGES = [
+  pageRow(PAGE_ID, 'offer', PublishStatus.DRAFT),
+  pageRow(OTHER_PAGE_ID, 'terms', PublishStatus.PUBLISHED),
+];
+/** The draft post `draft-post` (POST_ID) and the published post `live-post`. */
+const POSTS = [
+  postRow(POST_ID, 'draft-post', PublishStatus.DRAFT),
+  postRow(OTHER_POST_ID, 'live-post', PublishStatus.PUBLISHED),
+];
 
 describe('Preview tokens (e2e)', () => {
   let app: INestApplication;
@@ -54,10 +117,24 @@ describe('Preview tokens (e2e)', () => {
     findProduct: jest.fn((id: string) =>
       Promise.resolve(id === PRODUCT_ID ? { id, slug: 'hidden-case' } : null),
     ),
-    findPage: jest.fn((id: string) =>
-      Promise.resolve(id === PAGE_ID ? { id, slug: 'offer', kind: PageKind.LEGAL } : null),
-    ),
-    findPost: jest.fn(() => Promise.resolve(null)),
+    findPage: jest.fn((id: string) => {
+      const page = PAGES.find((row) => row.id === id);
+      return Promise.resolve(page ? { id, slug: page.slug, kind: page.kind } : null);
+    }),
+    findPost: jest.fn((id: string) => {
+      const post = POSTS.find((row) => row.id === id);
+      return Promise.resolve(post ? { id, slug: post.slug } : null);
+    }),
+  };
+  const pageRepositoryMock = {
+    findById: jest.fn(),
+    findBySlug: jest.fn(),
+    publishDue: jest.fn(),
+    revalidateTarget: { tags: ['pages'], paths: [] },
+  };
+  const blogRepositoryMock = {
+    findById: jest.fn(),
+    findPublishedBySlug: jest.fn(),
   };
   const homeBlockRepositoryMock = {
     findForPage: jest.fn(),
@@ -129,6 +206,10 @@ describe('Preview tokens (e2e)', () => {
       .useValue(homeBlockRepositoryMock)
       .overrideProvider(BannerRepository)
       .useValue(bannerRepositoryMock)
+      .overrideProvider(PageRepository)
+      .useValue(pageRepositoryMock)
+      .overrideProvider(BlogRepository)
+      .useValue(blogRepositoryMock)
       .overrideProvider(ProductService)
       .useValue(productServiceMock)
       .overrideProvider(RevalidationNotifier)
@@ -198,6 +279,23 @@ describe('Preview tokens (e2e)', () => {
         ]),
     );
     bannerRepositoryMock.findAllPublished.mockResolvedValue([]);
+    // Any status by id; the public read finds PUBLISHED rows only.
+    pageRepositoryMock.findById.mockImplementation((id: string) =>
+      Promise.resolve(PAGES.find((row) => row.id === id) ?? null),
+    );
+    pageRepositoryMock.findBySlug.mockImplementation((slug: string) =>
+      Promise.resolve(
+        PAGES.find((row) => row.slug === slug && row.status === PublishStatus.PUBLISHED) ?? null,
+      ),
+    );
+    blogRepositoryMock.findById.mockImplementation((id: string) =>
+      Promise.resolve(POSTS.find((row) => row.id === id) ?? null),
+    );
+    blogRepositoryMock.findPublishedBySlug.mockImplementation((slug: string) =>
+      Promise.resolve(
+        POSTS.find((row) => row.slug === slug && row.status === PublishStatus.PUBLISHED) ?? null,
+      ),
+    );
     productServiceMock.findBySlug.mockResolvedValue(productDetail('hidden-case', true));
     productServiceMock.findBySlugForPreview.mockImplementation((slug: string, id: string) =>
       Promise.resolve(id === PRODUCT_ID ? productDetail(slug, false) : null),
@@ -368,6 +466,73 @@ describe('Preview tokens (e2e)', () => {
     // Only the product-scoped request ever asked for the hidden product.
     expect(productServiceMock.findBySlugForPreview).toHaveBeenCalledTimes(1);
   });
+
+  describe.each([
+    {
+      route: 'pages',
+      type: 'page',
+      ownId: PAGE_ID,
+      draftSlug: 'offer',
+      otherId: OTHER_PAGE_ID,
+      liveSlug: 'terms',
+      previewRead: () => pageRepositoryMock.findById,
+      publicRead: () => pageRepositoryMock.findBySlug,
+    },
+    {
+      route: 'blog',
+      type: 'post',
+      ownId: POST_ID,
+      draftSlug: 'draft-post',
+      otherId: OTHER_POST_ID,
+      liveSlug: 'live-post',
+      previewRead: () => blogRepositoryMock.findById,
+      publicRead: () => blogRepositoryMock.findPublishedBySlug,
+    },
+  ])(
+    'GET /api/$route/:slug under a token',
+    ({ route, type, ownId, draftSlug, otherId, liveSlug, previewRead, publicRead }) => {
+      const get = (slug: string, token?: string) => {
+        const req = request(app.getHttpServer()).get(`/api/${route}/${slug}`);
+        return token === undefined ? req : req.set('X-Preview-Token', token);
+      };
+
+      it('its own token serves the DRAFT, private, no-store and noindex', async () => {
+        await get(draftSlug).expect(404);
+        const token = await issue({ type, id: ownId });
+        publicRead().mockClear();
+
+        const response = await get(draftSlug, token).expect(200);
+
+        expect(response.body.data).toMatchObject({ id: ownId, slug: draftSlug, status: 'DRAFT' });
+        expect(response.headers['cache-control']).toBe('private, no-store');
+        expect(response.headers['x-robots-tag']).toBe('noindex');
+        expect(previewRead()).toHaveBeenCalledWith(ownId);
+        expect(publicRead()).not.toHaveBeenCalled();
+      });
+
+      it("another item's token is ignored — byte-identical to no token, no preview headers", async () => {
+        const baseline = await get(liveSlug).expect(200);
+        expect(baseline.headers['x-robots-tag']).toBeUndefined();
+        // The token of the DRAFT item, presented at the published item's address.
+        const othersToken = await issue({ type, id: ownId });
+
+        const response = await get(liveSlug, othersToken).expect(200);
+
+        expect(response.text).toBe(baseline.text);
+        expect(response.body.data).toMatchObject({ id: otherId, status: 'PUBLISHED' });
+        expect(response.headers['x-robots-tag']).toBeUndefined();
+        expect(response.headers['cache-control']).toBe(baseline.headers['cache-control']);
+        expect(response.headers['cache-control']).not.toBe('private, no-store');
+      });
+
+      it('a token of another scope (home) never opens the draft', async () => {
+        const homeToken = await issue({ type: 'home' });
+
+        await get(draftSlug, homeToken).expect(404);
+        expect(previewRead()).not.toHaveBeenCalledWith(ownId);
+      });
+    },
+  );
 
   describe('GET /api/preview-tokens/resolve', () => {
     it('answers the scope and current path for a good token', async () => {

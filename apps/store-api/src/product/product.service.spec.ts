@@ -937,6 +937,7 @@ describe('ProductService', () => {
       await expect(
         service.findBySlugForPreview('discontinued-case', 'some-other-product'),
       ).resolves.toBeNull();
+      expect(cacheServiceMock.get).not.toHaveBeenCalled();
       expect(cacheServiceMock.set).not.toHaveBeenCalled();
     });
 
@@ -944,6 +945,24 @@ describe('ProductService', () => {
       productRepositoryMock.findBySlugWithRelations.mockResolvedValue(null);
 
       await expect(service.findBySlugForPreview('missing', 'x')).resolves.toBeNull();
+      expect(cacheServiceMock.get).not.toHaveBeenCalled();
+      expect(cacheServiceMock.set).not.toHaveBeenCalled();
+    });
+
+    it('ignores a cached public copy of the slug — the preview always reads the database', async () => {
+      // A HIT for any key: if the preview consulted the cache it would answer this.
+      cacheServiceMock.get.mockResolvedValue({ product: { slug: 'stale-public-copy' } });
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(hiddenWithRelations);
+
+      const result = await service.findBySlugForPreview(
+        'discontinued-case',
+        hiddenWithRelations.id,
+      );
+
+      expect(result?.product.slug).toBe('discontinued-case');
+      expect(cacheServiceMock.get).not.toHaveBeenCalled();
+      expect(cacheServiceMock.set).not.toHaveBeenCalled();
+      expect(cacheServiceMock.del).not.toHaveBeenCalled();
     });
   });
 
