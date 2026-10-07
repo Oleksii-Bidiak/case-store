@@ -1,20 +1,39 @@
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { DeliveryMethod, NotificationAudience, NotificationChannel, Prisma } from '@prisma/client';
+import {
+  DeliveryMethod,
+  NotificationAudience,
+  NotificationChannel,
+  OrderStatus,
+  Prisma,
+} from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderLookupRepository } from '../src/order/order-lookup.repository';
+import { OrderService } from '../src/order/order.service';
 import type { CreateOrderParams } from '../src/order/order.types';
+import type { CreateOrderDto } from '../src/order/dto/create-order.dto';
+import { AddonApplicabilityResolver } from '../src/addon-service';
 import { CacheService } from '../src/cache';
+import { CartService } from '../src/cart';
+import { CartRepository } from '../src/cart/cart.repository';
+import { DeliveryService } from '../src/delivery';
+import { DiscountService } from '../src/discount';
 import { PrismaService } from '../src/prisma';
 import { ProductIndexer } from '../src/search/product-indexer';
+import { UserRepository } from '../src/user';
 import { NotificationBindingRepository } from '../src/notification/notification-binding.repository';
 import {
   hashBindingToken,
   NotificationBindingService,
 } from '../src/notification/notification-binding.service';
 import { CustomerNotifier } from '../src/notification/customer-notifier.service';
+import { ShopNotifier } from '../src/notification/shop-notifier.service';
 import { NotificationOutboxRepository } from '../src/notification-outbox/notification-outbox.repository';
+import { NotificationOutboxService } from '../src/notification-outbox/notification-outbox.service';
+import { NOTIFICATION_OUTBOX_CLOCK } from '../src/notification-outbox/notification-outbox.clock';
+import { NOTIFICATION_CHANNEL_ADAPTERS } from '../src/notification-outbox/channels/notification-channel-adapter';
 
 const ROLLBACK = new Error('the order failed after the Telegram row was queued');
 
@@ -36,11 +55,15 @@ const ROLLBACK = new Error('the order failed after the Telegram row was queued')
 describe('CustomerNotifier (integration, TASK-680)', () => {
   let prisma: PrismaService;
   let orders: OrderRepository;
+  let orderService: OrderService;
+  let outboxRepository: NotificationOutboxRepository;
+  let carts: CartRepository;
   let bindings: NotificationBindingService;
   let notifier: CustomerNotifier;
 
   const run = randomUUID().slice(0, 8);
   const chat = (name: string) => `int-cust-${run}-${name}`;
+  const buyerEmail = `int-cust-${run}@test.local`;
   const tokens: string[] = [];
   const createdOrderIds: string[] = [];
 
@@ -64,6 +87,52 @@ describe('CustomerNotifier (integration, TASK-680)', () => {
         NotificationBindingService,
         NotificationOutboxRepository,
         CustomerNotifier,
+        // ─── The real checkout, for the order-transaction proof ────────────────
+        // OrderService with its real repository, its real letter queue and the
+        // real CustomerNotifier; the collaborators that do not write (delivery
+        // pricing, add-ons, discounts, the shop ping) are stubs.
+        OrderService,
+        CartRepository,
+        NotificationOutboxService,
+        { provide: NOTIFICATION_CHANNEL_ADAPTERS, useValue: [] },
+        { provide: NOTIFICATION_OUTBOX_CLOCK, useValue: { now: () => new Date() } },
+        {
+          provide: CartService,
+          useFactory: (repository: CartRepository) => ({
+            loadForCheckout: (identity: { userId: string }) =>
+              repository.findByUserId(identity.userId),
+          }),
+          inject: [CartRepository],
+        },
+        {
+          provide: UserRepository,
+          useValue: {
+            findById: jest.fn(async (id: string) => ({
+              id,
+              email: buyerEmail,
+              firstName: 'Тарас',
+              lastName: 'Шевченко',
+              isActive: true,
+            })),
+          },
+        },
+        {
+          provide: DeliveryService,
+          useValue: {
+            getMethodSettings: jest.fn().mockResolvedValue({
+              enabledMethods: [DeliveryMethod.NOVA_POSHTA],
+              courier: { price: '0', freeFrom: null },
+            }),
+            estimateShipping: jest.fn().mockResolvedValue({ cost: '60' }),
+          },
+        },
+        {
+          provide: AddonApplicabilityResolver,
+          useValue: { resolveForProducts: async () => new Map() },
+        },
+        { provide: DiscountService, useValue: {} },
+        { provide: OrderLookupRepository, useValue: {} },
+        { provide: ShopNotifier, useValue: { enqueueNewOrder: jest.fn().mockResolvedValue(0) } },
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },
         {
           provide: ProductIndexer,
@@ -81,6 +150,9 @@ describe('CustomerNotifier (integration, TASK-680)', () => {
 
     prisma = moduleRef.get(PrismaService);
     orders = moduleRef.get(OrderRepository);
+    orderService = moduleRef.get(OrderService);
+    outboxRepository = moduleRef.get(NotificationOutboxRepository);
+    carts = moduleRef.get(CartRepository);
     bindings = moduleRef.get(NotificationBindingService);
     notifier = moduleRef.get(CustomerNotifier);
     await prisma.$connect();
@@ -101,7 +173,7 @@ describe('CustomerNotifier (integration, TASK-680)', () => {
     productId = product.id;
     userId = (
       await prisma.user.create({
-        data: { email: `int-cust-${run}@test.local`, passwordHash: 'x' },
+        data: { email: buyerEmail, passwordHash: 'x' },
       })
     ).id;
   });
@@ -111,6 +183,8 @@ describe('CustomerNotifier (integration, TASK-680)', () => {
       await prisma.notificationOutbox.deleteMany({
         where: { recipientAddress: { startsWith: `int-cust-${run}-` } },
       });
+      // The letters the real checkout queued (OrderService describe).
+      await prisma.notificationOutbox.deleteMany({ where: { recipientAddress: buyerEmail } });
       await prisma.notificationBinding.deleteMany({
         where: { externalId: { startsWith: `int-cust-${run}-` } },
       });
@@ -245,6 +319,83 @@ describe('CustomerNotifier (integration, TASK-680)', () => {
       });
       await prisma.notificationOutbox.deleteMany({ where: { id: rows[0].id } });
     });
+
+    // ─── The same proof through OrderService itself (TASK-680 review) ────────
+    // The two cases above hand the repository their own callback, so they prove
+    // that the notifier honours `tx` — not that the checkout wires it into the
+    // order's transaction. These run the real `OrderService.createOrder`.
+
+    const checkoutDto = {
+      shippingAddress: {
+        firstName: 'Тарас',
+        lastName: 'Шевченко',
+        address1: 'Нова Пошта, відділення №12',
+        city: 'Київ',
+        phone: '+380501234567',
+        npCityRef: 'int-city-ref',
+      },
+      deliveryMethod: DeliveryMethod.NOVA_POSHTA,
+    } as unknown as CreateOrderDto;
+
+    it('OrderService: a failed Telegram insert takes the order AND its letter down with it', async () => {
+      await buildParams(); // a fresh two-unit cart for the account
+      const ordersBefore = await prisma.order.count({ where: { userId } });
+      const written: string[] = [];
+      const realEnqueue = outboxRepository.enqueue.bind(outboxRepository);
+      const spy = jest.spyOn(outboxRepository, 'enqueue').mockImplementation(async (params, tx) => {
+        // The row IS written — through the order's tx — and only then fails.
+        const row = await realEnqueue(params, tx);
+        written.push(params.channel ?? NotificationChannel.EMAIL);
+        if (params.channel === NotificationChannel.TELEGRAM) throw ROLLBACK;
+        return row;
+      });
+
+      try {
+        await expect(orderService.createOrder({ type: 'user', userId }, checkoutDto)).rejects.toBe(
+          ROLLBACK,
+        );
+      } finally {
+        spy.mockRestore();
+      }
+
+      // Both rows were inserted before the failure…
+      expect(written).toEqual([NotificationChannel.EMAIL, NotificationChannel.TELEGRAM]);
+      // …and neither the order, nor the letter, nor the Telegram row survived.
+      expect(await prisma.order.count({ where: { userId } })).toBe(ordersBefore);
+      expect(
+        await prisma.notificationOutbox.count({ where: { recipientAddress: buyerEmail } }),
+      ).toBe(0);
+      expect(await rowsFor(accountChat)).toHaveLength(0);
+      // The cart is untouched: the buyer can simply press «Оформити» again.
+      expect(await carts.findByUserId(userId)).toMatchObject({
+        items: [expect.objectContaining({ quantity: 2 })],
+      });
+    });
+
+    it('OrderService: a committed order has its letter AND one Telegram row for the chat', async () => {
+      await buildParams();
+
+      const order = await orderService.createOrder({ type: 'user', userId }, checkoutDto);
+      createdOrderIds.push(order.id);
+
+      const letters = await prisma.notificationOutbox.findMany({
+        where: { recipientAddress: buyerEmail, type: 'order-confirmation' },
+      });
+      expect(letters).toHaveLength(1);
+      expect(letters[0].channel).toBe(NotificationChannel.EMAIL);
+
+      const rows = await rowsFor(accountChat);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].payload).toMatchObject({
+        orderId: order.id,
+        itemsCount: 2,
+        deliveryMethod: DeliveryMethod.NOVA_POSHTA,
+        status: null,
+      });
+      await prisma.notificationOutbox.deleteMany({
+        where: { id: { in: [letters[0].id, rows[0].id] } },
+      });
+    });
   });
 
   // ─── Owner decision 3: the guest's summary, once ────────────────────────────
@@ -289,6 +440,9 @@ describe('CustomerNotifier (integration, TASK-680)', () => {
           orderNumber: guestOrderId.slice(0, 8).toUpperCase(),
           total: expect.stringMatching(/^449(\.00?)?$/),
           itemsCount: 3,
+          // Read from the order at connect time — the renderer words the next step by them.
+          deliveryMethod: DeliveryMethod.NOVA_POSHTA,
+          status: OrderStatus.PENDING,
           recipientOwner: { userId: null, orderId: guestOrderId },
         },
       });
@@ -344,6 +498,29 @@ describe('CustomerNotifier (integration, TASK-680)', () => {
       expect(shipped.map((row) => row.recipientAddress).sort()).toEqual(
         [chat('guest'), second].sort(),
       );
+    });
+
+    it('an order cancelled before the chat connected binds the chat but sends no «прийнято»', async () => {
+      const cancelled = await prisma.order.create({
+        data: {
+          subtotal: new Prisma.Decimal('149.50'),
+          total: new Prisma.Decimal('149.50'),
+          shippingAddress: {},
+          guestName: 'Гість',
+          status: OrderStatus.CANCELLED,
+          items: { create: [{ productId, quantity: 1, price: new Prisma.Decimal('149.50') }] },
+        },
+      });
+      createdOrderIds.push(cancelled.id);
+      const id = chat('guest-cancelled');
+
+      const bound = await bindings.consumeToken(await issue({ orderId: cancelled.id }), {
+        id,
+        isPrivate: true,
+      });
+
+      expect(bound).toMatchObject({ ok: true, created: true });
+      expect(await rowsFor(id)).toHaveLength(0);
     });
   });
 });

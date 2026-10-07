@@ -99,6 +99,46 @@ describe('Telegram customer messages (TASK-680)', () => {
       );
       expect(text).not.toMatch(/undefined|null/);
     });
+
+    it('promises a call, not a parcel, for a PICKUP order — like the letter', () => {
+      const text = renderOrderConfirmation(
+        row('order-confirmation', { ...payload, deliveryMethod: 'PICKUP', status: null }),
+        withoutStore,
+      );
+
+      expect(text).toContain('Зателефонуємо, коли замовлення буде готове до видачі.');
+      expect(text).not.toContain('посилка');
+    });
+
+    it('keeps the parcel promise for a delivered order (NOVA_POSHTA, COURIER)', () => {
+      for (const deliveryMethod of ['NOVA_POSHTA', 'COURIER']) {
+        const text = renderOrderConfirmation(
+          row('order-confirmation', { ...payload, deliveryMethod, status: 'PENDING' }),
+          withoutStore,
+        );
+
+        expect(text).toContain('Ми повідомимо, коли посилка вирушить.');
+      }
+    });
+
+    it.each([
+      ['NOVA_POSHTA', 'SHIPPED', 'Посилка вже вирушила.'],
+      ['PICKUP', 'SHIPPED', 'Замовлення вже готове до видачі.'],
+      ['NOVA_POSHTA', 'DELIVERED', 'Замовлення вже доставлено.'],
+      ['PICKUP', 'DELIVERED', 'Замовлення вже видано.'],
+    ])(
+      'a guest summary for a %s order already %s says so instead of promising news (owner decision 3)',
+      (deliveryMethod, status, expected) => {
+        const text = renderOrderConfirmation(
+          row('order-confirmation', { ...payload, deliveryMethod, status }),
+          withoutStore,
+        );
+
+        expect(text).toContain(expected);
+        expect(text).not.toContain('Ми повідомимо');
+        expect(text).not.toContain('Зателефонуємо');
+      },
+    );
   });
 
   describe('order-shipped', () => {
@@ -152,6 +192,22 @@ describe('Telegram customer messages (TASK-680)', () => {
 
       expect(text).toContain('<code>&lt;x&gt;&amp;&quot;</code>');
       expect(text).toContain('cargo_number=%3Cx%3E%26%22');
+    });
+
+    it('says «готове до видачі» for a PICKUP order — no carrier, no waybill, no tracking', () => {
+      const text = renderOrderShipped(
+        row('order-shipped', { ...payload, deliveryMethod: 'PICKUP', trackingNumber: null }),
+        withStore,
+      );
+
+      expect(text).toBe(
+        [
+          '📦 <b>Замовлення #AB12CD34 готове до видачі</b>',
+          'Візьміть із собою номер замовлення.',
+          '<a href="https://shop.example.com/orders/status">Статус замовлення</a>',
+        ].join('\n'),
+      );
+      expect(text).not.toContain('відправлено');
     });
   });
 });

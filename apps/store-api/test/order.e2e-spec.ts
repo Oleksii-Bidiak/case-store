@@ -2782,7 +2782,7 @@ describe('OrderController (e2e)', () => {
         isActive: true,
       });
       cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
-      const createdOrder = makeOrder();
+      const createdOrder = makeOrder({ deliveryMethod: 'NOVA_POSHTA' });
       orderRepositoryMock.createFromCart.mockImplementation(
         async (
           _params: unknown,
@@ -2833,6 +2833,10 @@ describe('OrderController (e2e)', () => {
           orderNumber: 'ORDER-E2',
           total: '59.98',
           itemsCount: 2,
+          // Worded as a parcel; a PICKUP order would get the pickup line.
+          deliveryMethod: 'NOVA_POSHTA',
+          // A new order — no status to word around (only the guest summary sets it).
+          status: null,
           recipientOwner: { userId: userA.id, orderId: 'order-e2e-1' },
         },
       });

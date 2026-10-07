@@ -18,6 +18,9 @@ import { orderStatusLinkLine } from './customer-template.helpers';
  * for a Nova Poshta parcel — NP's page knows nothing about another carrier's
  * number. A notice without a waybill (the operator enters it later; the
  * follow-up comes as a second message) simply has no ТТН line.
+ *
+ * A PICKUP order is not a parcel: the same event reads «готове до видачі»,
+ * with the pickup note of the confirmation letter.
  */
 export function renderOrderShipped(
   row: NotificationOutbox,
@@ -28,6 +31,18 @@ export function renderOrderShipped(
   const number = text(payload, 'orderNumber') ?? (orderId ? orderNumber(orderId) : null);
   const trackingNumber = text(payload, 'trackingNumber');
   const deliveryMethod = text(payload, 'deliveryMethod');
+
+  // A PICKUP order travels nowhere: «відправлено · Доставка: самовивіз» would
+  // send the buyer looking for a parcel. It is ready at the point instead.
+  if (deliveryMethod === 'PICKUP') {
+    return lines(
+      number
+        ? `📦 <b>Замовлення #${escapeHtml(number)} готове до видачі</b>`
+        : '📦 <b>Замовлення готове до видачі</b>',
+      'Візьміть із собою номер замовлення.',
+      orderStatusLinkLine(context),
+    );
+  }
 
   const trackingLink =
     trackingNumber && deliveryMethod === 'NOVA_POSHTA'

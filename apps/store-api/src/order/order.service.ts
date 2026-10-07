@@ -547,6 +547,7 @@ export class OrderService {
               orderId: created.id,
               total: created.total.toString(),
               itemsCount: countUnits(created),
+              deliveryMethod: created.deliveryMethod,
             },
             { userId },
             tx,
@@ -1626,7 +1627,12 @@ export class OrderService {
   ): Promise<void> {
     try {
       await this.customerNotifier.enqueueOrderConfirmation(
-        { orderId: order.id, total: order.total.toString(), itemsCount: countUnits(order) },
+        {
+          orderId: order.id,
+          total: order.total.toString(),
+          itemsCount: countUnits(order),
+          deliveryMethod: order.deliveryMethod,
+        },
         { userId },
       );
     } catch (err) {

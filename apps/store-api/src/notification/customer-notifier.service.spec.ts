@@ -59,7 +59,12 @@ describe('CustomerNotifier (TASK-680)', () => {
   });
 
   describe('enqueueOrderConfirmation', () => {
-    const order = { orderId: ORDER_ID, total: '1299.00', itemsCount: 2 };
+    const order = {
+      orderId: ORDER_ID,
+      total: '1299.00',
+      itemsCount: 2,
+      deliveryMethod: 'PICKUP',
+    };
 
     it('queues one TELEGRAM row per connected chat, through the given tx, with a small payload', async () => {
       bindings.findActiveForCustomer.mockResolvedValue([binding('111'), binding('222')]);
@@ -89,6 +94,10 @@ describe('CustomerNotifier (TASK-680)', () => {
           orderNumber: 'AB12CD34',
           total: '1299.00',
           itemsCount: 2,
+          // A pickup is worded as a pickup, not a parcel.
+          deliveryMethod: 'PICKUP',
+          // At checkout the order is new — no status to word around.
+          status: null,
           // The gate's owner: the account picked by, and always the order itself.
           recipientOwner: { userId: USER_ID, orderId: ORDER_ID },
         },
@@ -202,6 +211,8 @@ describe('CustomerNotifier (TASK-680)', () => {
         userId: null,
         total: '499.00',
         itemsCount: 3,
+        deliveryMethod: 'NOVA_POSHTA',
+        status: 'CONFIRMED',
       });
 
       await expect(notifier.onBindingCreated(guestBinding, tx)).resolves.toBe(1);
@@ -220,6 +231,9 @@ describe('CustomerNotifier (TASK-680)', () => {
             orderNumber: 'AB12CD34',
             total: '499.00',
             itemsCount: 3,
+            deliveryMethod: 'NOVA_POSHTA',
+            // The order's state at connect time — the renderer words the next step by it.
+            status: 'CONFIRMED',
             recipientOwner: { userId: null, orderId: ORDER_ID },
           },
         },
@@ -257,6 +271,50 @@ describe('CustomerNotifier (TASK-680)', () => {
           reason: 'order-missing',
         }),
         expect.any(String),
+      );
+    });
+
+    it.each(['CANCELLED', 'REFUNDED'])(
+      'sends no «прийнято» for an order %s before the chat connected, and says why',
+      async (status) => {
+        bindings.findOrderSummary.mockResolvedValue({
+          id: ORDER_ID,
+          userId: null,
+          total: '499.00',
+          itemsCount: 3,
+          deliveryMethod: 'NOVA_POSHTA',
+          status,
+        });
+
+        await expect(notifier.onBindingCreated(guestBinding, tx)).resolves.toBe(0);
+
+        expect(outbox.enqueue).not.toHaveBeenCalled();
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.objectContaining({
+            event: 'notification.customer.skipped',
+            reason: 'order-closed',
+            orderId: ORDER_ID,
+            status,
+          }),
+          expect.any(String),
+        );
+      },
+    );
+
+    it('still sends the summary for an order already shipped — worded by its status', async () => {
+      bindings.findOrderSummary.mockResolvedValue({
+        id: ORDER_ID,
+        userId: null,
+        total: '499.00',
+        itemsCount: 3,
+        deliveryMethod: 'NOVA_POSHTA',
+        status: 'SHIPPED',
+      });
+
+      await expect(notifier.onBindingCreated(guestBinding, tx)).resolves.toBe(1);
+
+      expect(outbox.enqueue.mock.calls[0][0].payload).toEqual(
+        expect.objectContaining({ status: 'SHIPPED', deliveryMethod: 'NOVA_POSHTA' }),
       );
     });
   });

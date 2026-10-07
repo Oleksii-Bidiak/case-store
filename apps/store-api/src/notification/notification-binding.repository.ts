@@ -69,6 +69,10 @@ export interface CustomerOrderSummary {
   total: string;
   /** Units across all lines. */
   itemsCount: number;
+  /** `DeliveryMethod` value — a pickup is not a parcel. */
+  deliveryMethod: string;
+  /** `OrderStatus` value NOW — the guest may connect long after checkout. */
+  status: string;
 }
 
 /** The chat that sent `/start <token>`. */
@@ -373,8 +377,9 @@ export class NotificationBindingRepository {
   }
 
   /**
-   * The order a customer notification is about (TASK-680): its sum, its units
-   * and its account. Null for an order that does not exist or is soft-deleted —
+   * The order a customer notification is about (TASK-680): its sum, its units,
+   * its account, how it is delivered and where it stands now. Null for an order
+   * that does not exist or is soft-deleted —
    * nothing is announced about it. `tx`-aware so the guest's summary is read
    * inside the token exchange that triggered it.
    */
@@ -385,7 +390,14 @@ export class NotificationBindingRepository {
     const client = tx ?? this.prisma;
     const order = await client.order.findFirst({
       where: { id: orderId, deletedAt: null },
-      select: { id: true, userId: true, total: true, items: { select: { quantity: true } } },
+      select: {
+        id: true,
+        userId: true,
+        total: true,
+        deliveryMethod: true,
+        status: true,
+        items: { select: { quantity: true } },
+      },
     });
     if (order === null) return null;
     return {
@@ -393,6 +405,8 @@ export class NotificationBindingRepository {
       userId: order.userId,
       total: order.total.toString(),
       itemsCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
+      deliveryMethod: order.deliveryMethod,
+      status: order.status,
     };
   }
 

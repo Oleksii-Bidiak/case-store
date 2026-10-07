@@ -17,6 +17,14 @@ import { orderStatusLinkLine } from './customer-template.helpers';
  * A short text and a link, not a retelling of the letter (plan 187): the items,
  * the address and the guest's status-link token stay in the mailbox. The link
  * opens the public number + phone lookup, which needs no token at all.
+ *
+ * The third line is the next step, and it depends on the order:
+ * - a PICKUP order is not a parcel — the shop calls when it is ready, the same
+ *   promise as the letter's pickup note;
+ * - the guest summary (owner decision 3) is queued when the chat connects, which
+ *   may be after the order went out — then it says so instead of promising news
+ *   that already happened. A cancelled order gets no summary at all
+ *   (`CustomerNotifier.onBindingCreated`).
  */
 export function renderOrderConfirmation(
   row: NotificationOutbox,
@@ -36,7 +44,21 @@ export function renderOrderConfirmation(
       total && `Сума: ${escapeHtml(formatMoney(total))}`,
       itemsCount !== null && `${itemsCount} шт.`,
     ),
-    'Ми повідомимо, коли посилка вирушить.',
+    nextStepLine(text(payload, 'deliveryMethod'), text(payload, 'status')),
     orderStatusLinkLine(context),
   );
+}
+
+/** What happens next, worded by how the order is delivered and where it stands. */
+function nextStepLine(deliveryMethod: string | null, status: string | null): string {
+  const pickup = deliveryMethod === 'PICKUP';
+  if (status === 'DELIVERED') {
+    return pickup ? 'Замовлення вже видано.' : 'Замовлення вже доставлено.';
+  }
+  if (status === 'SHIPPED') {
+    return pickup ? 'Замовлення вже готове до видачі.' : 'Посилка вже вирушила.';
+  }
+  return pickup
+    ? 'Зателефонуємо, коли замовлення буде готове до видачі.'
+    : 'Ми повідомимо, коли посилка вирушить.';
 }

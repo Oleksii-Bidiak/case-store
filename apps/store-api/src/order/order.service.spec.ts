@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import {
+  DeliveryMethod,
   OrderHistoryNote,
   OrderStatus,
   PaymentMethod,
@@ -1494,12 +1495,13 @@ describe('OrderService', () => {
 
     it("queues the account's Telegram confirmation through the ORDER transaction", async () => {
       customerNotifierMock.enqueueOrderConfirmation.mockResolvedValue(1);
-      resolveCreateWithHook();
+      resolveCreateWithHook(makeOrder({ deliveryMethod: DeliveryMethod.PICKUP }));
 
       await service.createOrder(userActor, createDto);
 
       expect(customerNotifierMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
-        { orderId: 'order-uuid-1', total: '69.97', itemsCount: 2 },
+        // deliveryMethod: a pickup is worded as a pickup, not a parcel (TASK-680 review).
+        { orderId: 'order-uuid-1', total: '69.97', itemsCount: 2, deliveryMethod: 'PICKUP' },
         // The buyer's account only — never an order a guest could not prove.
         { userId: USER_ID },
         txMock,
@@ -2829,12 +2831,20 @@ describe('OrderService', () => {
       it('queues the confirmation for the named account, after the commit (no tx)', async () => {
         userRepositoryMock.findById.mockResolvedValue(recipient);
         customerNotifierMock.enqueueOrderConfirmation.mockResolvedValue(1);
+        orderRepositoryMock.createManual.mockResolvedValue(
+          makeOrder({ deliveryMethod: DeliveryMethod.NOVA_POSHTA }),
+        );
 
         await service.adminCreateOrder({ ...dto, userId: USER_ID }, ADMIN_ID);
 
         expect(customerNotifierMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
         const call = customerNotifierMock.enqueueOrderConfirmation.mock.calls[0];
-        expect(call[0]).toEqual({ orderId: 'order-uuid-1', total: '69.97', itemsCount: 2 });
+        expect(call[0]).toEqual({
+          orderId: 'order-uuid-1',
+          total: '69.97',
+          itemsCount: 2,
+          deliveryMethod: 'NOVA_POSHTA',
+        });
         expect(call[1]).toEqual({ userId: USER_ID });
         expect(call[2]).toBeUndefined();
         // The letter to the dictated address is unchanged.

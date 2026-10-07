@@ -33,6 +33,17 @@ export interface CustomerOrderConfirmationInput {
   total: string;
   /** Units across all lines. */
   itemsCount: number;
+  /**
+   * `DeliveryMethod` value. A PICKUP order is not a parcel: its message says the
+   * shop will call when it is ready, like the letter's pickup note.
+   */
+  deliveryMethod?: string | null;
+  /**
+   * `OrderStatus` value when the message is queued. Only the guest summary sets
+   * it — a guest may connect long after checkout, when the order has already
+   * gone out; at checkout the order is new by definition.
+   */
+  status?: string | null;
 }
 
 /** What an order event gives the notifier for «відправлено». */
@@ -56,6 +67,9 @@ export type CustomerOrderConfirmationPayload = RecipientOwnerPayload & {
   orderNumber: string;
   total: string;
   itemsCount: number;
+  deliveryMethod: string | null;
+  /** Null for a confirmation queued at checkout (the order is new). */
+  status: string | null;
 };
 
 /** Payload of a TELEGRAM {@link CUSTOMER_ORDER_SHIPPED_TYPE} row. */

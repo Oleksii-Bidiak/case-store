@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { NotificationAudience, NotificationChannel, Prisma } from '@prisma/client';
+import { NotificationAudience, NotificationChannel, OrderStatus, Prisma } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 // eslint-disable-next-line local/no-deep-module-import -- cycle: notification-outbox barrel > notification-outbox.module > notification.module > this file
 import { NotificationOutboxRepository } from '../notification-outbox/notification-outbox.repository';
@@ -20,6 +20,12 @@ import {
 } from './customer-notification.types';
 
 const TELEGRAM = NotificationChannel.TELEGRAM;
+
+/** An order in one of these gets no «прийнято» summary when a guest connects. */
+const CLOSED_ORDER_STATUSES: ReadonlySet<string> = new Set<OrderStatus>([
+  OrderStatus.CANCELLED,
+  OrderStatus.REFUNDED,
+]);
 
 /**
  * CustomerNotifier — queues a buyer's own Telegram messages (TASK-680, plan 187):
@@ -137,11 +143,37 @@ export class CustomerNotifier {
       return 0;
     }
 
+    // The link stays valid for 15 minutes after the click and the success page
+    // can sit open for longer: by the time the chat connects, the operator may
+    // have cancelled the order. «Прийнято» about it would be a lie — say nothing
+    // (the chat still follows the order; the letter said what happened).
+    if (CLOSED_ORDER_STATUSES.has(order.status)) {
+      this.logger.info(
+        {
+          event: 'notification.customer.skipped',
+          customerEvent: CUSTOMER_ORDER_CONFIRMATION_TYPE,
+          reason: 'order-closed',
+          orderId: order.id,
+          status: order.status,
+        },
+        'The connected order is cancelled — no summary queued',
+      );
+      return 0;
+    }
+
     await this.enqueue(
       CUSTOMER_ORDER_CONFIRMATION_TYPE,
       binding.externalId,
       confirmationPayload(
-        { orderId: order.id, total: order.total, itemsCount: order.itemsCount },
+        {
+          orderId: order.id,
+          total: order.total,
+          itemsCount: order.itemsCount,
+          deliveryMethod: order.deliveryMethod,
+          // The renderer words the next step by it: an order already shipped
+          // gets no «we will tell you when it ships».
+          status: order.status,
+        },
         { userId: binding.userId, orderId: binding.orderId },
       ),
       tx,
@@ -191,6 +223,8 @@ function confirmationPayload(
     orderNumber: orderNumber(order.orderId),
     total: order.total,
     itemsCount: order.itemsCount,
+    deliveryMethod: order.deliveryMethod ?? null,
+    status: order.status ?? null,
     recipientOwner,
   };
 }

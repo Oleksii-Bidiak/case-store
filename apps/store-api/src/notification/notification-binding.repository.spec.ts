@@ -223,6 +223,8 @@ describe('NotificationBindingRepository', () => {
             id: 'order-a',
             userId: null,
             total: { toString: () => '499.00' },
+            deliveryMethod: 'PICKUP',
+            status: 'CANCELLED',
             items: [{ quantity: 2 }, { quantity: 1 }],
           }),
         },
@@ -233,7 +235,15 @@ describe('NotificationBindingRepository', () => {
         userId: null,
         total: '499.00',
         itemsCount: 3,
+        // TASK-680 review: a pickup is not a parcel, and a cancelled order gets no «прийнято».
+        deliveryMethod: 'PICKUP',
+        status: 'CANCELLED',
       });
+      expect(client.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ deliveryMethod: true, status: true }),
+        }),
+      );
       expect(client.order.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'order-a', deletedAt: null } }),
       );
