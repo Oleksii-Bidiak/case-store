@@ -65,8 +65,9 @@ export class NeedsActionDto {
   @ApiProperty({
     type: Number,
     description:
-      'Telegram notifications permanently failed (NotificationOutbox status = FAILED, ' +
-      'channel = TELEGRAM, TASK-1090) — the card links to /settings/notifications',
+      "Telegram notifications to the shop's own chats permanently failed (NotificationOutbox " +
+      'status = FAILED, channel = TELEGRAM, shop types only, TASK-1090) — the card links to ' +
+      '/settings/notifications. Buyer Telegram rows are not counted (TASK-680)',
     example: 0,
   })
   failedTelegram!: number;

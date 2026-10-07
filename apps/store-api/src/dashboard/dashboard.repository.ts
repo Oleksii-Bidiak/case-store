@@ -17,6 +17,7 @@ import {
 } from '../analytics';
 import { kyivDaySql } from '../common/time';
 import { PrismaService } from '../prisma';
+import { SHOP_NOTIFICATION_TYPES } from '../notification';
 import { moderationQueueWhere } from '../review';
 import {
   DASHBOARD_WINDOW_DAYS,
@@ -373,8 +374,12 @@ export class DashboardRepository {
    *                         EMAIL only since TASK-1090: plan 187 put Telegram rows in
    *                         the same outbox, and a dead bot counted as unsent mail
    *                         would send the operator to the wrong screen
-   *   - `failedTelegram`  — TELEGRAM outbox rows permanently failed; the card links
-   *                         to `/settings/notifications` (TASK-1090)
+   *   - `failedTelegram`  — TELEGRAM outbox rows for the SHOP's own chats permanently
+   *                         failed; the card links to `/settings/notifications`
+   *                         (TASK-1090). Shop types only ({@link SHOP_NOTIFICATION_TYPES}):
+   *                         a buyer's row (TASK-680) fails when they disconnect or
+   *                         block the bot, that screen lists shop chats only, and the
+   *                         owner can fix nothing — so it must not light the card
    *   - `ratingAbuse`     — bursts and one-star runs, each situation once
    *                         ({@link getRatingAbuseSignals}); `ratingAbuseSignals`
    *                         names them so the card can link to the series (TASK-601)
@@ -406,7 +411,11 @@ export class DashboardRepository {
         where: { status: NotificationOutboxStatus.FAILED, channel: NotificationChannel.EMAIL },
       }),
       this.prisma.notificationOutbox.count({
-        where: { status: NotificationOutboxStatus.FAILED, channel: NotificationChannel.TELEGRAM },
+        where: {
+          status: NotificationOutboxStatus.FAILED,
+          channel: NotificationChannel.TELEGRAM,
+          type: { in: [...SHOP_NOTIFICATION_TYPES] },
+        },
       }),
       this.prisma.order.count({ where: this.pendingOver48hWhere() }),
       this.getRatingAbuseSignals(),

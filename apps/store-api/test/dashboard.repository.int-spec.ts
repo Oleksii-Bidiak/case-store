@@ -16,6 +16,10 @@ import { lastKyivDays } from '../src/analytics/reports/report-period';
 import { SalesRepository } from '../src/analytics/reports/sales.repository';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { LOW_STOCK_THRESHOLD } from '../src/dashboard/dashboard.types';
+import {
+  CUSTOMER_ORDER_CONFIRMATION_TYPE,
+  CUSTOMER_ORDER_SHIPPED_TYPE,
+} from '../src/notification/customer-notification.types';
 import { SHOP_NEW_ORDER_TYPE } from '../src/notification/shop-notification.types';
 import { PrismaService } from '../src/prisma';
 
@@ -716,6 +720,20 @@ describe('DashboardRepository (integration)', () => {
           },
         });
       }
+      // A buyer's Telegram rows (TASK-680) that failed — the buyer disconnected or
+      // blocked the bot. Neither counter may see them: the owner can fix nothing,
+      // and the «Сповіщення» screen the card links to lists shop chats only.
+      for (const type of [CUSTOMER_ORDER_CONFIRMATION_TYPE, CUSTOMER_ORDER_SHIPPED_TYPE]) {
+        await prisma.notificationOutbox.create({
+          data: {
+            type,
+            channel: NotificationChannel.TELEGRAM,
+            recipientAddress: '555000111',
+            payload: {},
+            status: NotificationOutboxStatus.FAILED,
+          },
+        });
+      }
     });
 
     afterAll(async () => {
@@ -736,7 +754,8 @@ describe('DashboardRepository (integration)', () => {
       // Only the FAILED EMAIL outbox row; the SENT row and the FAILED Telegram
       // rows are excluded (TASK-1090 — before it this said 3).
       expect(needsAction.failedMails).toBe(1);
-      // Only the two FAILED Telegram rows.
+      // Only the two FAILED shop Telegram rows — the two FAILED buyer rows
+      // (order-confirmation, order-shipped) are not the owner's to fix (TASK-680).
       expect(needsAction.failedTelegram).toBe(2);
     });
   });

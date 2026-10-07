@@ -6,6 +6,7 @@ export {
   SHOP_NEW_ORDER_TYPE,
   SHOP_CONTACT_MESSAGE_TYPE,
   SHOP_RETURN_REQUESTED_TYPE,
+  SHOP_NOTIFICATION_TYPES,
   type ShopNotificationType,
   type ShopNewOrderPayload,
   type ShopContactMessageInput,

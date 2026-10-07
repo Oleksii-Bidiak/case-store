@@ -149,9 +149,12 @@ export interface NeedsAction {
    */
   failedMails: number;
   /**
-   * Telegram notifications permanently failed (`NotificationOutbox.status = FAILED
-   * AND channel = TELEGRAM`, TASK-1090). The card links to the «Сповіщення» screen,
-   * where the bot state and the connected chats are.
+   * Telegram notifications to the SHOP's own chats permanently failed
+   * (`NotificationOutbox.status = FAILED AND channel = TELEGRAM AND type IN
+   * SHOP_NOTIFICATION_TYPES`, TASK-1090). The card links to the «Сповіщення» screen,
+   * where the bot state and the connected shop chats are. A buyer's Telegram rows
+   * (`order-confirmation`, `order-shipped`, TASK-680) are not counted: they fail when
+   * the buyer disconnects or blocks the bot, which the owner can neither see nor fix.
    */
   failedTelegram: number;
   /**
