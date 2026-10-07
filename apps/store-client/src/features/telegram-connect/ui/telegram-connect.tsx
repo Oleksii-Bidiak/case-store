@@ -55,7 +55,7 @@ export function TelegramConnectButton({
 /**
  * The waiting block (role="status"): QR from `sm` up, «Відкрийте бота…»,
  * «Відкрити Telegram» · «Я натиснув «Старт»» · «Скасувати», and the one-time
- * hint. Outside `waiting` it shows the link error, if any, and nothing else.
+ * hint. While `off` it shows the link error, if any; otherwise nothing.
  *
  * It takes the focus when it opens: the button that opened it has just been
  * unmounted, and the instructions are what the shopper needs next.
@@ -67,7 +67,10 @@ export function TelegramConnectPanel({
   if (connect.phase === "waiting") {
     return <WaitingPanel connect={connect} className={className} />;
   }
-  if (connect.linkError) {
+  // Only while `off`: after a 409 the account row turns `na` and its own line
+  // already says Telegram is unavailable — the alert would say it twice. The
+  // guest card never turns `na` (its status is not re-read), so it keeps it.
+  if (connect.linkError && connect.phase === "off") {
     const t = dict.telegramNotifications;
     return (
       <p role="alert" className={cn("text-sm text-destructive", className)}>
@@ -77,6 +80,13 @@ export function TelegramConnectPanel({
   }
   return null;
 }
+
+/**
+ * The three waiting actions: a 44px touch target where they stack full-width
+ * on a phone, the default height from `sm` up, so «Відкрити Telegram» ·
+ * «Я натиснув «Старт»» · «Скасувати» fit one row in the account's text column.
+ */
+const WAITING_ACTION = "min-h-11 sm:min-h-10";
 
 function WaitingPanel({ connect, className }: TelegramConnectPartProps) {
   const t = dict.telegramNotifications;
@@ -130,31 +140,29 @@ function WaitingPanel({ connect, className }: TelegramConnectPartProps) {
 
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           {href ? (
-            <Button asChild size="lg" className="min-h-11">
+            <Button asChild className={WAITING_ACTION}>
               <a href={href} target="_blank" rel="noopener noreferrer">
                 {t.openTelegram}
                 <span className="sr-only"> {t.opensInNewTab}</span>
               </a>
             </Button>
           ) : (
-            <Button type="button" size="lg" className="min-h-11" disabled>
+            <Button type="button" className={WAITING_ACTION} disabled>
               {t.linkLoading}
             </Button>
           )}
           <Button
             type="button"
-            size="lg"
             variant="outline"
-            className="min-h-11"
+            className={WAITING_ACTION}
             onClick={connect.checkNow}
           >
             {t.pressedStart}
           </Button>
           <Button
             type="button"
-            size="lg"
             variant="ghost"
-            className="min-h-11 text-muted-foreground"
+            className={cn(WAITING_ACTION, "px-3 text-muted-foreground")}
             onClick={connect.cancel}
           >
             {t.cancel}

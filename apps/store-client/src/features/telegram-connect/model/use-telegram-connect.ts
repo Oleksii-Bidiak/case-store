@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetMyTelegramNotificationsQueryKey,
@@ -74,10 +74,13 @@ export interface TelegramConnectController {
   /** Re-read the status after a failed read. */
   retryStatus: () => void;
   /**
-   * True once after «Скасувати»: the connect button takes focus back when it
-   * re-appears, so a keyboard user is not dropped onto `<body>`.
+   * True once after «Скасувати» or a successful «Відключити»: the connect
+   * button takes focus back when it re-appears, so a keyboard user is not
+   * dropped onto `<body>`.
    */
   takeFocusRestore: () => boolean;
+  /** Arm {@link takeFocusRestore} — the host is about to unmount the focus. */
+  returnFocusToConnect: () => void;
 }
 
 /**
@@ -192,21 +195,59 @@ export function useTelegramConnect(
       restoreFocus.current = false;
       return value;
     },
+    returnFocusToConnect: () => {
+      restoreFocus.current = true;
+    },
   };
+}
+
+/**
+ * Waiting → connected unmounts the waiting panel, which usually held the
+ * focus (the shopper was on «Я натиснув «Старт»» or «Відкрити Telegram»).
+ * When that drops the focus onto `<body>`, hand it to `target` — the host's
+ * «connected» line, a `tabIndex={-1}` element — so a keyboard user lands next
+ * to what comes after it. Focus the shopper moved elsewhere is left alone.
+ */
+export function useFocusWhenConnected(
+  phase: TelegramConnectPhase,
+  target: RefObject<HTMLElement | null>,
+) {
+  const previous = useRef(phase);
+  useEffect(() => {
+    const was = previous.current;
+    previous.current = phase;
+    if (was !== "waiting" || phase !== "on") return;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    target.current?.focus();
+  }, [phase, target]);
+}
+
+interface UseDisconnectMyTelegramOptions {
+  /**
+   * Called once the revoke succeeded, BEFORE the status is re-read — the
+   * moment to arm the focus return (`connect.returnFocusToConnect`), since
+   * the re-read is what unmounts «Відключити».
+   */
+  onDisconnected?: () => void;
 }
 
 /**
  * «Відключити» in the account — revokes the caller's own CUSTOMER chats (204,
  * idempotent) and re-reads the status, which is what flips the row back.
  */
-export function useDisconnectMyTelegram() {
+export function useDisconnectMyTelegram({
+  onDisconnected,
+}: UseDisconnectMyTelegramOptions = {}) {
   const queryClient = useQueryClient();
   return useRevokeMyTelegramNotifications({
     mutation: {
-      onSuccess: () =>
-        queryClient.invalidateQueries({
+      onSuccess: () => {
+        onDisconnected?.();
+        return queryClient.invalidateQueries({
           queryKey: getGetMyTelegramNotificationsQueryKey(),
-        }),
+        });
+      },
     },
   });
 }

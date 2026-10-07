@@ -201,12 +201,84 @@ describe("AccountSettingsSection — Telegram channel (TASK-679)", () => {
     );
 
     expect(await within(row()).findByText(tg.account.off)).toBeInTheDocument();
-    expect(
-      within(row()).getByRole("button", { name: tg.connectAccount }),
-    ).toBeInTheDocument();
+    const connectButton = within(row()).getByRole("button", {
+      name: tg.connectAccount,
+    });
+    // «Відключити» unmounted itself — the focus is handed on, not dropped.
+    await waitFor(() => expect(connectButton).toHaveFocus());
     expect(
       within(row()).queryByText(tg.account.connectedPill),
     ).not.toBeInTheDocument();
+  });
+
+  it("waiting → on: the focus lands on the «connected» line, not on <body>", async () => {
+    let connected = false;
+    server.use(
+      http.get(STATUS, () =>
+        HttpResponse.json({
+          data: {
+            available: true,
+            connected,
+            label: connected ? "@oleksii_p" : undefined,
+            botUsername: "casestore_bot",
+          },
+        }),
+      ),
+      http.post(`${STATUS}/link`, () =>
+        HttpResponse.json({
+          data: {
+            deepLink: "https://t.me/casestore_bot?start=abc",
+            expiresAt: new Date(Date.now() + 900_000).toISOString(),
+          },
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(
+      await within(row()).findByRole("button", { name: tg.connectAccount }),
+    );
+    await user.click(
+      await within(row()).findByRole("button", { name: tg.pressedStart }),
+    );
+
+    connected = true;
+    const line = await within(row()).findByText(tg.account.on("@oleksii_p"));
+    await waitFor(() => expect(line).toHaveFocus());
+  });
+
+  it("a 409 on the link says «unavailable» once — the row, not a second alert", async () => {
+    let available = true;
+    server.use(
+      http.get(STATUS, () =>
+        HttpResponse.json({
+          data: {
+            available,
+            connected: false,
+            botUsername: available ? "casestore_bot" : undefined,
+          },
+        }),
+      ),
+      http.post(`${STATUS}/link`, () => {
+        available = false;
+        return HttpResponse.json(
+          { error: "TELEGRAM_UNAVAILABLE", message: "x", statusCode: 409 },
+          { status: 409 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(
+      await within(row()).findByRole("button", { name: tg.connectAccount }),
+    );
+
+    await waitFor(() => expect(row()).toHaveAttribute("data-phase", "na"));
+    expect(within(row()).getByText(tg.account.na)).toBeInTheDocument();
+    expect(within(row()).queryByText(tg.linkConflict)).not.toBeInTheDocument();
+    expect(within(row()).queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("na: the bot is not available — says so, offers no button", async () => {

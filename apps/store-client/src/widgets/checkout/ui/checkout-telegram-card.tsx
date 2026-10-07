@@ -1,8 +1,10 @@
 "use client";
 
+import { useRef } from "react";
 import { Check, Send } from "lucide-react";
 import {
   TelegramConnect,
+  useFocusWhenConnected,
   useTelegramConnect,
 } from "@/features/telegram-connect";
 import { dict } from "@/shared/config";
@@ -41,6 +43,9 @@ export function CheckoutTelegramCard({
     { pollIntervalMs },
   );
   const { phase } = connect;
+  // Waiting → connected unmounts the focused waiting panel; land on the news.
+  const connectedRef = useRef<HTMLParagraphElement>(null);
+  useFocusWhenConnected(phase, connectedRef);
   if (phase === "loading" || phase === "error" || phase === "na") return null;
 
   return (
@@ -61,8 +66,10 @@ export function CheckoutTelegramCard({
 
       {phase === "on" ? (
         <p
+          ref={connectedRef}
           role="status"
-          className="flex items-start gap-2 text-sm text-foreground"
+          tabIndex={-1}
+          className="flex items-start gap-2 rounded-sm text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
           {t.connected(email)}

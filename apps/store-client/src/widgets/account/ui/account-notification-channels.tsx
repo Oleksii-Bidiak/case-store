@@ -1,10 +1,12 @@
 "use client";
 
+import { useRef } from "react";
 import { Loader2, Lock, Mail, Send } from "lucide-react";
 import {
   TelegramConnectButton,
   TelegramConnectPanel,
   useDisconnectMyTelegram,
+  useFocusWhenConnected,
   useTelegramConnect,
   type TelegramConnectController,
 } from "@/features/telegram-connect";
@@ -103,8 +105,13 @@ function ChannelIcon({
 
 function TelegramRow({ connect }: { connect: TelegramConnectController }) {
   const t = dict.telegramNotifications.account;
-  const disconnect = useDisconnectMyTelegram();
+  // A successful «Відключити» unmounts itself; «Підключити» takes the focus.
+  const disconnect = useDisconnectMyTelegram({
+    onDisconnected: connect.returnFocusToConnect,
+  });
   const { phase, status } = connect;
+  const statusRef = useRef<HTMLDivElement>(null);
+  useFocusWhenConnected(phase, statusRef);
   const dimmed = phase === "na" || phase === "error";
 
   let sub: React.ReactNode;
@@ -150,8 +157,14 @@ function TelegramRow({ connect }: { connect: TelegramConnectController }) {
             {t.telegramTitle}
           </p>
           {/* Live: «Чекаємо…» → «Підключено як …» is the news a screen-reader
-              user is waiting for after pressing «Старт» on the phone. */}
-          <div aria-live="polite" className="text-xs text-muted-foreground">
+              user is waiting for after pressing «Старт» on the phone. It also
+              takes the focus when the waiting panel that held it goes away. */}
+          <div
+            ref={statusRef}
+            tabIndex={-1}
+            aria-live="polite"
+            className="rounded-sm text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             {sub}
           </div>
           {disconnect.isError ? (

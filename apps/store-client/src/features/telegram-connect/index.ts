@@ -4,6 +4,7 @@
 export {
   useTelegramConnect,
   useDisconnectMyTelegram,
+  useFocusWhenConnected,
   TELEGRAM_LINK_TTL_MS,
   TELEGRAM_POLL_MS,
   type TelegramConnectController,

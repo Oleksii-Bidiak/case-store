@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { makeOrder } from "@/shared/test/msw-handlers";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
@@ -180,5 +185,33 @@ describe("CheckoutGuestSuccess — Telegram card (TASK-679)", () => {
     expect(
       screen.queryByRole("button", { name: tg.connectGuest }),
     ).not.toBeInTheDocument();
+  });
+
+  it("waiting → connected: the focus lands on the «connected» line", async () => {
+    const state = { available: true, connected: false };
+    serveStatus(state);
+    server.use(
+      http.post(`${STATUS}/link`, () =>
+        HttpResponse.json({
+          data: {
+            deepLink: "https://t.me/casestore_bot?start=abc",
+            expiresAt: new Date(Date.now() + 900_000).toISOString(),
+          },
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderSuccess(TOKEN);
+
+    await user.click(
+      await screen.findByRole("button", { name: tg.connectGuest }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: tg.pressedStart }),
+    );
+
+    state.connected = true;
+    const line = await screen.findByText(tg.guest.connected(email));
+    await waitFor(() => expect(line).toHaveFocus());
   });
 });

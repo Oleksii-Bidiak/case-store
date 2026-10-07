@@ -2499,7 +2499,7 @@ export const dict = {
     /** «Відкрийте бота <b>@bot</b> і натисніть…» — the bot name is bold between the two halves. */
     waitingBefore: "Відкрийте бота",
     waitingAfter:
-      "і натисніть «Старт». На комп’ютері — відскануйте код телефоном.",
+      "і натисніть «Старт». На комп'ютері — відскануйте код телефоном.",
     openTelegram: "Відкрити Telegram",
     opensInNewTab: "(відкриється в новій вкладці)",
     pressedStart: "Я натиснув «Старт»",
