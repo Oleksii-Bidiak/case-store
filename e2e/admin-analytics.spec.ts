@@ -50,6 +50,9 @@ const FORBIDDEN = "У вас немає доступу до звітів.";
 
 const SALES_REQUEST = /\/api\/admin\/analytics\/reports\/sales/;
 const CATEGORIES_REQUEST = /\/api\/admin\/analytics\/reports\/categories/;
+const BRANDS_REQUEST = /\/api\/admin\/analytics\/reports\/brands/;
+const PRODUCTS_REQUEST = /\/api\/admin\/analytics\/reports\/products/;
+const BRANDS_TAB = "Бренди";
 
 /** Today in Kyiv as `YYYY-MM-DD` — the API's calendar, not the runner's. */
 function kyivToday(): string {
@@ -152,6 +155,7 @@ test.describe("/analytics (TASK-692)", () => {
     ).toBeVisible();
 
     const categoriesAnswered = page.waitForResponse(isGet(CATEGORIES_REQUEST));
+    const productsAnswered = page.waitForResponse(isGet(PRODUCTS_REQUEST));
     await page.goto(PAGE_URL);
 
     await expect(page.getByText(REVENUE_LOCKED)).toBeVisible();
@@ -168,6 +172,26 @@ test.describe("/analytics (TASK-692)", () => {
     for (const row of body.data.rows) {
       expect(row).not.toHaveProperty("revenue");
     }
+    // Leaders and outsiders too — no `revenue` key anywhere in the answer,
+    // and the leaders are ranked by units (an empty DB still says so).
+    const products = await productsAnswered;
+    expect(products.ok()).toBe(true);
+    const productsBody = (await products.json()) as {
+      data: { rankedBy: string };
+    };
+    expect(productsBody.data.rankedBy).toBe("units");
+    expect(JSON.stringify(productsBody)).not.toContain('"revenue"');
+    // And the brands tab, asked for only when it is opened.
+    const brandsAnswered = page.waitForResponse(isGet(BRANDS_REQUEST));
+    await page
+      .getByRole("region", { name: CATALOGUE })
+      .getByRole("tab", { name: BRANDS_TAB })
+      .click();
+    const brands = await brandsAnswered;
+    expect(brands.ok()).toBe(true);
+    expect(JSON.stringify(await brands.json())).not.toContain('"revenue"');
+    // Nor a hryvnia sign anywhere on the screen.
+    await expect(page.getByRole("main")).not.toContainText("₴");
 
     // Let every report finish asking before counting what was asked.
     await page.waitForLoadState("networkidle");

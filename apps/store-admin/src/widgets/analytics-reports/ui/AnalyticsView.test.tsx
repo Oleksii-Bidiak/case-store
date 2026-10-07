@@ -168,6 +168,24 @@ describe("AnalyticsView — the reports", () => {
       expect(paths).toContain("/api/admin/analytics/reports/funnel"),
     );
     expect(paths).not.toContain("/api/admin/analytics/reports/sales");
+    // Not a hidden column but no money at all: no hryvnia in any report.
+    for (const region of screen.getAllByRole("region")) {
+      expect(region).not.toHaveTextContent("₴");
+    }
+  });
+
+  it("shows no money on the brands tab either, without analytics:revenue", async () => {
+    mockSearchParams = new URLSearchParams("view=brands");
+    serveWithoutRevenue();
+
+    renderWithProviders(<AnalyticsView />, MANAGER);
+
+    const catalogue = screen.getByRole("region", { name: d.catalogueTitle });
+    expect(await within(catalogue).findByText("Spigen")).toBeInTheDocument();
+    expect(
+      within(catalogue).queryByRole("columnheader", { name: d.colRevenue }),
+    ).not.toBeInTheDocument();
+    expect(catalogue).not.toHaveTextContent("₴");
   });
 
   it("keeps the other reports when one fails", async () => {
