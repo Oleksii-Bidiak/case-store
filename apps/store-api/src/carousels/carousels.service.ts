@@ -290,12 +290,10 @@ export class CarouselService {
       throw reorderErrorToHttp(error);
     }
 
-    // Revalidate ONLY when the list holds something the shopper can see — the public
-    // `/api/carousels` list follows this order; a pure draft shuffle changes nothing.
-    const hasPublished = carousels.some((carousel) => carousel.status === PublishStatus.PUBLISHED);
-    if (hasPublished) {
-      await this.notifyRevalidation();
-    }
+    // NO storefront revalidation (TASK-660): the homepage order is the homepage blocks'
+    // (`/api/home-blocks`), not this list's, and nothing on the storefront reads
+    // `/api/carousels` any more (TASK-1895). Purging `home-blocks` / `carousels` / `/`
+    // here would only re-render a homepage that cannot have changed.
 
     // Shape parity with `findAllAdmin` is load-bearing: the admin panel writes this
     // response straight into the list query's cache (`useReorderLifecycle` →

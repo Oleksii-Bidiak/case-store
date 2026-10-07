@@ -727,16 +727,17 @@ describe('CarouselService', () => {
       // The unpaginated shape: one page holding everything (the panel writes this
       // response straight into the list query's cache).
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
-      expect(revalidationMock.revalidate).toHaveBeenCalledWith(carouselsTarget);
     });
 
-    it('does NOT revalidate when the list holds nothing published', async () => {
+    // TASK-660: the homepage order belongs to the homepage blocks, and nothing on the
+    // storefront reads `/api/carousels` — a reorder changes nothing a shopper sees.
+    it('never revalidates the storefront, even when published carousels moved', async () => {
       carouselRepositoryMock.reorder.mockResolvedValue({
-        carousels: [draftCarousel],
-        total: 1,
+        carousels: [baseCarousel, draftCarousel],
+        total: 2,
       });
 
-      await service.reorder({ orderedIds: ['carousel-uuid-2'] });
+      await service.reorder(payload);
 
       expect(revalidationMock.revalidate).not.toHaveBeenCalled();
     });
