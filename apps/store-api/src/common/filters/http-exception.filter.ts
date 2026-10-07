@@ -4,6 +4,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { Request, Response } from 'express';
 import { translatePrismaError } from './prisma-error.translator';
 import { RetryAfterException } from './retry-after.exception';
+import { redactUrlSecrets } from '../security';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -30,7 +31,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           prismaCode: (thrown as { code?: string }).code,
           meta: (thrown as { meta?: unknown }).meta,
           status: translated.getStatus(),
-          path: request.url,
+          path: redactUrlSecrets(request.url),
         },
         'Prisma error answered as a client error',
       );
@@ -65,7 +66,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       // Unexpected errors — log them with structured data
       isUnhandled = true;
       this.logger.error(
-        { err: exception, path: request.url },
+        { err: exception, path: redactUrlSecrets(request.url) },
         exception instanceof Error ? exception.message : 'Unhandled exception',
       );
     }
@@ -77,7 +78,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // No-op when SENTRY_DSN is unset (Sentry.init ran with enabled:false).
     if (isUnhandled || status >= HttpStatus.INTERNAL_SERVER_ERROR) {
       Sentry.captureException(exception, {
-        tags: { path: request.url, method: request.method },
+        tags: { path: redactUrlSecrets(request.url), method: request.method },
       });
     }
 

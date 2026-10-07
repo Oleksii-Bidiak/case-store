@@ -78,6 +78,14 @@
   --color-footer: #0f172a;
   --color-footer-foreground: #ffffff;
 
+  /* Machine-read code (TASK-679) — the Telegram connect QR in the account and
+     on the guest success panel. Theme-invariant like the footer, and for a
+     functional reason: phone cameras read dark modules on a light field
+     reliably and an inverted code often not at all, so the code keeps the
+     light-theme pair under dark mode too (same pair as the admin, TASK-676). */
+  --color-code-surface: #ffffff;
+  --color-code-ink: #0f172a;
+
   /* Brand gradient (TASK-879) — the primary hue deepening towards violet, for
      the decorative panels that carry white copy (/contact hero, /info «Про
      нас») and the 404 numeral. Declared once, not per theme: it is built from
@@ -330,6 +338,8 @@
   --color-overlay: var(--color-overlay);
   --color-footer: var(--color-footer);
   --color-footer-foreground: var(--color-footer-foreground);
+  --color-code-surface: var(--color-code-surface);
+  --color-code-ink: var(--color-code-ink);
 
   /* Elevation */
   --shadow-card: var(--shadow-card);

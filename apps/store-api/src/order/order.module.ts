@@ -15,6 +15,10 @@ import { OrderService } from './order.service';
 // (never the other way round) because this module is the one that IMPLEMENTS it.
 import { GUEST_ORDER_CLAIM_PORT } from '../common/ports';
 import { OrderController } from './order.controller';
+// TASK-679: the guest's Telegram routes — they resolve the order by its access
+// token, which is this module's business; the binding work is NotificationModule's
+// (global) CustomerTelegramService.
+import { GuestOrderNotificationController } from './guest-order-notification.controller';
 import { AdminOrderController } from './admin-order.controller';
 import { ReturnRepository } from './returns/return.repository';
 import { ReturnService } from './returns/return.service';
@@ -49,6 +53,7 @@ import {
   ],
   controllers: [
     OrderController,
+    GuestOrderNotificationController,
     AdminOrderController,
     ReturnController,
     AdminReturnController,

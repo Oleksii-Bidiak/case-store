@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../auth/guards';
 import { ContactController } from '../contact/contact.controller';
 import { NewsletterController } from '../newsletter/newsletter.controller';
 import { OrderController } from '../order/order.controller';
+import { GuestOrderNotificationController } from '../order/guest-order-notification.controller';
 import { LiqPayWebhookController } from '../payment/liqpay-webhook.controller';
 import { ProductController } from '../product/product.controller';
 import { ReviewController } from '../review/review.controller';
@@ -55,6 +56,15 @@ describe('Fail-closed route classification', () => {
       // segment is the credential.
       ['POST /api/orders/lookup', OrderController.prototype.lookupOrder],
       ['GET /api/orders/guest/:token', OrderController.prototype.getGuestOrder],
+      // TASK-679: the guest's Telegram routes carry the same credential in the path.
+      [
+        'GET /api/orders/guest/:token/notifications/telegram',
+        GuestOrderNotificationController.prototype.getTelegram,
+      ],
+      [
+        'POST /api/orders/guest/:token/notifications/telegram/link',
+        GuestOrderNotificationController.prototype.createTelegramLink,
+      ],
       ['POST /api/newsletter/subscribe', NewsletterController.prototype.subscribe],
       ['POST /api/newsletter/unsubscribe', NewsletterController.prototype.unsubscribe],
     ])('%s', (_route, handler) => {

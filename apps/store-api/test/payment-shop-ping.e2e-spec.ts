@@ -345,6 +345,7 @@ describe('Shop ping on a confirmed online payment (e2e, TASK-678)', () => {
     // What the owner reads: the method and the sum (check SYS-50).
     const text = renderShopNewOrder(shopRows()[0] as unknown as NotificationOutbox, {
       adminUrl: () => null,
+      storeUrl: () => null,
     });
     expect(text).toContain('Оплата: картка онлайн');
     expect(text).toMatch(/Сума: 1\s?299/);

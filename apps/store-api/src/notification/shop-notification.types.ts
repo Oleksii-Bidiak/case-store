@@ -24,6 +24,17 @@ export const SHOP_RETURN_REQUESTED_TYPE = 'shop-return-requested';
 export type ShopNotificationType =
   typeof SHOP_NEW_ORDER_TYPE | typeof SHOP_CONTACT_MESSAGE_TYPE | typeof SHOP_RETURN_REQUESTED_TYPE;
 
+/**
+ * Every shop type. The Telegram send gate reads it to decide that a row is for
+ * a SHOP chat, so a new shop type that is missing here would be gated as a
+ * customer row and refused. Fail-closed, and the adapter spec pins the list.
+ */
+export const SHOP_NOTIFICATION_TYPES: ReadonlySet<string> = new Set<ShopNotificationType>([
+  SHOP_NEW_ORDER_TYPE,
+  SHOP_CONTACT_MESSAGE_TYPE,
+  SHOP_RETURN_REQUESTED_TYPE,
+]);
+
 /** How much of a free-text field (message, return reason) travels in the payload. */
 export const SHOP_EXCERPT_MAX_LENGTH = 300;
 

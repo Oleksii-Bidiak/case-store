@@ -234,7 +234,7 @@ describe('Admin notifications (e2e)', () => {
       expect(res.body).toEqual({ data: { state: 'unconfigured', bindings: [] } });
     });
 
-    it('ok: the bot name and the active shop chats, with who connected them', async () => {
+    it('ok: the bot name and the active shop chats, their kind and who connected them', async () => {
       bindings.listActive.mockResolvedValue([
         {
           ...binding(),
@@ -246,7 +246,11 @@ describe('Admin notifications (e2e)', () => {
             lastName: null,
           },
         },
-        { ...binding('7a1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b'), label: null, connectedBy: null },
+        {
+          ...binding('7a1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b', '42'),
+          label: null,
+          connectedBy: null,
+        },
       ]);
 
       const res = await call('get', BASE, owner).expect(200);
@@ -264,6 +268,7 @@ describe('Admin notifications (e2e)', () => {
             {
               id: BINDING_ID,
               label: 'Замовлення',
+              kind: 'GROUP',
               createdAt: '2026-10-01T10:00:00.000Z',
               connectedBy: {
                 id: 'u-1',
@@ -272,7 +277,11 @@ describe('Admin notifications (e2e)', () => {
                 lastName: null,
               },
             },
-            { id: '7a1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b', createdAt: '2026-10-01T10:00:00.000Z' },
+            {
+              id: '7a1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b',
+              kind: 'PRIVATE',
+              createdAt: '2026-10-01T10:00:00.000Z',
+            },
           ],
         },
       });

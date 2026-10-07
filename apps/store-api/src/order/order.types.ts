@@ -10,6 +10,7 @@ import {
 } from '@prisma/client';
 import type { CartWithItems } from '../cart';
 import type { AddressDto } from './dto';
+import type { OrderEntity } from './entities/order.entity';
 
 /**
  * A single order-status-history audit row as returned by the repository
@@ -535,6 +536,17 @@ export interface GuestContact {
  */
 export type OrderActor =
   { type: 'user'; userId: string } | { type: 'guest'; cartToken: string; contact: GuestContact };
+
+/**
+ * What placing an order hands back (TASK-679): the order, and for a GUEST the
+ * raw access token the confirmation letter carries — `null` for an account
+ * order. The raw value exists only here and in the letter; the database keeps
+ * its SHA-256.
+ */
+export interface PlacedOrder {
+  order: OrderEntity;
+  guestAccessToken: string | null;
+}
 
 /**
  * An order the OPERATOR placed on the customer's behalf — a phone order

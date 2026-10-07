@@ -7,6 +7,7 @@ import { Button } from "@/shared/ui";
 import { dict, H1_CLASS } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
 import { CheckoutStepIndicator } from "./checkout-step-indicator";
+import { CheckoutTelegramCard } from "./checkout-telegram-card";
 
 interface CheckoutGuestSuccessProps {
   order: OrderEntity;
@@ -14,6 +15,13 @@ interface CheckoutGuestSuccessProps {
   email: string;
   /** Set when the order was placed but the payment handoff could not start. */
   handoffMessage?: string | null;
+  /**
+   * The guest's order access token from the create call (TASK-679). Without
+   * it the Telegram card is not offered — there is no way to prove the order.
+   */
+  guestAccessToken?: string | null;
+  /** Override the Telegram status poll cadence (tests). */
+  telegramPollIntervalMs?: number;
 }
 
 /**
@@ -41,6 +49,8 @@ export function CheckoutGuestSuccess({
   order,
   email,
   handoffMessage,
+  guestAccessToken,
+  telegramPollIntervalMs,
 }: CheckoutGuestSuccessProps) {
   const orderNumber = order.id.slice(0, 8).toUpperCase();
 
@@ -90,6 +100,17 @@ export function CheckoutGuestSuccess({
           </p>
         )}
       </section>
+
+      {/* TASK-679 — Telegram in addition to the letter, between the order and
+          the account offer: it is about THIS order, the offer is not. */}
+      {guestAccessToken ? (
+        <CheckoutTelegramCard
+          token={guestAccessToken}
+          orderNumber={orderNumber}
+          email={email}
+          pollIntervalMs={telegramPollIntervalMs}
+        />
+      ) : null}
 
       <section className="flex flex-col gap-3 rounded-card border border-border bg-card p-6 shadow-card">
         <div className="flex items-center gap-3">

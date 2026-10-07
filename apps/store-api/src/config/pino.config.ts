@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { ConfigService } from '@nestjs/config';
 import type { Params } from 'nestjs-pino';
+import { redactUrlSecrets } from '../common/security';
 
 /**
  * Pino redact paths for sensitive request/response fields.
@@ -98,7 +99,8 @@ export function buildPinoHttpOptions(configService: ConfigService): Params {
         req: (req: SerializedReq) => ({
           id: req.id,
           method: req.method,
-          url: req.url,
+          // The path itself can carry a credential (the guest order token).
+          url: redactUrlSecrets(req.url),
           query: req.query,
           remoteAddress: req.remoteAddress,
         }),

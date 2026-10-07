@@ -1,11 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { NotificationAudience, NotificationChannel, Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'crypto';
-import { NotificationBindingRepository } from './notification-binding.repository';
+import {
+  NotificationBindingRepository,
+  type CustomerBindingOwner,
+  type RecipientScope,
+} from './notification-binding.repository';
 import type {
   ConsumeTokenResult,
   NotificationBindingEntity,
 } from './entities/notification-binding.entity';
+import { CustomerNotifier } from './customer-notifier.service';
 
 /** How long a deep link stays usable. Long enough to find the phone, short enough to leak little. */
 export const BINDING_TOKEN_TTL_MS = 15 * 60 * 1000;
@@ -36,6 +41,12 @@ export interface IssuedToken {
 export interface StartingChat {
   id: string | number;
   label?: string | null;
+  /**
+   * A one-to-one chat with the bot, as the channel reports it. Required, so a
+   * caller cannot forget it: a CUSTOMER token from a non-private chat is refused
+   * and spent (`private-only`).
+   */
+  isPrivate: boolean;
 }
 
 /** SHA-256 hex — the only form in which a token is stored or logged (prefix only). */
@@ -58,7 +69,12 @@ export function hashBindingToken(token: string): string {
  */
 @Injectable()
 export class NotificationBindingService {
-  constructor(private readonly repository: NotificationBindingRepository) {}
+  constructor(
+    private readonly repository: NotificationBindingRepository,
+    // TASK-680: a guest's freshly connected chat gets the order summary, queued
+    // inside the token exchange (owner decision 3, 2026-10-07).
+    private readonly customerNotifier: CustomerNotifier,
+  ) {}
 
   async issueToken(params: IssueTokenParams): Promise<IssuedToken> {
     const token = randomBytes(32).toString('base64url');
@@ -78,6 +94,11 @@ export class NotificationBindingService {
    * Exchange `token` for a binding of `chat`. One-time and atomic — see
    * {@link NotificationBindingRepository.consumeToken}. A chat that is already
    * bound for the token's audience keeps its existing row (`created: false`).
+   *
+   * A CUSTOMER binding this exchange CREATES for a guest order also queues that
+   * order's summary for the chat, in the same transaction (TASK-680, see
+   * {@link CustomerNotifier.onBindingCreated}): the binding and its first
+   * message commit together, and a re-press that creates nothing sends nothing.
    */
   consumeToken(token: string, chat: StartingChat): Promise<ConsumeTokenResult> {
     if (!BINDING_TOKEN_PATTERN.test(token)) {
@@ -86,8 +107,9 @@ export class NotificationBindingService {
     const label = chat.label?.trim() ? chat.label.trim() : null;
     return this.repository.consumeToken(
       hashBindingToken(token),
-      { externalId: String(chat.id), label },
+      { externalId: String(chat.id), label, isPrivate: chat.isPrivate },
       new Date(Date.now()),
+      (binding, tx) => this.customerNotifier.onBindingCreated(binding, tx),
     );
   }
 
@@ -108,9 +130,17 @@ export class NotificationBindingService {
     return this.repository.listActiveWithUser(channel, audience);
   }
 
-  /** Is this chat still an active recipient on this channel (any audience)? */
-  hasActiveRecipient(channel: NotificationChannel, externalId: string): Promise<boolean> {
-    return this.repository.hasActive(channel, externalId);
+  /**
+   * Is this chat still an active recipient on this channel for this scope (an
+   * active SHOP binding, or an active CUSTOMER binding of the given owner)? The
+   * send gate: a chat bound for one audience never satisfies the other.
+   */
+  hasActiveRecipient(
+    channel: NotificationChannel,
+    externalId: string,
+    scope: RecipientScope,
+  ): Promise<boolean> {
+    return this.repository.hasActive(channel, externalId, scope);
   }
 
   /**
@@ -134,6 +164,40 @@ export class NotificationBindingService {
    */
   revokeByExternalId(channel: NotificationChannel, externalId: string): Promise<number> {
     return this.repository.revokeByExternalId(channel, externalId, new Date(Date.now()));
+  }
+
+  /**
+   * Active customer chats of an account and/or a guest order, one per chat,
+   * oldest first (TASK-679). With one owner it answers «is this account / order
+   * connected?»; with both, «who hears about this order?» (TASK-680). `tx`-aware.
+   */
+  findActiveForCustomer(
+    owner: CustomerBindingOwner,
+    tx?: Prisma.TransactionClient,
+    channel: NotificationChannel = NotificationChannel.TELEGRAM,
+  ): Promise<NotificationBindingEntity[]> {
+    return this.repository.findActiveForCustomer(channel, owner, tx);
+  }
+
+  /** The owner's most recently connected active customer row, or null (TASK-679). */
+  findLatestActiveForCustomer(
+    owner: CustomerBindingOwner,
+    channel: NotificationChannel = NotificationChannel.TELEGRAM,
+  ): Promise<NotificationBindingEntity | null> {
+    return this.repository.findLatestActiveForCustomer(channel, owner);
+  }
+
+  /**
+   * Disconnect the customer chats of exactly ONE owner the caller has proved —
+   * an account or a guest order, not both (a mixed owner would let one proof
+   * reach the other's chats). Idempotent: nothing connected is not an error, the
+   * end state is the same. Returns how many chats were disconnected.
+   */
+  revokeForCustomer(
+    owner: { userId: string; orderId?: never } | { orderId: string; userId?: never },
+    channel: NotificationChannel = NotificationChannel.TELEGRAM,
+  ): Promise<number> {
+    return this.repository.revokeForCustomer(channel, owner, new Date(Date.now()));
   }
 
   getOffset(channel: NotificationChannel): Promise<number> {

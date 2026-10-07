@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { TELEGRAM_CHAT_KINDS, type TelegramChatKind } from '../telegram/telegram-chat-kind';
 
 /** Channel states, as {@link TelegramChannelState} names them. */
 export const TELEGRAM_CHANNEL_STATES = ['unconfigured', 'failed', 'ok'] as const;
@@ -30,6 +31,16 @@ export class TelegramShopBindingDto {
     example: 'Магазин — замовлення',
   })
   label?: string;
+
+  @ApiProperty({
+    enum: TELEGRAM_CHAT_KINDS,
+    enumName: 'TelegramChatKind',
+    description:
+      '`PRIVATE` — a personal chat with the bot; `GROUP` — a group or supergroup the bot was ' +
+      'added to. Derived from the chat id: Telegram gives groups negative ids.',
+    example: 'GROUP',
+  })
+  kind!: TelegramChatKind;
 
   @ApiProperty({ format: 'date-time', example: '2026-10-01T12:00:00.000Z' })
   createdAt!: string;

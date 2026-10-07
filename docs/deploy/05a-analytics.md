@@ -177,4 +177,5 @@ Network → перезавантажте. Має бути запит на `scrip
 
 ## Далі
 
-[06-day-to-day.md](06-day-to-day.md) — щоденна робота й інциденти.
+[05b-telegram-bot.md](05b-telegram-bot.md) — сповіщення в Telegram: бот магазину.
+Потім [06-day-to-day.md](06-day-to-day.md) — щоденна робота й інциденти.

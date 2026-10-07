@@ -128,6 +128,7 @@ export function CheckoutView() {
     clearError,
     isOrderSubmitted,
     placedOrder,
+    guestAccessToken,
     handoffMessage,
   } = useCheckout({ isGuest });
 
@@ -391,6 +392,7 @@ export function CheckoutView() {
       <CheckoutGuestSuccess
         order={placedOrder}
         email={guestEmail.trim()}
+        guestAccessToken={guestAccessToken}
         handoffMessage={handoffMessage}
       />
     );

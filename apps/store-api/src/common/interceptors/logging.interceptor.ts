@@ -2,6 +2,7 @@ import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nes
 import { PinoLogger } from 'nestjs-pino';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
+import { redactUrlSecrets } from '../security';
 
 /**
  * Request-level success logging (method, url, statusCode, responseTime) is
@@ -19,7 +20,9 @@ export class LoggingInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest();
-    const { method, url } = request;
+    const { method } = request;
+    // A 404 on a wrong guest order token is logged here too; mask the token.
+    const url = redactUrlSecrets(request.url);
     const now = Date.now();
 
     return next.handle().pipe(

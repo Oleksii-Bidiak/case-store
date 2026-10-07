@@ -8,6 +8,7 @@ import {
   NotificationBindingService,
 } from './notification-binding.service';
 import type { NotificationBindingRepository } from './notification-binding.repository';
+import type { CustomerNotifier } from './customer-notifier.service';
 
 const NOW = new Date('2026-10-01T12:00:00.000Z');
 
@@ -20,9 +21,12 @@ describe('NotificationBindingService', () => {
     hasActive: jest.fn(),
     revoke: jest.fn(),
     revokeByExternalId: jest.fn(),
+    findActiveForCustomer: jest.fn(),
+    revokeForCustomer: jest.fn(),
     getOffset: jest.fn(),
     saveOffset: jest.fn(),
   };
+  const customerNotifier = { onBindingCreated: jest.fn() };
   let service: NotificationBindingService;
 
   beforeEach(() => {
@@ -30,6 +34,7 @@ describe('NotificationBindingService', () => {
     jest.spyOn(Date, 'now').mockReturnValue(NOW.getTime());
     service = new NotificationBindingService(
       repository as unknown as NotificationBindingRepository,
+      customerNotifier as unknown as CustomerNotifier,
     );
   });
 
@@ -90,25 +95,51 @@ describe('NotificationBindingService', () => {
     it('passes the hash, the chat id as a string and the trimmed label to the repository', async () => {
       repository.consumeToken.mockResolvedValue({ ok: false, reason: 'invalid' });
 
-      await service.consumeToken(token, { id: -1001234567890, label: '  Магазин  ' });
+      await service.consumeToken(token, {
+        id: -1001234567890,
+        label: '  Магазин  ',
+        isPrivate: false,
+      });
 
       expect(repository.consumeToken).toHaveBeenCalledWith(
         hashBindingToken(token),
-        { externalId: '-1001234567890', label: 'Магазин' },
+        { externalId: '-1001234567890', label: 'Магазин', isPrivate: false },
         NOW,
+        expect.any(Function),
       );
     });
 
     it('stores an empty label as null', async () => {
       repository.consumeToken.mockResolvedValue({ ok: false, reason: 'invalid' });
 
-      await service.consumeToken(token, { id: 42, label: '   ' });
+      await service.consumeToken(token, { id: 42, label: '   ', isPrivate: true });
 
       expect(repository.consumeToken).toHaveBeenCalledWith(
         expect.any(String),
-        { externalId: '42', label: null },
+        { externalId: '42', label: null, isPrivate: true },
         NOW,
+        expect.any(Function),
       );
+    });
+
+    // TASK-680, owner decision 3: a guest's freshly connected chat gets the order
+    // summary in the exchange's own transaction. The repository runs the hook
+    // only for a binding it CREATED; the service routes it to CustomerNotifier.
+    it('hands the repository a creation hook that queues through CustomerNotifier in the same tx', async () => {
+      repository.consumeToken.mockResolvedValue({ ok: false, reason: 'invalid' });
+      customerNotifier.onBindingCreated.mockResolvedValue(1);
+
+      await service.consumeToken(token, { id: 42, isPrivate: true });
+
+      const hook = repository.consumeToken.mock.calls[0][3] as (
+        binding: unknown,
+        tx: unknown,
+      ) => Promise<unknown>;
+      const binding = { id: 'b-1', orderId: 'order-1' };
+      const tx = { marker: 'consume-tx' };
+      await hook(binding, tx);
+
+      expect(customerNotifier.onBindingCreated).toHaveBeenCalledWith(binding, tx);
     });
 
     it.each([
@@ -117,7 +148,7 @@ describe('NotificationBindingService', () => {
       'x'.repeat(65),
       'тільки-кирилиця-що-довша-за-двадцять',
     ])('refuses %p without asking the database — no token of ours looks like that', async (bad) => {
-      await expect(service.consumeToken(bad, { id: 1 })).resolves.toEqual({
+      await expect(service.consumeToken(bad, { id: 1, isPrivate: true })).resolves.toEqual({
         ok: false,
         reason: 'invalid',
       });
@@ -128,7 +159,22 @@ describe('NotificationBindingService', () => {
       const outcome = { ok: false, reason: 'expired' };
       repository.consumeToken.mockResolvedValue(outcome);
 
-      await expect(service.consumeToken(token, { id: 1 })).resolves.toBe(outcome);
+      await expect(service.consumeToken(token, { id: 1, isPrivate: true })).resolves.toBe(outcome);
+    });
+  });
+
+  describe('hasActiveRecipient', () => {
+    it('passes the scope through: the gate is never audience-blind (TASK-679)', async () => {
+      repository.hasActive.mockResolvedValue(false);
+      const scope = {
+        audience: NotificationAudience.CUSTOMER,
+        owner: { userId: 'user-1', orderId: 'order-1' },
+      } as const;
+
+      await expect(
+        service.hasActiveRecipient(NotificationChannel.TELEGRAM, '777', scope),
+      ).resolves.toBe(false);
+      expect(repository.hasActive).toHaveBeenCalledWith(NotificationChannel.TELEGRAM, '777', scope);
     });
   });
 
@@ -176,5 +222,31 @@ describe('NotificationBindingService', () => {
       NotificationAudience.SHOP,
       tx,
     );
+  });
+
+  describe('customer bindings (TASK-679)', () => {
+    it('findActiveForCustomer defaults to TELEGRAM and forwards the owner and the tx', async () => {
+      const tx = { marker: true };
+      repository.findActiveForCustomer.mockResolvedValue([]);
+
+      await service.findActiveForCustomer({ userId: 'user-1', orderId: 'order-1' }, tx as never);
+
+      expect(repository.findActiveForCustomer).toHaveBeenCalledWith(
+        NotificationChannel.TELEGRAM,
+        { userId: 'user-1', orderId: 'order-1' },
+        tx,
+      );
+    });
+
+    it('revokeForCustomer stamps now, scoped to the one owner, and is idempotent', async () => {
+      repository.revokeForCustomer.mockResolvedValue(0);
+
+      await expect(service.revokeForCustomer({ userId: 'user-1' })).resolves.toBe(0);
+      expect(repository.revokeForCustomer).toHaveBeenCalledWith(
+        NotificationChannel.TELEGRAM,
+        { userId: 'user-1' },
+        NOW,
+      );
+    });
   });
 });

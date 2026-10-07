@@ -143,8 +143,20 @@ export interface NeedsAction {
   pendingReviews: number;
   /** Active orders not yet paid (`paymentStatus != PAID` AND `status NOT IN (CANCELLED, REFUNDED)`). */
   unpaidInTransit: number;
-  /** Outbound emails permanently failed (`NotificationOutbox.status = FAILED`). */
+  /**
+   * Outbound EMAILS permanently failed (`NotificationOutbox.status = FAILED AND
+   * channel = EMAIL`). EMAIL only since TASK-1090 — Telegram rows share the outbox.
+   */
   failedMails: number;
+  /**
+   * Telegram notifications to the SHOP's own chats permanently failed
+   * (`NotificationOutbox.status = FAILED AND channel = TELEGRAM AND type IN
+   * SHOP_NOTIFICATION_TYPES`, TASK-1090). The card links to the «Сповіщення» screen,
+   * where the bot state and the connected shop chats are. A buyer's Telegram rows
+   * (`order-confirmation`, `order-shipped`, TASK-680) are not counted: they fail when
+   * the buyer disconnects or blocks the bot, which the owner can neither see nor fix.
+   */
+  failedTelegram: number;
   /**
    * Orders sitting in PENDING for more than {@link PENDING_STALE_HOURS} hours
    * (TASK-251). A subset of `newOrders` (not mutually exclusive) — of the new

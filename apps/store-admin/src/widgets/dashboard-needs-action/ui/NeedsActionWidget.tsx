@@ -103,6 +103,9 @@ export function NeedsActionWidget() {
   // TASK-601: the rating-abuse card links only for a moderator — its href can
   // carry an IP address (see `ratingAbuseHref`).
   const canModerateReviews = can(PERM.reviewsModerate);
+  // TASK-1090: the failed-Telegram tile links to /settings/notifications only
+  // for a session that may open it — anyone else would land on a refusal.
+  const canManageNotifications = can(PERM.settingsNotifications);
   const { data: returnsData, isError: returnsFailed } =
     useAdminReturnControllerFindAll(
       { status: ReturnEntityStatus.REQUESTED, limit: 1 },
@@ -134,6 +137,9 @@ export function NeedsActionWidget() {
     counts.pendingReviews === 0 &&
     counts.unpaidInTransit === 0 &&
     counts.failedMails === 0 &&
+    // TASK-1090: a Telegram notification that never arrived is its own signal
+    // since `failedMails` stopped counting it.
+    counts.failedTelegram === 0 &&
     counts.pendingOver48h === 0 &&
     // TASK-446. A counter that renders but sits outside this check is the worst
     // of both worlds: the widget shows a non-zero number AND tells the owner
@@ -165,15 +171,17 @@ export function NeedsActionWidget() {
         ) : null}
       </div>
 
-      {/* Eight cards since TASK-352 (4 + 4 at four columns); nine with the
-          returns tile (TASK-613), which only a `returns:read` session sees. At
-          four columns the ninth would sit alone on a third row — the
-          "reads as an afterthought" problem TASK-470 moved away from — so nine
-          lay out 3 × 3 and eight stay 4 × 2. */}
+      {/* Nine cards since TASK-1090 (3 × 3); ten with the returns tile
+          (TASK-613), which only a `returns:read` session sees. A lone card on
+          the last row is the "reads as an afterthought" problem TASK-470 moved
+          away from, so nine lay out 3 × 3 and ten 5 × 2. Ten wait for `xl`
+          for their five columns: at `lg` beside the sidebar a fifth of the row
+          is ~130px and the labels wrap to three lines, and three columns would
+          leave the tenth card alone — so ten stay 2 × 5 until `xl`. */}
       <div
         className={cn(
           "mt-4 grid grid-cols-2 gap-4",
-          canReadReturns ? "lg:grid-cols-3" : "lg:grid-cols-4",
+          canReadReturns ? "xl:grid-cols-5" : "lg:grid-cols-3",
         )}
       >
         <NeedsActionCard
@@ -255,6 +263,14 @@ export function NeedsActionWidget() {
         <NeedsActionCard
           label={dict.dashboard.needsActionFailedMails}
           count={counts.failedMails}
+        />
+        {/* TASK-1090: FAILED Telegram rows, counted apart from mail. The
+            screen it opens says which chat is gone and lets the owner send a
+            test or disconnect it. */}
+        <NeedsActionCard
+          label={dict.dashboard.needsActionFailedTelegram}
+          count={counts.failedTelegram}
+          href={canManageNotifications ? "/settings/notifications" : undefined}
         />
       </div>
     </section>

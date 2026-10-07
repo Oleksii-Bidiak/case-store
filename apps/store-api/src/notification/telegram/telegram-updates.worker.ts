@@ -25,13 +25,21 @@ export const TELEGRAM_UPDATES_BATCH = 50;
 /** `/start`, optionally addressed (`/start@ShopBot` — how it arrives in a group), and its payload. */
 const START_COMMAND = /^\/start(?:@\w+)?(?:\s+(\S+))?\s*$/;
 
-/** What the bot answers. Plain text — nothing here is HTML-escaped because nothing is interpolated. */
+/**
+ * What the bot answers. Plain text — nothing here is HTML-escaped because nothing is interpolated.
+ *
+ * `invalid` and `bareStart` cannot know who is writing — a shop operator or a
+ * customer (TASK-679) — so they name both places a link comes from.
+ */
 export const TELEGRAM_REPLIES = {
   boundShop: '✅ Готово: цей чат отримуватиме сповіщення магазину.',
   boundCustomer: '✅ Готово: сюди надходитимуть сповіщення про ваші замовлення.',
-  invalid: 'Посилання недійсне або прострочене. Створіть нове в адмінці.',
+  invalid:
+    'Посилання недійсне або прострочене. Відкрийте його ще раз на сайті чи в адмінці, щоб отримати нове.',
   bareStart:
-    'Щоб отримувати сповіщення в цей чат, відкрийте посилання підключення, створене в адмінці магазину.',
+    'Щоб отримувати сповіщення в цей чат, відкрийте посилання підключення на сайті магазину чи в адмінці.',
+  privateOnly:
+    'Сповіщення про замовлення надходять лише в особистий чат із ботом. Це посилання вже не діє: отримайте нове на сайті й відкрийте його в особистому чаті.',
 } as const;
 
 /**
@@ -162,14 +170,23 @@ export class TelegramUpdatesWorker implements OnModuleInit, OnModuleDestroy {
     const chat = message.chat;
     const label = chat.title ?? (chat.username ? `@${chat.username}` : (chat.first_name ?? null));
     // A database failure here propagates: the update is retried next tick.
-    const result = await this.bindings.consumeToken(token, { id: chatId, label });
+    // A customer token binds only a one-to-one chat (plan 187). Telegram's own
+    // `chat.type` decides, not the sign of the id.
+    const result = await this.bindings.consumeToken(token, {
+      id: chatId,
+      label,
+      isPrivate: chat.type === 'private',
+    });
 
     if (!result.ok) {
       this.logger.warn(
         { event: 'telegram.binding.refused', chatId, tokenRef, reason: result.reason },
         `Telegram /start refused (${result.reason})`,
       );
-      await this.reply(chatId, TELEGRAM_REPLIES.invalid);
+      await this.reply(
+        chatId,
+        result.reason === 'private-only' ? TELEGRAM_REPLIES.privateOnly : TELEGRAM_REPLIES.invalid,
+      );
       return;
     }
 

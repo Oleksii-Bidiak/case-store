@@ -16,6 +16,8 @@ interface NeedsActionCounts {
   pendingReviews: number;
   unpaidInTransit: number;
   failedMails: number;
+  /** TASK-1090 — FAILED Telegram rows, counted apart from mail. */
+  failedTelegram?: number;
   pendingOver48h: number;
   /** TASK-446 — situations worth opening, not a count of reviews. */
   ratingAbuse?: number;
@@ -32,6 +34,7 @@ function mockNeedsAction(counts: NeedsActionCounts) {
     http.get("*/api/admin/dashboard/needs-action", () =>
       HttpResponse.json({
         data: {
+          failedTelegram: 0,
           ratingAbuse: 0,
           ratingAbuseSignals: { productIds: [], createdIps: [] },
           unavailableItems: 0,
@@ -623,27 +626,88 @@ describe("NeedsActionWidget — load failure (TASK-1037)", () => {
 });
 
 /**
- * TASK-1037 (П3): the skeleton has the loaded widget's shape — nine cards in
- * three columns with the returns tile, eight in four without it.
+ * TASK-1090: failed Telegram notifications are their own tile — `failedMails`
+ * counts e-mail only — and the tile opens /settings/notifications for a session
+ * that may open it.
+ */
+describe("NeedsActionWidget — «Telegram не доставив» (TASK-1090)", () => {
+  const quiet = {
+    newOrders: 0,
+    pendingReviews: 0,
+    unpaidInTransit: 0,
+    failedMails: 0,
+    pendingOver48h: 0,
+  };
+
+  it("counts failed Telegram apart from failed mail", async () => {
+    mockNeedsAction({ ...quiet, failedMails: 1, failedTelegram: 3 });
+
+    renderWithProviders(<NeedsActionWidget />, {
+      auth: { permissions: ["analytics:read", "settings:notifications"] },
+    });
+
+    const link = (
+      await screen.findByText(dict.dashboard.needsActionFailedTelegram)
+    ).closest("a") as HTMLElement;
+    expect(link).toHaveAttribute("href", "/settings/notifications");
+    expect(within(link).getByText("3")).toHaveClass("text-warning");
+
+    // The mail tile keeps its own count and stays a plain stat.
+    const mail = screen
+      .getByText(dict.dashboard.needsActionFailedMails)
+      .closest("div") as HTMLElement;
+    expect(within(mail).getByText("1")).toBeInTheDocument();
+  });
+
+  it("is a plain stat without settings:notifications", async () => {
+    mockNeedsAction({ ...quiet, failedTelegram: 2 });
+
+    renderWithProviders(<NeedsActionWidget />, {
+      auth: { permissions: ["analytics:read"] },
+    });
+
+    expect(
+      (
+        await screen.findByText(dict.dashboard.needsActionFailedTelegram)
+      ).closest("a"),
+    ).toBeNull();
+  });
+
+  it("withholds 'all clear' while failed Telegram is the only signal", async () => {
+    mockNeedsAction({ ...quiet, failedTelegram: 1 });
+
+    renderWithProviders(<NeedsActionWidget />);
+
+    await screen.findByText(dict.dashboard.needsActionFailedTelegram);
+    expect(
+      screen.queryByText(dict.dashboard.needsActionAllClear),
+    ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-1037 (П3): the skeleton has the loaded widget's shape — ten cards in
+ * five columns with the returns tile, nine in three without it (TASK-1090).
  */
 describe("NeedsActionWidgetSkeleton (TASK-1037)", () => {
-  it("draws nine cards in three columns with the returns tile", () => {
+  it("draws ten cards in five columns with the returns tile", () => {
     const { container } = render(<NeedsActionWidgetSkeleton withReturns />);
+
+    const cards = container.querySelectorAll(
+      "[data-slot='needs-action-skeleton']",
+    );
+    expect(cards).toHaveLength(10);
+    expect(cards[0].parentElement).toHaveClass("xl:grid-cols-5");
+    expect(cards[0].parentElement).not.toHaveClass("lg:grid-cols-5");
+  });
+
+  it("draws nine cards in three columns without it", () => {
+    const { container } = render(<NeedsActionWidgetSkeleton />);
 
     const cards = container.querySelectorAll(
       "[data-slot='needs-action-skeleton']",
     );
     expect(cards).toHaveLength(9);
     expect(cards[0].parentElement).toHaveClass("lg:grid-cols-3");
-  });
-
-  it("draws eight cards in four columns without it", () => {
-    const { container } = render(<NeedsActionWidgetSkeleton />);
-
-    const cards = container.querySelectorAll(
-      "[data-slot='needs-action-skeleton']",
-    );
-    expect(cards).toHaveLength(8);
-    expect(cards[0].parentElement).toHaveClass("lg:grid-cols-4");
   });
 });

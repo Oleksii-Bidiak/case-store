@@ -1,11 +1,12 @@
 // Notification Module — public API (plan 187)
 export { NotificationModule } from './notification.module';
-export { adminUrl } from './notification-links';
+export { adminUrl, storeUrl } from './notification-links';
 export { ShopNotifier } from './shop-notifier.service';
 export {
   SHOP_NEW_ORDER_TYPE,
   SHOP_CONTACT_MESSAGE_TYPE,
   SHOP_RETURN_REQUESTED_TYPE,
+  SHOP_NOTIFICATION_TYPES,
   type ShopNotificationType,
   type ShopNewOrderPayload,
   type ShopContactMessageInput,
@@ -13,6 +14,17 @@ export {
   type ShopReturnRequestedInput,
   type ShopReturnRequestedPayload,
 } from './shop-notification.types';
+export { recipientScopeOf, type RecipientOwnerPayload } from './recipient-scope';
+export { CustomerNotifier } from './customer-notifier.service';
+export {
+  CUSTOMER_ORDER_CONFIRMATION_TYPE,
+  CUSTOMER_ORDER_SHIPPED_TYPE,
+  type CustomerNotificationType,
+  type CustomerOrderConfirmationInput,
+  type CustomerOrderConfirmationPayload,
+  type CustomerOrderShippedInput,
+  type CustomerOrderShippedPayload,
+} from './customer-notification.types';
 export {
   NotificationBindingService,
   BINDING_TOKEN_TTL_MS,
@@ -39,6 +51,18 @@ export {
   type TelegramChannelSnapshot,
 } from './telegram/telegram-channel.state';
 export { TelegramAdapter } from './telegram/telegram.adapter';
+export {
+  CustomerTelegramService,
+  type CustomerTelegramOwner,
+  type CustomerTelegramStatus,
+  type CustomerTelegramLink,
+} from './telegram/customer-telegram.service';
+export {
+  CustomerTelegramStatusDto,
+  CustomerTelegramStatusResponse,
+  CustomerTelegramLinkDto,
+  CustomerTelegramLinkResponse,
+} from './dto/customer-telegram.dto';
 export {
   TelegramRendererRegistry,
   DEFAULT_TELEGRAM_RENDERERS,

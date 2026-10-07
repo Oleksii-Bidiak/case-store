@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ThemeToggle } from "@/features/theme";
 import { dict, H1_CLASS } from "@/shared/config";
+import { AccountNotificationChannels } from "./account-notification-channels";
 
 /**
  * AccountSettingsSection — the "Налаштування" section.
@@ -13,11 +14,21 @@ import { dict, H1_CLASS } from "@/shared/config";
  * theme — and described it wrongly, still promising the pre-TASK-412 behaviour
  * of following the OS with no say in it.
  *
- * The notification toggles below remain a STUB: local-only, not persisted (no
- * notification-prefs backend). Tracked with the loyalty/settings follow-up
- * (TASK-175).
+ * «Сповіщення» opens with WHERE the order notifications go (TASK-679): the
+ * e-mail, always, and Telegram on top of it — real, from the API. The topic
+ * toggles under it («Про що повідомляти») remain a STUB: local-only, not
+ * persisted (no notification-prefs backend). Tracked with the loyalty/settings
+ * follow-up (TASK-175).
  */
-export function AccountSettingsSection() {
+export function AccountSettingsSection({
+  email,
+  telegramPollIntervalMs,
+}: {
+  /** The account's address — named on the always-on «Пошта» row. */
+  email: string;
+  /** Override the Telegram status poll cadence (tests). */
+  telegramPollIntervalMs?: number;
+}) {
   const d = dict.account.dashboard;
   const [notifs, setNotifs] = useState<Record<string, boolean>>({
     promo: true,
@@ -48,9 +59,16 @@ export function AccountSettingsSection() {
       </div>
 
       <div className="mt-[18px] rounded-card border border-border bg-card p-[26px] shadow-card">
-        <h2 className="mb-2 text-lg font-semibold text-foreground">
+        <h2 className="mb-4 text-lg font-semibold text-foreground">
           {d.notificationsHeading}
         </h2>
+        <AccountNotificationChannels
+          email={email}
+          pollIntervalMs={telegramPollIntervalMs}
+        />
+        <h3 className="mt-2 border-t border-border pt-5 pb-2 text-sm font-semibold text-foreground">
+          {dict.telegramNotifications.account.topicsHeading}
+        </h3>
         {d.notifs.map((n) => {
           const on = notifs[n.key];
           return (

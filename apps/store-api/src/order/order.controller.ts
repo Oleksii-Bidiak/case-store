@@ -22,6 +22,7 @@ import {
   ApiParam,
   ApiQuery,
   ApiProperty,
+  ApiPropertyOptional,
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
@@ -110,6 +111,24 @@ class OrderResponseEnvelope {
 }
 
 /**
+ * The order as `POST /orders` answers it (TASK-679): the same order every read
+ * returns, plus — for a GUEST order only — the access token the confirmation
+ * letter carries. A separate class on purpose: the token is never part of
+ * {@link OrderEntity}, so no read can ever hand it out (only its hash is stored).
+ */
+class CreatedOrderEntity extends OrderEntity {
+  @ApiPropertyOptional({
+    description:
+      'GUEST orders only, and only in this create response: the raw order access token — the ' +
+      'same one the confirmation e-mail carries. It opens `GET /orders/guest/{token}` and the ' +
+      "guest's Telegram routes (`/orders/guest/{token}/notifications/telegram`). Absent for an " +
+      'account order. Never returned again by any read; keep it client-side for this session.',
+    example: '9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70',
+  })
+  guestAccessToken?: string;
+}
+
+/**
  * Response envelope for a paginated list of orders.
  *
  * Decorated class (not a bare interface) so Swagger emits a full schema and
@@ -159,6 +178,7 @@ function orderCreationLimit(context: ExecutionContext): number {
 @ApiBearerAuth('access-token')
 @ApiExtraModels(
   OrderEntity,
+  CreatedOrderEntity,
   OrderItemEntity,
   OrderGuestData,
   StorefrontPaginationMeta,
@@ -202,11 +222,13 @@ export class OrderController {
   @ApiOperation({ summary: 'Create order from cart', operationId: 'createOrder' })
   @ApiResponse({
     status: 201,
-    description: 'Order created',
+    description:
+      'Order created. For a guest order `data.guestAccessToken` carries the order access token ' +
+      '(TASK-679); it is absent for an account order.',
     schema: {
       allOf: [
         { $ref: getSchemaPath(OrderResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(OrderEntity) } } },
+        { properties: { data: { $ref: getSchemaPath(CreatedOrderEntity) } } },
       ],
     },
   })
@@ -218,9 +240,13 @@ export class OrderController {
   async createOrder(
     @CartIdentity() identity: ResolvedCartIdentity,
     @Body() dto: CreateOrderDto,
-  ): Promise<{ data: OrderEntity }> {
-    const order = await this.orderService.createOrder(toOrderActor(identity, dto), dto);
-    return { data: order };
+  ): Promise<{ data: CreatedOrderEntity }> {
+    const { order, guestAccessToken } = await this.orderService.placeOrder(
+      toOrderActor(identity, dto),
+      dto,
+    );
+    // The token rides on THIS response only — reads return a plain OrderEntity.
+    return { data: guestAccessToken ? Object.assign(order, { guestAccessToken }) : order };
   }
 
   /**

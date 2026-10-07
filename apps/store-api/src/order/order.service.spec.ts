@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import {
+  DeliveryMethod,
   OrderHistoryNote,
   OrderStatus,
   PaymentMethod,
@@ -25,6 +26,7 @@ import { CartEntity } from '../cart/entities/cart.entity';
 import { UserRepository } from '../user/user.repository';
 import { NotificationOutboxService } from '../notification-outbox';
 import { ShopNotifier } from '../notification/shop-notifier.service';
+import { CustomerNotifier } from '../notification/customer-notifier.service';
 import {
   DeliveryService,
   DeliveryNotConfiguredException,
@@ -258,6 +260,12 @@ const shopNotifierMock = {
   enqueueReturnRequested: jest.fn(),
 };
 
+// TASK-680: the buyer's own Telegram messages, next to their letters.
+const customerNotifierMock = {
+  enqueueOrderConfirmation: jest.fn(),
+  enqueueOrderShipped: jest.fn(),
+};
+
 /**
  * Default createFromCart behaviour: resolve to a created order AND drive the
  * in-transaction afterCreate hook (so the outbox enqueue runs), mirroring the
@@ -350,6 +358,7 @@ describe('OrderService', () => {
         { provide: ConfigService, useValue: configServiceMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
         { provide: ShopNotifier, useValue: shopNotifierMock },
+        { provide: CustomerNotifier, useValue: customerNotifierMock },
       ],
     }).compile();
 
@@ -1449,6 +1458,76 @@ describe('OrderService', () => {
 
       // The real repository runs the hook inside its $transaction, so this
       // rejection is what rolls the order back.
+      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(
+        'outbox insert failed',
+      );
+    });
+  });
+
+  // ─── TASK-680: the buyer's Telegram, next to the letter ─────────────────────
+
+  describe('createOrder — customer Telegram (TASK-680)', () => {
+    beforeEach(() => {
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+    });
+
+    it.each([
+      ['a connected chat', 1],
+      ['no chat', 0],
+    ])(
+      'queues the confirmation LETTER whether or not the account has a chat (%s)',
+      async (_label, chats) => {
+        customerNotifierMock.enqueueOrderConfirmation.mockResolvedValue(chats);
+        resolveCreateWithHook();
+
+        await service.createOrder(userActor, createDto);
+
+        // E-mail always — Telegram is added, never substituted (plan 187).
+        expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+        expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
+          expect.objectContaining({ to: recipient.email }),
+          txMock,
+        );
+        expect(customerNotifierMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it("queues the account's Telegram confirmation through the ORDER transaction", async () => {
+      customerNotifierMock.enqueueOrderConfirmation.mockResolvedValue(1);
+      resolveCreateWithHook(makeOrder({ deliveryMethod: DeliveryMethod.PICKUP }));
+
+      await service.createOrder(userActor, createDto);
+
+      expect(customerNotifierMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
+        // deliveryMethod: a pickup is worded as a pickup, not a parcel (TASK-680 review).
+        { orderId: 'order-uuid-1', total: '69.97', itemsCount: 2, deliveryMethod: 'PICKUP' },
+        // The buyer's account only — never an order a guest could not prove.
+        { userId: USER_ID },
+        txMock,
+      );
+    });
+
+    it('asks for no chat at all for a guest checkout — a guest connects one later', async () => {
+      cartServiceMock.loadForCheckout.mockResolvedValue({
+        ...cartWithItems,
+        userId: null,
+        token: GUEST_CART_TOKEN,
+      });
+      resolveCreateWithHook(makeOrder({ userId: null, guestName: guestContact.name }));
+
+      await service.createOrder(guestActor, createDto);
+
+      expect(customerNotifierMock.enqueueOrderConfirmation).not.toHaveBeenCalled();
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails the whole checkout when the Telegram row cannot be queued (same transaction)', async () => {
+      resolveCreateWithHook();
+      customerNotifierMock.enqueueOrderConfirmation.mockRejectedValueOnce(
+        new Error('outbox insert failed'),
+      );
+
       await expect(service.createOrder(userActor, createDto)).rejects.toThrow(
         'outbox insert failed',
       );
@@ -2748,6 +2827,50 @@ describe('OrderService', () => {
       expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
     });
 
+    describe("the account's Telegram (TASK-680)", () => {
+      it('queues the confirmation for the named account, after the commit (no tx)', async () => {
+        userRepositoryMock.findById.mockResolvedValue(recipient);
+        customerNotifierMock.enqueueOrderConfirmation.mockResolvedValue(1);
+        orderRepositoryMock.createManual.mockResolvedValue(
+          makeOrder({ deliveryMethod: DeliveryMethod.NOVA_POSHTA }),
+        );
+
+        await service.adminCreateOrder({ ...dto, userId: USER_ID }, ADMIN_ID);
+
+        expect(customerNotifierMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+        const call = customerNotifierMock.enqueueOrderConfirmation.mock.calls[0];
+        expect(call[0]).toEqual({
+          orderId: 'order-uuid-1',
+          total: '69.97',
+          itemsCount: 2,
+          deliveryMethod: 'NOVA_POSHTA',
+        });
+        expect(call[1]).toEqual({ userId: USER_ID });
+        expect(call[2]).toBeUndefined();
+        // The letter to the dictated address is unchanged.
+        expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+      });
+
+      it('asks for no chat for a guest phone order', async () => {
+        await service.adminCreateOrder(dto, ADMIN_ID);
+
+        expect(customerNotifierMock.enqueueOrderConfirmation).not.toHaveBeenCalled();
+      });
+
+      it('never fails the committed order when the Telegram row cannot be queued', async () => {
+        userRepositoryMock.findById.mockResolvedValue(recipient);
+        customerNotifierMock.enqueueOrderConfirmation.mockRejectedValueOnce(new Error('db down'));
+
+        await expect(
+          service.adminCreateOrder({ ...dto, userId: USER_ID }, ADMIN_ID),
+        ).resolves.toEqual(expect.objectContaining({ order: expect.any(OrderEntity) }));
+        expect(pinoLoggerMock.error).toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'order.customer_telegram_failed' }),
+          expect.any(String),
+        );
+      });
+    });
+
     it('prices the order from the catalogue, never from the request', async () => {
       await service.adminCreateOrder(dto, ADMIN_ID);
 
@@ -3240,6 +3363,76 @@ describe('OrderService', () => {
       expect(mailOutboxServiceMock.enqueueOrderShipped).not.toHaveBeenCalled();
       expect(pinoLoggerMock.warn).toHaveBeenCalled();
     });
+
+    describe("the buyer's Telegram (TASK-680)", () => {
+      it('tells the chats of the account AND of the order, with the waybill and the carrier', async () => {
+        seedShipped({ status: OrderStatus.PROCESSING }, {
+          status: OrderStatus.SHIPPED,
+          trackingNumber: '20450000000001',
+          deliveryMethod: 'NOVA_POSHTA',
+        } as never);
+
+        await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
+
+        expect(customerNotifierMock.enqueueOrderShipped).toHaveBeenCalledTimes(1);
+        expect(customerNotifierMock.enqueueOrderShipped).toHaveBeenCalledWith(
+          {
+            orderId: 'order-uuid-1',
+            trackingNumber: '20450000000001',
+            deliveryMethod: 'NOVA_POSHTA',
+          },
+          { userId: USER_ID, orderId: 'order-uuid-1' },
+        );
+        // …and the letter as before.
+        expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledTimes(1);
+      });
+
+      it('reaches a guest order’s chat even when no e-mail is on file', async () => {
+        seedShipped(
+          { status: OrderStatus.PROCESSING, userId: null },
+          { status: OrderStatus.SHIPPED, userId: null },
+        );
+        orderRepositoryMock.findRecipient.mockResolvedValue(null);
+
+        await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
+
+        expect(mailOutboxServiceMock.enqueueOrderShipped).not.toHaveBeenCalled();
+        expect(customerNotifierMock.enqueueOrderShipped).toHaveBeenCalledWith(
+          expect.objectContaining({ orderId: 'order-uuid-1' }),
+          { userId: null, orderId: 'order-uuid-1' },
+        );
+      });
+
+      it('does NOT fail the status change when the Telegram row cannot be queued', async () => {
+        seedShipped({ status: OrderStatus.PROCESSING }, { status: OrderStatus.SHIPPED });
+        customerNotifierMock.enqueueOrderShipped.mockRejectedValueOnce(new Error('db down'));
+
+        await expect(
+          service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID),
+        ).resolves.toBeInstanceOf(OrderEntity);
+        expect(pinoLoggerMock.error).toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'order.shipped_telegram_failed' }),
+          expect.any(String),
+        );
+      });
+
+      it('a failed LETTER does not stop the Telegram notice', async () => {
+        seedShipped({ status: OrderStatus.PROCESSING }, { status: OrderStatus.SHIPPED });
+        mailOutboxServiceMock.enqueueOrderShipped.mockRejectedValueOnce(new Error('outbox down'));
+
+        await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
+
+        expect(customerNotifierMock.enqueueOrderShipped).toHaveBeenCalledTimes(1);
+      });
+
+      it('sends nothing on a transition that is not a shipment', async () => {
+        seedShipped({ status: OrderStatus.PENDING }, { status: OrderStatus.CONFIRMED });
+
+        await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED, ADMIN_ID);
+
+        expect(customerNotifierMock.enqueueOrderShipped).not.toHaveBeenCalled();
+      });
+    });
   });
 
   // ─── «оплату не отримано» (TASK-352 (b), decision B-11 №2) ────────────────────
@@ -3637,6 +3830,72 @@ describe('OrderService', () => {
 
       const params = orderRepositoryMock.createFromCart.mock.calls[0][0] as { guest?: unknown };
       expect(params.guest).toBeUndefined();
+    });
+
+    // TASK-679 (owner decision 2026-10-07): the guest's proof of ownership for
+    // the Telegram offer on the success page — the letter's token, handed back
+    // by the very request that minted it.
+    it('placeOrder hands the guest the raw token whose hash it stored (and the letter carries)', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
+
+      const { order, guestAccessToken } = await service.placeOrder(guestActor, createDto);
+
+      expect(order).toBeInstanceOf(OrderEntity);
+      expect(guestAccessToken).toMatch(/^[a-f0-9]{64}$/);
+      const params = orderRepositoryMock.createFromCart.mock.calls[0][0] as {
+        guest: { accessTokenHash: string };
+      };
+      expect(params.guest.accessTokenHash).toBe(
+        createHash('sha256').update(guestAccessToken!).digest('hex'),
+      );
+      const mail = mailOutboxServiceMock.enqueueOrderConfirmation.mock.calls[0][0] as unknown as {
+        orderStatusUrl: string;
+      };
+      expect(mail.orderStatusUrl).toBe(`https://shop.example.com/orders/guest/${guestAccessToken}`);
+    });
+
+    it('placeOrder gives an account order no token', async () => {
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
+      resolveCreateWithHook();
+
+      await expect(service.placeOrder(userActor, createDto)).resolves.toEqual(
+        expect.objectContaining({ guestAccessToken: null }),
+      );
+    });
+  });
+
+  // ─── resolveGuestOnlyOrderId (TASK-679) ─────────────────────────────────────
+  describe('resolveGuestOnlyOrderId', () => {
+    const RAW_TOKEN = 'b'.repeat(64);
+
+    it('the id of a guest order whose token is valid', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ id: 'guest-order-1', userId: null, createdAt: new Date() }),
+      );
+
+      await expect(service.resolveGuestOnlyOrderId(RAW_TOKEN)).resolves.toBe('guest-order-1');
+      expect(orderRepositoryMock.findByAccessTokenHash).toHaveBeenCalledWith(
+        createHash('sha256').update(RAW_TOKEN).digest('hex'),
+      );
+    });
+
+    it('404s for an order that belongs to an account — the profile manages that one', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ userId: USER_ID, createdAt: new Date() }),
+      );
+
+      await expect(service.resolveGuestOnlyOrderId(RAW_TOKEN)).rejects.toThrow(NotFoundException);
+    });
+
+    it('404s for an unknown or expired token, exactly like the guest read', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValueOnce(null);
+      await expect(service.resolveGuestOnlyOrderId(RAW_TOKEN)).rejects.toThrow(NotFoundException);
+
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValueOnce(
+        makeOrder({ userId: null, createdAt: new Date(Date.now() - 61 * 24 * 60 * 60 * 1000) }),
+      );
+      await expect(service.resolveGuestOnlyOrderId(RAW_TOKEN)).rejects.toThrow(NotFoundException);
     });
   });
 

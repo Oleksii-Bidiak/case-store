@@ -24,7 +24,7 @@ import { OrderLookupRepository } from './order-lookup.repository';
 import { CartService, type CartWithItems } from '../cart';
 import { UserRepository } from '../user';
 import { NotificationOutboxService } from '../notification-outbox';
-import { ShopNotifier } from '../notification';
+import { CustomerNotifier, ShopNotifier } from '../notification';
 import { DeliveryService, isDeliveryNotConfigured } from '../delivery';
 import { DiscountService } from '../discount';
 import { OrderEntity, OrderStatusHistoryEntity, PublicOrderEntity } from './entities';
@@ -91,6 +91,7 @@ import type {
   OrderWithItems,
   PaymentApplyPlan,
   PaymentWithOrderRow,
+  PlacedOrder,
   ShippingAddressData,
 } from './order.types';
 import type { PaymentApplyResult, PaymentEventInput } from '../payment';
@@ -214,6 +215,11 @@ function hashGuestToken(rawToken: string): string {
   return createHash('sha256').update(rawToken).digest('hex');
 }
 
+/** Units across all lines of an order — what the Telegram messages print as «N шт.». */
+function countUnits(order: { items: ReadonlyArray<{ quantity: number }> }): number {
+  return order.items.reduce((sum, item) => sum + item.quantity, 0);
+}
+
 /**
  * Whether a status transition should automatically return reserved stock to
  * inventory (TASK-124).
@@ -292,6 +298,8 @@ export class OrderService {
     private readonly logger: PinoLogger,
     // TASK-677: the shop's Telegram ping for a storefront order.
     private readonly shopNotifier: ShopNotifier,
+    // TASK-680: the buyer's own Telegram messages, next to their letters.
+    private readonly customerNotifier: CustomerNotifier,
   ) {
     this.logger.setContext(OrderService.name);
   }
@@ -299,12 +307,31 @@ export class OrderService {
   /**
    * Create an order from the user's current cart.
    *
+   * The order alone — see {@link placeOrder} for the variant that also hands a
+   * guest their access token.
+   *
    * @throws ForbiddenException when the placing account is deactivated (banned).
    * @throws NotFoundException when the user has no cart.
    * @throws BadRequestException when the cart is empty or a variant has
    *   insufficient stock at order-creation time.
    */
   async createOrder(actor: OrderActor, dto: CreateOrderDto): Promise<OrderEntity> {
+    return (await this.placeOrder(actor, dto)).order;
+  }
+
+  /**
+   * Create an order, and give a guest the raw access token of it (TASK-679,
+   * owner decision 2026-10-07).
+   *
+   * The token is the same one the confirmation letter carries — the guest's
+   * proof that this order is theirs. The success page needs it to offer the
+   * Telegram link before the letter has even arrived, and it is the person who
+   * just placed the order asking, through the very request that minted it, so
+   * nothing is disclosed that the letter does not disclose anyway. Only the
+   * create response carries it; no read ever returns it — only the hash is
+   * stored. `null` for an account order: an account proves itself by its session.
+   */
+  async placeOrder(actor: OrderActor, dto: CreateOrderDto): Promise<PlacedOrder> {
     // ─── TASK-338: resolve who is buying, and from which cart ──────────────────
     // The two arms differ in exactly three things — the ban check, which cart to
     // load, and where the confirmation email is addressed. Everything after this
@@ -510,6 +537,22 @@ export class OrderService {
           },
           tx,
         );
+        // TASK-680: the same confirmation on the buyer's Telegram, IN ADDITION to
+        // the letter above and in the same transaction. Only the account's chats:
+        // a guest connects a chat after the order exists, and gets the summary
+        // then (CustomerNotifier.onBindingCreated).
+        if (userId) {
+          await this.customerNotifier.enqueueOrderConfirmation(
+            {
+              orderId: created.id,
+              total: created.total.toString(),
+              itemsCount: countUnits(created),
+              deliveryMethod: created.deliveryMethod,
+            },
+            { userId },
+            tx,
+          );
+        }
         // TASK-677: tell the shop, in the same transaction. TASK-678: only an
         // ON_DELIVERY order is real the moment it is placed — an online one is
         // announced when the provider confirms the money (applyPaymentEvent).
@@ -533,7 +576,7 @@ export class OrderService {
       'Order created',
     );
 
-    return OrderEntity.fromPrisma(order);
+    return { order: OrderEntity.fromPrisma(order), guestAccessToken: guestToken };
   }
 
   /**
@@ -742,7 +785,7 @@ export class OrderService {
         total: order.total.toString(),
         paymentMethod: order.paymentMethod ?? null,
         deliveryMethod: order.deliveryMethod ?? null,
-        itemsCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
+        itemsCount: countUnits(order),
         customerName: customerName || order.guestName || recipientName || null,
         city: typeof address?.city === 'string' ? address.city : null,
       },
@@ -848,6 +891,25 @@ export class OrderService {
     }
 
     return OrderEntity.fromPrisma(order);
+  }
+
+  /**
+   * The id of a GUEST order, proven by its access token (TASK-679) — what the
+   * guest's Telegram routes act on.
+   *
+   * The same lookup, hashing and expiry as {@link getGuestOrder}, plus one more
+   * refusal: an order that belongs to an account (claimed after checkout, or
+   * placed signed-in and issued a token by an operator). Its notifications are
+   * the account's to manage from the profile, behind a session; letting a link
+   * that may have been forwarded attach a chat to it would bypass that. Every
+   * refusal is the same 404, so the route tells a stranger nothing.
+   */
+  async resolveGuestOnlyOrderId(rawToken: string): Promise<string> {
+    const order = await this.getGuestOrder(rawToken);
+    if (order.userId !== null) {
+      throw new NotFoundException('Order not found');
+    }
+    return order.id;
   }
 
   /**
@@ -1544,7 +1606,41 @@ export class OrderService {
       });
     }
 
+    // TASK-680: an order taken for an ACCOUNT also reaches the chats that account
+    // connected — after the commit, like the letter above, and for the same
+    // reason. A guest phone order has no chat yet.
+    if (dto.userId) {
+      await this.enqueueCustomerConfirmationAfterCommit(order, dto.userId);
+    }
+
     return { order: entity, accessUrl };
+  }
+
+  /**
+   * The operator's phone order, told to the account's Telegram (TASK-680).
+   * Never throws: the order is committed and the operator is on the phone — a
+   * failed enqueue is logged, not turned into a 500 for an order that exists.
+   */
+  private async enqueueCustomerConfirmationAfterCommit(
+    order: OrderWithItems,
+    userId: string,
+  ): Promise<void> {
+    try {
+      await this.customerNotifier.enqueueOrderConfirmation(
+        {
+          orderId: order.id,
+          total: order.total.toString(),
+          itemsCount: countUnits(order),
+          deliveryMethod: order.deliveryMethod,
+        },
+        { userId },
+      );
+    } catch (err) {
+      this.logger.error(
+        { err, event: 'order.customer_telegram_failed', orderId: order.id },
+        'Failed to queue the customer’s Telegram confirmation; the order stands',
+      );
+    }
   }
 
   /**
@@ -1636,8 +1732,19 @@ export class OrderService {
    * because the operator would then retry the transition — and the state machine
    * would refuse it, leaving them stuck with a shipped parcel and an order that
    * says otherwise.
+   *
+   * TASK-680: the buyer's Telegram chats are told too — the account's and the
+   * order's own (a guest who connected from the success page), one message per
+   * chat. Independent of the letter: an order with no e-mail on file still
+   * reaches a connected chat, and a failure of one channel never stops the other.
    */
   private async notifyShipped(order: OrderWithItems): Promise<void> {
+    await this.notifyShippedByEmail(order);
+    await this.notifyShippedByTelegram(order);
+  }
+
+  /** The «відправлено» letter (TASK-335). Never throws — see {@link notifyShipped}. */
+  private async notifyShippedByEmail(order: OrderWithItems): Promise<void> {
     try {
       const recipient = await this.orderRepository.findRecipient(order.id);
 
@@ -1670,6 +1777,25 @@ export class OrderService {
       this.logger.error(
         { err, event: 'order.shipped_notice_failed', orderId: order.id },
         'Failed to enqueue the shipment notice; the order status change stands',
+      );
+    }
+  }
+
+  /** «Відправлено» to the buyer's Telegram chats (TASK-680). Never throws. */
+  private async notifyShippedByTelegram(order: OrderWithItems): Promise<void> {
+    try {
+      await this.customerNotifier.enqueueOrderShipped(
+        {
+          orderId: order.id,
+          trackingNumber: order.trackingNumber ?? null,
+          deliveryMethod: order.deliveryMethod ?? null,
+        },
+        { userId: order.userId, orderId: order.id },
+      );
+    } catch (err) {
+      this.logger.error(
+        { err, event: 'order.shipped_telegram_failed', orderId: order.id },
+        'Failed to queue the Telegram shipment notice; the order status change stands',
       );
     }
   }

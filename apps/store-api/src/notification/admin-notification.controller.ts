@@ -21,6 +21,7 @@ import { CurrentUser } from '../auth/decorators';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import type { TelegramChannelSnapshot } from './telegram/telegram-channel.state';
 import { TelegramAdminService } from './telegram/telegram-admin.service';
+import { telegramChatKind } from './telegram/telegram-chat-kind';
 import type { NotificationBindingEntity } from './entities/notification-binding.entity';
 import {
   NotificationBindingUserDto,
@@ -197,6 +198,7 @@ function bindingToDto(binding: NotificationBindingEntity): TelegramShopBindingDt
   return {
     id: binding.id,
     ...(binding.label !== null ? { label: binding.label } : {}),
+    kind: telegramChatKind(binding.externalId),
     createdAt: binding.createdAt.toISOString(),
     ...(binding.connectedBy ? { connectedBy: binding.connectedBy } : {}),
   };

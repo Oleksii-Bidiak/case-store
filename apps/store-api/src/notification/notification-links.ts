@@ -17,3 +17,19 @@ export function adminUrl(config: ConfigService, path: string): string | null {
   const origin = config.get<string>('STORE_ADMIN_URL')?.replace(/\/+$/, '');
   return origin ? `${origin}${path}` : null;
 }
+
+/**
+ * Absolute link into the STOREFRONT for a customer notification (TASK-680) —
+ * «Статус замовлення» in the buyer's Telegram message opens the public
+ * number + phone lookup (`/orders/status`, TASK-483).
+ *
+ * The twin of {@link adminUrl} on `STORE_CLIENT_URL` (required in production by
+ * env.validation.ts), with the same rule: no origin → `null` → the message goes
+ * out without the link, never with a guessed `localhost` one.
+ *
+ * `path` must start with `/`.
+ */
+export function storeUrl(config: ConfigService, path: string): string | null {
+  const origin = config.get<string>('STORE_CLIENT_URL')?.replace(/\/+$/, '');
+  return origin ? `${origin}${path}` : null;
+}

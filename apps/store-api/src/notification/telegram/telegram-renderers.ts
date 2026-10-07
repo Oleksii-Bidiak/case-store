@@ -1,15 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NotificationOutbox } from '@prisma/client';
-import { adminUrl } from '../notification-links';
+import { adminUrl, storeUrl } from '../notification-links';
 import {
   SHOP_CONTACT_MESSAGE_TYPE,
   SHOP_NEW_ORDER_TYPE,
   SHOP_RETURN_REQUESTED_TYPE,
 } from '../shop-notification.types';
+import {
+  CUSTOMER_ORDER_CONFIRMATION_TYPE,
+  CUSTOMER_ORDER_SHIPPED_TYPE,
+} from '../customer-notification.types';
 import { renderShopNewOrder } from './templates/shop-new-order';
 import { renderShopContactMessage } from './templates/shop-contact-message';
 import { renderShopReturnRequested } from './templates/shop-return-requested';
+import { renderOrderConfirmation } from './templates/order-confirmation';
+import { renderOrderShipped } from './templates/order-shipped';
 
 /**
  * What a renderer may ask of the running app at RENDER time (TASK-677).
@@ -18,9 +24,13 @@ import { renderShopReturnRequested } from './templates/shop-return-requested';
  * written before `STORE_ADMIN_URL` was set still gets a working link once it
  * is. `null` → no origin configured: the renderer drops the link line rather
  * than print a link to nowhere.
+ *
+ * `storeUrl` is the same for the storefront (`STORE_CLIENT_URL`, TASK-680) — the
+ * customer's messages link to the public order-status page.
  */
 export interface TelegramRenderContext {
   adminUrl(path: string): string | null;
+  storeUrl(path: string): string | null;
 }
 
 /**
@@ -36,12 +46,15 @@ export type TelegramRenderer = (row: NotificationOutbox, context: TelegramRender
  * The renderers shipped with the code, keyed by `NotificationOutbox.type` — one
  * entry per `type`, the same `type` strings the email side uses where an event
  * exists on both channels (`type` says what happened, `channel` says where;
- * plan 187, TASK-672). TASK-677: the shop's three pings.
+ * plan 187, TASK-672). TASK-677: the shop's three pings. TASK-680: the buyer's
+ * confirmation and «відправлено», under the e-mail's own type strings.
  */
 export const DEFAULT_TELEGRAM_RENDERERS: Readonly<Record<string, TelegramRenderer>> = {
   [SHOP_NEW_ORDER_TYPE]: renderShopNewOrder,
   [SHOP_CONTACT_MESSAGE_TYPE]: renderShopContactMessage,
   [SHOP_RETURN_REQUESTED_TYPE]: renderShopReturnRequested,
+  [CUSTOMER_ORDER_CONFIRMATION_TYPE]: renderOrderConfirmation,
+  [CUSTOMER_ORDER_SHIPPED_TYPE]: renderOrderShipped,
 };
 
 /**
@@ -62,7 +75,10 @@ export class TelegramRendererRegistry {
   private readonly context: TelegramRenderContext;
 
   constructor(config: ConfigService) {
-    this.context = { adminUrl: (path) => adminUrl(config, path) };
+    this.context = {
+      adminUrl: (path) => adminUrl(config, path),
+      storeUrl: (path) => storeUrl(config, path),
+    };
   }
 
   register(type: string, renderer: TelegramRenderer): void {

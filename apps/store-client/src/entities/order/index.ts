@@ -12,6 +12,9 @@ export type {
   CreateOrderDto,
   AddressDto,
   CreateOrder201,
+  // TASK-679: the create response — OrderEntity plus a guest's one-time
+  // `guestAccessToken`, which no read ever returns again.
+  CreatedOrderEntity,
   GetOrder200,
   CancelOrder200,
   // Guest checkout (TASK-338): the contact block sent at checkout, and the

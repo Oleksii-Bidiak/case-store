@@ -150,5 +150,10 @@ export {
   DeliverySettingsView,
   DeliverySettingsPageSkeleton,
 } from "./delivery-settings-view";
+// The shop's Telegram notifications: bot state, connected chats (TASK-676)
+export {
+  NotificationSettingsView,
+  NotificationSettingsPageSkeleton,
+} from "./notification-settings-view";
 // Internal media library (TASK-441)
 export { MediaLibraryView, MediaLibrarySkeleton } from "./media-library-view";

@@ -17,7 +17,7 @@ import {
  * Renders inside the `(dashboard)` shell chrome (sidebar + header stay visible)
  * with the page's own «Огляд» heading, then skeletons in the layout the page
  * will have FOR THIS SESSION — the same permission checks `DashboardView` makes:
- * needs-action (nine cards with `returns:read`, eight without), the summary
+ * needs-action (ten cards with `returns:read`, nine without), the summary
  * (ten stat cards and two charts with `analytics:revenue`), the last orders.
  *
  * A client component for exactly that reason: the shape depends on the

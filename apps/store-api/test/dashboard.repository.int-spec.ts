@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import {
+  NotificationChannel,
   NotificationOutboxStatus,
   OrderStatus,
   PaymentStatus,
@@ -15,6 +16,11 @@ import { lastKyivDays } from '../src/analytics/reports/report-period';
 import { SalesRepository } from '../src/analytics/reports/sales.repository';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { LOW_STOCK_THRESHOLD } from '../src/dashboard/dashboard.types';
+import {
+  CUSTOMER_ORDER_CONFIRMATION_TYPE,
+  CUSTOMER_ORDER_SHIPPED_TYPE,
+} from '../src/notification/customer-notification.types';
+import { SHOP_NEW_ORDER_TYPE } from '../src/notification/shop-notification.types';
 import { PrismaService } from '../src/prisma';
 
 /**
@@ -697,6 +703,37 @@ describe('DashboardRepository (integration)', () => {
           status: NotificationOutboxStatus.SENT,
         },
       });
+      // Telegram outbox (TASK-1090): 2 FAILED (counted as failedTelegram, NOT as
+      // failedMails), 1 SENT (excluded from both).
+      for (const status of [
+        NotificationOutboxStatus.FAILED,
+        NotificationOutboxStatus.FAILED,
+        NotificationOutboxStatus.SENT,
+      ]) {
+        await prisma.notificationOutbox.create({
+          data: {
+            type: SHOP_NEW_ORDER_TYPE,
+            channel: NotificationChannel.TELEGRAM,
+            recipientAddress: '-1001234567890',
+            payload: {},
+            status,
+          },
+        });
+      }
+      // A buyer's Telegram rows (TASK-680) that failed — the buyer disconnected or
+      // blocked the bot. Neither counter may see them: the owner can fix nothing,
+      // and the «Сповіщення» screen the card links to lists shop chats only.
+      for (const type of [CUSTOMER_ORDER_CONFIRMATION_TYPE, CUSTOMER_ORDER_SHIPPED_TYPE]) {
+        await prisma.notificationOutbox.create({
+          data: {
+            type,
+            channel: NotificationChannel.TELEGRAM,
+            recipientAddress: '555000111',
+            payload: {},
+            status: NotificationOutboxStatus.FAILED,
+          },
+        });
+      }
     });
 
     afterAll(async () => {
@@ -704,7 +741,7 @@ describe('DashboardRepository (integration)', () => {
       await prisma.notificationOutbox.deleteMany({});
     });
 
-    it('counts PENDING orders, unmoderated reviews, in-transit orders, and failed mail exactly', async () => {
+    it('counts PENDING orders, unmoderated reviews, in-transit orders, failed mail (EMAIL only) and failed Telegram exactly (TASK-1090)', async () => {
       const needsAction = await repo.getNeedsAction();
 
       // Only the PENDING order.
@@ -714,8 +751,12 @@ describe('DashboardRepository (integration)', () => {
       expect(needsAction.pendingReviews).toBe(1);
       // PENDING + CONFIRMED-unpaid; the CANCELLED order is excluded.
       expect(needsAction.unpaidInTransit).toBe(2);
-      // Only the FAILED outbox row; the SENT row is excluded.
+      // Only the FAILED EMAIL outbox row; the SENT row and the FAILED Telegram
+      // rows are excluded (TASK-1090 — before it this said 3).
       expect(needsAction.failedMails).toBe(1);
+      // Only the two FAILED shop Telegram rows — the two FAILED buyer rows
+      // (order-confirmation, order-shipped) are not the owner's to fix (TASK-680).
+      expect(needsAction.failedTelegram).toBe(2);
     });
   });
 
