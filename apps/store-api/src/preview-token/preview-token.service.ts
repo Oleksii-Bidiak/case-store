@@ -44,14 +44,22 @@ export const ANY_PREVIEW_PERMISSIONS = [
  */
 @Injectable()
 export class PreviewTokenService {
-  private readonly key: Buffer;
+  private derivedKey: Buffer | null = null;
 
   constructor(
     private readonly repository: PreviewTokenRepository,
     private readonly permissionService: PermissionService,
-    config: ConfigService,
-  ) {
-    this.key = derivePreviewKey(config.getOrThrow<string>('JWT_SECRET'));
+    private readonly config: ConfigService,
+  ) {}
+
+  /**
+   * The signing key, derived on first use. Lazy so a module graph compiled without the
+   * JWT secret (module-wiring tests) still resolves; at runtime the env validation has
+   * already refused to boot without `JWT_SECRET`.
+   */
+  private get key(): Buffer {
+    this.derivedKey ??= derivePreviewKey(this.config.getOrThrow<string>('JWT_SECRET'));
+    return this.derivedKey;
   }
 
   /**
