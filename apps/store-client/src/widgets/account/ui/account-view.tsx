@@ -65,7 +65,7 @@ function AccountContent({
     case "bonuses":
       return <AccountBonusesSection />;
     case "settings":
-      return <AccountSettingsSection />;
+      return <AccountSettingsSection email={user.email} />;
     case "purchases":
       return (
         <AccountPlaceholderSection

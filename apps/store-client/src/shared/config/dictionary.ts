@@ -2486,6 +2486,63 @@ export const dict = {
     /** aria-label for the scroll-right arrow. */
     nextAria: "Наступні товари",
   },
+
+  // --- Telegram order notifications (TASK-679) ------------------------------
+  // One connect flow, two hosts: the account «Налаштування → Сповіщення» card
+  // and the guest checkout success panel. The flow's own copy is at the top;
+  // each host's framing sits in its own sub-block. Telegram is always IN
+  // ADDITION to the e-mail — every state says so, because the order
+  // confirmation goes by e-mail whatever happens here (plan 187).
+  telegramNotifications: {
+    connectAccount: "Підключити",
+    connectGuest: "Підключити Telegram",
+    /** «Відкрийте бота <b>@bot</b> і натисніть…» — the bot name is bold between the two halves. */
+    waitingBefore: "Відкрийте бота",
+    waitingAfter:
+      "і натисніть «Старт». На комп’ютері — відскануйте код телефоном.",
+    openTelegram: "Відкрити Telegram",
+    opensInNewTab: "(відкриється в новій вкладці)",
+    pressedStart: "Я натиснув «Старт»",
+    cancel: "Скасувати",
+    oneTimeHint: "Посилання одноразове й діє обмежений час.",
+    linkLoading: "Готуємо посилання…",
+    qrLabel: "QR-код: посилання на бота магазину в Telegram",
+    /** 409 — the bot is not answering right now. */
+    linkConflict:
+      "Telegram зараз недоступний. Листи на пошту приходять як завжди.",
+    linkError: "Не вдалося отримати посилання. Спробуйте ще раз.",
+    account: {
+      blockTitle: "Куди надсилати сповіщення про замовлення",
+      blockSub: "Підтвердження, відправлення та зміни статусу.",
+      mailTitle: "Пошта",
+      mailSub: (email: string) =>
+        `${email} — підтвердження замовлення приходить сюди завжди`,
+      mailAlways: "Завжди",
+      telegramTitle: "Telegram",
+      off: "Додатково до пошти — підтвердження й відправлення замовлення в чат.",
+      waiting: "Чекаємо, поки ви натиснете «Старт» у боті…",
+      on: (label: string) =>
+        `Підключено як ${label}. Пошта теж приходить, як і раніше.`,
+      onNoLabel: "Підключено. Пошта теж приходить, як і раніше.",
+      na: "Тимчасово недоступно. Листи на пошту приходять як завжди.",
+      /** The status read failed — say it, never pretend «off». */
+      statusError:
+        "Не вдалося перевірити Telegram. Листи на пошту приходять як завжди.",
+      checking: "Перевіряємо Telegram…",
+      connectedPill: "Підключено",
+      disconnect: "Відключити",
+      disconnectError: "Не вдалося відключити Telegram. Спробуйте ще раз.",
+      /** Sub-heading over the (still local-only) topic toggles. */
+      topicsHeading: "Про що повідомляти",
+    },
+    guest: {
+      heading: "Стежте за замовленням у Telegram",
+      body: (orderNumber: string) =>
+        `Напишемо в Telegram, коли замовлення #${orderNumber} підтвердять і відправлять. Лист на пошту все одно прийде.`,
+      connected: (email: string) =>
+        `Підключено. Повідомлення про це замовлення прийдуть у Telegram і на ${email}.`,
+    },
+  },
 } as const;
 
 export type Dictionary = typeof dict;

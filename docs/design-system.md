@@ -64,6 +64,7 @@ The browser chrome follows the same rule: `viewport.themeColor` is a static
 | `border` / `input` / `ring`              | Borders / inputs / focus ring | `#e2e8f0` / `#e2e8f0` / `#4f46e5` | `#334155` / `#334155` / `#6366f1` |
 | `overlay`                                | Modal scrim, banner veil      | `rgba(0,0,0,.8)`                  | `rgba(0,0,0,.8)`                  |
 | `footer` / `footer-foreground`           | Footer & announcement bar     | `#0f172a` / `#ffffff`             | same (theme-invariant, F-06)      |
+| `code-surface` / `code-ink`              | QR code field / modules       | `#ffffff` / `#0f172a`             | same (theme-invariant, TASK-679)  |
 
 **Usage rules**
 
@@ -76,6 +77,9 @@ The browser chrome follows the same rule: `viewport.themeColor` is a static
   `FOCUS_ON_DARK_CLASS` (`shared/config/focus.ts`) instead — a white outline 2px off the control
   (TASK-865).
 - Footer and announcement bar: `bg-footer text-footer-foreground` — a dark panel in both themes.
+- A QR code (Telegram connect, TASK-679): `bg-code-surface text-code-ink`, the code drawn in
+  `currentColor`. Light in both themes on purpose — phone cameras often fail on an inverted
+  (light-on-dark) code. Hidden below `sm`: nobody scans the screen they are holding.
 - **No Tailwind palette colours** (`text-violet-500`, `bg-slate-900/60`, …) and no inline
   `color-mix()` styles for a tint (TASK-879). A tint is the token plus an opacity modifier over
   its surface: `bg-primary/10` for an active menu item, `bg-primary/15` for an avatar disc. Over

@@ -260,6 +260,19 @@ export const handlers = [
   // Current-user profile — a populated UA profile by default.
   http.get("*/api/users/me", () => HttpResponse.json(makeUser())),
 
+  // Telegram order notifications (TASK-679) — bot available, nothing
+  // connected, for the account and for a guest order. Override per-test.
+  http.get("*/api/users/me/notifications/telegram", () =>
+    HttpResponse.json({
+      data: { available: true, connected: false, botUsername: "casestore_bot" },
+    }),
+  ),
+  http.get("*/api/orders/guest/:token/notifications/telegram", () =>
+    HttpResponse.json({
+      data: { available: true, connected: false, botUsername: "casestore_bot" },
+    }),
+  ),
+
   // Nova Poshta delivery proxy (TASK-080) — sensible defaults; override per-test.
   http.get("*/api/delivery/cities", () =>
     HttpResponse.json({ data: [makeCity()] }),
