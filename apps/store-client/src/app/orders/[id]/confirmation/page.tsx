@@ -34,8 +34,8 @@ export default async function OrderConfirmationPage({
     // edge to edge while every other route sat in the shared column
     // (TASK-407). Same `PAGE_CONTAINER` as `loading.tsx` and `app/orders/page.tsx`.
     <div className={`${PAGE_CONTAINER} py-8`}>
-      {/* Step 3 of 3 — the stepper has always named «Підтвердження» as the last
-          step; this is the screen it meant. */}
+      {/* Step 3 of 3 — «Готово» (TASK-1098; «Підтвердження» until then): this
+          is the screen the stepper's last step means. */}
       <CheckoutStepIndicator current={3} />
       <Suspense fallback={<OrderConfirmationSkeleton />}>
         <OrderConfirmationView orderId={id} />

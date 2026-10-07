@@ -104,4 +104,75 @@ export class SlugRedirectRepository {
       },
     });
   }
+
+  /**
+   * Re-home the addresses of an entity RESTORED from a tombstone onto a NEW slug
+   * (TASK-1828) — {@link recordRename} adapted to an address the entity gave up when it
+   * was deleted, and which someone else may have taken since. Bare slugs (empty scope)
+   * only: the one caller is the product restore.
+   *
+   * While the entity was deleted its native address `from` was free: another entity may
+   * have been created on it, renamed into it (adding its own aliases `x → from`) or
+   * renamed away from it (repointing every `x → from`, ours included, and writing
+   * `from → y`). The rule throughout: a row last written at or before `deletedAt` is
+   * OUR history (until then `from` was ours) or older still, and is ours to rewrite; a
+   * row written later belongs to whoever held `from` afterwards and is left alone. So,
+   * against the caller's `tx`:
+   *
+   * 1. Repoint OUR aliases — rows targeting `from` last written at or before `deletedAt`.
+   * 2. Make the new address `to` a live one: delete EVERY row whose `oldSlug` is `to`,
+   *    whoever wrote it. The entity lives there now, so `to` must never redirect — a
+   *    leftover `to → from` (an alias of another, deleted entity; one of our own old
+   *    aliases became the self-loop `to → to` in step 1 and goes too) would otherwise
+   *    close a 301 loop with step 3's `from → to`, live while the restored entity is
+   *    still hidden. With no row left on `to`, no redirect cycle can pass through
+   *    `from → to` at all — a loop would need a way out of `to`.
+   * 3. Point the native address `from` at `to` when `redirectFrom` (the caller found no
+   *    live entity on `from`). An existing `from → X` last written at or before
+   *    `deletedAt` — left by an entity that renamed away from `from` before we held it —
+   *    is overwritten; one written later (a later holder renaming away) is theirs and is
+   *    kept; with no row, one is inserted. Two single statements rather than
+   *    read-then-write, so a concurrent insert of the same key cannot fail the restore:
+   *    the guarded update rewrites only a stale row, the `skipDuplicates` insert only
+   *    fills a gap.
+   *
+   * Back on the native address (`from === to`) only step 2 runs: a later holder of
+   * `from` that renamed away from it left `from → y`, and an entity living on `from`
+   * again must not send its own address to someone else's page.
+   */
+  async recordRestoreRename(
+    tx: Prisma.TransactionClient,
+    entity: SlugRedirectEntity,
+    from: string,
+    to: string,
+    { deletedAt, redirectFrom }: { deletedAt: Date; redirectFrom: boolean },
+  ): Promise<void> {
+    if (from !== to) {
+      // Step 1: our own aliases follow us to the new address.
+      await tx.slugRedirect.updateMany({
+        where: { entity, newScope: '', newSlug: from, updatedAt: { lte: deletedAt } },
+        data: { newScope: '', newSlug: to },
+      });
+    }
+
+    // Step 2: the address we now live on never redirects (this also drops the self-loop
+    // step 1 produces when restoring onto one of our own old aliases).
+    await tx.slugRedirect.deleteMany({
+      where: { entity, scope: '', oldSlug: to },
+    });
+
+    if (from === to) return;
+
+    // Step 3: the native address itself, unless it now belongs to someone else.
+    if (redirectFrom) {
+      await tx.slugRedirect.updateMany({
+        where: { entity, scope: '', oldSlug: from, updatedAt: { lte: deletedAt } },
+        data: { newScope: '', newSlug: to },
+      });
+      await tx.slugRedirect.createMany({
+        data: [{ entity, scope: '', oldSlug: from, newScope: '', newSlug: to }],
+        skipDuplicates: true,
+      });
+    }
+  }
 }

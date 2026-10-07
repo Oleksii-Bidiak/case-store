@@ -111,6 +111,17 @@ export function isValidUAPhone(raw: string): boolean {
 }
 
 /**
+ * A stored phone, shown back to a person: the UA mask `+380 50 123 4567` when
+ * the number IS a Ukrainian one, the stored text as-is otherwise. Order
+ * snapshots are format-free (an operator's order can carry a roaming number),
+ * and {@link formatUAPhone} would truncate such a number into a wrong one — so
+ * only a valid UA number is re-masked (TASK-647).
+ */
+export function displayPhone(raw: string): string {
+  return isValidUAPhone(raw) ? formatUAPhone(raw) : raw;
+}
+
+/**
  * `tel:` URI for a human-formatted number the shop typed into its contact
  * settings: keeps the digits and a leading `+`
  * («+380 44 000-00-00» → «tel:+380440000000», «0 800 30 30 30» →

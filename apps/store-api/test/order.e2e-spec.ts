@@ -594,6 +594,48 @@ describe('OrderController (e2e)', () => {
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
+    // ── TASK-1097: the manual-city fallback while NP is down ────────────────
+    // The storefront omits `deliveryMethod` on exactly that path; the request
+    // carries a hand-typed city and no npCityRef, so the server infers OTHER.
+    describe('«Інша доставка» switched off (TASK-1097)', () => {
+      beforeEach(() => {
+        prismaServiceMock.deliverySetting.findUnique.mockResolvedValue({
+          ...allMethodsRow,
+          otherEnabled: false,
+        });
+      });
+
+      it('an INFERRED OTHER (manual city, no method sent) still → 201, quoted later', async () => {
+        await placeOrder({ shippingAddress: validAddress }).expect(201);
+
+        expect(createdParams()).toMatchObject({ deliveryMethod: 'OTHER', shippingCost: 0 });
+        expect(createdParams().shippingAddress).toMatchObject({
+          deliveryMethod: 'OTHER',
+          shippingCostPending: true,
+        });
+      });
+
+      it('an INFERRED OTHER paid ONLINE → 400 DELIVERY_PAYMENT_NOT_ALLOWED (the matrix still applies)', async () => {
+        const res = await placeOrder({
+          shippingAddress: validAddress,
+          paymentMethod: 'ONLINE',
+        }).expect(400);
+
+        expect(res.body.error).toBe('DELIVERY_PAYMENT_NOT_ALLOWED');
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      });
+
+      it('an EXPLICIT OTHER → 400 DELIVERY_METHOD_UNAVAILABLE', async () => {
+        const res = await placeOrder({
+          shippingAddress: validAddress,
+          deliveryMethod: 'OTHER',
+        }).expect(400);
+
+        expect(res.body.error).toBe('DELIVERY_METHOD_UNAVAILABLE');
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      });
+    });
+
     it.each([
       ['an unknown delivery method', { deliveryMethod: 'DRONE' }],
       ['a malformed pickup point id', { deliveryMethod: 'PICKUP', pickupPointId: 'not-a-uuid' }],
@@ -1284,6 +1326,8 @@ describe('OrderController (e2e)', () => {
       status: OrderStatus.PENDING,
       paymentStatus: PaymentStatus.PENDING,
       paymentMethod: 'ON_DELIVERY',
+      // TASK-648: the «Спосіб доставки» column.
+      deliveryMethod: 'NOVA_POSHTA',
       paidAt: null,
       subtotal: { toString: () => '1000.00' },
       discount: { toString: () => '100.00' },
@@ -1331,6 +1375,7 @@ describe('OrderController (e2e)', () => {
         'status',
         'paymentStatus',
         'paymentMethod',
+        'Спосіб доставки',
         'paidAt',
         'customerType',
         'customerName',
@@ -1350,6 +1395,7 @@ describe('OrderController (e2e)', () => {
       // The order NUMBER is the uppercased id prefix the customer reads off their
       // email, and the full uuid is beside it for support.
       expect(row).toContain('ABC12345,abc12345-0000-0000-0000-000000000001');
+      expect(row).toContain('ON_DELIVERY,Нова Пошта,');
       expect(row).toContain('ACCOUNT');
       expect(row).toContain('buyer@example.com');
       expect(row).toContain('SUMMER10');
@@ -2418,7 +2464,120 @@ describe('OrderController (e2e)', () => {
       expect(response.body.data[0].delivery).toEqual({
         city: 'Київ',
         warehouse: 'Відділення №12',
+        pickupPointName: null,
+        pickupPointAddress: null,
+        shippingCostPending: false,
       });
+      // The fixture row carries no method column: the column default.
+      expect(response.body.data[0].deliveryMethod).toBe('NOVA_POSHTA');
+    });
+
+    // TASK-1030: the page names the real method. For a pickup order it shows the
+    // SHOP's point; for courier / OTHER it still shows the city and nothing more.
+    it('names the method and shows a pickup point, never the street of a courier or OTHER order', async () => {
+      const base = {
+        status: OrderStatus.CONFIRMED,
+        paymentStatus: PaymentStatus.PENDING,
+        paymentMethod: 'ON_DELIVERY',
+        createdAt: new Date('2026-09-01T10:00:00.000Z'),
+        subtotal: new Prisma.Decimal('500.00'),
+        discount: new Prisma.Decimal('0.00'),
+        shippingCost: new Prisma.Decimal('0.00'),
+        addonsTotal: new Prisma.Decimal('0.00'),
+        total: new Prisma.Decimal('500.00'),
+        trackingNumber: null,
+        items: [],
+      };
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([
+        {
+          ...base,
+          id: '94f5f971-0000-0000-0000-000000000001',
+          deliveryMethod: 'PICKUP',
+          shippingAddress: {
+            firstName: 'Olena',
+            lastName: 'Shevchenko',
+            phone: '+380501112233',
+            address1: 'вул. Хрещатик, 22',
+            city: 'Київ',
+            deliveryMethod: 'PICKUP',
+            carrier: null,
+            pickupPointName: 'Магазин на Хрещатику',
+            pickupPointAddress: 'вул. Хрещатик, 22',
+          },
+        },
+        {
+          ...base,
+          id: '94f5f971-0000-0000-0000-000000000002',
+          deliveryMethod: 'COURIER',
+          shippingAddress: {
+            firstName: 'Olena',
+            lastName: 'Shevchenko',
+            address1: 'вул. Січових Стрільців, 37, кв. 12',
+            city: 'Київ',
+            deliveryMethod: 'COURIER',
+            carrier: null,
+          },
+        },
+        {
+          ...base,
+          id: '94f5f971-0000-0000-0000-000000000003',
+          deliveryMethod: 'OTHER',
+          shippingAddress: {
+            firstName: 'Olena',
+            lastName: 'Shevchenko',
+            address1: 'вул. Корзо, 5',
+            city: 'Ужгород',
+            deliveryMethod: 'OTHER',
+            carrier: null,
+            shippingCostPending: true,
+          },
+        },
+        {
+          // TASK-647: the 0 OrderService books when the NP estimate failed — no
+          // flag in the snapshot, and still not "free".
+          ...base,
+          id: '94f5f971-0000-0000-0000-000000000004',
+          deliveryMethod: 'NOVA_POSHTA',
+          shippingAddress: {
+            firstName: 'Olena',
+            lastName: 'Shevchenko',
+            address1: 'Відділення №12',
+            city: 'Київ',
+            npWarehouseName: 'Відділення №12',
+            deliveryMethod: 'NOVA_POSHTA',
+            carrier: 'NOVA_POSHTA',
+          },
+        },
+      ]);
+
+      const response = await post({ number: validNumber, phone }).expect(200);
+      const [pickup, courier, other, novaPoshtaAtZero] = response.body.data;
+
+      expect(pickup.deliveryMethod).toBe('PICKUP');
+      expect(pickup.delivery).toEqual({
+        city: 'Київ',
+        warehouse: null,
+        pickupPointName: 'Магазин на Хрещатику',
+        pickupPointAddress: 'вул. Хрещатик, 22',
+        shippingCostPending: false,
+      });
+      expect(courier.deliveryMethod).toBe('COURIER');
+      expect(courier.delivery).toEqual({
+        city: 'Київ',
+        warehouse: null,
+        pickupPointName: null,
+        pickupPointAddress: null,
+        shippingCostPending: false,
+      });
+      expect(other.deliveryMethod).toBe('OTHER');
+      expect(other.delivery.shippingCostPending).toBe(true);
+      expect(novaPoshtaAtZero.deliveryMethod).toBe('NOVA_POSHTA');
+      expect(novaPoshtaAtZero.delivery.shippingCostPending).toBe(true);
+
+      const body = JSON.stringify(response.body);
+      for (const secret of ['Olena', 'Shevchenko', '380501112233', 'Січових', 'Корзо']) {
+        expect(body).not.toContain(secret);
+      }
     });
   });
 
@@ -2616,6 +2775,45 @@ describe('OrderController (e2e)', () => {
       // number however the next operator spells it.
       expect(guestArg()).toEqual({ name: 'Олена Шевченко', phone: '380501234567' });
       expect(guestArg().email).toBeUndefined();
+    });
+
+    // TASK-1021: the delivery × payment matrix holds on the operator's door too.
+    it('refuses a free-text (OTHER) phone order paid ONLINE with 400 DELIVERY_PAYMENT_NOT_ALLOWED', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      const res = await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          ...manualBody({ name: 'Олена Шевченко', phone: '050 123 4567' }),
+          paymentMethod: 'ONLINE',
+        })
+        .expect(400);
+
+      expect(res.body.error).toBe('DELIVERY_PAYMENT_NOT_ALLOWED');
+      expect(res.body.message).toMatch(/при отриманні/);
+      expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+    });
+
+    it('accepts a Nova Poshta phone order paid ONLINE (TASK-1021)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          ...manualBody({ name: 'Олена Шевченко', phone: '050 123 4567' }),
+          shippingAddress: { ...validAddress, npCityRef: 'city-ref-1' },
+          paymentMethod: 'ONLINE',
+        })
+        .expect(201);
+
+      expect(orderRepositoryMock.createManual).toHaveBeenCalledWith(
+        expect.objectContaining({ deliveryMethod: 'NOVA_POSHTA', paymentMethod: 'ONLINE' }),
+        expect.anything(),
+      );
     });
 
     it('never pings the shop for an order staff took by phone (TASK-677)', async () => {

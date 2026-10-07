@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { EllipsisIcon } from "lucide-react";
+import { EllipsisIcon, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/shared/lib/utils";
 import { Button } from "../button";
@@ -32,6 +32,11 @@ export interface RowActionItem {
    */
   groupLabel?: string;
   disabled?: boolean;
+  /**
+   * A leading icon (SettingsDelivery ДН-1.3, TASK-645). Decorative: the label
+   * names the action. Menus without icons keep their text-only look.
+   */
+  icon?: LucideIcon;
 }
 
 export interface RowActionsMenuProps {
@@ -47,6 +52,11 @@ export interface RowActionsMenuProps {
    * controls are in the tab order. Default: the button's own.
    */
   tabIndex?: number;
+  /**
+   * Classes for the popover. Default `w-60`; a menu whose label carries a
+   * count («Замовлення з цією точкою (N)», ДН-1.3) widens it to stay on one line.
+   */
+  contentClassName?: string;
 }
 
 /**
@@ -60,6 +70,7 @@ export function RowActionsMenu({
   align = "end",
   className,
   tabIndex,
+  contentClassName,
 }: RowActionsMenuProps) {
   if (items.length === 0) return null;
   return (
@@ -80,8 +91,11 @@ export function RowActionsMenu({
           <EllipsisIcon aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align={align} className="w-60">
-        {items.map((item) => (
+      <DropdownMenuContent
+        align={align}
+        className={cn("w-60", contentClassName)}
+      >
+        {items.map(({ icon: Icon, ...item }) => (
           <React.Fragment key={item.label}>
             {item.separatorBefore ? <DropdownMenuSeparator /> : null}
             {item.groupLabel ? (
@@ -101,6 +115,7 @@ export function RowActionsMenu({
                     ? { target: "_blank", rel: "noopener noreferrer" }
                     : {})}
                 >
+                  {Icon ? <Icon aria-hidden="true" /> : null}
                   {item.label}
                 </Link>
               </DropdownMenuItem>
@@ -110,6 +125,7 @@ export function RowActionsMenu({
                 variant={item.destructive ? "destructive" : "default"}
                 onSelect={() => item.onSelect?.()}
               >
+                {Icon ? <Icon aria-hidden="true" /> : null}
                 {item.label}
               </DropdownMenuItem>
             )}

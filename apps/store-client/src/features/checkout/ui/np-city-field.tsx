@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useController,
   type Control,
@@ -16,6 +16,12 @@ interface NpCityFieldProps {
   control: Control<CheckoutFormValues>;
   setValue: UseFormSetValue<CheckoutFormValues>;
   id?: string;
+  /**
+   * The directory lookup failed (TASK-1097). The checkout uses it to swap this
+   * autocomplete for the manual path; without it the field keeps its own
+   * free-text fallback and the notice below.
+   */
+  onLookupError?: () => void;
 }
 
 /**
@@ -33,6 +39,7 @@ export function NpCityField({
   control,
   setValue,
   id = "checkout-city",
+  onLookupError,
 }: NpCityFieldProps) {
   const { field, fieldState } = useController({ control, name: "city" });
   const [query, setQuery] = useState("");
@@ -52,6 +59,10 @@ export function NpCityField({
     { q: query },
     { query: { enabled: query.trim().length >= 2 } },
   );
+
+  useEffect(() => {
+    if (isError) onLookupError?.();
+  }, [isError, onLookupError]);
 
   const options: ComboboxOption[] = (data?.data ?? []).map((city) => ({
     value: city.ref,

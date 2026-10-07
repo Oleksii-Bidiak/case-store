@@ -48,7 +48,6 @@ export interface HelpSection {
  * catalogue) does not carry them.
  */
 const RAW = {
-  categoriesDelete: "categories:delete",
   attributesWrite: "attributes:write",
   analyticsRevenue: "analytics:revenue",
 } as const;
@@ -147,7 +146,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
         permission: PERM.categoriesWrite,
         phrase: "створювати й змінювати категорії",
       },
-      { permission: RAW.categoriesDelete, phrase: "видаляти категорії" },
+      { permission: PERM.categoriesDelete, phrase: "видаляти категорії" },
       {
         permission: RAW.attributesWrite,
         phrase: "змінювати шаблони характеристик",
@@ -446,6 +445,23 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       {
         permission: PERM.settingsSearch,
         phrase: "перебудовувати пошуковий покажчик",
+      },
+    ],
+  },
+  // TASK-644 (план 184 U). `docs/admin-guide.md` ще не має розділу про
+  // доставку — текст описує те, що екран робить сьогодні.
+  {
+    prefix: "/settings/delivery",
+    title: dict.nav.delivery,
+    what: [
+      "Які способи доставки бачить покупець на чекауті: Нова Пошта, самовивіз, курʼєр по місту, інша доставка.",
+      "Місто відправки й вага посилки для розрахунку тарифу Нової Пошти, ціна курʼєра й поріг безкоштовної доставки.",
+      "Праворуч видно, як це виглядатиме на чекауті, ще до збереження.",
+    ],
+    rights: [
+      {
+        permission: PERM.settingsDelivery,
+        phrase: "змінювати налаштування доставки",
       },
     ],
   },

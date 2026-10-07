@@ -35,6 +35,8 @@ export interface ProductSource {
   ogImage?: string | null;
   createdAt: Date;
   updatedAt: Date;
+  /** The tombstone moment (TASK-104); only the admin entity exposes it (TASK-1830). */
+  deletedAt?: Date | null;
   ratingAverage?: number | null;
   ratingCount?: number;
   primaryImage?: Parameters<typeof ProductImageEntity.fromPrisma>[0] | null;

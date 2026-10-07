@@ -22,6 +22,13 @@ export function OrderLookupResult({ order }: { order: PublicOrderEntity }) {
   const hasDiscount = parseFloat(order.discount) > 0;
   const hasShipping = parseFloat(order.shippingCost) > 0;
   const hasAddons = parseFloat(order.addonsTotal) > 0;
+  // A pickup line already names the shop's own address; the city row is for
+  // the deliveries that travel somewhere.
+  const showCity = order.deliveryMethod !== "PICKUP";
+  // A waybill exists only for a carrier parcel — «Ще не передано
+  // перевізнику» under a pickup would promise a carrier that never comes.
+  const showTracking =
+    order.deliveryMethod === "NOVA_POSHTA" || order.trackingNumber !== null;
 
   return (
     <article className="flex flex-col gap-5 rounded-card border border-border bg-card p-6 shadow-card sm:p-8">
@@ -96,8 +103,18 @@ export function OrderLookupResult({ order }: { order: PublicOrderEntity }) {
           {hasDiscount && (
             <Row label={d.discount} value={`−${formatMoney(order.discount)}`} />
           )}
-          {hasShipping && (
+          {/* Always present (TASK-1030): a sum, «Безкоштовно», or — when the
+              server says nobody priced it — «Уточнить оператор», never «0 ₴». */}
+          {hasShipping ? (
             <Row label={d.shipping} value={formatMoney(order.shippingCost)} />
+          ) : order.delivery.shippingCostPending ? (
+            <Row
+              label={d.shipping}
+              value={d.shippingPending}
+              valueClassName="text-muted-foreground italic"
+            />
+          ) : (
+            <Row label={d.shipping} value={d.shippingFree} />
           )}
           <div className="flex items-baseline justify-between gap-2 border-t border-border pt-1.5">
             <dt className="font-semibold text-foreground">{d.total}</dt>
@@ -106,6 +123,14 @@ export function OrderLookupResult({ order }: { order: PublicOrderEntity }) {
             </dd>
           </div>
         </dl>
+        {/* The same note the confirmation page puts under «Разом» — without
+            it, a total that leaves delivery out reads as the final sum. Kept
+            outside the <dl>: a <p> is not valid content there (TASK-868). */}
+        {!hasShipping && order.delivery.shippingCostPending && (
+          <p className="text-right text-xs text-muted-foreground">
+            {dict.order.deliveryBlock.totalWithoutShipping}
+          </p>
+        )}
       </section>
 
       <section className="flex flex-col gap-1.5">
@@ -117,48 +142,92 @@ export function OrderLookupResult({ order }: { order: PublicOrderEntity }) {
             content for a description list. They are now a dd under a visually
             hidden «Доставка» term, and look exactly as before. */}
         <dl className="flex flex-col gap-1 text-sm">
-          {order.delivery.city ? (
-            <Row label={d.deliveryCity} value={order.delivery.city} />
-          ) : (
-            <Statement term={d.deliveryHeading} text={d.deliveryUnknown} />
-          )}
-          {/* A branch name, or the plain statement that a courier is bringing it
-              — never the street. The API has no field for the street to arrive
-              in, which is the design, not an omission. */}
-          {order.delivery.city &&
-            (order.delivery.warehouse ? (
-              <Row
-                label={d.deliveryWarehouse}
-                value={order.delivery.warehouse}
-              />
-            ) : (
-              <Statement term={d.deliveryHeading} text={d.deliveryCourier} />
-            ))}
-          <Row
-            label={d.trackingHeading}
-            value={order.trackingNumber ?? d.trackingNone}
+          {/* The real method (TASK-1030) — never the street. The API has no
+              field for the buyer's street to arrive in, which is the design,
+              not an omission; a pickup address is the shop's own. */}
+          <Statement
+            term={d.deliveryHeading}
+            text={deliveryLine(order)}
+            className="text-foreground"
           />
+          {showCity &&
+            (order.delivery.city ? (
+              <Row label={d.deliveryCity} value={order.delivery.city} />
+            ) : (
+              <Statement term={d.deliveryHeading} text={d.deliveryUnknown} />
+            ))}
+          {showTracking && (
+            <Row
+              label={d.trackingHeading}
+              value={order.trackingNumber ?? d.trackingNone}
+            />
+          )}
         </dl>
       </section>
     </article>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+/**
+ * The delivery line by the real method (TASK-1030): «Нова Пошта: <відділення>»,
+ * «Самовивіз: <точка>, <адреса>», «Кур'єр», «Інший спосіб — вартість уточнить
+ * менеджер». Before it, a branch-less order read «Курʼєром за вказаною
+ * адресою» whatever its method — a pickup told the buyer a courier was coming.
+ */
+function deliveryLine(order: PublicOrderEntity): string {
+  const d = dict.orderLookup;
+  switch (order.deliveryMethod) {
+    case "PICKUP":
+      return d.deliveryPickup(
+        [order.delivery.pickupPointName, order.delivery.pickupPointAddress]
+          .filter(Boolean)
+          .join(", "),
+      );
+    case "COURIER":
+      return d.deliveryCourierMethod;
+    case "OTHER":
+      // The "manager will quote it" promise only while nobody has — once the
+      // totals row shows a price, the line must not contradict it.
+      return order.delivery.shippingCostPending
+        ? d.deliveryOther
+        : d.deliveryOtherPriced;
+    case "NOVA_POSHTA":
+    default:
+      return d.deliveryNovaPoshta(order.delivery.warehouse);
+  }
+}
+
+function Row({
+  label,
+  value,
+  valueClassName = "text-foreground",
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-2">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="text-foreground">{value}</dd>
+      <dd className={valueClassName}>{value}</dd>
     </div>
   );
 }
 
 /** A sentence in place of a value: the term is for screen readers only. */
-function Statement({ term, text }: { term: string; text: string }) {
+function Statement({
+  term,
+  text,
+  className = "text-muted-foreground",
+}: {
+  term: string;
+  text: string;
+  className?: string;
+}) {
   return (
     <div>
       <dt className="sr-only">{term}</dt>
-      <dd className="text-muted-foreground">{text}</dd>
+      <dd className={className}>{text}</dd>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Check } from "lucide-react";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
@@ -13,8 +14,10 @@ interface OrderTotalsBreakdownProps {
   discountCode?: string | null;
   shippingCost: string;
   /**
-   * The booked 0 is a placeholder the operator will price later (delivery
-   * OTHER, `shippingAddress.shippingCostPending`) — never «Безкоштовно».
+   * The booked 0 is a placeholder nobody has priced — OTHER, or a Nova Poshta
+   * order whose estimate never came (`orderDeliveryDetails().shippingCostPending`,
+   * the API's rule). Never «Безкоштовно»: «Уточнить оператор», and a note under
+   * «Разом» that the total leaves the delivery out.
    */
   shippingPending?: boolean;
   tax: string;
@@ -36,7 +39,7 @@ function Row({
   valueClassName = "text-foreground",
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   valueClassName?: string;
 }) {
   return (
@@ -53,14 +56,19 @@ function Row({
  * OrderTotalsBreakdown — «Підсумок замовлення» (TASK-217,
  * AccountOrders.dc.html): «Сума», «Послуги» (only when the order bought add-on
  * services), «Знижка · CODE» in the sale colour with an en-dash minus,
- * «Доставка» (0 reads «Безкоштовно»), «Податок» when non-zero, a rule, and
- * «Разом» in the display face. Shared by the order confirmation page and the
- * account order detail.
+ * «Доставка», «Податок» when non-zero, a rule, and «Разом» in the display face.
+ * Shared by the order confirmation page, the guest order page and the account
+ * order detail.
+ *
+ * «Доставка» has three faces (TASK-647, OrderConfirmation.dc.html), the same as
+ * the checkout summary: a sum; «Безкоштовно» with a success tick (the word
+ * stays foreground — green text at this size is below 4.5:1) for a pickup or a
+ * courier over its threshold; «Уточнить оператор» in muted italic when nobody
+ * priced it — and then «Без доставки — її вартість уточнить оператор» under
+ * «Разом».
  *
  * Every figure is the server's pre-computed string — no client arithmetic:
- * `total = subtotal + shippingCost + addonsTotal − discount`. Before TASK-217
- * the confirmation page skipped `addonsTotal`, so its rows did not add up to
- * its own total whenever a service was bought.
+ * `total = subtotal + shippingCost + addonsTotal − discount`.
  */
 export function OrderTotalsBreakdown({
   subtotal,
@@ -74,11 +82,24 @@ export function OrderTotalsBreakdown({
   className,
   children,
 }: OrderTotalsBreakdownProps) {
-  const shipping = isNonZero(shippingCost)
-    ? formatMoney(shippingCost)
-    : shippingPending
-      ? dict.order.shippingPending
-      : dict.order.shippingFree;
+  const priced = isNonZero(shippingCost);
+  const pending = !priced && shippingPending;
+
+  let shipping: ReactNode;
+  let shippingClassName = "text-foreground";
+  if (priced) {
+    shipping = formatMoney(shippingCost);
+  } else if (pending) {
+    shipping = dict.order.shippingPending;
+    shippingClassName = "text-muted-foreground italic";
+  } else {
+    shipping = (
+      <span className="inline-flex items-center gap-1 font-semibold">
+        <Check className="size-3.5 text-success" aria-hidden />
+        {dict.order.shippingFree}
+      </span>
+    );
+  }
 
   return (
     <section
@@ -108,7 +129,11 @@ export function OrderTotalsBreakdown({
             valueClassName="text-sale"
           />
         )}
-        <Row label={dict.order.shipping} value={shipping} />
+        <Row
+          label={dict.order.shipping}
+          value={shipping}
+          valueClassName={shippingClassName}
+        />
         {isNonZero(tax) && (
           <Row label={dict.order.tax} value={formatMoney(tax)} />
         )}
@@ -116,13 +141,20 @@ export function OrderTotalsBreakdown({
 
       <Separator />
 
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-semibold text-foreground">
-          {dict.order.total}
-        </span>
-        <span className="font-display text-xl font-bold whitespace-nowrap text-foreground">
-          {formatMoney(total)}
-        </span>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-semibold text-foreground">
+            {dict.order.total}
+          </span>
+          <span className="font-display text-xl font-bold whitespace-nowrap text-foreground">
+            {formatMoney(total)}
+          </span>
+        </div>
+        {pending && (
+          <p className="text-right text-xs text-muted-foreground">
+            {dict.order.deliveryBlock.totalWithoutShipping}
+          </p>
+        )}
       </div>
 
       {children}

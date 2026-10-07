@@ -8,7 +8,7 @@ const prismaMock = {
     findMany: jest.fn(),
     count: jest.fn(),
   },
-  user: { findUnique: jest.fn() },
+  user: { findUnique: jest.fn(), findMany: jest.fn() },
 };
 
 describe('AuditRepository — findMany ordering (TASK-356)', () => {
@@ -123,5 +123,64 @@ describe('AuditRepository — findMany ordering (TASK-356)', () => {
     await repository.findMany({ page: 1, limit: 50 });
 
     expect(prismaMock.auditLog.findMany.mock.calls[0][0].where).toEqual({});
+  });
+});
+
+describe('AuditRepository — findLatestActors (TASK-1830)', () => {
+  let repository: AuditRepository;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [AuditRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repository = module.get(AuditRepository);
+  });
+
+  it('keeps the NEWEST entry per entity, skips actor-less ones, and joins the current names', async () => {
+    // Newest first, as the query orders them.
+    prismaMock.auditLog.findMany.mockResolvedValue([
+      { entityId: 'p1', actorId: 'u2' },
+      { entityId: 'p1', actorId: 'u1' },
+      { entityId: 'p2', actorId: 'u-gone' },
+    ]);
+    prismaMock.user.findMany.mockResolvedValue([
+      { id: 'u2', firstName: 'Олена', lastName: 'Коваль' },
+    ]);
+
+    const result = await repository.findLatestActors('product.remove', 'product', [
+      'p1',
+      'p2',
+      'p3',
+    ]);
+
+    expect(prismaMock.auditLog.findMany).toHaveBeenCalledWith({
+      where: {
+        action: 'product.remove',
+        entityType: 'product',
+        entityId: { in: ['p1', 'p2', 'p3'] },
+        actorId: { not: null },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      // Never the recorded email: it is not shown to colleagues, so it is not even read.
+      select: { entityId: true, actorId: true },
+    });
+    expect(prismaMock.user.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ['u2', 'u-gone'] } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    expect([...result.entries()]).toEqual([
+      ['p1', { actorId: 'u2', firstName: 'Олена', lastName: 'Коваль' }],
+      // The account is gone — still a person on record, just without a name.
+      ['p2', { actorId: 'u-gone', firstName: null, lastName: null }],
+    ]);
+  });
+
+  it('reads nothing for an empty page', async () => {
+    const result = await repository.findLatestActors('product.remove', 'product', []);
+
+    expect(result.size).toBe(0);
+    expect(prismaMock.auditLog.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.user.findMany).not.toHaveBeenCalled();
   });
 });

@@ -2,10 +2,10 @@ import { cn } from "@/shared/lib/utils";
 import { Skeleton } from "./skeleton";
 
 /**
- * Stepper labels, sized like «Доставка», «Перевірка», «Підтвердження» so the
+ * Stepper labels, sized like «Доставка», «Перевірка», «Готово» (TASK-1098) so the
  * placeholder wraps onto a second row at the same widths the real stepper does.
  */
-const STEP_LABEL_WIDTHS = ["w-16", "w-18", "w-28"] as const;
+const STEP_LABEL_WIDTHS = ["w-16", "w-18", "w-14"] as const;
 
 /**
  * One line box of muted copy: 20px for `text-sm`, 16px for `text-xs`, with a
@@ -134,7 +134,7 @@ export function CheckoutSkeleton() {
         </div>
       </div>
 
-      {/* Stepper: Доставка — Перевірка — Підтвердження */}
+      {/* Stepper: Доставка — Перевірка — Готово */}
       <div
         data-testid="checkout-skeleton-stepper"
         className="mb-7 flex flex-wrap items-center gap-2"

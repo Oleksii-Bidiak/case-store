@@ -325,6 +325,10 @@ export class MailService {
         total: order.total,
         shippingAddress:
           order.shippingAddress as OrderConfirmationParams['order']['shippingAddress'],
+        // TASK-647: the order column, so the letter names the method even when
+        // the snapshot predates TASK-643. Rows queued before this field existed
+        // fall back inside the template (`resolveDeliveryMethod`).
+        deliveryMethod: order.deliveryMethod,
       },
     };
   }

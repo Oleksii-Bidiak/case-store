@@ -51,6 +51,7 @@ import {
   deliveryPickupPointRequiredError,
   deliveryPickupPointUnavailableError,
   invalidPaymentTransitionError,
+  manualOrderDeliveryPaymentNotAllowedError,
   paymentCorrectionProviderRefundError,
   invalidTransitionError,
   refundRequiresClosedOrderError,
@@ -133,6 +134,10 @@ const ORDER_EXPORT_HEADER = [
   'status',
   'paymentStatus',
   'paymentMethod',
+  // TASK-648. The one translated column, by the plan's decision: an operator
+  // reads it in a spreadsheet, and its four values filter back just as well as
+  // the enum would. Labels in DELIVERY_METHOD_EXPORT_LABEL below.
+  'Спосіб доставки',
   'paidAt',
   'customerType',
   'customerName',
@@ -149,6 +154,24 @@ const ORDER_EXPORT_HEADER = [
   'total',
   'trackingNumber',
 ] as const;
+
+/**
+ * The «Спосіб доставки» CSV cell for each method (TASK-648), spelled as the
+ * admin panel spells them — «Курʼєр» with U+02BC, the panel's apostrophe. A
+ * `Record`, so a fifth method fails to compile until it has a label.
+ */
+const DELIVERY_METHOD_EXPORT_LABEL: Readonly<Record<DeliveryMethod, string>> = {
+  NOVA_POSHTA: 'Нова Пошта',
+  PICKUP: 'Самовивіз',
+  COURIER: 'Курʼєр',
+  OTHER: 'Інша доставка',
+};
+
+/** What `GET /admin/orders/facets` answers (TASK-648). */
+export interface AdminOrderFacets {
+  /** Orders per delivery method under every filter but the method one; all four keys. */
+  deliveryMethod: Record<DeliveryMethod, number>;
+}
 
 /**
  * How long a guest's order-status link stays usable when
@@ -521,8 +544,10 @@ export class OrderService {
    *  1. **Resolve.** An explicit `dto.deliveryMethod` is used as is; absent, the
    *     address decides (`npCityRef` → NOVA_POSHTA, else OTHER). That keeps every
    *     pre-TASK-643 client working, with the same NP total as before the wave.
-   *  2. **Validate.** The method must be enabled in the shop's settings — the
-   *     derived one too — and the delivery × payment matrix must admit the
+   *  2. **Validate.** The method must be enabled in the shop's settings — a
+   *     derived NOVA_POSHTA too, but NOT a derived OTHER (the manual-city
+   *     fallback while NP is down, TASK-1097) — and the delivery × payment matrix
+   *     must admit the
    *     payment method. Then the method's own requirements: NP needs a city ref
    *     (never a silent 0), PICKUP an active point.
    *  3. **Price.** NOVA_POSHTA → the carrier estimate ({@link estimateNpShipping});
@@ -546,8 +571,26 @@ export class OrderService {
       npCityRef,
     });
 
+    // TASK-1097 (owner decision 2026-10-05): an INFERRED OTHER skips the
+    // `otherEnabled` switch. Since plan 184 part U the storefront sends
+    // `deliveryMethod` explicitly for every choice the shopper makes on the
+    // method step — and OMITS it on exactly one path: Nova Poshta is unreachable
+    // and the shopper typed the city by hand (no `npCityRef`). That is the
+    // storefront's fallback for a carrier outage, not «Інша доставка» chosen from
+    // the list, so the owner switching OTHER off must not close it. It is still
+    // booked as OTHER (shipping quoted by the operator, `shippingCostPending`),
+    // and the delivery × payment matrix below still applies: manual city + card
+    // → 400 DELIVERY_PAYMENT_NOT_ALLOWED. An EXPLICIT `deliveryMethod: 'OTHER'`
+    // and an inferred NOVA_POSHTA keep the switch check. The fallback only
+    // stands in for Nova Poshta, so with NP itself switched off there is no
+    // outage to fall back from and the inferred OTHER is checked like any other.
     const { enabledMethods, courier } = await this.deliveryService.getMethodSettings();
-    if (!enabledMethods.includes(deliveryMethod)) {
+    const inferredOther =
+      !dto.deliveryMethod &&
+      deliveryMethod === DeliveryMethod.OTHER &&
+      enabledMethods.includes(DeliveryMethod.NOVA_POSHTA);
+
+    if (!inferredOther && !enabledMethods.includes(deliveryMethod)) {
       throw deliveryMethodUnavailableError(deliveryMethod);
     }
     if (!isPaymentAllowedForDelivery(deliveryMethod, paymentMethod)) {
@@ -590,6 +633,11 @@ export class OrderService {
           carrier: null,
           pickupPointName: point.name,
           pickupPointAddress: point.address,
+          // TASK-647: what the letter and the order pages tell the shopper about
+          // collecting it — frozen like the rest, null when the point has none.
+          pickupPointHours: point.workingHours ?? null,
+          pickupPointPhone: point.phone ?? null,
+          pickupPointMapUrl: point.mapUrl ?? null,
         },
       };
     }
@@ -934,6 +982,16 @@ export class OrderService {
   }
 
   /**
+   * Admin — facet counts for the order list's filter chips (TASK-648): how many
+   * orders of each delivery method match every active filter except the method
+   * filter itself (see `OrderRepository.countByDeliveryMethod`). All four keys
+   * are always present.
+   */
+  async adminGetOrderFacets(query: AdminOrderExportQueryDto): Promise<AdminOrderFacets> {
+    return { deliveryMethod: await this.orderRepository.countByDeliveryMethod(query) };
+  }
+
+  /**
    * Admin — build the order CSV for the CURRENT filter set (TASK-425).
    *
    * Same filters as the list, no pagination, capped at
@@ -974,6 +1032,7 @@ export class OrderService {
         row.status,
         row.paymentStatus,
         row.paymentMethod ?? '',
+        DELIVERY_METHOD_EXPORT_LABEL[row.deliveryMethod] ?? '',
         row.paidAt ? row.paidAt.toISOString() : '',
         isGuest ? 'GUEST' : 'ACCOUNT',
         isGuest ? (row.guestName ?? '') : accountName,
@@ -1389,6 +1448,18 @@ export class OrderService {
       }
     }
 
+    // TASK-643: classified by the same rule as a legacy checkout and the
+    // TASK-642 backfill. Pricing of a phone order is deliberately unchanged.
+    const deliveryMethod = resolveDeliveryMethod({ npCityRef: dto.shippingAddress.npCityRef });
+    const paymentMethod = dto.paymentMethod ?? PaymentMethod.ON_DELIVERY;
+    // TASK-1021: the delivery × payment matrix is a money invariant, not a
+    // checkout nicety — an OTHER phone order paid online would send the customer
+    // a link for an amount whose shipping nobody has quoted yet. Checked before
+    // anything is read or reserved.
+    if (!isPaymentAllowedForDelivery(deliveryMethod, paymentMethod)) {
+      throw manualOrderDeliveryPaymentNotAllowedError(deliveryMethod);
+    }
+
     const productIds = [...new Set(dto.items.map((item) => item.productId))];
     const products = await this.orderRepository.findOrderableProducts(productIds);
     const byId = new Map(products.map((product) => [product.id, product]));
@@ -1430,18 +1501,14 @@ export class OrderService {
         accessTokenHash: hashGuestToken(accessToken),
         items,
         shippingAddress: dto.shippingAddress,
-        // TASK-643: classified by the same rule as a legacy checkout and the
-        // TASK-642 backfill. Pricing of a phone order is deliberately unchanged.
-        deliveryMethod: resolveDeliveryMethod({ npCityRef: dto.shippingAddress.npCityRef }),
+        deliveryMethod,
         ...(dto.notes ? { notes: dto.notes } : {}),
         ...(dto.internalNotes ? { internalNotes: dto.internalNotes } : {}),
         ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
         // An operator can take a phone order and send a payment link, so a manual
         // order needs the same reservation deadline as a storefront one — its
         // stock must expire rather than be held forever by a link nobody opened.
-        reservationExpiresAt: this.resolveReservationDeadline(
-          dto.paymentMethod ?? PaymentMethod.ON_DELIVERY,
-        ),
+        reservationExpiresAt: this.resolveReservationDeadline(paymentMethod),
       },
       adminUserId,
     );

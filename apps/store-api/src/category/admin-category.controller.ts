@@ -32,7 +32,7 @@ import {
   BulkCategoryStatusDto,
   DeleteCategoryDto,
 } from './dto';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../auth/permissions';
 // The `auth/decorators` sub-barrel, NOT the `../auth` barrel: the barrel pulls in `auth.module` →
 // `auth.controller` → … → the `../category` barrel → this file, and that require cycle
 // leaves `CurrentUser` undefined at decorator-evaluation time ("CurrentUser is not a
@@ -42,6 +42,7 @@ import {
   AdminCategoryDetailEntity,
   AdminCategoryTreeNodeEntity,
   CategoryDeletionImpactEntity,
+  CategoryDeletionResultEntity,
   CategoryEntity,
   CategoryWithCountEntity,
 } from './entities';
@@ -65,6 +66,15 @@ class CategoryResponseEnvelope {
 class AdminCategoryDetailResponseEnvelope {
   @ApiProperty({ type: AdminCategoryDetailEntity })
   data!: AdminCategoryDetailEntity;
+}
+
+/**
+ * Response envelope for the category delete (TASK-1775): what the delete actually did —
+ * the target id (incl. a target it created) and the real moved / switched counts.
+ */
+class CategoryDeletionResponseEnvelope {
+  @ApiProperty({ type: CategoryDeletionResultEntity })
+  data!: CategoryDeletionResultEntity;
 }
 
 /**
@@ -126,7 +136,8 @@ export class AdminCategoryTreeResponse {
  * Admin endpoints (ADMIN role required):
  *   GET    /admin/categories                  — List all categories with product counts
  *   PATCH  /admin/categories/reorder          — Batch reorder / reparent (tree)
- *   GET    /admin/categories/:id              — Get category by ID
+ *   GET    /admin/categories/:id              — Get category by ID (`categories:write`
+ *                                               or `categories:delete`, TASK-655)
  *   POST   /admin/categories                  — Create a new category
  *   PUT    /admin/categories/:id              — Update a category
  *   PATCH  /admin/categories/:id/deactivate   — Deactivate a category
@@ -145,6 +156,8 @@ export class AdminCategoryTreeResponse {
   AdminCategoryDetailResponseEnvelope,
   AdminCategoryDetailEntity,
   CategoryDeletionImpactEntity,
+  CategoryDeletionResponseEnvelope,
+  CategoryDeletionResultEntity,
   DeleteCategoryDto,
 )
 @Controller('admin/categories')
@@ -252,9 +265,14 @@ export class AdminCategoryController {
    * GET /api/admin/categories/:id
    *
    * Returns a category by ID.
-   * Admin-only endpoint.
+   *
+   * Opened by `categories:write` OR `categories:delete` (TASK-655): the card carries
+   * `deletionImpact` and the delete dialog lives on it, so a manager trusted to delete
+   * but not to edit must still be able to read it. Reading is all this grants — every
+   * write route keeps its own key.
    */
   @Get(':id')
+  @RequireAnyPermission('categories:write', 'categories:delete')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get category by ID (admin)' })
   @ApiParam({ name: 'id', description: 'Category UUID' })
@@ -264,7 +282,10 @@ export class AdminCategoryController {
     type: AdminCategoryDetailResponseEnvelope,
   })
   @ApiResponse({ status: 404, description: 'Category not found' })
-  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — needs categories:write or categories:delete',
+  })
   async findById(@Param('id') id: string): Promise<AdminCategoryDetailResponseEnvelope> {
     const category = await this.categoryService.findByIdForAdmin(id);
 
@@ -279,14 +300,19 @@ export class AdminCategoryController {
    * subtree, all in one transaction. Products are never deleted or deactivated. The
    * body names the target: `moveToId` (an existing category) XOR `moveToNew` (create
    * one — which additionally needs `categories:write`, checked by the service because
-   * it depends on the body).
+   * it depends on the body). An empty body (TASK-655) deletes a truly empty category
+   * with no target at all.
+   *
+   * Answers 200 with what the delete did (TASK-1775): the target id — including the id
+   * of a target `moveToNew` created — and the real moved / switched counts, counted in
+   * the delete's own transaction. It used to be a bodiless 204.
    *
    * Its own permission (TASK-654): the route-level `categories:delete` REPLACES the
    * class-level `categories:write` (see `PermissionGuard.resolveRequirement`).
    */
   @Delete(':id')
   @RequirePermission('categories:delete')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Delete a category subtree, moving its products (admin)',
@@ -294,11 +320,19 @@ export class AdminCategoryController {
   })
   @ApiParam({ name: 'id', description: 'Category UUID' })
   @ApiBody({ type: DeleteCategoryDto })
-  @ApiResponse({ status: 204, description: 'Category subtree deleted, products moved' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Category subtree deleted, products moved (or a truly empty category deleted). The body ' +
+      'reports the target (null for a target-less delete) and the real moved / switched counts',
+    type: CategoryDeletionResponseEnvelope,
+  })
   @ApiResponse({
     status: 400,
     description:
-      'Validation error; CATEGORY_MOVE_TARGET_REQUIRED (neither or both modes); ' +
+      'Validation error; CATEGORY_MOVE_TARGET_REQUIRED (both modes, or neither mode for a ' +
+      'category that is not truly empty — it has a subcategory, a product incl. a ' +
+      'soft-deleted one, or a carousel); ' +
       'CATEGORY_MOVE_TARGET_IN_SUBTREE (the target or its parent is inside the subtree)',
   })
   @ApiResponse({
@@ -312,15 +346,18 @@ export class AdminCategoryController {
   @ApiResponse({
     status: 409,
     description:
-      'CATEGORY_SLUG_CONFLICT (the new target slug is taken) or CATEGORY_TREE_STALE ' +
-      '(the subtree changed concurrently — reload and retry)',
+      'CATEGORY_SLUG_CONFLICT (the new target slug is taken), CATEGORY_TREE_STALE ' +
+      '(the subtree changed concurrently — reload and retry) or CATEGORY_MOVE_TARGET_HIDDEN ' +
+      '(the moveToId target is hidden and allowHiddenTarget was not true — nothing changed)',
   })
   async delete(
     @Param('id') id: string,
     @Body() dto: DeleteCategoryDto,
     @CurrentUser('id') adminUserId: string,
-  ): Promise<void> {
-    await this.categoryService.delete(id, dto, adminUserId);
+  ): Promise<CategoryDeletionResponseEnvelope> {
+    const result = await this.categoryService.delete(id, dto, adminUserId);
+
+    return { data: CategoryDeletionResultEntity.fromResult(result) };
   }
 
   /**

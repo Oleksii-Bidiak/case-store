@@ -1,11 +1,17 @@
 "use client";
 
+import { useRef } from "react";
 import Link from "next/link";
 import { type CartTotals } from "@/entities/cart";
 import { ApplyDiscount, useAppliedDiscount } from "@/features/apply-discount";
+import {
+  RemoveUnavailableButton,
+  type RemoveUnavailableResult,
+} from "@/features/cart-remove-unavailable";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { MobilePayBar } from "@/shared/ui";
+import { useFocusWhenReady } from "../model/use-focus-when-ready";
 
 interface CartSummaryProps {
   totals: CartTotals;
@@ -15,6 +21,19 @@ interface CartSummaryProps {
    * blocked here and the panel says which action unblocks it.
    */
   hasUnavailableItems?: boolean;
+  /**
+   * How many withdrawn LINES the cart holds (TASK-657) — the N in «Прибрати N
+   * недоступних товарів». Lines, not units.
+   */
+  unavailableCount?: number;
+  /**
+   * Remove every withdrawn line at once (TASK-657). Owned by `CartView`, which
+   * knows the line ids; omitted → no bulk button, the rows still remove one by
+   * one.
+   */
+  onRemoveUnavailable?: () => Promise<RemoveUnavailableResult>;
+  /** The bulk removal is running. */
+  isRemovingUnavailable?: boolean;
 }
 
 /**
@@ -32,8 +51,30 @@ interface CartSummaryProps {
 export function CartSummary({
   totals,
   hasUnavailableItems = false,
+  unavailableCount = 0,
+  onRemoveUnavailable,
+  isRemovingUnavailable = false,
 }: CartSummaryProps) {
   const applied = useAppliedDiscount();
+
+  // After the bulk removal unblocks checkout, focus lands on the now-live CTA —
+  // the button that was pressed unmounts with the last withdrawn line (TASK-657).
+  const checkoutRef = useRef<HTMLAnchorElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const focusAfterCleanup = useFocusWhenReady(
+    !hasUnavailableItems,
+    checkoutRef,
+    headingRef,
+  );
+
+  const removeUnavailable = async () => {
+    if (!onRemoveUnavailable) return;
+    focusAfterCleanup.arm();
+    const result = await onRemoveUnavailable();
+    if (result.failed > 0 || result.removed === 0 || !result.refreshed) {
+      focusAfterCleanup.disarm();
+    }
+  };
 
   const subtotalCents = Math.round(parseFloat(totals.subtotal) * 100);
   const couponCents = applied
@@ -46,7 +87,12 @@ export function CartSummary({
 
   return (
     <div className="rounded-card border border-border bg-card p-[22px] shadow-card">
-      <h2 className="mb-4 font-display text-lg font-bold text-foreground">
+      {/* `tabIndex={-1}`: the focus fallback after the bulk removal (TASK-657). */}
+      <h2
+        ref={headingRef}
+        tabIndex={-1}
+        className="mb-4 font-display text-lg font-bold text-foreground focus:outline-none"
+      >
         {dict.cart.summaryHeading}
       </h2>
 
@@ -117,11 +163,21 @@ export function CartSummary({
           >
             {dict.cart.checkoutBlocked}
           </p>
+          {/* The remedy right under the reason, inside the card — never in the
+              fixed mobile bar, which carries only the primary (TASK-657). */}
+          {onRemoveUnavailable && unavailableCount > 0 && (
+            <RemoveUnavailableButton
+              count={unavailableCount}
+              pending={isRemovingUnavailable}
+              onClick={() => void removeUnavailable()}
+            />
+          )}
         </>
       ) : (
         <>
           <MobilePayBar label={dict.cart.payable} amount={payableText}>
             <Link
+              ref={checkoutRef}
               href="/checkout"
               aria-label={dict.cart.checkoutAria}
               className="flex h-11 w-full items-center justify-center rounded-cta bg-primary px-4 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:h-13 md:text-base"

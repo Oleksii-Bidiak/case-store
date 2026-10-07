@@ -1,14 +1,20 @@
 "use client";
 
+import { useRef } from "react";
 import Link from "next/link";
 import { ShoppingBag, Truck } from "lucide-react";
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
+import {
+  RemoveUnavailableButton,
+  useRemoveUnavailableItems,
+} from "@/features/cart-remove-unavailable";
 import { Skeleton, Toaster } from "@/shared/ui";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/shared/ui";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { CART_SHEET_TOASTER_ID, CartItemRow } from "./cart-item-row";
+import { useFocusWhenReady } from "../model/use-focus-when-ready";
 
 interface CartSheetProps {
   open: boolean;
@@ -33,10 +39,35 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
   const items = cart?.items ?? [];
   const count = cart?.totals.itemCount ?? 0;
   // Same rule as the cart page (TASK-403): a line the API withdrew from sale
-  // blocks checkout. "Перейти в кошик" below stays live — that is where the
-  // shopper removes it; the rows carry the badge via the shared CartItemRow.
-  const hasUnavailableItems = items.some((item) => !item.isActive);
+  // blocks checkout. "Перейти в кошик" below stays live; the rows carry the
+  // badge via the shared CartItemRow.
+  const unavailableIds = items
+    .filter((item) => !item.isActive)
+    .map((item) => item.id);
+  const hasUnavailableItems = unavailableIds.length > 0;
   const close = () => onOpenChange(false);
+
+  // «Прибрати недоступні» (TASK-657) — the same one action as the cart page.
+  // Its toast goes to the toaster INSIDE this modal (TASK-497). Focus then
+  // moves to the unblocked CTA, or — when the cleanup emptied the cart — to
+  // the empty state's «Перейти до каталогу», never to <body>.
+  const removeUnavailable = useRemoveUnavailableItems({
+    toasterId: CART_SHEET_TOASTER_ID,
+  });
+  const checkoutRef = useRef<HTMLAnchorElement>(null);
+  const shopNowRef = useRef<HTMLAnchorElement>(null);
+  const focusAfterCleanup = useFocusWhenReady(
+    !hasUnavailableItems,
+    checkoutRef,
+    shopNowRef,
+  );
+  const handleRemoveUnavailable = async () => {
+    focusAfterCleanup.arm();
+    const result = await removeUnavailable.removeAll(unavailableIds);
+    if (result.failed > 0 || result.removed === 0 || !result.refreshed) {
+      focusAfterCleanup.disarm();
+    }
+  };
 
   const loading = isInitializing || isLoading;
 
@@ -100,6 +131,7 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
               </span>
             </div>
             <Link
+              ref={shopNowRef}
               href="/products"
               onClick={close}
               className="rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]"
@@ -165,9 +197,18 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
                   >
                     {dict.cart.checkoutBlocked}
                   </p>
+                  {/* Between the reason and «Перейти в кошик» (TASK-657). The
+                      sheet artboard draws it without the trash icon; it keeps
+                      the icon here so both hosts show one control. */}
+                  <RemoveUnavailableButton
+                    count={unavailableIds.length}
+                    pending={removeUnavailable.isPending}
+                    onClick={() => void handleRemoveUnavailable()}
+                  />
                 </>
               ) : (
                 <Link
+                  ref={checkoutRef}
                   href="/checkout"
                   onClick={close}
                   className="mt-3.5 flex h-12 items-center justify-center rounded-xl bg-primary font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]"

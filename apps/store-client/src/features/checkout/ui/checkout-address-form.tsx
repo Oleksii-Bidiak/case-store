@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Controller,
   useWatch,
@@ -11,8 +12,20 @@ import {
 import { dict } from "@/shared/config";
 import { Input, Label, PhoneInput } from "@/shared/ui";
 import type { CheckoutFormValues } from "../model/checkout-schema";
+import {
+  FALLBACK_DELIVERY_OPTIONS,
+  type CheckoutDeliveryMethod,
+  type CheckoutDeliveryOptions,
+} from "../model/delivery";
 import { NpCityField } from "./np-city-field";
 import { NpWarehouseField } from "./np-warehouse-field";
+import {
+  CourierBranch,
+  DeliveryBranch,
+  NpManualBranch,
+  OtherBranch,
+  PickupBranch,
+} from "./delivery-branch-fields";
 
 interface FieldConfig {
   name: keyof CheckoutFormValues;
@@ -23,9 +36,7 @@ interface FieldConfig {
 
 /**
  * Recipient name fields (rendered via plain `register`). Phone is a `Controller`
- * + `PhoneInput`; the city/warehouse rows use the Nova Poshta autocomplete
- * (`NpCityField` / `NpWarehouseField`, TASK-080), which fall back to free text
- * when NP is offline so manual delivery still works.
+ * + `PhoneInput`; what follows depends on the delivery method (TASK-646).
  */
 const NAME_FIELDS: FieldConfig[] = [
   {
@@ -46,12 +57,26 @@ interface CheckoutAddressFormProps {
   control: Control<CheckoutFormValues>;
   setValue: UseFormSetValue<CheckoutFormValues>;
   errors: FieldErrors<CheckoutFormValues>;
+  /**
+   * The delivery method whose fields to draw — already resolved against the
+   * shop's list (the form value can lag one render behind it). Defaults to Nova
+   * Poshta, the checkout this form grew out of.
+   */
+  method?: CheckoutDeliveryMethod;
+  /** The shop's delivery offer: pickup points, the courier's terms. */
+  options?: CheckoutDeliveryOptions;
 }
 
 /**
- * CheckoutAddressForm — the recipient + delivery fieldset for checkout. The
- * delivery rows are Nova Poshta autocompletes: the warehouse search is scoped to
- * the city selected via `npCityRef` (watched here and passed down).
+ * CheckoutAddressForm — the «Отримувач» card of checkout step 1: who receives
+ * the parcel (name, phone), then a subsection for WHERE, by delivery method
+ * (CheckoutDelivery.dc.html):
+ *
+ *   - Nova Poshta — the city and branch autocompletes (TASK-080). When the city
+ *     lookup itself fails, the subsection turns into the manual path
+ *     (`npManual`, TASK-1097): typed city + address, booked by the server as
+ *     «інша доставка».
+ *   - Pickup / courier / other — `delivery-branch-fields.tsx`.
  */
 export function CheckoutAddressForm({
   legend,
@@ -59,8 +84,23 @@ export function CheckoutAddressForm({
   control,
   setValue,
   errors,
+  method = "NOVA_POSHTA",
+  options = FALLBACK_DELIVERY_OPTIONS,
 }: CheckoutAddressFormProps) {
   const npCityRef = useWatch({ control, name: "npCityRef" });
+  const npManual = useWatch({ control, name: "npManual" }) ?? false;
+  // Whether the manual city input should take focus when it replaces the
+  // autocomplete — only if the shopper was typing there at that moment.
+  const [focusManualCity, setFocusManualCity] = useState(false);
+
+  const switchToManual = () => {
+    setFocusManualCity(document.activeElement?.id === "checkout-city");
+    // Dirty on purpose: the profile prefill resets every pristine field, and
+    // must not put the dead autocomplete back.
+    setValue("npManual", true, { shouldDirty: true, shouldValidate: false });
+    setValue("npCityRef", "");
+    setValue("npWarehouseRef", "");
+  };
 
   const renderField = (field: FieldConfig) => {
     const id = `checkout-${field.name}`;
@@ -89,9 +129,53 @@ export function CheckoutAddressForm({
     );
   };
 
+  const branch = () => {
+    switch (method) {
+      case "PICKUP":
+        return <PickupBranch control={control} points={options.pickupPoints} />;
+      case "COURIER":
+        return (
+          <CourierBranch
+            register={register}
+            errors={errors}
+            courier={options.courier}
+          />
+        );
+      case "OTHER":
+        return <OtherBranch register={register} errors={errors} />;
+      case "NOVA_POSHTA":
+      default:
+        if (npManual) {
+          return (
+            <NpManualBranch
+              register={register}
+              errors={errors}
+              focusCity={focusManualCity}
+            />
+          );
+        }
+        return (
+          <DeliveryBranch heading={dict.checkout.delivery.npHeading}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <NpCityField
+                control={control}
+                setValue={setValue}
+                onLookupError={switchToManual}
+              />
+              <NpWarehouseField
+                control={control}
+                setValue={setValue}
+                cityRef={npCityRef}
+              />
+            </div>
+          </DeliveryBranch>
+        );
+    }
+  };
+
   return (
-    <fieldset className="flex flex-col gap-4 border-0 p-0">
-      <legend className="mb-2 text-lg font-semibold text-foreground">
+    <fieldset className="flex flex-col gap-5 border-0 p-0">
+      <legend className="mb-2 font-display text-lg font-bold text-foreground">
         {legend}
       </legend>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -138,14 +222,9 @@ export function CheckoutAddressForm({
             </div>
           )}
         />
-
-        <NpCityField control={control} setValue={setValue} />
-        <NpWarehouseField
-          control={control}
-          setValue={setValue}
-          cityRef={npCityRef}
-        />
       </div>
+
+      {branch()}
     </fieldset>
   );
 }

@@ -47,6 +47,26 @@ describe('DeleteCategoryDto', () => {
     expect((await check({ moveToNew: { name: 'A', parentId: 'nope' } })).errors).toHaveLength(1);
   });
 
+  // TASK-1837: consent to move into a hidden target.
+  it('accepts allowHiddenTarget as a real boolean, and its absence', async () => {
+    const id = '550e8400-e29b-41d4-a716-446655440000';
+    const withTrue = await check({ moveToId: id, allowHiddenTarget: true });
+    expect(withTrue.errors).toHaveLength(0);
+    expect(withTrue.dto.allowHiddenTarget).toBe(true);
+    expect((await check({ moveToId: id, allowHiddenTarget: false })).errors).toHaveLength(0);
+    expect((await check({ moveToId: id })).dto.allowHiddenTarget).toBeUndefined();
+  });
+
+  // Implicit conversion would turn the string "false" into `true` — consent must not
+  // be manufactured out of a string.
+  it.each([['false'], ['true'], [1]])(
+    'rejects a non-boolean allowHiddenTarget (%j)',
+    async (value) => {
+      const { errors } = await check({ allowHiddenTarget: value });
+      expect(errors.map((e) => e.property)).toEqual(['allowHiddenTarget']);
+    },
+  );
+
   it('forbids unknown fields inside moveToNew', async () => {
     const { errors } = await check({ moveToNew: { name: 'A', slug: 'a' } });
     expect(errors.map((e) => e.property)).toEqual(['moveToNew']);

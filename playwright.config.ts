@@ -89,6 +89,7 @@ export default defineConfig({
       env: {
         DATABASE_URL,
         NODE_ENV: "test",
+        PORT: String(API_PORT),
         // The API defaults to allowing localhost:3000 alone, so without this the
         // admin panel's every XHR dies in CORS preflight and the admin specs
         // fail with an empty table rather than a useful error.
@@ -96,14 +97,16 @@ export default defineConfig({
       },
     },
     {
-      command: "npm run dev -w apps/store-client",
+      // `-p` is passed explicitly so `E2E_*_PORT` can move the stand; for the
+      // admin it lands after the script's own `-p 3002`, and next takes the last.
+      command: `npm run dev -w apps/store-client -- -p ${CLIENT_PORT}`,
       port: CLIENT_PORT,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
       env: { NEXT_PUBLIC_API_URL: `http://localhost:${API_PORT}` },
     },
     {
-      command: "npm run dev -w apps/store-admin",
+      command: `npm run dev -w apps/store-admin -- -p ${ADMIN_PORT}`,
       port: ADMIN_PORT,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

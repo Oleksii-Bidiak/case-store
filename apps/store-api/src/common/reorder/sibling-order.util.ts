@@ -73,6 +73,26 @@ export async function acquireAdvisoryLocks(
 }
 
 /**
+ * Take transaction-scoped advisory locks in SHARED mode — same key hashing, same sorted
+ * order and same automatic release as {@link acquireAdvisoryLocks}.
+ *
+ * A shared holder waits for, and blocks, an EXCLUSIVE holder of the same key, but never
+ * another shared one. That is the shape of a write that only has to be ordered against a
+ * structural change, not against its peers: a product filed into a category takes the
+ * category tree key shared (TASK-1772), so it cannot interleave with a category delete
+ * (which holds the key exclusively for its whole run), while two product saves still run
+ * side by side.
+ */
+export async function acquireSharedAdvisoryLocks(
+  client: AdvisoryLockClient,
+  keys: string[],
+): Promise<void> {
+  for (const key of [...new Set(keys)].sort()) {
+    await client.$executeRaw`SELECT pg_advisory_xact_lock_shared(hashtextextended(${key}::text, 0))`;
+  }
+}
+
+/**
  * The subset of a Prisma model delegate this module needs. Structural on purpose — any
  * `tx.<model>` with a `sortOrder` column satisfies it, and the module stays free of any
  * concrete model import.

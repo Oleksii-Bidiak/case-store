@@ -37,4 +37,18 @@ describe('OrderLookupRepository.findByNumberAndPhone', () => {
     expect(where.OR).toEqual([{ guestPhone: '380501234567' }, { user: { phone: '380501234567' } }]);
     expect(where.deletedAt).toBeNull();
   });
+
+  it('selects the delivery method and the snapshot, but no guest contact columns (TASK-1030)', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new OrderLookupRepository({ order: { findMany } } as never);
+
+    await repository.findByNumberAndPhone('abcdef01', '380501234567');
+
+    const { select } = findMany.mock.calls[0][0];
+    expect(select.deliveryMethod).toBe(true);
+    expect(select.shippingAddress).toBe(true);
+    for (const forbidden of ['guestEmail', 'guestPhone', 'guestName', 'notes', 'internalNotes']) {
+      expect(select).not.toHaveProperty(forbidden);
+    }
+  });
 });

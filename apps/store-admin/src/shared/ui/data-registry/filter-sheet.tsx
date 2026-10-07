@@ -152,6 +152,10 @@ export interface PillOption {
   label: string;
   /** Appends the «нове» tag. */
   isNew?: boolean;
+  /** Not pickable right now — say why through {@link describedBy}. */
+  disabled?: boolean;
+  /** Id of the element that explains the option (e.g. why it is disabled). */
+  describedBy?: string;
 }
 
 interface PillGroupBase {
@@ -207,9 +211,11 @@ export function PillGroup(props: PillGroupProps) {
             key={option.value}
             type="button"
             aria-pressed={on}
+            disabled={option.disabled}
+            aria-describedby={option.describedBy}
             onClick={() => pick(option.value)}
             className={cn(
-              "inline-flex h-7 items-center gap-1.5 rounded-full border bg-background px-2.5 text-pill text-foreground outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50",
+              "inline-flex h-7 items-center gap-1.5 rounded-full border bg-background px-2.5 text-pill text-foreground outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background",
               on &&
                 "border-primary bg-primary text-primary-foreground hover:bg-primary/90",
             )}

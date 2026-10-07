@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   useForm,
@@ -65,6 +65,9 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 
 /** Recipient fields the «той самий клієнт» checkbox hides and fills. */
 const RECIPIENT_FIELDS = ["firstName", "lastName", "phone"] as const;
+
+/** Why card / instalments are off: no Nova Poshta city ref (TASK-1021). */
+const PAYMENT_REASON_ID = "order-create-payment-reason";
 
 const ITEMS_ANCHOR = "order-create-section-items";
 const CUSTOMER_ANCHOR = "order-create-section-customer";
@@ -172,6 +175,26 @@ export function OrderCreateForm() {
   // reads most of the form, so the whole value set is watched once here.
   const values = useWatch({ control: form.control }) as CreateOrderFormValues;
   const customerMode = values.customerMode;
+
+  // TASK-1021: the server reads a phone order's delivery off its address — no
+  // Nova Poshta city ref means «Інша доставка», whose cost nobody has quoted,
+  // and the delivery × payment matrix then refuses card and instalments. Say so
+  // before the submit: those two pills are disabled, with the reason under them.
+  const onlinePaymentBlocked = !values.npCityRef?.trim();
+  useEffect(() => {
+    if (
+      onlinePaymentBlocked &&
+      values.paymentMethod !== CreateManualOrderDtoPaymentMethod.ON_DELIVERY
+    ) {
+      // The city lost its directory ref (retyped by hand): fall back to the one
+      // method the server will take, rather than keep a choice it will refuse.
+      form.setValue(
+        "paymentMethod",
+        CreateManualOrderDtoPaymentMethod.ON_DELIVERY,
+        { shouldValidate: true, shouldDirty: true },
+      );
+    }
+  }, [onlinePaymentBlocked, values.paymentMethod, form]);
 
   /**
    * Record the picked account, and fill the recipient block from it — only
@@ -442,14 +465,34 @@ export function OrderCreateForm() {
             <PillGroup
               label={t.paymentMethodAria}
               value={values.paymentMethod}
-              onChange={(value) => form.setValue("paymentMethod", value)}
+              onChange={(value) =>
+                form.setValue("paymentMethod", value, {
+                  shouldValidate: true,
+                  shouldDirty: true,
+                })
+              }
               options={Object.values(CreateManualOrderDtoPaymentMethod).map(
-                (method) => ({
-                  value: method,
-                  label: PAYMENT_METHOD_LABELS[method] ?? method,
-                }),
+                (method) => {
+                  const blocked =
+                    onlinePaymentBlocked &&
+                    method !== CreateManualOrderDtoPaymentMethod.ON_DELIVERY;
+                  return {
+                    value: method,
+                    label: PAYMENT_METHOD_LABELS[method] ?? method,
+                    disabled: blocked,
+                    describedBy: blocked ? PAYMENT_REASON_ID : undefined,
+                  };
+                },
               )}
             />
+            {onlinePaymentBlocked ? (
+              <p
+                id={PAYMENT_REASON_ID}
+                className="text-xs text-muted-foreground"
+              >
+                {t.paymentNeedsNpCity}
+              </p>
+            ) : null}
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <NoteField

@@ -22,12 +22,14 @@ import {
   userEvent,
   waitFor,
   within,
+  type RenderWithProvidersOptions,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { resetReorderLock } from "@/shared/lib/reorder-lock";
 import { getCategoryControllerGetAdminTreeQueryKey } from "@/entities/category";
 import { toast } from "@/shared/ui/toast";
+import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { AdminCategoryTree } from "./admin-category-tree";
 import {
   EXPANDED_STORAGE_KEY,
@@ -179,8 +181,13 @@ const polite = () => screen.getByTestId("tree-live-polite").textContent ?? "";
 const assertive = () =>
   screen.getByTestId("tree-live-assertive").textContent ?? "";
 
-async function renderTree() {
-  const result = renderWithProviders(<AdminCategoryTree />);
+/** The tree's editor (TASK-1781): every move and toggle needs this key. */
+const WRITER = { permissions: ["categories:write"] };
+
+async function renderTree(auth?: RenderWithProvidersOptions["auth"]) {
+  const result = renderWithProviders(<AdminCategoryTree />, {
+    auth: auth ?? WRITER,
+  });
   await screen.findByRole("treegrid");
   await waitFor(() => expect(dataRows().length).toBeGreaterThan(0));
   return result;
@@ -1657,5 +1664,260 @@ describe("AdminCategoryTree — CategoriesProposal КТ1–КТ4 (wave 198)", ()
       "href",
       `/categories/${A1}/edit`,
     );
+  });
+});
+
+/* ──────────────── «Видалити…» in «⋯» (TASK-655, ДН-2.1) ──────────────── */
+
+describe("AdminCategoryTree — delete (TASK-655)", () => {
+  const dd = dict.categories.delete;
+
+  function stubDetail() {
+    server.use(
+      http.get("*/api/admin/categories/:id", ({ params }) =>
+        HttpResponse.json({
+          data: {
+            id: params.id,
+            name: NAMES[params.id as string],
+            slug: "slug",
+            description: null,
+            image: null,
+            parentId: null,
+            isActive: true,
+            sortOrder: 0,
+            metaTitle: null,
+            metaDescription: null,
+            createdAt: "2026-10-01T00:00:00.000Z",
+            updatedAt: "2026-10-01T00:00:00.000Z",
+            deletionImpact: {
+              subcategoryCount: 1,
+              productCount: 4,
+              carouselCount: 0,
+              carousels: [],
+              deletedProductCount: 0,
+            },
+          },
+        }),
+      ),
+    );
+  }
+
+  async function openMenu(id: string) {
+    rowEl(id).focus();
+    fireEvent.keyDown(rowEl(id), { key: "F10", shiftKey: true });
+    // «Відкрити» / «Редагувати» is in every menu, writer or not.
+    await screen.findByRole("menuitem", {
+      name: new RegExp(
+        `^(${dict.categories.tree.edit}|${dict.categories.readOnly.open})$`,
+      ),
+    });
+  }
+
+  it("has no «Видалити…» without categories:delete", async () => {
+    mockReorder();
+    await renderTree({ permissions: ["categories:write"] });
+    await openMenu(A1);
+
+    expect(
+      screen.queryByRole("menuitem", { name: dd.action }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("puts «Видалити…» LAST in «⋯» and opens the delete dialog for that row", async () => {
+    mockReorder();
+    stubDetail();
+    await renderTree({ permissions: ["categories:delete"] });
+    await openMenu(A1);
+
+    const items = screen.getAllByRole("menuitem");
+    const last = items[items.length - 1];
+    expect(last).toHaveAccessibleName(dd.action);
+    expect(last).toHaveAttribute("data-variant", "destructive");
+
+    fireEvent.click(last);
+    const alert = await screen.findByRole("alertdialog");
+    expect(
+      within(alert).getByRole("heading", { name: dd.title("Чохли") }),
+    ).toBeInTheDocument();
+  });
+
+  it("tints the branch the open dialog would remove — and only it (ДН-2.2)", async () => {
+    mockReorder();
+    stubDetail();
+    await renderTree({ permissions: ["categories:delete"] });
+    expect(document.querySelector("[data-doomed]")).toBeNull();
+
+    // Deleting the ROOT «Аксесуари»: its visible children are tinted too.
+    await openMenu(A);
+    fireEvent.click(screen.getByRole("menuitem", { name: dd.action }));
+    await screen.findByRole("alertdialog");
+    for (const id of [A, A1, A2]) {
+      expect(rowEl(id)).toHaveAttribute("data-doomed", "true");
+    }
+    for (const id of [B, C]) {
+      expect(rowEl(id)).not.toHaveAttribute("data-doomed");
+    }
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: dict.common.cancel,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+
+    await openMenu(A1);
+    fireEvent.click(screen.getByRole("menuitem", { name: dd.action }));
+    await screen.findByRole("alertdialog");
+
+    // Чохли (its collapsed Силіконові is not drawn at all); not the parent,
+    // not the sibling.
+    expect(rowEl(A1)).toHaveAttribute("data-doomed", "true");
+    expect(rowEl(A1)).toHaveClass("bg-destructive/6");
+    for (const id of [A, A2, B, C]) {
+      expect(rowEl(id)).not.toHaveAttribute("data-doomed");
+    }
+
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: dict.common.cancel,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    expect(document.querySelector("[data-doomed]")).toBeNull();
+  });
+});
+
+/* ─────────── categories:delete without categories:write (TASK-1781) ─────────── */
+
+describe("AdminCategoryTree — delete-only manager (TASK-1781)", () => {
+  const ro = dict.categories.readOnly;
+  const tt = dict.categories.tree;
+  const DELETE_ONLY = { permissions: ["categories:delete"] };
+
+  it("reads the tree with no write control — no selection, grip, toggle or undo", async () => {
+    mockReorder();
+    await renderTree(DELETE_ONLY);
+
+    expect(screen.getByText(ro.treeNotice)).toBeInTheDocument();
+    const grid = screen.getByRole("treegrid");
+    expect(grid).not.toHaveAttribute("aria-multiselectable");
+    expect(within(grid).queryAllByRole("checkbox")).toHaveLength(0);
+    expect(
+      screen.queryByRole("button", {
+        name: dict.reorderTree.handleLabel("Чохли"),
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: dict.statusToggle.categoryDeactivate,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: tt.undo }),
+    ).not.toBeInTheDocument();
+    // The status is still said — as a plain badge.
+    expect(
+      within(rowEl(A1)).getAllByText(tt.statusShown).length,
+    ).toBeGreaterThan(0);
+    for (const row of dataRows()) {
+      expect(row).not.toHaveAttribute("aria-selected");
+    }
+  });
+
+  it("Space does not pick a row up and Ctrl+Space does not select it", async () => {
+    mockReorder();
+    await renderTree(DELETE_ONLY);
+
+    rowEl(A1).focus();
+    fireEvent.keyDown(rowEl(A1), { key: " " });
+    expect(rowEl(A1)).toHaveAttribute("data-grabbed", "false");
+    fireEvent.keyDown(rowEl(A1), { key: " ", ctrlKey: true });
+    fireEvent.keyDown(rowEl(A1), {
+      key: "ArrowDown",
+      altKey: true,
+      shiftKey: true,
+    });
+    expect(rowEl(A1)).not.toHaveAttribute("aria-selected");
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("«⋯» offers only «Відкрити» and «Видалити…»", async () => {
+    mockReorder();
+    await renderTree(DELETE_ONLY);
+
+    rowEl(A1).focus();
+    fireEvent.keyDown(rowEl(A1), { key: "F10", shiftKey: true });
+    await screen.findByRole("menuitem", { name: ro.open });
+    expect(
+      screen.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual([ro.open, dict.categories.delete.action]);
+    expect(screen.getByRole("menuitem", { name: ro.open })).toHaveAttribute(
+      "href",
+      `/categories/${A1}/edit`,
+    );
+  });
+
+  it("a writer gets no read-only notice", async () => {
+    mockReorder();
+    await renderTree();
+    expect(screen.queryByText(ro.treeNotice)).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("treegrid")).getAllByRole("checkbox").length,
+    ).toBeGreaterThan(0);
+  });
+});
+
+/* ───────────── grants still loading (ревʼю хвостів 185 U) ───────────── */
+
+describe("AdminCategoryTree — while the grants load", () => {
+  /** The real provider answers `can()` false until the grants arrive. */
+  const LOADING = { permissions: [], arePermissionsLoading: true };
+
+  it("holds the skeleton until the grants are known, then draws the writer's grid", async () => {
+    let served = false;
+    server.use(
+      http.get("*/api/categories/admin/tree", () => {
+        served = true;
+        return HttpResponse.json(treeResponse());
+      }),
+    );
+
+    const { rerender } = renderWithProviders(
+      <WithAuth {...LOADING}>
+        <AdminCategoryTree />
+      </WithAuth>,
+    );
+    await waitFor(() => expect(served).toBe(true));
+    // Let the tree response settle: the data is in, only the grants are not.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    // No grid without its selection column and grips, and no read-only
+    // notice that the grants would then take back.
+    expect(screen.queryByRole("treegrid")).not.toBeInTheDocument();
+    expect(dataRows()).toHaveLength(0);
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(
+      screen.queryByText(dict.categories.readOnly.treeNotice),
+    ).not.toBeInTheDocument();
+    // The skeleton keeps the grid's columns, selection included.
+    expect(
+      screen.getByText(dict.categories.tree.bulk.colSelect),
+    ).toBeInTheDocument();
+
+    rerender(
+      <WithAuth {...WRITER}>
+        <AdminCategoryTree />
+      </WithAuth>,
+    );
+
+    const grid = await screen.findByRole("treegrid");
+    expect(grid).toHaveAttribute("aria-multiselectable", "true");
+    expect(within(grid).getAllByRole("checkbox").length).toBeGreaterThan(0);
   });
 });

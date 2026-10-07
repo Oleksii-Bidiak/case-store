@@ -1,4 +1,6 @@
 import {
+  acquireAdvisoryLocks,
+  acquireSharedAdvisoryLocks,
   applySortOrderWrites,
   lockKey,
   resolveSiblingOrderWrites,
@@ -35,6 +37,34 @@ describe('sibling-order.util', () => {
     it('exposes the tree-scoped key, distinct from every bucket key', () => {
       expect(treeLockKey('categories')).toBe('categories:__tree__');
       expect(treeLockKey('categories')).not.toBe(lockKey('categories', null));
+    });
+  });
+
+  // ─── advisory locks ─────────────────────────────────────────────────────────
+
+  describe('acquireAdvisoryLocks / acquireSharedAdvisoryLocks', () => {
+    const sqlOf = (call: unknown[]): string => (call[0] as TemplateStringsArray).join('?');
+
+    it('takes exclusive locks once per key, in sorted order', async () => {
+      const client = { $executeRaw: jest.fn().mockResolvedValue(1) };
+
+      await acquireAdvisoryLocks(client, ['b', 'a', 'b']);
+
+      expect(client.$executeRaw.mock.calls.map((call) => call[1])).toEqual(['a', 'b']);
+      expect(sqlOf(client.$executeRaw.mock.calls[0])).toContain('pg_advisory_xact_lock(');
+    });
+
+    // TASK-1772: a product write takes the category tree key SHARED — ordered against a
+    // category delete (exclusive) without serialising product saves against each other.
+    it('takes SHARED locks once per key, in sorted order, with the same key hashing', async () => {
+      const client = { $executeRaw: jest.fn().mockResolvedValue(1) };
+
+      await acquireSharedAdvisoryLocks(client, ['b', 'a', 'a']);
+
+      expect(client.$executeRaw.mock.calls.map((call) => call[1])).toEqual(['a', 'b']);
+      const sql = sqlOf(client.$executeRaw.mock.calls[0]);
+      expect(sql).toContain('pg_advisory_xact_lock_shared(');
+      expect(sql).toContain('hashtextextended(');
     });
   });
 

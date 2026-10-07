@@ -44,6 +44,17 @@ export const PERM = {
   // is not automatically a manager who may retire a position.
   productsDelete: "products:delete",
   categoriesWrite: "categories:write",
+  // TASK-655 — «Видалити…» in the category tree «⋯» and on the category card
+  // (`DELETE /api/admin/categories/:id`, TASK-654). Its own key and NOT folded
+  // into `categories:write`: a delete tombstones a whole branch and moves every
+  // product in it, which is more reach than renaming a category.
+  //
+  // NO BACKFILL, on purpose (see the comment beside the key in the API's
+  // `permission.catalog.ts`): on deploy only the owner and admins hold it, and
+  // the menu item and the card button stay hidden for every manager until the
+  // owner ticks the box. Creating the move target inside the dialog asks for
+  // `categoriesWrite` on top of this one.
+  categoriesDelete: "categories:delete",
   brandsWrite: "brands:write",
   devicesWrite: "devices:write",
   addonsWrite: "addons:write",
@@ -113,6 +124,10 @@ export const PERM = {
   settingsSeo: "settings:seo",
   settingsContacts: "settings:contacts",
   settingsSearch: "settings:search",
+  // TASK-644 — /settings/delivery: the four checkout methods, the courier price
+  // and the pickup points. One key for the whole screen, as on the API
+  // (`AdminDeliveryController` and `AdminPickupPointsController`).
+  settingsDelivery: "settings:delivery",
 
   analyticsRead: "analytics:read",
   // TASK-684: the money on the dashboard and in the reports. The API cuts the

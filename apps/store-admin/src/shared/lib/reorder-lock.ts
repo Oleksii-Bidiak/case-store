@@ -30,7 +30,9 @@ export type ReorderResource =
   // TASK-428 converted these three from a hand-typed `sortOrder` field to drag-reorder.
   | "faq"
   | "pages"
-  | "carousels";
+  | "carousels"
+  // TASK-645 — the pickup points on /settings/delivery.
+  | "pickup-points";
 
 const inFlight = new Map<ReorderResource, number>();
 

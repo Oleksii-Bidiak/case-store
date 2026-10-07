@@ -14,19 +14,17 @@ import {
 } from './category-reorder.rules';
 import {
   CategoryCycleError,
+  CategoryMoveTargetHiddenError,
   CategoryMoveTargetInSubtreeError,
   CategoryMoveTargetNotFoundError,
+  CategoryMoveTargetRequiredError,
   CategoryNotFoundError,
   CategorySelfParentError,
   CategorySlugConflictError,
   CategoryTreeStaleError,
 } from './category.errors';
-import {
-  acquireAdvisoryLocks,
-  applySortOrderWrites,
-  lockKey,
-  treeLockKey,
-} from '../common/reorder';
+import { acquireAdvisoryLocks, applySortOrderWrites, lockKey } from '../common/reorder';
+import { CATEGORY_LOCK_RESOURCE, CATEGORY_TREE_LOCK_KEY } from './category-locks';
 
 /**
  * Any Prisma client the read helpers accept: the injected singleton or an
@@ -44,17 +42,16 @@ export type CategoryDbClient = PrismaService | Prisma.TransactionClient;
 const MAX_CATEGORY_DEPTH = 50;
 
 /**
- * Advisory-lock resource namespace (plan 158 §3.8). The key helpers themselves live in
- * `common/reorder/sibling-order.util.ts` so the flat sortable admins (banners /
- * blog-categories / device-brands) reuse the exact same recipe: advisory locks are
- * DATABASE-GLOBAL and every resource has a `__root__` bucket, so without the resource
- * prefix a banner reorder would serialise against a root-category reorder.
+ * Advisory-lock resource namespace (plan 158 §3.8) — defined in `./category-locks`, a
+ * leaf the product repository shares (see there).
  */
-const LOCK_RESOURCE = 'categories';
+const LOCK_RESOURCE = CATEGORY_LOCK_RESOURCE;
 
 /**
  * The TREE-SCOPED lock key. Taken by ANY write that changes a node's `parentId`
- * (`applyTreeMoves` with at least one reparent, and `update`'s parent-change path).
+ * (`applyTreeMoves` with at least one reparent, and `update`'s parent-change path), by
+ * the whole category delete, and — in SHARED mode — by every product write that files a
+ * product under a category (`ProductRepository` create / update / restore, TASK-1772).
  *
  * Non-negotiable (§3.8): cycle and depth are WHOLE-TREE invariants and per-bucket locks
  * do not serialise the operations that violate them — admin A moving X under Y locks
@@ -62,7 +59,7 @@ const LOCK_RESOURCE = 'categories';
  * sets; at READ COMMITTED both snapshot before the other commits, both guards see only
  * committed rows, and an `X → Y → X` cycle lands in the table (textbook write skew).
  */
-const TREE_LOCK_KEY = treeLockKey(LOCK_RESOURCE);
+const TREE_LOCK_KEY = CATEGORY_TREE_LOCK_KEY;
 
 /** Per-bucket lock key. `null` (the root bucket) has no row to lock — hence the sentinel. */
 const bucketLockKey = (parentId: string | null): string => lockKey(LOCK_RESOURCE, parentId);
@@ -231,10 +228,23 @@ export interface CategoryUpdateResult {
  * products (TASK-652): an EXISTING live category, or a NEW one created in the same
  * transaction. The new target's slug is generated and pre-checked by the service; the
  * unique index is the authoritative guard and surfaces as `CategorySlugConflictError`.
+ *
+ * `none` (TASK-655) — no target at all: allowed only for a TRULY EMPTY category (no live
+ * subcategory, no product of any state, no carousel), decided under the lock; anything
+ * else is `CategoryMoveTargetRequiredError`.
  */
 export type CategoryDeletionTarget =
-  | { kind: 'existing'; id: string }
-  | { kind: 'new'; name: string; slug: string; parentId: string | null };
+  | {
+      kind: 'existing';
+      id: string;
+      /**
+       * The operator consented to a HIDDEN target (TASK-1837, `allowHiddenTarget`).
+       * Absent/false → a target with `isActive = false` is `CategoryMoveTargetHiddenError`.
+       */
+      allowHidden?: boolean;
+    }
+  | { kind: 'new'; name: string; slug: string; parentId: string | null }
+  | { kind: 'none' };
 
 /**
  * Result of {@link CategoryRepository.deleteSubtreeWithMove} (TASK-652) — everything
@@ -242,12 +252,15 @@ export type CategoryDeletionTarget =
  * line, computed inside the transaction that did the work.
  */
 export interface CategoryDeletionResult {
-  targetId: string;
+  /** The category the products moved into; `null` for a target-less delete (TASK-655). */
+  targetId: string | null;
   targetCreated: boolean;
   /** The tombstoned ids — the deleted category itself plus every live descendant. */
   subtreeIds: string[];
   /** Products re-filed into the target (active, inactive and soft-deleted alike). */
   movedProducts: number;
+  /** Of {@link movedProducts}, the ones NOT soft-deleted (active or hidden). */
+  movedLiveProducts: number;
   /** Carousels switched from a subtree category to the target. */
   switchedCarousels: number;
 }
@@ -259,7 +272,16 @@ export interface CategoryDeletionResult {
 export interface CategoryDeletionImpact {
   subcategoryCount: number;
   productCount: number;
+  /** `carousels.length` — kept for the consumers that only need the number. */
   carouselCount: number;
+  /**
+   * Every carousel pointing into the subtree, i.e. every one the delete switches to the
+   * target (TASK-1776), ordered by name — so the dialog can name them. `name` is the
+   * carousel's `title`.
+   */
+  carousels: Array<{ id: string; name: string }>;
+  /** Soft-deleted products of the subtree (TASK-655) — they still block a target-less delete. */
+  deletedProductCount: number;
 }
 
 @Injectable()
@@ -1280,7 +1302,9 @@ export class CategoryRepository {
    *      refused as `CategoryTreeStaleError` rather than leaving a live orphan.
    *   3. The target is validated AUTHORITATIVELY here — the service's checks were only
    *      fast-fail hints: it (or the new target's parent) must be live and outside the
-   *      subtree.
+   *      subtree. A HIDDEN existing target is refused (`CategoryMoveTargetHiddenError`,
+   *      TASK-1837) unless `target.allowHidden` — the moved products would leave the
+   *      storefront. A new target is created active, so its parent may be hidden.
    *   4. A new target is created at the end of its bucket (live rows only); a slug
    *      collision on the unique index is `CategorySlugConflictError`.
    *   5. `product.updateMany` — NO `deletedAt` filter: a soft-deleted product moves too,
@@ -1290,6 +1314,10 @@ export class CategoryRepository {
    *      carousel left on a tombstone would 404 on its next edit.
    *   7. Each subtree row: `deletedAt = now`, `isActive = false`, slug mangled to
    *      `deleted:<id>:<slug>` so the address is free for a new category (I3).
+   *
+   * A `none` target (TASK-655) replaces steps 3-6 with
+   * {@link CategoryRepository.assertDeletableWithoutTarget} — the category must be a
+   * truly empty leaf — and tombstones the single row; `targetId` is then `null`.
    *
    * Throws the domain errors of `category.errors.ts`; any throw rolls everything back.
    */
@@ -1328,33 +1356,61 @@ export class CategoryRepository {
           throw new CategoryTreeStaleError();
         }
 
-        let targetId: string;
-        if (target.kind === 'existing') {
-          if (subtree.has(target.id)) {
-            throw new CategoryMoveTargetInSubtreeError();
-          }
-          const live = await tx.category.findFirst({
-            where: { id: target.id, deletedAt: null },
-            select: { id: true },
-          });
-          if (!live) {
-            throw new CategoryMoveTargetNotFoundError(
-              `Move target category "${target.id}" not found`,
-            );
-          }
-          targetId = target.id;
+        let targetId: string | null = null;
+        let movedProducts = 0;
+        let movedLiveProducts = 0;
+        let switchedCarousels = 0;
+        if (target.kind === 'none') {
+          await this.assertDeletableWithoutTarget(tx, id, subtreeIds);
         } else {
-          targetId = await this.createDeletionTarget(tx, target, subtree);
-        }
+          if (target.kind === 'existing') {
+            if (subtree.has(target.id)) {
+              throw new CategoryMoveTargetInSubtreeError();
+            }
+            const live = await tx.category.findFirst({
+              where: { id: target.id, deletedAt: null },
+              select: { id: true, isActive: true },
+            });
+            if (!live) {
+              throw new CategoryMoveTargetNotFoundError(
+                `Move target category "${target.id}" not found`,
+              );
+            }
+            // TASK-1837: a product is public only while its OWN category is active, so a
+            // hidden target takes every moved product off the storefront. That needs the
+            // operator's explicit consent, checked against the state read HERE — the
+            // dialog's warning may be older than a concurrent hide. (A hide committing
+            // after this read is equivalent to hiding the target right after the delete,
+            // which is the hider's own visible action — no row lock is needed.)
+            if (!live.isActive && target.allowHidden !== true) {
+              throw new CategoryMoveTargetHiddenError();
+            }
+            targetId = target.id;
+          } else {
+            targetId = await this.createDeletionTarget(tx, target, subtree);
+          }
 
-        const moved = await tx.product.updateMany({
-          where: { categoryId: { in: subtreeIds } },
-          data: { categoryId: targetId },
-        });
-        const switched = await tx.carousel.updateMany({
-          where: { categoryId: { in: subtreeIds } },
-          data: { categoryId: targetId },
-        });
+          // EVERY product moves — live and soft-deleted alike (invariant I1) — in two
+          // statements so the answer can say how many of them were live: the admin
+          // toast offers «Показати товари» only for those, and a count taken from the
+          // dialog's preview would be stale if products arrived in between. The tree
+          // lock keeps product writes out meanwhile, so the two halves are exact.
+          const movedLive = await tx.product.updateMany({
+            where: { categoryId: { in: subtreeIds }, deletedAt: null },
+            data: { categoryId: targetId },
+          });
+          const movedDeleted = await tx.product.updateMany({
+            where: { categoryId: { in: subtreeIds }, deletedAt: { not: null } },
+            data: { categoryId: targetId },
+          });
+          const switched = await tx.carousel.updateMany({
+            where: { categoryId: { in: subtreeIds } },
+            data: { categoryId: targetId },
+          });
+          movedLiveProducts = movedLive.count;
+          movedProducts = movedLive.count + movedDeleted.count;
+          switchedCarousels = switched.count;
+        }
 
         const rows = await tx.category.findMany({
           where: { id: { in: subtreeIds } },
@@ -1371,13 +1427,46 @@ export class CategoryRepository {
           targetId,
           targetCreated: target.kind === 'new',
           subtreeIds,
-          movedProducts: moved.count,
-          switchedCarousels: switched.count,
+          movedProducts,
+          movedLiveProducts,
+          switchedCarousels,
         };
       },
       // Lock waits count against `timeout` — same budget as `runTreeMoves`.
       { timeout: 15_000, maxWait: 10_000 },
     );
+  }
+
+  /**
+   * The authoritative "truly empty" check of a target-less delete (TASK-655), run under
+   * the caller's tree + bucket locks after the stale re-check: the category has NO live
+   * subcategory, NO product in ANY state and NO carousel pointing at it. The product
+   * count deliberately has no `deletedAt` filter — a soft-deleted product left on a
+   * tombstone would break invariant I1 the moment TASK-656 restores it.
+   */
+  private async assertDeletableWithoutTarget(
+    tx: Prisma.TransactionClient,
+    id: string,
+    subtreeIds: string[],
+  ): Promise<void> {
+    if (subtreeIds.length !== 1) {
+      throw new CategoryMoveTargetRequiredError(
+        'The category has subcategories — name a move target for its products',
+      );
+    }
+    // Sequential on purpose: one interactive-transaction connection runs them in turn.
+    const products = await tx.product.count({ where: { categoryId: id } });
+    if (products > 0) {
+      throw new CategoryMoveTargetRequiredError(
+        'The category still holds products (deleted ones included) — name a move target',
+      );
+    }
+    const carousels = await tx.carousel.count({ where: { categoryId: id } });
+    if (carousels > 0) {
+      throw new CategoryMoveTargetRequiredError(
+        'Homepage carousels point at the category — name a move target for them',
+      );
+    }
   }
 
   /**
@@ -1439,18 +1528,37 @@ export class CategoryRepository {
    *     would under-report). Soft-deleted products move too (step 5 of
    *     {@link CategoryRepository.deleteSubtreeWithMove}) but are deliberately left out
    *     of this count — the dialog describes the catalogue the operator can see;
-   *   - `carouselCount` — carousels pointing into the subtree, which switch too.
+   *   - `carousels` / `carouselCount` — carousels pointing into the subtree, which
+   *     switch too; named (TASK-1776) so the dialog can say WHICH ones. Same `where` as
+   *     the switch in {@link CategoryRepository.deleteSubtreeWithMove}, no status
+   *     filter: a draft carousel is switched as well;
+   *   - `deletedProductCount` (TASK-655) — the soft-deleted products of the subtree.
+   *     They are invisible in the catalogue but still block a target-less delete, so
+   *     the dialog needs them to tell a TRULY empty branch (all four counts zero).
    */
   async countDeletionImpact(id: string): Promise<CategoryDeletionImpact> {
     const subtreeIds = await this.findSubtreeIds(id);
-    const [productCount, carouselCount] = await Promise.all([
+    const [productCount, deletedProductCount, carouselRows] = await Promise.all([
       this.prisma.product.count({
         where: { categoryId: { in: subtreeIds }, deletedAt: null },
       }),
-      this.prisma.carousel.count({ where: { categoryId: { in: subtreeIds } } }),
+      this.prisma.product.count({
+        where: { categoryId: { in: subtreeIds }, deletedAt: { not: null } },
+      }),
+      this.prisma.carousel.findMany({
+        where: { categoryId: { in: subtreeIds } },
+        select: { id: true, title: true },
+        orderBy: [{ title: 'asc' }, { id: 'asc' }],
+      }),
     ]);
 
-    return { subcategoryCount: subtreeIds.length - 1, productCount, carouselCount };
+    return {
+      subcategoryCount: subtreeIds.length - 1,
+      productCount,
+      carouselCount: carouselRows.length,
+      carousels: carouselRows.map((row) => ({ id: row.id, name: row.title })),
+      deletedProductCount,
+    };
   }
 
   /**

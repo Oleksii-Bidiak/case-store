@@ -147,4 +147,16 @@ describe('MailService', () => {
       expect(logger.debug).not.toHaveBeenCalled();
     });
   });
+
+  // TASK-647: the letter names the delivery method from the order column.
+  describe('toOrderConfirmationPayload', () => {
+    it('carries the order-level delivery method into the outbox payload', () => {
+      const payload = MailService.toOrderConfirmationPayload({
+        to: 'c@example.com',
+        order: { ...order, deliveryMethod: 'PICKUP' } as OrderEntity,
+      });
+
+      expect(payload.order.deliveryMethod).toBe('PICKUP');
+    });
+  });
 });

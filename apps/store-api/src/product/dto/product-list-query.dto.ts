@@ -15,6 +15,20 @@ import { ApiProperty } from '@nestjs/swagger';
 import { SLUG_MAX_LENGTH, blankToUndefined } from '../../catalog-filter';
 
 /**
+ * Every value `sortBy` accepts. Exported so the validator and the error message
+ * read one tuple. `deletedAt` (TASK-656) only means something on the admin
+ * «Видалені» list — `ProductService` resolves it (and the default) per listing.
+ */
+export const PRODUCT_LIST_SORT_FIELDS = [
+  'createdAt',
+  'price',
+  'name',
+  'stock',
+  'bestselling',
+  'deletedAt',
+] as const;
+
+/**
  * DTO for querying the product list (public endpoint).
  *
  * Supports pagination, filtering by category, active status,
@@ -295,21 +309,26 @@ export class ProductListQueryDto {
 
   @ApiProperty({
     description:
-      'Sort field: createdAt, price, name, stock, or bestselling. `bestselling` orders by ' +
+      'Sort field: createdAt, price, name, stock, bestselling or deletedAt. `bestselling` orders by ' +
       'units sold across PAID orders (TASK-164); zero-sales products still appear, ' +
       'newest-first, at the tail. `stock` sorts by available (free-to-sell) stock — the ' +
       'admin list "Вільно" sort (TASK-254); harmless on the public list, which never ' +
-      'exposes raw stock.',
+      'exposes raw stock. `deletedAt` orders the admin «Видалені» list (`deleted=true`) ' +
+      'by the moment each product was deleted (TASK-656). Absent = `deletedAt` on that ' +
+      'list and `createdAt` everywhere else; on a live listing, where no row has a ' +
+      'deletion date, an explicit `deletedAt` also falls back to `createdAt`.',
     example: 'createdAt',
     required: false,
-    default: 'createdAt',
   })
   @IsOptional()
   @IsString()
-  @IsIn(['createdAt', 'price', 'name', 'stock', 'bestselling'], {
-    message: 'sortBy must be one of: createdAt, price, name, stock, bestselling',
+  @IsIn(PRODUCT_LIST_SORT_FIELDS, {
+    message: `sortBy must be one of: ${PRODUCT_LIST_SORT_FIELDS.join(', ')}`,
   })
-  sortBy?: string = 'createdAt';
+  // No field initializer (TASK-656): the default depends on `deleted`, which a
+  // class default cannot see. `ProductService` resolves it, so an absent value
+  // must stay distinguishable from an explicit `createdAt`.
+  sortBy?: string;
 
   @ApiProperty({
     description: 'Sort order (asc or desc)',

@@ -20,6 +20,7 @@ import {
   ApiParam,
   ApiExtraModels,
   ApiProperty,
+  ApiBody,
 } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import {
@@ -32,10 +33,12 @@ import {
   BulkProductStatusDto,
   BulkProductGroupDto,
   BulkProductColorDto,
+  RestoreProductDto,
 } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import {
   ProductEntity,
+  AdminProductListItemEntity,
   PublicProductEntity,
   ProductGroupEntity,
   ProductImageEntity,
@@ -88,10 +91,12 @@ class ProductListResponseEnvelope {
  */
 class AdminProductListResponseEnvelope {
   @ApiProperty({
-    type: [ProductEntity],
-    description: 'Products for the current page (admin, all statuses)',
+    type: [AdminProductListItemEntity],
+    description:
+      'Products for the current page (admin, all statuses); on deleted=true each row also ' +
+      'says when and by whom it was deleted (TASK-1830)',
   })
-  data!: ProductEntity[];
+  data!: AdminProductListItemEntity[];
 
   @ApiProperty({ type: PaginationMeta })
   meta!: PaginationMeta;
@@ -211,7 +216,7 @@ class GroupDeviceCompatResponseEnvelope {
 type ProductResponse = { data: ProductEntity };
 type GroupDeviceCompatResponse = { data: { updatedCount: number } };
 type ProductListResponse = { data: PublicProductEntity[]; meta: PaginationMeta };
-type AdminProductListResponse = { data: ProductEntity[]; meta: PaginationMeta };
+type AdminProductListResponse = { data: AdminProductListItemEntity[]; meta: PaginationMeta };
 type ProductCardsResponse = { data: PublicProductEntity[] };
 type ProductDetailResponse = {
   data: PublicProductEntity;
@@ -428,7 +433,19 @@ export class ProductController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Create a product (admin)' })
   @ApiResponse({ status: 201, description: 'Product created', type: ProductResponseEnvelope })
-  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing ' +
+      'category (TASK-1831)',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'PRODUCT_CATEGORY_BUSY — categories are being changed right now (a category delete ' +
+      'holds the tree lock longer than a save may wait); nothing was written, retry. ' +
+      'Also a plain 409 when the SKU is already taken',
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async create(@Body() dto: CreateProductDto): Promise<ProductResponse> {
     const product = await this.productService.create(dto);
@@ -449,8 +466,20 @@ export class ProductController {
   @ApiOperation({ summary: 'Update a product (admin)' })
   @ApiParam({ name: 'id', description: 'Product UUID' })
   @ApiResponse({ status: 200, description: 'Product updated', type: ProductResponseEnvelope })
-  @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing ' +
+      'category (TASK-1831)',
+  })
   @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'PRODUCT_CATEGORY_BUSY — categories are being changed right now (a category delete ' +
+      'holds the tree lock longer than a save may wait); nothing was written, retry. ' +
+      'Also a plain 409 when the slug or SKU is already taken',
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async update(@Param('id') id: string, @Body() dto: UpdateProductDto): Promise<ProductResponse> {
     const product = await this.productService.update(id, dto);
@@ -753,5 +782,54 @@ export class ProductController {
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async remove(@Param('id') id: string): Promise<void> {
     await this.productService.delete(id);
+  }
+
+  /**
+   * POST /api/products/:id/restore
+   *
+   * Restores a soft-deleted product (TASK-656) — the inverse of DELETE. It comes
+   * back HIDDEN (`isActive = false`) on the slug and SKU it had before deletion;
+   * the body may name a new `slug`/`sku` after a 409 said which one is taken.
+   * Nothing is written on a 409 — the product stays deleted.
+   *
+   * Same permission as DELETE: whoever may delete a product may undo it, so there
+   * is no separate key to grant.
+   */
+  @Post(':id/restore')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:delete')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Restore a soft-deleted product, hidden (admin)',
+    operationId: 'restoreProduct',
+  })
+  @ApiParam({ name: 'id', description: 'Product UUID' })
+  @ApiBody({ type: RestoreProductDto, required: false })
+  @ApiResponse({
+    status: 200,
+    description: 'Product restored, inactive (isActive = false)',
+    type: ProductResponseEnvelope,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Validation error (slug pattern, length caps); or PRODUCT_CATEGORY_GONE — the category ' +
+      'the product was filed under is deleted, so it cannot come back (TASK-1831); the ' +
+      'product stays deleted',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — needs products:delete' })
+  @ApiResponse({ status: 404, description: 'No deleted product with this id' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'PRODUCT_SLUG_CONFLICT, PRODUCT_SKU_CONFLICT or PRODUCT_SLUG_SKU_CONFLICT — a live ' +
+      'product holds the slug / SKU / both; resend with a new value. PRODUCT_CATEGORY_BUSY ' +
+      '— categories are being changed right now; retry. Nothing was written',
+  })
+  async restore(@Param('id') id: string, @Body() dto: RestoreProductDto): Promise<ProductResponse> {
+    const product = await this.productService.restore(id, { slug: dto.slug, sku: dto.sku });
+
+    return { data: product };
   }
 }

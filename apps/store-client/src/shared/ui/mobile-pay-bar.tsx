@@ -1,4 +1,7 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { type ReactNode, useRef } from "react";
+import { useMobileBarInset } from "@/shared/lib/use-mobile-bar-inset";
 import { cn } from "@/shared/lib/utils";
 
 interface MobilePayBarProps {
@@ -6,6 +9,8 @@ interface MobilePayBarProps {
   label: string;
   /** The formatted payable amount; omitted while it is not known yet. */
   amount?: string;
+  /** A short caption under the amount — e.g. «без доставки» when it is left out. */
+  amountNote?: string;
   /** The page's primary action (a link or a submit button). */
   children: ReactNode;
   className?: string;
@@ -26,15 +31,24 @@ interface MobilePayBarProps {
  *
  * Mind the ancestors: `position: fixed` is relative to the viewport only while
  * no ancestor sets `transform`, `filter`, `backdrop-filter` or `contain`.
+ *
+ * While mounted it also publishes its measured height (`useMobileBarInset`,
+ * TASK-1771), which lifts the global toaster above it below `md` — otherwise a
+ * toast lands on the bar's action, the very control focus is sent to.
  */
 export function MobilePayBar({
   label,
   amount,
+  amountNote,
   children,
   className,
 }: MobilePayBarProps) {
+  const barRef = useRef<HTMLDivElement>(null);
+  useMobileBarInset(barRef);
+
   return (
     <div
+      ref={barRef}
       data-testid="mobile-pay-bar"
       data-mobile-bar=""
       className={cn(
@@ -49,6 +63,11 @@ export function MobilePayBar({
             <span className="font-display text-lg font-bold tracking-tight whitespace-nowrap text-foreground tabular-nums">
               {amount}
             </span>
+            {amountNote && (
+              <span className="text-xs text-muted-foreground">
+                {amountNote}
+              </span>
+            )}
           </p>
         )}
         <div className="flex min-w-0 flex-1 md:contents">{children}</div>

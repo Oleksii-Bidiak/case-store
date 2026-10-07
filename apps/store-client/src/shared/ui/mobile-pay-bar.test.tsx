@@ -23,6 +23,44 @@ describe("MobilePayBar (TASK-864)", () => {
     expect(screen.getByText("1 199 ₴").parentElement).toHaveClass("md:hidden");
   });
 
+  it("publishes its height for the toaster while mounted (TASK-1771)", () => {
+    // jsdom has no layout: give every element a bar-like height, so the value
+    // published is the bar's own measurement, not a constant.
+    const rect = jest
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({ height: 69 } as DOMRect);
+    const root = document.documentElement;
+    try {
+      const { unmount } = render(
+        <MobilePayBar label="До сплати" amount="1 199 ₴">
+          <button type="button">Оформити</button>
+        </MobilePayBar>,
+      );
+      // globals.css lifts the app toaster by this below md — so a toast after
+      // «Прибрати N недоступних» no longer covers the focused bar CTA.
+      expect(root.style.getPropertyValue("--mobile-bar-inset")).toBe("69px");
+
+      unmount();
+      expect(root.style.getPropertyValue("--mobile-bar-inset")).toBe("");
+    } finally {
+      rect.mockRestore();
+    }
+  });
+
+  // TASK-647: a total that leaves an unpriced delivery out says so here too.
+  it("prints a caption under the amount when one is given", () => {
+    render(
+      <MobilePayBar label="До сплати" amount="998 ₴" amountNote="без доставки">
+        <button type="button">Далі</button>
+      </MobilePayBar>,
+    );
+
+    const note = screen.getByText("без доставки");
+    expect(note).toHaveClass("text-xs", "text-muted-foreground");
+    // It hides with the amount from md up — the summary card says it there.
+    expect(note.parentElement).toHaveClass("md:hidden");
+  });
+
   it("shows only the action while the amount is not known", () => {
     render(
       <MobilePayBar label="До сплати">

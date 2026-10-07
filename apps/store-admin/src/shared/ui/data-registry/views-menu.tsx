@@ -35,6 +35,13 @@ const DEFAULT_VIEW = "__default__";
 export interface ViewsMenuProps {
   /** The screen's built-in view, e.g. «Усі замовлення». */
   defaultName: string;
+  /**
+   * The active quick view's name when it is NOT the one `defaultName` stands
+   * for (TASK-1832) — e.g. «Видалені». With no saved view active the button
+   * says this instead of the built-in name, and no radio is checked: the list
+   * on screen is neither «Мої види» entry. `null` / omitted = the default.
+   */
+  quickViewName?: string | null;
   views: readonly RegistryView[];
   activeViewId: string | null;
   onApply: (id: string | null) => void;
@@ -51,6 +58,7 @@ export interface ViewsMenuProps {
  */
 export function ViewsMenu({
   defaultName,
+  quickViewName = null,
   views,
   activeViewId,
   onApply,
@@ -60,8 +68,8 @@ export function ViewsMenu({
 }: ViewsMenuProps) {
   const [saving, setSaving] = React.useState(false);
   const [managing, setManaging] = React.useState(false);
-  const activeName =
-    views.find((view) => view.id === activeViewId)?.name ?? defaultName;
+  const savedName = views.find((view) => view.id === activeViewId)?.name;
+  const activeName = savedName ?? quickViewName ?? defaultName;
 
   return (
     <>
@@ -78,7 +86,13 @@ export function ViewsMenu({
             {r.myViews}
           </DropdownMenuLabel>
           <DropdownMenuRadioGroup
-            value={activeViewId ?? DEFAULT_VIEW}
+            value={
+              savedName !== undefined
+                ? (activeViewId ?? DEFAULT_VIEW)
+                : quickViewName !== null
+                  ? ""
+                  : DEFAULT_VIEW
+            }
             onValueChange={(value) =>
               onApply(value === DEFAULT_VIEW ? null : value)
             }

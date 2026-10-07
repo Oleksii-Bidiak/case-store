@@ -8,7 +8,11 @@ import { toast } from "@/shared/ui/toast";
 import {
   OrderEntityStatus,
   OrderNumber,
+  deliveryMethodLabel,
+  deliverySnapshot,
   formatOrderNumber,
+  isShippingCostPending,
+  orderDeliveryMethod,
   orderDerivedMarks,
   orderStatusBadgeVariant,
   orderStatusLabel,
@@ -21,6 +25,10 @@ import {
 // barrel is another wave's file. A widget may read `@/shared` directly (the
 // product list already does).
 import { adminOrderControllerExport } from "@/shared/api";
+import {
+  useGetDeliverySettings,
+  useListAdminPickupPoints,
+} from "@/entities/delivery";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { useTableSort } from "@/shared/lib/use-table-sort";
@@ -134,22 +142,83 @@ function clientOf(order: OrderEntity): {
   };
 }
 
-/** «Київ, Відділення №12» — or «Самовивіз». */
-function deliveryShort(order: OrderEntity): string {
-  if (order.deliveryMethod === "PICKUP") return d.deliveryPickup;
-  const shipping = address(order);
-  const place = text(shipping.npWarehouseName) ?? text(shipping.address1);
-  return [text(shipping.city), place].filter(Boolean).join(", ") || "—";
+/** What the registry knows beyond the row: the courier's free-from threshold. */
+export interface DeliveryContext {
+  /**
+   * `courierFreeFrom` of the delivery settings — only for a session holding
+   * `settings:delivery`; `undefined` otherwise, and the cell then says just
+   * «безкоштовно». The CURRENT threshold: the order snapshots no threshold.
+   */
+  courierFreeFrom?: string | null;
 }
 
-/** «ТТН …», «ТТН не вказано» where one is due, «—» otherwise. */
-function waybill(order: OrderEntity): { label: string; missing: boolean } {
+/**
+ * The «Доставка» cell (ДН-1.11): the method over one detail line.
+ *  - Нова Пошта   «Київ · Відділення №1»
+ *  - Самовивіз    «Магазин на Хрещатику» (the snapshot's point name)
+ *  - Курʼєр       «Київ · 150 ₴», at 0 «Київ · безкоштовно (від 2 000 ₴)»
+ *  - Інша         «Уточнити вартість доставки», in the warning tone, while
+ *                 the cost is 0; once booked, «Ужгород · 90 ₴»
+ */
+export function deliveryShort(
+  order: OrderEntity,
+  context: DeliveryContext = {},
+): { method: string; detail: string; toQuote: boolean } {
+  const method = orderDeliveryMethod(order);
+  const snap = deliverySnapshot(order.shippingAddress);
+  const join = (...parts: Array<string | undefined>) =>
+    parts.filter(Boolean).join(" · ") || "—";
+  const label = deliveryMethodLabel(method);
+
+  if (isShippingCostPending(order)) {
+    return { method: label, detail: d.deliveryCostToQuote, toQuote: true };
+  }
+  if (method === "OTHER") {
+    // Quoted already (the cost is booked): the city and what was agreed.
+    return {
+      method: label,
+      detail: join(snap.city, formatCurrency(order.shippingCost)),
+      toQuote: false,
+    };
+  }
+  if (method === "PICKUP") {
+    return {
+      method: label,
+      detail: snap.pickupPointName ?? join(snap.city, snap.address1),
+      toQuote: false,
+    };
+  }
+  if (method === "COURIER") {
+    const cost = Number(order.shippingCost);
+    const price =
+      cost > 0
+        ? formatCurrency(order.shippingCost)
+        : context.courierFreeFrom
+          ? d.deliveryFreeFromShort(formatCurrency(context.courierFreeFrom))
+          : d.deliveryFreeShort;
+    return { method: label, detail: join(snap.city, price), toQuote: false };
+  }
+  return {
+    method: label,
+    detail: join(snap.city, snap.npWarehouseName ?? snap.address1),
+    toQuote: false,
+  };
+}
+
+/**
+ * «ТТН …» wherever a waybill was typed; «ТТН не вказано» only for a Nova
+ * Poshta order that is due one — a pickup or the shop's courier never is.
+ */
+function waybill(
+  order: OrderEntity,
+): { label: string; missing: boolean } | null {
   if (order.trackingNumber) {
     return { label: d.ttnValue(order.trackingNumber), missing: false };
   }
-  return NEEDS_TTN.includes(order.status)
+  return orderDeliveryMethod(order) === "NOVA_POSHTA" &&
+    NEEDS_TTN.includes(order.status)
     ? { label: d.ttnMissing, missing: true }
-    : { label: "—", missing: false };
+    : null;
 }
 
 /** Kopecks, so a page of «29.99» rows adds up without float drift. */
@@ -227,6 +296,45 @@ function StatusCell({ order, now }: { order: OrderEntity; now: number }) {
   );
 }
 
+/** Method (500) over its detail; the waybill line under both where it exists. */
+function DeliveryCell({
+  order,
+  context,
+}: {
+  order: OrderEntity;
+  context: DeliveryContext;
+}) {
+  const delivery = deliveryShort(order, context);
+  const ttn = waybill(order);
+  return (
+    <span className="flex min-w-0 flex-col gap-0.5">
+      <span className="font-medium text-foreground">{delivery.method}</span>
+      <span
+        className={cn(
+          "text-xs",
+          delivery.toQuote
+            ? "font-medium text-warning"
+            : "break-words text-muted-foreground",
+        )}
+      >
+        {delivery.detail}
+      </span>
+      {ttn ? (
+        <span
+          className={cn(
+            "text-xs",
+            ttn.missing
+              ? "font-medium text-warning"
+              : "text-muted-foreground tabular-nums",
+          )}
+        >
+          {ttn.label}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function PaymentStatusBadge({ order }: { order: OrderEntity }) {
   return (
     <Badge variant={paymentStatusBadgeVariant(order.paymentStatus)}>
@@ -241,7 +349,10 @@ function PaymentStatusBadge({ order }: { order: OrderEntity }) {
  */
 export const ORDER_COLUMNS_WIDTH_BUDGET = 1136 - 44 - 2;
 
-export function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
+export function buildColumns(
+  now: number,
+  delivery: DeliveryContext = {},
+): RegistryColumn<OrderEntity>[] {
   return [
     {
       id: "number",
@@ -269,7 +380,7 @@ export function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
     {
       id: "client",
       label: d.colCustomer,
-      defaultWidth: 200,
+      defaultWidth: 176,
       minWidth: 140,
       cell: (order) => <ClientCell order={order} />,
     },
@@ -277,7 +388,7 @@ export function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
       id: "status",
       label: d.colStatus,
       sortField: "status",
-      defaultWidth: 190,
+      defaultWidth: 170,
       minWidth: 140,
       cell: (order) => <StatusCell order={order} now={now} />,
     },
@@ -297,26 +408,12 @@ export function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
     {
       id: "delivery",
       label: d.colDelivery,
-      defaultWidth: 180,
+      // TASK-648 (ДН-1.11): wide enough for «Київ · безкоштовно (від 2 000 ₴)»
+      // and «Уточнити вартість доставки» on one line; the 44 px come out of
+      // «Клієнт» and «Статус», whose content wraps gracefully. Budget unchanged.
+      defaultWidth: 224,
       minWidth: 140,
-      cell: (order) => {
-        const ttn = waybill(order);
-        return (
-          <span className="flex flex-col gap-0.5">
-            <span className="text-foreground">{deliveryShort(order)}</span>
-            <span
-              className={cn(
-                "text-xs",
-                ttn.missing
-                  ? "font-medium text-warning"
-                  : "text-muted-foreground tabular-nums",
-              )}
-            >
-              {ttn.label}
-            </span>
-          </span>
-        );
-      },
+      cell: (order) => <DeliveryCell order={order} context={delivery} />,
     },
     {
       id: "total",
@@ -391,7 +488,12 @@ export function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
 }
 
 /** One order below md (OrdersProposal П7). */
-function renderCard(order: OrderEntity, parts: RegistryCardParts, now: number) {
+function renderCard(
+  order: OrderEntity,
+  parts: RegistryCardParts,
+  now: number,
+  delivery: DeliveryContext,
+) {
   const client = clientOf(order);
   const marks = orderDerivedMarks(order, now);
   return (
@@ -431,11 +533,19 @@ function renderCard(order: OrderEntity, parts: RegistryCardParts, now: number) {
           {formatCurrency(order.total)}
         </b>
       </div>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
         <PaymentStatusBadge order={order} />
-        <span className="min-w-0 truncate text-xs text-muted-foreground">
-          {deliveryShort(order)}
+        <span className="text-xs text-muted-foreground">
+          {paymentMethodLabel(order.paymentMethod)}
         </span>
+      </div>
+      {/* ДН-1.12: the delivery under its caption, the same two lines as the
+          table cell. */}
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          {d.colDelivery}
+        </span>
+        <DeliveryCell order={order} context={delivery} />
       </div>
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs text-muted-foreground tabular-nums">
@@ -454,7 +564,9 @@ function renderCard(order: OrderEntity, parts: RegistryCardParts, now: number) {
  * The URL contract is the one the dashboard tiles and the e2e deep links rely
  * on, unchanged: `?status=` (one status or a CSV — the quick views write it
  * verbatim, «Усі» drops it), `?search=`, `?paymentStatus=`, `?paymentMethod=`,
- * the seven signal booleans, `?dateFrom=`/`?dateTo=`, sort, page and size.
+ * the seven signal booleans, `?dateFrom=`/`?dateTo=`, sort, page and size —
+ * plus, since TASK-648, `?deliveryMethod=` (a CSV) and `?pickupPointId=` (the
+ * deep link from a pickup point's «⋯» on `/settings/delivery`).
  *
  * What moved, nothing removed: the three selects and the six toggles went into
  * «Фільтри», «Переглянути» became a row click + «⋯ → Відкрити», «Експорт CSV»
@@ -495,7 +607,32 @@ export function AdminOrderTable() {
   const totalPages = data?.meta?.totalPages ?? 1;
   const total = data?.meta?.total ?? 0;
 
-  const columns = useMemo(() => buildColumns(dataUpdatedAt), [dataUpdatedAt]);
+  // TASK-648: both reads need `settings:delivery` and are not asked without
+  // it — the cell then says just «безкоштовно», the chip «Точка самовивозу».
+  const canReadDelivery = can(PERM.settingsDelivery);
+  const deliverySettings = useGetDeliverySettings({
+    query: { enabled: canReadDelivery },
+  });
+  const pickupPoints = useListAdminPickupPoints({
+    query: { enabled: canReadDelivery && filters.pickupPointId !== "" },
+  });
+  const courierFreeFrom = deliverySettings.data?.data?.courierFreeFrom;
+  const pickupPointNames = useMemo(
+    () =>
+      Object.fromEntries(
+        (pickupPoints.data?.data ?? []).map((point) => [point.id, point.name]),
+      ),
+    [pickupPoints.data],
+  );
+  const deliveryContext = useMemo<DeliveryContext>(
+    () => ({ courierFreeFrom }),
+    [courierFreeFrom],
+  );
+
+  const columns = useMemo(
+    () => buildColumns(dataUpdatedAt, deliveryContext),
+    [dataUpdatedAt, deliveryContext],
+  );
   const registry = useDataRegistry({
     tableId: "orders",
     columns,
@@ -529,11 +666,13 @@ export function AdminOrderTable() {
     }
   };
 
-  const chips: FilterChip[] = orderFilterChips(filters).map((chip) => ({
-    key: chip.key,
-    label: chip.label,
-    onRemove: () => updateParams({ ...chip.clear, page: undefined }),
-  }));
+  const chips: FilterChip[] = orderFilterChips(filters, pickupPointNames).map(
+    (chip) => ({
+      key: chip.key,
+      label: chip.label,
+      onRemove: () => updateParams({ ...chip.clear, page: undefined }),
+    }),
+  );
 
   const rowActions = (order: OrderEntity): RowActionItem[] => {
     const href = orderHref(order);
@@ -628,7 +767,7 @@ export function AdminOrderTable() {
             />
           ),
         }}
-        views={{ defaultName: d.viewDefault }}
+        views={{ defaultName: d.viewDefault, defaultQuickViewId: ALL_VIEW }}
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
         chips={chips}
@@ -658,7 +797,9 @@ export function AdminOrderTable() {
         rowActions={rowActions}
         sort={{ sortBy, sortOrder, onSort }}
         totals
-        renderCard={(order, parts) => renderCard(order, parts, dataUpdatedAt)}
+        renderCard={(order, parts) =>
+          renderCard(order, parts, dataUpdatedAt, deliveryContext)
+        }
         isLoading={isLoading}
         isError={isError}
         errorMessage={d.loadError}

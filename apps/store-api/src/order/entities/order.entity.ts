@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { DeliveryMethod, OrderStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 import { OrderItemEntity } from './order-item.entity';
+import { OrderShippingAddressEntity } from './order-shipping-address.entity';
 import { centsToString, toCents, toTwoDecimals } from '../../addon-service';
 import type { OrderWithItems, ShippingAddressData } from '../order.types';
 
@@ -327,19 +328,43 @@ export class OrderEntity {
   })
   unavailableItemIds?: string[];
 
+  /**
+   * Pickup point the order was placed for (TASK-642), or null — for every
+   * non-pickup order, and for a pickup order whose point was later deleted
+   * (`onDelete: SetNull`). The point's name/address/hours as they were at
+   * checkout live in the `shippingAddress` snapshot, which survives the
+   * deletion; this id is only the live link (TASK-1023).
+   */
   @ApiProperty({
-    description: 'Shipping address snapshot',
+    description:
+      'Pickup point id for a PICKUP order (TASK-642); null otherwise, and null once the point ' +
+      'is deleted — the point details as they were at checkout stay in `shippingAddress`.',
+    type: String,
     nullable: true,
-    type: 'object',
-    additionalProperties: true,
+    example: null,
+  })
+  pickupPointId!: string | null;
+
+  /**
+   * Typed as the stored snapshot, documented by {@link OrderShippingAddressEntity}
+   * (TASK-1023). The runtime value is the JSON column unchanged — old orders
+   * keep the keys they were written with, so every delivery field is optional.
+   */
+  @ApiProperty({
+    description:
+      'Shipping address snapshot, including the delivery snapshot written at checkout ' +
+      '(TASK-643): method, carrier, pickup point details, `shippingCostPending`',
+    nullable: true,
+    type: () => OrderShippingAddressEntity,
   })
   shippingAddress!: ShippingAddressData | null;
 
   @ApiProperty({
-    description: 'Billing address snapshot (falls back to shipping address)',
+    description:
+      'Billing address snapshot (falls back to shipping address, and may then carry the same ' +
+      'delivery snapshot fields — TASK-1022)',
     nullable: true,
-    type: 'object',
-    additionalProperties: true,
+    type: () => OrderShippingAddressEntity,
   })
   billingAddress!: ShippingAddressData | null;
 
@@ -427,6 +452,12 @@ export class OrderEntity {
     entity.paymentMethod = order.paymentMethod ?? PaymentMethod.ON_DELIVERY;
     // Same reasoning: the column default, for fixtures predating TASK-642.
     entity.deliveryMethod = order.deliveryMethod ?? DeliveryMethod.NOVA_POSHTA;
+    // TASK-1023: every order read uses `include`, which carries all scalar
+    // columns, so the id is on the row at runtime. `OrderWithItems` does not
+    // declare it, and fixtures predating TASK-642 lack it — absent reads as
+    // "no pickup point", same as null.
+    entity.pickupPointId =
+      (order as OrderWithItems & { pickupPointId?: string | null }).pickupPointId ?? null;
     entity.paidAt = order.paidAt ? order.paidAt.toISOString() : null;
     // TASK-471: `?? null` because the column is optional on `OrderWithItems` —
     // fixtures predating TASK-330 simply do not carry it, and "no reservation"

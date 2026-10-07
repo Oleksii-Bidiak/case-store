@@ -1,33 +1,94 @@
 "use client";
 
-import { Lock } from "lucide-react";
+import { Check, Lock } from "lucide-react";
 import { ApplyDiscount } from "@/features/apply-discount";
+import {
+  centsToMoney,
+  deliveryMethodShortTitle,
+  type CheckoutDeliveryMethod,
+  type DeliveryQuote,
+} from "@/features/checkout";
 import { ProductThumb, Skeleton } from "@/shared/ui";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { useCheckoutTotal } from "../model/use-checkout-total";
 
+/**
+ * The shipping cell (CheckoutDelivery.dc.html, «Ваше замовлення»): a sum in
+ * mono; «Безкоштовно» with a success tick (the word stays foreground — green
+ * text at this size is below 4.5:1); «Уточнить оператор» in muted italic and
+ * NOT mono, because it is a sentence, not a number.
+ */
+function ShippingValue({ quote }: { quote: DeliveryQuote }) {
+  switch (quote.kind) {
+    case "amount":
+      return (
+        <span className="font-mono text-foreground">
+          {centsToMoney(quote.cents)}
+        </span>
+      );
+    case "free":
+      return (
+        <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+          <Check className="size-3.5 text-success" aria-hidden />
+          {dict.checkout.delivery.free}
+        </span>
+      );
+    case "calculating":
+      return (
+        <span className="text-foreground">
+          {dict.checkout.shippingCalculating}
+        </span>
+      );
+    case "select-city":
+      // Nova Poshta before a city is picked: a neutral hint, not a price —
+      // never on the manual path (TASK-1097), which quotes «pending».
+      return (
+        <span className="text-right text-muted-foreground">
+          {dict.checkout.shippingSelectCity}
+        </span>
+      );
+    case "pending":
+    default:
+      return (
+        <span className="text-muted-foreground italic">
+          {dict.checkout.shippingCostUnknown}
+        </span>
+      );
+  }
+}
+
 interface CheckoutOrderSummaryProps {
+  /** The chosen delivery method (TASK-646); Nova Poshta when omitted. */
+  method?: CheckoutDeliveryMethod;
+  /** The Nova Poshta manual path (TASK-1097) — priced by an operator. */
+  npManual?: boolean;
   /** NP city ref of the selected city; drives the live shipping estimate. */
   npCityRef?: string;
 }
 
 /**
  * CheckoutOrderSummary — the "Ваше замовлення" panel (Checkout.dc.html styling).
- * Reuses the cached `useGetCart` query (no extra round-trip), the real Nova
- * Poshta shipping estimate (TASK-080), and the real promo code (`ApplyDiscount`,
- * TASK-079). The server recomputes authoritatively at order creation.
+ * Reuses the cached `useGetCart` query (no extra round-trip), the delivery quote
+ * for the chosen method (TASK-646 — the NP estimate of TASK-080, the courier's
+ * price or free threshold, a free pickup, or «Уточнить оператор») and the real
+ * promo code (`ApplyDiscount`, TASK-079). The server recomputes authoritatively
+ * at order creation.
  */
-export function CheckoutOrderSummary({ npCityRef }: CheckoutOrderSummaryProps) {
+export function CheckoutOrderSummary({
+  method = "NOVA_POSHTA",
+  npManual = false,
+  npCityRef,
+}: CheckoutOrderSummaryProps) {
   // The total's arithmetic is shared with the mobile «До сплати» bar
-  // (TASK-864) — see `useCheckoutTotal` for the estimate / coupon rules.
+  // (TASK-864) — see `useCheckoutTotal` for the delivery / coupon rules.
   const {
     cartQuery: { data, isLoading, isError },
-    estimate,
-    isEstimating,
-    hasCost,
+    quote,
+    excludesShipping,
     totalText = formatMoney("0.00"),
-  } = useCheckoutTotal(npCityRef);
+  } = useCheckoutTotal({ method, npManual, npCityRef });
+  const isNovaPoshta = method === "NOVA_POSHTA" && !npManual;
 
   if (isLoading) {
     return (
@@ -100,24 +161,24 @@ export function CheckoutOrderSummary({ npCityRef }: CheckoutOrderSummaryProps) {
           </span>
         </div>
 
-        <div className="flex justify-between py-1.5 text-sm text-muted-foreground">
-          <span>{dict.checkout.shippingCostLabel}</span>
-          <span className="font-mono text-foreground">
-            {!npCityRef
-              ? dict.checkout.shippingSelectCity
-              : isEstimating
-                ? dict.checkout.shippingCalculating
-                : hasCost && estimate
-                  ? formatMoney(estimate.cost)
-                  : dict.checkout.shippingCostUnknown}
+        <div className="flex justify-between gap-3 py-1.5 text-sm text-muted-foreground">
+          <span>
+            {/* The method the shopper picked, as the review names it — even on
+                the manual path, which the server books as OTHER. */}
+            {dict.checkout.delivery.summaryLine(
+              deliveryMethodShortTitle(method),
+            )}
           </span>
+          <ShippingValue quote={quote} />
         </div>
 
-        {npCityRef && !isEstimating && estimate?.etaDays != null && (
+        {/* An ETA belongs to Nova Poshta proper — never to a pickup, a courier
+            or an address typed by hand. */}
+        {isNovaPoshta && quote.kind === "amount" && quote.etaDays != null && (
           <div className="flex justify-between py-1.5 text-sm text-muted-foreground">
             <span>{dict.checkout.deliveryEstimateLabel}</span>
             <span className="text-foreground">
-              {dict.checkout.etaValue(estimate.etaDays)}
+              {dict.checkout.etaValue(quote.etaDays)}
             </span>
           </div>
         )}
@@ -132,6 +193,11 @@ export function CheckoutOrderSummary({ npCityRef }: CheckoutOrderSummaryProps) {
             {totalText}
           </span>
         </div>
+        {excludesShipping && (
+          <p className="mt-1 text-right text-xs text-muted-foreground">
+            {dict.checkout.delivery.summaryWithoutShipping}
+          </p>
+        )}
       </div>
 
       <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">

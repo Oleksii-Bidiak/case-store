@@ -1,4 +1,5 @@
 import {
+  OrderEntityDeliveryMethod,
   OrderEntityPaymentMethod,
   OrderEntityPaymentStatus,
   OrderEntityStatus,
@@ -89,6 +90,21 @@ export const paymentMethodLabel = (method: string): string =>
   PAYMENT_METHOD_LABELS[method] ?? method;
 
 /**
+ * Delivery methods in the order of the settings cards and the checkout
+ * (ДН-1.11): the filter's rows, and the order the CSV param is written in.
+ */
+export const DELIVERY_METHOD_OPTIONS: readonly string[] = [
+  OrderEntityDeliveryMethod.NOVA_POSHTA,
+  OrderEntityDeliveryMethod.PICKUP,
+  OrderEntityDeliveryMethod.COURIER,
+  OrderEntityDeliveryMethod.OTHER,
+];
+
+/** The filter's wording — «Курʼєр по місту», not the cell's short «Курʼєр». */
+export const deliveryFilterLabel = (method: string): string =>
+  (d.deliveryFilterLabels as Record<string, string>)[method] ?? method;
+
+/**
  * Quick views (TASK-250) — presets over the SAME `?status=` param, written
  * verbatim. «Усі» is "no `?status=`"; its id never reaches the URL (TASK-405).
  */
@@ -118,6 +134,13 @@ export interface OrderFilters {
   status: string[];
   paymentStatus: string;
   paymentMethod: string;
+  /** One or several methods — a CSV in the URL and on the API (TASK-648). */
+  deliveryMethod: string[];
+  /**
+   * One pickup point. Not in the sheet: it arrives by the deep link «Замовлення
+   * з цією точкою» on `/settings/delivery` and leaves by its chip.
+   */
+  pickupPointId: string;
   signals: SignalParam[];
 }
 
@@ -127,20 +150,27 @@ export const EMPTY_FILTERS: OrderFilters = {
   status: [],
   paymentStatus: "",
   paymentMethod: "",
+  deliveryMethod: [],
+  pickupPointId: "",
   signals: [],
 };
 
-export function readOrderFilters(params: URLSearchParams): OrderFilters {
-  const status = (params.get("status") ?? "")
+const csvList = (raw: string | null): string[] =>
+  (raw ?? "")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
+
+export function readOrderFilters(params: URLSearchParams): OrderFilters {
+  const status = csvList(params.get("status"));
   return {
     dateFrom: params.get("dateFrom") ?? "",
     dateTo: params.get("dateTo") ?? "",
     status,
     paymentStatus: params.get("paymentStatus") ?? "",
     paymentMethod: params.get("paymentMethod") ?? "",
+    deliveryMethod: csvList(params.get("deliveryMethod")),
+    pickupPointId: params.get("pickupPointId") ?? "",
     signals: SIGNAL_PARAMS.filter((param) => params.get(param) === "true"),
   };
 }
@@ -149,6 +179,17 @@ export function readOrderFilters(params: URLSearchParams): OrderFilters {
 function statusCsv(status: readonly string[]): string {
   const known = STATUS_OPTIONS.filter((value) => status.includes(value));
   const unknown = status.filter((value) => !STATUS_OPTIONS.includes(value));
+  return [...known, ...unknown].join(",");
+}
+
+/** Methods in the settings' order, unknown ones (a hand-typed URL) kept last. */
+function deliveryCsv(methods: readonly string[]): string {
+  const known = DELIVERY_METHOD_OPTIONS.filter((value) =>
+    methods.includes(value),
+  );
+  const unknown = methods.filter(
+    (value) => !DELIVERY_METHOD_OPTIONS.includes(value),
+  );
   return [...known, ...unknown].join(",");
 }
 
@@ -162,6 +203,10 @@ export function orderFiltersToUrl(
     status: filters.status.length ? statusCsv(filters.status) : undefined,
     paymentStatus: filters.paymentStatus || undefined,
     paymentMethod: filters.paymentMethod || undefined,
+    deliveryMethod: filters.deliveryMethod.length
+      ? deliveryCsv(filters.deliveryMethod)
+      : undefined,
+    pickupPointId: filters.pickupPointId || undefined,
   };
   for (const param of SIGNAL_PARAMS) {
     patch[param] = filters.signals.includes(param) ? "true" : undefined;
@@ -190,6 +235,11 @@ export function orderFiltersToQuery(
       undefined) as AdminOrderControllerFindAllParams["paymentStatus"],
     paymentMethod: (filters.paymentMethod ||
       undefined) as AdminOrderControllerFindAllParams["paymentMethod"],
+    // TASK-648: a CSV like `status`; an unknown method is the DTO's to refuse.
+    deliveryMethod: filters.deliveryMethod.length
+      ? deliveryCsv(filters.deliveryMethod)
+      : undefined,
+    pickupPointId: filters.pickupPointId || undefined,
   };
   for (const param of filters.signals) {
     query[param] = true;
@@ -266,8 +316,15 @@ export interface OrderFilterChip {
 /**
  * One chip per applied filter. The status chip only when the status is not a
  * quick view — then the highlighted view already says it.
+ *
+ * `pickupPointNames` (id → name) comes from `GET /admin/pickup-points`, which
+ * needs `settings:delivery`: without it — or before it answers, or for a point
+ * since deleted — the chip says «Точка самовивозу» rather than show an id.
  */
-export function orderFilterChips(filters: OrderFilters): OrderFilterChip[] {
+export function orderFilterChips(
+  filters: OrderFilters,
+  pickupPointNames: Readonly<Record<string, string>> = {},
+): OrderFilterChip[] {
   const chips: OrderFilterChip[] = [];
   if (filters.dateFrom || filters.dateTo) {
     chips.push({
@@ -301,6 +358,26 @@ export function orderFilterChips(filters: OrderFilters): OrderFilterChip[] {
       clear: { paymentMethod: undefined },
     });
   }
+  if (filters.deliveryMethod.length) {
+    chips.push({
+      key: "deliveryMethod",
+      label: d.chipDelivery(
+        deliveryCsv(filters.deliveryMethod)
+          .split(",")
+          .map(deliveryFilterLabel)
+          .join(", "),
+      ),
+      clear: { deliveryMethod: undefined },
+    });
+  }
+  if (filters.pickupPointId) {
+    const name = pickupPointNames[filters.pickupPointId];
+    chips.push({
+      key: "pickupPointId",
+      label: name ? d.chipPickupPoint(name) : d.chipPickupPointUnknown,
+      clear: { pickupPointId: undefined },
+    });
+  }
   for (const param of filters.signals) {
     chips.push({
       key: param,
@@ -318,6 +395,8 @@ export function hasNonStatusFilters(filters: OrderFilters): boolean {
     filters.dateTo ||
     filters.paymentStatus ||
     filters.paymentMethod ||
+    filters.deliveryMethod.length ||
+    filters.pickupPointId ||
     filters.signals.length,
   );
 }

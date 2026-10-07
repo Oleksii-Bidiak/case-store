@@ -8,6 +8,7 @@ const repositoryMock = {
   create: jest.fn(),
   findActorSnapshot: jest.fn(),
   findMany: jest.fn(),
+  findLatestActors: jest.fn(),
 };
 
 const loggerMock = {
@@ -96,5 +97,41 @@ describe('AuditService (TASK-318)', () => {
 
     const written = repositoryMock.create.mock.calls[0][0] as { diff: unknown };
     expect(JSON.stringify(written.diff)).not.toContain('hunter2');
+  });
+
+  // TASK-1830: the actor line of the admin «Видалені» list.
+  describe('findLatestActors', () => {
+    it('names the actor «first last», and a nameless one null — never by email', async () => {
+      repositoryMock.findLatestActors.mockResolvedValue(
+        new Map([
+          ['p1', { actorId: 'u1', firstName: 'Олена', lastName: ' Коваль ' }],
+          ['p2', { actorId: 'u2', firstName: 'Макс', lastName: null }],
+          ['p3', { actorId: 'u3', firstName: null, lastName: '' }],
+          ['p4', { actorId: 'u4', firstName: '  ', lastName: null }],
+        ]),
+      );
+
+      const result = await service.findLatestActors('product.remove', 'product', [
+        'p1',
+        'p2',
+        'p3',
+        'p4',
+      ]);
+
+      expect(repositoryMock.findLatestActors).toHaveBeenCalledWith('product.remove', 'product', [
+        'p1',
+        'p2',
+        'p3',
+        'p4',
+      ]);
+      expect([...result.entries()]).toEqual([
+        ['p1', { id: 'u1', name: 'Олена Коваль' }],
+        ['p2', { id: 'u2', name: 'Макс' }],
+        // A person is on record, but without a name: the id stays, the name is null
+        // (the admin says «співробітник») — another employee's email is not exposed.
+        ['p3', { id: 'u3', name: null }],
+        ['p4', { id: 'u4', name: null }],
+      ]);
+    });
   });
 });

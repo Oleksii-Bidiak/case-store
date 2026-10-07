@@ -192,12 +192,15 @@ const UNAVAILABLE_MESSAGE: Record<DeliveryMethod, string> = {
   NOVA_POSHTA: 'Доставка Новою Поштою зараз недоступна — оберіть інший спосіб доставки',
   PICKUP: 'Самовивіз зараз недоступний — оберіть інший спосіб доставки',
   COURIER: 'Кур’єрська доставка зараз недоступна — оберіть інший спосіб доставки',
-  OTHER:
-    'Доставка за адресою без вибору міста Нової Пошти зараз недоступна — ' +
-    'оберіть місто зі списку або інший спосіб доставки',
+  // Only an EXPLICIT OTHER reaches this since TASK-1097: the inferred one (a
+  // city typed by hand while NP is down) is let through whatever the switch.
+  OTHER: '«Інша доставка» зараз недоступна — оберіть інший спосіб доставки',
 };
 
-/** 400 for a method the shop has switched off (explicit or derived). */
+/**
+ * 400 for a method the shop has switched off — explicit, or a derived
+ * NOVA_POSHTA. A derived OTHER never gets here (TASK-1097).
+ */
 export function deliveryMethodUnavailableError(method: DeliveryMethod): BadRequestException {
   return new BadRequestException({
     error: DeliveryOrderErrorCode.METHOD_UNAVAILABLE,
@@ -217,6 +220,26 @@ export function deliveryPaymentNotAllowedError(method: DeliveryMethod): BadReque
       method === DeliveryMethod.OTHER
         ? 'Вартість такої доставки уточнить оператор, тому оплатити замовлення можна лише при ' +
           'отриманні — оберіть оплату при отриманні'
+        : 'Обраний спосіб оплати недоступний для цього способу доставки — оберіть інший',
+  });
+}
+
+/**
+ * The same refusal on the OPERATOR's door — a phone order (TASK-1021). Same
+ * code, so the admin panel keys the same behaviour off it, but worded for the
+ * person taking the call: a phone order's method is read off its address, so
+ * the two repairs are "take the money on delivery" or "pick an NP city".
+ */
+export function manualOrderDeliveryPaymentNotAllowedError(
+  method: DeliveryMethod,
+): BadRequestException {
+  return new BadRequestException({
+    error: DeliveryOrderErrorCode.PAYMENT_NOT_ALLOWED,
+    message:
+      method === DeliveryMethod.OTHER
+        ? 'Для адреси без міста зі списку Нової Пошти вартість доставки ще не відома, тому ' +
+          'онлайн-оплата й оплата частинами недоступні — оберіть оплату при отриманні або ' +
+          'вкажіть місто Нової Пошти'
         : 'Обраний спосіб оплати недоступний для цього способу доставки — оберіть інший',
   });
 }

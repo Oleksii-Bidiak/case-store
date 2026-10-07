@@ -29,6 +29,7 @@ import {
   HelpCircle,
   Map,
   ScrollText,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -74,6 +75,13 @@ interface NavItem {
    * a partial grant would render a page of 403s.
    */
   permission?: string | string[];
+  /**
+   * Visible with ANY of these (TASK-1781) — for a section that serves two
+   * independent grants. «Категорії» is the editor's screen and also the only
+   * way to reach «Видалити…», so `categories:delete` alone must lead there; the
+   * screen itself keeps every write control behind `categories:write`.
+   */
+  anyPermission?: readonly string[];
   /**
    * Visible to the ONE account that owns the shop, and not to a deputy admin
    * (TASK-475). Unused today — nothing in the nav is part of the owner's reserve
@@ -124,7 +132,7 @@ const navItems: readonly NavItem[] = [
     label: dict.nav.categories,
     href: "/categories",
     icon: Tag,
-    permission: PERM.categoriesWrite,
+    anyPermission: [PERM.categoriesWrite, PERM.categoriesDelete],
   },
   {
     label: dict.nav.brands,
@@ -277,6 +285,14 @@ const bottomNavItems: readonly NavItem[] = [
     icon: RefreshCw,
     permission: PERM.settingsSearch,
   },
+  // TASK-644 — which delivery methods the checkout offers and what the courier
+  // costs. Right after «Пошук», as in the Д-н2 mockup.
+  {
+    label: dict.nav.delivery,
+    href: "/settings/delivery",
+    icon: Truck,
+    permission: PERM.settingsDelivery,
+  },
   {
     label: dict.nav.faq,
     href: "/faq",
@@ -385,6 +401,7 @@ export function AdminNavList({ onNavigate }: AdminNavListProps) {
 
   const isVisible = (item: NavItem): boolean => {
     if (item.ownerOnly) return isOwner;
+    if (item.anyPermission) return item.anyPermission.some(can);
     if (item.permission === undefined) return true;
     return Array.isArray(item.permission)
       ? canAll(item.permission)

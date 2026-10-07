@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { ChevronDownIcon } from "lucide-react";
 
+import { cn } from "@/shared/lib/utils";
 import { Combobox, type ComboboxOption } from "./combobox";
 
 /** One node of a picker tree, flattened in display order. */
@@ -12,6 +14,8 @@ export interface TreeComboboxItem {
   depth: number;
   /** «Аксесуари › Чохли» — shown under a match while searching. */
   path?: string;
+  /** A short figure at the option's end — «29 тов.» (TASK-655). */
+  meta?: string;
 }
 
 /** The shape every admin tree read shares (`id`, `name`, `children`). */
@@ -63,6 +67,12 @@ export interface TreeComboboxProps {
   clearLabel?: string;
   isLoading?: boolean;
   disabled?: boolean;
+  /**
+   * Show the picked node as its full path («Аксесуари › Аудіоаксесуари») in
+   * the field, not just its name — where WHICH «Аудіоаксесуари» is the whole
+   * question (the move target of a delete, TASK-655).
+   */
+  showSelectedPath?: boolean;
   "aria-invalid"?: boolean;
   "aria-describedby"?: string;
   className?: string;
@@ -89,6 +99,7 @@ export function TreeCombobox({
   clearLabel,
   isLoading,
   disabled,
+  showSelectedPath = false,
   "aria-invalid": ariaInvalid,
   "aria-describedby": ariaDescribedBy,
   className,
@@ -96,7 +107,12 @@ export function TreeCombobox({
   // `null` = not searching: the input shows the picked node's name.
   const [query, setQuery] = React.useState<string | null>(null);
   const selected = items.find((item) => item.value === value);
-  const text = query ?? selected?.label ?? "";
+  const selectedText = selected
+    ? showSelectedPath && selected.path
+      ? `${selected.path} › ${selected.label}`
+      : selected.label
+    : "";
+  const text = query ?? selectedText;
 
   const options = React.useMemo<ComboboxOption[]>(() => {
     const needle = query?.trim().toLocaleLowerCase("uk-UA") ?? "";
@@ -109,18 +125,20 @@ export function TreeCombobox({
           value: item.value,
           label: item.label,
           description: item.path,
+          meta: item.meta,
         }));
     }
     const all: ComboboxOption[] = items.map((item) => ({
       value: item.value,
       label: item.label,
       depth: item.depth,
+      meta: item.meta,
     }));
     return clearLabel ? [{ value: "", label: clearLabel }, ...all] : all;
   }, [clearLabel, items, query]);
 
   return (
-    <div onBlur={() => setQuery(null)}>
+    <div className="relative" onBlur={() => setQuery(null)}>
       <Combobox
         id={id}
         value={text}
@@ -130,13 +148,23 @@ export function TreeCombobox({
           setQuery(null);
         }}
         options={options}
+        selectedValue={value}
         isLoading={isLoading}
         disabled={disabled}
         placeholder={placeholder}
         emptyText={emptyText}
         aria-invalid={ariaInvalid}
         aria-describedby={ariaDescribedBy}
-        className={className}
+        className={cn("truncate pe-9", className)}
+      />
+      {/* Says «this opens a list», as a select would. Decorative: the input
+          is the control, and a click on the chevron lands on it. */}
+      <ChevronDownIcon
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none absolute end-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground",
+          disabled && "opacity-50",
+        )}
       />
     </div>
   );

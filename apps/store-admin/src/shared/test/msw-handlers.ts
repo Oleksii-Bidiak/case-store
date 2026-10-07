@@ -154,6 +154,40 @@ export const handlers = [
     }),
   ),
 
+  // Per-method counts for the order registry's «Спосіб доставки» filter
+  // (TASK-648) — asked whenever «Фільтри» opens, so every suite that opens the
+  // sheet stays off onUnhandledRequest. Zeros by default; override per-test.
+  http.get("*/api/admin/orders/facets", () =>
+    HttpResponse.json({
+      data: {
+        deliveryMethod: { NOVA_POSHTA: 0, PICKUP: 0, COURIER: 0, OTHER: 0 },
+      },
+    }),
+  ),
+
+  // Delivery settings (TASK-648) — the order registry and the order card read
+  // the courier's free-from threshold from here for any session with
+  // `settings:delivery`. Courier off and no threshold by default, so a cost-0
+  // courier row reads plain «безкоштовно»; override per-test.
+  http.get("*/api/admin/delivery-settings", () =>
+    HttpResponse.json({
+      data: {
+        senderCityRef: null,
+        senderCityName: null,
+        senderWarehouseRef: null,
+        defaultWeightKg: 1,
+        npEnabled: true,
+        pickupEnabled: false,
+        courierEnabled: false,
+        otherEnabled: true,
+        courierCityName: null,
+        courierPrice: "0",
+        courierFreeFrom: null,
+        updatedAt: null,
+      },
+    }),
+  ),
+
   // Admin returns queue — empty by default. Since TASK-613 the dashboard's
   // «Нові заявки на повернення» tile reads `meta.total` of
   // `?status=REQUESTED&limit=1` from here for any session with `returns:read`,

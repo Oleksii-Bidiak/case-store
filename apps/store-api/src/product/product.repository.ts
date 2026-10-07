@@ -14,12 +14,73 @@ import { PRE_SHIPMENT_STATUSES } from '../order/order.constants';
 import { COUNTS_TOWARD_RATING } from '../review/review.constants';
 import { COLOR_SPEC_KEY, isColorAxis, withColorAxis } from '../common/color-axis';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
+import {
+  ProductCategoryBusyError,
+  ProductCategoryGoneError,
+  ProductRestoreConflictError,
+  uniqueClashFromPrismaMeta,
+} from './product.errors';
+import { acquireSharedAdvisoryLocks } from '../common/reorder';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: category barrel > category.module > ... > product barrel > this file; a dependency-free leaf
+import { CATEGORY_TREE_LOCK_KEY } from '../category/category-locks';
 
 /**
  * Interactive-transaction budget for the bulk colour write (TASK-487). See the
  * note at the end of {@link ProductRepository.setColorMany}.
  */
 const TX_OPTIONS = { timeout: 30_000, maxWait: 10_000 } as const;
+
+/**
+ * Interactive-transaction budget of a write that files a product under a category
+ * (TASK-1772). It waits on the category tree lock, and lock waits count against
+ * `timeout` — the same budget `CategoryRepository.deleteSubtreeWithMove` gives itself,
+ * so a save queued behind a delete does not time out before the delete could.
+ */
+const CATEGORY_WRITE_TX_OPTIONS = { timeout: 15_000, maxWait: 10_000 } as const;
+
+/**
+ * How long a product write waits for the category tree lock before it gives up with
+ * {@link ProductCategoryBusyError} (a 409 the admin can retry). Set as Postgres
+ * `lock_timeout` for the lock statement only: the interactive-transaction `timeout`
+ * does NOT cut a statement short — a save stuck behind a long tree operation would
+ * keep waiting for as long as the holder holds the key, and only then fail its commit
+ * with `P2028` (measured). Well inside {@link CATEGORY_WRITE_TX_OPTIONS}' 15 s.
+ */
+const CATEGORY_LOCK_TIMEOUT = '5s';
+
+/**
+ * Did this Prisma error come from Postgres giving up on a lock wait (`55P03`,
+ * `lock_not_available` — what `lock_timeout` raises)? A raw statement fails as `P2010`;
+ * through the pg driver adapter the SQLSTATE sits in `meta.driverAdapterError.cause`,
+ * without it in `meta.code` — both are read.
+ */
+function isLockTimeout(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2010') {
+    return false;
+  }
+  const meta = (error.meta ?? {}) as {
+    code?: unknown;
+    driverAdapterError?: { cause?: { code?: unknown; originalCode?: unknown } };
+  };
+  const cause = meta.driverAdapterError?.cause;
+  return [meta.code, cause?.code, cause?.originalCode].includes('55P03');
+}
+
+/**
+ * A category-filing write's transaction outlived its budget (`P2028`) — the only thing
+ * that runs long in these short transactions is the wait for the tree lock — or its
+ * lock wait timed out: either way the tree is busy, not broken. Re-thrown as
+ * {@link ProductCategoryBusyError}; anything else passes through untouched.
+ */
+function rethrowCategoryBusy(error: unknown): never {
+  if (
+    isLockTimeout(error) ||
+    (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2028')
+  ) {
+    throw new ProductCategoryBusyError();
+  }
+  throw error;
+}
 
 /**
  * Slugs of a rename being persisted by this update — when present, the write
@@ -583,7 +644,7 @@ export class ProductRepository {
     return rows.map((row) => row.id);
   }
 
-  /** Standard column-ordered page (createdAt / price / name). */
+  /** Standard column-ordered page (createdAt / price / name / stock / deletedAt). */
   private async findPageByColumn(
     where: Prisma.ProductWhereInput,
     skip: number,
@@ -598,6 +659,9 @@ export class ProductRepository {
       name: 'name',
       // Admin "Вільно" sort by available stock (TASK-254).
       stock: 'stock',
+      // Admin «Видалені»: the moment of deletion (TASK-656). Only the service's
+      // tombstone path sends it — every live row's `deletedAt` is NULL.
+      deletedAt: 'deletedAt',
     };
     const sortField = allowedSortFields[sortBy ?? 'createdAt'];
     if (!sortField) {
@@ -1051,9 +1115,77 @@ export class ProductRepository {
    * Create a new product.
    * Slug is required — the service must generate it if not provided by the client.
    * Returns the created product record.
+   *
+   * Invariant I1 (TASK-1772): the category is re-checked under the category tree lock in
+   * the same transaction as the insert — see {@link ProductRepository.lockLiveCategory}.
+   * A deleted (or missing) category throws {@link ProductCategoryGoneError}; a tree lock
+   * held past the wait throws {@link ProductCategoryBusyError}; nothing is written.
    */
   create(data: CreateProductInput & { slug: string }): Promise<Product> {
-    return this.prisma.product.create({
+    return this.prisma
+      .$transaction(async (tx) => {
+        await this.lockLiveCategory(tx, data.categoryId);
+        return this.insertProduct(tx, data);
+      }, CATEGORY_WRITE_TX_OPTIONS)
+      .catch(rethrowCategoryBusy);
+  }
+
+  /**
+   * The category check every product write that sets `categoryId` runs inside its own
+   * transaction (invariant I1 — a product never points at a deleted category).
+   *
+   * Takes the category TREE key in SHARED mode, then reads the category. A category
+   * delete holds the same key EXCLUSIVELY for its whole transaction
+   * (`CategoryRepository.deleteSubtreeWithMove`), so the two cannot interleave: either
+   * the delete committed first — this read (a fresh READ COMMITTED snapshot, taken after
+   * the lock) sees the tombstone and throws {@link ProductCategoryGoneError} — or the
+   * delete waits until this write commits and then moves the product with the rest of
+   * the subtree. Shared, not exclusive: product saves only need ordering against the
+   * delete, not against each other.
+   */
+  private async lockLiveCategory(tx: Prisma.TransactionClient, categoryId: string): Promise<void> {
+    await this.lockCategoryTree(tx);
+    await this.assertCategoryLive(tx, categoryId);
+  }
+
+  /**
+   * The SHARED half of {@link ProductRepository.lockLiveCategory} — take it FIRST.
+   *
+   * The wait is bounded: `lock_timeout` is set to {@link CATEGORY_LOCK_TIMEOUT} for the
+   * lock statement alone (transaction-local, then back to the default, so the product
+   * write's own row locks keep the usual behaviour). A tree operation holding the key
+   * longer than that makes the save fail fast with {@link ProductCategoryBusyError} —
+   * a retryable 409 — instead of hanging until a 500. The lock itself is unchanged.
+   */
+  private async lockCategoryTree(tx: Prisma.TransactionClient): Promise<void> {
+    await tx.$executeRaw`SELECT set_config('lock_timeout', ${CATEGORY_LOCK_TIMEOUT}, true)`;
+    try {
+      await acquireSharedAdvisoryLocks(tx, [CATEGORY_TREE_LOCK_KEY]);
+    } catch (error) {
+      rethrowCategoryBusy(error);
+    }
+    await tx.$executeRaw`SET LOCAL lock_timeout TO DEFAULT`;
+  }
+
+  /** The read half of {@link ProductRepository.lockLiveCategory} — only under the lock. */
+  private async assertCategoryLive(
+    tx: Prisma.TransactionClient,
+    categoryId: string,
+  ): Promise<void> {
+    const category = await tx.category.findFirst({
+      where: { id: categoryId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!category) {
+      throw new ProductCategoryGoneError();
+    }
+  }
+
+  private insertProduct(
+    tx: Prisma.TransactionClient,
+    data: CreateProductInput & { slug: string },
+  ): Promise<Product> {
+    return tx.product.create({
       data: {
         name: data.name,
         slug: data.slug,
@@ -1087,6 +1219,14 @@ export class ProductRepository {
    * write commit in ONE transaction. When absent, the behavior is the
    * pre-TASK-285 single-statement update (no transaction on the hot,
    * no-rename path).
+   *
+   * When `data.categoryId` is present the write runs in a transaction that first
+   * re-checks the category under the category tree lock (TASK-1772, invariant I1 —
+   * {@link ProductRepository.lockLiveCategory}); a deleted category throws
+   * {@link ProductCategoryGoneError} and nothing is written. That covers an UNCHANGED
+   * `categoryId` too: a form re-sending the category it loaded would otherwise write a
+   * product a concurrent delete has just moved straight back into the tombstone. A tree
+   * lock held past the wait throws {@link ProductCategoryBusyError} (nothing written).
    */
   update(id: string, data: UpdateProductInput, slugRename?: SlugRenameInput): Promise<Product> {
     const { attributes, ...rest } = data;
@@ -1096,21 +1236,29 @@ export class ProductRepository {
         ? { attributes: (attributes ?? {}) as Prisma.InputJsonValue }
         : {}),
     };
+    const filesCategory = data.categoryId !== undefined;
 
-    if (!slugRename) {
+    if (!slugRename && !filesCategory) {
       return this.prisma.product.update({ where: { id }, data: updateData });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const write = this.prisma.$transaction(async (tx) => {
+      if (data.categoryId !== undefined) {
+        await this.lockLiveCategory(tx, data.categoryId);
+      }
       const updated = await tx.product.update({ where: { id }, data: updateData });
-      await this.slugRedirectRepository.recordRename(
-        tx,
-        SlugRedirectEntity.PRODUCT,
-        slugRename.oldSlug,
-        slugRename.newSlug,
-      );
+      if (slugRename) {
+        await this.slugRedirectRepository.recordRename(
+          tx,
+          SlugRedirectEntity.PRODUCT,
+          slugRename.oldSlug,
+          slugRename.newSlug,
+        );
+      }
       return updated;
-    });
+    }, CATEGORY_WRITE_TX_OPTIONS);
+    // Only a write that waited on the tree lock can be "busy"; a rename alone is not.
+    return filesCategory ? write.catch(rethrowCategoryBusy) : write;
   }
 
   /**
@@ -1451,5 +1599,99 @@ export class ProductRepository {
         sku: mangledSku,
       },
     });
+  }
+
+  /**
+   * Find a SOFT-DELETED product by id (TASK-656) — the one read that looks only at
+   * tombstones. Every other read hides them; restore needs exactly the opposite, so a
+   * live id answers null here just as an unknown one does.
+   */
+  findDeletedById(id: string): Promise<Product | null> {
+    return this.prisma.product.findFirst({ where: { id, deletedAt: { not: null } } });
+  }
+
+  /**
+   * Bring a tombstoned product back (TASK-656): clear `deletedAt`, put back the given
+   * `slug`/`sku`, and leave it HIDDEN (`isActive = false`) — re-publishing is a separate,
+   * deliberate act, so a restored product cannot reappear on the storefront unasked.
+   *
+   * The `deletedAt: { not: null }` guard makes a concurrent double restore a P2025
+   * (→ 404 via the global Prisma translator) instead of a second write. A unique
+   * violation — another product took the slug or SKU after the service checked them —
+   * is re-thrown as {@link ProductRestoreConflictError}, naming the column(s) when
+   * Prisma's metadata says which; the product stays deleted.
+   *
+   * Invariant I1 (a product never points at a deleted category) is checked HERE, under
+   * the category tree lock that `CategoryRepository.deleteSubtreeWithMove` holds for the
+   * whole delete: the check and the write run in one transaction, so a category delete
+   * either committed before it (the row's CURRENT category is read, never the one the
+   * service saw) or waits until the restore commits — and then moves the now-live product
+   * with the rest of the subtree. A deleted category throws
+   * {@link ProductCategoryGoneError} and nothing is written. The lock is the shared one
+   * every category-filing product write takes ({@link ProductRepository.lockLiveCategory}),
+   * with the same bounded wait ({@link ProductCategoryBusyError}).
+   *
+   * Coming back on a slug other than its native one (`nativeSlug`, the address it was
+   * deleted from — TASK-1828), the old links follow it, in the same transaction:
+   * `SlugRedirectRepository.recordRestoreRename` repoints the product's own aliases,
+   * drops any redirect off the new address (it is live now — no 301 loop) and
+   * records `native → new` — unless another live product now lives on the native
+   * address, which is then that product's and gets no redirect. Recorded although the
+   * product comes back hidden: the redirect is what makes the old links work the moment
+   * it is published again (until then the new address 404s like any hidden product).
+   * Back on the native slug, only a redirect a later holder left on it is dropped.
+   */
+  async restore(
+    id: string,
+    slug: string,
+    sku: string | null,
+    nativeSlug: string = slug,
+  ): Promise<Product> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.lockCategoryTree(tx);
+
+        const tombstone = await tx.product.findFirst({
+          where: { id, deletedAt: { not: null } },
+          select: { categoryId: true, deletedAt: true },
+        });
+        // No tombstone: let the guarded update below answer P2025 → 404, as before.
+        if (tombstone) {
+          await this.assertCategoryLive(tx, tombstone.categoryId);
+        }
+
+        const restored = await tx.product.update({
+          where: { id, deletedAt: { not: null } },
+          data: { deletedAt: null, isActive: false, slug, sku },
+        });
+
+        if (tombstone?.deletedAt) {
+          // The restored row now holds `slug`, so any live holder of the native
+          // address is another product. Back on the native slug there is none, and
+          // the call only drops a redirect a later holder left on it.
+          const nativeHolder =
+            nativeSlug === slug
+              ? null
+              : await tx.product.findFirst({
+                  where: { slug: nativeSlug, deletedAt: null },
+                  select: { id: true },
+                });
+          await this.slugRedirectRepository.recordRestoreRename(
+            tx,
+            SlugRedirectEntity.PRODUCT,
+            nativeSlug,
+            slug,
+            { deletedAt: tombstone.deletedAt, redirectFrom: nativeHolder === null },
+          );
+        }
+
+        return restored;
+      }, CATEGORY_WRITE_TX_OPTIONS);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ProductRestoreConflictError(uniqueClashFromPrismaMeta(error.meta));
+      }
+      rethrowCategoryBusy(error);
+    }
   }
 }
