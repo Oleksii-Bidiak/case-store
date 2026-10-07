@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-1863** (1855–1862 — пре-мерж ревʼю плану 185 U; 1848–1854 — пре-мерж ревʼю плану 184 U; 1827–1847 узяли невлиті гілки `worktree-feature-655-deletion-ui` і `worktree-feature-692-analytics-ui`; 1800–1826 — сусідні знахідки плану 184 U; 1770–1781 узяла невлита гілка `worktree-feature-655-deletion-ui`, 1782–1799 лишено їй про запас; 1123, 1124, 1140–1149, 1161–1164 — ревʼю M197; 1100–1122, 1125–1139, 1150–1160 зайняті блоками й гілкою 198; 1097–1099 — Д-н1/Д-н2). Перед видачею id — грепати develop і невлиті гілки, лічильник відставав уже двічі.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-1864** (1855–1863 — пре-мерж ревʼю й прогін плану 185 U; 1848–1854 — пре-мерж ревʼю плану 184 U; 1827–1847 узяли невлиті гілки `worktree-feature-655-deletion-ui` і `worktree-feature-692-analytics-ui`; 1800–1826 — сусідні знахідки плану 184 U; 1770–1781 узяла невлита гілка `worktree-feature-655-deletion-ui`, 1782–1799 лишено їй про запас; 1123, 1124, 1140–1149, 1161–1164 — ревʼю M197; 1100–1122, 1125–1139, 1150–1160 зайняті блоками й гілкою 198; 1097–1099 — Д-н1/Д-н2). Перед видачею id — грепати develop і невлиті гілки, лічильник відставав уже двічі.
 > (Хвиля 197 / S197 резервує **TASK-1600…1699**: хвиля 0 — 1600–1609, смуги A 1610–1629, B 1630–1649,
 > C 1650–1669, D 1670–1689, оркестратор 1690–1699. Паралельні S187A/S198 беруть з 1088.)
 > (Хвиля 198, гілка `worktree-feature-732-admin-by-mockups`, резервує **TASK-1700…1799** під свої хвости: 1088–1095 узяла гілка 187A, 1600–1691 — S197. Узято 1700–1751 (ревʼю перед мержем — 1743–1751); наступний із резерву — **TASK-1752**.)
@@ -877,6 +877,7 @@
 | TASK-1860 | [наслідок 185 U — пре-мерж ревʼю] [адмінка, сусід TASK-1779] Зміни `TreeCombobox` / `Combobox` під макет Д-н2 (шеврон, слот галочки, `truncate pe-9`) застосувались і до `product-filter-sheet.tsx` та `device-model-form.tsx`, яких макет не стосується → опт-ін прапорець або звірка тих екранів | ⬜ | [185](docs/plans/185-deletion.md) |
 | TASK-1861 | [наслідок 185 U — пре-мерж ревʼю] [адмінка, a11y] Діалоги «Видалити категорію» і «Перемістити» відкриваються з пункту «⋯» без `AlertDialogTrigger`: повернення фокусу на «⋯» / рядок дерева після «Скасувати» не перевірено й не покрито тестом | ⬜ | [185](docs/plans/185-deletion.md) |
 | TASK-1862 | [наслідок 185 U — пре-мерж ревʼю] [API] `moveToNew` з назвою, чий slug збігається зі slug гілки, яку видаляє той самий запит, дає 409 `CATEGORY_SLUG_CONFLICT`, хоча транзакція цей slug звільняє (поведінка 185 A, не регресія) → звільняти slug до створення цілі | ⬜ | [185](docs/plans/185-deletion.md) |
+| TASK-1863 | [наслідок 185 U — пре-мерж прогін] [тести, інструменти] `e2e/fixtures/seed-e2e.ts` лишає в `store_test` платіж (`payments`, id `e2e37121-…`), а `test/dashboard.repository.int-spec.ts` чистить `order` без `payment` → 19 падінь на FK `payments_order_id_fkey` у `npm run test:int` після будь-якого прогону Playwright на тій самій базі. Було й до хвилі; 2026-10-07 рядок прибрано руками → int-спека має чистити платежі (або сід — свої) | ⬜ | [185](docs/plans/185-deletion.md) |
 
 ### План 186 — Головна як блоки, перегляд без редагування, прев'ю (B-9 / TASK-451)
 
@@ -1872,6 +1873,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-1863**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-1864**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
