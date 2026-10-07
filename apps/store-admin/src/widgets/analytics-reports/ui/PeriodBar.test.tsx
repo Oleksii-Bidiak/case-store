@@ -17,10 +17,11 @@ import type { ReportPeriodSelection } from "../model/report-period";
 const d = dict.analytics;
 
 const mockReplace = jest.fn();
+let mockSearchParams = new URLSearchParams("");
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
   usePathname: () => "/analytics",
-  useSearchParams: () => new URLSearchParams(""),
+  useSearchParams: () => mockSearchParams,
 }));
 
 // Fixed days in the past of any clock this suite will run on.
@@ -46,7 +47,10 @@ const toField = () => screen.getByLabelText(d.customTo);
 const openCustom = () =>
   userEvent.click(screen.getByRole("button", { name: d.presetCustom }));
 
-beforeEach(() => mockReplace.mockClear());
+beforeEach(() => {
+  mockReplace.mockClear();
+  mockSearchParams = new URLSearchParams("");
+});
 
 describe("PeriodBar — presets", () => {
   it("marks the applied preset as pressed", () => {
@@ -70,6 +74,19 @@ describe("PeriodBar — presets", () => {
   it("drops a custom range, and the default preset, from the URL", async () => {
     renderWithProviders(<PeriodBar selection={AUGUST} />);
     await userEvent.click(screen.getByRole("button", { name: d.preset30d }));
+    expect(mockReplace).toHaveBeenCalledWith("/analytics");
+  });
+
+  it("cleans an invalid link when its fallback preset is pressed", async () => {
+    // `readReportPeriod` fell back to 30 days; the junk is still in the URL.
+    mockSearchParams = new URLSearchParams(
+      "preset=custom&from=2026-13-01&to=x",
+    );
+    renderWithProviders(<PeriodBar selection={THIRTY} />);
+    const thirty = screen.getByRole("button", { name: d.preset30d });
+    expect(thirty).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(thirty);
     expect(mockReplace).toHaveBeenCalledWith("/analytics");
   });
 });
@@ -118,6 +135,24 @@ describe("PeriodBar — «Довільно…»", () => {
     await openCustom();
     expect(fromField()).toHaveValue("2026-09-06");
     expect(toField()).toHaveValue("2026-10-05");
+  });
+
+  it("cannot be opened on a preset before the server has said its days", async () => {
+    const { rerender } = renderWithProviders(
+      <PeriodBar selection={THIRTY} periodLoading />,
+    );
+    expect(screen.getByRole("button", { name: d.presetCustom })).toBeDisabled();
+
+    rerender(<PeriodBar selection={THIRTY} period={period} />);
+    await openCustom();
+    expect(fromField()).toHaveValue("2026-09-06");
+  });
+
+  it("opens on a custom range at once — its days are in the URL", () => {
+    renderWithProviders(<PeriodBar selection={AUGUST} periodLoading />);
+    expect(
+      screen.getByRole("button", { name: d.presetCustom }),
+    ).not.toBeDisabled();
   });
 
   it("keeps the draft across a parent re-render", async () => {

@@ -109,10 +109,16 @@ export function PeriodBar({
     if (next) setSubmitted(false);
   }
 
+  // Written even when the preset is already pressed: an invalid link falls
+  // back to «30 днів» on screen while its junk is still in the address, and
+  // pressing «30 днів» is how that address gets cleaned (a no-op otherwise).
   function choosePreset(preset: ReportPreset) {
-    if (preset === selection.preset) return;
     setUrlParams(reportPeriodToUrl({ preset, from: "", to: "" }));
   }
+
+  // A preset's days come from the server; until they do, «Довільно…» would
+  // open on empty fields and stay empty (the draft seeds on open only).
+  const customUnready = !isCustom && !period && periodLoading;
 
   function applyCustom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -171,7 +177,8 @@ export function PeriodBar({
             <button
               type="button"
               aria-pressed={isCustom}
-              className={SEGMENT_CLASS}
+              disabled={customUnready}
+              className={cn(SEGMENT_CLASS, "disabled:opacity-50")}
             >
               {d.presetCustom}
             </button>
