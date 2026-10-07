@@ -227,12 +227,47 @@ class AdminOrderAllowedPaymentTransitionsResponse {
 }
 
 /**
+ * Orders per delivery method (TASK-648). All four keys are always present, 0
+ * when nothing matches — the admin chips are fixed and read a missing key as
+ * "unknown".
+ */
+class AdminOrderDeliveryMethodCounts {
+  @ApiProperty({ example: 12 })
+  NOVA_POSHTA!: number;
+
+  @ApiProperty({ example: 3 })
+  PICKUP!: number;
+
+  @ApiProperty({ example: 0 })
+  COURIER!: number;
+
+  @ApiProperty({ example: 1 })
+  OTHER!: number;
+}
+
+class AdminOrderFacetsData {
+  @ApiProperty({
+    type: AdminOrderDeliveryMethodCounts,
+    description:
+      'Orders per delivery method under every active filter EXCEPT `deliveryMethod` itself',
+  })
+  deliveryMethod!: AdminOrderDeliveryMethodCounts;
+}
+
+/** Response envelope for `GET /api/admin/orders/facets` (TASK-648). */
+class AdminOrderFacetsResponse {
+  @ApiProperty({ type: AdminOrderFacetsData })
+  data!: AdminOrderFacetsData;
+}
+
+/**
  * Controller for admin order management endpoints.
  *
  * Admin endpoints (ADMIN role required):
  *   POST   /admin/orders                              — Operator-created (phone) order (341)
  *   GET    /admin/orders                              — List all orders across all users
  *   GET    /admin/orders/export                       — CSV of the current filter set (425)
+ *   GET    /admin/orders/facets                       — Per-delivery-method counts (648)
  *   GET    /admin/orders/:orderId                     — Get any order by ID
  *   GET    /admin/orders/:orderId/allowed-transitions — Legal next statuses (TASK-332)
  *   PATCH  /admin/orders/:orderId                     — Waybill / internal notes (335, 336)
@@ -262,6 +297,9 @@ class AdminOrderAllowedPaymentTransitionsResponse {
   AdminOrderCreatedResponseEnvelope,
   AdminOrderAccessLink,
   AdminOrderAccessLinkResponse,
+  AdminOrderDeliveryMethodCounts,
+  AdminOrderFacetsData,
+  AdminOrderFacetsResponse,
 )
 @Controller('admin/orders')
 @UseGuards(PermissionGuard)
@@ -423,6 +461,35 @@ export class AdminOrderController {
     response.setHeader('Content-Type', 'text/csv; charset=utf-8');
     response.setHeader('Content-Disposition', 'attachment; filename="orders.csv"');
     response.send(csv);
+  }
+
+  /**
+   * GET /api/admin/orders/facets (TASK-648)
+   *
+   * Counts behind the delivery-method chips of the order list: the SAME query
+   * as the list (it is the list's filter set that is being counted), answered
+   * per method with every filter applied except the method filter itself.
+   * Pagination/sort params are accepted and ignored, so the admin can pass its
+   * list query through unchanged.
+   *
+   * Declared BEFORE `:orderId`, like `export` — otherwise "facets" is read as an
+   * order id and answers 404. Class-level `orders:read`, same as the list.
+   */
+  @Get('facets')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Count the filtered orders per delivery method (admin)',
+    operationId: 'adminOrderControllerFacets',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Per-method counts; all four methods always present',
+    type: AdminOrderFacetsResponse,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid filter value' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  async facets(@Query() query: AdminOrderListQueryDto): Promise<AdminOrderFacetsResponse> {
+    return { data: await this.orderService.adminGetOrderFacets(query) };
   }
 
   /**

@@ -3,17 +3,13 @@
 import { useState, type ChangeEvent } from "react";
 import { Check } from "lucide-react";
 import { useWatch, type UseFormReturn } from "react-hook-form";
-// Imported from the generated module directly, not through `@/shared/api`: the
-// `delivery` tag is the one Orval group that barrel does not re-export, and the
-// barrel belongs to no one feature — it is edited by whoever adds an endpoint, so
-// this wave leaves it alone (the same reasoning as `use-url-params` /
-// `use-table-sort`, which are imported from their own modules by convention). A
-// follow-up that introduces `entities/delivery`, mirroring the storefront, should
-// move this import there; nothing else in this file changes with it.
+// Through `@/entities/delivery` since TASK-644: the slice that names the admin's
+// delivery hooks (the `delivery` tag is the one Orval group the `@/shared/api`
+// barrel does not re-export).
 import {
   useSearchDeliveryCities,
   useSearchDeliveryWarehouses,
-} from "@/shared/api/generated/delivery/delivery";
+} from "@/entities/delivery";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { Button, Input, Label } from "@/shared/ui";
 import { dict } from "@/shared/config";

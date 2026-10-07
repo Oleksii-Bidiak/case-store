@@ -1,6 +1,7 @@
 import {
   CHECKOUT_DEFAULT_VALUES,
   checkoutSchema,
+  checkoutSchemaFor,
   guestCheckoutSchema,
 } from "./checkout-schema";
 import { dict } from "@/shared/config";
@@ -9,7 +10,11 @@ const validForm = {
   firstName: "Olena",
   lastName: "Shevchenko",
   phone: "+380501234567",
+  deliveryMethod: "NOVA_POSHTA" as const,
   city: "Kyiv",
+  // A Nova Poshta city picked from the directory (TASK-646: a typed one is not
+  // enough — the server refuses an NP order without the ref).
+  npCityRef: "city-ref-1",
   deliveryAddress: "Нова Пошта, відділення №12",
   // Required since TASK-330-B. The form always supplies it (it is a default
   // value, not something the shopper has to touch), so a payload without one is
@@ -181,5 +186,192 @@ describe("guestCheckoutSchema", () => {
     // Same field, different schema: the backend ignores a contact block from an
     // authenticated caller, so demanding it of them would be pointless friction.
     expect(checkoutSchema.safeParse(validForm).success).toBe(true);
+  });
+});
+
+/**
+ * TASK-646 — one schema, four delivery branches. Each branch requires its own
+ * fields and ignores the others', so a shopper who switched from Nova Poshta to
+ * pickup is not held back by an empty field they can no longer see.
+ */
+describe("checkoutSchema — delivery branches (TASK-646)", () => {
+  const base = {
+    firstName: "Olena",
+    lastName: "Shevchenko",
+    phone: "+380501234567",
+    paymentMethod: "ON_DELIVERY" as const,
+    city: "",
+    deliveryAddress: "",
+  };
+
+  const issuesOf = (values: Record<string, unknown>) => {
+    const result = checkoutSchema.safeParse(values);
+    if (result.success) return {};
+    return Object.fromEntries(
+      result.error.issues.map((issue) => [issue.path.join("."), issue.message]),
+    );
+  };
+
+  const d = dict.checkout.delivery.validation;
+
+  describe("Nova Poshta", () => {
+    it("requires a city and a branch", () => {
+      expect(issuesOf({ ...base, deliveryMethod: "NOVA_POSHTA" })).toEqual({
+        city: dict.checkout.validation.city,
+        deliveryAddress: dict.checkout.validation.deliveryAddress,
+      });
+    });
+
+    it("refuses a typed city that was never picked from the directory", () => {
+      expect(
+        issuesOf({
+          ...base,
+          deliveryMethod: "NOVA_POSHTA",
+          city: "Київ",
+          npCityRef: "",
+          deliveryAddress: "Відділення №1",
+        }),
+      ).toEqual({ city: d.npCity });
+    });
+
+    it("accepts a typed city on the manual path, when the directory is down (TASK-1097)", () => {
+      expect(
+        checkoutSchema.safeParse({
+          ...base,
+          deliveryMethod: "NOVA_POSHTA",
+          npManual: true,
+          city: "Ромни",
+          deliveryAddress: "вул. Соборна, 5",
+        }).success,
+      ).toBe(true);
+    });
+
+    it("still requires the city and address on the manual path", () => {
+      expect(
+        issuesOf({ ...base, deliveryMethod: "NOVA_POSHTA", npManual: true }),
+      ).toEqual({
+        city: dict.checkout.validation.city,
+        deliveryAddress: dict.checkout.validation.deliveryAddress,
+      });
+    });
+  });
+
+  it("pickup requires a pickup point — and nothing of the address", () => {
+    expect(
+      issuesOf({ ...base, deliveryMethod: "PICKUP", pickupPointId: "" }),
+    ).toEqual({ pickupPointId: d.pickupPoint });
+    expect(
+      checkoutSchema.safeParse({
+        ...base,
+        deliveryMethod: "PICKUP",
+        pickupPointId: "pp-1",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("courier requires street and house; the flat is optional", () => {
+    expect(
+      issuesOf({
+        ...base,
+        deliveryMethod: "COURIER",
+        courierStreet: " ",
+        courierHouse: "",
+      }),
+    ).toEqual({ courierStreet: d.courierStreet, courierHouse: d.courierHouse });
+    expect(
+      checkoutSchema.safeParse({
+        ...base,
+        deliveryMethod: "COURIER",
+        courierStreet: "вул. Велика Васильківська",
+        courierHouse: "10",
+        courierApartment: "",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("courier reports missing fields in Ukrainian even when the keys are absent", () => {
+    expect(issuesOf({ ...base, deliveryMethod: "COURIER" })).toEqual({
+      courierStreet: d.courierStreet,
+      courierHouse: d.courierHouse,
+    });
+  });
+
+  it("courier asks for a typed city only when the shop named none", () => {
+    const courier = {
+      ...base,
+      deliveryMethod: "COURIER",
+      courierStreet: "вул. Соборна",
+      courierHouse: "5",
+      courierCity: "",
+    };
+    // The shop's city (the default): nothing to type.
+    expect(checkoutSchemaFor(false).safeParse(courier).success).toBe(true);
+    // No city from the shop: required, for guests too.
+    for (const isGuest of [false, true]) {
+      const schema = checkoutSchemaFor(isGuest, { courierCityFixed: false });
+      const result = schema.safeParse({ ...courier, email: "a@b.ua" });
+      expect(result.success).toBe(false);
+      expect(result.error?.flatten().fieldErrors.courierCity).toEqual([
+        dict.checkout.validation.city,
+      ]);
+      expect(
+        schema.safeParse({
+          ...courier,
+          email: "a@b.ua",
+          courierCity: "Біла Церква",
+        }).success,
+      ).toBe(true);
+    }
+    // Other methods never ask for it.
+    expect(
+      checkoutSchemaFor(false, { courierCityFixed: false }).safeParse({
+        ...base,
+        deliveryMethod: "PICKUP",
+        pickupPointId: "pp-1",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("other requires a city and a free-text address, with no directory ref", () => {
+    expect(issuesOf({ ...base, deliveryMethod: "OTHER" })).toEqual({
+      city: dict.checkout.validation.city,
+      deliveryAddress: d.otherAddress,
+    });
+    expect(
+      checkoutSchema.safeParse({
+        ...base,
+        deliveryMethod: "OTHER",
+        city: "Ужгород",
+        deliveryAddress: "Укрпошта, індекс 88000",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("reports the delivery fields together with the recipient's on one submit", () => {
+    // Zod runs a refinement only once the object itself parsed — with every
+    // field defaulted it does, so «Далі» lists every problem at once.
+    const issues = issuesOf({
+      ...CHECKOUT_DEFAULT_VALUES,
+      deliveryMethod: "PICKUP",
+    });
+    expect(issues.firstName).toBe(dict.checkout.validation.firstName);
+    expect(issues.pickupPointId).toBe(d.pickupPoint);
+  });
+
+  it("rejects a delivery method the storefront does not know", () => {
+    expect(
+      checkoutSchema.safeParse({ ...base, deliveryMethod: "DRONE" }).success,
+    ).toBe(false);
+  });
+
+  it("defaults every delivery field (forms.md Rule 4c)", () => {
+    expect(CHECKOUT_DEFAULT_VALUES).toMatchObject({
+      deliveryMethod: "NOVA_POSHTA",
+      npManual: false,
+      pickupPointId: "",
+      courierStreet: "",
+      courierHouse: "",
+      courierApartment: "",
+    });
   });
 });

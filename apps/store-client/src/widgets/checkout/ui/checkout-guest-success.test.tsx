@@ -48,6 +48,8 @@ describe("CheckoutGuestSuccess (TASK-610)", () => {
     expect(current[0].closest("li")).toHaveTextContent(
       dict.checkout.stepConfirm,
     );
+    // TASK-1098: the last step reads «Готово».
+    expect(current[0].closest("li")).toHaveTextContent("Готово");
   });
 
   it("shows no alert when the payment handoff went fine", () => {

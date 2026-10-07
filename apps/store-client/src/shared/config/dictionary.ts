@@ -1321,7 +1321,9 @@ export const dict = {
     pricesDisclaimer: "Ціни відображають поточний стан вашого кошика.",
     stepShipping: "Доставка",
     stepReview: "Перевірка",
-    stepConfirm: "Підтвердження",
+    // TASK-1098: the third step is the outcome screen, not a second confirm —
+    // «Підтвердження» sat right after «Підтвердити замовлення» and read as one.
+    stepConfirm: "Готово",
     // Progress stepper landmark label (TASK-259-F).
     progressAria: "Прогрес оформлення замовлення",
     deliveryEstimateLabel: "Орієнтовна доставка",
@@ -1468,6 +1470,108 @@ export const dict = {
       required:
         "Щоб підтвердити замовлення, прийміть умови публічної оферти та політики конфіденційності.",
     },
+    // Delivery method on step 1 (TASK-646, CheckoutDelivery.dc.html). The list
+    // comes from GET /api/delivery/methods; the copy is ASCII-apostrophe like the
+    // rest of the storefront («Кур'єр»). The courier city is never declined —
+    // «Кур'єр · Київ», not «Кур'єр по Києву» (owner decision 2026-10-06).
+    delivery: {
+      methodHeading: "Спосіб доставки",
+      recipientHeading: "Отримувач",
+      titles: {
+        NOVA_POSHTA: "Нова Пошта",
+        PICKUP: "Самовивіз з магазину",
+        COURIER: "Кур'єр по місту",
+        OTHER: "Інша доставка",
+      },
+      courierTitle: (city: string) => `Кур'єр · ${city}`,
+      // Short names for the review row and the summary's «Доставка · …».
+      short: {
+        NOVA_POSHTA: "Нова Пошта",
+        PICKUP: "Самовивіз",
+        COURIER: "Кур'єр",
+        OTHER: "Інша доставка",
+      },
+      npTariff: "За тарифом Нової Пошти",
+      npQuote: (cost: string, days: number) =>
+        `${cost} · ${days}–${days + 1} роб. дн.`,
+      free: "Безкоштовно",
+      courierTerms: (price: string, freeFrom: string) =>
+        `${price} · безкоштовно від ${freeFrom}`,
+      operatorQuotes: "Вартість уточнить оператор",
+      // Section headings, one per branch.
+      npHeading: "Відділення Нової Пошти",
+      pickupHeading: "Де забрати",
+      courierHeading: "Адреса для кур'єра",
+      otherHeading: "Куди доставити",
+      npWarehouseLabel: "Відділення або поштомат",
+      // NP down (TASK-1097): the city lookup failed, so the shopper types the
+      // address by hand and the server treats the order as «інша доставка».
+      npDownNotice:
+        "Нова Пошта зараз не відповідає, тож список міст недоступний. Введіть місто й адресу вручну — вартість доставки уточнить оператор, коли зателефонує.",
+      manualCityPlaceholder: "Введіть назву міста",
+      manualAddressLabel: "Адреса доставки",
+      manualAddressPlaceholder: "Вулиця, будинок або номер відділення",
+      pickupGroupAria: "Пункт самовивозу",
+      pickupMapLink: "Як дістатися",
+      pickupNote:
+        "Зателефонуємо, коли замовлення буде готове до видачі. Пункт можна змінити до підтвердження.",
+      courierCityHint: (city: string) =>
+        `Кур'єр доставляє лише в межах міста ${city}. Для інших міст оберіть Нову Пошту.`,
+      courierStreet: "Вулиця",
+      courierHouse: "Будинок",
+      courierApartment: "Квартира",
+      courierAddressLine: (street: string, house: string, apartment: string) =>
+        [street, house, apartment ? `кв. ${apartment}` : ""]
+          .filter(Boolean)
+          .join(", "),
+      courierRemaining: "До безкоштовної доставки кур'єром ще",
+      courierProgressAria: "До безкоштовної доставки",
+      courierFree: (threshold: string) =>
+        `Доставка кур'єром безкоштовна — сума замовлення понад ${threshold}`,
+      otherAddressLabel: "Адреса або спосіб доставки",
+      otherAddressPlaceholder: "напр. Укрпошта, індекс 88000, вул. Корзо, 5",
+      otherAddressHint:
+        "Укрпошта, Meest чи інший перевізник — напишіть, як вам зручно.",
+      otherNote:
+        "Вартість доставки уточнить оператор, коли зателефонує підтвердити замовлення. Оплатити такий спосіб можна лише при отриманні.",
+      // «Оплата при отриманні» — where the money changes hands, by method.
+      onDeliveryNote: {
+        NOVA_POSHTA: "Готівкою або карткою у відділенні перевізника.",
+        PICKUP: "Готівкою або карткою в магазині.",
+        COURIER: "Готівкою або карткою кур'єру.",
+        OTHER: "Готівкою або карткою при отриманні.",
+      },
+      // Why a payment method is off for this delivery (the matrix). Beats the
+      // sign-in reason: signing in would not unlock it.
+      paymentBlockedOther:
+        "Недоступно для «Інша доставка»: спершу оператор уточнить вартість доставки.",
+      paymentBlockedNpDown:
+        "Недоступно, поки вартість доставки не розраховано.",
+      paymentBlocked: (method: string) => `Недоступно для «${method}».`,
+      // Review step rows.
+      reviewMethod: "Доставка",
+      reviewWarehouse: "Відділення",
+      reviewPickup: "Пункт самовивозу",
+      reviewAddress: "Адреса",
+      reviewCost: "Вартість доставки",
+      reviewManual: "(введено вручну)",
+      // Order summary.
+      summaryLine: (method: string) => `Доставка · ${method}`,
+      summaryWithoutShipping: "Без доставки — її вартість уточнить оператор",
+      validation: {
+        npCity: "Оберіть місто зі списку Нової Пошти",
+        pickupPoint: "Оберіть пункт самовивозу",
+        courierStreet: "Вкажіть вулицю",
+        courierHouse: "Вкажіть номер будинку",
+        otherAddress: "Вкажіть адресу або спосіб доставки",
+      },
+      // TASK-647: the mobile «До сплати» bar under a total that leaves the
+      // delivery out — the short form of `summaryWithoutShipping`.
+      payBarWithoutShipping: "без доставки",
+    },
+    // The title of the refusal alert at the top of step 1; the server's own
+    // sentence follows it verbatim (CheckoutDelivery.dc.html #error).
+    orderErrorTitle: "Не вдалося оформити замовлення",
   },
 
   order: {
@@ -1487,7 +1591,6 @@ export const dict = {
       `Оплата: ${PAYMENT_STATUS_LABELS[status] ?? status}`,
     itemsOrdered: "Замовлені товари",
     viewProductAria: (name: string) => `Переглянути «${name}»`,
-    shippingAddress: "Адреса доставки",
     billingAddress: "Адреса оплати",
     /** Localize a 2-letter country code for display; falls back to the raw code. */
     countryLabel: (code: string) => (code === "UA" ? "Україна" : code),
@@ -1601,7 +1704,7 @@ export const dict = {
       deliveryMethods: {
         NOVA_POSHTA: "Нова Пошта, відділення",
         PICKUP: "Самовивіз із магазину",
-        COURIER: "Курʼєр додому",
+        COURIER: "Кур'єр додому",
         OTHER: "Інша доставка",
       } as Record<string, string>,
       backToList: "До історії замовлень",
@@ -1618,6 +1721,31 @@ export const dict = {
       accountOfferBody:
         "З акаунтом ви бачитимете всі замовлення в одному місці. Це замовлення привʼяжеться до нього автоматично.",
       accountOfferCta: "Створити акаунт",
+    },
+
+    // ── «Доставка» after checkout (TASK-647, OrderConfirmation.dc.html) ─────
+    // One block for the confirmation page and the guest order page; the
+    // account detail reads the same facts. ASCII apostrophe, like the rest of
+    // the storefront.
+    deliveryBlock: {
+      heading: "Доставка",
+      methods: {
+        NOVA_POSHTA: "Нова Пошта",
+        PICKUP: "Самовивіз",
+        COURIER: "Кур'єр",
+        OTHER: "Інша доставка",
+      } as Record<string, string>,
+      pickupTitle: (name: string) => `Самовивіз · ${name}`,
+      // Owner decision 2026-10-06: the city is not declined — «Кур'єр · Київ».
+      courierTitle: (city: string) => `Кур'єр · ${city}`,
+      mapLink: "Як дістатися",
+      newTab: "(відкривається в новій вкладці)",
+      hoursTerm: "Години",
+      pickupNote: "Зателефонуємо, коли замовлення буде готове до видачі.",
+      otherNote:
+        "Вартість доставки уточнить оператор, коли зателефонує підтвердити замовлення. Її додадуть до суми при отриманні.",
+      // Under «Разом» while the delivery is unpriced (shippingCostPending).
+      totalWithoutShipping: "Без доставки — її вартість уточнить оператор",
     },
   },
 
@@ -1665,7 +1793,6 @@ export const dict = {
     deliveryHeading: "Доставка",
     deliveryCity: "Місто",
     deliveryWarehouse: "Відділення",
-    deliveryCourier: "Курʼєром за вказаною адресою",
     deliveryUnknown: "Адресу не вказано",
     trackingHeading: "ТТН",
     trackingNone: "Ще не передано перевізнику",
@@ -1679,6 +1806,17 @@ export const dict = {
         ? `Знайдено замовлень: ${count}. Деталі нижче.`
         : "Замовлення знайдено. Деталі нижче.",
     resultsRegionAria: "Результат перевірки замовлення",
+    // TASK-1030: the delivery line by the real method — never the street.
+    deliveryNovaPoshta: (warehouse: string | null) =>
+      warehouse ? `Нова Пошта: ${warehouse}` : "Нова Пошта",
+    deliveryPickup: (point: string) =>
+      point ? `Самовивіз: ${point}` : "Самовивіз",
+    deliveryCourierMethod: "Кур'єр",
+    deliveryOther: "Інший спосіб — вартість уточнить оператор",
+    shippingFree: "Безкоштовно",
+    shippingPending: "Уточнить оператор",
+    // TASK-647 fix: OTHER once the operator has priced it.
+    deliveryOtherPriced: "Інший спосіб",
   },
 
   account: {

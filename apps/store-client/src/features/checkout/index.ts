@@ -15,6 +15,29 @@ export {
   type CheckoutFormValues,
 } from "./model/checkout-schema";
 
+// Delivery methods (TASK-646): the shop's offer, the method card, what the
+// chosen delivery costs.
+export { DeliveryMethodPicker } from "./ui/delivery-method-picker";
+export {
+  useDeliveryOptions,
+  useDeliveryQuote,
+  type DeliverySelection,
+} from "./model/use-delivery-options";
+export {
+  CHECKOUT_DELIVERY_METHODS,
+  DEFAULT_DELIVERY_METHOD,
+  bookedDeliveryMethod,
+  centsToMoney,
+  deliveryMethodShortTitle,
+  deliveryMethodTitle,
+  deliveryQuoteText,
+  resolveDeliveryMethod,
+  toCents,
+  type CheckoutDeliveryMethod,
+  type CheckoutDeliveryOptions,
+  type DeliveryQuote,
+} from "./model/delivery";
+
 // Payment-method vocabulary + availability rules (TASK-330-B).
 export {
   CHECKOUT_PAYMENT_METHODS,
@@ -26,6 +49,7 @@ export {
   requiresPaymentHandoff,
   resolvePaymentMethods,
   type CheckoutPaymentMethod,
+  type DeliveryPaymentContext,
   type PaymentMethodBlocker,
   type PaymentMethodOption,
 } from "./model/payment-methods";

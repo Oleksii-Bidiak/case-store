@@ -12733,6 +12733,26 @@
             }
           },
           {
+            "name": "deliveryMethod",
+            "required": false,
+            "in": "query",
+            "description": "Filter by one or more delivery methods (comma-separated, TASK-648) — the same CSV shape as `status`: `PICKUP` or `PICKUP,COURIER`; absent means every method.",
+            "schema": {
+              "example": "PICKUP,COURIER",
+              "type": "string"
+            }
+          },
+          {
+            "name": "pickupPointId",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders collected at one pickup point (TASK-648). Orders whose point was deleted no longer carry its id (the FK is SetNull) and do not match.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
             "name": "pendingOverdue",
             "required": false,
             "in": "query",
@@ -13007,6 +13027,26 @@
             }
           },
           {
+            "name": "deliveryMethod",
+            "required": false,
+            "in": "query",
+            "description": "Filter by one or more delivery methods (comma-separated, TASK-648) — the same CSV shape as `status`: `PICKUP` or `PICKUP,COURIER`; absent means every method.",
+            "schema": {
+              "example": "PICKUP,COURIER",
+              "type": "string"
+            }
+          },
+          {
+            "name": "pickupPointId",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders collected at one pickup point (TASK-648). Orders whose point was deleted no longer carry its id (the FK is SetNull) and do not match.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
             "name": "pendingOverdue",
             "required": false,
             "in": "query",
@@ -13088,6 +13128,258 @@
           }
         ],
         "summary": "Export the filtered orders as CSV (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
+    "/api/admin/orders/facets": {
+      "get": {
+        "operationId": "adminOrderControllerFacets",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based)",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 10,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Filter by one or more order statuses (comma-separated). A single value (`PENDING`) or CSV (`CONFIRMED,PROCESSING`) are both accepted; absent means all statuses.",
+            "schema": {
+              "example": "CONFIRMED,PROCESSING",
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "description": "Filter by owning user ID",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID.",
+            "schema": {
+              "maxLength": 120,
+              "example": "ABC12345",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateFrom",
+            "required": false,
+            "in": "query",
+            "description": "Include orders created on or after the START of this calendar day in Kyiv (Europe/Kyiv)",
+            "schema": {
+              "example": "2026-01-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateTo",
+            "required": false,
+            "in": "query",
+            "description": "Include orders created on or before the END of this calendar day in Kyiv (Europe/Kyiv) — dateFrom = dateTo = a day returns that whole day",
+            "schema": {
+              "example": "2026-12-31",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Sort field (createdAt, total, status)",
+            "schema": {
+              "default": "createdAt",
+              "example": "createdAt",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "description": "Sort order (asc or desc)",
+            "schema": {
+              "default": "desc",
+              "example": "desc",
+              "type": "string"
+            }
+          },
+          {
+            "name": "unpaidInTransit",
+            "required": false,
+            "in": "query",
+            "description": "Filter to active-but-unpaid (\"in-transit\") orders — paymentStatus != PAID AND status NOT IN (CANCELLED, REFUNDED). Deep-link target for the dashboard needs-action widget (TASK-248).",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "paymentStatus",
+            "required": false,
+            "in": "query",
+            "description": "Filter by payment status (TASK-425). Single-valued, unlike `status`: the queue is read as \"show me the unpaid ones\", never as a union of two payment states.",
+            "schema": {
+              "example": "PENDING",
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "PAID",
+                "FAILED",
+                "PARTIALLY_REFUNDED",
+                "REFUNDED"
+              ]
+            }
+          },
+          {
+            "name": "paymentMethod",
+            "required": false,
+            "in": "query",
+            "description": "Filter by how the customer chose to pay (TASK-425) — the difference between a card order whose money never arrived and a cash-on-delivery order that is simply unpaid until the courier hands it over.",
+            "schema": {
+              "example": "ON_DELIVERY",
+              "type": "string",
+              "enum": [
+                "ONLINE",
+                "ON_DELIVERY",
+                "INSTALLMENTS"
+              ]
+            }
+          },
+          {
+            "name": "deliveryMethod",
+            "required": false,
+            "in": "query",
+            "description": "Filter by one or more delivery methods (comma-separated, TASK-648) — the same CSV shape as `status`: `PICKUP` or `PICKUP,COURIER`; absent means every method.",
+            "schema": {
+              "example": "PICKUP,COURIER",
+              "type": "string"
+            }
+          },
+          {
+            "name": "pickupPointId",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders collected at one pickup point (TASK-648). Orders whose point was deleted no longer carry its id (the FK is SetNull) and do not match.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "pendingOverdue",
+            "required": false,
+            "in": "query",
+            "description": "Filter to PENDING orders created more than 48 hours ago — the \"waiting too long\" queue (TASK-425). Deliberately a SERVER filter reusing the dashboard's PENDING_STALE_HOURS, so the list chip and the dashboard tile cannot drift apart.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "hasDebt",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders carrying a debt — status = DELIVERED AND paymentStatus NOT IN (PAID, REFUNDED). The «Борг N ₴» mark (TASK-470 / B-1): delivered goods nobody has paid for.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "awaitingPayment",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders still within their payment window — paymentMethod IN (ONLINE, INSTALLMENTS) AND paymentStatus = PENDING AND reservationExpiresAt in the future. The «Очікує оплати · N хв» mark (TASK-471). BNPL is included because it holds a timed reservation too and the auto-cancel worker acts on the same set.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "reservationExpired",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders whose payment window has closed — the same triple as `awaitingPayment` with `reservationExpiresAt` in the past. The «Резерв сплив» mark (TASK-471). Deliberately a separate flag, not a tri-state: the two are opposite answers to the same question and an operator acts differently on each.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "hasUnavailableItems",
+            "required": false,
+            "in": "query",
+            "description": "Filter to open orders holding at least one line that can no longer be supplied — the product is deleted, unpublished or oversold, or the order lost its reservation to the TTL worker (TASK-470). Deep-link target of the dashboard «Недоступні позиції» tile, and the same predicate it counts.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "paidAfterCancel",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders paid AFTER they were cancelled — still CANCELLED, payment PAID, with the PAID_AFTER_CANCEL history note (a late LiqPay success after the reservation lapsed). Deep-link target of the dashboard «Оплачено після скасування» tile and the same predicate it counts (TASK-352). The operator decides: revive the order or refund.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-method counts; all four methods always present",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderFacetsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter value"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Count the filtered orders per delivery method (admin)",
         "tags": [
           "Admin Orders"
         ]
@@ -14109,6 +14401,238 @@
           }
         ],
         "summary": "Update the delivery dispatch-origin settings (admin)",
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
+    "/api/admin/pickup-points": {
+      "get": {
+        "operationId": "listAdminPickupPoints",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "All points in display order, with the number of orders referencing each",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPickupPointListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "403": {
+            "description": "Forbidden — settings:delivery required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List every pickup point, inactive included (admin)",
+        "tags": [
+          "Delivery"
+        ]
+      },
+      "post": {
+        "operationId": "createPickupPoint",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePickupPointDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Point created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPickupPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "403": {
+            "description": "Forbidden — settings:delivery required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create a pickup point, appended to the end of the list (admin)",
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
+    "/api/admin/pickup-points/reorder": {
+      "patch": {
+        "operationId": "reorderPickupPoints",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderPickupPointsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The full refreshed list (same envelope as the list)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPickupPointListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, or REORDER_DUPLICATE_ID"
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "403": {
+            "description": "Forbidden — settings:delivery required"
+          },
+          "404": {
+            "description": "REORDER_NOT_FOUND — an id is not a pickup point"
+          },
+          "409": {
+            "description": "REORDER_STALE — the list changed since it was read"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reorder the pickup points (admin)",
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
+    "/api/admin/pickup-points/{id}": {
+      "put": {
+        "operationId": "updatePickupPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Pickup point UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePickupPointDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Point updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPickupPointResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "403": {
+            "description": "Forbidden — settings:delivery required"
+          },
+          "404": {
+            "description": "Pickup point not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Update a pickup point; only the fields sent are written (admin)",
+        "tags": [
+          "Delivery"
+        ]
+      },
+      "delete": {
+        "operationId": "deletePickupPoint",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Pickup point UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Point deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletePickupPointResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "403": {
+            "description": "Forbidden — settings:delivery required"
+          },
+          "404": {
+            "description": "Pickup point not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Delete a pickup point; its orders keep their snapshot (admin)",
         "tags": [
           "Delivery"
         ]
@@ -26613,6 +27137,138 @@
           "name"
         ]
       },
+      "DeliveryMethod": {
+        "type": "string",
+        "enum": [
+          "NOVA_POSHTA",
+          "PICKUP",
+          "COURIER",
+          "OTHER"
+        ],
+        "description": "Delivery method decided at checkout (TASK-643). Absent on orders created before it — fall back to the order-level `deliveryMethod`."
+      },
+      "OrderShippingAddressEntity": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "Recipient first name",
+            "example": "Олена"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Recipient last name",
+            "example": "Коваль"
+          },
+          "company": {
+            "type": "string",
+            "description": "Company",
+            "example": "ТОВ «Кейс»"
+          },
+          "address1": {
+            "type": "string",
+            "description": "Street address. For PICKUP the server overwrites it with the pickup point address (TASK-643).",
+            "example": "вул. Січових Стрільців, 37, кв. 12"
+          },
+          "address2": {
+            "type": "string",
+            "description": "Address line 2"
+          },
+          "city": {
+            "type": "string",
+            "description": "City. For PICKUP the server overwrites it with the pickup point city.",
+            "example": "Київ"
+          },
+          "state": {
+            "type": "string",
+            "description": "Region / state"
+          },
+          "postalCode": {
+            "type": "string",
+            "description": "Postal code",
+            "example": "01001"
+          },
+          "country": {
+            "type": "string",
+            "description": "ISO country code",
+            "example": "UA"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Recipient phone",
+            "example": "+380501234567"
+          },
+          "npCityRef": {
+            "type": "string",
+            "description": "Nova Poshta city ref (TASK-080); NOVA_POSHTA orders only"
+          },
+          "npWarehouseRef": {
+            "type": "string",
+            "description": "Nova Poshta branch ref (TASK-080); NOVA_POSHTA orders only"
+          },
+          "npWarehouseName": {
+            "type": "string",
+            "description": "Nova Poshta branch name as shown at checkout; NOVA_POSHTA orders only",
+            "example": "Відділення №1: вул. Пилипа Орлика, 1"
+          },
+          "deliveryMethod": {
+            "description": "Delivery method decided at checkout (TASK-643). Absent on orders created before it — fall back to the order-level `deliveryMethod`.",
+            "example": "NOVA_POSHTA",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryMethod"
+              }
+            ]
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Carrier that moves the parcel: 'NOVA_POSHTA' for Nova Poshta, null for pickup, the shop's courier and OTHER (TASK-643)",
+            "nullable": true,
+            "example": "NOVA_POSHTA"
+          },
+          "shippingCostPending": {
+            "type": "boolean",
+            "description": "True only for OTHER: the booked shipping cost (0) is a placeholder the operator will replace, NOT free delivery. Render \"вартість уточнить оператор\", never \"0 ₴\" (TASK-643).",
+            "example": true
+          },
+          "pickupPointName": {
+            "type": "string",
+            "description": "PICKUP only: the point name as it was at checkout",
+            "nullable": true,
+            "example": "Магазин на Хрещатику"
+          },
+          "pickupPointAddress": {
+            "type": "string",
+            "description": "PICKUP only: the point address as it was at checkout",
+            "nullable": true,
+            "example": "вул. Хрещатик, 22"
+          },
+          "pickupPointHours": {
+            "type": "string",
+            "description": "PICKUP only: the point working hours as typed by the owner, at checkout time",
+            "nullable": true,
+            "example": "Пн–Сб 10:00–20:00, Нд 11:00–18:00"
+          },
+          "pickupPointPhone": {
+            "type": "string",
+            "description": "PICKUP only: the point phone at checkout time",
+            "nullable": true,
+            "example": "+380441234567"
+          },
+          "pickupPointMapUrl": {
+            "type": "string",
+            "description": "PICKUP only: the point map link at checkout time",
+            "nullable": true,
+            "example": "https://maps.google.com/?q=Хрещатик+22"
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName",
+          "address1",
+          "city"
+        ]
+      },
       "OrderItemAddonEntity": {
         "type": "object",
         "properties": {
@@ -26880,17 +27536,31 @@
               "type": "string"
             }
           },
-          "shippingAddress": {
-            "type": "object",
-            "description": "Shipping address snapshot",
+          "pickupPointId": {
+            "type": "string",
+            "description": "Pickup point id for a PICKUP order (TASK-642); null otherwise, and null once the point is deleted — the point details as they were at checkout stay in `shippingAddress`.",
             "nullable": true,
-            "additionalProperties": true
+            "example": null
+          },
+          "shippingAddress": {
+            "description": "Shipping address snapshot, including the delivery snapshot written at checkout (TASK-643): method, carrier, pickup point details, `shippingCostPending`",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderShippingAddressEntity"
+              }
+            ]
           },
           "billingAddress": {
-            "type": "object",
-            "description": "Billing address snapshot (falls back to shipping address)",
+            "description": "Billing address snapshot (falls back to shipping address, and may then carry the same delivery snapshot fields — TASK-1022)",
             "nullable": true,
-            "additionalProperties": true
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderShippingAddressEntity"
+              }
+            ]
           },
           "notes": {
             "type": "string",
@@ -26962,6 +27632,7 @@
           "tax",
           "addonsTotal",
           "total",
+          "pickupPointId",
           "shippingAddress",
           "billingAddress",
           "notes",
@@ -27089,11 +27760,31 @@
             "description": "Nova Poshta branch, or null for a courier delivery (the street is NEVER shown)",
             "nullable": true,
             "example": "Відділення №12"
+          },
+          "pickupPointName": {
+            "type": "string",
+            "description": "PICKUP only: the pickup point name as it was at checkout; null otherwise",
+            "nullable": true,
+            "example": "Магазин на Хрещатику"
+          },
+          "pickupPointAddress": {
+            "type": "string",
+            "description": "PICKUP only: the pickup point (the shop's own) address as it was at checkout; null otherwise — the buyer's street is never shown",
+            "nullable": true,
+            "example": "вул. Хрещатик, 22"
+          },
+          "shippingCostPending": {
+            "type": "boolean",
+            "description": "True when the booked shipping cost is a placeholder the operator will quote (OTHER) — render \"вартість уточнить оператор\", never \"0 ₴\"",
+            "example": false
           }
         },
         "required": [
           "city",
-          "warehouse"
+          "warehouse",
+          "pickupPointName",
+          "pickupPointAddress",
+          "shippingCostPending"
         ]
       },
       "PublicOrderEntity": {
@@ -27145,6 +27836,15 @@
               "INSTALLMENTS"
             ],
             "example": "ON_DELIVERY"
+          },
+          "deliveryMethod": {
+            "description": "How the order ships (TASK-1030)",
+            "example": "NOVA_POSHTA",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryMethod"
+              }
+            ]
           },
           "items": {
             "description": "Purchased lines",
@@ -27199,6 +27899,7 @@
           "status",
           "paymentStatus",
           "paymentMethod",
+          "deliveryMethod",
           "items",
           "subtotal",
           "discount",
@@ -27251,16 +27952,6 @@
           "phone",
           "name"
         ]
-      },
-      "DeliveryMethod": {
-        "type": "string",
-        "enum": [
-          "NOVA_POSHTA",
-          "PICKUP",
-          "COURIER",
-          "OTHER"
-        ],
-        "description": "Delivery method. Omitted → derived from the address: shippingAddress.npCityRef present → NOVA_POSHTA, otherwise OTHER. The server computes the shipping cost for the method and refuses (400) a method that is disabled, a PICKUP without an active pickupPointId, a NOVA_POSHTA without npCityRef, and a payment method the delivery method does not admit (OTHER allows ON_DELIVERY only)."
       },
       "AddressDto": {
         "type": "object",
@@ -27793,6 +28484,60 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/AdminOrderAccessLink"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "AdminOrderDeliveryMethodCounts": {
+        "type": "object",
+        "properties": {
+          "NOVA_POSHTA": {
+            "type": "number",
+            "example": 12
+          },
+          "PICKUP": {
+            "type": "number",
+            "example": 3
+          },
+          "COURIER": {
+            "type": "number",
+            "example": 0
+          },
+          "OTHER": {
+            "type": "number",
+            "example": 1
+          }
+        },
+        "required": [
+          "NOVA_POSHTA",
+          "PICKUP",
+          "COURIER",
+          "OTHER"
+        ]
+      },
+      "AdminOrderFacetsData": {
+        "type": "object",
+        "properties": {
+          "deliveryMethod": {
+            "description": "Orders per delivery method under every active filter EXCEPT `deliveryMethod` itself",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminOrderDeliveryMethodCounts"
+              }
+            ]
+          }
+        },
+        "required": [
+          "deliveryMethod"
+        ]
+      },
+      "AdminOrderFacetsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AdminOrderFacetsData"
           }
         },
         "required": [
@@ -28743,6 +29488,224 @@
             "nullable": true,
             "minimum": 0,
             "maximum": 100000
+          }
+        }
+      },
+      "AdminPickupPointDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11"
+          },
+          "name": {
+            "type": "string",
+            "example": "Магазин на Хрещатику"
+          },
+          "city": {
+            "type": "string",
+            "example": "Київ"
+          },
+          "address": {
+            "type": "string",
+            "example": "вул. Хрещатик, 1"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "+380441234567"
+          },
+          "workingHours": {
+            "type": "string",
+            "description": "Free text, shown as typed",
+            "nullable": true,
+            "example": "Пн–Пт 10:00–19:00"
+          },
+          "mapUrl": {
+            "type": "string",
+            "nullable": true,
+            "example": "https://maps.app.goo.gl/…"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Shown at checkout",
+            "example": true
+          },
+          "sortOrder": {
+            "type": "number",
+            "description": "Position in the list (0-based, ascending)",
+            "example": 0
+          },
+          "ordersCount": {
+            "type": "number",
+            "description": "Orders that reference this point. Deleting it keeps them (their snapshot keeps the name and address) but unlinks them — deactivating is the usual move.",
+            "example": 3
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "city",
+          "address",
+          "phone",
+          "workingHours",
+          "mapUrl",
+          "isActive",
+          "sortOrder",
+          "ordersCount"
+        ]
+      },
+      "AdminPickupPointListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Every point, inactive included",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminPickupPointDto"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "AdminPickupPointResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AdminPickupPointDto"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "DeletedPickupPointId": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID of the deleted point"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "DeletePickupPointResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DeletedPickupPointId"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ReorderPickupPointsDto": {
+        "type": "object",
+        "properties": {
+          "orderedIds": {
+            "description": "The complete, final ordering of the list. The index becomes `sortOrder`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "orderedIds"
+        ]
+      },
+      "CreatePickupPointDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Point name shown at checkout",
+            "example": "Магазин на Хрещатику"
+          },
+          "city": {
+            "type": "string",
+            "example": "Київ"
+          },
+          "address": {
+            "type": "string",
+            "example": "вул. Хрещатик, 1"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Free-form phone; blank or null = none",
+            "nullable": true,
+            "example": "+380441234567"
+          },
+          "workingHours": {
+            "type": "string",
+            "description": "Free text, shown as typed; blank or null = none",
+            "nullable": true,
+            "example": "Пн–Пт 10:00–19:00"
+          },
+          "mapUrl": {
+            "type": "string",
+            "description": "Map link (http/https only); blank or null = none",
+            "nullable": true,
+            "example": "https://maps.app.goo.gl/abc"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Shown at checkout. Defaults to true.",
+            "example": true,
+            "default": true
+          }
+        },
+        "required": [
+          "name",
+          "city",
+          "address"
+        ]
+      },
+      "UpdatePickupPointDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Магазин на Хрещатику",
+            "maxLength": 255
+          },
+          "city": {
+            "type": "string",
+            "example": "Київ",
+            "maxLength": 255
+          },
+          "address": {
+            "type": "string",
+            "example": "вул. Хрещатик, 1",
+            "maxLength": 500
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "+380441234567"
+          },
+          "workingHours": {
+            "type": "string",
+            "nullable": true,
+            "example": "Пн–Пт 10:00–19:00"
+          },
+          "mapUrl": {
+            "type": "string",
+            "description": "Map link (http/https only); blank or null clears it",
+            "nullable": true,
+            "example": "https://maps.app.goo.gl/abc"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Shown at checkout. False hides it; existing orders keep their snapshot.",
+            "example": false
           }
         }
       },

@@ -6,6 +6,7 @@ import {
   PaymentAttemptStatus,
   OrderHistoryChangeType,
   OrderHistoryNote,
+  Prisma,
 } from '@prisma/client';
 import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
 import { OrderRepository } from './order.repository';
@@ -88,6 +89,8 @@ const prismaMock = {
     updateMany: jest.fn(),
     // TASK-786: the admin details write re-reads the row it just wrote.
     findUniqueOrThrow: jest.fn(),
+    // TASK-648: the delivery-method facet counts.
+    groupBy: jest.fn(),
   },
   // TASK-251: history read path.
   orderStatusHistory: {
@@ -393,6 +396,90 @@ describe('OrderRepository', () => {
         deliveryMethod: 'PICKUP',
         pickupPointId: 'point-uuid-1',
       });
+    });
+
+    // TASK-1022 (fix round): an order whose buyer sent no billing address stores
+    // SQL NULL, meaning "same as shipping". Every copy of the shipping snapshot,
+    // whole or address fields only, differs from the snapshot itself, so the
+    // admin card and the storefront summary rendered a redundant «Платіжна
+    // адреса» block. For a PICKUP order that block showed the shop's own address.
+    it('createFromCart stores a NULL billingAddress when the buyer sent none', async () => {
+      const tx = withTx();
+
+      await repository.createFromCart({
+        ...baseParams,
+        deliveryMethod: 'PICKUP',
+        pickupPointId: 'point-uuid-1',
+        shippingAddress: {
+          ...baseParams.shippingAddress,
+          npCityRef: 'city-ref-1',
+          deliveryMethod: 'PICKUP',
+          carrier: null,
+          shippingCostPending: true,
+          pickupPointName: 'Точка',
+          pickupPointAddress: 'вул. Хрещатик, 1',
+        },
+      });
+
+      expect(orderData(tx).billingAddress).toBe(Prisma.DbNull);
+    });
+
+    it('createFromCart keeps an explicit billing address as sent', async () => {
+      const tx = withTx();
+      const billing = {
+        firstName: 'Олена',
+        lastName: 'Коваль',
+        phone: '+380671112233',
+        address1: 'вул. Городоцька, 5',
+        city: 'Львів',
+      };
+
+      await repository.createFromCart({ ...baseParams, billingAddress: billing as never });
+
+      expect(orderData(tx).billingAddress).toEqual(billing);
+    });
+
+    it('createManual stores a NULL billingAddress when none was sent', async () => {
+      const tx = withTx();
+
+      await repository.createManual(
+        {
+          userId: 'user-uuid-1',
+          items: [{ productId: 'product-uuid-1', quantity: 1, price: '10.00', name: 'Case' }],
+          shippingAddress: {
+            ...baseParams.shippingAddress,
+            npCityRef: 'city-ref-1',
+            npWarehouseRef: 'wh-ref-1',
+          } as never,
+          deliveryMethod: 'NOVA_POSHTA',
+        },
+        'admin-uuid-1',
+      );
+
+      expect(orderData(tx).billingAddress).toBe(Prisma.DbNull);
+    });
+
+    it('createManual keeps an explicit billing address as sent', async () => {
+      const tx = withTx();
+      const billing = {
+        firstName: 'Олена',
+        lastName: 'Коваль',
+        city: 'Львів',
+        address1: 'вул. Городоцька, 5',
+      };
+
+      await repository.createManual(
+        {
+          userId: 'user-uuid-1',
+          items: [{ productId: 'product-uuid-1', quantity: 1, price: '10.00', name: 'Case' }],
+          shippingAddress: baseParams.shippingAddress as never,
+          billingAddress: billing as never,
+          deliveryMethod: 'NOVA_POSHTA',
+        },
+        'admin-uuid-1',
+      );
+
+      expect(orderData(tx).billingAddress).toEqual(billing);
     });
 
     it('createManual writes the method it is given', async () => {
@@ -2414,6 +2501,83 @@ describe('OrderRepository', () => {
       expect(call.include).toBeUndefined();
       expect(call.select.items).toBeUndefined();
       expect(call.select._count).toEqual({ select: { items: true } });
+    });
+  });
+
+  describe('delivery filters and facets (TASK-648)', () => {
+    const POINT_ID = '6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11';
+    const whereFor = async (query: Parameters<typeof repository.findAll>[0]) => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+      await repository.findAll(query);
+      return prismaMock.order.count.mock.calls[0][0].where;
+    };
+
+    it('filters the list by one or more delivery methods', async () => {
+      const where = await whereFor({ deliveryMethod: ['PICKUP', 'COURIER'] });
+
+      expect(where.AND).toContainEqual({ deliveryMethod: { in: ['PICKUP', 'COURIER'] } });
+    });
+
+    it('filters the list by pickup point', async () => {
+      const where = await whereFor({ pickupPointId: POINT_ID });
+
+      expect(where.AND).toContainEqual({ pickupPointId: POINT_ID });
+    });
+
+    it('treats an empty method list as no filter', async () => {
+      const where = await whereFor({ deliveryMethod: [] });
+
+      expect(where.AND).toBeUndefined();
+    });
+
+    it('applies the same delivery filters to the CSV export', async () => {
+      prismaMock.order.findMany.mockResolvedValue([]);
+
+      await repository.findAllForExport({ deliveryMethod: ['OTHER'], pickupPointId: POINT_ID }, 10);
+
+      const call = prismaMock.order.findMany.mock.calls[0][0];
+      expect(call.where.AND).toContainEqual({ deliveryMethod: { in: ['OTHER'] } });
+      expect(call.where.AND).toContainEqual({ pickupPointId: POINT_ID });
+      // The column the CSV prints.
+      expect(call.select.deliveryMethod).toBe(true);
+    });
+
+    describe('countByDeliveryMethod', () => {
+      it('groups by method under every OTHER filter, never its own, and fills all four keys', async () => {
+        prismaMock.order.groupBy.mockResolvedValue([
+          { deliveryMethod: 'PICKUP', _count: { _all: 3 } },
+          { deliveryMethod: 'NOVA_POSHTA', _count: { _all: 7 } },
+        ]);
+
+        const counts = await repository.countByDeliveryMethod({
+          deliveryMethod: ['PICKUP'],
+          paymentMethod: PaymentMethod.ON_DELIVERY,
+          search: 'ABC12345',
+        });
+
+        expect(counts).toEqual({ NOVA_POSHTA: 7, PICKUP: 3, COURIER: 0, OTHER: 0 });
+
+        const call = prismaMock.order.groupBy.mock.calls[0][0];
+        expect(call.by).toEqual(['deliveryMethod']);
+        expect(call._count).toEqual({ _all: true });
+        // Standard facet semantics: the other filters narrow the counts…
+        expect(call.where.deletedAt).toBeNull();
+        expect(call.where.OR).toContainEqual({ id: { startsWith: 'abc12345' } });
+        expect(call.where.AND).toContainEqual({ paymentMethod: PaymentMethod.ON_DELIVERY });
+        // …while the method filter itself does not, or every other chip would read 0.
+        expect(JSON.stringify(call.where)).not.toContain('deliveryMethod');
+      });
+
+      it('keeps the pickup-point filter (it is not the facet being counted)', async () => {
+        prismaMock.order.groupBy.mockResolvedValue([]);
+
+        const counts = await repository.countByDeliveryMethod({ pickupPointId: POINT_ID });
+
+        expect(counts).toEqual({ NOVA_POSHTA: 0, PICKUP: 0, COURIER: 0, OTHER: 0 });
+        expect(prismaMock.order.groupBy.mock.calls[0][0].where.AND).toContainEqual({
+          pickupPointId: POINT_ID,
+        });
+      });
     });
   });
 

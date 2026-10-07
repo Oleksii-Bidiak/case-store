@@ -47,6 +47,20 @@ describe("MobilePayBar (TASK-864)", () => {
     }
   });
 
+  // TASK-647: a total that leaves an unpriced delivery out says so here too.
+  it("prints a caption under the amount when one is given", () => {
+    render(
+      <MobilePayBar label="До сплати" amount="998 ₴" amountNote="без доставки">
+        <button type="button">Далі</button>
+      </MobilePayBar>,
+    );
+
+    const note = screen.getByText("без доставки");
+    expect(note).toHaveClass("text-xs", "text-muted-foreground");
+    // It hides with the amount from md up — the summary card says it there.
+    expect(note.parentElement).toHaveClass("md:hidden");
+  });
+
   it("shows only the action while the amount is not known", () => {
     render(
       <MobilePayBar label="До сплати">

@@ -43,8 +43,10 @@ describe("mapOrderToAddressValues (TASK-341)", () => {
 
   it("ignores a non-string value rather than putting an object in an input", () => {
     expect(
-      mapOrderToAddressValues({ shippingAddress: { city: { nested: true } } })
-        .city,
+      // A corrupt snapshot the generated type rules out — cast to reach the guard.
+      mapOrderToAddressValues({
+        shippingAddress: { city: { nested: true } } as never,
+      }).city,
     ).toBe("");
   });
 });

@@ -113,4 +113,46 @@ describe("CheckoutPayment (TASK-330-B)", () => {
       screen.getByRole("radio", { name: /Оплата при отриманні/ }),
     ).toBeEnabled();
   });
+
+  // TASK-646: the delivery × payment matrix.
+  it("disables a method the delivery rules out with the delivery reason, and no sign-in link", () => {
+    renderWithProviders(
+      <Harness
+        options={resolvePaymentMethods({
+          configured: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+          isAuthenticated: false,
+          delivery: {
+            method: "OTHER",
+            matrix: {
+              NOVA_POSHTA: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+              PICKUP: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+              COURIER: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+              OTHER: ["ON_DELIVERY"],
+            },
+          },
+        })}
+      />,
+    );
+
+    for (const name of [/Картка онлайн/, /Оплата частинами/]) {
+      const radio = screen.getByRole("radio", { name });
+      expect(radio).toBeDisabled();
+      expect(radio).toHaveAccessibleDescription(
+        dict.checkout.delivery.paymentBlockedOther,
+      );
+    }
+    // The reason is the one thing to read on a disabled option: nothing
+    // between it and the card fades it below AA contrast.
+    for (const reason of screen.getAllByText(
+      dict.checkout.delivery.paymentBlockedOther,
+    )) {
+      expect(reason.closest(".opacity-60")).toBeNull();
+    }
+    expect(
+      screen.queryByRole("link", { name: dict.checkout.payment.signIn }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("radio", { name: /Оплата при отриманні/ }),
+    ).toHaveAccessibleDescription(dict.checkout.delivery.onDeliveryNote.OTHER);
+  });
 });

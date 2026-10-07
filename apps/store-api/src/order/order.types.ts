@@ -88,6 +88,14 @@ export interface ShippingAddressData {
    */
   pickupPointName?: string;
   pickupPointAddress?: string;
+  /**
+   * PICKUP only (TASK-647): the point's working hours, phone and map link at
+   * checkout, for the confirmation letter and the order pages. Null when the
+   * point had none; absent on snapshots written before TASK-647.
+   */
+  pickupPointHours?: string | null;
+  pickupPointPhone?: string | null;
+  pickupPointMapUrl?: string | null;
 }
 
 /** Carriers an order can be handed to (TASK-643). One value today, by design. */

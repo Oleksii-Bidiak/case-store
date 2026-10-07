@@ -13,3 +13,12 @@ export {
   DeliveryPaymentMatrixDto,
   PickupPointPublicDto,
 } from './delivery-methods.dto';
+export {
+  CreatePickupPointDto,
+  UpdatePickupPointDto,
+  ReorderPickupPointsDto,
+  AdminPickupPointDto,
+  AdminPickupPointListResponse,
+  AdminPickupPointResponse,
+  DeletePickupPointResponse,
+} from './pickup-point-admin.dto';

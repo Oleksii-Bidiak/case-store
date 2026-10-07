@@ -104,14 +104,18 @@ export class OrderLookupRepository {
         status: true,
         paymentStatus: true,
         paymentMethod: true,
+        // TASK-1030: the public page names the real method instead of guessing
+        // "courier" from a missing branch.
+        deliveryMethod: true,
         subtotal: true,
         discount: true,
         shippingCost: true,
         addonsTotal: true,
         total: true,
         trackingNumber: true,
-        // The whole JSON column: the projection reads `city` and
-        // `npWarehouseName` out of it and never renders the rest. Prisma cannot
+        // The whole JSON column: the projection reads `city`, `npWarehouseName`,
+        // the pickup point's name/address (PICKUP only) and `shippingCostPending`
+        // out of it and never renders the rest. Prisma cannot
         // select INTO a Json column, so the narrowing happens in
         // `PublicOrderEntity.fromRow` — which is exactly why that class exists
         // and why it has no `address1` field to put a street in.

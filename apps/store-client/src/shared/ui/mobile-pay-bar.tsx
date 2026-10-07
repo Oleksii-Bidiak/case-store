@@ -9,6 +9,8 @@ interface MobilePayBarProps {
   label: string;
   /** The formatted payable amount; omitted while it is not known yet. */
   amount?: string;
+  /** A short caption under the amount — e.g. «без доставки» when it is left out. */
+  amountNote?: string;
   /** The page's primary action (a link or a submit button). */
   children: ReactNode;
   className?: string;
@@ -37,6 +39,7 @@ interface MobilePayBarProps {
 export function MobilePayBar({
   label,
   amount,
+  amountNote,
   children,
   className,
 }: MobilePayBarProps) {
@@ -60,6 +63,11 @@ export function MobilePayBar({
             <span className="font-display text-lg font-bold tracking-tight whitespace-nowrap text-foreground tabular-nums">
               {amount}
             </span>
+            {amountNote && (
+              <span className="text-xs text-muted-foreground">
+                {amountNote}
+              </span>
+            )}
           </p>
         )}
         <div className="flex min-w-0 flex-1 md:contents">{children}</div>

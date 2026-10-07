@@ -7,6 +7,7 @@ import {
   toOrderPaymentMethod,
   type PaymentMethodOption,
 } from "./payment-methods";
+import { dict } from "@/shared/config";
 
 /**
  * TASK-330-B. The rules that decide what the payment section is allowed to
@@ -128,6 +129,101 @@ describe("coercePaymentMethod", () => {
 
   it("falls back when nothing was selected at all", () => {
     expect(coercePaymentMethod(undefined, options)).toBe("ON_DELIVERY");
+  });
+});
+
+// TASK-646: the delivery narrows the payment list through the server's matrix.
+describe("resolvePaymentMethods — delivery × payment matrix (TASK-646)", () => {
+  const matrix = {
+    NOVA_POSHTA: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+    PICKUP: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+    COURIER: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+    OTHER: ["ON_DELIVERY"],
+  } as const satisfies Record<string, readonly string[]>;
+  const all = ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"] as const;
+
+  const resolve = (
+    method: "NOVA_POSHTA" | "PICKUP" | "COURIER" | "OTHER",
+    {
+      npManual = false,
+      isAuthenticated = true,
+    }: { npManual?: boolean; isAuthenticated?: boolean } = {},
+  ) =>
+    Object.fromEntries(
+      resolvePaymentMethods({
+        configured: [...all],
+        isAuthenticated,
+        delivery: {
+          method,
+          npManual,
+          matrix: {
+            NOVA_POSHTA: [...matrix.NOVA_POSHTA],
+            PICKUP: [...matrix.PICKUP],
+            COURIER: [...matrix.COURIER],
+            OTHER: [...matrix.OTHER],
+          },
+        },
+      }).map((o) => [o.method, o]),
+    );
+
+  it.each(["NOVA_POSHTA", "PICKUP", "COURIER"] as const)(
+    "leaves every method usable for %s",
+    (method) => {
+      const byMethod = resolve(method);
+      expect(all.every((m) => byMethod[m].enabled)).toBe(true);
+    },
+  );
+
+  it("rules the online methods out for «інша доставка», saying why", () => {
+    const byMethod = resolve("OTHER");
+    expect(byMethod.ON_DELIVERY.enabled).toBe(true);
+    for (const method of ["ONLINE", "INSTALLMENTS"] as const) {
+      expect(byMethod[method]).toMatchObject({
+        enabled: false,
+        blockedBy: "delivery-matrix",
+        blockedReason: dict.checkout.delivery.paymentBlockedOther,
+      });
+    }
+  });
+
+  it("treats the Nova Poshta manual path as OTHER, with its own reason (TASK-1097)", () => {
+    const byMethod = resolve("NOVA_POSHTA", { npManual: true });
+    expect(byMethod.ONLINE).toMatchObject({
+      enabled: false,
+      blockedBy: "delivery-matrix",
+      blockedReason: dict.checkout.delivery.paymentBlockedNpDown,
+    });
+    // …but the cash still changes hands at the carrier's branch (#np-down).
+    expect(byMethod.ON_DELIVERY.note).toBe(
+      dict.checkout.delivery.onDeliveryNote.NOVA_POSHTA,
+    );
+  });
+
+  it("puts the delivery reason before the sign-in one — signing in would not help", () => {
+    const byMethod = resolve("OTHER", { isAuthenticated: false });
+    expect(byMethod.ONLINE.blockedBy).toBe("delivery-matrix");
+    expect(byMethod.ONLINE.blockedReason).toBe(
+      dict.checkout.delivery.paymentBlockedOther,
+    );
+    // Where the delivery allows it, a guest still meets the account reason.
+    expect(resolve("PICKUP", { isAuthenticated: false }).ONLINE).toMatchObject({
+      blockedBy: "account-required",
+      blockedReason: dict.checkout.payment.accountRequired,
+    });
+  });
+
+  it.each([
+    ["NOVA_POSHTA", dict.checkout.delivery.onDeliveryNote.NOVA_POSHTA],
+    ["PICKUP", dict.checkout.delivery.onDeliveryNote.PICKUP],
+    ["COURIER", dict.checkout.delivery.onDeliveryNote.COURIER],
+    ["OTHER", dict.checkout.delivery.onDeliveryNote.OTHER],
+  ] as const)("names where the cash changes hands for %s", (method, note) => {
+    expect(resolve(method).ON_DELIVERY.note).toBe(note);
+  });
+
+  it("coerces a card choice back to cash when the delivery rules it out", () => {
+    const options = Object.values(resolve("OTHER"));
+    expect(coercePaymentMethod("ONLINE", options)).toBe("ON_DELIVERY");
   });
 });
 
