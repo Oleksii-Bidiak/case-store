@@ -722,7 +722,7 @@ describe('DashboardRepository (integration)', () => {
       await prisma.notificationOutbox.deleteMany({});
     });
 
-    it('counts PENDING orders, unmoderated reviews, in-transit orders, and failed mail exactly', async () => {
+    it('counts PENDING orders, unmoderated reviews, in-transit orders, failed mail (EMAIL only) and failed Telegram exactly (TASK-1090)', async () => {
       const needsAction = await repo.getNeedsAction();
 
       // Only the PENDING order.
