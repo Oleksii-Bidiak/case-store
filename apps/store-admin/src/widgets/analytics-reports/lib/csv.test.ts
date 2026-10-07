@@ -3,11 +3,13 @@ import {
   OUTSIDERS_TOTAL,
   brandReport,
   categoryReport,
+  emptySalesReport,
   funnelOff,
   funnelReport,
   productsReport,
   registrationsReport,
   salesReport,
+  unsoldCategoryReport,
 } from "@/shared/test/analytics-report-fixtures";
 import { dict } from "@/shared/config";
 import {
@@ -53,6 +55,13 @@ describe("salesCsv", () => {
     expect(rows).toContain("2026-09-24,0,-1299,-1299");
     expect(csv).not.toContain("'-");
     expect(rows).toHaveLength(8 + 30);
+  });
+
+  it("has no daily run in an empty period, where the screen has no chart", () => {
+    const empty = lines(salesCsv(emptySalesReport()).csv);
+    expect(empty).toHaveLength(6);
+    expect(empty[1]).toBe(`${d.salesTile},0,368100,-100`);
+    expect(empty.join("\n")).not.toContain(d.csvDate);
   });
 });
 
@@ -115,6 +124,18 @@ describe("categoriesCsv", () => {
     });
     expect(lines(csv)[0]).not.toContain(d.colRevenue);
     expect(lines(csv)[1]).toBe("Чохли,,214,131");
+  });
+
+  it("writes only the header when nothing sold, as the screen shows no rows", () => {
+    const unsold = unsoldCategoryReport();
+    const { csv } = categoriesCsv({
+      period: unsold.period,
+      rows: unsold.rows,
+      showRevenue: true,
+      expanded: new Set(),
+      childrenOf: () => undefined,
+    });
+    expect(lines(csv)).toHaveLength(1);
   });
 });
 

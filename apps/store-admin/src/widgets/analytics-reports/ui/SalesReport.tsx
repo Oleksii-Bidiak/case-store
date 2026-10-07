@@ -13,6 +13,7 @@ import {
   formatMoney,
 } from "../lib/format";
 import { salesCsv } from "../lib/csv";
+import { isEmptySales } from "../lib/empty";
 import type { ReportQuery } from "../model/report-period";
 import { CsvButton } from "./CsvButton";
 import { DailyBarChart } from "./DailyBarChart";
@@ -78,10 +79,7 @@ export function SalesReport({ query, enabled = true }: SalesReportProps) {
 }
 
 function SalesBody({ data }: { data: SalesReportEntity }) {
-  const empty =
-    data.sales.current === 0 &&
-    data.refunds.current === 0 &&
-    data.orders.current === 0;
+  const empty = isEmptySales(data);
   const points = data.daily.map((day) => ({ date: day.date, value: day.net }));
   const nets = points.map((point) => point.value);
   const hasNegative = nets.some((value) => value < 0);

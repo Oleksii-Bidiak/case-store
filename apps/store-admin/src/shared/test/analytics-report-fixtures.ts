@@ -138,6 +138,22 @@ export function categoryReport(
   };
 }
 
+/**
+ * An empty period as the API sends it: every root category is listed, sold
+ * or not, so «nothing sold» is a column of zeros rather than an empty list.
+ */
+export function unsoldCategoryReport(): CategoryReportEntity {
+  return {
+    ...categoryReport(),
+    rows: categoryReport().rows.map((row) => ({
+      ...row,
+      units: cv(0, row.units.previous),
+      orders: cv(0, row.orders.previous),
+      revenue: cv(0, row.revenue?.previous ?? 0),
+    })),
+  };
+}
+
 export function brandReport({ revenue = true } = {}): BrandReportEntity {
   const rows = [
     {

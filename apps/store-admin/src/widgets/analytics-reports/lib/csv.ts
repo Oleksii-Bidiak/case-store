@@ -34,6 +34,7 @@ import {
   type CsvCell,
 } from "@/shared/lib/csv";
 import { toKyivDateInput } from "@/shared/lib/format";
+import { isEmptySales, soldNothing } from "./empty";
 
 const d = dict.analytics;
 
@@ -86,18 +87,23 @@ export function salesCsv(data: SalesReportEntity): CsvFile {
       row(d.aovTile, data.averageOrderValue, money),
     ],
   );
-  const daily = buildCsv(
-    [d.csvDate, d.salesTile, d.refundsTile, d.netTile],
-    data.daily.map((day) => [
-      t(day.date),
-      money(day.sales),
-      outgoing(day.refunds),
-      money(day.net),
-    ]),
-  );
+  // An empty period has no chart on screen (ДН-8.7), so no per-day section.
+  const daily = isEmptySales(data)
+    ? []
+    : [
+        buildCsv(
+          [d.csvDate, d.salesTile, d.refundsTile, d.netTile],
+          data.daily.map((day) => [
+            t(day.date),
+            money(day.sales),
+            outgoing(day.refunds),
+            money(day.net),
+          ]),
+        ),
+      ];
   return {
     filename: csvFilename("sales", data.period),
-    csv: joinCsvSections([summary, daily]),
+    csv: joinCsvSections([summary, ...daily]),
   };
 }
 
@@ -161,7 +167,8 @@ export function categoriesCsv({
       }
     }
   };
-  walk(rows, null);
+  // Nothing sold: the screen says so in one line instead of zero rows.
+  if (!soldNothing(rows)) walk(rows, null);
 
   return {
     filename: csvFilename("categories", period),
@@ -191,10 +198,12 @@ export function brandsCsv(
         d.colOrders,
         ...(showRevenue ? [d.colRevenue] : []),
       ],
-      data.rows.map((row) => [
-        t(row.name ?? d.noBrand),
-        ...figureCells(row, showRevenue),
-      ]),
+      soldNothing(data.rows)
+        ? []
+        : data.rows.map((row) => [
+            t(row.name ?? d.noBrand),
+            ...figureCells(row, showRevenue),
+          ]),
     ),
   };
 }

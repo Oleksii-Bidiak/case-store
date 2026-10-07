@@ -35,6 +35,7 @@ import {
   TabsTrigger,
 } from "@/shared/ui";
 import { brandsCsv, categoriesCsv, categoryLabel } from "../lib/csv";
+import { soldNothing } from "../lib/empty";
 import { formatCount } from "../lib/format";
 import type { ReportQuery } from "../model/report-period";
 import { CsvButton } from "./CsvButton";
@@ -319,6 +320,8 @@ function CategoryTable({
   }
   if (!rows) return <ReportBodySkeleton height="h-60" />;
 
+  // Every root comes back, sold or not: an empty period is a column of zeros.
+  const empty = soldNothing(rows);
   const context: TreeContext = {
     query,
     expanded,
@@ -333,7 +336,7 @@ function CategoryTable({
       <Table>
         <TableHeadRow nameLabel={d.colCategory} showRevenue={showRevenue} />
         <TableBody>
-          {rows.length === 0 ? (
+          {empty ? (
             <NothingSoldRow columns={context.columns} />
           ) : (
             rows.map((row) => (
@@ -347,7 +350,7 @@ function CategoryTable({
           )}
         </TableBody>
       </Table>
-      {showRevenue && rows.length ? <GrossNote /> : null}
+      {showRevenue && !empty ? <GrossNote /> : null}
     </>
   );
 }
@@ -498,12 +501,13 @@ function BrandTable({
   if (!rows) return <ReportBodySkeleton height="h-60" />;
 
   const maxRevenue = maxRevenueOf(rows);
+  const empty = soldNothing(rows);
   return (
     <>
       <Table>
         <TableHeadRow nameLabel={d.colBrand} showRevenue={showRevenue} />
         <TableBody>
-          {rows.length === 0 ? (
+          {empty ? (
             <NothingSoldRow columns={showRevenue ? 4 : 3} />
           ) : (
             rows.map((row) => (
@@ -527,7 +531,7 @@ function BrandTable({
           )}
         </TableBody>
       </Table>
-      {showRevenue && rows.length ? <GrossNote /> : null}
+      {showRevenue && !empty ? <GrossNote /> : null}
     </>
   );
 }

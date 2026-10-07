@@ -10,6 +10,7 @@ import { server } from "@/shared/test/msw-server";
 import {
   CASES_ID,
   categoryReport,
+  unsoldCategoryReport,
 } from "@/shared/test/analytics-report-fixtures";
 import { dict } from "@/shared/config";
 import { CatalogueReport } from "./CatalogueReport";
@@ -108,6 +109,20 @@ describe("CatalogueReport — categories", () => {
     );
     renderWithProviders(<CatalogueReport query={QUERY} />, OWNER);
     expect(await screen.findByText(d.nothingSold)).toBeInTheDocument();
+  });
+
+  it("says so when every root comes back with zero sold (ДН-8.7)", async () => {
+    // The API lists every root, sold or not — an empty period is all zeros.
+    server.use(
+      http.get("*/api/admin/analytics/reports/categories", () =>
+        HttpResponse.json({ data: unsoldCategoryReport() }),
+      ),
+    );
+    renderWithProviders(<CatalogueReport query={QUERY} />, OWNER);
+
+    expect(await screen.findByText(d.nothingSold)).toBeInTheDocument();
+    expect(screen.queryByText("Смартфони")).not.toBeInTheDocument();
+    expect(screen.queryByText(d.grossNote)).not.toBeInTheDocument();
   });
 });
 
