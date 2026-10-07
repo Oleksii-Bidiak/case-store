@@ -10,7 +10,13 @@
  */
 const port = (name: string, fallback: number): number => {
   const raw = process.env[name];
-  return raw ? Number(raw) : fallback;
+  if (!raw) return fallback;
+  const value = Number(raw);
+  // A typo would otherwise boot `next dev -p NaN` and fail far from its cause.
+  if (!Number.isInteger(value) || value < 1 || value > 65535) {
+    throw new Error(`${name} must be a port number (1–65535), got "${raw}"`);
+  }
+  return value;
 };
 
 export const API_PORT = port("E2E_API_PORT", 3001);
