@@ -27105,7 +27105,7 @@
           },
           "sortOrder": {
             "type": "number",
-            "description": "Position on the page (lower = higher)",
+            "description": "Position on the page (lower = higher), kept dense 0..n-1 by create, delete and reorder — the same index `position` takes on create",
             "example": 3
           },
           "status": {
@@ -27151,11 +27151,11 @@
           },
           "isOrphaned": {
             "type": "boolean",
-            "description": "A CAROUSEL block whose carousel was deleted — it shows nothing until repointed"
+            "description": "A CAROUSEL block whose carousel was DELETED (carousel = null) — it shows nothing until it is pointed at another carousel. Always false for other types. An orphaned block is also isEmpty."
           },
           "isEmpty": {
             "type": "boolean",
-            "description": "Shows nothing of its own on the site right now: a CAROUSEL block whose carousel is not published (or deleted), or a TABS block with no published tab (the site then falls back to its automatic tabs)"
+            "description": "The block would draw nothing of its own on the storefront right now, whatever its own status: a CAROUSEL block whose carousel is deleted, not PUBLISHED, or PUBLISHED but resolving to 0 products (e.g. «Розпродаж» with nothing on sale); a TABS block with no PUBLISHED tab that resolves to at least one product (the site then falls back to its automatic tabs). Products are resolved exactly as the homepage resolves them. Always false for singleton blocks (isSystem)."
           },
           "createdAt": {
             "type": "string",
@@ -27227,7 +27227,7 @@
         "properties": {
           "status": {
             "type": "string",
-            "description": "Publish lifecycle state. Omitted on create defaults to DRAFT.",
+            "description": "Publish lifecycle state. Omitted on create defaults to DRAFT; omitted on update leaves it as is. `null` is rejected.",
             "enum": [
               "DRAFT",
               "SCHEDULED",
@@ -27237,7 +27237,7 @@
           },
           "scheduledAt": {
             "type": "string",
-            "description": "ISO-8601 instant to auto-publish at (only meaningful with status = SCHEDULED). A past/absent date collapses to immediate PUBLISHED.",
+            "description": "ISO-8601 instant to auto-publish at. Allowed ONLY with status = SCHEDULED (400 otherwise). A past date collapses to immediate PUBLISHED.",
             "example": "2026-08-01T09:00:00.000Z",
             "format": "date-time"
           },
@@ -27269,7 +27269,7 @@
           },
           "position": {
             "type": "number",
-            "description": "Where to insert the block, as a 0-based position in the page (later blocks move down). Omit it to append the block at the end.",
+            "description": "Where to insert the block: a 0-based index into the CURRENT page order (0 = the first block; the block now at that index and every one after it move down one). An index at or past the number of blocks, or no position at all, appends the block at the end. `null` is rejected.",
             "example": 4
           }
         },
@@ -27282,7 +27282,7 @@
         "properties": {
           "status": {
             "type": "string",
-            "description": "Publish lifecycle state. Omitted on create defaults to DRAFT.",
+            "description": "Publish lifecycle state. Omitted on create defaults to DRAFT; omitted on update leaves it as is. `null` is rejected.",
             "enum": [
               "DRAFT",
               "SCHEDULED",
@@ -27292,7 +27292,7 @@
           },
           "scheduledAt": {
             "type": "string",
-            "description": "ISO-8601 instant to auto-publish at (only meaningful with status = SCHEDULED). A past/absent date collapses to immediate PUBLISHED.",
+            "description": "ISO-8601 instant to auto-publish at. Allowed ONLY with status = SCHEDULED (400 otherwise). A past date collapses to immediate PUBLISHED.",
             "example": "2026-08-01T09:00:00.000Z",
             "format": "date-time"
           },
