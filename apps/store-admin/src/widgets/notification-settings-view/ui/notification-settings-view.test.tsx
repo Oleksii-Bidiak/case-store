@@ -153,6 +153,10 @@ describe("NotificationSettingsView (TASK-676)", () => {
     expect(rows[1]).toHaveTextContent(
       t.chatMeta(t.kindGroup, "02.10.2026", "Олена К."),
     );
+    // The mockup's order — who, then when — without a gendered verb.
+    expect(rows[0]).toHaveTextContent(
+      "Особистий чат · підключено: Олексій Б., 01.10.2026",
+    );
 
     expect(screen.getByRole("button", { name: t.connect })).toBeEnabled();
     expect(screen.getByRole("button", { name: t.sendTest })).toBeEnabled();
@@ -348,7 +352,13 @@ describe("NotificationSettingsView (TASK-676)", () => {
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog).toHaveTextContent(t.disconnectTitle("Магазин — замовлення"));
     expect(dialog).toHaveTextContent(t.disconnectGroupText);
-    expect(dialog).toHaveTextContent(t.disconnectOthersOne("Олексій Б."));
+    expect(dialog).toHaveTextContent(
+      t.disconnectOthersOne("Олексій Б.", false),
+    );
+    // ДН-7.8's wording: the person who stays, in their own Telegram.
+    expect(dialog).toHaveTextContent(
+      "Олексій Б. і далі отримуватиме їх у свій Telegram.",
+    );
     await userEvent.click(
       within(dialog).getByRole("button", { name: t.disconnect }),
     );
@@ -456,6 +466,66 @@ describe("NotificationSettingsView — «Підключити Telegram» (ДН-7
     );
     expect(screen.getAllByTestId("telegram-chat-row")).toHaveLength(2);
   }, 15000);
+
+  it("keeps the page and the open dialog when a poll fails, and still notices the chat after", async () => {
+    let failing = false;
+    let started = false;
+    let failedPolls = 0;
+    server.use(
+      http.get(GET, () => {
+        if (failing) {
+          failedPolls += 1;
+          return HttpResponse.json(
+            {
+              error: "Internal Server Error",
+              message: "boom",
+              statusCode: 500,
+            },
+            { status: 500 },
+          );
+        }
+        return HttpResponse.json(
+          okChannel(started ? [PRIVATE_CHAT, GROUP_CHAT] : [PRIVATE_CHAT]),
+        );
+      }),
+      http.post(`${GET}/link`, () => HttpResponse.json({ data: LINK })),
+    );
+
+    renderWithProviders(<NotificationSettingsView />, ADMIN);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: t.connect }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: t.dialogTitle });
+    const open = await within(dialog).findByRole("link", {
+      name: new RegExp(t.openPrivate),
+    });
+    open.focus();
+
+    // A background poll fails: the last good channel is still in hand, so
+    // neither the page nor the dialog may give way to the error page.
+    failing = true;
+    await waitFor(() => expect(failedPolls).toBeGreaterThan(0), {
+      timeout: 6000,
+    });
+    await waitFor(() =>
+      expect(screen.getAllByTestId("telegram-chat-row")).toHaveLength(1),
+    );
+    expect(screen.queryByText(t.loadError)).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: t.dialogTitle })).toBe(dialog);
+    expect(open).toHaveFocus();
+
+    // The network is back and «Старт» was pressed: the next poll answers.
+    failing = false;
+    started = true;
+    expect(
+      await within(dialog).findByTestId(
+        "telegram-connect-done",
+        {},
+        { timeout: 6000 },
+      ),
+    ).toHaveTextContent(t.doneTitle("Магазин — замовлення", t.doneKindGroup));
+  }, 20000);
 
   it("says the bot is not answering when the link is refused (409), instead of closing", async () => {
     serveChannel(okChannel());

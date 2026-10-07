@@ -35,6 +35,12 @@ import {
 } from "@/shared/ui";
 import { chatLabel } from "../model/chat-labels";
 
+/**
+ * How long a connect link lives — the API's `BINDING_TOKEN_TTL_MS`. The dialog
+ * re-issues the link this long after it arrived.
+ */
+export const CONNECT_LINK_TTL_MS = 15 * 60 * 1000;
+
 /** Which link the dialog shows: the private-chat one or the add-to-group one. */
 type ConnectTarget = "private" | "group";
 
@@ -135,13 +141,16 @@ function ConnectSteps({
 
   // Re-issue the link when its 15 minutes run out with the dialog still open.
   // A timer is the external system here; the effect only schedules the call.
-  const expiresAt = link?.expiresAt;
+  // The delay counts from the moment the link ARRIVED, not from `expiresAt`
+  // against the browser clock: a clock running ahead of the server would make
+  // `expiresAt` look past already and turn this into a re-issue loop, each
+  // round minting a new token. One timer per link, so at most one re-issue.
+  const linkId = link?.expiresAt;
   useEffect(() => {
-    if (!expiresAt) return;
-    const ms = new Date(expiresAt).getTime() - Date.now();
-    const id = setTimeout(onExpired, Math.max(ms, 0));
+    if (!linkId) return;
+    const id = setTimeout(onExpired, CONNECT_LINK_TTL_MS);
     return () => clearTimeout(id);
-  }, [expiresAt, onExpired]);
+  }, [linkId, onExpired]);
 
   if (linkError) {
     return (

@@ -7581,10 +7581,11 @@ export const dict = {
     chatsCount: (count: number) => countLabel(count, ["чат", "чати", "чатів"]),
     kindPrivate: "Особистий чат",
     kindGroup: "Група",
-    // Без роду дієслова: API не знає, хто підключив — він чи вона.
+    // Без роду дієслова: API не знає, хто підключив — він чи вона. Порядок
+    // макета («хто, дата») збережено безособовою формою.
     chatMeta: (kind: string, date: string, who: string | null) =>
       who
-        ? `${kind} · підключено ${date} (${who})`
+        ? `${kind} · підключено: ${who}, ${date}`
         : `${kind} · підключено ${date}`,
     disconnect: "Відключити",
     disconnectAria: (label: string) => `Відключити «${label}»`,
@@ -7617,8 +7618,12 @@ export const dict = {
     disconnectTitle: (label: string) => `Відключити «${label}»?`,
     disconnectGroupText: "Сповіщення в цю групу перестануть надходити одразу.",
     disconnectPrivateText: "Сповіщення в цей чат перестануть надходити одразу.",
-    disconnectOthersOne: (label: string) =>
-      `«${label}» і далі отримуватиме їх.`,
+    // Той, хто лишається: людина — без лапок і «у свій Telegram» (як у
+    // ДН-7.8), група — назва в лапках.
+    disconnectOthersOne: (label: string, isGroup: boolean) =>
+      isGroup
+        ? `Група «${label}» і далі отримуватиме їх.`
+        : `${label} і далі отримуватиме їх у свій Telegram.`,
     disconnectOthersMany: (count: number) =>
       `Інші ${countLabel(count, ["чат", "чати", "чатів"])} і далі отримуватимуть їх.`,
     disconnectLast:

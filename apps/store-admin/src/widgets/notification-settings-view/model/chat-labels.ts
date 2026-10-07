@@ -32,7 +32,7 @@ export function personShortName(user: NotificationBindingUserDto): string {
   return first || last || user.email;
 }
 
-/** «Особистий чат · підключено 01.10.2026 (Олексій Б.)». */
+/** «Особистий чат · підключено: Олексій Б., 01.10.2026». */
 export function chatMeta(binding: TelegramShopBindingDto): string {
   return t.chatMeta(
     chatKindLabel(binding),

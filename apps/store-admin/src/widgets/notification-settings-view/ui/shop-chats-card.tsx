@@ -127,7 +127,10 @@ export function ShopChatsCard({ channel, onConnect }: ShopChatsCardProps) {
       others.length === 0
         ? t.disconnectLast
         : others.length === 1
-          ? t.disconnectOthersOne(chatLabel(others[0]))
+          ? t.disconnectOthersOne(
+              chatLabel(others[0]),
+              others[0].kind === TelegramChatKind.GROUP,
+            )
           : t.disconnectOthersMany(others.length);
     const confirmed = await confirm({
       title: t.disconnectTitle(label),

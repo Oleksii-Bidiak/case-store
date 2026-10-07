@@ -106,19 +106,24 @@ function NotificationSettingsContent() {
   const { mutate: issueLink, reset: resetLink } = createLink;
   const reissueLink = useCallback(() => issueLink(), [issueLink]);
 
-  if (channelQuery.isLoading) return <NotificationSettingsSkeleton />;
-
-  if (channelQuery.isError || !channelQuery.data?.data) {
-    return (
+  // The error page replaces the page only when there is nothing to show. A
+  // failed BACKGROUND refetch — a poll while the connect dialog is open —
+  // leaves `isError` true with the last good data still in hand; swapping the
+  // page for ErrorState then would unmount the open dialog mid-connect. The
+  // next successful poll clears the error on its own.
+  const channel = channelQuery.data?.data;
+  if (!channel) {
+    return channelQuery.isError ? (
       <ErrorState
         message={dict.notificationSettings.loadError}
         onRetry={() => void channelQuery.refetch()}
         isRetrying={channelQuery.isFetching}
       />
+    ) : (
+      <NotificationSettingsSkeleton />
     );
   }
 
-  const channel = channelQuery.data.data;
   const connected: TelegramShopBindingDto | null = connectSession
     ? (channel.bindings.find(
         (binding) => !connectSession.knownIds.has(binding.id),
