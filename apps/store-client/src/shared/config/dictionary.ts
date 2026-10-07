@@ -2505,6 +2505,8 @@ export const dict = {
     pressedStart: "Я натиснув «Старт»",
     cancel: "Скасувати",
     oneTimeHint: "Посилання одноразове й діє обмежений час.",
+    pollFailing:
+      "Не вдається перевірити, чи Telegram підключився, — пробуємо ще раз. Якщо «Старт» уже натиснуто, зачекайте хвилину.",
     linkLoading: "Готуємо посилання…",
     qrLabel: "QR-код: посилання на бота магазину в Telegram",
     /** 409 — the bot is not answering right now. */

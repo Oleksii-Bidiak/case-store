@@ -65,6 +65,11 @@ export interface TelegramConnectController {
   /** The one-time link while waiting; `undefined` while it is being issued. */
   link: CustomerTelegramLinkDto | undefined;
   linkError: TelegramLinkError | null;
+  /**
+   * Waiting, but the last status read failed (a 429, the network): the panel
+   * must not keep promising it is watching for «Старт» in silence.
+   */
+  pollFailing: boolean;
   /** «Підключити» — issue (or reuse) a link and start waiting. */
   start: () => void;
   /** «Я натиснув «Старт»» — read the status now instead of at the next poll. */
@@ -178,11 +183,20 @@ export function useTelegramConnect(
   else if (waiting) phase = "waiting";
   else phase = "off";
 
+  // A connected chat has SPENT the link (the token is one-time). Forget it, or
+  // «Відключити» → «Підключити» within the reuse window would show the spent
+  // link again and wait on a «Старт» the bot can only refuse.
+  const resetLink = linkMutation.reset;
+  useEffect(() => {
+    if (phase === "on" && link) resetLink();
+  }, [phase, link, resetLink]);
+
   return {
     phase,
     status,
     link,
     linkError,
+    pollFailing: phase === "waiting" && statusQuery.isError,
     start,
     checkNow: () => void statusQuery.refetch(),
     cancel: () => {

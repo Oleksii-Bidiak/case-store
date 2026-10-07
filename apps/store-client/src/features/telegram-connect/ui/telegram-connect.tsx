@@ -83,10 +83,12 @@ export function TelegramConnectPanel({
 
 /**
  * The three waiting actions: a 44px touch target where they stack full-width
- * on a phone, the default height from `sm` up, so «Відкрити Telegram» ·
- * «Я натиснув «Старт»» · «Скасувати» fit one row in the account's text column.
+ * on a phone; from `sm` up the default height and a tighter side padding, so
+ * «Відкрити Telegram» · «Я натиснув «Старт»» · «Скасувати» fit one row in the
+ * account's ~450px text column at 1440 (the mockup's row — with `px-4` and
+ * `min-h-10` «Скасувати» wrapped, TASK-679 review).
  */
-const WAITING_ACTION = "min-h-11 sm:min-h-10";
+const WAITING_ACTION = "min-h-11 sm:min-h-9 sm:px-3";
 
 function WaitingPanel({ connect, className }: TelegramConnectPartProps) {
   const t = dict.telegramNotifications;
@@ -162,13 +164,21 @@ function WaitingPanel({ connect, className }: TelegramConnectPartProps) {
           <Button
             type="button"
             variant="ghost"
-            className={cn(WAITING_ACTION, "px-3 text-muted-foreground")}
+            className={cn(WAITING_ACTION, "px-3 text-muted-foreground sm:px-2")}
             onClick={connect.cancel}
           >
             {t.cancel}
           </Button>
         </div>
 
+        {connect.pollFailing ? (
+          <p
+            data-testid="telegram-connect-poll-failing"
+            className="text-xs text-foreground"
+          >
+            {t.pollFailing}
+          </p>
+        ) : null}
         <p className="text-xs text-muted-foreground">{t.oneTimeHint}</p>
       </div>
     </div>

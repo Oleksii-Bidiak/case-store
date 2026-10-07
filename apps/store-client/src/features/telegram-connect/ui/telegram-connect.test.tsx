@@ -184,6 +184,109 @@ describe("TelegramConnect (TASK-679)", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("mints a new link after connect → disconnect, never re-showing the spent one", async () => {
+    const state = { available: true, connected: false };
+    serveStatus(ME_STATUS, state);
+    let minted = 0;
+    server.use(
+      http.post(ME_LINK, () => {
+        minted += 1;
+        return HttpResponse.json({
+          data: {
+            deepLink: `https://t.me/casestore_bot?start=tok${minted}`,
+            expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+          },
+        });
+      }),
+    );
+    function WithReread() {
+      const connect = useTelegramConnect(
+        { kind: "me" },
+        { pollIntervalMs: 30 },
+      );
+      return (
+        <>
+          <span data-testid="phase">{connect.phase}</span>
+          <button type="button" onClick={connect.retryStatus}>
+            reread
+          </button>
+          <TelegramConnect connect={connect} variant="account" />
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    renderWithProviders(<WithReread />);
+
+    await user.click(
+      await screen.findByRole("button", { name: t.connectAccount }),
+    );
+    expect(
+      await screen.findByRole("link", { name: new RegExp(t.openTelegram) }),
+    ).toHaveAttribute("href", "https://t.me/casestore_bot?start=tok1");
+
+    // «Старт» spends tok1; then the chat is disconnected (well inside the
+    // link-reuse window).
+    state.connected = true;
+    await waitFor(() =>
+      expect(screen.getByTestId("phase")).toHaveTextContent("on"),
+    );
+    state.connected = false;
+    await user.click(screen.getByRole("button", { name: "reread" }));
+    await user.click(
+      await screen.findByRole("button", { name: t.connectAccount }),
+    );
+
+    expect(
+      await screen.findByRole("link", { name: new RegExp(t.openTelegram) }),
+    ).toHaveAttribute("href", "https://t.me/casestore_bot?start=tok2");
+    expect(minted).toBe(2);
+  });
+
+  it("says so while waiting when the status read fails, instead of waiting in silence", async () => {
+    let failing = false;
+    server.use(
+      http.get(ME_STATUS, () =>
+        failing
+          ? HttpResponse.json(
+              { error: "Too Many Requests", message: "x", statusCode: 429 },
+              { status: 429 },
+            )
+          : HttpResponse.json({
+              data: {
+                available: true,
+                connected: false,
+                botUsername: "casestore_bot",
+              },
+            }),
+      ),
+    );
+    serveLink(ME_LINK);
+    const user = userEvent.setup();
+    renderWithProviders(<Harness target={{ kind: "me" }} />);
+
+    await user.click(
+      await screen.findByRole("button", { name: t.connectAccount }),
+    );
+    await screen.findByRole("link", { name: new RegExp(t.openTelegram) });
+    expect(
+      screen.queryByTestId("telegram-connect-poll-failing"),
+    ).not.toBeInTheDocument();
+
+    failing = true;
+    expect(
+      await screen.findByTestId("telegram-connect-poll-failing"),
+    ).toHaveTextContent(t.pollFailing);
+    // Still waiting — the panel stays, the poll keeps trying.
+    expect(screen.getByTestId("phase")).toHaveTextContent("waiting");
+
+    failing = false;
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("telegram-connect-poll-failing"),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   it("asks the guest routes with the order token", async () => {
     serveStatus(GUEST_STATUS, { available: true, connected: false });
     const calls = serveLink(GUEST_LINK);
