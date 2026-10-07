@@ -305,6 +305,79 @@ describe("NotificationSettingsView (TASK-676)", () => {
     );
   });
 
+  it("stamps the test result with its time and drops it once the bot stops answering", async () => {
+    let botDown = false;
+    server.use(
+      http.get(GET, () =>
+        HttpResponse.json(
+          botDown
+            ? {
+                data: {
+                  state: "failed",
+                  reason: "Unauthorized",
+                  checkedAt: "2026-10-07T07:00:00.000Z",
+                  bindings: [PRIVATE_CHAT],
+                },
+              }
+            : okChannel(),
+        ),
+      ),
+      http.post(`${GET}/test`, () => {
+        // The group is gone; the API disconnects it and re-reads the channel —
+        // by then the bot itself has stopped answering.
+        botDown = true;
+        return HttpResponse.json({
+          data: {
+            results: [
+              { bindingId: PRIVATE_CHAT.id, ok: true },
+              {
+                bindingId: GROUP_CHAT.id,
+                ok: false,
+                error: "bot was kicked",
+                revoked: true,
+              },
+            ],
+          },
+        });
+      }),
+    );
+
+    renderWithProviders(<NotificationSettingsView />, ADMIN);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: t.sendTest }),
+    );
+
+    // The re-read says the bot is down: a «Доставлено» from before must not
+    // stay on screen next to «Не відповідає».
+    expect(await screen.findByText(t.stateFailed)).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("telegram-test-summary"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(t.testDelivered)).not.toBeInTheDocument();
+  });
+
+  it("says when the test ran", async () => {
+    serveChannel(okChannel());
+    server.use(
+      http.post(`${GET}/test`, () =>
+        HttpResponse.json({
+          data: { results: [{ bindingId: PRIVATE_CHAT.id, ok: true }] },
+        }),
+      ),
+    );
+
+    renderWithProviders(<NotificationSettingsView />, ADMIN);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: t.sendTest }),
+    );
+
+    expect(
+      await screen.findByTestId("telegram-test-summary"),
+    ).toHaveTextContent(new RegExp(`${t.testAt("")}\\d{1,2}:\\d{2}`));
+  });
+
   it("says why the test was not sent when the API refuses it", async () => {
     serveChannel(okChannel());
     server.use(
@@ -514,6 +587,14 @@ describe("NotificationSettingsView — «Підключити Telegram» (ДН-7
     expect(screen.queryByText(t.loadError)).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: t.dialogTitle })).toBe(dialog);
     expect(open).toHaveFocus();
+    // …but the kept data is not passed off as fresh: the bot card says the
+    // re-read failed, and the dialog stops promising it is watching.
+    expect(
+      await screen.findByTestId("notification-stale-notice"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByTestId("telegram-connect-waiting"),
+    ).toHaveTextContent(t.waitingPollFailing);
 
     // The network is back and «Старт» was pressed: the next poll answers.
     failing = false;
@@ -525,6 +606,9 @@ describe("NotificationSettingsView — «Підключити Telegram» (ДН-7
         { timeout: 6000 },
       ),
     ).toHaveTextContent(t.doneTitle("Магазин — замовлення", t.doneKindGroup));
+    expect(
+      screen.queryByTestId("notification-stale-notice"),
+    ).not.toBeInTheDocument();
   }, 20000);
 
   it("says the bot is not answering when the link is refused (409), instead of closing", async () => {

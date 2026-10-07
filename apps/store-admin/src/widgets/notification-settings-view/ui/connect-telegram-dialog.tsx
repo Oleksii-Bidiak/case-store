@@ -7,6 +7,7 @@ import {
   ClockIcon,
   ExternalLinkIcon,
   LoaderCircleIcon,
+  TriangleAlertIcon,
   UserIcon,
   UsersIcon,
 } from "lucide-react";
@@ -63,6 +64,13 @@ export interface ConnectTelegramDialogProps {
   onExpired: () => void;
   /** The chat that appeared since the dialog opened — switches to ДН-7.5. */
   connected: TelegramShopBindingDto | null;
+  /**
+   * The last poll of the channel failed — «Чекаємо на «Старт»» would then be a
+   * promise nobody is keeping, so the waiting line says checking has stalled.
+   */
+  pollFailing: boolean;
+  /** The bot still answers; when it stops mid-connect, the dialog says so. */
+  botOk: boolean;
 }
 
 /**
@@ -135,6 +143,8 @@ function ConnectSteps({
   onRetry,
   isRetrying,
   onExpired,
+  pollFailing,
+  botOk,
 }: ConnectTelegramDialogProps) {
   const t = dict.notificationSettings;
   const [target, setTarget] = useState<ConnectTarget>("private");
@@ -203,13 +213,29 @@ function ConnectSteps({
 
       <div
         role="status"
+        data-testid="telegram-connect-waiting"
         className="flex items-center gap-2.5 rounded-md bg-muted px-3 py-2.5 text-sm text-foreground"
       >
-        <LoaderCircleIcon
-          aria-hidden="true"
-          className="size-4 shrink-0 animate-spin text-primary motion-reduce:animate-none"
-        />
-        <span>{link ? t.waiting : t.linkLoading}</span>
+        {botOk ? (
+          <LoaderCircleIcon
+            aria-hidden="true"
+            className="size-4 shrink-0 animate-spin text-primary motion-reduce:animate-none"
+          />
+        ) : (
+          <TriangleAlertIcon
+            aria-hidden="true"
+            className="size-4 shrink-0 text-destructive"
+          />
+        )}
+        <span>
+          {!botOk
+            ? t.waitingBotDown
+            : !link
+              ? t.linkLoading
+              : pollFailing
+                ? t.waitingPollFailing
+                : t.waiting}
+        </span>
       </div>
     </>
   );

@@ -6,6 +6,7 @@ import { PERM } from "@/entities/permission";
 import { PermissionGate } from "@/entities/session";
 import {
   getGetTelegramNotificationChannelQueryKey,
+  TelegramChannelStateValue,
   useCreateTelegramConnectLink,
   useGetTelegramNotificationChannel,
   type TelegramShopBindingDto,
@@ -110,8 +111,10 @@ function NotificationSettingsContent() {
   // failed BACKGROUND refetch — a poll while the connect dialog is open —
   // leaves `isError` true with the last good data still in hand; swapping the
   // page for ErrorState then would unmount the open dialog mid-connect. The
-  // next successful poll clears the error on its own.
+  // stale data is SAID to be stale instead (the bot card's notice, the
+  // dialog's waiting line); the next successful poll clears the error.
   const channel = channelQuery.data?.data;
+  const refreshFailed = channelQuery.isError && channel !== undefined;
   if (!channel) {
     return channelQuery.isError ? (
       <ErrorState
@@ -156,6 +159,7 @@ function NotificationSettingsContent() {
         <BotStatusCard
           channel={channel}
           fetchedAt={channelQuery.dataUpdatedAt}
+          refreshFailedAt={refreshFailed ? channelQuery.errorUpdatedAt : null}
         />
         <ShopChatsCard channel={channel} onConnect={openConnect} />
       </div>
@@ -173,6 +177,8 @@ function NotificationSettingsContent() {
         isRetrying={createLink.isPending}
         onExpired={reissueLink}
         connected={connected}
+        pollFailing={refreshFailed}
+        botOk={channel.state === TelegramChannelStateValue.ok}
       />
     </div>
   );

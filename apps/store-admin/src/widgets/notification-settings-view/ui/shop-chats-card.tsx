@@ -24,7 +24,7 @@ import {
   type TelegramTestResultDto,
 } from "@/entities/notification";
 import { dict } from "@/shared/config";
-import { apiErrorStatus, cn } from "@/shared/lib";
+import { apiErrorStatus, cn, formatTime } from "@/shared/lib";
 import { Button, useAnnouncer, useConfirmDialog } from "@/shared/ui";
 import { toast } from "@/shared/ui/toast";
 import {
@@ -46,6 +46,8 @@ interface TestRun {
    * and vanishes from the list, and its advice must not vanish with it.
    */
   advice: readonly string[];
+  /** When the answer came — a «Доставлено» with no time reads as «now». */
+  at: number;
 }
 
 interface ShopChatsCardProps {
@@ -74,6 +76,11 @@ export function ShopChatsCard({ channel, onConnect }: ShopChatsCardProps) {
   const botOk = channel.state === TelegramChannelStateValue.ok;
   const lockedHintId = "notification-chats-locked-hint";
 
+  // Render-time guard (forms.md): a test result says the bot reached the chats
+  // THEN. Once the bot stops answering, a green «Доставлено» left on a row
+  // would contradict the card above it — drop the whole run.
+  if (testRun && !botOk) setTestRun(null);
+
   const invalidateChannel = () =>
     queryClient.invalidateQueries({
       queryKey: getGetTelegramNotificationChannelQueryKey(),
@@ -101,6 +108,7 @@ export function ShopChatsCard({ channel, onConnect }: ShopChatsCardProps) {
           delivered,
           total: results.length,
           advice,
+          at: Date.now(),
         });
         announcePolite(t.testSummary(delivered, results.length));
         // A chat Telegram called gone was disconnected by the API just now.
@@ -235,6 +243,10 @@ export function ShopChatsCard({ channel, onConnect }: ShopChatsCardProps) {
         >
           <p className="text-sm font-medium text-foreground">
             {t.testSummary(testRun.delivered, testRun.total)}
+            <span className="font-normal text-muted-foreground">
+              {" · "}
+              {t.testAt(formatTime(testRun.at))}
+            </span>
           </p>
           {testRun.advice.length > 0 ? (
             testRun.advice.map((line) => (

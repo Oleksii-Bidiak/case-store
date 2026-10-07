@@ -1,10 +1,15 @@
-import { BellIcon, CircleCheckIcon, CircleXIcon } from "lucide-react";
+import {
+  BellIcon,
+  CircleCheckIcon,
+  CircleXIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import {
   TelegramChannelStateValue,
   type TelegramChannelStatusDto,
 } from "@/entities/notification";
 import { dict } from "@/shared/config";
-import { cn, type DateInput } from "@/shared/lib";
+import { cn, formatTime, type DateInput } from "@/shared/lib";
 import { Badge } from "@/shared/ui";
 import { checkedWhen } from "../model/chat-labels";
 
@@ -12,6 +17,12 @@ interface BotStatusCardProps {
   channel: TelegramChannelStatusDto;
   /** When the status was fetched — the «сьогодні» reference. */
   fetchedAt: DateInput;
+  /**
+   * When the last background re-read failed while the data above is kept —
+   * `null` while the shown state is the latest answer. Without this line a
+   * stale «Працює» would look as fresh as a real one.
+   */
+  refreshFailedAt: DateInput | null;
 }
 
 /**
@@ -21,7 +32,11 @@ interface BotStatusCardProps {
  * quiet shop. The failure keeps Telegram's own words in a mono box — they are
  * for the developer, and paraphrasing them would lose the one useful detail.
  */
-export function BotStatusCard({ channel, fetchedAt }: BotStatusCardProps) {
+export function BotStatusCard({
+  channel,
+  fetchedAt,
+  refreshFailedAt,
+}: BotStatusCardProps) {
   const t = dict.notificationSettings;
   const when = checkedWhen(channel.checkedAt, fetchedAt);
 
@@ -100,6 +115,19 @@ export function BotStatusCard({ channel, fetchedAt }: BotStatusCardProps) {
           ) : null}
         </div>
       </div>
+      {refreshFailedAt !== null ? (
+        <p
+          role="status"
+          data-testid="notification-stale-notice"
+          className="flex items-start gap-1.5 rounded-sm bg-muted px-2 py-1.5 text-xs text-foreground"
+        >
+          <TriangleAlertIcon
+            aria-hidden="true"
+            className="mt-0.5 size-3.5 shrink-0 text-warning"
+          />
+          {t.staleNotice(formatTime(refreshFailedAt), formatTime(fetchedAt))}
+        </p>
+      ) : null}
     </section>
   );
 }

@@ -1,4 +1,5 @@
-import { act, renderWithProviders } from "@/shared/test/render";
+import { act, renderWithProviders, screen } from "@/shared/test/render";
+import { dict } from "@/shared/config";
 import {
   CONNECT_LINK_TTL_MS,
   ConnectTelegramDialog,
@@ -26,6 +27,8 @@ function props(
     isRetrying: false,
     onExpired: () => {},
     connected: null,
+    pollFailing: false,
+    botOk: true,
     ...overrides,
   };
 }
@@ -81,5 +84,35 @@ describe("ConnectTelegramDialog — re-issuing an expired link (TASK-676)", () =
 
     act(() => jest.advanceTimersByTime(60_000));
     expect(onExpired).not.toHaveBeenCalled();
+  });
+});
+
+describe("ConnectTelegramDialog — the waiting line stays honest (TASK-676 review)", () => {
+  const t = dict.notificationSettings;
+  const ready = link("tok1", "2099-10-07T09:15:00.000Z");
+
+  it("waits for «Старт» while the poll answers", () => {
+    renderWithProviders(<ConnectTelegramDialog {...props({ link: ready })} />);
+    expect(screen.getByTestId("telegram-connect-waiting")).toHaveTextContent(
+      t.waiting,
+    );
+  });
+
+  it("says checking has stalled when the poll keeps failing", () => {
+    renderWithProviders(
+      <ConnectTelegramDialog {...props({ link: ready, pollFailing: true })} />,
+    );
+    const line = screen.getByTestId("telegram-connect-waiting");
+    expect(line).toHaveTextContent(t.waitingPollFailing);
+    expect(line).not.toHaveTextContent(t.waiting);
+  });
+
+  it("says the bot stopped answering instead of waiting for a «Старт» that cannot work", () => {
+    renderWithProviders(
+      <ConnectTelegramDialog {...props({ link: ready, botOk: false })} />,
+    );
+    expect(screen.getByTestId("telegram-connect-waiting")).toHaveTextContent(
+      t.waitingBotDown,
+    );
   });
 });

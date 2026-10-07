@@ -7567,7 +7567,12 @@ export const dict = {
     checkedToday: (time: string) => `сьогодні о ${time}`,
     checkedOn: (date: string, time: string) => `${date} о ${time}`,
     okTitle: (bot: string) => `Бот @${bot} готовий надсилати`,
-    okText: (when: string) => `Перевірено ${when}, коли сервер запускався.`,
+    // Не «коли сервер запускався»: `failed` перевіряється знову через 5 хвилин,
+    // тож `ok` може бути й з повторної перевірки.
+    okText: (when: string) => `Останню перевірку пройдено ${when}.`,
+    // Фонове оновлення впало, а на екрані лишились попередні дані.
+    staleNotice: (failedAt: string, shownAt: string) =>
+      `Не вдалося оновити стан о ${failedAt} — показано дані на ${shownAt}. Оновіть сторінку, щоб побачити поточний стан.`,
     failedTitle: "Бот не відповідає — сповіщення не надходять",
     // `when` — null, коли перевірка ще не відповіла жодного разу.
     failedText: (when: string | null) =>
@@ -7604,6 +7609,7 @@ export const dict = {
     testUnknownReason: "Telegram не пояснив причину",
     testSummary: (delivered: number, total: number) =>
       `Тестове надіслано в ${delivered} ${pluralUk(delivered, ["чат", "чати", "чатів"])} із ${total}`,
+    testAt: (time: string) => `Тест о ${time}`,
     testAllDeliveredHint: "Перевірте, що повідомлення прийшло в кожен чат.",
     testFailedGroupHint: (label: string, reason: string) =>
       `«${label}»: Telegram відповів «${reason}». Додайте бота в групу знову або відключіть цей чат — інакше туди нічого не дійде.`,
@@ -7655,6 +7661,10 @@ export const dict = {
     linkLoading: "Створюємо посилання…",
     waiting:
       "Чекаємо на «Старт» у Telegram… Вікно можна не закривати — щойно чат підключиться, ви побачите це тут.",
+    waitingPollFailing:
+      "Не вдається перевірити, чи чат підключився, — пробуємо ще раз кожні кілька секунд. Якщо «Старт» уже натиснуто, зачекайте або закрийте вікно й оновіть сторінку.",
+    waitingBotDown:
+      "Бот перестав відповідати — підключення зараз не спрацює. Закрийте вікно: стан бота видно на сторінці.",
     linkConflict:
       "Бот зараз не відповідає, тож посилання не створено. Закрийте вікно — стан бота на сторінці оновиться.",
     linkError: "Не вдалося створити посилання.",
