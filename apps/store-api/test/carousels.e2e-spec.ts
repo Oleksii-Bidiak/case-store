@@ -4,10 +4,10 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { CarouselPlacement, CarouselSource, PublishStatus } from '@prisma/client';
+import { CarouselSource, PublishStatus } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { CarouselRepository, FindPublishedParams } from '../src/carousels/carousels.repository';
+import { CarouselRepository } from '../src/carousels/carousels.repository';
 import { CategoryRepository } from '../src/category';
 import { ProductService } from '../src/product/product.service';
 import { RevalidationNotifier } from '../src/publishing';
@@ -18,16 +18,15 @@ import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
- * E2E tests for the carousel PLACEMENT dimension (TASK-288):
+ * E2E tests for the carousel HTTP contract after TASK-660 removed `Carousel.placement`:
  *
- *   GET /api/carousels?placement=HOME_TABS   — public, placement-scoped read
- *   PUT /api/admin/carousels/:id             — admin, moves a carousel between placements
+ *   GET   /api/carousels                — public list, no placement on the payload
+ *   PUT   /api/admin/carousels/:id      — in-place edit; a `placement` is now a 400
+ *   GET   /api/admin/carousels          — admin list; `?placement=` is now a 400
+ *   PATCH /api/admin/carousels/reorder  — ONE global list, no placement bucket
  *
- * The repository is mocked (no database) — what is under test is the HTTP contract:
- * the query DTO's enum validation, the placement filter actually reaching the read,
- * `placement` surviving onto the public + admin payloads, and the admin guard on the
- * write. The mocked `findAllPublished` filters the fixture rows itself, so "?placement
- * returns ONLY that placement" is a real assertion and not a hardcoded stub.
+ * Where a carousel renders on the homepage belongs to the homepage blocks now
+ * (`test/home-blocks.e2e-spec.ts`). The repository is mocked (no database).
  */
 
 // Pass-through guard that allows all requests (disables rate limiting in tests)
@@ -37,7 +36,7 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
   }
 }
 
-describe('Carousel placement (e2e)', () => {
+describe('Carousels (e2e)', () => {
   let app: INestApplication;
   let jwtService: JwtService;
 
@@ -59,7 +58,6 @@ describe('Carousel placement (e2e)', () => {
     id: tabsId,
     title: 'Хіти',
     source: CarouselSource.BESTSELLING,
-    placement: CarouselPlacement.HOME_TABS,
     sortOrder: 0,
   };
 
@@ -68,7 +66,6 @@ describe('Carousel placement (e2e)', () => {
     id: railId,
     title: 'Новинки',
     source: CarouselSource.NEWEST,
-    placement: CarouselPlacement.HOME_RAILS,
     sortOrder: 1,
   };
 
@@ -80,7 +77,6 @@ describe('Carousel placement (e2e)', () => {
     findById: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
-    updateWithPlacementMove: jest.fn(),
     publish: jest.fn(),
     unpublish: jest.fn(),
     delete: jest.fn(),
@@ -88,8 +84,9 @@ describe('Carousel placement (e2e)', () => {
     findItemIds: jest.fn(),
     findItemsWithProducts: jest.fn(),
     replaceItems: jest.fn(),
-    reorderPlacement: jest.fn(),
-    revalidateTarget: { tags: ['carousels'], paths: ['/'] },
+    reorder: jest.fn(),
+    findByIds: jest.fn(),
+    revalidateTarget: { tags: ['carousels', 'home-blocks'], paths: ['/'] },
   };
 
   const productServiceMock = {
@@ -168,72 +165,38 @@ describe('Carousel placement (e2e)', () => {
     jest.resetAllMocks();
     revalidationMock.revalidate.mockResolvedValue(undefined);
     productServiceMock.findAll.mockResolvedValue({ items: [], meta: {} });
-    carouselRepositoryMock.findAllPublished.mockImplementation((params: FindPublishedParams = {}) =>
-      Promise.resolve(
-        publishedRows.filter(
-          (row) => params.placement === undefined || row.placement === params.placement,
-        ),
-      ),
-    );
+    carouselRepositoryMock.findAllPublished.mockResolvedValue(publishedRows);
   });
 
   // ─── GET /api/carousels ─────────────────────────────────────────────────────
 
   describe('GET /api/carousels', () => {
-    it('returns ONLY the HOME_TABS carousels when ?placement=HOME_TABS', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/api/carousels?placement=HOME_TABS')
-        .expect(200);
-
-      expect(carouselRepositoryMock.findAllPublished).toHaveBeenCalledWith({
-        placement: CarouselPlacement.HOME_TABS,
-      });
-      expect(response.body.data).toHaveLength(1);
-      expect(response.body.data[0]).toMatchObject({
-        id: tabsId,
-        title: 'Хіти',
-        placement: CarouselPlacement.HOME_TABS,
-        sortOrder: 0,
-      });
-      expect(response.body.data[0].products).toEqual([]);
-    });
-
-    it('returns ONLY the HOME_RAILS carousels when ?placement=HOME_RAILS', async () => {
-      const response = await request(app.getHttpServer())
-        .get('/api/carousels?placement=HOME_RAILS')
-        .expect(200);
-
-      expect(response.body.data.map((carousel: { id: string }) => carousel.id)).toEqual([railId]);
-    });
-
-    it('returns every published carousel when placement is omitted (unchanged contract)', async () => {
+    it('returns every published carousel, with no placement on the payload (TASK-660)', async () => {
       const response = await request(app.getHttpServer()).get('/api/carousels').expect(200);
 
-      expect(carouselRepositoryMock.findAllPublished).toHaveBeenCalledWith({
-        placement: undefined,
-      });
+      expect(carouselRepositoryMock.findAllPublished).toHaveBeenCalledWith();
       expect(response.body.data.map((carousel: { id: string }) => carousel.id)).toEqual([
         tabsId,
         railId,
       ]);
-    });
-
-    it('rejects an unknown placement with 400', async () => {
-      await request(app.getHttpServer()).get('/api/carousels?placement=HOME_SIDEBAR').expect(400);
-
-      expect(carouselRepositoryMock.findAllPublished).not.toHaveBeenCalled();
+      expect(response.body.data[0]).toMatchObject({
+        id: tabsId,
+        title: 'Хіти',
+        status: PublishStatus.PUBLISHED,
+        sortOrder: 0,
+        products: [],
+      });
+      expect(response.body.data[0]).not.toHaveProperty('placement');
     });
   });
 
   // ─── PUT /api/admin/carousels/:id ───────────────────────────────────────────
 
-  describe('PUT /api/admin/carousels/:id — placement change', () => {
-    const body = { placement: CarouselPlacement.HOME_TABS };
-
+  describe('PUT /api/admin/carousels/:id', () => {
     it('returns 401 without an auth token', async () => {
       await request(app.getHttpServer())
         .put(`/api/admin/carousels/${railId}`)
-        .send(body)
+        .send({ title: 'Новинки 2' })
         .expect(401);
     });
 
@@ -243,70 +206,44 @@ describe('Carousel placement (e2e)', () => {
       await request(app.getHttpServer())
         .put(`/api/admin/carousels/${railId}`)
         .set('Authorization', `Bearer ${token}`)
-        .send(body)
+        .send({ title: 'Новинки 2' })
         .expect(403);
 
       expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
     });
 
-    it('returns 400 on an unknown placement', async () => {
+    // The field is gone, not ignored: an old admin bundle still sending it gets a clear
+    // 400 instead of believing it moved a carousel between homepage sections.
+    it('rejects a placement with 400 — the field no longer exists (TASK-660)', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
 
       await request(app.getHttpServer())
         .put(`/api/admin/carousels/${railId}`)
         .set('Authorization', `Bearer ${token}`)
-        .send({ placement: 'HOME_SIDEBAR' })
+        .send({ placement: 'HOME_TABS' })
         .expect(400);
 
       expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
     });
 
-    // A placement change is a MOVE between two independent `sortOrder` sequences (TASK-428),
-    // so it must reach the RE-APPENDING repository path — the plain in-place write carried
-    // the row's old slot into the target bucket, putting two carousels at the same position
-    // and letting `createdAt` decide where the operator's move actually landed.
-    it('moves a live carousel to HOME_TABS through the re-appending path and purges the cache', async () => {
-      const token = generateAccessToken('admin-e2e-1', 'ADMIN');
-      carouselRepositoryMock.findById.mockResolvedValue(railCarousel);
-      carouselRepositoryMock.updateWithPlacementMove.mockResolvedValue({
-        ...railCarousel,
-        placement: CarouselPlacement.HOME_TABS,
-        sortOrder: 3,
-      });
-
-      const response = await request(app.getHttpServer())
-        .put(`/api/admin/carousels/${railId}`)
-        .set('Authorization', `Bearer ${token}`)
-        .send(body)
-        .expect(200);
-
-      expect(carouselRepositoryMock.updateWithPlacementMove).toHaveBeenCalledWith(
-        railId,
-        expect.objectContaining({ placement: CarouselPlacement.HOME_TABS }),
-        CarouselPlacement.HOME_TABS,
-      );
-      expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
-      expect(response.body.data.placement).toBe(CarouselPlacement.HOME_TABS);
-      expect(response.body.data.sortOrder).toBe(3);
-      expect(revalidationMock.revalidate).toHaveBeenCalledWith({
-        tags: ['carousels'],
-        paths: ['/'],
-      });
-    });
-
-    it('keeps an edit that re-sends the SAME placement on the plain in-place write', async () => {
+    it('edits a live carousel in place and purges the carousels + home-blocks cache', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
       carouselRepositoryMock.findById.mockResolvedValue(railCarousel);
       carouselRepositoryMock.update.mockResolvedValue({ ...railCarousel, title: 'Новинки 2' });
 
-      await request(app.getHttpServer())
+      const response = await request(app.getHttpServer())
         .put(`/api/admin/carousels/${railId}`)
         .set('Authorization', `Bearer ${token}`)
-        .send({ title: 'Новинки 2', placement: CarouselPlacement.HOME_RAILS })
+        .send({ title: 'Новинки 2' })
         .expect(200);
 
-      expect(carouselRepositoryMock.updateWithPlacementMove).not.toHaveBeenCalled();
       expect(carouselRepositoryMock.update).toHaveBeenCalledTimes(1);
+      expect(response.body.data.title).toBe('Новинки 2');
+      expect(response.body.data).not.toHaveProperty('placement');
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith({
+        tags: ['carousels', 'home-blocks'],
+        paths: ['/'],
+      });
     });
 
     it('returns 404 for a missing carousel', async () => {
@@ -316,7 +253,7 @@ describe('Carousel placement (e2e)', () => {
       await request(app.getHttpServer())
         .put(`/api/admin/carousels/${railId}`)
         .set('Authorization', `Bearer ${token}`)
-        .send(body)
+        .send({ title: 'x' })
         .expect(404);
     });
   });
@@ -324,29 +261,15 @@ describe('Carousel placement (e2e)', () => {
   // ─── GET /api/admin/carousels ───────────────────────────────────────────────
 
   describe('GET /api/admin/carousels', () => {
-    it('exposes placement on every admin row and forwards the placement filter', async () => {
+    it('rejects the retired placement filter with 400 (TASK-660)', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
-      carouselRepositoryMock.findAllAdmin.mockResolvedValue({
-        carousels: [tabsCarousel],
-        total: 1,
-      });
 
-      const response = await request(app.getHttpServer())
+      await request(app.getHttpServer())
         .get('/api/admin/carousels?placement=HOME_TABS')
         .set('Authorization', `Bearer ${token}`)
-        .expect(200);
+        .expect(400);
 
-      expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
-        placement: CarouselPlacement.HOME_TABS,
-        status: undefined,
-        page: undefined,
-        limit: undefined,
-        search: undefined,
-      });
-      expect(response.body.data[0]).toMatchObject({
-        id: tabsId,
-        placement: CarouselPlacement.HOME_TABS,
-      });
+      expect(carouselRepositoryMock.findAllAdmin).not.toHaveBeenCalled();
     });
 
     // ─── TASK-357 ─────────────────────────────────────────────────────────────
@@ -363,6 +286,12 @@ describe('Carousel placement (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
+      expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
+        status: undefined,
+        page: undefined,
+        limit: undefined,
+        search: undefined,
+      });
       expect(response.body.meta).toEqual({ total: 1, page: 1, limit: 1, totalPages: 1 });
     });
 
@@ -394,34 +323,12 @@ describe('Carousel placement (e2e)', () => {
 
       expect(carouselRepositoryMock.findAllAdmin).not.toHaveBeenCalled();
     });
-
-    // The storefront homepage reads the PUBLIC route and groups the WHOLE published set by
-    // placement. Pagination lives only on the admin subclass, so `forbidNonWhitelisted`
-    // makes this a 400 — the mechanical proof that path cannot start paging by accident.
-    it('leaves the PUBLIC carousel route free of pagination — ?page= is rejected there', async () => {
-      await request(app.getHttpServer()).get('/api/carousels?page=2').expect(400);
-
-      expect(carouselRepositoryMock.findAllPublished).not.toHaveBeenCalled();
-    });
-
-    it('still returns every published carousel on the default public request', async () => {
-      carouselRepositoryMock.findAllPublished.mockResolvedValue([]);
-
-      await request(app.getHttpServer()).get('/api/carousels').expect(200);
-
-      expect(carouselRepositoryMock.findAllPublished).toHaveBeenCalledWith({
-        placement: undefined,
-      });
-    });
   });
 
-  // ─── PATCH /api/admin/carousels/reorder (TASK-428) ──────────────────────────
+  // ─── PATCH /api/admin/carousels/reorder (TASK-428, one list since TASK-660) ─
 
   describe('PATCH /api/admin/carousels/reorder', () => {
-    const body = {
-      placement: CarouselPlacement.HOME_RAILS,
-      orderedIds: [railId, tabsId],
-    };
+    const body = { orderedIds: [railId, tabsId] };
 
     it('returns 401 without an auth token', async () => {
       await request(app.getHttpServer())
@@ -439,19 +346,19 @@ describe('Carousel placement (e2e)', () => {
         .send(body)
         .expect(403);
 
-      expect(carouselRepositoryMock.reorderPlacement).not.toHaveBeenCalled();
+      expect(carouselRepositoryMock.reorder).not.toHaveBeenCalled();
     });
 
-    it('returns 400 on an unknown placement', async () => {
+    it('rejects the retired placement key with 400', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
 
       await request(app.getHttpServer())
         .patch('/api/admin/carousels/reorder')
         .set('Authorization', `Bearer ${token}`)
-        .send({ placement: 'HOME_SIDEBAR', orderedIds: [railId] })
+        .send({ placement: 'HOME_RAILS', orderedIds: [railId] })
         .expect(400);
 
-      expect(carouselRepositoryMock.reorderPlacement).not.toHaveBeenCalled();
+      expect(carouselRepositoryMock.reorder).not.toHaveBeenCalled();
     });
 
     it('returns 400 when an ordered id is not a uuid', async () => {
@@ -460,17 +367,17 @@ describe('Carousel placement (e2e)', () => {
       await request(app.getHttpServer())
         .patch('/api/admin/carousels/reorder')
         .set('Authorization', `Bearer ${token}`)
-        .send({ placement: CarouselPlacement.HOME_RAILS, orderedIds: ['not-a-uuid'] })
+        .send({ orderedIds: ['not-a-uuid'] })
         .expect(400);
 
-      expect(carouselRepositoryMock.reorderPlacement).not.toHaveBeenCalled();
+      expect(carouselRepositoryMock.reorder).not.toHaveBeenCalled();
     });
 
     // Route-order regression guard: `reorder` is declared BEFORE `:id`, so it must reach
     // the reorder handler — never `GET/PUT :id` with `id = 'reorder'`.
     it('is matched by the reorder handler, NOT captured as an :id route', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
-      carouselRepositoryMock.reorderPlacement.mockResolvedValue({
+      carouselRepositoryMock.reorder.mockResolvedValue({
         carousels: publishedRows,
         total: 2,
       });
@@ -481,14 +388,14 @@ describe('Carousel placement (e2e)', () => {
         .send(body)
         .expect(200);
 
-      expect(carouselRepositoryMock.reorderPlacement).toHaveBeenCalledTimes(1);
+      expect(carouselRepositoryMock.reorder).toHaveBeenCalledTimes(1);
       expect(carouselRepositoryMock.findById).not.toHaveBeenCalled();
       expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
     });
 
-    it('returns 200 with the refreshed full admin list (ALL placements)', async () => {
+    it('returns 200 with the refreshed full admin list', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
-      carouselRepositoryMock.reorderPlacement.mockResolvedValue({
+      carouselRepositoryMock.reorder.mockResolvedValue({
         carousels: publishedRows,
         total: 2,
       });
@@ -501,10 +408,7 @@ describe('Carousel placement (e2e)', () => {
 
       expect(response.body.data).toHaveLength(2);
       expect(response.body.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
-      expect(carouselRepositoryMock.reorderPlacement).toHaveBeenCalledWith(
-        CarouselPlacement.HOME_RAILS,
-        [railId, tabsId],
-      );
+      expect(carouselRepositoryMock.reorder).toHaveBeenCalledWith([railId, tabsId]);
     });
 
     // The stable codes are the contract the admin panel keys its UA announcements off —
@@ -512,7 +416,7 @@ describe('Carousel placement (e2e)', () => {
     // from `error` + `message`.
     it('surfaces REORDER_STALE as 409 with the stable code', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
-      carouselRepositoryMock.reorderPlacement.mockRejectedValue(new ReorderStaleError());
+      carouselRepositoryMock.reorder.mockRejectedValue(new ReorderStaleError());
 
       const response = await request(app.getHttpServer())
         .patch('/api/admin/carousels/reorder')
@@ -525,7 +429,7 @@ describe('Carousel placement (e2e)', () => {
 
     it('surfaces REORDER_NOT_FOUND as 404 with the stable code', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
-      carouselRepositoryMock.reorderPlacement.mockRejectedValue(new ReorderNotFoundError());
+      carouselRepositoryMock.reorder.mockRejectedValue(new ReorderNotFoundError());
 
       const response = await request(app.getHttpServer())
         .patch('/api/admin/carousels/reorder')

@@ -1,42 +1,19 @@
 import { IsOptional, IsEnum, IsInt, IsString, MaxLength, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { CarouselPlacement, PublishStatus } from '@prisma/client';
+import { PublishStatus } from '@prisma/client';
 
 /**
- * Query DTO for the public carousel list (published carousels only), with an
- * optional placement filter. Omitting `placement` keeps the pre-TASK-288
- * behaviour: every published carousel, whatever its placement.
- */
-export class CarouselListQueryDto {
-  @ApiProperty({
-    description: 'Filter by homepage placement (HOME_TABS = "Популярне" tabs, HOME_RAILS = rails)',
-    enum: CarouselPlacement,
-    example: CarouselPlacement.HOME_TABS,
-    required: false,
-  })
-  @IsOptional()
-  @IsEnum(CarouselPlacement, {
-    message: `placement must be one of: ${Object.values(CarouselPlacement).join(', ')}`,
-  })
-  placement?: CarouselPlacement;
-}
-
-/**
- * Query DTO for the admin carousel list (all statuses), with optional placement
- * and status filters, plus opt-in pagination and a title search (TASK-357).
+ * Query DTO for the admin carousel list (all statuses), with an optional status
+ * filter, plus opt-in pagination and a title search (TASK-357).
  *
- * PAGINATION LIVES ONLY ON THE ADMIN SUBCLASS, never on the public
- * {@link CarouselListQueryDto}. `GET /api/carousels` is read server-side by the
- * homepage (`store-client/src/shared/api/carousels-server.ts`), which groups the
- * whole published set by placement; a default page size there would silently
- * amputate the homepage. The public DTO still rejects `page` / `limit` outright
- * (`forbidNonWhitelisted`), which is the strongest proof that path is untouched.
+ * The public `GET /api/carousels` takes no query since TASK-660: its only parameter
+ * was `placement`, which went away together with `Carousel.placement`.
  *
  * `page` and `limit` carry NO field initializer on purpose — their ABSENCE means
  * "return everything", preserving today's behaviour for any caller that omits them.
  */
-export class AdminCarouselListQueryDto extends CarouselListQueryDto {
+export class AdminCarouselListQueryDto {
   @ApiProperty({
     description: 'Filter by publish status (DRAFT, SCHEDULED, PUBLISHED)',
     enum: PublishStatus,

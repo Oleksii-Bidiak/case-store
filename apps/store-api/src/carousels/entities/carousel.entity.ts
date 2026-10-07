@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { CarouselPlacement, CarouselSource, PublishStatus } from '@prisma/client';
+import { CarouselSource, PublishStatus } from '@prisma/client';
 
 /**
  * Domain entity representing an admin-managed recommendation carousel.
@@ -42,14 +42,7 @@ export class CarouselEntity {
 
   @ApiProperty({
     description:
-      'Where the carousel surfaces on the homepage — HOME_TABS feeds one tab of the "Популярне" section, HOME_RAILS is a standalone rail',
-    enum: CarouselPlacement,
-    example: CarouselPlacement.HOME_RAILS,
-  })
-  placement!: CarouselPlacement;
-
-  @ApiProperty({
-    description: 'Display order WITHIN the placement (lower = first)',
+      'Position in the admin carousel list (lower = first). The homepage order belongs to the homepage blocks.',
     example: 0,
   })
   sortOrder!: number;
@@ -96,7 +89,6 @@ export class CarouselEntity {
     source: CarouselSource;
     categoryId: string | null;
     itemLimit: number;
-    placement: CarouselPlacement;
     sortOrder: number;
     status: PublishStatus;
     publishedAt: Date | null;
@@ -110,7 +102,6 @@ export class CarouselEntity {
     entity.source = carousel.source;
     entity.categoryId = carousel.categoryId;
     entity.itemLimit = carousel.itemLimit;
-    entity.placement = carousel.placement;
     entity.sortOrder = carousel.sortOrder;
     entity.status = carousel.status;
     entity.publishedAt = carousel.publishedAt;

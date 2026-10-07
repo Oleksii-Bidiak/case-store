@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PermissionGuard } from '../auth/permissions';
-import { CarouselPlacement, CarouselSource, PublishStatus } from '@prisma/client';
+import { CarouselSource, PublishStatus } from '@prisma/client';
 import { CarouselController } from './carousels.controller';
 import { AdminCarouselController } from './admin-carousels.controller';
 import { CarouselService } from './carousels.service';
@@ -12,7 +12,6 @@ const entity = Object.assign(new CarouselEntity(), {
   source: CarouselSource.BESTSELLING,
   categoryId: null,
   itemLimit: 12,
-  placement: CarouselPlacement.HOME_RAILS,
   sortOrder: 0,
   status: PublishStatus.PUBLISHED,
   publishedAt: new Date('2026-07-01T00:00:00.000Z'),
@@ -25,7 +24,7 @@ const publicEntity = Object.assign(new PublicCarouselEntity(), {
   id: 'carousel-uuid-1',
   title: 'Хіти продажів',
   source: CarouselSource.BESTSELLING,
-  placement: CarouselPlacement.HOME_RAILS,
+  status: PublishStatus.PUBLISHED,
   sortOrder: 0,
   products: [],
 });
@@ -79,20 +78,10 @@ describe('Carousel controllers', () => {
     it('wraps the published carousel list in a { data } envelope (empty products included)', async () => {
       serviceMock.findAllPublished.mockResolvedValue([publicEntity]);
 
-      const result = await publicController.findAll({});
+      const result = await publicController.findAll();
 
       expect(result).toEqual({ data: [publicEntity] });
-      expect(serviceMock.findAllPublished).toHaveBeenCalledWith({});
-    });
-
-    it('forwards the placement query to the service (TASK-288)', async () => {
-      serviceMock.findAllPublished.mockResolvedValue([]);
-
-      await publicController.findAll({ placement: CarouselPlacement.HOME_TABS });
-
-      expect(serviceMock.findAllPublished).toHaveBeenCalledWith({
-        placement: CarouselPlacement.HOME_TABS,
-      });
+      expect(serviceMock.findAllPublished).toHaveBeenCalledWith();
     });
   });
 
@@ -105,19 +94,6 @@ describe('Carousel controllers', () => {
 
       expect(result).toEqual({ data: [entity], meta });
       expect(serviceMock.findAllAdmin).toHaveBeenCalledWith({ status: PublishStatus.DRAFT });
-    });
-
-    it('list forwards a placement filter to the service', async () => {
-      serviceMock.findAllAdmin.mockResolvedValue({
-        items: [entity],
-        meta: { total: 1, page: 1, limit: 1, totalPages: 1 },
-      });
-
-      await adminController.findAll({ placement: CarouselPlacement.HOME_TABS });
-
-      expect(serviceMock.findAllAdmin).toHaveBeenCalledWith({
-        placement: CarouselPlacement.HOME_TABS,
-      });
     });
 
     it('findById wraps the entity in a data envelope', async () => {
@@ -146,19 +122,6 @@ describe('Carousel controllers', () => {
 
       expect(result).toEqual({ data: entity });
       expect(serviceMock.update).toHaveBeenCalledWith('carousel-uuid-1', { title: 'Renamed' });
-    });
-
-    it('update forwards a placement change to the service (TASK-288)', async () => {
-      serviceMock.update.mockResolvedValue({ ...entity, placement: CarouselPlacement.HOME_TABS });
-
-      const result = await adminController.update('carousel-uuid-1', {
-        placement: CarouselPlacement.HOME_TABS,
-      });
-
-      expect(result.data.placement).toBe(CarouselPlacement.HOME_TABS);
-      expect(serviceMock.update).toHaveBeenCalledWith('carousel-uuid-1', {
-        placement: CarouselPlacement.HOME_TABS,
-      });
     });
 
     it('publish delegates to the service', async () => {

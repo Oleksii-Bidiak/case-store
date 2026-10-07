@@ -1,7 +1,6 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiProperty, ApiExtraModels } from '@nestjs/swagger';
 import { CarouselService } from './carousels.service';
-import { CarouselListQueryDto } from './dto';
 import { PublicCarouselEntity } from './entities';
 
 /**
@@ -19,7 +18,9 @@ class PublicCarouselListResponse {
  * Controller for public (storefront) carousel endpoints.
  *
  *   GET /api/carousels — list published carousels with resolved products
- *                        (optional ?placement=)
+ *
+ * The homepage does not read this since TASK-660: it reads `GET /api/home-blocks`, which
+ * shows exactly the carousels its blocks point at, in block order.
  */
 @ApiTags('Carousels')
 @ApiExtraModels(PublicCarouselEntity, PublicCarouselListResponse)
@@ -29,16 +30,15 @@ export class CarouselController {
 
   @Get()
   @ApiOperation({
-    summary:
-      'List published recommendation carousels with resolved products, optionally filtered by placement',
+    summary: 'List published recommendation carousels with resolved products',
   })
   @ApiResponse({
     status: 200,
     description:
-      'Published carousels of the requested placement (all placements when omitted) ordered by sort order; each carries its resolved, ordered product list (possibly empty — the storefront hides empty sections)',
+      'Published carousels ordered by sort order; each carries its resolved, ordered product list (possibly empty — the storefront hides empty sections)',
     type: PublicCarouselListResponse,
   })
-  async findAll(@Query() query: CarouselListQueryDto): Promise<PublicCarouselListResponse> {
-    return { data: await this.carouselService.findAllPublished(query) };
+  async findAll(): Promise<PublicCarouselListResponse> {
+    return { data: await this.carouselService.findAllPublished() };
   }
 }

@@ -1,14 +1,17 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { CarouselPlacement, CarouselSource } from '@prisma/client';
+import { CarouselSource, PublishStatus } from '@prisma/client';
 import { PublicProductEntity } from '../../product';
 import type { CarouselEntity } from './carousel.entity';
 
 /**
- * Public (storefront) carousel: the published row plus its RESOLVED product
- * list. `products` reuses the existing {@link PublicProductEntity}, so the
- * storefront receives the exact same product-card shape PopularRail /
- * RecentlyViewed already consume. May legitimately be empty — the storefront
- * hides empty carousels client-side (§Empty-carousel behavior, plan 154).
+ * Public (storefront) carousel: the row plus its RESOLVED product list.
+ * `products` reuses the existing {@link PublicProductEntity}, so the storefront
+ * receives the exact same product-card shape PopularRail / RecentlyViewed already
+ * consume. May legitimately be empty — the storefront hides empty carousels
+ * client-side (§Empty-carousel behavior, plan 154).
+ *
+ * WHERE it renders is not a property of the carousel since TASK-660: the homepage
+ * block holding it decides (a standalone rail, or one tab of a TABS block).
  */
 export class PublicCarouselEntity {
   @ApiProperty({
@@ -17,7 +20,10 @@ export class PublicCarouselEntity {
   })
   id!: string;
 
-  @ApiProperty({ description: 'Carousel heading shown on the homepage', example: 'Хіти продажів' })
+  @ApiProperty({
+    description: 'Carousel heading — the rail title, or the tab label inside a TABS block',
+    example: 'Хіти продажів',
+  })
   title!: string;
 
   @ApiProperty({
@@ -29,14 +35,15 @@ export class PublicCarouselEntity {
 
   @ApiProperty({
     description:
-      'Where the carousel surfaces on the homepage — HOME_TABS feeds one tab of the "Популярне" section (title = tab label), HOME_RAILS is a standalone rail',
-    enum: CarouselPlacement,
-    example: CarouselPlacement.HOME_RAILS,
+      'Publish state. Always PUBLISHED on a public read; a signed homepage preview also ' +
+      'returns DRAFT / SCHEDULED carousels so the owner sees the page before publishing.',
+    enum: PublishStatus,
+    example: PublishStatus.PUBLISHED,
   })
-  placement!: CarouselPlacement;
+  status!: PublishStatus;
 
   @ApiProperty({
-    description: 'Display order WITHIN the placement (lower = first)',
+    description: 'Position in the admin carousel list (not the homepage order)',
     example: 0,
   })
   sortOrder!: number;
@@ -48,17 +55,17 @@ export class PublicCarouselEntity {
   products!: PublicProductEntity[];
 
   /**
-   * Assemble a PublicCarouselEntity from an admin entity + its resolved products.
+   * Assemble a PublicCarouselEntity from a carousel row + its resolved products.
    */
   static fromEntity(
-    carousel: Pick<CarouselEntity, 'id' | 'title' | 'source' | 'placement' | 'sortOrder'>,
+    carousel: Pick<CarouselEntity, 'id' | 'title' | 'source' | 'status' | 'sortOrder'>,
     products: PublicProductEntity[],
   ): PublicCarouselEntity {
     const entity = new PublicCarouselEntity();
     entity.id = carousel.id;
     entity.title = carousel.title;
     entity.source = carousel.source;
-    entity.placement = carousel.placement;
+    entity.status = carousel.status;
     entity.sortOrder = carousel.sortOrder;
     entity.products = products;
     return entity;

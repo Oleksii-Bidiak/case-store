@@ -11,7 +11,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
-import { CarouselPlacement, CarouselSource } from '@prisma/client';
+import { CarouselSource } from '@prisma/client';
 import { PublishFieldsDto } from '../../publishing';
 
 /** Trim leading/trailing whitespace from string inputs (leave non-strings as-is). */
@@ -22,8 +22,8 @@ const trim = ({ value }: { value: unknown }): unknown =>
  * DTO for creating a recommendation carousel (admin-only). `categoryId` is
  * required exactly when `source = CATEGORY` (enforced via `@ValidateIf`) and
  * ignored otherwise. `itemLimit` bounds only the four rule-based sources —
- * MANUAL carousels show exactly their `CarouselItem` rows. `placement` decides
- * WHERE the carousel renders, never HOW its list is resolved. Publish control
+ * MANUAL carousels show exactly their `CarouselItem` rows. WHERE the carousel
+ * renders is decided by the homepage blocks (TASK-660), not here. Publish control
  * comes from the shared {@link PublishFieldsDto} (`status` + `scheduledAt`).
  */
 export class CreateCarouselDto extends PublishFieldsDto {
@@ -53,20 +53,6 @@ export class CreateCarouselDto extends PublishFieldsDto {
   categoryId?: string;
 
   @ApiProperty({
-    description:
-      'Where the carousel surfaces on the homepage — HOME_TABS feeds one tab of the "Популярне" section (title = tab label), HOME_RAILS is a standalone rail',
-    enum: CarouselPlacement,
-    example: CarouselPlacement.HOME_RAILS,
-    required: false,
-    default: CarouselPlacement.HOME_RAILS,
-  })
-  @IsOptional()
-  @IsEnum(CarouselPlacement, {
-    message: `placement must be one of: ${Object.values(CarouselPlacement).join(', ')}`,
-  })
-  placement?: CarouselPlacement;
-
-  @ApiProperty({
     description: 'Max products to show for a rule-based source (ignored for MANUAL)',
     example: 12,
     required: false,
@@ -83,9 +69,9 @@ export class CreateCarouselDto extends PublishFieldsDto {
 
   @ApiProperty({
     description:
-      'Display order WITHIN the placement (lower values appear first). OMIT IT ' +
-      '(TASK-428): the carousel is then appended to the end of its placement bucket and ' +
-      'the order is changed by dragging rows.',
+      'Position in the admin carousel list (lower values appear first). OMIT IT ' +
+      '(TASK-428): the carousel is then appended to the end of the list and the order is ' +
+      'changed by dragging rows. The homepage order belongs to the homepage blocks.',
     example: 0,
     required: false,
   })

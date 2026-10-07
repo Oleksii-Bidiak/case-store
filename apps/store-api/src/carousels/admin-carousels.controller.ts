@@ -85,8 +85,8 @@ class CarouselItemListResponse {
  * Controller for admin carousel management (ADMIN role required).
  *
  *   GET    /api/admin/carousels                — list all carousels (all statuses,
- *                                                optional ?placement= / ?status=)
- *   PATCH  /api/admin/carousels/reorder        — reorder one placement bucket
+ *                                                optional ?status=)
+ *   PATCH  /api/admin/carousels/reorder        — reorder the (single) carousel list
  *   GET    /api/admin/carousels/:id            — carousel by ID
  *   POST   /api/admin/carousels                — create
  *   PUT    /api/admin/carousels/:id            — full update
@@ -116,7 +116,7 @@ export class AdminCarouselController {
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary:
-      'List all carousels — all statuses, optional placement / status filters, search and pagination (admin)',
+      'List all carousels — all statuses, optional status filter, search and pagination (admin)',
   })
   @ApiResponse({
     status: 200,
@@ -132,9 +132,10 @@ export class AdminCarouselController {
   /**
    * PATCH /api/admin/carousels/reorder (TASK-428)
    *
-   * Rewrites the COMPLETE ordering of ONE placement bucket — the array index becomes
+   * Rewrites the COMPLETE ordering of the carousel list — the array index becomes
    * `sortOrder` — in one advisory-locked transaction, and returns the full refreshed admin
-   * carousel list (both placements).
+   * carousel list. One global list since TASK-660; the homepage order belongs to the
+   * homepage blocks (`PATCH /api/admin/home-blocks/reorder`).
    *
    * DECLARED BEFORE the `:id` routes — otherwise `reorder` is captured as an `:id`.
    */
@@ -142,26 +143,26 @@ export class AdminCarouselController {
   @HttpCode(200)
   @ApiBearerAuth('access-token')
   @ApiOperation({
-    summary: 'Reorder carousels within one placement (admin)',
+    summary: 'Reorder the carousel list (admin)',
     operationId: 'adminCarouselControllerReorder',
   })
   @ApiResponse({
     status: 200,
-    description: 'The full refreshed admin carousel list (all placements)',
+    description: 'The full refreshed admin carousel list',
     type: AdminCarouselListResponse,
   })
   @ApiResponse({
     status: 400,
-    description: 'Validation error, an unknown placement, or REORDER_DUPLICATE_ID',
+    description: 'Validation error or REORDER_DUPLICATE_ID',
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  @ApiResponse({ status: 404, description: 'REORDER_NOT_FOUND — an id is not in this bucket' })
+  @ApiResponse({ status: 404, description: 'REORDER_NOT_FOUND — an id is not a carousel' })
   @ApiResponse({
     status: 409,
-    description: 'REORDER_STALE — another admin changed this placement first',
+    description: 'REORDER_STALE — another admin changed the list first',
   })
   async reorder(@Body() dto: ReorderCarouselsDto): Promise<AdminCarouselListResponse> {
-    const page = await this.carouselService.reorderPlacement(dto);
+    const page = await this.carouselService.reorder(dto);
     return { data: page.items, meta: page.meta };
   }
 
