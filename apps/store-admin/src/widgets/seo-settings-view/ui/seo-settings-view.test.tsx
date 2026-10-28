@@ -193,3 +193,48 @@ describe("SeoSettingsView — by mockup Н2 (TASK-1053)", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("SeoSettingsView — «Прев'ю чернеток» (TASK-670, ДП-8)", () => {
+  const t = dict.sitePreview;
+
+  function stubSettings() {
+    stubHealth();
+    server.use(
+      http.get("*/api/seo-settings", () =>
+        HttpResponse.json(seoSettingsResponse()),
+      ),
+    );
+  }
+
+  it("offers «Відкликати всі прев'ю» and a nav entry with settings:seo", async () => {
+    stubSettings();
+    renderWithProviders(<SeoSettingsView />, {
+      auth: { permissions: ["settings:seo"] },
+    });
+
+    const section = await screen.findByRole("region", {
+      name: t.settingsHeading,
+    });
+    expect(
+      within(section).getByRole("button", { name: t.revokeAll }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("navigation", { name: dict.seoSettings.navAria }))
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toContain("#seo-previews");
+  });
+
+  it("is absent without settings:seo", async () => {
+    stubSettings();
+    renderWithProviders(<SeoSettingsView />);
+
+    await screen.findByDisplayValue("CaseStore — аксесуари");
+    expect(
+      screen.queryByRole("region", { name: t.settingsHeading }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: t.revokeAll }),
+    ).not.toBeInTheDocument();
+  });
+});

@@ -2,9 +2,11 @@
 
 import {
   useEffect,
+  useImperativeHandle,
   useState,
   type BaseSyntheticEvent,
   type ReactNode,
+  type Ref,
 } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -33,6 +35,7 @@ import {
 } from "@/shared/ui";
 import { cn } from "@/shared/lib/utils";
 import { slugify } from "@/shared/lib/slug";
+import type { FormSubmitController } from "@/shared/lib/form-submit-controller";
 import {
   resolveSeoPreviewTitle,
   resolveSeoPreviewDescription,
@@ -132,6 +135,11 @@ interface PageFormProps {
    * bar. Reads only `defaultValues`.
    */
   readOnly?: boolean;
+  /**
+   * TASK-670 — lets the page's «Подивитись на сайті» ask whether anything is
+   * unsaved and run the form's save. Left unset in read-only mode.
+   */
+  controllerRef?: Ref<FormSubmitController>;
 }
 
 /** Empty form baseline used for create mode and as the merge base in edit mode. */
@@ -178,6 +186,7 @@ function EditablePageForm({
   onSubmit,
   isPending,
   submitLabel = f.submit,
+  controllerRef,
 }: Omit<PageFormProps, "readOnly">) {
   const {
     register,
@@ -319,7 +328,20 @@ function EditablePageForm({
   const submit = async (values: PageFormValues, event?: BaseSyntheticEvent) => {
     const saved = await onSubmit(values, event);
     if (saved === true) reset(getValues());
+    return saved === true;
   };
+
+  // TASK-670: re-created every render, so it always reads the current state.
+  useImperativeHandle(controllerRef, () => ({
+    isDirty: () => dirtySections.length > 0,
+    submit: async () => {
+      let landed = false;
+      await handleSubmit(async (values) => {
+        landed = await submit(values);
+      })();
+      return landed;
+    },
+  }));
 
   const fieldA11y = (field: FieldName, hintId?: string) => {
     const describedBy = [hintId, errors[field] ? errorId(field) : undefined]

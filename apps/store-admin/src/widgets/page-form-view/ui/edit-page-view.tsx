@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,6 +13,7 @@ import {
   type PageFormInput,
   type PageFormValues,
 } from "@/features/page-form";
+import { SitePreviewButton } from "@/features/site-preview";
 import {
   getAdminPageControllerFindAllQueryKey,
   getAdminPageControllerFindByIdQueryKey,
@@ -26,11 +27,11 @@ import { PERM } from "@/entities/permission";
 import {
   AdminFormSkeleton,
   Badge,
-  Button,
   RowActionsMenu,
   useConfirmDialog,
 } from "@/shared/ui";
 import { formatKeywords } from "@/shared/lib/seo";
+import type { FormSubmitController } from "@/shared/lib/form-submit-controller";
 import {
   dict,
   pagePreviewPath,
@@ -55,8 +56,9 @@ interface EditPageViewProps {
  * Edit-page body (PagesProposal СР8–СР12, wave 198).
  *
  * Header: «← Службові сторінки», the page's title, its status and kind and the
- * address it lives at; «Відкрити на сайті» for a PUBLISHED page only (owner
- * decision 2026-10-01 — draft preview is TASK-670), and «⋯» with «Видалити…».
+ * address it lives at; «Відкрити на сайті» for a PUBLISHED page, «Подивитись на
+ * сайті» (a signed preview link, TASK-670) for a draft or scheduled one, and «⋯»
+ * with «Видалити…».
  * Body: one sectioned form with ONE sticky «Зберегти».
  *
  * Renaming a PUBLISHED page's address asks first in an AlertDialog (TASK-285,
@@ -75,6 +77,10 @@ export function EditPageView({ pageId }: EditPageViewProps) {
   const update = useAdminPageControllerUpdate();
   const remove = useAdminPageControllerDelete();
   const { mutateAsync: updateAsync } = update;
+  const formRef = useRef<FormSubmitController>(null);
+  // TASK-670: «Зберегти й подивитись» saves and STAYS — the preview popover is
+  // waiting on this page for the save to land.
+  const stayAfterSaveRef = useRef(false);
 
   const isNotFound = error?.response?.status === 404;
 
@@ -131,8 +137,17 @@ export function EditPageView({ pageId }: EditPageViewProps) {
     }
     invalidate();
     toast.success(d.toastUpdated);
-    router.push("/pages");
+    if (!stayAfterSaveRef.current) router.push("/pages");
     return true;
+  };
+
+  const saveForPreview = async () => {
+    stayAfterSaveRef.current = true;
+    try {
+      return (await formRef.current?.submit()) ?? false;
+    } finally {
+      stayAfterSaveRef.current = false;
+    }
   };
 
   const handleDelete = async () => {
@@ -209,13 +224,16 @@ export function EditPageView({ pageId }: EditPageViewProps) {
           </div>
           {page ? (
             <div className="flex items-center gap-2">
-              {siteHref ? (
-                <Button asChild variant="outline">
-                  <a href={siteHref} target="_blank" rel="noopener noreferrer">
-                    <ExternalLinkIcon aria-hidden="true" />
-                    <span className="max-md:sr-only">{d.openOnSite}</span>
-                  </a>
-                </Button>
+              {/* A HUB slot has no address of its own until it has a slug —
+                  nothing to open or preview then. */}
+              {sitePath ? (
+                <SitePreviewButton
+                  target={{ type: "page", id: pageId }}
+                  liveHref={siteHref}
+                  description={dict.sitePreview.whatPage}
+                  hasUnsavedChanges={() => formRef.current?.isDirty() ?? false}
+                  onSave={canWrite ? saveForPreview : undefined}
+                />
               ) : null}
               {canWrite ? (
                 <RowActionsMenu
@@ -245,6 +263,7 @@ export function EditPageView({ pageId }: EditPageViewProps) {
       ) : page ? (
         <PageForm
           id={pageId}
+          controllerRef={formRef}
           defaultValues={mapPageToFormValues(page)}
           onSubmit={handleSubmit}
           isPending={update.isPending}

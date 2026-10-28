@@ -13,9 +13,14 @@ import { EditBlogPostView } from "./edit-blog-post-view";
 const d = dict.blogPosts;
 
 // next/navigation is unavailable under jsdom — mock the router.
+const mockPush = jest.fn();
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
+  useRouter: () => ({ replace: jest.fn(), push: mockPush }),
 }));
+
+beforeEach(() => {
+  mockPush.mockClear();
+});
 
 // The rich-text body editor (Tiptap) touches the DOM on init; stub it with a
 // controlled <textarea> proxy (same idiom as blog-post-form.test.tsx).
@@ -126,12 +131,79 @@ describe("EditBlogPostView — header (БЛ7)", () => {
     expect(site).toHaveAttribute("target", "_blank");
   });
 
-  it("does not link a draft to the site", async () => {
+  it("does not link a draft to the site — «Подивитись на сайті» instead (TASK-670)", async () => {
     await renderAndWaitForForm(makePost("DRAFT"));
 
     expect(
       screen.queryByRole("link", { name: d.rowOpenSite }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.sitePreview.viewOnSite }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("EditBlogPostView — «Подивитись на сайті» (TASK-670)", () => {
+  function stubPreviewTokens() {
+    const issued: unknown[] = [];
+    server.use(
+      http.post("*/api/admin/preview-tokens", async ({ request }) => {
+        issued.push(await request.json());
+        return HttpResponse.json(
+          {
+            data: {
+              token: "tok-post",
+              path: "/blog/iphone-16-oglyad",
+              expiresAt: "2026-10-06T12:42:00.000Z",
+            },
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    return issued;
+  }
+
+  it("issues a link to a draft post straight away when nothing is unsaved", async () => {
+    const issued = stubPreviewTokens();
+    const putCalls = await renderAndWaitForForm(makePost("DRAFT"));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.sitePreview.viewOnSite }),
+    );
+
+    expect(
+      await screen.findByLabelText(dict.sitePreview.linkLabel),
+    ).toHaveValue(`${STOREFRONT_URL}/preview?token=tok-post`);
+    expect(screen.getByText(dict.sitePreview.whatPost)).toBeInTheDocument();
+    expect(issued).toEqual([{ type: "post", id: POST_ID }]);
+    expect(putCalls).toHaveLength(0);
+  });
+
+  it("«Зберегти й подивитись» saves, stays on the page and issues a link", async () => {
+    const issued = stubPreviewTokens();
+    const putCalls = await renderAndWaitForForm(makePost("DRAFT"));
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: dict.blogPostForm.title }),
+      " (оновлено)",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.sitePreview.viewOnSite }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.sitePreview.saveAndView,
+      }),
+    );
+
+    expect(
+      await screen.findByLabelText(dict.sitePreview.linkLabel),
+    ).toHaveValue(`${STOREFRONT_URL}/preview?token=tok-post`);
+    expect(putCalls).toHaveLength(1);
+    expect(putCalls[0]).toMatchObject({ title: "Огляд iPhone 16 (оновлено)" });
+    expect(issued).toHaveLength(1);
+    expect(mockPush).not.toHaveBeenCalled();
   });
 });
 

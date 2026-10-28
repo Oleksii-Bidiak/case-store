@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { ExternalLinkIcon } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
   ProductForm,
@@ -34,6 +33,7 @@ import {
   buildReadinessChecks,
   missingSections,
 } from "@/features/product-publish-panel";
+import { SitePreviewButton } from "@/features/site-preview";
 import { useProductImageControllerList } from "@/shared/api";
 import {
   Badge,
@@ -44,6 +44,7 @@ import {
 } from "@/shared/ui";
 import { formatKeywords } from "@/shared/lib/seo";
 import type { SectionSaveController } from "@/shared/lib/section-save";
+import type { FormSubmitController } from "@/shared/lib/form-submit-controller";
 import { dict, STOREFRONT_URL } from "@/shared/config";
 import { formatDate } from "@/shared/lib";
 import {
@@ -118,6 +119,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
     }
   }, [isNotFound, router]);
 
+  const formRef = useRef<FormSubmitController>(null);
   const specsRef = useRef<SectionSaveController>(null);
   const compatRef = useRef<SectionSaveController>(null);
   const [specsDirty, setSpecsDirty] = useState(false);
@@ -136,6 +138,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
     setFailure(null);
     const saved: string[] = [];
     let mainSaved = false;
+    let complete = false;
     // Nothing marked dirty still writes the product, as the old button did —
     // «Зберегти» on an untouched page is a harmless re-save, never a no-op
     // that looks like it worked.
@@ -166,6 +169,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
         await compatRef.current.save();
         saved.push(current);
       }
+      complete = true;
       toast.success(dict.products.toastUpdated);
     } catch (saveError) {
       // TASK-397: the server's own words whenever it sends any.
@@ -183,7 +187,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
     } finally {
       setSaving(false);
     }
-    return { mainSaved };
+    return { mainSaved, complete };
   };
 
   const readinessMissing = product
@@ -206,7 +210,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
     ...(product
       ? [
           {
-            label: dict.products.menuPreview,
+            label: dict.products.menuOverview,
             href: `/products/preview/${product.slug}`,
             newTab: true,
           },
@@ -258,20 +262,21 @@ export function EditProductView({ productId }: EditProductViewProps) {
           </div>
           {product ? (
             <div className="flex items-center gap-2">
-              {/* Only a product the storefront serves has a page to open —
-                  a hidden one would 404 there (its preview is TASK-670). */}
-              {product.isActive ? (
-                <Button asChild variant="outline">
-                  <a
-                    href={`${STOREFRONT_URL}/products/${product.slug}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {dict.products.viewOnSite}
-                    <ExternalLinkIcon aria-hidden="true" />
-                  </a>
-                </Button>
-              ) : null}
+              {/* TASK-670: a product the storefront serves opens there; a
+                  hidden one would 404, so it gets a signed preview link. */}
+              <SitePreviewButton
+                target={{ type: "product", id: productId }}
+                liveHref={
+                  product.isActive
+                    ? `${STOREFRONT_URL}/products/${product.slug}`
+                    : null
+                }
+                description={dict.sitePreview.whatProduct}
+                hasUnsavedChanges={() => formRef.current?.isDirty() ?? false}
+                onSave={() =>
+                  formRef.current?.submit() ?? Promise.resolve(false)
+                }
+              />
               <RowActionsMenu
                 label={dict.products.headerMoreAria}
                 items={menuItems}
@@ -337,6 +342,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
       ) : product ? (
         <ProductForm
           id={productId}
+          controllerRef={formRef}
           defaultValues={mapProductToFormValues(product)}
           onSubmit={handleSubmit}
           isPending={isSaving}

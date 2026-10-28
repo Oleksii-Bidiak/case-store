@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { HomeBlockList, HomeBlockListSkeleton } from "@/widgets";
+import { SitePreviewButton } from "@/features/site-preview";
 import { dict } from "@/shared/config";
 
 /**
@@ -8,8 +9,10 @@ import { dict } from "@/shared/config";
  * admin route sits behind auth, so there is no static payload worth keeping.
  *
  * The heading and «Додати блок» live in the widget: the button is gated by
- * `home:write`, which only a client component can read. TASK-670 passes the
- * «Подивитись на сайті» action through `previewAction`.
+ * `home:write`, which only a client component can read. «Подивитись на сайті»
+ * (TASK-670) goes in through `previewAction` — always a signed preview here, never
+ * a plain link: the homepage may carry scheduled and hidden blocks, and block
+ * edits save one by one, so there is no unsaved form to ask about.
  */
 export const dynamic = "force-dynamic";
 
@@ -20,7 +23,14 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <Suspense fallback={<HomeBlockListSkeleton />}>
-      <HomeBlockList />
+      <HomeBlockList
+        previewAction={
+          <SitePreviewButton
+            target={{ type: "home" }}
+            description={dict.sitePreview.whatHome}
+          />
+        }
+      />
     </Suspense>
   );
 }
