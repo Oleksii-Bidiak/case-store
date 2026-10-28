@@ -43,7 +43,7 @@ export default function RootLayout({
       lang="uk"
       className={`${geistSans.variable} ${geistMono.variable} ${sora.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-background text-foreground">
+      <body className="h-full bg-background text-foreground overflow-hidden">
         {/* Root layout stays minimal: route groups supply their own chrome —
             (dashboard) renders the guarded admin shell, (auth) a bare page. */}
         <Providers>{children}</Providers>
