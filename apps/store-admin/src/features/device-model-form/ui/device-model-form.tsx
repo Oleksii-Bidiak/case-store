@@ -24,12 +24,16 @@ import {
 } from "@/shared/lib/seo";
 import { cn } from "@/shared/lib/utils";
 import {
-  Callout,
   FieldError,
   FormActionsBar,
   FormAlert,
   Input,
   Label,
+  ReadOnlyBool,
+  ReadOnlyField,
+  ReadOnlyFields,
+  ReadOnlyNotice,
+  ReadOnlySection,
   SeoSnippetPreview,
   Switch,
   Textarea,
@@ -224,7 +228,7 @@ export function DeviceModelForm({
       noValidate
     >
       {readOnly ? (
-        <Callout variant="strip">{dict.common.viewOnly}</Callout>
+        <ReadOnlyNotice>{dict.readOnlyView.notices.devices}</ReadOnlyNotice>
       ) : null}
       {showErrors ? <FormAlert>{f.errorSummary(errorCount)}</FormAlert> : null}
 
@@ -233,25 +237,18 @@ export function DeviceModelForm({
         <div className="flex min-w-0 flex-col gap-4">
           <FormSectionCard title={f.sectionMain}>
             {readOnly ? (
-              <>
-                <ReadOnlyValue label={f.brand} required>
-                  {brandName}
-                </ReadOnlyValue>
-                <ReadOnlyValue label={f.name} required>
-                  {nameValue}
-                </ReadOnlyValue>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <ReadOnlyValue label={f.series}>
-                    {values.series}
-                  </ReadOnlyValue>
-                  <ReadOnlyValue label={f.releaseYear}>
-                    {values.releaseYear}
-                  </ReadOnlyValue>
-                </div>
-                <ReadOnlyValue label={f.slug} mono>
+              // TASK-667 template: the same sections, the values as text.
+              <ReadOnlyFields>
+                <ReadOnlyField label={f.brand}>{brandName}</ReadOnlyField>
+                <ReadOnlyField label={f.name}>{nameValue}</ReadOnlyField>
+                <ReadOnlyField label={f.series}>{values.series}</ReadOnlyField>
+                <ReadOnlyField label={f.releaseYear}>
+                  {values.releaseYear}
+                </ReadOnlyField>
+                <ReadOnlyField label={f.slug} mono>
                   {slugValue}
-                </ReadOnlyValue>
-              </>
+                </ReadOnlyField>
+              </ReadOnlyFields>
             ) : (
               <>
                 <div className="flex flex-col gap-1.5">
@@ -375,17 +372,20 @@ export function DeviceModelForm({
             <LivePagesList pages={livePages} />
 
             {readOnly ? (
-              <>
-                <ReadOnlyValue label={f.metaTitle}>
+              <ReadOnlyFields>
+                <ReadOnlyField
+                  label={f.metaTitle}
+                  emptyConsequence={dict.readOnlyView.seoTitleFromName}
+                >
                   {metaTitleValue}
-                </ReadOnlyValue>
-                <ReadOnlyValue label={f.metaDescription}>
+                </ReadOnlyField>
+                <ReadOnlyField label={f.metaDescription}>
                   {metaDescriptionValue}
-                </ReadOnlyValue>
-                <ReadOnlyValue label={f.description}>
+                </ReadOnlyField>
+                <ReadOnlyField label={f.description} multiline>
                   {descriptionValue}
-                </ReadOnlyValue>
-              </>
+                </ReadOnlyField>
+              </ReadOnlyFields>
             ) : (
               <>
                 <CountedField
@@ -469,35 +469,46 @@ export function DeviceModelForm({
             />
           </FormSectionCard>
 
-          <section className="flex items-start justify-between gap-4 rounded-lg border bg-card p-4 shadow-card">
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <Label
-                htmlFor="device-model-active"
-                className="text-sm font-semibold"
-              >
-                {f.active}
-              </Label>
-              <p
-                id="device-model-active-hint"
-                className="text-xs text-muted-foreground"
-              >
-                {f.activeHint}
-              </p>
-            </div>
-            <Controller
-              control={control}
-              name="isActive"
-              render={({ field }) => (
-                <Switch
-                  id="device-model-active"
-                  checked={field.value ?? true}
-                  onCheckedChange={field.onChange}
-                  disabled={readOnly}
-                  aria-describedby="device-model-active-hint"
+          {readOnly ? (
+            <ReadOnlySection title={f.active}>
+              <ReadOnlyField label={f.active}>
+                <ReadOnlyBool
+                  value={values.isActive ?? true}
+                  on={dict.devices.statusActive}
+                  off={dict.devices.statusInactive}
                 />
-              )}
-            />
-          </section>
+              </ReadOnlyField>
+            </ReadOnlySection>
+          ) : (
+            <section className="flex items-start justify-between gap-4 rounded-lg border bg-card p-4 shadow-card">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <Label
+                  htmlFor="device-model-active"
+                  className="text-sm font-semibold"
+                >
+                  {f.active}
+                </Label>
+                <p
+                  id="device-model-active-hint"
+                  className="text-xs text-muted-foreground"
+                >
+                  {f.activeHint}
+                </p>
+              </div>
+              <Controller
+                control={control}
+                name="isActive"
+                render={({ field }) => (
+                  <Switch
+                    id="device-model-active"
+                    checked={field.value ?? true}
+                    onCheckedChange={field.onChange}
+                    aria-describedby="device-model-active-hint"
+                  />
+                )}
+              />
+            </section>
+          )}
         </div>
 
         {aside ? (
@@ -603,41 +614,6 @@ function CountedField({
           {f.counter(count, comfort)}
           {over ? <span className="sr-only">. {f.counterOver}</span> : null}
         </span>
-      </p>
-    </div>
-  );
-}
-
-/** A field in view-only mode: its label and the value as plain text. */
-function ReadOnlyValue({
-  label,
-  required = false,
-  mono = false,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  mono?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <p className="text-sm font-medium text-foreground">
-        {label}
-        {required ? (
-          <span aria-hidden="true" className="text-destructive">
-            {" *"}
-          </span>
-        ) : null}
-      </p>
-      <p
-        className={
-          mono
-            ? "font-mono text-sm break-all text-muted-foreground"
-            : "text-sm break-words whitespace-pre-line text-foreground"
-        }
-      >
-        {children || "—"}
       </p>
     </div>
   );

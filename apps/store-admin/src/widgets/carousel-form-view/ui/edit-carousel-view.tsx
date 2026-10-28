@@ -39,6 +39,7 @@ import {
   toPickedItems,
 } from "./carousel-source-panels";
 import { CarouselHomeRow } from "./carousel-home-row";
+import { CarouselReadOnly } from "./carousel-read-only";
 
 const d = dict.carousels;
 
@@ -69,7 +70,7 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
   const remove = useAdminCarouselControllerDelete();
   const { duplicate, isPending: isDuplicating } = useDuplicateCarousel();
   const { confirm, confirmDialog } = useConfirmDialog();
-  const { can } = useAuth();
+  const { can, arePermissionsLoading } = useAuth();
   const canWrite = can(PERM.carouselsWrite);
 
   const isNotFound = error?.response?.status === 404;
@@ -172,7 +173,8 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
     );
   };
 
-  if (isLoading) return <CarouselFormSkeleton />;
+  // TASK-667: no read-only view flashing for a writer while the rights load.
+  if (isLoading || arePermissionsLoading) return <CarouselFormSkeleton />;
 
   const busy =
     update.isPending || setItems.isPending || remove.isPending || isDuplicating;
@@ -222,6 +224,12 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
         <p role="alert" className="text-sm text-destructive">
           {d.loadOneError}
         </p>
+      ) : carousel && !canWrite ? (
+        <CarouselReadOnly
+          carousel={carousel}
+          items={savedItems}
+          itemsLoading={itemsQuery.isLoading}
+        />
       ) : carousel ? (
         <CarouselForm
           id={carouselId}

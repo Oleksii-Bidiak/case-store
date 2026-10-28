@@ -106,7 +106,9 @@ const chooseSource = (value: keyof typeof f.sourceOptions) =>
 describe("EditCarouselView — items section for an automatic source (AD-CNT-25)", () => {
   it("explains that the order is automatic instead of showing an empty space", async () => {
     stubCarousel("BESTSELLING", "DRAFT");
-    renderWithProviders(<EditCarouselView carouselId={carouselId} />);
+    renderWithProviders(<EditCarouselView carouselId={carouselId} />, {
+      auth: { permissions: [PERM.carouselsWrite] },
+    });
 
     expect(await screen.findByText(c.autoHeading)).toBeInTheDocument();
     // Names the source that is actually in charge…
@@ -123,7 +125,9 @@ describe("EditCarouselView — items section for an automatic source (AD-CNT-25)
 
   it("shows the real picker for a MANUAL carousel, with its saved list", async () => {
     stubCarousel("MANUAL");
-    renderWithProviders(<EditCarouselView carouselId={carouselId} />);
+    renderWithProviders(<EditCarouselView carouselId={carouselId} />, {
+      auth: { permissions: [PERM.carouselsWrite] },
+    });
 
     expect(
       await screen.findByPlaceholderText(c.searchPlaceholder),
@@ -134,7 +138,9 @@ describe("EditCarouselView — items section for an automatic source (AD-CNT-25)
 
   it("swaps the notice for the picker the moment the source flips to MANUAL", async () => {
     stubCarousel("NEWEST", "DRAFT");
-    renderWithProviders(<EditCarouselView carouselId={carouselId} />);
+    renderWithProviders(<EditCarouselView carouselId={carouselId} />, {
+      auth: { permissions: [PERM.carouselsWrite] },
+    });
 
     expect(await screen.findByText(c.autoHeading)).toBeInTheDocument();
 
@@ -171,7 +177,9 @@ describe("EditCarouselView — «Зараз на сайті» (КР7)", () => {
         }),
       ),
     );
-    renderWithProviders(<EditCarouselView carouselId={carouselId} />);
+    renderWithProviders(<EditCarouselView carouselId={carouselId} />, {
+      auth: { permissions: [PERM.carouselsWrite] },
+    });
 
     expect(await screen.findByText(f.livePreview(2))).toBeInTheDocument();
     expect(screen.getByText("Навушники AirPods")).toBeInTheDocument();
@@ -182,7 +190,9 @@ describe("EditCarouselView — «Зараз на сайті» (КР7)", () => {
 describe("EditCarouselView — the list saves with the one «Зберегти» (КР5/КР6)", () => {
   it("names «Товари каруселі» as unsaved and writes the list after the carousel", async () => {
     const writes = stubCarousel("MANUAL");
-    renderWithProviders(<EditCarouselView carouselId={carouselId} />);
+    renderWithProviders(<EditCarouselView carouselId={carouselId} />, {
+      auth: { permissions: [PERM.carouselsWrite] },
+    });
 
     await screen.findByText("iPhone 16 Pro 128");
     await userEvent.click(
@@ -207,7 +217,9 @@ describe("EditCarouselView — the list saves with the one «Зберегти» 
 
   it("«Скасувати зміни» brings the saved list back", async () => {
     stubCarousel("MANUAL");
-    renderWithProviders(<EditCarouselView carouselId={carouselId} />);
+    renderWithProviders(<EditCarouselView carouselId={carouselId} />, {
+      auth: { permissions: [PERM.carouselsWrite] },
+    });
 
     await screen.findByText("iPhone 16 Pro 128");
     await userEvent.click(
@@ -222,7 +234,9 @@ describe("EditCarouselView — the list saves with the one «Зберегти» 
 
   it("does not rewrite an untouched list", async () => {
     const writes = stubCarousel("MANUAL");
-    renderWithProviders(<EditCarouselView carouselId={carouselId} />);
+    renderWithProviders(<EditCarouselView carouselId={carouselId} />, {
+      auth: { permissions: [PERM.carouselsWrite] },
+    });
 
     await screen.findByText("iPhone 16 Pro 128");
     await userEvent.click(
@@ -286,5 +300,31 @@ describe("EditCarouselView — header «⋯» (КР5)", () => {
         name: dict.common.registry.rowActionsAria("Популярне"),
       }),
     ).not.toBeInTheDocument();
+  });
+
+  it("is the read-only template with carousels:read alone (TASK-667)", async () => {
+    const writes = stubCarousel("MANUAL", "DRAFT");
+    renderWithProviders(<EditCarouselView carouselId={carouselId} />, {
+      auth: { permissions: [PERM.carouselsRead] },
+    });
+
+    expect(
+      await screen.findByText(dict.readOnlyView.notices.carousels),
+    ).toBeInTheDocument();
+    for (const title of [f.sectionMain, f.source, c.heading, f.status]) {
+      expect(screen.getByRole("region", { name: title })).toBeInTheDocument();
+    }
+    // The saved list in its order, as text — no picker, no search box.
+    const list = await screen.findAllByRole("listitem");
+    expect(list.map((item) => item.textContent)).toEqual([
+      "iPhone 16 Pro 128",
+      "iPhone 16 Pro 256",
+    ]);
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.common.save }),
+    ).not.toBeInTheDocument();
+    expect(writes).toHaveLength(0);
   });
 });

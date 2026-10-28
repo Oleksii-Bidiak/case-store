@@ -346,10 +346,17 @@ describe("AdminFaqTable — «⋯» (ЧП1, ЧП6)", () => {
     await userEvent.click(
       within(menu).getByRole("menuitem", { name: dict.common.view }),
     );
-    const dialog = await screen.findByRole("dialog", { name: d.editHeading });
+    // TASK-667: not titled «Редагувати», values as text with the reason.
+    const dialog = await screen.findByRole("dialog", {
+      name: dict.faqForm.question,
+    });
     expect(
       within(dialog).queryByRole("button", { name: dict.faqForm.submit }),
     ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByText(dict.readOnlyView.notices.faq),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
   });
 });
 

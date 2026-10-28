@@ -19,6 +19,8 @@ import {
   useAdminBlogControllerUpdate,
   type BlogPostEntity,
 } from "@/entities/blog";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import { formatKeywords } from "@/shared/lib/seo";
 import {
   AdminFormSkeleton,
@@ -28,6 +30,7 @@ import {
 } from "@/shared/ui";
 import { dict, STOREFRONT_URL } from "@/shared/config";
 import { formatDate, toKyivDateTimeLocal } from "@/shared/lib";
+import { BlogPostReadOnly } from "./blog-post-read-only";
 
 const d = dict.blogPosts;
 
@@ -50,6 +53,9 @@ export function EditBlogPostView({ postId }: EditBlogPostViewProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { confirm, confirmDialog } = useConfirmDialog();
+  // TASK-667: `blog:read` alone opens the same page as the read-only template.
+  const { can, arePermissionsLoading } = useAuth();
+  const canWrite = can(PERM.blogWrite);
 
   const { data, isLoading, isError, error } =
     useAdminBlogControllerFindById(postId);
@@ -128,12 +134,14 @@ export function EditBlogPostView({ postId }: EditBlogPostViewProps) {
         ) : null}
       </div>
 
-      {isLoading ? (
+      {isLoading || arePermissionsLoading ? (
         <AdminFormSkeleton />
       ) : isError && !isNotFound ? (
         <p role="alert" className="text-sm text-destructive">
           {d.loadOneError}
         </p>
+      ) : post && !canWrite ? (
+        <BlogPostReadOnly post={post} />
       ) : post ? (
         <BlogPostForm
           id={postId}

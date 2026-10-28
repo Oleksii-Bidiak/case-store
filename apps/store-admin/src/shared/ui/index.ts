@@ -240,3 +240,27 @@ export {
   type SectionTab,
   type SectionTabsProps,
 } from "./section-tabs";
+
+// ── Plan 186 (TASK-667): an [id]/edit page without `:write` — values as text ─
+export {
+  ReadOnlyBool,
+  ReadOnlyEmpty,
+  ReadOnlyField,
+  ReadOnlyFields,
+  ReadOnlyImage,
+  ReadOnlyLayout,
+  ReadOnlyLink,
+  ReadOnlyNotice,
+  ReadOnlyRelation,
+  ReadOnlyRichText,
+  ReadOnlySection,
+  ReadOnlySwatch,
+  ReadOnlyTags,
+  isReadOnlyEmpty,
+  type ReadOnlyFieldProps,
+  type ReadOnlyImageProps,
+  type ReadOnlyLayoutProps,
+  type ReadOnlyLinkProps,
+  type ReadOnlyNoticeProps,
+  type ReadOnlySectionProps,
+} from "./read-only-view";

@@ -66,7 +66,7 @@ interface EditPageViewProps {
 export function EditPageView({ pageId }: EditPageViewProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { can } = useAuth();
+  const { can, arePermissionsLoading } = useAuth();
   const canWrite = can(PERM.pagesWrite);
   const { confirm, confirmDialog } = useConfirmDialog();
 
@@ -236,7 +236,7 @@ export function EditPageView({ pageId }: EditPageViewProps) {
         </div>
       </div>
 
-      {isLoading ? (
+      {isLoading || arePermissionsLoading ? (
         <AdminFormSkeleton />
       ) : isError && !isNotFound ? (
         <p role="alert" className="text-sm text-destructive">

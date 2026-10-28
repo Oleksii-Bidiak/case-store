@@ -95,7 +95,12 @@ export function FaqFormDialog({
       <DialogContent className="sm:max-w-140">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? dict.faq.editHeading : dict.faq.createHeading}
+            {/* Without `faq:write` the dialog does not say «Редагувати». */}
+            {readOnly
+              ? dict.faqForm.question
+              : isEdit
+                ? dict.faq.editHeading
+                : dict.faq.createHeading}
           </DialogTitle>
           <DialogDescription className="sr-only">
             {dict.faq.subheadingLead} /info {dict.faq.subheadingTail}

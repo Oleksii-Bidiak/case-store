@@ -83,7 +83,9 @@ function stubPost(post: ReturnType<typeof makePost>) {
 
 async function renderAndWaitForForm(post: ReturnType<typeof makePost>) {
   const putCalls = stubPost(post);
-  renderWithProviders(<EditBlogPostView postId={POST_ID} />);
+  renderWithProviders(<EditBlogPostView postId={POST_ID} />, {
+    auth: { permissions: ["blog:write"] },
+  });
   await waitFor(() =>
     expect(screen.getByLabelText(dict.blogPostForm.slug)).toHaveValue(
       post.slug,
@@ -130,6 +132,42 @@ describe("EditBlogPostView — header (БЛ7)", () => {
     expect(
       screen.queryByRole("link", { name: d.rowOpenSite }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("EditBlogPostView — blog:read without blog:write (TASK-667)", () => {
+  it("renders the same page as text: the form's sections, «Не задано», no save", async () => {
+    const putCalls = stubPost(makePost("PUBLISHED"));
+    renderWithProviders(<EditBlogPostView postId={POST_ID} />, {
+      auth: { permissions: ["blog:read"] },
+    });
+
+    const rv = dict.readOnlyView;
+    expect(await screen.findByText(rv.notices.blog)).toBeInTheDocument();
+    const f = dict.blogPostForm;
+    for (const title of [
+      f.sectionMain,
+      f.sectionContent,
+      f.sectionCover,
+      f.sectionShow,
+      f.sectionSeo,
+      f.sectionPublish,
+    ]) {
+      expect(screen.getByRole("region", { name: title })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("rte-stub")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    // The category by name; the empty SEO title says what Google shows.
+    expect(screen.getAllByText("Гайди").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(rv.notSetWith(rv.seoTitleFromName)),
+    ).toBeInTheDocument();
+    expect(screen.getByText(rv.blogListedOn)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.common.saveChanges }),
+    ).not.toBeInTheDocument();
+    expect(putCalls).toHaveLength(0);
   });
 });
 

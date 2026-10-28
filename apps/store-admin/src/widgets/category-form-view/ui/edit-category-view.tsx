@@ -22,8 +22,14 @@ import {
   AdminFormSkeleton,
   Badge,
   Button,
-  Callout,
-  Separator,
+  ReadOnlyBool,
+  ReadOnlyField,
+  ReadOnlyImage,
+  ReadOnlyLink,
+  ReadOnlyNotice,
+  ReadOnlyRelation,
+  ReadOnlySection,
+  ReadOnlyTags,
   useConfirmDialog,
 } from "@/shared/ui";
 import { formatKeywords } from "@/shared/lib/seo";
@@ -195,7 +201,11 @@ export function EditCategoryView({ categoryId }: EditCategoryViewProps) {
         canWrite ? (
           <EditableCategoryBody categoryId={categoryId} category={category} />
         ) : (
-          <ReadOnlyCategoryBody category={category} treeItems={treeItems} />
+          <ReadOnlyCategoryBody
+            category={category}
+            treeItems={treeItems}
+            canDelete={can(PERM.categoriesDelete)}
+          />
         )
       ) : null}
     </div>
@@ -320,78 +330,95 @@ function EditableCategoryBody({
 }
 
 /**
- * TASK-1781: what a session without `categories:write` sees under the
- * header — the category as it is, said once to be read-only, and nothing
- * that would only answer 403.
+ * What a session without `categories:write` sees under the header (TASK-1781,
+ * TASK-667 template): the form's own sections with the values as text, said
+ * once to be read-only, and nothing that would only answer 403. A
+ * `categories:delete` holder is told about the «Видалити» the header keeps.
+ * Characteristics and add-on services stay out: their reads need rights of
+ * their own.
  */
 function ReadOnlyCategoryBody({
   category,
   treeItems,
+  canDelete,
 }: {
   category: AdminCategoryDetailEntity;
   treeItems: CategoryTreeItem[];
+  canDelete: boolean;
 }) {
   const ro = dict.categories.readOnly;
-  const parentName = category.parentId
-    ? (treeItems.find((item) => item.id === category.parentId)?.label ??
-      ro.empty)
-    : ro.fieldParentRoot;
+  const rv = dict.readOnlyView;
+  const parent = category.parentId
+    ? treeItems.find((item) => item.id === category.parentId)
+    : undefined;
+  const keywords = category.keywords ?? [];
   return (
-    <div className="flex max-w-3xl flex-col gap-6">
-      <Callout variant="muted">{ro.cardNotice}</Callout>
-      <ReadOnlySection title={ro.sectionMain}>
+    <div className="flex max-w-3xl flex-col gap-4">
+      <ReadOnlyNotice>
+        {canDelete ? ro.cardNotice : rv.notices.categories}
+      </ReadOnlyNotice>
+      <ReadOnlySection title={f.sectionMain}>
         <ReadOnlyField label={ro.fieldName}>{category.name}</ReadOnlyField>
         <ReadOnlyField label={ro.fieldAddress}>
-          {`/categories/${category.slug}`}
+          <ReadOnlyLink
+            href={`${STOREFRONT_URL}/categories/${category.slug}`}
+            external
+          >
+            {`/categories/${category.slug}`}
+          </ReadOnlyLink>
         </ReadOnlyField>
-        <ReadOnlyField label={ro.fieldParent}>{parentName}</ReadOnlyField>
-        <ReadOnlyField label={ro.fieldDescription}>
-          {category.description?.trim() || ro.empty}
+        <ReadOnlyField label={ro.fieldParent}>
+          {!category.parentId ? (
+            ro.fieldParentRoot
+          ) : parent ? (
+            <ReadOnlyRelation href={`/categories/${parent.id}/edit`}>
+              {parent.label}
+            </ReadOnlyRelation>
+          ) : null}
+        </ReadOnlyField>
+        <ReadOnlyField label={ro.fieldDescription} multiline>
+          {category.description}
+        </ReadOnlyField>
+        <ReadOnlyField label={f.active}>
+          <ReadOnlyBool
+            value={category.isActive}
+            on={tree.statusShown}
+            off={tree.statusHidden}
+          />
         </ReadOnlyField>
       </ReadOnlySection>
-      <ReadOnlySection title={ro.sectionSeo}>
-        <ReadOnlyField label={ro.fieldMetaTitle}>
-          {category.metaTitle?.trim() || ro.empty}
+      <ReadOnlySection title={f.sectionImage}>
+        <ReadOnlyField label={f.imageUpload.alt}>
+          {category.image ? (
+            <ReadOnlyImage src={category.image} alt={f.imageUpload.alt} />
+          ) : null}
+        </ReadOnlyField>
+      </ReadOnlySection>
+      <ReadOnlySection title={f.sectionSeo}>
+        <ReadOnlyField
+          label={ro.fieldMetaTitle}
+          emptyConsequence={rv.seoTitleFromName}
+        >
+          {category.metaTitle}
         </ReadOnlyField>
         <ReadOnlyField label={ro.fieldMetaDescription}>
-          {category.metaDescription?.trim() || ro.empty}
+          {category.metaDescription}
+        </ReadOnlyField>
+        <ReadOnlyField label={f.keywords} empty={keywords.length === 0}>
+          <ReadOnlyTags tags={keywords} />
+        </ReadOnlyField>
+        <ReadOnlyField
+          label={dict.seoFields.ogImage}
+          emptyConsequence={rv.ogImageDefault}
+        >
+          {category.ogImage ? (
+            <ReadOnlyImage
+              src={category.ogImage}
+              alt={dict.seoFields.ogImage}
+            />
+          ) : null}
         </ReadOnlyField>
       </ReadOnlySection>
-    </div>
-  );
-}
-
-/** One titled block — the product card's section rhythm. */
-function ReadOnlySection({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-3">
-      <Separator />
-      <h3 className="text-lg font-semibold text-foreground">{title}</h3>
-      <dl className="grid grid-cols-1 gap-x-8 gap-y-1 text-sm">{children}</dl>
-    </section>
-  );
-}
-
-/** A label/value pair inside a read-only `<dl>`. */
-function ReadOnlyField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex justify-between gap-4 border-b border-border py-1.5">
-      <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-right font-medium break-words whitespace-pre-line text-foreground">
-        {children}
-      </dd>
     </div>
   );
 }

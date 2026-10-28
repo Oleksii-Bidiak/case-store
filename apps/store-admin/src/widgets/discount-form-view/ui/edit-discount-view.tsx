@@ -21,7 +21,6 @@ import {
 } from "@/entities/discount";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
-import { Callout } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { apiErrorMessage } from "@/shared/lib";
 import { DiscountFormSkeleton } from "./discount-form-skeleton";
@@ -38,8 +37,8 @@ interface EditDiscountViewProps {
  * card beside the cart preview. Fetches the discount by UUID to pre-populate
  * the form; a missing discount (404) redirects back to the list.
  *
- * Without `discounts:write` (the key every admin discount route requires) the
- * form is view-only — what a future `discounts:read` will get.
+ * Without `discounts:write` the same page is the read-only template
+ * (TASK-667): values as text, the reason in one line, no save bar.
  *
  * Usage stats beyond the count — «Знижок надано», «Востаннє», «Замовлення з цим
  * кодом →» — are not drawn: the API returns only `redeemedCount` (TASK-1085
@@ -48,7 +47,7 @@ interface EditDiscountViewProps {
 export function EditDiscountView({ discountId }: EditDiscountViewProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { can } = useAuth();
+  const { can, arePermissionsLoading } = useAuth();
   const canWrite = can(PERM.discountsWrite);
 
   const { data, dataUpdatedAt, isLoading, isError, error } =
@@ -91,7 +90,8 @@ export function EditDiscountView({ discountId }: EditDiscountViewProps) {
     );
   };
 
-  if (isLoading) return <DiscountFormSkeleton />;
+  // TASK-667: no read-only view flashing for a writer while the rights load.
+  if (isLoading || arePermissionsLoading) return <DiscountFormSkeleton />;
 
   return (
     <div className="flex flex-col gap-6">
@@ -111,8 +111,6 @@ export function EditDiscountView({ discountId }: EditDiscountViewProps) {
           ) : null}
         </div>
       </div>
-
-      {canWrite ? null : <Callout variant="strip">{d.readOnlyNotice}</Callout>}
 
       {isError && !isNotFound ? (
         <p role="alert" className="text-sm text-destructive">

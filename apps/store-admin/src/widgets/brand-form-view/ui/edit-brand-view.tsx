@@ -49,7 +49,7 @@ interface EditBrandViewProps {
 export function EditBrandView({ brandId }: EditBrandViewProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { can } = useAuth();
+  const { can, arePermissionsLoading } = useAuth();
   const canWrite = can(PERM.brandsWrite);
   const canOpenProducts = can(PERM.productsRead);
 
@@ -92,7 +92,11 @@ export function EditBrandView({ brandId }: EditBrandViewProps) {
     );
   };
 
-  if (isLoading) return <BrandFormSkeleton withAside />;
+  // TASK-667: until the rights are known, neither the form nor the read-only
+  // view — a writer must not see the view flash first.
+  if (isLoading || arePermissionsLoading) {
+    return <BrandFormSkeleton withAside />;
+  }
 
   const productsTotal = productCount.data?.meta?.total;
 

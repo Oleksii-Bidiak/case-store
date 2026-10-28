@@ -5,7 +5,6 @@ import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { slugify } from "@/shared/lib";
 import {
-  Callout,
   FieldError,
   FormActionsBar,
   FormAlert,
@@ -20,12 +19,13 @@ import {
   useUploadsControllerUploadBrandLogo,
 } from "@/features/content-image-upload";
 import { MediaPicker } from "@/features/media-picker";
-import { dict, STOREFRONT_URL } from "@/shared/config";
+import { dict } from "@/shared/config";
 import {
   brandSchema,
   type BrandFormInput,
   type BrandFormValues,
 } from "../model/brand-schema";
+import { BrandReadOnly } from "./brand-read-only";
 
 const f = dict.brandForm;
 const FORM_ID = "brand-form";
@@ -43,6 +43,7 @@ interface BrandFormProps {
   /**
    * View-only (TASK-667 template): the same sections, the values as text, no
    * uploader and no save bar. The edit page sets it from `brands:write`.
+   * Only `defaultValues` and `aside` are read then.
    */
   readOnly?: boolean;
   /** The side panel (БР5): products, «Змінено», «Технічне». */
@@ -70,14 +71,20 @@ const SECTIONS: readonly { label: string; fields: readonly FieldName[] }[] = [
 
 const errorId = (field: FieldName) => `brand-${field}-error`;
 
-/** The logo as the storefront will load it — see `logoSrc` in the list. */
-function previewSrc(logo: string): string {
-  if (!logo.startsWith("/") || logo.startsWith("//")) return logo;
-  try {
-    return new URL(logo, STOREFRONT_URL).toString();
-  } catch {
-    return logo;
-  }
+/**
+ * The brand form, or — `readOnly`, no `brands:write` — the same sections as
+ * text (TASK-667 template, `BrandReadOnly`). Two components, not one with
+ * `disabled` branches: the view needs no form state at all.
+ */
+export function BrandForm({ readOnly = false, ...props }: BrandFormProps) {
+  return readOnly ? (
+    <BrandReadOnly
+      values={{ ...EMPTY_VALUES, ...props.defaultValues }}
+      aside={props.aside}
+    />
+  ) : (
+    <EditableBrandForm {...props} />
+  );
 }
 
 /**
@@ -92,16 +99,15 @@ function previewSrc(logo: string): string {
  * The «Сторінка бренду на сайті» and «Пошук: інші написання» sections of the
  * artboard need API fields that do not exist yet (TASK-1080, TASK-1081).
  */
-export function BrandForm({
+function EditableBrandForm({
   id,
   defaultValues,
   onSubmit,
   isPending,
   submitLabel = f.submit,
-  readOnly = false,
   aside,
   barActions,
-}: BrandFormProps) {
+}: Omit<BrandFormProps, "readOnly">) {
   const {
     register,
     control,
@@ -172,125 +178,91 @@ export function BrandForm({
       className="flex flex-col gap-4"
       noValidate
     >
-      {readOnly ? (
-        <Callout variant="strip">{dict.common.viewOnly}</Callout>
-      ) : null}
       {showErrors ? <FormAlert>{f.errorSummary(errorCount)}</FormAlert> : null}
 
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-6">
         <div className="flex min-w-0 flex-col gap-4">
           <FormSectionCard title={f.sectionMain}>
-            {readOnly ? (
-              <>
-                <ReadOnlyValue label={f.name} required>
-                  {nameValue}
-                </ReadOnlyValue>
-                <ReadOnlyValue label={f.slug} mono>
-                  {slugValue}
-                </ReadOnlyValue>
-              </>
-            ) : (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="brand-name" required>
-                    {f.name}
-                  </Label>
-                  <Input
-                    id="brand-name"
-                    placeholder={f.namePlaceholder}
-                    aria-required="true"
-                    {...fieldA11y("name")}
-                    {...register("name")}
-                  />
-                  <FieldError id={errorId("name")}>
-                    {errors.name?.message}
-                  </FieldError>
-                </div>
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="brand-name" required>
+                  {f.name}
+                </Label>
+                <Input
+                  id="brand-name"
+                  placeholder={f.namePlaceholder}
+                  aria-required="true"
+                  {...fieldA11y("name")}
+                  {...register("name")}
+                />
+                <FieldError id={errorId("name")}>
+                  {errors.name?.message}
+                </FieldError>
+              </div>
 
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="brand-slug">{f.slug}</Label>
-                  <Input
-                    id="brand-slug"
-                    placeholder={f.slugPlaceholder}
-                    {...fieldA11y(
-                      "slug",
-                      effectiveSlug ? "brand-slug-hint" : undefined,
-                    )}
-                    {...register("slug")}
-                  />
-                  <FieldError id={errorId("slug")}>
-                    {errors.slug?.message}
-                  </FieldError>
-                  {!errors.slug && effectiveSlug ? (
-                    <p
-                      id="brand-slug-hint"
-                      className="text-xs text-muted-foreground"
-                      data-testid={slugValue ? undefined : "slug-preview"}
-                    >
-                      {slugValue
-                        ? f.slugHint(slugValue)
-                        : f.slugPreview(effectiveSlug)}
-                    </p>
-                  ) : null}
-                </div>
-              </>
-            )}
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="brand-slug">{f.slug}</Label>
+                <Input
+                  id="brand-slug"
+                  placeholder={f.slugPlaceholder}
+                  {...fieldA11y(
+                    "slug",
+                    effectiveSlug ? "brand-slug-hint" : undefined,
+                  )}
+                  {...register("slug")}
+                />
+                <FieldError id={errorId("slug")}>
+                  {errors.slug?.message}
+                </FieldError>
+                {!errors.slug && effectiveSlug ? (
+                  <p
+                    id="brand-slug-hint"
+                    className="text-xs text-muted-foreground"
+                    data-testid={slugValue ? undefined : "slug-preview"}
+                  >
+                    {slugValue
+                      ? f.slugHint(slugValue)
+                      : f.slugPreview(effectiveSlug)}
+                  </p>
+                ) : null}
+              </div>
+            </>
           </FormSectionCard>
 
           <FormSectionCard title={f.sectionLogo}>
-            {readOnly ? (
-              <div className="flex items-center gap-4">
-                <span className="flex h-20 w-40 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40 p-2">
-                  {logoValue ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- admin thumbnail off arbitrary upload hosts
-                    <img
-                      src={previewSrc(logoValue)}
-                      alt={f.logoUpload.alt}
-                      className="max-h-full max-w-full object-contain"
-                    />
-                  ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  )}
-                </span>
-                <p className="text-xs text-muted-foreground">
-                  {f.logoUpload.hint}
-                </p>
-              </div>
-            ) : (
-              <ContentImageField
-                id="brand-logo"
-                layout="inline"
-                label={f.logo}
-                urlPlaceholder={f.logoPlaceholder}
-                copy={{
-                  ...f.logoUpload,
-                  hint: logoValue.trim() ? f.logoUpload.hint : f.logoHintNew,
-                }}
-                value={logoValue}
-                urlInput={register("logo")}
-                onRemove={() =>
-                  setValue("logo", "", {
-                    shouldDirty: true,
-                    shouldValidate: true,
-                  })
-                }
-                fieldError={errors.logo?.message}
-                // TASK-441 — a logo is the picture most likely to be in the
-                // library already: brand filter, product cards, the strip.
-                picker={
-                  <MediaPicker
-                    onPick={(asset) =>
-                      setValue("logo", asset.url, {
-                        shouldDirty: true,
-                        shouldValidate: true,
-                      })
-                    }
-                  />
-                }
-                {...logoUpload}
-              />
-            )}
+            <ContentImageField
+              id="brand-logo"
+              layout="inline"
+              label={f.logo}
+              urlPlaceholder={f.logoPlaceholder}
+              copy={{
+                ...f.logoUpload,
+                hint: logoValue.trim() ? f.logoUpload.hint : f.logoHintNew,
+              }}
+              value={logoValue}
+              urlInput={register("logo")}
+              onRemove={() =>
+                setValue("logo", "", {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+              fieldError={errors.logo?.message}
+              // TASK-441 — a logo is the picture most likely to be in the
+              // library already: brand filter, product cards, the strip.
+              picker={
+                <MediaPicker
+                  onPick={(asset) =>
+                    setValue("logo", asset.url, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                />
+              }
+              {...logoUpload}
+            />
           </FormSectionCard>
 
           <section className="flex items-start justify-between gap-4 rounded-lg border bg-card p-4 shadow-card">
@@ -313,7 +285,6 @@ export function BrandForm({
                   id="brand-active"
                   checked={field.value ?? true}
                   onCheckedChange={field.onChange}
-                  disabled={readOnly}
                   aria-describedby="brand-active-hint"
                 />
               )}
@@ -326,53 +297,16 @@ export function BrandForm({
         ) : null}
       </div>
 
-      {readOnly ? null : (
-        <FormActionsBar
-          variant="sticky"
-          dirtySections={dirtySections}
-          onDiscard={id ? () => reset() : undefined}
-          saveLabel={isPending ? dict.common.saving : submitLabel}
-          formId={FORM_ID}
-          isSaving={isPending}
-        >
-          {barActions}
-        </FormActionsBar>
-      )}
-    </form>
-  );
-}
-
-/** A field in view-only mode: its label and the value as plain text (БР9). */
-function ReadOnlyValue({
-  label,
-  required = false,
-  mono = false,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  mono?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <p className="text-sm font-medium text-foreground">
-        {label}
-        {required ? (
-          <span aria-hidden="true" className="text-destructive">
-            {" *"}
-          </span>
-        ) : null}
-      </p>
-      <p
-        className={
-          mono
-            ? "font-mono text-sm break-all text-muted-foreground"
-            : "text-sm break-words text-foreground"
-        }
+      <FormActionsBar
+        variant="sticky"
+        dirtySections={dirtySections}
+        onDiscard={id ? () => reset() : undefined}
+        saveLabel={isPending ? dict.common.saving : submitLabel}
+        formId={FORM_ID}
+        isSaving={isPending}
       >
-        {children || "—"}
-      </p>
-    </div>
+        {barActions}
+      </FormActionsBar>
+    </form>
   );
 }

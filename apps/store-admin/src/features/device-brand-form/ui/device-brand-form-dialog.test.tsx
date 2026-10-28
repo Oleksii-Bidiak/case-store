@@ -116,13 +116,20 @@ describe("DeviceBrandFormDialog (ПР6)", () => {
       />,
     );
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText(dict.common.viewOnly)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(dict.readOnlyView.notices.devices),
+    ).toBeInTheDocument();
     expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
     expect(
       within(dialog).queryByRole("button", { name: f.submit }),
     ).not.toBeInTheDocument();
+    // TASK-667: values as text — no disabled switch.
+    expect(within(dialog).queryByRole("switch")).not.toBeInTheDocument();
     expect(
-      within(dialog).getByRole("switch", { name: f.active }),
-    ).toBeDisabled();
+      within(dialog).getByText(dict.devices.statusActive),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getAllByRole("button", { name: dict.common.close }),
+    ).not.toHaveLength(0);
   });
 });

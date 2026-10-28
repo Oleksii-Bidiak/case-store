@@ -56,6 +56,7 @@ import {
   type PageFormValues,
   type PageKindValue,
 } from "../model/page-schema";
+import { PageReadOnly } from "./page-read-only";
 
 const f = dict.pageForm;
 const FORM_ID = "page-form";
@@ -126,7 +127,10 @@ interface PageFormProps {
   ) => void | Promise<boolean | void>;
   isPending: boolean;
   submitLabel?: string;
-  /** No `pages:write`: every field disabled, no save bar (wave 191 canon). */
+  /**
+   * No `pages:write` (TASK-667 template): the same sections as text, no save
+   * bar. Reads only `defaultValues`.
+   */
   readOnly?: boolean;
 }
 
@@ -158,14 +162,23 @@ const errorId = (field: string) => `page-${field}-error`;
  * The slug auto-fills from the title while the address is still untouched;
  * once the admin edits it, typing in the title no longer overwrites it.
  */
-export function PageForm({
+export function PageForm({ readOnly = false, ...props }: PageFormProps) {
+  // TASK-667: without `pages:write` the same sections as text — a separate
+  // component, so the editor never mounts for a viewer and vice versa.
+  return readOnly ? (
+    <PageReadOnly values={{ ...EMPTY_VALUES, ...props.defaultValues }} />
+  ) : (
+    <EditablePageForm {...props} />
+  );
+}
+
+function EditablePageForm({
   id,
   defaultValues,
   onSubmit,
   isPending,
   submitLabel = f.submit,
-  readOnly = false,
-}: PageFormProps) {
+}: Omit<PageFormProps, "readOnly">) {
   const {
     register,
     control,
@@ -187,16 +200,8 @@ export function PageForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Content tab: preview for a read-only viewer, the editor otherwise. Kept
-  // in step with `readOnly` (forms.md rule 1a render-time guard) — on a cold
-  // load the permissions arrive after the first render, and a `defaultValue`
-  // would leave an editor staring at the preview.
-  const [contentTab, setContentTab] = useState(readOnly ? "preview" : "edit");
-  const [contentTabFor, setContentTabFor] = useState(readOnly);
-  if (contentTabFor !== readOnly) {
-    setContentTabFor(readOnly);
-    setContentTab(readOnly ? "preview" : "edit");
-  }
+  // Content tab: the editor first; «Попередній перегляд» on demand.
+  const [contentTab, setContentTab] = useState("edit");
 
   const titleValue = useWatch({ control, name: "title" }) ?? "";
   const slugValue = useWatch({ control, name: "slug" }) ?? "";
@@ -339,9 +344,6 @@ export function PageForm({
       className="flex flex-col gap-6"
       noValidate
     >
-      {readOnly ? (
-        <Callout variant="strip">{dict.common.viewOnly}</Callout>
-      ) : null}
       {showErrors ? (
         <FormAlert>
           {dict.pages.formErrorsAlert(
@@ -358,10 +360,7 @@ export function PageForm({
           className="md:w-42 md:shrink-0"
         />
 
-        <fieldset
-          disabled={readOnly}
-          className="flex max-w-3xl min-w-0 flex-1 flex-col gap-4"
-        >
+        <div className="flex max-w-3xl min-w-0 flex-1 flex-col gap-4">
           <FormCard id={PAGE_SECTION_IDS.main} title={f.sectionMain}>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="flex flex-col gap-1.5">
@@ -395,7 +394,6 @@ export function PageForm({
                         if (value === "") return;
                         field.onChange(value);
                       }}
-                      disabled={readOnly}
                     >
                       <SelectTrigger
                         id="page-kind"
@@ -440,7 +438,6 @@ export function PageForm({
                         if (value === "") return;
                         field.onChange(value);
                       }}
-                      disabled={readOnly}
                     >
                       <SelectTrigger
                         id="page-hub-slug"
@@ -544,7 +541,7 @@ export function PageForm({
                         onChange={field.onChange}
                         resetKey={id}
                         placeholder={f.contentPlaceholder}
-                        disabled={isPending || readOnly}
+                        disabled={isPending}
                         // TASK-547 — the editor lives in `shared/ui` and cannot
                         // reach the media library itself.
                         imagePicker={(insert) => (
@@ -739,26 +736,24 @@ export function PageForm({
               </div>
             )}
           </FormCard>
-        </fieldset>
+        </div>
       </div>
 
-      {readOnly ? null : (
-        <FormActionsBar
-          variant="sticky"
-          formId={FORM_ID}
-          dirtySections={dirtySections}
-          summary={
-            showErrors
-              ? dict.pages.formErrorsBar(failedFields.length)
-              : !id
-                ? dict.pages.newUnsaved
-                : undefined
-          }
-          onDiscard={() => reset()}
-          saveLabel={isPending ? dict.common.saving : submitLabel}
-          isSaving={isPending}
-        />
-      )}
+      <FormActionsBar
+        variant="sticky"
+        formId={FORM_ID}
+        dirtySections={dirtySections}
+        summary={
+          showErrors
+            ? dict.pages.formErrorsBar(failedFields.length)
+            : !id
+              ? dict.pages.newUnsaved
+              : undefined
+        }
+        onDiscard={() => reset()}
+        saveLabel={isPending ? dict.common.saving : submitLabel}
+        isSaving={isPending}
+      />
     </form>
   );
 }

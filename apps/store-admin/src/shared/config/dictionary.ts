@@ -1662,8 +1662,6 @@ export const dict = {
       cardNotice:
         "Ви можете переглянути цю категорію й видалити її. Змінювати категорії може працівник із правом «Категорії».",
       open: "Відкрити",
-      sectionMain: "Основне",
-      sectionSeo: "SEO",
       fieldName: "Назва",
       fieldAddress: "Адреса",
       fieldParent: "Батьківська категорія",
@@ -1671,7 +1669,6 @@ export const dict = {
       fieldDescription: "Опис",
       fieldMetaTitle: "Meta title",
       fieldMetaDescription: "Meta description",
-      empty: "—",
       // /categories/new typed by hand without the right.
       createForbidden: "Створювати категорії ви не можете.",
       createForbiddenHint:
@@ -7773,6 +7770,56 @@ export const dict = {
     submit: "Додати на головну",
     toastAdded: (title: string) => `«${title}» тепер на головній`,
     toastFailed: "Не вдалося додати карусель на головну",
+  },
+
+  // --- Перегляд без права редагувати (plan 186, TASK-667, ReadOnlyTemplate РО-1…РО-5)
+  // The same [id]/edit page for a session without the section's `:write`:
+  // values as text, «Не задано» with its consequence, one line saying why and
+  // whom to ask. The primitive is `shared/ui/read-only-view`.
+  readOnlyView: {
+    notSet: "Не задано",
+    notSetWith: (consequence: string) => `Не задано — ${consequence}`,
+    opensInNewTab: "(відкриється в новій вкладці)",
+    // What an empty field means on the site — after «Не задано — ».
+    seoTitleFromName: "у Google буде назва",
+    seoDescriptionFromText: "Google візьме короткий опис або початок тексту",
+    ogImageDefault: "посилання покажуть картинку сторінки або магазину",
+    brandLogoEmpty: "у списку буде сірий квадрат із першими літерами назви",
+    discountAnySum: "будь-яка сума",
+    discountNoLimit: "без ліміту",
+    discountNoBound: "без обмеження",
+    discountOn: "Увімкнено — код застосовується в кошику",
+    discountOff: "Вимкнено — код не застосовується",
+    discountOnPromo: "Показується на сторінці «Акції»",
+    discountNotOnPromo: "Не показується на «Акціях»",
+    blogReadingEmpty: "на сайті час читання не показується",
+    blogFeaturedOn: "Так — великим блоком угорі сторінки «Блог»",
+    blogFeaturedOff: "Ні",
+    blogListedOn: "Показується у списках",
+    bannerNoButton: "кнопки на банері немає",
+    bannerNoEnd: "банер лишається, доки його не знімуть вручну",
+    // One line per section: why nothing here can be changed, and whom to ask.
+    // The right is named as «Співробітники» shows it (the API catalogue label).
+    notices: {
+      categories:
+        "Ви можете переглядати, але не змінювати. Змінювати категорії — право «Категорії»; його дає власник у розділі «Співробітники».",
+      brands:
+        "Ви можете переглядати, але не змінювати. Змінювати бренди — право «Бренди»; його дає власник у розділі «Співробітники».",
+      devices:
+        "Ви можете переглядати, але не змінювати. Змінювати пристрої — право «Пристрої та сумісність»; його дає власник у розділі «Співробітники».",
+      addons:
+        "Ви можете переглядати, але не змінювати. Змінювати послуги — право «Додаткові послуги»; його дає власник у розділі «Співробітники».",
+      discounts:
+        "Ви можете переглядати, але не змінювати. Змінювати промокоди — право «Промокоди та знижки»; його дає власник у розділі «Співробітники».",
+      pages:
+        "Ви можете переглядати, але не змінювати. Змінювати сторінки — право «Сторінки»; його дає власник у розділі «Співробітники».",
+      blog: "Ви можете переглядати, але не змінювати. Змінювати статті — право «Блог»; його дає власник у розділі «Співробітники».",
+      banners:
+        "Ви можете переглядати, але не змінювати. Змінювати банери — право «Банери»; його дає власник у розділі «Співробітники».",
+      carousels:
+        "Ви можете переглядати, але не змінювати. Змінювати каруселі — право «Каруселі головної»; його дає власник у розділі «Співробітники».",
+      faq: "Ви можете переглядати, але не змінювати. Змінювати запитання — право «FAQ»; його дає власник у розділі «Співробітники».",
+    },
   },
 } as const;
 

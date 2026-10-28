@@ -5,11 +5,14 @@ import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Button,
-  Callout,
   FieldError,
   FormAlert,
   Input,
   Label,
+  ReadOnlyBool,
+  ReadOnlyField,
+  ReadOnlyFields,
+  ReadOnlyNotice,
   Switch,
   Textarea,
 } from "@/shared/ui";
@@ -36,7 +39,10 @@ interface FaqFormProps {
   submitLabel?: string;
   /** «Скасувати» (or «Закрити» when read-only). */
   onCancel?: () => void;
-  /** No `faq:write`: fields disabled, no submit (wave 191 canon). */
+  /**
+   * No `faq:write` (TASK-667 template): the values as text, the reason in one
+   * line, «Закрити» only. Reads only `defaultValues` and `onCancel`.
+   */
   readOnly?: boolean;
 }
 
@@ -58,15 +64,52 @@ const errorId = (field: string) => `faq-${field}-error`;
  * by dragging a row in the FAQ list, and a new question is appended by the
  * server.
  */
-export function FaqForm({
+export function FaqForm({ readOnly = false, ...props }: FaqFormProps) {
+  if (readOnly) {
+    const values = { ...EMPTY_VALUES, ...props.defaultValues };
+    return (
+      <div className="flex flex-col gap-4">
+        <ReadOnlyNotice>{dict.readOnlyView.notices.faq}</ReadOnlyNotice>
+        <ReadOnlyFields>
+          <ReadOnlyField label={f.question}>{values.question}</ReadOnlyField>
+          <ReadOnlyField label={f.answer} multiline>
+            {values.answer}
+          </ReadOnlyField>
+          <ReadOnlyField label={f.isActive}>
+            <ReadOnlyBool
+              value={values.isActive ?? true}
+              on={dict.faq.statusActive}
+              off={dict.faq.statusInactive}
+            />
+          </ReadOnlyField>
+        </ReadOnlyFields>
+        <FaqPreview question={values.question} answer={values.answer} />
+        {props.onCancel ? (
+          <div className="flex flex-col-reverse gap-2 md:flex-row md:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={props.onCancel}
+              className="max-md:h-11"
+            >
+              {dict.common.close}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+  return <EditableFaqForm {...props} />;
+}
+
+function EditableFaqForm({
   id,
   defaultValues,
   onSubmit,
   isPending,
   submitLabel = f.submit,
   onCancel,
-  readOnly = false,
-}: FaqFormProps) {
+}: Omit<FaqFormProps, "readOnly">) {
   const {
     register,
     control,
@@ -104,14 +147,11 @@ export function FaqForm({
       className="flex flex-col gap-4"
       noValidate
     >
-      {readOnly ? (
-        <Callout variant="strip">{dict.common.viewOnly}</Callout>
-      ) : null}
       {submitCount > 0 && hasErrors ? (
         <FormAlert>{f.formAlert}</FormAlert>
       ) : null}
 
-      <fieldset disabled={readOnly} className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between gap-2">
             <Label htmlFor="faq-question" required>
@@ -187,24 +227,9 @@ export function FaqForm({
             </p>
           </div>
         </div>
-      </fieldset>
+      </div>
 
-      {/* ЧП4 — how the item reads on /info, once there is something to read. */}
-      {question.trim() && answer.trim() ? (
-        <section
-          aria-label={f.preview}
-          className="flex flex-col gap-1.5 rounded-md border border-dashed px-3.5 py-3"
-        >
-          <span className="text-xs text-muted-foreground">{f.preview}</span>
-          <p className="flex justify-between gap-2 text-sm font-semibold text-foreground">
-            <span className="min-w-0 break-words">{question}</span>
-            <span aria-hidden="true">−</span>
-          </p>
-          <p className="text-sm break-words whitespace-pre-line text-muted-foreground">
-            {answer}
-          </p>
-        </section>
-      ) : null}
+      <FaqPreview question={question} answer={answer} />
 
       <div className="flex flex-col-reverse gap-2 md:flex-row md:justify-end">
         {onCancel ? (
@@ -214,16 +239,40 @@ export function FaqForm({
             onClick={onCancel}
             className="max-md:h-11"
           >
-            {readOnly ? dict.common.close : dict.common.cancel}
+            {dict.common.cancel}
           </Button>
         ) : null}
-        {readOnly ? null : (
-          <Button type="submit" disabled={isPending} className="max-md:h-11">
-            {isPending ? dict.common.saving : submitLabel}
-          </Button>
-        )}
+        <Button type="submit" disabled={isPending} className="max-md:h-11">
+          {isPending ? dict.common.saving : submitLabel}
+        </Button>
       </div>
     </form>
+  );
+}
+
+/** ЧП4 — how the item reads on /info, once there is something to read. */
+function FaqPreview({
+  question,
+  answer,
+}: {
+  question: string;
+  answer: string;
+}) {
+  if (!question.trim() || !answer.trim()) return null;
+  return (
+    <section
+      aria-label={f.preview}
+      className="flex flex-col gap-1.5 rounded-md border border-dashed px-3.5 py-3"
+    >
+      <span className="text-xs text-muted-foreground">{f.preview}</span>
+      <p className="flex justify-between gap-2 text-sm font-semibold text-foreground">
+        <span className="min-w-0 break-words">{question}</span>
+        <span aria-hidden="true">−</span>
+      </p>
+      <p className="text-sm break-words whitespace-pre-line text-muted-foreground">
+        {answer}
+      </p>
+    </section>
   );
 }
 

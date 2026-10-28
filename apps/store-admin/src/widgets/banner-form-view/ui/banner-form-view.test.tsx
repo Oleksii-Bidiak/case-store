@@ -95,7 +95,7 @@ describe("EditBannerView", () => {
   });
 
   it("names the banner, its display state and where it shows", async () => {
-    renderWithProviders(<EditBannerView bannerId={ID} />);
+    renderWithProviders(<EditBannerView bannerId={ID} />, { auth: WRITER });
 
     expect(
       await screen.findByRole("heading", { name: banner.title }),
@@ -117,6 +117,39 @@ describe("EditBannerView", () => {
       screen.queryByRole("button", {
         name: dict.common.registry.rowActionsAria(banner.title),
       }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("is the read-only template with banners:read alone (TASK-667, РО-1)", async () => {
+    renderWithProviders(<EditBannerView bannerId={ID} />, {
+      auth: { permissions: [PERM.bannersRead] },
+    });
+
+    const rv = dict.readOnlyView;
+    const f = dict.bannerForm;
+    expect(await screen.findByText(rv.notices.banners)).toBeInTheDocument();
+    for (const title of [
+      f.placement,
+      f.sectionText,
+      f.sectionImage,
+      f.sectionButton,
+      f.theme,
+      f.status,
+    ]) {
+      expect(screen.getByRole("region", { name: title })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+    // The button's target opens on the storefront.
+    expect(screen.getByRole("link", { name: /\/products/ })).toHaveAttribute(
+      "target",
+      "_blank",
+    );
+    // Empty values say what they mean.
+    expect(screen.getByText(rv.notSetWith(rv.bannerNoEnd))).toBeInTheDocument();
+    expect(screen.getByText(f.themes.auto)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.common.save }),
     ).not.toBeInTheDocument();
   });
 

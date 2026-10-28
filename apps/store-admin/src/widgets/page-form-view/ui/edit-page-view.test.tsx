@@ -167,16 +167,33 @@ describe("EditPageView — header", () => {
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/pages"));
   });
 
-  it("is view-only without pages:write — no save, no «⋯»", async () => {
-    await renderAndWaitForForm(makePage("PUBLISHED"), [PERM.blogWrite]);
+  it("is view-only without pages:write — values as text, no save, no «⋯» (TASK-667)", async () => {
+    stubPage(makePage("PUBLISHED"));
+    renderWithProviders(
+      <WithAuth permissions={[PERM.pagesRead]}>
+        <EditPageView pageId={PAGE_ID} />
+      </WithAuth>,
+    );
 
+    expect(
+      await screen.findByText(dict.readOnlyView.notices.pages),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    // The four sections of the form, in the form's words.
+    for (const title of [
+      dict.pageForm.sectionMain,
+      dict.pageForm.sectionContent,
+      dict.pageForm.sectionSeo,
+      dict.pageForm.sectionPublish,
+    ]) {
+      expect(screen.getByRole("region", { name: title })).toBeInTheDocument();
+    }
     expect(
       screen.queryByRole("button", { name: dict.common.save }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: d.headerMenuAria }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
   });
 });
 

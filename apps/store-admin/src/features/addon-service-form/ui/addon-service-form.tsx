@@ -5,14 +5,18 @@ import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Button,
-  Callout,
   FieldError,
   FormAlert,
   Input,
   Label,
+  ReadOnlyBool,
+  ReadOnlyField,
+  ReadOnlyFields,
+  ReadOnlyNotice,
   Switch,
   Textarea,
 } from "@/shared/ui";
+import { formatCurrency } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
 import {
@@ -37,7 +41,10 @@ interface AddonServiceFormProps {
   submitLabel?: string;
   /** «Скасувати» (or «Закрити» when read-only). */
   onCancel?: () => void;
-  /** No `addons:write`: fields disabled, nothing to save (wave 191 canon). */
+  /**
+   * No `addons:write` (TASK-667 template): the values as text, the reason in
+   * one line, «Закрити» only. Reads only `defaultValues` and `onCancel`.
+   */
   readOnly?: boolean;
 }
 
@@ -66,14 +73,61 @@ const errorId = (field: string) => `addon-${field}-error`;
  * count).
  */
 export function AddonServiceForm({
+  readOnly = false,
+  ...props
+}: AddonServiceFormProps) {
+  if (readOnly) {
+    const values = { ...EMPTY_VALUES, ...props.defaultValues };
+    const price = values.price.trim();
+    return (
+      <div className="flex flex-col gap-4">
+        <ReadOnlyNotice>{dict.readOnlyView.notices.addons}</ReadOnlyNotice>
+        <ReadOnlyFields>
+          <ReadOnlyField label={f.name}>{values.name}</ReadOnlyField>
+          <ReadOnlyField label={f.description} multiline>
+            {values.description}
+          </ReadOnlyField>
+          <ReadOnlyField label={f.price}>
+            {price === ""
+              ? null
+              : Number(price) === 0
+                ? dict.addonServices.free
+                : formatCurrency(price)}
+          </ReadOnlyField>
+          <ReadOnlyField label={f.active}>
+            <ReadOnlyBool
+              value={values.isActive ?? true}
+              on={dict.addonServices.statusActive}
+              off={dict.addonServices.statusInactive}
+            />
+          </ReadOnlyField>
+        </ReadOnlyFields>
+        {props.onCancel ? (
+          <div className="-mx-6 mt-2 flex flex-col-reverse gap-2 border-t px-6 pt-4 md:flex-row md:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={props.onCancel}
+              className="max-md:h-11"
+            >
+              {dict.common.close}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+  return <EditableAddonServiceForm {...props} />;
+}
+
+function EditableAddonServiceForm({
   id,
   defaultValues,
   onSubmit,
   isPending,
   submitLabel = f.submit,
   onCancel,
-  readOnly = false,
-}: AddonServiceFormProps) {
+}: Omit<AddonServiceFormProps, "readOnly">) {
   const {
     register,
     control,
@@ -109,14 +163,11 @@ export function AddonServiceForm({
       className="flex flex-col gap-4"
       noValidate
     >
-      {readOnly ? (
-        <Callout variant="strip">{dict.common.viewOnly}</Callout>
-      ) : null}
       {submitCount > 0 && errorCount > 0 ? (
         <FormAlert>{f.formAlert(errorCount)}</FormAlert>
       ) : null}
 
-      <fieldset disabled={readOnly} className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="addon-name" required>
             {f.name}
@@ -224,7 +275,7 @@ export function AddonServiceForm({
             )}
           />
         </div>
-      </fieldset>
+      </div>
 
       <div className="-mx-6 mt-2 flex flex-col-reverse gap-2 border-t px-6 pt-4 md:flex-row md:justify-end">
         {onCancel ? (
@@ -234,14 +285,12 @@ export function AddonServiceForm({
             onClick={onCancel}
             className="max-md:h-11"
           >
-            {readOnly ? dict.common.close : dict.common.cancel}
+            {dict.common.cancel}
           </Button>
         ) : null}
-        {readOnly ? null : (
-          <Button type="submit" disabled={isPending} className="max-md:h-11">
-            {isPending ? dict.common.saving : submitLabel}
-          </Button>
-        )}
+        <Button type="submit" disabled={isPending} className="max-md:h-11">
+          {isPending ? dict.common.saving : submitLabel}
+        </Button>
       </div>
     </form>
   );

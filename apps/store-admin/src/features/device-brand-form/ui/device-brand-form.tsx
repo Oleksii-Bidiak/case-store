@@ -1,9 +1,19 @@
 "use client";
 
 import { useEffect, type FormEvent, type ReactNode } from "react";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Callout, FieldError, Input, Label, Switch } from "@/shared/ui";
+import {
+  Button,
+  FieldError,
+  Input,
+  Label,
+  ReadOnlyBool,
+  ReadOnlyField,
+  ReadOnlyFields,
+  ReadOnlyNotice,
+  Switch,
+} from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
   deviceBrandSchema,
@@ -22,7 +32,10 @@ interface DeviceBrandFormProps {
   submitLabel?: string;
   /** «Скасувати» — the dialog closes. */
   onCancel: () => void;
-  /** View-only: the values as text, «Закрити» instead of the buttons. */
+  /**
+   * View-only (TASK-667 template): the values as text, the reason in one line,
+   * «Закрити» instead of the buttons. Reads only `defaultValues`.
+   */
   readOnly?: boolean;
   /** A line above the buttons — «Моделей: 28 · Перейти до моделей →». */
   footer?: ReactNode;
@@ -43,17 +56,52 @@ const errorId = (field: FieldName) => `device-brand-${field}-error`;
  * (required), «Адреса в посиланні (slug)» with what blank means, and
  * «Показувати на сайті» as a Switch with its consequence. Errors sit under the
  * fields with `aria-invalid`. TASK-295: no order field — the grid IS the order.
+ *
+ * Without `devices:write` the same dialog shows the values as text instead.
  */
 export function DeviceBrandForm({
+  readOnly = false,
+  ...props
+}: DeviceBrandFormProps) {
+  if (readOnly) {
+    const values = { ...EMPTY_VALUES, ...props.defaultValues };
+    return (
+      <div className="flex flex-col gap-4">
+        <ReadOnlyNotice>{dict.readOnlyView.notices.devices}</ReadOnlyNotice>
+        <ReadOnlyFields>
+          <ReadOnlyField label={f.name}>{values.name}</ReadOnlyField>
+          <ReadOnlyField label={f.slug} mono>
+            {values.slug}
+          </ReadOnlyField>
+          <ReadOnlyField label={f.active}>
+            <ReadOnlyBool
+              value={values.isActive ?? true}
+              on={dict.devices.statusActive}
+              off={dict.devices.statusInactive}
+            />
+          </ReadOnlyField>
+        </ReadOnlyFields>
+        {props.footer}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" onClick={props.onCancel}>
+            {dict.common.close}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  return <EditableDeviceBrandForm {...props} />;
+}
+
+function EditableDeviceBrandForm({
   id,
   defaultValues,
   onSubmit,
   isPending,
   submitLabel = f.submit,
   onCancel,
-  readOnly = false,
   footer,
-}: DeviceBrandFormProps) {
+}: Omit<DeviceBrandFormProps, "readOnly">) {
   const {
     register,
     control,
@@ -74,9 +122,6 @@ export function DeviceBrandForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const nameValue = useWatch({ control, name: "name" }) ?? "";
-  const slugValue = useWatch({ control, name: "slug" }) ?? "";
-
   const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     if (event.target !== event.currentTarget) return;
     void handleSubmit(onSubmit)(event);
@@ -94,58 +139,34 @@ export function DeviceBrandForm({
 
   return (
     <form onSubmit={onFormSubmit} className="flex flex-col gap-4" noValidate>
-      {readOnly ? (
-        <Callout variant="strip">{dict.common.viewOnly}</Callout>
-      ) : null}
-
       <div className="flex flex-col gap-1.5">
-        {readOnly ? (
-          <>
-            <p className="text-sm font-medium text-foreground">{f.name}</p>
-            <p className="text-sm text-foreground">{nameValue || "—"}</p>
-          </>
-        ) : (
-          <>
-            <Label htmlFor="device-brand-name" required>
-              {f.name}
-            </Label>
-            <Input
-              id="device-brand-name"
-              aria-required="true"
-              {...a11y("name")}
-              {...register("name")}
-            />
-            <FieldError id={errorId("name")}>{errors.name?.message}</FieldError>
-          </>
-        )}
+        <Label htmlFor="device-brand-name" required>
+          {f.name}
+        </Label>
+        <Input
+          id="device-brand-name"
+          aria-required="true"
+          {...a11y("name")}
+          {...register("name")}
+        />
+        <FieldError id={errorId("name")}>{errors.name?.message}</FieldError>
       </div>
 
       <div className="flex flex-col gap-1.5">
-        {readOnly ? (
-          <>
-            <p className="text-sm font-medium text-foreground">{f.slug}</p>
-            <p className="font-mono text-sm text-muted-foreground">
-              {slugValue || "—"}
-            </p>
-          </>
-        ) : (
-          <>
-            <Label htmlFor="device-brand-slug">{f.slug}</Label>
-            <Input
-              id="device-brand-slug"
-              placeholder={f.slugPlaceholder}
-              {...a11y("slug", "device-brand-slug-hint")}
-              {...register("slug")}
-            />
-            <FieldError id={errorId("slug")}>{errors.slug?.message}</FieldError>
-            <p
-              id="device-brand-slug-hint"
-              className="text-xs text-muted-foreground"
-            >
-              {f.slugHint}
-            </p>
-          </>
-        )}
+        <Label htmlFor="device-brand-slug">{f.slug}</Label>
+        <Input
+          id="device-brand-slug"
+          placeholder={f.slugPlaceholder}
+          {...a11y("slug", "device-brand-slug-hint")}
+          {...register("slug")}
+        />
+        <FieldError id={errorId("slug")}>{errors.slug?.message}</FieldError>
+        <p
+          id="device-brand-slug-hint"
+          className="text-xs text-muted-foreground"
+        >
+          {f.slugHint}
+        </p>
       </div>
 
       <div className="flex items-start justify-between gap-4">
@@ -166,7 +187,6 @@ export function DeviceBrandForm({
               id="device-brand-active"
               checked={field.value ?? true}
               onCheckedChange={field.onChange}
-              disabled={readOnly}
               aria-describedby="device-brand-active-hint"
             />
           )}
@@ -177,13 +197,11 @@ export function DeviceBrandForm({
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button type="button" variant="outline" onClick={onCancel}>
-          {readOnly ? dict.common.close : dict.common.cancel}
+          {dict.common.cancel}
         </Button>
-        {readOnly ? null : (
-          <Button type="submit" disabled={isPending}>
-            {isPending ? dict.common.saving : submitLabel}
-          </Button>
-        )}
+        <Button type="submit" disabled={isPending}>
+          {isPending ? dict.common.saving : submitLabel}
+        </Button>
       </div>
     </form>
   );

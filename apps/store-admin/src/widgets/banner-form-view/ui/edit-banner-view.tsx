@@ -30,6 +30,7 @@ import { Badge, RowActionsMenu, useConfirmDialog } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { toKyivDateTimeLocal } from "@/shared/lib";
 import { BannerFormSkeleton } from "./banner-form-skeleton";
+import { BannerReadOnly } from "./banner-read-only";
 
 const d = dict.banners;
 
@@ -63,7 +64,7 @@ export function EditBannerView({ bannerId }: EditBannerViewProps) {
   const create = useAdminBannerControllerCreate();
   const remove = useAdminBannerControllerDelete();
   const { confirm, confirmDialog } = useConfirmDialog();
-  const { can } = useAuth();
+  const { can, arePermissionsLoading } = useAuth();
   const canWrite = can(PERM.bannersWrite);
 
   const isNotFound = error?.response?.status === 404;
@@ -135,7 +136,8 @@ export function EditBannerView({ bannerId }: EditBannerViewProps) {
     );
   };
 
-  if (isLoading) return <BannerFormSkeleton />;
+  // TASK-667: no read-only view flashing for a writer while the rights load.
+  if (isLoading || arePermissionsLoading) return <BannerFormSkeleton />;
 
   const busy = update.isPending || create.isPending || remove.isPending;
   const state = banner ? bannerDisplayState(banner, dataUpdatedAt) : null;
@@ -195,6 +197,8 @@ export function EditBannerView({ bannerId }: EditBannerViewProps) {
         <p role="alert" className="text-sm text-destructive">
           {d.loadOneError}
         </p>
+      ) : banner && !canWrite ? (
+        <BannerReadOnly banner={banner} />
       ) : banner ? (
         <BannerForm
           id={bannerId}
