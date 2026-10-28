@@ -7819,7 +7819,175 @@ export const dict = {
       carousels:
         "Ви можете переглядати, але не змінювати. Змінювати каруселі — право «Каруселі головної»; його дає власник у розділі «Співробітники».",
       faq: "Ви можете переглядати, але не змінювати. Змінювати запитання — право «FAQ»; його дає власник у розділі «Співробітники».",
+      // TASK-662 (ReadOnlyTemplate РО-4): /home is a list, not a form — the
+      // line names what is missing, so the absent controls do not look broken.
+      home: "Ви можете переглядати, але не змінювати: без «Додати блок», перетягування й перемикачів. Змінювати головну — право «Головна: блоки та їх порядок»; його дає власник у розділі «Співробітники».",
     },
+  },
+
+  // --- «Головна» — the homepage blocks screen (plan 186, TASK-662, ДН-4.1…4.10)
+  // Which blocks stand on the homepage and in what order. The blocks' content is
+  // edited in «Банери» and «Каруселі»; this screen only places, hides and orders.
+  homeScreen: {
+    metaTitle: "Головна",
+    heading: "Головна",
+    intro:
+      "Які блоки є на головній і в якому порядку. Вміст блоків редагується в «Банерах» і «Каруселях».",
+    howItWorks:
+      "Опублікована карусель сама на головній не зʼявляється — її треба поставити блоком: «Додати блок» тут або «Додати на головну» в «Каруселях». Зміни порядку й вмикання діють на сайті одразу.",
+    add: "Додати блок",
+    reorderHint:
+      "Перетягніть блок за значок ліворуч, щоб змінити його місце на сторінці.",
+    reorderHintMobile: "Порядок змінюють стрілки «Вище» й «Нижче».",
+    gridLabel: "Блоки головної",
+    colBlock: "Блок",
+    colSchedule: "Запланований показ",
+    colShown: "Показ на сайті",
+    loadError: "Не вдалося завантажити блоки головної.",
+    retry: "Спробувати ще раз",
+    empty: "На головній ще немає жодного блоку.",
+    // «· системний» after the name.
+    kind: {
+      system: "системний",
+      tabs: "вкладки",
+      carousel: "карусель",
+    },
+    // What fills a singleton block, and where its content is changed.
+    summary: {
+      hero: "Банери → місце «Головний слайдер»",
+      trust: "Доставка, оплата, гарантія — тексти змінює розробник",
+      categoryNav: "Кореневі категорії, що показуються на сайті",
+      promoBanner: "Банери → місце «Промо-банер»",
+      recentlyViewed:
+        "Свої товари для кожного покупця; новому відвідувачу блок не показується",
+      newsletter: "Форма підписки · хто підписався — у «Підписниках»",
+    },
+    tabsSummary: (count: number) =>
+      `${countLabel(count, ["вкладка", "вкладки", "вкладок"])} — каруселі`,
+    carouselNotPublished: "карусель не опублікована",
+    orphanSummary: "Карусель видалили в «Каруселях» — блок лишився порожнім",
+    // Yellow rows (ДН-4.8): why the site shows nothing, and what to do.
+    warnOrphaned:
+      "На сайті блок не показується. Замініть карусель або приберіть блок.",
+    warnCarouselNotPublished: (title: string) =>
+      `Карусель «${title}» не опублікована — на сайті блок не показується, доки її не опублікують.`,
+    warnCarouselEmpty:
+      "Карусель зараз без товарів — на сайті блок не показується, доки в ній не зʼявляться товари в наявності.",
+    warnTabsEmpty:
+      "Жодна вкладка зараз не показує товарів — на сайті замість них будуть автоматичні вкладки.",
+    warnScheduled: (date: string) => `До ${date} блок на сайті не видно.`,
+    scheduledFrom: (dateTime: string) => `з ${dateTime}`,
+    duplicateNote: (where: string) =>
+      `Ця карусель стоїть на головній ще раз (${where}) — покупець побачить ті самі товари двічі.`,
+    // The «Показується» switch and its state in words.
+    shown: "Показується",
+    hidden: "Сховано",
+    scheduled: "Заплановано",
+    toggleAria: (name: string) => `Показувати «${name}» на головній`,
+    toastShown: (name: string) =>
+      `Блок «${name}» знову показується на головній.`,
+    toastHidden: (name: string) => `Блок «${name}» сховано з головної.`,
+    toastStatusFailed: "Не вдалося змінити показ блоку",
+    // Below md the drag handle gives way to two buttons (ДН-4.10).
+    moveUp: (name: string) => `Вище: «${name}»`,
+    moveDown: (name: string) => `Нижче: «${name}»`,
+    rowActionsAria: (name: string) => `Дії з блоком «${name}»`,
+    replaceCarousel: "Замінити карусель…",
+    openCarousel: "Відкрити карусель",
+    editTabs: "Редагувати вкладки…",
+    schedule: "Запланувати показ…",
+    openBanners: "Відкрити «Банери»",
+    remove: "Прибрати з головної…",
+    // ДН-4.9 — the AlertDialog. A singleton block has no «Прибрати» at all.
+    removeTitle: (name: string) => `Прибрати блок «${name}» з головної?`,
+    removeCarousel: (title: string) =>
+      `Блок зникне з головної одразу. Сама карусель «${title}» лишиться в розділі «Каруселі» — її можна поставити назад будь-коли.`,
+    removeOther:
+      "Блок зникне з головної одразу. Його каруселі лишаться в розділі «Каруселі» — їх можна поставити назад будь-коли.",
+    removeHideInstead:
+      "Щоб сховати блок на час, скористайтеся перемикачем «Показується» — тоді він залишиться на своєму місці.",
+    removeConfirm: "Прибрати з головної",
+    toastRemoved: (name: string) => `Блок «${name}» прибрано з головної`,
+    toastRemoveFailed: "Не вдалося прибрати блок",
+    removeSystemRefused:
+      "Цей блок системний: його можна сховати чи переставити, але не прибрати.",
+    // The page schema beside the list (desktop only, decorative).
+    schemaTitle: "Так стоїть на сайті",
+    schemaHeader: "Шапка · меню · пошук",
+    schemaFooter: "Футер · контакти",
+    schemaHint:
+      "Номер = місце у списку. Закреслені блоки сховано; пунктир — заплановано.",
+  },
+
+  // --- «Додати блок» / edit a block / schedule it (plan 186, TASK-662, ДН-4.5–4.6)
+  homeBlockDialog: {
+    addTitle: "Додати блок на головну",
+    addDescription:
+      "Блок показує карусель або кілька каруселей вкладками. Слайдер, банер, категорії й підписка вже є на головній — їх можна лише переставити чи сховати.",
+    replaceTitle: (name: string) => `Замінити карусель у блоці «${name}»`,
+    editTabsTitle: (name: string) => `Вкладки блоку «${name}»`,
+    editDescription: "Якщо блок показується, зміни діють на сайті одразу.",
+    typeLabel: "Тип блоку",
+    typeCarousel: "Карусель",
+    typeCarouselHint: "Один рядок товарів із заголовком",
+    typeTabs: "Вкладки",
+    typeTabsHint: "Кілька каруселей під одним заголовком, покупець перемикає",
+    carouselLabel: "Яку карусель показати",
+    carouselHint:
+      "Карусель, що вже стоїть на головній, можна поставити ще раз — але покупець побачить ті самі товари двічі.",
+    notOnHome: "не на головній",
+    duplicateWarning: (title: string, where: string) =>
+      `«${title}» уже стоїть на головній (${where}) — покупець побачить ті самі товари двічі.`,
+    carouselsLoading: "Завантажуємо каруселі…",
+    carouselsLoadError: "Не вдалося завантажити каруселі. Спробуйте ще раз.",
+    carouselsForbidden:
+      "Щоб обрати карусель, потрібне ще й право переглядати каруселі; його дає власник у розділі «Співробітники».",
+    noCarousels:
+      "Каруселей ще немає — спершу створіть карусель у розділі «Каруселі».",
+    titleLabel: "Заголовок блоку",
+    titleHint: "Над вкладками на сайті.",
+    tabsLabel: "Вкладки — у тому порядку, як на сайті",
+    tabsHint:
+      "Назва вкладки — назва каруселі. Щоб змінити, перейменуйте карусель.",
+    tabsEmpty: "Вкладок ще немає — додайте першу.",
+    tabUp: (name: string) => `Вкладку «${name}» вище`,
+    tabDown: (name: string) => `Вкладку «${name}» нижче`,
+    tabRemove: (name: string) => `Прибрати вкладку «${name}»`,
+    newTabLabel: "Карусель для нової вкладки",
+    newTabPlaceholder: "Оберіть карусель…",
+    addTab: "Додати вкладку",
+    alsoOnHome: (where: string) => `ще й ${where}`,
+    positionLabel: "Куди поставити",
+    showLabel: "Показ",
+    showNow: "Одразу",
+    showDraft: "Чернетка",
+    showScheduled: "Запланувати",
+    draftHint:
+      "Блок стане на своє місце схованим — увімкніть «Показується», коли буде готово.",
+    scheduledAtLabel: "Показати з",
+    scheduledAtHint: "До того блок на сайті не видно.",
+    cancel: "Скасувати",
+    submitAdd: "Додати блок",
+    submitSchedule: "Запланувати блок",
+    submitSave: "Зберегти",
+    errors: {
+      carouselRequired: "Оберіть карусель",
+      titleRequired: "Вкажіть заголовок блоку",
+      tabsRequired: "Додайте хоча б одну вкладку",
+      tabsTooMany: (max: number) => `Не більше ${max} вкладок в одному блоці`,
+      scheduledAtRequired: "Вкажіть дату й час показу",
+      scheduledAtPast: "Оберіть момент у майбутньому",
+    },
+    toastAdded: (name: string) => `Блок «${name}» додано на головну`,
+    toastSaved: (name: string) => `Блок «${name}» збережено`,
+    toastFailed: "Не вдалося зберегти блок",
+    // «Запланувати показ…» from the row menu.
+    scheduleTitle: (name: string) => `Запланувати показ «${name}»`,
+    scheduleDescription:
+      "До цього моменту блок на сайті не показується, потім зʼявиться сам на своєму місці.",
+    scheduleSubmit: "Запланувати",
+    toastScheduled: (name: string, when: string) =>
+      `Блок «${name}» зʼявиться на головній ${when}`,
   },
 } as const;
 

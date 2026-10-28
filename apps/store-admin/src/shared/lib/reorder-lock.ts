@@ -32,7 +32,9 @@ export type ReorderResource =
   | "pages"
   | "carousels"
   // TASK-645 — the pickup points on /settings/delivery.
-  | "pickup-points";
+  | "pickup-points"
+  // TASK-662 (plan 186) — the homepage blocks on /home.
+  | "home-blocks";
 
 const inFlight = new Map<ReorderResource, number>();
 

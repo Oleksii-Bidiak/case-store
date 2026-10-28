@@ -136,6 +136,12 @@ export {
   CreateCarouselView,
   EditCarouselView,
 } from "./carousel-form-view";
+// Plan 186 (TASK-662) — /home: the homepage blocks, their order and visibility.
+export {
+  HomeBlockList,
+  HomeBlockListSkeleton,
+  type HomeBlockListProps,
+} from "./home-block-list";
 // Operator-created (phone) orders (TASK-341)
 export { OrderCreateView } from "./order-create-view";
 // Returns / RMA (TASK-340)
