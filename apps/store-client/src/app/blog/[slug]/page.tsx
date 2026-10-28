@@ -10,6 +10,8 @@ import {
   fetchPublishedPost,
   fetchPublishedPosts,
 } from "@/shared/api/blog-server";
+import { readPreviewToken } from "@/shared/api/preview-server";
+import { PREVIEW_ROBOTS } from "@/shared/api/preview-token";
 import { JsonLd } from "@/shared/ui";
 import {
   buildBlogPostingSchema,
@@ -38,12 +40,18 @@ export async function generateMetadata({
   // `og:site_name` was the only one in the storefront that could not follow an
   // admin rename. `fetchSeoSettings()` is the tagged, per-request-deduped fetch
   // and returns null on failure, so adding it cannot break the article.
+  //
+  // A signed preview (TASK-669) forwards its token — store-api decides whether
+  // it opens this post's draft — and is never indexed. Outside one the token is
+  // `null`: the tagged ISR read, and no `robots` key (the root's is inherited).
+  const previewToken = await readPreviewToken();
   const [post, seo] = await Promise.all([
-    fetchPublishedPost(slug),
+    fetchPublishedPost(slug, previewToken),
     fetchSeoSettings(),
   ]);
+  const previewRobots = previewToken ? { robots: PREVIEW_ROBOTS } : {};
   if (!post) {
-    return { title: dict.meta.blogTitle };
+    return { title: dict.meta.blogTitle, ...previewRobots };
   }
 
   const canonical = `${SITE_URL}/blog/${post.slug}`;
@@ -96,6 +104,7 @@ export async function generateMetadata({
         siteName,
       }),
     },
+    ...previewRobots,
   };
 }
 
@@ -111,8 +120,9 @@ export default async function BlogArticlePage({
   // `seo` feeds the BlogPosting `publisher.name` below — the store name, which is
   // admin-managed since TASK-433. Deduped with generateMetadata's identical
   // tagged fetch within the request.
+  // A signed preview forwards its token (TASK-669) — see generateMetadata.
   const [entity, seo] = await Promise.all([
-    fetchPublishedPost(slug),
+    fetchPublishedPost(slug, await readPreviewToken()),
     fetchSeoSettings(),
   ]);
   if (!entity) {

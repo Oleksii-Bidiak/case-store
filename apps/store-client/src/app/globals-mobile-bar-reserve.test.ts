@@ -66,8 +66,16 @@ describe("globals.css — toasts clear a fixed bottom bar (TASK-1771)", () => {
     expect(flat).toContain(
       ":root { @variant max-md { --toast-offset-bottom: calc(--spacing(6) + var(--mobile-bar-inset, 0px)); --toast-mobile-offset-bottom: calc(--spacing(4) + var(--mobile-bar-inset, 0px)); } }",
     );
-    // …and nowhere else: one read per offset, both inside that block.
-    expect(flat.match(/var\(--mobile-bar-inset/g)).toHaveLength(2);
+    // …and nowhere else: one read per offset, both inside that block — plus
+    // the one below-md read of the preview bar's utility (TASK-669, pinned in
+    // the next test).
+    expect(flat.match(/var\(--mobile-bar-inset/g)).toHaveLength(3);
+  });
+
+  it("lets the preview bar ride above the fixed bar, below md only (TASK-669)", () => {
+    expect(flat).toContain(
+      "@utility bottom-above-mobile-bar { bottom: 0; @variant max-md { bottom: var(--mobile-bar-inset, 0px); } }",
+    );
   });
 
   it("lives inside @layer base, after the body reserve", () => {

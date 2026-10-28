@@ -44,8 +44,23 @@ function truncate(value: string, max: number): string {
  * price/stock/sku read directly from the position row; switching an attribute
  * navigates to a sibling position's slug (TASK-142).
  */
-export function ProductDetailView({ slug }: { slug: string }) {
-  const { data, isLoading, isError } = useProductControllerFindBySlug(slug);
+export function ProductDetailView({
+  slug,
+  preview = false,
+}: {
+  slug: string;
+  /**
+   * The page is a signed preview (TASK-669). The product the server seeded may
+   * be a draft, and the browser's own read carries no preview token (it lives
+   * in an httpOnly cookie), so any background refetch would swap the draft for
+   * a 404. In preview the seed is therefore never considered stale.
+   */
+  preview?: boolean;
+}) {
+  const { data, isLoading, isError } = useProductControllerFindBySlug(
+    slug,
+    preview ? { query: { staleTime: Infinity } } : undefined,
+  );
 
   const sortedImages = useMemo(
     () => [...(data?.images ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),

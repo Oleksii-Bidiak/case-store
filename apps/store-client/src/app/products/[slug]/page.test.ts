@@ -32,6 +32,8 @@ jest.mock("@/shared/api/faq-server", () => ({
 jest.mock("@/shared/api/seo-settings-server", () => ({
   fetchSeoSettings: jest.fn().mockResolvedValue(null),
 }));
+// The request APIs the signed preview reads (TASK-669) — see mockPreviewRequest.
+jest.mock("next/headers", () => ({ draftMode: jest.fn(), cookies: jest.fn() }));
 // Next's permanentRedirect() throws a special signal; mock it with a throwing
 // jest.fn() so the tests can assert the redirect fired.
 jest.mock("next/navigation", () => ({
@@ -78,6 +80,10 @@ import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { fetchFaqItems } from "@/shared/api/faq-server";
 import { findDehydratedQueryKeys } from "@/shared/test/element-tree";
 import { buildProductRailParams } from "@/widgets/product-detail/model/rail-params";
+import { PREVIEW_ROBOTS } from "@/shared/api/preview-token";
+import { mockPreviewRequest } from "@/shared/test/preview-request";
+
+beforeEach(() => mockPreviewRequest(null));
 
 const findBySlug = productControllerFindBySlug as jest.MockedFunction<
   typeof productControllerFindBySlug
@@ -299,5 +305,74 @@ describe("products/[slug] — the first HTML carries the product (TASK-563)", ()
 
     expect(findDehydratedQueryKeys(tree)).toEqual([]);
     expect(findAll).not.toHaveBeenCalled();
+  });
+});
+
+/** Every element of a server tree whose props carry `slug` (the PDP view). */
+function viewProps(node: unknown): Record<string, unknown>[] {
+  if (!node || typeof node !== "object") return [];
+  if (Array.isArray(node)) return node.flatMap(viewProps);
+  const props = (node as { props?: Record<string, unknown> }).props;
+  if (!props) return [];
+  const own = typeof props.slug === "string" ? [props] : [];
+  return [...own, ...viewProps(props.children)];
+}
+
+describe("products/[slug] — the signed preview (TASK-669)", () => {
+  const detail = {
+    data: {
+      id: "product-1",
+      name: "Чернетка",
+      slug: "draft-case",
+      description: null,
+      price: "29.99",
+      metaTitle: null,
+      metaDescription: null,
+      compatibleDeviceModels: [],
+    },
+    images: [],
+    category: { id: "cat-1", name: "Чохли", slug: "chohly" },
+  };
+  const params = { params: Promise.resolve({ slug: "draft-case" }) };
+
+  it("without draft mode reads the product as always: no token header, no robots, a refetching view", async () => {
+    findBySlug.mockResolvedValue(detail as never);
+
+    const meta = await generateMetadata(params);
+    const tree = await ProductDetailPage(params);
+
+    expect(findBySlug).toHaveBeenCalledWith("draft-case", {
+      timeout: expect.any(Number),
+    });
+    expect(meta).not.toHaveProperty("robots");
+    expect(viewProps(tree)).toEqual([
+      expect.objectContaining({ slug: "draft-case", preview: false }),
+    ]);
+  });
+
+  it("in a preview forwards the token, is noindex and keeps the seeded draft on the client", async () => {
+    mockPreviewRequest("product-token");
+    findBySlug.mockResolvedValue(detail as never);
+
+    const meta = await generateMetadata(params);
+    const tree = await ProductDetailPage(params);
+
+    expect(findBySlug).toHaveBeenCalledWith("draft-case", {
+      timeout: expect.any(Number),
+      headers: { "x-preview-token": "product-token" },
+    });
+    expect(meta.robots).toEqual(PREVIEW_ROBOTS);
+    expect(viewProps(tree)).toEqual([
+      expect.objectContaining({ slug: "draft-case", preview: true }),
+    ]);
+  });
+
+  it("is noindex in a preview even when the product did not load", async () => {
+    mockPreviewRequest("product-token");
+    findBySlug.mockRejectedValue(new Error("API down"));
+
+    const meta = await generateMetadata(params);
+
+    expect(meta.robots).toEqual(PREVIEW_ROBOTS);
   });
 });

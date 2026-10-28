@@ -5,6 +5,7 @@ import type {
   PageResponseEnvelope,
 } from "@/shared/api/generated/models";
 import { serverFetch } from "@/shared/api/server-fetch";
+import { publicReadInit } from "@/shared/api/preview-token";
 
 /**
  * Server-only, ISR-tagged fetchers for published static pages (TASK-187).
@@ -45,8 +46,9 @@ const PAGE_SIZE = 100;
 async function readPage(
   url: string,
   tags: string[],
+  previewToken?: string | null,
 ): Promise<PageEntity | null> {
-  const res = await serverFetch(url, { next: { tags } });
+  const res = await serverFetch(url, publicReadInit(tags, previewToken));
   if (res.status === 404) return null;
   if (!res.ok) {
     throw new Error(`Page read failed: ${res.status} ${url}`);
@@ -68,14 +70,20 @@ async function readPage(
  * page and `/info/<slug>` can never render a legal document. Making the argument
  * mandatory is the point — a caller that forgot it would silently re-open that
  * hole.
+ *
+ * `previewToken` (TASK-669) is a signed preview of THIS page: forwarded to the
+ * API, which then serves the draft; the read is `no-store` with no ISR tag.
+ * Without it the read is the tagged public one, unchanged.
  */
 export async function fetchPublishedPage(
   slug: string,
   kind: PageEntityKind,
+  previewToken?: string | null,
 ): Promise<PageEntity | null> {
   return readPage(
     `${API_BASE_URL}/api/pages/${encodeURIComponent(slug)}?kind=${kind}`,
     [PAGES_COLLECTION_TAG, pageDetailTag(slug)],
+    previewToken,
   );
 }
 

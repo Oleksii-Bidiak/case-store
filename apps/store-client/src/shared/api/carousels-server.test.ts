@@ -82,19 +82,29 @@ describe("fetchHomeBlocks (TASK-660 / TASK-663)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("lets a caller override the request (the seam the signed preview uses)", async () => {
+  it("under a preview token sends the token, no-store and NO ISR tag (TASK-669)", async () => {
     const fetchMock = mockBlocks([]);
 
-    await fetchHomeBlocks({
-      cache: "no-store",
-      next: undefined,
-      headers: { "x-test": "1" },
-    });
+    await fetchHomeBlocks("signed-token");
 
     const options = fetchMock.mock.calls[0][1];
     expect(options.cache).toBe("no-store");
-    expect(options.next).toBeUndefined();
-    expect(options.headers).toEqual({ "x-test": "1" });
+    expect(options).not.toHaveProperty("next");
+    expect(options.headers).toEqual({ "x-preview-token": "signed-token" });
+  });
+
+  it("without a token sends no preview header and no cache override", async () => {
+    const fetchMock = mockBlocks([]);
+
+    await fetchHomeBlocks(null);
+
+    const options = fetchMock.mock.calls[0][1];
+    expect(options).not.toHaveProperty("cache");
+    expect(options).not.toHaveProperty("headers");
+    expect(options.next.tags).toEqual([
+      HOME_BLOCKS_TAG,
+      CAROUSELS_COLLECTION_TAG,
+    ]);
   });
 
   it("returns [] when the body carries no data", async () => {

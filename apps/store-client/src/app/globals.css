@@ -426,6 +426,19 @@
   }
 }
 
+/* A fixed bar that must sit ON TOP of a page's own fixed bottom bar instead of
+   covering it (the signed-preview bar, TASK-669). `--mobile-bar-inset` is the
+   measured height a mounted MobilePayBar / MobileAtcBar publishes on <html>
+   (`useMobileBarInset`); with none mounted the offset is 0. Those bars exist
+   below `md` only, so — like the toast offsets — the inset is read below `md`
+   only; from `md` up the bar sits on the bottom edge. */
+@utility bottom-above-mobile-bar {
+  bottom: 0;
+  @variant max-md {
+    bottom: var(--mobile-bar-inset, 0px);
+  }
+}
+
 /* ─────────────────────────────────────────────
    Base Styles
    These are element defaults, so they live in `@layer base` (after Tailwind's

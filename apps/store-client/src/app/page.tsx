@@ -17,6 +17,8 @@ import {
 import { SITE_URL, dict } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import { fetchHomeBlocks } from "@/shared/api/carousels-server";
+import { readPreviewToken } from "@/shared/api/preview-server";
+import { PREVIEW_ROBOTS } from "@/shared/api/preview-token";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import {
@@ -55,7 +57,10 @@ export const revalidate = 3600;
  * the component's own call below within the request.
  */
 export async function generateMetadata(): Promise<Metadata> {
-  const seo = await fetchSeoSettings();
+  const [seo, previewToken] = await Promise.all([
+    fetchSeoSettings(),
+    readPreviewToken(),
+  ]);
   const resolved = resolveSeo({ settings: seo });
   const siteName = resolveSiteName(seo);
 
@@ -92,14 +97,24 @@ export async function generateMetadata(): Promise<Metadata> {
         siteName,
       }),
     },
+    // A signed preview (TASK-669) renders drafts: never indexed. Absent on the
+    // public render, which inherits the root layout's robots as before.
+    ...(previewToken ? { robots: PREVIEW_ROBOTS } : {}),
   };
 }
 
 export default async function HomePage() {
+  // The signed homepage preview (TASK-669): `null` unless this request is in
+  // Next draft mode with a preview cookie — always `null` while the page is
+  // prerendered or revalidated, so the ISR copy never sees a draft. With a
+  // token, the two reads below forward it, skip the cache and carry no ISR tag;
+  // store-api decides what the token opens (all draft banners and blocks).
+  const previewToken = await readPreviewToken();
+
   // Admin-managed homepage banners (ISR, tag `banners`). Each region falls back
   // to its hardcoded content when its placement group is empty, so the homepage
   // always renders even if the API is unreachable.
-  const banners = await fetchPublishedBanners();
+  const banners = await fetchPublishedBanners(previewToken);
 
   // The page itself (TASK-663): which sections, in which order, with which tab
   // sets — admin-managed homepage blocks (ISR, tags `home-blocks` + `carousels`;
@@ -108,7 +123,7 @@ export default async function HomePage() {
   // built-in default order, so the homepage always renders. This list is the
   // ONLY input the sections below are drawn from — the signed preview
   // (TASK-669) swaps where it comes from, not how it is drawn.
-  const blocks = homeBlocksOrDefault(await fetchHomeBlocks());
+  const blocks = homeBlocksOrDefault(await fetchHomeBlocks(previewToken));
 
   // Admin-managed social links feed the Organization `sameAs` (brand-entity
   // signal for AI/search). Deduped with the footer's fetch of the same tagged

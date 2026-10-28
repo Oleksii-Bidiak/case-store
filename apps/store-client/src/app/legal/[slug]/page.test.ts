@@ -34,7 +34,11 @@ jest.mock("next/navigation", () => ({
 jest.mock("@/shared/lib/slug-redirect", () => ({
   resolveSlugRedirectTarget: jest.fn(),
 }));
+// The request APIs the signed preview reads (TASK-669) — see mockPreviewRequest.
+jest.mock("next/headers", () => ({ draftMode: jest.fn(), cookies: jest.fn() }));
 
+import { PREVIEW_ROBOTS } from "@/shared/api/preview-token";
+import { mockPreviewRequest } from "@/shared/test/preview-request";
 import LegalDocPage, { generateMetadata } from "./page";
 import { notFound, permanentRedirect } from "next/navigation";
 import {
@@ -103,6 +107,55 @@ afterEach(() => jest.clearAllMocks());
 beforeEach(() => {
   fetchAnyKind.mockResolvedValue(null);
   resolveRedirect.mockResolvedValue(null);
+  mockPreviewRequest(null);
+});
+
+describe("legal/[slug] — the signed preview (TASK-669)", () => {
+  const params = { params: Promise.resolve({ slug: "nova-oferta" }) };
+
+  it("without draft mode reads the page with no token and stays indexable", async () => {
+    fetchPage.mockResolvedValue(makePage({ slug: "nova-oferta" }));
+    fetchSeo.mockResolvedValue(settings);
+
+    const meta = await generateMetadata(params);
+    await LegalDocPage(params);
+
+    // No token → `fetchPublishedPage` builds the tagged ISR read
+    // (`pages-server.test.ts` pins what that request is).
+    expect(fetchPage).toHaveBeenCalledWith("nova-oferta", "LEGAL", null);
+    expect(fetchPage.mock.calls.every(([, , token]) => token === null)).toBe(
+      true,
+    );
+    expect(meta).not.toHaveProperty("robots");
+  });
+
+  it("in a preview forwards the token to the read and is noindex", async () => {
+    mockPreviewRequest("page-token");
+    fetchPage.mockResolvedValue(
+      makePage({ slug: "nova-oferta", status: "DRAFT" }),
+    );
+    fetchSeo.mockResolvedValue(settings);
+
+    const meta = await generateMetadata(params);
+    await LegalDocPage(params);
+
+    expect(fetchPage).toHaveBeenCalledWith(
+      "nova-oferta",
+      "LEGAL",
+      "page-token",
+    );
+    expect(meta.robots).toEqual(PREVIEW_ROBOTS);
+  });
+
+  it("is noindex in a preview even when the page is not there", async () => {
+    mockPreviewRequest("page-token");
+    fetchPage.mockResolvedValue(null);
+    fetchSeo.mockResolvedValue(settings);
+
+    const meta = await generateMetadata(params);
+
+    expect(meta.robots).toEqual(PREVIEW_ROBOTS);
+  });
 });
 
 describe("legal/[slug] generateMetadata (TASK-268 review)", () => {
@@ -238,7 +291,7 @@ describe("legal/[slug] slug-redirect (TASK-285)", () => {
 
     await runPage("dostavka-ta-oplata");
 
-    expect(fetchPage).toHaveBeenCalledWith("dostavka-ta-oplata", "LEGAL");
+    expect(fetchPage).toHaveBeenCalledWith("dostavka-ta-oplata", "LEGAL", null);
   });
 
   // Changing a page's kind moves its URL without touching its slug. A move made
@@ -315,7 +368,7 @@ describe("legal/[slug] slug-redirect (TASK-285)", () => {
 
     await expect(runPage("about")).rejects.toThrow("NEXT_NOT_FOUND");
 
-    expect(fetchPage).toHaveBeenCalledWith("about", "LEGAL");
+    expect(fetchPage).toHaveBeenCalledWith("about", "LEGAL", null);
   });
 
   it("never consults the redirect ledger when the page resolves", async () => {

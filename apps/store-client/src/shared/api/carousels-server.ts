@@ -2,7 +2,8 @@ import type {
   PublicHomeBlockEntity,
   PublicHomeBlockListResponse,
 } from "@/shared/api/generated/models";
-import { serverFetch, type ServerFetchInit } from "@/shared/api/server-fetch";
+import { serverFetch } from "@/shared/api/server-fetch";
+import { publicReadInit } from "@/shared/api/preview-token";
 
 /**
  * Server-only, ISR-tagged fetcher for the homepage blocks (TASK-660/661/663).
@@ -31,19 +32,19 @@ export const CAROUSELS_COLLECTION_TAG = "carousels";
  * of every CAROUSEL / TABS block in the same response). Never throws — returns
  * `[]` on any error.
  *
- * `init` is spread over the default request. It exists as the seam for the
- * signed homepage preview (TASK-669), which must send its token header and
- * replace the ISR tags with `no-store`; called without it, this stays the
- * tagged, cached public read.
+ * `previewToken` is the signed homepage preview (TASK-669): the request then
+ * carries the token, is `no-store` and has no ISR tag, and the API answers with
+ * the draft blocks too. Called without it, this stays the tagged, cached public
+ * read.
  */
 export async function fetchHomeBlocks(
-  init: ServerFetchInit = {},
+  previewToken?: string | null,
 ): Promise<PublicHomeBlockEntity[]> {
   try {
-    const res = await serverFetch(`${API_BASE_URL}/api/home-blocks`, {
-      next: { tags: [HOME_BLOCKS_TAG, CAROUSELS_COLLECTION_TAG] },
-      ...init,
-    });
+    const res = await serverFetch(
+      `${API_BASE_URL}/api/home-blocks`,
+      publicReadInit([HOME_BLOCKS_TAG, CAROUSELS_COLLECTION_TAG], previewToken),
+    );
     if (!res.ok) return [];
 
     const body = (await res.json()) as PublicHomeBlockListResponse;

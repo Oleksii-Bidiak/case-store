@@ -35,7 +35,11 @@ jest.mock("@/shared/lib/slug-redirect", () => ({
 jest.mock("@/shared/api/seo-settings-server", () => ({
   fetchSeoSettings: jest.fn().mockResolvedValue(null),
 }));
+// The request APIs the signed preview reads (TASK-669) — see mockPreviewRequest.
+jest.mock("next/headers", () => ({ draftMode: jest.fn(), cookies: jest.fn() }));
 
+import { PREVIEW_ROBOTS } from "@/shared/api/preview-token";
+import { mockPreviewRequest } from "@/shared/test/preview-request";
 import BlogArticlePage, { generateMetadata } from "./page";
 import { notFound, permanentRedirect } from "next/navigation";
 import {
@@ -87,7 +91,43 @@ function makePost(): BlogPostEntity {
 afterEach(() => jest.clearAllMocks());
 // Re-arm the default (no store name configured) after every clear, so a test that
 // sets one cannot leak it into the next.
-beforeEach(() => fetchSeo.mockResolvedValue(null));
+beforeEach(() => {
+  fetchSeo.mockResolvedValue(null);
+  mockPreviewRequest(null);
+});
+
+describe("blog/[slug] — the signed preview (TASK-669)", () => {
+  const params = { params: Promise.resolve({ slug: "iphone-16-oglyad" }) };
+
+  it("without draft mode reads the post with no token and stays indexable", async () => {
+    fetchPost.mockResolvedValue(makePost());
+
+    const meta = await generateMetadata(params);
+    await BlogArticlePage(params);
+
+    // No token → `fetchPublishedPost` builds the tagged ISR read
+    // (`blog-server.test.ts` pins what that request is).
+    expect(fetchPost).toHaveBeenCalledTimes(2);
+    expect(fetchPost.mock.calls.every(([, token]) => token === null)).toBe(
+      true,
+    );
+    expect(meta).not.toHaveProperty("robots");
+  });
+
+  it("in a preview forwards the token to both reads and is noindex", async () => {
+    mockPreviewRequest("post-token");
+    fetchPost.mockResolvedValue({ ...makePost(), status: "DRAFT" });
+
+    const meta = await generateMetadata(params);
+    await BlogArticlePage(params);
+
+    expect(fetchPost.mock.calls).toEqual([
+      ["iphone-16-oglyad", "post-token"],
+      ["iphone-16-oglyad", "post-token"],
+    ]);
+    expect(meta.robots).toEqual(PREVIEW_ROBOTS);
+  });
+});
 
 describe("blog/[slug] slug-redirect (TASK-285)", () => {
   const runPage = (slug: string) =>

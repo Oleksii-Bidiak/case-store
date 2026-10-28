@@ -27,6 +27,8 @@ jest.mock("@/shared/api/banners-server", () => ({
     PROMO_BANNER: [],
   }),
 }));
+// The request APIs the signed preview reads (TASK-669) — see mockPreviewRequest.
+jest.mock("next/headers", () => ({ draftMode: jest.fn(), cookies: jest.fn() }));
 jest.mock("@/shared/api/site-contact-server", () => ({
   fetchSiteContactSettings: jest.fn().mockResolvedValue(null),
 }));
@@ -60,7 +62,12 @@ import { ACTIVE_ROOT_CATEGORIES_PARAMS } from "@/entities/category";
 import { SITE_URL } from "@/shared/config";
 import { findDehydratedQueryKeys } from "@/shared/test/element-tree";
 import { firstQueryTabParams } from "@/widgets/product-grid/model/popular-tabs";
+import { fetchPublishedBanners } from "@/shared/api/banners-server";
+import { PREVIEW_ROBOTS } from "@/shared/api/preview-token";
+import { mockPreviewRequest } from "@/shared/test/preview-request";
 import HomePage, { generateMetadata, revalidate } from "./page";
+
+beforeEach(() => mockPreviewRequest(null));
 
 /** Today's hard-coded order — what the page falls back to (TASK-663). */
 const DEFAULT_SECTIONS = [
@@ -320,5 +327,49 @@ describe("home page — the first HTML carries links (TASK-563)", () => {
 
   it("is prerendered with an hourly floor, so a copy baked without the API heals", () => {
     expect(revalidate).toBe(3600);
+  });
+});
+
+describe("home page — the signed preview (TASK-669)", () => {
+  /** The `init` of the `GET /api/home-blocks` call. */
+  const blocksInit = () =>
+    (global.fetch as jest.Mock).mock.calls.find(([url]) =>
+      String(url).endsWith("/api/home-blocks"),
+    )![1];
+
+  it("without draft mode stays the cached, indexable page: ISR tags, no token, no robots", async () => {
+    mockBlocks([block("HERO")]);
+
+    await HomePage();
+    const meta = await generateMetadata();
+
+    expect(blocksInit().next.tags).toEqual(["home-blocks", "carousels"]);
+    expect(blocksInit()).not.toHaveProperty("headers");
+    expect(blocksInit()).not.toHaveProperty("cache");
+    expect(fetchPublishedBanners).toHaveBeenCalledWith(null);
+    expect(meta).not.toHaveProperty("robots");
+  });
+
+  it("in a preview forwards the token, skips the cache, drops the ISR tags and is noindex", async () => {
+    mockPreviewRequest("home-token");
+    mockBlocks([block("HERO")]);
+
+    await HomePage();
+    const meta = await generateMetadata();
+
+    expect(blocksInit()).not.toHaveProperty("next");
+    expect(blocksInit().cache).toBe("no-store");
+    expect(blocksInit().headers).toEqual({ "x-preview-token": "home-token" });
+    expect(fetchPublishedBanners).toHaveBeenCalledWith("home-token");
+    expect(meta.robots).toEqual(PREVIEW_ROBOTS);
+    // Everything else about the page's metadata is unchanged.
+    expect(meta.alternates?.canonical).toBe(SITE_URL);
+  });
+
+  it("renders the draft blocks the API sent for the token", async () => {
+    mockPreviewRequest("home-token");
+    mockBlocks([block("NEWSLETTER"), block("HERO")]);
+
+    expect(names(await HomePage())).toEqual(["Newsletter", "HeroBanner"]);
   });
 });

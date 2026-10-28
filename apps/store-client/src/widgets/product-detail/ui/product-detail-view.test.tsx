@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw";
+import { QueryClient } from "@tanstack/react-query";
 import {
   renderWithProviders,
   screen,
@@ -501,5 +502,64 @@ describe("ProductDetailSkeleton — buy box (TASK-832)", () => {
     expect(skeletonRail.firstElementChild?.className).toBe(
       viewRail?.firstElementChild?.className,
     );
+  });
+});
+
+// TASK-669 — under a signed preview the server seeds a product the browser
+// cannot re-read (its own request carries no token: the token lives in an
+// httpOnly cookie), so a background refetch would trade the draft for a 404.
+describe("ProductDetailView — signed preview keeps the seeded draft (TASK-669)", () => {
+  let detailReads = 0;
+
+  beforeEach(() => {
+    detailReads = 0;
+    server.use(
+      http.get("*/api/products/:slug", () => {
+        detailReads += 1;
+        return HttpResponse.json({ statusCode: 404 }, { status: 404 });
+      }),
+      http.get("*/api/products", () =>
+        HttpResponse.json({
+          data: [],
+          meta: { total: 0, page: 1, limit: 5, totalPages: 0 },
+        }),
+      ),
+      http.get("*/api/cart", () => HttpResponse.json(makeCart([]))),
+    );
+  });
+
+  function seededClient(): QueryClient {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    // An old seed: stale under every default, as a long-open preview tab is.
+    client.setQueryData(["/api/products/glass-blue-single"], detailEnvelope(), {
+      updatedAt: 1,
+    });
+    return client;
+  }
+
+  it("does not refetch the seed in preview, so the draft stays on screen", async () => {
+    renderWithProviders(
+      <ProductDetailView slug="glass-blue-single" preview />,
+      { queryClient: seededClient() },
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Tempered Glass — Blue Single",
+      }),
+    ).toBeInTheDocument();
+    // Give a mount refetch every chance to happen.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(detailReads).toBe(0);
+  });
+
+  it("outside a preview still revalidates a stale seed, as before", async () => {
+    renderWithProviders(<ProductDetailView slug="glass-blue-single" />, {
+      queryClient: seededClient(),
+    });
+
+    await waitFor(() => expect(detailReads).toBe(1));
   });
 });

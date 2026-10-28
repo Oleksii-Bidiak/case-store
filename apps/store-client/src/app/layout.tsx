@@ -4,6 +4,7 @@ import Script from "next/script";
 import { Providers } from "./providers";
 import { Header } from "@/widgets/header";
 import { Footer } from "@/widgets";
+import { PreviewBar } from "@/widgets/preview-bar";
 import { ThemeColorSync } from "@/features/theme";
 import {
   PRIMARY_COLOR,
@@ -17,6 +18,7 @@ import {
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
+import { readPreviewSession } from "@/shared/api/preview-server";
 import {
   buildOgImages,
   resolveSeo,
@@ -171,10 +173,14 @@ export default async function RootLayout({
   // the same `site-contact` tag, so an admin edit reaches header and footer
   // together. The Header is a Client Component, hence the plain serializable
   // props.
-  const [banners, seo, contact] = await Promise.all([
+  const [banners, seo, contact, preview] = await Promise.all([
     fetchPublishedBanners(),
     fetchSeoSettings(),
     fetchSiteContactSettings(),
+    // The signed preview (TASK-669): `null` outside Next draft mode — always so
+    // while a page is prerendered or revalidated, which is why reading it here
+    // keeps every route static.
+    readPreviewSession(),
   ]);
   const announcement = banners.ANNOUNCEMENT_BAR[0];
   // TASK-546: the visible wordmark follows the same admin-managed name as the
@@ -212,6 +218,7 @@ export default async function RootLayout({
             {children}
           </main>
           <Footer />
+          {preview && <PreviewBar expiresAt={preview.expiresAt} />}
         </Providers>
         {/* Umami self-hosted analytics (TASK-261). Rendered only when both env
             keys are set — empty in local dev, so no tracker loads there. The

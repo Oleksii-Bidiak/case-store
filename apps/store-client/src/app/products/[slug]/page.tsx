@@ -28,6 +28,8 @@ import {
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { SITE_URL, CURRENCY, dict, PAGE_CONTAINER } from "@/shared/config";
+import { readPreviewToken } from "@/shared/api/preview-server";
+import { PREVIEW_ROBOTS } from "@/shared/api/preview-token";
 import { fetchProductBySlug, resolveProductRoute } from "./product-route";
 
 interface ProductDetailPageProps {
@@ -38,6 +40,11 @@ export async function generateMetadata({
   params,
 }: ProductDetailPageProps): Promise<Metadata> {
   const { slug } = await params;
+  // A signed preview (TASK-669) may render a draft: never indexed, on either
+  // branch. The public render adds no `robots` key at all (TASK-550 below).
+  const previewRobots = (await readPreviewToken())
+    ? { robots: PREVIEW_ROBOTS }
+    : {};
 
   try {
     const [{ data: product, images }, seo] = await Promise.all([
@@ -92,9 +99,10 @@ export async function generateMetadata({
           siteName,
         }),
       },
+      ...previewRobots,
     };
   } catch {
-    return { title: dict.meta.productFallbackTitle };
+    return { title: dict.meta.productFallbackTitle, ...previewRobots };
   }
 }
 
@@ -126,6 +134,10 @@ export default async function ProductDetailPage({
   // skeleton no longer wraps a product page). The in-page <Suspense> fallback
   // below keeps the skeleton UX while ProductDetailView hydrates.
   const detail = await resolveProductRoute(slug);
+  // Under a signed preview (TASK-669) the seeded product may be a draft the
+  // browser cannot re-read: its own request carries no token, so a background
+  // refetch would replace the draft with a 404. The view keeps the seed instead.
+  const preview = (await readPreviewToken()) !== null;
 
   const schemas = detail ? await buildProductPageSchemas(detail) : null;
   const queryClient = createServerQueryClient();
@@ -139,7 +151,7 @@ export default async function ProductDetailPage({
       {schemas?.breadcrumb && <JsonLd schema={schemas.breadcrumb} />}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
         <Suspense fallback={<ProductDetailSkeleton />}>
-          <ProductDetailView slug={slug} />
+          <ProductDetailView slug={slug} preview={preview} />
         </Suspense>
       </PrefetchBoundary>
     </div>
