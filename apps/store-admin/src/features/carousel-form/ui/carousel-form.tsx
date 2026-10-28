@@ -78,6 +78,11 @@ interface CarouselFormProps {
   extraDirtySections?: readonly string[];
   /** «Скасувати зміни» for the host-owned sections. */
   onDiscardExtra?: () => void;
+  /**
+   * The read-only «На головній» row under the title (TASK-664, ДН-4.13) — the
+   * host knows the homepage blocks; the form has no field for it.
+   */
+  homePlacement?: ReactNode;
 }
 
 /** Empty form baseline used for create mode and as the merge base in edit mode. */
@@ -131,7 +136,8 @@ const errorId = (field: FieldName) => `carousel-${field}-error`;
  *
  * «Місце на головній» is gone (TASK-660): `Carousel.placement` no longer exists —
  * where a carousel shows on the homepage is decided by the homepage blocks
- * (`/home`, TASK-662/664). TASK-428 removed the sort-order number field: the order
+ * (`/home`, TASK-662/664); the host passes a read-only row saying where it stands
+ * (`homePlacement`). TASK-428 removed the sort-order number field: the order
  * of the list is set by dragging rows in the carousel list.
  */
 export function CarouselForm({
@@ -143,6 +149,7 @@ export function CarouselForm({
   renderItemsSection,
   extraDirtySections = [],
   onDiscardExtra,
+  homePlacement,
 }: CarouselFormProps) {
   const {
     register,
@@ -225,6 +232,7 @@ export function CarouselForm({
           </p>
           <FieldError id={errorId("title")}>{errors.title?.message}</FieldError>
         </div>
+        {homePlacement}
       </FormSectionCard>
 
       <FormSectionCard title={f.source}>

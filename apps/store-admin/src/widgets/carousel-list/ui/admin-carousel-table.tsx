@@ -7,7 +7,14 @@
  * ONE list since TASK-660 (plan 186): `Carousel.placement` is gone — where a carousel
  * shows on the homepage belongs to the homepage blocks — so the two placement sections
  * collapsed into a single `role="grid"` with one reorder lifecycle. This order is the
- * admin list's only. The «На головній» column is TASK-664's.
+ * admin list's only.
+ *
+ * «НА ГОЛОВНІЙ» (TASK-664, ДН-4.11–4.14) — where each carousel stands, read from the
+ * homepage blocks (`GET /admin/home-blocks`, behind `home:read`/`home:write`): links to
+ * `/home`, or «ні» with «Додати на головну» (`home:write`). A PUBLISHED carousel that
+ * stands nowhere is the trap «створив, опублікував, не видно», so its row is
+ * highlighted. Without a home key the column is not drawn at all — an unknown is not
+ * «ні», and neither is a list that failed to load («—»).
  *
  * TWO RULES MAKE THAT SAFE, and they are the same two the banner / blog-category /
  * device-brand grids follow:
@@ -32,7 +39,12 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { GripVertical, LockIcon } from "lucide-react";
+import {
+  GripVertical,
+  LockIcon,
+  PlusIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import { formatDate } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
@@ -47,9 +59,20 @@ import {
   type CarouselEntity,
 } from "@/entities/carousel";
 import { useCategoryControllerGetCategoryTree } from "@/entities/category";
+import {
+  describeHomePlacement,
+  getAdminHomeBlockControllerFindAllQueryKey,
+  homePlacementsByCarousel,
+  useAdminHomeBlockControllerFindAll,
+  type CarouselHomePlacement,
+} from "@/entities/home-block";
 import { useAuth } from "@/entities/session";
 import { PERM } from "@/entities/permission";
 import { carouselsToItems, useCarouselReorder } from "@/features/list-reorder";
+import {
+  AddCarouselToHomeDialog,
+  type CarouselToHomeTarget,
+} from "@/features/carousel-to-home";
 import {
   useRowFocus,
   useSortableListGrid,
@@ -58,6 +81,7 @@ import {
 import {
   Badge,
   Button,
+  Callout,
   LiveAnnouncer,
   ReorderUndoButton,
   RowActionsMenu,
@@ -137,6 +161,33 @@ function AdminCarouselView() {
 
   const carousels = useMemo(() => data?.data ?? [], [data]);
 
+  // TASK-664: where each carousel stands on the homepage.
+  const canReadHome = can(PERM.homeRead) || can(PERM.homeWrite);
+  const canAddHome = can(PERM.homeWrite);
+  const homeBlocks = useAdminHomeBlockControllerFindAll({
+    query: { enabled: canReadHome },
+  });
+  const placements = useMemo(
+    () =>
+      homeBlocks.data
+        ? homePlacementsByCarousel(homeBlocks.data.data)
+        : undefined,
+    [homeBlocks.data],
+  );
+  const [toHome, setToHome] = useState<CarouselToHomeTarget | null>(null);
+  const home: HomeColumn | null = canReadHome
+    ? {
+        placements,
+        canAdd: canAddHome,
+        onAdd: (carousel) =>
+          setToHome({
+            id: carousel.id,
+            title: carousel.title,
+            status: carousel.status,
+          }),
+      }
+    : null;
+
   // Only a CATEGORY carousel needs a category name.
   const needsCategories = carousels.some(
     (carousel) => carousel.source === "CATEGORY",
@@ -199,6 +250,13 @@ function AdminCarouselView() {
       {
         onSuccess: () => {
           void invalidateList();
+          // The blocks that pointed at it changed with it (tabs dropped,
+          // a rail block orphaned).
+          if (canReadHome) {
+            void queryClient.invalidateQueries({
+              queryKey: getAdminHomeBlockControllerFindAllQueryKey(),
+            });
+          }
           toast.success(d.toastDeleted);
         },
         onError: () => toast.error(d.toastDeleteFailed),
@@ -286,6 +344,10 @@ function AdminCarouselView() {
             {searchActive ? dict.reorderList.searchLockedHint : d.reorderHint}
           </p>
         )}
+
+        {/* ДН-4.11: where a carousel shows is decided on «Головна» — said once,
+            above the column that answers it. */}
+        {home && <Callout>{d.homeIntro}</Callout>}
       </div>
 
       <div id={CAROUSEL_INSTRUCTIONS_LONG_ID} className="sr-only">
@@ -317,10 +379,19 @@ function AdminCarouselView() {
           names={names}
           canWrite={canWrite}
           rowActions={rowActions}
+          home={home}
         />
       )}
 
       {confirmDialog}
+      {canAddHome && (
+        <AddCarouselToHomeDialog
+          carousel={toHome}
+          onOpenChange={(open) => {
+            if (!open) setToHome(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -334,6 +405,17 @@ interface CarouselListSectionProps {
   names: ReadonlyMap<string, string>;
   canWrite: boolean;
   rowActions: (carousel: CarouselEntity) => RowActionItem[];
+  /** The «На головній» column; `null` = the session may not read the blocks. */
+  home: HomeColumn | null;
+}
+
+/** What the «На головній» column knows (TASK-664). */
+interface HomeColumn {
+  /** Carousel id → placements; `undefined` while loading or after an error. */
+  placements: ReadonlyMap<string, CarouselHomePlacement[]> | undefined;
+  /** `home:write` — «Додати на головну» is offered. */
+  canAdd: boolean;
+  onAdd: (carousel: CarouselEntity) => void;
 }
 
 /**
@@ -347,6 +429,7 @@ function CarouselListSection({
   names,
   canWrite,
   rowActions,
+  home,
 }: CarouselListSectionProps) {
   const items = useMemo(() => carouselsToItems(carousels), [carousels]);
   const byId = useMemo(
@@ -393,6 +476,7 @@ function CarouselListSection({
         locked={locked}
         canWrite={canWrite}
         actions={canWrite ? rowActions(carousel) : []}
+        home={home}
         registerRef={(node) => {
           focus.registerRow(carousel.id)(node);
           props.setNodeRef(node);
@@ -423,14 +507,18 @@ function CarouselListSection({
           aria-busy={reorder.isPending}
           className="max-md:block"
         >
-          {/* Columns named for assistive tech only: the row reads without a
-              header strip, and the header row stays row 1 of the grid. */}
-          <TableHeader className="sr-only">
+          {/* ДН-4.11: a visible header strip from md (a column of buttons and
+              links needs its name); below md the rows are cards and the
+              header is for assistive tech only. It stays row 1 of the grid. */}
+          <TableHeader className="max-md:sr-only">
             <TableRow aria-rowindex={1}>
               <TableHead>{d.colTitle}</TableHead>
               <TableHead>{d.colShows}</TableHead>
+              {home && <TableHead>{d.colHome}</TableHead>}
               <TableHead>{d.colStatus}</TableHead>
-              <TableHead>{dict.common.actions}</TableHead>
+              <TableHead>
+                <span className="sr-only">{dict.common.actions}</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="max-md:block">
@@ -457,6 +545,7 @@ interface CarouselRowProps {
   locked: boolean;
   canWrite: boolean;
   actions: RowActionItem[];
+  home: HomeColumn | null;
   registerRef: (node: HTMLTableRowElement | null) => void;
   style: React.CSSProperties;
   handleProps: SortableTreeRowRenderProps["handleProps"];
@@ -469,6 +558,7 @@ function CarouselRow({
   locked,
   canWrite,
   actions,
+  home,
   registerRef,
   style,
   handleProps,
@@ -479,6 +569,27 @@ function CarouselRow({
   const shows =
     carousel.source === "MANUAL" ? null : d.shows(carousel.itemLimit);
   const badge = <StatusBadge carousel={carousel} />;
+  // `undefined` = not known (no key, loading, error) — never drawn as «ні».
+  const placements = home?.placements
+    ? (home.placements.get(carousel.id) ?? [])
+    : undefined;
+  // The trap (ДН-4.11): published, and no block anywhere points at it.
+  const trap = carousel.status === "PUBLISHED" && placements?.length === 0;
+  const addButton =
+    home?.canAdd && placements?.length === 0 ? (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        tabIndex={tabIndex}
+        onClick={() => home.onAdd(carousel)}
+        className="w-fit max-md:min-h-11"
+      >
+        <PlusIcon aria-hidden="true" />
+        {d.addToHome}
+        <span className="sr-only">{` — ${carousel.title}`}</span>
+      </Button>
+    ) : null;
 
   return (
     <TableRow
@@ -494,8 +605,11 @@ function CarouselRow({
           ? "outline outline-2 outline-ring"
           : row.conflict
             ? "bg-accent"
-            : undefined,
+            : trap
+              ? "bg-warning/8 hover:bg-warning/12"
+              : undefined,
       )}
+      data-home-trap={trap || undefined}
     >
       <TableCell
         role="gridcell"
@@ -533,12 +647,33 @@ function CarouselRow({
               </span>
             )}
             <span className="text-xs text-muted-foreground">{source}</span>
+            {placements && (
+              <span className="text-xs text-muted-foreground md:hidden">
+                {d.homeMobile(
+                  placements.length > 0
+                    ? placements
+                        .map((p) => describeHomePlacement(p).where)
+                        .join(", ")
+                    : d.homeNone,
+                )}
+              </span>
+            )}
+            {trap && (
+              <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-foreground">
+                <TriangleAlertIcon
+                  aria-hidden="true"
+                  className="size-3.5 shrink-0 text-warning"
+                />
+                {d.homeTrap}
+              </span>
+            )}
             <div className="mt-1 flex flex-wrap items-center gap-1.5 md:hidden">
               {badge}
               {shows && (
                 <span className="text-xs text-muted-foreground">{shows}</span>
               )}
             </div>
+            {addButton && <div className="mt-1.5 md:hidden">{addButton}</div>}
           </div>
         </div>
       </TableCell>
@@ -548,6 +683,18 @@ function CarouselRow({
       >
         {shows ?? "—"}
       </TableCell>
+      {home && (
+        <TableCell
+          role="gridcell"
+          className="w-60 py-2.5 text-sm whitespace-normal max-md:hidden"
+        >
+          <HomeCell
+            placements={placements}
+            addButton={addButton}
+            tabIndex={tabIndex}
+          />
+        </TableCell>
+      )}
       <TableCell role="gridcell" className="py-2.5 max-md:hidden">
         {badge}
       </TableCell>
@@ -562,6 +709,53 @@ function CarouselRow({
         />
       </TableCell>
     </TableRow>
+  );
+}
+
+/**
+ * «На головній» (ДН-4.11): each place the carousel stands — a link to `/home` with
+ * its position under it — or «ні» / «Додати на головну». Unknown (loading, error)
+ * reads «—»: a list that did not load is not proof the carousel stands nowhere.
+ */
+function HomeCell({
+  placements,
+  addButton,
+  tabIndex,
+}: {
+  placements: CarouselHomePlacement[] | undefined;
+  addButton: React.ReactNode;
+  tabIndex: 0 | -1;
+}) {
+  if (!placements) return <span className="text-muted-foreground">—</span>;
+  if (placements.length === 0) {
+    return (
+      addButton ?? <span className="text-muted-foreground">{d.homeNone}</span>
+    );
+  }
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {placements.map((placement) => {
+        const { where, position, hidden } = describeHomePlacement(placement);
+        return (
+          <li
+            key={`${placement.block.id}:${placement.kind}`}
+            className="flex flex-col gap-0.5"
+          >
+            <Link
+              href="/home"
+              tabIndex={tabIndex}
+              aria-label={d.homeLinkAria(where)}
+              className="w-fit rounded-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {where}
+            </Link>
+            <span className="text-xs text-muted-foreground">
+              {hidden ? `${position} · ${hidden}` : position}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

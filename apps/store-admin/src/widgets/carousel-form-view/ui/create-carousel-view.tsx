@@ -22,6 +22,7 @@ import {
   ManualItemsPanel,
   itemsPayload,
 } from "./carousel-source-panels";
+import { CarouselHomeRow } from "./carousel-home-row";
 
 /**
  * Create-carousel body (CarouselsProposal КР8): the form, and — for
@@ -88,6 +89,7 @@ export function CreateCarouselView() {
           items.length > 0 ? [dict.carouselItems.heading] : []
         }
         onDiscardExtra={() => setItemsDraft([])}
+        homePlacement={<CarouselHomeRow />}
         renderItemsSection={(source) =>
           source === "MANUAL" ? (
             <ManualItemsPanel items={items} onChange={setItemsDraft} />

@@ -6577,6 +6577,19 @@ export const dict = {
     // knows where it stands; the homepage blocks pointing at it do.
     deleteDescription: (title: string) =>
       `Цю дію не можна скасувати. Карусель «${title}» зникне з головної — з усіх блоків і вкладок, де вона стоїть. Якщо вона ще знадобиться — краще «Зняти з публікації».`,
+
+    // Plan 186 (TASK-664, ДН-4.11–4.14): where a carousel stands on the homepage
+    // replaced the placement sections — a column, the trap highlight, and the
+    // «Додати на головну» action.
+    colHome: "На головній",
+    homeNone: "ні",
+    homeMobile: (where: string) => `На головній: ${where}`,
+    homeLinkAria: (where: string) => `${where} — керувати на «Головна»`,
+    homeTrap: "Опублікована, але на сайті її ніде немає",
+    addToHome: "Додати на головну",
+    // ДН-4.11: the info row above the list — drawn only with the column.
+    homeIntro:
+      "Карусель — це набір товарів. Де її показати, вирішується на екрані «Головна»: окремим рядком або вкладкою в блоці. Розділів «Вкладка в блоці «Популярне»» і «Окремий рядок» більше немає — їх замінила колонка «На головній».",
   },
 
   // --- Recommendation carousel form (TASK-139) --------------------------------
@@ -6628,6 +6641,16 @@ export const dict = {
     barNew: "Нова карусель ще не збережена",
     barErrors: (count: number) =>
       `Не збережено: ${countLabel(count, ["поле", "поля", "полів"])} з помилками`,
+
+    // Plan 186 (TASK-664, ДН-4.13): «Місце на головній» is no field any more —
+    // a read-only row says where the carousel stands and links to /home.
+    homeLabel: "На головній:",
+    homeNone: "ні",
+    homeNoneHint:
+      "Опублікована карусель сама на головній не зʼявляється — її треба поставити блоком.",
+    homeManage: "Керувати на «Головна»",
+    homeFieldGone:
+      "Поля «Місце на головній» більше немає: де й чи показувати карусель — вирішується на «Головна».",
   },
 
   // --- MANUAL carousel item picker (TASK-139) ----------------------------------
@@ -7725,6 +7748,31 @@ export const dict = {
     // A placement whose block is not live.
     blockDraft: "блок сховано",
     blockScheduled: "блок заплановано",
+  },
+
+  // --- «Додати на головну» from the carousel list (plan 186, TASK-664, ДН-4.12)
+  carouselToHome: {
+    title: (title: string) => `Додати «${title}» на головну`,
+    description: "Як показати карусель покупцям?",
+    modeLabel: "Як показати",
+    asBlock: "Окремим рядком",
+    asBlockHint: (title: string) => `Новий блок «${title}»`,
+    asTab: "Вкладкою в блоці",
+    asTabHint: (blocks: string) => `${blocks} — останньою вкладкою`,
+    asTabNone: "На головній немає блоку з вкладками, куди можна додати ще одну",
+    positionLabel: "Куди поставити",
+    positionFirst: "На самий верх",
+    positionAfter: (label: string) => `Після «${label}»`,
+    tabBlockLabel: "У який блок",
+    hint: "Порядок завжди можна змінити на «Головна».",
+    notPublished:
+      "Карусель ще не опублікована: місце на головній за нею закріпиться, але покупці побачать її, щойно ви її опублікуєте.",
+    loading: "Завантажуємо блоки головної…",
+    loadError: "Не вдалося завантажити блоки головної. Спробуйте ще раз.",
+    cancel: "Скасувати",
+    submit: "Додати на головну",
+    toastAdded: (title: string) => `«${title}» тепер на головній`,
+    toastFailed: "Не вдалося додати карусель на головну",
   },
 } as const;
 

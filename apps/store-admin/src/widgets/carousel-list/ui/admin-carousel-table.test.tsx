@@ -597,3 +597,174 @@ describe("AdminCarouselTable — the payload can never be partial", () => {
     expect(screen.queryByText(dict.carousels.empty)).not.toBeInTheDocument();
   });
 });
+
+/* ───────────────── «На головній» (TASK-664, ДН-4.11–4.14) ───────────────── */
+
+/**
+ * The homepage as the list sees it: «Популярне» (TAB) is a tab of the TABS block,
+ * «Хіти тижня» (R1, published) stands nowhere — the trap — and «Редакція обирає»
+ * (R2) is a draft that stands nowhere, which is not a trap.
+ */
+function homeBlocksResponse() {
+  const summary = (id: string) => ({
+    id,
+    title: TITLES[id],
+    source: "BESTSELLING",
+    status: "PUBLISHED",
+  });
+  const base = {
+    title: null,
+    status: "PUBLISHED",
+    carousel: null,
+    tabs: [],
+    isSystem: true,
+    isOrphaned: false,
+    isEmpty: false,
+    publishedAt: null,
+    scheduledAt: null,
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:00:00.000Z",
+  };
+  return {
+    data: [
+      { ...base, id: "hero", type: "HERO", sortOrder: 0 },
+      {
+        ...base,
+        id: "popular",
+        type: "TABS",
+        title: "Популярне",
+        sortOrder: 1,
+        isSystem: false,
+        tabs: [{ sortOrder: 0, carousel: summary(TAB) }],
+      },
+    ],
+  };
+}
+
+function mockHome() {
+  const homeRequests: string[] = [];
+  server.use(
+    http.get("*/api/admin/carousels", () => HttpResponse.json(listResponse())),
+    http.get("*/api/admin/home-blocks", ({ request }) => {
+      homeRequests.push(new URL(request.url).pathname);
+      return HttpResponse.json(homeBlocksResponse());
+    }),
+  );
+  return homeRequests;
+}
+
+const h = dict.homeBlocks;
+
+describe("AdminCarouselTable — «На головній» (TASK-664)", () => {
+  it("names the column and links a placed carousel to /home with its position", async () => {
+    mockHome();
+    renderTable([...WRITER, "home:read"]);
+    await waitFor(() => expect(railIds()).toHaveLength(3));
+
+    expect(
+      screen.getByRole("columnheader", { name: dict.carousels.colHome }),
+    ).toBeInTheDocument();
+    // ДН-4.11: the info row above the list explains the column.
+    expect(screen.getByText(dict.carousels.homeIntro)).toBeInTheDocument();
+    const link = await within(rowEl(TAB)).findByRole("link", {
+      name: dict.carousels.homeLinkAria(h.asTab("Популярне")),
+    });
+    expect(link).toHaveAttribute("href", "/home");
+    expect(
+      within(rowEl(TAB)).getByText(h.tabPosition(1, 1, 2)),
+    ).toBeInTheDocument();
+    // The phone card says the same in one line.
+    expect(
+      within(rowEl(TAB)).getByText(
+        dict.carousels.homeMobile(h.asTab("Популярне")),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("highlights a PUBLISHED carousel that stands nowhere — a draft is not the trap", async () => {
+    mockHome();
+    renderTable([...WRITER, "home:read"]);
+    await waitFor(() => expect(railIds()).toHaveLength(3));
+
+    await waitFor(() =>
+      expect(rowEl(R1)).toHaveAttribute("data-home-trap", "true"),
+    );
+    expect(
+      within(rowEl(R1)).getByText(dict.carousels.homeTrap),
+    ).toBeInTheDocument();
+
+    expect(rowEl(R2)).not.toHaveAttribute("data-home-trap");
+    expect(
+      within(rowEl(R2)).queryByText(dict.carousels.homeTrap),
+    ).not.toBeInTheDocument();
+    expect(rowEl(TAB)).not.toHaveAttribute("data-home-trap");
+
+    // Read-only on the homepage: «ні», no button.
+    expect(
+      within(rowEl(R1)).getByText(dict.carousels.homeNone),
+    ).toBeInTheDocument();
+    expect(
+      within(rowEl(R1)).queryByRole("button", {
+        name: new RegExp(dict.carousels.addToHome),
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers «Додати на головну» with home:write, opening the dialog for that carousel", async () => {
+    mockHome();
+    renderTable([...WRITER, "home:write"]);
+    await waitFor(() => expect(railIds()).toHaveLength(3));
+
+    const [add] = await within(rowEl(R1)).findAllByRole("button", {
+      name: `${dict.carousels.addToHome} — ${TITLES[R1]}`,
+    });
+    expect(
+      within(rowEl(TAB)).queryByRole("button", {
+        name: new RegExp(dict.carousels.addToHome),
+      }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(add);
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: dict.carouselToHome.title(TITLES[R1]),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("without a home key draws no column and asks nothing", async () => {
+    const homeRequests = mockHome();
+    renderTable();
+    await waitFor(() => expect(railIds()).toHaveLength(3));
+
+    expect(
+      screen.queryByRole("columnheader", { name: dict.carousels.colHome }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.carousels.homeIntro),
+    ).not.toBeInTheDocument();
+    expect(rowEl(R1)).not.toHaveAttribute("data-home-trap");
+    expect(homeRequests).toEqual([]);
+  });
+
+  it("never paints a failed blocks list as «ні» or a trap", async () => {
+    mockHome();
+    server.use(
+      http.get(
+        "*/api/admin/home-blocks",
+        () => new HttpResponse(null, { status: 500 }),
+      ),
+    );
+    renderTable([...WRITER, "home:write"]);
+    await waitFor(() => expect(railIds()).toHaveLength(3));
+
+    await waitFor(() =>
+      expect(within(rowEl(R1)).getByText("—")).toBeInTheDocument(),
+    );
+    expect(rowEl(R1)).not.toHaveAttribute("data-home-trap");
+    expect(
+      within(rowEl(R1)).queryByText(dict.carousels.homeNone),
+    ).not.toBeInTheDocument();
+  });
+});

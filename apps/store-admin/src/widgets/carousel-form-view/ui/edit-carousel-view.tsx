@@ -38,6 +38,7 @@ import {
   sameItemOrder,
   toPickedItems,
 } from "./carousel-source-panels";
+import { CarouselHomeRow } from "./carousel-home-row";
 
 const d = dict.carousels;
 
@@ -230,6 +231,7 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
           submitLabel={dict.common.save}
           extraDirtySections={itemsDirty ? [dict.carouselItems.heading] : []}
           onDiscardExtra={() => setDraftItems(null)}
+          homePlacement={<CarouselHomeRow carouselId={carouselId} />}
           renderItemsSection={(source) =>
             source === "MANUAL" ? (
               <ManualItemsPanel
