@@ -9,6 +9,7 @@ import { formatDate } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import {
   bannerZoneState,
+  homeBlocksZoneState,
   homeCarouselZoneState,
   contactsZoneState,
   promoCodesZoneState,
@@ -135,6 +136,28 @@ describe("homeCarouselZoneState (TASK-660)", () => {
     expect(homeCarouselZoneState([block("HERO", 0)], "rails")).toEqual({
       status: "ready",
       summary: c.shown(0),
+    });
+  });
+
+  // TASK-664: the «Блоки головної» zone.
+  it("counts the live sections and warns only about empty live rails", () => {
+    expect(
+      homeBlocksZoneState([
+        block("HERO", 0),
+        block("CAROUSEL", 1, { isEmpty: true }),
+        // An empty TABS block falls back to automatic tabs — not «без товарів».
+        block("TABS", 2, { isEmpty: true }),
+        block("CAROUSEL", 3, { status: "SCHEDULED" }),
+        block("CAROUSEL", 4, { status: "DRAFT", isEmpty: true }),
+      ]),
+    ).toEqual({
+      status: "ready",
+      summary: `${c.homeBlocksState(3)} · ${c.scheduled(1)}`,
+      badge: { text: c.homeBlocksEmpty(1), tone: "warning" },
+    });
+    expect(homeBlocksZoneState([block("HERO", 0)])).toEqual({
+      status: "ready",
+      summary: c.homeBlocksState(1),
     });
   });
 });

@@ -28,7 +28,7 @@ import {
   SetCarouselItemsDto,
   ReorderCarouselsDto,
 } from './dto';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../auth/permissions';
 import { CarouselEntity, CarouselItemEntity, CarouselItemProductEntity } from './entities';
 
 /**
@@ -113,6 +113,7 @@ export class AdminCarouselController {
   constructor(private readonly carouselService: CarouselService) {}
 
   @Get()
+  @RequireAnyPermission('carousels:read', 'carousels:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary:
@@ -167,6 +168,7 @@ export class AdminCarouselController {
   }
 
   @Get(':id')
+  @RequireAnyPermission('carousels:read', 'carousels:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get a carousel by ID (admin)' })
   @ApiParam({ name: 'id', description: 'Carousel UUID' })
@@ -248,6 +250,7 @@ export class AdminCarouselController {
   }
 
   @Get(':id/items')
+  @RequireAnyPermission('carousels:read', 'carousels:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: "Get a carousel's hand-picked items (admin)" })
   @ApiParam({ name: 'id', description: 'Carousel UUID' })

@@ -90,6 +90,9 @@ export const dict = {
     delivery: "Доставка",
     // TASK-676 — гейтиться правом `settings:notifications`.
     notifications: "Сповіщення",
+    // TASK-666 (план 186) — блоки головної (/home, екран TASK-662). Гейтиться
+    // `home:read` або `home:write`.
+    home: "Головна",
   },
 
   header: {
@@ -6306,22 +6309,31 @@ export const dict = {
         target: "Промокоди",
         appliesTo: "Сторінка «Акції» (/promo)",
       },
-      // Wave 198 — the carousels are zones of the home page; their own /home
-      // editor is a later design session (Д-н2, TASK-662/664).
+      // Wave 198 — the carousels are zones of the home page. Since plan 186
+      // (TASK-664) where they stand is set on «Головна» (/home), not on the
+      // carousel, so both zones link there.
       carouselTabs: {
-        source: "Популярне — вкладки",
-        target: "Каруселі",
-        appliesTo: "Блок вкладок із товарами",
+        source: "Вкладки з товарами",
+        target: "Головна",
+        appliesTo: "Блоки з вкладками — «Популярне» та інші",
       },
       carouselRails: {
         source: "Рядки товарів",
-        target: "Каруселі",
-        appliesTo: "Окремі рядки нижче",
+        target: "Головна",
+        appliesTo: "Окремі рядки — кожна карусель своїм блоком",
       },
       saleProducts: {
         source: "Товари зі знижкою",
         target: "Товари",
         appliesTo: "Сітка під промокодами",
+      },
+      // Plan 186 (TASK-664): the homepage itself — which sections it has and in
+      // what order — is the «Головна» screen.
+      homeBlocks: {
+        source: "Блоки головної",
+        target: "Головна",
+        appliesTo:
+          "Які секції є на головній і в якому порядку — слайдер, вкладки, рядки товарів, підписка",
       },
     },
 
@@ -6364,7 +6376,6 @@ export const dict = {
     contactsFooter: "Контакти у футері",
     contactsFooterWhere: "Низ кожної сторінки",
     announcementEverywhere: "Над шапкою кожної сторінки",
-    laterTag: "/home — Д-н2",
     onSite: "на сайті",
     onSiteAria: (title: string) => `${title} на сайті (нова вкладка)`,
     editAria: (title: string, section: string) =>
@@ -6412,6 +6423,11 @@ export const dict = {
       `${countLabel(n, ["документ", "документи", "документів"])} опубліковано`,
     blogState: (n: number) =>
       `${countLabel(n, ["стаття", "статті", "статей"])} опубліковано`,
+    // Plan 186 (TASK-664): the «Блоки головної» zone.
+    homeBlocksState: (n: number) =>
+      `${countLabel(n, ["блок", "блоки", "блоків"])} на сторінці`,
+    homeBlocksEmpty: (n: number) =>
+      `${countLabel(n, ["блок", "блоки", "блоків"])} без товарів`,
   },
 
   // SERP-snippet preview under the meta fields (план 130, TASK-268). A live
@@ -7685,6 +7701,30 @@ export const dict = {
     eventReturn: "Заявка на повернення",
     previewReturnTitle: "Заявка на повернення",
     previewReturnOrder: "до замовлення #C33D9A20",
+  },
+
+  // --- Homepage blocks — names and positions (plan 186, TASK-664) -------------
+  // Shared by every screen that says WHERE on the homepage something stands: the
+  // carousel list and form today, the «Головна» screen (TASK-662) next.
+  homeBlocks: {
+    // Singleton blocks have no title of their own.
+    hero: "Головний слайдер",
+    trust: "Переваги магазину",
+    categoryNav: "Категорії",
+    promoBanner: "Промо-банер",
+    recentlyViewed: "Ви переглядали",
+    newsletter: "Підписка на розсилку",
+    // A CAROUSEL block whose carousel was deleted; a TABS block without a title.
+    carouselDeleted: "Карусель видалено",
+    untitledTabs: "Вкладки",
+    asBlock: (title: string) => `Блок «${title}»`,
+    asTab: (block: string) => `Вкладка в «${block}»`,
+    blockPosition: (n: number) => `блок ${n}`,
+    tabPosition: (tab: number, tabs: number, n: number) =>
+      `вкладка ${tab} з ${tabs} · блок ${n}`,
+    // A placement whose block is not live.
+    blockDraft: "блок сховано",
+    blockScheduled: "блок заплановано",
   },
 } as const;
 

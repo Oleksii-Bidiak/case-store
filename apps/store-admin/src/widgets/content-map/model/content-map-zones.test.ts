@@ -29,13 +29,15 @@ describe("content-map config (TASK-264-A; tabs since wave 198, TASK-1076)", () =
       "carousel-tabs",
       "carousel-rails",
       "sale-products",
+      // TASK-664: the homepage as blocks.
+      "home-blocks",
     ];
     expect(new Set(ids)).toEqual(new Set(required));
   });
 
   it("has the six storefront pages as tabs, with the artboard's zone counts", () => {
     expect(CONTENT_MAP_TABS.map((tab) => [tab.id, tab.zones.length])).toEqual([
-      ["home", 7],
+      ["home", 8],
       ["all", 4],
       ["promo", 2],
       ["info", 2],
@@ -128,9 +130,20 @@ describe("content-map config (TASK-264-A; tabs since wave 198, TASK-1076)", () =
     expect(CONTENT_MAP_ZONE_BY_ID.blog.sitePath).toBe("/blog");
   });
 
-  it("marks the carousels as edited on the later /home screen (Д-н2)", () => {
-    expect(CONTENT_MAP_ZONE_BY_ID["carousel-tabs"].later).toBe(true);
-    expect(CONTENT_MAP_ZONE_BY_ID["carousel-rails"].later).toBe(true);
+  // TASK-664: where carousels stand — and the page's sections — are set on /home.
+  it("sends the homepage zone and both carousel zones to «Головна» (/home)", () => {
+    for (const id of [
+      "home-blocks",
+      "carousel-tabs",
+      "carousel-rails",
+    ] as const) {
+      expect(CONTENT_MAP_ZONE_BY_ID[id].targetHref).toBe("/home");
+      expect(CONTENT_MAP_ZONE_BY_ID[id].targetLabel).toBe(dict.nav.home);
+    }
+    expect(CONTENT_MAP_ZONE_BY_ID["home-blocks"].source).toEqual({
+      kind: "home-blocks",
+    });
+    expect(CONTENT_MAP_TABS[0].zones[0].id).toBe("home-blocks");
   });
 
   it("every zone exposes non-empty labels", () => {

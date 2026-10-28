@@ -11,11 +11,12 @@
  * whole time. Surfacing the gap turns a silent mismatch into a visible "не діє"
  * badge.
  *
- * **The set is empty in the steady state.** Plan 186 fills it for the span between
- * its clusters H1 and H2 (the `:read` keys below exist and are backfilled, their
- * routes arrive in H2) — it must be empty again once H2 lands. When it
- * was first derived on 2026-07-28 it held three entries; all three were then
- * resolved at integration rather than documented away:
+ * **The set is empty in the steady state.** Plan 186 filled it for the span between
+ * its clusters H1 and H2 (the eleven reference / content `:read` keys existed and
+ * were backfilled before their GET routes accepted them); TASK-666 gave every one a
+ * route and emptied it again. When it was first derived on 2026-07-28 it held
+ * three entries; all three were then resolved at integration rather than
+ * documented away:
  *
  *   - `payments:read` and `payments:refund` — `PaymentService.getAttemptsForOrder`
  *     and `.refund` existed, were docblocked "admin payment card" and were unit
@@ -34,20 +35,5 @@
  * a route naming a permission that does not exist — is caught by the backend's
  * own `permission.catalog.spec.ts`, which fails the build.
  */
-export const PERMISSIONS_WITHOUT_ROUTES: ReadonlySet<string> = new Set([
-  // TASK-666 H2 wires these. Plan 186 lands the `:read` keys and their backfill
-  // first (cluster H1) and moves the GET routes and the nav onto them second
-  // (cluster H2); in between, ticking one grants nothing, so the screen says so.
-  // Remove each entry in the same commit that gives its section a `:read` route.
-  "categories:read",
-  "brands:read",
-  "devices:read",
-  "attributes:read",
-  "addons:read",
-  "discounts:read",
-  "pages:read",
-  "blog:read",
-  "banners:read",
-  "carousels:read",
-  "faq:read",
-]);
+export const PERMISSIONS_WITHOUT_ROUTES: ReadonlySet<string> =
+  new Set<string>();

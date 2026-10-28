@@ -122,10 +122,11 @@ export class CategoryController {
    * Opened by `categories:write` OR `categories:delete` (TASK-655): the delete dialog's
    * target picker and the tree the delete action is launched from both read it, so a
    * manager trusted to delete but not to edit categories must be able to read it too.
+   * `categories:read` (TASK-666) opens it as well — the read-only role.
    */
   @Get('admin/tree')
   @UseGuards(PermissionGuard)
-  @RequireAnyPermission('categories:write', 'categories:delete')
+  @RequireAnyPermission('categories:read', 'categories:write', 'categories:delete')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Get full category tree including inactive (admin)',
@@ -138,7 +139,7 @@ export class CategoryController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — needs categories:write or categories:delete',
+    description: 'Forbidden — needs categories:read, categories:write or categories:delete',
   })
   async getCategoryTreeForAdmin(): Promise<AdminCategoryTreeResponse> {
     return { data: await this.categoryService.getCategoryTreeForAdmin() };

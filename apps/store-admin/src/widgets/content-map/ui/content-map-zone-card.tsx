@@ -73,11 +73,6 @@ export function ContentMapZoneCard({
           <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
             <span className="sr-only">{`${number}. `}</span>
             {name}
-            {zone.later ? (
-              <Badge variant="outline" className="font-mono font-normal">
-                {c.laterTag}
-              </Badge>
-            ) : null}
           </h3>
           <p className="text-xs text-muted-foreground">
             {appliesTo ?? zone.appliesTo}

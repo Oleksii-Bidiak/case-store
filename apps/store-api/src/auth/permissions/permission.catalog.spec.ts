@@ -1,8 +1,13 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
+import { RequestMethod } from '@nestjs/common';
 import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { PermissionGuard } from './permission.guard';
-import { OWNER_ONLY_KEY, REQUIRE_PERMISSION_KEY } from './require-permission.decorator';
+import {
+  ALSO_ACCEPTED_PERMISSIONS_KEY,
+  OWNER_ONLY_KEY,
+  REQUIRE_PERMISSION_KEY,
+} from './require-permission.decorator';
 import {
   ANALYTICS_REVENUE_BACKFILL_SOURCE_PERMISSIONS,
   ANALYTICS_REVENUE_PERMISSIONS,
@@ -66,6 +71,8 @@ interface DiscoveredRoute {
   path: string;
   guardedByPermissionGuard: boolean;
   permission?: string;
+  /** `@RequireAnyPermission` alternatives, read from the same target as `permission`. */
+  alsoAccepted: string[];
   ownerOnly: boolean;
 }
 
@@ -151,6 +158,11 @@ function discoverRoutes(): DiscoveredRoute[] {
         const permission = hasHandlerAnnotation
           ? (handlerPermission as string | undefined)
           : (classPermission as string | undefined);
+        const alsoAcceptedMeta: unknown = Reflect.getMetadata(
+          ALSO_ACCEPTED_PERMISSIONS_KEY,
+          hasHandlerAnnotation ? (handler as object) : controller,
+        );
+        const alsoAccepted = Array.isArray(alsoAcceptedMeta) ? (alsoAcceptedMeta as string[]) : [];
         const ownerOnly = hasHandlerAnnotation
           ? Boolean(handlerOwnerOnly)
           : Boolean(classOwnerOnly);
@@ -170,6 +182,7 @@ function discoverRoutes(): DiscoveredRoute[] {
           guardedByPermissionGuard:
             classGuards.includes(PermissionGuard) || handlerGuards.includes(PermissionGuard),
           permission,
+          alsoAccepted,
           ownerOnly,
         });
       }
@@ -1193,5 +1206,99 @@ describe('home:write + :read permission backfill migration (TASK-665 / TASK-666)
 
   it('is idempotent in all four statements, so a restore-then-migrate cannot fail', () => {
     expect(statement.match(/ON CONFLICT[\s\S]*?DO NOTHING/g) ?? []).toHaveLength(4);
+  });
+});
+
+/**
+ * The `:read` keys on the routes (TASK-666, plan 186, decision B-9 №5).
+ *
+ * The AC, as the metadata says it: a role holding only `x:read` sees the section
+ * (every admin GET of it accepts `x:read`) and is refused ANY write (no non-GET route
+ * accepts `x:read`), and nobody loses what they could do before (every GET that
+ * `x:read` opens still accepts `x:write`). Walked over the real controllers, so a new
+ * admin GET added to one of these sections without the read key fails here rather
+ * than as a blank screen for the read-only role.
+ */
+describe('the :read keys on the routes (TASK-666)', () => {
+  const routes = discoverRoutes();
+  const acceptedBy = (route: DiscoveredRoute): string[] =>
+    route.permission ? [route.permission, ...route.alsoAccepted] : [];
+  const isRead = (route: DiscoveredRoute) => route.method === String(RequestMethod.GET);
+  const describeRoute = (route: DiscoveredRoute) =>
+    `${route.method} ${route.path} → ${route.controller}.${route.handler}`;
+
+  /**
+   * Non-GET routes a `:read` key may open. Each is a read in substance, and each entry
+   * needs a reason a reviewer would accept — keep it short.
+   *
+   * - `POST /admin/preview-tokens` (TASK-668): minting a preview link changes no
+   *   content; it lets the caller LOOK at drafts on the storefront, which is exactly
+   *   what `x:read` is. The service still checks the key per preview target.
+   */
+  const READ_KEY_NON_GET_ALLOWLIST: ReadonlySet<string> = new Set(['POST /admin/preview-tokens']);
+  const methodName = (route: DiscoveredRoute) =>
+    RequestMethod[Number(route.method)] ?? route.method;
+
+  it('opens no write route with a :read key', () => {
+    const readKeys = new Set(READ_BACKFILL_PAIRS.map(([, read]) => read as string));
+    const offenders = routes
+      .filter(
+        (route) =>
+          !isRead(route) && !READ_KEY_NON_GET_ALLOWLIST.has(`${methodName(route)} ${route.path}`),
+      )
+      .filter((route) => acceptedBy(route).some((key) => readKeys.has(key)))
+      .map(
+        (route) =>
+          `${describeRoute(route)} accepts ${acceptedBy(route).join(' | ')} — ` +
+          'a :read key must never open a write',
+      );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('opens every GET that x:write opens with x:read as well', () => {
+    const offenders = routes
+      .filter(isRead)
+      .flatMap((route) =>
+        READ_BACKFILL_PAIRS.filter(
+          ([write, read]) => acceptedBy(route).includes(write) && !acceptedBy(route).includes(read),
+        ).map(([write, read]) => `${describeRoute(route)} accepts ${write} but not ${read}`),
+      );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps x:write on every GET that x:read opens, so no editor loses a screen', () => {
+    const offenders = routes
+      .filter(isRead)
+      .flatMap((route) =>
+        READ_BACKFILL_PAIRS.filter(
+          ([write, read]) => acceptedBy(route).includes(read) && !acceptedBy(route).includes(write),
+        ).map(([write, read]) => `${describeRoute(route)} accepts ${read} but no longer ${write}`),
+      );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('gives every paired :read key at least one route to open', () => {
+    const opened = new Set(routes.filter(isRead).flatMap(acceptedBy));
+    const idle = READ_BACKFILL_PAIRS.map(([, read]) => read as string).filter(
+      (read) => !opened.has(read),
+    );
+
+    expect(idle).toEqual([]);
+  });
+
+  it('keeps the delete-only category manager on the card and the tree (TASK-655)', () => {
+    const categoryReads = routes.filter(
+      (route) =>
+        isRead(route) && ['/admin/categories/:id', '/categories/admin/tree'].includes(route.path),
+    );
+    expect(categoryReads).toHaveLength(2);
+    for (const route of categoryReads) {
+      expect(acceptedBy(route)).toEqual(
+        expect.arrayContaining(['categories:read', 'categories:write', 'categories:delete']),
+      );
+    }
   });
 });

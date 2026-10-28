@@ -1,5 +1,5 @@
 import type { BannerEntity } from "@/entities/banner";
-import type { HomeBlockEntity } from "@/shared/api";
+import type { HomeBlockEntity } from "@/entities/home-block";
 import type { DiscountEntity } from "@/entities/discount";
 import type {
   SeoHealthEntity,
@@ -123,6 +123,33 @@ export function homeCarouselZoneState(
           live.map((carousel) => `«${carousel.title}»`).join(", "),
         ),
       };
+}
+
+/**
+ * «Блоки головної» (TASK-664): how many sections the page shows now, how many
+ * are scheduled, and — the one thing worth a warning — how many live blocks draw
+ * nothing (`isEmpty`: a deleted, unpublished or empty carousel behind them).
+ * An empty TABS block is not counted: the site then shows its automatic tabs,
+ * so «без товарів» would not be true of it.
+ */
+export function homeBlocksZoneState(
+  blocks: readonly HomeBlockEntity[],
+): ZoneState {
+  const live = blocks.filter((block) => block.status === "PUBLISHED");
+  const scheduled = blocks.filter((block) => block.status === "SCHEDULED");
+  const empty = live.filter(
+    (block) => block.type === "CAROUSEL" && block.isEmpty,
+  ).length;
+  const summary =
+    c.homeBlocksState(live.length) +
+    (scheduled.length > 0 ? ` · ${c.scheduled(scheduled.length)}` : "");
+  return empty > 0
+    ? {
+        status: "ready",
+        summary,
+        badge: { text: c.homeBlocksEmpty(empty), tone: "warning" },
+      }
+    : { status: "ready", summary };
 }
 
 /** Contacts: which of the form's fields are filled — nothing promised beyond it. */

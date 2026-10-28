@@ -28,7 +28,7 @@ import {
   ReorderFaqItemsDto,
 } from './dto';
 import { FaqItemEntity } from './entities';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../auth/permissions';
 
 /**
  * Response envelope for a single FAQ item.
@@ -117,6 +117,7 @@ export class AdminFaqController {
    * pagination. Omitting `page`/`limit` returns the complete list. Admin-only.
    */
   @Get()
+  @RequireAnyPermission('faq:read', 'faq:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'List all FAQ items including inactive, optional search + pagination (admin)',
@@ -165,6 +166,7 @@ export class AdminFaqController {
    * GET /api/admin/faq/:id — single item to pre-populate the edit form. Admin-only.
    */
   @Get(':id')
+  @RequireAnyPermission('faq:read', 'faq:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get FAQ item by ID (admin)' })
   @ApiParam({ name: 'id', description: 'FAQ item UUID' })
