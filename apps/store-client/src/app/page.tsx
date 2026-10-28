@@ -1,16 +1,5 @@
 import type { Metadata } from "next";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
-import {
-  HeroBanner,
-  TrustStrip,
-  CategoryNav,
-  PopularRail,
-  RecommendationCarousels,
-  PromoBanner,
-  RecentlyViewed,
-  Newsletter,
-  firstQueryTabParams,
-} from "@/widgets";
 import { ACTIVE_ROOT_CATEGORIES_PARAMS } from "@/entities/category";
 import { getCategoryControllerGetRootCategoriesQueryOptions } from "@/shared/api/generated/categories/categories";
 import { getProductControllerFindAllQueryOptions } from "@/shared/api/generated/products/products";
@@ -27,7 +16,7 @@ import {
 } from "@/shared/lib/schema";
 import { SITE_URL, dict } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
-import { fetchPublishedCarouselsByPlacement } from "@/shared/api/carousels-server";
+import { fetchHomeBlocks } from "@/shared/api/carousels-server";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import {
@@ -36,6 +25,11 @@ import {
   resolveSiteName,
   toMetadataTitle,
 } from "@/shared/lib/seo";
+import {
+  homeBlocksOrDefault,
+  homeRailPrefetchParams,
+  renderHomeBlock,
+} from "./home-blocks";
 
 /**
  * Time floor for the prerendered homepage (TASK-563). Catalogue, banner and
@@ -107,13 +101,14 @@ export default async function HomePage() {
   // always renders even if the API is unreachable.
   const banners = await fetchPublishedBanners();
 
-  // Admin-managed carousels (TASK-139; ISR, tag `carousels`), split by placement
-  // (TASK-288) so the same carousel never renders twice: HOME_TABS feeds the
-  // «Популярне» tab rail, HOME_RAILS the standalone rails below it. Resilient
-  // like the banners fetch — an unreachable API yields empty groups, PopularRail
-  // falls back to its query-driven tabs and RecommendationCarousels renders
-  // nothing, so the homepage always renders.
-  const carousels = await fetchPublishedCarouselsByPlacement();
+  // The page itself (TASK-663): which sections, in which order, with which tab
+  // sets — admin-managed homepage blocks (ISR, tags `home-blocks` + `carousels`;
+  // CAROUSEL/TABS products resolved in the same response). Resilient like the
+  // banners fetch: an unreachable API, or no visible block at all, yields the
+  // built-in default order, so the homepage always renders. This list is the
+  // ONLY input the sections below are drawn from — the signed preview
+  // (TASK-669) swaps where it comes from, not how it is drawn.
+  const blocks = homeBlocksOrDefault(await fetchHomeBlocks());
 
   // Admin-managed social links feed the Organization `sameAs` (brand-entity
   // signal for AI/search). Deduped with the footer's fetch of the same tagged
@@ -137,24 +132,22 @@ export default async function HomePage() {
   const siteName = resolveSiteName(seo);
 
   // First HTML with links in it (TASK-563): the root categories (the
-  // «Категорії» tiles and the hero's category rail share one key) and, when no
-  // HOME_TABS carousel is published, the «Популярне» rail's first tab — the one
-  // part of the page whose products are otherwise fetched in the browser. A
-  // failed prefetch leaves the widget to fetch on the client, as before.
+  // «Категорії» tiles and the hero's category rail share one key) and, for
+  // every TABS block with no usable carousel tab, its first query-driven tab —
+  // the one part of the page whose products are otherwise fetched in the
+  // browser. A failed prefetch leaves the widget to fetch on the client, as
+  // before.
   const queryClient = createServerQueryClient();
-  const railParams = firstQueryTabParams(carousels.HOME_TABS);
   await prefetchQueries(queryClient, [
     getCategoryControllerGetRootCategoriesQueryOptions(
       ACTIVE_ROOT_CATEGORIES_PARAMS,
       { request: serverRequestOptions() },
     ),
-    ...(railParams
-      ? [
-          getProductControllerFindAllQueryOptions(railParams, {
-            request: serverRequestOptions(),
-          }),
-        ]
-      : []),
+    ...homeRailPrefetchParams(blocks).map((params) =>
+      getProductControllerFindAllQueryOptions(params, {
+        request: serverRequestOptions(),
+      }),
+    ),
   ]);
 
   return (
@@ -178,19 +171,7 @@ export default async function HomePage() {
           must find it on the server AND during hydration, whatever order their
           Suspense boundaries hydrate in. */}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
-        <HeroBanner
-          heroSlides={banners.HERO_SLIDE}
-          promoTiles={banners.PROMO_TILE}
-        />
-        <TrustStrip />
-        <CategoryNav />
-        <PopularRail carousels={carousels.HOME_TABS} />
-        {/* Owner-approved default (plan 154): admin carousels COEXIST below the
-            PopularRail, grouped with the other product-rail section. */}
-        <RecommendationCarousels carousels={carousels.HOME_RAILS} />
-        <PromoBanner banner={banners.PROMO_BANNER[0]} />
-        <RecentlyViewed />
-        <Newsletter contact={contact} />
+        {blocks.map((block) => renderHomeBlock(block, { banners, contact }))}
       </PrefetchBoundary>
     </div>
   );

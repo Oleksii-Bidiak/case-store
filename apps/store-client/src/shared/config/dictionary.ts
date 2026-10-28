@@ -334,12 +334,13 @@ export const dict = {
         new: "Новинки",
         sale: "Акційні",
       },
-      tabsAria: "Категорії добірки",
       prev: "Прокрутити назад",
       next: "Прокрутити вперед",
       viewAll: "Дивитись усі",
       error: "Не вдалося завантажити товари. Спробуйте пізніше.",
       empty: "Товарів поки немає.",
+      /** Tablist name of one TABS block — the page may hold several (TASK-663). */
+      tabsAriaFor: (title: string) => `Розділи блоку «${title}»`,
     },
 
     widePromo: {

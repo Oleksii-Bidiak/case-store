@@ -1,6 +1,5 @@
 import {
   fetchHomeBlocks,
-  fetchPublishedCarouselsByPlacement,
   CAROUSELS_COLLECTION_TAG,
   HOME_BLOCKS_TAG,
 } from "./carousels-server";
@@ -38,7 +37,7 @@ function mockBlocks(rows: unknown[]): jest.Mock {
   return fetchMock;
 }
 
-describe("fetchHomeBlocks (TASK-660)", () => {
+describe("fetchHomeBlocks (TASK-660 / TASK-663)", () => {
   const originalFetch = global.fetch;
 
   afterEach(() => {
@@ -59,6 +58,53 @@ describe("fetchHomeBlocks (TASK-660)", () => {
     );
   });
 
+  it("returns the blocks as sent — order, several TABS / CAROUSEL blocks and empty carousels intact — in ONE request", async () => {
+    const rows = [
+      block("HERO"),
+      block("TABS", {
+        title: "Популярне",
+        tabs: [
+          carousel("t1", "Хіти", [{ id: "p1" }]),
+          carousel("t2", "Новинки"),
+        ],
+      }),
+      block("CAROUSEL", { carousel: carousel("r1", "Рейл A", [{ id: "p2" }]) }),
+      block("TABS", { title: "Аксесуари", tabs: [carousel("t3", "Чохли")] }),
+      block("CAROUSEL", { carousel: carousel("r2", "Рейл B") }),
+      block("NEWSLETTER"),
+    ];
+    const fetchMock = mockBlocks(rows);
+
+    const blocks = await fetchHomeBlocks();
+
+    // Hiding an empty carousel is the widget's job (plan 154), not the fetcher's.
+    expect(blocks).toEqual(rows);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a caller override the request (the seam the signed preview uses)", async () => {
+    const fetchMock = mockBlocks([]);
+
+    await fetchHomeBlocks({
+      cache: "no-store",
+      next: undefined,
+      headers: { "x-test": "1" },
+    });
+
+    const options = fetchMock.mock.calls[0][1];
+    expect(options.cache).toBe("no-store");
+    expect(options.next).toBeUndefined();
+    expect(options.headers).toEqual({ "x-test": "1" });
+  });
+
+  it("returns [] when the body carries no data", async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({}) }) as never;
+
+    await expect(fetchHomeBlocks()).resolves.toEqual([]);
+  });
+
   it("returns [] on a non-OK response", async () => {
     global.fetch = jest
       .fn()
@@ -73,61 +119,5 @@ describe("fetchHomeBlocks (TASK-660)", () => {
       .mockRejectedValue(new Error("ECONNREFUSED")) as never;
 
     await expect(fetchHomeBlocks()).resolves.toEqual([]);
-  });
-});
-
-describe("fetchPublishedCarouselsByPlacement — derived from the blocks (TASK-660 bridge)", () => {
-  const originalFetch = global.fetch;
-
-  afterEach(() => {
-    global.fetch = originalFetch;
-    jest.restoreAllMocks();
-  });
-
-  it("takes the first TABS block's tabs and every CAROUSEL block's carousel, in block order", async () => {
-    const fetchMock = mockBlocks([
-      block("HERO"),
-      block("TABS", {
-        title: "Популярне",
-        tabs: [
-          carousel("t1", "Хіти", [{ id: "p1" }]),
-          carousel("t2", "Новинки"),
-        ],
-      }),
-      block("CAROUSEL", { carousel: carousel("r1", "Рейл A", [{ id: "p2" }]) }),
-      // A second TABS block is TASK-663's to render; the bridge ignores it.
-      block("TABS", { title: "Аксесуари", tabs: [carousel("t3", "Чохли")] }),
-      block("CAROUSEL", { carousel: carousel("r2", "Рейл B") }),
-      block("NEWSLETTER"),
-    ]);
-
-    const groups = await fetchPublishedCarouselsByPlacement();
-
-    expect(groups.HOME_TABS.map((c) => c.id)).toEqual(["t1", "t2"]);
-    expect(groups.HOME_RAILS.map((c) => c.id)).toEqual(["r1", "r2"]);
-    // An empty carousel is the backend's honest answer — not filtered here.
-    expect(groups.HOME_TABS[1].products).toHaveLength(0);
-    // One request for the whole page.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("gives PopularRail an empty group (its fallback tabs) when the TABS block has no tabs", async () => {
-    mockBlocks([block("TABS", { title: "Популярне", tabs: [] })]);
-
-    await expect(fetchPublishedCarouselsByPlacement()).resolves.toEqual({
-      HOME_TABS: [],
-      HOME_RAILS: [],
-    });
-  });
-
-  it("returns empty groups when the API is unreachable", async () => {
-    global.fetch = jest
-      .fn()
-      .mockRejectedValue(new Error("ECONNREFUSED")) as never;
-
-    await expect(fetchPublishedCarouselsByPlacement()).resolves.toEqual({
-      HOME_TABS: [],
-      HOME_RAILS: [],
-    });
   });
 });
