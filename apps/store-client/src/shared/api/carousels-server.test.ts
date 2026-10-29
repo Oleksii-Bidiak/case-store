@@ -50,7 +50,7 @@ describe("fetchHomeBlocks (TASK-660 / TASK-663)", () => {
 
     const blocks = await fetchHomeBlocks();
 
-    expect(blocks.map((b) => b.type)).toEqual(["HERO"]);
+    expect(blocks?.map((b) => b.type)).toEqual(["HERO"]);
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/home-blocks$/);
     const options = fetchMock.mock.calls[0][1];
     expect(options.next.tags).toEqual(
