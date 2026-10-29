@@ -75,8 +75,10 @@ export const dict = {
     searchSubmit: "Шукати",
     // Top announcement bar (TASK-167-A). The number itself is NOT here: it is
     // the admin-managed SiteContactSettings.phone, hidden when unset (TASK-873)
-    // — a dictionary number would ring nobody.
-    announcement: "Безкоштовна доставка від 1 000 ₴ · Відправка день у день",
+    // — a dictionary number would ring nobody. TASK-1661: no «безкоштовна
+    // доставка від 1 000 ₴» — Nova Poshta is never free (B-6 №2).
+    announcement:
+      "Доставка Новою Поштою по всій Україні · Відправка день у день",
     phoneAria: "Зателефонувати в підтримку",
     // Catalog mega-menu trigger + labelled action cluster.
     catalogButton: "Каталог",
@@ -194,7 +196,9 @@ export const dict = {
   },
 
   trust: {
-    shipping: "Безкоштовна доставка від 1 000 ₴",
+    // TASK-1661 — Nova Poshta is never free (B-6 №2); only the courier has a
+    // threshold, and its copy names the live amount on the checkout.
+    shipping: "Доставка по всій Україні",
     // TASK-873 — 14 days, the statutory window (Закон «Про захист прав
     // споживачів», ст. 9) that RETURN_POLICY, /info, /contact and the seeded
     // «Повернення та обмін» page all state; the footer used to promise 30.
@@ -251,9 +255,9 @@ export const dict = {
         },
         {
           eyebrow: "Доставка",
-          title: "Безкоштовна доставка від 1 000 ₴",
+          title: "Доставка по всій Україні",
           subtitle:
-            "Нова Пошта по всій Україні · відправка день у день · оплата під час отримання.",
+            "Нова Пошта за тарифом перевізника · відправка день у день · оплата під час отримання.",
           cta: "Переглянути новинки",
           href: "/products?sortBy=createdAt&sortOrder=desc",
         },
@@ -294,9 +298,11 @@ export const dict = {
         accent: "sale" as const,
       },
       {
-        badge: "ВІД 1 000 ₴",
-        title: "Безкоштовна доставка",
-        text: "Нова Пошта по всій Україні — відправка день у день.",
+        // TASK-1661 — was «ВІД 1 000 ₴ / Безкоштовна доставка»: a threshold
+        // Nova Poshta never had.
+        badge: "НОВА ПОШТА",
+        title: "Доставка по всій Україні",
+        text: "Відділення й поштомати за тарифом перевізника — відправка день у день.",
         cta: "Умови доставки",
         href: "/info#delivery",
         accent: "primary" as const,
@@ -591,7 +597,7 @@ export const dict = {
     },
     deliveryHeading: "Доставка",
     deliveryIntro:
-      "Відправляємо замовлення день у день при оформленні до 18:00. Безкоштовно від 1 000 ₴.",
+      "Відправляємо замовлення день у день при оформленні до 18:00. Нова Пошта — за тарифом перевізника.",
     paymentHeading: "Оплата",
     paymentIntro: "Обирайте зручний спосіб — онлайн або при отриманні.",
     warrantyHeading: "Гарантія та сервіс",

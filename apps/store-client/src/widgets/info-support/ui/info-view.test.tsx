@@ -45,9 +45,12 @@ describe("InfoView", () => {
     expect(question).toBeInTheDocument();
 
     await user.click(question);
+    // TASK-1661: Nova Poshta is never free — the answer names the carrier's
+    // tariff, not a «від 1 000 ₴» threshold nothing implements.
     expect(
-      screen.getByText(/безкоштовно при замовленні від 1 000/),
+      screen.getByText(/Новою Поштою — за тарифом перевізника/),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/безкоштовно/i)).not.toBeInTheDocument();
   });
 
   it("shows the real contact details and a link card to /contact, not a form (TASK-866)", async () => {
