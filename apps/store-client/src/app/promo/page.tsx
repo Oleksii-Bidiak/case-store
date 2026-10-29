@@ -1,7 +1,11 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
-import { PROMO_DEALS_ANCHOR, PROMO_LISTING_LOCKS } from "@/widgets/promo";
+import {
+  PROMO_DEALS_ANCHOR,
+  PROMO_LISTING_LOCKS,
+  PromoScrollAnchor,
+} from "@/widgets/promo";
 import {
   ProductListSkeleton,
   ProductListView,
@@ -135,9 +139,12 @@ export default async function PromoPage({
 
   // The container, hero, coupons, deals heading and subscribe block are the
   // segment's `layout.tsx` (TASK-869); this page is what streams into the
-  // deals slot, and `loading.tsx` stands in for exactly that.
+  // deals slot, and `loading.tsx` stands in for exactly that. The segment opens
+  // with the scroll anchor so a fresh navigation lands at the top of the frame,
+  // not at the listing (TASK-1991) — keep it the first element.
   return (
     <>
+      <PromoScrollAnchor />
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.promo.breadcrumbHome, item: SITE_URL },
