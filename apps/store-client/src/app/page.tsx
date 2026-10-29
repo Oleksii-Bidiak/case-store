@@ -51,8 +51,8 @@ export const revalidate = 3600;
  * fallback (`fallback:` / `?? dict…`) instead.
  *
  * `toMetadataTitle` brands the derived title (`Головна | <store name>`)
- * explicitly — Next 16 does not apply the root `title.template` to a
- * `generateMetadata` title — closing the geo-audit "Головна without brand" gap
+ * explicitly — the root `title.template` applies only to child segments, never
+ * to the root layout's own page (`/`) — closing the geo-audit "Головна without brand" gap
  * (plan 116 gap 3). `fetchSeoSettings()` is a tagged native fetch, deduped with
  * the component's own call below within the request.
  */

@@ -2317,42 +2317,46 @@ export const dict = {
     productFallbackTitle: "Товар",
     productFallbackDescription: "Переглянути деталі товару.",
     pageFallbackTitle: "Сторінка",
-    cartTitle: "Кошик | CaseStore",
+    // The page titles below are bare page names: the root layout's title
+    // template appends the store name to every child segment's string title,
+    // static or from generateMetadata (TASK-1628 — they used to read
+    // «Кошик | CaseStore | CaseStore»).
+    cartTitle: "Кошик",
     cartDescription: "Перегляньте та змініть товари у вашому кошику.",
-    checkoutTitle: "Оформлення замовлення | CaseStore",
+    checkoutTitle: "Оформлення замовлення",
     checkoutDescription: "Завершіть оформлення покупки.",
-    orderTitle: (ref: string) => `Замовлення ${ref} підтверджено | CaseStore`,
+    orderTitle: (ref: string) => `Замовлення ${ref} підтверджено`,
     // Deliberately carries no order reference: the URL that reaches this page is
     // a bearer token from an email, so the title must stay uninformative to
     // anyone the link is forwarded to (TASK-338).
-    guestOrderTitle: "Статус замовлення | CaseStore",
+    guestOrderTitle: "Статус замовлення",
     // TASK-483: публічна форма «номер + телефон». Індексувати її МОЖНА — на
     // відміну від сторінки за токеном, тут в URL немає нічого приватного, а
     // покупець, який шукає «як дізнатися статус замовлення», має її знайти.
-    orderLookupTitle: "Статус замовлення за номером | CaseStore",
+    orderLookupTitle: "Статус замовлення за номером",
     orderLookupDescription:
       "Перевірте стан замовлення за номером із листа-підтвердження та номером телефону — без реєстрації та входу.",
-    loginTitle: "Вхід | CaseStore",
+    loginTitle: "Вхід",
     loginDescription: "Увійдіть до свого акаунту.",
-    registerTitle: "Реєстрація | CaseStore",
+    registerTitle: "Реєстрація",
     registerDescription: "Створіть новий акаунт.",
-    forgotPasswordTitle: "Відновлення пароля | CaseStore",
+    forgotPasswordTitle: "Відновлення пароля",
     forgotPasswordDescription: "Отримайте посилання для скидання пароля.",
-    resetPasswordTitle: "Новий пароль | CaseStore",
+    resetPasswordTitle: "Новий пароль",
     resetPasswordDescription: "Установіть новий пароль для вашого акаунту.",
-    verifyEmailTitle: "Підтвердження email | CaseStore",
+    verifyEmailTitle: "Підтвердження email",
     verifyEmailDescription: "Підтвердіть свою електронну адресу.",
     // TASK-396 — the two landing pages of an address change.
-    confirmEmailChangeTitle: "Нова адреса для входу | CaseStore",
+    confirmEmailChangeTitle: "Нова адреса для входу",
     confirmEmailChangeDescription: "Підтвердіть нову адресу для входу.",
-    revertEmailChangeTitle: "Скасування зміни адреси | CaseStore",
+    revertEmailChangeTitle: "Скасування зміни адреси",
     revertEmailChangeDescription: "Скасуйте зміну адреси для входу.",
-    accountTitle: "Мій акаунт | CaseStore",
+    accountTitle: "Мій акаунт",
     accountDescription: "Керуйте профілем та переглядайте свої замовлення.",
     ordersDescription: "Історія ваших замовлень.",
     // TASK-217 — the order history as a section of the account.
-    accountOrdersTitle: "Історія замовлень | CaseStore",
-    accountOrderTitle: (ref: string) => `Замовлення ${ref} | CaseStore`,
+    accountOrdersTitle: "Історія замовлень",
+    accountOrderTitle: (ref: string) => `Замовлення ${ref}`,
     blogTitle: "Блог",
     blogDescription:
       "Огляди, гайди та поради про смартфони, аксесуари й техніку — від команди CaseStore.",
