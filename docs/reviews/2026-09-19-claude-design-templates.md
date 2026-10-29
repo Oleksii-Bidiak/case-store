@@ -1,6 +1,6 @@
 # Ревізія шаблонів Claude Design — 2026-09-19
 
-> Крок S7.2 [ранбука](../session-runbook.md). Проєкт Claude Design **store-client Design System**
+> Крок S7.2 [ранбука](../archive/session-runbook-cycle-1.md). Проєкт Claude Design **store-client Design System**
 > (`projectId` у `.design-sync/config.json`), тека `templates/`. Шаблони — стартові макети, з
 > яких агент Claude Design починає нові дизайни. Застарілий шаблон тягне застарілу вітрину в кожен
 > новий макет. Звірено з develop `501a3aa0`. У проєкті під час ревізії нічого не змінювалось.

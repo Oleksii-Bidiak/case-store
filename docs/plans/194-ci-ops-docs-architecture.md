@@ -143,7 +143,7 @@ TASK-1200/1201 — частини A/B TASK-328; 1202 — `SENTRY_AUTH_TOKEN` я�
 `build-args`; 1208 — хвости gitleaks; 1209 — SHA-пін trivy-action; 1210 — форма входу адмінки
 шле пароль GET-ом до гідратації; 1211 — `next/font/google` у `.next`; 1212 — `screens-190.spec`;
 1213 — пастка `start:dev` у dev-traps; 1214 — застарілий коментар Playwright-джоби; 1215 — мертвий
-`prisma.seed`; 1216 — `session-runbook.md` без `--name`; 1217 — lint-staged лишає до-Prettier
+`prisma.seed`; 1216 — `archive/session-runbook-cycle-1.md` без `--name`; 1217 — lint-staged лишає до-Prettier
 копію в індексі.
 
 Уже відстежені й не продубльовані: гідратація `CategoryChips` (TASK-534), Playwright червоний до

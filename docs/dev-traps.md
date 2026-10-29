@@ -98,7 +98,7 @@ The database server … was reached but timed out.
 - **Потрібен лише SQL, без застосування** — `npx prisma migrate dev --create-only --name <name>`
   (з `apps/store-api`), або `npx prisma migrate diff … --script`, коли `migrate dev` у цьому
   оточенні взагалі непридатний (так роблять агентні хвилі — див.
-  [session-runbook-2.md](session-runbook-2.md)).
+  [archive/session-runbook-cycle-2.md](archive/session-runbook-cycle-2.md)).
 
 - **Лок уже висить (P1002)** — спершу завершити свій завислий `migrate dev` (Ctrl+C / kill
   саме цього процесу); зазвичай лок зникає разом із ним. Якщо ні — закрити сесію, що його тримає,

@@ -5,12 +5,12 @@
 >
 > **Стан, з якого цикл стартує** (звірено 2026-09-23): develop на `cdf97bf9`, демо-стенд на
 > `b63c3570`. У BACKLOG 376 відкритих рядків, розкладку див. в
-> [інвентарі циклу 2](reviews/2026-09-23-cycle-2-inventory.md). Next ID — TASK-858.
+> [інвентарі циклу 2](../reviews/2026-09-23-cycle-2-inventory.md). Next ID — TASK-858.
 >
-> **Джерела:** плани [189](plans/189-design-track-cycle-2.md)…[198](plans/198-admin-by-mockups.md) і
-> [184](plans/184-delivery-methods.md)…[188](plans/188-analytics.md) (розділи «Кластери (цикл 2)»);
-> перепровірка — [`qa-recheck.md`](qa-recheck.md). Попередній цикл —
-> [session-runbook.md](session-runbook.md).
+> **Джерела:** плани [189](../plans/189-design-track-cycle-2.md)…[198](../plans/198-admin-by-mockups.md) і
+> [184](../plans/184-delivery-methods.md)…[188](../plans/188-analytics.md) (розділи «Кластери (цикл 2)»);
+> перепровірка — [`qa-recheck.md`](../qa-recheck.md). Попередній цикл —
+> [session-runbook.md](session-runbook-cycle-1.md).
 
 ## Перед кожною сесією
 
@@ -651,4 +651,4 @@ TASK-491 — це не код, а рахунок: доки акаунт забл
   - 🅿️ TASK-034/081, 049, 050, 085, 090, 175, 178, 286;
   - TASK-284, 341 (залишок), 344 (2FA, рішення B-3), 482, 557, 576, 682, 683, 710, 746, 754.
 
-  Причина кожного — у [інвентарі](reviews/2026-09-23-cycle-2-inventory.md).
+  Причина кожного — у [інвентарі](../reviews/2026-09-23-cycle-2-inventory.md).
