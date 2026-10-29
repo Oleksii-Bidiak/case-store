@@ -1121,3 +1121,24 @@ describe("HeaderSearch — mega-menu keyboard, scroll-lock and the second exit (
     });
   });
 });
+
+// TASK-1996: the pill's popup shares the cap of the stand-alone field — a
+// viewport-tied height on the popup root, which is the one scroll area.
+describe("HeaderSearch — popup height on a short viewport (TASK-1996)", () => {
+  it("caps the pill's popup to the viewport height with a single scroll area", async () => {
+    setupHandlers({ products: [makeSuggestion()], posts: [makeBlogPost()] });
+
+    await typeQuery("чохол");
+    await screen.findByText("Як обрати чохол для iPhone");
+    const productList = screen.getByRole("listbox", {
+      name: dict.search.inputAria,
+    });
+    const popup = productList.parentElement!;
+
+    expect(popup).toHaveClass("absolute", "overflow-y-auto");
+    expect(popup.className).toMatch(/max-h-\[[^\]]*100dvh[^\]]*\]/);
+    expect(
+      popup.querySelectorAll(".overflow-y-auto, [class*='max-h-']"),
+    ).toHaveLength(0);
+  });
+});
