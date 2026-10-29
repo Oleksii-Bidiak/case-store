@@ -16,7 +16,7 @@ import {
   RequirePermission,
   type PermissionActor,
 } from '../auth/permissions';
-import { PreviewTokenService } from './preview-token.service';
+import { ANY_PREVIEW_PERMISSIONS, PreviewTokenService } from './preview-token.service';
 import { CreatePreviewTokenDto } from './dto/create-preview-token.dto';
 import { PreviewTokenEntity, ResolvedPreviewTokenEntity } from './entities';
 import { PREVIEW_TOKEN_HEADER } from './preview-response';
@@ -55,15 +55,9 @@ export class AdminPreviewTokenController {
   constructor(private readonly previewTokenService: PreviewTokenService) {}
 
   @Post()
-  @RequireAnyPermission(
-    'home:read',
-    'home:write',
-    'products:read',
-    'pages:read',
-    'pages:write',
-    'blog:read',
-    'blog:write',
-  )
+  // Derived from the service's per-type map, so a new previewable type cannot be
+  // left out of (or linger in) the route gate.
+  @RequireAnyPermission(ANY_PREVIEW_PERMISSIONS[0], ...ANY_PREVIEW_PERMISSIONS.slice(1))
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Issue a 24-hour signed preview link to one draft (admin)' })
   @ApiResponse({ status: 201, type: PreviewTokenResponse })
