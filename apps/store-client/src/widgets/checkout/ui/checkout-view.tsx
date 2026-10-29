@@ -227,13 +227,17 @@ export function CheckoutView() {
     setValue("deliveryMethod", deliveryMethod, { shouldValidate: true });
   }, [isDeliveryLoading, selectedDelivery, deliveryMethod, setValue]);
 
-  // The first pickup point is preselected, as the mockup draws it (#pickup) —
-  // the method's own default works the same way. A point the shop has since
-  // deactivated gives way to the first one still offered, never submitted.
+  // A lone pickup point is preselected — there is nothing to choose. Of several,
+  // none is (TASK-1997): a guessed point can send the shopper to the wrong
+  // shop, so they pick one and the schema says so if they don't. A choice still
+  // offered holds; one the shop has since deactivated is cleared, never
+  // submitted.
   const pointIds = deliveryOptions.pickupPoints.map((point) => point.id);
   const resolvedPointId = pointIds.includes(pickupPointId)
     ? pickupPointId
-    : (pointIds[0] ?? "");
+    : pointIds.length === 1
+      ? pointIds[0]
+      : "";
   useEffect(() => {
     if (isDeliveryLoading || resolvedPointId === pickupPointId) return;
     setValue("pickupPointId", resolvedPointId, {

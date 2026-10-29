@@ -1169,7 +1169,7 @@ describe("CheckoutView — delivery method (TASK-646)", () => {
     });
   });
 
-  it("pickup: the first of several points is preselected, with its city, and another can be chosen", async () => {
+  it("pickup: of several points none is preselected — the shopper must choose, and the choice holds (TASK-1997)", async () => {
     offer({
       pickupPoints: [
         makePickupPoint(),
@@ -1187,17 +1187,50 @@ describe("CheckoutView — delivery method (TASK-646)", () => {
     await screen.findByRole("heading", { name: dict.checkout.title });
 
     await user.click(methodRadio(dict.checkout.delivery.titles.PICKUP));
-    // As drawn (#pickup): the first point already chosen, city first.
+    // A guessed point could send the shopper to the wrong shop: nothing is
+    // chosen until they choose. The cards still show the city first.
+    const first = await screen.findByRole("radio", {
+      name: /Магазин на Хрещатику/,
+    });
+    expect(first).not.toBeChecked();
     expect(
-      await screen.findByRole("radio", { name: /Магазин на Хрещатику/ }),
-    ).toBeChecked();
+      screen.getByRole("radio", { name: /Магазин на Оболоні/ }),
+    ).not.toBeChecked();
     expect(screen.getByText("Київ, вул. Хрещатик, 22")).toBeVisible();
+    const group = screen.getByRole("radiogroup", {
+      name: dict.checkout.delivery.pickupGroupAria,
+    });
+    expect(group).toHaveAttribute("aria-required", "true");
+    // Not scolded before trying.
     expect(
       screen.queryByText(dict.checkout.delivery.validation.pickupPoint),
     ).toBeNull();
 
-    await user.click(screen.getByRole("radio", { name: /Магазин на Оболоні/ }));
+    // Moving on without a point is blocked, the reason under the field.
     await fillRecipient(user);
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+    expect(
+      await screen.findByText(dict.checkout.delivery.validation.pickupPoint),
+    ).toBeVisible();
+    expect(group).toHaveAttribute("aria-invalid", "true");
+    expect(group).toHaveAccessibleDescription(
+      dict.checkout.delivery.validation.pickupPoint,
+    );
+    await waitFor(() => expect(first).toHaveFocus());
+    expect(
+      screen.queryByRole("heading", { name: dict.checkout.reviewHeading }),
+    ).toBeNull();
+    expect(order.body).toBeNull();
+
+    // A chosen point that is still offered survives a detour to another method.
+    await user.click(screen.getByRole("radio", { name: /Магазин на Оболоні/ }));
+    await user.click(methodRadio(dict.checkout.delivery.titles.NOVA_POSHTA));
+    await user.click(methodRadio(dict.checkout.delivery.titles.PICKUP));
+    expect(
+      await screen.findByRole("radio", { name: /Магазин на Оболоні/ }),
+    ).toBeChecked();
     await placeOrder(user);
 
     await waitFor(() => expect(order.body).not.toBeNull());
