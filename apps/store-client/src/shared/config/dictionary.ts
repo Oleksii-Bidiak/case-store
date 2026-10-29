@@ -388,8 +388,9 @@ export const dict = {
     // the hub renders `badgeNamed` instead (no more hardcoded «MOBILESTORE»).
     badge: "Журнал",
     heading: "Блог про техніку та ґаджети",
-    subtitle:
-      "Огляди, гайди й поради від команди CaseStore — щоб обрати саме те, що потрібно, і вичавити з ґаджета максимум.",
+    // TASK-1677 — the store name is the admin's «SEO-налаштування» siteName.
+    subtitle: (siteName: string) =>
+      `Огляди, гайди й поради від команди ${siteName} — щоб обрати саме те, що потрібно, і вичавити з ґаджета максимум.`,
     searchPlaceholder: "Пошук у блозі…",
     searchAria: "Пошук у блозі",
     categoryFilterAria: "Категорії блогу",
@@ -408,8 +409,9 @@ export const dict = {
     emptyBody: "Спробуйте іншу категорію або уточніть запит.",
     newsletter: {
       heading: "Не пропускай нові статті",
-      subtitle:
-        "Підписуйся на канали CaseStore — огляди, гайди та знижки першими.",
+      // TASK-1677 — named after the resolved siteName, like `blog.subtitle`.
+      subtitle: (siteName: string) =>
+        `Підписуйся на канали ${siteName} — огляди, гайди та знижки першими.`,
       // TASK-873 — the social buttons are the shop's real channels from
       // «Контакти магазину», as on the home page (TASK-741); the old `href: "#"`
       // list with its «скоро запрацюють» toast is gone.

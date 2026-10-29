@@ -26,6 +26,9 @@ const copy: Array<[string, (siteName: string) => string]> = [
     "product.buyBoxInfo.warranty.text",
     (name) => dict.product.buyBoxInfo.warranty.text(name),
   ],
+  // TASK-1677 — the /blog hero and newsletter subtitles.
+  ["blog.subtitle", (name) => dict.blog.subtitle(name)],
+  ["blog.newsletter.subtitle", (name) => dict.blog.newsletter.subtitle(name)],
 ];
 
 describe("storefront dictionary — copy that names the store (TASK-1639)", () => {

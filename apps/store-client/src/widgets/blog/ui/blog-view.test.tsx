@@ -111,6 +111,26 @@ describe("BlogView", () => {
     expect(withoutCover.querySelector("img")).toBeNull();
   });
 
+  it("names the admin's store in the hero and newsletter subtitles (TASK-1677)", () => {
+    renderWithProviders(
+      <BlogView
+        posts={[makePost({ slug: "a", title: "Grid Card A" })]}
+        categories={categories}
+        featured={null}
+        activeCategory="all"
+        query=""
+        page={1}
+        totalPages={1}
+        siteName="Аксесуарня"
+        contact={null}
+      />,
+    );
+
+    expect(screen.getByText(/від команди Аксесуарня/)).toBeInTheDocument();
+    expect(screen.getByText(/на канали Аксесуарня/)).toBeInTheDocument();
+    expect(screen.queryByText(/CaseStore/)).not.toBeInTheDocument();
+  });
+
   it("shows the empty state when there are no posts and no featured", () => {
     renderWithProviders(
       <BlogView
