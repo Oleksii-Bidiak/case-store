@@ -407,6 +407,17 @@ describe("BlogPostForm — sections and publishing (БЛ7–БЛ10)", () => {
     ).toBeInTheDocument();
   });
 
+  it("anchors each sr-only status radio to its own segment (TASK-1989)", () => {
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
+
+    // An sr-only radio is position:absolute; without a positioned label it
+    // escapes to a far ancestor and focusing it scrolls the window.
+    const group = screen.getByRole("radiogroup", { name: f.status });
+    for (const radio of within(group).getAllByRole("radio")) {
+      expect(radio.closest("label")).toHaveClass("relative");
+    }
+  });
+
   it("submits the picked status", async () => {
     const onSubmit = jest.fn();
     renderWithProviders(

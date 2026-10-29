@@ -714,7 +714,7 @@ function EditablePageForm({
               {STATUS_OPTIONS.map((option) => (
                 <label
                   key={option.value}
-                  className="flex min-h-9 flex-1 cursor-pointer items-center justify-center rounded-sm px-4 text-sm font-medium whitespace-nowrap text-foreground has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50 has-disabled:cursor-not-allowed has-disabled:opacity-70 md:flex-none"
+                  className="relative flex min-h-9 flex-1 cursor-pointer items-center justify-center rounded-sm px-4 text-sm font-medium whitespace-nowrap text-foreground has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50 has-disabled:cursor-not-allowed has-disabled:opacity-70 md:flex-none"
                 >
                   <input
                     type="radio"

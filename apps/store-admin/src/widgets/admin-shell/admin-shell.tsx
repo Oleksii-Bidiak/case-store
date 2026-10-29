@@ -42,16 +42,24 @@ export function AdminShell({ children }: { children: ReactNode }) {
     setMobileNavOpen(false);
   }
 
+  // TASK-1989. `<main>` is the only scroller and is `relative`, so every
+  // absolutely positioned descendant (sr-only radios, Radix hidden inputs)
+  // resolves its containing block here and scrolls with the page. Without it
+  // they fall through to the initial containing block, sit at their unscrolled
+  // offset far below, and give the viewport a scroll range that focus or a
+  // `#section` anchor then uses — sliding the whole shell up behind the body's
+  // overflow-hidden. The wrappers use `overflow-clip`, not `-hidden`: clip is
+  // not a scroll container, so nothing (focus, anchors, script) can scroll it.
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-clip">
       <AdminSidebar />
       <MobileNavDrawer open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-clip">
         <AdminHeader
           mobileNavOpen={mobileNavOpen}
           onOpenMobileNav={() => setMobileNavOpen(true)}
         />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <main className="relative flex-1 overflow-y-auto p-4 lg:p-6">
           {permissionsFailed ? (
             // TASK-1014 (П6). Without permissions every section answers "no"
             // — the owner's too — so the page itself would render a refusal

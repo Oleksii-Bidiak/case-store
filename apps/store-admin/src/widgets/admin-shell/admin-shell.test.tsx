@@ -43,6 +43,34 @@ jest.mock("@/entities/session", () => ({
 
 const openMenu = { name: dict.header.openMenu };
 
+describe("AdminShell — page scroll container (TASK-1989)", () => {
+  // jsdom has no layout, so the contract is asserted on the classes: the
+  // <main> scroller must be the containing block of every absolutely
+  // positioned descendant (sr-only radios, Radix hidden inputs), or those
+  // inputs resolve to the initial containing block and give the VIEWPORT a
+  // scroll range — focusing one, or following a #section anchor, then slides
+  // the whole h-screen shell up behind body overflow-hidden.
+  it("makes <main> the positioned scroll container", () => {
+    renderWithProviders(<AdminShell>page content</AdminShell>);
+
+    const main = screen.getByRole("main");
+    expect(main).toHaveClass("relative");
+    expect(main).toHaveClass("overflow-y-auto");
+  });
+
+  it("clips the shell wrappers so script/focus cannot scroll them", () => {
+    renderWithProviders(<AdminShell>page content</AdminShell>);
+
+    const main = screen.getByRole("main");
+    const column = main.parentElement!;
+    const shell = column.parentElement!;
+    for (const wrapper of [column, shell]) {
+      expect(wrapper).toHaveClass("overflow-clip");
+      expect(wrapper).not.toHaveClass("overflow-hidden");
+    }
+  });
+});
+
 describe("AdminShell — mobile nav drawer", () => {
   afterEach(() => {
     mockPathname = "/";

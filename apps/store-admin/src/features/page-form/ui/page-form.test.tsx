@@ -382,6 +382,17 @@ describe("PageForm — sections, one sticky save, errors under fields", () => {
     expect(screen.getByLabelText(f.scheduledAt)).toBeInTheDocument();
   });
 
+  it("anchors each sr-only status radio to its own segment (TASK-1989)", () => {
+    renderWithProviders(<PageForm onSubmit={noop} isPending={false} />);
+
+    // An sr-only radio is position:absolute; without a positioned label it
+    // escapes to a far ancestor and focusing it scrolls the window.
+    const group = screen.getByRole("radiogroup", { name: f.statusAria });
+    for (const radio of within(group).getAllByRole("radio")) {
+      expect(radio.closest("label")).toHaveClass("relative");
+    }
+  });
+
   it("warns next to the address and the status of a page /info renders inline", async () => {
     renderWithProviders(
       <PageForm

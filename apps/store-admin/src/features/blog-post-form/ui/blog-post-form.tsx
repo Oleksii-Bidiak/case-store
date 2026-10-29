@@ -813,7 +813,7 @@ export function BlogPostForm({
                 {STATUS_OPTIONS.map((option) => (
                   <label
                     key={option.value}
-                    className="flex min-h-11 cursor-pointer items-center justify-center rounded-sm px-3 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50 md:min-h-9"
+                    className="relative flex min-h-11 cursor-pointer items-center justify-center rounded-sm px-3 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50 md:min-h-9"
                   >
                     <input
                       type="radio"
