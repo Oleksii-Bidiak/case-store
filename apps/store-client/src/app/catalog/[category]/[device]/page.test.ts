@@ -57,7 +57,8 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { catalogLandingControllerFindCompatPage } from "@/shared/api/generated/catalog/catalog";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
-import { SITE_URL, dict } from "@/shared/config";
+import { SITE_NAME, SITE_URL, dict } from "@/shared/config";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { ProductListView } from "@/widgets";
 import { StaleCanonicalGuard } from "@/shared/lib/seo/stale-canonical-guard";
 import CompatLandingPage, { generateMetadata } from "./page";
@@ -316,7 +317,7 @@ describe("catalog/[category]/[device] — metadata (TASK-490)", () => {
       absolute: expect.stringContaining("Чохли для iPhone 15 Pro"),
     });
     expect(result.description).toBe(
-      dict.meta.compatDescription("Чохли", "iPhone 15 Pro"),
+      dict.meta.compatDescription("Чохли", "iPhone 15 Pro", SITE_NAME),
     );
     expect(result.alternates?.canonical).toBe(
       `${SITE_URL}/catalog/chohly/iphone-15-pro`,
@@ -324,6 +325,20 @@ describe("catalog/[category]/[device] — metadata (TASK-490)", () => {
     // Indexable: the unfiltered compat page is the one facet combination with
     // an address of its own.
     expect(result.robots).toBeUndefined();
+  });
+
+  it("names the admin-managed store in the generated description (TASK-1639)", async () => {
+    findPage.mockResolvedValue(pair() as never);
+    (fetchSeoSettings as jest.Mock).mockResolvedValueOnce({
+      siteName: "Аксесуарня",
+    });
+
+    const result = await meta("chohly", "iphone-15-pro");
+
+    expect(result.description).toBe(
+      dict.meta.compatDescription("Чохли", "iPhone 15 Pro", "Аксесуарня"),
+    );
+    expect(result.description).not.toContain(SITE_NAME);
   });
 
   it("lets the device model's admin overrides win over the template", async () => {

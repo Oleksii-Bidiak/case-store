@@ -106,7 +106,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     metadataBase: new URL(SITE_URL),
     title: {
-      default: resolved.title || dict.meta.rootTitle,
+      default: resolved.title || dict.meta.rootTitle(siteName),
       template: resolveTitleTemplate(seo, siteName),
     },
     description: resolved.description ?? dict.meta.rootDescription,
@@ -126,8 +126,7 @@ export async function generateMetadata(): Promise<Metadata> {
       images: buildOgImages({
         defaultOgImage: resolved.ogImage,
         // No admin title → the helper's floor, the brand-card alt built from
-        // the resolved store name (TASK-546), not the constant-bearing
-        // `dict.meta.rootTitle`.
+        // the resolved store name (TASK-546).
         alt: resolved.title,
         siteName,
       }),

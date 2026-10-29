@@ -41,9 +41,16 @@ function legalDocIcon(slug: string): Glyph {
 /**
  * LegalHubView — the LegalHub.dc.html template: a hub of all published static
  * pages (`/legal`). Driven by the `Page` backend; each tile links to the
- * `/legal/[slug]` document. Presentational — the page fetches `docs`.
+ * `/legal/[slug]` document. Presentational — the page fetches `docs` and
+ * resolves `siteName` (`resolveSiteName(seo)`, TASK-1639) for the subtitle.
  */
-export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
+export function LegalHubView({
+  docs,
+  siteName,
+}: {
+  docs: LegalHubDoc[];
+  siteName: string;
+}) {
   return (
     <>
       {/* Breadcrumbs */}
@@ -71,7 +78,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
           {dict.legal.hub.heading}
         </h1>
         <p className="text-base leading-[1.55] text-muted-foreground">
-          {dict.legal.hub.subtitle}
+          {dict.legal.hub.subtitle(siteName)}
         </p>
       </div>
 

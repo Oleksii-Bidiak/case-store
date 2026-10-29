@@ -34,6 +34,7 @@ import {
   H2_CLASS,
 } from "@/shared/config";
 import { formatMoney } from "@/shared/lib/format";
+import { resolveSiteName } from "@/shared/lib/seo";
 import { useHashNavigation } from "@/shared/lib/use-hash-navigation";
 import { Button } from "@/shared/ui";
 import {
@@ -145,8 +146,12 @@ export function InfoView({
   sections = OFFLINE_SECTIONS,
   services = [],
   pages = [],
+  siteName = resolveSiteName(),
 }: {
   contact: SiteContactSettingsEntity | null;
+  /** The admin-managed store name (`resolveSiteName(seo)` on the page,
+   *  TASK-1639) for the static «Про нас» heading. Omitted → the default. */
+  siteName?: string;
   /** FAQ entries from the admin-managed API; falls back to the static
    *  `INFO_FAQS` when the caller passes nothing (offline / error path). */
   faqs?: readonly InfoFaq[];
@@ -455,7 +460,7 @@ export function InfoView({
           >
             <div className="rounded-card bg-brand-gradient p-10 text-white">
               <h2 className={`mb-3 ${H2_CLASS}`}>
-                {about?.heading ?? d.aboutHeading}
+                {about?.heading ?? d.aboutHeading(siteName)}
               </h2>
               <p className="max-w-[620px] text-base leading-[1.6] opacity-95">
                 {about?.intro ?? d.aboutIntro}

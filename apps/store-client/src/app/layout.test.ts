@@ -140,7 +140,17 @@ describe("root layout generateMetadata (TASK-279)", () => {
 
     const title = meta.title as { default: string; template: string };
     expect(title.default.startsWith("CaseStore —")).toBe(true);
-    expect(title.default).toBe(dict.meta.rootTitle);
+    expect(title.default).toBe(dict.meta.rootTitle(SITE_NAME));
+  });
+
+  it("names the zero-config root title after the admin store name (TASK-1639)", async () => {
+    fetchSeo.mockResolvedValue(makeSettings({ siteName: "Аксесуарня" }));
+
+    const meta = await generateMetadata();
+
+    const title = meta.title as { default: string };
+    expect(title.default).toBe(dict.meta.rootTitle("Аксесуарня"));
+    expect(title.default).not.toContain("CaseStore");
   });
 
   it("keeps the admin defaultMetaTitle winning over the branded fallback", async () => {

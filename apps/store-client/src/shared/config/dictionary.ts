@@ -472,8 +472,10 @@ export const dict = {
     hub: {
       badge: "ДОКУМЕНТИ",
       heading: "Правова інформація",
-      subtitle:
-        "Усі офіційні документи CaseStore в одному місці — політики, умови та гарантії. Оберіть потрібний документ, щоб прочитати повну редакцію.",
+      // TASK-1639 — the admin-managed store name (`resolveSiteName(seo)`),
+      // never a literal; also the hub's fallback meta description.
+      subtitle: (siteName: string) =>
+        `Усі офіційні документи ${siteName} в одному місці — політики, умови та гарантії. Оберіть потрібний документ, щоб прочитати повну редакцію.`,
       // "{updatedPrefix} {date}" → "Оновлено 12 черв. 2026".
       updatedPrefix: "Оновлено",
       empty: "Документів поки немає",
@@ -603,7 +605,8 @@ export const dict = {
     warrantyHeading: "Гарантія та сервіс",
     warrantyIntro: "Уся техніка — офіційна, з гарантією виробника.",
     servicesHeading: "Додаткові сервіси захисту",
-    aboutHeading: "Ми — CaseStore",
+    // TASK-1639 — the admin-managed store name, passed down by /info.
+    aboutHeading: (siteName: string) => `Ми — ${siteName}`,
     aboutIntro:
       "Інтернет-магазин електроніки, який допомагає українцям обирати техніку без зайвого клопоту. Тільки оригінальні пристрої, офіційна гарантія та чесні ціни.",
     valuesHeading: "Чому обирають нас",
@@ -1031,7 +1034,8 @@ export const dict = {
       },
       warranty: {
         title: "Офіційна гарантія 12 міс.",
-        text: "Сервісне обслуговування CaseStore",
+        // TASK-1639 — the admin-managed store name, passed down by the PDP.
+        text: (siteName: string) => `Сервісне обслуговування ${siteName}`,
       },
       returns: { title: "Повернення 14 днів", text: "Без пояснення причин" },
     },
@@ -2291,7 +2295,10 @@ export const dict = {
   },
 
   meta: {
-    rootTitle: "CaseStore — магазин аксесуарів для телефонів",
+    // TASK-1639 — `title.default` and the manifest description: built from the
+    // admin-managed store name, so a rename in /settings/seo reaches them too.
+    rootTitle: (siteName: string) =>
+      `${siteName} — магазин аксесуарів для телефонів`,
     rootDescription:
       "Ваш магазин аксесуарів для мобільних телефонів — чохли, зарядні пристрої, захисні скельця та інше.",
     homeTitle: "Головна",
@@ -2309,8 +2316,12 @@ export const dict = {
     // field by the device model's admin `metaTitle`/`metaDescription`.
     compatTitle: (categoryName: string, deviceName: string) =>
       `${categoryName} для ${deviceName}`,
-    compatDescription: (categoryName: string, deviceName: string) =>
-      `${categoryName} для ${deviceName} у CaseStore — перевірена сумісність, оригінальні аксесуари та швидка доставка по Україні.`,
+    compatDescription: (
+      categoryName: string,
+      deviceName: string,
+      siteName: string,
+    ) =>
+      `${categoryName} для ${deviceName} у ${siteName} — перевірена сумісність, оригінальні аксесуари та швидка доставка по Україні.`,
     // Shown only for the split second before notFound() owns the response: a
     // 404 still needs *a* metadata object (same shape as the category landing).
     compatFallbackTitle: "Сумісні аксесуари",
@@ -2320,7 +2331,7 @@ export const dict = {
     // The page titles below are bare page names: the root layout's title
     // template appends the store name to every child segment's string title,
     // static or from generateMetadata (TASK-1628 — they used to read
-    // «Кошик | CaseStore | CaseStore»).
+    // «Кошик | <назва> | <назва>»).
     cartTitle: "Кошик",
     cartDescription: "Перегляньте та змініть товари у вашому кошику.",
     checkoutTitle: "Оформлення замовлення",
@@ -2358,8 +2369,10 @@ export const dict = {
     accountOrdersTitle: "Історія замовлень",
     accountOrderTitle: (ref: string) => `Замовлення ${ref}`,
     blogTitle: "Блог",
-    blogDescription:
-      "Огляди, гайди та поради про смартфони, аксесуари й техніку — від команди CaseStore.",
+    // TASK-1639 — the blog / contact hub fallbacks name the admin-managed
+    // store; `buildHubMetadata` passes the name it resolves.
+    blogDescription: (siteName: string) =>
+      `Огляди, гайди та поради про смартфони, аксесуари й техніку — від команди ${siteName}.`,
     notFoundTitle: "Сторінку не знайдено",
     notFoundDescription:
       "Схоже, такої сторінки не існує. Скористайтеся пошуком або поверніться на головну.",
@@ -2367,8 +2380,8 @@ export const dict = {
     promoDescription:
       "Найкращі ціни сезону — промокоди тижня та товари зі знижкою на смартфони, ноутбуки та аудіо.",
     contactTitle: "Звʼязатися з нами",
-    contactDescription:
-      "Гаряча лінія, пошта, месенджери та адреса шоуруму — оберіть зручний спосіб звʼязку з CaseStore.",
+    contactDescription: (siteName: string) =>
+      `Гаряча лінія, пошта, месенджери та адреса шоуруму — оберіть зручний спосіб звʼязку з ${siteName}.`,
     // TASK-546 — `og:image:alt` of the committed brand card and the alt floor
     // of `buildOgImages`: the resolved store name, not a literal.
     brandCardAlt: (siteName: string) =>
@@ -2427,7 +2440,7 @@ export const dict = {
     error: "Не вдалося оновити обране. Спробуйте ще раз.",
     /** Metadata for the /wishlist route. The bare page name: the root
      *  layout's title template appends the store name (TASK-875 — it used to
-     *  read «Список бажань | CaseStore | CaseStore»). */
+     *  read «Список бажань | <назва> | <назва>»). */
     metaTitle: "Обране",
     metaDescription: "Товари, які ви зберегли в обране.",
     // TASK-167-P — wishlist redesign (Wishlist.dc.html): a client-side toolbar

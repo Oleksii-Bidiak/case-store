@@ -211,9 +211,11 @@ export async function generateMetadata({
 
   const model = page.deviceModel;
   const heading = dict.catalog.compatHeading(page.categoryName, model.name);
+  const siteName = resolveSiteName(seo);
   const generatedDescription = dict.meta.compatDescription(
     page.categoryName,
     model.name,
+    siteName,
   );
 
   const seoMeta = resolveSeo({
@@ -235,7 +237,6 @@ export async function generateMetadata({
     resolvedParams,
   );
 
-  const siteName = resolveSiteName(seo);
   const title = toMetadataTitle(seoMeta, {
     settings: seo,
     siteName,

@@ -16,6 +16,7 @@ import { CartSheet } from "@/widgets/cart";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { formatMoney, trackEvent } from "@/shared/lib";
+import { resolveSiteName } from "@/shared/lib/seo";
 import {
   dict,
   FEATURE_STUBS,
@@ -47,8 +48,14 @@ function truncate(value: string, max: number): string {
 export function ProductDetailView({
   slug,
   preview = false,
+  siteName = resolveSiteName(),
 }: {
   slug: string;
+  /**
+   * The admin-managed store name (`resolveSiteName(seo)` on the page,
+   * TASK-1639), named by the buy box's warranty row. Omitted → the default.
+   */
+  siteName?: string;
   /**
    * The page is a signed preview (TASK-669). The product the server seeded may
    * be a draft, and the browser's own read carries no preview token (it lives
@@ -331,7 +338,7 @@ export function ProductDetailView({
               </button>
             )}
 
-            <ProductTrustBadges />
+            <ProductTrustBadges siteName={siteName} />
           </div>
         </div>
       </div>

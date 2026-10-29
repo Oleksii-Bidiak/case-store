@@ -15,6 +15,9 @@ jest.mock("@/shared/api/faq-server", () => ({
 jest.mock("@/shared/api/site-contact-server", () => ({
   fetchSiteContactSettings: jest.fn().mockResolvedValue(null),
 }));
+jest.mock("@/shared/api/seo-settings-server", () => ({
+  fetchSeoSettings: jest.fn().mockResolvedValue(null),
+}));
 jest.mock("@/shared/lib/seo/server", () => ({
   buildHubMetadata: jest.fn(),
 }));
@@ -40,9 +43,11 @@ import {
   fetchPublishedPages,
 } from "@/shared/api/pages-server";
 import { fetchActiveAddonServices } from "@/shared/api/addon-services-server";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import {
   INFO_HUB_SECTION_SLUGS,
   INFO_SLUG_INLINED_ON_HUB,
+  SITE_NAME,
 } from "@/shared/config";
 
 const fetchPage = fetchPublishedPage as jest.MockedFunction<
@@ -97,6 +102,24 @@ beforeEach(() => {
   fetchPage.mockImplementation(async (slug) => makePage(slug));
   fetchPages.mockResolvedValue([]);
   fetchAddons.mockResolvedValue([]);
+});
+
+describe("/info — the store name (TASK-1639)", () => {
+  it("hands the view the admin-managed store name", async () => {
+    (fetchSeoSettings as jest.Mock).mockResolvedValueOnce({
+      siteName: "Аксесуарня",
+    });
+
+    const { siteName } = await viewProps();
+
+    expect(siteName).toBe("Аксесуарня");
+  });
+
+  it("falls back to the default name when the settings are unavailable", async () => {
+    const { siteName } = await viewProps();
+
+    expect(siteName).toBe(SITE_NAME);
+  });
 });
 
 describe("/info — blocks from CMS pages (TASK-560)", () => {
