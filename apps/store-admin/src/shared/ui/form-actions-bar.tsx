@@ -29,6 +29,12 @@ import { Button } from "./button";
  * bleed it over `<main>`'s padding (`p-4` / `lg:p-6`), the same trick as
  * above. Place it as the LAST child of the form so its sticky range is the
  * whole form.
+ *
+ * The bottom needs the same bleed (TASK-1993): a sticky edge is inset by the
+ * scroll container's padding, so `bottom-0` stuck 16/24 px above `<main>`'s
+ * edge. `-bottom-4 lg:-bottom-6` cancels that inset while scrolling, and
+ * `-mb-4 lg:-mb-6` lets the bar cover `<main>`'s bottom padding at the end of
+ * the scroll instead of leaving a strip below it. Both track `p-4 lg:p-6`.
  */
 interface StickyBarProps {
   variant: "sticky";
@@ -88,7 +94,7 @@ function StickyFormActionsBar({
       data-slot="form-actions-bar"
       data-variant="sticky"
       className={cn(
-        "sticky bottom-0 z-20 -mx-4 flex flex-wrap items-center gap-3 border-t bg-background px-4 py-2.5 shadow-bar lg:-mx-6 lg:px-6 lg:py-3",
+        "sticky -bottom-4 z-20 -mx-4 -mb-4 flex flex-wrap items-center gap-3 border-t bg-background px-4 py-2.5 shadow-bar lg:-bottom-6 lg:-mx-6 lg:-mb-6 lg:px-6 lg:py-3",
         className,
       )}
       {...rest}
