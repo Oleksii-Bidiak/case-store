@@ -336,7 +336,21 @@ export function Header({
             {/* «Статус замовлення» for guests (TASK-1999) — until now only the
                 footer led there. From exactly `xl`, where the slide-out menu
                 that carries it below `xl` disappears; a signed-in shopper has
-                «Мої замовлення» under Кабінет instead. */}
+                «Мої замовлення» under Кабінет instead.
+                While the session restores, an invisible twin holds its box, as
+                HeaderAuth's skeleton does: the theme switch is this cluster's
+                leftmost item, so an action that only appeared once auth settled
+                slid it left under a guest's cursor. */}
+            {isInitializing && (
+              <span
+                aria-hidden="true"
+                data-slot="order-status-placeholder"
+                className={cn(ACCOUNT_ACTION_CLASS, "invisible hidden xl:flex")}
+              >
+                <PackageSearch className="size-5.5" />
+                <span>{dict.header.orderStatusCaption}</span>
+              </span>
+            )}
             {!isInitializing && !isAuthenticated && (
               <Link
                 href="/orders/status"

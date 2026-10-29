@@ -239,6 +239,33 @@ describe("Header — the order-status lookup for guests (TASK-1999)", () => {
     );
   });
 
+  it("reserves the action's box while the session restores — no shift for guests", () => {
+    // The theme switch is the cluster's leftmost item, so an action that only
+    // appears once auth settles moved it under the cursor: a click aimed at
+    // «Світла» landed on the radiogroup between segments (e2e/theme.spec.ts).
+    renderHeader({ auth: { isInitializing: true } });
+
+    expect(
+      screen.queryByRole("link", { name: dict.header.orderStatusLink }),
+    ).toBeNull();
+    const placeholder = document.querySelector(
+      '[data-slot="order-status-placeholder"]',
+    );
+    expect(placeholder).not.toBeNull();
+    expect(placeholder).toHaveAttribute("aria-hidden", "true");
+    // The same box the link settles into: its classes, made invisible.
+    expect(classesOf(placeholder)).toEqual(
+      expect.arrayContaining([
+        "invisible",
+        "hidden",
+        "xl:flex",
+        "min-h-11",
+        "min-w-11",
+      ]),
+    );
+    expect(placeholder).toHaveTextContent(dict.header.orderStatusCaption);
+  });
+
   it("lists «Статус замовлення» in the guest's slide-out menu", async () => {
     const user = userEvent.setup();
     renderHeader();
