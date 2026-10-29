@@ -53,6 +53,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
   // For the same reason the column needs an explicit `min-w-0`: a non-scroll
   // flex item keeps `min-width: auto`, so wide content (tables, chip rows)
   // would widen it past the viewport instead of scrolling inside <main>.
+  //
+  // TASK-1994. A registry's table box (`data-registry-fill`) scrolls itself so
+  // its header can stick; <main> scrolling too made two vertical scrollers and
+  // the page scrolled the header away. From md up, <main> and every wrapper
+  // between it and the box (pages and widgets wrap it in their own columns)
+  // become shrinkable flex columns, so the box gets exactly the height left
+  // and <main> has nothing to scroll. <main> keeps overflow-y-auto: it is the
+  // fallback when the box hits its floor on a very short window.
   return (
     <div className="flex h-screen overflow-clip">
       <AdminSidebar />
@@ -62,7 +70,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           mobileNavOpen={mobileNavOpen}
           onOpenMobileNav={() => setMobileNavOpen(true)}
         />
-        <main className="relative flex-1 overflow-y-auto p-4 lg:p-6">
+        <main className="relative flex-1 overflow-y-auto p-4 md:has-[[data-registry-fill]]:flex md:has-[[data-registry-fill]]:flex-col md:[&_:has([data-registry-fill])]:flex md:[&_:has([data-registry-fill])]:min-h-0 md:[&_:has([data-registry-fill])]:flex-col lg:p-6">
           {permissionsFailed ? (
             // TASK-1014 (П6). Without permissions every section answers "no"
             // — the owner's too — so the page itself would render a refusal

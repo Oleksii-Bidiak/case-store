@@ -82,6 +82,42 @@ describe("AdminShell — page scroll container (TASK-1989)", () => {
   });
 });
 
+describe("AdminShell — a registry fills the page (TASK-1994)", () => {
+  // jsdom has no layout, so the contract is asserted on the classes. A
+  // registry's table box (`data-registry-fill`) scrolls on its own so its
+  // header can stick; <main> scrolling as well made two vertical scrollers,
+  // and scrolling <main> took the header away. From md up, the shell turns
+  // <main> and every wrapper between it and the box into a shrinkable flex
+  // column, so the box gets exactly the height left and <main> has nothing
+  // to scroll.
+  it("makes <main> a flex column when it holds a filling registry", () => {
+    renderWithProviders(<AdminShell>page content</AdminShell>);
+
+    const main = screen.getByRole("main");
+    expect(main).toHaveClass(
+      "md:has-[[data-registry-fill]]:flex",
+      "md:has-[[data-registry-fill]]:flex-col",
+    );
+  });
+
+  it("lets every wrapper around the registry shrink instead of overflowing <main>", () => {
+    renderWithProviders(<AdminShell>page content</AdminShell>);
+
+    const main = screen.getByRole("main");
+    expect(main).toHaveClass(
+      "md:[&_:has([data-registry-fill])]:flex",
+      "md:[&_:has([data-registry-fill])]:flex-col",
+      "md:[&_:has([data-registry-fill])]:min-h-0",
+    );
+  });
+
+  it("keeps <main> scrollable — the fallback when the box hits its floor", () => {
+    renderWithProviders(<AdminShell>page content</AdminShell>);
+
+    expect(screen.getByRole("main")).toHaveClass("overflow-y-auto");
+  });
+});
+
 describe("AdminShell — mobile nav drawer", () => {
   afterEach(() => {
     mockPathname = "/";
