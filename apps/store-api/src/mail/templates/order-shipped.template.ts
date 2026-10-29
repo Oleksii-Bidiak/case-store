@@ -66,22 +66,32 @@ function escapeHtml(value: string): string {
  * Public Nova Poshta tracking page for a waybill.
  *
  * A bare number is something the customer has to copy, find the right site for,
- * and paste. A link is one tap. NP's public tracking page takes the number as a
- * query parameter and needs no API key — which is also true of the
- * `TrackingDocument/getStatusDocuments` API, should in-app tracking follow later.
+ * and paste. A link is one tap. NP's public tracking page takes the number as the
+ * PATH segment — it stopped filling in the old query-parameter form (TASK-1987) — and needs
+ * no API key, which is also true of the `TrackingDocument/getStatusDocuments`
+ * API, should in-app tracking follow later.
+ *
+ * Digits only, the same rule as the storefront and the admin link: the number is
+ * operator-typed, and a stray space or symbol must not break out of the path. A
+ * value with no digits at all («ТТН уточнюється») is no waybill — `null`, no link.
+ * Shared with the Telegram `order-shipped` notice so both channels agree.
  */
-function trackingUrl(trackingNumber: string): string {
-  return `https://novaposhta.ua/tracking/?cargo_number=${encodeURIComponent(trackingNumber)}`;
+export function novaPoshtaTrackingUrl(trackingNumber: string): string | null {
+  const digits = trackingNumber.replace(/\D/g, '');
+  return digits ? `https://novaposhta.ua/tracking/${digits}` : null;
 }
 
 function renderTrackingHtml(trackingNumber?: string | null): string {
   if (!trackingNumber) return '';
   const safe = escapeHtml(trackingNumber);
-  return `<p style="margin:16px 0 0;color:#334155;">
+  const url = novaPoshtaTrackingUrl(trackingNumber);
+  const number = `<p style="margin:16px 0 0;color:#334155;">
   Номер накладної: <strong>${safe}</strong>
-</p>
+</p>`;
+  if (!url) return number;
+  return `${number}
 <p style="margin:16px 0 0;">
-  <a href="${escapeHtml(trackingUrl(trackingNumber))}" style="display:inline-block;padding:12px 24px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;">Відстежити посилку</a>
+  <a href="${escapeHtml(url)}" style="display:inline-block;padding:12px 24px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;">Відстежити посилку</a>
 </p>`;
 }
 
@@ -122,11 +132,9 @@ function renderText(params: OrderShippedParams): string {
   ];
 
   if (params.order.trackingNumber) {
-    sections.push(
-      '',
-      `Номер накладної: ${params.order.trackingNumber}`,
-      `Відстежити: ${trackingUrl(params.order.trackingNumber)}`,
-    );
+    const url = novaPoshtaTrackingUrl(params.order.trackingNumber);
+    sections.push('', `Номер накладної: ${params.order.trackingNumber}`);
+    if (url) sections.push(`Відстежити: ${url}`);
   }
 
   if (params.orderStatusUrl) {

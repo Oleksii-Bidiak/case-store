@@ -37,10 +37,13 @@ export function isValidWaybill(raw: string): boolean {
 
 /**
  * Nova Poshta's public tracking page for a waybill (wave 198, К1 «Відстежити на
- * сайті НП ↗»). Digits only — the spaces an operator pastes are not part of it.
+ * сайті НП ↗»). The number is the PATH segment — NP's page stopped filling in
+ * the old query-parameter form (TASK-1987). Digits only — the spaces an operator pastes are
+ * not part of it; a value with no digits at all is no waybill, so `null`.
  */
-export function npTrackingUrl(waybill: string): string {
-  return `https://novaposhta.ua/tracking/?cargo_number=${waybill.replace(/\D/g, "")}`;
+export function npTrackingUrl(waybill: string): string | null {
+  const digits = waybill.replace(/\D/g, "");
+  return digits ? `https://novaposhta.ua/tracking/${digits}` : null;
 }
 
 /**

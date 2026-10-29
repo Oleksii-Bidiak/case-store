@@ -473,7 +473,7 @@ describe("OrderHistoryView — the card (TASK-217)", () => {
     const track = screen.getByRole("link", { name: t.trackAria });
     expect(track).toHaveAttribute(
       "href",
-      "https://novaposhta.ua/tracking/?cargo_number=20450123456789",
+      "https://novaposhta.ua/tracking/20450123456789",
     );
     expect(track).toHaveAttribute("target", "_blank");
     expect(track).toHaveAttribute("rel", "noopener noreferrer");

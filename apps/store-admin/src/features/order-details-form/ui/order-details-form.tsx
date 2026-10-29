@@ -96,6 +96,9 @@ function OrderDetailsReadOnly({
   showWaybill = true,
 }: OrderDetailsFormProps) {
   const { trackingNumber, internalNotes } = mapOrderToDetailsValues(order);
+  const trackingUrl = isValidWaybill(trackingNumber)
+    ? npTrackingUrl(trackingNumber)
+    : null;
   return (
     <dl className="flex flex-col gap-3 text-sm">
       {showWaybill ? (
@@ -105,9 +108,9 @@ function OrderDetailsReadOnly({
           </dt>
           <dd className="flex flex-col gap-1 text-muted-foreground">
             <span>{trackingNumber || dict.orders.detailsValueEmpty}</span>
-            {isValidWaybill(trackingNumber) ? (
+            {trackingUrl ? (
               <a
-                href={npTrackingUrl(trackingNumber)}
+                href={trackingUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="self-start rounded-xs text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -185,7 +188,9 @@ function OrderDetailsEditor({
   const trackingValue =
     useWatch({ control: form.control, name: "trackingNumber" }) ?? "";
   const trackingDigits = trackingValue.replace(/\D/g, "").length;
-  const trackingValid = isValidWaybill(trackingValue);
+  const trackingUrl = isValidWaybill(trackingValue)
+    ? npTrackingUrl(trackingValue)
+    : null;
 
   /** «Оновити» on the 409 banner: refetch the order, clear the refusal. */
   const handleReload = () => {
@@ -316,9 +321,9 @@ function OrderDetailsEditor({
                 </span>
               ) : null}
             </p>
-          ) : trackingValid ? (
+          ) : trackingUrl ? (
             <a
-              href={npTrackingUrl(trackingValue)}
+              href={trackingUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="self-start rounded-xs text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
