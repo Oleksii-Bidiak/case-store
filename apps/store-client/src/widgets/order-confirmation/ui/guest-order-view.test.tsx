@@ -5,11 +5,18 @@ import { makeOrder } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
 import { GuestOrderView } from "./guest-order-view";
 
+// The query string the page is opened with — `?placed=1` right after checkout
+// (TASK-1999), nothing when the guest follows the e-mailed link.
+let mockSearch = "";
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
-  useSearchParams: () => ({ get: () => null }),
+  useSearchParams: () => new URLSearchParams(mockSearch),
   usePathname: () => "/orders/guest/token-1",
 }));
+
+afterEach(() => {
+  mockSearch = "";
+});
 
 /**
  * TASK-338. Without this page a guest goes blind the moment their cart cookie
@@ -145,6 +152,139 @@ describe("GuestOrderView", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(dict.order.guest.linkInvalidBody),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-1999 — after checkout a guest is sent here (`?placed=1`) instead of a
+ * thinner in-place panel, so this page has to say what that panel said: the
+ * order is in, an account would keep it, and where to look it up later.
+ */
+describe("GuestOrderView — arriving from checkout (TASK-1999)", () => {
+  const guestOrder = makeOrder({
+    userId: null,
+    guest: {
+      email: "olena@example.com",
+      phone: "+380501234567",
+      name: "Олена Шевченко",
+    },
+  });
+
+  function serveOrder() {
+    server.use(
+      http.get("*/api/orders/guest/:token", () =>
+        HttpResponse.json(guestOrder),
+      ),
+    );
+  }
+
+  it("greets the guest with «Замовлення прийнято!» right after checkout", async () => {
+    mockSearch = "placed=1";
+    serveOrder();
+
+    renderWithProviders(<GuestOrderView token="token-1" />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: dict.checkout.guest.successHeading,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: dict.order.thankYou }),
+    ).toBeNull();
+  });
+
+  it("keeps the usual heading for a visit from the e-mailed link", async () => {
+    serveOrder();
+
+    renderWithProviders(<GuestOrderView token="token-1" />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: dict.order.thankYou,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("puts the register banner at the top, before the order itself", async () => {
+    mockSearch = "placed=1";
+    serveOrder();
+
+    renderWithProviders(<GuestOrderView token="token-1" />);
+
+    const register = await screen.findByRole("link", {
+      name: dict.order.guest.registerBannerCta,
+    });
+    expect(register).toHaveAttribute("href", "/register");
+    // Above the order: the first thing read after the heading, not a card at
+    // the bottom of the sidebar.
+    const items = screen.getByRole("heading", {
+      name: dict.order.itemsOrdered,
+    });
+    expect(
+      register.compareDocumentPosition(items) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // One offer, not two.
+    expect(
+      screen
+        .getAllByRole("link")
+        .filter((link) => link.getAttribute("href") === "/register"),
+    ).toHaveLength(1);
+  });
+
+  it("offers no registration to a visitor who is already signed in", async () => {
+    serveOrder();
+
+    renderWithProviders(<GuestOrderView token="token-1" />, {
+      auth: { isAuthenticated: true, accessToken: "token" },
+    });
+
+    await screen.findByRole("heading", {
+      level: 1,
+      name: dict.order.thankYou,
+    });
+    expect(
+      screen.queryByRole("link", {
+        name: dict.order.guest.registerBannerCta,
+      }),
+    ).toBeNull();
+  });
+
+  it("points to the order-status lookup by number", async () => {
+    serveOrder();
+
+    renderWithProviders(<GuestOrderView token="token-1" />);
+
+    expect(
+      await screen.findByRole("link", { name: dict.orderLookup.entryLink }),
+    ).toHaveAttribute("href", "/orders/status");
+  });
+
+  it("still offers Telegram for this order right after checkout (TASK-679)", async () => {
+    mockSearch = "placed=1";
+    serveOrder();
+    server.use(
+      http.get("*/api/orders/guest/:token/notifications/telegram", () =>
+        HttpResponse.json({
+          data: {
+            available: true,
+            connected: false,
+            botUsername: "casestore_bot",
+          },
+        }),
+      ),
+    );
+
+    renderWithProviders(<GuestOrderView token="token-1" />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: dict.telegramNotifications.guest.heading,
+      }),
     ).toBeInTheDocument();
   });
 });

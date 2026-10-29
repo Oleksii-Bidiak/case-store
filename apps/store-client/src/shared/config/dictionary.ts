@@ -88,6 +88,10 @@ export const dict = {
     accountLabel: "Кабінет",
     accountOpenAria: "Відкрити особистий кабінет",
     cartTotalAria: "Сума кошика",
+    // TASK-1999 — the guest's way back to an order (/orders/status). The
+    // caption is short for the action row; the link's name is the page's.
+    orderStatusLink: "Статус замовлення",
+    orderStatusCaption: "Статус",
     // TASK-082 — mega-menu second level (desktop flyout + mobile accordion).
     catalogSubcategoriesAria: "Підкатегорії",
     toggleSubcategoriesAria: (name: string) =>
@@ -1727,10 +1731,15 @@ export const dict = {
       linkInvalidBody:
         "Посилання на замовлення застаріло або неправильне. Перевірте лист із підтвердженням або зверніться до нас.",
       contactHeading: "Контактні дані",
-      accountOfferHeading: "Створіть акаунт",
-      accountOfferBody:
-        "З акаунтом ви бачитимете всі замовлення в одному місці. Це замовлення привʼяжеться до нього автоматично.",
-      accountOfferCta: "Створити акаунт",
+      // TASK-1999 — the heading on arrival straight from checkout (`?placed=1`);
+      // the same words as the in-place panel it replaced.
+      placedHeading: "Замовлення прийнято!",
+      // The account offer, as a banner at the top (it was a card at the foot
+      // of the sidebar). Guest orders move into the account once the email is
+      // confirmed (TASK-485), so the banner can promise exactly that.
+      registerBannerCta: "Зареєструйтесь — замовлення з'явиться в кабінеті",
+      registerBannerBody:
+        "Підтвердьте email після реєстрації — і всі замовлення на цю адресу, разом із цим, перейдуть у кабінет автоматично.",
     },
 
     // ── «Доставка» after checkout (TASK-647, OrderConfirmation.dc.html) ─────
@@ -1767,6 +1776,8 @@ export const dict = {
     breadcrumbHome: "Головна",
     breadcrumb: "Статус замовлення",
     heading: "Статус замовлення",
+    // TASK-1999 — the way in from the guest's success panel and order page.
+    entryLink: "Перевірити статус за номером замовлення",
     intro:
       "Введіть номер замовлення з листа-підтвердження та номер телефону, який ви вказали при оформленні.",
     fieldNumber: "Номер замовлення",

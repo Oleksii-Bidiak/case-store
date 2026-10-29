@@ -2,12 +2,12 @@
 
 import { useRef } from "react";
 import { Check, Send } from "lucide-react";
+import { dict } from "@/shared/config";
 import {
-  TelegramConnect,
   useFocusWhenConnected,
   useTelegramConnect,
-} from "@/features/telegram-connect";
-import { dict } from "@/shared/config";
+} from "../model/use-telegram-connect";
+import { TelegramConnect } from "./telegram-connect";
 
 interface CheckoutTelegramCardProps {
   /** The guest's order access token from the create call. */
@@ -30,6 +30,10 @@ interface CheckoutTelegramCardProps {
  * 187 forbids — and nothing when the read fails (an unknown or claimed token
  * answers 404). The link is issued on click, so the QR appears only after
  * «Підключити Telegram» (owner decision 2, 2026-10-07).
+ *
+ * Lives in this feature, not in the checkout widget, since TASK-1999: it has
+ * two hosts now — the in-place success panel and the guest order page that
+ * checkout sends a guest to — and a widget may not import another widget.
  */
 export function CheckoutTelegramCard({
   token,

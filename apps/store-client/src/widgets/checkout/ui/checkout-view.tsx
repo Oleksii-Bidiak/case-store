@@ -108,8 +108,10 @@ function OrderErrorAlert({
  * order, never in front of it.
  *
  * The two shoppers diverge only at the end: a signed-in one is pushed to
- * `/orders/[id]/confirmation`; a guest gets {@link CheckoutGuestSuccess} in
- * place, because that route reads an endpoint guests cannot call.
+ * `/orders/[id]/confirmation`; a guest goes to their token page
+ * `/orders/guest/[token]` (TASK-1999), or gets {@link CheckoutGuestSuccess} in
+ * place when there is no token — never the confirmation route, which reads an
+ * endpoint guests cannot call.
  */
 export function CheckoutView() {
   const router = useRouter();
@@ -436,8 +438,8 @@ export function CheckoutView() {
 
   // Redirect to the cart when there is nothing to order — but NOT right after a
   // successful order, when the backend empties the cart on purpose and we are
-  // either navigating to the confirmation page or already showing the guest
-  // success panel (the TASK-119 redirect race).
+  // either navigating to the confirmation page / the guest order page or
+  // already showing the guest success panel (the TASK-119 redirect race).
   useEffect(() => {
     if (cartIsEmpty && !isOrderSubmitted) {
       router.replace("/cart");
