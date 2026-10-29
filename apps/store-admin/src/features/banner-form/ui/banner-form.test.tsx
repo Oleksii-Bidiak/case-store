@@ -411,3 +411,24 @@ describe("BannerForm — one sticky «Зберегти» (БН5)", () => {
     );
   });
 });
+
+describe("BannerForm — the upload lands in the media library (TASK-2002)", () => {
+  it("media:write — the artwork goes through POST /admin/media", async () => {
+    const library = stubMediaLibrary([]);
+    renderWithProviders(<BannerForm onSubmit={noop} isPending={false} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    await userEvent.upload(
+      within(fieldsPanel()).getByTestId("single-image-upload-input"),
+      new File(["png-bytes"], "hero.png", { type: "image/png" }),
+    );
+
+    await waitFor(() => expect(library.uploadedNames).toEqual(["hero.png"]));
+    await waitFor(() =>
+      expect(within(fieldsPanel()).getByLabelText(f.imageUrl)).toHaveValue(
+        makeMediaAsset("up-1").url,
+      ),
+    );
+  });
+});

@@ -493,3 +493,98 @@ describe("BlogPostForm — sections and publishing (БЛ7–БЛ10)", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 });
+
+// TASK-2002 — the cover upload goes into the media library, and the OG field
+// gets the same three paths (file, library pick, link) the product OG has.
+describe("BlogPostForm — library-first images (TASK-2002)", () => {
+  const OG_URL = "http://localhost:3001/uploads/media/og-card.webp";
+  const ogField = () =>
+    screen.getByLabelText(dict.seoFields.ogImage) as HTMLInputElement;
+  const coverField = () =>
+    screen.getByLabelText(dict.blogPostForm.coverImageUrl) as HTMLInputElement;
+  const scopeOf = (field: HTMLInputElement) =>
+    within(field.parentElement as HTMLElement);
+
+  it("media:write — the cover goes through POST /admin/media, not the blog route", async () => {
+    const library = stubMediaLibrary([]);
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    await userEvent.upload(
+      scopeOf(coverField()).getByTestId("single-image-upload-input"),
+      new File(["png-bytes"], "cover.png", { type: "image/png" }),
+    );
+
+    await waitFor(() => expect(library.uploadedNames).toEqual(["cover.png"]));
+    await waitFor(() =>
+      expect(coverField()).toHaveValue(makeMediaAsset("up-1").url),
+    );
+  });
+
+  it("uploads an OG file into the library and writes its URL into the OG field only", async () => {
+    const library = stubMediaLibrary([]);
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    await userEvent.upload(
+      scopeOf(ogField()).getByTestId("single-image-upload-input"),
+      new File(["png-bytes"], "og.png", { type: "image/png" }),
+    );
+
+    await waitFor(() => expect(library.uploadedNames).toEqual(["og.png"]));
+    await waitFor(() =>
+      expect(ogField()).toHaveValue(makeMediaAsset("up-1").url),
+    );
+    expect(coverField()).toHaveValue("");
+  });
+
+  it("picks the OG image from the library through its own named trigger", async () => {
+    stubMediaLibrary([
+      makeMediaAsset("m1", { alt: "Картка для соцмереж", url: OG_URL }),
+    ]);
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.seoFields.ogImagePickerAria,
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.mediaPicker.pickCardAria("Картка для соцмереж"),
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.mediaPicker.useSelected }),
+    );
+
+    await waitFor(() => expect(ogField()).toHaveValue(OG_URL));
+    expect(coverField()).toHaveValue("");
+  });
+
+  it("without media keys — no OG picker; the OG upload falls back to the blog route", async () => {
+    const blogRoute: string[] = [];
+    server.use(
+      http.post("*/api/admin/uploads/blog", async ({ request }) => {
+        const file = (await request.formData()).get("file");
+        blogRoute.push(file instanceof File ? file.name : String(file));
+        return HttpResponse.json({ data: { url: OG_URL, blurDataUrl: null } });
+      }),
+    );
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
+
+    expect(
+      screen.queryByRole("button", { name: dict.seoFields.ogImagePickerAria }),
+    ).not.toBeInTheDocument();
+    await userEvent.upload(
+      scopeOf(ogField()).getByTestId("single-image-upload-input"),
+      new File(["png-bytes"], "og.png", { type: "image/png" }),
+    );
+    await waitFor(() => expect(blogRoute).toEqual(["og.png"]));
+    await waitFor(() => expect(ogField()).toHaveValue(OG_URL));
+  });
+});

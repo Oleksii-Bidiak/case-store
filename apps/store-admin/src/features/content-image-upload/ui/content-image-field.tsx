@@ -1,6 +1,11 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
+import {
+  useId,
+  useState,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from "react";
 import type { UseFormRegisterReturn } from "react-hook-form";
 import { ChevronDownIcon } from "lucide-react";
 import { Input, Label, SingleImageUpload } from "@/shared/ui";
@@ -27,6 +32,17 @@ export interface ContentImageFieldProps {
   value: string;
   /** `register()` result for the URL input. */
   urlInput: UseFormRegisterReturn;
+  /**
+   * Extra attributes for the URL input in the `"stacked"` layout (TASK-2002):
+   * a form that wires its own hint/error ids (`aria-describedby`) or a
+   * `type="url"` keeps them when its plain input becomes this field. A form
+   * that passes `aria-describedby` usually renders its own `FieldError` and
+   * leaves `fieldError` unset, so the error is not shown twice.
+   */
+  urlInputProps?: Pick<
+    InputHTMLAttributes<HTMLInputElement>,
+    "type" | "aria-invalid" | "aria-describedby"
+  >;
   onSelectFile: (file: File) => void;
   /** Clears the field. Does NOT delete the stored file — see below. */
   onRemove: () => void;
@@ -87,6 +103,7 @@ export function ContentImageField({
   copy,
   value,
   urlInput,
+  urlInputProps,
   onSelectFile,
   onRemove,
   isUploading,
@@ -149,7 +166,12 @@ export function ContentImageField({
           laptop, a link from somewhere else. */}
       {picker}
 
-      <Input id={id} placeholder={urlPlaceholder} {...urlInput} />
+      <Input
+        id={id}
+        placeholder={urlPlaceholder}
+        {...urlInputProps}
+        {...urlInput}
+      />
 
       {fieldError && (
         <p role="alert" className="text-sm text-destructive">
@@ -175,7 +197,7 @@ function InlineContentImageField({
   fieldError,
   picker,
   canUpload = true,
-}: Omit<ContentImageFieldProps, "layout">) {
+}: Omit<ContentImageFieldProps, "layout" | "urlInputProps">) {
   const [urlOpenState, setUrlOpen] = useState(false);
   const regionId = useId();
   // An error in the URL box must be visible — so the fold opens for it.

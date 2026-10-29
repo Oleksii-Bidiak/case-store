@@ -43,7 +43,14 @@ import {
   resolvePreviewSiteName,
 } from "@/shared/lib/seo";
 import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
-import { MediaPickerEditorButton } from "@/features/media-picker";
+import { useMediaControllerUpload } from "@/entities/media";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
+import {
+  ContentImageField,
+  useImageUploadField,
+} from "@/features/content-image-upload";
+import { MediaPicker, MediaPickerEditorButton } from "@/features/media-picker";
 import {
   dict,
   HUB_PAGES,
@@ -194,6 +201,7 @@ function EditablePageForm({
     handleSubmit,
     reset,
     getValues,
+    setValue,
     formState: { errors, dirtyFields, submitCount },
   } = useForm<PageFormInput, unknown, PageFormValues>({
     resolver: zodResolver(pageSchema),
@@ -227,6 +235,20 @@ function EditablePageForm({
   const metaDescriptionValue =
     useWatch({ control, name: "metaDescription" }) ?? "";
   const seoSettings = useSeoSettingsControllerGetSettings().data?.data;
+
+  // TASK-2002: the social-card image takes a file and a library pick as well
+  // as a link, like the product OG. There is no pages upload route, so the
+  // file goes into the media library and the uploader is offered only with
+  // `media:write`; the picker and the URL box stay the field for everyone else.
+  const { can } = useAuth();
+  const ogImageValue = useWatch({ control, name: "ogImage" }) ?? "";
+  const ogImageUpload = useImageUploadField({
+    upload: useMediaControllerUpload(),
+    copy: dict.seoFields.ogImageUpload,
+    onUploaded: (url) =>
+      setValue("ogImage", url, { shouldDirty: true, shouldValidate: true }),
+  });
+
   const previewTitle = resolveSeoPreviewTitle({
     entityTitle: metaTitleValue,
     defaultTitle: isHub ? undefined : seoSettings?.defaultMetaTitle,
@@ -683,12 +705,37 @@ function EditablePageForm({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="page-og-image">{dict.seoFields.ogImage}</Label>
-              <Input
+              <ContentImageField
                 id="page-og-image"
-                placeholder={dict.seoFields.ogImagePlaceholder(STOREFRONT_HOST)}
-                {...fieldA11y("ogImage", "page-og-image-hint")}
-                {...register("ogImage")}
+                label={dict.seoFields.ogImage}
+                urlPlaceholder={dict.seoFields.ogImagePlaceholder(
+                  STOREFRONT_HOST,
+                )}
+                copy={dict.seoFields.ogImageUpload}
+                value={ogImageValue}
+                urlInput={register("ogImage")}
+                // The hint and the `FieldError` below keep their ids, so the
+                // error is rendered there and not passed as `fieldError`.
+                urlInputProps={fieldA11y("ogImage", "page-og-image-hint")}
+                onRemove={() =>
+                  setValue("ogImage", "", {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  })
+                }
+                canUpload={can(PERM.mediaWrite)}
+                picker={
+                  <MediaPicker
+                    ariaLabel={dict.seoFields.ogImagePickerAria}
+                    onPick={(asset) =>
+                      setValue("ogImage", asset.url, {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                      })
+                    }
+                  />
+                }
+                {...ogImageUpload}
               />
               <p
                 id="page-og-image-hint"
