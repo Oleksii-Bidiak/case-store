@@ -124,7 +124,7 @@ Design, нові екрани), [190](plans/190-red-wave-ci-security-money.md) �
 (цикл 2)»: API зараз, UI — після дизайн-воріт.
 
 **Цикл 3** (з 2026-10-29; порядок сесій — у [session-runbook.md](session-runbook.md)): без нових
-планів — задачі TASK-1949…2010 у секції «Цикл 3» [BACKLOG](../BACKLOG.md), розібрані з
+планів — задачі TASK-1949…2012 у секції «Цикл 3» [BACKLOG](../BACKLOG.md), розібрані з
 [журналу прогону](reviews/2026-08-27-demo-run.md) (2026-10-26…28),
 [аудиту адмінки](reviews/2026-10-admin-audit.md) і
 [брейншторму вітрини](reviews/2026-10-28-storefront-design-brainstorm.md).
