@@ -35,6 +35,10 @@ import { Button } from "./button";
  * edge. `-bottom-4 lg:-bottom-6` cancels that inset while scrolling, and
  * `-mb-4 lg:-mb-6` lets the bar cover `<main>`'s bottom padding at the end of
  * the scroll instead of leaving a strip below it. Both track `p-4 lg:p-6`.
+ * The `-mb` shrinks the form box, so a block placed after the form needs that
+ * space back (`pt-4 lg:pt-6`, see seo-settings-view), and a form inside a
+ * padded card caps the bleed at the card's padding via `className`
+ * (search-synonyms-form: `lg:-mb-4`).
  */
 interface StickyBarProps {
   variant: "sticky";

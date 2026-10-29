@@ -452,8 +452,11 @@ export function SearchSynonymsForm({ settings }: SearchSynonymsFormProps) {
         </p>
       )}
 
+      {/* Inside the search page's `p-4` card, not straight in <main>: the
+          bottom bleed stops at that padding instead of lg's 24 px (TASK-1993). */}
       <FormActionsBar
         variant="sticky"
+        className="lg:-mb-4"
         dirtySections={dirtySections}
         onDiscard={() => resetTo(mapSynonymsToFormValues(settings))}
         saveLabel={update.isPending ? d.saving : d.submit}
