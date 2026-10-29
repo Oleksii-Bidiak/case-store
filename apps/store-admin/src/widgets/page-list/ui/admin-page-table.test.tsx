@@ -161,6 +161,19 @@ async function renderGrid(options: { permissions?: string[] } = {}) {
   return result;
 }
 
+/**
+ * TASK-1990 — the order is changed INSIDE a hub, so every reorder test runs on
+ * a kind view. «Юридичні» holds A and B; C (INFO) is hidden but still named in
+ * every payload.
+ */
+async function renderLegal(options: { permissions?: string[] } = {}) {
+  mockSearchParams = new URLSearchParams("kind=LEGAL");
+  const result = renderTable(options);
+  await screen.findByRole("grid", { name: d.gridLabel });
+  await waitFor(() => expect(rowIds()).toEqual([A, B]));
+  return result;
+}
+
 /** Keyboard: pick up, move up one slot, drop. */
 function keyboardMoveUp(id: string) {
   rowEl(id).focus();
@@ -518,15 +531,16 @@ describe("AdminPageTable — ARIA model", () => {
 describe("AdminPageTable — keyboard reorder", () => {
   it("Space ↑ Space sends exactly ONE PATCH with the COMPLETE orderedIds", async () => {
     mockReorder();
-    await renderGrid();
+    await renderLegal();
 
     rowEl(B).focus();
     fireEvent.keyDown(rowEl(B), { key: " " });
-    expect(polite()).toBe(dict.reorderList.announce.grabbed("FAQ", 2, 3));
+    // Positions are counted within the hub the operator is ordering.
+    expect(polite()).toBe(dict.reorderList.announce.grabbed("FAQ", 2, 2));
 
     fireEvent.keyDown(rowEl(B), { key: "ArrowUp" });
-    expect(polite()).toBe(dict.reorderList.announce.moved("FAQ", 1, 3));
-    expect(rowIds()).toEqual([B, A, C]);
+    expect(polite()).toBe(dict.reorderList.announce.moved("FAQ", 1, 2));
+    expect(rowIds()).toEqual([B, A]);
     expect(bodies).toHaveLength(0); // nothing committed yet
 
     fireEvent.keyDown(rowEl(B), { key: " " });
@@ -537,19 +551,19 @@ describe("AdminPageTable — keyboard reorder", () => {
 
   it("resyncs the list from the PATCH RESPONSE alone — no refetch", async () => {
     mockReorder();
-    await renderGrid();
+    await renderLegal();
     const before = listCalls;
 
     keyboardMoveUp(B);
 
     await waitFor(() => expect(bodies).toHaveLength(1));
-    await waitFor(() => expect(rowIds()).toEqual([B, A, C]));
+    await waitFor(() => expect(rowIds()).toEqual([B, A]));
     expect(listCalls).toBe(before);
   });
 
   it("the persistent Undo control sends the INVERSE order", async () => {
     mockReorder();
-    await renderGrid();
+    await renderLegal();
 
     keyboardMoveUp(B);
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -574,7 +588,7 @@ describe("AdminPageTable — server rejections", () => {
         { status: 409 },
       ),
     );
-    await renderGrid();
+    await renderLegal();
     const before = listCalls;
 
     keyboardMoveUp(B);
@@ -584,7 +598,7 @@ describe("AdminPageTable — server rejections", () => {
       expect(assertive()).toBe(dict.reorderList.rejected.REORDER_STALE),
     );
     await waitFor(() => expect(listCalls).toBeGreaterThan(before));
-    expect(rowIds()).toEqual(DEFAULT_ORDER);
+    expect(rowIds()).toEqual([A, B]);
   });
 });
 
@@ -595,7 +609,7 @@ describe("AdminPageTable — server rejections", () => {
 describe("AdminPageTable — the payload can never be partial", () => {
   it("a search that hides rows LOCKS reordering", async () => {
     mockReorder();
-    await renderGrid();
+    await renderLegal();
 
     await userEvent.type(searchBox(), "FAQ");
 
@@ -732,19 +746,6 @@ describe("AdminPageTable — kind views", () => {
     expect(listCalls).toBe(1);
   });
 
-  it("locks reordering while a kind view is active, and says why", async () => {
-    mockSearchParams = new URLSearchParams("kind=LEGAL");
-    mockReorder();
-    renderTable();
-    await waitFor(() => expect(rowIds()).toEqual([A, B]));
-
-    expect(screen.getByText(d.kindLockedHint)).toBeInTheDocument();
-
-    keyboardMoveUp(B);
-    expect(rowIds()).toEqual([A, B]);
-    expect(bodies).toHaveLength(0);
-  });
-
   it("explains what a hub is on the «Хаби» view, and says it is empty", async () => {
     mockSearchParams = new URLSearchParams("kind=HUB");
     mockReorder();
@@ -763,6 +764,141 @@ describe("AdminPageTable — kind views", () => {
     for (const label of [d.tabAll, d.tabLegal, d.tabInfo, d.tabHub]) {
       expect(view(label)).toHaveAttribute("aria-selected", "false");
     }
+  });
+});
+
+/**
+ * TASK-1990 — pages carry ONE global order, but a hub (/legal, /info) renders
+ * only its own kind, so the order is changed INSIDE a kind view: the slice is
+ * written back into the slots its rows held. «Усі» mixes hubs, so a drag there
+ * means nothing and is locked; so is «Хаби».
+ */
+describe("AdminPageTable — reorder within a hub (TASK-1990)", () => {
+  it("«Юридичні» reorders its own rows and says so", async () => {
+    mockReorder();
+    await renderLegal();
+
+    expect(screen.getByText(d.reorderHintLegal)).toBeInTheDocument();
+    expect(
+      within(rowEl(B)).getByRole("button", {
+        name: dict.reorderList.handleLabel("FAQ"),
+      }),
+    ).not.toHaveAttribute("aria-disabled");
+
+    keyboardMoveUp(B);
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ orderedIds: [B, A, C] });
+  });
+
+  it("writes the slice back into its own slots — pages of another hub keep theirs", async () => {
+    // INFO's C sits BETWEEN the two legal pages in the global order.
+    mockReorder(() => HttpResponse.json(listResponse([B, C, A])));
+    server.use(
+      http.get("*/api/admin/pages", () => {
+        listCalls += 1;
+        return HttpResponse.json(listResponse([A, C, B]));
+      }),
+    );
+    await renderLegal();
+
+    keyboardMoveUp(B);
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ orderedIds: [B, C, A] });
+    await waitFor(() => expect(rowIds()).toEqual([B, A]));
+
+    const undo = screen.getByRole("button", { name: dict.reorderList.undo });
+    await waitFor(() => expect(undo).toHaveAttribute("aria-disabled", "false"));
+    fireEvent.click(undo);
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({ orderedIds: [A, C, B] });
+  });
+
+  it("«Довідкові» reorders the INFO slice the same way", async () => {
+    const D = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const withSecondInfo = (order: string[]) => {
+      const body = listResponse(order.filter((id) => id !== D));
+      body.data.splice(order.indexOf(D), 0, {
+        ...body.data[0],
+        id: D,
+        slug: "payment",
+        kind: "INFO",
+        title: "Payment",
+      });
+      return body;
+    };
+    server.use(
+      http.get("*/api/admin/pages", () =>
+        HttpResponse.json(withSecondInfo([A, C, B, D])),
+      ),
+      http.patch("*/api/admin/pages/reorder", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(withSecondInfo([A, D, B, C]));
+      }),
+    );
+    mockSearchParams = new URLSearchParams("kind=INFO");
+    renderTable();
+    await waitFor(() => expect(rowIds()).toEqual([C, D]));
+    expect(screen.getByText(d.reorderHintInfo)).toBeInTheDocument();
+
+    keyboardMoveUp(D);
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ orderedIds: [A, D, B, C] });
+  });
+
+  it("«Усі» mixes hubs, so the drag is locked with an honest hint", async () => {
+    mockReorder();
+    await renderGrid();
+
+    expect(screen.getByText(d.allLockedHint)).toBeInTheDocument();
+    expect(
+      within(rowEl(B)).getByRole("button", {
+        name: dict.reorderList.handleLabel("FAQ"),
+      }),
+    ).toHaveAttribute("aria-disabled", "true");
+
+    rowEl(B).focus();
+    fireEvent.keyDown(rowEl(B), { key: " " });
+    // The live region says the same thing — never «Пошук активний».
+    expect(polite()).toBe(d.allLockedHint);
+    expect(rowEl(B)).toHaveAttribute("data-grabbed", "false");
+    keyboardMoveUp(B);
+    expect(rowIds()).toEqual([A, B, C]);
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("a search on «Усі» keeps the hub hint — clearing the search alone would not unlock", async () => {
+    mockReorder();
+    await renderGrid();
+
+    await userEvent.type(searchBox(), "FAQ");
+    await waitFor(() => expect(rowIds()).toEqual([B]));
+    expect(screen.getByText(d.allLockedHint)).toBeInTheDocument();
+  });
+
+  it("«Хаби» has no order to change, and says so", async () => {
+    server.use(
+      http.get("*/api/admin/pages", () => {
+        const body = listResponse();
+        body.data[1] = { ...body.data[1], kind: "HUB", slug: "promo" };
+        body.data[2] = { ...body.data[2], kind: "HUB", slug: "sale" };
+        return HttpResponse.json(body);
+      }),
+      http.patch("*/api/admin/pages/reorder", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(listResponse());
+      }),
+    );
+    mockSearchParams = new URLSearchParams("kind=HUB");
+    renderTable();
+    await waitFor(() => expect(rowIds()).toEqual([B, C]));
+
+    expect(screen.getByText(d.hubLockedHint)).toBeInTheDocument();
+    keyboardMoveUp(C);
+    expect(rowIds()).toEqual([B, C]);
+    expect(bodies).toHaveLength(0);
   });
 });
 
@@ -819,15 +955,16 @@ describe("AdminPageTable — status filter (TASK-562)", () => {
   });
 
   it("locks reordering while a status filter is active, and says why", async () => {
-    mockSearchParams = new URLSearchParams("status=PUBLISHED");
+    // Inside a hub — the one place a drag is otherwise allowed (TASK-1990).
+    mockSearchParams = new URLSearchParams("kind=LEGAL&status=DRAFT");
     mockReorder();
     renderTable();
-    await waitFor(() => expect(rowIds()).toEqual([A, C]));
+    await waitFor(() => expect(rowIds()).toEqual([B]));
 
     expect(screen.getByText(d.statusLockedHint)).toBeInTheDocument();
 
-    keyboardMoveUp(C);
-    expect(rowIds()).toEqual([A, C]);
+    keyboardMoveUp(B);
+    expect(rowIds()).toEqual([B]);
     expect(bodies).toHaveLength(0);
   });
 
@@ -850,13 +987,13 @@ describe("AdminPageTable — status filter (TASK-562)", () => {
     expect(screen.queryByText(d.emptyKind)).toBeNull();
   });
 
-  it("ignores a bogus ?status= — every row listed, drag not locked", async () => {
-    mockSearchParams = new URLSearchParams("status=NOT_A_STATUS");
+  it("ignores a bogus ?status= — every row of the hub listed, drag not locked", async () => {
+    mockSearchParams = new URLSearchParams("kind=LEGAL&status=NOT_A_STATUS");
     mockReorder();
-    await renderGrid();
+    renderTable();
+    await waitFor(() => expect(rowIds()).toEqual([A, B]));
 
-    expect(rowIds()).toEqual([A, B, C]);
-    expect(screen.getByText(d.reorderHint)).toBeInTheDocument();
+    expect(screen.getByText(d.reorderHintLegal)).toBeInTheDocument();
   });
 });
 
