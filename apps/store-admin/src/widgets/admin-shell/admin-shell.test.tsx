@@ -69,6 +69,17 @@ describe("AdminShell — page scroll container (TASK-1989)", () => {
       expect(wrapper).not.toHaveClass("overflow-hidden");
     }
   });
+
+  it("lets the content column shrink below its content width", () => {
+    // overflow-clip is not a scroll container, so the column's flex
+    // `min-width: auto` would resolve to its content width: a wide table or
+    // chip row would push it past the viewport, the outer clip would cut the
+    // right edge off and <main> would lose its horizontal scroll.
+    renderWithProviders(<AdminShell>page content</AdminShell>);
+
+    const column = screen.getByRole("main").parentElement!;
+    expect(column).toHaveClass("min-w-0");
+  });
 });
 
 describe("AdminShell — mobile nav drawer", () => {

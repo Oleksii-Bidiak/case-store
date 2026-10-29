@@ -50,11 +50,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
   // `#section` anchor then uses — sliding the whole shell up behind the body's
   // overflow-hidden. The wrappers use `overflow-clip`, not `-hidden`: clip is
   // not a scroll container, so nothing (focus, anchors, script) can scroll it.
+  // For the same reason the column needs an explicit `min-w-0`: a non-scroll
+  // flex item keeps `min-width: auto`, so wide content (tables, chip rows)
+  // would widen it past the viewport instead of scrolling inside <main>.
   return (
     <div className="flex h-screen overflow-clip">
       <AdminSidebar />
       <MobileNavDrawer open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
-      <div className="flex flex-1 flex-col overflow-clip">
+      <div className="flex min-w-0 flex-1 flex-col overflow-clip">
         <AdminHeader
           mobileNavOpen={mobileNavOpen}
           onOpenMobileNav={() => setMobileNavOpen(true)}
