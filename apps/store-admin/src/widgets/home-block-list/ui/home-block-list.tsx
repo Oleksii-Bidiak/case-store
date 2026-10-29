@@ -456,7 +456,9 @@ function HomeBlockGrid({
         row={row}
         count={grid.rows.length}
         canWrite={canWrite}
-        busy={busy}
+        // A toggle racing an in-flight reorder lets the reorder response
+        // overwrite the cache with the block's old status.
+        busy={busy || reorder.isPending}
         reorder={reorder}
         onToggle={onToggle}
         actions={canWrite ? rowActions(block) : []}

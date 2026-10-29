@@ -274,6 +274,35 @@ describe("HomeBlockList — reorder", () => {
       orderedIds: [TABS, HERO, RAIL, ORPHAN, RECENT],
     });
   });
+
+  it("locks the show/hide switches while the reorder is saving", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    server.use(
+      http.patch("*/api/admin/home-blocks/reorder", async ({ request }) => {
+        patches.push(await request.json());
+        await held;
+        return HttpResponse.json({ data: blocks() });
+      }),
+    );
+    await renderScreen();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: d.moveDown(dict.homeBlocks.hero) }),
+    );
+    await waitFor(() => expect(patches).toHaveLength(1));
+
+    // The reorder response would overwrite a toggle that landed meanwhile.
+    for (const toggle of screen.getAllByRole("switch")) {
+      expect(toggle).toBeDisabled();
+    }
+    release();
+    await waitFor(() =>
+      screen
+        .getAllByRole("switch")
+        .forEach((toggle) => expect(toggle).toBeEnabled()),
+    );
+  });
 });
 
 describe("HomeBlockList — «Показується»", () => {
