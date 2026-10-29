@@ -52,14 +52,14 @@ export interface PurchasableProduct {
   name: string;
   stock: number;
   isActive: boolean;
-  category: { isActive: boolean };
+  category: { isActive: boolean; ancestorsActive: boolean };
 }
 
 const PURCHASABLE_PRODUCT_SELECT = {
   name: true,
   stock: true,
   isActive: true,
-  category: { select: { isActive: true } },
+  category: { select: { isActive: true, ancestorsActive: true } },
 } satisfies Prisma.ProductSelect;
 
 /**
@@ -98,7 +98,7 @@ export interface CartWithItems {
        * deactivated is withdrawn from sale just as surely as one whose product
        * was, so `CartItemEntity` folds this into the line's `isActive` flag.
        */
-      category: { isActive: boolean };
+      category: { isActive: boolean; ancestorsActive: boolean };
       images: Array<{ url: string }>;
     };
   }>;
@@ -138,7 +138,7 @@ const CART_ITEMS_INCLUDE = {
           categoryId: true,
           // Whether the category is still on sale (TASK-297) — pulled in the SAME
           // query, so marking a withdrawn line unavailable costs no extra round trip.
-          category: { select: { isActive: true } },
+          category: { select: { isActive: true, ancestorsActive: true } },
           images: {
             orderBy: [{ isPrimary: 'desc' as const }, { sortOrder: 'asc' as const }],
             take: 1,
@@ -444,7 +444,7 @@ export class CartRepository {
     name: string;
     stock: number;
     isActive: boolean;
-    category: { isActive: boolean };
+    category: { isActive: boolean; ancestorsActive: boolean };
   } | null> {
     return this.prisma.product.findUnique({
       where: { id: productId },
@@ -453,7 +453,7 @@ export class CartRepository {
         name: true,
         stock: true,
         isActive: true,
-        category: { select: { isActive: true } },
+        category: { select: { isActive: true, ancestorsActive: true } },
       },
     });
   }

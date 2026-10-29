@@ -65,6 +65,7 @@ import {
   toCents,
   toTwoDecimals,
 } from '../addon-service';
+import { isCategoryOnSale } from '../product';
 // Shared with the newsletter export: one formula-injection guard, so a fix
 // cannot land in one export and miss the other (see the helper's docblock).
 import { buildCsvDocument, escapeCsvField, toSingleCsvLine } from '../common/utils';
@@ -380,7 +381,8 @@ export class OrderService {
     // stock check so a withdrawn item reports "no longer available", not a stock
     // figure the shopper can never act on.
     for (const item of cart.items) {
-      if (!item.product.isActive || !item.product.category.isActive) {
+      // `isCategoryOnSale`: the category AND its ancestor chain (TASK-1032).
+      if (!item.product.isActive || !isCategoryOnSale(item.product.category)) {
         throw new BadRequestException(`Product "${item.product.name}" is no longer available`);
       }
       if (item.quantity > item.product.stock) {
@@ -1532,7 +1534,7 @@ export class OrderService {
       if (!product) {
         throw new BadRequestException('One of the selected products no longer exists');
       }
-      if (!product.isActive || !product.category.isActive) {
+      if (!product.isActive || !isCategoryOnSale(product.category)) {
         throw new BadRequestException(`Product "${product.name}" is no longer available`);
       }
       if (line.quantity > product.stock) {

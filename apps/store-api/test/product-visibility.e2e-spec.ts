@@ -17,7 +17,7 @@ import { createPermissionRepositoryMock } from './permission-repository.mock';
  * Unlike most e2e suites here, the REAL repositories run: only PrismaService is
  * replaced, by a tiny in-memory table that EVALUATES the `where` it is handed
  * (`id`/`slug`/`groupId` — plain or `{ in }` — `isActive`, `deletedAt`,
- * `category.isActive`, `category.deletedAt`). A mock that answered by fixture would pass no matter
+ * `category.isActive`, `category.deletedAt`, `category.ancestorsActive`). A mock that answered by fixture would pass no matter
  * which predicate the repository sent; this one only returns a row the
  * predicate actually admits, so the tests below fail the moment a public read
  * drops a half of the rule — which is exactly how the variant siblings leaked
@@ -55,7 +55,14 @@ type Row = {
   ogImage: null;
   createdAt: Date;
   updatedAt: Date;
-  category: { id: string; name: string; slug: string; isActive: boolean; deletedAt: Date | null };
+  category: {
+    id: string;
+    name: string;
+    slug: string;
+    isActive: boolean;
+    ancestorsActive: boolean;
+    deletedAt: Date | null;
+  };
 };
 
 const ACTIVE_CATEGORY = {
@@ -63,6 +70,7 @@ const ACTIVE_CATEGORY = {
   name: 'Чохли',
   slug: 'chokhly',
   isActive: true,
+  ancestorsActive: true,
   deletedAt: null,
 };
 const HIDDEN_CATEGORY = {
@@ -70,6 +78,7 @@ const HIDDEN_CATEGORY = {
   name: 'Архів',
   slug: 'arkhiv',
   isActive: false,
+  ancestorsActive: true,
   deletedAt: null,
 };
 /**
@@ -83,7 +92,21 @@ const DELETED_CATEGORY = {
   name: 'Видалена',
   slug: 'deleted:cat-gone:vydalena',
   isActive: true,
+  ancestorsActive: true,
   deletedAt: new Date('2026-09-26'),
+};
+/**
+ * An ACTIVE subcategory whose parent (or any ancestor) is deactivated (TASK-1032).
+ * Its own flags say «on sale»; only the stored branch flag hides its products —
+ * the owner's cascade decision.
+ */
+const BRANCH_HIDDEN_CATEGORY = {
+  id: 'cat-under-off',
+  name: 'Підкатегорія прихованої',
+  slug: 'pidkatehoriia',
+  isActive: true,
+  ancestorsActive: false,
+  deletedAt: null,
 };
 
 /** UUIDs — `GET /products/cards` validates its ids. */
@@ -96,6 +119,8 @@ const ID = {
   siblingHiddenCategory: '66666666-6666-4666-8666-666666666666',
   siblingDraft: '77777777-7777-4777-8777-777777777777',
   inDeletedCategory: '88888888-8888-4888-8888-888888888888',
+  inHiddenBranch: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  siblingHiddenBranch: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
   missing: '99999999-9999-4999-8999-999999999999',
 };
 
@@ -158,6 +183,16 @@ const ROWS: Row[] = [
     category: HIDDEN_CATEGORY,
   }),
   row({
+    id: ID.siblingHiddenBranch,
+    slug: 'sibling-hidden-branch',
+    groupId: 'grp-1',
+    positionOrder: 4,
+    attributes: { Колір: 'Зелений' },
+    price: { toString: () => '10' },
+    categoryId: BRANCH_HIDDEN_CATEGORY.id,
+    category: BRANCH_HIDDEN_CATEGORY,
+  }),
+  row({
     id: ID.siblingDraft,
     slug: 'sibling-draft',
     groupId: 'grp-1',
@@ -180,6 +215,12 @@ const ROWS: Row[] = [
     categoryId: DELETED_CATEGORY.id,
     category: DELETED_CATEGORY,
   }),
+  row({
+    id: ID.inHiddenBranch,
+    slug: 'in-hidden-branch',
+    categoryId: BRANCH_HIDDEN_CATEGORY.id,
+    category: BRANCH_HIDDEN_CATEGORY,
+  }),
 ];
 
 /** Does `target` satisfy the Prisma-style `where`? Throws on anything it does not know. */
@@ -196,7 +237,11 @@ function matches(target: Record<string, unknown>, where: Record<string, unknown>
       }
       throw new Error(`fake prisma: unsupported condition on "${key}": ${JSON.stringify(cond)}`);
     }
-    if (!['id', 'slug', 'groupId', 'isActive', 'deletedAt', 'categoryId'].includes(key)) {
+    if (
+      !['id', 'slug', 'groupId', 'isActive', 'deletedAt', 'categoryId', 'ancestorsActive'].includes(
+        key,
+      )
+    ) {
       throw new Error(`fake prisma: unsupported key "${key}"`);
     }
     return value === cond;
@@ -329,6 +374,10 @@ describe('Public product visibility (e2e, TASK-781/782)', () => {
       ['a draft', ID.draft],
       ['a product in a deactivated category', ID.inHiddenCategory],
       ['a product in a deleted category (TASK-653)', ID.inDeletedCategory],
+      [
+        'a product of an active subcategory under a deactivated parent (TASK-1032)',
+        ID.inHiddenBranch,
+      ],
       ['a soft-deleted product', ID.deleted],
     ])('answers %s exactly like a nonexistent id — 404, no prices', async (_label, id) => {
       const hidden = await request(app.getHttpServer()).get(url(id)).expect(404);
@@ -356,6 +405,10 @@ describe('Public product visibility (e2e, TASK-781/782)', () => {
       await request(app.getHttpServer()).get('/api/products/in-deleted-category').expect(404);
     });
 
+    it('answers a product of an active subcategory under a deactivated parent with 404 (TASK-1032)', async () => {
+      await request(app.getHttpServer()).get('/api/products/in-hidden-branch').expect(404);
+    });
+
     it('offers only publicly visible siblings in the variant switcher', async () => {
       const res = await request(app.getHttpServer()).get('/api/products/visible').expect(200);
 
@@ -363,6 +416,7 @@ describe('Public product visibility (e2e, TASK-781/782)', () => {
       expect(slugs).toEqual(['visible', 'sibling-visible']);
       expect(slugs).not.toContain('sibling-hidden-category');
       expect(slugs).not.toContain('sibling-draft');
+      expect(slugs).not.toContain('sibling-hidden-branch');
     });
   });
 
@@ -385,7 +439,15 @@ describe('Public product visibility (e2e, TASK-781/782)', () => {
     it('drops hidden products from the requested cards altogether', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/products/cards')
-        .query({ ids: [ID.draft, ID.inHiddenCategory, ID.inDeletedCategory, ID.visible].join(',') })
+        .query({
+          ids: [
+            ID.draft,
+            ID.inHiddenCategory,
+            ID.inDeletedCategory,
+            ID.inHiddenBranch,
+            ID.visible,
+          ].join(','),
+        })
         .expect(200);
 
       expect((res.body.data as Array<{ id: string }>).map((p) => p.id)).toEqual([ID.visible]);
@@ -400,5 +462,16 @@ describe('Public product visibility (e2e, TASK-781/782)', () => {
         .expect(404);
       expect(prismaServiceMock.wishlistItem.upsert).not.toHaveBeenCalled();
     });
+
+    it.each(['items', 'toggle'])(
+      'POST /api/wishlist/%s answers 404 for a product under a deactivated parent (TASK-1032)',
+      async (path) => {
+        await request(app.getHttpServer())
+          .post(`/api/wishlist/${path}`)
+          .send({ productId: ID.inHiddenBranch })
+          .expect(404);
+        expect(prismaServiceMock.wishlistItem.upsert).not.toHaveBeenCalled();
+      },
+    );
   });
 });

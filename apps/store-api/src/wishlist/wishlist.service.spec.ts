@@ -27,7 +27,7 @@ function buildItem(productId: string, id = `item-${productId}`) {
       stock: 50,
       isActive: true,
       // TASK-297: WishlistItemEntity folds the category's status into isActive.
-      category: { isActive: true },
+      category: { isActive: true, ancestorsActive: true },
       images: [] as Array<{ url: string }>,
     },
   };
@@ -104,7 +104,11 @@ describe('WishlistService', () => {
       const withdrawnBase = buildItem('product-withdrawn');
       const withdrawnItem = {
         ...withdrawnBase,
-        product: { ...withdrawnBase.product, isActive: true, category: { isActive: false } },
+        product: {
+          ...withdrawnBase.product,
+          isActive: true,
+          category: { isActive: false, ancestorsActive: true },
+        },
       };
       wishlistRepositoryMock.findOrCreate.mockResolvedValue({
         ...emptyUserWishlist,

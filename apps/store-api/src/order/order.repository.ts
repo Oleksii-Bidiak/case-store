@@ -541,7 +541,7 @@ export class OrderRepository {
       price: { toString(): string };
       stock: number;
       isActive: boolean;
-      category: { isActive: boolean };
+      category: { isActive: boolean; ancestorsActive: boolean };
     }>
   > {
     return this.prisma.product.findMany({
@@ -552,7 +552,7 @@ export class OrderRepository {
         price: true,
         stock: true,
         isActive: true,
-        category: { select: { isActive: true } },
+        category: { select: { isActive: true, ancestorsActive: true } },
       },
     });
   }

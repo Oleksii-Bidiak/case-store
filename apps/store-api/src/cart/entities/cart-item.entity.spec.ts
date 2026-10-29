@@ -11,7 +11,7 @@ function buildPrismaCartItem(
     images: Array<{ url: string }>;
     stock: number;
     isActive: boolean;
-    category: { isActive: boolean };
+    category: { isActive: boolean; ancestorsActive: boolean };
   }> = {},
 ) {
   return {
@@ -28,7 +28,7 @@ function buildPrismaCartItem(
       compareAtPrice: { toString: () => '39.99' },
       stock: 50,
       isActive: true,
-      category: { isActive: true },
+      category: { isActive: true, ancestorsActive: true },
       images: [{ url: 'https://cdn.example.com/primary.jpg' }],
       ...productOverrides,
     },
@@ -88,7 +88,17 @@ describe('CartItemEntity.fromPrisma', () => {
   // has always used — the storefront has exactly one "no longer available" branch.
   it('marks the line inactive when the product is active but its CATEGORY was deactivated', () => {
     const entity = CartItemEntity.fromPrisma(
-      buildPrismaCartItem({ isActive: true, category: { isActive: false } }),
+      buildPrismaCartItem({ isActive: true, category: { isActive: false, ancestorsActive: true } }),
+    );
+
+    expect(entity.isActive).toBe(false);
+  });
+
+  // TASK-1032: deactivating a PARENT withdraws its whole branch — the line of an
+  // active subcategory under it answers exactly like an own-category withdrawal.
+  it('marks the line inactive when its category is active but an ANCESTOR was deactivated', () => {
+    const entity = CartItemEntity.fromPrisma(
+      buildPrismaCartItem({ isActive: true, category: { isActive: true, ancestorsActive: false } }),
     );
 
     expect(entity.isActive).toBe(false);
@@ -96,7 +106,7 @@ describe('CartItemEntity.fromPrisma', () => {
 
   it('marks the line inactive when the product itself was deactivated', () => {
     const entity = CartItemEntity.fromPrisma(
-      buildPrismaCartItem({ isActive: false, category: { isActive: true } }),
+      buildPrismaCartItem({ isActive: false, category: { isActive: true, ancestorsActive: true } }),
     );
 
     expect(entity.isActive).toBe(false);
@@ -104,7 +114,7 @@ describe('CartItemEntity.fromPrisma', () => {
 
   it('keeps the line active only when BOTH the product and its category are active', () => {
     const entity = CartItemEntity.fromPrisma(
-      buildPrismaCartItem({ isActive: true, category: { isActive: true } }),
+      buildPrismaCartItem({ isActive: true, category: { isActive: true, ancestorsActive: true } }),
     );
 
     expect(entity.isActive).toBe(true);

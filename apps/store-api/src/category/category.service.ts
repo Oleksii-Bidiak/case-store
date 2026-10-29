@@ -360,7 +360,11 @@ export class CategoryService {
       // like "no change" here while the repository legitimately moves the node back — and
       // the cache/index would silently rot. `movedIds` does the same job for the batch
       // endpoint; this is its single-node twin.
-      await this.purgeProductCaches(PRODUCT_LIST_PREFIX);
+      //
+      // The WHOLE product namespace (TASK-1032): a move into (or out of) a hidden branch
+      // withdraws (or restores) the moved products, so their cached PDPs must go too —
+      // the reindex above handles search the same way it does for a status change.
+      await this.purgeProductCaches(PRODUCT_CACHE_PREFIX);
       this.reindexSubtreesInBackground([id]);
     }
 
@@ -391,7 +395,12 @@ export class CategoryService {
       throw this.toHttp(error);
     }
 
-    await this.purgeProductCaches(PRODUCT_LIST_PREFIX);
+    // A batch that MOVED something may have carried a branch into or out of a hidden
+    // parent (TASK-1032), which changes its products' visibility — PDPs included — so
+    // the whole product namespace goes; a pure reorder only touches the lists.
+    await this.purgeProductCaches(
+      result.movedIds.length > 0 ? PRODUCT_CACHE_PREFIX : PRODUCT_LIST_PREFIX,
+    );
     this.reindexSubtreesInBackground(result.movedIds);
 
     this.logger.info(

@@ -658,9 +658,12 @@ describe('Category deletion (integration, TASK-652/653)', () => {
       expect(await publicCount([pOne, pTwo])).toBe(2);
     });
 
-    // A new target is created active: its products stay public even under a hidden
-    // parent — only the category is unreachable from the storefront menu.
-    it('needs no consent for a NEW target under a hidden parent', async () => {
+    // A new target is created active, but under a hidden parent it is born into a
+    // hidden BRANCH: since the cascade (TASK-1032) its products are off the storefront
+    // too. The delete path recomputes the new row's `ancestorsActive` in-transaction.
+    // (No consent is asked for this case yet — the TASK-1837 guard reads only the
+    // target's own flag.)
+    it('needs no consent for a NEW target under a hidden parent — and the cascade hides it', async () => {
       const doomed = await makeCategory('hidden-parent-doomed', anchor, 74);
       const hiddenParent = await makeCategory('hidden-parent', anchor, 75);
       await prisma.category.update({ where: { id: hiddenParent }, data: { isActive: false } });
@@ -675,8 +678,10 @@ describe('Category deletion (integration, TASK-652/653)', () => {
       createdCategoryIds.push(result.targetId!);
 
       const created = await prisma.category.findUnique({ where: { id: result.targetId! } });
-      expect(created).toEqual(expect.objectContaining({ parentId: hiddenParent, isActive: true }));
-      expect(await publicCount([pMoved])).toBe(1);
+      expect(created).toEqual(
+        expect.objectContaining({ parentId: hiddenParent, isActive: true, ancestorsActive: false }),
+      );
+      expect(await publicCount([pMoved])).toBe(0);
     });
   });
 

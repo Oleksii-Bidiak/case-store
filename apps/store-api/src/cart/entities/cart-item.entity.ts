@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { MAX_QUANTITY } from '../cart.constants';
 import { ResolvedAddonEntity, centsToString, lineTotalCents } from '../../addon-service';
 import type { ResolvedAddon } from '../../addon-service';
+import { isCategoryOnSale } from '../../product';
 
 /**
  * Domain entity representing a single item in a shopping cart.
@@ -141,7 +142,7 @@ export class CartItemEntity {
         compareAtPrice: { toString(): string } | null;
         stock: number;
         isActive: boolean;
-        category: { isActive: boolean };
+        category: { isActive: boolean; ancestorsActive: boolean };
         images: Array<{ url: string }>;
       };
     },
@@ -163,10 +164,11 @@ export class CartItemEntity {
     entity.price = unitPriceStr;
     // Public cap, never the raw stock: the stepper only needs min(cap, stock).
     entity.maxQty = Math.min(MAX_QUANTITY, item.product.stock);
-    // Withdrawing the CATEGORY withdraws the line (TASK-297) — folded into the
-    // existing flag rather than exposed as a second one, so every reader that
-    // already handles a deactivated product handles this for free.
-    entity.isActive = item.product.isActive && item.product.category.isActive;
+    // Withdrawing the CATEGORY — or any of its ancestors (TASK-1032) — withdraws
+    // the line (TASK-297), folded into the existing flag rather than exposed as a
+    // second one, so every reader that already handles a deactivated product
+    // handles this for free.
+    entity.isActive = item.product.isActive && isCategoryOnSale(item.product.category);
 
     // Integer cents via the canonical helpers (TASK-807) — never a float product.
     entity.lineTotal = centsToString(lineTotalCents(item.product.price, item.quantity));

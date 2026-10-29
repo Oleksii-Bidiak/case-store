@@ -47,7 +47,7 @@ const mockWishlist: WishlistWithItems = {
         compareAtPrice: { toString: () => '39.99' } as any,
         stock: 50,
         isActive: true,
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
         images: [{ url: 'https://cdn.example.com/a.jpg' }],
       },
     },
