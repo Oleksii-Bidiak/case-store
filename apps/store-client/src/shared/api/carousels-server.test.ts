@@ -107,27 +107,33 @@ describe("fetchHomeBlocks (TASK-660 / TASK-663)", () => {
     ]);
   });
 
-  it("returns [] when the body carries no data", async () => {
+  it("returns [] for a genuine empty list", async () => {
+    mockBlocks([]);
+
+    await expect(fetchHomeBlocks()).resolves.toEqual([]);
+  });
+
+  it("returns null when the body carries no data", async () => {
     global.fetch = jest
       .fn()
       .mockResolvedValue({ ok: true, json: async () => ({}) }) as never;
 
-    await expect(fetchHomeBlocks()).resolves.toEqual([]);
+    await expect(fetchHomeBlocks()).resolves.toBeNull();
   });
 
-  it("returns [] on a non-OK response", async () => {
+  it("returns null on a non-OK response", async () => {
     global.fetch = jest
       .fn()
       .mockResolvedValue({ ok: false, json: async () => ({}) }) as never;
 
-    await expect(fetchHomeBlocks()).resolves.toEqual([]);
+    await expect(fetchHomeBlocks()).resolves.toBeNull();
   });
 
-  it("returns [] when the API is unreachable (never throws)", async () => {
+  it("returns null when the API is unreachable (never throws)", async () => {
     global.fetch = jest
       .fn()
       .mockRejectedValue(new Error("ECONNREFUSED")) as never;
 
-    await expect(fetchHomeBlocks()).resolves.toEqual([]);
+    await expect(fetchHomeBlocks()).resolves.toBeNull();
   });
 });

@@ -251,20 +251,55 @@ describe("home page — sections follow the homepage blocks (TASK-663)", () => {
     expect(rail?.props.carousels).toEqual([]);
   });
 
-  it("falls back to today's hard-coded order when the API is unreachable", async () => {
-    global.fetch = jest
-      .fn()
-      .mockRejectedValue(new Error("ECONNREFUSED")) as unknown as typeof fetch;
+  describe("a failed read", () => {
+    const originalPhase = process.env.NEXT_PHASE;
 
-    expect(names(await HomePage())).toEqual(DEFAULT_SECTIONS);
-  });
+    afterEach(() => {
+      if (originalPhase === undefined) delete process.env.NEXT_PHASE;
+      else process.env.NEXT_PHASE = originalPhase;
+    });
 
-  it("falls back to today's hard-coded order on a non-OK response", async () => {
-    global.fetch = jest
-      .fn()
-      .mockResolvedValue({ ok: false, json: async () => ({}) }) as never;
+    const apiDown = () => {
+      global.fetch = jest
+        .fn()
+        .mockRejectedValue(
+          new Error("ECONNREFUSED"),
+        ) as unknown as typeof fetch;
+    };
 
-    expect(names(await HomePage())).toEqual(DEFAULT_SECTIONS);
+    // The order is the owner's data: the default rendered over it would bring
+    // hidden blocks back and drop CAROUSEL blocks, and ISR would keep it for an
+    // hour. A throw keeps the last good ISR copy (Next retries next request).
+    it("throws at runtime when the API is unreachable, so ISR keeps the last good copy", async () => {
+      delete process.env.NEXT_PHASE;
+      apiDown();
+
+      await expect(HomePage()).rejects.toThrow("Homepage blocks read failed");
+    });
+
+    it("throws at runtime on a non-OK response", async () => {
+      delete process.env.NEXT_PHASE;
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue({ ok: false, json: async () => ({}) }) as never;
+
+      await expect(HomePage()).rejects.toThrow("Homepage blocks read failed");
+    });
+
+    it("throws in a preview instead of passing the default off as the draft", async () => {
+      delete process.env.NEXT_PHASE;
+      mockPreviewRequest("home-token");
+      apiDown();
+
+      await expect(HomePage()).rejects.toThrow("Homepage blocks read failed");
+    });
+
+    it("falls back to today's hard-coded order while `next build` prerenders without the API", async () => {
+      process.env.NEXT_PHASE = "phase-production-build";
+      apiDown();
+
+      expect(names(await HomePage())).toEqual(DEFAULT_SECTIONS);
+    });
   });
 });
 

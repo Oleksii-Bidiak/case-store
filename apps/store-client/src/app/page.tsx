@@ -118,9 +118,10 @@ export default async function HomePage() {
 
   // The page itself (TASK-663): which sections, in which order, with which tab
   // sets — admin-managed homepage blocks (ISR, tags `home-blocks` + `carousels`;
-  // CAROUSEL/TABS products resolved in the same response). Resilient like the
-  // banners fetch: an unreachable API, or no visible block at all, yields the
-  // built-in default order, so the homepage always renders. This list is the
+  // CAROUSEL/TABS products resolved in the same response). No visible block at
+  // all yields the built-in default order; a failed read throws at runtime, so
+  // ISR keeps the last good copy instead of caching the default over the
+  // owner's order (the default only stands in during `next build`). This list is the
   // ONLY input the sections below are drawn from — the signed preview
   // (TASK-669) swaps where it comes from, not how it is drawn.
   const blocks = homeBlocksOrDefault(await fetchHomeBlocks(previewToken));

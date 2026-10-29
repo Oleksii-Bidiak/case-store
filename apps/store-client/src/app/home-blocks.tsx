@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { PHASE_PRODUCTION_BUILD } from "next/constants";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import type { BannersByPlacement } from "@/shared/api/banners-server";
 import type {
@@ -41,11 +42,11 @@ function defaultBlock(
 }
 
 /**
- * The page the storefront renders when the API is unreachable or returns no
- * block at all: the hard-coded order `page.tsx` had before TASK-663. The TABS
- * block has no tabs, so it shows the query-driven «Популярне» tabs; there are no
- * CAROUSEL blocks, as there were no carousels to show without the API. The
- * homepage must always render.
+ * The page the storefront renders when the API returns no block at all, or is
+ * unreachable while `next build` prerenders: the hard-coded order `page.tsx`
+ * had before TASK-663. The TABS block has no tabs, so it shows the query-driven
+ * «Популярне» tabs; there are no CAROUSEL blocks, as there were no carousels to
+ * show without the API.
  */
 export const DEFAULT_HOME_BLOCKS: readonly PublicHomeBlockEntity[] = [
   defaultBlock("HERO", 0),
@@ -59,12 +60,26 @@ export const DEFAULT_HOME_BLOCKS: readonly PublicHomeBlockEntity[] = [
 
 /**
  * The blocks to render: the API's, in the order it sent them, or the built-in
- * default when there are none (`fetchHomeBlocks` already turns every failure
- * into `[]`).
+ * default when there are none.
+ *
+ * A failed read (`null` from `fetchHomeBlocks`) is NOT "no blocks": the order is
+ * the owner's data now, so rendering the default over it would put hidden blocks
+ * back and drop every CAROUSEL block — and ISR would keep that page for an hour.
+ * At runtime it throws instead: Next keeps serving the last good ISR copy and
+ * retries on the next request, and a preview shows an error rather than a
+ * default that looks like the draft. Only `next build` (no earlier copy exists,
+ * and the build must not need a live API) falls back to the default.
  */
 export function homeBlocksOrDefault(
-  blocks: readonly PublicHomeBlockEntity[],
+  blocks: readonly PublicHomeBlockEntity[] | null,
+  phase: string | undefined = process.env.NEXT_PHASE,
 ): readonly PublicHomeBlockEntity[] {
+  if (blocks === null) {
+    if (phase !== PHASE_PRODUCTION_BUILD) {
+      throw new Error("Homepage blocks read failed");
+    }
+    return DEFAULT_HOME_BLOCKS;
+  }
   return blocks.length > 0 ? blocks : DEFAULT_HOME_BLOCKS;
 }
 

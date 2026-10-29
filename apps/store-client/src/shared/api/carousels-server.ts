@@ -14,9 +14,12 @@ import { publicReadInit } from "@/shared/api/preview-token";
  * `home-blocks` and `carousels` (and the `/` path) on any admin write to a block
  * or a carousel, so the homepage picks up changes on demand.
  *
- * Resilient by design: any transport error, unreachable API, or non-OK
- * response yields an EMPTY list — the homepage then renders its built-in default
- * order (`app/home-blocks.tsx`), so it always renders.
+ * A failed read (transport error, unreachable API, non-OK response, a body
+ * without `data`) yields `null`, distinct from a genuine empty list `[]`, and
+ * `app/home-blocks.tsx` decides what the page does with it: the built-in
+ * default order while `next build` prerenders, a throw at runtime so Next keeps
+ * serving the last good ISR copy instead of caching the default over the
+ * owner's curated page.
  */
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -30,7 +33,7 @@ export const CAROUSELS_COLLECTION_TAG = "carousels";
  * Fetch the visible homepage blocks, in page order, with their carousels and
  * tabs resolved — ONE request for the whole page (the API resolves the products
  * of every CAROUSEL / TABS block in the same response). Never throws — returns
- * `[]` on any error.
+ * `null` on any error.
  *
  * `previewToken` is the signed homepage preview (TASK-669): the request then
  * carries the token, is `no-store` and has no ISR tag, and the API answers with
@@ -39,17 +42,17 @@ export const CAROUSELS_COLLECTION_TAG = "carousels";
  */
 export async function fetchHomeBlocks(
   previewToken?: string | null,
-): Promise<PublicHomeBlockEntity[]> {
+): Promise<PublicHomeBlockEntity[] | null> {
   try {
     const res = await serverFetch(
       `${API_BASE_URL}/api/home-blocks`,
       publicReadInit([HOME_BLOCKS_TAG, CAROUSELS_COLLECTION_TAG], previewToken),
     );
-    if (!res.ok) return [];
+    if (!res.ok) return null;
 
     const body = (await res.json()) as PublicHomeBlockListResponse;
-    return body.data ?? [];
+    return body.data ?? null;
   } catch {
-    return [];
+    return null;
   }
 }
