@@ -1,4 +1,5 @@
 import { http, HttpResponse, delay } from "msw";
+import { QueryClient } from "@tanstack/react-query";
 import {
   renderWithProviders,
   screen,
@@ -328,6 +329,110 @@ describe("ProductList load-more append (TASK-216)", () => {
     expect(
       screen.getByText(dict.catalog.shownOfTotal(1, 5)),
     ).toBeInTheDocument();
+  });
+});
+
+// TASK-1995 — after Alt+Tab the stale list refetches on window focus with the
+// SAME params; the "loading" veil over the grid made every card image blink
+// although the data came back identical. Only a change of params the shopper
+// made (filters, sort, page) may veil the results it is about to replace.
+describe("ProductList — refetch overlay (TASK-1995)", () => {
+  /** Cache kept across a param switch, as the app's own client keeps it. */
+  function makeCachingClient() {
+    return new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 60_000 } },
+    });
+  }
+
+  const overlay = () => screen.queryByTestId("results-refetch-overlay");
+
+  it("does not veil the grid during a background refetch with unchanged params", async () => {
+    installProducts({ "": CAT_1_PAGES }, { limit: 2, slowPages: [1] });
+    const queryClient = makeCachingClient();
+
+    renderWithProviders(
+      <ProductList {...baseProps} params={{ page: 1, limit: 2 }} />,
+      { queryClient },
+    );
+    await screen.findByText("Alpha Case");
+
+    // What refetchOnWindowFocus does to stale data.
+    void queryClient.refetchQueries();
+    await waitFor(() => expect(queryClient.isFetching()).toBeGreaterThan(0));
+
+    expect(overlay()).not.toBeInTheDocument();
+    expect(screen.getByText("Alpha Case")).toBeInTheDocument();
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    expect(overlay()).not.toBeInTheDocument();
+  });
+
+  it("still veils the grid while a param change refetches cached results", async () => {
+    installProducts(
+      {
+        "cat-1": CAT_1_PAGES,
+        "cat-2": { 1: [makeProduct("x1", "Xi Charger")] },
+      },
+      { limit: 2, slowPages: [1] },
+    );
+    const queryClient = makeCachingClient();
+
+    const { rerender } = renderWithProviders(
+      <ProductList
+        {...baseProps}
+        params={{ categoryId: "cat-1", page: 1, limit: 2 }}
+      />,
+      { queryClient },
+    );
+    await screen.findByText("Alpha Case");
+    rerender(
+      <ProductList
+        {...baseProps}
+        params={{ categoryId: "cat-2", page: 1, limit: 2 }}
+      />,
+    );
+    await screen.findByText("Xi Charger");
+
+    // Back to cat-1: its (stale) cache paints at once and revalidates — a
+    // shopper-driven change, so the veil says "these are being replaced".
+    rerender(
+      <ProductList
+        {...baseProps}
+        params={{ categoryId: "cat-1", page: 1, limit: 2 }}
+      />,
+    );
+    expect(screen.getByText("Alpha Case")).toBeInTheDocument();
+    expect(overlay()).toBeInTheDocument();
+
+    await waitFor(() => expect(overlay()).not.toBeInTheDocument());
+    expect(screen.getByText("Alpha Case")).toBeInTheDocument();
+  });
+
+  it("shows the skeleton when a param change has nothing cached", async () => {
+    installProducts(
+      {
+        "cat-1": CAT_1_PAGES,
+        "cat-2": { 1: [makeProduct("x1", "Xi Charger")] },
+      },
+      { limit: 2, slowPages: [1] },
+    );
+
+    const { rerender } = renderWithProviders(
+      <ProductList
+        {...baseProps}
+        params={{ categoryId: "cat-1", page: 1, limit: 2 }}
+      />,
+    );
+    await screen.findByText("Alpha Case");
+    rerender(
+      <ProductList
+        {...baseProps}
+        params={{ categoryId: "cat-2", page: 1, limit: 2 }}
+      />,
+    );
+
+    expect(screen.queryByText("Alpha Case")).not.toBeInTheDocument();
+    expect(screen.getByTestId("result-count-skeleton")).toBeInTheDocument();
+    await screen.findByText("Xi Charger");
   });
 });
 

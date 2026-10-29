@@ -116,10 +116,28 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
     sort: parseSearchSort(searchParams.get("sort")),
   };
 
-  const { data, isPending, isFetching, isError } = useSearch(
-    { q: trimmed, page: currentPage, limit: PAGE_SIZE, ...facets },
-    { query: { enabled } },
-  );
+  const searchRequest = {
+    q: trimmed,
+    page: currentPage,
+    limit: PAGE_SIZE,
+    ...facets,
+  };
+  const { data, isPending, isFetching, isError } = useSearch(searchRequest, {
+    query: { enabled },
+  });
+
+  // The results veil is for a fetch the SHOPPER started — a new query, filter,
+  // sort or page over cached results it is about to replace. A background
+  // refetch of the URL already on screen (refetchOnWindowFocus after Alt+Tab)
+  // brings the same cards back, and veiling them made every image blink
+  // (TASK-1995) — the catalogue's `ProductList` rule. The key of the last
+  // settled request is held with a render-time guard (docs/conventions/forms.md
+  // Rule 1a). The object is built in one fixed order, so `JSON.stringify` (which
+  // drops the `undefined` facets) is a stable identity.
+  const requestKey = JSON.stringify(searchRequest);
+  const [settledKey, setSettledKey] = useState(requestKey);
+  if (!isFetching && settledKey !== requestKey) setSettledKey(requestKey);
+  const isRefetchingForNewRequest = isFetching && settledKey !== requestKey;
 
   // The panel speaks the catalogue's param language. The keyword box is fed the
   // page's own query: on `/search` the keyword IS the subject of the page, so
@@ -280,9 +298,10 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
       </p>
 
       <div className="relative">
-        {isFetching && (
+        {isRefetchingForNewRequest && (
           <div
             aria-hidden="true"
+            data-testid="results-refetch-overlay"
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/60"
           >
             <Loader2 className="size-8 animate-spin text-primary" />
