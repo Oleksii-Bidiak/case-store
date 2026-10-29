@@ -1492,6 +1492,15 @@ export const dict = {
         COURIER: "Кур'єр",
         OTHER: "Інша доставка",
       },
+      // TASK-1998: the method the shopper had chosen is gone — the shop
+      // switched it off mid-checkout. One sentence per method, so the
+      // adjective agrees with the name («недоступна» / «недоступний»).
+      methodUnavailable: {
+        NOVA_POSHTA: "Нова Пошта зараз недоступна — оберіть інший спосіб",
+        PICKUP: "Самовивіз зараз недоступний — оберіть інший спосіб",
+        COURIER: "Кур'єр зараз недоступний — оберіть інший спосіб",
+        OTHER: "Інша доставка зараз недоступна — оберіть інший спосіб",
+      },
       npTariff: "За тарифом Нової Пошти",
       npQuote: (cost: string, days: number) =>
         `${cost} · ${days}–${days + 1} роб. дн.`,

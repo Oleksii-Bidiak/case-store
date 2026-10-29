@@ -31,6 +31,7 @@ export {
   deliveryMethodShortTitle,
   deliveryMethodTitle,
   deliveryQuoteText,
+  lostDeliveryMethod,
   resolveDeliveryMethod,
   toCents,
   type CheckoutDeliveryMethod,
