@@ -8,8 +8,14 @@ import type { SeoSettingsEntity } from "@/shared/api/generated/models";
 // test pins the actual tiering behavior.
 jest.mock("@/shared/api/seo-settings-server", () => ({
   fetchSeoSettings: jest.fn(),
+  fetchSeoSettingsForChrome: jest.fn(),
   SEO_SETTINGS_TAG: "seo-settings",
 }));
+jest.mock("@/shared/api/preview-server", () => ({
+  readPreviewSession: jest.fn().mockResolvedValue(null),
+}));
+jest.mock("@/widgets/preview-bar", () => ({ PreviewBar: () => null }));
+jest.mock("@/features/theme", () => ({ ThemeColorSync: () => null }));
 jest.mock("@/shared/api/banners-server", () => ({
   fetchPublishedBanners: jest.fn().mockResolvedValue({ ANNOUNCEMENT_BAR: [] }),
   BANNERS_COLLECTION_TAG: "banners",
@@ -32,8 +38,8 @@ jest.mock("next/script", () => ({ __esModule: true, default: () => null }));
 // Plain CSS import — ts-jest cannot parse it; generateMetadata never needs it.
 jest.mock("./globals.css", () => ({}));
 
-import { generateMetadata } from "./layout";
-import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import RootLayout, { generateMetadata } from "./layout";
+import { fetchSeoSettingsForChrome } from "@/shared/api/seo-settings-server";
 import {
   BRAND_OG_IMAGE_HEIGHT,
   BRAND_OG_IMAGE_PATH,
@@ -42,8 +48,10 @@ import {
   SITE_NAME,
 } from "@/shared/config";
 
-const fetchSeo = fetchSeoSettings as jest.MockedFunction<
-  typeof fetchSeoSettings
+// The root layout reads through the strict chrome reader (TASK-1988); `null`
+// here is what it resolves while `next build` prerenders with no API.
+const fetchSeo = fetchSeoSettingsForChrome as jest.MockedFunction<
+  typeof fetchSeoSettingsForChrome
 >;
 
 function makeSettings(
@@ -224,6 +232,36 @@ describe("root layout generateMetadata (TASK-279)", () => {
 
     expect(meta.verification?.google).toBe("G-TOKEN");
     expect(meta.verification?.other).toEqual({ "msvalidate.01": "B-TOKEN" });
+  });
+});
+
+/**
+ * TASK-1988 — a failed SEO settings read at runtime must fail the render, not
+ * draw the placeholder "C CaseStore" chrome that ISR then keeps for days. The
+ * thrown render is what makes Next keep the previous (correct) page.
+ */
+describe("root layout on a failed SEO settings read (TASK-1988)", () => {
+  const unavailable = () =>
+    Object.assign(new Error("SEO settings read failed: HTTP 429"), {
+      name: "SeoSettingsUnavailableError",
+    });
+
+  it("generateMetadata propagates the failure instead of the CaseStore fallback", async () => {
+    fetchSeo.mockRejectedValue(unavailable());
+
+    await expect(generateMetadata()).rejects.toThrow("HTTP 429");
+  });
+
+  it("RootLayout propagates the failure instead of rendering the placeholder logo", async () => {
+    fetchSeo.mockRejectedValue(unavailable());
+
+    await expect(RootLayout({ children: null })).rejects.toThrow("HTTP 429");
+  });
+
+  it("RootLayout renders normally on the build-time null (TASK-327)", async () => {
+    fetchSeo.mockResolvedValue(null);
+
+    await expect(RootLayout({ children: null })).resolves.toBeTruthy();
   });
 });
 
