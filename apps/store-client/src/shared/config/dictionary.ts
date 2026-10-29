@@ -334,12 +334,13 @@ export const dict = {
         new: "Новинки",
         sale: "Акційні",
       },
-      tabsAria: "Категорії добірки",
       prev: "Прокрутити назад",
       next: "Прокрутити вперед",
       viewAll: "Дивитись усі",
       error: "Не вдалося завантажити товари. Спробуйте пізніше.",
       empty: "Товарів поки немає.",
+      /** Tablist name of one TABS block — the page may hold several (TASK-663). */
+      tabsAriaFor: (title: string) => `Розділи блоку «${title}»`,
     },
 
     widePromo: {
@@ -2544,6 +2545,20 @@ export const dict = {
       connected: (email: string) =>
         `Підключено. Повідомлення про це замовлення прийдуть у Telegram і на ${email}.`,
     },
+  },
+  /** Signed storefront preview of drafts (TASK-669, plan 186). */
+  preview: {
+    /** Accessible name of the bottom bar region. */
+    barLabel: "Режим прев'ю",
+    title: "Це прев'ю",
+    /** Shown from `sm` up: what the visitor is looking at. */
+    homeHint: "Так головну побачать покупці після публікації",
+    pageHint: "Так сторінку побачать покупці після публікації",
+    expires: (when: string) => `посилання діє до ${when}`,
+    exit: "Вийти з прев'ю",
+    /** The landing after a link the API refused (invalid, expired, revoked). */
+    invalid:
+      "Посилання на прев'ю недійсне або вже не діє. Показуємо сторінку такою, якою її бачать покупці зараз.",
   },
 } as const;
 

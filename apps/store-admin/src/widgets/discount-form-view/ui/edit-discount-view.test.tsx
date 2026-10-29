@@ -165,13 +165,18 @@ describe("EditDiscountView — ПК3 header and stats", () => {
     expect(screen.getByText(d.statsTimes(12))).toBeInTheDocument();
   });
 
-  it("view-only without discounts:write (ПК7): fields locked, no save", async () => {
+  it("view-only without discounts:write (ПК7, TASK-667): values as text, no save", async () => {
     stubDiscount();
-    renderWithProviders(<EditDiscountView discountId={DISCOUNT_ID} />);
+    renderWithProviders(<EditDiscountView discountId={DISCOUNT_ID} />, {
+      auth: { permissions: [PERM.discountsRead] },
+    });
 
-    await waitFor(() => expect(startsInput()).toHaveValue("2026-09-01"));
-    expect(startsInput()).toBeDisabled();
-    expect(screen.getByText(d.readOnlyNotice)).toBeInTheDocument();
+    expect(
+      await screen.findByText(dict.readOnlyView.notices.discounts),
+    ).toBeInTheDocument();
+    expect(screen.getByText("01.09.2026")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText(d.statsUsed)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: dict.common.save }),
     ).not.toBeInTheDocument();

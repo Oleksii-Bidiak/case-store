@@ -380,7 +380,7 @@ A clean seed produces:
 | Device models          | 40    | Grouped by `series` for the storefront ModelPicker cascade                                                                                   |
 | Device compat links    | 143   | Accessories ↔ Apple / Samsung / Xiaomi models across 30 catalogue entries (`ProductDeviceCompat`, TASK-190)                                  |
 | Banners                | 6     | PUBLISHED, across the homepage placements (HERO_SLIDE / PROMO_TILE / …), TASK-186                                                            |
-| **Carousels**          | **5** | **3 `HOME_TABS` + 2 `HOME_RAILS`, all PUBLISHED — see below (TASK-139, TASK-288)**                                                           |
+| **Carousels**          | **5** | **3 tabs of «Популярне» + 2 standalone rails, all PUBLISHED, shown through homepage blocks — see below (TASK-139, TASK-660)**                |
 | Carousel items         | 4     | Hand-picked products on the MANUAL rail; replaced wholesale on re-run                                                                        |
 | Reviews (approved)     | 2 203 | 5–20 per position, pre-approved (`isActive = true`), deterministic, ratings skewed positive                                                  |
 | Reviews (pending)      | 6     | `isActive = false` with UA comments, on six **named** positions — the admin moderation queue is always exactly these six                     |
@@ -400,29 +400,30 @@ A clean seed produces:
 | SEO settings           | 1     | Singleton row (fixed id `…0002`) with zero-config defaults, TASK-239                                                                         |
 | Addresses              | 8     | `seed-address-1` (John) + 1–2 UA addresses per new customer (deterministic ids)                                                              |
 
-### Homepage carousels (TASK-288)
+### Homepage carousels and blocks (TASK-288, TASK-660)
 
-`Carousel.placement` decides where a carousel surfaces; `sortOrder` is scoped **within** a
-placement (so both buckets start at 0):
+Since TASK-660 a carousel has no placement: it shows on the homepage only through a **homepage
+block** (`home_blocks`) — a tab of a `TABS` block or its own `CAROUSEL` block. The seed writes
+both the carousels and the blocks that show them; `sortOrder` on a carousel is just its position
+in the one admin list:
 
-| Placement    | Title                | Source        | sortOrder | itemLimit |
-| ------------ | -------------------- | ------------- | --------- | --------- |
-| `HOME_TABS`  | Хіти продажів        | `BESTSELLING` | 0         | 12        |
-| `HOME_TABS`  | Новинки              | `NEWEST`      | 1         | 12        |
-| `HOME_TABS`  | Акційні              | `ON_SALE`     | 2         | 12        |
-| `HOME_RAILS` | Чохли для смартфонів | `CATEGORY`    | 0         | 12        |
-| `HOME_RAILS` | Редакція обирає      | `MANUAL`      | 1         | — (items) |
+| On the homepage                | Title                | Source        | sortOrder | itemLimit |
+| ------------------------------ | -------------------- | ------------- | --------- | --------- |
+| tab 1 of the «Популярне» block | Хіти продажів        | `BESTSELLING` | 0         | 12        |
+| tab 2 of the «Популярне» block | Новинки              | `NEWEST`      | 1         | 12        |
+| tab 3 of the «Популярне» block | Акційні              | `ON_SALE`     | 2         | 12        |
+| its own `CAROUSEL` block       | Чохли для смартфонів | `CATEGORY`    | 3         | 12        |
+| its own `CAROUSEL` block       | Редакція обирає      | `MANUAL`      | 4         | — (items) |
 
-The three `HOME_TABS` rows reproduce the storefront's former **hardcoded** "Популярне" tabs 1:1 —
-titles are copied from `store-client/src/shared/config/dictionary.ts` (`home.popular.tabs.*`) and
-`itemLimit: 12` matches the size the hardcoded rail fetched. Tab order = `sortOrder`. Editing these
-rows in the admin now changes the homepage tabs; deleting them all leaves the section empty (the
-storefront renders correctly with zero carousels).
+The three tabs reproduce the storefront's former **hardcoded** "Популярне" tabs 1:1 — titles are
+copied from `store-client/src/shared/config/dictionary.ts` (`home.popular.tabs.*`) and
+`itemLimit: 12` matches the size the hardcoded rail fetched. The system blocks (slider, trust strip,
+categories, promo banner, «Ви переглядали», newsletter) come from the `…_home_blocks` migration; the
+seed only creates one if it is missing. A re-run never reshuffles an existing page: tabs upsert on
+(block, carousel) and a `CAROUSEL` block is created only when no block shows that carousel yet.
 
-The BESTSELLING carousel is a **tab**, not a rail: before TASK-288 the seed also created it as a
-standalone "Хіти продажів" rail, which would now render the same products twice under the same
-heading. Re-seeding an existing dev DB flips that row's `placement` to `HOME_TABS` in place (same
-deterministic id).
+The BESTSELLING carousel is a **tab**, not a rail: an identical "Хіти продажів" rail underneath the
+tab it duplicates would render the same products twice under the same heading.
 
 ### Imagery (TASK-365)
 

@@ -307,6 +307,32 @@ describe("AdminHeader — section help (TASK-1034/1035)", () => {
     expect(
       within(sheet).getByText(
         dict.header.sectionHelpCannot(
+          "переглядати бренди й створювати й змінювати бренди",
+          dict.nav.staff,
+        ),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("tells a view-only manager they may look but not change (TASK-666)", async () => {
+    mockPathname = "/brands";
+    mockSession = {
+      ...OWNER,
+      isOwner: false,
+      isAdmin: false,
+      role: "MANAGER",
+      permissions: ["brands:read"],
+    };
+    renderHeader();
+
+    const sheet = await openHelp();
+
+    expect(
+      within(sheet).getByText(dict.header.sectionHelpCan("переглядати бренди")),
+    ).toBeInTheDocument();
+    expect(
+      within(sheet).getByText(
+        dict.header.sectionHelpCannot(
           "створювати й змінювати бренди",
           dict.nav.staff,
         ),

@@ -7,6 +7,7 @@ import type {
   BlogPaginationMeta,
 } from "@/shared/api/generated/models";
 import { serverFetch } from "@/shared/api/server-fetch";
+import { publicReadInit } from "@/shared/api/preview-token";
 
 /**
  * Server-only, ISR-tagged fetchers for the published blog (TASK-173).
@@ -97,14 +98,20 @@ export async function fetchPublishedPosts(
  * Next.js `notFound()`, and THROWS on any other failure (TASK-793, same rule as
  * `pages-server.ts`): a 502 or a timeout used to become `null` too, so an API
  * outage answered HTTP 404 on every `/blog/<slug>` URL in the sitemap.
+ *
+ * `previewToken` (TASK-669) is a signed preview of THIS post: forwarded to the
+ * API, which then serves the draft; the read is `no-store` with no ISR tag.
+ * Without it the read is the tagged public one, unchanged.
  */
 export async function fetchPublishedPost(
   slug: string,
+  previewToken?: string | null,
 ): Promise<BlogPostEntity | null> {
   const url = `${API_BASE_URL}/api/blog/${encodeURIComponent(slug)}`;
-  const res = await serverFetch(url, {
-    next: { tags: [BLOG_COLLECTION_TAG, blogDetailTag(slug)] },
-  });
+  const res = await serverFetch(
+    url,
+    publicReadInit([BLOG_COLLECTION_TAG, blogDetailTag(slug)], previewToken),
+  );
   if (res.status === 404) return null;
   if (!res.ok) {
     throw new Error(`Blog post read failed: ${res.status} ${url}`);

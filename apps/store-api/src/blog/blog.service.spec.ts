@@ -431,6 +431,32 @@ describe('BlogService', () => {
     });
   });
 
+  // TASK-668: the post a signed preview token opens.
+  describe('findPreviewBySlug', () => {
+    it('returns the post in ANY status when the token id lives at this slug', async () => {
+      repositoryMock.findById.mockResolvedValue(draftPost);
+
+      const result = await service.findPreviewBySlug('draft-post', 'post-2');
+
+      expect(repositoryMock.findById).toHaveBeenCalledWith('post-2');
+      expect(result).toBeInstanceOf(BlogPostEntity);
+      expect(result?.status).toBe(PublishStatus.DRAFT);
+      expect(repositoryMock.findPublishedBySlug).not.toHaveBeenCalled();
+    });
+
+    it('returns null for a token of a post at ANOTHER slug', async () => {
+      repositoryMock.findById.mockResolvedValue(draftPost);
+
+      await expect(service.findPreviewBySlug('iphone16-vs-15', 'post-2')).resolves.toBeNull();
+    });
+
+    it('returns null when the post no longer exists', async () => {
+      repositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.findPreviewBySlug('draft-post', 'gone')).resolves.toBeNull();
+    });
+  });
+
   describe('create', () => {
     it('auto-generates the slug, validates category, and sanitizes content', async () => {
       repositoryMock.findBySlugAny.mockResolvedValue(null);

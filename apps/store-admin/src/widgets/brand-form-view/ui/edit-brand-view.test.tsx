@@ -111,7 +111,9 @@ describe("EditBrandView — header and side panel (БР5, БР9)", () => {
 
     stubBrand();
     renderWithProviders(<EditBrandView brandId={BRAND_ID} />);
-    expect(await screen.findByText(dict.common.viewOnly)).toBeInTheDocument();
+    expect(
+      await screen.findByText(dict.readOnlyView.notices.brands),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("textbox", { name: dict.brandForm.name }),
     ).not.toBeInTheDocument();

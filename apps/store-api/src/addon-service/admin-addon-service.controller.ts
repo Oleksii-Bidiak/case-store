@@ -33,7 +33,7 @@ import {
   AddonServiceEntity,
   ResolvedCategoryTemplateEntity,
 } from './entities';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../auth/permissions';
 import { ResolvedAddonListResponse } from './addon-service.controller';
 
 class AddonServiceResponseEnvelope {
@@ -132,6 +132,7 @@ export class AdminAddonServiceController {
   // ─── Catalog CRUD ─────────────────────────────────────────────────────────
 
   @Get('admin/list')
+  @RequireAnyPermission('addons:read', 'addons:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'List all add-on services including inactive (admin)',
@@ -151,6 +152,7 @@ export class AdminAddonServiceController {
   }
 
   @Get('admin/active')
+  @RequireAnyPermission('addons:read', 'addons:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'List active add-on services for the admin pickers (admin)',
@@ -187,6 +189,7 @@ export class AdminAddonServiceController {
   }
 
   @Get('admin/:id')
+  @RequireAnyPermission('addons:read', 'addons:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Get add-on service by ID (admin)',
@@ -238,6 +241,7 @@ export class AdminAddonServiceController {
   // ─── Category templates ───────────────────────────────────────────────────
 
   @Get('templates/category/:categoryId')
+  @RequireAnyPermission('addons:read', 'addons:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: "Get a category's OWN add-on template (no inheritance) (admin)",
@@ -253,6 +257,7 @@ export class AdminAddonServiceController {
   }
 
   @Get('templates/category/:categoryId/resolved')
+  @RequireAnyPermission('addons:read', 'addons:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: "Resolve a category's effective template (own / inherited / none) (admin)",
@@ -291,6 +296,7 @@ export class AdminAddonServiceController {
   // ─── Product deltas ───────────────────────────────────────────────────────
 
   @Get('deltas/product/:productId')
+  @RequireAnyPermission('addons:read', 'addons:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'List the add-on deltas declared on a product (admin)',

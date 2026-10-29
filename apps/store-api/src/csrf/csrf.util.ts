@@ -1,4 +1,8 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { randomBytes } from 'crypto';
+import { hmacSha256, safeEqual, timingSafeEqualHex } from '../common/security';
+
+// Re-exported: callers (CsrfService, the LiqPay signature check) import it from here.
+export { safeEqual };
 
 /**
  * Signed double-submit CSRF token utilities.
@@ -46,27 +50,6 @@ export function isValidCsrfToken(token: string, secret: string): boolean {
   return timingSafeEqualHex(signature, sign(value, secret));
 }
 
-/** Constant-time string comparison. Returns false on any length mismatch. */
-export function safeEqual(a: string, b: string): boolean {
-  if (typeof a !== 'string' || typeof b !== 'string') {
-    return false;
-  }
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) {
-    return false;
-  }
-  return timingSafeEqual(bufA, bufB);
-}
-
 function sign(value: string, secret: string): string {
-  return createHmac('sha256', secret).update(value).digest('hex');
-}
-
-/** timingSafeEqual on two hex strings, guarding against length mismatch. */
-function timingSafeEqualHex(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  return timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
+  return hmacSha256(secret, value, 'hex');
 }

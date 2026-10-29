@@ -21,11 +21,9 @@ import { FormSectionCard } from "@/shared/ui/form-section-card";
 import { dict } from "@/shared/config";
 import {
   carouselSchema,
-  CAROUSEL_PLACEMENT,
   CAROUSEL_SOURCE,
   type CarouselFormInput,
   type CarouselFormValues,
-  type CarouselPlacementValue,
   type CarouselSourceValue,
   type CarouselStatusValue,
 } from "../model/carousel-schema";
@@ -80,18 +78,21 @@ interface CarouselFormProps {
   extraDirtySections?: readonly string[];
   /** «Скасувати зміни» for the host-owned sections. */
   onDiscardExtra?: () => void;
+  /**
+   * The read-only «На головній» row under the title (TASK-664, ДН-4.13) — the
+   * host knows the homepage blocks; the form has no field for it.
+   */
+  homePlacement?: ReactNode;
 }
 
 /** Empty form baseline used for create mode and as the merge base in edit mode. */
 const EMPTY_VALUES: CarouselFormInput = {
   title: "",
   source: "BESTSELLING",
-  // Mirrors the API's create-time default (CreateCarouselDto.placement).
-  placement: "HOME_RAILS",
   categoryId: "",
   itemLimit: "12",
   // No `sortOrder` (TASK-428): the field is gone from the form, and omitting it from
-  // the payload is what makes the server append a new carousel to its placement bucket.
+  // the payload is what makes the server append a new carousel to the end of the list.
   status: "DRAFT",
   scheduledAt: "",
 };
@@ -110,14 +111,13 @@ const STATUS_OPTIONS: readonly { value: CarouselStatusValue; label: string }[] =
 type FieldName = keyof CarouselFormInput;
 
 const SECTIONS: readonly { label: string; fields: readonly FieldName[] }[] = [
-  { label: f.sectionMain, fields: ["title", "placement"] },
+  { label: f.sectionMain, fields: ["title"] },
   { label: f.source, fields: ["source", "categoryId", "itemLimit"] },
   { label: f.status, fields: ["status", "scheduledAt"] },
 ];
 
 const ERROR_FIELDS: readonly FieldName[] = [
   "title",
-  "placement",
   "source",
   "categoryId",
   "itemLimit",
@@ -129,14 +129,16 @@ const errorId = (field: FieldName) => `carousel-${field}-error`;
 
 /**
  * Create/edit carousel form (CarouselsProposal КР5–КР8, wave 198): «Основне»
- * (title + «Місце на головній» as cards), «Звідки товари» as cards with what
+ * (title), «Звідки товари» as cards with what
  * each source does, the count as −/+ for an automatic source, the host's items
  * section right under it, «Публікація» as segments — and ONE sticky «Зберегти»
  * that names what is unsaved, the host's item list included.
  *
- * «Місце на головній» stays a field here until the `/home` block editor takes
- * it over (Д-н2, TASK-662/664). TASK-428 removed the sort-order number field:
- * the order within a placement is set by dragging rows in the carousel list.
+ * «Місце на головній» is gone (TASK-660): `Carousel.placement` no longer exists —
+ * where a carousel shows on the homepage is decided by the homepage blocks
+ * (`/home`, TASK-662/664); the host passes a read-only row saying where it stands
+ * (`homePlacement`). TASK-428 removed the sort-order number field: the order
+ * of the list is set by dragging rows in the carousel list.
  */
 export function CarouselForm({
   id,
@@ -147,6 +149,7 @@ export function CarouselForm({
   renderItemsSection,
   extraDirtySections = [],
   onDiscardExtra,
+  homePlacement,
 }: CarouselFormProps) {
   const {
     register,
@@ -229,35 +232,7 @@ export function CarouselForm({
           </p>
           <FieldError id={errorId("title")}>{errors.title?.message}</FieldError>
         </div>
-
-        <div className="flex flex-col gap-1.5">
-          <p className="text-sm font-medium text-foreground">{f.placement}</p>
-          <Controller
-            control={control}
-            name="placement"
-            render={({ field }) => (
-              <RadioCardGroup
-                aria-label={f.placement}
-                value={field.value}
-                onValueChange={(value) =>
-                  field.onChange(value as CarouselPlacementValue)
-                }
-                className="md:grid-cols-2"
-              >
-                {CAROUSEL_PLACEMENT.map((placement) => (
-                  <RadioCard
-                    key={placement}
-                    value={placement}
-                    title={f.placementOptions[placement]}
-                    description={dict.carousels.placementWhere[placement]}
-                    className="data-[state=checked]:bg-primary/6"
-                  />
-                ))}
-              </RadioCardGroup>
-            )}
-          />
-          <p className="text-xs text-muted-foreground">{f.placementHint}</p>
-        </div>
+        {homePlacement}
       </FormSectionCard>
 
       <FormSectionCard title={f.source}>

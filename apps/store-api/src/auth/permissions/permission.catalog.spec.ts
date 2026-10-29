@@ -1,12 +1,20 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
+import { RequestMethod } from '@nestjs/common';
 import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { PermissionGuard } from './permission.guard';
-import { OWNER_ONLY_KEY, REQUIRE_PERMISSION_KEY } from './require-permission.decorator';
+import {
+  ALSO_ACCEPTED_PERMISSIONS_KEY,
+  OWNER_ONLY_KEY,
+  REQUIRE_PERMISSION_KEY,
+} from './require-permission.decorator';
 import {
   ANALYTICS_REVENUE_BACKFILL_SOURCE_PERMISSIONS,
   ANALYTICS_REVENUE_PERMISSIONS,
   GRANTABLE_PERMISSIONS,
+  HOME_BACKFILL_SOURCE_PERMISSIONS,
+  HOME_PERMISSIONS,
+  READ_BACKFILL_PAIRS,
   CUSTOMERS_CARD_BACKFILL_SOURCE_PERMISSIONS,
   CUSTOMERS_CARD_PERMISSIONS,
   MANAGER_BACKFILL_TEMPLATE_NAME,
@@ -63,6 +71,8 @@ interface DiscoveredRoute {
   path: string;
   guardedByPermissionGuard: boolean;
   permission?: string;
+  /** `@RequireAnyPermission` alternatives, read from the same target as `permission`. */
+  alsoAccepted: string[];
   ownerOnly: boolean;
 }
 
@@ -148,6 +158,11 @@ function discoverRoutes(): DiscoveredRoute[] {
         const permission = hasHandlerAnnotation
           ? (handlerPermission as string | undefined)
           : (classPermission as string | undefined);
+        const alsoAcceptedMeta: unknown = Reflect.getMetadata(
+          ALSO_ACCEPTED_PERMISSIONS_KEY,
+          hasHandlerAnnotation ? (handler as object) : controller,
+        );
+        const alsoAccepted = Array.isArray(alsoAcceptedMeta) ? (alsoAcceptedMeta as string[]) : [];
         const ownerOnly = hasHandlerAnnotation
           ? Boolean(handlerOwnerOnly)
           : Boolean(classOwnerOnly);
@@ -167,6 +182,7 @@ function discoverRoutes(): DiscoveredRoute[] {
           guardedByPermissionGuard:
             classGuards.includes(PermissionGuard) || handlerGuards.includes(PermissionGuard),
           permission,
+          alsoAccepted,
           ownerOnly,
         });
       }
@@ -1053,5 +1069,236 @@ describe('analytics:revenue permission backfill migration (TASK-684)', () => {
 
   it('is idempotent in BOTH halves, so a restore-then-migrate cannot fail', () => {
     expect(statement.match(/ON CONFLICT[\s\S]*?DO NOTHING/g) ?? []).toHaveLength(2);
+  });
+});
+
+/**
+ * `home:write` and the `:read` keys (TASK-665 / TASK-666, plan 186).
+ *
+ * Every `:read` key is paired with the `:write` it is backfilled from, and the pair
+ * table is the contract the migration below must say back. A `:read` with no pair is
+ * the dangerous direction: the day the nav and the GET routes move to `:read`, the
+ * section silently disappears for everybody who edited it yesterday.
+ */
+describe('home:write and the :read keys (TASK-665 / TASK-666)', () => {
+  const byKey = new Map(
+    (PERMISSIONS as ReadonlyArray<{ key: string; zone: string; label: string }>).map(
+      (permission) => [permission.key, permission] as const,
+    ),
+  );
+
+  it('declares every paired key, grantable, in the same zone as its :write', () => {
+    for (const [write, read] of READ_BACKFILL_PAIRS) {
+      expect(isKnownPermission(write)).toBe(true);
+      expect(isGrantablePermission(read)).toBe(true);
+      expect(byKey.get(read)?.zone).toBe(byKey.get(write)?.zone);
+      expect(read).toBe(write.replace(/:write$/, ':read'));
+    }
+  });
+
+  it('pairs EVERY :read key that has a :write sibling except the pre-existing ones', () => {
+    // products/orders/returns/customers/media/staff/messages/newsletter :read existed
+    // before this wave and are not part of it.
+    const preExisting = new Set([
+      'products:read',
+      'orders:read',
+      'returns:read',
+      'customers:read',
+      'media:read',
+      'staff:read',
+      'messages:read',
+    ]);
+    const paired = new Set(READ_BACKFILL_PAIRS.map(([, read]) => read as string));
+    const unpaired = PERMISSIONS.map((permission) => permission.key as string).filter(
+      (key) =>
+        key.endsWith(':read') &&
+        isKnownPermission(key.replace(/:read$/, ':write')) &&
+        !preExisting.has(key) &&
+        !paired.has(key),
+    );
+    expect(unpaired).toEqual([]);
+  });
+
+  it('puts the homepage keys in the content zone and backfills home:write from carousels + banners', () => {
+    expect(byKey.get('home:write')?.zone).toBe(PERMISSION_ZONES.CONTENT);
+    expect(byKey.get('home:read')?.zone).toBe(PERMISSION_ZONES.CONTENT);
+    expect([...HOME_BACKFILL_SOURCE_PERMISSIONS]).toEqual(['carousels:write', 'banners:write']);
+    expect([...HOME_PERMISSIONS]).toEqual(['home:write']);
+  });
+
+  it('lists home:write → home:read LAST, so it reads the rows the home:write step wrote', () => {
+    expect(READ_BACKFILL_PAIRS[READ_BACKFILL_PAIRS.length - 1]).toEqual([
+      'home:write',
+      'home:read',
+    ]);
+  });
+});
+
+/**
+ * The `home:write` + `:read` backfill migration (TASK-665 / TASK-666).
+ *
+ * Pinned like the per-person media, returns and revenue backfills above, plus the
+ * one property only this file has: ORDER. `home:read` is derived from `home:write`,
+ * which is itself being backfilled in the same file, so the `home:write` step must
+ * come first or a content manager gets the right to edit the homepage and not the
+ * right to look at it.
+ */
+describe('home:write + :read permission backfill migration (TASK-665 / TASK-666)', () => {
+  const MIGRATIONS_ROOT = resolve(SRC_ROOT, '../prisma/migrations');
+
+  const sql = (() => {
+    const dir = readdirSync(MIGRATIONS_ROOT).find((entry) =>
+      entry.endsWith('_backfill_home_and_read_permissions'),
+    );
+    if (!dir) {
+      throw new Error(
+        `No *_backfill_home_and_read_permissions migration under ${MIGRATIONS_ROOT}. ` +
+          'Without it the homepage and every reference section disappear for the ' +
+          'managers who edit them today.',
+      );
+    }
+    return readFileSync(join(MIGRATIONS_ROOT, dir, 'migration.sql'), 'utf8');
+  })();
+
+  const statement = sql
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+
+  it('names exactly the declared keys and no other', () => {
+    const declared = [
+      ...HOME_PERMISSIONS,
+      ...HOME_BACKFILL_SOURCE_PERMISSIONS,
+      ...READ_BACKFILL_PAIRS.flat(),
+    ];
+    for (const key of declared) {
+      expect(statement).toContain(`'${key}'`);
+    }
+    const quoted = new Set(statement.match(/'[a-z]+:[a-z]+'/g) ?? []);
+    const allowed = new Set(declared.map((key) => `'${key}'`));
+    expect([...quoted].filter((token) => !allowed.has(token))).toEqual([]);
+  });
+
+  it('maps every :write to its own :read, pair for pair, in both halves', () => {
+    for (const [write, read] of READ_BACKFILL_PAIRS) {
+      const pair = new RegExp(`\\('${write}', '${read}'\\)`, 'g');
+      expect(statement.match(pair) ?? []).toHaveLength(2);
+    }
+  });
+
+  it('writes home:write BEFORE deriving any :read from it', () => {
+    const homeWriteGrant = statement.indexOf("VALUES ('home:write')");
+    const homeReadPair = statement.indexOf("('home:write', 'home:read')");
+    expect(homeWriteGrant).toBeGreaterThan(-1);
+    expect(homeReadPair).toBeGreaterThan(homeWriteGrant);
+  });
+
+  it('grants to a PERSON and to TEMPLATES, never to a role', () => {
+    expect(statement).toContain('"user_permissions"');
+    expect(statement).toContain('"user_id"');
+    expect(statement).toContain('"permission_template_items"');
+    expect(statement).toContain('"template_id"');
+    expect(statement).not.toContain('role_permissions');
+    expect(statement).not.toContain('"allowed"');
+    expect(statement).not.toContain('ADMIN');
+    expect(statement).not.toContain('MANAGER');
+  });
+
+  it('is idempotent in all four statements, so a restore-then-migrate cannot fail', () => {
+    expect(statement.match(/ON CONFLICT[\s\S]*?DO NOTHING/g) ?? []).toHaveLength(4);
+  });
+});
+
+/**
+ * The `:read` keys on the routes (TASK-666, plan 186, decision B-9 №5).
+ *
+ * The AC, as the metadata says it: a role holding only `x:read` sees the section
+ * (every admin GET of it accepts `x:read`) and is refused ANY write (no non-GET route
+ * accepts `x:read`), and nobody loses what they could do before (every GET that
+ * `x:read` opens still accepts `x:write`). Walked over the real controllers, so a new
+ * admin GET added to one of these sections without the read key fails here rather
+ * than as a blank screen for the read-only role.
+ */
+describe('the :read keys on the routes (TASK-666)', () => {
+  const routes = discoverRoutes();
+  const acceptedBy = (route: DiscoveredRoute): string[] =>
+    route.permission ? [route.permission, ...route.alsoAccepted] : [];
+  const isRead = (route: DiscoveredRoute) => route.method === String(RequestMethod.GET);
+  const describeRoute = (route: DiscoveredRoute) =>
+    `${route.method} ${route.path} → ${route.controller}.${route.handler}`;
+
+  /**
+   * Non-GET routes a `:read` key may open. Each is a read in substance, and each entry
+   * needs a reason a reviewer would accept — keep it short.
+   *
+   * - `POST /admin/preview-tokens` (TASK-668): minting a preview link changes no
+   *   content; it lets the caller LOOK at drafts on the storefront, which is exactly
+   *   what `x:read` is. The service still checks the key per preview target.
+   */
+  const READ_KEY_NON_GET_ALLOWLIST: ReadonlySet<string> = new Set(['POST /admin/preview-tokens']);
+  const methodName = (route: DiscoveredRoute) =>
+    RequestMethod[Number(route.method)] ?? route.method;
+
+  it('opens no write route with a :read key', () => {
+    const readKeys = new Set(READ_BACKFILL_PAIRS.map(([, read]) => read as string));
+    const offenders = routes
+      .filter(
+        (route) =>
+          !isRead(route) && !READ_KEY_NON_GET_ALLOWLIST.has(`${methodName(route)} ${route.path}`),
+      )
+      .filter((route) => acceptedBy(route).some((key) => readKeys.has(key)))
+      .map(
+        (route) =>
+          `${describeRoute(route)} accepts ${acceptedBy(route).join(' | ')} — ` +
+          'a :read key must never open a write',
+      );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('opens every GET that x:write opens with x:read as well', () => {
+    const offenders = routes
+      .filter(isRead)
+      .flatMap((route) =>
+        READ_BACKFILL_PAIRS.filter(
+          ([write, read]) => acceptedBy(route).includes(write) && !acceptedBy(route).includes(read),
+        ).map(([write, read]) => `${describeRoute(route)} accepts ${write} but not ${read}`),
+      );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps x:write on every GET that x:read opens, so no editor loses a screen', () => {
+    const offenders = routes
+      .filter(isRead)
+      .flatMap((route) =>
+        READ_BACKFILL_PAIRS.filter(
+          ([write, read]) => acceptedBy(route).includes(read) && !acceptedBy(route).includes(write),
+        ).map(([write, read]) => `${describeRoute(route)} accepts ${read} but no longer ${write}`),
+      );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('gives every paired :read key at least one route to open', () => {
+    const opened = new Set(routes.filter(isRead).flatMap(acceptedBy));
+    const idle = READ_BACKFILL_PAIRS.map(([, read]) => read as string).filter(
+      (read) => !opened.has(read),
+    );
+
+    expect(idle).toEqual([]);
+  });
+
+  it('keeps the delete-only category manager on the card and the tree (TASK-655)', () => {
+    const categoryReads = routes.filter(
+      (route) =>
+        isRead(route) && ['/admin/categories/:id', '/categories/admin/tree'].includes(route.path),
+    );
+    expect(categoryReads).toHaveLength(2);
+    for (const route of categoryReads) {
+      expect(acceptedBy(route)).toEqual(
+        expect.arrayContaining(['categories:read', 'categories:write', 'categories:delete']),
+      );
+    }
   });
 });

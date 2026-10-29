@@ -80,3 +80,29 @@ describe.each([
     await expect(read()).rejects.toBeDefined();
   });
 });
+
+describe("fetchPublishedPage — the signed preview (TASK-669)", () => {
+  it("without a token is the tagged ISR read, with no preview header", async () => {
+    const fetchMock = respond(200, { data: { slug: "oferta" } });
+    global.fetch = fetchMock;
+
+    await fetchPublishedPage("oferta", "LEGAL");
+
+    const init = fetchMock.mock.calls[0][1];
+    expect(init.next).toEqual({ tags: ["pages", "page:oferta"] });
+    expect(init).not.toHaveProperty("cache");
+    expect(init).not.toHaveProperty("headers");
+  });
+
+  it("with a token forwards it, uncached and with NO ISR tag", async () => {
+    const fetchMock = respond(200, { data: { slug: "oferta" } });
+    global.fetch = fetchMock;
+
+    await fetchPublishedPage("oferta", "LEGAL", "page-token");
+
+    const init = fetchMock.mock.calls[0][1];
+    expect(init).not.toHaveProperty("next");
+    expect(init.cache).toBe("no-store");
+    expect(init.headers).toEqual({ "x-preview-token": "page-token" });
+  });
+});

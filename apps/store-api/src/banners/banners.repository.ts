@@ -25,6 +25,11 @@ type BannerDbClient = PrismaService | ReorderTx;
  */
 export interface FindPublishedParams {
   placement?: BannerPlacement;
+  /**
+   * A signed homepage preview (TASK-668): DRAFT and SCHEDULED banners too, so the
+   * owner sees the page as it will look. Never set on an ordinary public read.
+   */
+  includeUnpublished?: boolean;
 }
 
 /**
@@ -117,7 +122,7 @@ export class BannerRepository implements PublishablePort {
    */
   findAllPublished(params: FindPublishedParams = {}): Promise<Banner[]> {
     const where: Prisma.BannerWhereInput = {
-      status: PublishStatus.PUBLISHED,
+      ...(params.includeUnpublished !== true && { status: PublishStatus.PUBLISHED }),
       ...(params.placement !== undefined && { placement: params.placement }),
     };
 

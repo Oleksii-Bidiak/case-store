@@ -369,7 +369,7 @@ model User {
   /// Return requests this account OPENED (TASK-469) — their own from the account
   /// page, or a customer's from the admin panel when the shop filed it for them.
   /// Not "returns of this user's orders": that is reached through `Return.order`.
-  openedReturns           Return[]                 @relation("ReturnCreatedBy")
+  openedReturns           Return[]                   @relation("ReturnCreatedBy")
   /// Messenger chats this account connected (TASK-675) — a SHOP chat records who
   /// connected it (audit only), a CUSTOMER chat whose notifications it receives.
   notificationBindings    NotificationBinding[]
@@ -863,29 +863,29 @@ model Order {
 /// payment pair stays null) and PAYMENT_STATUS rows populate
 /// from/toPaymentStatus (the status pair stays null).
 model OrderStatusHistory {
-  id                String                 @id @default(uuid())
-  orderId           String                 @map("order_id")
-  order             Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  changeType        OrderHistoryChangeType @map("change_type")
+  id                    String                 @id @default(uuid())
+  orderId               String                 @map("order_id")
+  order                 Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  changeType            OrderHistoryChangeType @map("change_type")
   // Populated only for changeType = STATUS rows; both null for PAYMENT_STATUS rows.
-  fromStatus        OrderStatus?           @map("from_status")
-  toStatus          OrderStatus?           @map("to_status")
+  fromStatus            OrderStatus?           @map("from_status")
+  toStatus              OrderStatus?           @map("to_status")
   // Populated only for changeType = PAYMENT_STATUS rows; both null for STATUS rows.
-  fromPaymentStatus PaymentStatus?         @map("from_payment_status")
-  toPaymentStatus   PaymentStatus?         @map("to_payment_status")
+  fromPaymentStatus     PaymentStatus?         @map("from_payment_status")
+  toPaymentStatus       PaymentStatus?         @map("to_payment_status")
   // Null for an ordinary move. Set when the row records an event the shop wrote
   // down but deliberately did not act on — see OrderHistoryNote (TASK-619).
-  note              OrderHistoryNote?
+  note                  OrderHistoryNote?
   // TASK-621: set only on a PAYMENT_EVENT_REFUSED row — the payment status the
   // provider's event asked for and the shop refused. Kept out of
   // `toPaymentStatus`, which stays the literal truth (`current → current`).
-  rejectedPaymentStatus PaymentStatus?     @map("rejected_payment_status")
+  rejectedPaymentStatus PaymentStatus?         @map("rejected_payment_status")
   // Nullable: system/webhook-driven changes (order creation's initial PENDING
   // row today; a future Stripe/payment webhook tomorrow) have no acting
   // admin/customer user. Populated with the acting user's id when the change
   // came from an authenticated request.
-  changedBy         String?                @map("changed_by")
-  changedAt         DateTime               @default(now()) @map("changed_at")
+  changedBy             String?                @map("changed_by")
+  changedAt             DateTime               @default(now()) @map("changed_at")
 
   @@index([orderId, changedAt])
   @@map("order_status_history")
@@ -1214,6 +1214,11 @@ model SeoSettings {
   /// Google Business/Wikipedia, ...) — merged into Organization `sameAs`
   /// alongside SiteContactSettings' viber/telegram/instagram. See Decision 4.
   additionalSameAsLinks  String[] @default([]) @map("additional_sameas_links")
+  /// Generation of the signed preview links (TASK-668, plan 186). Every preview
+  /// token carries the version it was issued under; «Відкликати всі прев'ю» bumps
+  /// this, and every older token stops working at once — no table of issued tokens
+  /// to walk. Never shown on the storefront (the entity maps fields explicitly).
+  previewTokenVersion    Int      @default(0) @map("preview_token_version")
   createdAt              DateTime @default(now()) @map("created_at")
   updatedAt              DateTime @updatedAt @map("updated_at")
 
@@ -2012,15 +2017,6 @@ enum CarouselSource {
   MANUAL
 }
 
-/// Where a Carousel surfaces on the homepage (TASK-288). HOME_TABS — the carousel
-/// feeds ONE tab of the "Популярне" section at the top of the page (its `title` is
-/// the tab label; tabs are ordered by `sortOrder`). HOME_RAILS — the carousel is
-/// rendered as its own standalone horizontal rail further down (today's behaviour).
-enum CarouselPlacement {
-  HOME_TABS
-  HOME_RAILS
-}
-
 /// Admin-managed homepage recommendation carousel (TASK-139). Structural copy
 /// of `Banner` (publish lifecycle + sortOrder) with one added dimension: `source`
 /// determines how the product list is computed at read time — this model never
@@ -2031,7 +2027,7 @@ enum CarouselPlacement {
 /// enforced at the DTO/service layer, not by a DB CHECK (same documented
 /// limitation as `Product.stock >= 0` elsewhere in this schema).
 model Carousel {
-  id          String            @id @default(uuid())
+  id          String         @id @default(uuid())
   title       String
   /// How the product list is computed — see {@link CarouselSource}.
   source      CarouselSource
@@ -2039,33 +2035,31 @@ model Carousel {
   /// otherwise. SetNull (not Cascade) on category deletion: a carousel must
   /// survive its category disappearing — it just resolves to zero products
   /// until an admin repoints it.
-  categoryId  String?           @map("category_id")
-  category    Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId  String?        @map("category_id")
+  category    Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   /// Max products to show for a rule-based source (1–24, default 12 — matches
   /// PopularRail/RecentlyViewed's existing rail size). Ignored for MANUAL.
-  itemLimit   Int               @default(12) @map("item_limit")
-  /// Where this carousel surfaces on the homepage — see {@link CarouselPlacement}.
-  /// Defaults to HOME_RAILS so every carousel that predates TASK-288 keeps its
-  /// current standalone-rail behaviour untouched.
-  placement   CarouselPlacement @default(HOME_RAILS) @map("placement")
-  /// Display order (lower = first) WITHIN the carousel's `placement` — the tab
-  /// order inside the "Популярне" section for HOME_TABS, the top-to-bottom rail
-  /// order for HOME_RAILS. Same semantics as `Banner.sortOrder` within a placement.
-  sortOrder   Int               @default(0) @map("sort_order")
+  itemLimit   Int            @default(12) @map("item_limit")
+  /// Order of the carousel in the ADMIN list — one global list since TASK-660.
+  /// Where (and whether) a carousel shows on the homepage is no longer a property
+  /// of the carousel: it belongs to the {@link HomeBlock} that points at it (a
+  /// CAROUSEL block, or a tab of a TABS block). `placement` / `CarouselPlacement`
+  /// were dropped by `…_home_blocks` (plan 186, decision B-9 №4).
+  sortOrder   Int            @default(0) @map("sort_order")
   /// Publish lifecycle — the single source of truth for public visibility.
-  status      PublishStatus     @default(DRAFT)
-  publishedAt DateTime?         @map("published_at")
-  scheduledAt DateTime?         @map("scheduled_at")
-  createdAt   DateTime          @default(now()) @map("created_at")
-  updatedAt   DateTime          @updatedAt @map("updated_at")
+  status      PublishStatus  @default(DRAFT)
+  publishedAt DateTime?      @map("published_at")
+  scheduledAt DateTime?      @map("scheduled_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
 
-  items CarouselItem[]
+  items         CarouselItem[]
+  /// Homepage CAROUSEL blocks showing this carousel as a standalone rail (TASK-660).
+  homeBlocks    HomeBlock[]
+  /// Tabs of homepage TABS blocks showing this carousel (TASK-660).
+  homeBlockTabs HomeBlockTab[]
 
   @@index([status, sortOrder])
-  /// Serves the TASK-288 placement-scoped public read
-  /// (`status = PUBLISHED AND placement = ? ORDER BY sort_order`); the
-  /// status-leading index above still covers the unscoped list.
-  @@index([placement, status, sortOrder])
   @@index([categoryId])
   @@map("carousels")
 }
@@ -2089,6 +2083,90 @@ model CarouselItem {
   @@unique([carouselId, productId])
   @@index([carouselId, sortOrder])
   @@map("carousel_items")
+}
+
+/// What a homepage block IS (TASK-660, plan 186, decision B-9). The storefront keeps
+/// the `type → component` map in code; the ORDER, VISIBILITY and tab sets are data.
+///
+/// - Singletons, one row each, created by the `…_home_blocks` migration and never
+///   created or deleted through the API — only hidden, scheduled or moved:
+///   `HERO`, `TRUST`, `CATEGORY_NAV`, `PROMO_BANNER`, `RECENTLY_VIEWED`, `NEWSLETTER`.
+///   Their content is edited where it always was (banners, settings, code).
+/// - `CAROUSEL` — a standalone rail showing ONE carousel (`HomeBlock.carouselId`).
+///   May repeat; two blocks may even show the same carousel (the admin warns).
+/// - `TABS` — a titled section whose tabs are carousels (`HomeBlockTab`), in order.
+///   Any number of them since TASK-660 (the single «Популярне» bucket is gone).
+enum HomeBlockType {
+  HERO
+  TRUST
+  CATEGORY_NAV
+  TABS
+  CAROUSEL
+  PROMO_BANNER
+  RECENTLY_VIEWED
+  NEWSLETTER
+}
+
+/// One section of the storefront homepage, in page order (TASK-660, plan 186).
+///
+/// A REGISTRY, not a page builder: a block says that a section exists, where it
+/// stands and whether it is live — never what it contains. Content stays in
+/// «Банери» and «Каруселі», so each thing is edited in exactly one place.
+///
+/// A published carousel does NOT appear on the homepage until a block points at it
+/// (decision B-9 №3): one truth about position, one write path into it.
+///
+/// `carouselId` is meaningful only for `CAROUSEL`, `title` only for `TABS` (enforced
+/// by the DTOs and the service, like `Carousel.categoryId`). `SetNull` on the
+/// carousel: a block survives its carousel being deleted — it renders nothing and
+/// the admin flags it as orphaned until someone repoints or removes it.
+///
+/// Public visibility: `status = PUBLISHED`, and for a CAROUSEL block a carousel that
+/// is itself PUBLISHED. A TABS block shows only its PUBLISHED tabs and is returned
+/// even with none (the storefront then keeps its query-driven fallback tabs).
+model HomeBlock {
+  id          String        @id @default(uuid())
+  type        HomeBlockType
+  /// Section heading — TABS only.
+  title       String?
+  /// Position on the page (lower = higher). One global list kept dense `0..n-1`
+  /// under the `home-blocks` advisory lock: create inserts at an index, delete
+  /// compacts, the reorder endpoint rewrites it.
+  sortOrder   Int           @default(0) @map("sort_order")
+  /// Publish lifecycle — the single source of truth for public visibility.
+  status      PublishStatus @default(DRAFT)
+  publishedAt DateTime?     @map("published_at")
+  scheduledAt DateTime?     @map("scheduled_at")
+  /// The carousel a CAROUSEL block shows. Null for every other type, and for a
+  /// CAROUSEL block whose carousel was deleted (SetNull — the block is orphaned).
+  carouselId  String?       @map("carousel_id")
+  carousel    Carousel?     @relation(fields: [carouselId], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  tabs HomeBlockTab[]
+
+  @@index([status, sortOrder])
+  @@index([carouselId])
+  @@map("home_blocks")
+}
+
+/// One tab of a TABS homepage block (TASK-660): a carousel whose title is the tab
+/// label, ordered by `sortOrder`. Cascades both ways — a tab is meaningless without
+/// its block or its carousel. A carousel appears at most once per block.
+model HomeBlockTab {
+  id          String    @id @default(uuid())
+  homeBlockId String    @map("home_block_id")
+  homeBlock   HomeBlock @relation(fields: [homeBlockId], references: [id], onDelete: Cascade)
+  carouselId  String    @map("carousel_id")
+  carousel    Carousel  @relation(fields: [carouselId], references: [id], onDelete: Cascade)
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@unique([homeBlockId, carouselId])
+  @@index([homeBlockId, sortOrder])
+  @@index([carouselId])
+  @@map("home_block_tabs")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -5,6 +5,8 @@ import { apiErrorStatus } from "@/shared/lib/api-error";
 import { productControllerFindBySlug } from "@/shared/api/generated/products/products";
 import type { ProductDetailResponseEnvelope } from "@/shared/api/generated/models";
 import { serverRequestOptions } from "@/shared/api/query-prefetch-server";
+import { readPreviewToken } from "@/shared/api/preview-server";
+import { withPreviewHeader } from "@/shared/api/preview-token";
 
 /**
  * The product read of one request, shared by `[slug]/layout.tsx`,
@@ -15,10 +17,19 @@ import { serverRequestOptions } from "@/shared/api/query-prefetch-server";
  * `serverRequestOptions`). It lives in its own module so the layout and the
  * page share ONE `cache()` instance — two module-local copies would be two
  * reads.
+ *
+ * The signed preview (TASK-669): inside Next draft mode with a preview cookie
+ * the read forwards the token, and store-api decides whether it opens THIS
+ * product's draft. axios never touches Next's Data Cache, and a draft-mode
+ * render is never stored, so there is no tag to drop. Outside a preview the
+ * token is `null` and the call is the one it always was.
  */
 export const fetchProductBySlug = cache(
-  (slug: string): Promise<ProductDetailResponseEnvelope> =>
-    productControllerFindBySlug(slug, serverRequestOptions()),
+  async (slug: string): Promise<ProductDetailResponseEnvelope> =>
+    productControllerFindBySlug(
+      slug,
+      withPreviewHeader(serverRequestOptions(), await readPreviewToken()),
+    ),
 );
 
 /**

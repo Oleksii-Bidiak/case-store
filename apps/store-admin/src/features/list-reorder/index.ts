@@ -40,3 +40,10 @@ export {
   usePickupPointReorder,
   type UsePickupPointReorderOptions,
 } from "./model/use-pickup-point-reorder";
+// TASK-662 (plan 186): the homepage blocks on /home — one list, every block.
+export {
+  homeBlockReorderPayload,
+  homeBlocksToItems,
+  useHomeBlockReorder,
+  type UseHomeBlockReorderOptions,
+} from "./model/use-home-block-reorder";

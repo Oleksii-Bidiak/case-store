@@ -16,6 +16,7 @@ import {
   ImageIcon,
   Images,
   GalleryHorizontal,
+  House,
   ShoppingCart,
   Undo2,
   Star,
@@ -78,7 +79,9 @@ interface NavItem {
   permission?: string | string[];
   /**
    * Visible with ANY of these (TASK-1781) — for a section that serves two
-   * independent grants. «Категорії» is the editor's screen and also the only
+   * independent grants. Since TASK-666 every reference / content section uses it
+   * as `[x:read, x:write]`: the read key shows the section, the write controls
+   * inside keep asking for `x:write`. «Категорії» is the editor's screen and also the only
    * way to reach «Видалити…», so `categories:delete` alone must lead there; the
    * screen itself keeps every write control behind `categories:write`.
    */
@@ -133,50 +136,62 @@ const navItems: readonly NavItem[] = [
     label: dict.nav.categories,
     href: "/categories",
     icon: Tag,
-    anyPermission: [PERM.categoriesWrite, PERM.categoriesDelete],
+    anyPermission: [
+      PERM.categoriesRead,
+      PERM.categoriesWrite,
+      PERM.categoriesDelete,
+    ],
   },
   {
     label: dict.nav.brands,
     href: "/brands",
     icon: Award,
-    permission: PERM.brandsWrite,
+    anyPermission: [PERM.brandsRead, PERM.brandsWrite],
   },
   {
     label: dict.nav.addonServices,
     href: "/addon-services",
     icon: ShieldCheck,
-    permission: PERM.addonsWrite,
+    anyPermission: [PERM.addonsRead, PERM.addonsWrite],
   },
   {
     label: dict.nav.devices,
     href: "/devices/brands",
     activePrefix: "/devices",
     icon: Smartphone,
-    permission: PERM.devicesWrite,
+    anyPermission: [PERM.devicesRead, PERM.devicesWrite],
   },
   {
     label: dict.nav.discounts,
     href: "/discounts",
     icon: Ticket,
-    permission: PERM.discountsWrite,
+    anyPermission: [PERM.discountsRead, PERM.discountsWrite],
   },
   {
     label: dict.nav.pages,
     href: "/pages",
     icon: FileText,
-    permission: PERM.pagesWrite,
+    anyPermission: [PERM.pagesRead, PERM.pagesWrite],
   },
   {
     label: dict.nav.blog,
     href: "/blog",
     icon: Newspaper,
-    permission: PERM.blogWrite,
+    anyPermission: [PERM.blogRead, PERM.blogWrite],
+  },
+  // TASK-666 (plan 186) — the homepage blocks, /home (the screen is TASK-662).
+  // In the content group, right before the banners and carousels it arranges.
+  {
+    label: dict.nav.home,
+    href: "/home",
+    icon: House,
+    anyPermission: [PERM.homeRead, PERM.homeWrite],
   },
   {
     label: dict.nav.banners,
     href: "/banners",
     icon: ImageIcon,
-    permission: PERM.bannersWrite,
+    anyPermission: [PERM.bannersRead, PERM.bannersWrite],
   },
   // TASK-139: label deliberately lives in this plan's own `carousels` namespace,
   // not the shared `dict.nav` registry (this wave's stricter dictionary scoping).
@@ -184,7 +199,7 @@ const navItems: readonly NavItem[] = [
     label: dict.carousels.navLabel,
     href: "/carousels",
     icon: GalleryHorizontal,
-    permission: PERM.carouselsWrite,
+    anyPermission: [PERM.carouselsRead, PERM.carouselsWrite],
   },
   // TASK-441 — gated on the READ key alone. The screen is useful to anyone who
   // may look at a picture, and `media:write` is checked inside it to decide
@@ -255,13 +270,20 @@ const bottomNavItems: readonly NavItem[] = [
     label: dict.nav.contentMap,
     href: "/content-map",
     icon: Map,
-    // The content map counts banners, FAQ, pages and blog posts in one view;
-    // with a partial grant every missing slice would render as an error, so it
-    // asks for the full set.
-    permission: [
+    // TASK-666: open with ANY content key, read or write. The map asks each
+    // source only when the session may read it (`ContentMapView`), so a partial
+    // grant shows those zones without a state instead of a 403 painted as an
+    // error.
+    anyPermission: [
+      PERM.homeRead,
+      PERM.homeWrite,
+      PERM.pagesRead,
       PERM.pagesWrite,
+      PERM.bannersRead,
       PERM.bannersWrite,
+      PERM.faqRead,
       PERM.faqWrite,
+      PERM.blogRead,
       PERM.blogWrite,
     ],
   },
@@ -306,7 +328,7 @@ const bottomNavItems: readonly NavItem[] = [
     label: dict.nav.faq,
     href: "/faq",
     icon: HelpCircle,
-    permission: PERM.faqWrite,
+    anyPermission: [PERM.faqRead, PERM.faqWrite],
   },
   // TASK-318 / TASK-475 — the log is gated by `audit:read`, a key that is real
   // and enforced but never OFFERED on any granting screen, so in practice only

@@ -407,12 +407,27 @@ describe("AdminNavList — permission filtering (TASK-334)", () => {
     ).toHaveAttribute("href", "/audit-log");
   });
 
-  it("requires the whole content set for «Де що на сайті» — a partial grant would render 403s", async () => {
+  // TASK-666: the map asks each source only with its own key, so ANY content
+  // key — read or write — opens it; with none of them it stays hidden.
+  it.each([["blog:write"], ["banners:read"], ["home:read"]])(
+    "shows «Де що на сайті» with %s alone",
+    async (key) => {
+      mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+      renderNav({ isOwner: false, permissions: [key] });
+
+      expect(
+        await screen.findByRole("link", { name: dict.nav.contentMap }),
+      ).toHaveAttribute("href", "/content-map");
+    },
+  );
+
+  it("hides «Де що на сайті» without any content key", async () => {
     mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
 
-    renderNav({ isOwner: false, permissions: ["blog:write"] });
+    renderNav({ isOwner: false, permissions: ["orders:read"] });
 
-    await screen.findByRole("link", { name: dict.nav.blog });
+    await screen.findByRole("link", { name: dict.nav.orders });
     expect(
       screen.queryByRole("link", { name: dict.nav.contentMap }),
     ).not.toBeInTheDocument();
@@ -555,9 +570,8 @@ describe("AdminNavList — wave 198 shell", () => {
     },
   );
 
-  // TASK-666 (part): every section that HAS a read key is gated on it, so a
-  // manager who may only look sees the section. Sections whose only key is
-  // `:write` (categories, brands, devices, …) wait for the API's new keys.
+  // Every section that HAS a read key is gated on it, so a manager who may only
+  // look sees the section (the reference / content ones: see TASK-666 below).
   it("shows the read-only sections to a manager holding only the :read keys", async () => {
     mockCounters({ newOrders: 0, pendingReviews: 0 });
 
@@ -615,6 +629,71 @@ describe("AdminNavList — wave 198 shell", () => {
     expect(
       screen.queryByRole("link", { name: dict.nav.categories }),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-666 (plan 186, decision B-9 №5) — «look, do not touch». Every reference /
+ * content section opens with its `:read` key alone AND still with its `:write`
+ * key alone (the write key has always shown the section; nobody loses it).
+ */
+describe("AdminNavList — the :read keys (TASK-666)", () => {
+  const SECTIONS = [
+    ["categories", () => dict.nav.categories, "/categories"],
+    ["brands", () => dict.nav.brands, "/brands"],
+    ["addons", () => dict.nav.addonServices, "/addon-services"],
+    ["devices", () => dict.nav.devices, "/devices/brands"],
+    ["discounts", () => dict.nav.discounts, "/discounts"],
+    ["pages", () => dict.nav.pages, "/pages"],
+    ["blog", () => dict.nav.blog, "/blog"],
+    ["banners", () => dict.nav.banners, "/banners"],
+    ["carousels", () => dict.carousels.navLabel, "/carousels"],
+    ["faq", () => dict.nav.faq, "/faq"],
+    ["home", () => dict.nav.home, "/home"],
+  ] as const;
+
+  it.each(SECTIONS)(
+    "shows the %s section with its :read key alone",
+    async (section, label, href) => {
+      mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+      renderNav({ isOwner: false, permissions: [`${section}:read`] });
+      expect(
+        await screen.findByRole("link", { name: label() }),
+      ).toHaveAttribute("href", href);
+    },
+  );
+
+  it.each(SECTIONS)(
+    "still shows the %s section with its :write key alone",
+    async (section, label, href) => {
+      mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+      renderNav({ isOwner: false, permissions: [`${section}:write`] });
+      expect(
+        await screen.findByRole("link", { name: label() }),
+      ).toHaveAttribute("href", href);
+    },
+  );
+
+  it("hides every one of them from a manager holding neither key", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+    renderNav({ isOwner: false, permissions: ["orders:read"] });
+    await screen.findByRole("link", { name: dict.nav.orders });
+    for (const [, label] of SECTIONS) {
+      expect(
+        screen.queryByRole("link", { name: label() }),
+      ).not.toBeInTheDocument();
+    }
+  });
+
+  it("puts «Головна» right before «Банери» in the content group", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+    renderNav();
+    const links = (await screen.findAllByRole("link")).map(
+      (link) => link.textContent ?? "",
+    );
+    const home = links.findIndex((text) => text.startsWith(dict.nav.home));
+    expect(home).toBeGreaterThan(-1);
+    expect(links[home + 1]).toContain(dict.nav.banners);
   });
 });
 

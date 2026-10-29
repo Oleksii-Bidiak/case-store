@@ -1,4 +1,5 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Headers, Param, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -6,7 +7,9 @@ import {
   ApiParam,
   ApiProperty,
   ApiExtraModels,
+  ApiHeader,
 } from '@nestjs/swagger';
+import { PREVIEW_TOKEN_HEADER, PreviewTokenService, markPreviewResponse } from '../preview-token';
 import { Throttle } from '@nestjs/throttler';
 import { BlogService } from './blog.service';
 import { BlogPostListQueryDto, BlogSuggestQueryDto } from './dto';
@@ -81,7 +84,10 @@ class BlogSuggestResponse {
 )
 @Controller('blog')
 export class BlogController {
-  constructor(private readonly blogService: BlogService) {}
+  constructor(
+    private readonly blogService: BlogService,
+    private readonly previewTokenService: PreviewTokenService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List published blog posts' })
@@ -124,7 +130,26 @@ export class BlogController {
   @ApiParam({ name: 'slug', description: 'Post URL slug' })
   @ApiResponse({ status: 200, description: 'Published post', type: BlogPostResponseEnvelope })
   @ApiResponse({ status: 404, description: 'Post not found or not published' })
-  async findBySlug(@Param('slug') slug: string): Promise<BlogPostResponseEnvelope> {
+  @ApiHeader({
+    name: 'X-Preview-Token',
+    required: false,
+    description: 'A signed preview token for THIS post (TASK-668) — serves its draft, uncached',
+  })
+  async findBySlug(
+    @Param('slug') slug: string,
+    @Headers(PREVIEW_TOKEN_HEADER) previewToken: string | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<BlogPostResponseEnvelope> {
+    // A signed preview of exactly this post (TASK-668) serves it in any status; any
+    // other token falls through to the ordinary published-only read, unchanged.
+    const scope = await this.previewTokenService.validScope(previewToken);
+    if (scope?.type === 'post' && scope.id) {
+      const preview = await this.blogService.findPreviewBySlug(slug, scope.id);
+      if (preview) {
+        markPreviewResponse(response);
+        return { data: preview };
+      }
+    }
     const post = await this.blogService.findPublishedBySlug(slug);
     return { data: post };
   }

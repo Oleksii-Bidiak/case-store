@@ -381,7 +381,7 @@ describe("EditProductView — delete (TASK-427)", () => {
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/products"));
   });
 
-  it("links to the read-only card and the preview from «⋯»", async () => {
+  it("links to the read-only card and «Огляд товару» from «⋯»", async () => {
     await renderAndWaitForForm(makeProduct(true));
 
     await userEvent.click(
@@ -390,8 +390,9 @@ describe("EditProductView — delete (TASK-427)", () => {
     expect(
       await screen.findByRole("menuitem", { name: dict.products.menuCard }),
     ).toHaveAttribute("href", `/products/${PRODUCT_ID}`);
+    // TASK-670: the admin inspector — named apart from the storefront preview.
     expect(
-      screen.getByRole("menuitem", { name: dict.products.menuPreview }),
+      screen.getByRole("menuitem", { name: dict.products.menuOverview }),
     ).toHaveAttribute("href", "/products/preview/chohol-magsafe");
   });
 
@@ -436,20 +437,24 @@ describe("EditProductView — header (TASK-1050, Ф1)", () => {
     ).toHaveAttribute("href", "/products");
   });
 
-  it("links «Подивитись на сайті» for a live product only", async () => {
+  it("links «Відкрити на сайті» for a live product — no preview", async () => {
     await renderAndWaitForForm(makeProduct(true));
     expect(
-      screen.getByRole("link", { name: new RegExp(dict.products.viewOnSite) }),
+      screen.getByRole("link", { name: dict.sitePreview.openOnSite }),
     ).toHaveAttribute("href", `${STOREFRONT_URL}/products/chohol-magsafe`);
+    expect(
+      screen.queryByRole("button", { name: dict.sitePreview.viewOnSite }),
+    ).toBeNull();
   });
 
-  it("offers no storefront link for a hidden product", async () => {
+  it("offers «Подивитись на сайті» instead for a hidden product", async () => {
     await renderAndWaitForForm(makeProduct(false));
     expect(
-      screen.queryByRole("link", {
-        name: new RegExp(dict.products.viewOnSite),
-      }),
+      screen.queryByRole("link", { name: dict.sitePreview.openOnSite }),
     ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: dict.sitePreview.viewOnSite }),
+    ).toBeInTheDocument();
   });
 
   it("indexes the sections in the left column", async () => {
@@ -636,5 +641,70 @@ describe("EditProductView — one «Зберегти» for the whole page (TASK-
         screen.queryByRole("button", { name: dict.canon.discardChanges }),
       ).toBeNull(),
     );
+  });
+});
+
+describe("EditProductView — «Подивитись на сайті» (TASK-670)", () => {
+  const EXPIRES_AT = "2026-10-06T12:42:00.000Z";
+
+  function stubPreviewTokens() {
+    const issued: unknown[] = [];
+    server.use(
+      http.post("*/api/admin/preview-tokens", async ({ request }) => {
+        issued.push(await request.json());
+        return HttpResponse.json(
+          {
+            data: {
+              token: "tok-123",
+              path: "/products/chohol-magsafe",
+              expiresAt: EXPIRES_AT,
+            },
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    return issued;
+  }
+
+  it("issues a preview link for a hidden product with nothing unsaved", async () => {
+    const issued = stubPreviewTokens();
+    await renderAndWaitForForm(makeProduct(false));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.sitePreview.viewOnSite }),
+    );
+
+    expect(
+      await screen.findByLabelText(dict.sitePreview.linkLabel),
+    ).toHaveValue(`${STOREFRONT_URL}/preview?token=tok-123`);
+    expect(issued).toEqual([{ type: "product", id: PRODUCT_ID }]);
+  });
+
+  it("saves unsaved edits first on «Зберегти й подивитись», then issues", async () => {
+    const issued = stubPreviewTokens();
+    const putCalls = await renderAndWaitForForm(makeProduct(false));
+
+    await userEvent.type(screen.getByLabelText(dict.productForm.name), " New");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.sitePreview.viewOnSite }),
+    );
+
+    expect(
+      await screen.findByText(dict.sitePreview.dirtyTitle),
+    ).toBeInTheDocument();
+    expect(issued).toHaveLength(0);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.sitePreview.saveAndView }),
+    );
+
+    expect(
+      await screen.findByLabelText(dict.sitePreview.linkLabel),
+    ).toHaveValue(`${STOREFRONT_URL}/preview?token=tok-123`);
+    expect(putCalls).toHaveLength(1);
+    expect(putCalls[0]).toMatchObject({ name: "Чохол MagSafe New" });
+    expect(issued).toHaveLength(1);
+    expect(mockPush).not.toHaveBeenCalled();
   });
 });

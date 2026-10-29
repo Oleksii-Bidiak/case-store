@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type RefObject } from "react";
+import { useId, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
@@ -22,18 +22,24 @@ import { PopularRailSkeleton } from "./product-grid-skeleton";
 const RAIL_IMAGE_SIZES = "(max-width: 639px) 244px, 260px";
 
 /**
- * PopularRail — the homepage "Популярне" section: a tabbed, horizontally
- * scrollable product rail. Tabs come from the published HOME_TABS carousels
- * (TASK-288), fetched server-side and passed in already resolved; only the
- * fallback tabs still query the product list themselves. Client Component (tab
- * state + scroll arrows).
+ * PopularRail — one homepage TABS block (TASK-663; «Популярне» by default): a
+ * tabbed, horizontally scrollable product rail. Tabs are the block's published
+ * carousels (TASK-288), fetched server-side and passed in already resolved; only
+ * the fallback tabs still query the product list themselves. The page may hold
+ * several TABS blocks, so the heading is the block's own title and the heading
+ * id is per instance. Client Component (tab state + scroll arrows).
  */
 export function PopularRail({
   carousels = [],
+  title,
 }: {
-  /** Published HOME_TABS carousels, ordered by sortOrder (from the server page). */
+  /** The block's published tab carousels, in tab order (from the server page). */
   carousels?: PublicCarouselEntity[];
+  /** The block's heading; blank or absent → the default «Популярне». */
+  title?: string | null;
 }) {
+  const heading = title?.trim() || dict.home.popular.heading;
+  const headingId = useId();
   const tabs = toTabs(carousels);
   const [selectedKey, setSelectedKey] = useState(tabs[0].key);
   // Render-time guard instead of seeding state again from the (async) prop: if
@@ -52,18 +58,15 @@ export function PopularRail({
   }
 
   return (
-    <section aria-labelledby="popular-heading" className={PAGE_CONTAINER}>
+    <section aria-labelledby={headingId} className={PAGE_CONTAINER}>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-border">
         <div className="flex flex-wrap items-end gap-x-7 gap-y-1">
-          <h2
-            id="popular-heading"
-            className={`pb-3 ${H2_CLASS} text-foreground`}
-          >
-            {dict.home.popular.heading}
+          <h2 id={headingId} className={`pb-3 ${H2_CLASS} text-foreground`}>
+            {heading}
           </h2>
           <div
             role="tablist"
-            aria-label={dict.home.popular.tabsAria}
+            aria-label={dict.home.popular.tabsAriaFor(heading)}
             className="flex flex-wrap gap-x-7 gap-y-1"
           >
             {tabs.map(({ key, label }) => {

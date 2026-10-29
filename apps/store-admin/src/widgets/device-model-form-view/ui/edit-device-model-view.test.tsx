@@ -273,9 +273,13 @@ describe("EditDeviceModelView — canon layout (ПР7, ПР11)", () => {
     stubModel();
     renderWithProviders(<EditDeviceModelView modelId={MODEL_ID} />);
 
-    expect(await screen.findByText(dict.common.viewOnly)).toBeInTheDocument();
+    expect(
+      await screen.findByText(dict.readOnlyView.notices.devices),
+    ).toBeInTheDocument();
     expect(await screen.findByText("Власний абзац")).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    // TASK-667: «Показувати на сайті» as a word, not a disabled switch.
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: t.submit }),
     ).not.toBeInTheDocument();

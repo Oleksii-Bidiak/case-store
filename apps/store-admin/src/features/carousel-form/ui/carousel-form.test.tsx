@@ -45,8 +45,6 @@ function stubAdminTree() {
 const titleInput = () => screen.getByRole("textbox", { name: f.title });
 const submitButton = () => screen.getByRole("button", { name: f.submit });
 const sourceGroup = () => screen.getByRole("radiogroup", { name: f.source });
-const placementGroup = () =>
-  screen.getByRole("radiogroup", { name: f.placement });
 const chooseSource = (value: keyof typeof f.sourceOptions) =>
   userEvent.click(
     within(sourceGroup()).getByRole("radio", { name: f.sourceOptions[value] }),
@@ -180,23 +178,8 @@ describe("CarouselForm — «Звідки товари» as cards (КР5/КР7)"
       categoryId: "cat-parent",
       itemLimit: 12,
       // No `sortOrder` — TASK-428 removed the field; the server appends the new
-      // carousel to the end of its placement bucket.
+      // carousel to the end of the list.
       status: "DRAFT",
-    });
-  });
-
-  it("submits the default placement", async () => {
-    stubAdminTree();
-    const onSubmit = jest.fn();
-    renderWithProviders(<CarouselForm onSubmit={onSubmit} isPending={false} />);
-
-    await userEvent.type(titleInput(), "Хіти");
-    await userEvent.click(submitButton());
-
-    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
-    // Mirrors the API's CreateCarouselDto default.
-    expect(onSubmit.mock.calls[0][0]).toMatchObject({
-      placement: "HOME_RAILS",
     });
   });
 
@@ -220,60 +203,25 @@ describe("CarouselForm — «Звідки товари» as cards (КР5/КР7)"
   });
 });
 
-describe("CarouselForm — «Місце на головній» (TASK-288, КР5)", () => {
-  it("offers both placements as cards that say where they are", () => {
-    stubAdminTree();
-    renderWithProviders(<CarouselForm onSubmit={noop} isPending={false} />);
-
-    expect(
-      within(placementGroup()).getByRole("radio", {
-        name: f.placementOptions.HOME_RAILS,
-      }),
-    ).toBeChecked();
-    expect(
-      within(placementGroup()).getByText(
-        dict.carousels.placementWhere.HOME_TABS,
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText(f.placementHint)).toBeInTheDocument();
-  });
-
-  it("submits HOME_TABS once the admin picks the tab placement", async () => {
+describe("CarouselForm — no «Місце на головній» (TASK-660)", () => {
+  // The carousel has no placement any more: where it shows on the homepage is
+  // decided by the homepage blocks (`/home`), so the form neither shows the
+  // choice nor sends it.
+  it("offers no placement choice and submits none", async () => {
     stubAdminTree();
     const onSubmit = jest.fn();
     renderWithProviders(<CarouselForm onSubmit={onSubmit} isPending={false} />);
 
+    expect(
+      screen.queryByRole("radiogroup", { name: "Місце на головній" }),
+    ).not.toBeInTheDocument();
+
     await userEvent.type(titleInput(), "Новинки");
-    await userEvent.click(
-      within(placementGroup()).getByRole("radio", {
-        name: f.placementOptions.HOME_TABS,
-      }),
-    );
     await userEvent.click(submitButton());
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
-    expect(onSubmit.mock.calls[0][0]).toMatchObject({
-      title: "Новинки",
-      placement: "HOME_TABS",
-    });
-  });
-
-  it("seeds the placement from the edited carousel in edit mode", async () => {
-    stubAdminTree();
-    renderWithProviders(
-      <CarouselForm
-        id="carousel-1"
-        defaultValues={{ title: "Хіти", placement: "HOME_TABS" }}
-        onSubmit={noop}
-        isPending={false}
-      />,
-    );
-
-    await waitFor(() =>
-      expect(
-        screen.getByRole("radio", { name: f.placementOptions.HOME_TABS }),
-      ).toBeChecked(),
-    );
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ title: "Новинки" });
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty("placement");
   });
 });
 

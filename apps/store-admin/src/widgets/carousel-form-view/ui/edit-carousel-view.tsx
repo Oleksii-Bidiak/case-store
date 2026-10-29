@@ -38,6 +38,8 @@ import {
   sameItemOrder,
   toPickedItems,
 } from "./carousel-source-panels";
+import { CarouselHomeRow } from "./carousel-home-row";
+import { CarouselReadOnly } from "./carousel-read-only";
 
 const d = dict.carousels;
 
@@ -68,7 +70,7 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
   const remove = useAdminCarouselControllerDelete();
   const { duplicate, isPending: isDuplicating } = useDuplicateCarousel();
   const { confirm, confirmDialog } = useConfirmDialog();
-  const { can } = useAuth();
+  const { can, arePermissionsLoading } = useAuth();
   const canWrite = can(PERM.carouselsWrite);
 
   const isNotFound = error?.response?.status === 404;
@@ -151,10 +153,7 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
   const handleDelete = async (source: CarouselEntity) => {
     const confirmed = await confirm({
       title: d.deleteTitle(source.title),
-      description:
-        source.placement === "HOME_TABS"
-          ? d.deleteDescriptionTab(source.title)
-          : d.deleteDescriptionRail(source.title),
+      description: d.deleteDescription(source.title),
       confirmLabel: d.deleteConfirmLabel,
       destructive: true,
     });
@@ -174,7 +173,8 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
     );
   };
 
-  if (isLoading) return <CarouselFormSkeleton />;
+  // TASK-667: no read-only view flashing for a writer while the rights load.
+  if (isLoading || arePermissionsLoading) return <CarouselFormSkeleton />;
 
   const busy =
     update.isPending || setItems.isPending || remove.isPending || isDuplicating;
@@ -195,9 +195,6 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
           {carousel && (
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge carousel={carousel} />
-              <span className="text-xs text-muted-foreground">
-                {d.placementLabels[carousel.placement]}
-              </span>
             </div>
           )}
         </div>
@@ -227,6 +224,12 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
         <p role="alert" className="text-sm text-destructive">
           {d.loadOneError}
         </p>
+      ) : carousel && !canWrite ? (
+        <CarouselReadOnly
+          carousel={carousel}
+          items={savedItems}
+          itemsLoading={itemsQuery.isLoading}
+        />
       ) : carousel ? (
         <CarouselForm
           id={carouselId}
@@ -236,6 +239,7 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
           submitLabel={dict.common.save}
           extraDirtySections={itemsDirty ? [dict.carouselItems.heading] : []}
           onDiscardExtra={() => setDraftItems(null)}
+          homePlacement={<CarouselHomeRow carouselId={carouselId} />}
           renderItemsSection={(source) =>
             source === "MANUAL" ? (
               <ManualItemsPanel
@@ -281,7 +285,6 @@ function mapCarouselToFormValues(
   return {
     title: carousel.title,
     source: carousel.source,
-    placement: carousel.placement,
     categoryId: carousel.categoryId ?? "",
     itemLimit: String(carousel.itemLimit),
     status: carousel.status,

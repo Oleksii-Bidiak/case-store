@@ -71,7 +71,7 @@ function makeTabCarousel(
     id,
     title,
     source: "BESTSELLING",
-    placement: "HOME_TABS",
+    status: "PUBLISHED",
     sortOrder: 0,
     products,
   } as unknown as PublicCarouselEntity;
@@ -173,7 +173,9 @@ describe("PopularRail — admin-managed tabs (TASK-288)", () => {
     );
 
     expect(
-      screen.getByRole("tablist", { name: dict.home.popular.tabsAria }),
+      screen.getByRole("tablist", {
+        name: dict.home.popular.tabsAriaFor(dict.home.popular.heading),
+      }),
     ).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: dict.home.popular.prev }),
@@ -182,6 +184,73 @@ describe("PopularRail — admin-managed tabs (TASK-288)", () => {
       screen.getByRole("button", { name: dict.home.popular.next }),
     );
     expect(screen.getByText("Чохол Alpha")).toBeInTheDocument();
+  });
+});
+
+describe("PopularRail — one TABS block of several (TASK-663)", () => {
+  it("uses the block's own title as the section heading and tablist name", () => {
+    renderWithProviders(
+      <PopularRail
+        title="Аксесуари"
+        carousels={[
+          makeTabCarousel("c1", "Чохли", [makeProduct({ id: "p1" })]),
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("region", { name: "Аксесуари" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tablist", {
+        name: dict.home.popular.tabsAriaFor("Аксесуари"),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to «Популярне» when the block has no title", () => {
+    renderWithProviders(
+      <PopularRail
+        title="   "
+        carousels={[makeTabCarousel("c1", "Хіти", [makeProduct()])]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: dict.home.popular.heading }),
+    ).toBeInTheDocument();
+  });
+
+  it("gives two rails on one page distinct heading ids, each section named by its own", () => {
+    renderWithProviders(
+      <>
+        <PopularRail
+          title="Техніка Apple"
+          carousels={[
+            makeTabCarousel("c1", "iPhone", [makeProduct({ id: "p1" })]),
+          ]}
+        />
+        <PopularRail
+          title="Аксесуари"
+          carousels={[
+            makeTabCarousel("c2", "Чохли", [makeProduct({ id: "p2" })]),
+          ]}
+        />
+      </>,
+    );
+
+    const headings = screen.getAllByRole("heading", { level: 2 });
+    expect(headings.map((h) => h.textContent)).toEqual([
+      "Техніка Apple",
+      "Аксесуари",
+    ]);
+    expect(headings[0].id).not.toBe(headings[1].id);
+    expect(
+      screen.getByRole("region", { name: "Техніка Apple" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Аксесуари" }),
+    ).toBeInTheDocument();
   });
 });
 

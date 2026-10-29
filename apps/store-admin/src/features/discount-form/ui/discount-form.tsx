@@ -13,6 +13,10 @@ import {
   FormAlert,
   Input,
   Label,
+  ReadOnlyBool,
+  ReadOnlyField,
+  ReadOnlyNotice,
+  ReadOnlySection,
   SegmentedControl,
   Switch,
 } from "@/shared/ui";
@@ -41,7 +45,10 @@ interface DiscountFormProps {
   submitLabel?: string;
   /** In edit mode the code is immutable — old mailings and banners keep working. */
   lockCode?: boolean;
-  /** No `discounts:write`: every field disabled, no save bar (ПК7). */
+  /**
+   * No `discounts:write` (ПК7, TASK-667 template): the values as text, the
+   * cart preview kept, no save bar. Reads only `defaultValues` and `aside`.
+   */
   readOnly?: boolean;
   /** Extra cards under the cart preview — the usage stats of a saved code. */
   aside?: ReactNode;
@@ -101,15 +108,163 @@ const dayLabel = (value: string) => {
  * (TASK-795) — the conversion lives in `discountFormValuesToDto`.
  */
 export function DiscountForm({
+  readOnly = false,
+  ...props
+}: DiscountFormProps) {
+  return readOnly ? (
+    <DiscountReadOnly
+      values={{ ...EMPTY_VALUES, ...props.defaultValues }}
+      aside={props.aside}
+    />
+  ) : (
+    <EditableDiscountForm {...props} />
+  );
+}
+
+/** «Діє для замовлень від … · Діє з … до … · 1 раз на клієнта». */
+function previewHintFor({
+  minSpend,
+  startsAt,
+  expiresAt,
+  perUserLimit,
+}: Pick<
+  DiscountFormInput,
+  "minSpend" | "startsAt" | "expiresAt" | "perUserLimit"
+>): string {
+  return [
+    minSpend && Number(minSpend) > 0
+      ? f.previewMinSpend(formatCurrency(minSpend))
+      : null,
+    startsAt && expiresAt
+      ? f.previewRange(dayLabel(startsAt), dayLabel(expiresAt))
+      : startsAt
+        ? f.previewFrom(dayLabel(startsAt))
+        : expiresAt
+          ? f.previewUntil(dayLabel(expiresAt))
+          : null,
+    perUserLimit && /^\d+$/.test(perUserLimit) && Number(perUserLimit) > 0
+      ? dict.discounts.condPerUser(Number(perUserLimit))
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * The promo code without `discounts:write` (TASK-667 template, ПК7): the four
+ * sections as text, the cart line the customer sees kept beside them, the
+ * usage card under it, no save bar.
+ */
+function DiscountReadOnly({
+  values,
+  aside,
+}: {
+  values: DiscountFormInput;
+  aside?: ReactNode;
+}) {
+  const rv = dict.readOnlyView;
+  const value = values.value?.trim() ?? "";
+  return (
+    <div className="flex flex-col gap-4">
+      <ReadOnlyNotice>{rv.notices.discounts}</ReadOnlyNotice>
+      <Callout variant="primary">
+        {f.guestNoticeBefore}
+        <strong>{f.guestNoticeStrong}</strong>
+        {f.guestNoticeAfter}
+      </Callout>
+      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-5 lg:items-start lg:gap-6">
+        <div className="flex min-w-0 flex-col gap-4 lg:col-span-3">
+          <ReadOnlySection title={f.sectionCode}>
+            <ReadOnlyField label={f.code} mono>
+              {values.code}
+            </ReadOnlyField>
+            <ReadOnlyField label={f.type}>
+              {values.type === "FIXED" ? f.typeFixed : f.typePercent}
+            </ReadOnlyField>
+            <ReadOnlyField label={f.value}>
+              {value
+                ? discountValueLabel({ type: values.type ?? "PERCENT", value })
+                : null}
+            </ReadOnlyField>
+          </ReadOnlySection>
+          <ReadOnlySection title={f.sectionConditions}>
+            <ReadOnlyField
+              label={f.minSpend}
+              emptyConsequence={rv.discountAnySum}
+            >
+              {values.minSpend?.trim()
+                ? formatCurrency(values.minSpend.trim())
+                : null}
+            </ReadOnlyField>
+            <ReadOnlyField
+              label={f.maxRedemptions}
+              emptyConsequence={rv.discountNoLimit}
+            >
+              {values.maxRedemptions}
+            </ReadOnlyField>
+            <ReadOnlyField
+              label={f.perUserLimit}
+              emptyConsequence={rv.discountNoLimit}
+            >
+              {values.perUserLimit}
+            </ReadOnlyField>
+          </ReadOnlySection>
+          <ReadOnlySection title={f.sectionPeriod}>
+            <ReadOnlyField
+              label={f.startsAt}
+              emptyConsequence={rv.discountNoBound}
+            >
+              {values.startsAt ? dayLabel(values.startsAt) : null}
+            </ReadOnlyField>
+            <ReadOnlyField
+              label={f.expiresAt}
+              emptyConsequence={rv.discountNoBound}
+            >
+              {values.expiresAt ? dayLabel(values.expiresAt) : null}
+            </ReadOnlyField>
+          </ReadOnlySection>
+          <ReadOnlySection title={f.sectionVisibility}>
+            <ReadOnlyField label={f.active}>
+              <ReadOnlyBool
+                value={values.isActive ?? true}
+                on={rv.discountOn}
+                off={rv.discountOff}
+              />
+            </ReadOnlyField>
+            <ReadOnlyField label={f.showOnPromoPage}>
+              <ReadOnlyBool
+                value={values.showOnPromoPage ?? false}
+                on={rv.discountOnPromo}
+                off={rv.discountNotOnPromo}
+              />
+            </ReadOnlyField>
+          </ReadOnlySection>
+        </div>
+        <div className="flex flex-col gap-4 lg:sticky lg:top-4 lg:col-span-2">
+          <CartPreview
+            code={values.code.trim().toUpperCase()}
+            discount={discountValueLabel({
+              type: values.type ?? "PERCENT",
+              value: value || "0",
+            })}
+            hint={previewHintFor(values)}
+          />
+          {aside}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditableDiscountForm({
   id,
   defaultValues,
   onSubmit,
   isPending,
   submitLabel = f.submit,
   lockCode = false,
-  readOnly = false,
   aside,
-}: DiscountFormProps) {
+}: Omit<DiscountFormProps, "readOnly">) {
   const {
     register,
     control,
@@ -163,10 +318,6 @@ export function DiscountForm({
   const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     // A submit bubbling through a portal (a dialog's own form) is not ours.
     if (event.target !== event.currentTarget) return;
-    if (readOnly) {
-      event.preventDefault();
-      return;
-    }
     void handleSubmit(onSubmit)(event);
   };
 
@@ -190,23 +341,12 @@ export function DiscountForm({
       .join(" "),
   });
 
-  const previewHint = [
-    minSpend && Number(minSpend) > 0
-      ? f.previewMinSpend(formatCurrency(minSpend))
-      : null,
-    startsAt && expiresAt
-      ? f.previewRange(dayLabel(startsAt), dayLabel(expiresAt))
-      : startsAt
-        ? f.previewFrom(dayLabel(startsAt))
-        : expiresAt
-          ? f.previewUntil(dayLabel(expiresAt))
-          : null,
-    perUserLimit && /^\d+$/.test(perUserLimit) && Number(perUserLimit) > 0
-      ? dict.discounts.condPerUser(Number(perUserLimit))
-      : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const previewHint = previewHintFor({
+    minSpend,
+    startsAt,
+    expiresAt,
+    perUserLimit,
+  });
 
   return (
     <form
@@ -224,10 +364,7 @@ export function DiscountForm({
       {showErrors ? <FormAlert>{f.errorSummary(errorCount)}</FormAlert> : null}
 
       <div className="flex flex-col gap-4 lg:grid lg:grid-cols-5 lg:items-start lg:gap-6">
-        <fieldset
-          disabled={readOnly}
-          className="flex min-w-0 flex-col gap-4 lg:col-span-3"
-        >
+        <div className="flex min-w-0 flex-col gap-4 lg:col-span-3">
           <FormSectionCard title={f.sectionCode}>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="discount-code" required={!lockCode}>
@@ -240,13 +377,13 @@ export function DiscountForm({
                   autoCapitalize="characters"
                   autoComplete="off"
                   spellCheck={false}
-                  disabled={lockCode || readOnly}
+                  disabled={lockCode}
                   aria-required={!lockCode}
                   className="font-mono uppercase"
                   {...fieldA11y("code", "discount-code-hint")}
                   {...register("code")}
                 />
-                {lockCode || readOnly ? null : (
+                {lockCode ? null : (
                   <Button
                     type="button"
                     variant="outline"
@@ -289,7 +426,6 @@ export function DiscountForm({
                     value={field.value}
                     onValueChange={field.onChange}
                     options={TYPE_OPTIONS}
-                    disabled={readOnly}
                   />
                 )}
               />
@@ -430,7 +566,6 @@ export function DiscountForm({
                     id="discount-active"
                     checked={field.value ?? false}
                     onCheckedChange={field.onChange}
-                    disabled={readOnly}
                     aria-describedby="discount-active-hint"
                   />
                 )}
@@ -450,14 +585,13 @@ export function DiscountForm({
                     id="discount-show-on-promo-page"
                     checked={field.value ?? false}
                     onCheckedChange={field.onChange}
-                    disabled={readOnly}
                     aria-describedby="discount-show-on-promo-page-hint"
                   />
                 )}
               />
             </SwitchRow>
           </FormSectionCard>
-        </fieldset>
+        </div>
 
         <div className="flex flex-col gap-4 lg:sticky lg:top-4 lg:col-span-2">
           <CartPreview
@@ -472,16 +606,14 @@ export function DiscountForm({
         </div>
       </div>
 
-      {readOnly ? null : (
-        <FormActionsBar
-          variant="sticky"
-          dirtySections={dirtySections}
-          onDiscard={() => reset()}
-          saveLabel={isPending ? dict.common.saving : submitLabel}
-          formId={FORM_ID}
-          isSaving={isPending}
-        />
-      )}
+      <FormActionsBar
+        variant="sticky"
+        dirtySections={dirtySections}
+        onDiscard={() => reset()}
+        saveLabel={isPending ? dict.common.saving : submitLabel}
+        formId={FORM_ID}
+        isSaving={isPending}
+      />
     </form>
   );
 }

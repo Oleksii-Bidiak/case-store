@@ -3,6 +3,7 @@ import { PermissionGuard } from '../auth/permissions';
 import { BlogController } from './blog.controller';
 import { AdminBlogController } from './admin-blog.controller';
 import { BlogService } from './blog.service';
+import { PreviewTokenService } from '../preview-token';
 
 const serviceMock = {
   findAll: jest.fn(),
@@ -30,7 +31,11 @@ describe('Blog controllers', () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
       controllers: [BlogController, AdminBlogController],
-      providers: [{ provide: BlogService, useValue: serviceMock }],
+      providers: [
+        { provide: BlogService, useValue: serviceMock },
+        // No preview token on these requests (TASK-668).
+        { provide: PreviewTokenService, useValue: { validScope: () => Promise.resolve(null) } },
+      ],
     })
       .overrideGuard(PermissionGuard)
       .useValue({ canActivate: () => true })
@@ -73,7 +78,9 @@ describe('Blog controllers', () => {
     it('findBySlug wraps the post in a data envelope', async () => {
       serviceMock.findPublishedBySlug.mockResolvedValue({ slug: 'x' });
 
-      const result = await publicCtrl.findBySlug('x');
+      const result = await publicCtrl.findBySlug('x', undefined, {
+        setHeader: jest.fn(),
+      } as unknown as Parameters<BlogController['findBySlug']>[2]);
 
       expect(result).toEqual({ data: { slug: 'x' } });
       expect(serviceMock.findPublishedBySlug).toHaveBeenCalledWith('x');

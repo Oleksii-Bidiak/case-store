@@ -48,7 +48,6 @@ export interface HelpSection {
  * catalogue) does not carry them.
  */
 const RAW = {
-  attributesWrite: "attributes:write",
   analyticsRevenue: "analytics:revenue",
 } as const;
 
@@ -142,13 +141,18 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       "На категорії задаються шаблони характеристик і додаткові послуги для всіх її товарів.",
     ],
     rights: [
+      { permission: PERM.categoriesRead, phrase: "переглядати категорії" },
       {
         permission: PERM.categoriesWrite,
         phrase: "створювати й змінювати категорії",
       },
       { permission: PERM.categoriesDelete, phrase: "видаляти категорії" },
       {
-        permission: RAW.attributesWrite,
+        permission: PERM.attributesRead,
+        phrase: "переглядати шаблони характеристик",
+      },
+      {
+        permission: PERM.attributesWrite,
         phrase: "змінювати шаблони характеристик",
       },
     ],
@@ -161,6 +165,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       "Покупці фільтрують каталог за брендом і бачать блок «Популярні бренди».",
     ],
     rights: [
+      { permission: PERM.brandsRead, phrase: "переглядати бренди" },
       {
         permission: PERM.brandsWrite,
         phrase: "створювати й змінювати бренди",
@@ -175,6 +180,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       "Де пропонувати послугу, задається на категорії, а винятки — на товарі.",
     ],
     rights: [
+      { permission: PERM.addonsRead, phrase: "переглядати додаткові послуги" },
       {
         permission: PERM.addonsWrite,
         phrase: "керувати додатковими послугами",
@@ -191,6 +197,10 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     ],
     rights: [
       {
+        permission: PERM.devicesRead,
+        phrase: "переглядати пристрої та сумісність",
+      },
+      {
         permission: PERM.devicesWrite,
         phrase: "керувати пристроями та сумісністю",
       },
@@ -206,6 +216,10 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     ],
     rights: [
       {
+        permission: PERM.discountsRead,
+        phrase: "переглядати промокоди та знижки",
+      },
+      {
         permission: PERM.discountsWrite,
         phrase: "керувати промокодами та знижками",
       },
@@ -220,6 +234,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       "Публікація одразу або за розкладом.",
     ],
     rights: [
+      { permission: PERM.pagesRead, phrase: "переглядати сторінки" },
       {
         permission: PERM.pagesWrite,
         phrase: "створювати й змінювати сторінки",
@@ -235,6 +250,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       "Публікація й зняття з публікації прямо в рядку статті.",
     ],
     rights: [
+      { permission: PERM.blogRead, phrase: "переглядати блог" },
       { permission: PERM.blogWrite, phrase: "писати й публікувати статті" },
     ],
   },
@@ -246,7 +262,10 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       "Кожен банер прив'язаний до конкретного розташування (слоту).",
       "Прев'ю показує, як банер виглядатиме на сайті.",
     ],
-    rights: [{ permission: PERM.bannersWrite, phrase: "керувати банерами" }],
+    rights: [
+      { permission: PERM.bannersRead, phrase: "переглядати банери" },
+      { permission: PERM.bannersWrite, phrase: "керувати банерами" },
+    ],
   },
   {
     prefix: "/carousels",
@@ -256,6 +275,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       "Карусель — вкладка в секції «Популярне» або окремий рядок товарів нижче.",
     ],
     rights: [
+      { permission: PERM.carouselsRead, phrase: "переглядати каруселі" },
       { permission: PERM.carouselsWrite, phrase: "керувати каруселями" },
     ],
   },
@@ -401,10 +421,11 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       "Тут нічого не редагується — лише переходи до розділів.",
     ],
     rights: [
-      { permission: PERM.pagesWrite, phrase: "редагувати сторінки" },
-      { permission: PERM.bannersWrite, phrase: "редагувати банери" },
-      { permission: PERM.faqWrite, phrase: "редагувати FAQ" },
-      { permission: PERM.blogWrite, phrase: "редагувати блог" },
+      { permission: PERM.homeRead, phrase: "бачити блоки головної" },
+      { permission: PERM.pagesRead, phrase: "бачити сторінки" },
+      { permission: PERM.bannersRead, phrase: "бачити банери" },
+      { permission: PERM.faqRead, phrase: "бачити FAQ" },
+      { permission: PERM.blogRead, phrase: "бачити блог" },
     ],
   },
   {
@@ -489,7 +510,10 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
       "Часті запитання й відповіді для покупців і пошукових систем.",
       "Порядок, приховування й видалення запитань.",
     ],
-    rights: [{ permission: PERM.faqWrite, phrase: "керувати FAQ" }],
+    rights: [
+      { permission: PERM.faqRead, phrase: "переглядати FAQ" },
+      { permission: PERM.faqWrite, phrase: "керувати FAQ" },
+    ],
   },
   {
     prefix: "/audit-log",

@@ -111,10 +111,7 @@ export function AutoSourcePanel({
     saved !== undefined &&
     saved.status === "PUBLISHED" &&
     saved.source === source;
-  const live = useCarouselControllerFindAll(
-    saved ? { placement: saved.placement } : undefined,
-    { query: { enabled: canPreview } },
-  );
+  const live = useCarouselControllerFindAll({ query: { enabled: canPreview } });
   const current = canPreview
     ? live.data?.data.find((carousel) => carousel.id === saved.id)
     : undefined;

@@ -11,9 +11,12 @@
  * whole time. Surfacing the gap turns a silent mismatch into a visible "не діє"
  * badge.
  *
- * **The set is currently empty, and that is the correct steady state.** When it
- * was first derived on 2026-07-28 it held three entries; all three were then
- * resolved at integration rather than documented away:
+ * **The set is empty in the steady state.** Plan 186 filled it for the span between
+ * its clusters H1 and H2 (the eleven reference / content `:read` keys existed and
+ * were backfilled before their GET routes accepted them); TASK-666 gave every one a
+ * route and emptied it again. When it was first derived on 2026-07-28 it held
+ * three entries; all three were then resolved at integration rather than
+ * documented away:
  *
  *   - `payments:read` and `payments:refund` — `PaymentService.getAttemptsForOrder`
  *     and `.refund` existed, were docblocked "admin payment card" and were unit
@@ -32,4 +35,5 @@
  * a route naming a permission that does not exist — is caught by the backend's
  * own `permission.catalog.spec.ts`, which fails the build.
  */
-export const PERMISSIONS_WITHOUT_ROUTES: ReadonlySet<string> = new Set([]);
+export const PERMISSIONS_WITHOUT_ROUTES: ReadonlySet<string> =
+  new Set<string>();

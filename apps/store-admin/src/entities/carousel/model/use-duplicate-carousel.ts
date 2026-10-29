@@ -29,7 +29,7 @@ export class DuplicateCarouselItemsError extends Error {
  * The create payload of a carousel's copy («Дублювати», TASK-1074): the same
  * source, category, count and place, a «(копія)» title, and ALWAYS a draft —
  * two identical rails must never go up side by side. The API appends the copy
- * to the end of its placement.
+ * to the end of the list.
  */
 export function duplicateCarouselPayload(
   carousel: CarouselEntity,
@@ -41,7 +41,6 @@ export function duplicateCarouselPayload(
       carousel.title.slice(0, room).trimEnd(),
     ),
     source: carousel.source,
-    placement: carousel.placement,
     categoryId:
       carousel.source === "CATEGORY" && carousel.categoryId
         ? carousel.categoryId

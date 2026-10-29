@@ -3,6 +3,7 @@ import type {
   BannerListResponse,
 } from "@/shared/api/generated/models";
 import { serverFetch } from "@/shared/api/server-fetch";
+import { publicReadInit } from "@/shared/api/preview-token";
 
 /**
  * Server-only, ISR-tagged fetcher for published homepage banners (TASK-186).
@@ -24,10 +25,7 @@ export const BANNERS_COLLECTION_TAG = "banners";
 
 /** Placement slot keys — mirror of the API's BannerPlacement enum. */
 export type BannerPlacementKey =
-  | "HERO_SLIDE"
-  | "PROMO_TILE"
-  | "PROMO_BANNER"
-  | "ANNOUNCEMENT_BAR";
+  "HERO_SLIDE" | "PROMO_TILE" | "PROMO_BANNER" | "ANNOUNCEMENT_BAR";
 
 /** Published banners grouped by placement (each group ordered by sortOrder). */
 export type BannersByPlacement = Record<BannerPlacementKey, BannerEntity[]>;
@@ -46,14 +44,22 @@ function emptyGroups(): BannersByPlacement {
  * Fetch all PUBLISHED banners and group them by placement, tagged for on-demand
  * revalidation. Never throws — returns all-empty groups on error so the homepage
  * always renders its static fallback content.
+ *
+ * `previewToken` (TASK-669) is the signed homepage preview: the request then
+ * carries the token, is `no-store` and drops the ISR tag, and the API answers
+ * with the draft and scheduled banners too. Without it this is the tagged
+ * public read, unchanged.
  */
-export async function fetchPublishedBanners(): Promise<BannersByPlacement> {
+export async function fetchPublishedBanners(
+  previewToken?: string | null,
+): Promise<BannersByPlacement> {
   const groups = emptyGroups();
 
   try {
-    const res = await serverFetch(`${API_BASE_URL}/api/banners`, {
-      next: { tags: [BANNERS_COLLECTION_TAG] },
-    });
+    const res = await serverFetch(
+      `${API_BASE_URL}/api/banners`,
+      publicReadInit([BANNERS_COLLECTION_TAG], previewToken),
+    );
     if (!res.ok) return groups;
 
     const body = (await res.json()) as BannerListResponse;

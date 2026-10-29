@@ -7,3 +7,4 @@ export {
   CSV_BOM,
   buildCsvDocument,
 } from './csv.util';
+export { mapWithConcurrency } from './map-with-concurrency.util';

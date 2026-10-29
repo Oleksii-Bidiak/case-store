@@ -2,7 +2,13 @@
 // route's `loading.tsx`, so the 404 / 308 reaches the wire before the skeleton
 // shell streams with a 200. These tests pin who gets checked and that the
 // layout and the page share one product read.
-jest.mock("next/headers", () => ({ headers: jest.fn() }));
+// `draftMode` / `cookies`: the product read asks whether this is a signed
+// preview (TASK-669); these tests are the public request (see beforeEach).
+jest.mock("next/headers", () => ({
+  headers: jest.fn(),
+  draftMode: jest.fn(),
+  cookies: jest.fn(),
+}));
 jest.mock("next/navigation", () => ({
   permanentRedirect: jest.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
@@ -41,8 +47,11 @@ import { headers } from "next/headers";
 import { notFound, permanentRedirect } from "next/navigation";
 import { productControllerFindBySlug } from "@/shared/api/generated/products/products";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
+import { mockPreviewRequest } from "@/shared/test/preview-request";
 import ProductSlugLayout from "./layout";
 import { resolveProductRoute } from "./product-route";
+
+beforeEach(() => mockPreviewRequest(null));
 
 const headersMock = headers as jest.MockedFunction<typeof headers>;
 const findBySlug = productControllerFindBySlug as jest.MockedFunction<

@@ -29,7 +29,7 @@ import {
   DeviceBrandListQueryDto,
   ReorderDeviceBrandsDto,
 } from './dto';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../auth/permissions';
 // The `auth/decorators` sub-barrel, NOT the `../auth` barrel: the barrel pulls the auth module in and the
 // resulting require cycle leaves `CurrentUser` undefined at decorator-evaluation time.
 import { CurrentUser } from '../auth/decorators';
@@ -126,6 +126,7 @@ export class AdminDeviceController {
   // ─── Device brands ────────────────────────────────────────────────────────
 
   @Get('brands')
+  @RequireAnyPermission('devices:read', 'devices:write')
   @ApiOperation({
     summary: 'List device brands with model counts, optional search + pagination (admin)',
     operationId: 'adminDeviceControllerFindBrands',
@@ -177,6 +178,7 @@ export class AdminDeviceController {
   }
 
   @Get('brands/:id')
+  @RequireAnyPermission('devices:read', 'devices:write')
   @ApiOperation({ summary: 'Get device brand by ID (admin)' })
   @ApiParam({ name: 'id', description: 'Device brand UUID' })
   @ApiResponse({ status: 200, description: 'Device brand', type: DeviceBrandResponseEnvelope })
@@ -242,6 +244,7 @@ export class AdminDeviceController {
   // ─── Device models ────────────────────────────────────────────────────────
 
   @Get('models')
+  @RequireAnyPermission('devices:read', 'devices:write')
   @ApiOperation({
     summary: 'List device models (admin, paginated)',
     operationId: 'adminDeviceControllerFindModels',
@@ -254,6 +257,7 @@ export class AdminDeviceController {
   }
 
   @Get('models/:id')
+  @RequireAnyPermission('devices:read', 'devices:write')
   @ApiOperation({ summary: 'Get device model by ID (admin)' })
   @ApiParam({ name: 'id', description: 'Device model UUID' })
   @ApiResponse({ status: 200, description: 'Device model', type: DeviceModelResponseEnvelope })

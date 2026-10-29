@@ -21,6 +21,7 @@ import { useMediaControllerUpload } from "@/entities/media";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { slugify } from "@/shared/lib";
+import type { FormSubmitController } from "@/shared/lib/form-submit-controller";
 import {
   resolveSeoPreviewTitle,
   resolveSeoPreviewDescription,
@@ -168,6 +169,11 @@ export interface ProductFormSubmitContext {
 export interface ProductFormSubmitResult {
   /** The product's own fields were written — the form becomes pristine. */
   mainSaved: boolean;
+  /**
+   * Every part of the page's save landed (product, specs, compatibility) — the
+   * chain did not stop on a failure. Defaults to `mainSaved` when omitted.
+   */
+  complete?: boolean;
 }
 
 interface ProductFormProps {
@@ -219,6 +225,11 @@ interface ProductFormProps {
   missingSections?: readonly string[];
   /** «Скасувати зміни» also throws away the external sections' edits. */
   onDiscard?: () => void;
+  /**
+   * TASK-670 — lets the page's «Подивитись на сайті» ask whether anything is
+   * unsaved (the external sections included) and run this form's save.
+   */
+  controllerRef?: React.Ref<FormSubmitController>;
 }
 
 /** Empty form baseline used for create mode and as the merge base in edit mode. */
@@ -285,6 +296,7 @@ export function ProductForm({
   externalDirty,
   missingSections = [],
   onDiscard,
+  controllerRef,
 }: ProductFormProps) {
   const formId = React.useId();
   const {
@@ -451,14 +463,31 @@ export function ProductForm({
   const [slugDraft, setSlugDraft] = React.useState("");
   const slugDraftId = React.useId();
 
-  const submit = handleSubmit(async (values) => {
+  const save = async (values: ProductFormValues) => {
     const result = await onSubmit(values, { mainDirty, mainSections });
     if (result?.mainSaved) {
       // Pristine at what was just written; the refetch then lands on equal
       // values (Rule 2a), so nothing flickers back to «є зміни».
       reset(getValues(), { keepDirtyValues: false, keepFieldsRef: true });
     }
+    return result;
+  };
+  const submit = handleSubmit(async (values) => {
+    await save(values);
   }, onInvalid);
+
+  // TASK-670: re-created every render, so it always reads the current state.
+  React.useImperativeHandle(controllerRef, () => ({
+    isDirty: () => dirtyLabels.length > 0,
+    submit: async () => {
+      let landed = false;
+      await handleSubmit(async (values) => {
+        const result = await save(values);
+        landed = result?.complete ?? Boolean(result?.mainSaved);
+      }, onInvalid)();
+      return landed;
+    },
+  }));
 
   const discount = discountPercent(priceValue, compareValue);
 

@@ -89,22 +89,38 @@ function stubAll(
         meta: { total: opts.blogTotal ?? 0, page: 1, limit: 1, totalPages: 1 },
       });
     }),
-    http.get("*/api/admin/carousels", ({ request }) => {
+    // TASK-660: the carousel zones read the homepage blocks — a carousel has no
+    // placement any more.
+    http.get("*/api/admin/home-blocks", ({ request }) => {
       track(request);
+      const carousel = (title: string) => ({
+        id: title,
+        title,
+        source: "NEWEST",
+        status: "PUBLISHED",
+      });
       return HttpResponse.json({
         data: [
-          ["Хіти", "HOME_TABS", 0],
-          ["Новинки", "HOME_TABS", 1],
-          ["Акційні", "HOME_TABS", 2],
-          ["Чохли для смартфонів", "HOME_RAILS", 0],
-        ].map(([title, placement, sortOrder]) => ({
-          id: String(title),
-          title,
-          placement,
-          sortOrder,
-          status: "PUBLISHED",
-        })),
-        meta: { total: 4, page: 1, limit: 100, totalPages: 1 },
+          {
+            id: "tabs",
+            type: "TABS",
+            sortOrder: 3,
+            status: "PUBLISHED",
+            carousel: null,
+            tabs: ["Хіти", "Новинки", "Акційні"].map((title, sortOrder) => ({
+              sortOrder,
+              carousel: carousel(title),
+            })),
+          },
+          {
+            id: "rail",
+            type: "CAROUSEL",
+            sortOrder: 4,
+            status: "PUBLISHED",
+            carousel: carousel("Чохли для смартфонів"),
+            tabs: [],
+          },
+        ],
       });
     }),
     http.get("*/api/site-contact", ({ request }) => {
@@ -198,7 +214,7 @@ describe("ContentMapView — tabs and the page schema (ДЩ1)", () => {
     stubAll();
     renderMap();
 
-    expect(tab(c.tabs.home)).toHaveTextContent("7");
+    expect(tab(c.tabs.home)).toHaveTextContent("8");
     expect(tab(c.tabs.all)).toHaveTextContent("4");
     expect(tab(c.tabs.promo)).toHaveTextContent("2");
     expect(tab(c.tabs.info)).toHaveTextContent("2");
@@ -216,6 +232,7 @@ describe("ContentMapView — tabs and the page schema (ДЩ1)", () => {
       .getAllByRole("listitem")
       .map((item) => item.getAttribute("data-zone-id"));
     expect(titles).toEqual([
+      "home-blocks",
       "announcement-bar",
       "hero-slide",
       "promo-tile",
@@ -234,7 +251,7 @@ describe("ContentMapView — tabs and the page schema (ДЩ1)", () => {
     renderMap();
 
     const block = screen.getByRole("button", {
-      name: c.blockAria(2, dict.contentMap.zones.heroSlide.source),
+      name: c.blockAria(3, dict.contentMap.zones.heroSlide.source),
     });
     await userEvent.click(block);
 
@@ -301,7 +318,7 @@ describe("ContentMapView — zone state (ДЩ1–ДЩ3)", () => {
     ).toBeInTheDocument();
   });
 
-  it("names the live carousels and tags them for the later /home screen", async () => {
+  it("names the live carousels and sends both zones to «Головна» (TASK-664)", async () => {
     stubAll();
     renderMap();
 
@@ -311,13 +328,76 @@ describe("ContentMapView — zone state (ДЩ1–ДЩ3)", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      within(zoneCard("carousel-tabs")).getByText(c.laterTag),
-    ).toBeInTheDocument();
-    expect(
       within(zoneCard("carousel-rails")).getByText(
         c.carouselRailsState(1, "«Чохли для смартфонів»"),
       ),
     ).toBeInTheDocument();
+    for (const [id, zone] of [
+      ["carousel-tabs", c.zones.carouselTabs],
+      ["carousel-rails", c.zones.carouselRails],
+    ] as const) {
+      expect(
+        within(zoneCard(id)).getByRole("link", {
+          name: c.editAria(zone.source, zone.target),
+        }),
+      ).toHaveAttribute("href", "/home");
+    }
+  });
+
+  it("«Блоки головної»: the live sections, linked to /home (TASK-664)", async () => {
+    stubAll();
+    renderMap();
+
+    const home = zoneCard("home-blocks");
+    expect(
+      await within(home).findByText(c.homeBlocksState(2)),
+    ).toBeInTheDocument();
+    expect(
+      within(home).getByRole("link", {
+        name: c.editAria(c.zones.homeBlocks.source, c.zones.homeBlocks.target),
+      }),
+    ).toHaveAttribute("href", "/home");
+    expect(
+      within(home).getByRole("link", {
+        name: c.onSiteAria(c.zones.homeBlocks.source),
+      }),
+    ).toHaveAttribute("href", `${STOREFRONT_URL}/`);
+  });
+
+  it("«Блоки головної» warns about live blocks that draw nothing", async () => {
+    stubAll();
+    const block = (id: string, extra: object) => ({
+      id,
+      type: "CAROUSEL",
+      sortOrder: 0,
+      status: "PUBLISHED",
+      carousel: null,
+      tabs: [],
+      isEmpty: false,
+      ...extra,
+    });
+    server.use(
+      http.get("*/api/admin/home-blocks", () =>
+        HttpResponse.json({
+          data: [
+            block("a", { isEmpty: true, isOrphaned: true }),
+            block("b", {}),
+            block("c", { status: "SCHEDULED" }),
+            // A hidden empty block warns nobody: it is not on the page.
+            block("d", { status: "DRAFT", isEmpty: true }),
+          ],
+        }),
+      ),
+    );
+    renderMap();
+
+    const home = zoneCard("home-blocks");
+    expect(
+      await within(home).findByText(
+        `${c.homeBlocksState(2)} · ${c.scheduled(1)}`,
+      ),
+    ).toBeInTheDocument();
+    expect(within(home).getByText(c.homeBlocksEmpty(1))).toBeInTheDocument();
   });
 
   it("says what the contacts form has filled", async () => {
@@ -533,7 +613,7 @@ describe("ContentMapView — permissions", () => {
         expect.arrayContaining(["/api/admin/banners", "/api/admin/pages"]),
       ),
     );
-    expect(requests).not.toContain("/api/admin/carousels");
+    expect(requests).not.toContain("/api/admin/home-blocks");
     expect(requests).not.toContain("/api/admin/discounts");
     expect(requests).not.toContain("/api/products/admin/list");
     expect(requests).not.toContain("/api/admin/seo-settings/health");
@@ -547,6 +627,23 @@ describe("ContentMapView — permissions", () => {
           dict.contentMap.zones.carouselRails.target,
         ),
       }),
-    ).toHaveAttribute("href", "/carousels");
+    ).toHaveAttribute("href", "/home");
+  });
+
+  // TASK-666: the nav opens the map with ANY content key, read or write, so the
+  // four content sources are gated one by one like the rest.
+  it("asks only the content sources the :read keys open", async () => {
+    const requests = stubAll();
+    renderMap([PERM.bannersRead, PERM.discountsRead]);
+
+    await waitFor(() =>
+      expect(requests).toEqual(
+        expect.arrayContaining(["/api/admin/banners", "/api/admin/discounts"]),
+      ),
+    );
+    expect(requests).not.toContain("/api/admin/pages");
+    expect(requests).not.toContain("/api/admin/faq");
+    expect(requests).not.toContain("/api/admin/blog/posts");
+    expect(requests).not.toContain("/api/admin/home-blocks");
   });
 });

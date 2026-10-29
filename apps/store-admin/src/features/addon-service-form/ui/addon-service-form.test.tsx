@@ -127,15 +127,24 @@ describe("AddonServiceForm (wave 198)", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("read-only: the fields are disabled and there is nothing to save", () => {
+  it("read-only: the values as text and there is nothing to save (TASK-667)", () => {
     renderForm({
       readOnly: true,
       id: "s1",
       defaultValues: { name: "Гарантія", price: "499", isActive: true },
     });
 
-    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: f.name })).toBeDisabled();
+    expect(
+      screen.getByText(dict.readOnlyView.notices.addons),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(screen.getByText("Гарантія")).toBeInTheDocument();
+    // The empty description says so instead of showing a blank box.
+    expect(screen.getByText(dict.readOnlyView.notSet)).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.addonServices.statusActive),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: f.submit }),
     ).not.toBeInTheDocument();

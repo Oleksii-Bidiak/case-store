@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
-import { CarouselPlacement, CarouselSource, PublishStatus } from '@prisma/client';
+import { CarouselSource, PublishStatus } from '@prisma/client';
 import { CarouselRepository } from './carousels.repository';
-import { CarouselService } from './carousels.service';
+import { CarouselService, RESOLVE_CONCURRENCY } from './carousels.service';
 import { CarouselEntity, CarouselItemEntity, PublicCarouselEntity } from './entities';
 import { ProductService } from '../product/product.service';
 import { ProductListQueryDto } from '../product/dto';
@@ -16,7 +16,6 @@ const baseCarousel = {
   source: CarouselSource.BESTSELLING,
   categoryId: null as string | null,
   itemLimit: 12,
-  placement: CarouselPlacement.HOME_RAILS,
   sortOrder: 0,
   status: PublishStatus.PUBLISHED,
   publishedAt: new Date('2026-07-01T00:00:00.000Z'),
@@ -41,14 +40,14 @@ const carouselRepositoryMock = {
   findById: jest.fn(),
   create: jest.fn(),
   update: jest.fn(),
-  updateWithPlacementMove: jest.fn(),
   publish: jest.fn(),
   unpublish: jest.fn(),
   delete: jest.fn(),
   findItemIds: jest.fn(),
   findItemsWithProducts: jest.fn(),
   replaceItems: jest.fn(),
-  reorderPlacement: jest.fn(),
+  reorder: jest.fn(),
+  findByIds: jest.fn(),
 };
 
 const productServiceMock = {
@@ -62,7 +61,7 @@ const categoryRepositoryMock = {
 
 const revalidationMock = { revalidate: jest.fn() };
 
-const carouselsTarget = { tags: ['carousels'], paths: ['/'] };
+const carouselsTarget = { tags: ['carousels', 'home-blocks'], paths: ['/'] };
 
 describe('CarouselService', () => {
   let service: CarouselService;
@@ -225,39 +224,60 @@ describe('CarouselService', () => {
     });
   });
 
-  describe('findAllPublished — placement filter (TASK-288)', () => {
-    it('forwards the requested placement to the repository and echoes it on the entity', async () => {
-      carouselRepositoryMock.findAllPublished.mockResolvedValue([
-        { ...baseCarousel, placement: CarouselPlacement.HOME_TABS },
-      ]);
+  describe('resolvePublic (TASK-661)', () => {
+    it('resolves rows in the given order, whatever their status', async () => {
       productServiceMock.findAll.mockResolvedValue({ items: [productCard], meta: {} });
 
-      const result = await service.findAllPublished({ placement: CarouselPlacement.HOME_TABS });
+      const result = await service.resolvePublic([draftCarousel, baseCarousel]);
 
-      expect(carouselRepositoryMock.findAllPublished).toHaveBeenCalledWith({
-        placement: CarouselPlacement.HOME_TABS,
-      });
+      expect(result.map((carousel) => carousel.id)).toEqual(['carousel-uuid-2', 'carousel-uuid-1']);
       expect(result[0]).toBeInstanceOf(PublicCarouselEntity);
-      expect(result[0].placement).toBe(CarouselPlacement.HOME_TABS);
+      expect(result[0].status).toBe(PublishStatus.DRAFT);
+      expect(result[1].products).toEqual([productCard]);
     });
 
-    it('asks for every placement when the query omits it (pre-TASK-288 behaviour)', async () => {
-      carouselRepositoryMock.findAllPublished.mockResolvedValue([]);
-
-      await service.findAllPublished();
-
-      expect(carouselRepositoryMock.findAllPublished).toHaveBeenCalledWith({
-        placement: undefined,
-      });
-    });
-
-    it('resolves products identically whatever the placement (placement is render-only)', async () => {
-      carouselRepositoryMock.findAllPublished.mockResolvedValue([
-        { ...baseCarousel, placement: CarouselPlacement.HOME_TABS },
-      ]);
+    it('resolves a carousel that appears twice only once', async () => {
       productServiceMock.findAll.mockResolvedValue({ items: [productCard], meta: {} });
 
-      await service.findAllPublished({ placement: CarouselPlacement.HOME_TABS });
+      const result = await service.resolvePublic([baseCarousel, baseCarousel]);
+
+      expect(result).toHaveLength(2);
+      expect(productServiceMock.findAll).toHaveBeenCalledTimes(1);
+    });
+
+    // TASK-1894: distinct carousels resolve in parallel, bounded, in input order.
+    it('resolves at most RESOLVE_CONCURRENCY carousels at once and keeps the input order', async () => {
+      const ids = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5'];
+      const rows = ids.map((id) => ({ ...baseCarousel, id, source: CarouselSource.MANUAL }));
+      let inFlight = 0;
+      let peak = 0;
+      carouselRepositoryMock.findItemIds.mockImplementation(async (id: string) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        // Later carousels finish first.
+        await new Promise((resolve) => setTimeout(resolve, (ids.length - ids.indexOf(id)) * 2));
+        inFlight -= 1;
+        return [{ productId: `p-${id}`, sortOrder: 0 }];
+      });
+      productServiceMock.getCardsByIds.mockImplementation(async ([productId]: string[]) => [
+        { id: productId },
+      ]);
+
+      const result = await service.resolvePublic([...rows, rows[0]]);
+
+      expect(peak).toBe(RESOLVE_CONCURRENCY);
+      expect(carouselRepositoryMock.findItemIds).toHaveBeenCalledTimes(ids.length);
+      expect(result.map((carousel) => carousel.id)).toEqual([...ids, 'c0']);
+      expect(result.map((carousel) => carousel.products[0]?.id)).toEqual([
+        ...ids.map((id) => `p-${id}`),
+        'p-c0',
+      ]);
+    });
+
+    it('resolves products identically to the public list (one code path)', async () => {
+      productServiceMock.findAll.mockResolvedValue({ items: [productCard], meta: {} });
+
+      await service.resolvePublic([baseCarousel]);
 
       const query = productServiceMock.findAll.mock.calls[0][0] as ProductListQueryDto;
       expect(query).toMatchObject({
@@ -282,29 +302,11 @@ describe('CarouselService', () => {
       expect(result.items).toHaveLength(2);
       expect(result.items[0]).toBeInstanceOf(CarouselEntity);
       expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
-        placement: undefined,
         status: undefined,
         page: undefined,
         limit: undefined,
         search: undefined,
       });
-    });
-
-    it('forwards the placement filter and exposes placement on the admin row', async () => {
-      carouselRepositoryMock.findAllAdmin.mockResolvedValue({
-        carousels: [{ ...baseCarousel, placement: CarouselPlacement.HOME_TABS }],
-        total: 1,
-      });
-
-      const result = await service.findAllAdmin({ placement: CarouselPlacement.HOME_TABS });
-
-      expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith(
-        expect.objectContaining({
-          placement: CarouselPlacement.HOME_TABS,
-          status: undefined,
-        }),
-      );
-      expect(result.items[0].placement).toBe(CarouselPlacement.HOME_TABS);
     });
 
     // TASK-357: an unpaginated read still reports a truthful count.
@@ -409,36 +411,6 @@ describe('CarouselService', () => {
       expect(carouselRepositoryMock.create).not.toHaveBeenCalled();
     });
 
-    it('passes the requested placement to the repository (TASK-288)', async () => {
-      carouselRepositoryMock.create.mockResolvedValue({
-        ...draftCarousel,
-        placement: CarouselPlacement.HOME_TABS,
-      });
-
-      const entity = await service.create({
-        title: 'Хіти',
-        source: CarouselSource.BESTSELLING,
-        placement: CarouselPlacement.HOME_TABS,
-      });
-
-      const passed = carouselRepositoryMock.create.mock.calls[0][0] as {
-        placement?: CarouselPlacement;
-      };
-      expect(passed.placement).toBe(CarouselPlacement.HOME_TABS);
-      expect(entity.placement).toBe(CarouselPlacement.HOME_TABS);
-    });
-
-    it('leaves placement undefined when omitted (repository applies the HOME_RAILS default)', async () => {
-      carouselRepositoryMock.create.mockResolvedValue(draftCarousel);
-
-      await service.create({ title: 'Хіти', source: CarouselSource.BESTSELLING });
-
-      const passed = carouselRepositoryMock.create.mock.calls[0][0] as {
-        placement?: CarouselPlacement;
-      };
-      expect(passed.placement).toBeUndefined();
-    });
-
     it('ignores a supplied categoryId for a non-CATEGORY source (stores null)', async () => {
       carouselRepositoryMock.create.mockResolvedValue(draftCarousel);
 
@@ -493,104 +465,6 @@ describe('CarouselService', () => {
       await service.update('carousel-uuid-2', { title: 'Renamed' });
 
       expect(revalidationMock.revalidate).not.toHaveBeenCalled();
-    });
-
-    it('writes a new placement and revalidates the homepage for a live carousel (TASK-288)', async () => {
-      carouselRepositoryMock.findById.mockResolvedValue(baseCarousel);
-      carouselRepositoryMock.updateWithPlacementMove.mockResolvedValue({
-        ...baseCarousel,
-        placement: CarouselPlacement.HOME_TABS,
-      });
-
-      const entity = await service.update('carousel-uuid-1', {
-        placement: CarouselPlacement.HOME_TABS,
-      });
-
-      const passed = carouselRepositoryMock.updateWithPlacementMove.mock.calls[0][1] as {
-        placement?: CarouselPlacement;
-      };
-      expect(passed.placement).toBe(CarouselPlacement.HOME_TABS);
-      expect(entity.placement).toBe(CarouselPlacement.HOME_TABS);
-      expect(revalidationMock.revalidate).toHaveBeenCalledWith(carouselsTarget);
-    });
-
-    // ─── placement moves re-append (review #11) ─────────────────────────────
-    //
-    // `sortOrder` is a contiguous per-placement sequence (TASK-428), so the two placements
-    // are independent 0..n lists. A plain `update` carried the row's OLD slot into the new
-    // list — HOME_TABS ending up with two rows at 0 and the homepage tiebreaking them by
-    // createdAt. The service is what decides this is a MOVE; the re-append itself is the
-    // repository's locked `max + 1`.
-
-    it('routes a placement CHANGE through the re-appending repository path', async () => {
-      carouselRepositoryMock.findById.mockResolvedValue(baseCarousel); // stored: HOME_RAILS
-      carouselRepositoryMock.updateWithPlacementMove.mockResolvedValue({
-        ...baseCarousel,
-        placement: CarouselPlacement.HOME_TABS,
-        sortOrder: 3,
-      });
-
-      await service.update('carousel-uuid-1', { placement: CarouselPlacement.HOME_TABS });
-
-      expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
-      expect(carouselRepositoryMock.updateWithPlacementMove).toHaveBeenCalledWith(
-        'carousel-uuid-1',
-        expect.objectContaining({ placement: CarouselPlacement.HOME_TABS }),
-        CarouselPlacement.HOME_TABS,
-      );
-    });
-
-    it('keeps an edit that RE-SENDS the current placement an in-place write', async () => {
-      carouselRepositoryMock.findById.mockResolvedValue(baseCarousel); // stored: HOME_RAILS
-      carouselRepositoryMock.update.mockResolvedValue(baseCarousel);
-
-      await service.update('carousel-uuid-1', {
-        title: 'Renamed',
-        placement: CarouselPlacement.HOME_RAILS,
-      });
-
-      // The admin form always submits the select's current value, so treating an unchanged
-      // placement as a move would drop the carousel to the bottom of its own list on every
-      // rename.
-      expect(carouselRepositoryMock.updateWithPlacementMove).not.toHaveBeenCalled();
-      expect(carouselRepositoryMock.update).toHaveBeenCalledTimes(1);
-    });
-
-    it('keeps an edit that omits placement entirely an in-place write', async () => {
-      carouselRepositoryMock.findById.mockResolvedValue(baseCarousel);
-      carouselRepositoryMock.update.mockResolvedValue(baseCarousel);
-
-      await service.update('carousel-uuid-1', { title: 'Renamed' });
-
-      expect(carouselRepositoryMock.updateWithPlacementMove).not.toHaveBeenCalled();
-      expect(carouselRepositoryMock.update).toHaveBeenCalledTimes(1);
-    });
-
-    it('still validates the category before moving — no write on a bad category', async () => {
-      carouselRepositoryMock.findById.mockResolvedValue(baseCarousel);
-      categoryRepositoryMock.findById.mockResolvedValue(null);
-
-      await expect(
-        service.update('carousel-uuid-1', {
-          placement: CarouselPlacement.HOME_TABS,
-          source: CarouselSource.CATEGORY,
-          categoryId: 'missing-category',
-        }),
-      ).rejects.toThrow(NotFoundException);
-      expect(carouselRepositoryMock.updateWithPlacementMove).not.toHaveBeenCalled();
-      expect(carouselRepositoryMock.update).not.toHaveBeenCalled();
-    });
-
-    it('leaves placement untouched when the update omits it', async () => {
-      carouselRepositoryMock.findById.mockResolvedValue(baseCarousel);
-      carouselRepositoryMock.update.mockResolvedValue(baseCarousel);
-
-      await service.update('carousel-uuid-1', { title: 'Renamed' });
-
-      const passed = carouselRepositoryMock.update.mock.calls[0][1] as {
-        placement?: CarouselPlacement;
-      };
-      expect(passed.placement).toBeUndefined();
     });
 
     it('preserves the original publishedAt when re-saving an already-PUBLISHED carousel', async () => {
@@ -833,61 +707,45 @@ describe('CarouselService', () => {
     });
   });
 
-  // ─── reorderPlacement (TASK-428) ───────────────────────────────────────────
+  // ─── reorder (TASK-428; one global list since TASK-660) ────────────────────
 
-  describe('reorderPlacement', () => {
+  describe('reorder', () => {
     const payload = {
-      placement: CarouselPlacement.HOME_RAILS,
       orderedIds: ['carousel-uuid-2', 'carousel-uuid-1'],
     };
 
-    it('returns the refreshed FULL list (all placements) with meta', async () => {
-      carouselRepositoryMock.reorderPlacement.mockResolvedValue({
+    it('returns the refreshed list with meta', async () => {
+      carouselRepositoryMock.reorder.mockResolvedValue({
         carousels: [draftCarousel, baseCarousel],
         total: 2,
       });
 
-      const result = await service.reorderPlacement(payload);
+      const result = await service.reorder(payload);
 
-      expect(carouselRepositoryMock.reorderPlacement).toHaveBeenCalledWith(
-        CarouselPlacement.HOME_RAILS,
-        payload.orderedIds,
-      );
+      expect(carouselRepositoryMock.reorder).toHaveBeenCalledWith(payload.orderedIds);
       expect(result.items[0]).toBeInstanceOf(CarouselEntity);
       // The unpaginated shape: one page holding everything (the panel writes this
       // response straight into the list query's cache).
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
-      expect(revalidationMock.revalidate).toHaveBeenCalledWith(carouselsTarget);
     });
 
-    it('does NOT revalidate when the reordered bucket holds nothing published', async () => {
-      carouselRepositoryMock.reorderPlacement.mockResolvedValue({
-        carousels: [draftCarousel],
-        total: 1,
-      });
-
-      await service.reorderPlacement({ ...payload, orderedIds: ['carousel-uuid-2'] });
-
-      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
-    });
-
-    it('ignores a published carousel in the OTHER placement when deciding to revalidate', async () => {
-      carouselRepositoryMock.reorderPlacement.mockResolvedValue({
-        // Published, but it lives in HOME_TABS — the HOME_RAILS shuffle changed nothing
-        // a shopper can see.
-        carousels: [{ ...baseCarousel, placement: CarouselPlacement.HOME_TABS }, draftCarousel],
+    // TASK-660: the homepage order belongs to the homepage blocks, and nothing on the
+    // storefront reads `/api/carousels` — a reorder changes nothing a shopper sees.
+    it('never revalidates the storefront, even when published carousels moved', async () => {
+      carouselRepositoryMock.reorder.mockResolvedValue({
+        carousels: [baseCarousel, draftCarousel],
         total: 2,
       });
 
-      await service.reorderPlacement(payload);
+      await service.reorder(payload);
 
       expect(revalidationMock.revalidate).not.toHaveBeenCalled();
     });
 
     it('maps REORDER_STALE onto 409 with the stable code on the wire', async () => {
-      carouselRepositoryMock.reorderPlacement.mockRejectedValue(new ReorderStaleError());
+      carouselRepositoryMock.reorder.mockRejectedValue(new ReorderStaleError());
 
-      await expect(service.reorderPlacement(payload)).rejects.toMatchObject({
+      await expect(service.reorder(payload)).rejects.toMatchObject({
         status: 409,
         response: { error: 'REORDER_STALE' },
       });
@@ -895,9 +753,9 @@ describe('CarouselService', () => {
     });
 
     it('maps REORDER_NOT_FOUND onto 404 with the stable code on the wire', async () => {
-      carouselRepositoryMock.reorderPlacement.mockRejectedValue(new ReorderNotFoundError());
+      carouselRepositoryMock.reorder.mockRejectedValue(new ReorderNotFoundError());
 
-      await expect(service.reorderPlacement(payload)).rejects.toMatchObject({
+      await expect(service.reorder(payload)).rejects.toMatchObject({
         status: 404,
         response: { error: 'REORDER_NOT_FOUND' },
       });

@@ -518,9 +518,28 @@ describe("EditCategoryView — categories:delete without categories:write (TASK-
     expect(term(ro.fieldParent)).toHaveTextContent(ro.fieldParentRoot);
     expect(term(ro.fieldDescription)).toHaveTextContent("Чохли для смартфонів");
     expect(term(ro.fieldMetaTitle)).toHaveTextContent("Чохли — магазин");
-    expect(term(ro.fieldMetaDescription)).toHaveTextContent(ro.empty);
+    expect(term(ro.fieldMetaDescription)).toHaveTextContent(
+      dict.readOnlyView.notSet,
+    );
+    // TASK-667: the switch is a word, not a disabled control.
+    expect(term(dict.categoryForm.active)).toHaveTextContent(
+      dict.categories.tree.statusShown,
+    );
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
 
     expect(reads).toEqual([]);
+  });
+
+  it("categories:read alone: the generic notice — no promise of «Видалити»", async () => {
+    stubCategory(makeCategory(true));
+    renderWithProviders(<EditCategoryView categoryId={CATEGORY_ID} />, {
+      auth: { permissions: ["categories:read"] },
+    });
+    expect(
+      await screen.findByText(dict.readOnlyView.notices.categories),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(ro.cardNotice)).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
   it("keeps «Видалити» in the header", async () => {

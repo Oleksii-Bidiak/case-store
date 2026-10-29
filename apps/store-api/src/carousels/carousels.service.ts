@@ -4,14 +4,12 @@ import {
   CarouselRepository,
   CreateCarouselInput,
   UpdateCarouselInput,
-  FindPublishedParams,
   FindAllAdminParams,
 } from './carousels.repository';
 import { CarouselEntity, CarouselItemEntity, PublicCarouselEntity } from './entities';
 import {
   CreateCarouselDto,
   UpdateCarouselDto,
-  CarouselListQueryDto,
   AdminCarouselListQueryDto,
   SetCarouselItemsDto,
   ReorderCarouselsDto,
@@ -21,6 +19,14 @@ import { CategoryRepository } from '../category';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
 import { reorderErrorToHttp } from '../common/reorder';
 import type { Paginated, PaginationMeta } from '../common/pagination';
+import { mapWithConcurrency } from '../common/utils';
+
+/**
+ * How many carousels `resolvePublic` resolves at once (TASK-1894). Each resolution is a
+ * catalog query on the shared Prisma pool; four keeps a cold homepage fast without
+ * letting one page render take the pool over.
+ */
+export const RESOLVE_CONCURRENCY = 4;
 
 /**
  * The admin carousel list is a `Paginated` page even for an unpaginated read: the
@@ -29,9 +35,13 @@ import type { Paginated, PaginationMeta } from '../common/pagination';
  */
 @Injectable()
 export class CarouselService {
-  /** Homepage cache target purged after any admin write that changes visibility. */
+  /**
+   * Homepage cache target purged after any admin write that changes visibility.
+   * `home-blocks` too (TASK-660): the homepage reads carousels through its blocks, so a
+   * carousel change alters the `/api/home-blocks` payload the storefront caches.
+   */
   private readonly revalidateTarget: RevalidateTarget = {
-    tags: ['carousels'],
+    tags: ['carousels', 'home-blocks'],
     paths: ['/'],
   };
 
@@ -44,34 +54,67 @@ export class CarouselService {
 
   /**
    * List published carousels (public storefront) with their RESOLVED product
-   * lists, optionally narrowed to ONE placement (TASK-288 — the homepage asks
-   * for HOME_TABS and HOME_RAILS separately). Placement scopes only WHICH
-   * carousels come back, never HOW each one resolves its products. Carousels
-   * whose resolution comes back empty are INCLUDED (honest "what's published"
-   * list — the storefront hides empty sections client-side, §Empty-carousel
-   * behavior, plan 154).
+   * lists. Carousels whose resolution comes back empty are INCLUDED (honest
+   * "what's published" list — the storefront hides empty sections client-side,
+   * §Empty-carousel behavior, plan 154). Since TASK-660 the homepage does not read
+   * this list: it shows the carousels its blocks point at (`GET /api/home-blocks`).
    */
-  async findAllPublished(query: CarouselListQueryDto = {}): Promise<PublicCarouselEntity[]> {
-    const params: FindPublishedParams = { placement: query.placement };
-    const carousels = await this.carouselRepository.findAllPublished(params);
+  async findAllPublished(): Promise<PublicCarouselEntity[]> {
+    const carousels = await this.carouselRepository.findAllPublished();
+    return this.resolvePublic(carousels);
+  }
 
-    const published: PublicCarouselEntity[] = [];
+  /**
+   * Resolve already-loaded carousel rows into public carousels with their product lists,
+   * in the order given (TASK-661). The homepage-block read loads the carousels together
+   * with the blocks in one query and hands them here, so the product resolution stays in
+   * ONE place — bestseller ranking, the on-sale definition and the category-subtree
+   * rollup cannot drift between `/api/carousels` and `/api/home-blocks`.
+   *
+   * Status is NOT checked here: the caller decides what may be shown (a signed preview
+   * resolves draft carousels too). Each distinct carousel id is resolved once, so a
+   * carousel that two blocks point at costs one resolution, not two.
+   *
+   * The distinct carousels resolve in parallel, at most {@link RESOLVE_CONCURRENCY} at a
+   * time (TASK-1894): on a cold cache a homepage of N carousels used to pay N catalog
+   * queries back to back, while an unbounded fan-out would take N pool connections at
+   * once. The result keeps the INPUT order whatever finishes first.
+   */
+  async resolvePublic(carousels: readonly Carousel[]): Promise<PublicCarouselEntity[]> {
+    const distinct = new Map<string, Carousel>();
     for (const carousel of carousels) {
-      const products = await this.resolveProducts(carousel);
-      published.push(PublicCarouselEntity.fromEntity(carousel, products));
+      if (!distinct.has(carousel.id)) distinct.set(carousel.id, carousel);
     }
 
-    return published;
+    const productLists = await mapWithConcurrency(
+      [...distinct.values()],
+      RESOLVE_CONCURRENCY,
+      (carousel) => this.resolveProducts(carousel),
+    );
+    const resolved = new Map<string, PublicProductEntity[]>();
+    [...distinct.keys()].forEach((id, index) => resolved.set(id, productLists[index]));
+
+    return carousels.map((carousel) =>
+      PublicCarouselEntity.fromEntity(carousel, resolved.get(carousel.id) ?? []),
+    );
+  }
+
+  /**
+   * Find several carousels by id regardless of status — the homepage-block service
+   * validates the carousels a block points at with this (TASK-661). Order not guaranteed.
+   */
+  async findByIds(ids: readonly string[]): Promise<CarouselEntity[]> {
+    const rows = await this.carouselRepository.findByIds(ids);
+    return rows.map((row) => CarouselEntity.fromPrisma(row));
   }
 
   /**
    * List all carousels including drafts (admin), optionally filtered by
-   * placement and/or status, searched by title and paginated. Omitting
-   * `page`/`limit` returns the complete list (TASK-357).
+   * status, searched by title and paginated. Omitting `page`/`limit` returns the
+   * complete list (TASK-357).
    */
   async findAllAdmin(query: AdminCarouselListQueryDto): Promise<Paginated<CarouselEntity>> {
     const params: FindAllAdminParams = {
-      placement: query.placement,
       status: query.status,
       page: query.page,
       limit: query.limit,
@@ -119,7 +162,6 @@ export class CarouselService {
       source: dto.source,
       categoryId,
       itemLimit: dto.itemLimit,
-      placement: dto.placement,
       sortOrder: dto.sortOrder,
       status: publishState.status,
       publishedAt: publishState.publishedAt,
@@ -139,13 +181,7 @@ export class CarouselService {
    * are resolved only when `status` is supplied. When the EFFECTIVE source is
    * CATEGORY the effective categoryId (incoming or existing) must resolve to a
    * real category. Revalidates the homepage whenever public visibility could
-   * have changed — a `placement` move of a live carousel counts (it relocates
-   * the carousel between homepage sections) and is covered by the same rule.
-   *
-   * A placement CHANGE is not an ordinary field write: since TASK-428 each placement is its
-   * own contiguous 0..n `sortOrder` sequence, so the row has to be re-appended to the target
-   * list rather than arrive carrying its old slot. That decision is made here; the locked
-   * `max + 1` write belongs to `CarouselRepository.updateWithPlacementMove`.
+   * have changed.
    */
   async update(id: string, dto: UpdateCarouselDto): Promise<CarouselEntity> {
     const carousel = await this.carouselRepository.findById(id);
@@ -155,18 +191,10 @@ export class CarouselService {
 
     const wasPublished = carousel.status === PublishStatus.PUBLISHED;
 
-    // Only a placement that DIFFERS from the stored one is a move. Re-sending the carousel's
-    // current placement (which the admin form does on every save, because the select is
-    // always populated) must stay an in-place edit — treating it as a move would shove the
-    // row to the bottom of its own list every time anyone renamed it.
-    const targetPlacement =
-      dto.placement !== undefined && dto.placement !== carousel.placement ? dto.placement : null;
-
     const input: UpdateCarouselInput = {
       title: dto.title,
       source: dto.source,
       itemLimit: dto.itemLimit,
-      placement: dto.placement,
       sortOrder: dto.sortOrder,
     };
 
@@ -196,9 +224,7 @@ export class CarouselService {
           : resolved.publishedAt;
     }
 
-    const updated = targetPlacement
-      ? await this.carouselRepository.updateWithPlacementMove(id, input, targetPlacement)
-      : await this.carouselRepository.update(id, input);
+    const updated = await this.carouselRepository.update(id, input);
     const entity = CarouselEntity.fromPrisma(updated);
     // Revalidate whenever public visibility could have changed: the carousel is
     // live now, or it was live before (e.g. just unpublished or edited in place).
@@ -247,35 +273,27 @@ export class CarouselService {
   }
 
   /**
-   * Reorder ONE placement bucket (admin, TASK-428) and return the refreshed FULL admin
-   * carousel list — both placements — so the panel resyncs in a single round-trip, exactly
-   * as the banner reorder does.
+   * Reorder the carousel list (admin, TASK-428 — one global list since TASK-660) and
+   * return the refreshed admin list so the panel resyncs in a single round-trip, exactly
+   * as the banner reorder does. This order is the ADMIN list's only: the homepage order
+   * belongs to the homepage blocks.
    *
    * The repository's domain errors are mapped to HTTP here, so the wire body carries the
    * stable `error` code the admin panel keys its UA announcements off.
    */
-  async reorderPlacement(dto: ReorderCarouselsDto): Promise<Paginated<CarouselEntity>> {
+  async reorder(dto: ReorderCarouselsDto): Promise<Paginated<CarouselEntity>> {
     let carousels;
     let total;
     try {
-      ({ carousels, total } = await this.carouselRepository.reorderPlacement(
-        dto.placement,
-        dto.orderedIds,
-      ));
+      ({ carousels, total } = await this.carouselRepository.reorder(dto.orderedIds));
     } catch (error) {
       throw reorderErrorToHttp(error);
     }
 
-    // Revalidate ONLY when the reordered bucket actually contains something the shopper
-    // can see — a pure draft shuffle changes nothing public, and this service already
-    // gates its revalidation on visibility everywhere else (create / update / delete).
-    const bucketHasPublished = carousels.some(
-      (carousel) =>
-        carousel.placement === dto.placement && carousel.status === PublishStatus.PUBLISHED,
-    );
-    if (bucketHasPublished) {
-      await this.notifyRevalidation();
-    }
+    // NO storefront revalidation (TASK-660): the homepage order is the homepage blocks'
+    // (`/api/home-blocks`), not this list's, and nothing on the storefront reads
+    // `/api/carousels` any more (TASK-1895). Purging `home-blocks` / `carousels` / `/`
+    // here would only re-render a homepage that cannot have changed.
 
     // Shape parity with `findAllAdmin` is load-bearing: the admin panel writes this
     // response straight into the list query's cache (`useReorderLifecycle` →

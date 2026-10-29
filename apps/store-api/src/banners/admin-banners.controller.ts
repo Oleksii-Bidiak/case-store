@@ -27,7 +27,7 @@ import {
   AdminBannerListQueryDto,
   ReorderBannersDto,
 } from './dto';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../auth/permissions';
 // The `auth/decorators` sub-barrel, NOT the `../auth` barrel: the barrel pulls the auth module in and the
 // resulting require cycle leaves `CurrentUser` undefined at decorator-evaluation time.
 import { CurrentUser } from '../auth/decorators';
@@ -98,6 +98,7 @@ export class AdminBannerController {
   constructor(private readonly bannerService: BannerService) {}
 
   @Get()
+  @RequireAnyPermission('banners:read', 'banners:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'List all banners — all statuses, optional search + pagination (admin)',
@@ -153,6 +154,7 @@ export class AdminBannerController {
   }
 
   @Get(':id')
+  @RequireAnyPermission('banners:read', 'banners:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get a banner by ID (admin)' })
   @ApiParam({ name: 'id', description: 'Banner UUID' })

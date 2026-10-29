@@ -1,5 +1,5 @@
 import type { BannerEntity } from "@/entities/banner";
-import type { CarouselEntity } from "@/entities/carousel";
+import type { HomeBlockEntity } from "@/entities/home-block";
 import type { DiscountEntity } from "@/entities/discount";
 import type {
   SeoHealthEntity,
@@ -8,6 +8,7 @@ import type {
 import type { SiteContactSettingsEntity } from "@/entities/site-contact";
 import { formatDate } from "@/shared/lib";
 import { dict } from "@/shared/config";
+import type { HomeCarouselSlot } from "./content-map-zones";
 
 const c = dict.contentMap;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -81,19 +82,33 @@ export function bannerZoneState(
     : { status: "ready", summary };
 }
 
-/** A carousel placement: the live carousels, by title, in display order. */
-export function carouselZoneState(
-  carousels: readonly CarouselEntity[],
-  placement: CarouselEntity["placement"],
+/**
+ * The carousels the homepage shows, by title, in page order (TASK-660): the tabs of
+ * the live TABS blocks, or the carousels of the live CAROUSEL blocks — only those a
+ * shopper can see (block AND carousel published), exactly the storefront's rule.
+ */
+export function homeCarouselZoneState(
+  blocks: readonly HomeBlockEntity[],
+  slot: HomeCarouselSlot,
 ): ZoneState {
-  const live = carousels
-    .filter(
-      (carousel) =>
-        carousel.placement === placement && carousel.status === "PUBLISHED",
-    )
+  const liveBlocks = [...blocks]
+    .filter((block) => block.status === "PUBLISHED")
     .sort((a, b) => a.sortOrder - b.sortOrder);
+  const live =
+    slot === "tabs"
+      ? liveBlocks
+          .filter((block) => block.type === "TABS")
+          .flatMap((block) => block.tabs.map((tab) => tab.carousel))
+          .filter((carousel) => carousel.status === "PUBLISHED")
+      : liveBlocks
+          .filter((block) => block.type === "CAROUSEL")
+          .map((block) => block.carousel)
+          .filter(
+            (carousel): carousel is NonNullable<typeof carousel> =>
+              carousel !== null && carousel?.status === "PUBLISHED",
+          );
   if (live.length === 0) return { status: "ready", summary: c.shown(0) };
-  return placement === "HOME_TABS"
+  return slot === "tabs"
     ? {
         status: "ready",
         summary: c.carouselTabsState(
@@ -108,6 +123,33 @@ export function carouselZoneState(
           live.map((carousel) => `«${carousel.title}»`).join(", "),
         ),
       };
+}
+
+/**
+ * «Блоки головної» (TASK-664): how many sections the page shows now, how many
+ * are scheduled, and — the one thing worth a warning — how many live blocks draw
+ * nothing (`isEmpty`: a deleted, unpublished or empty carousel behind them).
+ * An empty TABS block is not counted: the site then shows its automatic tabs,
+ * so «без товарів» would not be true of it.
+ */
+export function homeBlocksZoneState(
+  blocks: readonly HomeBlockEntity[],
+): ZoneState {
+  const live = blocks.filter((block) => block.status === "PUBLISHED");
+  const scheduled = blocks.filter((block) => block.status === "SCHEDULED");
+  const empty = live.filter(
+    (block) => block.type === "CAROUSEL" && block.isEmpty,
+  ).length;
+  const summary =
+    c.homeBlocksState(live.length) +
+    (scheduled.length > 0 ? ` · ${c.scheduled(scheduled.length)}` : "");
+  return empty > 0
+    ? {
+        status: "ready",
+        summary,
+        badge: { text: c.homeBlocksEmpty(empty), tone: "warning" },
+      }
+    : { status: "ready", summary };
 }
 
 /** Contacts: which of the form's fields are filled — nothing promised beyond it. */

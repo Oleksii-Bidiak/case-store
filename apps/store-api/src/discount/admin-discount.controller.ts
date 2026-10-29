@@ -21,7 +21,7 @@ import {
 import { DiscountService } from './discount.service';
 import { CreateDiscountDto, UpdateDiscountDto, DiscountListQueryDto } from './dto';
 import { DiscountEntity } from './entities';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../auth/permissions';
 
 /** Response envelope for a single discount. */
 class DiscountResponseEnvelope {
@@ -87,6 +87,7 @@ export class AdminDiscountController {
 
   /** GET /api/admin/discounts — paginated list. */
   @Get()
+  @RequireAnyPermission('discounts:read', 'discounts:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'List discounts (admin)', operationId: 'adminListDiscounts' })
   @ApiResponse({
@@ -102,6 +103,7 @@ export class AdminDiscountController {
 
   /** GET /api/admin/discounts/:id — get one. */
   @Get(':id')
+  @RequireAnyPermission('discounts:read', 'discounts:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get a discount by id (admin)', operationId: 'adminGetDiscount' })
   @ApiParam({ name: 'id', description: 'Discount UUID' })

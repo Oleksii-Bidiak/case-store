@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ChevronDownIcon } from "lucide-react";
 import { useAdminBannerControllerFindAll } from "@/entities/banner";
-import { useAdminCarouselControllerFindAll } from "@/entities/carousel";
+import { useAdminHomeBlockControllerFindAll } from "@/entities/home-block";
 import {
   useAdminListDiscounts,
   useListActiveDiscounts,
@@ -31,7 +31,8 @@ import {
 } from "../model/content-map-zones";
 import {
   bannerZoneState,
-  carouselZoneState,
+  homeBlocksZoneState,
+  homeCarouselZoneState,
   contactsZoneState,
   promoCodesZoneState,
   seoZoneState,
@@ -69,10 +70,10 @@ function fromSource<T>(
  * list of zones, the selected one highlighted in both. Every zone card says
  * what is in it NOW, from list queries the screens behind it already use:
  *
- * - banners, FAQ, pages, blog — the page's own gate (the nav asks for all four
- *   content keys), so they are always asked;
- * - carousels, the admin discount list, the product count, the SEO health
- *   check — behind OTHER keys, so asked only when the session holds them; a
+ * - every admin source (banners, FAQ, pages, blog, the homepage blocks, the
+ *   admin discount list, the product count, the SEO health check) is asked only
+ *   when the session holds its key — `:read` or `:write` since TASK-666, when the
+ *   nav started opening this page with ANY content key; a
  *   zone without its source shows its links and no state, never a 403 painted
  *   as an error (the AD-CNT-26 lesson);
  * - contacts, the SEO settings and the «Акції» promo list — public reads, the
@@ -85,21 +86,37 @@ export function ContentMapView() {
   // Read once: the end-date badges count days from the moment of the visit.
   const [now] = useState(() => Date.now());
 
+  // TASK-666: each content source is read with its own `:read` OR `:write` key —
+  // the nav opens this page with ANY of them, so a source the session cannot
+  // read is never asked and its zones show no state rather than a 403.
+  const canBanners = can(PERM.bannersRead) || can(PERM.bannersWrite);
+  const canFaq = can(PERM.faqRead) || can(PERM.faqWrite);
+  const canPages = can(PERM.pagesRead) || can(PERM.pagesWrite);
+  const canBlog = can(PERM.blogRead) || can(PERM.blogWrite);
+
   // Banners: one fetch for every placement, all statuses — live, scheduled and
   // their end dates are all read from it.
-  const banners = useAdminBannerControllerFindAll();
-  const faq = useAdminFaqControllerFindAll();
+  const banners = useAdminBannerControllerFindAll(undefined, {
+    query: { enabled: canBanners },
+  });
+  const faq = useAdminFaqControllerFindAll(undefined, {
+    query: { enabled: canFaq },
+  });
   // Pages: one fetch for all three kinds, grouped client-side. `limit: 100` is
   // the API's maximum and comfortably above any real page count.
-  const pages = useAdminPageControllerFindAll({
-    status: "PUBLISHED",
-    limit: 100,
-  });
-  const blog = useAdminBlogControllerFindAll({ status: "PUBLISHED", limit: 1 });
+  const pages = useAdminPageControllerFindAll(
+    { status: "PUBLISHED", limit: 100 },
+    { query: { enabled: canPages } },
+  );
+  const blog = useAdminBlogControllerFindAll(
+    { status: "PUBLISHED", limit: 1 },
+    { query: { enabled: canBlog } },
+  );
 
-  const canCarousels = can(PERM.carouselsWrite);
-  const carousels = useAdminCarouselControllerFindAll(undefined, {
-    query: { enabled: canCarousels },
+  // TASK-660: what the homepage shows is the homepage blocks' answer.
+  const canHome = can(PERM.homeRead) || can(PERM.homeWrite);
+  const homeBlocks = useAdminHomeBlockControllerFindAll({
+    query: { enabled: canHome },
   });
   const contacts = useSiteContactControllerGetSettings();
   const seoSettings = useSeoSettingsControllerGetSettings();
@@ -108,7 +125,7 @@ export function ContentMapView() {
     query: { enabled: canSeo },
   });
   const activeDiscounts = useListActiveDiscounts();
-  const canDiscounts = can(PERM.discountsWrite);
+  const canDiscounts = can(PERM.discountsRead) || can(PERM.discountsWrite);
   const adminDiscounts = useAdminListDiscounts(
     { limit: 100 },
     { query: { enabled: canDiscounts } },
@@ -123,21 +140,30 @@ export function ContentMapView() {
     switch (source.kind) {
       case "banner":
         return fromSource(
-          { allowed: true, ...pick(banners), data: banners.data?.data },
+          { allowed: canBanners, ...pick(banners), data: banners.data?.data },
           (data) => bannerZoneState(data, source.placement, now),
         );
-      case "carousel":
+      case "home-blocks":
         return fromSource(
           {
-            allowed: canCarousels,
-            ...pick(carousels),
-            data: carousels.data?.data,
+            allowed: canHome,
+            ...pick(homeBlocks),
+            data: homeBlocks.data?.data,
           },
-          (data) => carouselZoneState(data, source.placement),
+          homeBlocksZoneState,
+        );
+      case "home-carousels":
+        return fromSource(
+          {
+            allowed: canHome,
+            ...pick(homeBlocks),
+            data: homeBlocks.data?.data,
+          },
+          (data) => homeCarouselZoneState(data, source.slot),
         );
       case "faq":
         return fromSource(
-          { allowed: true, ...pick(faq), data: faq.data?.data },
+          { allowed: canFaq, ...pick(faq), data: faq.data?.data },
           (data) => ({
             status: "ready",
             summary: c.shown(data.filter((item) => item.isActive).length),
@@ -145,7 +171,7 @@ export function ContentMapView() {
         );
       case "pages":
         return fromSource(
-          { allowed: true, ...pick(pages), data: pages.data?.data },
+          { allowed: canPages, ...pick(pages), data: pages.data?.data },
           (data) => {
             const count = data.filter(
               (page) => page.kind === source.pageKind,
@@ -163,7 +189,7 @@ export function ContentMapView() {
         );
       case "blog":
         return fromSource(
-          { allowed: true, ...pick(blog), data: blog.data?.meta?.total },
+          { allowed: canBlog, ...pick(blog), data: blog.data?.meta?.total },
           (total) => ({ status: "ready", summary: c.blogState(total) }),
         );
       case "contacts":

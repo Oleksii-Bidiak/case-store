@@ -136,13 +136,11 @@ describe("PageForm — content preview tab (TASK-266)", () => {
   });
 
   it("switches to the editor when write access arrives after the first render", () => {
-    // A cold load: permissions are not in yet, so the form mounts read-only.
+    // A cold load: permissions are not in yet, so the page mounts read-only.
     const { rerender } = renderWithProviders(
       <PageForm onSubmit={noop} isPending={false} readOnly />,
     );
-    expect(
-      screen.getByRole("tab", { name: dict.contentPreview.tabPreview }),
-    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByTestId("rte-stub")).not.toBeInTheDocument();
 
     rerender(<PageForm onSubmit={noop} isPending={false} readOnly={false} />);
 
@@ -408,22 +406,43 @@ describe("PageForm — sections, one sticky save, errors under fields", () => {
     ).toBeInTheDocument();
   });
 
-  it("is read-only without the right: fields disabled, no save, says why", () => {
+  it("is read-only without the right: values as text, «Не задано» with its consequence, no save (TASK-667)", () => {
     renderWithProviders(
       <PageForm
         id="page-1"
-        defaultValues={{ title: "Доставка", content: "<p>x</p>" }}
+        defaultValues={{
+          title: "Доставка",
+          slug: "dostavka",
+          kind: "INFO",
+          status: "PUBLISHED",
+          content: "<h2>Оплата</h2><p>Карткою</p>",
+          keywords: "доставка, оплата",
+        }}
         onSubmit={noop}
         isPending={false}
         readOnly
       />,
     );
 
-    expect(titleField()).toBeDisabled();
+    const rv = dict.readOnlyView;
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText(rv.notices.pages)).toBeInTheDocument();
+    expect(screen.getByText("Доставка")).toBeInTheDocument();
+    // A published page's address opens the site.
+    expect(
+      screen.getByRole("link", { name: /\/info\/dostavka/ }),
+    ).toHaveAttribute("target", "_blank");
+    // The body as the site renders it, not HTML.
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Оплата" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(rv.notSetWith(rv.seoDescriptionFromText)),
+    ).toBeInTheDocument();
+    expect(screen.getByText("оплата")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: f.submit }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
   });
 });
 

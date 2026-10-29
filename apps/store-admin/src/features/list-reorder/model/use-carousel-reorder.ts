@@ -1,18 +1,14 @@
 "use client";
 
 /**
- * Carousel reorder — ONE PLACEMENT BUCKET (TASK-428).
+ * Carousel reorder — ONE LIST (TASK-428; a single global list since TASK-660).
  *
- * A carousel's `sortOrder` is only meaningful inside its own placement (the tab order
- * within HOME_TABS, the rail order within HOME_RAILS), so the unit of reordering is a
- * placement, not "the carousels". The hook is therefore instantiated PER SECTION
- * (`widgets/carousel-list` renders one section per placement, because hooks cannot be
- * called in a loop), and `placement` travels in the PATCH body. Structurally the banner
- * adapter, and for the same reasons.
- *
- * The payload must name EVERY carousel in the placement or the server 409s, so the items
- * handed in must come from the UNFILTERED, UNPAGINATED admin list, narrowed to this
- * placement — never from a list a UI filter has already thinned out.
+ * Until plan 186 carousels had two placement buckets (the «Популярне» tabs and the
+ * standalone rails). `Carousel.placement` is gone: where a carousel shows on the
+ * homepage now belongs to the homepage blocks, and this order is only the admin
+ * list's. The payload must name EVERY carousel or the server 409s, so the items
+ * handed in must come from the UNFILTERED, UNPAGINATED admin list — never from a
+ * list a UI filter has already thinned out.
  *
  * The generated hooks come from `@/shared/api` for the reason spelled out in
  * `use-faq-reorder.ts` — TASK-428 does not own the entity barrels.
@@ -26,7 +22,6 @@ import {
   useAdminCarouselControllerReorder,
   type AdminCarouselListResponse,
   type CarouselEntity,
-  type CarouselEntityPlacement,
   type ReorderCarouselsDto,
 } from "@/shared/api";
 import {
@@ -39,35 +34,28 @@ import type { TreeItem } from "@/shared/lib/sortable-tree";
 import { useUndoToastReorder } from "./use-undo-toast-reorder";
 
 /**
- * The key of the UNPARAMETERISED list read — the one the grids render and the one the
+ * The key of the UNPARAMETERISED list read — the one the grid renders and the one the
  * reorder response is written into. It must match the widget's
  * `useAdminCarouselControllerFindAll()` call exactly (no arguments).
  */
 const CAROUSELS_KEY = getAdminCarouselControllerFindAllQueryKey();
 
-/** Carousels of one placement, in list order, as reorder items. */
-export function carouselsToItems(
-  carousels: CarouselEntity[],
-  placement: CarouselEntityPlacement,
-): TreeItem[] {
-  return carousels
-    .filter((carousel) => carousel.placement === placement)
-    .map((carousel) => ({
-      id: carousel.id,
-      parentId: null,
-      label: carousel.title,
-    }));
+/** The carousels, in list order, as reorder items. */
+export function carouselsToItems(carousels: CarouselEntity[]): TreeItem[] {
+  return carousels.map((carousel) => ({
+    id: carousel.id,
+    parentId: null,
+    label: carousel.title,
+  }));
 }
 
 export interface UseCarouselReorderOptions {
-  placement: CarouselEntityPlacement;
-  /** This placement's carousels, from the UNFILTERED admin list. */
+  /** Every carousel, from the UNFILTERED admin list. */
   items: TreeItem[];
   onFocusRow?: (id: string) => void;
 }
 
 export function useCarouselReorder({
-  placement,
   items,
   onFocusRow,
 }: UseCarouselReorderOptions): ReorderLifecycleApi {
@@ -78,9 +66,9 @@ export function useCarouselReorder({
   const toPayload = useCallback(
     (from: TreeItem[], to: TreeItem[]): ReorderCarouselsDto | null => {
       const orderedIds = orderedIdsIfChanged(from, to);
-      return orderedIds === null ? null : { placement, orderedIds };
+      return orderedIds === null ? null : { orderedIds };
     },
-    [placement],
+    [],
   );
 
   const mutate = useCallback(
@@ -97,18 +85,15 @@ export function useCarouselReorder({
     [rawMutate],
   );
 
-  /**
-   * `fetchQuery` writes the fresh list into the cache AND resolves with it; it is then
-   * narrowed back to THIS placement, because the lifecycle orders one bucket.
-   */
+  /** `fetchQuery` writes the fresh list into the cache AND resolves with it. */
   const refetch = useCallback(
     () =>
       queryClient
         .fetchQuery(getAdminCarouselControllerFindAllQueryOptions())
         .then((fresh: AdminCarouselListResponse) =>
-          carouselsToItems(fresh?.data ?? [], placement),
+          carouselsToItems(fresh?.data ?? []),
         ),
-    [placement, queryClient],
+    [queryClient],
   );
 
   const strings = useMemo(() => flatReorderStrings, []);

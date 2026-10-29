@@ -1,77 +1,58 @@
 import type {
-  PublicCarouselEntity,
-  PublicCarouselListResponse,
+  PublicHomeBlockEntity,
+  PublicHomeBlockListResponse,
 } from "@/shared/api/generated/models";
 import { serverFetch } from "@/shared/api/server-fetch";
+import { publicReadInit } from "@/shared/api/preview-token";
 
 /**
- * Server-only, ISR-tagged fetcher for published recommendation carousels
- * (TASK-139).
+ * Server-only, ISR-tagged fetcher for the homepage blocks (TASK-660/661/663).
  *
  * Mirrors `banners-server.ts`: the Orval hooks talk over Axios, which cannot
- * carry Next.js cache tags (`next: { tags }`), so the homepage reads carousels
- * through this tagged `fetch` helper instead. The store-api
- * RevalidationNotifier purges the `carousels` tag (and the `/` path) on any
- * admin write that changes carousel visibility, so the homepage picks up
- * changes on-demand.
+ * carry Next.js cache tags (`next: { tags }`), so the homepage reads through
+ * this tagged `fetch` helper instead. The store-api RevalidationNotifier purges
+ * `home-blocks` and `carousels` (and the `/` path) on any admin write to a block
+ * or a carousel, so the homepage picks up changes on demand.
  *
- * Resilient by design: any transport error, unreachable API, or non-OK
- * response yields an EMPTY list — the RecommendationCarousels widget renders
- * nothing for an empty list, so the homepage always renders.
+ * A failed read (transport error, unreachable API, non-OK response, a body
+ * without `data`) yields `null`, distinct from a genuine empty list `[]`, and
+ * `app/home-blocks.tsx` decides what the page does with it: the built-in
+ * default order while `next build` prerenders, a throw at runtime so Next keeps
+ * serving the last good ISR copy instead of caching the default over the
+ * owner's curated page.
  */
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-/** Cache tag for the whole published-carousels collection. */
+/** Cache tag of the homepage block list (TASK-660). */
+export const HOME_BLOCKS_TAG = "home-blocks";
+
+/** Cache tag of carousel-derived data (purged by every carousel write). */
 export const CAROUSELS_COLLECTION_TAG = "carousels";
 
-/** Placement slot keys — mirror of the API's CarouselPlacement enum (TASK-288). */
-export type CarouselPlacementKey = "HOME_TABS" | "HOME_RAILS";
-
-/** Published carousels grouped by placement (each group ordered by sortOrder). */
-export type CarouselsByPlacement = Record<
-  CarouselPlacementKey,
-  PublicCarouselEntity[]
->;
-
 /**
- * Fetch all PUBLISHED carousels with their resolved product lists, tagged for
- * on-demand revalidation. Never throws — returns `[]` on any error. Empty
- * `products` arrays are the backend's honest answer (§Empty-carousel behavior,
- * plan 154); hiding those sections is the widget's job, not this helper's.
- */
-export async function fetchPublishedCarousels(): Promise<
-  PublicCarouselEntity[]
-> {
-  try {
-    const res = await serverFetch(`${API_BASE_URL}/api/carousels`, {
-      next: { tags: [CAROUSELS_COLLECTION_TAG] },
-    });
-    if (!res.ok) return [];
-
-    const body = (await res.json()) as PublicCarouselListResponse;
-    return body.data ?? [];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Same single request, grouped by placement (TASK-288) — the homepage feeds
- * HOME_TABS to the «Популярне» tab rail and HOME_RAILS to RecommendationCarousels,
- * so no carousel can render twice.
+ * Fetch the visible homepage blocks, in page order, with their carousels and
+ * tabs resolved — ONE request for the whole page (the API resolves the products
+ * of every CAROUSEL / TABS block in the same response). Never throws — returns
+ * `null` on any error.
  *
- * Grouping locally rather than issuing two `?placement=` requests: the API sorts
- * the whole list by `sortOrder asc` and `sortOrder` is scoped per placement, so
- * each filtered subsequence is already in its own display order — one round-trip,
- * one cache entry, same result.
+ * `previewToken` is the signed homepage preview (TASK-669): the request then
+ * carries the token, is `no-store` and has no ISR tag, and the API answers with
+ * the draft blocks too. Called without it, this stays the tagged, cached public
+ * read.
  */
-export async function fetchPublishedCarouselsByPlacement(): Promise<CarouselsByPlacement> {
-  const groups: CarouselsByPlacement = { HOME_TABS: [], HOME_RAILS: [] };
+export async function fetchHomeBlocks(
+  previewToken?: string | null,
+): Promise<PublicHomeBlockEntity[] | null> {
+  try {
+    const res = await serverFetch(
+      `${API_BASE_URL}/api/home-blocks`,
+      publicReadInit([HOME_BLOCKS_TAG, CAROUSELS_COLLECTION_TAG], previewToken),
+    );
+    if (!res.ok) return null;
 
-  for (const carousel of await fetchPublishedCarousels()) {
-    const key = carousel.placement as CarouselPlacementKey;
-    if (groups[key]) groups[key].push(carousel);
+    const body = (await res.json()) as PublicHomeBlockListResponse;
+    return body.data ?? null;
+  } catch {
+    return null;
   }
-
-  return groups;
 }

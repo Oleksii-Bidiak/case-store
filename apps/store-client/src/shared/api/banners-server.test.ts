@@ -89,3 +89,41 @@ describe("fetchPublishedBanners", () => {
     });
   });
 });
+
+describe("fetchPublishedBanners — the signed homepage preview (TASK-669)", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function mockOk(): jest.Mock {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({ data: [] }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    return fetchMock;
+  }
+
+  it("without a token sends no preview header and keeps the tag", async () => {
+    const fetchMock = mockOk();
+
+    await fetchPublishedBanners(null);
+
+    const options = fetchMock.mock.calls[0][1];
+    expect(options.next.tags).toEqual([BANNERS_COLLECTION_TAG]);
+    expect(options).not.toHaveProperty("headers");
+    expect(options).not.toHaveProperty("cache");
+  });
+
+  it("with a token forwards it, uncached and with NO ISR tag", async () => {
+    const fetchMock = mockOk();
+
+    await fetchPublishedBanners("home-token");
+
+    const options = fetchMock.mock.calls[0][1];
+    expect(options).not.toHaveProperty("next");
+    expect(options.cache).toBe("no-store");
+    expect(options.headers).toEqual({ "x-preview-token": "home-token" });
+  });
+});

@@ -48,8 +48,16 @@ export class BannerService {
   /**
    * List published banners (public storefront), optionally filtered by placement.
    */
-  async findAllPublished(query: BannerListQueryDto): Promise<BannerEntity[]> {
-    const params: FindPublishedParams = { placement: query.placement };
+  async findAllPublished(
+    query: BannerListQueryDto,
+    options: { preview?: boolean } = {},
+  ): Promise<BannerEntity[]> {
+    const params: FindPublishedParams = {
+      placement: query.placement,
+      // Only a valid signed `home` preview (TASK-668) widens this; the key is omitted
+      // otherwise so the ordinary read is the exact call it always was.
+      ...(options.preview === true && { includeUnpublished: true }),
+    };
     const banners = await this.bannerRepository.findAllPublished(params);
 
     return banners.map((banner) => BannerEntity.fromPrisma(banner));

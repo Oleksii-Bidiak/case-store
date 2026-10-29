@@ -9,7 +9,8 @@ import { formatDate } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import {
   bannerZoneState,
-  carouselZoneState,
+  homeBlocksZoneState,
+  homeCarouselZoneState,
   contactsZoneState,
   promoCodesZoneState,
   seoZoneState,
@@ -81,30 +82,83 @@ describe("bannerZoneState", () => {
   });
 });
 
-describe("carouselZoneState", () => {
-  const carousel = (title: string, placement: string, sortOrder: number) =>
-    ({ id: title, title, placement, sortOrder, status: "PUBLISHED" }) as never;
+describe("homeCarouselZoneState (TASK-660)", () => {
+  const carousel = (title: string, status = "PUBLISHED") => ({
+    id: title,
+    title,
+    source: "NEWEST",
+    status,
+  });
+  const block = (
+    type: "TABS" | "CAROUSEL" | "HERO",
+    sortOrder: number,
+    extra: Record<string, unknown> = {},
+  ) =>
+    ({
+      id: `${type}-${sortOrder}`,
+      type,
+      sortOrder,
+      status: "PUBLISHED",
+      carousel: null,
+      tabs: [],
+      ...extra,
+    }) as never;
+  const blocks = [
+    block("CAROUSEL", 4, { carousel: carousel("Чохли") }),
+    block("TABS", 3, {
+      tabs: [
+        { sortOrder: 0, carousel: carousel("Хіти") },
+        { sortOrder: 1, carousel: carousel("Чернетка", "DRAFT") },
+        { sortOrder: 2, carousel: carousel("Новинки") },
+      ],
+    }),
+    block("CAROUSEL", 5, { carousel: carousel("Прихована", "DRAFT") }),
+    block("CAROUSEL", 6, { status: "DRAFT", carousel: carousel("Сховано") }),
+    block("CAROUSEL", 7, { carousel: null }),
+    block("HERO", 0),
+  ];
 
-  it("names the live tabs in display order", () => {
-    expect(
-      carouselZoneState(
-        [
-          carousel("Новинки", "HOME_TABS", 1),
-          carousel("Хіти", "HOME_TABS", 0),
-          carousel("Чохли", "HOME_RAILS", 0),
-        ],
-        "HOME_TABS",
-      ),
-    ).toEqual({
+  it("names the live tabs of the TABS blocks, in page order", () => {
+    expect(homeCarouselZoneState(blocks, "tabs")).toEqual({
       status: "ready",
       summary: c.carouselTabsState(2, "Хіти, Новинки"),
     });
   });
 
-  it("quotes the rails", () => {
+  it("quotes only the rails a shopper can see", () => {
+    expect(homeCarouselZoneState(blocks, "rails")).toEqual({
+      status: "ready",
+      summary: c.carouselRailsState(1, "«Чохли»"),
+    });
+  });
+
+  it("says nothing is shown when no block carries a live carousel", () => {
+    expect(homeCarouselZoneState([block("HERO", 0)], "rails")).toEqual({
+      status: "ready",
+      summary: c.shown(0),
+    });
+  });
+
+  // TASK-664: the «Блоки головної» zone.
+  it("counts the live sections and warns only about empty live rails", () => {
     expect(
-      carouselZoneState([carousel("Чохли", "HOME_RAILS", 0)], "HOME_RAILS"),
-    ).toEqual({ status: "ready", summary: c.carouselRailsState(1, "«Чохли»") });
+      homeBlocksZoneState([
+        block("HERO", 0),
+        block("CAROUSEL", 1, { isEmpty: true }),
+        // An empty TABS block falls back to automatic tabs — not «без товарів».
+        block("TABS", 2, { isEmpty: true }),
+        block("CAROUSEL", 3, { status: "SCHEDULED" }),
+        block("CAROUSEL", 4, { status: "DRAFT", isEmpty: true }),
+      ]),
+    ).toEqual({
+      status: "ready",
+      summary: `${c.homeBlocksState(3)} · ${c.scheduled(1)}`,
+      badge: { text: c.homeBlocksEmpty(1), tone: "warning" },
+    });
+    expect(homeBlocksZoneState([block("HERO", 0)])).toEqual({
+      status: "ready",
+      summary: c.homeBlocksState(1),
+    });
   });
 });
 

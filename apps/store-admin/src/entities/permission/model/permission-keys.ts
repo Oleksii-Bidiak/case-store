@@ -43,6 +43,12 @@ export const PERM = {
   // key in the backend catalogue since TASK-140 — a manager who may edit prices
   // is not automatically a manager who may retire a position.
   productsDelete: "products:delete",
+  // TASK-666 (plan 186, decision B-9 №5): each reference / content section has a
+  // :read key next to its :write — «look, do not touch». The nav shows a section
+  // with EITHER key; every write control inside keeps asking for the :write one.
+  // All of them arrived backfilled from their :write (READ_BACKFILL_PAIRS in the
+  // API's permission.catalog.ts), so nobody lost a section on deploy.
+  categoriesRead: "categories:read",
   categoriesWrite: "categories:write",
   // TASK-655 — «Видалити…» in the category tree «⋯» and on the category card
   // (`DELETE /api/admin/categories/:id`, TASK-654). Its own key and NOT folded
@@ -55,15 +61,25 @@ export const PERM = {
   // owner ticks the box. Creating the move target inside the dialog asks for
   // `categoriesWrite` on top of this one.
   categoriesDelete: "categories:delete",
+  brandsRead: "brands:read",
   brandsWrite: "brands:write",
+  devicesRead: "devices:read",
   devicesWrite: "devices:write",
+  attributesRead: "attributes:read",
+  attributesWrite: "attributes:write",
+  addonsRead: "addons:read",
   addonsWrite: "addons:write",
   catalogImport: "catalog:import",
 
+  blogRead: "blog:read",
   blogWrite: "blog:write",
+  pagesRead: "pages:read",
   pagesWrite: "pages:write",
+  bannersRead: "banners:read",
   bannersWrite: "banners:write",
+  carouselsRead: "carousels:read",
   carouselsWrite: "carousels:write",
+  faqRead: "faq:read",
   faqWrite: "faq:write",
   reviewsModerate: "reviews:moderate",
   // TASK-446: answering a review PUBLICLY, as the shop, is its own capability and
@@ -86,6 +102,7 @@ export const PERM = {
   mediaRead: "media:read",
   mediaWrite: "media:write",
 
+  discountsRead: "discounts:read",
   discountsWrite: "discounts:write",
   newsletterRead: "newsletter:read",
 
@@ -153,6 +170,11 @@ export const PERM = {
   staffRead: "staff:read",
   staffWrite: "staff:write",
   auditRead: "audit:read",
+
+  // Plan 186 (TASK-665): the homepage as a list of blocks. home:write arrived
+  // backfilled from carousels:write / banners:write, home:read from home:write.
+  homeRead: "home:read",
+  homeWrite: "home:write",
 } as const;
 
 export type PermissionKey = (typeof PERM)[keyof typeof PERM];

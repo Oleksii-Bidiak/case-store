@@ -4,6 +4,8 @@ import {
   fetchPublishedPage,
   fetchPublishedPages,
 } from "@/shared/api/pages-server";
+import { readPreviewToken } from "@/shared/api/preview-server";
+import { PREVIEW_ROBOTS } from "@/shared/api/preview-token";
 import { resolvePageRedirect } from "@/shared/lib/page-redirect";
 import { LegalDocView, type LegalOtherDoc } from "@/widgets/legal-doc";
 import { JsonLd } from "@/shared/ui";
@@ -24,8 +26,13 @@ import { PAGE_CONTAINER, SITE_URL, dict } from "@/shared/config";
  * as a 404 on a canonical URL from the sitemap. Do not wrap it in a catch. The
  * explicit kind is what keeps a help page from ever being served under a legal
  * address (TASK-435) — the API 404s the mismatch.
+ *
+ * Under a signed preview (TASK-669) the token is forwarded and the read is
+ * uncached and untagged; store-api decides whether it opens this page's draft.
+ * Outside one the token is `null` and the read is the tagged ISR one.
  */
-const getPage = (slug: string) => fetchPublishedPage(slug, "LEGAL");
+const getPage = async (slug: string) =>
+  fetchPublishedPage(slug, "LEGAL", await readPreviewToken());
 
 /** Other published pages (for the "інші правові документи" grid). Never throws. */
 async function getOtherDocs(currentSlug: string): Promise<LegalOtherDoc[]> {
@@ -47,9 +54,16 @@ export async function generateMetadata({
   // Fetch the page and the global SEO settings in parallel. getPage is null only
   // for a real 404 and throws on an outage (TASK-793); fetchSeoSettings degrades
   // to null, which resolveSeo tolerates.
-  const [page, seo] = await Promise.all([getPage(slug), fetchSeoSettings()]);
+  const [page, seo, previewToken] = await Promise.all([
+    getPage(slug),
+    fetchSeoSettings(),
+    readPreviewToken(),
+  ]);
+  // A signed preview (TASK-669) is never indexed; the public render adds no
+  // `robots` key, so it keeps inheriting the root layout's.
+  const previewRobots = previewToken ? { robots: PREVIEW_ROBOTS } : {};
   if (!page) {
-    return { title: dict.meta.pageFallbackTitle };
+    return { title: dict.meta.pageFallbackTitle, ...previewRobots };
   }
 
   // Precedence via the shared helper — identical tiering to the product route
@@ -97,6 +111,7 @@ export async function generateMetadata({
         siteName,
       }),
     },
+    ...previewRobots,
   };
 }
 

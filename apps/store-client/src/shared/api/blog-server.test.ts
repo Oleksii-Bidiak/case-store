@@ -58,3 +58,29 @@ describe("fetchPublishedPost (TASK-793)", () => {
     await expect(fetchPublishedPost("iphone16-vs-15")).rejects.toBeDefined();
   });
 });
+
+describe("fetchPublishedPost — the signed preview (TASK-669)", () => {
+  it("without a token is the tagged ISR read, with no preview header", async () => {
+    const fetchMock = respond(200, { data: { slug: "a" } });
+    global.fetch = fetchMock;
+
+    await fetchPublishedPost("a");
+
+    const init = fetchMock.mock.calls[0][1];
+    expect(init.next).toEqual({ tags: ["blog", "blog:a"] });
+    expect(init).not.toHaveProperty("cache");
+    expect(init).not.toHaveProperty("headers");
+  });
+
+  it("with a token forwards it, uncached and with NO ISR tag", async () => {
+    const fetchMock = respond(200, { data: { slug: "a" } });
+    global.fetch = fetchMock;
+
+    await fetchPublishedPost("a", "post-token");
+
+    const init = fetchMock.mock.calls[0][1];
+    expect(init).not.toHaveProperty("next");
+    expect(init.cache).toBe("no-store");
+    expect(init.headers).toEqual({ "x-preview-token": "post-token" });
+  });
+});

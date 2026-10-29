@@ -280,8 +280,13 @@ describe("BrandForm — canon layout (wave 198, БР5–БР9)", () => {
     );
 
     expect(await screen.findByText("Apple")).toBeInTheDocument();
-    expect(screen.getByText("apple")).toBeInTheDocument();
-    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /apple/ })).toHaveAttribute(
+      "target",
+      "_blank",
+    );
+    expect(
+      screen.getByText(dict.readOnlyView.notices.brands),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: f.submit }),
@@ -289,6 +294,17 @@ describe("BrandForm — canon layout (wave 198, БР5–БР9)", () => {
     expect(
       screen.queryByRole("button", { name: f.logoUpload.upload }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: f.active })).toBeDisabled();
+    // TASK-667: values as text — the switch is a word, the empty logo says
+    // what it means on the site.
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(screen.getByText(dict.brands.statusActive)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        dict.readOnlyView.notSetWith(dict.readOnlyView.brandLogoEmpty),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: f.sectionLogo }),
+    ).toBeInTheDocument();
   });
 });

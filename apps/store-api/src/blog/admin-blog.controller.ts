@@ -30,7 +30,7 @@ import {
   ReorderBlogCategoriesDto,
   AdminBlogCategoryListQueryDto,
 } from './dto';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../auth/permissions';
 // The `auth/decorators` sub-barrel, NOT the `../auth` barrel: the barrel pulls the auth module in and the
 // resulting require cycle leaves `CurrentUser` undefined at decorator-evaluation time.
 import { CurrentUser } from '../auth/decorators';
@@ -114,6 +114,7 @@ export class AdminBlogController {
   // ─── categories ─────────────────────────────────────────────────────────────
 
   @Get('categories')
+  @RequireAnyPermission('blog:read', 'blog:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'List all blog categories, optional search + pagination (admin)',
@@ -168,6 +169,7 @@ export class AdminBlogController {
   }
 
   @Get('categories/:id')
+  @RequireAnyPermission('blog:read', 'blog:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get a blog category by ID (admin)' })
   @ApiParam({ name: 'id', description: 'Category UUID' })
@@ -218,6 +220,7 @@ export class AdminBlogController {
   // ─── posts ──────────────────────────────────────────────────────────────────
 
   @Get('posts')
+  @RequireAnyPermission('blog:read', 'blog:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'List all posts — any status (admin)' })
   @ApiResponse({
@@ -232,6 +235,7 @@ export class AdminBlogController {
   }
 
   @Get('posts/:id')
+  @RequireAnyPermission('blog:read', 'blog:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get a post by ID (admin)' })
   @ApiParam({ name: 'id', description: 'Post UUID' })

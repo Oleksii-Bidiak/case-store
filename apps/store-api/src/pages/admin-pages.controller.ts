@@ -22,7 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { PageService } from './pages.service';
 import { CreatePageDto, UpdatePageDto, AdminPageListQueryDto, ReorderPagesDto } from './dto';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../auth/permissions';
 import { PageEntity } from './entities';
 
 /**
@@ -85,6 +85,7 @@ export class AdminPageController {
   constructor(private readonly pageService: PageService) {}
 
   @Get()
+  @RequireAnyPermission('pages:read', 'pages:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'List all pages — published + drafts, optional search + pagination (admin)',
@@ -131,6 +132,7 @@ export class AdminPageController {
   }
 
   @Get(':id')
+  @RequireAnyPermission('pages:read', 'pages:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get a page by ID (admin)' })
   @ApiParam({ name: 'id', description: 'Page UUID' })

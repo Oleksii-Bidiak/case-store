@@ -134,12 +134,71 @@ describe("EditPageView — header", () => {
     expect(screen.getAllByText(d.statusPublished).length).toBeGreaterThan(0);
   });
 
-  it("offers no site link for a draft", async () => {
+  it("offers no site link for a draft — «Подивитись на сайті» instead (TASK-670)", async () => {
     await renderAndWaitForForm(makePage("DRAFT"));
 
     expect(
       screen.queryByRole("link", { name: d.openOnSite }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.sitePreview.viewOnSite }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps «Подивитись на сайті» for a read-only viewer (pages:read)", async () => {
+    stubPage(makePage("SCHEDULED"));
+    renderWithProviders(
+      <WithAuth permissions={[PERM.pagesRead]}>
+        <EditPageView pageId={PAGE_ID} />
+      </WithAuth>,
+    );
+
+    await screen.findByText(dict.readOnlyView.notices.pages);
+    expect(
+      screen.getByRole("button", { name: dict.sitePreview.viewOnSite }),
+    ).toBeInTheDocument();
+  });
+
+  it("«Зберегти й подивитись» saves, stays on the page and issues a link (TASK-670)", async () => {
+    const issued: unknown[] = [];
+    server.use(
+      http.post("*/api/admin/preview-tokens", async ({ request }) => {
+        issued.push(await request.json());
+        return HttpResponse.json(
+          {
+            data: {
+              token: "tok-page",
+              path: "/legal/dostavka",
+              expiresAt: "2026-10-06T12:42:00.000Z",
+            },
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    const putCalls = await renderAndWaitForForm(makePage("DRAFT"));
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: dict.pageForm.title }),
+      " NP",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.sitePreview.viewOnSite }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.sitePreview.saveAndView,
+      }),
+    );
+
+    expect(
+      await screen.findByLabelText(dict.sitePreview.linkLabel),
+    ).toHaveValue(`${STOREFRONT_URL}/preview?token=tok-page`);
+    expect(putCalls).toHaveLength(1);
+    expect(putCalls[0]).toMatchObject({ title: "Доставка NP" });
+    expect(issued).toEqual([{ type: "page", id: PAGE_ID }]);
+    // Saving for a preview does not leave for the list as «Зберегти» does.
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it("deletes from «⋯» after an AlertDialog and returns to the list", async () => {
@@ -167,16 +226,33 @@ describe("EditPageView — header", () => {
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/pages"));
   });
 
-  it("is view-only without pages:write — no save, no «⋯»", async () => {
-    await renderAndWaitForForm(makePage("PUBLISHED"), [PERM.blogWrite]);
+  it("is view-only without pages:write — values as text, no save, no «⋯» (TASK-667)", async () => {
+    stubPage(makePage("PUBLISHED"));
+    renderWithProviders(
+      <WithAuth permissions={[PERM.pagesRead]}>
+        <EditPageView pageId={PAGE_ID} />
+      </WithAuth>,
+    );
 
+    expect(
+      await screen.findByText(dict.readOnlyView.notices.pages),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    // The four sections of the form, in the form's words.
+    for (const title of [
+      dict.pageForm.sectionMain,
+      dict.pageForm.sectionContent,
+      dict.pageForm.sectionSeo,
+      dict.pageForm.sectionPublish,
+    ]) {
+      expect(screen.getByRole("region", { name: title })).toBeInTheDocument();
+    }
     expect(
       screen.queryByRole("button", { name: dict.common.save }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: d.headerMenuAria }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
   });
 });
 

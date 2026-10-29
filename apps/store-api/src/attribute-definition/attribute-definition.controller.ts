@@ -19,7 +19,7 @@ import {
   FacetCeilingCategoryEntity,
   FacetCeilingReportEntity,
 } from './entities';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../auth/permissions';
 
 /** Response envelope for a single attribute definition. */
 class AttributeDefinitionResponse {
@@ -75,6 +75,7 @@ export class AttributeDefinitionController {
 
   /** GET /api/categories/:categoryId/attribute-definitions — own-category templates. */
   @Get('categories/:categoryId/attribute-definitions')
+  @RequireAnyPermission('attributes:read', 'attributes:write')
   @ApiOperation({
     summary: "List a category's own characteristic templates (admin)",
     operationId: 'attributeDefinitionControllerFindByCategory',
@@ -97,6 +98,7 @@ export class AttributeDefinitionController {
    * effective definition. Admin-only.
    */
   @Get('categories/:categoryId/effective-attribute-definitions')
+  @RequireAnyPermission('attributes:read', 'attributes:write')
   @ApiOperation({
     summary: "List a category's effective (own + inherited) templates (admin)",
     operationId: 'attributeDefinitionControllerFindEffective',
@@ -118,6 +120,7 @@ export class AttributeDefinitionController {
    * public `filterable-specs` endpoint enforces.
    */
   @Get('categories/:categoryId/facet-ceiling')
+  @RequireAnyPermission('attributes:read', 'attributes:write')
   @ApiOperation({
     summary: 'List categories of a subtree that declare more facets than the storefront shows',
     operationId: 'attributeDefinitionControllerFacetCeiling',

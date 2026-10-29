@@ -37,7 +37,11 @@ jest.mock("next/navigation", () => ({
 jest.mock("@/shared/lib/slug-redirect", () => ({
   resolveSlugRedirectTarget: jest.fn(),
 }));
+// The request APIs the signed preview reads (TASK-669) — see mockPreviewRequest.
+jest.mock("next/headers", () => ({ draftMode: jest.fn(), cookies: jest.fn() }));
 
+import { PREVIEW_ROBOTS } from "@/shared/api/preview-token";
+import { mockPreviewRequest } from "@/shared/test/preview-request";
 import InfoDocPage, { generateMetadata } from "./page";
 import { notFound, permanentRedirect } from "next/navigation";
 import {
@@ -103,6 +107,44 @@ afterEach(() => jest.clearAllMocks());
 beforeEach(() => {
   fetchAnyKind.mockResolvedValue(null);
   resolveRedirect.mockResolvedValue(null);
+  mockPreviewRequest(null);
+});
+
+describe("info/[slug] — the signed preview (TASK-669)", () => {
+  const params = { params: Promise.resolve({ slug: "draft-help" }) };
+
+  it("without draft mode reads the page with no token and stays indexable", async () => {
+    fetchPage.mockResolvedValue(makePage({ slug: "draft-help" }));
+    fetchSeo.mockResolvedValue(settings);
+
+    const meta = await generateMetadata(params);
+    await InfoDocPage(params);
+
+    // No token → `fetchPublishedPage` builds the tagged ISR read
+    // (`pages-server.test.ts` pins what that request is).
+    expect(fetchPage).toHaveBeenCalledWith("draft-help", "INFO", null);
+    expect(fetchPage.mock.calls.every(([, , token]) => token === null)).toBe(
+      true,
+    );
+    expect(meta).not.toHaveProperty("robots");
+  });
+
+  it("in a preview forwards the token to the read and is noindex", async () => {
+    mockPreviewRequest("page-token");
+    fetchPage.mockResolvedValue(
+      makePage({ slug: "draft-help", status: "DRAFT" }),
+    );
+    fetchSeo.mockResolvedValue(settings);
+
+    const meta = await generateMetadata(params);
+    await InfoDocPage(params);
+
+    expect(fetchPage).toHaveBeenCalledWith("draft-help", "INFO", "page-token");
+    expect(
+      fetchPage.mock.calls.every(([, , token]) => token === "page-token"),
+    ).toBe(true);
+    expect(meta.robots).toEqual(PREVIEW_ROBOTS);
+  });
 });
 
 describe("info/[slug] generateMetadata (TASK-435)", () => {
@@ -148,7 +190,7 @@ describe("info/[slug] generateMetadata (TASK-435)", () => {
 
     await runMeta();
 
-    expect(fetchPage).toHaveBeenCalledWith("about", "INFO");
+    expect(fetchPage).toHaveBeenCalledWith("about", "INFO", null);
   });
 
   it("falls back to the page fallback title when nothing resolves", async () => {
@@ -171,7 +213,7 @@ describe("info/[slug] rendering + slug redirect", () => {
 
     await runPage("about");
 
-    expect(fetchPage).toHaveBeenCalledWith("about", "INFO");
+    expect(fetchPage).toHaveBeenCalledWith("about", "INFO", null);
     expect(notFound).not.toHaveBeenCalled();
   });
 
@@ -189,7 +231,7 @@ describe("info/[slug] rendering + slug redirect", () => {
       "NEXT_REDIRECT:/legal/privacy-policy",
     );
 
-    expect(fetchPage).toHaveBeenCalledWith("privacy-policy", "INFO");
+    expect(fetchPage).toHaveBeenCalledWith("privacy-policy", "INFO", null);
     expect(permanentRedirect).toHaveBeenCalledWith("/legal/privacy-policy");
   });
 

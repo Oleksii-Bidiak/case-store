@@ -47,7 +47,7 @@ interface EditDeviceModelViewProps {
 export function EditDeviceModelView({ modelId }: EditDeviceModelViewProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { can } = useAuth();
+  const { can, arePermissionsLoading } = useAuth();
   const canWrite = can(PERM.devicesWrite);
   const canOpenProducts = can(PERM.productsRead);
 
@@ -89,7 +89,10 @@ export function EditDeviceModelView({ modelId }: EditDeviceModelViewProps) {
     );
   };
 
-  if (isLoading) return <DeviceModelFormSkeleton withAside />;
+  // TASK-667: no view flashing for a writer while the rights load.
+  if (isLoading || arePermissionsLoading) {
+    return <DeviceModelFormSkeleton withAside />;
+  }
 
   const livePages = compat.isLoading
     ? undefined

@@ -80,6 +80,29 @@ export class PageService {
   }
 
   /**
+   * The page a signed preview opens (TASK-668): page `pageId` in ANY status, but only
+   * when it really lives at this address — same slug, and the same kind when the
+   * storefront named one. A HUB row has no page and is never served. Returns null
+   * otherwise; the caller then serves the ordinary public read.
+   */
+  async findPreviewBySlug(
+    slug: string,
+    kind: PageKind | undefined,
+    pageId: string,
+  ): Promise<PageEntity | null> {
+    const page = await this.pageRepository.findById(pageId);
+    if (
+      !page ||
+      page.slug !== slug ||
+      page.kind === PageKind.HUB ||
+      (kind !== undefined && page.kind !== kind)
+    ) {
+      return null;
+    }
+    return PageEntity.fromPrisma(page);
+  }
+
+  /**
    * List all pages including drafts (admin). Omitting `page`/`limit` returns the
    * COMPLETE list — the mode the reorder UI requires (TASK-428).
    */

@@ -11,7 +11,7 @@ import {
 import { BrandService } from './brand.service';
 import { CreateBrandDto, UpdateBrandDto, BrandListQueryDto, UpdateBrandStatusDto } from './dto';
 import { BrandEntity } from './entities';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../auth/permissions';
 
 /**
  * Response envelope for a single brand.
@@ -85,6 +85,7 @@ export class AdminBrandController {
    * name search. Admin-only.
    */
   @Get('admin/list')
+  @RequireAnyPermission('brands:read', 'brands:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'List all brands including inactive (admin)',
@@ -107,6 +108,7 @@ export class AdminBrandController {
    * Fetch a single brand by UUID to pre-populate the admin edit form. Admin-only.
    */
   @Get('admin/:id')
+  @RequireAnyPermission('brands:read', 'brands:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get brand by ID (admin)', operationId: 'brandControllerFindById' })
   @ApiParam({ name: 'id', description: 'Brand UUID' })

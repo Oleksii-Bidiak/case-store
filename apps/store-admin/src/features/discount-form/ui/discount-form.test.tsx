@@ -342,11 +342,16 @@ describe("DiscountForm — ПК3/ПК4 layout", () => {
     ).toBeInTheDocument();
   });
 
-  it("view-only: every field disabled, no save", async () => {
+  it("view-only (TASK-667): values as text, empties with their meaning, no save", () => {
     renderWithProviders(
       <DiscountForm
         id="d-1"
-        defaultValues={{ code: "SUMMER500", value: "500" }}
+        defaultValues={{
+          code: "SUMMER500",
+          value: "500",
+          type: "FIXED",
+          startsAt: "2026-09-01",
+        }}
         lockCode
         readOnly
         onSubmit={jest.fn()}
@@ -354,9 +359,22 @@ describe("DiscountForm — ПК3/ПК4 layout", () => {
       />,
     );
 
-    await waitFor(() => expect(codeInput()).toHaveValue("SUMMER500"));
-    expect(valueInput()).toBeDisabled();
-    expect(screen.getByRole("switch", { name: f.active })).toBeDisabled();
+    const rv = dict.readOnlyView;
+    expect(screen.getByText(rv.notices.discounts)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    const codeSection = screen.getByRole("region", { name: f.sectionCode });
+    expect(within(codeSection).getByText("SUMMER500")).toBeInTheDocument();
+    expect(within(codeSection).getByText(f.typeFixed)).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: f.sectionPeriod })).getByText(
+        "01.09.2026",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(rv.notSetWith(rv.discountNoLimit))).toHaveLength(
+      2,
+    );
+    expect(screen.getByText(rv.discountOn)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: f.submit }),
     ).not.toBeInTheDocument();

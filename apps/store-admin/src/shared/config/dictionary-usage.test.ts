@@ -51,10 +51,6 @@ const DYNAMIC_ACCESS: Record<string, string> = {
     "features/banner-form/ui/banner-form.tsx — imageHints[placement] as the picture hint",
   "bannerPreview.shape":
     "shared/ui/banner-placement-preview/banner-placement-preview.tsx — shape[placement]",
-  "carousels.placementLabels":
-    "widgets/carousel-list/ui/admin-carousel-table.tsx, widgets/carousel-form-view/ui/edit-carousel-view.tsx — per placement",
-  "carousels.placementWhere":
-    "widgets/carousel-list/ui/admin-carousel-table.tsx, features/carousel-form/ui/carousel-form.tsx — where the placement is",
   "carousels.sourceLabels":
     "widgets/carousel-list/ui/admin-carousel-table.tsx — the source in words",
   "carousels.statusLabels":
@@ -63,8 +59,6 @@ const DYNAMIC_ACCESS: Record<string, string> = {
     "features/carousel-form/ui/carousel-form.tsx, widgets/carousel-form-view/ui/carousel-source-panels.tsx — per source",
   "carouselForm.sourceDescriptions":
     "features/carousel-form/ui/carousel-form.tsx — RadioCard description per source",
-  "carouselForm.placementOptions":
-    "features/carousel-form/ui/carousel-form.tsx — RadioCard per placement",
   "catalogImport.status":
     "widgets/catalog-import-view/ui/catalog-import-view.tsx — d.status[run.status]",
   "auditLog.entityLabels":

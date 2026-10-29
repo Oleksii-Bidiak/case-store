@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -38,6 +43,7 @@ import { useAdminBlogControllerFindCategories } from "@/entities/blog";
 import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
 import { slugify } from "@/shared/lib/slug";
 import { countLabel } from "@/shared/lib";
+import type { FormSubmitController } from "@/shared/lib/form-submit-controller";
 import { cn } from "@/shared/lib/utils";
 import {
   resolveEffectiveTitleTemplate,
@@ -141,9 +147,18 @@ interface BlogPostFormProps {
   /** Entity id (edit mode) — drives the forms.md reset keyed to the entity. */
   id?: string;
   defaultValues?: Partial<BlogPostFormInput>;
-  onSubmit: (values: BlogPostFormValues) => void;
+  /**
+   * The form's one «Зберегти». May return a promise: resolving to `true` means
+   * it saved and the form takes the submitted values as its baseline.
+   */
+  onSubmit: (values: BlogPostFormValues) => void | Promise<boolean | void>;
   isPending: boolean;
   submitLabel?: string;
+  /**
+   * TASK-670 — lets the page's «Подивитись на сайті» ask whether anything is
+   * unsaved and run the form's save.
+   */
+  controllerRef?: Ref<FormSubmitController>;
 }
 
 /** Empty baseline for create mode and the merge base in edit mode. */
@@ -187,6 +202,7 @@ export function BlogPostForm({
   onSubmit,
   isPending,
   submitLabel = f.submit,
+  controllerRef,
 }: BlogPostFormProps) {
   const { data: categoriesData } = useAdminBlogControllerFindCategories();
   const categories = categoriesData?.data ?? [];
@@ -196,6 +212,7 @@ export function BlogPostForm({
     control,
     handleSubmit,
     reset,
+    getValues,
     setValue,
     formState: { errors, dirtyFields, submitCount },
   } = useForm<BlogPostFormInput, unknown, BlogPostFormValues>({
@@ -279,6 +296,24 @@ export function BlogPostForm({
     .filter((section) => section.dirty)
     .map((section) => section.label);
 
+  const submit = async (values: BlogPostFormValues) => {
+    const saved = await onSubmit(values);
+    if (saved === true) reset(getValues());
+    return saved === true;
+  };
+
+  // TASK-670: re-created every render, so it always reads the current state.
+  useImperativeHandle(controllerRef, () => ({
+    isDirty: () => dirtySections.length > 0,
+    submit: async () => {
+      let landed = false;
+      await handleSubmit(async (values) => {
+        landed = await submit(values);
+      })();
+      return landed;
+    },
+  }));
+
   // БЛ10: after a refused submit, ONE line names every field to fix — and it
   // follows the errors as they are fixed, rather than freezing at submit time.
   const invalidLabels =
@@ -301,7 +336,7 @@ export function BlogPostForm({
   return (
     <form
       id={FORM_ID}
-      onSubmit={handleSubmit(onSubmit)}
+      onSubmit={handleSubmit(submit)}
       className="flex flex-col gap-6"
       noValidate
     >

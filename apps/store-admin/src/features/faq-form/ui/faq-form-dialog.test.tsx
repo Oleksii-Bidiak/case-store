@@ -156,14 +156,25 @@ describe("FaqFormDialog — edit (ЧП4)", () => {
     expect(calls).toBe(0);
   });
 
-  it("is read-only without faq:write — fields disabled, only «Закрити»", async () => {
-    renderDialog({ item: ITEM, readOnly: true });
+  it("is read-only without faq:write — values as text, only «Закрити» (TASK-667)", async () => {
+    const { onOpenChange } = renderDialog({ item: ITEM, readOnly: true });
 
-    await waitFor(() => expect(questionField()).toHaveValue(ITEM.question));
-    expect(questionField()).toBeDisabled();
+    const dialog = screen.getByRole("dialog", { name: dict.faqForm.question });
+    expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("switch")).not.toBeInTheDocument();
+    expect(within(dialog).getAllByText(ITEM.question).length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      within(dialog).getByText(dict.readOnlyView.notices.faq),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: f.submit }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
+    const [close] = within(dialog).getAllByRole("button", {
+      name: dict.common.close,
+    });
+    await userEvent.click(close);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

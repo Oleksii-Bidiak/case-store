@@ -10,6 +10,12 @@ import { dict } from "@/shared/config";
 import { SEO_SECTION_IDS, SeoSettingsForm } from "@/features/seo-settings-form";
 import { StoreLogoUpload } from "@/features/store-logo-upload";
 import {
+  PREVIEW_SETTINGS_SECTION_ID,
+  RevokePreviewsSection,
+} from "@/features/site-preview";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
+import {
   useAdminSeoSettingsControllerGetHealth,
   useSeoSettingsControllerGetSettings,
   type SeoHealthEntity,
@@ -43,6 +49,7 @@ function section(id: string, label: string, ok: boolean): FormSection {
 function navSections(
   settings: SeoSettingsEntity,
   health: SeoHealthEntity | undefined,
+  withPreviews: boolean,
 ): FormSection[] {
   const healthOk =
     !settings.noindexSite &&
@@ -73,6 +80,15 @@ function navSections(
       Boolean(settings.googleSiteVerification?.trim()),
     ),
     { id: SEO_SECTION_IDS.ai, label: f.sectionAi },
+    // TASK-670 — no dot: there is nothing to fill in, only a switch to pull.
+    ...(withPreviews
+      ? [
+          {
+            id: PREVIEW_SETTINGS_SECTION_ID,
+            label: dict.sitePreview.settingsHeading,
+          },
+        ]
+      : []),
   ];
 }
 
@@ -88,10 +104,15 @@ function navSections(
  * Wave 198 (TASK-1053, Н2/Н5): titled «SEO»; a section nav with status dots
  * (sticky on the left at `md`+, a scrolling row on a phone); «Стан SEO» first;
  * a failed load offers «Повторити».
+ *
+ * TASK-670: «Прев'ю чернеток» last — «Відкликати всі прев'ю» for whoever holds
+ * `settings:seo` (the revoke route's own key).
  */
 export function SeoSettingsView() {
   const { data, isLoading, isError, isFetching, refetch } =
     useSeoSettingsControllerGetSettings();
+  const { can } = useAuth();
+  const canRevokePreviews = can(PERM.settingsSeo);
   // The same query «Стан SEO» runs — React Query shares the one request.
   const { data: healthData } = useAdminSeoSettingsControllerGetHealth();
   const settings = data?.data;
@@ -119,7 +140,11 @@ export function SeoSettingsView() {
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:gap-6">
           <FormSectionNav
             aria-label={dict.seoSettings.navAria}
-            sections={navSections(settings, healthData?.data)}
+            sections={navSections(
+              settings,
+              healthData?.data,
+              canRevokePreviews,
+            )}
             className="md:w-45 md:shrink-0"
           />
           <div className="flex min-w-0 max-w-220 flex-1 flex-col gap-4">
@@ -128,6 +153,7 @@ export function SeoSettingsView() {
               settings={settings}
               logoSlot={<StoreLogoUpload logoUrl={settings.logoUrl ?? null} />}
             />
+            {canRevokePreviews ? <RevokePreviewsSection /> : null}
           </div>
         </div>
       )}

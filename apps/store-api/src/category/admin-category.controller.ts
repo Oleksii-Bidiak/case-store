@@ -246,6 +246,7 @@ export class AdminCategoryController {
    * Admin-only endpoint.
    */
   @Get()
+  @RequireAnyPermission('categories:read', 'categories:write')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'List all categories with product counts (admin)' })
   @ApiResponse({
@@ -269,10 +270,11 @@ export class AdminCategoryController {
    * Opened by `categories:write` OR `categories:delete` (TASK-655): the card carries
    * `deletionImpact` and the delete dialog lives on it, so a manager trusted to delete
    * but not to edit must still be able to read it. Reading is all this grants — every
-   * write route keeps its own key.
+   * write route keeps its own key. `categories:read` (TASK-666) opens it too: the
+   * read-only «look, do not touch» role.
    */
   @Get(':id')
-  @RequireAnyPermission('categories:write', 'categories:delete')
+  @RequireAnyPermission('categories:read', 'categories:write', 'categories:delete')
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get category by ID (admin)' })
   @ApiParam({ name: 'id', description: 'Category UUID' })
@@ -284,7 +286,7 @@ export class AdminCategoryController {
   @ApiResponse({ status: 404, description: 'Category not found' })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — needs categories:write or categories:delete',
+    description: 'Forbidden — needs categories:read, categories:write or categories:delete',
   })
   async findById(@Param('id') id: string): Promise<AdminCategoryDetailResponseEnvelope> {
     const category = await this.categoryService.findByIdForAdmin(id);

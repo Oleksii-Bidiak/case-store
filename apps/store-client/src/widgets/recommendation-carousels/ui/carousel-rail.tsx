@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { PublicCarouselEntity } from "@/shared/api/generated/models";
 import { ProductCard } from "@/shared/ui";
@@ -28,7 +28,9 @@ interface CarouselRailProps {
  */
 export function CarouselRail({ carousel }: CarouselRailProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const headingId = `carousel-heading-${carousel.id}`;
+  // Per instance, not per carousel: the same carousel may stand in two
+  // CAROUSEL blocks of the homepage (TASK-663), and ids must stay unique.
+  const headingId = useId();
 
   function scroll(direction: 1 | -1) {
     const el = scrollerRef.current;

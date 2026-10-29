@@ -903,6 +903,69 @@ describe('ProductService', () => {
 
   // ─── findBySlugForAdminPreview (admin) ───────────────────────────────────────
 
+  // TASK-668: the storefront product page under a signed preview token.
+  describe('findBySlugForPreview', () => {
+    const hiddenWithRelations = {
+      ...mockInactiveProduct,
+      category: { id: 'cat-1', name: 'Phone Cases', slug: 'phone-cases' },
+      group: null,
+      images: [],
+    };
+
+    it('serves the HIDDEN product the token names, as the public shape, without the cache', async () => {
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(hiddenWithRelations);
+
+      const result = await service.findBySlugForPreview(
+        'discontinued-case',
+        hiddenWithRelations.id,
+      );
+
+      expect(productRepositoryMock.findBySlugWithRelations).toHaveBeenCalledWith(
+        'discontinued-case',
+        { activeOnly: false },
+      );
+      expect(result?.product).toBeInstanceOf(PublicProductEntity);
+      expect(result?.product.slug).toBe('discontinued-case');
+      // A draft must never be written where the public read would find it.
+      expect(cacheServiceMock.get).not.toHaveBeenCalled();
+      expect(cacheServiceMock.set).not.toHaveBeenCalled();
+    });
+
+    it('returns null for a token issued for ANOTHER product', async () => {
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(hiddenWithRelations);
+
+      await expect(
+        service.findBySlugForPreview('discontinued-case', 'some-other-product'),
+      ).resolves.toBeNull();
+      expect(cacheServiceMock.get).not.toHaveBeenCalled();
+      expect(cacheServiceMock.set).not.toHaveBeenCalled();
+    });
+
+    it('returns null when nothing lives at the slug', async () => {
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(null);
+
+      await expect(service.findBySlugForPreview('missing', 'x')).resolves.toBeNull();
+      expect(cacheServiceMock.get).not.toHaveBeenCalled();
+      expect(cacheServiceMock.set).not.toHaveBeenCalled();
+    });
+
+    it('ignores a cached public copy of the slug — the preview always reads the database', async () => {
+      // A HIT for any key: if the preview consulted the cache it would answer this.
+      cacheServiceMock.get.mockResolvedValue({ product: { slug: 'stale-public-copy' } });
+      productRepositoryMock.findBySlugWithRelations.mockResolvedValue(hiddenWithRelations);
+
+      const result = await service.findBySlugForPreview(
+        'discontinued-case',
+        hiddenWithRelations.id,
+      );
+
+      expect(result?.product.slug).toBe('discontinued-case');
+      expect(cacheServiceMock.get).not.toHaveBeenCalled();
+      expect(cacheServiceMock.set).not.toHaveBeenCalled();
+      expect(cacheServiceMock.del).not.toHaveBeenCalled();
+    });
+  });
+
   describe('findBySlugForAdminPreview', () => {
     const inactiveWithRelations = {
       ...mockInactiveProduct,

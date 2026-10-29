@@ -4,6 +4,8 @@ import {
   fetchPublishedPage,
   fetchPublishedPages,
 } from "@/shared/api/pages-server";
+import { readPreviewToken } from "@/shared/api/preview-server";
+import { PREVIEW_ROBOTS } from "@/shared/api/preview-token";
 import { resolvePageRedirect } from "@/shared/lib/page-redirect";
 import {
   INFO_DOC_HUB,
@@ -39,8 +41,13 @@ import {
 /**
  * Fetch a published INFO page by slug; null on 404 / wrong kind. An API error
  * THROWS (TASK-793) — an outage renders the error boundary (5xx), never a 404.
+ *
+ * Under a signed preview (TASK-669) the token is forwarded and the read is
+ * uncached and untagged; store-api decides whether it opens this page's draft.
+ * Outside one the token is `null` and the read is the tagged ISR one.
  */
-const getPage = (slug: string) => fetchPublishedPage(slug, "INFO");
+const getPage = async (slug: string) =>
+  fetchPublishedPage(slug, "INFO", await readPreviewToken());
 
 /** Other published help pages (for the sibling grid). Never throws. */
 async function getOtherDocs(currentSlug: string): Promise<LegalOtherDoc[]> {
@@ -59,9 +66,16 @@ export async function generateMetadata({
 }: InfoDocPageProps): Promise<Metadata> {
   const { slug } = await params;
 
-  const [page, seo] = await Promise.all([getPage(slug), fetchSeoSettings()]);
+  const [page, seo, previewToken] = await Promise.all([
+    getPage(slug),
+    fetchSeoSettings(),
+    readPreviewToken(),
+  ]);
+  // A signed preview (TASK-669) is never indexed; the public render adds no
+  // `robots` key, so it keeps inheriting the root layout's.
+  const previewRobots = previewToken ? { robots: PREVIEW_ROBOTS } : {};
   if (!page) {
-    return { title: dict.meta.pageFallbackTitle };
+    return { title: dict.meta.pageFallbackTitle, ...previewRobots };
   }
 
   // Same three tiers as /legal/[slug]: the page's own meta (tier 1) → its
@@ -109,6 +123,7 @@ export async function generateMetadata({
         siteName,
       }),
     },
+    ...previewRobots,
   };
 }
 

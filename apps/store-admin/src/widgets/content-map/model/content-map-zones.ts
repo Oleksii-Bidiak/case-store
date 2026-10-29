@@ -1,5 +1,4 @@
 import { BannerEntityPlacement } from "@/entities/banner";
-import { CarouselEntityPlacement } from "@/entities/carousel";
 import { PageEntityKind } from "@/entities/page";
 import { dict } from "@/shared/config";
 
@@ -15,6 +14,7 @@ const b = dict.contentMap.blocks;
  */
 
 export type ContentMapZoneId =
+  | "home-blocks"
   | "announcement-bar"
   | "hero-slide"
   | "promo-tile"
@@ -33,13 +33,18 @@ export type ContentMapZoneId =
 
 /**
  * Where a zone's live state comes from. Typed against the real enums
- * ({@link BannerEntityPlacement}, {@link CarouselEntityPlacement},
- * {@link PageEntityKind}) so a renamed placement or a new kind surfaces as a
- * compile error here rather than silently miscounting.
+ * ({@link BannerEntityPlacement}, {@link PageEntityKind}) so a renamed placement
+ * or a new kind surfaces as a compile error here rather than silently miscounting.
+ *
+ * `home-carousels` (TASK-660): carousels have no placement any more — what shows on
+ * the homepage, and where, is the homepage blocks' answer. `tabs` = the tabs of the
+ * TABS blocks, `rails` = the CAROUSEL blocks. `home-blocks` (TASK-664) is the page
+ * itself: which sections it has, in what order — the «Головна» screen at `/home`.
  */
 export type ContentMapZoneSource =
   | { kind: "banner"; placement: BannerEntityPlacement }
-  | { kind: "carousel"; placement: CarouselEntityPlacement }
+  | { kind: "home-blocks" }
+  | { kind: "home-carousels"; slot: HomeCarouselSlot }
   | { kind: "faq" }
   | { kind: "pages"; pageKind: PageEntityKind }
   | { kind: "blog" }
@@ -47,6 +52,9 @@ export type ContentMapZoneSource =
   | { kind: "seo" }
   | { kind: "promo-codes" }
   | { kind: "sale-products" };
+
+/** Which carousels of the homepage blocks a zone counts (TASK-660). */
+export type HomeCarouselSlot = "tabs" | "rails";
 
 export interface ContentMapZone {
   id: ContentMapZoneId;
@@ -61,8 +69,6 @@ export interface ContentMapZone {
   /** Storefront path for «на сайті ↗»; `null` = invisible on the page. */
   sitePath: string | null;
   source: ContentMapZoneSource;
-  /** Drawn here, edited on a later screen (`/home`, Д-н2 — TASK-662/664). */
-  later?: boolean;
 }
 
 /**
@@ -71,6 +77,16 @@ export interface ContentMapZone {
  * `AdminPageTable`'s views.
  */
 export const CONTENT_MAP_ZONES: readonly ContentMapZone[] = [
+  // TASK-664: the homepage as blocks — which sections, in what order.
+  {
+    id: "home-blocks",
+    sourceLabel: z.homeBlocks.source,
+    targetLabel: z.homeBlocks.target,
+    targetHref: "/home",
+    appliesTo: z.homeBlocks.appliesTo,
+    sitePath: "/",
+    source: { kind: "home-blocks" },
+  },
   {
     id: "announcement-bar",
     sourceLabel: z.announcementBar.source,
@@ -105,11 +121,11 @@ export const CONTENT_MAP_ZONES: readonly ContentMapZone[] = [
     id: "carousel-tabs",
     sourceLabel: z.carouselTabs.source,
     targetLabel: z.carouselTabs.target,
-    targetHref: "/carousels",
+    // TASK-664: which carousels are tabs is set on «Головна», not on a carousel.
+    targetHref: "/home",
     appliesTo: z.carouselTabs.appliesTo,
     sitePath: "/",
-    source: { kind: "carousel", placement: CarouselEntityPlacement.HOME_TABS },
-    later: true,
+    source: { kind: "home-carousels", slot: "tabs" },
   },
   {
     id: "promo-banner",
@@ -124,14 +140,10 @@ export const CONTENT_MAP_ZONES: readonly ContentMapZone[] = [
     id: "carousel-rails",
     sourceLabel: z.carouselRails.source,
     targetLabel: z.carouselRails.target,
-    targetHref: "/carousels",
+    targetHref: "/home",
     appliesTo: z.carouselRails.appliesTo,
     sitePath: "/",
-    source: {
-      kind: "carousel",
-      placement: CarouselEntityPlacement.HOME_RAILS,
-    },
-    later: true,
+    source: { kind: "home-carousels", slot: "rails" },
   },
   {
     id: "site-contact",
@@ -261,7 +273,10 @@ export const CONTENT_MAP_TABS: readonly ContentMapTab[] = [
     id: "home",
     label: t.home,
     schemaTitle: s.home,
+    // TASK-664: «Блоки головної» first — the order of everything under it is
+    // set there. It is the page as a whole, so no single schema block is its.
     zones: [
+      { id: "home-blocks" },
       { id: "announcement-bar" },
       { id: "hero-slide" },
       { id: "promo-tile" },
@@ -275,20 +290,20 @@ export const CONTENT_MAP_TABS: readonly ContentMapTab[] = [
       },
     ],
     blocks: [
-      { zone: 1, label: z.announcementBar.source, size: "xs" },
+      { zone: 2, label: z.announcementBar.source, size: "xs" },
       { label: b.headerFull, size: "sm" },
-      { zone: 2, label: z.heroSlide.source, size: "xl" },
+      { zone: 3, label: z.heroSlide.source, size: "xl" },
       {
         row: [
-          { zone: 3, label: b.tile },
-          { zone: 3, label: b.tile },
-          { zone: 3, label: b.tile },
+          { zone: 4, label: b.tile },
+          { zone: 4, label: b.tile },
+          { zone: 4, label: b.tile },
         ],
       },
-      { zone: 4, label: z.carouselTabs.source, size: "lg" },
-      { zone: 5, label: z.promoBanner.source, size: "md" },
-      { zone: 6, label: z.carouselRails.source, size: "lg" },
-      { zone: 7, label: b.footer, size: "md" },
+      { zone: 5, label: z.carouselTabs.source, size: "lg" },
+      { zone: 6, label: z.promoBanner.source, size: "md" },
+      { zone: 7, label: z.carouselRails.source, size: "lg" },
+      { zone: 8, label: b.footer, size: "md" },
     ],
   },
   {

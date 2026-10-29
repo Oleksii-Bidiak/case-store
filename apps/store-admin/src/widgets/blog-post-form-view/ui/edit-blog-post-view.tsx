@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { ExternalLinkIcon, StarIcon } from "lucide-react";
+import { StarIcon } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
   BlogPostForm,
@@ -12,6 +12,7 @@ import {
   type BlogPostFormInput,
   type BlogPostFormValues,
 } from "@/features/blog-post-form";
+import { SitePreviewButton } from "@/features/site-preview";
 import {
   getAdminBlogControllerFindAllQueryKey,
   getAdminBlogControllerFindByIdQueryKey,
@@ -19,15 +20,14 @@ import {
   useAdminBlogControllerUpdate,
   type BlogPostEntity,
 } from "@/entities/blog";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import { formatKeywords } from "@/shared/lib/seo";
-import {
-  AdminFormSkeleton,
-  Badge,
-  Button,
-  useConfirmDialog,
-} from "@/shared/ui";
+import type { FormSubmitController } from "@/shared/lib/form-submit-controller";
+import { AdminFormSkeleton, Badge, useConfirmDialog } from "@/shared/ui";
 import { dict, STOREFRONT_URL } from "@/shared/config";
-import { formatDate, toKyivDateTimeLocal } from "@/shared/lib";
+import { formatDate, formatDateTime, toKyivDateTimeLocal } from "@/shared/lib";
+import { BlogPostReadOnly } from "./blog-post-read-only";
 
 const d = dict.blogPosts;
 
@@ -40,9 +40,9 @@ interface EditBlogPostViewProps {
  *
  * Header: «← Блог», the post's own title, its status (and «★ Головна» / «Не в
  * списках»), the category, the byline and the public address, and «Відкрити
- * на сайті» — for a PUBLISHED post only, in a new tab (owner decision
- * 2026-10-01; a draft preview is TASK-670). Body: the sectioned form with one
- * sticky «Зберегти».
+ * на сайті» — for a PUBLISHED post, in a new tab (owner decision 2026-10-01) —
+ * or «Подивитись на сайті», a signed preview link, for a draft or scheduled one
+ * (TASK-670). Body: the sectioned form with one sticky «Зберегти».
  *
  * A missing post (404) redirects back to the list.
  */
@@ -50,10 +50,17 @@ export function EditBlogPostView({ postId }: EditBlogPostViewProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { confirm, confirmDialog } = useConfirmDialog();
+  // TASK-667: `blog:read` alone opens the same page as the read-only template.
+  const { can, arePermissionsLoading } = useAuth();
+  const canWrite = can(PERM.blogWrite);
 
   const { data, isLoading, isError, error } =
     useAdminBlogControllerFindById(postId);
   const update = useAdminBlogControllerUpdate();
+  const formRef = useRef<FormSubmitController>(null);
+  // TASK-670: «Зберегти й подивитись» saves and STAYS — the preview popover is
+  // waiting on this page for the save to land.
+  const stayAfterSaveRef = useRef(false);
 
   const isNotFound = error?.response?.status === 404;
 
@@ -65,7 +72,7 @@ export function EditBlogPostView({ postId }: EditBlogPostViewProps) {
 
   const post = data?.data;
 
-  const handleSubmit = async (values: BlogPostFormValues) => {
+  const handleSubmit = async (values: BlogPostFormValues): Promise<boolean> => {
     // TASK-285: renaming a PUBLISHED post's slug kills its indexed URL — warn
     // first (an AlertDialog since TASK-812). A blank slug means "auto-generate"
     // (treated as no rename here).
@@ -77,27 +84,39 @@ export function EditBlogPostView({ postId }: EditBlogPostViewProps) {
         description: d.slugChangeConfirm(post.slug, nextSlug),
         confirmLabel: d.slugChangeAction,
       });
-      if (!confirmed) return;
+      if (!confirmed) return false;
     }
-    update.mutate(
-      { id: postId, data: blogPostFormValuesToUpdateDto(values) },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({
-            queryKey: getAdminBlogControllerFindAllQueryKey(),
-          });
-          void queryClient.invalidateQueries({
-            queryKey: getAdminBlogControllerFindByIdQueryKey(postId),
-          });
-          toast.success(d.toastUpdated);
-          router.push("/blog");
-        },
-        onError: () => {
-          toast.error(d.toastUpdateFailed);
-        },
-      },
-    );
+    try {
+      await update.mutateAsync({
+        id: postId,
+        data: blogPostFormValuesToUpdateDto(values),
+      });
+    } catch {
+      toast.error(d.toastUpdateFailed);
+      return false;
+    }
+    void queryClient.invalidateQueries({
+      queryKey: getAdminBlogControllerFindAllQueryKey(),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: getAdminBlogControllerFindByIdQueryKey(postId),
+    });
+    toast.success(d.toastUpdated);
+    if (!stayAfterSaveRef.current) router.push("/blog");
+    return true;
   };
+
+  const saveForPreview = async () => {
+    stayAfterSaveRef.current = true;
+    try {
+      return (await formRef.current?.submit()) ?? false;
+    } finally {
+      stayAfterSaveRef.current = false;
+    }
+  };
+
+  const liveHref =
+    post?.status === "PUBLISHED" ? `${STOREFRONT_URL}/blog/${post.slug}` : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -114,31 +133,37 @@ export function EditBlogPostView({ postId }: EditBlogPostViewProps) {
           </h2>
           {post ? <PostFacts post={post} /> : null}
         </div>
-        {post?.status === "PUBLISHED" ? (
-          <Button asChild variant="outline">
-            <a
-              href={`${STOREFRONT_URL}/blog/${post.slug}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <ExternalLinkIcon aria-hidden="true" />
-              {d.rowOpenSite}
-            </a>
-          </Button>
+        {post ? (
+          <SitePreviewButton
+            target={{ type: "post", id: postId }}
+            liveHref={liveHref}
+            description={
+              post.status === "SCHEDULED" && post.scheduledAt
+                ? dict.sitePreview.whatPostScheduled(
+                    formatDateTime(post.scheduledAt),
+                  )
+                : dict.sitePreview.whatPost
+            }
+            hasUnsavedChanges={() => formRef.current?.isDirty() ?? false}
+            onSave={canWrite ? saveForPreview : undefined}
+          />
         ) : null}
       </div>
 
-      {isLoading ? (
+      {isLoading || arePermissionsLoading ? (
         <AdminFormSkeleton />
       ) : isError && !isNotFound ? (
         <p role="alert" className="text-sm text-destructive">
           {d.loadOneError}
         </p>
+      ) : post && !canWrite ? (
+        <BlogPostReadOnly post={post} />
       ) : post ? (
         <BlogPostForm
           id={postId}
+          controllerRef={formRef}
           defaultValues={mapPostToFormValues(post)}
-          onSubmit={(values) => void handleSubmit(values)}
+          onSubmit={handleSubmit}
           isPending={update.isPending}
           submitLabel={dict.common.saveChanges}
         />
