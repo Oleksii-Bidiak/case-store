@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConflictException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { ReturnStatus } from '@prisma/client';
@@ -547,5 +548,28 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
 
     expect(txMock.$queryRaw).not.toHaveBeenCalled();
     expect(txMock.return.findMany).not.toHaveBeenCalled();
+  });
+
+  // TASK-1966: the loser of a concurrent restock is refused from INSIDE the
+  // transaction, and must carry the same code the service's early check does —
+  // otherwise the admin panel shows two different messages for one fact.
+  it('409 RETURN_ALREADY_RESTOCKED when the stamp was taken meanwhile, touching no product', async () => {
+    txMock.return.updateMany.mockResolvedValue({ count: 0 });
+
+    const caught = await repository
+      .resolve(RETURN_ID, { status: ReturnStatus.RECEIVED }, { restock: true })
+      .then(
+        () => {
+          throw new Error('expected a refusal');
+        },
+        (error: unknown) => error,
+      );
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toEqual({
+      error: 'RETURN_ALREADY_RESTOCKED',
+      message: 'These returned goods have already been credited back to inventory',
+    });
+    expect(txMock.product.update).not.toHaveBeenCalled();
   });
 });

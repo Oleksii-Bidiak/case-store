@@ -495,6 +495,87 @@ describe('Admin returns queue (e2e)', () => {
     });
   });
 
+  // ─── Stable error codes on the wire (TASK-1966) ─────────────────────────────
+  //
+  // The real service and repository run, so this pins that the `error` code the
+  // service puts on the exception survives the global filter into the envelope.
+
+  describe('error codes reach the envelope (TASK-1966)', () => {
+    const returnId = '550e8400-e29b-41d4-a716-446655440000';
+    const orderId = '550e8400-e29b-41d4-a716-4466554400ff';
+    const adminToken = () => `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`;
+
+    it('GET /admin/returns/:id → 404 RETURN_NOT_FOUND', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(null);
+
+      const response = await request(app.getHttpServer())
+        .get(`${url}/${returnId}`)
+        .set('Authorization', adminToken())
+        .expect(404);
+
+      expect(response.body).toMatchObject({
+        error: 'RETURN_NOT_FOUND',
+        message: 'Return not found',
+      });
+    });
+
+    it('PATCH /admin/returns/:id → 409 RETURN_TRANSITION_INVALID, writing nothing', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(makeReturnRow());
+
+      const response = await request(app.getHttpServer())
+        .patch(`${url}/${returnId}`)
+        .set('Authorization', adminToken())
+        .send({ status: ReturnStatus.REFUNDED })
+        .expect(409);
+
+      expect(response.body).toMatchObject({
+        error: 'RETURN_TRANSITION_INVALID',
+        message: 'A return cannot move from REQUESTED to REFUNDED',
+      });
+      expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+    });
+
+    it('PATCH /admin/returns/:id → 400 RETURN_RESTOCK_REQUIRES_RECEIVED', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(makeReturnRow());
+
+      const response = await request(app.getHttpServer())
+        .patch(`${url}/${returnId}`)
+        .set('Authorization', adminToken())
+        .send({ status: ReturnStatus.APPROVED, restock: true })
+        .expect(400);
+
+      expect(response.body.error).toBe('RETURN_RESTOCK_REQUIRES_RECEIVED');
+    });
+
+    it('PATCH /admin/returns/:id → 409 RETURN_ALREADY_RESTOCKED', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(
+        makeReturnRow({ status: ReturnStatus.APPROVED, restockedAt: now }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch(`${url}/${returnId}`)
+        .set('Authorization', adminToken())
+        .send({ status: ReturnStatus.RECEIVED, restock: true })
+        .expect(409);
+
+      expect(response.body.error).toBe('RETURN_ALREADY_RESTOCKED');
+    });
+
+    it('GET /orders/:id/returns → 404 RETURN_ORDER_NOT_FOUND for an order the caller does not own', async () => {
+      prismaServiceMock.order.findFirst.mockResolvedValue(null);
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/orders/${orderId}/returns`)
+        .set('Authorization', `Bearer ${generateAccessToken(testCustomer.id, 'CUSTOMER')}`)
+        .expect(404);
+
+      expect(response.body).toMatchObject({
+        error: 'RETURN_ORDER_NOT_FOUND',
+        message: 'Order not found',
+      });
+    });
+  });
+
   // ─── Audit key of an operator-opened return (TASK-628) ──────────────────────
   //
   // The path names the ORDER; the row is about the RETURN. It used to be keyed

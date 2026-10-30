@@ -1,5 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus, ReturnStatus } from '@prisma/client';
 import { MY_RETURNS_LIMIT, ReturnService } from './return.service';
@@ -821,6 +826,158 @@ describe('ReturnService (TASK-340)', () => {
           expect.objectContaining({ refundedAmount: null }),
           { restock: false },
         );
+      });
+    });
+  });
+
+  // ─── Stable error codes (TASK-1966) ─────────────────────────────────────────
+  //
+  // The admin panel used to receive a bare English sentence for every refusal
+  // here and could only show "try again" — a double request and an exhausted
+  // line looked the same. Every throw now carries `{ error: CODE, message }`
+  // (the `order.errors.ts` pattern). The HTTP status and the English message are
+  // pinned too: the status is part of the contract, and the message is what the
+  // storefront and older admin builds still render.
+
+  describe('error codes (TASK-1966)', () => {
+    /** The exception a call was refused with, failing the test if it resolved. */
+    const refusalOf = async (promise: Promise<unknown>) => {
+      const caught = await promise.then(
+        () => {
+          throw new Error('expected a refusal');
+        },
+        (error: unknown) => error,
+      );
+      expect(caught).toBeInstanceOf(HttpException);
+      const exception = caught as HttpException;
+      return {
+        status: exception.getStatus(),
+        body: exception.getResponse() as { error: string; message: string },
+      };
+    };
+
+    const dto = { items: [{ orderItemId: LINE_ID, quantity: 1 }] };
+
+    it.each([
+      ['createReturn', () => service.createReturn(USER_ID, ORDER_ID, dto)],
+      ['adminCreateReturn', () => service.adminCreateReturn('operator-uuid-1', ORDER_ID, dto)],
+      ['getOrderReturns', () => service.getOrderReturns(USER_ID, ORDER_ID)],
+    ])('%s: 404 RETURN_ORDER_NOT_FOUND for a missing order', async (_name, call) => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      expect(await refusalOf(call())).toEqual({
+        status: 404,
+        body: { error: 'RETURN_ORDER_NOT_FOUND', message: 'Order not found' },
+      });
+    });
+
+    it("404 RETURN_ORDER_NOT_FOUND for someone else's order — same body as a missing one", async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: OTHER_USER_ID }));
+
+      expect(await refusalOf(service.createReturn(USER_ID, ORDER_ID, dto))).toEqual({
+        status: 404,
+        body: { error: 'RETURN_ORDER_NOT_FOUND', message: 'Order not found' },
+      });
+    });
+
+    it.each([
+      ['adminGetReturn', () => service.adminGetReturn('missing')],
+      ['resolveReturn', () => service.resolveReturn('missing', { status: ReturnStatus.APPROVED })],
+    ])('%s: 404 RETURN_NOT_FOUND for a missing return', async (_name, call) => {
+      returnRepositoryMock.findById.mockResolvedValue(null);
+
+      expect(await refusalOf(call())).toEqual({
+        status: 404,
+        body: { error: 'RETURN_NOT_FOUND', message: 'Return not found' },
+      });
+    });
+
+    it('400 RETURN_ORDER_NOT_RETURNABLE for an order that has not shipped', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PROCESSING }));
+
+      expect(await refusalOf(service.createReturn(USER_ID, ORDER_ID, dto))).toEqual({
+        status: 400,
+        body: {
+          error: 'RETURN_ORDER_NOT_RETURNABLE',
+          message: 'Only shipped or delivered orders can be returned — cancel the order instead',
+        },
+      });
+    });
+
+    it('400 RETURN_ITEM_NOT_IN_ORDER for a line of another order', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+
+      const refusal = await refusalOf(
+        service.adminCreateReturn('operator-uuid-1', ORDER_ID, {
+          items: [{ orderItemId: 'someone-elses-line', quantity: 1 }],
+        }),
+      );
+
+      expect(refusal).toEqual({
+        status: 400,
+        body: { error: 'RETURN_ITEM_NOT_IN_ORDER', message: 'That item is not part of this order' },
+      });
+    });
+
+    it('400 RETURN_QUANTITY_EXCEEDED, naming how many units remain returnable', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      // All three bought are already claimed by a live return.
+      ledger = [makeReturn({ items: [{ ...makeReturn().items[0], quantity: 3 }] })];
+
+      expect(await refusalOf(service.createReturn(USER_ID, ORDER_ID, dto))).toEqual({
+        status: 400,
+        body: {
+          error: 'RETURN_QUANTITY_EXCEEDED',
+          message: 'Cannot return 1 of that item — 0 remain returnable',
+        },
+      });
+    });
+
+    it('409 RETURN_TRANSITION_INVALID, naming both ends of the forbidden move', async () => {
+      returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+      expect(
+        await refusalOf(service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED })),
+      ).toEqual({
+        status: 409,
+        body: {
+          error: 'RETURN_TRANSITION_INVALID',
+          message: 'A return cannot move from REQUESTED to REFUNDED',
+        },
+      });
+    });
+
+    it('400 RETURN_RESTOCK_REQUIRES_RECEIVED for a restock on any other status', async () => {
+      returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+      expect(
+        await refusalOf(
+          service.resolveReturn(RETURN_ID, { status: ReturnStatus.APPROVED, restock: true }),
+        ),
+      ).toEqual({
+        status: 400,
+        body: {
+          error: 'RETURN_RESTOCK_REQUIRES_RECEIVED',
+          message: 'Stock is credited back when a return is marked RECEIVED, not APPROVED',
+        },
+      });
+    });
+
+    it('409 RETURN_ALREADY_RESTOCKED for goods already credited back', async () => {
+      returnRepositoryMock.findById.mockResolvedValue(
+        makeReturn({ status: ReturnStatus.APPROVED, restockedAt: new Date() }),
+      );
+
+      expect(
+        await refusalOf(
+          service.resolveReturn(RETURN_ID, { status: ReturnStatus.RECEIVED, restock: true }),
+        ),
+      ).toEqual({
+        status: 409,
+        body: {
+          error: 'RETURN_ALREADY_RESTOCKED',
+          message: 'These returned goods have already been credited back to inventory',
+        },
       });
     });
   });
