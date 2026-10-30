@@ -156,6 +156,12 @@ const MODEL_LIST_ORDER: Prisma.DeviceModelOrderByWithRelationInput[] = [
 /** A device model row with its brand relation loaded (for labelling). */
 export type DeviceModelWithBrand = DeviceModel & { brand: { name: string } };
 
+/**
+ * A device model with the two brand fields the public model hub (TASK-1954)
+ * shows and links by: the display name and the brand slug.
+ */
+export type DeviceModelWithBrandSlug = DeviceModel & { brand: { name: string; slug: string } };
+
 /** Result of a paginated device model query. */
 export interface PaginatedDeviceModelsResult {
   models: DeviceModelWithBrand[];
@@ -432,6 +438,18 @@ export class DeviceRepository {
 
   findModelBySlug(slug: string): Promise<DeviceModel | null> {
     return this.prisma.deviceModel.findUnique({ where: { slug } });
+  }
+
+  /**
+   * {@link findModelBySlug} plus the owning brand's name and slug — the model
+   * hub (TASK-1954) labels and links the brand. Same visibility: no `isActive`
+   * gate here, the caller decides what an inactive model means.
+   */
+  findModelBySlugWithBrand(slug: string): Promise<DeviceModelWithBrandSlug | null> {
+    return this.prisma.deviceModel.findUnique({
+      where: { slug },
+      include: { brand: { select: { name: true, slug: true } } },
+    });
   }
 
   /**

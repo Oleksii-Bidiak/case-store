@@ -9151,6 +9151,42 @@
         ]
       }
     },
+    "/api/catalog/device-hubs/{deviceSlug}": {
+      "get": {
+        "operationId": "catalogLandingControllerFindDeviceHub",
+        "parameters": [
+          {
+            "name": "deviceSlug",
+            "required": true,
+            "in": "path",
+            "description": "Device model slug",
+            "schema": {
+              "example": "iphone-15-pro",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The hub: the model plus every non-empty top-level category group (≤ 8 cards each). Its existence is the 200 itself.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceHubResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown or deactivated model, or no visible product is compatible with it"
+          }
+        },
+        "summary": "Get one device model's hub — its accessories grouped by top-level category",
+        "tags": [
+          "Catalog"
+        ]
+      }
+    },
     "/api/catalog/compat-pages": {
       "get": {
         "operationId": "catalogLandingControllerFindCompatPages",
@@ -24976,6 +25012,157 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/CompatLandingDetailEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "DeviceHubModelEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Device model identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Device model display name",
+            "example": "iPhone 15 Pro"
+          },
+          "slug": {
+            "type": "string",
+            "description": "Device model slug — the hub URL segment",
+            "example": "iphone-15-pro"
+          },
+          "brandName": {
+            "type": "string",
+            "description": "Owning device brand display name",
+            "example": "Apple"
+          },
+          "brandSlug": {
+            "type": "string",
+            "description": "Owning device brand slug",
+            "example": "apple"
+          },
+          "series": {
+            "type": "string",
+            "description": "Product-line series the model belongs to, if set",
+            "example": "iPhone 15",
+            "nullable": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "Admin override of the page's <title>; null → generated",
+            "example": null,
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "Admin override of the page's meta description; null → generated",
+            "example": null,
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "description": "Admin-written intro text for the model, if any",
+            "example": null,
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "brandName",
+          "brandSlug",
+          "series",
+          "metaTitle",
+          "metaDescription",
+          "description"
+        ]
+      },
+      "DeviceHubCategoryEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Category identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Category display name",
+            "example": "Чохли"
+          },
+          "slug": {
+            "type": "string",
+            "description": "Category slug",
+            "example": "cases"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug"
+        ]
+      },
+      "DeviceHubGroupEntity": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/DeviceHubCategoryEntity"
+          },
+          "productCount": {
+            "type": "number",
+            "description": "Visible products of this category subtree compatible with the model — the same number the landing /catalog/<category>/<model> lists. Always ≥ 1.",
+            "example": 44
+          },
+          "products": {
+            "description": "The first products of the group (at most 8): in stock first, then newest — the catalogue's default order. Same card shape as GET /products/cards, including `compatibleDeviceModelIds`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicProductEntity"
+            }
+          }
+        },
+        "required": [
+          "category",
+          "productCount",
+          "products"
+        ]
+      },
+      "DeviceHubEntity": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "$ref": "#/components/schemas/DeviceHubModelEntity"
+          },
+          "productCount": {
+            "type": "number",
+            "description": "Visible products compatible with the model, across all groups. Each product sits in exactly one group, so this is the sum of the group counts. Always ≥ 1.",
+            "example": 128
+          },
+          "groups": {
+            "description": "Non-empty groups, ordered by category sortOrder, then name",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceHubGroupEntity"
+            }
+          }
+        },
+        "required": [
+          "model",
+          "productCount",
+          "groups"
+        ]
+      },
+      "DeviceHubResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DeviceHubEntity"
           }
         },
         "required": [

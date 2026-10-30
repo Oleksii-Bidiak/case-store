@@ -6,7 +6,11 @@ export {
   type PublishablePort,
   type RevalidateTarget,
 } from './publishing.tokens';
-export { CATALOGUE_REVALIDATE_TARGET } from './revalidate-targets';
+export {
+  CATALOGUE_REVALIDATE_TARGET,
+  DEVICE_HUBS_TAG,
+  DEVICE_HUBS_REVALIDATE_TARGET,
+} from './revalidate-targets';
 export {
   resolvePublishState,
   type PublishStateInput,

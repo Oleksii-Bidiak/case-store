@@ -5,6 +5,7 @@ import { ReorderDuplicateIdError } from '../common/reorder';
 import { DeviceRepository } from './device.repository';
 import { DeviceService } from './device.service';
 import { DeviceModelListQueryDto } from './dto';
+import { DEVICE_HUBS_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 const mockBrand = {
   id: 'brand-1',
@@ -49,6 +50,12 @@ const pinoLoggerMock = {
   error: jest.fn(),
 };
 
+// The model hub /devices/<модель> is ISR (TASK-1954): every write that changes
+// a model's name, copy, slug or visibility — or its brand's name — purges it.
+const revalidationMock = {
+  revalidate: jest.fn().mockResolvedValue(undefined),
+};
+
 describe('DeviceService', () => {
   let service: DeviceService;
 
@@ -59,6 +66,7 @@ describe('DeviceService', () => {
         DeviceService,
         { provide: DeviceRepository, useValue: deviceRepositoryMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
+        { provide: RevalidationNotifier, useValue: revalidationMock },
       ],
     }).compile();
     service = module.get(DeviceService);
@@ -342,6 +350,55 @@ describe('DeviceService', () => {
       await expect(service.setModelActive('ghost', false)).rejects.toBeInstanceOf(
         NotFoundException,
       );
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('purges the storefront model hubs, so a hidden model 404s there (TASK-1954)', async () => {
+      deviceRepositoryMock.findModelById.mockResolvedValue(mockModel);
+      deviceRepositoryMock.updateModel.mockResolvedValue({ ...mockModel, isActive: false });
+
+      await service.setModelActive('model-1', false);
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(DEVICE_HUBS_REVALIDATE_TARGET);
+    });
+
+    it('never fails the write when the storefront purge throws', async () => {
+      deviceRepositoryMock.findModelById.mockResolvedValue(mockModel);
+      deviceRepositoryMock.updateModel.mockResolvedValue(mockModel);
+      revalidationMock.revalidate.mockRejectedValueOnce(new Error('storefront down'));
+
+      await expect(service.setModelActive('model-1', true)).resolves.toMatchObject({
+        id: 'model-1',
+      });
+    });
+  });
+
+  describe('model-hub purge on other writes (TASK-1954)', () => {
+    it('purges after a model edit', async () => {
+      deviceRepositoryMock.findModelById.mockResolvedValue(mockModel);
+      deviceRepositoryMock.updateModel.mockResolvedValue(mockModel);
+
+      await service.updateModel('model-1', { metaTitle: 'Все для iPhone 15 Pro' });
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(DEVICE_HUBS_REVALIDATE_TARGET);
+    });
+
+    it('purges after a brand edit — the hub shows the brand name', async () => {
+      deviceRepositoryMock.findBrandById.mockResolvedValue(mockBrand);
+      deviceRepositoryMock.updateBrand.mockResolvedValue({ ...mockBrand, name: 'Apple Inc.' });
+
+      await service.updateBrand('brand-1', { name: 'Apple Inc.' });
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(DEVICE_HUBS_REVALIDATE_TARGET);
+    });
+
+    it('does not purge on a rejected edit', async () => {
+      deviceRepositoryMock.findModelById.mockResolvedValue(null);
+
+      await expect(service.updateModel('ghost', { name: 'x' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
     });
   });
 

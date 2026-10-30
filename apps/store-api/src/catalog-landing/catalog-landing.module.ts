@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
 import { CategoryModule } from '../category/category.module';
 import { DeviceModule } from '../device/device.module';
+import { ProductModule } from '../product/product.module';
 import { CatalogLandingController } from './catalog-landing.controller';
 import { CatalogLandingRepository } from './catalog-landing.repository';
 import { CatalogLandingService } from './catalog-landing.service';
+import { DeviceHubService } from './device-hub.service';
 
 /**
  * CatalogLandingModule — the compatibility landing pages `/catalog/<категорія>/
@@ -18,9 +20,12 @@ import { CatalogLandingService } from './catalog-landing.service';
  * Category↔Search `forwardRef` cycle, since nothing imports it back.
  */
 @Module({
-  imports: [CategoryModule, DeviceModule],
+  // ProductModule supplies ProductService.getCardsByIds — the model hub
+  // (TASK-1954) hydrates its cards exactly as GET /products/cards does. No cycle:
+  // nothing imports this module back.
+  imports: [CategoryModule, DeviceModule, ProductModule],
   controllers: [CatalogLandingController],
-  providers: [CatalogLandingRepository, CatalogLandingService],
+  providers: [CatalogLandingRepository, CatalogLandingService, DeviceHubService],
   exports: [CatalogLandingService],
 })
 export class CatalogLandingModule {}
