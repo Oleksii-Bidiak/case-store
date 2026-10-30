@@ -1,6 +1,7 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma, ReturnStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma';
+import { returnAlreadyRestockedError } from './return.errors';
 import {
   CacheService,
   productDetailIdKey,
@@ -348,9 +349,7 @@ export class ReturnRepository {
       });
 
       if (count === 0) {
-        throw new ConflictException(
-          'These returned goods have already been credited back to inventory',
-        );
+        throw returnAlreadyRestockedError();
       }
 
       // The product is reached through the order line rather than stored on the

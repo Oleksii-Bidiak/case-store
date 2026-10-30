@@ -96,7 +96,7 @@ export class AdminReturnController {
   })
   @ApiParam({ name: 'returnId', description: 'Return UUID' })
   @ApiResponse({ status: 200, description: 'Return found', type: AdminReturnResponseEnvelope })
-  @ApiResponse({ status: 404, description: 'Return not found' })
+  @ApiResponse({ status: 404, description: 'Return not found — error: RETURN_NOT_FOUND' })
   async findById(@Param('returnId') returnId: string): Promise<AdminReturnResponseEnvelope> {
     const data = await this.returnService.adminGetReturn(returnId);
     return { data };
@@ -121,11 +121,18 @@ export class AdminReturnController {
   })
   @ApiParam({ name: 'returnId', description: 'Return UUID' })
   @ApiResponse({ status: 200, description: 'Return resolved', type: AdminReturnResponseEnvelope })
-  @ApiResponse({ status: 400, description: 'Restock requested for the wrong status' })
-  @ApiResponse({ status: 404, description: 'Return not found' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'error: RETURN_RESTOCK_REQUIRES_RECEIVED (restock requested for a status other than ' +
+      'RECEIVED), RETURN_REFUND_EXCEEDS_RETURNED_VALUE or RETURN_REFUND_EXCEEDS_ORDER_BALANCE',
+  })
+  @ApiResponse({ status: 404, description: 'Return not found — error: RETURN_NOT_FOUND' })
   @ApiResponse({
     status: 409,
-    description: 'Illegal transition, or the goods were already credited back to inventory',
+    description:
+      'error: RETURN_TRANSITION_INVALID (illegal transition) or RETURN_ALREADY_RESTOCKED ' +
+      '(the goods were already credited back to inventory)',
   })
   async resolve(
     @Param('returnId') returnId: string,
@@ -216,10 +223,13 @@ export class AdminOrderReturnController {
   @ApiResponse({ status: 201, description: 'Return opened', type: AdminReturnResponseEnvelope })
   @ApiResponse({
     status: 400,
-    description: 'Order has not shipped, unknown line, or more units than were bought',
+    description:
+      'error: RETURN_ORDER_NOT_RETURNABLE (order has not shipped), RETURN_ITEM_NOT_IN_ORDER ' +
+      '(unknown line) or RETURN_QUANTITY_EXCEEDED (more units than remain returnable; the ' +
+      'message names the remainder)',
   })
   @ApiResponse({ status: 403, description: 'Forbidden — returns:write required' })
-  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({ status: 404, description: 'Order not found — error: RETURN_ORDER_NOT_FOUND' })
   async create(
     @CurrentUser('id') actorUserId: string,
     @Param('orderId') orderId: string,

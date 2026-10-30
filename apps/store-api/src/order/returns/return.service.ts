@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus, ReturnStatus } from '@prisma/client';
 import { ReturnRepository } from './return.repository';
@@ -12,7 +7,18 @@ import { ShopNotifier } from '../../notification';
 import { ReturnEntity } from './entities';
 import { RESTOCK_ON_STATUS, canTransitionReturn } from './return-state-machine';
 import type { CreateReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
-import { refundExceedsOrderBalanceError, refundExceedsReturnedValueError } from './return.errors';
+import {
+  invalidReturnTransitionError,
+  orderNotReturnableError,
+  refundExceedsOrderBalanceError,
+  refundExceedsReturnedValueError,
+  restockRequiresReceivedError,
+  returnAlreadyRestockedError,
+  returnItemNotInOrderError,
+  returnNotFoundError,
+  returnOrderNotFoundError,
+  returnQuantityExceededError,
+} from './return.errors';
 import { centsToString, toCents } from '../../addon-service';
 import type { Paginated } from '../../common/pagination';
 import type {
@@ -77,7 +83,7 @@ export class ReturnService {
     const order = await this.orderRepository.findById(orderId);
 
     if (!order || order.userId !== userId) {
-      throw new NotFoundException('Order not found');
+      throw returnOrderNotFoundError();
     }
 
     const assertClaimable = this.assertLinesAreReturnable(order, dto);
@@ -146,7 +152,7 @@ export class ReturnService {
     const order = await this.orderRepository.findById(orderId);
 
     if (!order) {
-      throw new NotFoundException('Order not found');
+      throw returnOrderNotFoundError();
     }
 
     const assertClaimable = this.assertLinesAreReturnable(order, dto);
@@ -197,7 +203,7 @@ export class ReturnService {
     const order = await this.orderRepository.findById(orderId);
 
     if (!order || order.userId !== userId) {
-      throw new NotFoundException('Order not found');
+      throw returnOrderNotFoundError();
     }
 
     const returns = await this.returnRepository.findByOrderId(orderId);
@@ -233,7 +239,7 @@ export class ReturnService {
     const row = await this.returnRepository.findById(returnId);
 
     if (!row) {
-      throw new NotFoundException('Return not found');
+      throw returnNotFoundError();
     }
 
     return ReturnEntity.fromPrisma(row, { includeInternal: true });
@@ -259,25 +265,21 @@ export class ReturnService {
     const existing = await this.returnRepository.findById(returnId);
 
     if (!existing) {
-      throw new NotFoundException('Return not found');
+      throw returnNotFoundError();
     }
 
     if (!canTransitionReturn(existing.status, dto.status)) {
-      throw new ConflictException(`A return cannot move from ${existing.status} to ${dto.status}`);
+      throw invalidReturnTransitionError(existing.status, dto.status);
     }
 
     if (dto.restock && dto.status !== RESTOCK_ON_STATUS) {
-      throw new BadRequestException(
-        `Stock is credited back when a return is marked ${RESTOCK_ON_STATUS}, not ${dto.status}`,
-      );
+      throw restockRequiresReceivedError(RESTOCK_ON_STATUS, dto.status);
     }
 
     // Belt-and-braces in front of the repository's authoritative guard: it gives
     // the operator a clean 409 instead of one raised from inside a transaction.
     if (dto.restock && existing.restockedAt !== null) {
-      throw new ConflictException(
-        'These returned goods have already been credited back to inventory',
-      );
+      throw returnAlreadyRestockedError();
     }
 
     const resolved = await this.returnRepository.resolve(
@@ -338,15 +340,13 @@ export class ReturnService {
     dto: CreateReturnDto,
   ): AssertReturnClaimable {
     if (!RETURNABLE_ORDER_STATUSES.has(order.status)) {
-      throw new BadRequestException(
-        'Only shipped or delivered orders can be returned — cancel the order instead',
-      );
+      throw orderNotReturnableError();
     }
 
     const orderedByLineId = new Map(order.items.map((item) => [item.id, item.quantity]));
     for (const line of dto.items) {
       if (!orderedByLineId.has(line.orderItemId)) {
-        throw new BadRequestException('That item is not part of this order');
+        throw returnItemNotInOrderError();
       }
     }
 
@@ -377,9 +377,7 @@ export class ReturnService {
         const ordered = orderedByLineId.get(orderItemId) as number;
         const claimed = alreadyClaimed.get(orderItemId) ?? 0;
         if (claimed + requested > ordered) {
-          throw new BadRequestException(
-            `Cannot return ${requested} of that item — ${ordered - claimed} remain returnable`,
-          );
+          throw returnQuantityExceededError(requested, ordered - claimed);
         }
       }
     };
