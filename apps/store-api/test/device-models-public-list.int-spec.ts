@@ -18,11 +18,16 @@ import { SlugRedirectRepository } from '../src/slug-redirect';
  * Fixture (all under one brand, so rows other suites leave in the DB are scoped
  * out with `deviceBrandId`):
  *
- *   alpha  — 3 visible products
+ *   gamma  — 3 visible products
+ *   alpha  — 1 visible product
  *   beta   — 1 visible product + one inactive, one soft-deleted, one in an
- *            inactive category (all three must NOT count)
- *   gamma  — no products at all → 0, still listed
+ *            inactive category (all three must NOT count) → ties with alpha
+ *   delta  — no products at all → 0, still listed
  *   hidden — an inactive model with a visible product → never listed
+ *
+ * Counts are chosen so `popular` (gamma, alpha, beta, delta) differs from both
+ * `name` and the default newest-first order, and alpha/beta tie on count so the
+ * name tie-break is exercised against the live database.
  *
  * Requires the isolated `*_test` DB (forced by setup-int.ts). Run with
  * `npm run test:int -w apps/store-api`.
@@ -38,10 +43,11 @@ describe('Public device-model list (integration, TASK-1952)', () => {
   let liveCategoryId: string;
   let deadCategoryId: string;
   let deviceBrandId: string;
-  const modelIds: Record<'alpha' | 'beta' | 'gamma' | 'hidden', string> = {
+  const modelIds: Record<'alpha' | 'beta' | 'gamma' | 'delta' | 'hidden', string> = {
     alpha: '',
     beta: '',
     gamma: '',
+    delta: '',
     hidden: '',
   };
   const productIds: string[] = [];
@@ -93,7 +99,8 @@ describe('Public device-model list (integration, TASK-1952)', () => {
     // Release years chosen so newest-first differs from both other orders.
     modelIds.alpha = await model('alpha', 2021);
     modelIds.beta = await model('beta', 2024);
-    modelIds.gamma = await model('gamma', 2023);
+    modelIds.gamma = await model('gamma', 2022);
+    modelIds.delta = await model('delta', 2023);
     modelIds.hidden = await model('hidden', 2025, false);
 
     const product = async (
@@ -116,9 +123,10 @@ describe('Public device-model list (integration, TASK-1952)', () => {
       productIds.push(row.id);
     };
 
-    await product('a1', [modelIds.alpha, modelIds.beta]);
-    await product('a2', [modelIds.alpha]);
-    await product('a3', [modelIds.alpha, modelIds.hidden]);
+    await product('g1', [modelIds.gamma, modelIds.alpha]);
+    await product('g2', [modelIds.gamma]);
+    await product('g3', [modelIds.gamma, modelIds.hidden]);
+    await product('b1', [modelIds.beta]);
     await product('b-inactive', [modelIds.beta], { isActive: false });
     await product('b-deleted', [modelIds.beta], { deletedAt: new Date() });
     await product('b-dead-category', [modelIds.beta], { categoryId: deadCategoryId });
@@ -142,12 +150,14 @@ describe('Public device-model list (integration, TASK-1952)', () => {
   it('counts only publicly visible products and never lists an inactive model', async () => {
     const rows = await list('popular');
 
+    // gamma leads on count; alpha and beta tie at 1 and fall back to name order.
     expect(rows.map((r) => [r.slug, r.productCount])).toEqual([
-      [slug('alpha'), 3],
+      [slug('gamma'), 3],
+      [slug('alpha'), 1],
       [slug('beta'), 1],
-      [slug('gamma'), 0],
+      [slug('delta'), 0],
     ]);
-    expect(rows[0]).toMatchObject({
+    expect(rows.find((r) => r.id === modelIds.alpha)).toMatchObject({
       id: modelIds.alpha,
       deviceBrandId,
       series: 'Alpha',
@@ -156,6 +166,7 @@ describe('Public device-model list (integration, TASK-1952)', () => {
       brandSlug: slug('brand'),
     });
     expect(typeof rows[0].productCount).toBe('number');
+    expect(rows.find((r) => r.id === modelIds.gamma)?.series).toBeNull();
   });
 
   it('agrees with a Prisma count over PUBLIC_PRODUCT_WHERE for every model', async () => {
@@ -168,10 +179,16 @@ describe('Public device-model list (integration, TASK-1952)', () => {
   });
 
   it('keeps newest-first by default and sorts alphabetically on sort=name', async () => {
-    expect((await list()).map((r) => r.slug)).toEqual([slug('beta'), slug('gamma'), slug('alpha')]);
+    expect((await list()).map((r) => r.slug)).toEqual([
+      slug('beta'),
+      slug('delta'),
+      slug('gamma'),
+      slug('alpha'),
+    ]);
     expect((await list('name')).map((r) => r.slug)).toEqual([
       slug('alpha'),
       slug('beta'),
+      slug('delta'),
       slug('gamma'),
     ]);
   });

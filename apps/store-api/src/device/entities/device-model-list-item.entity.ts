@@ -40,7 +40,7 @@ export class DeviceModelListItemEntity extends PickType(DeviceModelEntity, [
   @ApiProperty({
     description: 'Release year; null when not set',
     example: 2023,
-    type: Number,
+    type: 'integer',
     nullable: true,
   })
   releaseYear!: number | null;
@@ -56,6 +56,7 @@ export class DeviceModelListItemEntity extends PickType(DeviceModelEntity, [
       'Number of publicly visible products (active, not deleted, in a visible category) ' +
       'compatible with this model',
     example: 42,
+    type: 'integer',
     minimum: 0,
   })
   productCount!: number;

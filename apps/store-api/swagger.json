@@ -20826,7 +20826,7 @@
             "nullable": true
           },
           "releaseYear": {
-            "type": "number",
+            "type": "integer",
             "description": "Release year; null when not set",
             "example": 2023,
             "nullable": true
@@ -20842,7 +20842,7 @@
             "example": "apple"
           },
           "productCount": {
-            "type": "number",
+            "type": "integer",
             "description": "Number of publicly visible products (active, not deleted, in a visible category) compatible with this model",
             "example": 42,
             "minimum": 0
