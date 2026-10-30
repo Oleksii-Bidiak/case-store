@@ -210,8 +210,9 @@ export class AdminCategoryController {
    * PATCH /api/admin/categories/status
    *
    * Bulk activate / deactivate (TASK-293). Writes `isActive` on exactly the named ids —
-   * NO CASCADE to descendants — in one transaction, and returns the full refreshed admin
-   * tree so the panel resyncs in a single round-trip (as `reorder` does).
+   * descendants keep their own flag, though a hidden parent hides its whole branch
+   * (TASK-1032) — in one transaction, and returns the full refreshed admin tree so the
+   * panel resyncs in a single round-trip (as `reorder` does).
    *
    * DECLARED BEFORE the `:id` routes, for the same reason `reorder` is — otherwise
    * `status` is captured as an `:id`.

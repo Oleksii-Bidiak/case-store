@@ -456,8 +456,10 @@ export class CategoryService {
    * refreshed admin tree so the panel resyncs from a single round-trip — the same contract
    * as {@link reorderTree}.
    *
-   * NO CASCADE (owner decision): exactly the named rows change. To switch a whole branch
-   * off, the operator selects the whole branch.
+   * The FLAGS do not cascade (owner decision): exactly the named rows' `isActive` changes.
+   * The VISIBILITY does (TASK-1032): deactivating a parent takes its whole branch and the
+   * branch's products off the storefront via the derived `ancestorsActive`, so switching a
+   * branch off needs only its root selected.
    */
   async setStatusMany(
     ids: string[],
