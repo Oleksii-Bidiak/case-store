@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { ReturnDecision, ReturnStatus, UserRole } from '@prisma/client';
+import { createHash } from 'crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
@@ -91,6 +92,8 @@ describe('Admin returns queue (e2e)', () => {
     },
     // TASK-628: the audit row written behind an admin create.
     auditLog: { create: jest.fn() },
+    // TASK-1965: the shop's Telegram recipients, read inside a guest return's transaction.
+    notificationBinding: { findMany: jest.fn() },
     // TASK-1961/2044: the history row every decision writes in its transaction.
     returnDecisionEvent: { create: jest.fn() },
     // The list path uses the ARRAY form of $transaction; awaiting the operations
@@ -1019,6 +1022,128 @@ describe('Admin returns queue (e2e)', () => {
       expect(res.body.data).toMatchObject({ requestedOutcome: 'REPLACEMENT', channel: 'OPERATOR' });
       expect(prismaServiceMock.order.update).not.toHaveBeenCalled();
       expect(prismaServiceMock.order.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── /api/orders/guest/:token/returns (TASK-1965) ───────────────────────────
+  //
+  // The guest's door: no session, the token in the path is the credential. The
+  // real OrderService resolves it (hash, soft-delete filter, TTL), the real
+  // ReturnService + repository run against the Prisma double.
+
+  describe('/api/orders/guest/:token/returns (TASK-1965)', () => {
+    const orderId = '550e8400-e29b-41d4-a716-4466554400ff';
+    const lineId = '550e8400-e29b-41d4-a716-446655440001';
+    const VALID = 'v'.repeat(64);
+    const EXPIRED = 'x'.repeat(64);
+    const WRONG = 'w'.repeat(64);
+    const hashOf = (raw: string) => createHash('sha256').update(raw).digest('hex');
+    const guestUrl = (token: string) => `/api/orders/guest/${token}/returns`;
+    const body = { requestedOutcome: 'REFUND', items: [{ orderItemId: lineId, quantity: 1 }] };
+
+    const order = (createdAt: Date) => ({
+      id: orderId,
+      userId: null,
+      status: 'DELIVERED',
+      paymentStatus: 'PAID',
+      createdAt,
+      accessTokenIssuedAt: null,
+      items: [{ id: lineId, quantity: 3 }],
+    });
+    const fresh = order(new Date());
+    // Older than the 60-day default window, with no re-issue to restart it.
+    const stale = order(new Date(Date.now() - 200 * 24 * 60 * 60 * 1000));
+
+    beforeEach(() => {
+      prismaServiceMock.order.findFirst.mockImplementation(
+        async ({ where }: { where: { id?: string; accessTokenHash?: string } }) => {
+          if (where.accessTokenHash === hashOf(VALID)) return fresh;
+          if (where.accessTokenHash === hashOf(EXPIRED)) return stale;
+          if (where.id === orderId) return fresh;
+          return null;
+        },
+      );
+      prismaServiceMock.$queryRaw.mockResolvedValue([{ id: orderId }]);
+      prismaServiceMock.return.findMany.mockResolvedValue([]);
+      // No shop chat connected: the ping is attempted and skipped.
+      prismaServiceMock.notificationBinding.findMany.mockResolvedValue([]);
+    });
+
+    it('POST with a valid token: 201, GUEST_LINK, no author, the shop ping attempted', async () => {
+      prismaServiceMock.return.create.mockResolvedValue(
+        makeReturnRow({
+          requestedOutcome: 'REFUND',
+          channel: 'GUEST_LINK',
+          createdByUserId: null,
+          operatorNotes: 'внутрішнє',
+        }),
+      );
+
+      const res = await request(app.getHttpServer()).post(guestUrl(VALID)).send(body).expect(201);
+
+      expect(prismaServiceMock.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { accessTokenHash: hashOf(VALID), deletedAt: null } }),
+      );
+      expect(prismaServiceMock.return.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            orderId,
+            requestedOutcome: 'REFUND',
+            channel: 'GUEST_LINK',
+            createdByUserId: null,
+          }),
+        }),
+      );
+      // The same in-transaction Telegram ping as the customer's own door.
+      expect(prismaServiceMock.notificationBinding.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ channel: 'TELEGRAM', audience: 'SHOP' }),
+        }),
+      );
+      expect(res.body.data).toMatchObject({ orderId, channel: 'GUEST_LINK' });
+      expect(res.body.data).not.toHaveProperty('operatorNotes');
+      expect(res.body.data).not.toHaveProperty('createdByUserId');
+    });
+
+    it('GET with a valid token: the customer projection of the order’s returns', async () => {
+      prismaServiceMock.return.findMany.mockResolvedValue([
+        makeReturnRow({ operatorNotes: 'внутрішнє', createdByUserId: 'operator-e2e-9' }),
+      ]);
+
+      const res = await request(app.getHttpServer()).get(guestUrl(VALID)).expect(200);
+
+      const args = prismaServiceMock.return.findMany.mock.calls.at(-1)?.[0] as {
+        where: unknown;
+      };
+      expect(args.where).toEqual({ orderId });
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0]).not.toHaveProperty('operatorNotes');
+      expect(JSON.stringify(res.body)).not.toContain('operator-e2e-9');
+    });
+
+    it('wrong and expired tokens answer the very same 404 as the guest order read', async () => {
+      const wrongPost = await request(app.getHttpServer()).post(guestUrl(WRONG)).send(body);
+      const expiredPost = await request(app.getHttpServer()).post(guestUrl(EXPIRED)).send(body);
+      const wrongGet = await request(app.getHttpServer()).get(guestUrl(WRONG));
+      const expiredGet = await request(app.getHttpServer()).get(guestUrl(EXPIRED));
+      const orderRead = await request(app.getHttpServer()).get(`/api/orders/guest/${WRONG}`);
+
+      for (const res of [wrongPost, expiredPost, wrongGet, expiredGet]) {
+        expect(res.status).toBe(404);
+        expect(res.body).toEqual(orderRead.body);
+      }
+      expect(orderRead.body).toMatchObject({ statusCode: 404, message: 'Order not found' });
+      expect(prismaServiceMock.return.create).not.toHaveBeenCalled();
+      expect(prismaServiceMock.return.findMany).not.toHaveBeenCalled();
+    });
+
+    it('validates the body before the token is even looked up', async () => {
+      await request(app.getHttpServer())
+        .post(guestUrl(VALID))
+        .send({ items: [{ orderItemId: lineId, quantity: 0 }] })
+        .expect(400);
+
+      expect(prismaServiceMock.return.create).not.toHaveBeenCalled();
     });
   });
 });

@@ -388,6 +388,108 @@ describe('ReturnService (TASK-340)', () => {
     );
   });
 
+  // ─── createGuestReturn (TASK-1965) ──────────────────────────────────────────
+  // The order id arrives already proven by its access token (the controller
+  // resolves it through OrderService.resolveGuestOrderId). Everything else is
+  // the customer door: same shipped-only rule, same lines, same locked cap, the
+  // same shop ping — only the author (nobody) and the channel differ.
+
+  describe('createGuestReturn', () => {
+    const dto = { items: [{ orderItemId: LINE_ID, quantity: 1 }] };
+
+    it('opens it through the GUEST_LINK channel with no author', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: null }));
+
+      const result = await service.createGuestReturn(ORDER_ID, {
+        ...dto,
+        requestedOutcome: ReturnOutcome.REPAIR,
+      });
+
+      expect(result).toBeInstanceOf(ReturnEntity);
+      expect(orderRepositoryMock.findById).toHaveBeenCalledWith(ORDER_ID);
+      expect(returnRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderId: ORDER_ID,
+          items: dto.items,
+          createdByUserId: null,
+          requestedOutcome: ReturnOutcome.REPAIR,
+          channel: ReturnChannel.GUEST_LINK,
+        }),
+        expect.any(Function),
+        expect.any(Function),
+      );
+    });
+
+    it('does not ask whose order it is — a phone order for an account holds a token too', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: OTHER_USER_ID }));
+
+      await expect(service.createGuestReturn(ORDER_ID, dto)).resolves.toBeInstanceOf(ReturnEntity);
+    });
+
+    it("queues the same shop ping as the customer's door, in the return's transaction", async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: null }));
+
+      await service.createGuestReturn(ORDER_ID, dto);
+
+      expect(shopNotifierMock.enqueueReturnRequested).toHaveBeenCalledWith(
+        { returnId: RETURN_ID, orderId: ORDER_ID, itemsCount: 1, reason: 'Not the right size' },
+        txMock,
+      );
+    });
+
+    it('answers with the customer projection — no operator notes, no author', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: null }));
+      returnRepositoryMock.create.mockResolvedValue(
+        makeReturn({ createdByUserId: null, operatorNotes: 'internal' }),
+      );
+
+      const result = await service.createGuestReturn(ORDER_ID, dto);
+
+      expect(result).not.toHaveProperty('operatorNotes');
+      expect(result).not.toHaveProperty('createdByUserId');
+    });
+
+    it('refuses an order that has not shipped', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ userId: null, status: OrderStatus.PROCESSING }),
+      );
+
+      await expect(service.createGuestReturn(ORDER_ID, dto)).rejects.toThrow(BadRequestException);
+      expect(returnRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('holds the same locked cap over earlier returns', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: null }));
+      ledger = [makeReturn({ items: [{ ...makeReturn().items[0], quantity: 3 }] })];
+
+      await expect(service.createGuestReturn(ORDER_ID, dto)).rejects.toThrow(BadRequestException);
+      expect(inserted).toHaveLength(0);
+    });
+
+    it('404s when the order vanished between the token check and the write', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.createGuestReturn(ORDER_ID, dto)).rejects.toThrow(NotFoundException);
+      expect(returnRepositoryMock.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getGuestOrderReturns (TASK-1965)', () => {
+    it('reads the customer projection of every return on the order', async () => {
+      returnRepositoryMock.findByOrderId.mockResolvedValue([
+        makeReturn({ operatorNotes: 'internal', createdByUserId: 'operator-uuid-1' }),
+      ]);
+
+      const [entity] = await service.getGuestOrderReturns(ORDER_ID);
+
+      // The customer read: no admin joins, so no staff account is even loaded.
+      expect(returnRepositoryMock.findByOrderId).toHaveBeenCalledWith(ORDER_ID);
+      expect(entity).toBeInstanceOf(ReturnEntity);
+      expect(entity).not.toHaveProperty('operatorNotes');
+      expect(entity).not.toHaveProperty('createdByUserId');
+    });
+  });
+
   // ─── adminCreateReturn (TASK-469) ───────────────────────────────────────────
 
   describe('adminCreateReturn', () => {
