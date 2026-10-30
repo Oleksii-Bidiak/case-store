@@ -145,6 +145,67 @@ export class ReturnService {
   }
 
   /**
+   * Open a return from the guest link (TASK-1965).
+   *
+   * `orderId` must already be proven by the order's access token —
+   * `OrderService.resolveGuestOrderId` is the only caller-side source of it. No
+   * ownership check follows: the token IS the ownership, and an account-owned
+   * order reached by its token (a phone order) is accepted on purpose.
+   *
+   * Otherwise the customer door: shipped-only, lines of this order, the locked
+   * cap over earlier returns, the shop's Telegram ping. Nobody is recorded as the
+   * author; the GUEST_LINK channel says where it came from.
+   */
+  async createGuestReturn(orderId: string, dto: CreateReturnDto): Promise<ReturnEntity> {
+    const order = await this.orderRepository.findById(orderId);
+
+    if (!order) {
+      throw returnOrderNotFoundError();
+    }
+
+    const assertClaimable = this.assertLinesAreReturnable(order, dto);
+
+    const created = await this.returnRepository.create(
+      {
+        orderId,
+        ...(dto.reason ? { reason: dto.reason } : {}),
+        createdByUserId: null,
+        ...(dto.requestedOutcome ? { requestedOutcome: dto.requestedOutcome } : {}),
+        channel: ReturnChannel.GUEST_LINK,
+        items: dto.items.map((item) => ({
+          orderItemId: item.orderItemId,
+          quantity: item.quantity,
+        })),
+      },
+      assertClaimable,
+      async (tx, inserted) => {
+        await this.shopNotifier.enqueueReturnRequested(
+          {
+            returnId: inserted.id,
+            orderId: inserted.orderId,
+            itemsCount: inserted.items.reduce((sum, item) => sum + item.quantity, 0),
+            reason: inserted.reason,
+          },
+          tx,
+        );
+      },
+    );
+
+    this.logger.info(
+      { event: 'return.requested', returnId: created.id, orderId, source: 'guest_link' },
+      'Return requested from the guest link',
+    );
+
+    return ReturnEntity.fromPrisma(created);
+  }
+
+  /** The returns on an order, for the holder of its access token (TASK-1965). */
+  async getGuestOrderReturns(orderId: string): Promise<ReturnEntity[]> {
+    const returns = await this.returnRepository.findByOrderId(orderId);
+    return returns.map((row) => ReturnEntity.fromPrisma(row));
+  }
+
+  /**
    * Admin — open a return on a customer's behalf (TASK-469).
    *
    * WHY A SECOND DOOR AND NOT A FLAG ON THE FIRST. The customer door is scoped by

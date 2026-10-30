@@ -872,6 +872,30 @@ export class OrderService {
    * guessing tokens.
    */
   async getGuestOrder(rawToken: string): Promise<OrderEntity> {
+    return OrderEntity.fromPrisma(await this.findOrderByGuestToken(rawToken));
+  }
+
+  /**
+   * The id of the order an access token proves (TASK-1965) — what the guest's
+   * returns routes act on.
+   *
+   * Exactly the resolution of {@link getGuestOrder}, and deliberately NOT
+   * {@link resolveGuestOnlyOrderId}: an order that belongs to an account is
+   * accepted. An operator's phone order for a signed-up customer carries a token
+   * too (B-5 §4), and that buyer files a return from the link they were sent,
+   * the way B-12 §1 decided. The return records the GUEST_LINK channel either
+   * way, so the operator still sees which door it came through.
+   */
+  async resolveGuestOrderId(rawToken: string): Promise<string> {
+    return (await this.findOrderByGuestToken(rawToken)).id;
+  }
+
+  /**
+   * The one token check behind every guest-link route: hash, soft-delete filter
+   * (in the repository), and the TTL counted from `accessTokenIssuedAt ??
+   * createdAt`. Every failure is the same `NotFoundException('Order not found')`.
+   */
+  private async findOrderByGuestToken(rawToken: string): Promise<OrderWithItems> {
     const order = await this.orderRepository.findByAccessTokenHash(hashGuestToken(rawToken));
 
     if (!order) {
@@ -892,7 +916,7 @@ export class OrderService {
       throw new NotFoundException('Order not found');
     }
 
-    return OrderEntity.fromPrisma(order);
+    return order;
   }
 
   /**

@@ -14461,6 +14461,87 @@
         ]
       }
     },
+    "/api/orders/guest/{token}/returns": {
+      "get": {
+        "operationId": "getGuestOrderReturns",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "description": "Opaque access token from the confirmation email",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The returns on the order, customer projection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnListResponseEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No order for this token, the link has expired, or the order was deleted (deliberately indistinguishable — the same body as GET /orders/guest/:token)"
+          }
+        },
+        "summary": "List the returns on a guest order, by the order's access token",
+        "tags": [
+          "Returns"
+        ]
+      },
+      "post": {
+        "operationId": "createGuestReturn",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "description": "Opaque access token from the confirmation email",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReturnDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Return requested",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "error: RETURN_ORDER_NOT_RETURNABLE (order has not shipped), RETURN_ITEM_NOT_IN_ORDER (unknown line) or RETURN_QUANTITY_EXCEEDED (more units than remain returnable; the message names the remainder)"
+          },
+          "404": {
+            "description": "No order for this token, the link has expired, or the order was deleted (deliberately indistinguishable — the same body as GET /orders/guest/:token)"
+          }
+        },
+        "summary": "Request a return on a guest order, by the order's access token",
+        "tags": [
+          "Returns"
+        ]
+      }
+    },
     "/api/admin/returns": {
       "get": {
         "operationId": "adminReturnControllerFindAll",

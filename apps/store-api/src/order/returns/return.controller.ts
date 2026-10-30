@@ -23,12 +23,12 @@ import { ReturnService } from './return.service';
 import { ReturnEntity, ReturnItemEntity, ReturnRepairStepEntity } from './entities';
 import { CreateReturnDto } from './dto';
 
-class ReturnResponseEnvelope {
+export class ReturnResponseEnvelope {
   @ApiProperty({ type: ReturnEntity })
   data!: ReturnEntity;
 }
 
-class ReturnListResponseEnvelope {
+export class ReturnListResponseEnvelope {
   @ApiProperty({ type: [ReturnEntity] })
   data!: ReturnEntity[];
 }
