@@ -392,4 +392,25 @@ describe('DeviceRepository', () => {
       );
     });
   });
+
+  describe('findModelsBySlugs (TASK-2077)', () => {
+    it('resolves every slug in ONE query', async () => {
+      prismaMock.deviceModel.findMany.mockResolvedValue([{ id: 'm1', slug: 'iphone-15' }]);
+
+      const models = await repo.findModelsBySlugs(['iphone-15', 'nope']);
+
+      expect(prismaMock.deviceModel.findMany).toHaveBeenCalledTimes(1);
+      expect(prismaMock.deviceModel.findMany).toHaveBeenCalledWith({
+        where: { slug: { in: ['iphone-15', 'nope'] } },
+      });
+      expect(models).toEqual([{ id: 'm1', slug: 'iphone-15' }]);
+    });
+
+    it('costs no query for an empty list', async () => {
+      prismaMock.deviceModel.findMany.mockClear();
+
+      await expect(repo.findModelsBySlugs([])).resolves.toEqual([]);
+      expect(prismaMock.deviceModel.findMany).not.toHaveBeenCalled();
+    });
+  });
 });

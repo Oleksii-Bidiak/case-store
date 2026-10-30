@@ -139,6 +139,10 @@ describe('ProductController (e2e)', () => {
       ),
     },
     deviceModel: {
+      // TASK-2077: the multi-slug `?device=a,b` lookup — echoes each slug back.
+      findMany: jest.fn(({ where }: { where: { slug: { in: string[] } } }) =>
+        Promise.resolve(where.slug.in.map((slug) => ({ id: `id-of-${slug}`, slug }))),
+      ),
       findUnique: jest.fn(({ where }: { where: { slug?: string; id?: string } }) =>
         Promise.resolve(
           where.slug
@@ -338,9 +342,29 @@ describe('ProductController (e2e)', () => {
         expect.objectContaining({
           categoryIds: ['id-of-phone-cases'],
           brandId: 'id-of-apple',
-          deviceModelId: 'id-of-iphone-15',
+          deviceModelIds: ['id-of-iphone-15'],
         }),
       );
+    });
+
+    // TASK-2077: «усі мої пристрої» — a comma list, OR-ed into one id set.
+    it('ORs a comma-separated device list', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/products')
+        .query({ device: 'iphone-15,galaxy-s24', search: `task2077-${Date.now()}` })
+        .expect(200);
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ deviceModelIds: ['id-of-galaxy-s24', 'id-of-iphone-15'] }),
+      );
+    });
+
+    it('rejects a device list longer than 20 slugs with a 400', async () => {
+      const slugs = Array.from({ length: 21 }, (_, i) => `model-${i}`).join(',');
+
+      await request(app.getHttpServer()).get('/api/products').query({ device: slugs }).expect(400);
     });
 
     // Degrade, don't refuse: a dead catalogue link is not a client error. It is

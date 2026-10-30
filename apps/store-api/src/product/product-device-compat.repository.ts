@@ -69,6 +69,30 @@ export class ProductDeviceCompatRepository {
     return map;
   }
 
+  /**
+   * Just the compatible device-model IDS for a whole page of products, in ONE
+   * query (TASK-1953): the storefront compares them with the shopper's own
+   * device («підходить / ні») on the client, so a list card needs the ids and
+   * nothing else — no model/brand join. Every requested id is present in the
+   * map; a product with no compat maps to `[]`.
+   */
+  async getDeviceModelIdsByProductIds(productIds: string[]): Promise<Map<string, string[]>> {
+    const map = new Map<string, string[]>(productIds.map((id) => [id, []]));
+    if (productIds.length === 0) {
+      return map;
+    }
+    const rows = await this.prisma.productDeviceCompat.findMany({
+      where: { productId: { in: [...new Set(productIds)] } },
+      select: { productId: true, deviceModelId: true },
+      // Deterministic order, so a cached page never differs from a fresh one.
+      orderBy: { deviceModelId: 'asc' },
+    });
+    for (const row of rows) {
+      map.get(row.productId)?.push(row.deviceModelId);
+    }
+    return map;
+  }
+
   /** Just the compatible device-model ids for a product (for cross-sell seeding). */
   async getDeviceModelIds(productId: string): Promise<string[]> {
     const rows = await this.prisma.productDeviceCompat.findMany({

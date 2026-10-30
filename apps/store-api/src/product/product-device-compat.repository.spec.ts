@@ -121,4 +121,34 @@ describe('ProductDeviceCompatRepository', () => {
       ]);
     });
   });
+
+  describe('getDeviceModelIdsByProductIds (TASK-1953)', () => {
+    it('answers a whole page with exactly ONE query, ids only', async () => {
+      prismaMock.productDeviceCompat.findMany.mockResolvedValue([
+        { productId: 'p1', deviceModelId: 'm1' },
+        { productId: 'p1', deviceModelId: 'm2' },
+        { productId: 'p3', deviceModelId: 'm1' },
+      ]);
+
+      const map = await repo.getDeviceModelIdsByProductIds(['p1', 'p2', 'p3']);
+
+      expect(prismaMock.productDeviceCompat.findMany).toHaveBeenCalledTimes(1);
+      expect(prismaMock.productDeviceCompat.findMany).toHaveBeenCalledWith({
+        where: { productId: { in: ['p1', 'p2', 'p3'] } },
+        select: { productId: true, deviceModelId: true },
+        orderBy: { deviceModelId: 'asc' },
+      });
+      expect(map.get('p1')).toEqual(['m1', 'm2']);
+      // A product with no compat is present with an empty list, not absent.
+      expect(map.get('p2')).toEqual([]);
+      expect(map.get('p3')).toEqual(['m1']);
+    });
+
+    it('costs no query for an empty page', async () => {
+      const map = await repo.getDeviceModelIdsByProductIds([]);
+
+      expect(map.size).toBe(0);
+      expect(prismaMock.productDeviceCompat.findMany).not.toHaveBeenCalled();
+    });
+  });
 });

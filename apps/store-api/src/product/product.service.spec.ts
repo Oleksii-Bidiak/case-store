@@ -140,6 +140,10 @@ const deviceCompatRepositoryMock = {
   getDeviceCompat: jest.fn().mockResolvedValue([]),
   getDeviceCompatByProductIds: jest.fn().mockResolvedValue(new Map()),
   getDeviceModelIds: jest.fn().mockResolvedValue([]),
+  // TASK-1953: the per-page batch of compat ids; every requested id maps to [].
+  getDeviceModelIdsByProductIds: jest.fn((ids: string[]) =>
+    Promise.resolve(new Map(ids.map((id) => [id, [] as string[]]))),
+  ),
   setDeviceCompat: jest.fn().mockResolvedValue(undefined),
   setDeviceCompatForGroup: jest.fn().mockResolvedValue({ updatedCount: 0, positions: [] }),
   countGroupPositions: jest.fn().mockResolvedValue(0),
@@ -151,6 +155,10 @@ const deviceRepositoryMock = {
   // the category mock above.
   findModelById: jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` })),
   findModelBySlug: jest.fn((slug: string) => Promise.resolve({ id: `id-of-${slug}`, slug })),
+  // TASK-2077: the multi-slug lookup, same echo convention.
+  findModelsBySlugs: jest.fn((slugs: string[]) =>
+    Promise.resolve(slugs.map((slug) => ({ id: `id-of-${slug}`, slug }))),
+  ),
 };
 
 // ─── ProductSpecRepository / AttributeDefinitionRepository mocks (TASK-191) ────
@@ -249,6 +257,9 @@ describe('ProductService', () => {
     deviceCompatRepositoryMock.getDeviceCompat.mockResolvedValue([]);
     deviceCompatRepositoryMock.getDeviceCompatByProductIds.mockResolvedValue(new Map());
     deviceCompatRepositoryMock.getDeviceModelIds.mockResolvedValue([]);
+    deviceCompatRepositoryMock.getDeviceModelIdsByProductIds.mockImplementation((ids: string[]) =>
+      Promise.resolve(new Map(ids.map((id) => [id, [] as string[]]))),
+    );
     deviceCompatRepositoryMock.setDeviceCompat.mockResolvedValue(undefined);
     deviceCompatRepositoryMock.setDeviceCompatForGroup.mockResolvedValue({
       updatedCount: 0,
@@ -302,6 +313,49 @@ describe('ProductService', () => {
       products: [mockProduct],
       total: 1,
     };
+
+    // TASK-1953: «підходить / ні» on every card without an N+1 — the compat ids
+    // of the WHOLE page come from exactly one batched repository call.
+    it('fills compatibleDeviceModelIds with ONE batched query per page', async () => {
+      const second = { ...mockProduct, id: 'second-uuid', slug: 'second' };
+      productRepositoryMock.findAll.mockResolvedValue({
+        products: [mockProduct, second],
+        total: 2,
+      });
+      deviceCompatRepositoryMock.getDeviceModelIdsByProductIds.mockResolvedValue(
+        new Map([
+          [mockProduct.id, ['model-a', 'model-b']],
+          ['second-uuid', []],
+        ]),
+      );
+
+      const result = await service.findAll(query);
+
+      expect(deviceCompatRepositoryMock.getDeviceModelIdsByProductIds).toHaveBeenCalledTimes(1);
+      expect(deviceCompatRepositoryMock.getDeviceModelIdsByProductIds).toHaveBeenCalledWith([
+        mockProduct.id,
+        'second-uuid',
+      ]);
+      expect(deviceCompatRepositoryMock.getDeviceCompat).not.toHaveBeenCalled();
+      expect(result.items.map((item) => item.compatibleDeviceModelIds)).toEqual([
+        ['model-a', 'model-b'],
+        [],
+      ]);
+    });
+
+    // TASK-2077: «усі мої пристрої» — several slugs OR-ed into one id set.
+    it('passes every resolved device of a comma list to the repository', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll({ page: 1, limit: 20, device: 'iphone-15,galaxy-s24' });
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ deviceModelIds: ['id-of-galaxy-s24', 'id-of-iphone-15'] }),
+      );
+      expect(cacheServiceMock.get).toHaveBeenCalledWith(
+        expect.stringContaining('device=galaxy-s24,iphone-15'),
+      );
+    });
 
     it('should return paginated results with meta', async () => {
       productRepositoryMock.findAll.mockResolvedValue(paginatedResult);
@@ -459,7 +513,7 @@ describe('ProductService', () => {
         expect.objectContaining({
           categoryIds: ['cat-uuid-7'],
           brandId: 'brand-uuid-7',
-          deviceModelId: 'model-uuid-7',
+          deviceModelIds: ['model-uuid-7'],
         }),
       );
     });
@@ -786,6 +840,21 @@ describe('ProductService', () => {
       expect(result).toHaveLength(2);
       expect(result[0]).toBeInstanceOf(PublicProductEntity);
       expect(result.map((p) => p.id)).toEqual(['card-uuid-b', 'card-uuid-a']);
+    });
+
+    it('carries compatibleDeviceModelIds from ONE batched query (TASK-1953)', async () => {
+      productRepositoryMock.findByIdsForCards.mockResolvedValue([productA, productB]);
+      deviceCompatRepositoryMock.getDeviceModelIdsByProductIds.mockResolvedValue(
+        new Map([
+          ['card-uuid-a', ['model-a']],
+          ['card-uuid-b', []],
+        ]),
+      );
+
+      const result = await service.getCardsByIds(['card-uuid-b', 'card-uuid-a']);
+
+      expect(deviceCompatRepositoryMock.getDeviceModelIdsByProductIds).toHaveBeenCalledTimes(1);
+      expect(result.map((p) => p.compatibleDeviceModelIds)).toEqual([[], ['model-a']]);
     });
 
     it('silently drops unknown / inactive ids so a stale client history self-heals', async () => {

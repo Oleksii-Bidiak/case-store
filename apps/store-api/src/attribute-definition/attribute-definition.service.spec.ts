@@ -278,7 +278,7 @@ describe('AttributeDefinitionService', () => {
       // filters would advertise «Силікон (12)» on a page that then shows eight.
       repo.findEffectiveForCategory.mockResolvedValue([materialDef]);
       categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
-      catalogueFilters.resolve.mockResolvedValue({ brandId: 'brand-1', deviceModelId: 'dev-1' });
+      catalogueFilters.resolve.mockResolvedValue({ brandId: 'brand-1', deviceModelIds: ['dev-1'] });
       repo.findValueCountsByKey.mockResolvedValue(
         new Map([['material', [{ value: 'Силікон', count: 2 }]]]),
       );
@@ -301,7 +301,7 @@ describe('AttributeDefinitionService', () => {
       expect(repo.findValueCountsByKey).toHaveBeenCalledWith(['material'], {
         categoryIds: ['cat'],
         brandId: 'brand-1',
-        deviceModelId: 'dev-1',
+        deviceModelIds: ['dev-1'],
         minPrice: 100,
         maxPrice: 900,
         search: 'чохол',
@@ -579,7 +579,7 @@ describe('AttributeDefinitionService', () => {
       catalogueFilters.resolve.mockResolvedValue({
         brandId: 'brand-uuid',
         brandKey: 'apple',
-        deviceModelId: 'dev-uuid',
+        deviceModelIds: ['dev-uuid'],
         deviceKey: 'iphone-15',
       });
 

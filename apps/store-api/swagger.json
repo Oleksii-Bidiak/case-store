@@ -2297,9 +2297,9 @@
             "name": "device",
             "required": false,
             "in": "query",
-            "description": "Narrow to products compatible with one device model, by SLUG (TASK-420).",
+            "description": "Narrow to products compatible with a device model, by SLUG (TASK-420), or with ANY of up to 20 comma-separated slugs (OR, TASK-2077). Unknown slugs in a list are ignored; when nothing resolves the result is empty.",
             "schema": {
-              "example": "iphone-15",
+              "example": "iphone-15,galaxy-s24",
               "type": "string"
             }
           },
@@ -2590,9 +2590,9 @@
             "name": "device",
             "required": false,
             "in": "query",
-            "description": "Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420). Same unknown-value behaviour as `category`. Wins over the legacy `deviceModelId`.",
+            "description": "Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420) — or a comma-separated list of up to 20 slugs with OR semantics (`?device=iphone-15,galaxy-s24` = compatible with ANY of them, TASK-2077). In a list, unknown slugs are ignored; when nothing resolves the filter matches nothing (an empty 200 page), same as an unknown single slug. Wins over the legacy `deviceModelId`.",
             "schema": {
-              "example": "iphone-15",
+              "example": "iphone-15,galaxy-s24",
               "type": "string"
             }
           },
@@ -2850,9 +2850,9 @@
             "name": "device",
             "required": false,
             "in": "query",
-            "description": "Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420). Same unknown-value behaviour as `category`. Wins over the legacy `deviceModelId`.",
+            "description": "Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420) — or a comma-separated list of up to 20 slugs with OR semantics (`?device=iphone-15,galaxy-s24` = compatible with ANY of them, TASK-2077). In a list, unknown slugs are ignored; when nothing resolves the filter matches nothing (an empty 200 page), same as an unknown single slug. Wins over the legacy `deviceModelId`.",
             "schema": {
-              "example": "iphone-15",
+              "example": "iphone-15,galaxy-s24",
               "type": "string"
             }
           },
@@ -5646,9 +5646,9 @@
             "name": "device",
             "required": false,
             "in": "query",
-            "description": "Active compatible device-model SLUG — `?device=iphone-15` (TASK-420).",
+            "description": "Active compatible device-model SLUG — `?device=iphone-15` (TASK-420) — or a comma-separated list of up to 20 slugs, OR-ed (TASK-2077); same grammar as the listing twin.",
             "schema": {
-              "example": "iphone-15",
+              "example": "iphone-15,galaxy-s24",
               "type": "string"
             }
           },
@@ -18958,6 +18958,16 @@
               "$ref": "#/components/schemas/ProductCompatibleDeviceEntity"
             }
           },
+          "compatibleDeviceModelIds": {
+            "description": "Ids of every device model this position is compatible with (TASK-1953). Present on every public product response — list, cards, search and detail — so the storefront can mark «підходить до вашого пристрою» against the shopper’s locally stored device without a per-product request. Empty when the position declares no compatibility.",
+            "example": [
+              "550e8400-e29b-41d4-a716-446655440000"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "specs": {
             "description": "Structured specifications (TASK-191): hydrated key/label/unit/value rows for the PDP \"Характеристики\" table. Empty on list responses and for products with no specs.",
             "type": "array",
@@ -18988,6 +18998,7 @@
           "ratingAverage",
           "ratingCount",
           "variantSummary",
+          "compatibleDeviceModelIds",
           "specs",
           "highlights"
         ]

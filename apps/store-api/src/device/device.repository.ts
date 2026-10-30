@@ -435,6 +435,18 @@ export class DeviceRepository {
   }
 
   /**
+   * Resolve several slugs in ONE query (TASK-2077 multi-device filter). Same
+   * visibility as {@link findModelBySlug} (no `isActive` gate). Slugs that name
+   * nothing are simply absent from the result.
+   */
+  findModelsBySlugs(slugs: string[]): Promise<DeviceModel[]> {
+    if (slugs.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.prisma.deviceModel.findMany({ where: { slug: { in: slugs } } });
+  }
+
+  /**
    * Resolve a set of device model ids to their full rows (with brand). Used to
    * validate a compat assignment before writing. Returns only the ids that
    * exist — the caller diffs against the requested set to reject unknown ids.

@@ -94,7 +94,7 @@ export class CatalogLandingRepository {
     return this.prisma.product.count({
       where: buildProductListWhere({
         categoryIds,
-        deviceModelId,
+        deviceModelIds: [deviceModelId],
         isActive: true,
         categoryActiveOnly: true,
       }),

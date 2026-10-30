@@ -292,11 +292,19 @@ export class ProductService {
   async getCardsByIds(ids: string[]): Promise<PublicProductEntity[]> {
     const uniqueIds = [...new Set(ids)];
     const products = await this.productRepository.findByIdsForCards(uniqueIds);
+    const compatIds = await this.deviceCompatRepository.getDeviceModelIdsByProductIds(
+      products.map((product) => product.id),
+    );
     const byId = new Map(products.map((product) => [product.id, product]));
     return uniqueIds
       .map((id) => byId.get(id))
       .filter((product): product is NonNullable<typeof product> => product != null)
-      .map((product) => PublicProductEntity.fromPrisma(product));
+      .map((product) =>
+        PublicProductEntity.fromPrisma({
+          ...product,
+          compatibleDeviceModelIds: compatIds.get(product.id) ?? [],
+        }),
+      );
   }
 
   /**
@@ -318,7 +326,7 @@ export class ProductService {
       limit: query.limit ?? 20,
       // Ids only — the repository layer never learns what a slug is (TASK-420).
       brandId: filters.brandId,
-      deviceModelId: filters.deviceModelId,
+      deviceModelIds: filters.deviceModelIds,
       isActive: query.isActive,
       outOfStock: query.outOfStock,
       minPrice: query.minPrice,
@@ -353,13 +361,25 @@ export class ProductService {
     return this.categoryRepository.findSubtreeIds(categoryId);
   }
 
-  /** Run the repository listing and map it onto one page of public entities. */
+  /**
+   * Run the repository listing and map it onto one page of public entities.
+   * The compatible device-model ids of the whole page arrive in ONE batched
+   * query (TASK-1953), never one per card.
+   */
   private async listFromDb(params: FindAllParams): Promise<Paginated<PublicProductEntity>> {
     const { products, total } = await this.productRepository.findAll(params);
+    const compatIds = await this.deviceCompatRepository.getDeviceModelIdsByProductIds(
+      products.map((product) => product.id),
+    );
     const totalPages = Math.ceil(total / params.limit);
 
     return {
-      items: products.map((product) => PublicProductEntity.fromPrisma(product)),
+      items: products.map((product) =>
+        PublicProductEntity.fromPrisma({
+          ...product,
+          compatibleDeviceModelIds: compatIds.get(product.id) ?? [],
+        }),
+      ),
       meta: {
         total,
         page: params.page,

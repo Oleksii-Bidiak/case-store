@@ -7,6 +7,11 @@ import { ProductRepository } from '../product/product.repository';
 // seam, never the other way round.
 // eslint-disable-next-line local/no-deep-module-import -- cycle: blog barrel > blog.module > this file. (BlogRepository is not in BlogModule.exports either; provided module-locally — TASK-827)
 import { BlogRepository } from '../blog/blog.repository';
+// Same rule again (TASK-1953): the search results carry each card's compatible
+// device-model ids, and on the exact-SKU / Postgres-fallback paths they come from
+// this stateless Prisma wrapper — provided here, not via ProductModule.
+// eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > search barrel > this file
+import { ProductDeviceCompatRepository } from '../product/product-device-compat.repository';
 // Direct file imports (NOT the '../category' barrel): CategoryModule and SearchModule now
 // form a module cycle, and routing these through the barrels would make the emitted
 // design:paramtypes of SearchService's CategoryRepository resolve to `Object` at runtime.
@@ -58,6 +63,7 @@ import { AdminSearchController } from './admin-search.controller';
     MeiliClient,
     SearchService,
     ProductRepository,
+    ProductDeviceCompatRepository,
     BrandRepository,
     DeviceRepository,
     CatalogueFilterResolver,
