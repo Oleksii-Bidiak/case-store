@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { CheckCircle2, Mail, UserPlus } from "lucide-react";
 import type { OrderEntity } from "@/entities/order";
+import { CheckoutTelegramCard } from "@/features/telegram-connect";
 import { Button } from "@/shared/ui";
 import { dict, H1_CLASS } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
 import { CheckoutStepIndicator } from "./checkout-step-indicator";
-import { CheckoutTelegramCard } from "./checkout-telegram-card";
 
 interface CheckoutGuestSuccessProps {
   order: OrderEntity;
@@ -28,13 +28,15 @@ interface CheckoutGuestSuccessProps {
  * CheckoutGuestSuccess — what a shopper without an account sees once the order
  * is in (TASK-338).
  *
- * ── Why this exists instead of a redirect ─────────────────────────────────────
- * A signed-in shopper is pushed to `/orders/[id]/confirmation`. A guest cannot
- * be: that page reads `GET /api/orders/:id`, which is behind `JwtAuthGuard` and
- * scoped to the owning user. Sending a guest there would show them a login wall
- * seconds after they placed an order — the exact barrier TASK-338 removes, moved
- * one screen later. So the success state is rendered right here, from the
- * `OrderEntity` the create call returned.
+ * ── When this still shows (TASK-1999) ────────────────────────────────────────
+ * A guest whose create call returned their order token is sent to the full
+ * guest order page, `/orders/guest/[token]?placed=1`. This panel is the
+ * fallback: no token came back, or the payment handoff failed and its alert must
+ * stay on screen. Never `/orders/[id]/confirmation`: that page reads
+ * `GET /api/orders/:id`, behind `JwtAuthGuard` and scoped to the owning user —
+ * a login wall seconds after the order, the barrier TASK-338 removed. So the
+ * success state is rendered right here, from the `OrderEntity` the create call
+ * returned.
  *
  * The durable copy is the emailed link (`/orders/guest/[token]`), which is why
  * this panel names the address it went to: if that address is wrong, the shopper
@@ -90,6 +92,15 @@ export function CheckoutGuestSuccess({
           <Mail className="mt-0.5 size-4 shrink-0" aria-hidden />
           {dict.checkout.guest.successEmail(email)}
         </p>
+
+        {/* TASK-1999: the way back once the letter is gone — the number above
+            and the phone are all the lookup asks for. */}
+        <Link
+          href="/orders/status"
+          className="self-start text-sm font-medium text-primary underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {dict.orderLookup.entryLink}
+        </Link>
 
         {/* Only ever shown when the provider handoff failed. It describes the
             handoff — the order is real and unpaid — and claims nothing about

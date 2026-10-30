@@ -43,7 +43,8 @@ import { SlugRedirectRepository } from '../src/slug-redirect';
  *    ├── child  (active)
  *    └── dead   (INACTIVE)
  *
- *   gparent (active) → middle (INACTIVE) → leaf (active)
+ *   gparent (active) → middle (INACTIVE) → leaf (active, but its branch is
+ *            hidden: TASK-1032 cascade — `ancestorsActive = false`)
  *
  *   phone / tablet  (active models)      hidden (INACTIVE model)
  *   lonely (active model, no compat rows at all)
@@ -63,10 +64,12 @@ import { SlugRedirectRepository } from '../src/slug-redirect';
  *            `deleted_at` half of the SQL twin can hide this product, which is
  *            the half the twin's type guard cannot see.)
  *
- * So exactly six pages must exist: (parent|child) × (phone|tablet) — phone at 2
- * products, tablet at 1 — plus (gparent|leaf) × phone. NOT `middle`: it is
- * withdrawn from sale, yet the walk must CONTINUE through it, because
- * `gparent`'s own listing does roll `leaf`'s products up.
+ * So exactly four pages must exist: (parent|child) × (phone|tablet) — phone at 2
+ * products, tablet at 1. Nothing from the `gparent` tree: `middle` is withdrawn
+ * from sale, and by the owner's cascade decision (TASK-1032, 2026-10-29) that
+ * withdraws `leaf` and its product too — so `gparent`'s own listing does not
+ * show `p-deep` either. `p-deep` is the row only the `ancestors_active` half of
+ * the SQL twin can hide (its own category is active and live).
  *
  * Requires the isolated `*_test` DB (forced by setup-int.ts). Run with
  * `npm run test:int -w apps/store-api`.
@@ -158,6 +161,7 @@ describe('Compatibility landing pages (integration)', () => {
 
     prisma = moduleRef.get(PrismaService);
     service = moduleRef.get(CatalogLandingService);
+    const categoryRepository = moduleRef.get(CategoryRepository);
 
     const parent = await prisma.category.create({
       data: { name: 'compat parent', slug: slug('parent') },
@@ -199,6 +203,11 @@ describe('Compatibility landing pages (integration)', () => {
       data: { name: 'compat tomb', slug: slug('tomb'), deletedAt: new Date() },
     });
     tombId = tomb.id;
+
+    // The raw creates above bypass the repository's writers, which are what keep
+    // the stored branch flag (TASK-1032) in step — settle it once, the way every
+    // repository write does.
+    await categoryRepository.refreshBranchVisibility();
 
     const brand = await prisma.deviceBrand.create({
       data: { name: 'compat brand', slug: slug('brand') },
@@ -274,26 +283,20 @@ describe('Compatibility landing pages (integration)', () => {
       expect(await fixturePages()).toEqual([
         { category: slug('child'), device: slug('phone'), count: 2 },
         { category: slug('child'), device: slug('tablet'), count: 1 },
-        { category: slug('gparent'), device: slug('phone'), count: 1 },
-        { category: slug('leaf'), device: slug('phone'), count: 1 },
         { category: slug('parent'), device: slug('phone'), count: 2 },
         { category: slug('parent'), device: slug('tablet'), count: 1 },
       ]);
     });
 
-    it('skips a DEACTIVATED middle ancestor but keeps walking past it', async () => {
-      const pages = await fixturePages();
+    it('withdraws everything under a DEACTIVATED middle ancestor (cascade, TASK-1032)', async () => {
+      const categories = (await fixturePages()).map((page) => page.category);
 
-      // `middle` is withdrawn from sale — no page of its own…
-      expect(pages.map((page) => page.category)).not.toContain(slug('middle'));
-      // …but `gparent` still gets one, because ITS listing rolls the whole
-      // subtree up and does show `leaf`'s product. Stopping the walk at the
-      // first inactive link would have lost that page.
-      expect(pages).toContainEqual({
-        category: slug('gparent'),
-        device: slug('phone'),
-        count: 1,
-      });
+      // `middle` is withdrawn from sale — no page of its own, none for the active
+      // `leaf` below it, and none for `gparent`, whose listing no longer shows
+      // `leaf`'s product. Before the cascade all three of the last two existed.
+      expect(categories).not.toContain(slug('middle'));
+      expect(categories).not.toContain(slug('leaf'));
+      expect(categories).not.toContain(slug('gparent'));
     });
 
     it('rolls a leaf product up to its ancestors, because the listing does', async () => {
@@ -356,6 +359,13 @@ describe('Compatibility landing pages (integration)', () => {
       });
 
       const sqlIds = viaSql.map((row) => row.id).sort();
+      // `p-deep` is hidden ONLY by the ancestors_active half (TASK-1032) — a
+      // twin that lagged behind the Prisma rule would let it through here.
+      const deep = await prisma.product.findFirstOrThrow({
+        where: { slug: slug('deep') },
+        select: { id: true },
+      });
+      expect(sqlIds).not.toContain(deep.id);
       // Non-vacuous: some fixture products are visible and some are not.
       expect(sqlIds.length).toBeGreaterThan(0);
       expect(sqlIds.length).toBeLessThan(productIds.length);
@@ -394,7 +404,6 @@ describe('Compatibility landing pages (integration)', () => {
         new Map([
           [`${childId}|${phoneId}`, 2],
           [`${childId}|${tabletId}`, 1],
-          [`${leafId}|${phoneId}`, 1],
         ]),
       );
       for (const count of actual.values()) {
@@ -429,6 +438,15 @@ describe('Compatibility landing pages (integration)', () => {
     it('404s a pair whose products are all invisible', async () => {
       // `dead × phone` has a product — the category is just withdrawn from sale.
       await expect(service.getCompatPage(slug('dead'), slug('phone'))).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('404s an active subcategory under a deactivated ancestor, and its ancestor (TASK-1032)', async () => {
+      await expect(service.getCompatPage(slug('leaf'), slug('phone'))).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(service.getCompatPage(slug('gparent'), slug('phone'))).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });

@@ -34,8 +34,11 @@ interface PromoViewProps {
 export function PromoView({ deals }: PromoViewProps) {
   const d = dict.promo;
 
+  // `relative`: the containing block of the `PromoScrollAnchor` the deals
+  // segment opens with, so Next's route-change scroll target is the frame top
+  // (TASK-1991).
   return (
-    <div>
+    <div className="relative">
       <nav
         aria-label={d.breadcrumb}
         className="mb-4.5 flex items-center gap-2.5 text-sm text-muted-foreground"

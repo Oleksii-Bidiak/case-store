@@ -442,4 +442,18 @@ describe("SearchSynonymsForm — chip grid by mockup Н3 (TASK-1053)", () => {
     ).not.toBeInTheDocument();
     expect(groupValues()[0]).toBe("чохол, case, кейс");
   });
+
+  // TASK-1993. The sticky bar bleeds over <main>'s bottom padding
+  // (`-mb-4 lg:-mb-6`), but this form sits inside the search page's `p-4`
+  // card, so at lg the 24 px bleed ran 8 px past the card's border.
+  it("bleeds the sticky bar's bottom only over the card's p-4 padding", () => {
+    const { container } = renderWithProviders(
+      <SearchSynonymsForm settings={SAVED} />,
+    );
+    const bar = container.querySelector(
+      '[data-slot="form-actions-bar"]',
+    ) as HTMLElement;
+    expect(bar).toHaveClass("-mb-4", "lg:-mb-4");
+    expect(bar).not.toHaveClass("lg:-mb-6");
+  });
 });

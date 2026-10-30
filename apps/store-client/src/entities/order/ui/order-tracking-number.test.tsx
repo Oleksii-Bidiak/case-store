@@ -1,6 +1,5 @@
 import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
 import { dict } from "@/shared/config";
-import { novaPoshtaTrackingUrl } from "../lib/tracking";
 import { OrderTrackingNumber } from "./order-tracking-number";
 
 const t = dict.order.tracking;
@@ -43,16 +42,21 @@ describe("OrderTrackingNumber (TASK-217)", () => {
     const link = screen.getByRole("link", { name: t.trackAria });
     expect(link).toHaveAttribute(
       "href",
-      `https://novaposhta.ua/tracking/?cargo_number=${TTN}`,
+      `https://novaposhta.ua/tracking/${TTN}`,
     );
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
     expect(link).toHaveTextContent(t.track);
   });
 
-  it("encodes an operator-typed number into the tracking URL", () => {
-    expect(novaPoshtaTrackingUrl(" 2045 0123&x ")).toBe(
-      "https://novaposhta.ua/tracking/?cargo_number=2045%200123%26x",
+  it("offers no tracking link for a waybill with no digits, but keeps the number", () => {
+    renderWithProviders(
+      <OrderTrackingNumber trackingNumber="ТТН уточнюється" />,
     );
+
+    expect(screen.getByText("ТТН уточнюється")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: t.trackAria }),
+    ).not.toBeInTheDocument();
   });
 });

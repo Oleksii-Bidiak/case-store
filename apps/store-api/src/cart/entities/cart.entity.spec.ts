@@ -23,7 +23,7 @@ function line(id: string, price: string, quantity: number) {
       compareAtPrice: null,
       stock: 50,
       isActive: true,
-      category: { isActive: true },
+      category: { isActive: true, ancestorsActive: true },
       images: [],
     },
   };

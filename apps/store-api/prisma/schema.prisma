@@ -423,6 +423,15 @@ model Category {
   // `deleted:<id>:<slug>`: the address is released for a new category instead of
   // keeping `slug @unique` scoped to live rows.
   deletedAt       DateTime?  @map("deleted_at")
+  /// Stored branch visibility (TASK-1032, owner decision 2026-10-29: deactivation
+  /// CASCADES). True iff EVERY ancestor is active and live; the row's own `isActive`
+  /// never feeds its own flag, only its descendants'. A product is public only when
+  /// its category is `isActive && ancestorsActive` (PUBLIC_PRODUCT_WHERE). Derived,
+  /// never admin-edited: `CategoryRepository.refreshBranchVisibility` recomputes it
+  /// in the same transaction as every write that can change it (status, reparent,
+  /// create, delete). Independent of `isActive` on purpose — reactivating the parent
+  /// restores the branch with every child's own toggle exactly as the owner left it.
+  ancestorsActive Boolean    @default(true) @map("ancestors_active")
 
   products Product[]
 

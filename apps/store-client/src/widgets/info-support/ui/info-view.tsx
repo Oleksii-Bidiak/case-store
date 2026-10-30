@@ -34,6 +34,8 @@ import {
   H2_CLASS,
 } from "@/shared/config";
 import { formatMoney } from "@/shared/lib/format";
+import { resolveSiteName } from "@/shared/lib/seo";
+import { useHashNavigation } from "@/shared/lib/use-hash-navigation";
 import { Button } from "@/shared/ui";
 import {
   ABOUT_STATS,
@@ -114,6 +116,9 @@ const MESSENGERS: {
 /** DOM id of a section panel — the side-nav buttons point at it (aria-controls). */
 const panelId = (key: InfoSectionKey) => `info-panel-${key}`;
 
+const isInfoSection = (hash: string): hash is InfoSectionKey =>
+  (INFO_SECTIONS as readonly string[]).includes(hash);
+
 /**
  * InfoView — the "Інформація та підтримка" hub (/info). A sticky side nav
  * switches between support sections (delivery / warranty / faq / about), plus a
@@ -141,8 +146,12 @@ export function InfoView({
   sections = OFFLINE_SECTIONS,
   services = [],
   pages = [],
+  siteName = resolveSiteName(),
 }: {
   contact: SiteContactSettingsEntity | null;
+  /** The admin-managed store name (`resolveSiteName(seo)` on the page,
+   *  TASK-1639) for the static «Про нас» heading. Omitted → the default. */
+  siteName?: string;
   /** FAQ entries from the admin-managed API; falls back to the static
    *  `INFO_FAQS` when the caller passes nothing (offline / error path). */
   faqs?: readonly InfoFaq[];
@@ -156,18 +165,33 @@ export function InfoView({
   pages?: readonly InfoPageLink[];
 }) {
   const [section, setSection] = useState<InfoSectionKey>("delivery");
+  // A fresh object per request, so a second link to the section already shown
+  // still scrolls.
+  const [scrollTarget, setScrollTarget] = useState<{
+    key: InfoSectionKey;
+  } | null>(null);
   const [openFaq, setOpenFaq] = useState<Record<number, boolean>>({});
   const d = dict.info;
 
-  // Deep-link support: adopt a valid `#section` hash after mount (rAF-deferred to
-  // avoid a hydration mismatch / setState-in-effect).
+  // TASK-1992 / TASK-1670 — deep links: `/info#faq` selects the section on
+  // arrival, on a same-page link (Next's pushState fires no hashchange) and on
+  // back/forward. A hash that names no section is left alone; no hash at all
+  // after a change (Back to plain /info) is the default section again.
+  useHashNavigation((hash, source) => {
+    if (isInfoSection(hash)) {
+      setSection(hash);
+      setScrollTarget({ key: hash });
+    } else if (hash === "" && source === "change") {
+      setSection("delivery");
+    }
+  });
+
+  // Scrolled only once the section switch has rendered.
   useEffect(() => {
-    const raf = requestAnimationFrame(() => {
-      const hash = window.location.hash.replace("#", "") as InfoSectionKey;
-      if (INFO_SECTIONS.includes(hash)) setSection(hash);
-    });
-    return () => cancelAnimationFrame(raf);
-  }, []);
+    if (scrollTarget) {
+      document.getElementById(scrollTarget.key)?.scrollIntoView();
+    }
+  }, [scrollTarget]);
 
   function go(key: InfoSectionKey) {
     setSection(key);
@@ -233,6 +257,20 @@ export function InfoView({
 
         {/* Content */}
         <section className="min-w-0">
+          {/* TASK-1992 — the targets of `/info#<key>`. Next's Link scrolls to
+              document.getElementById(hash), and so does the browser on a full
+              load; the panels carry `info-panel-*` ids and are display:none
+              until chosen, so neither could scroll to them. Outside the
+              panels, at the top of the content column, these are always
+              scrollable — and sit exactly where the chosen panel starts. */}
+          {INFO_SECTIONS.map((key) => (
+            <span
+              key={key}
+              id={key}
+              aria-hidden="true"
+              className="block scroll-mt-24"
+            />
+          ))}
           {/* TASK-866 — all five panels render; only the active one is shown.
               Tailwind's preflight makes `[hidden]` display:none !important, so
               the panels' own flex/grid classes cannot override it. */}
@@ -422,7 +460,7 @@ export function InfoView({
           >
             <div className="rounded-card bg-brand-gradient p-10 text-white">
               <h2 className={`mb-3 ${H2_CLASS}`}>
-                {about?.heading ?? d.aboutHeading}
+                {about?.heading ?? d.aboutHeading(siteName)}
               </h2>
               <p className="max-w-[620px] text-base leading-[1.6] opacity-95">
                 {about?.intro ?? d.aboutIntro}

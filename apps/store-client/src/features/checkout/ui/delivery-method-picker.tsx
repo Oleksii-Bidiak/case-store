@@ -61,8 +61,9 @@ function clearNpCarryOver(setValue: UseFormSetValue<CheckoutFormValues>) {
  * CheckoutDelivery.dc.html). One radio per method the shop switched on, in the
  * API's order; each says what it costs before the shopper commits to it.
  *
- * Renders nothing when the shop offers a single method (#np-only): a choice of
- * one is not a choice, and the shopper goes straight to the fields.
+ * With a single method (#np-only) there is no radio — a choice of one is not a
+ * choice — only its name as a heading, so the shopper still knows how the
+ * parcel travels (TASK-1998).
  *
  * Same visual grammar as the «Оплата» options (`checkout-payment.tsx`): a native
  * radio inside a label, a 38px icon tile, the selected card in a primary border
@@ -79,8 +80,6 @@ export function DeliveryMethodPicker({
     method: "NOVA_POSHTA",
     npCityRef,
   });
-
-  if (options.methods.length < 2) return null;
 
   const subline = (method: CheckoutDeliveryMethod) => {
     switch (method) {
@@ -117,6 +116,46 @@ export function DeliveryMethodPicker({
   const isFree = (method: CheckoutDeliveryMethod) =>
     method === "PICKUP" ||
     (method === "COURIER" && toCents(options.courier.price) <= 0);
+
+  // A lone method has no radio — but the shopper is still told, on top of
+  // step 1, how the parcel travels and what that costs (TASK-1998).
+  if (options.methods.length === 1) {
+    const method = options.methods[0];
+    const Icon = ICONS[method];
+    return (
+      <section
+        aria-labelledby="checkout-delivery-method-single"
+        className="flex items-center gap-3.5 rounded-card border border-border bg-card p-6 shadow-card"
+      >
+        <span className="inline-flex size-9.5 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <Icon className="size-5" aria-hidden />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-muted-foreground">
+            {dict.checkout.delivery.methodHeading}
+          </p>
+          <h2
+            id="checkout-delivery-method-single"
+            className="font-display text-lg font-bold text-foreground"
+          >
+            {deliveryMethodTitle(method, options.courier.cityName)}
+          </h2>
+          <p
+            className={
+              isFree(method)
+                ? "inline-flex items-center gap-1 text-xs font-semibold text-foreground"
+                : "text-xs text-muted-foreground"
+            }
+          >
+            {isFree(method) && (
+              <Check className="size-3.5 text-success" aria-hidden />
+            )}
+            {subline(method)}
+          </p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="rounded-card border border-border bg-card p-6 shadow-card">

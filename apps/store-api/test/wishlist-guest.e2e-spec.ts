@@ -106,7 +106,7 @@ describe('Wishlist — guest & merge (e2e)', () => {
     stock: 50,
     isActive: true,
     // TASK-297: WishlistItemEntity folds the category's status into isActive.
-    category: { isActive: true },
+    category: { isActive: true, ancestorsActive: true },
     images: [{ url: 'https://cdn.example.com/a.jpg' }],
   });
 

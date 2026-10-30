@@ -153,7 +153,14 @@ export function SeoSettingsView() {
               settings={settings}
               logoSlot={<StoreLogoUpload logoUrl={settings.logoUrl ?? null} />}
             />
-            {canRevokePreviews ? <RevokePreviewsSection /> : null}
+            {/* The form's sticky bar bleeds over <main>'s bottom padding
+                (`-mb-4 lg:-mb-6`, TASK-1993), shrinking the form box by
+                16/24 px; this pad gives the card that space back. */}
+            {canRevokePreviews ? (
+              <div className="pt-4 lg:pt-6">
+                <RevokePreviewsSection />
+              </div>
+            ) : null}
           </div>
         </div>
       )}

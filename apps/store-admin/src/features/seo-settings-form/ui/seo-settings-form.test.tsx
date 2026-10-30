@@ -10,6 +10,11 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { dict, STOREFRONT_HOST } from "@/shared/config";
 import type { SeoSettingsEntity } from "@/entities/seo-settings";
+import {
+  MEDIA_PERMISSIONS,
+  makeMediaAsset,
+  stubMediaLibrary,
+} from "@/features/media-picker/model/media-picker.fixture";
 import { SEO_SECTION_IDS, SeoSettingsForm } from "./seo-settings-form";
 
 jest.mock("sonner", () => ({
@@ -450,5 +455,74 @@ describe("SeoSettingsForm — by mockup Н2/Н5 (TASK-1053)", () => {
       expect(screen.queryByText(/Незбережені зміни/)).not.toBeInTheDocument(),
     );
     expect(defaultTitleField()).toHaveValue("Мій магазин");
+  });
+});
+
+// TASK-2002 — the site-wide default OG image gets the product OG's three
+// paths: a file uploaded into the media library, a library pick, a link.
+describe("SeoSettingsForm — default OG upload and library pick (TASK-2002)", () => {
+  const f = dict.seoSettingsForm;
+  const OG_URL = "http://localhost:3001/uploads/media/og-card.webp";
+  const ogField = () => {
+    expand(f.sectionSocial);
+    return screen.getByLabelText(f.defaultOgImage) as HTMLInputElement;
+  };
+  const ogScope = () => within(ogField().parentElement as HTMLElement);
+
+  it("media:write — uploads a file into the library and saves its URL", async () => {
+    const library = stubMediaLibrary([]);
+    const bodies = stubUpdate();
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    await userEvent.upload(
+      ogScope().getByTestId("single-image-upload-input"),
+      new File(["png-bytes"], "og.png", { type: "image/png" }),
+    );
+
+    const stored = makeMediaAsset("up-1").url;
+    await waitFor(() => expect(library.uploadedNames).toEqual(["og.png"]));
+    await waitFor(() => expect(ogField()).toHaveValue(stored));
+
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ defaultOgImage: stored });
+  });
+
+  it("picks the default OG image from the library", async () => {
+    stubMediaLibrary([
+      makeMediaAsset("m1", { alt: "Картка для соцмереж", url: OG_URL }),
+    ]);
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    expand(f.sectionSocial);
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.seoFields.ogImagePickerAria }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.mediaPicker.pickCardAria("Картка для соцмереж"),
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.mediaPicker.useSelected }),
+    );
+
+    await waitFor(() => expect(ogField()).toHaveValue(OG_URL));
+  });
+
+  it("without media keys — no picker and no upload, only the URL box", () => {
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    expect(ogField()).toHaveValue("");
+    expect(
+      screen.queryByRole("button", { name: dict.seoFields.ogImagePickerAria }),
+    ).not.toBeInTheDocument();
+    expect(
+      ogScope().queryByTestId("single-image-upload-input"),
+    ).not.toBeInTheDocument();
   });
 });

@@ -42,16 +42,35 @@ export function AdminShell({ children }: { children: ReactNode }) {
     setMobileNavOpen(false);
   }
 
+  // TASK-1989. `<main>` is the only scroller and is `relative`, so every
+  // absolutely positioned descendant (sr-only radios, Radix hidden inputs)
+  // resolves its containing block here and scrolls with the page. Without it
+  // they fall through to the initial containing block, sit at their unscrolled
+  // offset far below, and give the viewport a scroll range that focus or a
+  // `#section` anchor then uses — sliding the whole shell up behind the body's
+  // overflow-hidden. The wrappers use `overflow-clip`, not `-hidden`: clip is
+  // not a scroll container, so nothing (focus, anchors, script) can scroll it.
+  // For the same reason the column needs an explicit `min-w-0`: a non-scroll
+  // flex item keeps `min-width: auto`, so wide content (tables, chip rows)
+  // would widen it past the viewport instead of scrolling inside <main>.
+  //
+  // TASK-1994. A registry's table box (`data-registry-fill`) scrolls itself so
+  // its header can stick; <main> scrolling too made two vertical scrollers and
+  // the page scrolled the header away. From md up, <main> and every wrapper
+  // between it and the box (pages and widgets wrap it in their own columns)
+  // become shrinkable flex columns, so the box gets exactly the height left
+  // and <main> has nothing to scroll. <main> keeps overflow-y-auto: it is the
+  // fallback when the box hits its floor on a very short window.
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-clip">
       <AdminSidebar />
       <MobileNavDrawer open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-clip">
         <AdminHeader
           mobileNavOpen={mobileNavOpen}
           onOpenMobileNav={() => setMobileNavOpen(true)}
         />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <main className="relative flex-1 overflow-y-auto p-4 md:has-[[data-registry-fill]]:flex md:has-[[data-registry-fill]]:flex-col md:[&_:has([data-registry-fill])]:flex md:[&_:has([data-registry-fill])]:min-h-0 md:[&_:has([data-registry-fill])]:flex-col lg:p-6">
           {permissionsFailed ? (
             // TASK-1014 (П6). Without permissions every section answers "no"
             // — the owner's too — so the page itself would render a refusal

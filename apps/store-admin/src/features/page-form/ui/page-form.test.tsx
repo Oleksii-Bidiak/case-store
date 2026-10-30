@@ -8,6 +8,11 @@ import {
 import { http, HttpResponse } from "msw";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import {
+  MEDIA_PERMISSIONS,
+  makeMediaAsset,
+  stubMediaLibrary,
+} from "@/features/media-picker/model/media-picker.fixture";
 import { MAX_PAGE_CONTENT_LENGTH } from "../model/page-schema";
 import { PageForm } from "./page-form";
 
@@ -382,6 +387,17 @@ describe("PageForm — sections, one sticky save, errors under fields", () => {
     expect(screen.getByLabelText(f.scheduledAt)).toBeInTheDocument();
   });
 
+  it("anchors each sr-only status radio to its own segment (TASK-1989)", () => {
+    renderWithProviders(<PageForm onSubmit={noop} isPending={false} />);
+
+    // An sr-only radio is position:absolute; without a positioned label it
+    // escapes to a far ancestor and focusing it scrolls the window.
+    const group = screen.getByRole("radiogroup", { name: f.statusAria });
+    for (const radio of within(group).getAllByRole("radio")) {
+      expect(radio.closest("label")).toHaveClass("relative");
+    }
+  });
+
   it("warns next to the address and the status of a page /info renders inline", async () => {
     renderWithProviders(
       <PageForm
@@ -554,5 +570,72 @@ describe("PageForm — preview parity with the storefront", () => {
     await pickKind(f.kindHub);
 
     await waitFor(() => expect(previewDescription()).toBeNull());
+  });
+});
+
+// TASK-2002 — the page OG field gets the product OG's three paths: a file
+// uploaded into the media library, a library pick, a link.
+describe("PageForm — OG image upload and library pick (TASK-2002)", () => {
+  const OG_URL = "http://localhost:3001/uploads/media/og-card.webp";
+  const ogField = () =>
+    screen.getByLabelText(dict.seoFields.ogImage) as HTMLInputElement;
+  const ogScope = () => within(ogField().parentElement as HTMLElement);
+
+  it("media:write — uploads a file into the library and writes its URL into the OG field", async () => {
+    const library = stubMediaLibrary([]);
+    renderWithProviders(<PageForm onSubmit={noop} isPending={false} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    await userEvent.upload(
+      ogScope().getByTestId("single-image-upload-input"),
+      new File(["png-bytes"], "og.png", { type: "image/png" }),
+    );
+
+    await waitFor(() => expect(library.uploadedNames).toEqual(["og.png"]));
+    await waitFor(() =>
+      expect(ogField()).toHaveValue(makeMediaAsset("up-1").url),
+    );
+  });
+
+  it("picks the OG image from the library and submits it", async () => {
+    stubMediaLibrary([
+      makeMediaAsset("m1", { alt: "Картка для соцмереж", url: OG_URL }),
+    ]);
+    const onSubmit = jest.fn();
+    renderWithProviders(<PageForm onSubmit={onSubmit} isPending={false} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.seoFields.ogImagePickerAria }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.mediaPicker.pickCardAria("Картка для соцмереж"),
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.mediaPicker.useSelected }),
+    );
+    await waitFor(() => expect(ogField()).toHaveValue(OG_URL));
+
+    await userEvent.type(screen.getByTestId("rte-stub"), "<p>Текст</p>");
+    await userEvent.type(titleField(), "Доставка");
+    await userEvent.click(submitButton());
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ ogImage: OG_URL });
+  });
+
+  it("without media keys — no picker and no upload, only the URL box", () => {
+    renderWithProviders(<PageForm onSubmit={noop} isPending={false} />);
+
+    expect(
+      screen.queryByRole("button", { name: dict.seoFields.ogImagePickerAria }),
+    ).not.toBeInTheDocument();
+    expect(
+      ogScope().queryByTestId("single-image-upload-input"),
+    ).not.toBeInTheDocument();
+    expect(ogField()).toHaveValue("");
   });
 });

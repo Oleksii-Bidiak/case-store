@@ -45,9 +45,11 @@ export interface ProductListWhereParams {
    * keeps seeing the full catalogue (it is how an operator finds the products
    * stranded by the deactivation in the first place).
    *
-   * Scope is the product's OWN category, not its ancestor chain — deactivation
-   * deliberately does NOT cascade to descendant categories (the `setActiveMany`
-   * owner decision), so neither does this filter.
+   * Scope is the product's own category AND its ancestor chain: deactivation
+   * CASCADES to the whole branch (owner decision 2026-10-29, TASK-1032). The
+   * descendants' own `isActive` flags are untouched — the cascade is read from
+   * the category's stored `ancestorsActive`, which `PUBLIC_PRODUCT_WHERE.category`
+   * carries — so reactivating the parent restores every child as it was.
    */
   categoryActiveOnly?: boolean;
   /** Keep only positions with zero free-to-sell stock (TASK-362). */

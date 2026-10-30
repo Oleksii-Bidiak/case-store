@@ -110,7 +110,7 @@ describe('Cart — guest & merge (e2e)', () => {
     categoryId: 'cat-e2e-1',
     // TASK-297: the line's availability now folds in the CATEGORY's status, so
     // CART_ITEMS_INCLUDE joins it — the mock must supply it or fromPrisma throws.
-    category: { isActive: true },
+    category: { isActive: true, ancestorsActive: true },
     // CartItemEntity.fromPrisma reads product.images (CART_ITEMS_INCLUDE always
     // selects it in prod); the mock must supply it or `images[0]` throws → 500.
     images: [],
@@ -259,7 +259,7 @@ describe('Cart — guest & merge (e2e)', () => {
         name: 'iPhone 15 Pro Case — Clear MagSafe',
         stock: 50,
         isActive: true,
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
       });
       cartRepositoryMock.addItem.mockResolvedValue(makeGuestCart([guestCartItem]));
 

@@ -520,7 +520,7 @@ describe("OrderDetailsForm — the waybill by mockup", () => {
     });
     expect(link).toHaveAttribute(
       "href",
-      "https://novaposhta.ua/tracking/?cargo_number=20450000000001",
+      "https://novaposhta.ua/tracking/20450000000001",
     );
     expect(link).toHaveAttribute("target", "_blank");
   });

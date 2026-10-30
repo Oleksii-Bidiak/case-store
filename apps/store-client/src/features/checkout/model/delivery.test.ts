@@ -6,6 +6,7 @@ import {
   courierFreeProgress,
   deliveryMethodTitle,
   deliveryQuoteText,
+  lostDeliveryMethod,
   quoteDelivery,
   resolveDeliveryMethod,
   toDeliveryOptions,
@@ -47,6 +48,35 @@ describe("resolveDeliveryMethod", () => {
       "PICKUP",
     );
     expect(resolveDeliveryMethod(undefined, ["OTHER"])).toBe("OTHER");
+  });
+});
+
+describe("lostDeliveryMethod (TASK-1998)", () => {
+  it("names a selection the previous offer had and the current one dropped", () => {
+    expect(
+      lostDeliveryMethod("PICKUP", ["NOVA_POSHTA", "PICKUP"], ["NOVA_POSHTA"]),
+    ).toBe("PICKUP");
+  });
+
+  it("is null while the selection is still offered", () => {
+    expect(
+      lostDeliveryMethod(
+        "NOVA_POSHTA",
+        ["NOVA_POSHTA", "PICKUP"],
+        ["NOVA_POSHTA"],
+      ),
+    ).toBeNull();
+  });
+
+  it("is null on the first offer, or for a default the shop never offered", () => {
+    // The first list to arrive has nothing to be compared with.
+    expect(lostDeliveryMethod("NOVA_POSHTA", null, ["PICKUP"])).toBeNull();
+    // The static default (or the profile prefill's reset() back to it) on a
+    // shop without Nova Poshta was never the shopper's choice.
+    expect(
+      lostDeliveryMethod("NOVA_POSHTA", ["PICKUP", "OTHER"], ["PICKUP"]),
+    ).toBeNull();
+    expect(lostDeliveryMethod(undefined, ["PICKUP"], ["OTHER"])).toBeNull();
   });
 });
 

@@ -17,6 +17,7 @@ export {
   type ImageUploadFieldState,
   type ImageUploadMutation,
 } from "./model/use-image-upload-field";
+export { useLibraryFirstUpload } from "./model/use-library-first-upload";
 export {
   useUploadsControllerUploadCategoryImage,
   useUploadsControllerUploadBrandLogo,

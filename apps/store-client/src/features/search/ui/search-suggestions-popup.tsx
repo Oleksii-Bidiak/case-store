@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { Newspaper, Search } from "lucide-react";
 import { dict } from "@/shared/config";
@@ -43,10 +44,28 @@ export function SearchSuggestionsPopup({
   // alone printed "нічого не знайдено" above a list of matching posts.
   const hasSuggestions = products.length > 0 || blogPosts.length > 0;
 
+  // The popup scrolls as one box, so a keyboard walk past its edge must bring
+  // the highlighted row into view — focus stays on the input, so the browser
+  // will not do it for us (TASK-1996).
+  const activeOptionId = activeIndex >= 0 ? optionId(activeIndex) : undefined;
+  useEffect(() => {
+    if (!activeOptionId) return;
+    document
+      .getElementById(activeOptionId)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeOptionId]);
+
   return (
     <div
       className={cn(
-        "rounded-2xl border border-border bg-popover p-2 shadow-lift",
+        // ONE scroll area, capped to the viewport (TASK-1996). The popup lives
+        // inside the sticky header, so page scroll can never reveal what runs
+        // past its bottom edge — on an 844×390 landscape phone two `max-h-72`
+        // lists made it ~620px tall. 12rem covers the worst anchor: announcement
+        // bar + header row + the compact panel's field above the popup and the
+        // panel's padding below it; 36rem keeps it a dropdown on a desktop.
+        // eslint-disable-next-line tailwindcss/no-arbitrary-value -- viewport-tied height cap, see above; no max-height token for it yet
+        "max-h-[min(36rem,calc(100dvh-12rem))] overflow-y-auto overscroll-contain rounded-2xl border border-border bg-popover p-2 shadow-lift",
         className,
       )}
     >
@@ -56,7 +75,7 @@ export function SearchSuggestionsPopup({
         aria-label={dict.search.inputAria}
         // `min-h-16` is the floor that keeps the popup from resizing under the
         // cursor as a query narrows from several rows down to one.
-        className="max-h-72 min-h-16 overflow-y-auto"
+        className="min-h-16"
       >
         {isSearching && !hasSuggestions && (
           <li
@@ -100,7 +119,7 @@ export function SearchSuggestionsPopup({
       </ul>
 
       {/* Blog-article suggestions (TASK-218) — rendered only when there is at
-          least one match; scrolls independently of the product list. */}
+          least one match; scrolls with the product list as one box. */}
       {blogPosts.length > 0 && (
         <>
           <hr aria-hidden="true" className="mx-3 my-2 border-t border-border" />
@@ -111,7 +130,6 @@ export function SearchSuggestionsPopup({
             id={blogListboxId}
             role="listbox"
             aria-label={dict.search.blogSectionLabel}
-            className="max-h-72 overflow-y-auto"
           >
             {blogPosts.map((post, i) => {
               const index = products.length + i;

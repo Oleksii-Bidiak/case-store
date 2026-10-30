@@ -17,26 +17,29 @@ import { pagesData } from '../prisma/seed/data/content/pages.data';
  * `WHERE` that matches nothing, the silent no-op this project has shipped
  * before, fails HERE rather than on the demo stand. Every scenario runs inside a
  * rolled-back transaction, so nothing leaks into or out of the shared test DB.
+ *
+ * A migrated stand gets the backfill AND every later migration that corrects its
+ * texts (an applied migration is never edited), so the chain below is what runs.
+ * `20261029130000_info_delivery_excerpt_carrier_tariff` drops the free-shipping
+ * promise the backfill wrote into the «Доставка» excerpt (TASK-1661).
  */
-const MIGRATION_SQL = join(
-  __dirname,
-  '..',
-  'prisma',
-  'migrations',
+const MIGRATIONS = [
   '20260926110000_backfill_info_pages',
-  'migration.sql',
-);
+  '20261029130000_info_delivery_excerpt_carrier_tariff',
+];
 
 const SECTION_SLUGS = ['info-delivery', 'info-payment', 'info-warranty', 'info-about-stats'];
 
 function migrationStatements(): string[] {
-  return readFileSync(MIGRATION_SQL, 'utf8')
-    .split('\n')
-    .filter((line) => !line.trimStart().startsWith('--'))
-    .join('\n')
-    .split(';')
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
+  return MIGRATIONS.flatMap((name) =>
+    readFileSync(join(__dirname, '..', 'prisma', 'migrations', name, 'migration.sql'), 'utf8')
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('--'))
+      .join('\n')
+      .split(';')
+      .map((statement) => statement.trim())
+      .filter((statement) => statement.length > 0),
+  );
 }
 
 type Tx = Prisma.TransactionClient;
@@ -200,6 +203,22 @@ describe('/info section pages backfill migration (integration)', () => {
       expect(delivery).toHaveLength(1);
       expect(delivery[0].title).toBe('Доставка (власник)');
       expect(delivery[0].content).toBe('<p>Моє</p>');
+    });
+  });
+
+  it('leaves a «Доставка» excerpt the owner rewrote alone (TASK-1661)', async () => {
+    await inRolledBackTx(async (tx) => {
+      await buildExistingStand(tx);
+      await insertPage(tx, { slug: 'info-delivery', kind: 'INFO', title: 'Доставка' }, 4);
+      await tx.$executeRawUnsafe(
+        `UPDATE "pages" SET "excerpt" = 'Безкоштовно від 2 000 ₴ — наша акція.'
+         WHERE "slug" = 'info-delivery'`,
+      );
+
+      await runMigration(tx);
+
+      const delivery = (await rows(tx)).find((row) => row.slug === 'info-delivery');
+      expect(delivery?.excerpt).toBe('Безкоштовно від 2 000 ₴ — наша акція.');
     });
   });
 

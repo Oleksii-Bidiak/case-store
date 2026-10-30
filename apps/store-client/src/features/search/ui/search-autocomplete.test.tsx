@@ -461,3 +461,44 @@ describe("SearchAutocomplete — the pill's behaviour at every width (TASK-805/5
     outside.remove();
   });
 });
+
+// TASK-1996: on a landscape phone (844×390) the popup ran past the bottom of
+// the viewport inside the sticky header, where page scroll cannot reach it.
+// jsdom cannot measure, so these pin the structure the layout depends on.
+describe("SearchAutocomplete — popup height on a short viewport (TASK-1996)", () => {
+  it("caps the popup root to the viewport height and scrolls it as ONE area", async () => {
+    mockSuggest([suggestion()], [blogPost()]);
+
+    await typeQuery("чохол");
+    const blogList = await screen.findByRole("listbox", {
+      name: dict.search.blogSectionLabel,
+    });
+    const popup = productList().parentElement!;
+
+    expect(popup).toHaveClass("overflow-y-auto", "overscroll-contain");
+    expect(popup.className).toMatch(/max-h-\[[^\]]*100dvh[^\]]*\]/);
+    // The lists no longer scroll on their own: two nested scroll areas were
+    // what let the popup grow to two caps tall.
+    for (const list of [productList(), blogList]) {
+      expect(list).not.toHaveClass("overflow-y-auto");
+      expect(list.className).not.toMatch(/max-h-/);
+    }
+  });
+
+  it("scrolls the keyboard-highlighted option into view", async () => {
+    mockSuggest([suggestion()], [blogPost()]);
+    const spy = jest.spyOn(Element.prototype, "scrollIntoView");
+
+    const { user } = await typeQuery("чохол");
+    const blogList = await screen.findByRole("listbox", {
+      name: dict.search.blogSectionLabel,
+    });
+
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+
+    const article = within(blogList).getByRole("option");
+    expect(spy.mock.contexts).toContain(article);
+    expect(spy).toHaveBeenLastCalledWith({ block: "nearest" });
+    spy.mockRestore();
+  });
+});

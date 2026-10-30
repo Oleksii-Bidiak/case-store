@@ -36,7 +36,9 @@ import { PrismaService } from '../src/prisma';
  * setup-int.ts. Run with `npm run test:int -w apps/store-api` (DB up + migrated).
  *
  * NOTE: dashboard metrics aggregate the whole database, so beforeAll clears all
- * orders/order-items first to make the revenue assertions deterministic.
+ * orders/order-items first to make the revenue assertions deterministic. Every
+ * such wipe deletes `payments` first: they are Restrict on the order, and the
+ * Playwright seed (e2e/fixtures/seed-e2e.ts) leaves one in store_test (TASK-1092).
  */
 describe('DashboardRepository (integration)', () => {
   let app: INestApplication;
@@ -72,6 +74,7 @@ describe('DashboardRepository (integration)', () => {
 
     // Deterministic revenue aggregates: start from zero orders.
     await prisma.orderItem.deleteMany({});
+    await prisma.payment.deleteMany({});
     await prisma.order.deleteMany({});
 
     const suffix = randomUUID();
@@ -180,6 +183,7 @@ describe('DashboardRepository (integration)', () => {
       return;
     }
     await prisma.orderItem.deleteMany({});
+    await prisma.payment.deleteMany({});
     await prisma.order.deleteMany({});
     await prisma.product.deleteMany({
       where: {
@@ -368,6 +372,7 @@ describe('DashboardRepository (integration)', () => {
   describe('getRevenueMetrics — average order value', () => {
     beforeAll(async () => {
       await prisma.orderItem.deleteMany({});
+      await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
 
       // Two PAID orders in the window: $100 + $50 = $150 over 2 orders → AOV $75.
@@ -407,6 +412,7 @@ describe('DashboardRepository (integration)', () => {
     });
 
     it('returns 0 (no divide-by-zero) when there are no paid orders in the window', async () => {
+      await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
       const revenue = await repo.getRevenueMetrics();
       expect(revenue.averageOrderValueLast30Days).toBe(0);
@@ -425,6 +431,7 @@ describe('DashboardRepository (integration)', () => {
     beforeAll(async () => {
       sales = app.get(SalesRepository);
       await prisma.orderItem.deleteMany({});
+      await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
 
       // 1 000 ₴ with 200 ₴ returned: stays in sales in full, the 200 is a refund.
@@ -518,6 +525,7 @@ describe('DashboardRepository (integration)', () => {
 
     beforeAll(async () => {
       await prisma.orderItem.deleteMany({});
+      await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
 
       const suffix = randomUUID();
@@ -593,6 +601,7 @@ describe('DashboardRepository (integration)', () => {
     });
 
     afterAll(async () => {
+      await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
       await prisma.user.deleteMany({
         where: { id: { in: [repeatUserId, mixedUserId, singleUserId] } },
@@ -625,6 +634,7 @@ describe('DashboardRepository (integration)', () => {
     beforeAll(async () => {
       // Deterministic baseline — wipe every table the four counters read.
       await prisma.orderItem.deleteMany({});
+      await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
       await prisma.review.deleteMany({});
       await prisma.notificationOutbox.deleteMany({});
@@ -769,6 +779,7 @@ describe('DashboardRepository (integration)', () => {
     beforeAll(async () => {
       await prisma.orderStatusHistory.deleteMany({});
       await prisma.orderItem.deleteMany({});
+      await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
 
       const now = Date.now();
@@ -797,6 +808,7 @@ describe('DashboardRepository (integration)', () => {
     });
 
     afterAll(async () => {
+      await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
     });
 
@@ -819,6 +831,7 @@ describe('DashboardRepository (integration)', () => {
     beforeAll(async () => {
       await prisma.orderStatusHistory.deleteMany({});
       await prisma.orderItem.deleteMany({});
+      await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
 
       // (a) Order created 10 days ago, first shipped exactly 48h later.
@@ -859,6 +872,7 @@ describe('DashboardRepository (integration)', () => {
 
     afterAll(async () => {
       await prisma.orderStatusHistory.deleteMany({});
+      await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
     });
 
@@ -870,6 +884,7 @@ describe('DashboardRepository (integration)', () => {
 
     it('returns 0 when no order has shipped yet', async () => {
       await prisma.orderStatusHistory.deleteMany({});
+      await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
       await prisma.order.create({
         data: {

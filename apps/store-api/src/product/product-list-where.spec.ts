@@ -88,10 +88,11 @@ describe('buildProductListWhere', () => {
     });
 
     it('joins on category.isActive only when categoryActiveOnly is set', () => {
-      // The joined category must also be live (TASK-653) — the same half of the rule.
+      // The joined category must also be live (TASK-653) and on a visible branch —
+      // no inactive ancestor (TASK-1032) — the same half of the rule.
       expect(buildProductListWhere({ categoryActiveOnly: true })).toEqual({
         deletedAt: null,
-        category: { isActive: true, deletedAt: null },
+        category: { isActive: true, deletedAt: null, ancestorsActive: true },
       });
       expect(buildProductListWhere({ categoryActiveOnly: false })).not.toHaveProperty('category');
     });

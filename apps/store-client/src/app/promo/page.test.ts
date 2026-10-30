@@ -3,6 +3,9 @@
 // the params builder is real (TASK-1301).
 jest.mock("@/widgets/promo", () => ({
   PromoView: () => null,
+  PromoScrollAnchor: function PromoScrollAnchor() {
+    return null;
+  },
   PROMO_DEALS_ANCHOR: "deals",
   PROMO_LISTING_LOCKS: { onSale: true },
 }));
@@ -60,6 +63,7 @@ import {
   buildCatalogListingParams,
   readSearchParamsRecord,
 } from "@/widgets/product-list/model/listing-params";
+import { PromoScrollAnchor } from "@/widgets/promo";
 import PromoPage, { generateMetadata } from "./page";
 
 const findAll = productControllerFindAll as jest.MockedFunction<
@@ -126,6 +130,17 @@ describe("/promo — the deals are the catalogue with a discount lock (TASK-1301
     const [fallback] = findPropValues(tree, "fallback");
     expect(findPropValues(fallback, "lockedOnSale")).toEqual([true]);
     expect(findPropValues(fallback, "withSidebar")).toEqual([true]);
+  });
+
+  // TASK-1991 — Next scrolls a fresh navigation to the first element of the
+  // deepest new segment, i.e. this page. Its listing sits two screens down
+  // inside the layout's deals section, so the segment must open with the
+  // anchor pinned to the frame top — before the JSON-LD and the listing.
+  it("opens the segment with the top-of-frame scroll anchor", async () => {
+    const tree = (await render()) as { props: { children: unknown[] } };
+
+    const [firstChild] = tree.props.children as { type?: unknown }[];
+    expect(firstChild?.type).toBe(PromoScrollAnchor);
   });
 
   it("describes the prefetched deals as an ItemList", async () => {

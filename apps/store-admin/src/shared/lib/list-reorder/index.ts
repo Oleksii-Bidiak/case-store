@@ -16,6 +16,8 @@ export {
   isFlatReorderConflict,
   orderedIdsIfChanged,
 } from "./flat-reorder-strings";
+// TASK-1990: one global order reordered one slice (a page kind) at a time.
+export { mergeSliceOrder } from "./merge-slice-order";
 export {
   flatPointerAnnouncements,
   useSortableListGrid,

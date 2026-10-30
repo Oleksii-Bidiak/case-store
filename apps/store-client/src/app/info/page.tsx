@@ -19,8 +19,10 @@ import {
   fetchPublishedPage,
   fetchPublishedPages,
 } from "@/shared/api/pages-server";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { sanitizeHtml } from "@/shared/lib/sanitize-html";
+import { resolveSiteName } from "@/shared/lib/seo";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
 import {
   INFO_HUB_SECTION_SLUGS,
@@ -169,14 +171,18 @@ export default async function InfoPage() {
   // Contacts come from the shared, `site-contact` tagged fetcher (TASK-345) —
   // this page used to hold its own untagged copy, so admin edits took up to an
   // hour to appear here while the footer updated at once.
-  const [contact, faqs, about, sections, services, pages] = await Promise.all([
-    fetchSiteContactSettings(),
-    getFaqs(),
-    getAbout(),
-    getSections(),
-    getServices(),
-    getOtherPages(),
-  ]);
+  // TASK-1639 — the tagged SEO settings for the store name in the static
+  // «Про нас» heading (null → the default name).
+  const [contact, faqs, about, sections, services, pages, seo] =
+    await Promise.all([
+      fetchSiteContactSettings(),
+      getFaqs(),
+      getAbout(),
+      getSections(),
+      getServices(),
+      getOtherPages(),
+      fetchSeoSettings(),
+    ]);
 
   return (
     <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
@@ -198,6 +204,7 @@ export default async function InfoPage() {
         sections={sections}
         services={services}
         pages={pages}
+        siteName={resolveSiteName(seo)}
       />
     </div>
   );

@@ -222,6 +222,7 @@ export function PickupBranch({
               <div
                 role="radiogroup"
                 aria-label={dict.checkout.delivery.pickupGroupAria}
+                aria-required="true"
                 aria-invalid={fieldState.error ? true : undefined}
                 aria-describedby={
                   fieldState.error ? errorId : "checkout-pickup-note"

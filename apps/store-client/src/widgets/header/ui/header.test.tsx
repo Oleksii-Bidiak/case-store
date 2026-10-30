@@ -30,7 +30,7 @@ jest.mock("next/navigation", () => ({
  * classes that decide who yields are pinned here, where a drive-by "cleanup"
  * would turn this suite red instead of squeezing the logo on a real tablet.
  */
-function renderHeader() {
+function renderHeader(options?: Parameters<typeof renderWithProviders>[1]) {
   server.use(
     // HeaderSearch's mega-menu fires the tree request on mount.
     http.get("*/api/categories/tree", () => HttpResponse.json({ data: [] })),
@@ -43,6 +43,7 @@ function renderHeader() {
     <ThemeProvider attribute="data-theme" defaultTheme="system" enableSystem>
       <Header siteName={STORE_NAME} />
     </ThemeProvider>,
+    options,
   );
 }
 
@@ -216,5 +217,93 @@ describe("Header — responsive class contract (TASK-539)", () => {
     expect(classesOf(cluster)).not.toContain("gap-1");
     expect(classesOf(cart)).toContain("sm:ml-1");
     expect(classesOf(cart)).not.toContain("ml-1");
+  });
+});
+
+/**
+ * TASK-1999 — «Статус замовлення» (/orders/status) is how a guest finds an
+ * order once the letter is gone, and the footer used to be the only way in.
+ * A signed-in shopper has «Мої замовлення» instead, so they are not offered it.
+ */
+describe("Header — the order-status lookup for guests (TASK-1999)", () => {
+  it("shows guests a named 44×44 «Статус замовлення» action from exactly xl", async () => {
+    renderHeader();
+
+    const status = await screen.findByRole("link", {
+      name: dict.header.orderStatusLink,
+    });
+    expect(status).toHaveAttribute("href", "/orders/status");
+    // Desktop only: below `xl` the slide-out menu carries it (next test).
+    expect(classesOf(status)).toEqual(
+      expect.arrayContaining(["hidden", "xl:flex", "min-h-11", "min-w-11"]),
+    );
+  });
+
+  it("reserves the action's box while the session restores — no shift for guests", () => {
+    // The theme switch is the cluster's leftmost item, so an action that only
+    // appears once auth settles moved it under the cursor: a click aimed at
+    // «Світла» landed on the radiogroup between segments (e2e/theme.spec.ts).
+    renderHeader({ auth: { isInitializing: true } });
+
+    expect(
+      screen.queryByRole("link", { name: dict.header.orderStatusLink }),
+    ).toBeNull();
+    const placeholder = document.querySelector(
+      '[data-slot="order-status-placeholder"]',
+    );
+    expect(placeholder).not.toBeNull();
+    expect(placeholder).toHaveAttribute("aria-hidden", "true");
+    // The same box the link settles into: its classes, made invisible.
+    expect(classesOf(placeholder)).toEqual(
+      expect.arrayContaining([
+        "invisible",
+        "hidden",
+        "xl:flex",
+        "min-h-11",
+        "min-w-11",
+      ]),
+    );
+    expect(placeholder).toHaveTextContent(dict.header.orderStatusCaption);
+  });
+
+  it("lists «Статус замовлення» in the guest's slide-out menu", async () => {
+    const user = userEvent.setup();
+    renderHeader();
+
+    await user.click(
+      screen.getByRole("button", { name: dict.header.openMenu }),
+    );
+    const menu = await screen.findByRole("dialog");
+
+    expect(
+      within(menu).getByRole("link", { name: dict.header.orderStatusLink }),
+    ).toHaveAttribute("href", "/orders/status");
+  });
+
+  it("offers it to nobody signed in — they have «Мої замовлення»", async () => {
+    const user = userEvent.setup();
+    renderHeader({ auth: { isAuthenticated: true, accessToken: "token" } });
+
+    // The row first — the open menu would hide it from the a11y tree.
+    expect(
+      await screen.findByRole("button", {
+        name: dict.header.accountTriggerAria,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: dict.header.orderStatusLink }),
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", { name: dict.header.openMenu }),
+    );
+    const menu = await screen.findByRole("dialog");
+
+    expect(
+      within(menu).getByRole("link", { name: dict.account.ordersLink }),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).queryByRole("link", { name: dict.header.orderStatusLink }),
+    ).toBeNull();
   });
 });

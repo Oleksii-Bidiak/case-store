@@ -20,4 +20,6 @@ export type {
 export type { EmailVerificationMailPayload } from './templates/email-verification.template';
 export type { OrderPaymentExpiredMailPayload } from './templates/order-payment-expired.template';
 export type { OrderShippedMailPayload } from './templates/order-shipped.template';
+// The Telegram `order-shipped` notice links the same page as the letter (TASK-1987).
+export { novaPoshtaTrackingUrl } from './templates/order-shipped.template';
 export type { PasswordResetMailPayload } from './templates/password-reset.template';

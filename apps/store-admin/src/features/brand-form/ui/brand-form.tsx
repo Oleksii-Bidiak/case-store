@@ -16,6 +16,7 @@ import { FormSectionCard } from "@/shared/ui/form-section-card";
 import {
   ContentImageField,
   useImageUploadField,
+  useLibraryFirstUpload,
   useUploadsControllerUploadBrandLogo,
 } from "@/features/content-image-upload";
 import { MediaPicker } from "@/features/media-picker";
@@ -140,8 +141,9 @@ function EditableBrandForm({
   // URL goes in through `setValue`, so the form remains the only source of truth
   // for the field (docs/conventions/forms.md).
   const logoValue = useWatch({ control, name: "logo" }) ?? "";
+  // TASK-2002: into the media library first, the brand route as fallback.
   const logoUpload = useImageUploadField({
-    upload: useUploadsControllerUploadBrandLogo(),
+    upload: useLibraryFirstUpload(useUploadsControllerUploadBrandLogo()),
     copy: f.logoUpload,
     onUploaded: (url) =>
       setValue("logo", url, { shouldDirty: true, shouldValidate: true }),

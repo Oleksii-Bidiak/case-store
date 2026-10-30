@@ -196,9 +196,8 @@ export function resolveSeo(input: ResolveSeoInput): ResolvedSeo {
  * Pick the effective `%s`-based title template: the admin's
  * `SeoSettings.titleTemplate` when it is set and contains exactly one `%s`
  * token, else the zero-config default `%s | ${siteName}`. Used by the root
- * layout's `title.template` (which Next applies to a child segment's *static*
- * `metadata` string title) and by `toMetadataTitle` for the `generateMetadata`
- * call sites.
+ * layout's `title.template` (which Next applies to every child segment's string
+ * title) and by `toMetadataTitle` for the `{ absolute }` call sites.
  */
 export function resolveTitleTemplate(
   settings: Pick<SeoSettingsEntity, "titleTemplate"> | null | undefined,
@@ -217,12 +216,16 @@ export function applyTitleTemplate(template: string, title: string): string {
  * Turn a {@link ResolvedSeo} into a Next `Metadata.title` value for a
  * `generateMetadata()` call site, always as an `{ absolute }` string.
  *
- * Next 16 applies the root `title.template` to a child's *static* `metadata`
- * string title but NOT to one returned from a page's `generateMetadata`, so the
+ * Next 16 applies the root `title.template` to every child segment's string
+ * title — a static `metadata` export and a `generateMetadata` return alike
+ * (`resolveTitle` in next/dist/lib/metadata; verified on 16.3.6, TASK-1628) —
+ * but never to the root segment's own page (`/`), and an admin-typed title
+ * must not be templated at all. So the result is always `{ absolute }` and the
  * template is applied here explicitly: a content-derived title is branded with
  * the effective template; an admin-typed title (the entity's `metaTitle` or the
  * global `defaultMetaTitle`) is used verbatim. Either way the rendered `<title>`
- * includes the brand (plan 116 gap 3).
+ * includes the brand exactly once (plan 116 gap 3). A plain-string page title
+ * outside this helper must therefore be the bare page name.
  */
 export function toMetadataTitle(
   resolved: ResolvedSeo,

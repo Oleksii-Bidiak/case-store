@@ -38,6 +38,13 @@ describe("BlogNewsletter — the shop's real social channels (TASK-873)", () => 
     expect(container.querySelector('a[href="#"]')).toBeNull();
   });
 
+  it("names the admin's store in the subtitle (TASK-1677)", () => {
+    renderWithProviders(<BlogNewsletter siteName="Аксесуарня" />);
+
+    expect(screen.getByText(/на канали Аксесуарня/)).toBeInTheDocument();
+    expect(screen.queryByText(/CaseStore/)).not.toBeInTheDocument();
+  });
+
   it("still renders the newsletter subscribe form (regression)", () => {
     renderWithProviders(<BlogNewsletter />);
 

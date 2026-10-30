@@ -43,6 +43,81 @@ jest.mock("@/entities/session", () => ({
 
 const openMenu = { name: dict.header.openMenu };
 
+describe("AdminShell — page scroll container (TASK-1989)", () => {
+  // jsdom has no layout, so the contract is asserted on the classes: the
+  // <main> scroller must be the containing block of every absolutely
+  // positioned descendant (sr-only radios, Radix hidden inputs), or those
+  // inputs resolve to the initial containing block and give the VIEWPORT a
+  // scroll range — focusing one, or following a #section anchor, then slides
+  // the whole h-screen shell up behind body overflow-hidden.
+  it("makes <main> the positioned scroll container", () => {
+    renderWithProviders(<AdminShell>page content</AdminShell>);
+
+    const main = screen.getByRole("main");
+    expect(main).toHaveClass("relative");
+    expect(main).toHaveClass("overflow-y-auto");
+  });
+
+  it("clips the shell wrappers so script/focus cannot scroll them", () => {
+    renderWithProviders(<AdminShell>page content</AdminShell>);
+
+    const main = screen.getByRole("main");
+    const column = main.parentElement!;
+    const shell = column.parentElement!;
+    for (const wrapper of [column, shell]) {
+      expect(wrapper).toHaveClass("overflow-clip");
+      expect(wrapper).not.toHaveClass("overflow-hidden");
+    }
+  });
+
+  it("lets the content column shrink below its content width", () => {
+    // overflow-clip is not a scroll container, so the column's flex
+    // `min-width: auto` would resolve to its content width: a wide table or
+    // chip row would push it past the viewport, the outer clip would cut the
+    // right edge off and <main> would lose its horizontal scroll.
+    renderWithProviders(<AdminShell>page content</AdminShell>);
+
+    const column = screen.getByRole("main").parentElement!;
+    expect(column).toHaveClass("min-w-0");
+  });
+});
+
+describe("AdminShell — a registry fills the page (TASK-1994)", () => {
+  // jsdom has no layout, so the contract is asserted on the classes. A
+  // registry's table box (`data-registry-fill`) scrolls on its own so its
+  // header can stick; <main> scrolling as well made two vertical scrollers,
+  // and scrolling <main> took the header away. From md up, the shell turns
+  // <main> and every wrapper between it and the box into a shrinkable flex
+  // column, so the box gets exactly the height left and <main> has nothing
+  // to scroll.
+  it("makes <main> a flex column when it holds a filling registry", () => {
+    renderWithProviders(<AdminShell>page content</AdminShell>);
+
+    const main = screen.getByRole("main");
+    expect(main).toHaveClass(
+      "md:has-[[data-registry-fill]]:flex",
+      "md:has-[[data-registry-fill]]:flex-col",
+    );
+  });
+
+  it("lets every wrapper around the registry shrink instead of overflowing <main>", () => {
+    renderWithProviders(<AdminShell>page content</AdminShell>);
+
+    const main = screen.getByRole("main");
+    expect(main).toHaveClass(
+      "md:[&_:has([data-registry-fill])]:flex",
+      "md:[&_:has([data-registry-fill])]:flex-col",
+      "md:[&_:has([data-registry-fill])]:min-h-0",
+    );
+  });
+
+  it("keeps <main> scrollable — the fallback when the box hits its floor", () => {
+    renderWithProviders(<AdminShell>page content</AdminShell>);
+
+    expect(screen.getByRole("main")).toHaveClass("overflow-y-auto");
+  });
+});
+
 describe("AdminShell — mobile nav drawer", () => {
   afterEach(() => {
     mockPathname = "/";

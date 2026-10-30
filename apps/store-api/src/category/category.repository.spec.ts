@@ -164,7 +164,8 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
 
       expect(result).toBeNull();
       expect(findFirst).toHaveBeenCalledWith({
-        where: { slug: 'phone-cases', deletedAt: null, isActive: true },
+        // …and for an active one under a withdrawn ancestor (TASK-1032 cascade).
+        where: { slug: 'phone-cases', deletedAt: null, isActive: true, ancestorsActive: true },
       });
     });
 
@@ -478,7 +479,10 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
 
       const data = txMock.category.updateMany.mock.calls[0][0].data;
       expect(data).toEqual({ isActive: true });
-      expect(txMock.$executeRaw).not.toHaveBeenCalled(); // no advisory lock needed
+      // Only raw statements: the tree lock and the branch recompute (TASK-1032) —
+      // no row write of `parentId` / `sortOrder` anywhere.
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(2);
+      expect(txMock.category.update).not.toHaveBeenCalled();
     });
   });
 
@@ -661,8 +665,10 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
   const calls: string[] = [];
 
   const tx = {
-    $executeRaw: jest.fn((..._args: unknown[]) => {
-      calls.push('lock');
+    // Advisory locks and the branch-visibility recompute (TASK-1032) are both raw
+    // statements — told apart by their SQL so the ordering assertions stay exact.
+    $executeRaw: jest.fn((strings: TemplateStringsArray, ..._values: unknown[]) => {
+      calls.push(strings.join('').includes('pg_advisory') ? 'lock' : 'refresh');
       return Promise.resolve(1);
     }),
     $queryRaw: jest.fn(),
@@ -748,7 +754,8 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
       movedLiveProducts: 3,
       switchedCarousels: 1,
     });
-    // Locks first, then the moves (live, then soft-deleted), then the three tombstones.
+    // Locks first, then the moves (live, then soft-deleted), then the three tombstones,
+    // then the branch-visibility recompute (TASK-1032) inside the same transaction.
     expect(calls.filter((c) => c !== 'lock')).toEqual([
       'products',
       'products',
@@ -756,6 +763,7 @@ describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
       'tombstone',
       'tombstone',
       'tombstone',
+      'refresh',
     ]);
     expect(calls.lastIndexOf('lock')).toBeLessThan(calls.indexOf('products'));
   });

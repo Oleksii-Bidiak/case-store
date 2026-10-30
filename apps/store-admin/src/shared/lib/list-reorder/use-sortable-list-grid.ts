@@ -135,6 +135,12 @@ export interface UseSortableListGridOptions {
   rowIdPrefix: string;
   /** Reordering is off: a search/filter hides rows, so the visible order is not the real one. */
   locked?: boolean;
+  /**
+   * What the live region says about the lock. Defaults to the search wording;
+   * a grid locked for another reason passes its own (TASK-1990 — the page
+   * list's «Усі» view must not claim a search is active).
+   */
+  lockedAnnouncement?: string;
   /** Rows to RENDER. Defaults to all of them. Hidden rows still belong to the payload. */
   visibleIds?: ReadonlySet<string>;
 }
@@ -159,6 +165,7 @@ export function useSortableListGrid({
   focus,
   rowIdPrefix,
   locked = false,
+  lockedAnnouncement = a.searchLocked,
   visibleIds,
 }: UseSortableListGridOptions): SortableListGridApi {
   const { announcePolite } = useAnnouncer();
@@ -198,8 +205,8 @@ export function useSortableListGrid({
   // The visible order is not the real order while a filter is active, so every
   // move affordance is off and the lock is announced.
   useEffect(() => {
-    if (locked) announcePolite(a.searchLocked);
-  }, [announcePolite, locked]);
+    if (locked) announcePolite(lockedAnnouncement);
+  }, [announcePolite, locked, lockedAnnouncement]);
 
   /**
    * Roving-tabindex ownership: tracked by ROW ID, never by index. If the owner is
@@ -227,7 +234,7 @@ export function useSortableListGrid({
   const pickUp = useCallback(
     (movingId: string) => {
       if (locked) {
-        announcePolite(a.searchLocked);
+        announcePolite(lockedAnnouncement);
         return;
       }
       if (reorder.isPending) {
@@ -239,7 +246,13 @@ export function useSortableListGrid({
       const at = positionOf(base, movingId);
       if (at) announcePolite(a.grabbed(at.name, at.pos, at.size));
     },
-    [announcePolite, locked, reorder.isPending, reorder.items],
+    [
+      announcePolite,
+      locked,
+      lockedAnnouncement,
+      reorder.isPending,
+      reorder.items,
+    ],
   );
 
   const stepMove = useCallback(

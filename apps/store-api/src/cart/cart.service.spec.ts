@@ -40,7 +40,7 @@ const mockCartWithSaleItem: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
         images: [],
       },
     },
@@ -70,7 +70,7 @@ const mockCartWithFullPriceItem: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
         images: [],
       },
     },
@@ -100,7 +100,7 @@ const mockCartWithMultipleItems: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
         images: [],
       },
     },
@@ -120,7 +120,7 @@ const mockCartWithMultipleItems: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
         images: [],
       },
     },
@@ -159,7 +159,7 @@ const mockCartWithLowStockItem: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
         images: [],
       },
     },
@@ -190,7 +190,7 @@ const mockGuestCart: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
         images: [],
       },
     },
@@ -210,7 +210,7 @@ const mockGuestCart: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
         images: [],
       },
     },
@@ -400,7 +400,7 @@ describe('CartService', () => {
       name: 'iPhone 15 Pro Case',
       stock: 50,
       isActive: true,
-      category: { isActive: true },
+      category: { isActive: true, ancestorsActive: true },
     };
 
     it('should validate, add the item, and return the updated cart', async () => {
@@ -505,7 +505,7 @@ describe('CartService', () => {
         name: 'Out of Stock Case',
         stock: 0,
         isActive: true,
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
       });
 
       await expect(
@@ -521,7 +521,7 @@ describe('CartService', () => {
         name: 'Limited Edition Case — Gold',
         stock: 2,
         isActive: true,
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
       });
 
       await expect(
@@ -552,7 +552,7 @@ describe('CartService', () => {
               isActive: true,
               slug: 'test-product',
               categoryId: 'cat-1',
-              category: { isActive: true },
+              category: { isActive: true, ancestorsActive: true },
               images: [],
             },
           },
@@ -574,7 +574,7 @@ describe('CartService', () => {
         name: 'Discontinued Case',
         stock: 10,
         isActive: false,
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
       });
 
       await expect(
@@ -595,7 +595,24 @@ describe('CartService', () => {
         name: 'Case From A Withdrawn Category',
         stock: 10,
         isActive: true,
-        category: { isActive: false },
+        category: { isActive: false, ancestorsActive: true },
+      });
+
+      await expect(
+        service.addToCart(userIdentity, { productId: 'product-uuid-5', quantity: 1 }),
+      ).rejects.toThrow(BadRequestException);
+      expect(cartRepositoryMock.addItem).not.toHaveBeenCalled();
+    });
+
+    // TASK-1032: an active subcategory under a deactivated parent is withdrawn too.
+    it('should throw BadRequestException and NOT persist when an ANCESTOR of the category is inactive', async () => {
+      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
+      cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
+        id: 'product-uuid-5',
+        name: 'Case Under A Withdrawn Parent',
+        stock: 10,
+        isActive: true,
+        category: { isActive: true, ancestorsActive: false },
       });
 
       await expect(
@@ -626,7 +643,7 @@ describe('CartService', () => {
               isActive: true,
               slug: 'test-product',
               categoryId: 'cat-1',
-              category: { isActive: false },
+              category: { isActive: false, ancestorsActive: true },
               images: [],
             },
           },
@@ -657,7 +674,7 @@ describe('CartService', () => {
         name: 'Screen Protector',
         stock: 30,
         isActive: true,
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
       });
       cartRepositoryMock.addItem.mockResolvedValue(mockCartWithFullPriceItem);
 
@@ -717,7 +734,12 @@ describe('CartService', () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithSaleItem);
       cartRepositoryMock.updateItem.mockImplementation((_input, guard) => {
         guard(
-          { name: 'iPhone 15 Pro Case', stock: 2, isActive: true, category: { isActive: true } },
+          {
+            name: 'iPhone 15 Pro Case',
+            stock: 2,
+            isActive: true,
+            category: { isActive: true, ancestorsActive: true },
+          },
           5,
         );
         return Promise.resolve(updatedItemRow);
@@ -809,7 +831,7 @@ describe('CartService', () => {
 
       it('rejects with 400 and writes nothing when the product CATEGORY was deactivated', async () => {
         cartRepositoryMock.findByUserId.mockResolvedValue(
-          withLineProduct({ category: { isActive: false } }),
+          withLineProduct({ category: { isActive: false, ancestorsActive: true } }),
         );
 
         await expect(
@@ -1457,7 +1479,7 @@ describe('CartService', () => {
               isActive: true,
               slug: 'test-product',
               categoryId: 'cat-1',
-              category: { isActive: true },
+              category: { isActive: true, ancestorsActive: true },
               images: [],
             },
           },
@@ -1505,7 +1527,7 @@ describe('CartService', () => {
               isActive: true,
               slug: 'test-product',
               categoryId: 'cat-1',
-              category: { isActive: true },
+              category: { isActive: true, ancestorsActive: true },
               images: [],
             },
           },

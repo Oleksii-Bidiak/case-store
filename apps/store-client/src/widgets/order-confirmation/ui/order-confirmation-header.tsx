@@ -12,6 +12,8 @@ interface OrderConfirmationHeaderProps {
   paymentStatus: OrderEntityPaymentStatus;
   /** ISO timestamp */
   createdAt: string;
+  /** The h1; «Дякуємо за ваше замовлення!» unless a host says otherwise. */
+  heading?: string;
 }
 
 /**
@@ -25,12 +27,13 @@ export function OrderConfirmationHeader({
   status,
   paymentStatus,
   createdAt,
+  heading = dict.order.thankYou,
 }: OrderConfirmationHeaderProps) {
   const orderNumber = orderId.slice(0, 8).toUpperCase();
 
   return (
     <header className="flex flex-col gap-3">
-      <h1 className={`${H1_CLASS} text-foreground`}>{dict.order.thankYou}</h1>
+      <h1 className={`${H1_CLASS} text-foreground`}>{heading}</h1>
 
       <dl className="flex flex-col gap-1 text-sm">
         <div className="flex gap-2">

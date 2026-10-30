@@ -16,7 +16,7 @@ import {
   UMAMI_WEBSITE_ID,
 } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
-import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { fetchSeoSettingsForChrome } from "@/shared/api/seo-settings-server";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { readPreviewSession } from "@/shared/api/preview-server";
 import {
@@ -79,11 +79,14 @@ export const viewport: Viewport = {
  *     current `dict.meta.*` strings.
  *   - openGraph.images — seeded from `SeoSettings.defaultOgImage` when set.
  *
- * `fetchSeoSettings()` is tagged (`seo-settings`) and returns null on any error,
- * so an unreachable API degrades gracefully to the hardcoded defaults.
+ * `fetchSeoSettingsForChrome()` is the Data-Cached `seo-settings` read. It
+ * resolves null (→ the hardcoded defaults) only while `next build` prerenders
+ * without an API; a failed read at runtime THROWS (TASK-1988), so Next keeps
+ * the previously generated page instead of caching "CaseStore" branding over
+ * the owner's — see that function for what a cold-cache failure renders.
  */
 export async function generateMetadata(): Promise<Metadata> {
-  const seo = await fetchSeoSettings();
+  const seo = await fetchSeoSettingsForChrome();
 
   // Root defaults resolved through the shared precedence helper. The root layout
   // is not an entity — it has no content of its own — so ONLY `settings` is fed
@@ -103,7 +106,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     metadataBase: new URL(SITE_URL),
     title: {
-      default: resolved.title || dict.meta.rootTitle,
+      default: resolved.title || dict.meta.rootTitle(siteName),
       template: resolveTitleTemplate(seo, siteName),
     },
     description: resolved.description ?? dict.meta.rootDescription,
@@ -123,8 +126,7 @@ export async function generateMetadata(): Promise<Metadata> {
       images: buildOgImages({
         defaultOgImage: resolved.ogImage,
         // No admin title → the helper's floor, the brand-card alt built from
-        // the resolved store name (TASK-546), not the constant-bearing
-        // `dict.meta.rootTitle`.
+        // the resolved store name (TASK-546).
         alt: resolved.title,
         siteName,
       }),
@@ -175,7 +177,9 @@ export default async function RootLayout({
   // props.
   const [banners, seo, contact, preview] = await Promise.all([
     fetchPublishedBanners(),
-    fetchSeoSettings(),
+    // Strict read (TASK-1988): a failure throws rather than drawing the
+    // placeholder monogram, which ISR would otherwise keep until the next purge.
+    fetchSeoSettingsForChrome(),
     fetchSiteContactSettings(),
     // The signed preview (TASK-669): `null` outside Next draft mode — always so
     // while a page is prerendered or revalidated, which is why reading it here

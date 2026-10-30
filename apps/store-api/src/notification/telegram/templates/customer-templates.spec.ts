@@ -186,7 +186,7 @@ describe('Telegram customer messages (TASK-680)', () => {
         [
           '🚚 <b>Замовлення #AB12CD34 відправлено</b>',
           'Доставка: Нова Пошта · ТТН: <code>20450000000001</code>',
-          '<a href="https://novaposhta.ua/tracking/?cargo_number=20450000000001">Відстежити посилку</a>',
+          '<a href="https://novaposhta.ua/tracking/20450000000001">Відстежити посилку</a>',
           '<a href="https://shop.example.com/orders/status">Статус замовлення</a>',
         ].join('\n'),
       );
@@ -213,14 +213,25 @@ describe('Telegram customer messages (TASK-680)', () => {
       expect(text).not.toContain('novaposhta.ua');
     });
 
-    it('escapes a hostile waybill in the text and in the link', () => {
+    it('escapes a hostile waybill in the text and gives it no tracking link (TASK-1987)', () => {
       const text = renderOrderShipped(
         row('order-shipped', { ...payload, trackingNumber: '<x>&"' }),
         withoutStore,
       );
 
       expect(text).toContain('<code>&lt;x&gt;&amp;&quot;</code>');
-      expect(text).toContain('cargo_number=%3Cx%3E%26%22');
+      expect(text).not.toContain('novaposhta.ua');
+    });
+
+    it('links the digits of a pasted waybill only, in the path (TASK-1987)', () => {
+      const text = renderOrderShipped(
+        row('order-shipped', { ...payload, trackingNumber: '2045 0000 0000 01"><b>' }),
+        withoutStore,
+      );
+
+      expect(text).toContain(
+        '<a href="https://novaposhta.ua/tracking/20450000000001">Відстежити посилку</a>',
+      );
     });
 
     it('says «готове до видачі» for a PICKUP order — no carrier, no waybill, no tracking', () => {

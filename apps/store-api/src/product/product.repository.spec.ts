@@ -778,13 +778,18 @@ describe('ProductRepository (soft-delete behaviour)', () => {
 
       const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
       expect(findManyArgs.where).toEqual(
-        expect.objectContaining({ isActive: true, category: { isActive: true, deletedAt: null } }),
+        expect.objectContaining({
+          isActive: true,
+          category: { isActive: true, deletedAt: null, ancestorsActive: true },
+        }),
       );
       // The count must carry the SAME predicate, or pagination `total` would
       // advertise pages of products the list itself refuses to return.
       const countArgs = prismaMock.product.count.mock.calls[0][0];
       expect(countArgs.where).toEqual(
-        expect.objectContaining({ category: { isActive: true, deletedAt: null } }),
+        expect.objectContaining({
+          category: { isActive: true, deletedAt: null, ancestorsActive: true },
+        }),
       );
     });
 
@@ -813,7 +818,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(findManyArgs.where).toEqual(
         expect.objectContaining({
           categoryId: { in: ['root', 'child'] },
-          category: { isActive: true, deletedAt: null },
+          category: { isActive: true, deletedAt: null, ancestorsActive: true },
         }),
       );
     });

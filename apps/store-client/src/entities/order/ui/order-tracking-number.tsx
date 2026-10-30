@@ -52,6 +52,8 @@ export function OrderTrackingNumber({
   const inline = variant === "inline";
   const t = dict.order.tracking;
   const [copied, setCopied] = useState(false);
+  // A digit-less note («ТТН уточнюється») has nothing to track (TASK-1987).
+  const trackingUrl = novaPoshtaTrackingUrl(trackingNumber);
 
   useEffect(() => {
     if (!copied) return;
@@ -99,16 +101,18 @@ export function OrderTrackingNumber({
         )}
         {copied ? t.copied : t.copy}
       </button>
-      <a
-        href={novaPoshtaTrackingUrl(trackingNumber)}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={t.trackAria}
-        className={`${action} text-primary hover:underline`}
-      >
-        {t.track}
-        <ArrowUpRight className="size-3.5" aria-hidden="true" />
-      </a>
+      {trackingUrl ? (
+        <a
+          href={trackingUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={t.trackAria}
+          className={`${action} text-primary hover:underline`}
+        >
+          {t.track}
+          <ArrowUpRight className="size-3.5" aria-hidden="true" />
+        </a>
+      ) : null}
       <span className="sr-only" role="status" aria-live="polite">
         {copied ? t.copiedLive(trackingNumber) : ""}
       </span>

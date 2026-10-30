@@ -45,6 +45,7 @@ import {
 import {
   ContentImageField,
   useImageUploadField,
+  useLibraryFirstUpload,
   useUploadsControllerUploadCategoryImage,
 } from "@/features/content-image-upload";
 import { MediaPicker } from "@/features/media-picker";
@@ -216,21 +217,22 @@ export function CategoryForm({
   // of truth for the field, so no local copy can disagree with an id-keyed
   // `reset()` (docs/conventions/forms.md).
   const imageValue = useWatch({ control, name: "image" }) ?? "";
+  // TASK-2002: into the media library first, the category route as fallback.
   const imageUpload = useImageUploadField({
-    upload: useUploadsControllerUploadCategoryImage(),
+    upload: useLibraryFirstUpload(useUploadsControllerUploadCategoryImage()),
     copy: f.imageUpload,
     onUploaded: (url) =>
       setValue("image", url, { shouldDirty: true, shouldValidate: true }),
   });
 
   // TASK-728: the social-card image gets the same three paths as the tile
-  // above — a file, a library pick, a link — through the same route (the form's
-  // own `categories:write`), and is written through `setValue` for the same
-  // reason. Its own mutation instance, so one field's spinner never shows on
-  // the other.
+  // above — a file, a library pick, a link — through the same route choice
+  // (TASK-2002: the library, else the form's own `categories:write` route), and
+  // is written through `setValue` for the same reason. Its own mutation
+  // instance, so one field's spinner never shows on the other.
   const ogImageValue = useWatch({ control, name: "ogImage" }) ?? "";
   const ogImageUpload = useImageUploadField({
-    upload: useUploadsControllerUploadCategoryImage(),
+    upload: useLibraryFirstUpload(useUploadsControllerUploadCategoryImage()),
     copy: dict.seoFields.ogImageUpload,
     onUploaded: (url) =>
       setValue("ogImage", url, { shouldDirty: true, shouldValidate: true }),

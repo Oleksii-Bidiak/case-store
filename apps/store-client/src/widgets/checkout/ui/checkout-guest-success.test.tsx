@@ -91,6 +91,15 @@ describe("CheckoutGuestSuccess (TASK-610)", () => {
       screen.getByRole("link", { name: dict.common.continueShopping }),
     ).toHaveAttribute("href", "/");
   });
+
+  // TASK-1999: the page a guest comes back to once the letter is gone.
+  it("points to the order-status lookup by number", () => {
+    renderWithProviders(<CheckoutGuestSuccess order={order} email={email} />);
+
+    expect(
+      screen.getByRole("link", { name: dict.orderLookup.entryLink }),
+    ).toHaveAttribute("href", "/orders/status");
+  });
 });
 
 /**

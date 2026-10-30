@@ -13,10 +13,18 @@
  * 1. THE LIST IS NOT PAGINATED. A page of rows is a PARTIAL view, and a reorder
  *    computed on a partial view is a partial ordering the server rejects as a lost
  *    update (409). So the view reads the COMPLETE list.
- * 2. ANYTHING THAT HIDES ROWS LOCKS REORDERING. The search box, the kind views and the
- *    status filter all filter LOCALLY (never a narrowed API query — pages carry ONE
- *    global `sortOrder` and `PATCH /reorder` rewrites the whole list), and each of them
- *    sets `locked`: dragging inside a slice would write the wrong `sortOrder`.
+ * 2. ANYTHING THAT HIDES ROWS OF THE ORDERED SLICE LOCKS REORDERING. The search box, the
+ *    kind views and the status filter all filter LOCALLY (never a narrowed API query —
+ *    pages carry ONE global `sortOrder` and `PATCH /reorder` rewrites the whole list).
+ *    Search and status set `locked`: dragging among the rows left on screen would write
+ *    the wrong `sortOrder`.
+ *
+ * TASK-1990 — the order that is VISIBLE on the site is per hub (`/legal` lists the legal
+ * pages, `/info` the info ones), so a kind view is the slice the operator orders:
+ * «Юридичні» / «Довідкові» hand `usePageReorder` their ids as its `scope`, and the
+ * adapter writes the reordered slice back into the global order. «Усі» mixes hubs (a
+ * drag there moved nothing anyone could see) and «Хаби» has no order, so both lock with
+ * a hint that names the tabs where the order does change.
  *
  * Wave 198 built the registry AROUND that grid from the shared pieces
  * (`shared/ui/data-registry`): header, quick views with counters (counted from the
@@ -123,6 +131,15 @@ function isPageStatus(value: string): value is PageEntity["status"] {
   return (PAGE_STATUSES as ReadonlyArray<string>).includes(value);
 }
 
+/**
+ * TASK-1990 — the kinds with an order of their own (each is one hub on the site),
+ * and the hint a view of it shows while the drag is live.
+ */
+const ORDERED_KIND_HINTS: Partial<Record<PageEntityKind, string>> = {
+  [PageEntityKind.LEGAL]: d.reorderHintLegal,
+  [PageEntityKind.INFO]: d.reorderHintInfo,
+};
+
 /** Narrow an arbitrary `?kind=` string to the enum. */
 function isPageKind(value: string): value is PageEntityKind {
   return Object.values(PageEntityKind).includes(value as PageEntityKind);
@@ -198,9 +215,16 @@ function AdminPageGrid() {
   const statusFilter = isPageStatus(statusParam) ? statusParam : undefined;
   const statusActive = statusFilter !== undefined;
 
-  // Any filter hides rows, and any one therefore locks the drag; so does a
-  // session that may not reorder at all.
+  // Any filter hides rows (the grid renders only `visibleIds`).
   const filterActive = searchActive || kindActive || statusActive;
+  // TASK-1990 — the drag lives in a hub's own view only: «Усі» (and a bogus
+  // `?kind=`, which shows the same mix) and «Хаби» lock it. Inside a hub, a
+  // search or a status filter hides some of ITS rows and locks it too; so does
+  // a session that may not reorder at all.
+  const orderedKindHint =
+    kindFilter === undefined ? undefined : ORDERED_KIND_HINTS[kindFilter];
+  const viewLocked = orderedKindHint === undefined;
+  const locked = viewLocked || searchActive || statusActive || !canWrite;
 
   // A bogus `?kind=` selects no view — the honest state.
   const activeView = kindParam || ALL_VIEW;
@@ -229,16 +253,45 @@ function AdminPageGrid() {
     );
   }, [filterActive, kindFilter, needle, pages, searchActive, statusFilter]);
 
+  // The hub being ordered: its ids are the reorder slice (see the header).
+  const scope = useMemo(
+    () =>
+      viewLocked
+        ? undefined
+        : new Set(
+            pages.filter((page) => page.kind === kindFilter).map((p) => p.id),
+          ),
+    [kindFilter, pages, viewLocked],
+  );
+
+  const hint = !canWrite
+    ? dict.common.viewOnly
+    : kindFilter === PageEntityKind.HUB
+      ? d.hubLockedHint
+      : viewLocked
+        ? d.allLockedHint
+        : searchActive
+          ? dict.reorderList.searchLockedHint
+          : statusActive
+            ? d.statusLockedHint
+            : orderedKindHint;
+  const HintIcon = locked ? LockIcon : GripVertical;
+
   const focus = useRowFocus();
   const reorder = usePageReorder({
     items: treeItems,
+    scope,
     onFocusRow: focus.focusRow,
   });
   const grid = useSortableListGrid({
     reorder,
     focus,
     rowIdPrefix: "page-row-",
-    locked: filterActive || !canWrite,
+    locked,
+    // A search inside a hub keeps the shared search wording; every other lock
+    // speaks the same line the hint shows (never «Пошук активний» on «Усі»).
+    lockedAnnouncement:
+      canWrite && !viewLocked && searchActive ? undefined : hint,
     visibleIds,
   });
 
@@ -344,7 +397,7 @@ function AdminPageGrid() {
         row={row}
         columns={registry.visibleColumns}
         canWrite={canWrite}
-        locked={filterActive}
+        locked={locked}
         actions={rowActions(page)}
         onOpen={openRow}
         registerRef={(node) => {
@@ -366,17 +419,6 @@ function AdminPageGrid() {
         },
       ]
     : [];
-
-  const hint = !canWrite
-    ? dict.common.viewOnly
-    : searchActive
-      ? dict.reorderList.searchLockedHint
-      : kindActive
-        ? d.kindLockedHint
-        : statusActive
-          ? d.statusLockedHint
-          : d.reorderHint;
-  const HintIcon = !canWrite || filterActive ? LockIcon : GripVertical;
 
   const widthOf = (id: string) => registry.widths[id];
 
@@ -546,7 +588,7 @@ interface PageRowProps {
   row: SortableListRow;
   columns: readonly RegistryColumn<PageEntity>[];
   canWrite: boolean;
-  /** A filter hides rows — the grip stays but says it is unavailable. */
+  /** The drag is off (a filter, or a view with no order) — the grip stays but says so. */
   locked: boolean;
   actions: RowActionItem[];
   onOpen: (event: MouseEvent<HTMLTableRowElement>, href: string) => void;

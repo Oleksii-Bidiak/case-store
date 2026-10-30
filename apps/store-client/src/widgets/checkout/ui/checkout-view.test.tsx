@@ -26,6 +26,7 @@ import {
   makeUser,
   makeWarehouse,
 } from "@/shared/test/msw-handlers";
+import { getGetDeliveryMethodsQueryKey } from "@/entities/delivery";
 import { dict } from "@/shared/config";
 import { CheckoutView } from "./checkout-view";
 
@@ -1095,7 +1096,7 @@ describe("CheckoutView — delivery method (TASK-646)", () => {
     ).toHaveAccessibleDescription(dict.checkout.delivery.operatorQuotes);
   });
 
-  it("draws no method card when the shop offers one method (#np-only)", async () => {
+  it("draws no method choice when the shop offers one method, but names it on top (#np-only, TASK-1998)", async () => {
     offer({ methods: ["NOVA_POSHTA"] });
     setupBlankProfile();
     renderWithProviders(<CheckoutView />, authed);
@@ -1106,6 +1107,16 @@ describe("CheckoutView — delivery method (TASK-646)", () => {
         name: dict.checkout.delivery.methodHeading,
       }),
     ).toBeNull();
+    // The shopper is still told how the parcel travels — above the fields.
+    const heading = screen.getByRole("heading", {
+      level: 2,
+      name: dict.checkout.delivery.titles.NOVA_POSHTA,
+    });
+    expect(
+      heading.compareDocumentPosition(
+        screen.getByLabelText(dict.checkout.fields.firstName),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     // Straight to the fields.
     expect(
       screen.getByLabelText(dict.checkout.delivery.npWarehouseLabel),
@@ -1169,7 +1180,7 @@ describe("CheckoutView — delivery method (TASK-646)", () => {
     });
   });
 
-  it("pickup: the first of several points is preselected, with its city, and another can be chosen", async () => {
+  it("pickup: of several points none is preselected — the shopper must choose, and the choice holds (TASK-1997)", async () => {
     offer({
       pickupPoints: [
         makePickupPoint(),
@@ -1187,17 +1198,50 @@ describe("CheckoutView — delivery method (TASK-646)", () => {
     await screen.findByRole("heading", { name: dict.checkout.title });
 
     await user.click(methodRadio(dict.checkout.delivery.titles.PICKUP));
-    // As drawn (#pickup): the first point already chosen, city first.
+    // A guessed point could send the shopper to the wrong shop: nothing is
+    // chosen until they choose. The cards still show the city first.
+    const first = await screen.findByRole("radio", {
+      name: /Магазин на Хрещатику/,
+    });
+    expect(first).not.toBeChecked();
     expect(
-      await screen.findByRole("radio", { name: /Магазин на Хрещатику/ }),
-    ).toBeChecked();
+      screen.getByRole("radio", { name: /Магазин на Оболоні/ }),
+    ).not.toBeChecked();
     expect(screen.getByText("Київ, вул. Хрещатик, 22")).toBeVisible();
+    const group = screen.getByRole("radiogroup", {
+      name: dict.checkout.delivery.pickupGroupAria,
+    });
+    expect(group).toHaveAttribute("aria-required", "true");
+    // Not scolded before trying.
     expect(
       screen.queryByText(dict.checkout.delivery.validation.pickupPoint),
     ).toBeNull();
 
-    await user.click(screen.getByRole("radio", { name: /Магазин на Оболоні/ }));
+    // Moving on without a point is blocked, the reason under the field.
     await fillRecipient(user);
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+    expect(
+      await screen.findByText(dict.checkout.delivery.validation.pickupPoint),
+    ).toBeVisible();
+    expect(group).toHaveAttribute("aria-invalid", "true");
+    expect(group).toHaveAccessibleDescription(
+      dict.checkout.delivery.validation.pickupPoint,
+    );
+    await waitFor(() => expect(first).toHaveFocus());
+    expect(
+      screen.queryByRole("heading", { name: dict.checkout.reviewHeading }),
+    ).toBeNull();
+    expect(order.body).toBeNull();
+
+    // A chosen point that is still offered survives a detour to another method.
+    await user.click(screen.getByRole("radio", { name: /Магазин на Оболоні/ }));
+    await user.click(methodRadio(dict.checkout.delivery.titles.NOVA_POSHTA));
+    await user.click(methodRadio(dict.checkout.delivery.titles.PICKUP));
+    expect(
+      await screen.findByRole("radio", { name: /Магазин на Оболоні/ }),
+    ).toBeChecked();
     await placeOrder(user);
 
     await waitFor(() => expect(order.body).not.toBeNull());
@@ -1290,6 +1334,151 @@ describe("CheckoutView — delivery method (TASK-646)", () => {
     );
     await screen.findByRole("button", { name: dict.checkout.nextStep });
     expect(screen.queryByText(dict.checkout.orderErrorTitle)).toBeNull();
+  });
+
+  describe("the chosen method is switched off mid-checkout (TASK-1998)", () => {
+    /** An offer the test can change under the page, then refetch. */
+    function changingOffer(
+      initial: ReturnType<typeof makeDeliveryMethods>["methods"],
+    ) {
+      const state = { methods: initial };
+      server.use(
+        http.get("*/api/delivery/methods", () =>
+          HttpResponse.json({
+            data: makeDeliveryMethods({ methods: state.methods }),
+          }),
+        ),
+      );
+      return state;
+    }
+
+    /** What a window refocus does in the browser: refetch the offer. */
+    async function refetchOffer(queryClient: QueryClient) {
+      await act(() =>
+        queryClient.invalidateQueries({
+          queryKey: getGetDeliveryMethodsQueryKey(),
+        }),
+      );
+    }
+
+    it("on the review step: back to step 1, the lost method named, no premature «Місто є обов'язковим»", async () => {
+      const offered = changingOffer(["NOVA_POSHTA", "PICKUP"]);
+      setupBlankProfile();
+      const order = captureOrder();
+      const user = userEvent.setup();
+      const { queryClient } = renderWithProviders(<CheckoutView />, authed);
+      await screen.findByRole("heading", { name: dict.checkout.title });
+
+      await user.click(methodRadio(dict.checkout.delivery.titles.PICKUP));
+      await fillRecipient(user);
+      await user.click(
+        screen.getByRole("button", { name: dict.checkout.nextStep }),
+      );
+      await screen.findByRole("heading", {
+        name: dict.checkout.reviewHeading,
+      });
+
+      // The owner switches pickup off in the admin; the tab refetches.
+      offered.methods = ["NOVA_POSHTA"];
+      await refetchOffer(queryClient);
+
+      const notice = await screen.findByText(
+        dict.checkout.delivery.methodUnavailable.PICKUP,
+      );
+      expect(notice).toBeVisible();
+      expect(notice.closest('[role="status"]')).not.toBeNull();
+      // Step 2 can no longer be confirmed as read — and step 1 is the only
+      // place the method can be changed.
+      expect(
+        screen.queryByRole("heading", { name: dict.checkout.reviewHeading }),
+      ).toBeNull();
+      await waitFor(() =>
+        expect(notice.closest('[role="status"]')).toHaveFocus(),
+      );
+      // The replacement is named, its fields shown — and not yet scolded.
+      expect(
+        screen.getByRole("heading", {
+          level: 2,
+          name: dict.checkout.delivery.titles.NOVA_POSHTA,
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByLabelText(dict.checkout.fields.city),
+      ).not.toHaveAttribute("aria-invalid");
+      expect(screen.queryByText(dict.checkout.validation.city)).toBeNull();
+      expect(order.body).toBeNull();
+    });
+
+    it("on step 1: the notice names the lost method and goes once another is picked", async () => {
+      const offered = changingOffer(["NOVA_POSHTA", "PICKUP", "OTHER"]);
+      setupBlankProfile();
+      const user = userEvent.setup();
+      const { queryClient } = renderWithProviders(<CheckoutView />, authed);
+      await screen.findByRole("heading", { name: dict.checkout.title });
+
+      await user.click(methodRadio(dict.checkout.delivery.titles.PICKUP));
+      offered.methods = ["NOVA_POSHTA", "OTHER"];
+      await refetchOffer(queryClient);
+
+      expect(
+        await screen.findByText(
+          dict.checkout.delivery.methodUnavailable.PICKUP,
+        ),
+      ).toBeVisible();
+      expect(
+        methodRadio(dict.checkout.delivery.titles.NOVA_POSHTA),
+      ).toBeChecked();
+      expect(screen.queryByText(dict.checkout.validation.city)).toBeNull();
+
+      await user.click(methodRadio(dict.checkout.delivery.titles.OTHER));
+      expect(
+        screen.queryByText(dict.checkout.delivery.methodUnavailable.PICKUP),
+      ).toBeNull();
+    });
+
+    it("says nothing when the offer changes but the chosen method stays", async () => {
+      const offered = changingOffer(["NOVA_POSHTA", "PICKUP"]);
+      setupBlankProfile();
+      const { queryClient } = renderWithProviders(<CheckoutView />, authed);
+      await screen.findByRole("heading", { name: dict.checkout.title });
+
+      offered.methods = ["NOVA_POSHTA"];
+      await refetchOffer(queryClient);
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("radiogroup", {
+            name: dict.checkout.delivery.methodHeading,
+          }),
+        ).toBeNull(),
+      );
+
+      for (const text of Object.values(
+        dict.checkout.delivery.methodUnavailable,
+      )) {
+        expect(screen.queryByText(text)).toBeNull();
+      }
+    });
+  });
+
+  it("shows no «До безкоштовної…» bar when the shop set no free-shipping threshold (TASK-1998)", async () => {
+    offer({ courier: { price: "150.00", freeFrom: null, cityName: "Київ" } });
+    setupBlankProfile();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    // Nova Poshta has no threshold at all (an owner decision, B-12).
+    expect(screen.queryByText(/До безкоштовної/)).toBeNull();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+
+    await user.click(methodRadio("Кур'єр · Київ"));
+    expect(
+      screen.getByLabelText(dict.checkout.delivery.courierStreet),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.checkout.delivery.courierRemaining),
+    ).toBeNull();
+    expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
   it("a failure that is not a refusal keeps the shopper on step 2, the alert on top", async () => {

@@ -65,6 +65,7 @@ const mockCategory: Category = {
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   deletedAt: null,
+  ancestorsActive: true,
 };
 
 const mockChildCategory: Category = {
@@ -83,6 +84,7 @@ const mockChildCategory: Category = {
   createdAt: new Date('2026-01-02T00:00:00.000Z'),
   updatedAt: new Date('2026-01-02T00:00:00.000Z'),
   deletedAt: null,
+  ancestorsActive: true,
 };
 
 const mockInactiveCategory = {
@@ -892,12 +894,13 @@ describe('CategoryService', () => {
 
       await service.update('cat-uuid-2', { parentId: 'cat-uuid-3' });
 
-      // Two namespaces, one per write: the product lists whose keys carry the
-      // subtree rollup, and the per-category brand list derived from the same
+      // Two namespaces, one per write: the WHOLE product namespace — the lists carry
+      // the subtree rollup, and since the cascade (TASK-1032) a move into a hidden
+      // branch also 404s the moved products' cached PDPs — and the per-category brand list derived from the same
       // subtree (TASK-414) — the latter lives outside `product:` on purpose, so
       // it has to be named separately or it is never reached.
       expect(cacheMock.delByPrefix).toHaveBeenCalledTimes(2);
-      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
       expect(cacheMock.delByPrefix).toHaveBeenCalledWith(BRAND_LIST_PREFIX);
       expect(cacheMock.delByPrefix.mock.invocationCallOrder[0]).toBeGreaterThan(
         categoryRepositoryMock.update.mock.invocationCallOrder[0],
@@ -939,7 +942,7 @@ describe('CategoryService', () => {
 
       await service.update('cat-uuid-2', { parentId: 'cat-uuid-1' });
 
-      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
       expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith(['cat-uuid-2']);
     });
 
@@ -1022,11 +1025,21 @@ describe('CategoryService', () => {
       // Once per namespace, not once per group in the batch — that is what this
       // test has always been guarding.
       expect(cacheMock.delByPrefix).toHaveBeenCalledTimes(2);
-      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
       expect(cacheMock.delByPrefix).toHaveBeenCalledWith(BRAND_LIST_PREFIX);
       expect(cacheMock.delByPrefix.mock.invocationCallOrder[0]).toBeGreaterThan(
         categoryRepositoryMock.applyTreeMoves.mock.invocationCallOrder[0],
       );
+    });
+
+    // TASK-1032: only a MOVE can change branch visibility; a pure reorder keeps PDPs.
+    it('evicts only the product lists for a pure reorder that moved nothing', async () => {
+      categoryRepositoryMock.applyTreeMoves.mockResolvedValue({ tree: adminTree, movedIds: [] });
+
+      await service.reorderTree({ groups }, 'admin-1');
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
     });
 
     it('reindexes exactly once with the moved-root ids reported by the repository', async () => {

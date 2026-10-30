@@ -138,6 +138,9 @@ export default async function ProductDetailPage({
   // browser cannot re-read: its own request carries no token, so a background
   // refetch would replace the draft with a 404. The view keeps the seed instead.
   const preview = (await readPreviewToken()) !== null;
+  // TASK-1639 — the buy box's warranty row names the admin-managed store; the
+  // same tagged settings read generateMetadata made (null → the default name).
+  const siteName = resolveSiteName(await fetchSeoSettings());
 
   const schemas = detail ? await buildProductPageSchemas(detail) : null;
   const queryClient = createServerQueryClient();
@@ -151,7 +154,11 @@ export default async function ProductDetailPage({
       {schemas?.breadcrumb && <JsonLd schema={schemas.breadcrumb} />}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
         <Suspense fallback={<ProductDetailSkeleton />}>
-          <ProductDetailView slug={slug} preview={preview} />
+          <ProductDetailView
+            slug={slug}
+            preview={preview}
+            siteName={siteName}
+          />
         </Suspense>
       </PrefetchBoundary>
     </div>

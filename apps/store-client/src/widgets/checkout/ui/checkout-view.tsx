@@ -9,7 +9,7 @@ import {
   type Ref,
 } from "react";
 import Link from "next/link";
-import { CircleAlert } from "lucide-react";
+import { CircleAlert, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -21,6 +21,7 @@ import {
   CheckoutContactFields,
   CheckoutReviewStep,
   DeliveryMethodPicker,
+  lostDeliveryMethod,
   resolveDeliveryMethod,
   useCheckout,
   useDeliveryOptions,
@@ -31,6 +32,7 @@ import {
   readConfiguredMethods,
   resolvePaymentMethods,
   CHECKOUT_DEFAULT_VALUES,
+  type CheckoutDeliveryMethod,
   type CheckoutFormValues,
 } from "@/features/checkout";
 import {
@@ -106,8 +108,10 @@ function OrderErrorAlert({
  * order, never in front of it.
  *
  * The two shoppers diverge only at the end: a signed-in one is pushed to
- * `/orders/[id]/confirmation`; a guest gets {@link CheckoutGuestSuccess} in
- * place, because that route reads an endpoint guests cannot call.
+ * `/orders/[id]/confirmation`; a guest goes to their token page
+ * `/orders/guest/[token]` (TASK-1999), or gets {@link CheckoutGuestSuccess} in
+ * place when there is no token — never the confirmation route, which reads an
+ * endpoint guests cannot call.
  */
 export function CheckoutView() {
   const router = useRouter();
@@ -172,6 +176,10 @@ export function CheckoutView() {
   // refusal alert at its top instead of the first field.
   const pendingAlertFocus = useRef(false);
   const orderErrorRef = useRef<HTMLDivElement>(null);
+  // Set when the chosen method vanished on step 2 (TASK-1998): the return
+  // lands on the notice that names it.
+  const pendingNoticeFocus = useRef(false);
+  const lostNoticeRef = useRef<HTMLParagraphElement>(null);
 
   // Offer + privacy consent on the confirm step (TASK-882). Plain state, not a
   // form field: the zod schema also runs on the step-1 «Далі», where an
@@ -198,6 +206,11 @@ export function CheckoutView() {
       orderErrorRef.current?.focus();
       return;
     }
+    if (pendingNoticeFocus.current) {
+      pendingNoticeFocus.current = false;
+      lostNoticeRef.current?.focus();
+      return;
+    }
     const target = pendingErrorFocus.current ?? "firstName";
     pendingErrorFocus.current = null;
     setFocus(target);
@@ -221,19 +234,67 @@ export function CheckoutView() {
   );
 
   // …and the form value follows. Also re-asserts itself after the profile
-  // prefill's `reset()`, which restores the static default.
+  // prefill's `reset()`, which restores the static default. Not validated: the
+  // shopper has not touched the replacement yet, and its empty fields must not
+  // greet them with «Місто є обов'язковим» (TASK-1998).
   useEffect(() => {
     if (isDeliveryLoading || selectedDelivery === deliveryMethod) return;
-    setValue("deliveryMethod", deliveryMethod, { shouldValidate: true });
+    setValue("deliveryMethod", deliveryMethod);
   }, [isDeliveryLoading, selectedDelivery, deliveryMethod, setValue]);
 
-  // The first pickup point is preselected, as the mockup draws it (#pickup) —
-  // the method's own default works the same way. A point the shop has since
-  // deactivated gives way to the first one still offered, never submitted.
+  // A method the shopper had chosen and the shop has since switched off (a
+  // refetch on refocus, or after a `DELIVERY_*` refusal) is never swapped
+  // silently (TASK-1998): the notice names it until another method is picked
+  // or step 1 is left. Compared with the previous offer during render — the
+  // selection still holds the lost method on that render, the effect above
+  // replaces it only afterwards.
+  const offeredMethods = deliveryOptions.methods;
+  const offerKey = isDeliveryLoading ? null : offeredMethods.join(",");
+  const [seenOffer, setSeenOffer] = useState<{
+    key: string;
+    methods: readonly CheckoutDeliveryMethod[];
+  } | null>(null);
+  const [lostMethod, setLostMethod] = useState<{
+    method: CheckoutDeliveryMethod;
+    replacement: CheckoutDeliveryMethod;
+  } | null>(null);
+  if (offerKey !== null && offerKey !== seenOffer?.key) {
+    setSeenOffer({ key: offerKey, methods: offeredMethods });
+    const lost = lostDeliveryMethod(
+      selectedDelivery,
+      seenOffer?.methods ?? null,
+      offeredMethods,
+    );
+    if (lost) setLostMethod({ method: lost, replacement: deliveryMethod });
+  }
+  // The shopper picked another method themselves — the notice has done its job.
+  if (
+    lostMethod &&
+    selectedDelivery !== lostMethod.method &&
+    selectedDelivery !== lostMethod.replacement
+  ) {
+    setLostMethod(null);
+  }
+  // Lost on the review step: what it reads back is no longer on offer, and
+  // step 1 is the only place the method can be changed. Back there, focus on
+  // the notice.
+  useEffect(() => {
+    if (!lostMethod || step !== 2) return;
+    pendingNoticeFocus.current = true;
+    goToDelivery();
+  }, [lostMethod, step, goToDelivery]);
+
+  // A lone pickup point is preselected — there is nothing to choose. Of several,
+  // none is (TASK-1997): a guessed point can send the shopper to the wrong
+  // shop, so they pick one and the schema says so if they don't. A choice still
+  // offered holds; one the shop has since deactivated is cleared, never
+  // submitted.
   const pointIds = deliveryOptions.pickupPoints.map((point) => point.id);
   const resolvedPointId = pointIds.includes(pickupPointId)
     ? pickupPointId
-    : (pointIds[0] ?? "");
+    : pointIds.length === 1
+      ? pointIds[0]
+      : "";
   useEffect(() => {
     if (isDeliveryLoading || resolvedPointId === pickupPointId) return;
     setValue("pickupPointId", resolvedPointId, {
@@ -315,6 +376,7 @@ export function CheckoutView() {
   // the shopper has acted on it, and it must not greet them a second time.
   const advance = () => {
     clearError();
+    setLostMethod(null);
     goToReview();
   };
 
@@ -376,8 +438,8 @@ export function CheckoutView() {
 
   // Redirect to the cart when there is nothing to order — but NOT right after a
   // successful order, when the backend empties the cart on purpose and we are
-  // either navigating to the confirmation page or already showing the guest
-  // success panel (the TASK-119 redirect race).
+  // either navigating to the confirmation page / the guest order page or
+  // already showing the guest success panel (the TASK-119 redirect race).
   useEffect(() => {
     if (cartIsEmpty && !isOrderSubmitted) {
       router.replace("/cart");
@@ -454,8 +516,31 @@ export function CheckoutView() {
                 <OrderErrorAlert ref={orderErrorRef} message={errorMessage} />
               )}
 
+              {/* The chosen method the shop has just switched off, by name —
+                  never a silent swap (TASK-1998). */}
+              {lostMethod && (
+                <p
+                  ref={lostNoticeRef}
+                  role="status"
+                  tabIndex={-1}
+                  className="flex items-start gap-2 rounded-xl border border-warning/45 bg-warning/10 px-4 py-3.5 text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <TriangleAlert
+                    className="mt-0.5 size-4 shrink-0 text-warning"
+                    aria-hidden
+                  />
+                  <span>
+                    {
+                      dict.checkout.delivery.methodUnavailable[
+                        lostMethod.method
+                      ]
+                    }
+                  </span>
+                </p>
+              )}
+
               {/* The method first (CheckoutDelivery.dc.html): it decides
-                  which fields follow. Absent when the shop offers one. */}
+                  which fields follow. A lone method is only named. */}
               <DeliveryMethodPicker
                 control={control}
                 setValue={setValue}

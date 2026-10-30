@@ -64,6 +64,32 @@ describe("/promo loading boundary (TASK-869)", () => {
     expect(sections).not.toContain("specs");
   });
 
+  // TASK-1991 — on a fresh navigation Next scrolls to the first element of the
+  // deepest new segment (the loading listing first, then the page). That
+  // element sits inside the deals section, two screens down; the segment opens
+  // with an anchor absolutely pinned to the TOP of the frame instead, so the
+  // scroll target is already in view at the page top and Next stays there.
+  // (jsdom has no layout — this pins the structure; the scroll itself is a
+  // manual / Playwright check.)
+  it("opens the segment with an anchor pinned to the top of the frame", async () => {
+    const { container: segment } = renderWithProviders(<Loading />);
+    expect(segment.firstElementChild).toHaveAttribute(
+      "data-testid",
+      "promo-scroll-anchor",
+    );
+
+    const { container } = await renderFrame();
+    const anchor = container.querySelector(
+      '[data-testid="promo-scroll-anchor"]',
+    )!;
+    expect(anchor).toHaveClass("absolute", "top-0");
+    expect(anchor).toHaveAttribute("aria-hidden", "true");
+    // Its containing block is the frame root, which starts at the breadcrumb.
+    const frame = container.firstElementChild!.firstElementChild!;
+    expect(anchor.parentElement!.closest(".relative")).toBe(frame);
+    expect(frame.firstElementChild).toHaveRole("navigation");
+  });
+
   it("keeps the page container on the layout, so loading and page share it", async () => {
     const { container } = await renderFrame();
 

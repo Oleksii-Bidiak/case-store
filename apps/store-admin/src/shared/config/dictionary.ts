@@ -2284,12 +2284,17 @@ export const dict = {
     // TASK-428: the list became a drag-reorderable grid — the hand-typed «Порядок»
     // column and its form field are gone, so the grid needs its own accessible name.
     gridLabel: "Службові сторінки — порядок",
-    reorderHint:
-      "Порядок рядків тут = порядок сторінок у розділах «Правова інформація» і «Довідка». Перетягніть рядок за значок ліворуч або скористайтеся клавіатурою.",
-    // The list is ONE order shared by every kind, so a kind tab shows a slice
-    // of it — dragging inside a slice cannot describe the whole list.
-    kindLockedHint:
-      "Поки увімкнено фільтр за видом, порядок змінювати не можна: сторінки впорядковані одним спільним списком, а тут видно лише його частину. Оберіть «Усі».",
+    // TASK-1990 — a hub renders only its own kind, so the order is changed
+    // INSIDE a kind view («Юридичні» / «Довідкові»); the slice is written back
+    // into the one global order. «Усі» mixes hubs and «Хаби» has no order.
+    reorderHintLegal:
+      "Порядок рядків тут = порядок документів у розділі «Правова інформація» (/legal). Перетягніть рядок за значок ліворуч або скористайтеся клавіатурою.",
+    reorderHintInfo:
+      "Порядок рядків тут = порядок сторінок у розділі «Довідка» (/info). Перетягніть рядок за значок ліворуч або скористайтеся клавіатурою.",
+    allLockedHint:
+      "Порядок змінюється всередині хабу — оберіть вкладку «Юридичні» чи «Довідкові». Тут разом показано сторінки різних розділів, і їхній спільний порядок на сайті ніде не видно.",
+    hubLockedHint:
+      "Хаби не мають порядку: кожен — заголовок і опис свого розділу. Порядок сторінок змінюється на вкладках «Юридичні» чи «Довідкові».",
     // TASK-435 — one screen, three kinds of row. The tabs write `?kind=`.
     colKind: "Вид",
     kindLegal: "Юридична",
@@ -2308,10 +2313,10 @@ export const dict = {
     // slug; renaming or unpublishing one changes /info.
     inlinedOnInfoHint:
       "Текст цієї сторінки показується прямо на сторінці /info вітрини. Не змінюйте slug і не знімайте з публікації — інакше відповідний блок /info зникне або покаже запасний текст.",
-    // TASK-562 — status filter (`?status=`), local like the kind tabs, so it
-    // locks reordering for the same reason.
+    // TASK-562 — status filter (`?status=`), local like the kind tabs; it hides
+    // rows of the hub being ordered, so it locks reordering (TASK-1990).
     statusLockedHint:
-      "Поки увімкнено фільтр за статусом, порядок змінювати не можна: сторінки впорядковані одним спільним списком, а тут видно лише його частину. Зніміть фільтр.",
+      "Поки увімкнено фільтр за статусом, порядок змінювати не можна: тут видно лише частину сторінок розділу. Зніміть фільтр.",
 
     // Wave 198 (PagesProposal СР1–СР12, TASK-1069): the list became a registry —
     // views with counters, «На сайті», «⋯», the filter sheet, AlertDialogs.
@@ -3464,7 +3469,7 @@ export const dict = {
     questionHint: "Одне речення — так, як його поставив би клієнт.",
     answer: "Відповідь",
     answerPlaceholder:
-      "Доставка Новою Поштою — за тарифами перевізника, безкоштовно від 1 000 ₴…",
+      "Доставка Новою Поштою — за тарифом перевізника, вартість видно під час оформлення…",
     answerHint: "Простою мовою; клієнт побачить її, коли розгорне запитання.",
     isActive: "Показувати на сайті",
     isActiveHint:

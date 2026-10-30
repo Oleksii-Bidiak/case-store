@@ -1,4 +1,10 @@
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import {
+  act,
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
 import { InfoView } from "./info-view";
@@ -39,9 +45,12 @@ describe("InfoView", () => {
     expect(question).toBeInTheDocument();
 
     await user.click(question);
+    // TASK-1661: Nova Poshta is never free — the answer names the carrier's
+    // tariff, not a «від 1 000 ₴» threshold nothing implements.
     expect(
-      screen.getByText(/безкоштовно при замовленні від 1 000/),
+      screen.getByText(/Новою Поштою — за тарифом перевізника/),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/безкоштовно/i)).not.toBeInTheDocument();
   });
 
   it("shows the real contact details and a link card to /contact, not a form (TASK-866)", async () => {
@@ -132,6 +141,137 @@ describe("InfoView", () => {
       await user.click(question);
       expect(question).toHaveAttribute("aria-expanded", "true");
       expect(answer).toBeVisible();
+    });
+  });
+
+  describe("deep links by URL hash (TASK-1992, TASK-1670)", () => {
+    let scrollSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      scrollSpy = jest.spyOn(Element.prototype, "scrollIntoView");
+    });
+
+    afterEach(() => {
+      scrollSpy.mockRestore();
+      window.history.replaceState(null, "", "/");
+    });
+
+    const panel = (container: HTMLElement, key: string) =>
+      container.querySelector(`#info-panel-${key}`);
+
+    /** Elements `scrollIntoView` was called on, in call order. */
+    const scrolled = () => scrollSpy.mock.contexts as Element[];
+
+    /** Let the mount-time (rAF-deferred) hash read run before acting. */
+    const flushFrame = () =>
+      act(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => resolve()),
+          ),
+      );
+
+    it("keeps an anchor with each section key in the DOM, outside the hidden panels", () => {
+      // Next's Link scrolls to document.getElementById(hash); with no such
+      // element the scroll was silently dropped.
+      renderWithProviders(<InfoView contact={contact} />);
+
+      for (const key of [
+        "delivery",
+        "warranty",
+        "faq",
+        "about",
+        "contacts",
+      ] as const) {
+        const anchor = document.getElementById(key);
+        expect(anchor).not.toBeNull();
+        expect(anchor!.closest("[hidden]")).toBeNull();
+      }
+    });
+
+    it("selects the section named by the hash on arrival and scrolls it into view", async () => {
+      window.history.replaceState(null, "", "/info#faq");
+      const { container } = renderWithProviders(<InfoView contact={contact} />);
+
+      await waitFor(() =>
+        expect(panel(container, "faq")).not.toHaveAttribute("hidden"),
+      );
+      expect(panel(container, "delivery")).toHaveAttribute("hidden");
+      await waitFor(() =>
+        expect(scrolled()).toContain(document.getElementById("faq")),
+      );
+    });
+
+    it("does not scroll on arrival without a hash", async () => {
+      window.history.replaceState(null, "", "/info");
+      renderWithProviders(<InfoView contact={contact} />);
+
+      await flushFrame();
+      expect(scrollSpy).not.toHaveBeenCalled();
+    });
+
+    it("switches the section on a hashchange", async () => {
+      window.history.replaceState(null, "", "/info");
+      const { container } = renderWithProviders(<InfoView contact={contact} />);
+      await flushFrame();
+
+      act(() => {
+        window.history.pushState(null, "", "/info#about");
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
+      });
+
+      await waitFor(() =>
+        expect(panel(container, "about")).not.toHaveAttribute("hidden"),
+      );
+      expect(scrolled()).toContain(document.getElementById("about"));
+    });
+
+    it("switches on an in-page /info#<key> link even though no hashchange fires", async () => {
+      // Next's <Link> prevents the default and calls pushState, which fires
+      // no hashchange — the URL changed and the page did not (TASK-1670).
+      const user = userEvent.setup();
+      window.history.replaceState(null, "", "/info");
+      const { container } = renderWithProviders(
+        <>
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- stands in for Next's <Link> (preventDefault + pushState) without a router */}
+          <a
+            href="/info#warranty"
+            onClick={(e) => {
+              e.preventDefault();
+              window.history.pushState(null, "", "/info#warranty");
+            }}
+          >
+            footer link
+          </a>
+          <InfoView contact={contact} />
+        </>,
+      );
+      await flushFrame();
+
+      await user.click(screen.getByRole("link", { name: "footer link" }));
+
+      await waitFor(() =>
+        expect(panel(container, "warranty")).not.toHaveAttribute("hidden"),
+      );
+      expect(scrolled()).toContain(document.getElementById("warranty"));
+    });
+
+    it("follows the hash on back/forward, back to the default section without one", async () => {
+      window.history.replaceState(null, "", "/info#faq");
+      const { container } = renderWithProviders(<InfoView contact={contact} />);
+      await waitFor(() =>
+        expect(panel(container, "faq")).not.toHaveAttribute("hidden"),
+      );
+
+      act(() => {
+        window.history.replaceState(null, "", "/info");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      });
+
+      await waitFor(() =>
+        expect(panel(container, "delivery")).not.toHaveAttribute("hidden"),
+      );
+      expect(panel(container, "faq")).toHaveAttribute("hidden");
     });
   });
 
