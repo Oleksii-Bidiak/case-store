@@ -136,8 +136,21 @@ describe('DeviceService', () => {
   });
 
   describe('getModels', () => {
+    /** One row of the public read (brand + visible-product count, TASK-1952). */
+    const publicRow = {
+      id: 'model-1',
+      deviceBrandId: 'brand-1',
+      name: 'iPhone 15 Pro',
+      slug: 'iphone-15-pro',
+      series: 'iPhone 15',
+      releaseYear: 2023,
+      brandName: 'Apple',
+      brandSlug: 'apple',
+      productCount: 12,
+    };
+
     it('lists active models scoped to a brand through the light public read', async () => {
-      deviceRepositoryMock.findPublicModels.mockResolvedValue([mockModel]);
+      deviceRepositoryMock.findPublicModels.mockResolvedValue([publicRow]);
       const query: DeviceModelListQueryDto = { deviceBrandId: 'brand-1', search: 'pro' };
 
       const result = await service.getModels(query);
@@ -146,13 +159,23 @@ describe('DeviceService', () => {
         limit: 200,
         deviceBrandId: 'brand-1',
         search: 'pro',
+        sort: undefined,
       });
       expect(deviceRepositoryMock.findModels).not.toHaveBeenCalled();
-      expect(result[0]).toEqual({
-        id: 'model-1',
-        deviceBrandId: 'brand-1',
-        name: 'iPhone 15 Pro',
-        slug: 'iphone-15-pro',
+      expect(result[0]).toEqual(publicRow);
+    });
+
+    // TASK-1952 / TASK-2070: the device picker asks for the popular models.
+    it.each(['popular', 'name'] as const)('passes sort=%s to the repository', async (sort) => {
+      deviceRepositoryMock.findPublicModels.mockResolvedValue([]);
+
+      await service.getModels({ sort, limit: 12 });
+
+      expect(deviceRepositoryMock.findPublicModels).toHaveBeenCalledWith({
+        limit: 12,
+        deviceBrandId: undefined,
+        search: undefined,
+        sort,
       });
     });
 
@@ -163,6 +186,9 @@ describe('DeviceService', () => {
       deviceRepositoryMock.findPublicModels.mockResolvedValue([
         {
           ...mockModel,
+          brandName: 'Apple',
+          brandSlug: 'apple',
+          productCount: 3,
           metaTitle: 'Чохли для iPhone 15 Pro',
           metaDescription: 'Опис',
           description: 'Лід',
@@ -171,7 +197,17 @@ describe('DeviceService', () => {
 
       const result = await service.getModels({});
 
-      expect(Object.keys(result[0]).sort()).toEqual(['deviceBrandId', 'id', 'name', 'slug']);
+      expect(Object.keys(result[0]).sort()).toEqual([
+        'brandName',
+        'brandSlug',
+        'deviceBrandId',
+        'id',
+        'name',
+        'productCount',
+        'releaseYear',
+        'series',
+        'slug',
+      ]);
     });
   });
 

@@ -9,7 +9,12 @@ import {
   FindAdminBrandsParams,
 } from './device.repository';
 import { DeviceBrandEntity, DeviceModelEntity, DeviceModelListItemEntity } from './entities';
-import { DeviceModelListQueryDto, DeviceBrandListQueryDto, ReorderDeviceBrandsDto } from './dto';
+import {
+  DeviceModelListQueryDto,
+  DeviceBrandListQueryDto,
+  PublicDeviceModelListQueryDto,
+  ReorderDeviceBrandsDto,
+} from './dto';
 import { generateSlug } from '../common/utils';
 import { reorderErrorToHttp } from '../common/reorder';
 import type { Paginated, PaginationMeta } from '../common/pagination';
@@ -150,15 +155,17 @@ export class DeviceService {
   /**
    * Public — list active device models (optionally scoped to a brand/search) as
    * the light {@link DeviceModelListItemEntity} projection (TASK-702): the
-   * compat-landing SEO copy stays on the landing and admin routes.
+   * compat-landing SEO copy stays on the landing and admin routes. `sort` picks the
+   * order (TASK-1952 / TASK-2070); omitted keeps newest-first.
    */
-  async getModels(query: DeviceModelListQueryDto): Promise<DeviceModelListItemEntity[]> {
+  async getModels(query: PublicDeviceModelListQueryDto): Promise<DeviceModelListItemEntity[]> {
     const models = await this.deviceRepository.findPublicModels({
       limit: query.limit ?? 200,
       deviceBrandId: query.deviceBrandId,
       search: query.search,
+      sort: query.sort,
     });
-    return models.map((m) => DeviceModelListItemEntity.fromPrisma(m));
+    return models.map((m) => DeviceModelListItemEntity.fromRow(m));
   }
 
   /** Admin — paginated device model list across all statuses (or an explicit filter). */

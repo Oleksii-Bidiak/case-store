@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { DeviceRepository } from './device.repository';
+import { DeviceRepository, escapeLikePattern } from './device.repository';
 import { PrismaService } from '../prisma';
 import { ReorderDuplicateIdError } from '../common/reorder';
 import { SlugRedirectEntity } from '@prisma/client';
@@ -43,6 +43,7 @@ describe('DeviceRepository', () => {
       update: jest.fn(),
     },
     $transaction: jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
+    $queryRaw: jest.fn(),
   };
 
   const slugRedirectRepositoryMock = { recordRename: jest.fn() };
@@ -235,33 +236,86 @@ describe('DeviceRepository', () => {
 
   // TASK-702: the public picker/filter list reads a narrow column set, so the SEO
   // copy of the compat landing (metaTitle/metaDescription/description) is never
-  // even fetched — and it runs no COUNT the public envelope would throw away.
+  // even fetched. TASK-1952 / TASK-2070: it carries the brand and the number of
+  // compatible visible products, computed in ONE statement — never per model.
   describe('findPublicModels', () => {
-    it('selects only the light columns under the same active/brand/search where', async () => {
-      prismaMock.deviceModel.findMany.mockResolvedValue([]);
+    /** The single raw statement the call issued, as Prisma.Sql exposes it. */
+    const issuedQuery = () => {
+      expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(1);
+      return prismaMock.$queryRaw.mock.calls[0][0] as { sql: string; values: unknown[] };
+    };
 
-      await repo.findPublicModels({ limit: 50, deviceBrandId: 'brand-1', search: 'pro' });
+    const row = {
+      id: 'model-1',
+      deviceBrandId: 'brand-1',
+      name: 'iPhone 15 Pro',
+      slug: 'iphone-15-pro',
+      series: 'iPhone 15',
+      releaseYear: 2023,
+      brandName: 'Apple',
+      brandSlug: 'apple',
+      productCount: BigInt(7),
+    };
 
-      const arg = prismaMock.deviceModel.findMany.mock.calls[0][0];
-      expect(arg.where).toEqual({
-        isActive: true,
-        deviceBrandId: 'brand-1',
-        name: { contains: 'pro', mode: 'insensitive' },
-      });
-      expect(arg.take).toBe(50);
-      expect(arg.orderBy).toEqual([{ releaseYear: 'desc' }, { name: 'asc' }]);
-      expect(arg.select).toEqual({ id: true, deviceBrandId: true, name: true, slug: true });
-      expect(arg).not.toHaveProperty('include');
-      expect(prismaMock.deviceModel.count).not.toHaveBeenCalled();
+    it('reads models, brand and visible-product counts in one statement', async () => {
+      prismaMock.$queryRaw.mockResolvedValue([row]);
+
+      const result = await repo.findPublicModels({ limit: 50 });
+
+      const { sql, values } = issuedQuery();
+      expect(sql).toMatch(/JOIN device_brands db ON db\.id = dm\.device_brand_id/);
+      expect(sql).toMatch(/GROUP BY pdc\.device_model_id/);
+      // The visibility rule is the shared SQL twin of PUBLIC_PRODUCT_WHERE.
+      expect(sql).toContain(
+        'p.is_active = true AND p.deleted_at IS NULL AND c.is_active = true AND ' +
+          'c.deleted_at IS NULL AND c.ancestors_active = true',
+      );
+      expect(sql).not.toMatch(/meta_title|meta_description|dm\.description/);
+      expect(values).toEqual([50]);
+      expect(prismaMock.deviceModel.findMany).not.toHaveBeenCalled();
+      // bigint from the driver → plain number for JSON.
+      expect(result).toEqual([{ ...row, productCount: 7 }]);
     });
 
     it('never lists an inactive model, whatever the caller passes', async () => {
-      prismaMock.deviceModel.findMany.mockResolvedValue([]);
+      prismaMock.$queryRaw.mockResolvedValue([]);
 
       await repo.findPublicModels({});
 
-      const arg = prismaMock.deviceModel.findMany.mock.calls[0][0];
-      expect(arg.where).toEqual({ isActive: true });
+      const { sql, values } = issuedQuery();
+      expect(sql).toMatch(/WHERE dm\.is_active = true\s+ORDER BY/);
+      expect(values).toEqual([50]);
+    });
+
+    it('binds the brand and an escaped case-insensitive name search as parameters', async () => {
+      prismaMock.$queryRaw.mockResolvedValue([]);
+
+      await repo.findPublicModels({ limit: 20, deviceBrandId: 'brand-1', search: '50%_pro' });
+
+      const { sql, values } = issuedQuery();
+      expect(sql).toMatch(
+        /WHERE dm\.is_active = true AND dm\.device_brand_id = \? AND dm\.name ILIKE \?/,
+      );
+      expect(values).toEqual(['brand-1', '%50\\%\\_pro%', 20]);
+    });
+
+    it.each([
+      [undefined, 'ORDER BY dm.release_year DESC, dm.name ASC, dm.id ASC'],
+      ['name' as const, 'ORDER BY dm.name ASC, dm.id ASC'],
+      ['popular' as const, 'ORDER BY "productCount" DESC, dm.name ASC, dm.id ASC'],
+    ])('orders sort=%s by a constant clause', async (sort, orderBy) => {
+      prismaMock.$queryRaw.mockResolvedValue([]);
+
+      await repo.findPublicModels({ sort });
+
+      expect(issuedQuery().sql).toContain(orderBy);
+    });
+  });
+
+  describe('escapeLikePattern', () => {
+    it('escapes LIKE wildcards and the escape character', () => {
+      expect(escapeLikePattern('a%b_c\\d')).toBe('a\\%b\\_c\\\\d');
+      expect(escapeLikePattern('iPhone 15')).toBe('iPhone 15');
     });
   });
 

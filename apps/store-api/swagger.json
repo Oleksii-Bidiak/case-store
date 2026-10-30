@@ -4640,6 +4640,15 @@
               "example": true,
               "type": "boolean"
             }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "List order. `name` — alphabetical; `popular` — by the number of compatible publicly visible products (desc), then name. Omitted — newest release year first, then name.",
+            "schema": {
+              "$ref": "#/components/schemas/DeviceModelSort"
+            }
           }
         ],
         "responses": {
@@ -20809,13 +20818,46 @@
             "type": "string",
             "description": "URL-friendly slug",
             "example": "iphone-15-pro"
+          },
+          "series": {
+            "type": "string",
+            "description": "Series grouping (e.g. \"iPhone 15\"); null when not set",
+            "example": "iPhone 15",
+            "nullable": true
+          },
+          "releaseYear": {
+            "type": "number",
+            "description": "Release year; null when not set",
+            "example": 2023,
+            "nullable": true
+          },
+          "brandName": {
+            "type": "string",
+            "description": "Owning device brand name",
+            "example": "Apple"
+          },
+          "brandSlug": {
+            "type": "string",
+            "description": "Owning device brand slug",
+            "example": "apple"
+          },
+          "productCount": {
+            "type": "number",
+            "description": "Number of publicly visible products (active, not deleted, in a visible category) compatible with this model",
+            "example": 42,
+            "minimum": 0
           }
         },
         "required": [
           "id",
           "deviceBrandId",
           "name",
-          "slug"
+          "slug",
+          "series",
+          "releaseYear",
+          "brandName",
+          "brandSlug",
+          "productCount"
         ]
       },
       "DeviceBrandListResponse": {
@@ -20837,7 +20879,7 @@
         "type": "object",
         "properties": {
           "data": {
-            "description": "Active device models (id, brand, name, slug)",
+            "description": "Active device models (id, brand id/name/slug, name, slug, series, release year, number of compatible visible products)",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DeviceModelListItemEntity"
@@ -20846,6 +20888,13 @@
         },
         "required": [
           "data"
+        ]
+      },
+      "DeviceModelSort": {
+        "type": "string",
+        "enum": [
+          "name",
+          "popular"
         ]
       },
       "DeviceModelEntity": {
