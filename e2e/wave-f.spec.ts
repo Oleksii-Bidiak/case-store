@@ -11,6 +11,10 @@ import { addSeededProductToCart } from "./fixtures/cart";
  *     fits the viewport height and scrolls inside.
  *   - TASK-1997: with several pickup points none is preselected, and leaving it
  *     unchosen stops the step with «Оберіть пункт самовивозу».
+ *   - TASK-1991 (D01): a client navigation to `/promo` opens it at the top, not
+ *     scrolled down to the deals listing. The fix (`PromoScrollAnchor`) leans on
+ *     Next's scroll-to-first-element of a new segment, so this is the guard that
+ *     goes red if Next changes that.
  *
  * Both reads the storefront makes about them are mocked, as
  * checkout-delivery.spec.ts does: the seeded catalogue has one product and no
@@ -204,5 +208,32 @@ test.describe("TASK-1997: several pickup points", () => {
       main.getByText("Оберіть пункт самовивозу"),
       "the step names the missing pickup point",
     ).toBeVisible({ timeout: 5_000 });
+  });
+});
+
+test.describe("TASK-1991: /promo opens at the top", () => {
+  test("a client navigation from the header lands on the hero, not the deals", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.goto("/");
+    await page
+      .getByRole("banner")
+      .getByRole("link", { name: "Акції", exact: true })
+      .click();
+    await page.waitForURL("**/promo");
+
+    // The page segment (or its loading.tsx) streams into the deals slot after
+    // the frame: wait for it, then give Next's post-navigation scroll its chance.
+    await expect(page.getByTestId("promo-scroll-anchor")).toBeAttached({
+      timeout: 30_000,
+    });
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(1_000);
+
+    expect(
+      await page.evaluate(() => window.scrollY),
+      "scrollY after navigating to /promo",
+    ).toBe(0);
   });
 });
