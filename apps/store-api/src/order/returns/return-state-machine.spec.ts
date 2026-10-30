@@ -1,9 +1,11 @@
-import { ReturnStatus } from '@prisma/client';
+import { ReturnDecision, ReturnStatus } from '@prisma/client';
 import {
   RETURN_TRANSITIONS,
   RESTOCK_ON_STATUS,
   allowedReturnTransitions,
   canTransitionReturn,
+  decisionPermitsTransition,
+  returnStatusAfterDecision,
 } from './return-state-machine';
 
 const ALL = Object.values(ReturnStatus);
@@ -82,5 +84,79 @@ describe('return-state-machine (TASK-340)', () => {
         }
       }
     });
+  });
+
+  // ── Decisions (TASK-1961, TASK-2044) ─────────────────────────────────────────
+  //
+  // APPROVED and REJECTED are no longer statuses an operator sets: they are the
+  // EFFECT of a decision. The table above still governs PATCH (goods and money);
+  // these two functions govern what a decision does to the status.
+
+  describe('returnStatusAfterDecision', () => {
+    const GRANTS = [ReturnDecision.REFUND, ReturnDecision.REPLACEMENT, ReturnDecision.REPAIR];
+
+    describe.each(GRANTS)('%s', (decision) => {
+      it('approves a fresh request', () => {
+        expect(returnStatusAfterDecision(ReturnStatus.REQUESTED, decision)).toBe(
+          ReturnStatus.APPROVED,
+        );
+      });
+
+      it('re-opens a refused request as approved (B-12: a decision may change, with a reason)', () => {
+        expect(returnStatusAfterDecision(ReturnStatus.REJECTED, decision)).toBe(
+          ReturnStatus.APPROVED,
+        );
+      });
+
+      it.each([ReturnStatus.APPROVED, ReturnStatus.RECEIVED])(
+        'leaves %s where it is — the goods journey is not the decision',
+        (from) => {
+          expect(returnStatusAfterDecision(from, decision)).toBe(from);
+        },
+      );
+
+      it('has no status after REFUNDED — money paid out is final', () => {
+        expect(returnStatusAfterDecision(ReturnStatus.REFUNDED, decision)).toBeNull();
+      });
+    });
+
+    describe('REJECT', () => {
+      it.each([ReturnStatus.REQUESTED, ReturnStatus.APPROVED])('refuses from %s', (from) => {
+        expect(returnStatusAfterDecision(from, ReturnDecision.REJECT)).toBe(ReturnStatus.REJECTED);
+      });
+
+      it('keeps a refused return refused (a reworded refusal)', () => {
+        expect(returnStatusAfterDecision(ReturnStatus.REJECTED, ReturnDecision.REJECT)).toBe(
+          ReturnStatus.REJECTED,
+        );
+      });
+
+      it.each([ReturnStatus.RECEIVED, ReturnStatus.REFUNDED])(
+        'cannot refuse goods already taken back (%s)',
+        (from) => {
+          expect(returnStatusAfterDecision(from, ReturnDecision.REJECT)).toBeNull();
+        },
+      );
+    });
+  });
+
+  describe('decisionPermitsTransition', () => {
+    it('lets money go out only on a REFUND decision', () => {
+      expect(decisionPermitsTransition(ReturnStatus.REFUNDED, ReturnDecision.REFUND)).toBe(true);
+    });
+
+    it.each([ReturnDecision.REPLACEMENT, ReturnDecision.REPAIR, ReturnDecision.REJECT, null])(
+      'refuses REFUNDED under decision %s',
+      (decision) => {
+        expect(decisionPermitsTransition(ReturnStatus.REFUNDED, decision)).toBe(false);
+      },
+    );
+
+    it.each([ReturnDecision.REPLACEMENT, ReturnDecision.REPAIR, ReturnDecision.REFUND])(
+      'lets the goods be received under decision %s',
+      (decision) => {
+        expect(decisionPermitsTransition(ReturnStatus.RECEIVED, decision)).toBe(true);
+      },
+    );
   });
 });

@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderStatus, ReturnStatus } from '@prisma/client';
+import { OrderStatus, ReturnDecision, ReturnStatus } from '@prisma/client';
 import { MY_RETURNS_LIMIT, ReturnService } from './return.service';
 import { ReturnRepository } from './return.repository';
 import { OrderRepository } from '../order.repository';
@@ -59,6 +59,10 @@ const makeReturn = (overrides: Partial<ReturnWithItems> = {}): ReturnWithItems =
     restockedAt: null,
     refundedAmount: null,
     createdByUserId: USER_ID,
+    decision: null,
+    decisionReason: null,
+    decidedAt: null,
+    decidedById: null,
     createdAt: now,
     updatedAt: now,
     items: [
@@ -87,6 +91,7 @@ const returnRepositoryMock = {
   findByUserId: jest.fn(),
   findAll: jest.fn(),
   resolve: jest.fn(),
+  decide: jest.fn(),
 };
 
 const orderRepositoryMock = {
@@ -548,17 +553,54 @@ describe('ReturnService (TASK-340)', () => {
       );
     });
 
-    it('records an approval and stamps the resolution time', async () => {
-      returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+    it('records the goods arriving and stamps the resolution time', async () => {
+      returnRepositoryMock.findById.mockResolvedValue(
+        makeReturn({ status: ReturnStatus.APPROVED, decision: ReturnDecision.REFUND }),
+      );
 
-      await service.resolveReturn(RETURN_ID, { status: ReturnStatus.APPROVED });
+      await service.resolveReturn(RETURN_ID, { status: ReturnStatus.RECEIVED });
 
       expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
         RETURN_ID,
-        expect.objectContaining({ status: ReturnStatus.APPROVED, resolvedAt: expect.any(Date) }),
+        expect.objectContaining({ status: ReturnStatus.RECEIVED, resolvedAt: expect.any(Date) }),
         { restock: false },
       );
     });
+
+    // TASK-1961/2044: approving and refusing are DECISIONS now — with an author,
+    // a reason the customer sees and a history row. PATCH setting them directly
+    // would be a way round all three.
+    it.each([ReturnStatus.APPROVED, ReturnStatus.REJECTED])(
+      'refuses to set %s — 400 RETURN_USE_DECISION_ENDPOINT, writing nothing',
+      async (status) => {
+        returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+        const caught = (await service
+          .resolveReturn(RETURN_ID, { status })
+          .catch((error: unknown) => error)) as HttpException;
+
+        expect(caught).toBeInstanceOf(BadRequestException);
+        expect(caught.getResponse()).toMatchObject({ error: 'RETURN_USE_DECISION_ENDPOINT' });
+        expect(returnRepositoryMock.resolve).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([ReturnDecision.REPLACEMENT, ReturnDecision.REPAIR])(
+      'refuses to pay money out on a %s decision — 409 RETURN_TRANSITION_INVALID',
+      async (decision) => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.RECEIVED, decision }),
+        );
+
+        const caught = (await service
+          .resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED })
+          .catch((error: unknown) => error)) as HttpException;
+
+        expect(caught).toBeInstanceOf(ConflictException);
+        expect(caught.getResponse()).toMatchObject({ error: 'RETURN_TRANSITION_INVALID' });
+        expect(returnRepositoryMock.resolve).not.toHaveBeenCalled();
+      },
+    );
 
     it('rejects a transition the state machine forbids, without writing', async () => {
       returnRepositoryMock.findById.mockResolvedValue(
@@ -576,18 +618,20 @@ describe('ReturnService (TASK-340)', () => {
       returnRepositoryMock.findById.mockResolvedValue(null);
 
       await expect(
-        service.resolveReturn('missing', { status: ReturnStatus.APPROVED }),
+        service.resolveReturn('missing', { status: ReturnStatus.RECEIVED }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('exposes operatorNotes on the admin response', async () => {
-      returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+      returnRepositoryMock.findById.mockResolvedValue(
+        makeReturn({ status: ReturnStatus.APPROVED, decision: ReturnDecision.REFUND }),
+      );
       returnRepositoryMock.resolve.mockResolvedValue(
-        makeReturn({ status: ReturnStatus.APPROVED, operatorNotes: 'Refund via card' }),
+        makeReturn({ status: ReturnStatus.RECEIVED, operatorNotes: 'Refund via card' }),
       );
 
       const result = await service.resolveReturn(RETURN_ID, {
-        status: ReturnStatus.APPROVED,
+        status: ReturnStatus.RECEIVED,
         operatorNotes: 'Refund via card',
       });
 
@@ -623,10 +667,12 @@ describe('ReturnService (TASK-340)', () => {
       });
 
       it('refuses a restock requested for any status but RECEIVED', async () => {
-        returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
+        );
 
         await expect(
-          service.resolveReturn(RETURN_ID, { status: ReturnStatus.APPROVED, restock: true }),
+          service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED, restock: true }),
         ).rejects.toThrow(BadRequestException);
       });
 
@@ -646,7 +692,11 @@ describe('ReturnService (TASK-340)', () => {
 
       it('never restocks on the refund step (the goods came back at RECEIVED)', async () => {
         returnRepositoryMock.findById.mockResolvedValue(
-          makeReturn({ status: ReturnStatus.RECEIVED, restockedAt: new Date() }),
+          makeReturn({
+            status: ReturnStatus.RECEIVED,
+            decision: ReturnDecision.REFUND,
+            restockedAt: new Date(),
+          }),
         );
 
         await service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED });
@@ -686,7 +736,7 @@ describe('ReturnService (TASK-340)', () => {
           items: [{ quantity: 1, unitPrice: money('499.00') }],
         };
         returnRepositoryMock.findById.mockResolvedValue(
-          makeReturn({ status: ReturnStatus.RECEIVED }),
+          makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
         );
         returnRepositoryMock.resolve.mockImplementation(
           async (
@@ -882,7 +932,12 @@ describe('ReturnService (TASK-340)', () => {
 
     it.each([
       ['adminGetReturn', () => service.adminGetReturn('missing')],
-      ['resolveReturn', () => service.resolveReturn('missing', { status: ReturnStatus.APPROVED })],
+      ['resolveReturn', () => service.resolveReturn('missing', { status: ReturnStatus.RECEIVED })],
+      [
+        'decideReturn',
+        () =>
+          service.decideReturn('missing', 'operator-uuid-1', { decision: ReturnDecision.REFUND }),
+      ],
     ])('%s: 404 RETURN_NOT_FOUND for a missing return', async (_name, call) => {
       returnRepositoryMock.findById.mockResolvedValue(null);
 
@@ -948,17 +1003,19 @@ describe('ReturnService (TASK-340)', () => {
     });
 
     it('400 RETURN_RESTOCK_REQUIRES_RECEIVED for a restock on any other status', async () => {
-      returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+      returnRepositoryMock.findById.mockResolvedValue(
+        makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
+      );
 
       expect(
         await refusalOf(
-          service.resolveReturn(RETURN_ID, { status: ReturnStatus.APPROVED, restock: true }),
+          service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED, restock: true }),
         ),
       ).toEqual({
         status: 400,
         body: {
           error: 'RETURN_RESTOCK_REQUIRES_RECEIVED',
-          message: 'Stock is credited back when a return is marked RECEIVED, not APPROVED',
+          message: 'Stock is credited back when a return is marked RECEIVED, not REFUNDED',
         },
       });
     });
@@ -978,6 +1035,379 @@ describe('ReturnService (TASK-340)', () => {
           error: 'RETURN_ALREADY_RESTOCKED',
           message: 'These returned goods have already been credited back to inventory',
         },
+      });
+    });
+  });
+
+  // ─── decideReturn (TASK-1961, TASK-2044) ─────────────────────────────────────
+  //
+  // One request, several possible outcomes: refund, replacement, repair or
+  // refusal — each with an author, a date and a reason the customer sees. A
+  // refusal without a reason, or a silent change of an earlier decision, is
+  // exactly what B-12 decided the shop must not be able to do.
+
+  describe('decideReturn (TASK-1961, TASK-2044)', () => {
+    const OPERATOR_ID = 'operator-uuid-1';
+
+    /** Other returns of the order, as the repository reads them under the lock. */
+    let decideLedger: ReturnWithItems[];
+    /** What the mocked repository wrote — only decisions whose check passed. */
+    let decided: Array<{ current: unknown; change: Record<string, unknown> }>;
+
+    beforeEach(() => {
+      decideLedger = [];
+      decided = [];
+      returnRepositoryMock.decide.mockImplementation(
+        async (
+          current: unknown,
+          change: Record<string, unknown>,
+          options?: { assertClaimable?: (rows: ReturnWithItems[]) => void },
+        ) => {
+          options?.assertClaimable?.(decideLedger);
+          decided.push({ current, change });
+          return makeReturn(change as Partial<ReturnWithItems>);
+        },
+      );
+    });
+
+    const refusal = async (promise: Promise<unknown>) => {
+      const caught = (await promise.then(
+        () => {
+          throw new Error('expected a refusal');
+        },
+        (error: unknown) => error,
+      )) as HttpException;
+      expect(caught).toBeInstanceOf(HttpException);
+      return {
+        status: caught.getStatus(),
+        body: caught.getResponse() as { error: string; message: string },
+      };
+    };
+
+    describe('a first decision on a fresh request', () => {
+      it.each([ReturnDecision.REFUND, ReturnDecision.REPLACEMENT, ReturnDecision.REPAIR])(
+        '%s approves it — no reason needed for a yes',
+        async (decision) => {
+          returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+          await service.decideReturn(RETURN_ID, OPERATOR_ID, { decision });
+
+          expect(decided).toHaveLength(1);
+          expect(decided[0].change).toEqual({
+            status: ReturnStatus.APPROVED,
+            decision,
+            decisionReason: null,
+            decidedById: OPERATOR_ID,
+            decidedAt: expect.any(Date),
+          });
+        },
+      );
+
+      it('records the operator from the actor, not from the request body', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+        await service.decideReturn(RETURN_ID, OPERATOR_ID, {
+          decision: ReturnDecision.REFUND,
+          reason: 'Брак підтверджено',
+        });
+
+        expect(decided[0].change).toMatchObject({
+          decidedById: OPERATOR_ID,
+          decisionReason: 'Брак підтверджено',
+        });
+      });
+
+      it('hands the repository the state it decided against, for its concurrency guard', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+        await service.decideReturn(RETURN_ID, OPERATOR_ID, { decision: ReturnDecision.REFUND });
+
+        expect(decided[0].current).toEqual({
+          id: RETURN_ID,
+          orderId: ORDER_ID,
+          status: ReturnStatus.REQUESTED,
+          decision: null,
+        });
+      });
+
+      it('answers with the admin projection, decision and author included', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+        const result = await service.decideReturn(RETURN_ID, OPERATOR_ID, {
+          decision: ReturnDecision.REPAIR,
+        });
+
+        expect(result).toBeInstanceOf(ReturnEntity);
+        expect(result).toMatchObject({
+          status: ReturnStatus.APPROVED,
+          decision: ReturnDecision.REPAIR,
+          decidedById: OPERATOR_ID,
+        });
+      });
+    });
+
+    describe('the reason rule', () => {
+      it('400 RETURN_DECISION_REASON_REQUIRED for a refusal without a reason, writing nothing', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+        const result = await refusal(
+          service.decideReturn(RETURN_ID, OPERATOR_ID, { decision: ReturnDecision.REJECT }),
+        );
+
+        expect(result.status).toBe(400);
+        expect(result.body.error).toBe('RETURN_DECISION_REASON_REQUIRED');
+        expect(returnRepositoryMock.decide).not.toHaveBeenCalled();
+      });
+
+      it('treats a null reason (a blank one, after the DTO trims it) as no reason', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+        const result = await refusal(
+          service.decideReturn(RETURN_ID, OPERATOR_ID, {
+            decision: ReturnDecision.REJECT,
+            reason: null,
+          }),
+        );
+
+        expect(result.body.error).toBe('RETURN_DECISION_REASON_REQUIRED');
+      });
+
+      it('requires a reason to CHANGE a decision already made', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.APPROVED, decision: ReturnDecision.REPAIR }),
+        );
+
+        const result = await refusal(
+          service.decideReturn(RETURN_ID, OPERATOR_ID, { decision: ReturnDecision.REFUND }),
+        );
+
+        expect(result.status).toBe(400);
+        expect(result.body.error).toBe('RETURN_DECISION_REASON_REQUIRED');
+        expect(returnRepositoryMock.decide).not.toHaveBeenCalled();
+      });
+
+      it('counts a backfilled (legacy) decision as one already made', async () => {
+        // R1 backfill: an APPROVED row before B-12 became decision = REFUND.
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.APPROVED, decision: ReturnDecision.REFUND }),
+        );
+
+        const result = await refusal(
+          service.decideReturn(RETURN_ID, OPERATOR_ID, { decision: ReturnDecision.REPLACEMENT }),
+        );
+
+        expect(result.body.error).toBe('RETURN_DECISION_REASON_REQUIRED');
+      });
+    });
+
+    describe('what cannot be decided', () => {
+      it('409 RETURN_DECISION_LOCKED on a refunded return — money paid out is final', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.REFUNDED, decision: ReturnDecision.REFUND }),
+        );
+
+        const result = await refusal(
+          service.decideReturn(RETURN_ID, OPERATOR_ID, {
+            decision: ReturnDecision.REJECT,
+            reason: 'Передумали',
+          }),
+        );
+
+        expect(result.status).toBe(409);
+        expect(result.body.error).toBe('RETURN_DECISION_LOCKED');
+        expect(returnRepositoryMock.decide).not.toHaveBeenCalled();
+      });
+
+      it('409 RETURN_DECISION_UNCHANGED for the same decision with the same reason', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({
+            status: ReturnStatus.REJECTED,
+            decision: ReturnDecision.REJECT,
+            decisionReason: 'Сліди використання',
+          }),
+        );
+
+        const result = await refusal(
+          service.decideReturn(RETURN_ID, OPERATOR_ID, {
+            decision: ReturnDecision.REJECT,
+            reason: 'Сліди використання',
+          }),
+        );
+
+        expect(result.status).toBe(409);
+        expect(result.body.error).toBe('RETURN_DECISION_UNCHANGED');
+        expect(returnRepositoryMock.decide).not.toHaveBeenCalled();
+      });
+
+      it('lets the same decision be re-worded — a new reason is a new history row', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.REJECTED, decision: ReturnDecision.REJECT }),
+        );
+
+        await service.decideReturn(RETURN_ID, OPERATOR_ID, {
+          decision: ReturnDecision.REJECT,
+          reason: 'Сліди використання на корпусі',
+        });
+
+        expect(decided[0].change).toMatchObject({
+          status: ReturnStatus.REJECTED,
+          decision: ReturnDecision.REJECT,
+          decisionReason: 'Сліди використання на корпусі',
+        });
+      });
+
+      it('409 RETURN_TRANSITION_INVALID for refusing goods already received', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
+        );
+
+        const result = await refusal(
+          service.decideReturn(RETURN_ID, OPERATOR_ID, {
+            decision: ReturnDecision.REJECT,
+            reason: 'Не наш товар',
+          }),
+        );
+
+        expect(result).toEqual({
+          status: 409,
+          body: {
+            error: 'RETURN_TRANSITION_INVALID',
+            message: 'A return cannot move from RECEIVED to REJECTED',
+          },
+        });
+        expect(returnRepositoryMock.decide).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('status effects', () => {
+      it.each([ReturnStatus.REQUESTED, ReturnStatus.APPROVED])(
+        'REJECT moves %s to REJECTED',
+        async (status) => {
+          returnRepositoryMock.findById.mockResolvedValue(
+            makeReturn({
+              status,
+              decision: status === ReturnStatus.APPROVED ? ReturnDecision.REFUND : null,
+            }),
+          );
+
+          await service.decideReturn(RETURN_ID, OPERATOR_ID, {
+            decision: ReturnDecision.REJECT,
+            reason: 'Пошкоджено покупцем',
+          });
+
+          expect(decided[0].change.status).toBe(ReturnStatus.REJECTED);
+        },
+      );
+
+      it('a change of decision on RECEIVED goods keeps them RECEIVED', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REPAIR }),
+        );
+
+        await service.decideReturn(RETURN_ID, OPERATOR_ID, {
+          decision: ReturnDecision.REFUND,
+          reason: 'Не підлягає ремонту',
+        });
+
+        expect(decided[0].change.status).toBe(ReturnStatus.RECEIVED);
+      });
+
+      it('takes no claim check when the units were never released', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+        await service.decideReturn(RETURN_ID, OPERATOR_ID, { decision: ReturnDecision.REFUND });
+
+        expect(returnRepositoryMock.decide).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.anything(),
+          {},
+        );
+      });
+    });
+
+    // A REJECTED return releases its units (TASK-784), so the customer may have
+    // filed a new request for them since. Re-opening the refusal claims them
+    // back — and must not succeed if they are gone.
+    describe('re-opening a refusal', () => {
+      const rejected = () =>
+        makeReturn({
+          status: ReturnStatus.REJECTED,
+          decision: ReturnDecision.REJECT,
+          decisionReason: 'Немає чека',
+          items: [{ ...makeReturn().items[0], quantity: 2 }],
+        });
+
+      it('approves it and re-claims its units under the lock', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(rejected());
+
+        await service.decideReturn(RETURN_ID, OPERATOR_ID, {
+          decision: ReturnDecision.REFUND,
+          reason: 'Чек знайшовся',
+        });
+
+        expect(decided[0].change.status).toBe(ReturnStatus.APPROVED);
+        expect(returnRepositoryMock.decide).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.anything(),
+          { assertClaimable: expect.any(Function) },
+        );
+      });
+
+      it('fits exactly: 2 re-claimed + 1 held elsewhere = the 3 bought', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(rejected());
+        decideLedger = [makeReturn({ id: 'other-return', status: ReturnStatus.APPROVED })];
+
+        await service.decideReturn(RETURN_ID, OPERATOR_ID, {
+          decision: ReturnDecision.REPAIR,
+          reason: 'Чек знайшовся',
+        });
+
+        expect(decided).toHaveLength(1);
+      });
+
+      it('ignores other REJECTED returns — they hold nothing', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(rejected());
+        decideLedger = [
+          makeReturn({
+            id: 'other-return',
+            status: ReturnStatus.REJECTED,
+            items: [{ ...makeReturn().items[0], quantity: 3 }],
+          }),
+        ];
+
+        await service.decideReturn(RETURN_ID, OPERATOR_ID, {
+          decision: ReturnDecision.REFUND,
+          reason: 'Чек знайшовся',
+        });
+
+        expect(decided).toHaveLength(1);
+      });
+
+      it('409 RETURN_QUANTITY_EXCEEDED when a newer request holds the units, writing nothing', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(rejected());
+        decideLedger = [
+          makeReturn({
+            id: 'newer-return',
+            status: ReturnStatus.REQUESTED,
+            items: [{ ...makeReturn().items[0], quantity: 2 }],
+          }),
+        ];
+
+        const result = await refusal(
+          service.decideReturn(RETURN_ID, OPERATOR_ID, {
+            decision: ReturnDecision.REFUND,
+            reason: 'Чек знайшовся',
+          }),
+        );
+
+        expect(result).toEqual({
+          status: 409,
+          body: {
+            error: 'RETURN_QUANTITY_EXCEEDED',
+            message: 'Cannot return 2 of that item — 1 remain returnable',
+          },
+        });
+        expect(decided).toHaveLength(0);
       });
     });
   });

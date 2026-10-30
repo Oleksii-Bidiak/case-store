@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { ReturnStatus } from '@prisma/client';
+import { ReturnDecision, ReturnStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma';
 import { CacheService } from '../../cache';
 import { ProductIndexer } from '../../search/product-indexer';
@@ -571,5 +571,180 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
       message: 'These returned goods have already been credited back to inventory',
     });
     expect(txMock.product.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReturnRepository.decide — one transaction per decision (TASK-1961, TASK-2044)', () => {
+  const ORDER_ID = 'order-uuid-1';
+  const RETURN_ID = 'return-uuid-1';
+  const OPERATOR_ID = 'operator-uuid-1';
+  const decidedAt = new Date('2026-10-31T12:00:00.000Z');
+
+  const current = {
+    id: RETURN_ID,
+    orderId: ORDER_ID,
+    status: ReturnStatus.REJECTED,
+    decision: ReturnDecision.REJECT,
+  };
+  const change = {
+    status: ReturnStatus.APPROVED,
+    decision: ReturnDecision.REFUND,
+    decisionReason: 'Чек знайшовся',
+    decidedById: OPERATOR_ID,
+    decidedAt,
+  };
+  const ledger = [{ status: ReturnStatus.REQUESTED, items: [{ orderItemId: 'x', quantity: 1 }] }];
+  const decidedRow = { id: RETURN_ID, ...change, items: [] };
+
+  /** Every statement, in the order the transaction issued it. */
+  let issued: string[];
+  let repository: ReturnRepository;
+
+  const txMock = {
+    $queryRaw: jest.fn(),
+    return: { findMany: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+    returnDecisionEvent: { create: jest.fn() },
+  };
+  const txPrismaMock = {
+    $transaction: jest.fn((fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock)),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    issued = [];
+    txMock.$queryRaw.mockImplementation(async () => {
+      issued.push('lock');
+      return [{ id: ORDER_ID }];
+    });
+    txMock.return.findMany.mockImplementation(async () => {
+      issued.push('ledger');
+      return ledger;
+    });
+    txMock.return.updateMany.mockImplementation(async () => {
+      issued.push('write');
+      return { count: 1 };
+    });
+    txMock.returnDecisionEvent.create.mockImplementation(async () => {
+      issued.push('event');
+      return {};
+    });
+    txMock.return.findUniqueOrThrow.mockImplementation(async () => {
+      issued.push('read');
+      return decidedRow;
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReturnRepository,
+        { provide: PrismaService, useValue: txPrismaMock },
+        { provide: CacheService, useValue: cacheMock },
+        { provide: ProductIndexer, useValue: productIndexerMock },
+      ],
+    }).compile();
+
+    repository = module.get(ReturnRepository);
+  });
+
+  it('locks the order, reads the ledger, checks, writes the decision and its event — in one transaction', async () => {
+    const assertClaimable = jest.fn(() => {
+      issued.push('check');
+    });
+
+    const result = await repository.decide(current, change, { assertClaimable });
+
+    expect(txPrismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(issued).toEqual(['lock', 'ledger', 'check', 'write', 'event', 'read']);
+    expect(assertClaimable).toHaveBeenCalledWith(ledger);
+    expect(result).toBe(decidedRow);
+  });
+
+  it('takes the same FOR UPDATE lock on the order row that create takes', async () => {
+    await repository.decide(current, change, { assertClaimable: jest.fn() });
+
+    const [strings, orderId] = txMock.$queryRaw.mock.calls[0] as [TemplateStringsArray, string];
+    expect(strings.join('?')).toMatch(/SELECT id FROM orders WHERE id = \? FOR UPDATE/);
+    expect(orderId).toBe(ORDER_ID);
+  });
+
+  it("reads the OTHER returns of the order — this one's own claim is the one being re-made", async () => {
+    await repository.decide(current, change, { assertClaimable: jest.fn() });
+
+    expect(txMock.return.findMany).toHaveBeenCalledWith({
+      where: { orderId: ORDER_ID, id: { not: RETURN_ID } },
+      select: { status: true, items: { select: { orderItemId: true, quantity: true } } },
+    });
+  });
+
+  it('reads no ledger when there is no claim to check', async () => {
+    await repository.decide(current, change);
+
+    expect(issued).toEqual(['lock', 'write', 'event', 'read']);
+  });
+
+  it('writes nothing when the check refuses — the error rolls the transaction back', async () => {
+    const refusal = new ConflictException('no units left');
+
+    await expect(
+      repository.decide(current, change, {
+        assertClaimable: () => {
+          throw refusal;
+        },
+      }),
+    ).rejects.toBe(refusal);
+    expect(txMock.return.updateMany).not.toHaveBeenCalled();
+    expect(txMock.returnDecisionEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('guards the write on the status and decision the service decided against', async () => {
+    await repository.decide(current, change);
+
+    expect(txMock.return.updateMany).toHaveBeenCalledWith({
+      where: { id: RETURN_ID, status: ReturnStatus.REJECTED, decision: ReturnDecision.REJECT },
+      data: {
+        status: ReturnStatus.APPROVED,
+        decision: ReturnDecision.REFUND,
+        decisionReason: 'Чек знайшовся',
+        decidedAt,
+        decidedById: OPERATOR_ID,
+        // A decision taken by a person is no longer the backfill's inference.
+        decisionLegacy: false,
+        // `resolvedAt` stays "the last change" (plan, Модель даних).
+        resolvedAt: decidedAt,
+      },
+    });
+  });
+
+  it('records the decision event with its author, reason and time', async () => {
+    await repository.decide(current, change);
+
+    expect(txMock.returnDecisionEvent.create).toHaveBeenCalledWith({
+      data: {
+        returnId: RETURN_ID,
+        decision: ReturnDecision.REFUND,
+        reason: 'Чек знайшовся',
+        actorId: OPERATOR_ID,
+        createdAt: decidedAt,
+      },
+    });
+  });
+
+  it('409 RETURN_TRANSITION_INVALID when the return changed meanwhile, recording no event', async () => {
+    // Another operator moved it (e.g. marked it RECEIVED) between the service's
+    // read and this transaction: the decision was taken against a state that no
+    // longer exists.
+    txMock.return.updateMany.mockResolvedValue({ count: 0 });
+
+    const caught = await repository.decide(current, change).then(
+      () => {
+        throw new Error('expected a refusal');
+      },
+      (error: unknown) => error,
+    );
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toMatchObject({
+      error: 'RETURN_TRANSITION_INVALID',
+    });
+    expect(txMock.returnDecisionEvent.create).not.toHaveBeenCalled();
   });
 });

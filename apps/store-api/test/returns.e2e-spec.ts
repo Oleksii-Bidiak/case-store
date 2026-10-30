@@ -4,7 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { ReturnStatus, UserRole } from '@prisma/client';
+import { ReturnDecision, ReturnStatus, UserRole } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
@@ -86,6 +86,8 @@ describe('Admin returns queue (e2e)', () => {
     order: { findFirst: jest.fn() },
     // TASK-628: the audit row written behind an admin create.
     auditLog: { create: jest.fn() },
+    // TASK-1961/2044: the history row every decision writes in its transaction.
+    returnDecisionEvent: { create: jest.fn() },
     // The list path uses the ARRAY form of $transaction; awaiting the operations
     // it was handed is what the real client does with that form.
     $transaction: jest.fn(),
@@ -433,6 +435,8 @@ describe('Admin returns queue (e2e)', () => {
     /** One unit of a 499.00 line, back at the shop and waiting for its money. */
     const received = makeReturnRow({
       status: ReturnStatus.RECEIVED,
+      // Money goes out only on a REFUND decision (TASK-2044).
+      decision: ReturnDecision.REFUND,
       items: [
         {
           id: '550e8400-e29b-41d4-a716-446655440010',
@@ -536,12 +540,14 @@ describe('Admin returns queue (e2e)', () => {
     });
 
     it('PATCH /admin/returns/:id → 400 RETURN_RESTOCK_REQUIRES_RECEIVED', async () => {
-      prismaServiceMock.return.findUnique.mockResolvedValue(makeReturnRow());
+      prismaServiceMock.return.findUnique.mockResolvedValue(
+        makeReturnRow({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
+      );
 
       const response = await request(app.getHttpServer())
         .patch(`${url}/${returnId}`)
         .set('Authorization', adminToken())
-        .send({ status: ReturnStatus.APPROVED, restock: true })
+        .send({ status: ReturnStatus.REFUNDED, restock: true })
         .expect(400);
 
       expect(response.body.error).toBe('RETURN_RESTOCK_REQUIRES_RECEIVED');
@@ -654,5 +660,141 @@ describe('Admin returns queue (e2e)', () => {
       });
       created.mockRestore();
     });
+  });
+
+  // ─── Decisions (TASK-1961, TASK-2044) ───────────────────────────────────────
+  //
+  // The real service and repository run against the Prisma double, so these pin
+  // the whole chain: DTO → service rules → the repository's transaction → the
+  // envelope, plus the audit row the interceptor writes behind it.
+
+  describe('POST /api/admin/returns/:returnId/decision', () => {
+    const returnId = '550e8400-e29b-41d4-a716-446655440000';
+    const adminToken = () => `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`;
+    const decide = (body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .post(`${url}/${returnId}/decision`)
+        .set('Authorization', adminToken())
+        .send(body);
+
+    beforeEach(() => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(makeReturnRow());
+      prismaServiceMock.$queryRaw.mockResolvedValue([{ id: makeReturnRow().orderId }]);
+      prismaServiceMock.return.updateMany.mockResolvedValue({ count: 1 });
+      prismaServiceMock.returnDecisionEvent.create.mockResolvedValue({});
+    });
+
+    it('400 RETURN_DECISION_REASON_REQUIRED for a refusal without a reason, writing nothing', async () => {
+      const response = await decide({ decision: ReturnDecision.REJECT }).expect(400);
+
+      expect(response.body.error).toBe('RETURN_DECISION_REASON_REQUIRED');
+      expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+      expect(prismaServiceMock.returnDecisionEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('treats a blank reason as none — "   " is not a reason the customer can read', async () => {
+      const response = await decide({ decision: ReturnDecision.REJECT, reason: '   ' }).expect(400);
+
+      expect(response.body.error).toBe('RETURN_DECISION_REASON_REQUIRED');
+    });
+
+    it('400 on a decision outside the enum', async () => {
+      await decide({ decision: 'APPROVE' }).expect(400);
+      expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('records the decision with its author, reason and an event row', async () => {
+      prismaServiceMock.return.findUniqueOrThrow.mockResolvedValue(
+        makeReturnRow({
+          status: ReturnStatus.REJECTED,
+          decision: ReturnDecision.REJECT,
+          decisionReason: 'Сліди використання',
+          decidedAt: now,
+          decidedById: testAdmin.id,
+          resolvedAt: now,
+        }),
+      );
+
+      const response = await decide({
+        decision: ReturnDecision.REJECT,
+        reason: '  Сліди використання ',
+      }).expect(200);
+
+      expect(response.body.data).toMatchObject({
+        id: returnId,
+        status: 'REJECTED',
+        decision: 'REJECT',
+        decisionReason: 'Сліди використання',
+        decidedById: testAdmin.id,
+      });
+      expect(prismaServiceMock.return.updateMany).toHaveBeenCalledWith({
+        where: { id: returnId, status: ReturnStatus.REQUESTED, decision: null },
+        data: expect.objectContaining({
+          status: ReturnStatus.REJECTED,
+          decision: ReturnDecision.REJECT,
+          decisionReason: 'Сліди використання',
+          decidedById: testAdmin.id,
+        }),
+      });
+      expect(prismaServiceMock.returnDecisionEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          returnId,
+          decision: ReturnDecision.REJECT,
+          reason: 'Сліди використання',
+          actorId: testAdmin.id,
+        }),
+      });
+    });
+
+    it('writes an audit row return.decide keyed by the return', async () => {
+      prismaServiceMock.return.findUniqueOrThrow.mockResolvedValue(
+        makeReturnRow({ status: ReturnStatus.APPROVED, decision: ReturnDecision.REFUND }),
+      );
+
+      await decide({ decision: ReturnDecision.REFUND }).expect(200);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(prismaServiceMock.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'return.decide',
+          entityType: 'return',
+          entityId: returnId,
+        }),
+      });
+    });
+
+    it('refuses a manager who may only read returns', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['returns:read']);
+      try {
+        await request(app.getHttpServer())
+          .post(`${url}/${returnId}/decision`)
+          .set('Authorization', `Bearer ${generateAccessToken(testManager.id, 'MANAGER')}`)
+          .send({ decision: ReturnDecision.REFUND })
+          .expect(403);
+        expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+      } finally {
+        permissionRepositoryMock.setGrants(UserRole.MANAGER, []);
+      }
+    });
+  });
+
+  describe('PATCH /api/admin/returns/:returnId — decisions have their own door', () => {
+    const returnId = '550e8400-e29b-41d4-a716-446655440000';
+
+    it.each([ReturnStatus.APPROVED, ReturnStatus.REJECTED])(
+      '400 RETURN_USE_DECISION_ENDPOINT for status %s, writing nothing',
+      async (status) => {
+        prismaServiceMock.return.findUnique.mockResolvedValue(makeReturnRow());
+
+        const response = await request(app.getHttpServer())
+          .patch(`${url}/${returnId}`)
+          .set('Authorization', `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`)
+          .send({ status })
+          .expect(400);
+
+        expect(response.body.error).toBe('RETURN_USE_DECISION_ENDPOINT');
+        expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+      },
+    );
   });
 });
