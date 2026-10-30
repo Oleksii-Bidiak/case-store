@@ -45,10 +45,14 @@ const AUTOPLAY_MS = 7000;
 // Per-slide visual theme (copy lives in the dictionary; visuals stay in code).
 // Each slide gets its own gradient, text colour, eyebrow pill, CTA button and an
 // optional decorative "product" glass panel on the right — mirroring the mockup:
-//   0 · brand indigo→violet · white text · frosted panel
-//   1 · dark (foreground→primary) · sale eyebrow · no panel
-//   2 · success green · white text · frosted panel
-// All gradients are token-derived (color-mix/oklch) so they follow the theme.
+//   0 · ink panel with a violet cast · white text · frosted panel
+//   1 · inverse (foreground panel, background text) · sale eyebrow · no panel
+//   2 · deep success green · white text · frosted panel
+// All gradients are token-derived (color-mix/oklch). Slides 0 and 2 carry white
+// copy, so they are built from tones that stay dark in BOTH themes (TASK-1951):
+// the theme-invariant footer ink, and success mixed well towards black (the
+// dark-theme success is a light green). Never from `primary`: since direction В
+// it is graphite in light and near-white in dark.
 type SlideTheme = {
   gradient: string;
   text: string;
@@ -62,10 +66,10 @@ type SlideTheme = {
 const THEMES: SlideTheme[] = [
   {
     gradient:
-      "linear-gradient(120deg, color-mix(in oklab, var(--color-primary) 90%, black) 0%, var(--color-primary) 52%, color-mix(in oklab, var(--color-primary) 55%, oklch(0.55 0.2 300)) 100%)",
+      "linear-gradient(120deg, color-mix(in oklab, var(--color-footer) 90%, black) 0%, var(--color-footer) 52%, color-mix(in oklab, var(--color-footer) 75%, oklch(0.45 0.12 290)) 100%)",
     text: "text-white",
     eyebrow: "bg-white/15 text-white ring-1 ring-white/25 backdrop-blur-sm",
-    cta: "bg-white text-primary hover:bg-white/90",
+    cta: "bg-white text-footer hover:bg-white/90",
     panel: true,
     scrim: "bg-black/45",
   },
@@ -74,16 +78,16 @@ const THEMES: SlideTheme[] = [
       "linear-gradient(120deg, var(--color-foreground) 0%, color-mix(in oklab, var(--color-foreground) 72%, var(--color-primary)) 100%)",
     text: "text-background",
     eyebrow: "bg-sale text-sale-foreground",
-    cta: "bg-primary text-primary-foreground hover:bg-primary/90",
+    cta: "bg-background text-foreground hover:bg-background/90",
     panel: false,
     scrim: "bg-foreground/60",
   },
   {
     gradient:
-      "linear-gradient(120deg, color-mix(in oklab, var(--color-success) 86%, black) 0%, var(--color-success) 60%, oklch(0.6 0.13 175) 100%)",
+      "linear-gradient(120deg, color-mix(in oklab, var(--color-success) 50%, black) 0%, color-mix(in oklab, var(--color-success) 60%, black) 60%, color-mix(in oklab, oklch(0.6 0.13 175) 62%, black) 100%)",
     text: "text-white",
     eyebrow: "bg-white/18 text-white ring-1 ring-white/25 backdrop-blur-sm",
-    cta: "bg-white text-success hover:bg-white/90",
+    cta: "bg-white text-footer hover:bg-white/90",
     panel: true,
     scrim: "bg-black/45",
   },

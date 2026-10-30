@@ -22,7 +22,6 @@ const KNOWN: Record<string, string> = {
   "features/submit-review/ui/submit-review-form.tsx": "TASK-1687",
   // Dark banners: an inverse / on-inverse token pair is planned.
   "widgets/hero-banner/ui/hero-slider.tsx": "TASK-1678",
-  "widgets/promo-banner/ui/promo-banner.tsx": "TASK-1678",
 };
 
 const PALETTE =

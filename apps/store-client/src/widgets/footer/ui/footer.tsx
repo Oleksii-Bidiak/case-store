@@ -85,7 +85,10 @@ export async function Footer() {
               key={label}
               className="flex items-center justify-center gap-3 text-sm font-medium sm:justify-start"
             >
-              <Icon className="size-5 text-primary" aria-hidden="true" />
+              <Icon
+                className="size-5 text-footer-foreground/80"
+                aria-hidden="true"
+              />
               {label}
             </li>
           ))}
