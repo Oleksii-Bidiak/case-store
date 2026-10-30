@@ -5,11 +5,12 @@ Synced surface: `apps/store-client/src/shared/ui` → Claude Design project
 
 ## Sync log (staleness check)
 
-| Date       | Source commit (develop) | Components | Authored previews                 |
-| ---------- | ----------------------- | ---------- | --------------------------------- |
-| 2026-07-01 | `25064fe5`              | 48         | 21 (English copy, empty `.d.ts`)  |
-| 2026-09-19 | `09aaa712`              | 56         | 29 (Ukrainian copy, real `.d.ts`) |
-| 2026-09-25 | `57aa2a97`              | 56         | 29 (re-graded after TASK-735/736) |
+| Date       | Source commit (develop)                                                              | Components | Authored previews                                                               |
+| ---------- | ------------------------------------------------------------------------------------ | ---------- | ------------------------------------------------------------------------------- |
+| 2026-07-01 | `25064fe5`                                                                           | 48         | 21 (English copy, empty `.d.ts`)                                                |
+| 2026-09-19 | `09aaa712`                                                                           | 56         | 29 (Ukrainian copy, real `.d.ts`)                                               |
+| 2026-09-25 | `57aa2a97`                                                                           | 56         | 29 (re-graded after TASK-735/736)                                               |
+| 2026-10-30 | `030427ee` (branch `worktree-feature-1951-storefront-direction`, not yet in develop) | 64         | 29 (direction В, TASK-1951; all re-graded, Logo + AccountDropdownItem repaired) |
 
 Before any design session: `git log <last source commit>..HEAD -- apps/store-client/src/shared/ui apps/store-client/src/app/globals.css`
 — non-empty means the project is behind the code; re-sync first (runbook S7.1).
@@ -83,15 +84,22 @@ store-client is a Next.js app, not a published component library, so this is a
 
 ## Fonts
 
-Brand fonts (Geist / Geist Mono / Sora) are injected by `next/font` at runtime in the
-app, so `--font-geist-sans|geist-mono|sora` are undefined in a standalone bundle.
-`compile-css.mjs` loads them from Google Fonts (remote `@import`) and defines the vars.
+Brand fonts (Onest / Unbounded / Geist Mono since TASK-1951; Geist + Sora before) are
+injected by `next/font` at runtime in the app, so `--font-onest|unbounded|geist-mono` are
+undefined in a standalone bundle. `compile-css.mjs` loads them from Google Fonts (remote
+`@import`; the css2 API serves the Cyrillic subset by `unicode-range`) and defines the vars.
 `[FONT_REMOTE]`/no `[FONT_MISSING]` — fonts load at runtime; offline renders fall back
-to system sans (harmless). Display font (Sora) is used for headings & prices.
+to system sans (harmless). Onest = text and prices, Unbounded = headings, Geist Mono = SKUs.
+
+- **Logo / AccountDropdownItem previews** broke silently between syncs (2026-10-30): `Logo`
+  gained a required `siteName` (TASK-433) and the account items became Radix
+  `DropdownMenu.Item`s (TASK-503) that throw outside a menu. A preview that imports a
+  second `radix-ui` cannot fix it — its Menu context is not the bundle's. The preview now
+  opens the real `AccountDropdown` with an Enter keydown on its trigger after mount.
 
 ## Known render warns
 
-- None from validate (56/56 clean).
+- None from validate (64/64 clean, 2026-10-30).
 - 2026-09-25: `Input › Invalid` now shows the red `destructive` border (TASK-735 moved
   `* { border-color }` into `@layer base`). Disabled cells of Button/Input/Textarea/Select are
   readable (`bg-disabled` + `text-disabled-foreground`, TASK-736). Both earlier warns are closed.
@@ -109,7 +117,9 @@ category tile reuses the site's oklch `categoryGradient` formula). 27 subcompone
 - **Tokens track `src/app/globals.css`.** compile-css strips its `@import 'tailwindcss'`
   and `@plugin '@tailwindcss/typography'` lines and re-adds scoped versions. If those
   lines' format changes, update the strip regexes in compile-css.mjs.
-- **Fonts** depend on the remote Google Fonts families staying named Geist/Geist Mono/Sora.
+- **Fonts** depend on the remote Google Fonts families staying named Onest / Unbounded /
+  Geist Mono. A font change in `app/layout.tsx` must be mirrored in `compile-css.mjs`
+  (import URL + `--font-*` vars), or the DS silently renders in the system fallback.
 - **Barrel shims** list exactly what shared/ui imports from `@/shared/config` and
   `@/shared/lib`. Before every sync: `grep -rn 'from "@/shared/\(config\|lib\)"' apps/store-client/src/shared/ui`
   — a new name missing from the shim fails the build (or, if it reads `process.env`
