@@ -212,6 +212,11 @@ test.describe("TASK-1997: several pickup points", () => {
 });
 
 test.describe("TASK-1991: /promo opens at the top", () => {
+  // Short enough that the deals listing starts below the fold on the seeded
+  // stand (its hero is short — no banners); at 720 the listing is already in
+  // view and Next has nothing to scroll to, so the test could not go red.
+  test.use({ viewport: { width: 1280, height: 400 } });
+
   test("a client navigation from the header lands on the hero, not the deals", async ({
     page,
   }) => {
@@ -231,9 +236,15 @@ test.describe("TASK-1991: /promo opens at the top", () => {
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(1_000);
 
-    expect(
-      await page.evaluate(() => window.scrollY),
-      "scrollY after navigating to /promo",
-    ).toBe(0);
+    const { scrollY, dealsTop } = await page.evaluate(() => ({
+      scrollY: window.scrollY,
+      dealsTop: document.getElementById("deals")?.getBoundingClientRect().top,
+    }));
+    expect(scrollY, "scrollY after navigating to /promo").toBe(0);
+    // Precondition, not the claim: the listing must start below the fold, or
+    // a page that never scrolls would pass vacuously.
+    expect(dealsTop, "the deals listing starts below the fold").toBeGreaterThan(
+      400,
+    );
   });
 });
