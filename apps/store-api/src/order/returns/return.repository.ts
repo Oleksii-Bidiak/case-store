@@ -22,10 +22,10 @@ import type {
 } from './return.types';
 
 /**
- * Shared include for return reads: the lines, each with the order line it points
- * at (product name + unit price), so an admin card can be rendered from one query.
+ * The lines, each with the order line it points at (product name + unit price),
+ * so a card can be rendered from one query. The base of every read.
  */
-const RETURNS_INCLUDE = {
+const RETURN_LINES_INCLUDE = {
   items: {
     orderBy: { createdAt: 'asc' as const },
     include: {
@@ -42,9 +42,57 @@ const RETURNS_INCLUDE = {
   },
 } satisfies Prisma.ReturnInclude;
 
+/** History rows oldest first; `id` breaks ties between rows of one instant. */
+const HISTORY_ORDER = [{ createdAt: 'asc' as const }, { id: 'asc' as const }];
+
+/**
+ * An account as a return names it (TASK-1963): what a display name is built
+ * from, and nothing else of the user row.
+ */
+const ACTOR_SELECT = {
+  id: true,
+  email: true,
+  firstName: true,
+  lastName: true,
+} satisfies Prisma.UserSelect;
+
+/**
+ * The CUSTOMER read (TASK-1963, TASK-2045): the lines and the repair progress.
+ * The repair step's `note` and `actorId` are not even selected, and no staff
+ * account is joined — `ReturnEntity` strips them too, but what was never read
+ * cannot leak.
+ */
+const RETURNS_INCLUDE = {
+  ...RETURN_LINES_INCLUDE,
+  repairEvents: {
+    orderBy: HISTORY_ORDER,
+    select: { id: true, step: true, result: true, destination: true, ttn: true, createdAt: true },
+  },
+} satisfies Prisma.ReturnInclude;
+
+/**
+ * The admin LIST read — the queue and the per-order list (TASK-1963): the
+ * owning order with its purchase date, and both authors. Each is a to-one join,
+ * which Prisma batches into one query per relation for the whole page, so a page
+ * costs a fixed number of queries. The history arrays are left to the card.
+ */
 const ADMIN_RETURNS_INCLUDE = {
-  ...RETURNS_INCLUDE,
-  order: { select: { id: true, userId: true, guestEmail: true, status: true } },
+  ...RETURN_LINES_INCLUDE,
+  order: { select: { id: true, userId: true, guestEmail: true, status: true, createdAt: true } },
+  createdBy: { select: ACTOR_SELECT },
+  decidedBy: { select: ACTOR_SELECT },
+} satisfies Prisma.ReturnInclude;
+
+/**
+ * The admin CARD read — one return in full (TASK-1963, TASK-2044, TASK-2045):
+ * the list joins plus the decision history and the repair steps, each with its
+ * author and, for repairs, the operator's note. Used by `findById` and by every
+ * write that answers with the card (create, resolve, decide).
+ */
+const ADMIN_RETURN_DETAIL_INCLUDE = {
+  ...ADMIN_RETURNS_INCLUDE,
+  decisionEvents: { orderBy: HISTORY_ORDER, include: { actor: { select: ACTOR_SELECT } } },
+  repairEvents: { orderBy: HISTORY_ORDER, include: { actor: { select: ACTOR_SELECT } } },
 } satisfies Prisma.ReturnInclude;
 
 const DEFAULT_PAGE = 1;
@@ -160,6 +208,9 @@ export class ReturnRepository {
         // who it was serving and simply threw the fact away; the admin door has
         // no other way to record it, since a guest order carries no user at all.
         createdByUserId: params.createdByUserId ?? null,
+        // TASK-2044/1963: what was asked for, and through which door.
+        requestedOutcome: params.requestedOutcome ?? null,
+        channel: params.channel,
         items: {
           create: params.items.map((item) => ({
             orderItemId: item.orderItemId,
@@ -167,22 +218,31 @@ export class ReturnRepository {
           })),
         },
       },
-      include: RETURNS_INCLUDE,
+      // The full card: a fresh return has no decision and no repair yet, so the
+      // only account it can name is whoever just opened it — and the customer
+      // projection drops even that.
+      include: ADMIN_RETURN_DETAIL_INCLUDE,
     }) as Promise<ReturnWithItems>;
   }
 
+  /** One return in full — the admin card (TASK-1963): authors, history, repair notes. */
   findById(returnId: string): Promise<ReturnWithItems | null> {
     return this.prisma.return.findUnique({
       where: { id: returnId },
-      include: ADMIN_RETURNS_INCLUDE,
+      include: ADMIN_RETURN_DETAIL_INCLUDE,
     }) as Promise<ReturnWithItems | null>;
   }
 
-  /** Every return opened against one order — the "already returned" ledger. */
-  findByOrderId(orderId: string): Promise<ReturnWithItems[]> {
+  /**
+   * Every return opened against one order — the "already returned" ledger.
+   *
+   * @param options.admin the operator's read (TASK-1963): authors and purchase
+   *   date joined. Without it, the customer read: no staff account is loaded.
+   */
+  findByOrderId(orderId: string, options: { admin?: boolean } = {}): Promise<ReturnWithItems[]> {
     return this.prisma.return.findMany({
       where: { orderId },
-      include: RETURNS_INCLUDE,
+      include: options.admin ? ADMIN_RETURNS_INCLUDE : RETURNS_INCLUDE,
       orderBy: { requestedAt: 'desc' },
     }) as Promise<ReturnWithItems[]>;
   }
@@ -308,7 +368,7 @@ export class ReturnRepository {
     const updated = (await this.prisma.$transaction(async (tx) => {
       const existing = await tx.return.findUniqueOrThrow({
         where: { id: returnId },
-        include: RETURNS_INCLUDE,
+        include: RETURN_LINES_INCLUDE,
       });
 
       if (options.assertRefundable) {
@@ -340,7 +400,7 @@ export class ReturnRepository {
         await tx.return.update({ where: { id: returnId }, data });
         return tx.return.findUniqueOrThrow({
           where: { id: returnId },
-          include: ADMIN_RETURNS_INCLUDE,
+          include: ADMIN_RETURN_DETAIL_INCLUDE,
         });
       }
 
@@ -368,7 +428,7 @@ export class ReturnRepository {
 
       return tx.return.findUniqueOrThrow({
         where: { id: returnId },
-        include: ADMIN_RETURNS_INCLUDE,
+        include: ADMIN_RETURN_DETAIL_INCLUDE,
       });
     })) as ReturnWithItems;
 
@@ -446,7 +506,7 @@ export class ReturnRepository {
 
       return tx.return.findUniqueOrThrow({
         where: { id: current.id },
-        include: ADMIN_RETURNS_INCLUDE,
+        include: ADMIN_RETURN_DETAIL_INCLUDE,
       });
     }) as Promise<ReturnWithItems>;
   }

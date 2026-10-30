@@ -30241,6 +30241,49 @@
           "reason"
         ]
       },
+      "ReturnActorEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Account id",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "First and last name as stored; the email when the account has no name",
+            "example": "Олена Коваль"
+          },
+          "email": {
+            "type": "string",
+            "description": "Account email",
+            "example": "olena@example.com"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email"
+        ]
+      },
+      "ReturnOutcome": {
+        "type": "string",
+        "enum": [
+          "REFUND",
+          "REPLACEMENT",
+          "REPAIR"
+        ],
+        "description": "What the customer asked for; null when they did not say, and on requests filed before the field existed."
+      },
+      "ReturnChannel": {
+        "type": "string",
+        "enum": [
+          "ACCOUNT",
+          "GUEST_LINK",
+          "OPERATOR"
+        ],
+        "description": "Which door the request came through: the customer account, a guest link, or an operator writing it down for the customer."
+      },
       "ReturnDecision": {
         "type": "string",
         "enum": [
@@ -30249,7 +30292,128 @@
           "REPAIR",
           "REJECT"
         ],
-        "description": "The current decision; null while nobody has decided. Present ONLY on admin responses."
+        "description": "The current decision; null while nobody has decided."
+      },
+      "ReturnDecisionEventEntity": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "description": "What was decided",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnDecision"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "The reason given to the customer; null on legacy rows and bare approvals",
+            "nullable": true
+          },
+          "legacy": {
+            "type": "boolean",
+            "description": "True when inferred by the pre-B-12 backfill rather than taken by a person"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When it was decided",
+            "format": "date-time"
+          },
+          "actor": {
+            "description": "Who decided; null for legacy rows and deleted accounts",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnActorEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "decision",
+          "reason",
+          "legacy",
+          "createdAt",
+          "actor"
+        ]
+      },
+      "ReturnRepairStep": {
+        "type": "string",
+        "enum": [
+          "ACCEPTED",
+          "SENT_TO_SERVICE",
+          "RETURNED_FROM_SERVICE",
+          "HANDED_TO_CUSTOMER"
+        ],
+        "description": "Repair step"
+      },
+      "RepairResult": {
+        "type": "string",
+        "enum": [
+          "REPAIRED",
+          "UNREPAIRABLE"
+        ],
+        "description": "What the service centre reported; set on RETURNED_FROM_SERVICE"
+      },
+      "ReturnRepairStepEntity": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "description": "Repair step",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnRepairStep"
+              }
+            ]
+          },
+          "result": {
+            "description": "What the service centre reported; set on RETURNED_FROM_SERVICE",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RepairResult"
+              }
+            ]
+          },
+          "destination": {
+            "type": "string",
+            "description": "The service centre, free text",
+            "nullable": true
+          },
+          "ttn": {
+            "type": "string",
+            "description": "Nova Poshta waybill number, when the step involved a shipment",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When the step was recorded",
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string",
+            "description": "Operator-only note. Present ONLY on admin responses.",
+            "nullable": true
+          },
+          "actor": {
+            "description": "Who recorded the step; null for deleted accounts. Present ONLY on admin responses.",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnActorEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "step",
+          "result",
+          "destination",
+          "ttn",
+          "createdAt"
+        ]
       },
       "ReturnItemEntity": {
         "type": "object",
@@ -30353,8 +30517,35 @@
             "format": "uuid",
             "nullable": true
           },
+          "createdBy": {
+            "description": "Who opened the request — the customer, or the operator who filed it for them; null for rows predating the column and for deleted accounts. Present ONLY on admin responses.",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnActorEntity"
+              }
+            ]
+          },
+          "requestedOutcome": {
+            "description": "What the customer asked for; null when they did not say, and on requests filed before the field existed.",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnOutcome"
+              }
+            ]
+          },
+          "channel": {
+            "description": "Which door the request came through: the customer account, a guest link, or an operator writing it down for the customer.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnChannel"
+              }
+            ]
+          },
           "decision": {
-            "description": "The current decision; null while nobody has decided. Present ONLY on admin responses.",
+            "description": "The current decision; null while nobody has decided.",
             "nullable": true,
             "allOf": [
               {
@@ -30364,20 +30555,53 @@
           },
           "decisionReason": {
             "type": "string",
-            "description": "Why — the reason the customer is shown. Null on legacy (pre-B-12) decisions and on approvals given without one. Present ONLY on admin responses.",
+            "description": "Why — the reason the customer is shown. Null on legacy (pre-B-12) decisions and on approvals given without one.",
             "nullable": true
           },
           "decidedAt": {
             "type": "string",
-            "description": "When the current decision was taken. Present ONLY on admin responses.",
+            "description": "When the current decision was taken.",
             "format": "date-time",
             "nullable": true
+          },
+          "decisionLegacy": {
+            "type": "boolean",
+            "description": "True when the decision was inferred from the pre-B-12 status by the data backfill — no reason and no author were ever recorded for it."
           },
           "decidedById": {
             "type": "string",
             "description": "Account that took the current decision; null for legacy decisions and deleted accounts. Present ONLY on admin responses.",
             "format": "uuid",
             "nullable": true
+          },
+          "decidedBy": {
+            "description": "Who took the current decision, by name; null for legacy decisions and deleted accounts. Present ONLY on admin responses.",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnActorEntity"
+              }
+            ]
+          },
+          "decisionHistory": {
+            "description": "Every decision, superseded ones included, oldest first. Present ONLY on admin single-return responses (GET /admin/returns/:id, the decision, PATCH and the admin create); omitted on lists.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReturnDecisionEventEntity"
+            }
+          },
+          "repairSteps": {
+            "description": "Repair progress, oldest first. On customer responses each step carries no note and no actor. Present on customer responses and on admin single-return responses; omitted on admin lists.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReturnRepairStepEntity"
+            }
+          },
+          "orderCreatedAt": {
+            "type": "string",
+            "description": "When the order was placed — the purchase date the 14-day window counts from. Present ONLY on admin responses.",
+            "format": "date-time"
           },
           "items": {
             "description": "Lines coming back",
@@ -30396,6 +30620,12 @@
           "resolvedAt",
           "restockedAt",
           "refundedAmount",
+          "requestedOutcome",
+          "channel",
+          "decision",
+          "decisionReason",
+          "decidedAt",
+          "decisionLegacy",
           "items"
         ]
       },
@@ -30451,6 +30681,14 @@
             "type": "string",
             "description": "Why the customer is returning, in their own words",
             "maxLength": 1000
+          },
+          "requestedOutcome": {
+            "description": "What the customer asks for: a refund, a replacement or a repair. Omit when they did not say — the shop decides either way.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnOutcome"
+              }
+            ]
           },
           "items": {
             "description": "The lines coming back, with quantities",

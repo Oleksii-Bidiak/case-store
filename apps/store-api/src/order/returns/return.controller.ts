@@ -20,7 +20,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard, CurrentUser } from '../../auth';
 import { ReturnService } from './return.service';
-import { ReturnEntity, ReturnItemEntity } from './entities';
+import { ReturnEntity, ReturnItemEntity, ReturnRepairStepEntity } from './entities';
 import { CreateReturnDto } from './dto';
 
 class ReturnResponseEnvelope {
@@ -53,7 +53,13 @@ class ReturnListResponseEnvelope {
  */
 @ApiTags('Returns')
 @ApiBearerAuth('access-token')
-@ApiExtraModels(ReturnEntity, ReturnItemEntity, ReturnResponseEnvelope, ReturnListResponseEnvelope)
+@ApiExtraModels(
+  ReturnEntity,
+  ReturnItemEntity,
+  ReturnRepairStepEntity,
+  ReturnResponseEnvelope,
+  ReturnListResponseEnvelope,
+)
 @Controller()
 @UseGuards(JwtAuthGuard)
 export class ReturnController {

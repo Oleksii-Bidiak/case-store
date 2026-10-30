@@ -1,1 +1,7 @@
-export { ReturnEntity, ReturnItemEntity } from './return.entity';
+export {
+  ReturnActorEntity,
+  ReturnDecisionEventEntity,
+  ReturnEntity,
+  ReturnItemEntity,
+  ReturnRepairStepEntity,
+} from './return.entity';

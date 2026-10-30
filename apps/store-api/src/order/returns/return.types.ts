@@ -1,4 +1,48 @@
-import { ReturnDecision, ReturnStatus } from '@prisma/client';
+import {
+  RepairResult,
+  ReturnChannel,
+  ReturnDecision,
+  ReturnOutcome,
+  ReturnRepairStep,
+  ReturnStatus,
+} from '@prisma/client';
+
+/**
+ * A staff or customer account as a return names it (TASK-1963): just enough to
+ * show a name, with the email as the fallback. Never on a customer read.
+ */
+export interface ReturnActorRow {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+}
+
+/** One row of a return's decision history (TASK-1961, TASK-2044). */
+export interface ReturnDecisionEventRow {
+  id: string;
+  decision: ReturnDecision;
+  reason: string | null;
+  legacy: boolean;
+  createdAt: Date;
+  /** Null for backfilled decisions and deleted accounts. */
+  actor: ReturnActorRow | null;
+}
+
+/**
+ * One repair step (TASK-2045). `note` and `actor` are loaded on admin reads only;
+ * the customer read selects neither.
+ */
+export interface ReturnRepairEventRow {
+  id: string;
+  step: ReturnRepairStep;
+  result: RepairResult | null;
+  destination: string | null;
+  ttn: string | null;
+  createdAt: Date;
+  note?: string | null;
+  actor?: ReturnActorRow | null;
+}
 
 /** One order line coming back, as stored on a return (TASK-340). */
 export interface ReturnItemRow {
@@ -51,6 +95,12 @@ export interface ReturnWithItems {
   decidedAt: Date | null;
   /** Who decided; null for backfilled (legacy) decisions and deleted accounts. */
   decidedById: string | null;
+  /** True when the decision was inferred by the R1 backfill (no reason, no author). */
+  decisionLegacy: boolean;
+  /** What the customer asked for (TASK-2044); null on pre-B-12 requests. */
+  requestedOutcome: ReturnOutcome | null;
+  /** Which door the request came through (TASK-1963). */
+  channel: ReturnChannel;
   createdAt: Date;
   updatedAt: Date;
   items: ReturnItemRow[];
@@ -60,7 +110,17 @@ export interface ReturnWithItems {
     userId: string | null;
     guestEmail: string | null;
     status: string;
+    /** The purchase date — the 14-day clock starts there (TASK-1963). */
+    createdAt?: Date;
   };
+  /** Admin reads only (TASK-1963). Undefined when not joined; null when gone. */
+  createdBy?: ReturnActorRow | null;
+  /** Admin reads only (TASK-1963). Undefined when not joined; null when gone. */
+  decidedBy?: ReturnActorRow | null;
+  /** Admin single-return reads only; oldest first. */
+  decisionEvents?: ReturnDecisionEventRow[];
+  /** Customer reads (lean) and admin single-return reads (full); oldest first. */
+  repairEvents?: ReturnRepairEventRow[];
 }
 
 /**
@@ -130,5 +190,9 @@ export interface CreateReturnParams {
   reason?: string;
   /** Whoever pressed the button — customer or operator (TASK-469). */
   createdByUserId?: string | null;
+  /** What the customer asked for (TASK-2044); omitted = they did not say. */
+  requestedOutcome?: ReturnOutcome;
+  /** Which door the request came through (TASK-1963) — set by the service, never inferred. */
+  channel: ReturnChannel;
   items: Array<{ orderItemId: string; quantity: number }>;
 }

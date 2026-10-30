@@ -28,7 +28,13 @@ import {
   type PermissionActor,
 } from '../../auth/permissions';
 import { ReturnService } from './return.service';
-import { ReturnEntity, ReturnItemEntity } from './entities';
+import {
+  ReturnActorEntity,
+  ReturnDecisionEventEntity,
+  ReturnEntity,
+  ReturnItemEntity,
+  ReturnRepairStepEntity,
+} from './entities';
 import { CreateReturnDto, DecideReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
 
 class AdminReturnPaginationMeta {
@@ -70,6 +76,9 @@ class AdminReturnResponseEnvelope {
 @ApiExtraModels(
   ReturnEntity,
   ReturnItemEntity,
+  ReturnActorEntity,
+  ReturnDecisionEventEntity,
+  ReturnRepairStepEntity,
   AdminReturnListResponse,
   AdminReturnPaginationMeta,
   AdminReturnResponseEnvelope,
@@ -225,6 +234,9 @@ export class AdminReturnController {
 @ApiExtraModels(
   ReturnEntity,
   ReturnItemEntity,
+  ReturnActorEntity,
+  ReturnDecisionEventEntity,
+  ReturnRepairStepEntity,
   AdminReturnResponseEnvelope,
   AdminReturnListResponse,
 )

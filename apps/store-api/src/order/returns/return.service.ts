@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderStatus, ReturnDecision, ReturnStatus } from '@prisma/client';
+import { OrderStatus, ReturnChannel, ReturnDecision, ReturnStatus } from '@prisma/client';
 import { ReturnRepository } from './return.repository';
 import { OrderRepository } from '../order.repository';
 import { ShopNotifier } from '../../notification';
@@ -112,6 +112,8 @@ export class ReturnService {
         orderId,
         ...(dto.reason ? { reason: dto.reason } : {}),
         createdByUserId: userId,
+        ...(dto.requestedOutcome ? { requestedOutcome: dto.requestedOutcome } : {}),
+        channel: ReturnChannel.ACCOUNT,
         items: dto.items.map((item) => ({
           orderItemId: item.orderItemId,
           quantity: item.quantity,
@@ -181,6 +183,9 @@ export class ReturnService {
         orderId,
         ...(dto.reason ? { reason: dto.reason } : {}),
         createdByUserId: actorUserId,
+        // TASK-1963: what the customer told the operator, written down by staff.
+        ...(dto.requestedOutcome ? { requestedOutcome: dto.requestedOutcome } : {}),
+        channel: ReturnChannel.OPERATOR,
         items: dto.items.map((item) => ({
           orderItemId: item.orderItemId,
           quantity: item.quantity,
@@ -213,7 +218,7 @@ export class ReturnService {
    * caller at all.
    */
   async adminGetOrderReturns(orderId: string): Promise<ReturnEntity[]> {
-    const returns = await this.returnRepository.findByOrderId(orderId);
+    const returns = await this.returnRepository.findByOrderId(orderId, { admin: true });
     return returns.map((row) => ReturnEntity.fromPrisma(row, { includeInternal: true }));
   }
 
