@@ -7,6 +7,10 @@
 // If multi-locale is ever required, this object's shape already matches a
 // next-intl message catalog, so migration is mechanical.
 
+import { deviceFitDict } from "./dict-sections/device-fit";
+import { devicePagesDict } from "./dict-sections/device-pages";
+import { devicePickerDict } from "./dict-sections/device-picker";
+import { searchDeviceDict } from "./dict-sections/search-device";
 import { pluralUk } from "./plural";
 
 // Ukrainian labels for the order/payment status enums (TASK-129). Keyed by the
@@ -2605,6 +2609,11 @@ export const dict = {
     invalid:
       "Посилання на прев'ю недійсне або вже не діє. Показуємо сторінку такою, якою її бачать покупці зараз.",
   },
+  // SД3 sections live in ./dict-sections/* — one module per cluster.
+  devicePicker: devicePickerDict,
+  deviceFit: deviceFitDict,
+  devicePages: devicePagesDict,
+  searchDevice: searchDeviceDict,
 } as const;
 
 export type Dictionary = typeof dict;
