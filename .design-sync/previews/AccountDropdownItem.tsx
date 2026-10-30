@@ -1,26 +1,54 @@
-import { AccountDropdownItem } from "@store/store-client";
+import { useEffect, useRef } from "react";
+import {
+  AccountDropdown,
+  AccountDropdownItem,
+  AccountDropdownSeparator,
+} from "@store/store-client";
 
-// Composed inside a representative menu panel (the same markup AccountDropdown
-// renders when open) so the real item styling is visible statically.
-const panel: React.CSSProperties = {
-  minWidth: 208,
-  width: 240,
-  padding: 4,
-  borderRadius: 8,
-  border: "1px solid var(--color-border)",
-  background: "var(--color-popover)",
-  color: "var(--color-popover-foreground)",
-  boxShadow: "var(--shadow-elevated)",
-  listStyle: "none",
-  margin: 0,
+const avatar: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 32,
+  height: 32,
+  borderRadius: 9999,
+  background: "var(--color-primary)",
+  color: "var(--color-primary-foreground)",
+  fontSize: 12,
+  fontWeight: 600,
 };
 
-export const Menu = () => (
-  <ul role="menu" style={panel}>
-    <AccountDropdownItem href="/account">Мій акаунт</AccountDropdownItem>
-    <AccountDropdownItem href="/orders">Історія замовлень</AccountDropdownItem>
-    <AccountDropdownItem href="/wishlist">Обране</AccountDropdownItem>
-    <AccountDropdownItem onClick={() => {}}>Вийти</AccountDropdownItem>
-    <AccountDropdownItem disabled>Адмін-панель</AccountDropdownItem>
-  </ul>
-);
+// Since TASK-503 the items are Radix `DropdownMenu.Item`s and render only
+// inside the open menu (a separately imported `radix-ui` would be a second
+// copy whose Menu context the bundle's items cannot see). AccountDropdown has
+// no `open` prop, so the card opens the real one the way a keyboard user does:
+// Enter on the trigger, once, after mount.
+export const Menu = () => {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const trigger = box.current?.querySelector("button");
+    trigger?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  }, []);
+  return (
+    <div
+      ref={box}
+      style={{ height: 260, display: "flex", justifyContent: "flex-end" }}
+    >
+      <AccountDropdown
+        triggerContent={<span style={avatar}>ОБ</span>}
+        triggerAria="Відкрити меню акаунту"
+        menuAria="Меню акаунту"
+      >
+        <AccountDropdownItem href="/account">Мій акаунт</AccountDropdownItem>
+        <AccountDropdownItem href="/orders">
+          Історія замовлень
+        </AccountDropdownItem>
+        <AccountDropdownItem href="/wishlist">Обране</AccountDropdownItem>
+        <AccountDropdownSeparator />
+        <AccountDropdownItem onClick={() => {}}>Вийти</AccountDropdownItem>
+      </AccountDropdown>
+    </div>
+  );
+};
