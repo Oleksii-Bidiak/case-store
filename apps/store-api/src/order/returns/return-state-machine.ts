@@ -1,4 +1,4 @@
-import { ReturnStatus } from '@prisma/client';
+import { ReturnDecision, ReturnStatus } from '@prisma/client';
 
 /**
  * The return (RMA) state machine (TASK-340).
@@ -17,10 +17,11 @@ import { ReturnStatus } from '@prisma/client';
  *   REQUESTED ─→ APPROVED ─→ RECEIVED ─→ REFUNDED
  *       └────→ REJECTED
  *
- * Nothing leaves REJECTED or REFUNDED. A customer whose return was refused and
- * who then argues successfully is a NEW request, not an edited old one — the
- * refusal is a decision that was communicated, and rewriting it in place erases
- * the fact that it happened.
+ * Nothing leaves REJECTED or REFUNDED through this table. Since B-12 (TASK-1961,
+ * TASK-2044) APPROVED and REJECTED are the EFFECT of an operator's decision, not
+ * a status anyone sets: see {@link returnStatusAfterDecision}. That is the one
+ * door out of REJECTED — a changed decision, with a reason and a history row, so
+ * the refusal that was communicated is never erased, only superseded.
  */
 export const RETURN_TRANSITIONS: Readonly<Record<ReturnStatus, readonly ReturnStatus[]>> =
   Object.freeze({
@@ -51,4 +52,54 @@ export function canTransitionReturn(from: ReturnStatus, to: ReturnStatus): boole
 /** Every status reachable from `from`, as a fresh (caller-owned) array. */
 export function allowedReturnTransitions(from: ReturnStatus): ReturnStatus[] {
   return [...RETURN_TRANSITIONS[from]];
+}
+
+/**
+ * What a decision does to the status (TASK-1961, TASK-2044), or `null` when the
+ * decision cannot be taken from `from`.
+ *
+ * - REJECT refuses from REQUESTED or APPROVED (the table's own refusal edges),
+ *   and keeps a REJECTED return refused when the refusal is only re-worded.
+ *   Goods already RECEIVED cannot be refused: they may already be back in stock.
+ * - REFUND / REPLACEMENT / REPAIR approve a fresh request or re-open a refused
+ *   one, and leave APPROVED and RECEIVED where they are — where the goods are is
+ *   not what the operator decided.
+ * - Nothing is decided on REFUNDED: the money is gone.
+ */
+export function returnStatusAfterDecision(
+  from: ReturnStatus,
+  decision: ReturnDecision,
+): ReturnStatus | null {
+  if (from === ReturnStatus.REFUNDED) {
+    return null;
+  }
+
+  if (decision === ReturnDecision.REJECT) {
+    if (from === ReturnStatus.REJECTED) {
+      return ReturnStatus.REJECTED;
+    }
+    return canTransitionReturn(from, ReturnStatus.REJECTED) ? ReturnStatus.REJECTED : null;
+  }
+
+  if (from === ReturnStatus.REQUESTED || from === ReturnStatus.REJECTED) {
+    return ReturnStatus.APPROVED;
+  }
+  return from;
+}
+
+/**
+ * Whether the current decision allows a PATCH move to `to` (TASK-2044).
+ *
+ * Money goes out only on a REFUND decision: a replacement or a repair is paid
+ * for in goods, and a refusal in nothing. Rows from before B-12 carry REFUND from
+ * the R1 backfill, so their RECEIVED → REFUNDED path is unchanged.
+ */
+export function decisionPermitsTransition(
+  to: ReturnStatus,
+  decision: ReturnDecision | null,
+): boolean {
+  if (to === ReturnStatus.REFUNDED) {
+    return decision === ReturnDecision.REFUND;
+  }
+  return true;
 }

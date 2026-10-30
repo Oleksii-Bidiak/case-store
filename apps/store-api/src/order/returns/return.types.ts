@@ -1,4 +1,4 @@
-import { ReturnStatus } from '@prisma/client';
+import { ReturnDecision, ReturnStatus } from '@prisma/client';
 
 /** One order line coming back, as stored on a return (TASK-340). */
 export interface ReturnItemRow {
@@ -44,6 +44,13 @@ export interface ReturnWithItems {
    * a guest order it is null while this one names a member of staff.
    */
   createdByUserId: string | null;
+  /** The CURRENT decision (TASK-2044); null while nobody has decided. */
+  decision: ReturnDecision | null;
+  /** Why — customer-facing, unlike `operatorNotes`. */
+  decisionReason: string | null;
+  decidedAt: Date | null;
+  /** Who decided; null for backfilled (legacy) decisions and deleted accounts. */
+  decidedById: string | null;
   createdAt: Date;
   updatedAt: Date;
   items: ReturnItemRow[];
@@ -95,6 +102,27 @@ export interface RefundLedger {
  * the write.
  */
 export type AssertRefundWithinBalance = (ledger: RefundLedger) => void;
+
+/**
+ * The state a decision was taken against (TASK-1961, TASK-2044). The repository
+ * writes only if the row still holds this status and decision, so a decision
+ * never lands on a return another operator has moved meanwhile.
+ */
+export interface ReturnDecisionBasis {
+  id: string;
+  orderId: string;
+  status: ReturnStatus;
+  decision: ReturnDecision | null;
+}
+
+/** What a decision writes onto the return and into its history row. */
+export interface ReturnDecisionChange {
+  status: ReturnStatus;
+  decision: ReturnDecision;
+  decisionReason: string | null;
+  decidedById: string;
+  decidedAt: Date;
+}
 
 /** What the service hands the repository to open a return (TASK-340). */
 export interface CreateReturnParams {

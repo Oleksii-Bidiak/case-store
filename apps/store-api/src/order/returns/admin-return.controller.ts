@@ -21,10 +21,15 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../auth';
-import { PermissionGuard, RequirePermission } from '../../auth/permissions';
+import {
+  CurrentActor,
+  PermissionGuard,
+  RequirePermission,
+  type PermissionActor,
+} from '../../auth/permissions';
 import { ReturnService } from './return.service';
 import { ReturnEntity, ReturnItemEntity } from './entities';
-import { CreateReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
+import { CreateReturnDto, DecideReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
 
 class AdminReturnPaginationMeta {
   @ApiProperty({ example: 42 })
@@ -124,21 +129,73 @@ export class AdminReturnController {
   @ApiResponse({
     status: 400,
     description:
-      'error: RETURN_RESTOCK_REQUIRES_RECEIVED (restock requested for a status other than ' +
+      'error: RETURN_USE_DECISION_ENDPOINT (APPROVED and REJECTED are set only by a decision), ' +
+      'RETURN_RESTOCK_REQUIRES_RECEIVED (restock requested for a status other than ' +
       'RECEIVED), RETURN_REFUND_EXCEEDS_RETURNED_VALUE or RETURN_REFUND_EXCEEDS_ORDER_BALANCE',
   })
   @ApiResponse({ status: 404, description: 'Return not found — error: RETURN_NOT_FOUND' })
   @ApiResponse({
     status: 409,
     description:
-      'error: RETURN_TRANSITION_INVALID (illegal transition) or RETURN_ALREADY_RESTOCKED ' +
-      '(the goods were already credited back to inventory)',
+      'error: RETURN_TRANSITION_INVALID (illegal transition, or REFUNDED without a REFUND ' +
+      'decision) or RETURN_ALREADY_RESTOCKED (the goods were already credited back to inventory)',
   })
   async resolve(
     @Param('returnId') returnId: string,
     @Body() dto: ResolveReturnDto,
   ): Promise<AdminReturnResponseEnvelope> {
     const data = await this.returnService.resolveReturn(returnId, dto);
+    return { data };
+  }
+
+  /**
+   * POST /api/admin/returns/:returnId/decision
+   *
+   * The operator's decision (TASK-1961, TASK-2044): refund, replacement, repair
+   * or refusal, with a reason the customer sees. Approving and refusing happen
+   * ONLY here — PATCH refuses those statuses — so a refusal without a reason, or
+   * a silent change of an earlier decision, cannot be made through the API.
+   *
+   * The author is the actor the permission guard resolved from the database,
+   * not the token's claims. The audit row is `return.decide`.
+   */
+  @Post(':returnId/decision')
+  @RequirePermission('returns:write')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Decide on a return (admin)',
+    description:
+      'REFUND, REPLACEMENT and REPAIR approve the return (or re-open a refused one, re-claiming ' +
+      'its units); REJECT refuses it. A reason is required on REJECT and on any change of a ' +
+      'decision already made. Every decision is recorded with its author in the return history.',
+    operationId: 'adminReturnControllerDecide',
+  })
+  @ApiParam({ name: 'returnId', description: 'Return UUID' })
+  @ApiResponse({ status: 200, description: 'Decision recorded', type: AdminReturnResponseEnvelope })
+  @ApiResponse({
+    status: 400,
+    description:
+      'error: RETURN_DECISION_REASON_REQUIRED (refusal or change without a reason), or a ' +
+      'validation error (unknown decision, reason over 1000 characters)',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — returns:write required' })
+  @ApiResponse({ status: 404, description: 'Return not found — error: RETURN_NOT_FOUND' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'error: RETURN_DECISION_LOCKED (the return was refunded), RETURN_DECISION_UNCHANGED ' +
+      '(same decision and reason), RETURN_TRANSITION_INVALID (refusing goods already ' +
+      'received, or the return changed meanwhile) or RETURN_QUANTITY_EXCEEDED (re-opening a ' +
+      'refusal whose units a newer request now holds; the message names the remainder)',
+  })
+  async decide(
+    @CurrentActor() actor: PermissionActor,
+    @Param('returnId') returnId: string,
+    @Body() dto: DecideReturnDto,
+  ): Promise<AdminReturnResponseEnvelope> {
+    const data = await this.returnService.decideReturn(returnId, actor.id, dto);
     return { data };
   }
 }

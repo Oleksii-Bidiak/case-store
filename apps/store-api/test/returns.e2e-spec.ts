@@ -114,6 +114,11 @@ describe('Admin returns queue (e2e)', () => {
     resolvedAt: null,
     restockedAt: null,
     refundedAmount: null,
+    // TASK-2044: a real row always carries these columns, null until decided.
+    decision: null,
+    decisionReason: null,
+    decidedAt: null,
+    decidedById: null,
     createdAt: now,
     updatedAt: now,
     items: [],

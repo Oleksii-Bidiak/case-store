@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, ReturnStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma';
-import { returnAlreadyRestockedError } from './return.errors';
+import { invalidReturnTransitionError, returnAlreadyRestockedError } from './return.errors';
 import {
   CacheService,
   productDetailIdKey,
@@ -16,6 +16,8 @@ import type {
   AssertRefundWithinBalance,
   AssertReturnClaimable,
   CreateReturnParams,
+  ReturnDecisionBasis,
+  ReturnDecisionChange,
   ReturnWithItems,
 } from './return.types';
 
@@ -375,6 +377,78 @@ export class ReturnRepository {
     }
 
     return updated;
+  }
+
+  /**
+   * Record an operator's decision (TASK-1961, TASK-2044): the denormalised
+   * current decision on the return AND its history row, in ONE transaction.
+   *
+   * ── The order lock ──────────────────────────────────────────────────────────
+   * The same `SELECT … FOR UPDATE` on the order row that `create` takes, so a
+   * decision and a new request on the same order serialise. It matters for one
+   * case: re-opening a REJECTED return claims its units back, and a customer may
+   * have filed a new request for those units since the refusal released them.
+   * When the service passes `assertClaimable`, the OTHER returns of the order
+   * are read under the lock and checked before anything is written.
+   *
+   * ── The state guard ─────────────────────────────────────────────────────────
+   * The service decided against a read taken outside this transaction. The
+   * write is conditional on the row still holding that status and decision; a
+   * return another operator moved meanwhile (say, to RECEIVED, with its goods
+   * restocked) is refused with 409 rather than silently overwritten.
+   *
+   * @throws ConflictException (RETURN_TRANSITION_INVALID) when the return changed
+   *   since the service read it; whatever `assertClaimable` throws.
+   */
+  async decide(
+    current: ReturnDecisionBasis,
+    change: ReturnDecisionChange,
+    options: { assertClaimable?: AssertReturnClaimable } = {},
+  ): Promise<ReturnWithItems> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM orders WHERE id = ${current.orderId} FOR UPDATE`;
+
+      if (options.assertClaimable) {
+        const ledger = await tx.return.findMany({
+          where: { orderId: current.orderId, id: { not: current.id } },
+          select: { status: true, items: { select: { orderItemId: true, quantity: true } } },
+        });
+        options.assertClaimable(ledger);
+      }
+
+      const { count } = await tx.return.updateMany({
+        where: { id: current.id, status: current.status, decision: current.decision },
+        data: {
+          status: change.status,
+          decision: change.decision,
+          decisionReason: change.decisionReason,
+          decidedAt: change.decidedAt,
+          decidedById: change.decidedById,
+          // A decision a person took is no longer the R1 backfill's inference.
+          decisionLegacy: false,
+          // `resolvedAt` stays "the last change" (plan 2026-10, Модель даних).
+          resolvedAt: change.decidedAt,
+        },
+      });
+      if (count === 0) {
+        throw invalidReturnTransitionError(current.status, change.status);
+      }
+
+      await tx.returnDecisionEvent.create({
+        data: {
+          returnId: current.id,
+          decision: change.decision,
+          reason: change.decisionReason,
+          actorId: change.decidedById,
+          createdAt: change.decidedAt,
+        },
+      });
+
+      return tx.return.findUniqueOrThrow({
+        where: { id: current.id },
+        include: ADMIN_RETURNS_INCLUDE,
+      });
+    }) as Promise<ReturnWithItems>;
   }
 
   /**

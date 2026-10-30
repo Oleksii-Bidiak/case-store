@@ -14635,13 +14635,13 @@
             }
           },
           "400": {
-            "description": "error: RETURN_RESTOCK_REQUIRES_RECEIVED (restock requested for a status other than RECEIVED), RETURN_REFUND_EXCEEDS_RETURNED_VALUE or RETURN_REFUND_EXCEEDS_ORDER_BALANCE"
+            "description": "error: RETURN_USE_DECISION_ENDPOINT (APPROVED and REJECTED are set only by a decision), RETURN_RESTOCK_REQUIRES_RECEIVED (restock requested for a status other than RECEIVED), RETURN_REFUND_EXCEEDS_RETURNED_VALUE or RETURN_REFUND_EXCEEDS_ORDER_BALANCE"
           },
           "404": {
             "description": "Return not found — error: RETURN_NOT_FOUND"
           },
           "409": {
-            "description": "error: RETURN_TRANSITION_INVALID (illegal transition) or RETURN_ALREADY_RESTOCKED (the goods were already credited back to inventory)"
+            "description": "error: RETURN_TRANSITION_INVALID (illegal transition, or REFUNDED without a REFUND decision) or RETURN_ALREADY_RESTOCKED (the goods were already credited back to inventory)"
           }
         },
         "security": [
@@ -14650,6 +14650,66 @@
           }
         ],
         "summary": "Resolve a return (admin)",
+        "tags": [
+          "Admin Returns"
+        ]
+      }
+    },
+    "/api/admin/returns/{returnId}/decision": {
+      "post": {
+        "description": "REFUND, REPLACEMENT and REPAIR approve the return (or re-open a refused one, re-claiming its units); REJECT refuses it. A reason is required on REJECT and on any change of a decision already made. Every decision is recorded with its author in the return history.",
+        "operationId": "adminReturnControllerDecide",
+        "parameters": [
+          {
+            "name": "returnId",
+            "required": true,
+            "in": "path",
+            "description": "Return UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideReturnDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReturnResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "error: RETURN_DECISION_REASON_REQUIRED (refusal or change without a reason), or a validation error (unknown decision, reason over 1000 characters)"
+          },
+          "403": {
+            "description": "Forbidden — returns:write required"
+          },
+          "404": {
+            "description": "Return not found — error: RETURN_NOT_FOUND"
+          },
+          "409": {
+            "description": "error: RETURN_DECISION_LOCKED (the return was refunded), RETURN_DECISION_UNCHANGED (same decision and reason), RETURN_TRANSITION_INVALID (refusing goods already received, or the return changed meanwhile) or RETURN_QUANTITY_EXCEEDED (re-opening a refusal whose units a newer request now holds; the message names the remainder)"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Decide on a return (admin)",
         "tags": [
           "Admin Returns"
         ]
@@ -30181,6 +30241,16 @@
           "reason"
         ]
       },
+      "ReturnDecision": {
+        "type": "string",
+        "enum": [
+          "REFUND",
+          "REPLACEMENT",
+          "REPAIR",
+          "REJECT"
+        ],
+        "description": "The current decision; null while nobody has decided. Present ONLY on admin responses."
+      },
       "ReturnItemEntity": {
         "type": "object",
         "properties": {
@@ -30280,6 +30350,32 @@
           "createdByUserId": {
             "type": "string",
             "description": "Account that opened the request — the customer from their own page, an operator when the shop filed it for them, null for rows predating the column. Present ONLY on admin responses.",
+            "format": "uuid",
+            "nullable": true
+          },
+          "decision": {
+            "description": "The current decision; null while nobody has decided. Present ONLY on admin responses.",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnDecision"
+              }
+            ]
+          },
+          "decisionReason": {
+            "type": "string",
+            "description": "Why — the reason the customer is shown. Null on legacy (pre-B-12) decisions and on approvals given without one. Present ONLY on admin responses.",
+            "nullable": true
+          },
+          "decidedAt": {
+            "type": "string",
+            "description": "When the current decision was taken. Present ONLY on admin responses.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "decidedById": {
+            "type": "string",
+            "description": "Account that took the current decision; null for legacy decisions and deleted accounts. Present ONLY on admin responses.",
             "format": "uuid",
             "nullable": true
           },
@@ -30429,7 +30525,7 @@
         "properties": {
           "status": {
             "type": "string",
-            "description": "New return status. Validated against the return state machine.",
+            "description": "New return status: RECEIVED or REFUNDED. Validated against the return state machine; REFUNDED needs a REFUND decision. APPROVED and REJECTED are set only by a decision (POST /admin/returns/:returnId/decision) and are refused here with RETURN_USE_DECISION_ENDPOINT.",
             "enum": [
               "REQUESTED",
               "APPROVED",
@@ -30458,6 +30554,29 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "DecideReturnDto": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "description": "The outcome: REFUND, REPLACEMENT or REPAIR approve the return (or re-open a refused one); REJECT refuses it.",
+            "example": "REFUND",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnDecision"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why — shown to the customer. Required on REJECT and on any change of a decision already made. Trimmed; blank becomes null.",
+            "nullable": true,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "decision"
         ]
       },
       "NpCityDto": {

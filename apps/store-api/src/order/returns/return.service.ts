@@ -1,14 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderStatus, ReturnStatus } from '@prisma/client';
+import { OrderStatus, ReturnDecision, ReturnStatus } from '@prisma/client';
 import { ReturnRepository } from './return.repository';
 import { OrderRepository } from '../order.repository';
 import { ShopNotifier } from '../../notification';
 import { ReturnEntity } from './entities';
-import { RESTOCK_ON_STATUS, canTransitionReturn } from './return-state-machine';
-import type { CreateReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
 import {
+  RESTOCK_ON_STATUS,
+  canTransitionReturn,
+  decisionPermitsTransition,
+  returnStatusAfterDecision,
+} from './return-state-machine';
+import type { CreateReturnDto, DecideReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
+import {
+  decisionLockedError,
+  decisionReasonRequiredError,
+  decisionUnchangedError,
   invalidReturnTransitionError,
+  returnQuantityExceededOnReopenError,
+  useDecisionEndpointError,
   orderNotReturnableError,
   refundExceedsOrderBalanceError,
   refundExceedsReturnedValueError,
@@ -52,6 +62,15 @@ const RETURNABLE_ORDER_STATUSES: ReadonlySet<OrderStatus> = new Set([
 
 /** Return statuses that no longer hold a claim on the units they name. */
 const DEAD_RETURN_STATUSES: ReadonlySet<ReturnStatus> = new Set([ReturnStatus.REJECTED]);
+
+/**
+ * Statuses only a decision sets (TASK-1961, TASK-2044); PATCH refuses them with
+ * RETURN_USE_DECISION_ENDPOINT.
+ */
+const DECISION_STATUSES: ReadonlySet<ReturnStatus> = new Set([
+  ReturnStatus.APPROVED,
+  ReturnStatus.REJECTED,
+]);
 
 /**
  * ReturnService — the RMA minimum (TASK-340).
@@ -262,13 +281,22 @@ export class ReturnService {
    *   {@link assertRefundWithinCeilings}.
    */
   async resolveReturn(returnId: string, dto: ResolveReturnDto): Promise<ReturnEntity> {
+    // TASK-1961/2044: approving and refusing are decisions, with an author and a
+    // reason the customer sees. Setting them here would bypass both.
+    if (DECISION_STATUSES.has(dto.status)) {
+      throw useDecisionEndpointError(dto.status);
+    }
+
     const existing = await this.returnRepository.findById(returnId);
 
     if (!existing) {
       throw returnNotFoundError();
     }
 
-    if (!canTransitionReturn(existing.status, dto.status)) {
+    if (
+      !canTransitionReturn(existing.status, dto.status) ||
+      !decisionPermitsTransition(dto.status, existing.decision)
+    ) {
       throw invalidReturnTransitionError(existing.status, dto.status);
     }
 
@@ -314,6 +342,91 @@ export class ReturnService {
     );
 
     return ReturnEntity.fromPrisma(resolved, { includeInternal: true });
+  }
+
+  /**
+   * Admin — the operator's decision on a return (TASK-1961, TASK-2044; B-12
+   * theme 1.1): refund, replacement, repair or refusal, each with an author, a
+   * date and a reason the customer sees.
+   *
+   * - The reason is required on a refusal and on any CHANGE of a decision
+   *   already made (backfilled legacy decisions included): a silent change is
+   *   exactly what B-12 ruled out.
+   * - A refunded return is final; an identical decision (same reason) is refused
+   *   so the history holds only real changes.
+   * - The status follows from the decision ({@link returnStatusAfterDecision}).
+   *   Re-opening a refusal claims its units back, so the "no more than was
+   *   bought" cap is re-run under the order lock against the OTHER returns.
+   *
+   * @throws NotFoundException RETURN_NOT_FOUND
+   * @throws BadRequestException RETURN_DECISION_REASON_REQUIRED
+   * @throws ConflictException RETURN_DECISION_LOCKED, RETURN_DECISION_UNCHANGED,
+   *   RETURN_TRANSITION_INVALID, RETURN_QUANTITY_EXCEEDED
+   */
+  async decideReturn(
+    returnId: string,
+    actorId: string,
+    dto: DecideReturnDto,
+  ): Promise<ReturnEntity> {
+    const existing = await this.returnRepository.findById(returnId);
+
+    if (!existing) {
+      throw returnNotFoundError();
+    }
+
+    if (existing.status === ReturnStatus.REFUNDED) {
+      throw decisionLockedError();
+    }
+
+    const reason = dto.reason ?? null;
+    const needsReason = dto.decision === ReturnDecision.REJECT || existing.decision !== null;
+    if (needsReason && reason === null) {
+      throw decisionReasonRequiredError();
+    }
+
+    if (dto.decision === existing.decision && reason === existing.decisionReason) {
+      throw decisionUnchangedError(dto.decision);
+    }
+
+    const status = returnStatusAfterDecision(existing.status, dto.decision);
+    if (status === null) {
+      throw invalidReturnTransitionError(existing.status, ReturnStatus.REJECTED);
+    }
+
+    const reclaimsUnits =
+      existing.status === ReturnStatus.REJECTED && status !== ReturnStatus.REJECTED;
+
+    const decided = await this.returnRepository.decide(
+      {
+        id: existing.id,
+        orderId: existing.orderId,
+        status: existing.status,
+        decision: existing.decision,
+      },
+      {
+        status,
+        decision: dto.decision,
+        decisionReason: reason,
+        decidedById: actorId,
+        decidedAt: new Date(),
+      },
+      reclaimsUnits ? { assertClaimable: assertReturnReclaimable(existing) } : {},
+    );
+
+    this.logger.info(
+      {
+        event: 'return.decided',
+        returnId,
+        orderId: existing.orderId,
+        actorId,
+        from: existing.decision,
+        to: dto.decision,
+        status,
+      },
+      'Return decided',
+    );
+
+    return ReturnEntity.fromPrisma(decided, { includeInternal: true });
   }
 
   /**
@@ -402,6 +515,34 @@ function countClaimedUnits(ledger: ReturnClaimRow[]): Map<string, number> {
   }
 
   return claimed;
+}
+
+/**
+ * The cap for re-opening a refused return (TASK-1961, TASK-2044): its own units
+ * plus those the order's OTHER live returns hold must not exceed what was bought.
+ * Run by the repository against the ledger it reads under the order lock.
+ */
+function assertReturnReclaimable(existing: ReturnWithItems): AssertReturnClaimable {
+  const orderedByLineId = new Map<string, number>();
+  const requestedByLineId = new Map<string, number>();
+  for (const item of existing.items) {
+    orderedByLineId.set(item.orderItemId, item.orderItem?.quantity ?? 0);
+    requestedByLineId.set(
+      item.orderItemId,
+      (requestedByLineId.get(item.orderItemId) ?? 0) + item.quantity,
+    );
+  }
+
+  return (ledger) => {
+    const alreadyClaimed = countClaimedUnits(ledger);
+    for (const [orderItemId, requested] of requestedByLineId) {
+      const ordered = orderedByLineId.get(orderItemId) as number;
+      const claimed = alreadyClaimed.get(orderItemId) ?? 0;
+      if (claimed + requested > ordered) {
+        throw returnQuantityExceededOnReopenError(requested, ordered - claimed);
+      }
+    }
+  };
 }
 
 /**

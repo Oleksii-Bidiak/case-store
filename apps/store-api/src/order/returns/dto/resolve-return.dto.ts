@@ -8,7 +8,11 @@ import { ReturnStatus } from '@prisma/client';
  */
 export class ResolveReturnDto {
   @ApiProperty({
-    description: 'New return status. Validated against the return state machine.',
+    description:
+      'New return status: RECEIVED or REFUNDED. Validated against the return state machine; ' +
+      'REFUNDED needs a REFUND decision. APPROVED and REJECTED are set only by a decision ' +
+      '(POST /admin/returns/:returnId/decision) and are refused here with ' +
+      'RETURN_USE_DECISION_ENDPOINT.',
     enum: ReturnStatus,
   })
   @IsEnum(ReturnStatus)

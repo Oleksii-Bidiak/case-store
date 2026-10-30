@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ReturnStatus } from '@prisma/client';
+import { ReturnDecision, ReturnStatus } from '@prisma/client';
 import type { ReturnItemRow, ReturnWithItems } from '../return.types';
 
 /** One line of a return, with the product it points at (TASK-340). */
@@ -119,6 +119,52 @@ export class ReturnEntity {
   })
   createdByUserId?: string | null;
 
+  /*
+   * The decision (TASK-1961, TASK-2044). Admin-only for now: the customer
+   * projection gains decision, reason and date with TASK-2044's customer part
+   * (plan, R1-API step A4), and never gains the author.
+   */
+
+  @ApiProperty({
+    description:
+      'The current decision; null while nobody has decided. Present ONLY on admin responses.',
+    enum: ReturnDecision,
+    enumName: 'ReturnDecision',
+    required: false,
+    nullable: true,
+  })
+  decision?: ReturnDecision | null;
+
+  @ApiProperty({
+    description:
+      'Why — the reason the customer is shown. Null on legacy (pre-B-12) decisions and on ' +
+      'approvals given without one. Present ONLY on admin responses.',
+    type: String,
+    required: false,
+    nullable: true,
+  })
+  decisionReason?: string | null;
+
+  @ApiProperty({
+    description: 'When the current decision was taken. Present ONLY on admin responses.',
+    type: String,
+    format: 'date-time',
+    required: false,
+    nullable: true,
+  })
+  decidedAt?: Date | null;
+
+  @ApiProperty({
+    description:
+      'Account that took the current decision; null for legacy decisions and deleted ' +
+      'accounts. Present ONLY on admin responses.',
+    type: String,
+    format: 'uuid',
+    required: false,
+    nullable: true,
+  })
+  decidedById?: string | null;
+
   @ApiProperty({ description: 'Lines coming back', type: [ReturnItemEntity] })
   items!: ReturnItemEntity[];
 
@@ -134,6 +180,10 @@ export class ReturnEntity {
     if (options.includeInternal) {
       entity.operatorNotes = row.operatorNotes;
       entity.createdByUserId = row.createdByUserId;
+      entity.decision = row.decision;
+      entity.decisionReason = row.decisionReason;
+      entity.decidedAt = row.decidedAt;
+      entity.decidedById = row.decidedById;
     }
     entity.requestedAt = row.requestedAt;
     entity.resolvedAt = row.resolvedAt;

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import type { ReturnStatus } from '@prisma/client';
+import type { ReturnDecision, ReturnStatus } from '@prisma/client';
 
 /**
  * Stable, machine-readable error codes for return resolution (TASK-785).
@@ -33,6 +33,14 @@ export const ReturnErrorCode = {
   ALREADY_RESTOCKED: 'RETURN_ALREADY_RESTOCKED',
   /** A restock was asked for on a status other than RECEIVED (TASK-1966). */
   RESTOCK_REQUIRES_RECEIVED: 'RETURN_RESTOCK_REQUIRES_RECEIVED',
+  /** A refusal, or a change of a decision already made, came without a reason (TASK-1961). */
+  DECISION_REASON_REQUIRED: 'RETURN_DECISION_REASON_REQUIRED',
+  /** The return was refunded — its decision is final (TASK-2044). */
+  DECISION_LOCKED: 'RETURN_DECISION_LOCKED',
+  /** The same decision with the same reason — nothing would change (TASK-2044). */
+  DECISION_UNCHANGED: 'RETURN_DECISION_UNCHANGED',
+  /** PATCH was asked to set APPROVED or REJECTED, which only a decision may do (TASK-2044). */
+  USE_DECISION_ENDPOINT: 'RETURN_USE_DECISION_ENDPOINT',
 } as const;
 
 export type ReturnErrorCode = (typeof ReturnErrorCode)[keyof typeof ReturnErrorCode];
@@ -149,5 +157,56 @@ export function restockRequiresReceivedError(
   return new BadRequestException({
     error: ReturnErrorCode.RESTOCK_REQUIRES_RECEIVED,
     message: `Stock is credited back when a return is marked ${restockOn}, not ${requested}`,
+  });
+}
+
+/*
+ * TASK-1961, TASK-2044 — decisions (B-12 theme 1.1).
+ */
+
+/**
+ * 409 for re-opening a refusal whose units a newer request now holds. Same code
+ * and message as the 400 on create — the fact is the same — but a 409 here,
+ * because what conflicts is the return's state, not the request's shape.
+ */
+export function returnQuantityExceededOnReopenError(
+  requested: number,
+  remaining: number,
+): ConflictException {
+  return new ConflictException({
+    error: ReturnErrorCode.QUANTITY_EXCEEDED,
+    message: `Cannot return ${requested} of that item — ${remaining} remain returnable`,
+  });
+}
+
+/** 400 for a refusal, or a change of an earlier decision, with no reason given. */
+export function decisionReasonRequiredError(): BadRequestException {
+  return new BadRequestException({
+    error: ReturnErrorCode.DECISION_REASON_REQUIRED,
+    message: 'A reason is required to reject a return or to change a decision already made',
+  });
+}
+
+/** 409 for any decision on a refunded return. */
+export function decisionLockedError(): ConflictException {
+  return new ConflictException({
+    error: ReturnErrorCode.DECISION_LOCKED,
+    message: 'The return has been refunded — its decision can no longer change',
+  });
+}
+
+/** 409 for a decision identical to the current one, reason included. */
+export function decisionUnchangedError(decision: ReturnDecision): ConflictException {
+  return new ConflictException({
+    error: ReturnErrorCode.DECISION_UNCHANGED,
+    message: `The return already carries the decision ${decision} with this reason`,
+  });
+}
+
+/** 400 for PATCH asked to set a status only a decision may set. */
+export function useDecisionEndpointError(requested: ReturnStatus): BadRequestException {
+  return new BadRequestException({
+    error: ReturnErrorCode.USE_DECISION_ENDPOINT,
+    message: `${requested} is set by a decision — use POST /admin/returns/:returnId/decision`,
   });
 }
