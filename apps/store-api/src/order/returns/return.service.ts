@@ -476,25 +476,40 @@ export class ReturnService {
     // items and credits stock for each, so the shop invents a unit it never got
     // back and then oversells it. Reachable from the customer door and from the
     // operator one, since both call this helper.
-    const requestedByLineId = new Map<string, number>();
-    for (const line of dto.items) {
-      requestedByLineId.set(
-        line.orderItemId,
-        (requestedByLineId.get(line.orderItemId) ?? 0) + line.quantity,
-      );
-    }
-
-    return (ledger) => {
-      const alreadyClaimed = countClaimedUnits(ledger);
-      for (const [orderItemId, requested] of requestedByLineId) {
-        const ordered = orderedByLineId.get(orderItemId) as number;
-        const claimed = alreadyClaimed.get(orderItemId) ?? 0;
-        if (claimed + requested > ordered) {
-          throw returnQuantityExceededError(requested, ordered - claimed);
-        }
-      }
-    };
+    return claimCap(orderedByLineId, sumByLine(dto.items), returnQuantityExceededError);
   }
+}
+
+/** Units per order line, summed over lines that may repeat an `orderItemId`. */
+function sumByLine(lines: Array<{ orderItemId: string; quantity: number }>): Map<string, number> {
+  const sums = new Map<string, number>();
+  for (const line of lines) {
+    sums.set(line.orderItemId, (sums.get(line.orderItemId) ?? 0) + line.quantity);
+  }
+  return sums;
+}
+
+/**
+ * The "no more than was bought" cap as a closure over a ledger (TASK-784):
+ * units already claimed by the ledger's live returns plus `requested` must not
+ * exceed `ordered`, per line. Shared by a new request (400) and a re-opened
+ * refusal (409, TASK-1961/2044) so the two can never drift apart.
+ */
+function claimCap(
+  ordered: ReadonlyMap<string, number>,
+  requested: ReadonlyMap<string, number>,
+  exceeded: (requested: number, remaining: number) => Error,
+): AssertReturnClaimable {
+  return (ledger) => {
+    const alreadyClaimed = countClaimedUnits(ledger);
+    for (const [orderItemId, units] of requested) {
+      const bought = ordered.get(orderItemId) as number;
+      const claimed = alreadyClaimed.get(orderItemId) ?? 0;
+      if (claimed + units > bought) {
+        throw exceeded(units, bought - claimed);
+      }
+    }
+  };
 }
 
 /**
@@ -523,26 +538,11 @@ function countClaimedUnits(ledger: ReturnClaimRow[]): Map<string, number> {
  * Run by the repository against the ledger it reads under the order lock.
  */
 function assertReturnReclaimable(existing: ReturnWithItems): AssertReturnClaimable {
-  const orderedByLineId = new Map<string, number>();
-  const requestedByLineId = new Map<string, number>();
-  for (const item of existing.items) {
-    orderedByLineId.set(item.orderItemId, item.orderItem?.quantity ?? 0);
-    requestedByLineId.set(
-      item.orderItemId,
-      (requestedByLineId.get(item.orderItemId) ?? 0) + item.quantity,
-    );
-  }
-
-  return (ledger) => {
-    const alreadyClaimed = countClaimedUnits(ledger);
-    for (const [orderItemId, requested] of requestedByLineId) {
-      const ordered = orderedByLineId.get(orderItemId) as number;
-      const claimed = alreadyClaimed.get(orderItemId) ?? 0;
-      if (claimed + requested > ordered) {
-        throw returnQuantityExceededOnReopenError(requested, ordered - claimed);
-      }
-    }
-  };
+  // The admin read joins each line's order line, so what was bought is on hand.
+  const ordered = new Map(
+    existing.items.map((item) => [item.orderItemId, item.orderItem?.quantity ?? 0]),
+  );
+  return claimCap(ordered, sumByLine(existing.items), returnQuantityExceededOnReopenError);
 }
 
 /**
