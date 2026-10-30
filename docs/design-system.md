@@ -9,11 +9,19 @@ Distilled from the project's existing tokens plus best practices observed on
 ivan-chohol.ua, ktc.ua and ash-mobile.com.ua (the Ukrainian accessory-shop benchmark)
 and the polish bar of Apple Store / Stripe / Linear.
 
+**Visual direction: В «Кольоровий»** (owner pick Д3-0, 2026-10-30 —
+[decision](reviews/2026-10-28-storefront-design-brainstorm.md#рішення-д3-0); tokens TASK-1951). A
+light lavender page, white panels with a soft shadow, round shapes (panel 32, card 26, pills for
+buttons and chips), Unbounded headings over Onest text, a graphite «Купити» pill and coral cart
+counters. The reference mockup is `Home.dc.html#c` (`#c-dark` for dark) in «store-client —
+Pages». The main risk of the direction is noise — the fallback is the А+В mix
+(`HomeCompare.dc.html`).
+
 ---
 
 ## 1. Design principles
 
-1. **One primary action per screen.** The indigo `primary` button is reserved for the
+1. **One primary action per screen.** The graphite `primary` button is reserved for the
    single most important **page-level** action in a view (Buy / Add to cart / Checkout).
    Everything else is `secondary`, `outline`, or a link. Allowed exceptions (owner decision
    7.4, audit 2026-09-24): the header chrome (cart button, search submit) and the «Купити»
@@ -21,9 +29,13 @@ and the polish bar of Apple Store / Stripe / Linear.
 2. **Let products breathe, but keep commerce dense.** Generous whitespace around hero and
    section headings; tight, information-rich product cards (price, old price, discount %,
    variants, delivery hint) like the benchmark UA shops.
-3. **Color is meaning, not decoration.** Indigo = brand/action, rose = sale/urgency, green
-   = in-stock/success, amber = low-stock warning, red = error. Don't use a semantic color
-   for anything but its meaning.
+3. **Color is meaning, not decoration** (the colour rule of direction В). Hue means a **device
+   family** — iPhone coral, Galaxy blue, Redmi amber, Watch green, iPad violet (`family-*`) — or
+   the **product's own colour** (swatches, the case on the photo). Categories stay neutral. The
+   action is graphite (`primary`), not a hue. Status colours keep their meaning: raspberry =
+   sale/urgency (its own hue, never a family's — so «Тиждень Apple» is coral because it is the
+   iPhone family, not because it is a sale), green = in-stock/success, amber = low-stock
+   warning, red = error. No colour without a meaning.
 4. **Trust is a feature.** Surface delivery ETA, guarantee, secure-payment and installment
    cues — these drive conversion in this market.
 5. **Motion is subtle and fast.** 150–250ms, ease-out, only to reinforce hierarchy (hover
@@ -47,24 +59,35 @@ The browser chrome follows the same rule: `viewport.themeColor` is a static
 `features/theme` `ThemeColorSync` puts its own media-less `theme-color` meta first in `<head>`
 (values from `THEME_COLOR` in `shared/config/theme.ts`).
 
-| Token                                    | Role                          | Light                             | Dark                              |
-| ---------------------------------------- | ----------------------------- | --------------------------------- | --------------------------------- |
-| `background` / `foreground`              | Page bg / default text        | `#ffffff` / `#0f172a`             | `#0a0a0a` / `#ededed`             |
-| `primary` / `primary-foreground`         | Brand, primary CTA            | `#4f46e5` / `#fff`                | `#6366f1` / `#fff`                |
-| `secondary` / `secondary-foreground`     | Secondary CTA                 | `#f4f4f5` / `#18181b`             | `#1e293b` / `#ededed`             |
-| `muted` / `muted-foreground`             | Subtle bg / secondary text    | `#f1f5f9` / `#64748b`             | `#1e293b` / `#94a3b8`             |
-| `disabled` / `disabled-foreground`       | Inactive control bg / text    | `#f1f5f9` / `#475569`             | `#1e293b` / `#94a3b8`             |
-| `accent` / `accent-foreground`           | Highlights, hover bg          | `#f1f5f9` / `#0f172a`             | `#1e293b` / `#ededed`             |
-| `card` / `card-foreground`               | Card & popover surface        | `#ffffff` / `#0f172a`             | `#0f0f0f` / `#ededed`             |
-| `popover` / `popover-foreground`         | Dropdowns, overlays           | `#ffffff` / `#0f172a`             | `#0f0f0f` / `#ededed`             |
-| `sale` / `sale-foreground`               | Discount/urgency accent       | `#e11d48` / `#fff`                | `#f43f5e` / `#fff`                |
-| `success` / `success-foreground`         | In stock, confirmed           | `#16a34a` / `#fff`                | `#22c55e` / `#052e16`             |
-| `warning` / `warning-foreground`         | Low stock                     | `#d97706` / `#fff`                | `#f59e0b` / `#271100`             |
-| `destructive` / `destructive-foreground` | Errors, delete                | `#ef4444` / `#fff`                | `#dc2626` / `#fff`                |
-| `border` / `input` / `ring`              | Borders / inputs / focus ring | `#e2e8f0` / `#e2e8f0` / `#4f46e5` | `#334155` / `#334155` / `#6366f1` |
-| `overlay`                                | Modal scrim, banner veil      | `rgba(0,0,0,.8)`                  | `rgba(0,0,0,.8)`                  |
-| `footer` / `footer-foreground`           | Footer & announcement bar     | `#0f172a` / `#ffffff`             | same (theme-invariant, F-06)      |
-| `code-surface` / `code-ink`              | QR code field / modules       | `#ffffff` / `#0f172a`             | same (theme-invariant, TASK-679)  |
+| Token                                     | Role                            | Light                                             | Dark                                              |
+| ----------------------------------------- | ------------------------------- | ------------------------------------------------- | ------------------------------------------------- |
+| `background` / `foreground`               | Page bg (lavender) / text       | `#f6f5f9` / `#191924`                             | `#111118` / `#efedf3`                             |
+| `primary` / `primary-foreground`          | Action: graphite pill CTA       | `#191924` / `#fff`                                | `#efedf3` / `#111118`                             |
+| `secondary` / `secondary-foreground`      | Secondary CTA                   | `#eeebf4` / `#191924`                             | `#24222d` / `#efedf3`                             |
+| `muted` / `muted-foreground`              | Subtle bg / secondary text      | `#eeebf4` / `#595966`                             | `#24222d` / `#aaa9b4`                             |
+| `disabled` / `disabled-foreground`        | Inactive control bg / text      | `#eeebf4` / `#4c4c58`                             | `#24222d` / `#aaa9b4`                             |
+| `accent` / `accent-foreground`            | Highlights, hover bg            | `#eeebf4` / `#191924`                             | `#24222d` / `#efedf3`                             |
+| `card` / `card-foreground`                | White panel, card surface       | `#ffffff` / `#191924`                             | `#1b1a24` / `#efedf3`                             |
+| `popover` / `popover-foreground`          | Dropdowns, overlays             | `#ffffff` / `#191924`                             | `#1b1a24` / `#efedf3`                             |
+| `sale` / `sale-foreground`                | Discount/urgency (raspberry)    | `#cd1755` / `#fff`                                | `#f15f7f` / `#111118`                             |
+| `success` / `success-foreground`          | In stock, confirmed             | `#0b7643` / `#fff`                                | `#65c98c` / `#111118`                             |
+| `warning` / `warning-foreground`          | Low stock                       | `#b04d00` / `#fff`                                | `#f3ad66` / `#111118`                             |
+| `destructive` / `destructive-foreground`  | Errors, delete                  | `#c51e21` / `#fff`                                | `#f66d67` / `#111118`                             |
+| `border` / `input` / `ring`               | Layers / field outline / ring   | `#dadae1` / `#85858f` / `#191924`                 | `#32313d` / `#747380` / `#efedf3`                 |
+| `overlay`                                 | Modal scrim, banner veil        | `rgba(0,0,0,.8)`                                  | `rgba(0,0,0,.8)`                                  |
+| `footer` / `footer-foreground`            | Footer & announcement bar       | `#191924` / `#ffffff`                             | same (theme-invariant, F-06)                      |
+| `code-surface` / `code-ink`               | QR code field / modules         | `#ffffff` / `#191924`                             | same (theme-invariant, TASK-679)                  |
+| `badge` / `badge-foreground`              | Cart / wishlist counters        | `#ed756e` / `#15151f`                             | `#ed756e` / `#111118`                             |
+| `family-{iphone,galaxy,redmi,watch,ipad}` | Device-family tile / panel tone | `#ffcfca` `#c1e2ff` `#fae2b0` `#c0eacd` `#e4d6ff` | `#4d2623` `#193550` `#46350d` `#153c25` `#382b4d` |
+| `family-*-strong`                         | Family icon disc / dot          | `#ed756e` `#4ba3f7` `#e3ae28` `#3bb974` `#ad87ed` | same (theme-invariant)                            |
+| `pad-1` … `pad-4`                         | Soft tint under a product photo | `#f3e2cb` `#cfeef8` `#d0f1e1` `#f3edc7`           | `#372c1d` `#1c3138` `#1c3329` `#353118`           |
+
+The values come from the chosen mockup (`Home.dc.html`, `.home.cv` / `.home.cv.dk`), converted
+from oklch to hex, with three corrections where the mockup failed AA: the light `warning` and
+the dark `sale` were made darker / lighter for text, and `destructive` (previously `#ef4444`,
+3.5:1 on the page) was deepened. `badge`, `family-*` and `pad-*` exist as tokens and are consumed
+by the Д3 screens (SД3); `primary` is the same ink as `foreground`, so a link in running text
+needs an underline to stand apart (WCAG 1.4.1).
 
 **Usage rules**
 
@@ -72,8 +95,14 @@ The browser chrome follows the same rule: `viewport.themeColor` is a static
 - Price on sale: price in `text-sale`, original price `text-muted-foreground line-through`.
 - Discount badge: `bg-sale text-sale-foreground`. "New": `bg-primary text-primary-foreground`.
 - Stock: in-stock `text-success`, low-stock `text-warning`, out `text-muted-foreground`.
-- Focus ring: rely on `ring`/`ring-ring` — never remove focus outlines. On a dark or
-  brand-coloured banner (hero slides, promo banner) the indigo ring is indigo on indigo: merge
+- Header counters (cart, wishlist): `bg-badge text-badge-foreground` — coral in both themes.
+- A device family: tile or panel `bg-family-<f>`, its icon disc or dot `bg-family-<f>-strong`
+  with ink on it; text on a family tile is `text-foreground` / `text-muted-foreground`. Never a
+  family colour on a category, a status or decoration.
+- Photo pads: `bg-pad-1` … `bg-pad-4` under a product photo (`object-contain`, §4).
+- Focus ring: rely on `ring`/`ring-ring` — never remove focus outlines. The ring is graphite in
+  light and near-white in dark. On a dark panel (ink banner, promo banner, footer) the graphite
+  ring disappears into the panel: merge
   `FOCUS_ON_DARK_CLASS` (`shared/config/focus.ts`) instead — a white outline 2px off the control
   (TASK-865).
 - Footer and announcement bar: `bg-footer text-footer-foreground` — a dark panel in both themes.
@@ -90,8 +119,9 @@ var(--color-card))`. Decoration with no meaning (the hero category-rail dots, an
   60 % in both themes). The same holds for arbitrary values (`bg-[color-mix(…)]`,
   `[background:color-mix(…)]`) and for raw `oklch(…)` in a widget: an icon tile is
   `bg-primary/12`, a success disc `bg-success/16`, an active TOC row `bg-primary/7`. A gradient
-  that several screens share is a token in `globals.css` — the brand gradient (primary deepening
-  to violet: the `/contact` hero, the `/info` «Про нас» panel, the 404 numeral with
+  that several screens share is a token in `globals.css` — the brand gradient (an ink panel with a
+  faint violet cast, built from the theme-invariant `footer` ink rather than from `primary`,
+  which turns light in dark — TASK-1951: the `/contact` hero, the `/info` «Про нас» panel, the 404 numeral with
   `bg-clip-text text-transparent`) is `bg-brand-gradient`. `shared/config/color-tokens.test.ts`
   fails on any palette utility, `color-mix(` or `oklch(` in `src` outside the files it tracks by
   backlog row.
@@ -110,9 +140,10 @@ var(--color-card))`. Decoration with no meaning (the hero category-rail dots, an
   `Badge` with `size="pill"` and `dot` (TASK-868). The four in-progress stages share the
   `tint-primary` variant and get darker step by step (`/10` → `/15` → `/20` → `/30`). The
   colour sits in the **tint and the leading dot only**. The label is always `text-foreground`,
-  because role-coloured `text-xs` on its own tint is below 4.5:1 with the current tokens
-  (light: success ≈3.0, destructive ≈3.3; dark: primary ≈3.9, destructive ≈3.7). Foreground on
-  any of the tints is ≥ 9:1, and each dot is ≥ 3:1 against the page in both themes. The badge
+  because role-coloured `text-xs` on its own tint fell below 4.5:1 when this was measured
+  (pre-В tokens — light: success ≈3.0, destructive ≈3.3; dark: primary ≈3.9, destructive ≈3.7),
+  and the rule stays with the В tokens. Foreground on any of the tints is ≥ 5.9:1 (the darkest,
+  `tint-primary` `/30` in dark), and each dot is ≥ 3:1 against the page in both themes. The badge
   is named by an `sr-only` `<dt>` (or an `sr-only` prefix where no `<dl>` is around it), never
   by an `aria-label` on the `<span>`. The `Badge` variants are `tint-primary`, `tint-success`,
   `tint-destructive` and `tint-muted`. Use them for any other status pill too.
@@ -121,8 +152,18 @@ var(--color-card))`. Decoration with no meaning (the hero category-rail dots, an
 
 ## 3. Typography
 
-Fonts (Next font vars, mapped in `@theme`): `font-sans` = Geist Sans (body/UI),
-`font-display` = Sora → Geist fallback (headings/hero), `font-mono` = Geist Mono (SKUs, code).
+Fonts (`next/font/google` in `app/layout.tsx`, vars mapped in `@theme`, TASK-1951):
+
+| Utility        | Family                | Var                 | Use                                     |
+| -------------- | --------------------- | ------------------- | --------------------------------------- |
+| `font-sans`    | **Onest** (variable)  | `--font-onest`      | Body, UI, prices (the `<body>` font)    |
+| `font-display` | **Unbounded** → Onest | `--font-unbounded`  | Headings, hero, logo                    |
+| `font-mono`    | Geist Mono            | `--font-geist-mono` | SKUs, codes, order numbers — not prices |
+
+Every family is loaded with `subsets: ["latin", "cyrillic"]`: the copy is Ukrainian, and a
+latin-only family (Geist was) silently renders ґ, є, і, ї and all other Cyrillic in the system
+fallback. A new family is added only with the Cyrillic subset. Unbounded is a **wide** face:
+check long Ukrainian words in H1/H2 at 390 before making a heading bigger than the scale below.
 
 | Role            | Classes                                                      | Notes                              |
 | --------------- | ------------------------------------------------------------ | ---------------------------------- |
@@ -161,8 +202,9 @@ Rules:
   blog search) use `text-base md:text-sm`, like `shared/ui/input`. `/orders/status` is on the
   `Input` / `PhoneInput` / `Label` / `Button` primitives since TASK-872.
   Below 16px iOS Safari zooms the page on focus.
-- **Price figures use `font-mono` (Geist Mono)**. This is the house equivalent of `tabular-nums`,
-  so columns of prices align.
+- **Prices are `tabular-nums` in the text font** (Onest — decision Д3-0), so columns of prices
+  align without a different typeface. The markup still sets prices in `font-mono` (Geist Mono,
+  the pre-В rule); the switch to `font-sans tabular-nums` belongs to the Д3 screen work (SД3).
 
 ---
 
@@ -204,6 +246,9 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
   row the same height. The same grid is used on `/products`, `/search` and `/wishlist`, and
   each **skeleton must repeat the class list byte for byte** — a skeleton with different
   columns reflows the page the moment real cards replace it.
+  **Target of direction В (Д3-0), not yet in code:** breakpoints 1280 / 992 / 768 / 390, card
+  rows 4 / 3 / 2 (three at 992). The catalogue moves in TASK-1957; until then the 1 / 2 / 4
+  grid above is the rule.
 - **Product card image:** a fixed `aspect-square` box with `object-contain` over the card
   gradient — accessory photos arrive in mixed aspect ratios and must never be cropped
   (TASK-415). The PDP gallery follows the same rule — the main frame and every 64px thumbnail
@@ -256,21 +301,27 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
 
 ## 5. Radius & elevation
 
-Radii follow what the storefront actually renders (owner decision 7.9):
+Radii are named by role (owner decision 7.9), with the round values of direction В (Д3-0,
+TASK-1951). The base `--radius` is **24px**, so the shadcn scale is sm 20 · md 22 · lg 24 ·
+xl 28 · 2xl 32 and every `shared/ui` button and field (h-9…h-11) renders as a pill:
 
-| Role                          | Radius           | Today in code  |
-| ----------------------------- | ---------------- | -------------- |
-| Card (product, info, order)   | 18px             | `rounded-card` |
-| Large CTA                     | 13px             | `rounded-cta`  |
-| Menu item                     | 11px             | `rounded-menu` |
-| Hero banner                   | `radius + 8px`   | `rounded-2xl`  |
-| Chip / pill                   | full             | `rounded-full` |
-| Inputs, buttons (`shared/ui`) | `radius − 2px`   | `rounded-md`   |
-| Badges, small chips           | `radius − 4px`   | `rounded-sm`   |
-| Dialogs, images               | `0.75rem` (base) | `rounded-lg`   |
+| Role                              | Radius            | Token / utility |
+| --------------------------------- | ----------------- | --------------- |
+| Panel (picker, hero, wide banner) | 32px              | `rounded-panel` |
+| Card (product, info, order)       | 26px              | `rounded-card`  |
+| Photo pad inside a card           | 18px              | `rounded-pad`   |
+| Large CTA                         | pill (9999px)     | `rounded-cta`   |
+| Menu item                         | 16px              | `rounded-menu`  |
+| Hero banner (today)               | `radius + 8` = 32 | `rounded-2xl`   |
+| Chip / pill                       | full              | `rounded-full`  |
+| Inputs, buttons (`shared/ui`)     | `radius − 2` = 22 | `rounded-md`    |
+| Badges, small chips               | `radius − 4` = 20 | `rounded-sm`    |
+| Dialogs, images                   | `radius` = 24     | `rounded-lg`    |
 
-The 18 / 13 / 11 values are the named tokens `--radius-card`, `--radius-cta` and
-`--radius-menu` in `@theme inline` (`globals.css`, TASK-862). The card radius covers the whole
+The role values are the named tokens `--radius-panel`, `--radius-card`, `--radius-pad`,
+`--radius-cta` and `--radius-menu` in `@theme inline` (`globals.css`, TASK-862 / TASK-1951).
+`panel` and `pad` are new for the Д3 screens and are not yet registered with `cn`'s
+tailwind-merge (below) — register them when the first component uses them. The card radius covers the whole
 funnel: cart, checkout, order confirmation, `/orders`, `/orders/status` and the guest order
 view all use `rounded-card`. New code picks the role from this table and does not invent a
 new radius: no `rounded-[..px]`.
@@ -296,6 +347,11 @@ half-clipped last chip says "scrolls".
 | `shadow-elevated` | Dropdowns, popovers, sticky header on scroll                  |
 | `shadow-lift`     | Card **hover** rise (pair with `-translate-y-0.5 transition`) |
 
+In light the shadows are long, soft and slightly violet (`0 10px 28px -14px` at ~22 % for a
+card): white panels float on the lavender page, and the `border` token keeps the layer edge
+visible where a shadow alone would wash out. In dark a shadow barely reads, so the panels rely
+on the surface step (`background` → `card` → `muted`) and a 1px `border`.
+
 ---
 
 ## 6. Component states (every interactive element needs all five)
@@ -320,8 +376,8 @@ fading the control: `opacity-50` over text that is already grey gave ≈2.0:1
 Borders keep their enabled token (`border-input`); WCAG exempts inactive controls from the
 3:1 UI-component rule, and the grey fill already marks the state. `text-disabled-foreground`
 is ≥ 4.5:1 on `disabled`, `background`, `card`, `popover` and `muted` in both themes
-(light 6.92:1 on `disabled`, 7.58:1 on white; dark 5.71:1 on `disabled`, 7.72:1 on
-`background`) — pinned by `apps/store-client/src/app/globals-disabled-contrast.test.ts`.
+(light 7.18:1 on `disabled`, 7.80:1 on the page, 8.46:1 on white; dark 6.74:1 on `disabled`,
+8.09:1 on `background`) — pinned by `apps/store-client/src/app/globals-disabled-contrast.test.ts`.
 New disabled styling anywhere on the storefront uses these tokens, not opacity; decorative
 icons (e.g. the select chevron) may keep an opacity since they carry no text.
 
@@ -429,6 +485,11 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
 - [ ] Visible `focus-visible` ring on all interactive elements. `outline-none` is allowed
       **only** together with a `focus-visible:ring-*` replacement on the same element.
 - [ ] Contrast ≥ 4.5:1 text / 3:1 large text & UI borders (check sale-on-white, muted text).
+      Every token pair (text on page / card / muted, each `*-foreground` on its fill, role text,
+      muted text on family tones and photo pads, field outline ≥ 3:1) is pinned for light and
+      both dark blocks by `app/globals-disabled-contrast.test.ts` (TASK-1951) — a new token
+      joins its pair list there. Raw `text-white` over a token fill is not covered: use the
+      fill's `*-foreground`.
 - [ ] Images have meaningful `alt` (empty `alt=""` for decorative).
 - [ ] Icon-only buttons have `aria-label` (wishlist heart, cart, close).
 - [ ] Touch targets are at least 44×44 (`min-h-11 min-w-11`, or `size-11` for a fixed icon
@@ -494,7 +555,8 @@ Reusable patterns the storefront should converge on — pulled from the UA bench
   tokens come from «store-client Design System», which is compiled from `shared/ui` and
   `globals.css`.
 - **Artboards:** every screen gets two artboards, desktop **1440** and mobile **390**. The
-  **light theme** is primary, and dark is a switch. The artboards use the 1320px container
+  **light theme** is primary (tinted lavender page, visible layer edges, pads under photos), and
+  dark is a switch that every mockup must also show. The artboards use the 1320px container
   token (§4) and the type and radius scales from §3 and §5 — tokens from `_ds`, no private hex.
 - **An artboard shows only what exists in code.** A parity artboard reproduces the implemented
   screen and never "improves" it. A difference from the code is a defect of the artboard.
