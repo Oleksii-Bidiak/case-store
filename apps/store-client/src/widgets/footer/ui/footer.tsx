@@ -107,6 +107,9 @@ export async function Footer() {
               siteName={siteName}
               logoUrl={seo?.logoUrl}
               className="gap-2.5"
+              // The default mark is `bg-primary` — graphite since TASK-1951,
+              // the same ink as this panel. Invert it on the footer.
+              markClassName="bg-footer-foreground text-footer"
             />
           </Link>
           <p className="max-w-xs text-sm leading-relaxed text-footer-foreground/70">
