@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { PRIMARY_COLOR, dict } from "@/shared/config";
+import { THEME_COLOR, dict } from "@/shared/config";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSiteName } from "@/shared/lib/seo";
 
@@ -9,9 +9,9 @@ import { resolveSiteName } from "@/shared/lib/seo";
  * every page's <head>. Drives the Android/Chromium "Add to Home Screen"
  * name + icon and the installed-PWA chrome color.
  *
- * theme_color reuses PRIMARY_COLOR — the same token viewport.themeColor in
- * layout.tsx already uses (light variant; the manifest format has no
- * media-query pair). Icons are generated from src/app/icon.svg by
+ * theme_color reuses THEME_COLOR.light — the same value viewport.themeColor in
+ * layout.tsx already uses (the light page background since TASK-1951; the
+ * manifest format has no media-query pair). Icons are generated from src/app/icon.svg by
  * `npm run generate:brand-assets -w apps/store-client`.
  *
  * ASYNC since TASK-433: `name`/`short_name` are the store's name, which is now
@@ -34,8 +34,8 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     description: dict.meta.rootTitle,
     start_url: "/",
     display: "standalone",
-    background_color: "#ffffff",
-    theme_color: PRIMARY_COLOR,
+    background_color: THEME_COLOR.light,
+    theme_color: THEME_COLOR.light,
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },

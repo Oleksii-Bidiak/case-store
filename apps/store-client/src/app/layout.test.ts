@@ -24,9 +24,9 @@ jest.mock("./providers", () => ({ Providers: () => null }));
 // next/font/google is a build-time macro (compiled away by Next's SWC plugin);
 // under plain ts-jest the runtime module throws, so stub the three loaders.
 jest.mock("next/font/google", () => ({
-  Geist: () => ({ variable: "--font-geist-sans" }),
+  Onest: () => ({ variable: "--font-onest" }),
+  Unbounded: () => ({ variable: "--font-unbounded" }),
   Geist_Mono: () => ({ variable: "--font-geist-mono" }),
-  Sora: () => ({ variable: "--font-sora" }),
 }));
 jest.mock("next/script", () => ({ __esModule: true, default: () => null }));
 // Plain CSS import — ts-jest cannot parse it; generateMetadata never needs it.

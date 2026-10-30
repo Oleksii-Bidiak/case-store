@@ -5,13 +5,14 @@ import { cn } from "@/shared/lib/utils";
 
 /**
  * Contract test for the role radii (owner decision 7.9, design-system.md §5,
- * TASK-862). The storefront renders three radii that sit off the base scale —
- * card 18px, large CTA 13px, menu item 11px. They are named tokens in
- * `@theme inline` (→ `rounded-card` / `rounded-cta` / `rounded-menu`), so a
- * component picks a role instead of retyping the px.
+ * TASK-862). The storefront's role radii are named tokens in `@theme inline`
+ * (→ `rounded-panel` / `rounded-card` / `rounded-pad` / `rounded-cta` /
+ * `rounded-menu`), so a component picks a role instead of retyping the px.
+ * Values of direction В (Д3-0, TASK-1951): panel 32, card 26, photo pad 18,
+ * large CTA a pill, menu item 16 (were card 18, CTA 13, menu 11).
  *
- *  1. the three tokens are declared inside `@theme inline` with today's values;
- *  2. no source file goes back to the raw `rounded-[18px|13px|11px]` form.
+ *  1. the tokens are declared inside `@theme inline` with today's values;
+ *  2. no source file goes back to a raw `rounded-[..px]` form of a role.
  */
 
 const SRC = join(__dirname, "..");
@@ -46,9 +47,11 @@ describe("role radius tokens (TASK-862)", () => {
   const theme = themeInlineBody(css);
 
   it.each([
-    ["--radius-card", "18px"],
-    ["--radius-cta", "13px"],
-    ["--radius-menu", "11px"],
+    ["--radius-panel", "32px"],
+    ["--radius-card", "26px"],
+    ["--radius-pad", "18px"],
+    ["--radius-cta", "9999px"],
+    ["--radius-menu", "16px"],
   ])("declares %s: %s in @theme inline", (token, value) => {
     expect(theme).toMatch(new RegExp(`${token}:\\s*${value};`));
   });
@@ -73,9 +76,9 @@ describe("role radius tokens (TASK-862)", () => {
     );
   });
 
-  it("leaves no raw rounded-[18px|13px|11px] class in the source tree", () => {
+  it("leaves no raw rounded-[..px] form of a role radius in the source tree", () => {
     const offenders = sourceFiles(SRC).filter((file) =>
-      /rounded-\[(18|13|11)px\]/.test(readFileSync(file, "utf8")),
+      /rounded-\[(32|26|18|16|13|11)px\]/.test(readFileSync(file, "utf8")),
     );
     expect(offenders).toEqual([]);
   });

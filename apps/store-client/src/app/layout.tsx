@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Sora } from "next/font/google";
+import { Geist_Mono, Onest, Unbounded } from "next/font/google";
 import Script from "next/script";
 import { Providers } from "./providers";
 import { Header } from "@/widgets/header";
@@ -7,9 +7,8 @@ import { Footer } from "@/widgets";
 import { PreviewBar } from "@/widgets/preview-bar";
 import { ThemeColorSync } from "@/features/theme";
 import {
-  PRIMARY_COLOR,
-  PRIMARY_COLOR_DARK,
   SITE_URL,
+  THEME_COLOR,
   dict,
   UMAMI_ENABLED,
   UMAMI_SRC,
@@ -28,33 +27,35 @@ import {
 import "./globals.css";
 
 /**
+ * Fonts of direction В (Д3-0, TASK-1951). Every family carries the `cyrillic`
+ * subset: the storefront is Ukrainian, and a latin-only family (as Geist was)
+ * leaves ґ, є, і, ї and the rest of the copy to the system fallback. Onest and
+ * Unbounded are variable fonts, so no weight list — one woff2 per subset.
+ *
  * TASK-212 — «woff2 preloaded but not used» console warnings: investigated,
- * intentionally left as is. In the production build each family emits exactly
- * one preloaded latin file (Sora's 600/700/800 resolve to a single variable
- * woff2), and all three are consumed at first paint on every route: Sora 700 —
- * header logo, Geist Mono — support phone in the announcement bar, Geist —
- * body text and digits. The QA capture was from the dev server (development
- * React stack trace in the same log), where @font-face CSS is injected late
- * via HMR, so Chrome's ~3s post-load preload check flags all three files at
- * once — a dev-only false positive. Do not add `preload: false` or
- * `display: "optional"` here: it would regress production font rendering
- * without silencing the dev warning.
+ * intentionally left as is. In the production build each family emits one
+ * preloaded file per subset, and all are consumed at first paint on every
+ * route: Unbounded — header logo, Geist Mono — support phone in the
+ * announcement bar, Onest — body text. The QA capture was from the dev server,
+ * where @font-face CSS is injected late via HMR, so Chrome's ~3s post-load
+ * preload check flags the files at once — a dev-only false positive. Do not
+ * add `preload: false` or `display: "optional"` here: it would regress
+ * production font rendering without silencing the dev warning.
  */
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+const onest = Onest({
+  variable: "--font-onest",
+  subsets: ["latin", "cyrillic"],
+});
+
+// Display font for headings — wide, round, confident (direction В).
+const unbounded = Unbounded({
+  variable: "--font-unbounded",
+  subsets: ["latin", "cyrillic"],
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-// Display font for headings — geometric, confident, retail-friendly.
-const sora = Sora({
-  variable: "--font-sora",
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
+  subsets: ["latin", "cyrillic"],
 });
 
 export const viewport: Viewport = {
@@ -64,8 +65,8 @@ export const viewport: Viewport = {
   // its own. An EXPLICIT light/dark pick is layered on top on the client by
   // <ThemeColorSync /> (TASK-506), which outranks this pair by tree order.
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: PRIMARY_COLOR },
-    { media: "(prefers-color-scheme: dark)", color: PRIMARY_COLOR_DARK },
+    { media: "(prefers-color-scheme: light)", color: THEME_COLOR.light },
+    { media: "(prefers-color-scheme: dark)", color: THEME_COLOR.dark },
   ],
 };
 
@@ -197,7 +198,7 @@ export default async function RootLayout({
       // flag React logs a hydration warning on every page load; scoped to <html>
       // alone, so real mismatches anywhere inside still surface.
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} ${sora.variable} h-full antialiased`}
+      className={`${onest.variable} ${unbounded.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <Providers>
