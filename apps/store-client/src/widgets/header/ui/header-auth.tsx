@@ -19,8 +19,9 @@ import { dict } from "@/shared/config";
  * trigger so the two states are the same target: 44×44 icon-only below `xl`,
  * icon + caption from `xl` (TASK-511) — the box the skeleton reserves. The
  * signed-in trigger used to be AccountDropdown's own 36px icon button.
+ * Also the guest's «Статус замовлення» action beside it (TASK-1999).
  */
-const ACCOUNT_ACTION_CLASS =
+export const ACCOUNT_ACTION_CLASS =
   "flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-accent hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Icon + caption; the caption is display:none below `xl`, so aria-label names it. */

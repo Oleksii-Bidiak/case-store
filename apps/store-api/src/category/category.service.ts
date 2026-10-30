@@ -360,7 +360,11 @@ export class CategoryService {
       // like "no change" here while the repository legitimately moves the node back — and
       // the cache/index would silently rot. `movedIds` does the same job for the batch
       // endpoint; this is its single-node twin.
-      await this.purgeProductCaches(PRODUCT_LIST_PREFIX);
+      //
+      // The WHOLE product namespace (TASK-1032): a move into (or out of) a hidden branch
+      // withdraws (or restores) the moved products, so their cached PDPs must go too —
+      // the reindex above handles search the same way it does for a status change.
+      await this.purgeProductCaches(PRODUCT_CACHE_PREFIX);
       this.reindexSubtreesInBackground([id]);
     }
 
@@ -391,7 +395,12 @@ export class CategoryService {
       throw this.toHttp(error);
     }
 
-    await this.purgeProductCaches(PRODUCT_LIST_PREFIX);
+    // A batch that MOVED something may have carried a branch into or out of a hidden
+    // parent (TASK-1032), which changes its products' visibility — PDPs included — so
+    // the whole product namespace goes; a pure reorder only touches the lists.
+    await this.purgeProductCaches(
+      result.movedIds.length > 0 ? PRODUCT_CACHE_PREFIX : PRODUCT_LIST_PREFIX,
+    );
     this.reindexSubtreesInBackground(result.movedIds);
 
     this.logger.info(
@@ -447,8 +456,10 @@ export class CategoryService {
    * refreshed admin tree so the panel resyncs from a single round-trip — the same contract
    * as {@link reorderTree}.
    *
-   * NO CASCADE (owner decision): exactly the named rows change. To switch a whole branch
-   * off, the operator selects the whole branch.
+   * The FLAGS do not cascade (owner decision): exactly the named rows' `isActive` changes.
+   * The VISIBILITY does (TASK-1032): deactivating a parent takes its whole branch and the
+   * branch's products off the storefront via the derived `ancestorsActive`, so switching a
+   * branch off needs only its root selected.
    */
   async setStatusMany(
     ids: string[],

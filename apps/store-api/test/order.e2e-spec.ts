@@ -211,7 +211,7 @@ describe('OrderController (e2e)', () => {
       categoryId: 'cat-e2e-1',
       // TASK-297: checkout re-checks the owning category's status, so the cart
       // fixture must carry it (mirrors CART_ITEMS_INCLUDE's category select).
-      category: { isActive: true },
+      category: { isActive: true, ancestorsActive: true },
       // Match the CartWithItems contract: CART_ITEMS_INCLUDE always selects
       // product.images, so the cart fixture must carry it too.
       images: [],
@@ -2984,7 +2984,7 @@ describe('OrderController (e2e)', () => {
       price: { toString: () => '29.99' },
       stock: 50,
       isActive: true,
-      category: { isActive: true },
+      category: { isActive: true, ancestorsActive: true },
     };
 
     /** Arm the catalogue + write so only the payload under test varies. */

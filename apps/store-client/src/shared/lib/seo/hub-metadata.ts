@@ -13,8 +13,13 @@ export interface HubMetadataInput {
   canonical: string;
   /** The route's built-in title, used when no hub row supplies one. */
   fallbackTitle: string;
-  /** The route's built-in description, used when no hub row supplies one. */
-  fallbackDescription: string;
+  /**
+   * The route's built-in description, used when no hub row supplies one. A
+   * function when the copy names the store (TASK-1639): it receives the name
+   * resolved here from `SeoSettings.siteName`, so the route needs no second
+   * settings read and the description follows a rename.
+   */
+  fallbackDescription: string | ((siteName: string) => string);
   /** Open Graph `type`; hubs are listings, so "website" unless stated. */
   ogType?: "website" | "article";
   /**
@@ -90,7 +95,11 @@ export async function buildHubMetadata({
     siteName,
     fallback: fallbackTitle,
   });
-  const description = resolved.description ?? fallbackDescription;
+  const description =
+    resolved.description ??
+    (typeof fallbackDescription === "function"
+      ? fallbackDescription(siteName)
+      : fallbackDescription);
 
   return {
     title,

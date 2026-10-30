@@ -108,7 +108,7 @@ export class CartEntity {
           compareAtPrice: { toString(): string } | null;
           stock: number;
           isActive: boolean;
-          category: { isActive: boolean };
+          category: { isActive: boolean; ancestorsActive: boolean };
           images: Array<{ url: string }>;
         };
       }>;

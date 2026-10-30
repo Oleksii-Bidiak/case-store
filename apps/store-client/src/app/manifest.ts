@@ -31,7 +31,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
   return {
     name: siteName,
     short_name: siteName,
-    description: dict.meta.rootTitle,
+    description: dict.meta.rootTitle(siteName),
     start_url: "/",
     display: "standalone",
     background_color: THEME_COLOR.light,

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { Menu, Tag } from "lucide-react";
+import { Menu, PackageSearch, Tag } from "lucide-react";
 import { useAuth, useAuthControllerLogout } from "@/entities/session";
 import {
   Button,
@@ -16,12 +16,13 @@ import {
   SheetTrigger,
 } from "@/shared/ui";
 import { dict, PAGE_CONTAINER } from "@/shared/config";
+import { cn } from "@/shared/lib/utils";
 import type { BannerEntity } from "@/shared/api/generated/models";
 import { SearchAutocomplete } from "@/features/search";
 import { ThemeToggle } from "@/features/theme";
 import { AnnouncementBar } from "./announcement-bar";
 import { HeaderSearch } from "./header-search";
-import { HeaderAuth } from "./header-auth";
+import { ACCOUNT_ACTION_CLASS, HeaderAuth } from "./header-auth";
 import { HeaderCartBadge } from "./header-cart-badge";
 import { HeaderWishlistBadge } from "./header-wishlist-badge";
 import {
@@ -222,6 +223,15 @@ export function Header({
                     ) : (
                       <>
                         <hr className="my-1 border-border" />
+                        {/* TASK-1999: a guest's «Мої замовлення» — the lookup
+                            by number. A signed-in shopper has the real one. */}
+                        <Link
+                          href="/orders/status"
+                          onClick={() => setMenuOpen(false)}
+                          className={MOBILE_LINK_CLASS}
+                        >
+                          {dict.header.orderStatusLink}
+                        </Link>
                         <Link
                           href="/login"
                           onClick={() => setMenuOpen(false)}
@@ -323,6 +333,34 @@ export function Header({
               <span className="hidden xl:inline">{dict.header.promoLabel}</span>
             </Link>
             <HeaderWishlistBadge className="hidden min-[390px]:flex" />
+            {/* «Статус замовлення» for guests (TASK-1999) — until now only the
+                footer led there. From exactly `xl`, where the slide-out menu
+                that carries it below `xl` disappears; a signed-in shopper has
+                «Мої замовлення» under Кабінет instead.
+                While the session restores, an invisible twin holds its box, as
+                HeaderAuth's skeleton does: the theme switch is this cluster's
+                leftmost item, so an action that only appeared once auth settled
+                slid it left under a guest's cursor. */}
+            {isInitializing && (
+              <span
+                aria-hidden="true"
+                data-slot="order-status-placeholder"
+                className={cn(ACCOUNT_ACTION_CLASS, "invisible hidden xl:flex")}
+              >
+                <PackageSearch className="size-5.5" />
+                <span>{dict.header.orderStatusCaption}</span>
+              </span>
+            )}
+            {!isInitializing && !isAuthenticated && (
+              <Link
+                href="/orders/status"
+                aria-label={dict.header.orderStatusLink}
+                className={cn(ACCOUNT_ACTION_CLASS, "hidden xl:flex")}
+              >
+                <PackageSearch className="size-5.5" aria-hidden="true" />
+                <span>{dict.header.orderStatusCaption}</span>
+              </Link>
+            )}
             <div className="hidden min-[390px]:block">
               <HeaderAuth />
             </div>

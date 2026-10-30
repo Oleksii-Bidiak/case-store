@@ -36,6 +36,7 @@ import { FormSectionCard } from "@/shared/ui/form-section-card";
 import {
   ContentImageField,
   useImageUploadField,
+  useLibraryFirstUpload,
   useUploadsControllerUploadBlogCover,
 } from "@/features/content-image-upload";
 import { MediaPicker, MediaPickerEditorButton } from "@/features/media-picker";
@@ -242,14 +243,26 @@ export function BlogPostForm({
   // URL is written through `setValue`, so the form stays the single source of
   // truth for the field (docs/conventions/forms.md).
   const coverValue = useWatch({ control, name: "coverImageUrl" }) ?? "";
+  // TASK-2002: into the media library first, the blog route as fallback.
   const coverUpload = useImageUploadField({
-    upload: useUploadsControllerUploadBlogCover(),
+    upload: useLibraryFirstUpload(useUploadsControllerUploadBlogCover()),
     copy: f.coverUpload,
     onUploaded: (url) =>
       setValue("coverImageUrl", url, {
         shouldDirty: true,
         shouldValidate: true,
       }),
+  });
+  // TASK-2002: the social-card image gets the cover's three paths — a file, a
+  // library pick, a link — through the same route choice (the blog route is
+  // the form's own `blog:write`). Its own mutation instance, so one field's
+  // spinner never shows on the other.
+  const ogImageValue = useWatch({ control, name: "ogImage" }) ?? "";
+  const ogImageUpload = useImageUploadField({
+    upload: useLibraryFirstUpload(useUploadsControllerUploadBlogCover()),
+    copy: dict.seoFields.ogImageUpload,
+    onUploaded: (url) =>
+      setValue("ogImage", url, { shouldDirty: true, shouldValidate: true }),
   });
   // Live SERP preview (TASK-437). The tiers are the storefront's own
   // (`resolveSeo`): the overrides below, then the post's title/excerpt, then
@@ -770,14 +783,36 @@ export function BlogPostForm({
               </Field>
 
               <Field>
-                <Label htmlFor="post-og-image">{dict.seoFields.ogImage}</Label>
-                <Input
+                <ContentImageField
                   id="post-og-image"
-                  placeholder={dict.seoFields.ogImagePlaceholder(
+                  label={dict.seoFields.ogImage}
+                  urlPlaceholder={dict.seoFields.ogImagePlaceholder(
                     STOREFRONT_HOST,
                   )}
-                  {...fieldA11y("ogImage", "post-og-image-hint")}
-                  {...register("ogImage")}
+                  copy={dict.seoFields.ogImageUpload}
+                  value={ogImageValue}
+                  urlInput={register("ogImage")}
+                  // The hint and the `FieldError` below keep their ids, so the
+                  // error is rendered there and not passed as `fieldError`.
+                  urlInputProps={fieldA11y("ogImage", "post-og-image-hint")}
+                  onRemove={() =>
+                    setValue("ogImage", "", {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                  picker={
+                    <MediaPicker
+                      ariaLabel={dict.seoFields.ogImagePickerAria}
+                      onPick={(asset) =>
+                        setValue("ogImage", asset.url, {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        })
+                      }
+                    />
+                  }
+                  {...ogImageUpload}
                 />
                 <p
                   id="post-og-image-hint"
@@ -813,7 +848,7 @@ export function BlogPostForm({
                 {STATUS_OPTIONS.map((option) => (
                   <label
                     key={option.value}
-                    className="flex min-h-11 cursor-pointer items-center justify-center rounded-sm px-3 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50 md:min-h-9"
+                    className="relative flex min-h-11 cursor-pointer items-center justify-center rounded-sm px-3 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground has-checked:bg-primary has-checked:text-primary-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50 md:min-h-9"
                   >
                     <input
                       type="radio"

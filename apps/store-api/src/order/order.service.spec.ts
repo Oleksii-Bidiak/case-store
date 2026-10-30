@@ -104,7 +104,7 @@ const cartWithItems: CartWithItems = {
         stock: 50,
         isActive: true,
         // TASK-297: checkout re-checks the owning category's status too.
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
         slug: 'test-product',
         categoryId: 'cat-1',
         images: [],
@@ -124,7 +124,7 @@ const cartWithItems: CartWithItems = {
         compareAtPrice: null,
         stock: 30,
         isActive: true,
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
         slug: 'test-product',
         categoryId: 'cat-1',
         images: [],
@@ -730,12 +730,33 @@ describe('OrderService', () => {
             product: {
               ...cartWithItems.items[0].product,
               isActive: true,
-              category: { isActive: false },
+              category: { isActive: false, ancestorsActive: true },
             },
           },
         ],
       };
       cartServiceMock.loadForCheckout.mockResolvedValue(cartWithWithdrawnCategory);
+
+      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(BadRequestException);
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when an ANCESTOR of the line category was withdrawn (TASK-1032)', async () => {
+      // Product and its own category are active — only a parent was deactivated.
+      const cartUnderWithdrawnParent: CartWithItems = {
+        ...cartWithItems,
+        items: [
+          {
+            ...cartWithItems.items[0],
+            product: {
+              ...cartWithItems.items[0].product,
+              isActive: true,
+              category: { isActive: true, ancestorsActive: false },
+            },
+          },
+        ],
+      };
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartUnderWithdrawnParent);
 
       await expect(service.createOrder(userActor, createDto)).rejects.toThrow(BadRequestException);
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
@@ -2807,7 +2828,7 @@ describe('OrderService', () => {
       price: { toString: () => '499.00' },
       stock: 10,
       isActive: true,
-      category: { isActive: true },
+      category: { isActive: true, ancestorsActive: true },
     };
 
     const dto = {
@@ -3012,7 +3033,7 @@ describe('OrderService', () => {
 
     it('refuses a product whose category has been withdrawn from sale', async () => {
       orderRepositoryMock.findOrderableProducts.mockResolvedValue([
-        { ...catalogueProduct, category: { isActive: false } },
+        { ...catalogueProduct, category: { isActive: false, ancestorsActive: true } },
       ]);
 
       await expect(service.adminCreateOrder(dto, ADMIN_ID)).rejects.toThrow(BadRequestException);

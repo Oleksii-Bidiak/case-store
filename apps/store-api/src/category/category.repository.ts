@@ -336,7 +336,9 @@ export class CategoryRepository {
    * @param options.activeOnly - when `true` (the DEFAULT), a deactivated category
    *   resolves to `null`, so the public category page 404s it (TASK-297: an
    *   inactive category is WITHDRAWN FROM SALE, not merely hidden from the menu).
-   *   Mirrors `ProductRepository.findBySlugWithRelations` (TASK-145).
+   *   Mirrors `ProductRepository.findBySlugWithRelations` (TASK-145). An ACTIVE
+   *   category under a deactivated ancestor resolves to `null` too
+   *   (`ancestorsActive`, TASK-1032): the cascade withdraws the whole branch.
    *
    *   Callers doing a SLUG-UNIQUENESS check must pass `{ activeOnly: false }` —
    *   an inactive category still occupies its slug, and a create/update that
@@ -354,7 +356,7 @@ export class CategoryRepository {
       where: {
         slug,
         deletedAt: null,
-        ...((options?.activeOnly ?? true) ? { isActive: true } : {}),
+        ...((options?.activeOnly ?? true) ? { isActive: true, ancestorsActive: true } : {}),
       },
     });
   }
@@ -708,6 +710,12 @@ export class CategoryRepository {
           .filter((write) => parentById.get(write.id) !== write.parentId)
           .map((write) => write.id);
 
+        // A moved branch inherits its new ancestors' visibility (TASK-1032). Only a
+        // reparent can change it, and a reparent always runs in tree-lock mode.
+        if (movedIds.length > 0) {
+          await this.refreshBranchVisibility(tx);
+        }
+
         return { tree: await this.findCategoryTreeForAdmin(tx), movedIds };
       },
       // A lock wait happens INSIDE the transaction, so it is charged against `timeout`
@@ -1040,6 +1048,10 @@ export class CategoryRepository {
     const parentId = data.parentId ?? null;
 
     return this.prisma.$transaction(async (tx) => {
+      // Tree lock first (TASK-1032), then the bucket — the global order. Every write
+      // that changes branch visibility holds the tree lock, so the parent's flags read
+      // below cannot change before this row commits with a value derived from them.
+      await this.acquireLocks(tx, [TREE_LOCK_KEY]);
       await this.acquireLocks(tx, [bucketLockKey(parentId)]);
 
       // Re-check the parent UNDER the bucket lock (TASK-653): the service's check ran
@@ -1047,14 +1059,18 @@ export class CategoryRepository {
       // lock until it commits. Without the re-check, a create that waited on that lock
       // would insert a live child under a tombstone — breaking invariant I2, which the
       // snapshot and ancestor reads rely on.
+      let ancestorsActive = true;
       if (parentId !== null) {
         const parent = await tx.category.findFirst({
           where: { id: parentId, deletedAt: null },
-          select: { id: true },
+          select: { id: true, isActive: true, ancestorsActive: true },
         });
         if (!parent) {
           throw new CategoryNotFoundError(`Parent category "${parentId}" not found`);
         }
+        // A child is born into its parent's branch: visible only if the parent and
+        // everything above it are (TASK-1032).
+        ancestorsActive = parent.isActive && parent.ancestorsActive;
       }
 
       // Live rows only: a tombstone keeps its old `sortOrder` but is no longer a sibling.
@@ -1073,6 +1089,7 @@ export class CategoryRepository {
           parentId,
           sortOrder: nextSortOrder,
           isActive: data.isActive ?? true,
+          ancestorsActive,
           metaTitle: data.metaTitle ?? null,
           metaDescription: data.metaDescription ?? null,
           keywords: data.keywords ?? [],
@@ -1123,12 +1140,23 @@ export class CategoryRepository {
       delete writeData.parentId;
     }
 
-    if (!slugRename && !mayChangeParent) {
+    // A PUT that sends `isActive` may flip the branch visibility of every descendant
+    // (TASK-1032), so it leaves the single-statement path: the recompute must commit
+    // with the toggle, under the tree lock every visibility writer holds.
+    const touchesStatus = data.isActive !== undefined;
+
+    if (!slugRename && !mayChangeParent && !touchesStatus) {
       const category = await this.prisma.category.update({ where: { id }, data: writeData });
       return { category, reparented: false };
     }
 
     return this.prisma.$transaction(async (tx) => {
+      if (touchesStatus) {
+        // Tree lock FIRST — the global order; `prepareReparent` re-taking it below is a
+        // no-op for the same transaction.
+        await this.acquireLocks(tx, [TREE_LOCK_KEY]);
+      }
+
       // A parent change is a WHOLE-TREE mutation (cycle + depth are whole-tree
       // invariants), so it runs under exactly the same locks as a reparenting batch —
       // otherwise `PUT /:id` would race `applyTreeMoves` outside every lock this design
@@ -1142,6 +1170,12 @@ export class CategoryRepository {
 
       if (reparent) {
         await this.writeRows(tx, reparent.sourceRewrites);
+      }
+
+      // Recompute the branch flags of the whole tree (TASK-1032). The returned row's
+      // own `ancestorsActive` predates it — it is not part of any response entity.
+      if (reparent || touchesStatus) {
+        await this.refreshBranchVisibility(tx);
       }
 
       if (slugRename) {
@@ -1247,20 +1281,23 @@ export class CategoryRepository {
    * Set `isActive` on many categories at once, and return the refreshed admin tree
    * (TASK-293).
    *
-   * NO CASCADE, by owner decision: exactly the named rows are written. Descendants keep
-   * their own `isActive` — a bulk deactivate is the per-row toggle applied N times, not a
-   * subtree operation. (Deactivating a parent already hides its whole branch from the
-   * public tree: `findCategoryTree` filters `isActive` at every level of the nested
-   * include, so an inactive node — and with it everything under it — is simply not
-   * returned. Only the branch's *visibility* is inherited; the flags are not.)
+   * The FLAGS do not cascade, by owner decision: exactly the named rows' `isActive` is
+   * written. Descendants keep their own `isActive` — a bulk deactivate is the per-row
+   * toggle applied N times, not a subtree operation. The VISIBILITY does cascade (owner
+   * decision 2026-10-29, TASK-1032): the public category tree filters `isActive` at every
+   * level of its nested include, and the derived `ancestorsActive` recomputed below takes
+   * the descendants' PRODUCTS off sale with them. Reactivating the parent restores every
+   * child exactly as its own flag left it.
    *
-   * Needs no advisory lock: it touches neither `parentId` nor `sortOrder`, so it cannot
-   * race the reorder invariants that `applyTreeMoves` protects. Unknown ids are rejected
+   * Takes the tree lock (TASK-1032): it touches neither `parentId` nor `sortOrder`, but the
+   * branch recompute must not interleave with a reparent's. Unknown ids are rejected
    * as a whole (all-or-nothing) rather than silently skipped, so the admin panel can never
    * report "12 updated" when only 11 rows existed.
    */
   async setActiveMany(ids: string[], isActive: boolean): Promise<BulkStatusResult> {
     return this.prisma.$transaction(async (tx) => {
+      await this.acquireLocks(tx, [TREE_LOCK_KEY]);
+
       // A deleted id is unknown (TASK-653): it 404s the batch instead of flipping a
       // tombstone's `isActive` back on.
       const found = await tx.category.findMany({
@@ -1278,6 +1315,7 @@ export class CategoryRepository {
         where: { id: { in: ids }, deletedAt: null },
         data: { isActive },
       });
+      await this.refreshBranchVisibility(tx);
 
       return { tree: await this.findCategoryTreeForAdmin(tx), updatedCount: count };
     });
@@ -1423,6 +1461,11 @@ export class CategoryRepository {
           });
         }
 
+        // The tombstoned subtree has no live descendant left (I2), but a NEW target is a
+        // live row created above under `target.parentId`, possibly in a hidden branch —
+        // its flag must be derived like any other (TASK-1032). Still under the tree lock.
+        await this.refreshBranchVisibility(tx);
+
         return {
           targetId,
           targetCreated: target.kind === 'new',
@@ -1566,10 +1609,7 @@ export class CategoryRepository {
    * Returns the updated category record.
    */
   deactivate(id: string): Promise<Category> {
-    return this.prisma.category.update({
-      where: { id },
-      data: { isActive: false },
-    });
+    return this.setActive(id, false);
   }
 
   /**
@@ -1577,10 +1617,57 @@ export class CategoryRepository {
    * Returns the updated category record.
    */
   activate(id: string): Promise<Category> {
-    return this.prisma.category.update({
-      where: { id },
-      data: { isActive: true },
+    return this.setActive(id, true);
+  }
+
+  /** The single toggle + the branch recompute it implies (TASK-1032), in one transaction. */
+  private setActive(id: string, isActive: boolean): Promise<Category> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.acquireLocks(tx, [TREE_LOCK_KEY]);
+      const category = await tx.category.update({ where: { id }, data: { isActive } });
+      await this.refreshBranchVisibility(tx);
+      return category;
     });
+  }
+
+  /**
+   * Recompute the stored branch visibility `ancestorsActive` of EVERY category
+   * (TASK-1032, owner decision 2026-10-29: deactivation cascades): true iff every
+   * ancestor is active and live. Walks down from the roots in one recursive statement
+   * and writes only the rows whose value changes — byte-for-byte the backfill of
+   * migration `20261029120000_category_ancestors_active`, which
+   * `test/category.repository.int-spec.ts` runs against this method's results.
+   *
+   * The whole tree, not just the touched subtree: a category is a taxonomy (tens–low
+   * hundreds of rows), and a full walk cannot miss a branch a multi-move batch touched.
+   * `UNION ALL` always terminates — a node on a cycle is never reachable from a root.
+   *
+   * Every caller passes its transaction client AND holds the tree lock: two visibility
+   * writes (say, a deactivation and a reparent into that branch) would otherwise each
+   * recompute from a snapshot without the other's change and commit a stale flag. Public
+   * so a raw-Prisma writer (an int-spec fixture) can settle the flags the same way.
+   */
+  async refreshBranchVisibility(client: CategoryDbClient = this.prisma): Promise<void> {
+    await client.$executeRaw`
+      WITH RECURSIVE walk AS (
+        SELECT c.id,
+               true AS ancestors_active,
+               (c.is_active AND c.deleted_at IS NULL) AS passes_on
+        FROM "categories" c
+        WHERE c.parent_id IS NULL
+        UNION ALL
+        SELECT c.id,
+               w.passes_on,
+               (w.passes_on AND c.is_active AND c.deleted_at IS NULL)
+        FROM "categories" c
+        JOIN walk w ON c.parent_id = w.id
+      )
+      UPDATE "categories" AS c
+      SET "ancestors_active" = w.ancestors_active
+      FROM walk w
+      WHERE c.id = w.id
+        AND c.ancestors_active IS DISTINCT FROM w.ancestors_active
+    `;
   }
 
   /**

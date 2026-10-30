@@ -13,6 +13,7 @@ import {
   DataRegistry,
   ExportMenu,
   REGISTRY_ROW_ACTION_WIDTH,
+  RegistryTable,
   useDataRegistry,
   type DataRegistryProps,
   type RegistryColumn,
@@ -787,6 +788,61 @@ describe("DataRegistry — row navigation", () => {
     expect(screen.getByText("Ірина").closest("tr")).not.toHaveClass(
       "bg-primary/6",
     );
+  });
+});
+
+describe("DataRegistry — the table box fills the page (TASK-1994)", () => {
+  // jsdom has no layout, so the contract is asserted on the classes. The box
+  // used to be capped at the viewport height (`max-h-svh`) inside a <main>
+  // that scrolls too: two vertical scrollers, and scrolling the page took the
+  // sticky header out of view. From md up the box now takes the height that
+  // is left (the shell flexes everything around a `data-registry-fill` box),
+  // so it is the only vertical scroller and its header never leaves.
+  const box = () =>
+    document.querySelector('[data-slot="registry-table"]') as HTMLElement;
+
+  it("marks the table box as the one that fills the page", () => {
+    renderWithProviders(<Harness />);
+    expect(box()).toHaveAttribute("data-registry-fill");
+  });
+
+  it("scrolls the box in both axes and keeps its header sticky", () => {
+    renderWithProviders(<Harness />);
+    expect(box()).toHaveClass("overflow-auto");
+    expect(box().querySelector("thead")).toHaveClass("sticky", "top-0");
+  });
+
+  it("drops the viewport cap from md up, with a floor, and keeps it below md", () => {
+    renderWithProviders(<Harness />);
+    expect(box()).not.toHaveClass("max-h-svh");
+    expect(box()).toHaveClass("max-md:max-h-svh", "md:min-h-48");
+  });
+
+  it("lets the registry and its panel shrink so the box absorbs the overflow", () => {
+    renderWithProviders(<Harness />);
+    const root = document.querySelector(
+      '[data-slot="data-registry"]',
+    ) as HTMLElement;
+    expect(root).toHaveClass("flex", "flex-col", "md:min-h-0");
+    // The panel the quick views switch — the box's own parent.
+    expect(box().parentElement).toHaveClass("flex", "flex-col", "md:min-h-0");
+  });
+
+  it("does not fill on its own — a bare RegistryTable keeps the viewport cap", () => {
+    renderWithProviders(
+      <RegistryTable<Order>
+        label="Історія"
+        columns={COLUMNS}
+        rows={PAGE_1}
+        getRowId={(o) => o.id}
+        getRowLabel={(o) => o.number}
+        widths={{}}
+        itemForms={ORDERS}
+        emptyState="—"
+      />,
+    );
+    expect(box()).not.toHaveAttribute("data-registry-fill");
+    expect(box()).toHaveClass("max-h-svh");
   });
 });
 

@@ -1,6 +1,7 @@
 import { MessageCircle } from "lucide-react";
 import { NewsletterSubscribeForm } from "@/features";
 import { dict } from "@/shared/config";
+import { resolveSiteName } from "@/shared/lib/seo";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
 import { BlogInstagramIcon, BlogTelegramIcon } from "./blog-icons";
 
@@ -29,6 +30,11 @@ interface BlogNewsletterProps {
    * link is left out; with none, the social row is not rendered at all.
    */
   contact?: BlogNewsletterContact | null;
+  /**
+   * The admin-managed store name (`resolveSiteName(seo)` on the page) the
+   * subtitle names (TASK-1677); the fallback is the default store name.
+   */
+  siteName?: string;
 }
 
 /**
@@ -41,8 +47,12 @@ interface BlogNewsletterProps {
  * owner's real links from «Контакти магазину», exactly as on the home page
  * (TASK-741), and a channel the owner has not filled in simply is not shown.
  */
-export function BlogNewsletter({ contact }: BlogNewsletterProps = {}) {
-  const { heading, subtitle } = dict.blog.newsletter;
+export function BlogNewsletter({
+  contact,
+  siteName = resolveSiteName(),
+}: BlogNewsletterProps = {}) {
+  const { heading } = dict.blog.newsletter;
+  const subtitle = dict.blog.newsletter.subtitle(siteName);
   const channels = SOCIAL_CHANNELS.flatMap((channel) => {
     const href = contact?.[channel.key];
     return href ? [{ ...channel, href }] : [];

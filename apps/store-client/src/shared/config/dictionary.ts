@@ -75,8 +75,10 @@ export const dict = {
     searchSubmit: "Шукати",
     // Top announcement bar (TASK-167-A). The number itself is NOT here: it is
     // the admin-managed SiteContactSettings.phone, hidden when unset (TASK-873)
-    // — a dictionary number would ring nobody.
-    announcement: "Безкоштовна доставка від 1 000 ₴ · Відправка день у день",
+    // — a dictionary number would ring nobody. TASK-1661: no «безкоштовна
+    // доставка від 1 000 ₴» — Nova Poshta is never free (B-6 №2).
+    announcement:
+      "Доставка Новою Поштою по всій Україні · Відправка день у день",
     phoneAria: "Зателефонувати в підтримку",
     // Catalog mega-menu trigger + labelled action cluster.
     catalogButton: "Каталог",
@@ -88,6 +90,10 @@ export const dict = {
     accountLabel: "Кабінет",
     accountOpenAria: "Відкрити особистий кабінет",
     cartTotalAria: "Сума кошика",
+    // TASK-1999 — the guest's way back to an order (/orders/status). The
+    // caption is short for the action row; the link's name is the page's.
+    orderStatusLink: "Статус замовлення",
+    orderStatusCaption: "Статус",
     // TASK-082 — mega-menu second level (desktop flyout + mobile accordion).
     catalogSubcategoriesAria: "Підкатегорії",
     toggleSubcategoriesAria: (name: string) =>
@@ -190,7 +196,9 @@ export const dict = {
   },
 
   trust: {
-    shipping: "Безкоштовна доставка від 1 000 ₴",
+    // TASK-1661 — Nova Poshta is never free (B-6 №2); only the courier has a
+    // threshold, and its copy names the live amount on the checkout.
+    shipping: "Доставка по всій Україні",
     // TASK-873 — 14 days, the statutory window (Закон «Про захист прав
     // споживачів», ст. 9) that RETURN_POLICY, /info, /contact and the seeded
     // «Повернення та обмін» page all state; the footer used to promise 30.
@@ -247,9 +255,9 @@ export const dict = {
         },
         {
           eyebrow: "Доставка",
-          title: "Безкоштовна доставка від 1 000 ₴",
+          title: "Доставка по всій Україні",
           subtitle:
-            "Нова Пошта по всій Україні · відправка день у день · оплата під час отримання.",
+            "Нова Пошта за тарифом перевізника · відправка день у день · оплата під час отримання.",
           cta: "Переглянути новинки",
           href: "/products?sortBy=createdAt&sortOrder=desc",
         },
@@ -290,9 +298,11 @@ export const dict = {
         accent: "sale" as const,
       },
       {
-        badge: "ВІД 1 000 ₴",
-        title: "Безкоштовна доставка",
-        text: "Нова Пошта по всій Україні — відправка день у день.",
+        // TASK-1661 — was «ВІД 1 000 ₴ / Безкоштовна доставка»: a threshold
+        // Nova Poshta never had.
+        badge: "НОВА ПОШТА",
+        title: "Доставка по всій Україні",
+        text: "Відділення й поштомати за тарифом перевізника — відправка день у день.",
         cta: "Умови доставки",
         href: "/info#delivery",
         accent: "primary" as const,
@@ -378,8 +388,9 @@ export const dict = {
     // the hub renders `badgeNamed` instead (no more hardcoded «MOBILESTORE»).
     badge: "Журнал",
     heading: "Блог про техніку та ґаджети",
-    subtitle:
-      "Огляди, гайди й поради від команди CaseStore — щоб обрати саме те, що потрібно, і вичавити з ґаджета максимум.",
+    // TASK-1677 — the store name is the admin's «SEO-налаштування» siteName.
+    subtitle: (siteName: string) =>
+      `Огляди, гайди й поради від команди ${siteName} — щоб обрати саме те, що потрібно, і вичавити з ґаджета максимум.`,
     searchPlaceholder: "Пошук у блозі…",
     searchAria: "Пошук у блозі",
     categoryFilterAria: "Категорії блогу",
@@ -398,8 +409,9 @@ export const dict = {
     emptyBody: "Спробуйте іншу категорію або уточніть запит.",
     newsletter: {
       heading: "Не пропускай нові статті",
-      subtitle:
-        "Підписуйся на канали CaseStore — огляди, гайди та знижки першими.",
+      // TASK-1677 — named after the resolved siteName, like `blog.subtitle`.
+      subtitle: (siteName: string) =>
+        `Підписуйся на канали ${siteName} — огляди, гайди та знижки першими.`,
       // TASK-873 — the social buttons are the shop's real channels from
       // «Контакти магазину», as on the home page (TASK-741); the old `href: "#"`
       // list with its «скоро запрацюють» toast is gone.
@@ -462,8 +474,10 @@ export const dict = {
     hub: {
       badge: "ДОКУМЕНТИ",
       heading: "Правова інформація",
-      subtitle:
-        "Усі офіційні документи CaseStore в одному місці — політики, умови та гарантії. Оберіть потрібний документ, щоб прочитати повну редакцію.",
+      // TASK-1639 — the admin-managed store name (`resolveSiteName(seo)`),
+      // never a literal; also the hub's fallback meta description.
+      subtitle: (siteName: string) =>
+        `Усі офіційні документи ${siteName} в одному місці — політики, умови та гарантії. Оберіть потрібний документ, щоб прочитати повну редакцію.`,
       // "{updatedPrefix} {date}" → "Оновлено 12 черв. 2026".
       updatedPrefix: "Оновлено",
       empty: "Документів поки немає",
@@ -587,13 +601,14 @@ export const dict = {
     },
     deliveryHeading: "Доставка",
     deliveryIntro:
-      "Відправляємо замовлення день у день при оформленні до 18:00. Безкоштовно від 1 000 ₴.",
+      "Відправляємо замовлення день у день при оформленні до 18:00. Нова Пошта — за тарифом перевізника.",
     paymentHeading: "Оплата",
     paymentIntro: "Обирайте зручний спосіб — онлайн або при отриманні.",
     warrantyHeading: "Гарантія та сервіс",
     warrantyIntro: "Уся техніка — офіційна, з гарантією виробника.",
     servicesHeading: "Додаткові сервіси захисту",
-    aboutHeading: "Ми — CaseStore",
+    // TASK-1639 — the admin-managed store name, passed down by /info.
+    aboutHeading: (siteName: string) => `Ми — ${siteName}`,
     aboutIntro:
       "Інтернет-магазин електроніки, який допомагає українцям обирати техніку без зайвого клопоту. Тільки оригінальні пристрої, офіційна гарантія та чесні ціни.",
     valuesHeading: "Чому обирають нас",
@@ -1021,7 +1036,8 @@ export const dict = {
       },
       warranty: {
         title: "Офіційна гарантія 12 міс.",
-        text: "Сервісне обслуговування CaseStore",
+        // TASK-1639 — the admin-managed store name, passed down by the PDP.
+        text: (siteName: string) => `Сервісне обслуговування ${siteName}`,
       },
       returns: { title: "Повернення 14 днів", text: "Без пояснення причин" },
     },
@@ -1492,6 +1508,15 @@ export const dict = {
         COURIER: "Кур'єр",
         OTHER: "Інша доставка",
       },
+      // TASK-1998: the method the shopper had chosen is gone — the shop
+      // switched it off mid-checkout. One sentence per method, so the
+      // adjective agrees with the name («недоступна» / «недоступний»).
+      methodUnavailable: {
+        NOVA_POSHTA: "Нова Пошта зараз недоступна — оберіть інший спосіб",
+        PICKUP: "Самовивіз зараз недоступний — оберіть інший спосіб",
+        COURIER: "Кур'єр зараз недоступний — оберіть інший спосіб",
+        OTHER: "Інша доставка зараз недоступна — оберіть інший спосіб",
+      },
       npTariff: "За тарифом Нової Пошти",
       npQuote: (cost: string, days: number) =>
         `${cost} · ${days}–${days + 1} роб. дн.`,
@@ -1718,10 +1743,15 @@ export const dict = {
       linkInvalidBody:
         "Посилання на замовлення застаріло або неправильне. Перевірте лист із підтвердженням або зверніться до нас.",
       contactHeading: "Контактні дані",
-      accountOfferHeading: "Створіть акаунт",
-      accountOfferBody:
-        "З акаунтом ви бачитимете всі замовлення в одному місці. Це замовлення привʼяжеться до нього автоматично.",
-      accountOfferCta: "Створити акаунт",
+      // TASK-1999 — the heading on arrival straight from checkout (`?placed=1`);
+      // the same words as the in-place panel it replaced.
+      placedHeading: "Замовлення прийнято!",
+      // The account offer, as a banner at the top (it was a card at the foot
+      // of the sidebar). Guest orders move into the account once the email is
+      // confirmed (TASK-485), so the banner can promise exactly that.
+      registerBannerCta: "Зареєструйтесь — замовлення з'явиться в кабінеті",
+      registerBannerBody:
+        "Підтвердьте email після реєстрації — і всі замовлення на цю адресу, разом із цим, перейдуть у кабінет автоматично.",
     },
 
     // ── «Доставка» after checkout (TASK-647, OrderConfirmation.dc.html) ─────
@@ -1758,6 +1788,8 @@ export const dict = {
     breadcrumbHome: "Головна",
     breadcrumb: "Статус замовлення",
     heading: "Статус замовлення",
+    // TASK-1999 — the way in from the guest's success panel and order page.
+    entryLink: "Перевірити статус за номером замовлення",
     intro:
       "Введіть номер замовлення з листа-підтвердження та номер телефону, який ви вказали при оформленні.",
     fieldNumber: "Номер замовлення",
@@ -2265,7 +2297,10 @@ export const dict = {
   },
 
   meta: {
-    rootTitle: "CaseStore — магазин аксесуарів для телефонів",
+    // TASK-1639 — `title.default` and the manifest description: built from the
+    // admin-managed store name, so a rename in /settings/seo reaches them too.
+    rootTitle: (siteName: string) =>
+      `${siteName} — магазин аксесуарів для телефонів`,
     rootDescription:
       "Ваш магазин аксесуарів для мобільних телефонів — чохли, зарядні пристрої, захисні скельця та інше.",
     homeTitle: "Головна",
@@ -2283,53 +2318,63 @@ export const dict = {
     // field by the device model's admin `metaTitle`/`metaDescription`.
     compatTitle: (categoryName: string, deviceName: string) =>
       `${categoryName} для ${deviceName}`,
-    compatDescription: (categoryName: string, deviceName: string) =>
-      `${categoryName} для ${deviceName} у CaseStore — перевірена сумісність, оригінальні аксесуари та швидка доставка по Україні.`,
+    compatDescription: (
+      categoryName: string,
+      deviceName: string,
+      siteName: string,
+    ) =>
+      `${categoryName} для ${deviceName} у ${siteName} — перевірена сумісність, оригінальні аксесуари та швидка доставка по Україні.`,
     // Shown only for the split second before notFound() owns the response: a
     // 404 still needs *a* metadata object (same shape as the category landing).
     compatFallbackTitle: "Сумісні аксесуари",
     productFallbackTitle: "Товар",
     productFallbackDescription: "Переглянути деталі товару.",
     pageFallbackTitle: "Сторінка",
-    cartTitle: "Кошик | CaseStore",
+    // The page titles below are bare page names: the root layout's title
+    // template appends the store name to every child segment's string title,
+    // static or from generateMetadata (TASK-1628 — they used to read
+    // «Кошик | <назва> | <назва>»).
+    cartTitle: "Кошик",
     cartDescription: "Перегляньте та змініть товари у вашому кошику.",
-    checkoutTitle: "Оформлення замовлення | CaseStore",
+    checkoutTitle: "Оформлення замовлення",
     checkoutDescription: "Завершіть оформлення покупки.",
-    orderTitle: (ref: string) => `Замовлення ${ref} підтверджено | CaseStore`,
+    orderTitle: (ref: string) => `Замовлення ${ref} підтверджено`,
     // Deliberately carries no order reference: the URL that reaches this page is
     // a bearer token from an email, so the title must stay uninformative to
     // anyone the link is forwarded to (TASK-338).
-    guestOrderTitle: "Статус замовлення | CaseStore",
+    guestOrderTitle: "Статус замовлення",
     // TASK-483: публічна форма «номер + телефон». Індексувати її МОЖНА — на
     // відміну від сторінки за токеном, тут в URL немає нічого приватного, а
     // покупець, який шукає «як дізнатися статус замовлення», має її знайти.
-    orderLookupTitle: "Статус замовлення за номером | CaseStore",
+    orderLookupTitle: "Статус замовлення за номером",
     orderLookupDescription:
       "Перевірте стан замовлення за номером із листа-підтвердження та номером телефону — без реєстрації та входу.",
-    loginTitle: "Вхід | CaseStore",
+    loginTitle: "Вхід",
     loginDescription: "Увійдіть до свого акаунту.",
-    registerTitle: "Реєстрація | CaseStore",
+    registerTitle: "Реєстрація",
     registerDescription: "Створіть новий акаунт.",
-    forgotPasswordTitle: "Відновлення пароля | CaseStore",
+    forgotPasswordTitle: "Відновлення пароля",
     forgotPasswordDescription: "Отримайте посилання для скидання пароля.",
-    resetPasswordTitle: "Новий пароль | CaseStore",
+    resetPasswordTitle: "Новий пароль",
     resetPasswordDescription: "Установіть новий пароль для вашого акаунту.",
-    verifyEmailTitle: "Підтвердження email | CaseStore",
+    verifyEmailTitle: "Підтвердження email",
     verifyEmailDescription: "Підтвердіть свою електронну адресу.",
     // TASK-396 — the two landing pages of an address change.
-    confirmEmailChangeTitle: "Нова адреса для входу | CaseStore",
+    confirmEmailChangeTitle: "Нова адреса для входу",
     confirmEmailChangeDescription: "Підтвердіть нову адресу для входу.",
-    revertEmailChangeTitle: "Скасування зміни адреси | CaseStore",
+    revertEmailChangeTitle: "Скасування зміни адреси",
     revertEmailChangeDescription: "Скасуйте зміну адреси для входу.",
-    accountTitle: "Мій акаунт | CaseStore",
+    accountTitle: "Мій акаунт",
     accountDescription: "Керуйте профілем та переглядайте свої замовлення.",
     ordersDescription: "Історія ваших замовлень.",
     // TASK-217 — the order history as a section of the account.
-    accountOrdersTitle: "Історія замовлень | CaseStore",
-    accountOrderTitle: (ref: string) => `Замовлення ${ref} | CaseStore`,
+    accountOrdersTitle: "Історія замовлень",
+    accountOrderTitle: (ref: string) => `Замовлення ${ref}`,
     blogTitle: "Блог",
-    blogDescription:
-      "Огляди, гайди та поради про смартфони, аксесуари й техніку — від команди CaseStore.",
+    // TASK-1639 — the blog / contact hub fallbacks name the admin-managed
+    // store; `buildHubMetadata` passes the name it resolves.
+    blogDescription: (siteName: string) =>
+      `Огляди, гайди та поради про смартфони, аксесуари й техніку — від команди ${siteName}.`,
     notFoundTitle: "Сторінку не знайдено",
     notFoundDescription:
       "Схоже, такої сторінки не існує. Скористайтеся пошуком або поверніться на головну.",
@@ -2337,8 +2382,8 @@ export const dict = {
     promoDescription:
       "Найкращі ціни сезону — промокоди тижня та товари зі знижкою на смартфони, ноутбуки та аудіо.",
     contactTitle: "Звʼязатися з нами",
-    contactDescription:
-      "Гаряча лінія, пошта, месенджери та адреса шоуруму — оберіть зручний спосіб звʼязку з CaseStore.",
+    contactDescription: (siteName: string) =>
+      `Гаряча лінія, пошта, месенджери та адреса шоуруму — оберіть зручний спосіб звʼязку з ${siteName}.`,
     // TASK-546 — `og:image:alt` of the committed brand card and the alt floor
     // of `buildOgImages`: the resolved store name, not a literal.
     brandCardAlt: (siteName: string) =>
@@ -2397,7 +2442,7 @@ export const dict = {
     error: "Не вдалося оновити обране. Спробуйте ще раз.",
     /** Metadata for the /wishlist route. The bare page name: the root
      *  layout's title template appends the store name (TASK-875 — it used to
-     *  read «Список бажань | CaseStore | CaseStore»). */
+     *  read «Список бажань | <назва> | <назва>»). */
     metaTitle: "Обране",
     metaDescription: "Товари, які ви зберегли в обране.",
     // TASK-167-P — wishlist redesign (Wishlist.dc.html): a client-side toolbar

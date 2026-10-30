@@ -120,14 +120,23 @@ export function toDeliveryPayload(
   }
 }
 
+/**
+ * The query flag on `/orders/guest/[token]` that says "you got here straight
+ * from checkout" (TASK-1999) — the page then greets the guest the way the
+ * in-place success panel did. It carries no data, so a reload or a copied link
+ * shows the same greeting and nothing more.
+ */
+export const GUEST_ORDER_PLACED_PARAM = "placed";
+
 /** How an order attempt ended — see `submitOrder`. */
 export type SubmitOrderOutcome = "placed" | "refused" | "failed";
 
 export interface UseCheckoutOptions {
   /**
-   * Whether the shopper has no account. Guests supply a `contact` block and stay
-   * on this page afterwards, because `GET /api/orders/:id` — and therefore
-   * `/orders/[id]/confirmation` — requires a session they do not have.
+   * Whether the shopper has no account. Guests supply a `contact` block and
+   * afterwards go to their token page (or stay here), never to
+   * `/orders/[id]/confirmation`: `GET /api/orders/:id` requires a session they
+   * do not have.
    */
   isGuest: boolean;
 }
@@ -145,9 +154,13 @@ export interface UseCheckoutOptions {
  *    that is what makes the server stamp the 30-minute stock reservation
  *    (TASK-650); the second call only opens the payment attempt
  *    (docs/payments-liqpay.md §3, steps 2–5).
- * 3. **Guest** — create the order and surface {@link placedOrder} for an in-page
- *    success panel. No redirect: the confirmation route needs a JWT, so pushing a
- *    guest there would show them a login screen seconds after they paid us money.
+ * 3. **Guest** — create the order and replace the page with the guest's own
+ *    order page, `/orders/guest/[token]?placed=1` (TASK-1999), the token being
+ *    the one the confirmation e-mail carries. Never `/orders/[id]/confirmation`:
+ *    that route needs a JWT, so pushing a guest there would show them a login
+ *    screen seconds after they paid us money. Without a token, or when the
+ *    payment handoff failed (the guest page cannot retry it, and its alert would
+ *    be lost), {@link placedOrder} is surfaced for the in-page success panel.
  *
  * If the handoff itself fails, the order still exists and is still unpaid, so we
  * land on the confirmation page carrying the reason. Nothing anywhere in this
@@ -170,7 +183,8 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
   // The guest's own order access token (TASK-679) — the one the confirmation
   // e-mail carries, returned ONCE by the create call. It is the guest's proof
   // of ownership for the Telegram routes on the success panel. Memory only, on
-  // purpose: never localStorage / sessionStorage — it opens the order.
+  // purpose: never localStorage / sessionStorage — it opens the order. Its one
+  // other home is the guest page's path (TASK-1999), exactly as in the e-mail.
   const [guestAccessToken, setGuestAccessToken] = useState<string | null>(null);
 
   // Set when the order was created but the provider handoff was not. Describes
@@ -264,7 +278,16 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
     }
 
     if (isGuest) {
-      setGuestAccessToken(order.guestAccessToken ?? null);
+      // TASK-1999: with its token the guest has a full order page of their own
+      // — the one the e-mail links to — so send them there. `replace`: «Назад»
+      // must not reopen a checkout whose cart the order has just emptied.
+      if (order.guestAccessToken) {
+        router.replace(
+          `/orders/guest/${encodeURIComponent(order.guestAccessToken)}?${GUEST_ORDER_PLACED_PARAM}=1`,
+        );
+        return "placed";
+      }
+      setGuestAccessToken(null);
       setPlacedOrder(order);
       return "placed";
     }

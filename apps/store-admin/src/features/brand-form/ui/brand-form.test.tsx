@@ -308,3 +308,21 @@ describe("BrandForm — canon layout (wave 198, БР5–БР9)", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("BrandForm — the upload lands in the media library (TASK-2002)", () => {
+  it("media:write — the logo goes through POST /admin/media, not the brand route", async () => {
+    const library = stubMediaLibrary([]);
+    const brandRoute = stubUpload();
+    renderWithProviders(<BrandForm onSubmit={() => {}} isPending={false} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    await userEvent.upload(fileInput(), pickFile());
+
+    await waitFor(() => expect(library.uploadedNames).toEqual(["logo.png"]));
+    await waitFor(() =>
+      expect(logoField()).toHaveValue(makeMediaAsset("up-1").url),
+    );
+    expect(brandRoute).toEqual([]);
+  });
+});

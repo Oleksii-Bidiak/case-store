@@ -237,4 +237,20 @@ describe("SeoSettingsView — «Прев'ю чернеток» (TASK-670, ДП-8
       screen.queryByRole("button", { name: t.revokeAll }),
     ).not.toBeInTheDocument();
   });
+
+  // TASK-1993. The form's sticky bar bleeds over <main>'s bottom padding
+  // (`-mb-4 lg:-mb-6`), which shrinks the form box by 16/24 px. In this
+  // `gap-4` column that collapsed the gap to the revoke card below lg and
+  // laid the bar over the card's top border at lg+, so the card gets it back.
+  it("keeps the revoke card clear of the sticky bar's bottom bleed", async () => {
+    stubSettings();
+    renderWithProviders(<SeoSettingsView />, {
+      auth: { permissions: ["settings:seo"] },
+    });
+
+    const section = await screen.findByRole("region", {
+      name: t.settingsHeading,
+    });
+    expect(section.parentElement).toHaveClass("pt-4", "lg:pt-6");
+  });
 });

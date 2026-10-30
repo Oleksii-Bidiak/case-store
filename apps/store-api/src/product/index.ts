@@ -29,6 +29,7 @@ export {
 // that counts or lists products for the storefront (brands, categories, landing
 // pages, reports, the wishlist) must ask THIS module rather than re-derive it.
 export {
+  isCategoryOnSale,
   PUBLIC_PRODUCT_WHERE,
   publicProductSql,
   type PublicProductSqlAliases,

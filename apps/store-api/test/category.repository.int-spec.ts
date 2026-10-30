@@ -2,6 +2,8 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { CategoryRepository } from '../src/category/category.repository';
 import { PrismaService } from '../src/prisma';
 import { SlugRedirectRepository } from '../src/slug-redirect';
@@ -247,5 +249,236 @@ describe('CategoryRepository traversal — tombstones (integration, TASK-653)', 
 
   it('findDescendantIds(tombstone) returns only live rows', async () => {
     expect(await repo.findDescendantIds(tombT)).toEqual([orphanT]);
+  });
+});
+
+/**
+ * The stored branch-visibility flag `ancestorsActive` (TASK-1032, owner decision
+ * 2026-10-29: deactivation CASCADES). It is true iff every ANCESTOR of the row is
+ * active and live; a category's own `isActive` never feeds its own flag, only its
+ * descendants'. Every write that can change it — status toggles, a PUT, a reparent
+ * (single or batch), a create, a delete with a new target — must recompute it in
+ * the same transaction, and only a real Postgres shows whether the recursive
+ * recompute reaches every depth without touching an unrelated tree.
+ *
+ *   rootV
+ *     ├── midV
+ *     │     └── leafV
+ *     └── sideV            (no children — moved around by the reparent tests)
+ *   otherV                 (unrelated root, stays active throughout)
+ *     └── otherChildV
+ *   offV                   (INACTIVE root — a reparent destination)
+ */
+describe('CategoryRepository branch visibility (integration, TASK-1032)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let repo: CategoryRepository;
+
+  const s = randomUUID();
+  let rootV: string;
+  let midV: string;
+  let leafV: string;
+  let sideV: string;
+  let otherV: string;
+  let otherChildV: string;
+  let offV: string;
+  const created: string[] = [];
+
+  /** `ancestorsActive` of each id, as committed. */
+  async function flags(ids: string[]): Promise<Record<string, boolean>> {
+    const rows = await prisma.category.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, ancestorsActive: true },
+    });
+    return Object.fromEntries(rows.map((row) => [row.id, row.ancestorsActive]));
+  }
+
+  beforeAll(async () => {
+    const url = process.env.DATABASE_URL ?? '';
+    if (!/test/i.test(url)) {
+      throw new Error(`Refusing to run integration tests against a non-test database: "${url}"`);
+    }
+
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
+      providers: [PrismaService, CategoryRepository, SlugRedirectRepository],
+    }).compile();
+
+    app = moduleRef.createNestApplication();
+    await app.init();
+
+    prisma = moduleRef.get(PrismaService);
+    repo = moduleRef.get(CategoryRepository);
+
+    const mk = async (name: string, parentId: string | null, isActive = true) => {
+      const cat = await prisma.category.create({
+        data: { name, slug: `${name}-${s}`, parentId, isActive },
+      });
+      created.push(cat.id);
+      return cat.id;
+    };
+
+    rootV = await mk('rootV', null);
+    midV = await mk('midV', rootV);
+    leafV = await mk('leafV', midV);
+    sideV = await mk('sideV', rootV);
+    otherV = await mk('otherV', null);
+    otherChildV = await mk('otherChildV', otherV);
+    offV = await mk('offV', null, false);
+    // Raw `prisma.category.create` bypasses the repository, so settle the flags once.
+    await repo.refreshBranchVisibility();
+  });
+
+  afterAll(async () => {
+    if (!prisma) {
+      return;
+    }
+    // `Category.parent` is a plain FK: detach everything first, so the delete does not
+    // depend on where the tests below left each row.
+    await prisma.category.updateMany({ where: { id: { in: created } }, data: { parentId: null } });
+    await prisma.category.deleteMany({ where: { id: { in: created } } });
+    await app.close();
+  });
+
+  it('starts true under active ancestors — an inactive ROOT keeps its own flag true', async () => {
+    expect(await flags([rootV, midV, leafV, sideV, offV])).toEqual({
+      [rootV]: true,
+      [midV]: true,
+      [leafV]: true,
+      [sideV]: true,
+      // Its own isActive is false, but it has no ancestor: the flag describes the
+      // chain ABOVE a row, never the row itself.
+      [offV]: true,
+    });
+  });
+
+  it('setActiveMany(false) on a root hides its whole subtree at every depth, and only it', async () => {
+    await repo.setActiveMany([rootV], false);
+
+    expect(await flags([rootV, midV, leafV, sideV, otherV, otherChildV])).toEqual({
+      [rootV]: true,
+      [midV]: false,
+      [leafV]: false,
+      [sideV]: false,
+      [otherV]: true,
+      [otherChildV]: true,
+    });
+
+    await repo.setActiveMany([rootV], true);
+    expect(await flags([midV, leafV, sideV])).toEqual({
+      [midV]: true,
+      [leafV]: true,
+      [sideV]: true,
+    });
+  });
+
+  it('a deactivated MIDDLE link hides only what is below it', async () => {
+    await repo.setActiveMany([midV], false);
+    expect(await flags([midV, leafV, sideV])).toEqual({
+      [midV]: true,
+      [leafV]: false,
+      [sideV]: true,
+    });
+
+    await repo.setActiveMany([midV], true);
+    expect((await flags([leafV]))[leafV]).toBe(true);
+  });
+
+  it('the PUT path (update with isActive) cascades too, and reactivation restores', async () => {
+    await repo.update(rootV, { isActive: false });
+    expect(await flags([midV, leafV])).toEqual({ [midV]: false, [leafV]: false });
+
+    await repo.update(rootV, { isActive: true });
+    expect(await flags([midV, leafV])).toEqual({ [midV]: true, [leafV]: true });
+  });
+
+  it('the single deactivate / activate toggles cascade too', async () => {
+    await repo.deactivate(rootV);
+    expect((await flags([leafV]))[leafV]).toBe(false);
+
+    await repo.activate(rootV);
+    expect((await flags([leafV]))[leafV]).toBe(true);
+  });
+
+  it('reparenting under an inactive parent hides the moved branch; moving it out shows it', async () => {
+    await repo.update(midV, { parentId: offV });
+    expect(await flags([midV, leafV])).toEqual({ [midV]: false, [leafV]: false });
+
+    await repo.update(midV, { parentId: rootV });
+    expect(await flags([midV, leafV])).toEqual({ [midV]: true, [leafV]: true });
+  });
+
+  it('a batch reparent (applyTreeMoves) recomputes the moved branch as well', async () => {
+    await repo.applyTreeMoves([{ parentId: offV, orderedIds: [sideV] }]);
+    expect((await flags([sideV]))[sideV]).toBe(false);
+
+    await repo.applyTreeMoves([{ parentId: otherV, orderedIds: [otherChildV, sideV] }]);
+    expect((await flags([sideV]))[sideV]).toBe(true);
+  });
+
+  it('a category created under a hidden branch is born hidden', async () => {
+    const underOff = await repo.create({ name: 'underOff', slug: `underOff-${s}`, parentId: offV });
+    created.push(underOff.id);
+    expect(underOff.ancestorsActive).toBe(false);
+
+    const underRoot = await repo.create({
+      name: 'underRoot',
+      slug: `underRoot-${s}`,
+      parentId: rootV,
+    });
+    created.push(underRoot.id);
+    expect(underRoot.ancestorsActive).toBe(true);
+  });
+
+  it('findBySlug (public) answers null for an active subcategory under an inactive ancestor', async () => {
+    await repo.setActiveMany([rootV], false);
+    try {
+      expect(await repo.findBySlug(`leafV-${s}`)).toBeNull();
+      // The admin read still finds it.
+      expect(await repo.findBySlug(`leafV-${s}`, { activeOnly: false })).not.toBeNull();
+    } finally {
+      await repo.setActiveMany([rootV], true);
+    }
+    expect(await repo.findBySlug(`leafV-${s}`)).not.toBeNull();
+  });
+
+  it('the shipped migration backfill computes the same flags as the repository', async () => {
+    await repo.setActiveMany([midV], false);
+    try {
+      // Corrupt the fixture flags, then run ONLY the migration's backfill statement.
+      await prisma.category.updateMany({
+        where: { id: { in: created } },
+        data: { ancestorsActive: true },
+      });
+      await prisma.category.update({ where: { id: rootV }, data: { ancestorsActive: false } });
+      const backfill = readFileSync(
+        join(
+          __dirname,
+          '..',
+          'prisma',
+          'migrations',
+          '20261029120000_category_ancestors_active',
+          'migration.sql',
+        ),
+        'utf8',
+      )
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('--'))
+        .join('\n')
+        .split(';')
+        .map((statement) => statement.trim())
+        .find((statement) => statement.startsWith('WITH RECURSIVE'));
+      expect(backfill).toBeDefined();
+      await prisma.$executeRawUnsafe(backfill!);
+
+      expect(await flags([rootV, midV, leafV, otherChildV])).toEqual({
+        [rootV]: true,
+        [midV]: true,
+        [leafV]: false,
+        [otherChildV]: true,
+      });
+    } finally {
+      await repo.setActiveMany([midV], true);
+    }
   });
 });

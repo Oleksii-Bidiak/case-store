@@ -28,6 +28,14 @@ import {
   useAdminSeoSettingsControllerUpdate,
   type SeoSettingsEntity,
 } from "@/entities/seo-settings";
+import { useMediaControllerUpload } from "@/entities/media";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
+import {
+  ContentImageField,
+  useImageUploadField,
+} from "@/features/content-image-upload";
+import { MediaPicker } from "@/features/media-picker";
 import {
   seoSettingsSchema,
   seoSettingsFormValuesToDto,
@@ -158,6 +166,22 @@ export function SeoSettingsForm({ settings, logoSlot }: SeoSettingsFormProps) {
   //     while they are blank).
   // TASK-1053: one preview card, the two samples behind a switch.
   const live = useWatch({ control });
+
+  // TASK-2002: the default social-card image takes a file and a library pick
+  // as well as a link, like the product OG. The settings have no image route
+  // of their own (the logo's is a different field), so the file goes into the
+  // media library and the uploader is offered only with `media:write`.
+  const { can } = useAuth();
+  const ogImageUpload = useImageUploadField({
+    upload: useMediaControllerUpload(),
+    copy: dict.seoFields.ogImageUpload,
+    onUploaded: (url) =>
+      setValue("defaultOgImage", url, {
+        shouldDirty: true,
+        shouldValidate: true,
+      }),
+  });
+
   const defaultMetaTitleValue = live.defaultMetaTitle ?? "";
   const defaultMetaDescriptionValue = live.defaultMetaDescription ?? "";
   // TASK-433: the brand half of the `%s | …` template now follows the store name
@@ -458,17 +482,42 @@ export function SeoSettingsForm({ settings, logoSlot }: SeoSettingsFormProps) {
       >
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="seo-og-image">{f.defaultOgImage}</Label>
-            <Input
+            <ContentImageField
               id="seo-og-image"
-              type="url"
-              placeholder={f.defaultOgImagePlaceholder(STOREFRONT_HOST)}
-              aria-invalid={errors.defaultOgImage ? true : undefined}
-              aria-describedby={describedBy(
-                errors.defaultOgImage && "seo-og-image-error",
-                "seo-og-image-hint",
-              )}
-              {...register("defaultOgImage")}
+              label={f.defaultOgImage}
+              urlPlaceholder={f.defaultOgImagePlaceholder(STOREFRONT_HOST)}
+              copy={dict.seoFields.ogImageUpload}
+              value={live.defaultOgImage ?? ""}
+              urlInput={register("defaultOgImage")}
+              // The hint and the `FieldError` below keep their ids, so the
+              // error is rendered there and not passed as `fieldError`.
+              urlInputProps={{
+                type: "url",
+                "aria-invalid": errors.defaultOgImage ? true : undefined,
+                "aria-describedby": describedBy(
+                  errors.defaultOgImage && "seo-og-image-error",
+                  "seo-og-image-hint",
+                ),
+              }}
+              onRemove={() =>
+                setValue("defaultOgImage", "", {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+              canUpload={can(PERM.mediaWrite)}
+              picker={
+                <MediaPicker
+                  ariaLabel={dict.seoFields.ogImagePickerAria}
+                  onPick={(asset) =>
+                    setValue("defaultOgImage", asset.url, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                />
+              }
+              {...ogImageUpload}
             />
             <FieldError id="seo-og-image-error">
               {errorText("defaultOgImage")}

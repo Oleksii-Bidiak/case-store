@@ -18,3 +18,6 @@ export {
   TelegramConnectPanel,
   type TelegramConnectVariant,
 } from "./ui/telegram-connect";
+// The guest's order card — the checkout success panel and the guest order page
+// (TASK-1999).
+export { CheckoutTelegramCard } from "./ui/checkout-telegram-card";

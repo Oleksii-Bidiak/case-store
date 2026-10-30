@@ -24,6 +24,7 @@ import { FormSectionCard } from "@/shared/ui/form-section-card";
 import {
   ContentImageField,
   useImageUploadField,
+  useLibraryFirstUpload,
   useUploadsControllerUploadBannerImage,
 } from "@/features/content-image-upload";
 import { MediaPicker } from "@/features/media-picker";
@@ -200,8 +201,9 @@ export function BannerForm({
   // TASK-424: the artwork field takes a FILE as well as a pasted link. The
   // uploaded URL is written with `setValue`, which also refreshes the live
   // preview above — it reads the same `imageUrlValue` watcher.
+  // TASK-2002: into the media library first, the banner route as fallback.
   const imageUpload = useImageUploadField({
-    upload: useUploadsControllerUploadBannerImage(),
+    upload: useLibraryFirstUpload(useUploadsControllerUploadBannerImage()),
     copy: f.imageUpload,
     onUploaded: (url) =>
       setValue("imageUrl", url, { shouldDirty: true, shouldValidate: true }),

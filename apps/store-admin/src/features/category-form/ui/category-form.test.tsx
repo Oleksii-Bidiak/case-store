@@ -930,3 +930,49 @@ describe("CategoryForm — OG image upload and library pick (TASK-728)", () => {
     expect(ogField()).toHaveValue("");
   });
 });
+
+describe("CategoryForm — uploads land in the media library (TASK-2002)", () => {
+  const ogField = () =>
+    screen.getByLabelText(dict.seoFields.ogImage) as HTMLInputElement;
+  const imageField = () =>
+    screen.getByLabelText(dict.categoryForm.image) as HTMLInputElement;
+  const scopeOf = (field: HTMLInputElement) =>
+    within(field.parentElement as HTMLElement);
+
+  it("media:write — the tile and the OG upload go through POST /admin/media, not the category route", async () => {
+    stubCategories();
+    const library = stubMediaLibrary([]);
+    const categoryRoute: string[] = [];
+    server.use(
+      http.post("*/api/admin/uploads/categories", () => {
+        categoryRoute.push("hit");
+        return HttpResponse.json({ data: { url: "x", blurDataUrl: null } });
+      }),
+    );
+    renderWithProviders(
+      <CategoryForm onSubmit={jest.fn()} isPending={false} />,
+      { auth: { permissions: MEDIA_PERMISSIONS } },
+    );
+
+    await userEvent.upload(
+      scopeOf(imageField()).getByTestId("single-image-upload-input"),
+      new File(["png-bytes"], "tile.png", { type: "image/png" }),
+    );
+    await waitFor(() => expect(library.uploadedNames).toEqual(["tile.png"]));
+    await waitFor(() =>
+      expect(imageField()).toHaveValue(makeMediaAsset("up-1").url),
+    );
+
+    await userEvent.upload(
+      scopeOf(ogField()).getByTestId("single-image-upload-input"),
+      new File(["png-bytes"], "og.png", { type: "image/png" }),
+    );
+    await waitFor(() =>
+      expect(library.uploadedNames).toEqual(["tile.png", "og.png"]),
+    );
+    await waitFor(() =>
+      expect(ogField()).toHaveValue(makeMediaAsset("up-2").url),
+    );
+    expect(categoryRoute).toEqual([]);
+  });
+});

@@ -55,7 +55,7 @@ const mockCartWithItems: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
         images: [],
       },
     },
@@ -75,7 +75,7 @@ const mockCartWithItems: CartWithItems = {
         isActive: true,
         slug: 'test-product',
         categoryId: 'cat-1',
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
         images: [],
       },
     },
@@ -204,7 +204,7 @@ describe('CartRepository', () => {
       name: 'iPhone 15 Pro Case',
       stock: 50,
       isActive: true,
-      category: { isActive: true },
+      category: { isActive: true, ancestorsActive: true },
     };
 
     const makeTx = (
@@ -318,7 +318,7 @@ describe('CartRepository', () => {
       name: 'iPhone 15 Pro Case',
       stock: 50,
       isActive: true,
-      category: { isActive: true },
+      category: { isActive: true, ancestorsActive: true },
     };
 
     const updatedItem = {
@@ -439,7 +439,7 @@ describe('CartRepository', () => {
         name: 'iPhone 15 Pro Case',
         stock: 50,
         isActive: true,
-        category: { isActive: true },
+        category: { isActive: true, ancestorsActive: true },
       };
       prismaMock.product.findUnique.mockResolvedValue(product);
 
@@ -455,7 +455,7 @@ describe('CartRepository', () => {
           name: true,
           stock: true,
           isActive: true,
-          category: { select: { isActive: true } },
+          category: { select: { isActive: true, ancestorsActive: true } },
         },
       });
     });

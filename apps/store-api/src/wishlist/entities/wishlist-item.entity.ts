@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { MAX_QUANTITY } from '../../common/constants';
+import { isCategoryOnSale } from '../../product';
 
 /**
  * Domain entity representing a single saved product in a wishlist.
@@ -96,7 +97,7 @@ export class WishlistItemEntity {
       compareAtPrice: { toString(): string } | null;
       stock: number;
       isActive: boolean;
-      category: { isActive: boolean };
+      category: { isActive: boolean; ancestorsActive: boolean };
       images: Array<{ url: string }>;
     };
   }): WishlistItemEntity {
@@ -112,10 +113,11 @@ export class WishlistItemEntity {
       : null;
     // Public cap, never the raw stock: the client only needs min(cap, stock).
     entity.maxQty = Math.min(MAX_QUANTITY, item.product.stock);
-    // Withdrawing the CATEGORY withdraws the saved product (TASK-297) — folded
-    // into the existing flag exactly as the cart line does, so no second
-    // "unavailable" mechanism exists and every reader handles it for free.
-    entity.isActive = item.product.isActive && item.product.category.isActive;
+    // Withdrawing the CATEGORY — or any of its ancestors (TASK-1032) — withdraws
+    // the saved product (TASK-297), folded into the existing flag exactly as the
+    // cart line does, so no second "unavailable" mechanism exists and every reader
+    // handles it for free.
+    entity.isActive = item.product.isActive && isCategoryOnSale(item.product.category);
     entity.createdAt = item.createdAt;
     return entity;
   }

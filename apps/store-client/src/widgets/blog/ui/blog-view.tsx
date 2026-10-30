@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Newspaper, SearchX } from "lucide-react";
 import { dict, H1_CLASS } from "@/shared/config";
 import { Pagination } from "@/shared/ui/pagination";
+import { resolveSiteName } from "@/shared/lib/seo";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import type { BlogPostView } from "../model/posts";
 import { BlogArrowDownIcon, BlogSearchIcon } from "./blog-icons";
@@ -37,7 +38,8 @@ interface BlogViewProps {
   totalPages: number;
   /**
    * The shop name from «SEO-налаштування» (TASK-873) — the badge reads
-   * «Журнал <назва>»; without it, the neutral «Журнал».
+   * «Журнал <назва>»; without it, the neutral «Журнал». The hero and the
+   * newsletter subtitles name it too (TASK-1677), falling back to the default.
    */
   siteName?: string;
   /** «Контакти магазину» — the newsletter block's social channels (TASK-873). */
@@ -86,6 +88,9 @@ export function BlogView({
   contact,
 }: BlogViewProps) {
   const router = useRouter();
+  // The badge keeps its neutral «Журнал» without a name; the subtitles name
+  // the store either way, so they fall back to the default name (TASK-1677).
+  const storeName = siteName ?? resolveSiteName();
 
   // Search text mirrors the URL `query`. Seeded once, then re-synced only when
   // the URL changes to a value we did not just push (forms.md async-seed guard).
@@ -157,7 +162,7 @@ export function BlogView({
             {dict.blog.heading}
           </h1>
           <p className="text-base leading-[1.55] text-muted-foreground">
-            {dict.blog.subtitle}
+            {dict.blog.subtitle(storeName)}
           </p>
         </div>
         <div className="w-80 max-w-full">
@@ -243,7 +248,7 @@ export function BlogView({
       )}
 
       {/* Newsletter / social channels */}
-      <BlogNewsletter contact={contact} />
+      <BlogNewsletter contact={contact} siteName={storeName} />
     </>
   );
 }

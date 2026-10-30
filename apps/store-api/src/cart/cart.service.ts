@@ -1,11 +1,18 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
-import { CartRepository, AddToCartInput, CartWithItems, MergeCartLine } from './cart.repository';
+import {
+  CartRepository,
+  AddToCartInput,
+  CartWithItems,
+  MergeCartLine,
+  type PurchasableProduct,
+} from './cart.repository';
 import { CartEntity } from './entities';
 import { AddToCartDto, UpdateCartItemDto } from './dto';
 import type { ResolvedCartIdentity } from './cart-identity.types';
 import { MAX_QUANTITY } from './cart.constants';
 import { AddonApplicabilityResolver } from '../addon-service';
 import type { ResolvedAddon } from '../addon-service';
+import { isCategoryOnSale } from '../product';
 
 /**
  * CartService — business logic for the shopping cart.
@@ -384,15 +391,13 @@ export class CartService {
    *
    * @throws BadRequestException if any rule fails
    */
-  private assertLinePurchasable(
-    product: { name: string; stock: number; isActive: boolean; category: { isActive: boolean } },
-    resultingQuantity: number,
-  ): void {
-    // Deactivating a category WITHDRAWS its products from sale (TASK-297), so it
-    // blocks an add exactly as a deactivated position does — and reports the same
-    // message, because the distinction ("we pulled the whole category" vs "we
-    // pulled this item") is internal and of no use to the shopper.
-    if (!product.isActive || !product.category.isActive) {
+  private assertLinePurchasable(product: PurchasableProduct, resultingQuantity: number): void {
+    // Deactivating a category WITHDRAWS its products from sale (TASK-297) — and so
+    // does deactivating any of its ancestors (TASK-1032) — so it blocks an add
+    // exactly as a deactivated position does, and reports the same message, because
+    // the distinction ("we pulled the whole category" vs "we pulled this item") is
+    // internal and of no use to the shopper.
+    if (!product.isActive || !isCategoryOnSale(product.category)) {
       throw new BadRequestException(`Product "${product.name}" is no longer available`);
     }
 

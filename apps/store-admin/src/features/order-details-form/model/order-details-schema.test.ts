@@ -3,6 +3,7 @@ import {
   isValidWaybill,
   isWaybillRejection,
   mapOrderToDetailsValues,
+  npTrackingUrl,
   orderDetailsValuesToDto,
   type OrderDetailsFormValues,
 } from "./order-details-schema";
@@ -35,6 +36,27 @@ describe("isValidWaybill (TASK-426)", () => {
   ])("refuses %s (%s)", (raw) => {
     expect(isValidWaybill(raw)).toBe(false);
   });
+});
+
+describe("npTrackingUrl (TASK-1987)", () => {
+  it("puts the waybill in the path, the only form NP's page still fills in", () => {
+    expect(npTrackingUrl(WAYBILL)).toBe(
+      "https://novaposhta.ua/tracking/20450000000001",
+    );
+  });
+
+  it("keeps digits only — the spaces an operator pastes are not part of it", () => {
+    expect(npTrackingUrl(" 2045 0000 0000 01 ")).toBe(
+      "https://novaposhta.ua/tracking/20450000000001",
+    );
+  });
+
+  it.each([[LEGACY], ["--------------"], [""]])(
+    "gives no link for %p, which holds no digits at all",
+    (raw) => {
+      expect(npTrackingUrl(raw)).toBeNull();
+    },
+  );
 });
 
 describe("createOrderDetailsSchema — the waybill rule", () => {

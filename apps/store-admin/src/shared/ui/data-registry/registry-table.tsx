@@ -164,6 +164,12 @@ export interface RegistryTableProps<T> {
   renderExpanded?: (row: T) => React.ReactNode;
   /** Accessible name of a row's expand toggle. */
   expandLabel?: (row: T) => string;
+  /**
+   * From md up, take the page height that is left instead of a viewport-high
+   * box (TASK-1994) — see «Layout» below. `DataRegistry` sets it; a table
+   * that shares its page with other content leaves it off.
+   */
+  fill?: boolean;
   className?: string;
 }
 
@@ -179,9 +185,18 @@ const cellPadding: Record<RegistryDensity, string> = {
  * `table-fixed` with an explicit width per column: the widths the operator
  * drags are then exactly the widths painted (an auto layout widens a column to
  * its longest cell and ignores the handle). The table is at least as wide as
- * its box and scrolls sideways past it. The header is sticky inside a box
- * capped at the viewport height — sticky needs the scroll container to be the
- * box, since a sideways-scrolling box is a scroll container anyway.
+ * its box and scrolls sideways past it. The header sticks to the box, not to
+ * the page: a sideways-scrolling box is a scroll container in both axes, so
+ * it is the only thing sticky can stick to. That only holds if the box is the
+ * page's ONE vertical scroller — a viewport-high box inside a scrolling
+ * <main> (the pre-TASK-1994 layout) let the page scroll the header away. So
+ * with `fill`, from md up, the box takes exactly the height left on the page:
+ * it is `data-registry-fill`, the shell turns <main> and every wrapper down to
+ * it into a shrinkable flex column, and the box (min-h-0 in effect, as a
+ * scroll container) absorbs the overflow. A short table stays short — the box
+ * is not stretched — and `min-h-48` is the floor below which <main> scrolls
+ * instead. Below md (cards, or a phone-sized table) and without `fill`, the
+ * box keeps its viewport cap.
  *
  * ── The row opens the record ────────────────────────────────────────────────
  * The `rowLink` column carries a real `<a>` (keyboard, middle-click, «open in
@@ -224,6 +239,7 @@ export function RegistryTable<T>({
   groupBy,
   renderExpanded,
   expandLabel,
+  fill = false,
   className,
 }: RegistryTableProps<T>) {
   const router = useRouter();
@@ -554,8 +570,10 @@ export function RegistryTable<T>({
     <div
       data-slot="registry-table"
       aria-busy={isRefetching || undefined}
+      data-registry-fill={fill ? "" : undefined}
       className={cn(
-        "relative max-h-svh overflow-auto rounded-lg border shadow-card",
+        "relative overflow-auto rounded-lg border shadow-card",
+        fill ? "max-md:max-h-svh md:min-h-48" : "max-h-svh",
         className,
       )}
     >

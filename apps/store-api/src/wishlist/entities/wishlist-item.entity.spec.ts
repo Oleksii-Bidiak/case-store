@@ -11,7 +11,7 @@ function buildPrismaWishlistItem(
     images: Array<{ url: string }>;
     stock: number;
     isActive: boolean;
-    category: { isActive: boolean };
+    category: { isActive: boolean; ancestorsActive: boolean };
   }> = {},
 ) {
   return {
@@ -26,7 +26,7 @@ function buildPrismaWishlistItem(
       compareAtPrice: { toString: () => '39.99' },
       stock: 50,
       isActive: true,
-      category: { isActive: true },
+      category: { isActive: true, ancestorsActive: true },
       images: [{ url: 'https://cdn.example.com/primary.jpg' }],
       ...productOverrides,
     },
@@ -97,7 +97,22 @@ describe('WishlistItemEntity.fromPrisma', () => {
 
   it('isActive is false when the category was withdrawn from sale (product still active)', () => {
     const entity = WishlistItemEntity.fromPrisma(
-      buildPrismaWishlistItem({ isActive: true, category: { isActive: false } }),
+      buildPrismaWishlistItem({
+        isActive: true,
+        category: { isActive: false, ancestorsActive: true },
+      }),
+    );
+
+    expect(entity.isActive).toBe(false);
+  });
+
+  // TASK-1032: the cascade — an active subcategory under a deactivated parent.
+  it('isActive is false when an ANCESTOR of the category was withdrawn (category still active)', () => {
+    const entity = WishlistItemEntity.fromPrisma(
+      buildPrismaWishlistItem({
+        isActive: true,
+        category: { isActive: true, ancestorsActive: false },
+      }),
     );
 
     expect(entity.isActive).toBe(false);

@@ -1,14 +1,23 @@
 "use client";
 
 /**
- * Static-page reorder (TASK-428) — ONE global bucket (the `/legal` hub renders the pages
- * in one sequence), so the payload is a bare `{ orderedIds }` naming every page.
+ * Static-page reorder (TASK-428) — ONE global bucket on the wire, so the payload is a
+ * bare `{ orderedIds }` naming every page.
  *
  * The payload must name EVERY page or the server 409s it as a lost update, so the items
  * handed in must come from the UNFILTERED, UNPAGINATED admin list. `widgets/page-list`
  * therefore stopped paging: before TASK-428 the admin endpoint could not even RETURN the
  * complete list (its query DTO inherited `page = 1` / `limit = 20` initializers), so a
  * drag on page 1 of a long list would have sent a 20-id payload describing a list of 42.
+ *
+ * TASK-1990 — the order that MEANS something is per hub: `/legal` renders only the
+ * legal pages, `/info` only the info ones, so a drag across kinds in «Усі» changed
+ * nothing an operator could see. `scope` names the slice (a kind view's ids): the
+ * lifecycle then runs over that slice alone — positions, announcements and the undo
+ * toast count within it — and `toPayload` writes the reordered slice back into the
+ * slots its rows held in the global order (`mergeSliceOrder`), so the wire payload
+ * still names every page and the API is unchanged. The undo stays exact:
+ * `toPayload(next, prev)` merges into the SAME full order the move did.
  *
  * The generated hooks come from `@/shared/api` for the reason spelled out in
  * `use-faq-reorder.ts` — TASK-428 does not own the entity barrels.
@@ -27,6 +36,7 @@ import {
 import {
   flatReorderStrings,
   isFlatReorderConflict,
+  mergeSliceOrder,
   orderedIdsIfChanged,
   type ReorderLifecycleApi,
 } from "@/shared/lib/list-reorder";
@@ -52,23 +62,39 @@ export function pagesToItems(pages: PageEntity[]): TreeItem[] {
 export interface UsePageReorderOptions {
   /** The COMPLETE page list (a filtered or paged one would 409). */
   items: TreeItem[];
+  /**
+   * TASK-1990 — reorder only these rows (a kind view's ids). The returned
+   * `items` are that slice; every payload still names every page. Omitted ⇒
+   * the whole list is the slice.
+   */
+  scope?: ReadonlySet<string>;
   onFocusRow?: (id: string) => void;
 }
 
 export function usePageReorder({
   items,
+  scope,
   onFocusRow,
 }: UsePageReorderOptions): ReorderLifecycleApi {
   const queryClient = useQueryClient();
   const reorder = useAdminPageControllerReorder();
   const { mutate: rawMutate } = reorder;
 
+  const slice = useMemo(
+    () => (scope ? items.filter((item) => scope.has(item.id)) : items),
+    [items, scope],
+  );
+
   const toPayload = useCallback(
     (from: TreeItem[], to: TreeItem[]): ReorderPagesDto | null => {
-      const orderedIds = orderedIdsIfChanged(from, to);
+      if (orderedIdsIfChanged(from, to) === null) return null;
+      const orderedIds = mergeSliceOrder(
+        items.map((item) => item.id),
+        to.map((item) => item.id),
+      );
       return orderedIds === null ? null : { orderedIds };
     },
-    [],
+    [items],
   );
 
   const mutate = useCallback(
@@ -90,17 +116,19 @@ export function usePageReorder({
     () =>
       queryClient
         .fetchQuery(getAdminPageControllerFindAllQueryOptions())
-        .then((fresh: AdminPageListResponse) =>
-          pagesToItems(fresh?.data ?? []),
-        ),
-    [queryClient],
+        .then((fresh: AdminPageListResponse) => {
+          const all = pagesToItems(fresh?.data ?? []);
+          // The conflict recovery speaks positions within the slice on screen.
+          return scope ? all.filter((item) => scope.has(item.id)) : all;
+        }),
+    [queryClient, scope],
   );
 
   const strings = useMemo(() => flatReorderStrings, []);
 
   return useUndoToastReorder<ReorderPagesDto, AdminPageListResponse>({
     resource: "pages",
-    items,
+    items: slice,
     toPayload,
     mutate,
     isPending: reorder.isPending,

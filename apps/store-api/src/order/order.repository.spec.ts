@@ -122,7 +122,7 @@ const firstItem: CartWithItems['items'][number] = {
     stock: 50,
     isActive: true,
     categoryId: 'category-uuid-1',
-    category: { isActive: true },
+    category: { isActive: true, ancestorsActive: true },
     images: [],
   },
 };
@@ -143,7 +143,7 @@ const secondItem: CartWithItems['items'][number] = {
     stock: 30,
     isActive: true,
     categoryId: 'category-uuid-1',
-    category: { isActive: true },
+    category: { isActive: true, ancestorsActive: true },
     images: [],
   },
 };

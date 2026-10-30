@@ -228,10 +228,13 @@ export function DataRegistry<T>({
     return params.toString();
   };
 
+  // TASK-1994: `md:min-h-0` here and on the panel lets both shrink to the
+  // page, so the table box (`fill`) takes the height left and is the page's
+  // one vertical scroller — see RegistryTable «Layout».
   return (
     <div
       data-slot="data-registry"
-      className={cn("flex flex-col gap-4", className)}
+      className={cn("flex flex-col gap-4 md:min-h-0", className)}
     >
       {showHeader ? (
         <RegistryHeader
@@ -253,7 +256,7 @@ export function DataRegistry<T>({
         role={quickViews ? "tabpanel" : undefined}
         aria-labelledby={activeViewTab}
         aria-label={quickViews && !activeViewTab ? title : undefined}
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-4 md:min-h-0"
       >
         <div className="flex flex-col gap-3">
           <RegistryToolbar
@@ -341,6 +344,7 @@ export function DataRegistry<T>({
           groupBy={groupBy}
           renderExpanded={renderExpanded}
           expandLabel={expandLabel}
+          fill
           isLoading={isLoading}
           isError={isError}
           errorMessage={errorMessage}

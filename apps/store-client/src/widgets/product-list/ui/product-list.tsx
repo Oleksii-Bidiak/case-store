@@ -71,6 +71,17 @@ export function ProductList({
   const key = accumulationKey(params);
   const basePage = params.page ?? 1;
 
+  // The results veil is for a fetch the SHOPPER started — new filters, sort or
+  // page over cached results it is about to replace. A background refetch of
+  // the params already on screen (refetchOnWindowFocus after Alt+Tab) brings the
+  // same cards back, and veiling them made every image blink (TASK-1995). The
+  // key of the last settled result set is held with a render-time guard
+  // (docs/conventions/forms.md Rule 1a); it starts at the mounted params, so a
+  // remount painting from cache revalidates unveiled too (TASK-409).
+  const [settledKey, setSettledKey] = useState(key);
+  if (!isFetching && settledKey !== key) setSettledKey(key);
+  const isRefetchingForNewParams = isFetching && settledKey !== key;
+
   // Appended-pages count, valid only for the result set it was created for
   // (render-time reset guard — docs/conventions/forms.md Rule 1a).
   const [accum, setAccum] = useState({ key, extra: 0 });
@@ -159,9 +170,10 @@ export function ProductList({
       </p>
 
       <div className="relative">
-        {isFetching && (
+        {isRefetchingForNewParams && (
           <div
             aria-hidden="true"
+            data-testid="results-refetch-overlay"
             className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/60"
           >
             <Loader2 className="size-8 animate-spin text-primary" />

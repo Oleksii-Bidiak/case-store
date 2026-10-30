@@ -1,4 +1,5 @@
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
+import { QueryClient } from "@tanstack/react-query";
 import {
   renderWithProviders,
   screen,
@@ -233,6 +234,88 @@ describe("SearchResultsView", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       dict.search.error,
     );
+  });
+
+  // ── TASK-1995: no veil over a background refetch ───────────────────────────
+  // After Alt+Tab the stale results refetch on window focus with the SAME URL;
+  // the veil over the grid made every card image blink though the data came
+  // back identical. Only a change the shopper made (filters, sort, page) may
+  // veil the results it is about to replace.
+  describe("refetch overlay (TASK-1995)", () => {
+    /** Cache kept across a URL switch, as the app's own client keeps it. */
+    function makeCachingClient() {
+      return new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 60_000 } },
+      });
+    }
+
+    function installSlowSearch() {
+      server.use(
+        http.get("*/api/search", async ({ request }) => {
+          await delay(150);
+          const inStock = new URL(request.url).searchParams.get("inStock");
+          return HttpResponse.json(
+            resultsEnvelope([
+              inStock === "true"
+                ? makeProduct({ id: "p-2", name: "Stocked Case" })
+                : makeProduct(),
+            ]),
+          );
+        }),
+      );
+    }
+
+    const overlay = () => screen.queryByTestId("results-refetch-overlay");
+
+    it("does not veil the grid during a background refetch with an unchanged URL", async () => {
+      currentQuery = "q=case";
+      installSlowSearch();
+      const queryClient = makeCachingClient();
+
+      renderWithProviders(<SearchResultsView query="case" page={1} />, {
+        queryClient,
+      });
+      await screen.findByText("iPhone 15 Case");
+
+      // What refetchOnWindowFocus does to stale data.
+      void queryClient.refetchQueries({ queryKey: ["/api/search"] });
+      await waitFor(() =>
+        expect(
+          queryClient.isFetching({ queryKey: ["/api/search"] }),
+        ).toBeGreaterThan(0),
+      );
+
+      expect(overlay()).not.toBeInTheDocument();
+      expect(screen.getByText("iPhone 15 Case")).toBeInTheDocument();
+      await waitFor(() =>
+        expect(queryClient.isFetching({ queryKey: ["/api/search"] })).toBe(0),
+      );
+      expect(overlay()).not.toBeInTheDocument();
+    });
+
+    it("still veils the grid while a filter change refetches cached results", async () => {
+      currentQuery = "q=case";
+      installSlowSearch();
+      const queryClient = makeCachingClient();
+
+      const { rerender } = renderWithProviders(
+        <SearchResultsView query="case" page={1} />,
+        { queryClient },
+      );
+      await screen.findByText("iPhone 15 Case");
+      currentQuery = "q=case&inStock=true";
+      rerender(<SearchResultsView query="case" page={1} />);
+      await screen.findByText("Stocked Case");
+
+      // Filter dropped again: the (stale) cache paints at once and revalidates.
+      currentQuery = "q=case";
+      rerender(<SearchResultsView query="case" page={1} />);
+      expect(screen.getByText("iPhone 15 Case")).toBeInTheDocument();
+      expect(overlay()).toBeInTheDocument();
+
+      await waitFor(() => expect(overlay()).not.toBeInTheDocument());
+      expect(screen.getByText("iPhone 15 Case")).toBeInTheDocument();
+    });
   });
 
   // ── TASK-415: the 1 / 2 / 4 card ladder ────────────────────────────────────

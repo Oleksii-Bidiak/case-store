@@ -204,6 +204,36 @@ describe("flat-list reorder — the «Скасувати» toast (wave 198, TASK
     expect(undoToast).toHaveBeenCalledTimes(1);
   });
 
+  // TASK-1990 — a kind view reorders ONE slice of the single global order: the
+  // move, the toast and both undos all speak the slice, while every payload
+  // still names every page with the rest kept in place.
+  it("pages scoped to a slice: the move merges into the global order, and the toast's undo restores it exactly", async () => {
+    mockReorder("pages");
+    const SLICE: ReadonlySet<string> = new Set([A, C]);
+    const useScoped: UseAdapter = ({ items }) =>
+      usePageReorder({ items, scope: SLICE });
+    renderHarness(useScoped);
+
+    expect(screen.getByTestId("order")).toHaveTextContent("Гарантія,Оплата");
+    await moveFirstDown();
+    await waitFor(() => expect(undoToast).toHaveBeenCalledTimes(1));
+    // The slice [A, C] became [C, A]; B keeps its slot between them.
+    expect(bodies[0]).toEqual({ orderedIds: [C, B, A] });
+    const [message, options] = undoToast.mock.calls[0] as [
+      string,
+      { onUndo: () => void },
+    ];
+    // The place is counted within the slice the operator sees.
+    expect(message).toBe("«Гарантія» переміщено на друге місце.");
+
+    await waitFor(() =>
+      expect(persistentUndo()).toHaveAttribute("aria-disabled", "false"),
+    );
+    act(() => options.onUndo());
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({ orderedIds: [A, B, C] });
+  });
+
   it("only ONE undo toast is live: a newer move dismisses the older toast first", async () => {
     mockReorder("pages");
     renderHarness(usePageReorder);

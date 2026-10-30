@@ -32,12 +32,15 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
 }
 
 // `deletedAt` is part of the public visibility rule since the category tombstone
-// (TASK-653): the fake evaluates `category: { isActive, deletedAt: null }` literally.
+// (TASK-653), and so is the stored branch flag `ancestorsActive` since the
+// category cascade (TASK-1032): the fake evaluates
+// `category: { isActive, ancestorsActive, deletedAt: null }` literally.
 const CATEGORY = {
   id: 'cat-cases',
   name: 'Чохли',
   slug: 'chokhly',
   isActive: true,
+  ancestorsActive: true,
   deletedAt: null,
 };
 
@@ -106,7 +109,7 @@ const SOLD_OUT = ['sold-out-a', 'sold-out-b'];
 
 function matchesCondition(key: string, value: unknown, cond: unknown): boolean {
   if (cond === null || typeof cond !== 'object' || cond instanceof Date) {
-    if (!['isActive', 'deletedAt', 'categoryId'].includes(key)) {
+    if (!['isActive', 'ancestorsActive', 'deletedAt', 'categoryId'].includes(key)) {
       throw new Error(`fake prisma: unsupported key "${key}"`);
     }
     return value === cond;

@@ -7,7 +7,11 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
-import { toDeliveryPayload, useCheckout } from "./use-checkout";
+import {
+  GUEST_ORDER_PLACED_PARAM,
+  toDeliveryPayload,
+  useCheckout,
+} from "./use-checkout";
 import { toDeliveryOptions } from "./delivery";
 import { makeDeliveryMethods } from "@/shared/test/msw-handlers";
 import type { CheckoutFormValues } from "./checkout-schema";
@@ -15,8 +19,9 @@ import type { CheckoutFormValues } from "./checkout-schema";
 // next/navigation is unavailable under jsdom — mock the router. Names are
 // `mock`-prefixed so jest allows them inside the hoisted factory.
 const mockPush = jest.fn();
+const mockReplace = jest.fn();
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
 }));
 
 const authed = {
@@ -280,33 +285,38 @@ describe("useCheckout — the payment method travels on the create call (TASK-65
   );
 });
 
-describe("useCheckout — the guest's order token (TASK-679)", () => {
-  function GuestHarness() {
-    const { submitOrder, placedOrder, guestAccessToken } = useCheckout({
-      isGuest: true,
-    });
+describe("useCheckout — the guest's order token (TASK-679, TASK-1999)", () => {
+  function GuestHarness({ values = VALUES }: { values?: CheckoutFormValues }) {
+    const { submitOrder, placedOrder, guestAccessToken, isOrderSubmitted } =
+      useCheckout({ isGuest: true });
     return (
       <div>
         <button
           type="button"
           onClick={() =>
-            void submitOrder({ ...VALUES, email: "guest@example.com" })
+            void submitOrder({ ...values, email: "guest@example.com" })
           }
         >
           submit
         </button>
         {placedOrder && <p data-testid="placed">{placedOrder.id}</p>}
         <p data-testid="token">{guestAccessToken ?? "none"}</p>
+        <p data-testid="submitted">{String(isOrderSubmitted)}</p>
       </div>
     );
   }
+
+  beforeEach(() => {
+    mockPush.mockClear();
+    mockReplace.mockClear();
+  });
 
   afterEach(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
   });
 
-  it("keeps the token the create call returns — in memory, nowhere else", async () => {
+  it("replaces the checkout with the guest's full order page — and stores the token nowhere", async () => {
     const token = "a".repeat(64);
     server.use(
       http.post("*/api/orders", () =>
@@ -321,8 +331,18 @@ describe("useCheckout — the guest's order token (TASK-679)", () => {
 
     await user.click(screen.getByRole("button", { name: "submit" }));
 
-    expect(await screen.findByTestId("placed")).toHaveTextContent("order-9");
-    expect(screen.getByTestId("token")).toHaveTextContent(token);
+    // `replace`, not `push`: «Назад» from the order page must not land on a
+    // checkout whose cart the order has just emptied.
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        `/orders/guest/${token}?${GUEST_ORDER_PLACED_PARAM}=1`,
+      ),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+    // The empty-cart guard already sees the order as submitted (TASK-119),
+    // and no in-place panel is drawn under the navigation.
+    expect(screen.getByTestId("submitted")).toHaveTextContent("true");
+    expect(screen.queryByTestId("placed")).toBeNull();
     const stored = [
       ...Object.values({ ...window.localStorage }),
       ...Object.values({ ...window.sessionStorage }),
@@ -330,7 +350,7 @@ describe("useCheckout — the guest's order token (TASK-679)", () => {
     expect(stored).not.toContain(token);
   });
 
-  it("has no token when the create response carries none", async () => {
+  it("keeps the in-place panel when the create response carries no token", async () => {
     const user = userEvent.setup();
     renderWithProviders(<GuestHarness />);
 
@@ -338,5 +358,31 @@ describe("useCheckout — the guest's order token (TASK-679)", () => {
 
     expect(await screen.findByTestId("placed")).toBeInTheDocument();
     expect(screen.getByTestId("token")).toHaveTextContent("none");
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("keeps the in-place panel when the payment handoff failed, so its alert is not lost", async () => {
+    const token = "b".repeat(64);
+    server.use(
+      http.post("*/api/orders", () =>
+        HttpResponse.json(
+          { data: { id: "order-9", guestAccessToken: token } },
+          { status: 201 },
+        ),
+      ),
+      http.post("*/api/payments/orders/:orderId/checkout", () =>
+        HttpResponse.json({ message: "unavailable" }, { status: 503 }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(
+      <GuestHarness values={{ ...VALUES, paymentMethod: "ONLINE" }} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "submit" }));
+
+    expect(await screen.findByTestId("placed")).toHaveTextContent("order-9");
+    expect(screen.getByTestId("token")).toHaveTextContent(token);
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 });

@@ -153,7 +153,9 @@ describe('Customer Telegram notifications (e2e)', () => {
           stock: 50,
           isActive: true,
           categoryId: 'cat-notify-1',
-          category: { isActive: true },
+          // The shape the cart repository selects: the category's own flag and
+          // its stored branch flag (TASK-1032) — both must be on to sell it.
+          category: { isActive: true, ancestorsActive: true },
           images: [],
         },
       },

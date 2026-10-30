@@ -3,6 +3,8 @@ import { LegalHubView, type LegalHubDoc } from "@/widgets/legal-doc";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { fetchPublishedPages } from "@/shared/api/pages-server";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { resolveSiteName } from "@/shared/lib/seo";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { PAGE_CONTAINER, SITE_URL, dict } from "@/shared/config";
 
@@ -29,7 +31,9 @@ async function getDocs(): Promise<LegalHubDoc[]> {
 }
 
 export default async function LegalHubPage() {
-  const docs = await getDocs();
+  // TASK-1639 — the hero subtitle names the admin-managed store: the same
+  // tagged settings read the metadata makes (null → the default name).
+  const [docs, seo] = await Promise.all([getDocs(), fetchSeoSettings()]);
 
   return (
     <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
@@ -40,7 +44,7 @@ export default async function LegalHubPage() {
         ])}
       />
       <div className="mx-auto max-w-5xl">
-        <LegalHubView docs={docs} />
+        <LegalHubView docs={docs} siteName={resolveSiteName(seo)} />
       </div>
     </div>
   );

@@ -19,8 +19,17 @@ const docs: LegalHubDoc[] = [
 ];
 
 describe("LegalHubView", () => {
+  it("names the admin-managed store in the hero subtitle (TASK-1639)", () => {
+    renderWithProviders(<LegalHubView docs={docs} siteName="Аксесуарня" />);
+
+    expect(
+      screen.getByText(dict.legal.hub.subtitle("Аксесуарня")),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/CaseStore/)).not.toBeInTheDocument();
+  });
+
   it("renders the hero and a tile per document, linking to /legal/[slug]", () => {
-    renderWithProviders(<LegalHubView docs={docs} />);
+    renderWithProviders(<LegalHubView docs={docs} siteName="CaseStore" />);
 
     expect(screen.getByText(dict.legal.hub.badge)).toBeInTheDocument();
     expect(
@@ -38,7 +47,7 @@ describe("LegalHubView", () => {
   });
 
   it("renders the support CTA linking to the /contact form (TASK-866)", () => {
-    renderWithProviders(<LegalHubView docs={docs} />);
+    renderWithProviders(<LegalHubView docs={docs} siteName="CaseStore" />);
 
     expect(screen.getByText(dict.legal.hub.supportHeading)).toBeInTheDocument();
     // /contact is the single contact form (owner decision 7.8) — not the
@@ -49,7 +58,9 @@ describe("LegalHubView", () => {
   });
 
   it("keeps the support CTA the hub's one primary, with a focus ring (TASK-865)", () => {
-    const { container } = renderWithProviders(<LegalHubView docs={docs} />);
+    const { container } = renderWithProviders(
+      <LegalHubView docs={docs} siteName="CaseStore" />,
+    );
 
     const filled = container.querySelectorAll(".bg-primary");
     expect(filled).toHaveLength(1);
@@ -60,7 +71,9 @@ describe("LegalHubView", () => {
   });
 
   it("shows the §6 empty state with the support action as its one primary (TASK-870)", () => {
-    const { container } = renderWithProviders(<LegalHubView docs={[]} />);
+    const { container } = renderWithProviders(
+      <LegalHubView docs={[]} siteName="CaseStore" />,
+    );
 
     expect(screen.getByText(dict.legal.hub.empty)).toBeInTheDocument();
     expect(screen.getByText(dict.legal.hub.emptyBody)).toBeInTheDocument();

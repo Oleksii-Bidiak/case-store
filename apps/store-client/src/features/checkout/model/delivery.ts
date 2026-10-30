@@ -92,6 +92,22 @@ export function resolveDeliveryMethod(
 }
 
 /**
+ * The method the shop has just taken away from the shopper (TASK-1998): the
+ * selection the previous offer still had and the current one dropped — the
+ * owner switched it off mid-checkout. `null` on the first offer (nothing to
+ * compare with) and for a selection the shop never offered: the static default,
+ * or the profile prefill's `reset()` back to it, was nobody's choice.
+ */
+export function lostDeliveryMethod(
+  selected: CheckoutDeliveryMethod | undefined,
+  previous: readonly CheckoutDeliveryMethod[] | null,
+  current: readonly CheckoutDeliveryMethod[],
+): CheckoutDeliveryMethod | null {
+  if (!selected || !previous?.includes(selected)) return null;
+  return current.includes(selected) ? null : selected;
+}
+
+/**
  * The method the SERVER will book (TASK-1097). The Nova Poshta manual path —
  * the city lookup failed and the shopper typed the address by hand — is sent
  * without `deliveryMethod` and without `npCityRef`, and the server infers
