@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { ReturnDecision, ReturnStatus } from '@prisma/client';
+import { ReturnChannel, ReturnDecision, ReturnOutcome, ReturnStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma';
 import { CacheService } from '../../cache';
 import { ProductIndexer } from '../../search/product-indexer';
@@ -287,6 +287,7 @@ describe('ReturnRepository.create — the quantity cap is checked under a lock (
   const params = {
     orderId: ORDER_ID,
     createdByUserId: 'user-uuid-1',
+    channel: ReturnChannel.ACCOUNT,
     items: [{ orderItemId: 'order-item-1', quantity: 1 }],
   };
   const ledger = [{ status: ReturnStatus.REQUESTED, items: [{ orderItemId: 'x', quantity: 1 }] }];
@@ -746,5 +747,189 @@ describe('ReturnRepository.decide — one transaction per decision (TASK-1961, T
       error: 'RETURN_TRANSITION_INVALID',
     });
     expect(txMock.returnDecisionEvent.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReturnRepository — what each read loads (TASK-1963, TASK-2044, TASK-2045)', () => {
+  const ACTOR_SELECT = { id: true, email: true, firstName: true, lastName: true };
+  const HISTORY_ORDER = [{ createdAt: 'asc' }, { id: 'asc' }];
+
+  const readMock = {
+    return: {
+      count: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+    $queryRaw: jest.fn(),
+    $transaction: jest.fn((arg: unknown): Promise<unknown> =>
+      typeof arg === 'function'
+        ? (arg as (tx: unknown) => Promise<unknown>)(readMock)
+        : Promise.all(arg as Promise<unknown>[]),
+    ),
+  };
+
+  let repository: ReturnRepository;
+
+  type Include = Record<string, unknown>;
+  const includeOf = (mock: jest.Mock): Include =>
+    (mock.mock.calls.at(-1)?.[0] as { include: Include }).include;
+
+  function expectCustomerInclude(include: Include): void {
+    expect(include.repairEvents).toEqual({
+      orderBy: HISTORY_ORDER,
+      select: { id: true, step: true, result: true, destination: true, ttn: true, createdAt: true },
+    });
+    expect(include).not.toHaveProperty('createdBy');
+    expect(include).not.toHaveProperty('decidedBy');
+    expect(include).not.toHaveProperty('decisionEvents');
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    readMock.return.count.mockResolvedValue(0);
+    readMock.return.findMany.mockResolvedValue([]);
+    readMock.return.findUnique.mockResolvedValue(null);
+    readMock.return.create.mockResolvedValue({ id: 'return-1', items: [] });
+    readMock.$queryRaw.mockResolvedValue([]);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReturnRepository,
+        { provide: PrismaService, useValue: readMock },
+        { provide: CacheService, useValue: cacheMock },
+        { provide: ProductIndexer, useValue: productIndexerMock },
+      ],
+    }).compile();
+
+    repository = module.get(ReturnRepository);
+  });
+
+  describe('one return for the operator (findById)', () => {
+    it('joins both authors with the fields a name is built from — nothing else of the account', async () => {
+      await repository.findById('return-1');
+
+      const include = includeOf(readMock.return.findUnique);
+      expect(include.createdBy).toEqual({ select: ACTOR_SELECT });
+      expect(include.decidedBy).toEqual({ select: ACTOR_SELECT });
+    });
+
+    it('loads the decision history and the repair steps oldest first, each with its actor', async () => {
+      await repository.findById('return-1');
+
+      const include = includeOf(readMock.return.findUnique);
+      expect(include.decisionEvents).toEqual({
+        orderBy: HISTORY_ORDER,
+        include: { actor: { select: ACTOR_SELECT } },
+      });
+      expect(include.repairEvents).toEqual({
+        orderBy: HISTORY_ORDER,
+        include: { actor: { select: ACTOR_SELECT } },
+      });
+    });
+
+    it('reads the purchase date off the order', async () => {
+      await repository.findById('return-1');
+
+      const include = includeOf(readMock.return.findUnique) as {
+        order: { select: Record<string, boolean> };
+      };
+      expect(include.order.select.createdAt).toBe(true);
+    });
+  });
+
+  // A page of the queue costs one batched query per to-one join; the history
+  // arrays belong to the card, not to a page of twenty rows.
+  describe('the admin queue (findAll)', () => {
+    it('joins the authors and the purchase date but no history arrays', async () => {
+      await repository.findAll({});
+
+      const include = includeOf(readMock.return.findMany) as Include & {
+        order: { select: Record<string, boolean> };
+      };
+      expect(include.createdBy).toEqual({ select: ACTOR_SELECT });
+      expect(include.decidedBy).toEqual({ select: ACTOR_SELECT });
+      expect(include.order.select.createdAt).toBe(true);
+      expect(include).not.toHaveProperty('decisionEvents');
+      expect(include).not.toHaveProperty('repairEvents');
+    });
+  });
+
+  describe('the per-order list (findByOrderId)', () => {
+    it('for the operator: the queue joins', async () => {
+      await repository.findByOrderId('order-1', { admin: true });
+
+      const include = includeOf(readMock.return.findMany);
+      expect(include.createdBy).toEqual({ select: ACTOR_SELECT });
+      expect(include).not.toHaveProperty('decisionEvents');
+    });
+
+    it('for the customer: repair progress without the note or the actor, and no staff account', async () => {
+      await repository.findByOrderId('order-1');
+
+      expectCustomerInclude(includeOf(readMock.return.findMany));
+    });
+  });
+
+  describe("the customer's own list (findByUserId)", () => {
+    it('repair progress without the note or the actor, and no staff account', async () => {
+      await repository.findByUserId('user-1', 100);
+
+      expectCustomerInclude(includeOf(readMock.return.findMany));
+    });
+  });
+
+  describe('create', () => {
+    const createArgs = () =>
+      readMock.return.create.mock.calls.at(-1)?.[0] as {
+        data: Record<string, unknown>;
+        include: Include;
+      };
+
+    it('writes what the customer asked for and the door it came through', async () => {
+      await repository.create(
+        {
+          orderId: 'order-1',
+          createdByUserId: 'operator-1',
+          requestedOutcome: ReturnOutcome.REPAIR,
+          channel: ReturnChannel.OPERATOR,
+          items: [{ orderItemId: 'line-1', quantity: 1 }],
+        },
+        () => undefined,
+      );
+
+      expect(createArgs().data).toMatchObject({
+        requestedOutcome: ReturnOutcome.REPAIR,
+        channel: ReturnChannel.OPERATOR,
+      });
+    });
+
+    it('writes no outcome when none was asked for — null, not a guess', async () => {
+      await repository.create(
+        {
+          orderId: 'order-1',
+          createdByUserId: 'user-1',
+          channel: ReturnChannel.ACCOUNT,
+          items: [{ orderItemId: 'line-1', quantity: 1 }],
+        },
+        () => undefined,
+      );
+
+      expect(createArgs().data).toMatchObject({
+        requestedOutcome: null,
+        channel: ReturnChannel.ACCOUNT,
+      });
+    });
+
+    it('answers with the full card — the operator sees the return they just opened', async () => {
+      await repository.create(
+        { orderId: 'order-1', channel: ReturnChannel.OPERATOR, items: [] },
+        () => undefined,
+      );
+
+      const include = createArgs().include;
+      expect(include.createdBy).toEqual({ select: ACTOR_SELECT });
+      expect(include).toHaveProperty('decisionEvents');
+    });
   });
 });

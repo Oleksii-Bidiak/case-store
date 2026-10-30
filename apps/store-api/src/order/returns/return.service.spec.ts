@@ -6,7 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderStatus, ReturnDecision, ReturnStatus } from '@prisma/client';
+import {
+  OrderStatus,
+  ReturnChannel,
+  ReturnDecision,
+  ReturnOutcome,
+  ReturnStatus,
+} from '@prisma/client';
 import { MY_RETURNS_LIMIT, ReturnService } from './return.service';
 import { ReturnRepository } from './return.repository';
 import { OrderRepository } from '../order.repository';
@@ -96,6 +102,13 @@ const returnRepositoryMock = {
 
 const orderRepositoryMock = {
   findById: jest.fn(),
+  // Every write the order repository has that could touch status or payment —
+  // mocked so a test can prove a return path calls none of them (TASK-1963).
+  updateStatus: jest.fn(),
+  updatePaymentStatus: jest.fn(),
+  cancelAndRestock: jest.fn(),
+  updateDetails: jest.fn(),
+  applyPaymentOutcome: jest.fn(),
 };
 
 const pinoLoggerMock = {
@@ -211,6 +224,35 @@ describe('ReturnService (TASK-340)', () => {
         expect.any(Function),
         expect.any(Function),
       );
+    });
+
+    // TASK-1963/2044: what the customer asks for, and which door they used.
+    it('passes the requested outcome through and records the ACCOUNT channel', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+
+      await service.createReturn(USER_ID, ORDER_ID, {
+        ...dto,
+        requestedOutcome: ReturnOutcome.REPLACEMENT,
+      });
+
+      expect(returnRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestedOutcome: ReturnOutcome.REPLACEMENT,
+          channel: ReturnChannel.ACCOUNT,
+        }),
+        expect.any(Function),
+        expect.any(Function),
+      );
+    });
+
+    it('records the ACCOUNT channel even when the customer asked for nothing specific', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+
+      await service.createReturn(USER_ID, ORDER_ID, dto);
+
+      const params = returnRepositoryMock.create.mock.calls[0][0] as Record<string, unknown>;
+      expect(params.channel).toBe(ReturnChannel.ACCOUNT);
+      expect(params.requestedOutcome).toBeUndefined();
     });
 
     it('never shows the customer who opened it — that can be a member of staff', async () => {
@@ -387,6 +429,47 @@ describe('ReturnService (TASK-340)', () => {
       );
     });
 
+    // TASK-1963: "the operator wrote it down" reads differently from "the
+    // customer said", to both sides — so the door is recorded, not inferred.
+    it('records the OPERATOR channel and the outcome the customer asked for', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: null }));
+
+      await service.adminCreateReturn(OPERATOR_ID, ORDER_ID, {
+        ...dto,
+        requestedOutcome: ReturnOutcome.REPAIR,
+      });
+
+      expect(returnRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: ReturnChannel.OPERATOR,
+          requestedOutcome: ReturnOutcome.REPAIR,
+          createdByUserId: OPERATOR_ID,
+        }),
+        expect.any(Function),
+      );
+    });
+
+    // TASK-1963: opening a return is paperwork about goods, not a verdict on the
+    // order. The order's lifecycle and its money move only through their own
+    // doors (the decision, PATCH and the payment flow).
+    it('never changes the order status or payment status', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+
+      await service.adminCreateReturn(OPERATOR_ID, ORDER_ID, {
+        ...dto,
+        requestedOutcome: ReturnOutcome.REFUND,
+      });
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+      const params = returnRepositoryMock.create.mock.calls[0][0] as Record<string, unknown>;
+      expect(params).not.toHaveProperty('status');
+      expect(params).not.toHaveProperty('paymentStatus');
+    });
+
     it('404s on an order that does not exist', async () => {
       orderRepositoryMock.findById.mockResolvedValue(null);
 
@@ -501,7 +584,8 @@ describe('ReturnService (TASK-340)', () => {
       const result = await service.adminGetOrderReturns(ORDER_ID);
 
       expect(result).toHaveLength(1);
-      expect(returnRepositoryMock.findByOrderId).toHaveBeenCalledWith(ORDER_ID);
+      // The admin read, with the authors joined for the operator (TASK-1963).
+      expect(returnRepositoryMock.findByOrderId).toHaveBeenCalledWith(ORDER_ID, { admin: true });
       // No ownership read: there is nobody to compare against.
       expect(orderRepositoryMock.findById).not.toHaveBeenCalled();
     });
@@ -510,6 +594,21 @@ describe('ReturnService (TASK-340)', () => {
       returnRepositoryMock.findByOrderId.mockResolvedValue([]);
 
       await expect(service.adminGetOrderReturns(ORDER_ID)).resolves.toEqual([]);
+    });
+  });
+
+  describe('getOrderReturns (customer)', () => {
+    // TASK-1963: the customer read never even LOADS staff accounts — the
+    // projection strips them too, but what was never read cannot leak.
+    it('asks the repository for the customer read, without the admin joins', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      returnRepositoryMock.findByOrderId.mockResolvedValue([makeReturn()]);
+
+      const [entity] = await service.getOrderReturns(USER_ID, ORDER_ID);
+
+      expect(returnRepositoryMock.findByOrderId).toHaveBeenCalledWith(ORDER_ID);
+      expect(entity).not.toHaveProperty('createdBy');
+      expect(entity).not.toHaveProperty('decidedById');
     });
   });
 

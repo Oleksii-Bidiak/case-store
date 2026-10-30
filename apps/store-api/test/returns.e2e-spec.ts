@@ -83,7 +83,12 @@ describe('Admin returns queue (e2e)', () => {
     // The row lock on the order the resolve transaction takes (TASK-785).
     $queryRaw: jest.fn(),
     // The order-scoped return routes read the order first (review of plan 180).
-    order: { findFirst: jest.fn() },
+    order: {
+      findFirst: jest.fn(),
+      // Never called by a return path — asserted (TASK-1963).
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
     // TASK-628: the audit row written behind an admin create.
     auditLog: { create: jest.fn() },
     // TASK-1961/2044: the history row every decision writes in its transaction.
@@ -119,6 +124,9 @@ describe('Admin returns queue (e2e)', () => {
     decisionReason: null,
     decidedAt: null,
     decidedById: null,
+    decisionLegacy: false,
+    requestedOutcome: null,
+    channel: 'ACCOUNT',
     createdAt: now,
     updatedAt: now,
     items: [],
@@ -801,5 +809,216 @@ describe('Admin returns queue (e2e)', () => {
         expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
       },
     );
+  });
+
+  // ─── Projections (TASK-1963, TASK-2044, TASK-2045) ──────────────────────────
+  //
+  // The Prisma double hands back a row carrying EVERYTHING — staff accounts,
+  // operator notes, repair notes — as if a read had over-fetched. What reaches
+  // the wire is then decided by the projection alone, which is the guarantee.
+
+  describe('what the customer and the operator each see', () => {
+    const operator = {
+      id: 'operator-e2e-9',
+      email: 'olena@shop.test',
+      firstName: 'Олена',
+      lastName: 'Коваль',
+    };
+    const orderCreatedAt = new Date('2026-06-30T08:00:00.000Z');
+
+    const fullRow = () =>
+      makeReturnRow({
+        status: ReturnStatus.APPROVED,
+        operatorNotes: 'Клієнт сварився',
+        createdByUserId: operator.id,
+        requestedOutcome: 'REPAIR',
+        channel: 'OPERATOR',
+        decision: ReturnDecision.REPAIR,
+        decisionReason: 'Гарантійний випадок',
+        decidedAt: now,
+        decidedById: operator.id,
+        order: {
+          id: '550e8400-e29b-41d4-a716-4466554400ff',
+          userId: testCustomer.id,
+          guestEmail: null,
+          status: 'DELIVERED',
+          createdAt: orderCreatedAt,
+        },
+        createdBy: operator,
+        decidedBy: operator,
+        decisionEvents: [
+          {
+            id: 'event-1',
+            decision: ReturnDecision.REPAIR,
+            reason: 'Гарантійний випадок',
+            legacy: false,
+            createdAt: now,
+            actor: operator,
+          },
+        ],
+        repairEvents: [
+          {
+            id: 'repair-1',
+            step: 'SENT_TO_SERVICE',
+            result: null,
+            destination: 'СЦ «Ябко»',
+            ttn: '20450000000000',
+            note: 'Подряпина на корпусі',
+            createdAt: now,
+            actor: operator,
+          },
+        ],
+      });
+
+    it('GET /api/returns: the decision and repair progress, and not one staff fact', async () => {
+      prismaServiceMock.return.findMany.mockResolvedValue([fullRow()]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/returns')
+        .set('Authorization', `Bearer ${generateAccessToken(testCustomer.id, 'CUSTOMER')}`)
+        .expect(200);
+
+      const [body] = res.body.data;
+      expect(body).toMatchObject({
+        requestedOutcome: 'REPAIR',
+        channel: 'OPERATOR',
+        decision: 'REPAIR',
+        decisionReason: 'Гарантійний випадок',
+        decidedAt: now.toISOString(),
+        decisionLegacy: false,
+        restockedAt: null,
+        repairSteps: [
+          {
+            step: 'SENT_TO_SERVICE',
+            result: null,
+            destination: 'СЦ «Ябко»',
+            ttn: '20450000000000',
+            createdAt: now.toISOString(),
+          },
+        ],
+      });
+      for (const key of [
+        'operatorNotes',
+        'createdByUserId',
+        'createdBy',
+        'decidedById',
+        'decidedBy',
+        'decisionHistory',
+        'orderCreatedAt',
+      ]) {
+        expect(body).not.toHaveProperty(key);
+      }
+      expect(body.repairSteps[0]).not.toHaveProperty('note');
+      expect(body.repairSteps[0]).not.toHaveProperty('actor');
+      const wire = JSON.stringify(res.body);
+      expect(wire).not.toContain(operator.id);
+      expect(wire).not.toContain(operator.email);
+      expect(wire).not.toContain('Подряпина');
+      expect(wire).not.toContain('Клієнт сварився');
+    });
+
+    it('GET /api/orders/:id/returns: the same customer projection', async () => {
+      prismaServiceMock.order.findFirst.mockResolvedValue({
+        id: '550e8400-e29b-41d4-a716-4466554400ff',
+        userId: testCustomer.id,
+        status: 'DELIVERED',
+        items: [],
+      });
+      prismaServiceMock.return.findMany.mockResolvedValue([fullRow()]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/orders/550e8400-e29b-41d4-a716-4466554400ff/returns')
+        .set('Authorization', `Bearer ${generateAccessToken(testCustomer.id, 'CUSTOMER')}`)
+        .expect(200);
+
+      const wire = JSON.stringify(res.body);
+      expect(wire).not.toContain(operator.id);
+      expect(wire).not.toContain(operator.email);
+      expect(wire).not.toContain('Подряпина');
+      expect(res.body.data[0]).not.toHaveProperty('operatorNotes');
+    });
+
+    it('GET /api/admin/returns/:id: authors by name, history, repair notes and the purchase date', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(fullRow());
+
+      const res = await request(app.getHttpServer())
+        .get(`${url}/550e8400-e29b-41d4-a716-446655440000`)
+        .set('Authorization', `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`)
+        .expect(200);
+
+      const actor = { id: operator.id, name: 'Олена Коваль', email: operator.email };
+      expect(res.body.data).toMatchObject({
+        operatorNotes: 'Клієнт сварився',
+        createdBy: actor,
+        decidedBy: actor,
+        orderCreatedAt: orderCreatedAt.toISOString(),
+        decisionHistory: [
+          {
+            decision: 'REPAIR',
+            reason: 'Гарантійний випадок',
+            legacy: false,
+            createdAt: now.toISOString(),
+            actor,
+          },
+        ],
+        repairSteps: [
+          {
+            step: 'SENT_TO_SERVICE',
+            note: 'Подряпина на корпусі',
+            actor,
+          },
+        ],
+      });
+    });
+  });
+
+  describe('POST — the requested outcome and the door (TASK-1963)', () => {
+    const orderId = '550e8400-e29b-41d4-a716-4466554400ff';
+    const lineId = '550e8400-e29b-41d4-a716-446655440001';
+
+    it('400 on a requested outcome outside the enum, before anything is read', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/returns`)
+        .set('Authorization', `Bearer ${generateAccessToken(testCustomer.id, 'CUSTOMER')}`)
+        .send({ requestedOutcome: 'MONEY_BACK', items: [{ orderItemId: lineId, quantity: 1 }] })
+        .expect(400);
+
+      expect(prismaServiceMock.order.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('an operator opens it: OPERATOR channel, the outcome stored, the order left alone', async () => {
+      prismaServiceMock.order.findFirst.mockResolvedValue({
+        id: orderId,
+        userId: null,
+        status: 'DELIVERED',
+        paymentStatus: 'PAID',
+        items: [{ id: lineId, quantity: 3 }],
+      });
+      prismaServiceMock.$queryRaw.mockResolvedValue([{ id: orderId }]);
+      prismaServiceMock.return.findMany.mockResolvedValue([]);
+      prismaServiceMock.return.create.mockResolvedValue(
+        makeReturnRow({ requestedOutcome: 'REPLACEMENT', channel: 'OPERATOR' }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/admin/orders/${orderId}/returns`)
+        .set('Authorization', `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`)
+        .send({ requestedOutcome: 'REPLACEMENT', items: [{ orderItemId: lineId, quantity: 1 }] })
+        .expect(201);
+
+      expect(prismaServiceMock.return.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            orderId,
+            requestedOutcome: 'REPLACEMENT',
+            channel: 'OPERATOR',
+            createdByUserId: testAdmin.id,
+          }),
+        }),
+      );
+      expect(res.body.data).toMatchObject({ requestedOutcome: 'REPLACEMENT', channel: 'OPERATOR' });
+      expect(prismaServiceMock.order.update).not.toHaveBeenCalled();
+      expect(prismaServiceMock.order.updateMany).not.toHaveBeenCalled();
+    });
   });
 });
