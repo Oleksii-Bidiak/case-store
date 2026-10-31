@@ -159,11 +159,45 @@ export const dict = {
     // literal — the owner renames the store in /settings/seo.
     rights: (year: number, siteName: string) =>
       `© ${year} ${siteName}. Усі права захищено.`,
+    // TASK-2078 — direction В (SiteFooter mockup).
     tagline:
-      "Інтернет-магазин аксесуарів та ґаджетів. Оригінальна продукція з офіційною гарантією та доставкою по Україні.",
+      "Аксесуари для смартфонів, годинників і планшетів — оригінальні, з офіційною гарантією та доставкою по Україні.",
+    // The footer's trust strip (TASK-2078). Never «безкоштовно» about delivery
+    // (B-12, TASK-1661 / 2053 / 2054): Nova Poshta charges its own tariff. The
+    // return window is the homepage's and RETURN_POLICY's — 14 days; a test
+    // keeps the two strips in step.
+    trustAria: "Наші гарантії",
+    trust: [
+      { title: "Безпечна оплата", subtitle: "LiqPay або при отриманні" },
+      {
+        title: "Відправка день у день",
+        subtitle: "Нова Пошта по всій Україні",
+      },
+      { title: "Повернення 14 днів", subtitle: "Обмін або гроші назад" },
+      { title: "Офіційна гарантія", subtitle: "Лише оригінальні аксесуари" },
+    ],
+    // «Мої пристрої» row (TASK-2078): the active device → its hub, none → the picker.
+    device: {
+      aria: "Мої пристрої",
+      activeLead: "Ваш активний пристрій:",
+      more: (count: number) => ` · ще ${count} у списку`,
+      hubCta: (device: string) => `Все для ${device}`,
+      myDevices: "Мої пристрої",
+      emptyLead: "Оберіть свій пристрій",
+      emptyText:
+        "— покажемо, що до нього підходить, у каталозі й на сторінках товарів.",
+      choose: "Обрати пристрій",
+    },
+    catalogAllCategories: "Усі категорії",
+    buyersTitle: "Покупцям",
+    buyersMyDevices: "Мої пристрої",
+    companyPromo: "Акції",
+    // Said only when the number really is a free line (0 800 …) — a city
+    // number is not free to call.
+    callsFree: "Дзвінки безкоштовні",
+    legalAria: "Правова інформація",
     shopTitle: "Магазин",
     shopAll: "Усі товари",
-    shopCart: "Кошик",
     supportTitle: "Підтримка",
     supportFaq: "Часті запитання",
     supportReturns: "Повернення та обмін",
@@ -180,15 +214,12 @@ export const dict = {
     // Redesigned footer (TASK-167-B).
     catalogTitle: "Каталог",
     catalogAll: "Усі товари",
-    catalogNew: "Новинки",
     catalogWishlist: "Обране",
-    infoTitle: "Інформація",
     infoAbout: "Про нас",
     infoFaq: "Часті питання",
     /** TASK-483 — публічна форма «номер + телефон» у колонці «Інформація». */
     infoOrderStatus: "Статус замовлення",
     infoBlog: "Блог",
-    freeCallout: "Безкоштовно по Україні",
     socialsAria: "Ми в соцмережах",
     payments: ["Visa", "Mastercard", "Apple Pay", "Google Pay", "Privat24"],
     // TASK-834 — the two hubs, so every published page has a way in.
