@@ -975,6 +975,72 @@ describe('Admin returns queue (e2e)', () => {
     );
   });
 
+  // The notes-only PATCH: since approving and refusing moved to POST /decision,
+  // a REQUESTED or REJECTED return has no status step for its notes to ride on.
+  describe('PATCH /api/admin/returns/:returnId — notes only', () => {
+    const returnId = '550e8400-e29b-41d4-a716-446655440000';
+    const patch = (body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .patch(`${url}/${returnId}`)
+        .set('Authorization', `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`)
+        .send(body);
+
+    it.each([ReturnStatus.REQUESTED, ReturnStatus.REJECTED, ReturnStatus.REFUNDED])(
+      'saves the notes on a %s return without a transition',
+      async (status) => {
+        prismaServiceMock.return.findUnique.mockResolvedValue(makeReturnRow({ status }));
+        prismaServiceMock.return.update.mockResolvedValue(
+          makeReturnRow({ status, operatorNotes: 'Дзвонив клієнт' }),
+        );
+
+        const response = await patch({ operatorNotes: '  Дзвонив клієнт ' }).expect(200);
+
+        expect(response.body.data).toMatchObject({ status, operatorNotes: 'Дзвонив клієнт' });
+        expect(prismaServiceMock.return.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: returnId },
+            data: { operatorNotes: 'Дзвонив клієнт' },
+          }),
+        );
+        expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+      },
+    );
+
+    it('writes an audit row return.resolve keyed by the return', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(makeReturnRow());
+      prismaServiceMock.return.update.mockResolvedValue(makeReturnRow({ operatorNotes: 'x' }));
+
+      await patch({ operatorNotes: 'x' }).expect(200);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(prismaServiceMock.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'return.resolve',
+          entityType: 'return',
+          entityId: returnId,
+        }),
+      });
+    });
+
+    it('400 RETURN_UPDATE_EMPTY for a body with neither a status nor notes', async () => {
+      const response = await patch({}).expect(400);
+
+      expect(response.body.error).toBe('RETURN_UPDATE_EMPTY');
+      expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+    });
+
+    it.each([{ refundedAmount: '499.00' }, { restock: true }])(
+      '400 RETURN_STATUS_REQUIRED for %o without a status',
+      async (body) => {
+        const response = await patch({ operatorNotes: 'x', ...body }).expect(400);
+
+        expect(response.body.error).toBe('RETURN_STATUS_REQUIRED');
+        expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+        expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   // ─── Projections (TASK-1963, TASK-2044, TASK-2045) ──────────────────────────
   //
   // The Prisma double hands back a row carrying EVERYTHING — staff accounts,

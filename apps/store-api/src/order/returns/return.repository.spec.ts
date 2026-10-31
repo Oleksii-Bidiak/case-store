@@ -1156,3 +1156,50 @@ describe('ReturnRepository — what each read loads (TASK-1963, TASK-2044, TASK-
     });
   });
 });
+
+// Approving and refusing moved to POST /decision (TASK-1961/2044); a notes-only
+// PATCH keeps the operator's notes writable on every status.
+describe('ReturnRepository.updateNotes — the operator notes on any status', () => {
+  const RETURN_ID = 'return-uuid-1';
+  const notesPrismaMock = { return: { update: jest.fn() } };
+  let repository: ReturnRepository;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    notesPrismaMock.return.update.mockResolvedValue({ id: RETURN_ID, items: [] });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReturnRepository,
+        { provide: PrismaService, useValue: notesPrismaMock },
+        { provide: CacheService, useValue: cacheMock },
+        { provide: ProductIndexer, useValue: productIndexerMock },
+      ],
+    }).compile();
+
+    repository = module.get(ReturnRepository);
+  });
+
+  it('writes the notes and nothing else — no status, no resolution stamp, no decision', async () => {
+    await repository.updateNotes(RETURN_ID, 'Дзвонив клієнт');
+
+    const call = notesPrismaMock.return.update.mock.calls[0]?.[0] as {
+      where: unknown;
+      data: unknown;
+      include: Record<string, unknown>;
+    };
+    expect(call.where).toEqual({ id: RETURN_ID });
+    expect(call.data).toEqual({ operatorNotes: 'Дзвонив клієнт' });
+    // The answer is the full admin card, like every other admin write.
+    expect(call.include).toHaveProperty('decisionEvents');
+    expect(call.include).toHaveProperty('decidedBy');
+  });
+
+  it('clears the notes with null', async () => {
+    await repository.updateNotes(RETURN_ID, null);
+
+    expect(notesPrismaMock.return.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { operatorNotes: null } }),
+    );
+  });
+});

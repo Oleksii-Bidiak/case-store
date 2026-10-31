@@ -99,6 +99,7 @@ const returnRepositoryMock = {
   findByUserId: jest.fn(),
   findAll: jest.fn(),
   resolve: jest.fn(),
+  updateNotes: jest.fn(),
   decide: jest.fn(),
   addRepairStep: jest.fn(),
 };
@@ -1121,6 +1122,94 @@ describe('ReturnService (TASK-340)', () => {
           RESOLVE_BASIS,
           expect.objectContaining({ refundedAmount: null }),
           { restock: false },
+        );
+      });
+    });
+
+    // Approving and refusing moved to POST /decision (TASK-1961/2044), so a
+    // PATCH carrying only the notes is the one way left to keep the operator's
+    // notes on a request nobody has decided yet, or on a closed return.
+    describe('notes only — no status', () => {
+      beforeEach(() => {
+        returnRepositoryMock.updateNotes.mockImplementation(
+          (_id: string, operatorNotes: string | null) =>
+            Promise.resolve(makeReturn({ operatorNotes })),
+        );
+      });
+
+      it.each([
+        ReturnStatus.REQUESTED,
+        ReturnStatus.APPROVED,
+        ReturnStatus.REJECTED,
+        ReturnStatus.RECEIVED,
+        ReturnStatus.REFUNDED,
+      ])('saves the notes on a %s return without moving it', async (status) => {
+        returnRepositoryMock.findById.mockResolvedValue(makeReturn({ status }));
+
+        const result = await service.resolveReturn(RETURN_ID, { operatorNotes: 'Дзвонив клієнт' });
+
+        expect(returnRepositoryMock.updateNotes).toHaveBeenCalledWith(RETURN_ID, 'Дзвонив клієнт');
+        expect(returnRepositoryMock.resolve).not.toHaveBeenCalled();
+        // The operator's own view: the notes come back in the answer.
+        expect(result.operatorNotes).toBe('Дзвонив клієнт');
+      });
+
+      it('clears the notes when sent null', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+        await service.resolveReturn(RETURN_ID, { operatorNotes: null });
+
+        expect(returnRepositoryMock.updateNotes).toHaveBeenCalledWith(RETURN_ID, null);
+      });
+
+      it('404 RETURN_NOT_FOUND for a missing return, writing nothing', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(null);
+
+        await expect(
+          service.resolveReturn('missing', { operatorNotes: 'x' }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(returnRepositoryMock.updateNotes).not.toHaveBeenCalled();
+      });
+
+      it('400 RETURN_UPDATE_EMPTY when neither a status nor notes are sent', async () => {
+        const caught = await service.resolveReturn(RETURN_ID, {}).catch((e: unknown) => e);
+
+        expect(caught).toBeInstanceOf(BadRequestException);
+        expect((caught as HttpException).getResponse()).toEqual({
+          error: 'RETURN_UPDATE_EMPTY',
+          message: 'Nothing to update — send a status, operatorNotes, or both',
+        });
+        expect(returnRepositoryMock.findById).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['refundedAmount', { operatorNotes: 'x', refundedAmount: '499.00' }],
+        ['restock', { operatorNotes: 'x', restock: true }],
+        ['restock: false', { restock: false }],
+      ])('400 RETURN_STATUS_REQUIRED for %s without a status', async (_name, dto) => {
+        const caught = await service.resolveReturn(RETURN_ID, dto).catch((e: unknown) => e);
+
+        expect(caught).toBeInstanceOf(BadRequestException);
+        expect((caught as HttpException).getResponse()).toEqual({
+          error: 'RETURN_STATUS_REQUIRED',
+          message: 'refundedAmount and restock move a return on — send them with a status',
+        });
+        expect(returnRepositoryMock.updateNotes).not.toHaveBeenCalled();
+        expect(returnRepositoryMock.resolve).not.toHaveBeenCalled();
+      });
+
+      it('logs the notes change as its own event, not as a resolution', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+        await service.resolveReturn(RETURN_ID, { operatorNotes: 'x' });
+
+        expect(pinoLoggerMock.info).toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'return.notesUpdated', returnId: RETURN_ID }),
+          expect.any(String),
+        );
+        expect(pinoLoggerMock.info).not.toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'return.resolved' }),
+          expect.anything(),
         );
       });
     });
