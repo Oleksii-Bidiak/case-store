@@ -256,9 +256,12 @@ describe("WishlistView (TASK-076)", () => {
     expect(
       screen.getByRole("button", { name: dict.wishlist.addAll }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: dict.filters.viewGrid }),
-    ).toHaveAttribute("aria-pressed", "true");
+    // Grid is the default, so the toggle offers the list (TASK-1958) — at
+    // every width: no responsive `hidden` on it any more.
+    const toggle = screen.getByRole("button", {
+      name: dict.filters.viewListAria,
+    });
+    expect(toggle).not.toHaveClass("hidden");
   });
 
   it("filters to sale items via the quick filter and surfaces a removable chip", async () => {
@@ -373,7 +376,7 @@ describe("WishlistView quick-view triggers (TASK-290)", () => {
     });
 
     await user.click(
-      screen.getByRole("button", { name: dict.filters.viewList }),
+      screen.getByRole("button", { name: dict.filters.viewListAria }),
     );
 
     // List row: the trigger is pinned to the thumbnail's top-right corner, the

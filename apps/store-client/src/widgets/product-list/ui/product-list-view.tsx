@@ -304,8 +304,10 @@ export function ProductListView({
         />
       )}
 
-      {/* Toolbar: mobile filters button (left) + view toggle + sort (right) */}
-      <div className="mb-5 flex items-center gap-3">
+      {/* Toolbar: mobile filters button (left) + sort + view toggle (right).
+          The view toggle stays at every width (TASK-1958): below `sm` it is a
+          44px icon-only pill, so a 320px row still holds all three. */}
+      <div className="mb-5 flex items-center gap-2 sm:gap-3">
         <FiltersButton
           activeCount={activeFilterCount}
           onClick={() => setFiltersOpen(true)}
@@ -313,14 +315,10 @@ export function ProductListView({
 
         {/* `min-w-0` lets the sort trigger shrink on a 320px phone (it
             truncates its label) instead of widening the page; the filters
-            button beside it keeps its size. */}
-        <div className="ml-auto flex min-w-0 items-center gap-3">
-          <ViewToggle
-            view={view}
-            onChange={setView}
-            className="hidden lg:flex"
-          />
+            button and the view toggle beside it keep their size. */}
+        <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
           <SortSelect currentSort={currentSort} onChange={applyFilters} />
+          <ViewToggle view={view} onChange={setView} />
         </div>
       </div>
 

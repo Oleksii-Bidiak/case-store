@@ -12,41 +12,36 @@ interface ViewToggleProps {
 }
 
 /**
- * Grid / list results view switch for the catalog toolbar. Segmented control
- * with two icon buttons; the active one is filled with the brand colour.
+ * Grid / list results view switch for a listing toolbar (TASK-1958,
+ * Catalog.dc.html §6). One pill that offers the OTHER view — «Списком» while
+ * the grid is shown, «Плиткою» while the list is — so it costs one control's
+ * width and fits the phone toolbar beside «Фільтри» and the sort; the old
+ * two-button segmented control did not, and was hidden below `lg`.
+ *
+ * The visible word appears from `sm`; below it the pill is icon-only, so the
+ * accessible name is always the full action («Показати списком»), which also
+ * contains the visible word (WCAG 2.5.3 label-in-name). It is an action
+ * button, not a pressed toggle: its label already changes with the state, and
+ * `aria-pressed` on top of a changing label would announce it twice.
  */
 export function ViewToggle({ view, onChange, className }: ViewToggleProps) {
-  const buttonClass = (active: boolean) =>
-    `inline-flex size-11 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
-      active
-        ? "bg-primary text-primary-foreground"
-        : "text-muted-foreground hover:text-foreground"
-    }`;
+  const next: CatalogView = view === "grid" ? "list" : "grid";
+  const Icon = next === "list" ? List : LayoutGrid;
+  const label = next === "list" ? dict.filters.viewList : dict.filters.viewGrid;
+  const ariaLabel =
+    next === "list" ? dict.filters.viewListAria : dict.filters.viewGridAria;
 
   return (
-    <div
-      role="group"
-      aria-label={dict.filters.viewToggleAria}
-      className={`items-center gap-1 rounded-xl border-[1.5px] border-border bg-card p-1 ${className ?? ""}`}
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      title={ariaLabel}
+      onClick={() => onChange(next)}
+      // eslint-disable-next-line tailwindcss/no-arbitrary-value -- the toolbar's 1.5px control border, shared with FiltersButton and SortSelect; no border-width token yet
+      className={`inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl border-[1.5px] border-border bg-card px-3 text-sm font-semibold whitespace-nowrap text-foreground outline-none transition-colors hover:border-primary focus-visible:ring-2 focus-visible:ring-ring sm:px-4 ${className ?? ""}`}
     >
-      <button
-        type="button"
-        aria-label={dict.filters.viewGrid}
-        aria-pressed={view === "grid"}
-        onClick={() => onChange("grid")}
-        className={buttonClass(view === "grid")}
-      >
-        <LayoutGrid className="size-[18px]" />
-      </button>
-      <button
-        type="button"
-        aria-label={dict.filters.viewList}
-        aria-pressed={view === "list"}
-        onClick={() => onChange("list")}
-        className={buttonClass(view === "list")}
-      >
-        <List className="size-[18px]" />
-      </button>
-    </div>
+      <Icon aria-hidden="true" className="size-4.5" />
+      <span className="hidden sm:inline">{label}</span>
+    </button>
   );
 }

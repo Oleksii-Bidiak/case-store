@@ -346,12 +346,6 @@ export function WishlistView() {
             )}
           </button>
 
-          <ViewToggle
-            view={view}
-            onChange={setView}
-            className="hidden lg:flex"
-          />
-
           <SortSelect
             currentSort={sortKey}
             options={SORT_OPTIONS}
@@ -364,6 +358,9 @@ export function WishlistView() {
               }
             }}
           />
+
+          {/* At every width, like the catalogue toolbar (TASK-1958). */}
+          <ViewToggle view={view} onChange={setView} />
 
           <Button
             type="button"

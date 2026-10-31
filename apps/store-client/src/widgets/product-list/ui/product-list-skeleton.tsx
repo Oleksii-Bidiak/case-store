@@ -176,16 +176,17 @@ export function ProductListSkeleton({
         <CategoryChipsSkeleton withSubcategories={withSubcategoryChips} />
       )}
 
-      {/* Toolbar: mobile filters button (left) + view toggle & sort (right).
-          The toggle is two 44px buttons in a padded, bordered segment — 54px
-          tall, not 44 — and it sets the row's height on desktop, so a 44px
-          placeholder left the whole grid 10px too high until the swap
-          (TASK-515). The sort trigger's width follows its «Спочатку: …» label. */}
-      <div className="mb-5 flex items-center gap-3">
+      {/* Toolbar: mobile filters button (left) + sort & view toggle (right),
+          the same gaps as ProductListView. Every control is 44px tall since
+          the toggle became one pill shown at every width (TASK-1958; it was a
+          54px segment on desktop only, TASK-515): icon-only 44px below `sm`,
+          «Списком» beside the icon from `sm`. The sort trigger's width
+          follows its «Спочатку: …» label. */}
+      <div className="mb-5 flex items-center gap-2 sm:gap-3">
         <Skeleton className="h-11 w-32 rounded-xl lg:hidden" />
-        <div className="ml-auto flex min-w-0 items-center gap-3">
-          <Skeleton className="hidden h-13.5 w-25.5 rounded-xl lg:block" />
-          <Skeleton className="h-11 w-48 max-w-full rounded-xl sm:w-66" />
+        <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
+          <Skeleton className="h-11 w-40 max-w-full rounded-xl sm:w-66" />
+          <Skeleton className="h-11 w-11 shrink-0 rounded-xl sm:w-30" />
         </div>
       </div>
 

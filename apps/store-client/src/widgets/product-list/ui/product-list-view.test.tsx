@@ -475,6 +475,60 @@ describe("ProductListView — filters (TASK-414)", () => {
   });
 });
 
+/**
+ * TASK-1958 — the grid / list toggle used to be `hidden lg:flex`, so phones and
+ * tablets had no list view at all. It now sits in the toolbar at every width
+ * and keeps the choice in the URL (`?view=list`, grid = no param).
+ */
+describe("ProductListView — view toggle at every width (TASK-1958)", () => {
+  it("renders the toggle with no responsive hiding on it or its toolbar group", async () => {
+    installCatalogHandlers();
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText("Alpha Case");
+
+    const toggle = screen.getByRole("button", {
+      name: dict.filters.viewListAria,
+    });
+    expect(toggle.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    expect(toggle.parentElement?.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+  });
+
+  it("writes ?view=list and keeps the other params", async () => {
+    const user = userEvent.setup();
+    installCatalogHandlers();
+    currentQuery = "category=chargers&page=2";
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText("Alpha Case");
+
+    await user.click(
+      screen.getByRole("button", { name: dict.filters.viewListAria }),
+    );
+
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    const params = new URLSearchParams(target.split("?")[1]);
+    expect(params.get("view")).toBe("list");
+    expect(params.get("category")).toBe("chargers");
+    expect(params.get("page")).toBe("2");
+  });
+
+  it("offers the grid back once the list is shown", async () => {
+    const user = userEvent.setup();
+    installCatalogHandlers();
+    currentQuery = "view=list";
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText("Alpha Case");
+
+    await user.click(
+      screen.getByRole("button", { name: dict.filters.viewGridAria }),
+    );
+
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    expect(new URLSearchParams(target.split("?")[1] ?? "").has("view")).toBe(
+      false,
+    );
+  });
+});
+
 describe("ProductListView — mobile filter drawer count (TASK-084)", () => {
   it("shows the live, grammatically-correct result count on the apply button", async () => {
     installCatalogHandlers(); // one matching product

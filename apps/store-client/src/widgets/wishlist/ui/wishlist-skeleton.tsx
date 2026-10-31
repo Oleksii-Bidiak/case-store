@@ -18,8 +18,8 @@ export function WishlistSkeleton() {
           with a 24px gap, so the rail and the grid started 68px too high on a
           desktop and 184px too high on a phone, where the toolbar wraps under
           the title onto two rows. Heights are the real line boxes (text-sm
-          20px, H1_CLASS 36px / 40px from md, 44px controls, the 54px view
-          toggle); widths are the real controls' at 390 and 1440, so the row
+          20px, H1_CLASS 36px / 40px from md, 44px controls — the view toggle
+          too, one pill at every width since TASK-1958); widths are the real controls' at 390 and 1440, so the row
           wraps at the same widths the real one does. */}
       <div aria-hidden="true">
         <Skeleton className="mb-4.5 h-5 w-44" />
@@ -30,8 +30,8 @@ export function WishlistSkeleton() {
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-3">
             <Skeleton className="h-11 w-29 rounded-xl lg:hidden" />
-            <Skeleton className="hidden h-13.5 w-25.5 rounded-xl lg:block" />
             <Skeleton className="h-11 w-46 rounded-xl sm:w-74" />
+            <Skeleton className="h-11 w-11 rounded-xl sm:w-30" />
             <Skeleton className="h-11 w-43 rounded-xl" />
           </div>
         </div>

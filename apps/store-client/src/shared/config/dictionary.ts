@@ -907,10 +907,12 @@ export const dict = {
     clearAll: "Очистити все",
     removeFilter: "Прибрати фільтр",
     filtersButton: "Фільтри",
-    // Grid / list results view toggle (catalog toolbar).
-    viewGrid: "Плитка",
-    viewList: "Список",
-    viewToggleAria: "Перемкнути вигляд",
+    // Grid / list results view toggle (listing toolbars, TASK-1958). One pill
+    // that names the OTHER view; the word shows from `sm`, the aria-label always.
+    viewGrid: "Плиткою",
+    viewList: "Списком",
+    viewGridAria: "Показати плиткою",
+    viewListAria: "Показати списком",
     // Manufacturer (brand) filter card — TASK-189.
     brandTitle: "Виробник",
     allBrands: "Всі виробники",

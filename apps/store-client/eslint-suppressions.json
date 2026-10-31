@@ -74,11 +74,6 @@
       "count": 1
     }
   },
-  "src/features/product-filters/ui/view-toggle.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 3
-    }
-  },
   "src/shared/ui/badge.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 2
@@ -401,7 +396,7 @@
   },
   "src/widgets/wishlist/ui/wishlist-list-item.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 4
+      "count": 1
     }
   },
   "src/widgets/wishlist/ui/wishlist-view.tsx": {
