@@ -888,11 +888,21 @@ export const dict = {
   filters: {
     legend: "Фільтри",
     category: "Категорія",
-    allCategories: "Всі категорії",
-    // TASK-216 — horizontal category chips row above the catalog grid.
-    categoryChipsAria: "Фільтр за категорією",
-    // TASK-236 — secondary row of subcategory chips under the active root.
-    subcategoryChipsAria: "Фільтр за підкатегорією",
+    // TASK-2011 — the category tree in the filter rail («дерево в рейці») and
+    // its sheet below `lg`. The tree's first row, linking to every product.
+    allCategories: "Усі категорії",
+    // The rail panel's small-caps heading — also the tree's nav name.
+    categoryTreeTitle: "Категорія",
+    // A disclosure beside a node that has children: peek into them in place.
+    categoryTreeExpand: (name: string) => `Показати підкатегорії «${name}»`,
+    categoryTreeCollapse: (name: string) => `Сховати підкатегорії «${name}»`,
+    // Toolbar button below `lg` that opens the tree in a bottom sheet: the
+    // current category's children (or the top-level count on «Усі товари»);
+    // a leaf has none, so the button names the panel instead.
+    subcategoriesButton: (n: number) =>
+      n > 0 ? `Підкатегорії · ${n}` : "Категорія",
+    // The sheet's footer when the current selection yields nothing.
+    subcategoriesNothing: "Нічого не знайдено",
     priceRange: "Ціновий діапазон",
     minPrice: "Мінімальна ціна",
     maxPrice: "Максимальна ціна",

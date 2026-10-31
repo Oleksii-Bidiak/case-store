@@ -127,7 +127,7 @@ describe("products — one tree read per render (TASK-703)", () => {
     expect(getTree).toHaveBeenCalledTimes(1);
   });
 
-  it("reads the tree once on the unfiltered listing — for the chips row, not the metadata", async () => {
+  it("reads the tree once on the unfiltered listing — for the rail tree, not the metadata", async () => {
     getTree.mockResolvedValue({ data: makeTree() } as never);
 
     await generateMetadata(props());
@@ -143,7 +143,7 @@ describe("products — one tree read per render (TASK-703)", () => {
  * mount after hydration, pushing the toolbar and the grid 60px down out of the
  * place the skeleton had held for them.
  */
-describe("products — the category chips row is in the first HTML (TASK-515)", () => {
+describe("products — the category tree is in the first HTML (TASK-515, TASK-2011)", () => {
   const withChildren = (): CategoryTreeNodeEntity[] => {
     const [node] = makeTree();
     return [
@@ -154,7 +154,7 @@ describe("products — the category chips row is in the first HTML (TASK-515)", 
     ];
   };
 
-  it("hands the tree to the view under the chips query's key", async () => {
+  it("hands the tree to the view under the tree query's key", async () => {
     getTree.mockResolvedValue({ data: makeTree() } as never);
 
     const tree = await ProductsPage(props());
@@ -165,20 +165,20 @@ describe("products — the category chips row is in the first HTML (TASK-515)", 
     expect(findPropValues(tree, "categoryTreePrefetched")).toEqual([true]);
   });
 
-  it("reserves the subcategory row in the fallback when the category has one", async () => {
+  // TASK-2011 — the fallback's tree panel reserves the rows the rail tree
+  // will draw for this URL's category.
+  it("sizes the fallback's tree panel to the rows the tree will draw", async () => {
     getTree.mockResolvedValue({ data: withChildren() } as never);
 
     const filtered = await ProductsPage(props({ category: "chohly-iphone" }));
     const plain = await ProductsPage(props());
 
+    // «Усі категорії» + ancestor «chohly» + the current level (one node).
     const [filteredFallback] = findPropValues(filtered, "fallback");
-    expect(findPropValues(filteredFallback, "withSubcategoryChips")).toEqual([
-      true,
-    ]);
+    expect(findPropValues(filteredFallback, "categoryTreeRows")).toEqual([3]);
+    // «Усі категорії» + the one root.
     const [plainFallback] = findPropValues(plain, "fallback");
-    expect(findPropValues(plainFallback, "withSubcategoryChips")).toEqual([
-      false,
-    ]);
+    expect(findPropValues(plainFallback, "categoryTreeRows")).toEqual([2]);
   });
 
   it("does not claim a tree the server could not read", async () => {

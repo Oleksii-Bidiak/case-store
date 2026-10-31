@@ -58,30 +58,37 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     }
   });
 
-  it("leaves out the category chips row where the route locks the category", () => {
-    const { container: withChips } = render(
-      <ProductListSkeleton withSidebar />,
-    );
-    const { container: locked } = render(
-      <ProductListSkeleton withSidebar withCategoryChips={false} hasCategory />,
-    );
+  // TASK-2011 — the category tree tops the rail, before the filter cards.
+  it("opens the rail with the category tree panel", () => {
+    render(<ProductListSkeleton withSidebar />);
 
-    const chips = (root: HTMLElement) =>
-      root.querySelectorAll(".rounded-full.h-9, .h-9.rounded-full");
-    expect(chips(withChips).length).toBeGreaterThan(0);
-    expect(chips(locked)).toHaveLength(0);
+    expect(
+      screen.getByTestId("filter-rail-skeleton").firstElementChild,
+    ).toHaveAttribute("data-testid", "category-tree-skeleton");
   });
 
-  it("reserves the subcategory chips row only when the page says there is one", () => {
+  it("leaves out the tree where the route fixes the device", () => {
+    render(
+      <ProductListSkeleton
+        withSidebar
+        withCategoryTree={false}
+        hasCategory
+        lockedDevice
+      />,
+    );
+
+    expect(
+      screen.queryByTestId("category-tree-skeleton"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reserves exactly the rows the page says its tree draws", () => {
     const rows = () =>
-      screen.getByTestId("category-chips-skeleton").children.length;
+      screen.getByTestId("category-tree-skeleton").querySelectorAll(".h-9")
+        .length;
 
-    const { unmount } = render(<ProductListSkeleton withSidebar />);
-    expect(rows()).toBe(1);
-    unmount();
-
-    render(<ProductListSkeleton withSidebar withSubcategoryChips />);
-    expect(rows()).toBe(2);
+    render(<ProductListSkeleton withSidebar categoryTreeRows={9} />);
+    expect(rows()).toBe(9);
   });
 
   // TASK-869 — the count line sits in the results column in every variant,

@@ -12,7 +12,7 @@ import {
   buildCatalogListingParams,
   readSearchParamsRecord,
 } from "@/widgets/product-list";
-import { subcategoryChipsOf } from "@/features/product-filters";
+import { categoryTreeRowCount } from "@/features/product-filters";
 import { getCategoryControllerGetCategoryTreeQueryOptions } from "@/shared/api/generated/categories/categories";
 import { getProductControllerFindAllQueryOptions } from "@/shared/api/generated/products/products";
 import {
@@ -55,9 +55,9 @@ const NOINDEX_FOLLOW = { index: false, follow: true } as const;
 // a landing page of its own to canonicalise onto (`/categories/<slug>`); the
 // deals have no per-category landing, so here it is a narrowing like any other
 // filter — noindex,follow and no canonical. Left to the helper (which keeps
-// `category` out of its filter list for the `/products` reason), the CategoryChips
-// links would each canonicalise onto `/promo` or `/promo?page=N`, a different
-// result set.
+// `category` out of its filter list for the `/products` reason), the category
+// tree's links would each canonicalise onto `/promo` or `/promo?page=N`, a
+// different result set.
 export async function generateMetadata({
   searchParams,
 }: {
@@ -118,17 +118,17 @@ export default async function PromoPage({
   const listingQuery = getProductControllerFindAllQueryOptions(listingParams, {
     request: serverRequestOptions(),
   });
-  // The category tree too (TASK-515): the deals listing has the catalogue's
-  // chips row, and without the tree on the server the row appeared only after
-  // hydration and pushed the grid 60px down.
+  // The category tree too (TASK-515, TASK-2011): the deals listing has the
+  // catalogue's rail tree, and without it on the server the panel appeared
+  // only after hydration and pushed the filter cards down.
   const categoryTreeQuery = getCategoryControllerGetCategoryTreeQueryOptions({
     request: serverRequestOptions(),
   });
   await prefetchQueries(queryClient, [listingQuery, categoryTreeQuery]);
   const categoryTree = queryClient.getQueryData(categoryTreeQuery.queryKey);
-  const withSubcategoryChips =
-    subcategoryChipsOf(categoryTree?.data ?? [], listingParams.category)
-      .length > 0;
+  const categoryTreeRows = categoryTree
+    ? categoryTreeRowCount(categoryTree.data ?? [], listingParams.category)
+    : undefined;
 
   // ItemList from the grid's own fetch (TASK-556 tail): the structured data
   // names exactly the deals the page shows.
@@ -153,15 +153,15 @@ export default async function PromoPage({
       />
       {itemList && <JsonLd schema={itemList} />}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
-        {/* The fallback stands in for the whole listing — chips row, toolbar
-            and the filter rail — like on /products (TASK-416). Its rail has no
+        {/* The fallback stands in for the whole listing — toolbar and the
+            rail with its category tree — like on /products (TASK-416). Its rail has no
             «Знижки» (the route fixes it) and reserves «Характеристики» under a
             `?category=` (TASK-515). */}
         <Suspense
           fallback={
             <ProductListSkeleton
               withSidebar
-              withSubcategoryChips={withSubcategoryChips}
+              categoryTreeRows={categoryTreeRows}
               lockedOnSale={PROMO_LISTING_LOCKS.onSale}
               hasCategory={Boolean(listingParams.category)}
             />

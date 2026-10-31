@@ -9,8 +9,10 @@ import { useBrandControllerFindAll } from "@/entities/brand";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import {
   ActiveFilterChips,
-  CategoryChips,
-  CategoryChipsSkeleton,
+  CategoryTreePanel,
+  CategoryTreePanelSkeleton,
+  CategoryTreeSheet,
+  categoryTreeHref,
   FiltersButton,
   FiltersDrawer,
   ListingEmptyState,
@@ -41,6 +43,13 @@ const PAGE_SIZE = 20;
 const subscribeNever = () => () => {};
 const clientSnapshot = () => true;
 const serverSnapshot = () => false;
+
+/**
+ * What a category change in the tree keeps (TASK-2011): the query — it is the
+ * page — plus the device and the sort order. Brand, price, availability and
+ * the page belonged to the old category and are dropped.
+ */
+const CATEGORY_NAV_KEEP = ["q", "device", "sort"] as const;
 
 interface SearchResultsViewProps {
   /** The search query from the URL (`?q=`). May be blank. */
@@ -79,8 +88,8 @@ interface SearchFacets {
  * page is shareable and survives a reload. The server component hands down the
  * first `q`/`page`; from then on the live URL wins (they agree on first render).
  *
- * The category is picked from the same chips row the catalogue uses and rides
- * the URL as a slug (TASK-523). Its id is handed to the panel, so the brand
+ * The category is picked from the same category tree the catalogue's rail has
+ * (TASK-2011; a chips row since TASK-523) and rides the URL as a slug. Its id is handed to the panel, so the brand
  * list is scoped to it — but the panel's spec facets and «Зі знижкою» stay
  * hidden (`hideSpecFacets`, `hideOnSale`): `GET /api/search` takes neither
  * `?specs=` nor `?onSale=`, and a control the endpoint ignores is worse than
@@ -93,6 +102,7 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
   const pathname = usePathname();
 
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [treeOpen, setTreeOpen] = useState(false);
 
   // The live URL is the source of truth; the server-resolved props are the
   // first-render fallback (and the value for a param the URL does not carry).
@@ -153,24 +163,32 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
     inStock: facets.inStock,
   };
 
-  // The public tree (roots + children, one payload) feeds the chips row and the
-  // slug → id lookup the id-addressed brand list needs — the same query the
-  // catalogue already holds, so it is shared through React Query's cache.
+  // The public tree (every level, one payload) feeds the rail's category tree
+  // and the slug → id lookup the id-addressed brand list needs — the same query
+  // the catalogue already holds, so it is shared through React Query's cache.
   const { data: categoriesData, isPending: categoriesPending } =
     useCategoryControllerGetCategoryTree();
   // Until hydration is done, render what the server had — no tree (TASK-534,
   // the catalogue's rule): the header's menu can have fetched it first, and
-  // chips the server never drew are a hydration mismatch.
+  // rows the server never drew are a hydration mismatch.
   const hydrated = useSyncExternalStore(
     subscribeNever,
     clientSnapshot,
     serverSnapshot,
   );
   const categories = hydrated ? (categoriesData?.data ?? []) : [];
-  // No tree yet → the chips row's placeholder, not nothing (TASK-515): the row
-  // is 60px of page above the toolbar and the grid, which used to drop by that
-  // much the moment the tree landed.
-  const categoryChipsPending = !hydrated || categoriesPending;
+  // No tree yet → the panel's placeholder, not nothing (TASK-515): the filter
+  // cards under it would rise and fall back when it landed.
+  const categoryTreePending = !hydrated || categoriesPending;
+  // A node narrows the results by `?category=` on this page (TASK-2011).
+  const categoryHref = useCallback(
+    (slug: string | undefined) =>
+      categoryTreeHref(slug, searchParams, {
+        target: { path: pathname },
+        keep: CATEGORY_NAV_KEEP,
+      }),
+    [searchParams, pathname],
+  );
   const activeCategoryId = facets.category
     ? findCategoryIdBySlug(categories, facets.category)
     : undefined;
@@ -189,7 +207,7 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
 
   // Badge on the mobile «Фільтри» button. Counted through the shared definition
   // (TASK-414) and without the keyword, which is the query rather than a filter.
-  // The category is excluded as on the catalogue: its control is the chips row.
+  // The category is excluded as on the catalogue: its control is the tree.
   const activeFilterCount = countActiveFilters(
     { ...panelParams, search: undefined },
     { includeCategory: false },
@@ -336,32 +354,33 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
 
   return (
     <div>
-      {/* Category chips — the catalogue's own row (TASK-523), writing
-          ?category=<slug>. No per-category counts yet: those need facet counts
-          from the search engine (TASK-1401). */}
-      {categoryChipsPending ? (
-        // A selected category opens the subcategory row under it (its own
-        // children, or its siblings) — so reserve that row too. Only a
-        // childless root guesses wrong, and collapses by one row.
-        <CategoryChipsSkeleton withSubcategories={Boolean(facets.category)} />
-      ) : (
-        <CategoryChips
-          categories={categories}
-          activeCategorySlug={facets.category}
-          onSelect={(category) => applyFilters({ category })}
-        />
-      )}
-
-      {/* Toolbar: mobile filters button (left) + sort (right) — the
-          catalogue's controls (TASK-876). `min-w-0` lets the sort pill shrink
-          and truncate on a 320px phone instead of widening the page. No
-          grid/list toggle yet: the list row lives in the catalogue widget,
-          and a widget does not import a widget (TASK-1621). */}
-      <div className="mb-5 flex items-center gap-3">
-        <FiltersButton
-          activeCount={activeFilterCount}
-          onClick={() => setFiltersOpen(true)}
-        />
+      {/* Toolbar: «Фільтри» + «Підкатегорії · N» below `lg` and the sort —
+          the catalogue's controls (TASK-876, TASK-2011). Below `md` the two
+          buttons share the first row and the sort wraps under them.
+          `min-w-0` lets the sort pill shrink and truncate on a 320px phone
+          instead of widening the page. No grid/list toggle yet: the list row
+          lives in the catalogue widget, and a widget does not import a widget
+          (TASK-1621). The tree's nodes write ?category=<slug>; no
+          per-category counts yet — those need facet counts from the search
+          engine (TASK-1401). */}
+      <div className="mb-5 flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="flex w-full gap-2 sm:gap-3 md:w-auto lg:hidden">
+          <FiltersButton
+            activeCount={activeFilterCount}
+            onClick={() => setFiltersOpen(true)}
+            className="flex-1 md:flex-none"
+          />
+          <CategoryTreeSheet
+            open={treeOpen}
+            onOpenChange={setTreeOpen}
+            pending={categoryTreePending}
+            categories={categories}
+            currentSlug={facets.category}
+            hrefFor={categoryHref}
+            resultCount={meta?.total}
+            className="flex-1 md:flex-none"
+          />
+        </div>
 
         <div className="ml-auto flex min-w-0 items-center gap-3">
           <SearchSortSelect value={facets.sort} onChange={applyFilters} />
@@ -384,10 +403,20 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
         {/* Desktop sidebar. A sticky aside with no height cap runs off a short
             viewport, and page scroll never brings the overflow back — so it is
-            capped at `max-h-sticky-aside` and scrolls inside itself (TASK-414). */}
+            capped at `max-h-sticky-aside` and scrolls inside itself (TASK-414).
+            The category tree tops it (TASK-2011), then the filter cards. */}
         <aside
-          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} lg:block lg:max-h-sticky-aside lg:self-start lg:overflow-y-auto lg:overscroll-contain`}
+          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} lg:flex lg:max-h-sticky-aside lg:flex-col lg:gap-3.5 lg:self-start lg:overflow-y-auto lg:overscroll-contain`}
         >
+          {categoryTreePending ? (
+            <CategoryTreePanelSkeleton />
+          ) : (
+            <CategoryTreePanel
+              categories={categories}
+              currentSlug={facets.category}
+              hrefFor={categoryHref}
+            />
+          )}
           <ProductFilters
             idPrefix="search-filter"
             currentParams={panelParams}

@@ -2,7 +2,7 @@ import { Skeleton } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { PRODUCT_GRID_CLASS } from "@/shared/config/product-grid";
 import {
-  CategoryChipsSkeleton,
+  CategoryTreePanelSkeleton,
   FilterCardSkeleton,
   filterRailSections,
   type CatalogView,
@@ -20,18 +20,19 @@ interface ProductListSkeletonProps {
    */
   withSidebar?: boolean;
   /**
-   * Draw the category chips row (`withSidebar` only). `ProductListView` hides
-   * it when the route locks the category — `/categories/[slug]` and
-   * `/catalog/[category]/[device]` — so those fallbacks pass `false`, or the
-   * placeholder row would collapse and pull everything up on mount.
+   * Draw the category tree — its panel at the top of the rail and its
+   * «Підкатегорії» button in the toolbar below `lg` (`withSidebar` only,
+   * TASK-2011). `ProductListView` leaves the tree out only where the route
+   * fixes the device (`/catalog/[category]/[device]`), so that fallback passes
+   * `false`.
    */
-  withCategoryChips?: boolean;
+  withCategoryTree?: boolean;
   /**
-   * Reserve the subcategory chips row under it (`subcategoryChipsOf` is
-   * non-empty for the active category). Only a page that has the category tree
-   * can know; a `loading.tsx` gets no searchParams and leaves it out.
+   * Rows the tree panel will draw — `categoryTreeRowCount` of the page's tree
+   * and category. Only a page that has the tree can know; a `loading.tsx` gets
+   * no searchParams and takes the panel's default.
    */
-  withSubcategoryChips?: boolean;
+  categoryTreeRows?: number;
   /** A category is active → the rail ends with «Характеристики» (TASK-515). */
   hasCategory?: boolean;
   /** The route fixes the device → the rail has no «Сумісний пристрій». */
@@ -118,8 +119,8 @@ function ProductCardSkeleton() {
 export function ProductListSkeleton({
   view = "grid",
   withSidebar = false,
-  withCategoryChips = true,
-  withSubcategoryChips = false,
+  withCategoryTree = true,
+  categoryTreeRows,
   hasCategory = false,
   lockedDevice = false,
   lockedOnSale = false,
@@ -169,21 +170,22 @@ export function ProductListSkeleton({
 
   return (
     <div aria-hidden="true">
-      {/* Category chips — the feature's own placeholder, the one the view
-          shows until its category tree is there, so the two are the same box
-          row for row (TASK-515). */}
-      {withCategoryChips && (
-        <CategoryChipsSkeleton withSubcategories={withSubcategoryChips} />
-      )}
-
-      {/* Toolbar: mobile filters button (left) + sort & view toggle (right),
-          the same gaps as ProductListView. Every control is 44px tall since
-          the toggle became one pill shown at every width (TASK-1958; it was a
-          54px segment on desktop only, TASK-515): icon-only 44px below `sm`,
-          «Списком» beside the icon from `sm`. The sort trigger's width
-          follows its «Спочатку: …» label. */}
-      <div className="mb-5 flex items-center gap-2 sm:gap-3">
-        <Skeleton className="h-11 w-32 rounded-xl lg:hidden" />
+      {/* Toolbar: the same rows and gaps as ProductListView. Every control is
+          44px tall since the toggle became one pill shown at every width
+          (TASK-1958): icon-only 44px below `sm`, «Списком» beside the icon
+          from `sm`. With the category tree (TASK-2011), «Фільтри» and
+          «Підкатегорії» share the first row below `md` and sort + view wrap
+          under them. The sort trigger's width follows its «Спочатку: …»
+          label. */}
+      <div className="mb-5 flex flex-wrap items-center gap-2 sm:gap-3">
+        {withCategoryTree ? (
+          <div className="flex w-full gap-2 sm:gap-3 md:w-auto lg:hidden">
+            <Skeleton className="h-11 flex-1 rounded-xl md:w-32 md:flex-none" />
+            <Skeleton className="h-11 flex-1 rounded-xl md:w-44 md:flex-none" />
+          </div>
+        ) : (
+          <Skeleton className="h-11 w-32 rounded-xl lg:hidden" />
+        )}
         <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
           <Skeleton className="h-11 w-40 max-w-full rounded-xl sm:w-66" />
           <Skeleton className="h-11 w-11 shrink-0 rounded-xl sm:w-30" />
@@ -197,6 +199,11 @@ export function ProductListSkeleton({
           className="hidden flex-col gap-3.5 lg:flex"
           data-testid="filter-rail-skeleton"
         >
+          {/* The tree panel first, as in the rail (TASK-2011) — the feature's
+              own placeholder, the one the view shows until its tree is there. */}
+          {withCategoryTree && (
+            <CategoryTreePanelSkeleton rows={categoryTreeRows} />
+          )}
           {/* WHICH cards, in what order, comes from `filterRailSections` — the
               list `ProductFilters` gates its own sections on — and each card is
               the feature's own placeholder: the same box «Виробник» and

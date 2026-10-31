@@ -6,14 +6,26 @@ export { FilterChipList, type FilterChip } from "./ui/filter-chip-list";
 export { PriceRangeFilter } from "./ui/price-range-filter";
 export { DeviceModelFilter } from "./ui/device-model-filter";
 export { SpecFacets } from "./ui/spec-facets";
-export { CategoryChips } from "./ui/category-chips";
-// Its placeholder and its second-row rule (TASK-515): the catalogue skeleton and
-// pages reserve exactly the rows the chips will draw.
-export { CategoryChipsSkeleton } from "./ui/category-chips-skeleton";
+// The category tree (TASK-2011, «дерево в рейці»): the rail panel, its
+// placeholder, and the same tree in a bottom sheet below `lg`.
+export { CategoryTree } from "./ui/category-tree";
+export {
+  CategoryTreePanel,
+  CategoryTreePanelSkeleton,
+} from "./ui/category-tree-panel";
+export { CategoryTreeSheet } from "./ui/category-tree-sheet";
 // One filter card's placeholder (TASK-515): the catalogue skeleton's rail and
 // the brand / spec cards' own pending state are the same box.
 export { FilterCardSkeleton } from "./ui/filter-card-skeleton";
-export { subcategoryChipsOf } from "./model/category-chips";
+// The tree's rows, its row count (what the skeleton reserves) and its links.
+export {
+  categoryTreeView,
+  categoryTreeRowCount,
+  categoryTreeHref,
+  subcategoryCount,
+  type CategoryTreeView,
+  type CategoryTreeHrefOptions,
+} from "./model/category-tree";
 export { SortSelect, type SortOption } from "./ui/sort-select";
 export { ViewToggle, type CatalogView } from "./ui/view-toggle";
 export { FilterCheckbox } from "./ui/filter-checkbox";

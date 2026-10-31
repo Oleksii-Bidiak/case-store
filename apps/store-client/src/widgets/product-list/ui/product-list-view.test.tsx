@@ -124,16 +124,29 @@ beforeEach(() => {
 });
 
 describe("ProductListView — unlocked (/products, unchanged behavior)", () => {
-  it("renders the category chips row and follows ?category= from the URL", async () => {
+  it("renders the category tree and follows ?category= from the URL", async () => {
     const productRequests = installCatalogHandlers();
-    currentQuery = "category=chargers";
+    currentQuery = "category=chargers&view=list&brand=apple";
 
     renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
 
     await screen.findByText("Alpha Case");
+    const tree = await screen.findByRole("navigation", {
+      name: dict.filters.categoryTreeTitle,
+    });
+    // TASK-2011: the URL's category is the tree's current node, and every
+    // node links to its own landing page, keeping the view but not the facets.
+    expect(within(tree).getByRole("link", { name: "Зарядні" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(tree).getByRole("link", { name: "Чохли" })).toHaveAttribute(
+      "href",
+      "/categories/cases?view=list",
+    );
     expect(
-      screen.getByRole("group", { name: dict.filters.categoryChipsAria }),
-    ).toBeInTheDocument();
+      within(tree).getByRole("link", { name: dict.filters.allCategories }),
+    ).toHaveAttribute("href", "/products?view=list");
     // TASK-420: the listing is filtered by the SLUG, and no uuid rides along.
     expect(productRequests.at(-1)?.searchParams.get("category")).toBe(
       "chargers",
@@ -143,7 +156,7 @@ describe("ProductListView — unlocked (/products, unchanged behavior)", () => {
 });
 
 describe("ProductListView — lockedCategory (/categories/[slug], TASK-277)", () => {
-  it("hides the category chips row and queries the locked category", async () => {
+  it("marks the locked category current in the tree and queries it", async () => {
     const productRequests = installCatalogHandlers();
     currentPathname = "/categories/cases";
 
@@ -155,9 +168,17 @@ describe("ProductListView — lockedCategory (/categories/[slug], TASK-277)", ()
     );
 
     await screen.findByText("Alpha Case");
-    expect(
-      screen.queryByRole("group", { name: dict.filters.categoryChipsAria }),
-    ).not.toBeInTheDocument();
+    const tree = await screen.findByRole("navigation", {
+      name: dict.filters.categoryTreeTitle,
+    });
+    expect(within(tree).getByRole("link", { name: "Чохли" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(tree).getByRole("link", { name: "Зарядні" })).toHaveAttribute(
+      "href",
+      "/categories/chargers",
+    );
     expect(productRequests.at(-1)?.searchParams.get("category")).toBe("cases");
   });
 
@@ -226,19 +247,23 @@ describe("ProductListView — lockedOnSale (/promo, TASK-1301)", () => {
     expect(lastRequest.searchParams.get("category")).toBe("cases");
   });
 
-  it("keeps the catalogue chips row, but neither the discount control nor its chip", async () => {
+  it("keeps the category tree, but neither the discount control nor its chip", async () => {
     installCatalogHandlers();
     currentPathname = "/promo";
     currentQuery = "inStock=true";
 
-    renderWithProviders(<ProductListView lockedOnSale />);
+    renderWithProviders(<ProductListView lockedOnSale anchorId="deals" />);
     await screen.findByText("Alpha Case");
 
-    expect(
-      await screen.findByRole("group", {
-        name: dict.filters.categoryChipsAria,
-      }),
-    ).toBeInTheDocument();
+    // TASK-2011: the deals have no per-category landing, so the tree narrows
+    // them by ?category= on /promo itself and lands back on the listing.
+    const tree = await screen.findByRole("navigation", {
+      name: dict.filters.categoryTreeTitle,
+    });
+    expect(within(tree).getByRole("link", { name: "Зарядні" })).toHaveAttribute(
+      "href",
+      "/promo?category=chargers#deals",
+    );
     expect(
       screen.queryByRole("checkbox", { name: dict.filters.onSaleOnly }),
     ).not.toBeInTheDocument();
@@ -690,13 +715,12 @@ describe("ProductListView — adopts the server's prefetch (TASK-563)", () => {
 });
 
 /**
- * TASK-515 — the chips row is 60px of page above the toolbar and the grid. It
- * used to be absent from the server HTML (no tree there) and mount after
- * hydration, so the grid first rose out of the skeleton's place and then fell
- * back. Now the row is in the first HTML when the route prefetched the tree,
- * and a same-size placeholder stands in whenever there is no tree yet.
+ * TASK-515 / TASK-2011 — the category tree tops the rail. It is in the first
+ * HTML (as crawlable links) when the route prefetched the tree, and a
+ * same-size placeholder stands in whenever there is no tree yet, so the filter
+ * cards under it do not move when it lands.
  */
-describe("ProductListView — the category chips row holds its place (TASK-515)", () => {
+describe("ProductListView — the category tree holds its place (TASK-515, TASK-2011)", () => {
   const tree = {
     data: [
       treeNode("cat-locked", "cases", "Чохли"),
@@ -723,7 +747,7 @@ describe("ProductListView — the category chips row holds its place (TASK-515)"
       </QueryClientProvider>,
     );
 
-  it("puts the chips into the server HTML when the route prefetched the tree", () => {
+  it("puts the tree's links into the server HTML when the route prefetched the tree", () => {
     const prefetched = new QueryClient();
     prefetched.setQueryData(
       getCategoryControllerGetCategoryTreeQueryKey(),
@@ -736,16 +760,16 @@ describe("ProductListView — the category chips row holds its place (TASK-515)"
       </PrefetchBoundary>,
     );
 
-    expect(html).toContain(`aria-label="${dict.filters.categoryChipsAria}"`);
+    expect(html).toContain('href="/categories/chargers"');
     expect(html).toContain("Зарядні");
-    expect(html).not.toContain('data-testid="category-chips-skeleton"');
+    expect(html).not.toContain('data-testid="category-tree-skeleton"');
   });
 
-  it("reserves the row with its placeholder when the server had no tree", () => {
+  it("reserves the panel with its placeholder when the server had no tree", () => {
     const html = serverHtml(<ProductListView />);
 
-    expect(html).toContain('data-testid="category-chips-skeleton"');
-    expect(html).not.toContain(dict.filters.categoryChipsAria);
+    expect(html).toContain('data-testid="category-tree-skeleton"');
+    expect(html).not.toContain('href="/categories/chargers"');
   });
 
   it("keeps the placeholder on the client until the tree arrives", async () => {
@@ -757,38 +781,59 @@ describe("ProductListView — the category chips row holds its place (TASK-515)"
     renderWithProviders(<ProductListView />);
 
     await screen.findByText("Alpha Case");
-    expect(screen.getByTestId("category-chips-skeleton")).toBeInTheDocument();
+    expect(screen.getByTestId("category-tree-skeleton")).toBeInTheDocument();
     expect(
-      screen.queryByRole("group", { name: dict.filters.categoryChipsAria }),
+      screen.queryByRole("navigation", {
+        name: dict.filters.categoryTreeTitle,
+      }),
     ).not.toBeInTheDocument();
+    // The sheet's button keeps its place, neutral and inert, meanwhile.
+    expect(
+      screen.getByRole("button", { name: dict.filters.categoryTreeTitle }),
+    ).toBeDisabled();
   });
 
-  it("swaps the placeholder for the chips once the tree is there", async () => {
+  it("swaps the placeholder for the tree once it is there", async () => {
     installCatalogHandlers();
 
     renderWithProviders(<ProductListView />);
 
     expect(
-      await screen.findByRole("group", {
-        name: dict.filters.categoryChipsAria,
+      await screen.findByRole("navigation", {
+        name: dict.filters.categoryTreeTitle,
       }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByTestId("category-chips-skeleton"),
+      screen.queryByTestId("category-tree-skeleton"),
     ).not.toBeInTheDocument();
+    // Below lg: «Підкатегорії · 2» — the two roots on «Усі товари».
+    expect(
+      screen.getByRole("button", { name: dict.filters.subcategoriesButton(2) }),
+    ).toBeEnabled();
   });
 
-  it("draws no row at all on a category landing page, placeholder included", async () => {
+  it("draws no tree on a compat page, where the route fixes the device", async () => {
     installCatalogHandlers();
-    currentPathname = "/categories/cases";
+    currentPathname = "/catalog/cases/iphone-15";
 
     renderWithProviders(
-      <ProductListView lockedCategory={{ id: "cat-locked", slug: "cases" }} />,
+      <ProductListView
+        lockedCategory={{ id: "cat-locked", slug: "cases" }}
+        lockedDevice={{ slug: "iphone-15" }}
+      />,
     );
 
     await screen.findByText("Alpha Case");
     expect(
-      screen.queryByTestId("category-chips-skeleton"),
+      screen.queryByTestId("category-tree-skeleton"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("navigation", {
+        name: dict.filters.categoryTreeTitle,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Підкатегорії|^Категорія$/ }),
     ).not.toBeInTheDocument();
   });
 });

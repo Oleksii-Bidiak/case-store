@@ -3,18 +3,18 @@ import type { Metadata } from "next";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
-import {
-  ProductListView,
-  ProductListSkeleton,
-  SubcategoryChips,
-} from "@/widgets";
+import { ProductListView, ProductListSkeleton } from "@/widgets";
+import { categoryTreeRowCount } from "@/features/product-filters";
 import {
   buildCatalogListingParams,
   findCategoryPathBySlug,
   readSearchParamsRecord,
 } from "@/widgets/product-list";
 import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
-import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
+import {
+  categoryControllerGetCategoryTree,
+  getCategoryControllerGetCategoryTreeQueryKey,
+} from "@/shared/api/generated/categories/categories";
 import { getProductControllerFindAllQueryOptions } from "@/shared/api/generated/products/products";
 import {
   createServerQueryClient,
@@ -71,10 +71,17 @@ function first(value: string | string[] | undefined): string | undefined {
  */
 const resolveCategoryPath = cache(
   async (slug: string): Promise<CategoryTreeNodeEntity[] | null> => {
-    const { data } = await categoryControllerGetCategoryTree();
+    const { data } = await fetchCategoryTree();
     return findCategoryPathBySlug(data ?? [], slug);
   },
 );
+
+/**
+ * The public tree, once per request (React `cache()`). Resolves the path AND
+ * goes to the client under the rail tree's query key (TASK-2011), so the tree
+ * — ancestors, siblings, subcategories — is in the first HTML as links.
+ */
+const fetchCategoryTree = cache(() => categoryControllerGetCategoryTree());
 
 /**
  * Serve the 308 from a pre-TASK-420 uuid query to its slug form, if this is one.
@@ -249,6 +256,18 @@ export default async function CategoryLandingPage({
   });
   await prefetchQueries(queryClient, [listingQuery]);
   const listing = queryClient.getQueryData(listingQuery.queryKey);
+  // The rail's category tree (TASK-2011): the tree this page already read to
+  // resolve its path (one `cache()`d request), under the key the view's tree
+  // query reads — so its links are in the first HTML.
+  const categoryTree = await fetchCategoryTree();
+  queryClient.setQueryData(
+    getCategoryControllerGetCategoryTreeQueryKey(),
+    categoryTree,
+  );
+  const categoryTreeRows = categoryTreeRowCount(
+    categoryTree.data ?? [],
+    node.slug,
+  );
 
   // «Головна → [батько →] категорія» — one crumb per tree ancestor, each an
   // ancestor's own landing page (no generic hub crumb).
@@ -309,18 +328,16 @@ export default async function CategoryLandingPage({
         </p>
       </div>
 
-      {/* Direct subcategories — navigation links, not filter toggles */}
-      <SubcategoryChips categories={node.children ?? []} />
-
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
-        {/* The whole catalogue shell, like /products (TASK-416), minus the
-            category chips the locked view never shows, plus «Характеристики»
-            — a category is always set here (TASK-515). */}
+        {/* The whole catalogue shell, like /products (TASK-416): the rail's
+            category tree — this category current, its subcategories under it
+            (TASK-2011) — plus «Характеристики», a category is always set here
+            (TASK-515). */}
         <Suspense
           fallback={
             <ProductListSkeleton
               withSidebar
-              withCategoryChips={false}
+              categoryTreeRows={categoryTreeRows}
               hasCategory
             />
           }
@@ -330,6 +347,7 @@ export default async function CategoryLandingPage({
             // Slug for the listing filter, id for the id-addressed side
             // endpoints (brands-per-category, filterable specs) — TASK-420.
             lockedCategory={{ id: node.id, slug: node.slug }}
+            categoryTreePrefetched
           />
         </Suspense>
       </PrefetchBoundary>

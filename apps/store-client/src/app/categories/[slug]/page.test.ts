@@ -4,12 +4,13 @@
 jest.mock("@/widgets", () => ({
   ProductListView: () => null,
   ProductListSkeleton: () => null,
-  SubcategoryChips: () => null,
 }));
 // Category tree fetch used by resolveCategoryPath — an empty tree resolves the
 // slug to null (the tree is active-only), which is the route's 404 candidate.
+// The same read is handed to the rail's tree under its query key (TASK-2011).
 jest.mock("@/shared/api/generated/categories/categories", () => ({
   categoryControllerGetCategoryTree: jest.fn(),
+  getCategoryControllerGetCategoryTreeQueryKey: () => ["/api/categories/tree"],
 }));
 // The grid's page, prefetched server-side (TASK-563) — it feeds both the
 // HydrationBoundary and the ItemList JSON-LD. The options builder is stubbed
@@ -72,6 +73,7 @@ import { SITE_URL } from "@/shared/config";
 import {
   findDehydratedQueryKeys,
   findJsonLdSchemas,
+  findPropValues,
 } from "@/shared/test/element-tree";
 import { buildCatalogListingParams } from "@/widgets/product-list/model/listing-params";
 
@@ -266,7 +268,36 @@ describe("categories/[slug] — the first HTML carries the product cards (TASK-5
     expect(findAll).toHaveBeenCalledWith(expected);
     expect(findDehydratedQueryKeys(tree)).toEqual([
       ["/api/products", expected],
+      ["/api/categories/tree"],
     ]);
+  });
+
+  // TASK-2011 — the rail's category tree is in the first HTML as links: the
+  // tree this page read for its path goes to the view under the tree query's
+  // key, the view is told so, and the fallback reserves the tree's rows.
+  it("hands its tree to the rail and sizes the fallback's tree panel from it", async () => {
+    const [node] = makeTree();
+    getTree.mockResolvedValue({
+      data: [
+        {
+          ...node,
+          children: [
+            { ...node, id: "c2", slug: "iphone", name: "iPhone", children: [] },
+          ],
+        },
+      ],
+    } as never);
+
+    const tree = await run();
+
+    expect(getTree).toHaveBeenCalledTimes(1);
+    expect(findDehydratedQueryKeys(tree)).toContainEqual([
+      "/api/categories/tree",
+    ]);
+    expect(findPropValues(tree, "categoryTreePrefetched")).toEqual([true]);
+    // «Усі категорії» + «Чохли» (current) + its one child.
+    const [fallback] = findPropValues(tree, "fallback");
+    expect(findPropValues(fallback, "categoryTreeRows")).toEqual([3]);
   });
 
   it("builds the ItemList from that same page — no second product request", async () => {
@@ -301,7 +332,7 @@ describe("categories/[slug] — the first HTML carries the product cards (TASK-5
 
     const tree = await run();
 
-    expect(findDehydratedQueryKeys(tree)).toEqual([]);
+    expect(findDehydratedQueryKeys(tree)).toEqual([["/api/categories/tree"]]);
     expect(findJsonLdSchemas(tree).map((schema) => schema["@type"])).toEqual([
       "BreadcrumbList",
     ]);

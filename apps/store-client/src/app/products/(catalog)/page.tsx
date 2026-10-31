@@ -14,7 +14,7 @@ import {
   resolveLegacyCatalogParams,
   withQuery,
 } from "@/shared/lib/legacy-catalog-params";
-import { subcategoryChipsOf } from "@/features/product-filters";
+import { categoryTreeRowCount } from "@/features/product-filters";
 import type {
   CategoryTreeNodeEntity,
   CategoryTreeResponse,
@@ -72,9 +72,9 @@ const resolveCategoryNode = cache(
 /**
  * The public category tree, once per request (React `cache()`), or null on
  * any failure. Read for the selected category's name AND handed to the client
- * under the key `ProductListView`'s chips query uses (TASK-515), so one
- * download serves both — and the chips row is in the first HTML instead of
- * appearing after hydration and pushing the whole grid down.
+ * under the key `ProductListView`'s tree query uses (TASK-515), so one
+ * download serves both — and the rail's category tree is in the first HTML as
+ * links (TASK-2011) instead of appearing after hydration.
  */
 const fetchCategoryTree = cache(
   async (): Promise<CategoryTreeResponse | null> => {
@@ -286,8 +286,8 @@ export default async function ProductsPage({
     fetchCategoryTree(),
     prefetchQueries(queryClient, [listingQuery]),
   ]);
-  // The chips row's data, under the chips query's own key (TASK-515). Absent
-  // when the read failed — the view then shows the row's placeholder and
+  // The rail tree's data, under the tree query's own key (TASK-515). Absent
+  // when the read failed — the view then shows the panel's placeholder and
   // fetches the tree itself, as it did before.
   if (categoryTree) {
     queryClient.setQueryData(
@@ -295,8 +295,10 @@ export default async function ProductsPage({
       categoryTree,
     );
   }
-  const withSubcategoryChips =
-    subcategoryChipsOf(categoryTree?.data ?? [], categorySlug).length > 0;
+  // The fallback's tree panel reserves exactly the rows the tree will draw.
+  const categoryTreeRows = categoryTree
+    ? categoryTreeRowCount(categoryTree.data ?? [], categorySlug)
+    : undefined;
 
   // ItemList from the same fetch as the grid (TASK-556 tail): the structured
   // data lists exactly the cards the page shows.
@@ -364,8 +366,8 @@ export default async function ProductsPage({
         </p>
       </div>
 
-      {/* The fallback stands in for ProductListView as a whole — chips row,
-          toolbar and the 268px filter rail included (TASK-416) — so the grid
+      {/* The fallback stands in for ProductListView as a whole — toolbar and
+          the 268px rail with its category tree included (TASK-416) — so the grid
           does not render full-width and then shrink into a column. With a
           `?category=` the rail also reserves «Характеристики» (TASK-515). */}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
@@ -373,7 +375,7 @@ export default async function ProductsPage({
           fallback={
             <ProductListSkeleton
               withSidebar
-              withSubcategoryChips={withSubcategoryChips}
+              categoryTreeRows={categoryTreeRows}
               hasCategory={Boolean(categorySlug)}
             />
           }

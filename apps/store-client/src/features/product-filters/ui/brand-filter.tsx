@@ -45,7 +45,7 @@ interface BrandFilterProps {
  * BrandFilter (TASK-189) — a "Виробник" dropdown card for the catalog filter
  * panel. Lists the active brands from `GET /brands`; a leading "Всі виробники"
  * option clears the selection. Renders nothing (no empty card) when there are
- * no brands — same empty-state convention as `CategoryChips` — and the card's
+ * no brands, and the card's
  * placeholder box while the list is still loading (TASK-515).
  *
  * Scoped to the active category since TASK-414. Before that the dropdown listed

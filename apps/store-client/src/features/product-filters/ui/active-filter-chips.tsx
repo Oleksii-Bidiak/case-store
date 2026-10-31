@@ -48,7 +48,7 @@ interface ActiveFilterChipsProps {
  * ActiveFilterChips — a removable pill per active filter (search, min/max
  * price), shown above the product grid. Each chip's × clears just that filter;
  * a trailing "clear all" clears every filter at once (including the category,
- * whose visible control is the `CategoryChips` row since TASK-216 — it is not
+ * whose visible control is the category tree since TASK-2011 — it is not
  * duplicated here). The search chip is highlighted in the brand colour and
  * carries a search glyph.
  */

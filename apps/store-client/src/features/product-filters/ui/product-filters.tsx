@@ -93,8 +93,8 @@ const cardTitleClass =
  * Filter panel for the product list page, styled as stacked cards (keyword
  * search, price). Each control writes its change back to the URL via
  * `onFilterChange`; sorting and the grid/list toggle live in the page toolbar.
- * Category selection moved to the `CategoryChips` row above the grid
- * (TASK-216) and is intentionally no longer part of this stack.
+ * Category selection is the category tree that tops the rail (TASK-2011;
+ * a chips row above the grid since TASK-216) and is not part of this stack.
  */
 export function ProductFilters({
   currentParams,
@@ -113,8 +113,8 @@ export function ProductFilters({
   // now it appeared for four of them and cleared those same four, leaving a
   // device or spec selection applied and the button gone.
   //
-  // `includeCategory: false` — the category's control is the chips row above the
-  // grid (TASK-216) and, on a category landing page, the route itself; clearing
+  // `includeCategory: false` — the category's control is the category tree
+  // (TASK-2011) and, on a category landing page, the route itself; clearing
   // it from in here would navigate the shopper somewhere they did not ask to go.
   //
   // `includeDevice` follows the same rule one segment down: on
