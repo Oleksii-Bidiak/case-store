@@ -45,7 +45,7 @@ export const DeviceBarCategories = forwardRef<
   { device, categories, isLoading, panelId, panelOpen, onTogglePanel },
   toggleRef,
 ) {
-  const [rowRef, fit] = useFitCount<HTMLDivElement>(categories.length);
+  const [rowRef, fit] = useFitCount<HTMLDivElement>(categories);
 
   return (
     <div className="hidden border-t border-border lg:block">

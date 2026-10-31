@@ -1,4 +1,6 @@
 import { http, HttpResponse } from "msw";
+import { renderToString } from "react-dom/server";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
   renderWithProviders,
@@ -12,9 +14,14 @@ import {
   MY_DEVICES_STORAGE_KEY,
   closeDevicePicker,
   getDevicePickerState,
+  openDevicePicker,
   readMyDevices,
   type MyDevice,
 } from "@/entities/my-devices";
+import {
+  HAS_DEVICE_ATTR,
+  RESERVE_TIER_TWO_SCRIPT,
+} from "../model/reserve-tier-two";
 import { WIDE_VIEWPORT_QUERY } from "../model/use-wide-viewport";
 import { DeviceBar } from "./device-bar";
 
@@ -297,6 +304,37 @@ describe("DeviceBar — tier 2 and the «Усі категорії» panel (TASK
     expect(toggle).toHaveFocus();
   });
 
+  it("Escape already handled by a dialog on top (the picker) leaves the panel and its focus alone", async () => {
+    const user = userEvent.setup();
+    seed([PRO]);
+    renderWithProviders(<DeviceBar />);
+
+    const toggle = await screen.findByRole("button", {
+      name: new RegExp(t.allCategories(3)),
+    });
+    await user.click(toggle);
+    expect(screen.getByRole("region")).toBeInTheDocument();
+
+    // Radix dismisses its layer from a capture listener and marks the event.
+    const handled = (event: KeyboardEvent) => event.preventDefault();
+    document.addEventListener("keydown", handled, { capture: true });
+    try {
+      await user.keyboard("{Escape}");
+    } finally {
+      document.removeEventListener("keydown", handled, { capture: true });
+    }
+    expect(screen.getByRole("region")).toBeInTheDocument();
+
+    // While the picker is open, its Esc is never the panel's either.
+    act(() => openDevicePicker());
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("region")).toBeInTheDocument();
+    act(() => closeDevicePicker());
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("region")).not.toBeInTheDocument();
+  });
+
   it("an outside click closes the panel", async () => {
     const user = userEvent.setup();
     seed([PRO]);
@@ -330,5 +368,43 @@ describe("DeviceBar — tier 2 and the «Усі категорії» panel (TASK
     expect(
       within(nav).queryByRole("button", { name: /Усі категорії/ }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("DeviceBar — server HTML (TASK-2074, no layout shift)", () => {
+  function serverHtml(): string {
+    const client = new QueryClient();
+    return renderToString(
+      <QueryClientProvider client={client}>
+        <DeviceBar />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("ships a placeholder with the pre-paint script and a tier-2 reservation keyed to it", () => {
+    seed([PRO]);
+    const html = serverHtml();
+    // innerHTML never runs scripts — the markup is only inspected.
+    const doc = document.createElement("div");
+    doc.innerHTML = html;
+
+    // No personal content: the saved device never reaches the HTML.
+    expect(html).not.toContain(PRO.name);
+    expect(doc.querySelector("script")?.textContent).toBe(
+      RESERVE_TIER_TWO_SCRIPT,
+    );
+
+    const reserve = doc.querySelector(
+      '[data-slot="device-bar-tier-two-reserve"]',
+    );
+    expect(reserve).toHaveAttribute("aria-hidden", "true");
+    // Hidden by default; shown at lg only under the script's <html> flag.
+    expect(reserve?.className).toContain("hidden");
+    expect(reserve?.className).toContain(
+      `lg:[html[${HAS_DEVICE_ATTR}]_&]:block`,
+    );
+    // Same box as the real tier 2: 1px border + a 52px row.
+    expect(reserve?.className).toContain("border-t");
+    expect(reserve?.querySelector(".h-13")).not.toBeNull();
   });
 });

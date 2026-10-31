@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useLayoutEffect, useState } from "react";
 
 /**
  * How many children of a single-row, wrapping, `overflow-hidden` flex box sit
@@ -11,23 +11,28 @@ import { useLayoutEffect, useRef, useState, type RefObject } from "react";
  * the tab order and the accessibility tree, not just out of sight. Visibility
  * does not change layout, so hiding them never moves the line break (no
  * measure → hide → re-measure loop). `null` until the first measurement.
+ *
+ * The row is tracked through a callback ref, not a ref object: the caller
+ * unmounts and remounts it (loading skeleton ↔ links, e.g. across the 1024
+ * breakpoint), and the observer must follow the live node instead of staying
+ * on a detached one. `items` re-measures when the content changes without the
+ * row's box changing size (another device, same count, same-width label).
  */
 export function useFitCount<T extends HTMLElement>(
-  itemCount: number,
-): [RefObject<T | null>, number | null] {
-  const ref = useRef<T | null>(null);
+  items: readonly unknown[],
+): [(node: T | null) => void, number | null] {
+  const [row, setRow] = useState<T | null>(null);
   const [fit, setFit] = useState<number | null>(null);
 
   useLayoutEffect(() => {
-    const row = ref.current;
     if (!row) return;
 
     const measure = () => {
-      const items = Array.from(row.children) as HTMLElement[];
-      const firstTop = items[0]?.offsetTop ?? 0;
+      const children = Array.from(row.children) as HTMLElement[];
+      const firstTop = children[0]?.offsetTop ?? 0;
       let count = 0;
-      for (const item of items) {
-        if (item.offsetTop !== firstTop) break;
+      for (const child of children) {
+        if (child.offsetTop !== firstTop) break;
         count += 1;
       }
       setFit(count);
@@ -38,7 +43,7 @@ export function useFitCount<T extends HTMLElement>(
     const observer = new ResizeObserver(measure);
     observer.observe(row);
     return () => observer.disconnect();
-  }, [itemCount]);
+  }, [row, items]);
 
-  return [ref, fit];
+  return [setRow, fit];
 }

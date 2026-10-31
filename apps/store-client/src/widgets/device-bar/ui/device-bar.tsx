@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import {
+  getDevicePickerState,
   openDevicePicker,
   removeDevice,
   setActiveDevice,
@@ -13,12 +14,16 @@ import {
 import { PAGE_CONTAINER } from "@/shared/config";
 import { Skeleton } from "@/shared/ui";
 
+import { RESERVE_TIER_TWO_SCRIPT } from "../model/reserve-tier-two";
 import { useDeviceCategories } from "../model/use-device-categories";
 import { useWideViewport } from "../model/use-wide-viewport";
 import { PRIMARY_CONTROL_ATTR } from "./bar-styles";
 import { DeviceBarCategories } from "./device-bar-categories";
 import { DeviceBarDevices } from "./device-bar-devices";
 import { DeviceBarPanel } from "./device-bar-panel";
+
+/** Pills in the pre-hydration tier-2 reservation (as in its loading state). */
+const TIER_TWO_SKELETON_PILLS = 5;
 
 /** Tier 1 at every width: 44px controls with 6px above and below. */
 const TIER_ONE_CLASS = `${PAGE_CONTAINER} flex min-h-14 items-center gap-3 py-1.5`;
@@ -35,7 +40,9 @@ const TIER_ONE_CLASS = `${PAGE_CONTAINER} flex min-h-14 items-center gap-3 py-1.
  * The device list lives in localStorage only (no cookie), so the server and
  * the hydration render cannot know it: they draw a 56px placeholder of the
  * exact tier-1 height, and the real tiers render once the client snapshot is
- * in use — tier 1 swaps in place without moving anything below it.
+ * in use — tier 1 swaps in place without moving anything below it. Tier 2 is
+ * reserved too: an inline pre-paint script flags <html> when a device is
+ * saved, and the placeholder then holds tier 2's 52px at ≥ 1024.
  */
 export function DeviceBar() {
   const hydrated = useMyDevicesHydrated();
@@ -60,7 +67,11 @@ export function DeviceBar() {
   useEffect(() => {
     if (!panelOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      // A dialog on top (the picker, opened from inside the bar) handles its
+      // own Esc — Radix marks the event handled; the panel stays as it was
+      // and the dialog's return-focus is not overridden.
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (getDevicePickerState().open) return;
       setPanelFor(null);
       toggleRef.current?.focus();
     };
@@ -94,8 +105,28 @@ export function DeviceBar() {
   if (!hydrated) {
     return (
       <div className="border-t border-border">
+        <script
+          // Must run before the reservation row below is painted.
+          dangerouslySetInnerHTML={{ __html: RESERVE_TIER_TWO_SCRIPT }}
+        />
         <div aria-hidden="true" className={TIER_ONE_CLASS}>
           <Skeleton className="h-11 w-full rounded-full min-[480px]:w-72" />
+        </div>
+        {/* Tier 2's 52px, shown only at ≥ 1024 with a saved device — the
+            same box (border + h-13) the real tier and its skeleton draw. */}
+        <div
+          aria-hidden="true"
+          data-slot="device-bar-tier-two-reserve"
+          className="hidden border-t border-border lg:[html[data-has-device]_&]:block"
+        >
+          <div
+            className={`${PAGE_CONTAINER} flex h-13 items-center gap-1 overflow-hidden`}
+          >
+            <Skeleton className="mr-1.5 h-4 w-40 shrink-0 rounded-sm" />
+            {Array.from({ length: TIER_TWO_SKELETON_PILLS }, (_, i) => (
+              <Skeleton key={i} className="h-11 w-32 shrink-0 rounded-full" />
+            ))}
+          </div>
         </div>
       </div>
     );
