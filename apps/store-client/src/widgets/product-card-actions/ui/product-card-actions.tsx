@@ -11,6 +11,7 @@ import { CartSheet } from "@/widgets/cart";
 import { Button } from "@/shared/ui";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
+import { cn } from "@/shared/lib/utils";
 
 /**
  * ProductCardActions — the product-card footer from the design import: a small
@@ -39,6 +40,7 @@ import { dict } from "@/shared/config";
 export function ProductCardActions({
   product,
   showFit = true,
+  layout = "stack",
 }: {
   product: PublicProductEntity;
   /**
@@ -46,7 +48,15 @@ export function ProductCardActions({
    * places the mark under the rating instead (Catalog mockup §4).
    */
   showFit?: boolean;
+  /**
+   * `stack` — a card footer: stock line over the buttons. `list` — the
+   * catalog list row's buy area (Catalog mockup §4): below 768px one row,
+   * stock line then the buttons pushed right; from 768px the 250px column
+   * stacks like a card footer.
+   */
+  layout?: "stack" | "list";
 }) {
+  const list = layout === "list";
   // Every card is ONE first-class position (TASK-142), so quick-add must target
   // THIS product and reflect ITS availability. `variantSummary.defaultVariantId`
   // / `defaultInStock` describe the group's CHEAPEST sibling — using them here
@@ -70,7 +80,13 @@ export function ProductCardActions({
   };
 
   return (
-    <div className="flex flex-col gap-2">
+    <div
+      className={cn(
+        "flex flex-col gap-2",
+        list &&
+          "flex-row flex-wrap items-center gap-x-3 md:flex-col md:flex-nowrap md:items-stretch",
+      )}
+    >
       {showFit && (
         <DeviceFitMark
           compatibleDeviceModelIds={product.compatibleDeviceModelIds}
@@ -82,14 +98,15 @@ export function ProductCardActions({
           inStock ? "text-success" : "text-muted-foreground"
         }`}
       >
-        <span aria-hidden="true" className="text-[10px] leading-none">
-          ●
-        </span>
+        <span
+          aria-hidden="true"
+          className="size-2.5 shrink-0 rounded-full bg-current"
+        />
         {inStock
           ? dict.productCard.inStockLine
           : dict.productCard.outOfStockLine}
       </p>
-      <div className="flex gap-2">
+      <div className={cn("flex gap-2", list && "ml-auto md:ml-0")}>
         {inCart ? (
           // Already in cart — takes precedence over out-of-stock (the line is
           // already reserved in the cart); opens the mini-cart to manage it.
@@ -99,7 +116,10 @@ export function ProductCardActions({
             variant="outline"
             onClick={openCartSheet}
             aria-label={dict.productCard.inCartAria(product.name)}
-            className="h-10 flex-1 border-success/40 font-semibold text-success transition-all hover:bg-success/10 hover:text-success active:scale-[0.99]"
+            className={cn(
+              "h-10 flex-1 border-success/40 font-semibold text-success transition-all hover:bg-success/10 hover:text-success active:scale-99 motion-reduce:active:scale-100",
+              list && "flex-none px-5 md:flex-1",
+            )}
           >
             <Check aria-hidden="true" className="size-4" />
             {dict.productCard.inCart}
@@ -110,14 +130,14 @@ export function ProductCardActions({
             compact
             outOfStock={!inStock}
             ariaLabel={dict.productCard.buyAria(product.name)}
-            className="h-10 flex-1"
+            className={cn("h-10 flex-1", list && "flex-none px-5 md:flex-1")}
           />
         )}
         <WishlistToggleButton
           productId={product.id}
           productName={product.name}
           variant="inline"
-          className="h-10 w-[42px] shrink-0"
+          className="h-10 w-10.5 shrink-0"
         />
       </div>
       {sheetMounted && (

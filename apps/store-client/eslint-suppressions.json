@@ -294,11 +294,6 @@
       "count": 11
     }
   },
-  "src/widgets/product-card-actions/ui/product-card-actions.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 3
-    }
-  },
   "src/widgets/product-detail/ui/product-highlights.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 3
@@ -315,11 +310,6 @@
     }
   },
   "src/widgets/product-grid/ui/product-grid.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 2
-    }
-  },
-  "src/widgets/product-list/ui/product-list-item.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 2
     }
