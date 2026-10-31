@@ -12,6 +12,7 @@ import {
   getDevicePickerState,
   setLabel,
 } from "@/entities/my-devices";
+import type { ProductGroupEntity } from "@/entities/product";
 import { dict } from "@/shared/config";
 
 import { ProductCompatRow } from "./product-compat-row";
@@ -131,6 +132,78 @@ describe("ProductCompatRow", () => {
       addDevice(galaxyS24);
     });
     expect(region()).toHaveAttribute("data-state", "no-fit");
+  });
+
+  describe("a group with a variant for the device (state c)", () => {
+    const iphone13 = {
+      modelId: "m-13",
+      slug: "iphone-13",
+      name: "iPhone 13",
+      brandName: "Apple",
+      family: "iphone" as const,
+    };
+    const sibling = (slug: string, model: string, order: number) => ({
+      id: slug,
+      slug,
+      name: slug,
+      price: "999",
+      attributes: { Модель: model, Колір: "Чорний" },
+      stock: 1,
+      isActive: true,
+      positionOrder: order,
+    });
+    const group = {
+      id: "g-1",
+      name: "Clear Case",
+      axes: [
+        { name: "Модель", sortOrder: 0 },
+        { name: "Колір", sortOrder: 1 },
+      ],
+      positions: [
+        sibling("case-15pro", "iPhone 15 Pro", 0),
+        sibling("case-13", "iPhone 13", 1),
+      ],
+    } as unknown as ProductGroupEntity;
+    const props = {
+      models: [models[1]],
+      group,
+      currentAttributes: { Модель: "iPhone 15 Pro", Колір: "Чорний" },
+      currentSlug: "case-15pro",
+      currentPrice: "999",
+    };
+
+    it("offers the sibling made for the active device instead of the hub", () => {
+      addDevice(iphone13);
+      setLabel("m-13", "Мама");
+      render(<ProductCompatRow {...props} />);
+      expect(region()).toHaveAttribute("data-state", "variant");
+      expect(region()).toHaveClass("bg-muted");
+      expect(
+        screen.getByText(row.variantTitle("iPhone 15 Pro", "iPhone 13 · Мама")),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(row.variantSub("iPhone 13", true)),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: row.pickVariant("iPhone 13") }),
+      ).toHaveAttribute("href", "/products/case-13");
+      expect(
+        screen.queryByRole("link", { name: row.allForDevice("iPhone 13") }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("offers «Варіант для нього» for another saved device without switching the active one", () => {
+      addDevice(iphone13);
+      addDevice(iphone15Pro); // active — fits
+      render(<ProductCompatRow {...props} />);
+      expect(region()).toHaveAttribute("data-state", "fits");
+      const item = within(screen.getByRole("list")).getByRole("listitem");
+      expect(
+        within(item).getByRole("link", {
+          name: row.otherVariantAria("iPhone 13"),
+        }),
+      ).toHaveAttribute("href", "/products/case-13");
+    });
   });
 
   it("renders the neutral pending frame on the server — no personal verdict in cached HTML", () => {
