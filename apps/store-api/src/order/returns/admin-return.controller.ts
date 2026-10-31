@@ -138,7 +138,11 @@ export class AdminReturnController {
   @ApiBearerAuth('access-token')
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({
-    summary: 'Resolve a return (admin)',
+    summary: 'Resolve a return, or save its operator notes (admin)',
+    description:
+      'With a status: a guarded transition (RECEIVED or REFUNDED), optionally with notes, ' +
+      'refundedAmount and restock. Without a status: saves operatorNotes alone on a return of ' +
+      'any status — no transition, resolvedAt and the decision untouched.',
     operationId: 'adminReturnControllerResolve',
   })
   @ApiParam({ name: 'returnId', description: 'Return UUID' })
@@ -146,7 +150,9 @@ export class AdminReturnController {
   @ApiResponse({
     status: 400,
     description:
-      'error: RETURN_USE_DECISION_ENDPOINT (APPROVED and REJECTED are set only by a decision), ' +
+      'error: RETURN_UPDATE_EMPTY (neither a status nor operatorNotes), ' +
+      'RETURN_STATUS_REQUIRED (refundedAmount or restock without a status), ' +
+      'RETURN_USE_DECISION_ENDPOINT (APPROVED and REJECTED are set only by a decision), ' +
       'RETURN_RESTOCK_REQUIRES_RECEIVED (restock requested for a status other than ' +
       'RECEIVED), RETURN_REFUND_EXCEEDS_RETURNED_VALUE or RETURN_REFUND_EXCEEDS_ORDER_BALANCE',
   })

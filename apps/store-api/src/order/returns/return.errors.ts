@@ -50,6 +50,10 @@ export const ReturnErrorCode = {
   REPAIR_RESULT_REQUIRED: 'RETURN_REPAIR_RESULT_REQUIRED',
   /** An outcome on a step other than RETURNED_FROM_SERVICE (TASK-2045). */
   REPAIR_RESULT_NOT_ALLOWED: 'RETURN_REPAIR_RESULT_NOT_ALLOWED',
+  /** PATCH with neither a status nor operatorNotes — nothing to write. */
+  UPDATE_EMPTY: 'RETURN_UPDATE_EMPTY',
+  /** refundedAmount or restock sent without the status they belong to. */
+  STATUS_REQUIRED: 'RETURN_STATUS_REQUIRED',
 } as const;
 
 export type ReturnErrorCode = (typeof ReturnErrorCode)[keyof typeof ReturnErrorCode];
@@ -217,6 +221,22 @@ export function useDecisionEndpointError(requested: ReturnStatus): BadRequestExc
   return new BadRequestException({
     error: ReturnErrorCode.USE_DECISION_ENDPOINT,
     message: `${requested} is set by a decision — use POST /admin/returns/:returnId/decision`,
+  });
+}
+
+/** 400 for a PATCH that carries neither a status nor notes. */
+export function returnUpdateEmptyError(): BadRequestException {
+  return new BadRequestException({
+    error: ReturnErrorCode.UPDATE_EMPTY,
+    message: 'Nothing to update — send a status, operatorNotes, or both',
+  });
+}
+
+/** 400 for money or stock sent on a notes-only PATCH — both belong to a status step. */
+export function returnStatusRequiredError(): BadRequestException {
+  return new BadRequestException({
+    error: ReturnErrorCode.STATUS_REQUIRED,
+    message: 'refundedAmount and restock move a return on — send them with a status',
   });
 }
 

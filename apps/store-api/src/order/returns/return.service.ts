@@ -47,6 +47,8 @@ import {
   returnNotFoundError,
   returnOrderNotFoundError,
   returnQuantityExceededError,
+  returnStatusRequiredError,
+  returnUpdateEmptyError,
 } from './return.errors';
 import { centsToString, toCents } from '../../addon-service';
 import type { Paginated } from '../../common/pagination';
@@ -366,6 +368,10 @@ export class ReturnService {
    *   {@link assertRefundWithinCeilings}.
    */
   async resolveReturn(returnId: string, dto: ResolveReturnDto): Promise<ReturnEntity> {
+    if (dto.status === undefined) {
+      return this.updateReturnNotes(returnId, dto);
+    }
+
     // TASK-1961/2044: approving and refusing are decisions, with an author and a
     // reason the customer sees. Setting them here would bypass both.
     if (DECISION_STATUSES.has(dto.status)) {
@@ -433,6 +439,46 @@ export class ReturnService {
     );
 
     return ReturnEntity.fromPrisma(resolved, { includeInternal: true });
+  }
+
+  /**
+   * Admin — the operator's notes alone, on a return of ANY status (a PATCH
+   * without a status). Approving and refusing moved to POST /decision
+   * (TASK-1961/2044), so a REQUESTED or REJECTED return has no status step for
+   * the notes to ride on. No transition: `resolvedAt` and the decision stay.
+   *
+   * @throws BadRequestException RETURN_UPDATE_EMPTY (no notes either),
+   *   RETURN_STATUS_REQUIRED (refundedAmount or restock without a status)
+   * @throws NotFoundException RETURN_NOT_FOUND
+   */
+  private async updateReturnNotes(returnId: string, dto: ResolveReturnDto): Promise<ReturnEntity> {
+    // Money and stock are steps of a transition — never a side effect of a note.
+    if (dto.refundedAmount !== undefined || dto.restock !== undefined) {
+      throw returnStatusRequiredError();
+    }
+    if (dto.operatorNotes === undefined) {
+      throw returnUpdateEmptyError();
+    }
+
+    const existing = await this.returnRepository.findById(returnId);
+
+    if (!existing) {
+      throw returnNotFoundError();
+    }
+
+    const updated = await this.returnRepository.updateNotes(existing.id, dto.operatorNotes);
+
+    this.logger.info(
+      {
+        event: 'return.notesUpdated',
+        returnId,
+        orderId: existing.orderId,
+        status: existing.status,
+      },
+      'Return notes updated',
+    );
+
+    return ReturnEntity.fromPrisma(updated, { includeInternal: true });
   }
 
   /**

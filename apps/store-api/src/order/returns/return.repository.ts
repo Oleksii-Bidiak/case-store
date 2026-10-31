@@ -471,6 +471,19 @@ export class ReturnRepository {
   }
 
   /**
+   * The operator's notes alone, on a return of any status — no transition, so
+   * no state guard: the notes do not depend on the status or the decision, and
+   * `resolvedAt` ("the last step") is left alone. Answers with the admin card.
+   */
+  updateNotes(returnId: string, operatorNotes: string | null): Promise<ReturnWithItems> {
+    return this.prisma.return.update({
+      where: { id: returnId },
+      data: { operatorNotes },
+      include: ADMIN_RETURN_DETAIL_INCLUDE,
+    }) as Promise<ReturnWithItems>;
+  }
+
+  /**
    * Record an operator's decision (TASK-1961, TASK-2044): the denormalised
    * current decision on the return AND its history row, in ONE transaction.
    *
