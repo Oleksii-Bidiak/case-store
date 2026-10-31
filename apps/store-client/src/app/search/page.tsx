@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { permanentRedirect } from "next/navigation";
 import { SearchResultsView } from "@/widgets";
+import { SearchDeviceRow } from "@/widgets/search-device-row";
 import {
   resolveLegacyCatalogParams,
   withQuery,
@@ -121,6 +122,9 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
             : dict.search.resultsTitleEmpty}
         </h1>
       </div>
+      {/* The model row (TASK-2069) sits ABOVE the results, not inside them:
+          it answers "you mean this model" before the filters and the grid. */}
+      {trimmed && <SearchDeviceRow query={q} />}
       <SearchResultsView query={q} page={page} />
     </div>
   );
