@@ -1,7 +1,10 @@
 "use client";
 
 import type { ProductControllerFindAllParams } from "@/entities/product";
-import { useDeviceControllerFindModels } from "@/entities/device";
+import {
+  getDeviceFamilyTone,
+  useDeviceControllerFindModels,
+} from "@/entities/device";
 import { useCategoryControllerGetFilterableSpecs } from "@/entities/category";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
@@ -12,6 +15,8 @@ import {
 } from "../model/spec-facet";
 import { clearFilterUpdates } from "../model/active-filters";
 import { toFacetQueryParams } from "../model/facet-query";
+import { parseDeviceParam } from "../model/my-devices-filter";
+import { useMyDevicesFilter } from "../model/use-my-devices-filter";
 import { FilterChipList, type FilterChip } from "./filter-chip-list";
 
 interface ActiveFilterChipsProps {
@@ -86,11 +91,18 @@ export function ActiveFilterChips({
   // Only fires when a device filter is active AND removable — on a compat
   // landing page the device is the route, so there is no chip and no lookup.
   // Keyed by SLUG since TASK-420 — `?device=iphone-15`.
-  const deviceSlug = lockedDevice ? undefined : currentParams.device;
+  // Since TASK-2077 the param may hold several slugs (`device=a,b`, OR-ed),
+  // and «Мої пристрої» names the chip itself when it explains the param.
+  const deviceParam = lockedDevice ? undefined : currentParams.device;
+  const myDevices = useMyDevicesFilter(deviceParam);
+  const deviceSlugs = parseDeviceParam(deviceParam);
   const { data: modelsData } = useDeviceControllerFindModels(undefined, {
-    query: { enabled: Boolean(deviceSlug) },
+    query: {
+      enabled: deviceSlugs.length > 0 && myDevices.state.mode === "other",
+    },
   });
-  const deviceModel = modelsData?.data.find((m) => m.slug === deviceSlug);
+  const modelName = (slug: string) =>
+    modelsData?.data.find((m) => m.slug === slug)?.name;
 
   const chips: FilterChip[] = [];
 
@@ -127,12 +139,49 @@ export function ActiveFilterChips({
     });
   }
 
-  if (deviceSlug) {
-    chips.push({
-      key: "device",
-      label: `${dict.filters.deviceLabel}: ${deviceModel?.name ?? "…"}`,
-      onRemove: () => onFilterChange({ device: undefined }),
-    });
+  if (deviceSlugs.length > 0) {
+    const mine = dict.filters.myDevices;
+    const state = myDevices.state;
+    const removeDevice = () => onFilterChange({ device: undefined });
+    if (state.mode === "active") {
+      // «Для iPhone 13 · Мама» in the device family tone, with its dot.
+      const tone = getDeviceFamilyTone(state.device.family);
+      const label = mine.chipFor(
+        mine.deviceName(state.device.name, state.device.label),
+      );
+      chips.push({
+        key: "device",
+        label,
+        toneClassName: tone.surface,
+        dotClassName: tone.strong,
+        ariaLabel: `${label} — ${mine.chipRemoveAria}`,
+        onRemove: removeDevice,
+      });
+    } else if (state.mode === "all") {
+      const label = mine.chipAll(state.devices.length);
+      chips.push({
+        key: "device",
+        label,
+        toneClassName: "bg-muted",
+        ariaLabel: `${label} — ${mine.chipRemoveAria}`,
+        onRemove: removeDevice,
+      });
+    } else if (deviceSlugs.length === 1) {
+      chips.push({
+        key: "device",
+        label: `${dict.filters.deviceLabel}: ${modelName(deviceSlugs[0]) ?? "…"}`,
+        onRemove: removeDevice,
+      });
+    } else {
+      // A shared «для всіх моїх» link opened where those devices are not saved.
+      chips.push({
+        key: "device",
+        label: mine.chipOther(
+          deviceSlugs.map((slug) => modelName(slug) ?? "…").join(", "),
+        ),
+        onRemove: removeDevice,
+      });
+    }
   }
 
   if (currentParams.inStock === true) {

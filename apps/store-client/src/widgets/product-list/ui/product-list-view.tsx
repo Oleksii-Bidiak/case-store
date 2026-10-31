@@ -20,6 +20,8 @@ import {
   ViewToggle,
   FiltersDrawer,
   FiltersButton,
+  MyDevicesEmptyState,
+  useMyDevicesFilter,
   clearFilterUpdates,
   countActiveFilters,
   hasActiveFilters,
@@ -302,6 +304,27 @@ export function ProductListView({
       ? findCategoryNodeBySlug(categories, params.category)?.id
       : undefined);
 
+  // «З урахуванням моїх пристроїв» (TASK-2077): the filter is on for one saved
+  // device and nothing fits — say so and offer the way out (Catalog §14 A),
+  // rather than the generic «nothing matches the filters».
+  const myDevices = useMyDevicesFilter(
+    lockedDevice ? undefined : params.device,
+  );
+  const myDeviceEmpty =
+    myDevices.state.mode === "active" ? (
+      <MyDevicesEmptyState
+        device={myDevices.state.device}
+        devices={myDevices.devices}
+        currentParams={params}
+        categoryName={
+          params.category
+            ? findCategoryNodeBySlug(categories, params.category)?.name
+            : undefined
+        }
+        onFilterChange={applyFilters}
+      />
+    ) : undefined;
+
   // Active brands power both the sidebar «Виробник» select and the removable
   // brand chip's label (slug → name). One shared query, deduped by React Query.
   // Same category scope the sidebar's BrandFilter uses (TASK-414) — one shared
@@ -388,6 +411,7 @@ export function ProductListView({
             lockedDevice={Boolean(lockedDevice)}
             lockedOnSale={lockedOnSale}
             onFilterChange={applyFilters}
+            withMyDevices
           />
         </aside>
 
@@ -396,7 +420,11 @@ export function ProductListView({
             params={params}
             buildPageHref={buildPageHref}
             view={view}
-            empty={emptyState}
+            empty={
+              myDeviceEmpty
+                ? { ...emptyState, custom: myDeviceEmpty }
+                : emptyState
+            }
           />
         </section>
       </div>
@@ -419,6 +447,7 @@ export function ProductListView({
           lockedOnSale={lockedOnSale}
           onFilterChange={applyFilters}
           collapsible
+          withMyDevices
         />
       </FiltersDrawer>
     </div>

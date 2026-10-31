@@ -13,6 +13,12 @@ import {
 } from "../model/active-filters";
 import { keepFacetsOfCategory, toFacetQueryParams } from "../model/facet-query";
 import { filterRailSections } from "../model/filter-sections";
+import {
+  isMyDevicesFilterOn,
+  parseDeviceParam,
+} from "../model/my-devices-filter";
+import { useMyDevicesFilter } from "../model/use-my-devices-filter";
+import { MyDevicesFilter } from "./my-devices-filter";
 import { SearchInput } from "./search-input";
 import { BrandFilter } from "./brand-filter";
 import { DeviceModelFilter } from "./device-model-filter";
@@ -82,6 +88,12 @@ interface ProductFiltersProps {
    * facet checkboxes there would be ticked with no effect on the results.
    */
   hideSpecFacets?: boolean;
+  /**
+   * Top the panel with «З урахуванням моїх пристроїв» (TASK-2077). Opt-in: the
+   * catalogue listings pass it; `/search` has its own device row (TASK-2069).
+   * Ignored with `lockedDevice`.
+   */
+  withMyDevices?: boolean;
 }
 
 const cardClass =
@@ -106,6 +118,7 @@ export function ProductFilters({
   hideOnSale = false,
   lockedOnSale = false,
   hideSpecFacets = false,
+  withMyDevices = false,
 }: ProductFiltersProps) {
   // Every filter this panel owns — search, brand, device, price, spec facets and
   // availability. Sourced from the one shared definition (TASK-414) so the
@@ -140,8 +153,19 @@ export function ProductFilters({
       lockedOnSale,
       hideSpecFacets,
       hasCategory: Boolean(categoryId),
+      withMyDevices,
     }),
   );
+
+  // «З урахуванням моїх пристроїв» and the brand → model cascade both write
+  // the one `?device=` (TASK-2077). While the panel drives it — or the param
+  // holds several slugs, which a single-model select cannot show — the
+  // cascade steps aside instead of showing the same choice twice.
+  const myDevices = useMyDevicesFilter(currentParams.device);
+  const showDeviceCascade =
+    sections.has("device") &&
+    !(sections.has("myDevices") && isMyDevicesFilterOn(myDevices.state)) &&
+    parseDeviceParam(currentParams.device).length <= 1;
 
   // Presence gates for the collapsible mobile drawer only: BrandFilter and
   // SpecFacets self-hide (return null) when they have no data, but a `<details>`
@@ -216,6 +240,17 @@ export function ProductFilters({
 
   return (
     <div className="flex flex-col gap-3.5">
+      {/* «З урахуванням моїх пристроїв» (TASK-2077) — the first block, always
+          expanded, in the rail and the drawer alike. */}
+      {sections.has("myDevices") && (
+        <MyDevicesFilter
+          filter={myDevices}
+          currentParams={currentParams}
+          onFilterChange={onFilterChange}
+          idPrefix={idPrefix}
+        />
+      )}
+
       {/* Keyword search */}
       {renderSection(
         collapsible ? dict.filters.searchLabel : null,
@@ -291,7 +326,7 @@ export function ProductFilters({
 
       {/* Device compatibility (TASK-190) — brand → model cascade. Absent when
           the route already names the device (TASK-490). */}
-      {sections.has("device") &&
+      {showDeviceCascade &&
         renderSection(
           dict.filters.deviceTitle,
           <DeviceModelFilter

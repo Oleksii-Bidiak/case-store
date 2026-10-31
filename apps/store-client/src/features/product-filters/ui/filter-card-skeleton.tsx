@@ -13,6 +13,9 @@ import type { FilterSectionId } from "../model/filter-sections";
  * and the card is the rail's last, so a mismatch shifts nothing under it.
  */
 const FILTER_CARD_HEIGHT: Record<FilterSectionId, string> = {
+  // TASK-2077 — «З урахуванням моїх пристроїв» in its common states (no
+  // device: title, two-line hint, button, link; off: title, note, link).
+  myDevices: "h-41",
   search: "h-23.5",
   availability: "h-27",
   onSale: "h-27.25",

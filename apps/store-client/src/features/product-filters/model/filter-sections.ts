@@ -7,6 +7,9 @@
  * TASK-742 added «Знижки» and category pages gained «Характеристики».
  */
 export const FILTER_SECTION_ORDER = [
+  // TASK-2077 — «З урахуванням моїх пристроїв» tops the filters (after the
+  // category tree, which is not a filter section).
+  "myDevices",
   "search",
   "availability",
   "onSale",
@@ -32,6 +35,12 @@ export interface FilterSectionOptions {
   hideSpecFacets?: boolean;
   /** A category is active — spec facets are category-scoped (TASK-191). */
   hasCategory?: boolean;
+  /**
+   * The listing offers «З урахуванням моїх пристроїв» (TASK-2077) — the
+   * catalogue does; `/search` has its own device row (TASK-2069). Never where
+   * the route fixes the device.
+   */
+  withMyDevices?: boolean;
 }
 
 /**
@@ -49,9 +58,12 @@ export function filterRailSections({
   lockedOnSale = false,
   hideSpecFacets = false,
   hasCategory = false,
+  withMyDevices = false,
 }: FilterSectionOptions = {}): FilterSectionId[] {
   return FILTER_SECTION_ORDER.filter((section) => {
     switch (section) {
+      case "myDevices":
+        return withMyDevices && !lockedDevice;
       case "onSale":
         return !hideOnSale && !lockedOnSale;
       case "device":

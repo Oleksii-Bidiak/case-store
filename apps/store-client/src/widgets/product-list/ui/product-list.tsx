@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Loader2, SearchX } from "lucide-react";
 import {
@@ -44,6 +44,12 @@ interface ProductListProps {
     heading: string;
     body?: string;
     action: ListingEmptyStateAction;
+    /**
+     * A whole empty state of the view's own — the «nothing fits your device»
+     * card (TASK-2077). Mounted only when the list is empty, so whatever it
+     * fetches is not paid for on a normal page.
+     */
+    custom?: ReactNode;
   };
 }
 
@@ -135,6 +141,7 @@ export function ProductList({
   ]);
 
   if (products.length === 0) {
+    if (empty.custom) return empty.custom;
     return (
       <ListingEmptyState
         icon={SearchX}

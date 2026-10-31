@@ -497,6 +497,7 @@ describe("ProductFilters — hideSpecFacets (TASK-523)", () => {
         ),
       );
       const titleOf: Record<FilterSectionId, string | null> = {
+        myDevices: dict.filters.myDevices.title, // opt-in, not in these rails
         search: null, // the keyword card has no heading on desktop
         availability: dict.filters.availabilityTitle,
         onSale: dict.filters.saleTitle,

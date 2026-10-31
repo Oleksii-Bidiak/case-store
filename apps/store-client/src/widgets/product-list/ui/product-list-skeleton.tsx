@@ -214,6 +214,9 @@ export function ProductListSkeleton({
             hasCategory,
             lockedDevice,
             lockedOnSale,
+            // The catalogue rail tops its filters with «З урахуванням моїх
+            // пристроїв» (TASK-2077); the section list drops it on compat pages.
+            withMyDevices: true,
           }).map((section) => (
             <FilterCardSkeleton key={section} section={section} />
           ))}

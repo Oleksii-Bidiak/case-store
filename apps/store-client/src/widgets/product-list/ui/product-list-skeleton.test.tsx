@@ -21,7 +21,7 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
   it("mirrors the default /products rail, «Знижки» included", () => {
     render(<ProductListSkeleton withSidebar />);
 
-    expect(railSections()).toEqual(filterRailSections());
+    expect(railSections()).toEqual(filterRailSections({ withMyDevices: true }));
     expect(railSections()).toContain("onSale");
     expect(railSections()).not.toContain("specs");
   });
@@ -29,7 +29,9 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
   it("reserves «Характеристики» once a category is set", () => {
     render(<ProductListSkeleton withSidebar hasCategory />);
 
-    expect(railSections()).toEqual(filterRailSections({ hasCategory: true }));
+    expect(railSections()).toEqual(
+      filterRailSections({ hasCategory: true, withMyDevices: true }),
+    );
     expect(railSections().at(-1)).toBe("specs");
   });
 
@@ -37,15 +39,27 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     render(<ProductListSkeleton withSidebar hasCategory lockedDevice />);
 
     expect(railSections()).toEqual(
-      filterRailSections({ hasCategory: true, lockedDevice: true }),
+      filterRailSections({
+        hasCategory: true,
+        lockedDevice: true,
+        withMyDevices: true,
+      }),
     );
   });
 
   it("drops «Знижки» on /promo, where the route fixes the discount", () => {
     render(<ProductListSkeleton withSidebar lockedOnSale />);
 
-    expect(railSections()).toEqual(filterRailSections({ lockedOnSale: true }));
+    expect(railSections()).toEqual(
+      filterRailSections({ lockedOnSale: true, withMyDevices: true }),
+    );
     expect(railSections()).not.toContain("onSale");
+  });
+
+  // TASK-2077 — «З урахуванням моїх пристроїв» is the first filter card.
+  it("reserves the my-devices card first", () => {
+    render(<ProductListSkeleton withSidebar />);
+    expect(railSections()[0]).toBe("myDevices");
   });
 
   it("gives every card a height, so no section collapses to zero", () => {

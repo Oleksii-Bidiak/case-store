@@ -1,4 +1,20 @@
 export { ProductFilters } from "./ui/product-filters";
+// «З урахуванням моїх пристроїв» (TASK-2077): the panel lives inside
+// ProductFilters; the listing reads the same state for its empty state, and
+// the cards (K2, device-fit) can read which devices the filter names.
+export { MyDevicesEmptyState } from "./ui/my-devices-empty-state";
+export {
+  MAX_DEVICE_FILTER_SLUGS,
+  allMyDevicesParam,
+  isMyDevicesFilterOn,
+  parseDeviceParam,
+  resolveMyDevicesFilter,
+  type MyDevicesFilterState,
+} from "./model/my-devices-filter";
+export {
+  useMyDevicesFilter,
+  type MyDevicesFilter,
+} from "./model/use-my-devices-filter";
 export { ActiveFilterChips } from "./ui/active-filter-chips";
 // Presentational pieces shared with the wishlist rail (TASK-1300): the chip row
 // and the inputs + two-thumb price slider, each fed by its caller's own state.

@@ -999,6 +999,53 @@ export const dict = {
     saleTitle: "Знижки",
     onSaleOnly: "Зі знижкою",
     onSaleChip: "Зі знижкою",
+    // TASK-2077 — «З урахуванням моїх пристроїв», the rail's first block. The
+    // state is the `?device=` slugs themselves, so a link opens the same way.
+    myDevices: {
+      title: "З урахуванням моїх пристроїв",
+      subtitleNoDevice:
+        "Оберіть пристрій — і покажемо лише те, що до нього підходить",
+      subtitleOff: "Вимкнено",
+      subtitleActive: "Лише сумісне з активним пристроєм",
+      subtitleAll: "Сумісне хоча б з одним з ваших пристроїв",
+      pickDevice: "Обрати пристрій",
+      radiogroupAria: "Для якого пристрою",
+      moreDevices: (n: number) => `Ще ${n} — обрати інший`,
+      allDevices: (n: number) => `Для всіх моїх · ${n}`,
+      // «iPhone 13 · Мама» — the owner's label after the model name.
+      deviceName: (name: string, label?: string) =>
+        label ? `${name} · ${label}` : name,
+      offNote: (name: string) =>
+        `Показуємо всі товари, а на картках — чи підходить до ${name}.`,
+      manage: "Мої пристрої",
+      // Spoken count after a radio's name: «iPhone 13, 12 товарів».
+      countAria: (n: number) =>
+        `${n} ${pluralUk(n, "товар", "товари", "товарів")}`,
+      // Active-filter chips above the grid.
+      chipFor: (name: string) => `Для ${name}`,
+      chipAll: (n: number) => `Для всіх моїх · ${n}`,
+      chipOther: (names: string) => `Пристрої: ${names}`,
+      chipRemoveAria: "Зняти фільтр за пристроєм",
+      // Empty state — the filter is on and nothing in the listing fits.
+      emptyHeading: (name: string) => `Для ${name} тут нічого немає`,
+      emptyBody: (
+        name: string,
+        total: number | undefined,
+        category: string | undefined,
+      ) => {
+        const where = category ? `У «${category}»` : "У каталозі";
+        const count =
+          total === undefined
+            ? "є товари"
+            : `— ${total} ${pluralUk(total, "товар", "товари", "товарів")}`;
+        return `${where} ${count}, але жоден не підходить до ${name}. Подивіться все, що є саме для нього, або вимкніть фільтр.`;
+      },
+      emptyHub: (name: string) => `Все для ${name}`,
+      emptyShowAll: (total: number | undefined) =>
+        total === undefined ? "Показати всі" : `Показати всі ${total}`,
+      emptyOtherDevices: "Для ваших інших пристроїв тут є:",
+      emptyOtherDevice: (name: string, n: number) => `${name} — ${n}`,
+    },
   },
 
   product: {
