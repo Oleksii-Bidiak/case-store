@@ -39,11 +39,6 @@
       "count": 1
     }
   },
-  "src/features/add-to-cart/ui/add-to-cart-button.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/features/auth/ui/auth-sheet.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 1

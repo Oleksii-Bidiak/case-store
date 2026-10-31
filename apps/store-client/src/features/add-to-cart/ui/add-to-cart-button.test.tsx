@@ -15,6 +15,8 @@ describe("AddToCartButton — out-of-stock guard (TASK-144)", () => {
       name: dict.addToCart.outOfStock,
     });
     expect(button).toBeDisabled();
+    // An outline on the card surface, not the grey disabled slab (§3.1).
+    expect(button).toHaveClass("bg-card", "disabled:bg-card");
   });
 
   it("renders an enabled compact button labelled 'Купити' when in stock", () => {

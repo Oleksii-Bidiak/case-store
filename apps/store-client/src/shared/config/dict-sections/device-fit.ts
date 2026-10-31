@@ -10,6 +10,44 @@ export const deviceFitDict = {
   // Verdict first, so a truncated pill still says the answer.
   fits: (device: string) => `Підходить до ${device}`,
   notFor: (device: string) => `Не для ${device}`,
+  // Mode B — the catalogue filter «для всіх моїх» (Catalog mockup §2.3): the
+  // saved devices the product fits, each with its label («iPhone 13 · Мама»).
+  fitsAny: (devices: readonly string[]) => `Підходить: ${devices.join(", ")}`,
+  notForAny: "Не для ваших пристроїв",
+
+  // ── Out of stock: «Повідомити про надходження» (TASK-1066, behind
+  // FEATURE_STUBS until the subscription exists) ──
+  notify: {
+    short: "Повідомити",
+    long: "Повідомити про надходження",
+    stub: "Сповіщення про надходження зʼявиться незабаром.",
+  },
+
+  // ── PDP model chips (Product mockup §6.6) ──
+  modelChips: {
+    // The tag on a chip of one of the shopper's saved devices without a label.
+    mine: "ваш",
+  },
+
+  // ── PDP «Сумісність» tab (Product mockup §6.8) ──
+  tab: {
+    title: "Сумісність",
+    fitsHeading: "Цей варіант підходить до",
+    note: "Сумісність перевірена за розміром і вирізом камери. На інші моделі, навіть схожі розміром, цей варіант не підійде.",
+    variantsHeading: "Є варіанти для",
+  },
+
+  // ── PDP rails (Product mockup §6.9) ──
+  rail: {
+    kickerMine: "Для вашого пристрою",
+    kickerLabelled: (label: string) => `Для пристрою · ${label}`,
+    kickerNone: "Часто беруть разом",
+    titleMine: (device: string) => `Ще для ${device}`,
+    titleNone: "До цього товару беруть",
+    allFor: (device: string) => `Все для ${device}`,
+    seeAll: "Дивитись усі",
+    categoryLink: "Усі в категорії",
+  },
 
   // ── PDP compatibility row ──
   row: {
@@ -36,6 +74,18 @@ export const deviceFitDict = {
     noFitSub: (models: string, device: string) =>
       `Цей товар сумісний лише з: ${models}. Подивіться, що є саме для ${device}.`,
     allForDevice: (device: string) => `Все для ${device}`,
+
+    // Not this variant, but the group has one for the active device.
+    variantTitle: (model: string, device: string) =>
+      `Цей варіант — для ${model}, не для ${device}`,
+    // «ціна та сама» only when the sibling's price really is the same.
+    variantSub: (device: string, samePrice: boolean) =>
+      samePrice
+        ? `Той самий товар є і для ${device} — за тією ж ціною.`
+        : `Той самий товар є і для ${device}.`,
+    pickVariant: (device: string) => `Обрати варіант для ${device}`,
+    otherVariant: "Варіант для нього",
+    otherVariantAria: (device: string) => `Обрати варіант для ${device}`,
 
     otherDevice: "Інший пристрій",
 
