@@ -64,9 +64,17 @@ describe("hub copy", () => {
     );
   });
 
-  it("leaves «Пристрої» unlinked while the /devices index does not exist", () => {
-    expect(DEVICES_INDEX_PATH).toBeNull();
+  it("links «Пристрої» to the «Мої пристрої» page by default (TASK-2076)", () => {
+    expect(DEVICES_INDEX_PATH).toBe("/devices");
     expect(deviceHubTrail("iPhone 15 Pro")).toEqual([
+      { name: "Головна", path: "/" },
+      { name: "Пристрої", path: "/devices" },
+      { name: "Все для iPhone 15 Pro" },
+    ]);
+  });
+
+  it("leaves «Пристрої» unlinked when no index path is given", () => {
+    expect(deviceHubTrail("iPhone 15 Pro", null)).toEqual([
       { name: "Головна", path: "/" },
       { name: "Пристрої" },
       { name: "Все для iPhone 15 Pro" },

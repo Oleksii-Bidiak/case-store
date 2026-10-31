@@ -83,4 +83,75 @@ export const devicePagesDict = {
     // Shown only for the instant before notFound() owns the response.
     metaFallbackTitle: "Аксесуари для пристрою",
   },
+
+  // ── TASK-2076: «Мої пристрої» — `/devices` and the account section ──
+  manager: {
+    metaTitle: "Мої пристрої",
+    metaDescription:
+      "Ваші збережені пристрої й пристрої рідних: перемикайтеся між ними, щоб бачити аксесуари, які підходять.",
+    crumbHome: "Головна",
+    title: "Мої пристрої",
+    /** «Мої пристрої · 10» — the H1 once the list is read. */
+    titleWithCount: (count: number) => `Мої пристрої · ${formatCount(count)}`,
+    lede: "Активний пристрій визначає, що підходить, у каталозі, на сторінках товарів і в пошуку. Зберігайте свої пристрої й пристрої рідних — і перемикайтеся в один дотик, коли шукаєте подарунок.",
+    add: "Додати пристрій",
+    loadingAria: "Завантажуємо ваші пристрої",
+
+    // Settings panel — the defaults of the catalogue filter (TASK-2077).
+    settingsAria: "Налаштування каталогу",
+    compatOnlyTitle: "У каталозі — лише сумісне з активним пристроєм",
+    compatOnlyHint:
+      "Перемикач «З урахуванням моїх пристроїв» у фільтрах буде увімкнений за замовчуванням. Вимкніть — і каталог покаже все, зі стрічкою «підходить / не підходить» на картках.",
+    scopeAllTitle: "Показувати товари для всіх моїх пристроїв",
+    scopeAllHintDisabled: "Доступно, коли увімкнено «лише сумісне».",
+    /** `example` — «iPhone 15 Pro, iPhone 13 · Мама», the card's own wording. */
+    scopeAllHintOn: (count: number, example: string) =>
+      `Каталог показує те, що підходить хоча б до одного з ваших пристроїв (${formatCount(
+        count,
+      )}); на картці — до яких саме: «Підходить: ${example}».`,
+    scopeAllHintOff:
+      "Зараз — лише для активного. Увімкніть, щоб бачити товари для всієї родини одразу.",
+
+    // Groups by label; no label → «Мої».
+    groupMine: "Мої",
+    deviceCount: (n: number) =>
+      `${formatCount(n)} ${pluralUk(n, "пристрій", "пристрої", "пристроїв")}`,
+
+    // Device card.
+    /** «Apple · 128 товарів підходить». */
+    cardMeta: (brand: string, count: number) =>
+      `${brand ? `${brand} · ` : ""}${productCount(count)} підходить`,
+    /** While the model list loads, or for a model no longer in the catalogue. */
+    cardMetaNoCount: (brand: string) => brand,
+    /** The name with its label, as the catalogue card names it («iPhone 13 · Мама»). */
+    deviceWithLabel: (name: string, label?: string) =>
+      label ? `${name} · ${label}` : name,
+    active: "Активний",
+    showForIt: "Показувати для нього",
+    showForItAria: (name: string) => `Показувати для ${name}`,
+    allForIt: (name: string) => `Все для ${name}`,
+    label: "Підписати",
+    relabel: "Змінити підпис",
+    labelAria: (name: string) => `Підписати ${name}`,
+    relabelAria: (name: string) => `Змінити підпис ${name}`,
+    forget: "Забути",
+    forgetAria: (name: string) => `Забути ${name}`,
+    forgotten: (name: string) => `${name} прибрано з ваших пристроїв`,
+    undo: "Повернути",
+
+    // Label editor.
+    labelInputAria: "Підпис пристрою",
+    labelPlaceholder: "Для кого? Наприклад, Мама",
+    labelSave: "Зберегти",
+    labelCancel: "Скасувати",
+    labelSuggestionsAria: "Підказки підпису",
+    labelSuggestionAria: (label: string) => `Підставити «${label}»`,
+    /** Offered after the labels already in use; first five shown. */
+    labelDefaults: ["Мама", "Тато", "Син", "Донька", "Робочий"],
+
+    // Empty state.
+    emptyTitle: "Ще немає збережених пристроїв",
+    emptyBody:
+      "Додайте свій телефон, годинник чи планшет — і каталог покаже, що до них підходить.",
+  },
 } as const;

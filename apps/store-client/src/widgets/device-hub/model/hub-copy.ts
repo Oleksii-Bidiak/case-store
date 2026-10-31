@@ -52,13 +52,11 @@ export function compatLandingPath(categorySlug: string, modelSlug: string) {
 }
 
 /**
- * Where «Пристрої» links to — the device index `/devices`, or `null` while that
- * page does not exist. It ships with TASK-2076; until then the crumb is plain
- * text and the BreadcrumbList skips it, so neither the visible trail nor the
- * structured data points at a 404. Set to `"/devices"` together with
- * `app/devices/page.tsx`.
+ * Where «Пристрої» links to — the «Мої пристрої» page `/devices` (TASK-2076).
+ * `null` would render the crumb as plain text and drop it from the
+ * BreadcrumbList (how it shipped before that page existed).
  */
-export const DEVICES_INDEX_PATH: string | null = null;
+export const DEVICES_INDEX_PATH: string | null = "/devices";
 
 /**
  * The visible crumb trail. The last crumb is the hub itself (current page, no
