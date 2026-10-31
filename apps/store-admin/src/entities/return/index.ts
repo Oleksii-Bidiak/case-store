@@ -24,6 +24,10 @@ export {
   ReturnDecision,
   ReturnOutcome,
   ReturnChannel,
+  // TASK-2045 (B-12 §1.7) — a repair, step by step, under a REPAIR decision.
+  useAdminReturnControllerAddRepairStep,
+  ReturnRepairStep,
+  RepairResult,
 } from "@/shared/api";
 
 export type {
@@ -32,6 +36,8 @@ export type {
   ReturnDecisionEventEntity,
   ReturnActorEntity,
   DecideReturnDto,
+  ReturnRepairStepEntity,
+  AddRepairStepDto,
   ResolveReturnDto,
   CreateReturnDto,
   ReturnItemDto,

@@ -536,3 +536,88 @@ describe("ReturnDetailView — what the customer asked for (TASK-2044, TASK-1961
     ).not.toBeInTheDocument();
   });
 });
+
+describe("ReturnDetailView — the repair (TASK-2045, B-12 §1.7)", () => {
+  const step = (name: string, result: string | null = null) => ({
+    step: name,
+    result,
+    destination: null,
+    ttn: null,
+    createdAt: "2026-09-24T09:30:00.000Z",
+    note: null,
+    actor: { id: "u-1", name: "Ірина Коваль", email: "irina@shop.ua" },
+  });
+  const repair = (repairSteps: unknown[] = []) =>
+    makeReturn({
+      status: "APPROVED",
+      decision: "REPAIR",
+      decidedAt: "2026-09-22T09:30:00.000Z",
+      repairSteps,
+    });
+
+  it("has no repair panel under another decision", async () => {
+    serve({ rma: makeReturn({ status: "APPROVED", decision: "REFUND" }) });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    await screen.findByRole("region", { name: d.decisionHeading });
+    expect(
+      screen.queryByRole("region", { name: d.repairHeading }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("moves to the next step once one is recorded, focus on the panel", async () => {
+    let current = repair();
+    serve({ rma: current });
+    server.use(
+      http.get("*/api/admin/returns/:id", () =>
+        HttpResponse.json({ data: current }),
+      ),
+      http.post("*/api/admin/returns/:returnId/repair-steps", () => {
+        current = repair([step("ACCEPTED")]);
+        return HttpResponse.json({ data: current });
+      }),
+    );
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const panel = await screen.findByRole("region", { name: d.repairHeading });
+    await userEvent.click(
+      within(panel).getByRole("button", {
+        name: d.repairSubmit(d.repairStepACCEPTED),
+      }),
+    );
+
+    expect(
+      await within(panel).findByRole("button", {
+        name: d.repairSubmit(d.repairStepSENT_TO_SERVICE),
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: d.repairHeading }),
+    ).toHaveFocus();
+  });
+
+  it("links the «not repairable» hint to the decision card", async () => {
+    serve({
+      rma: repair([
+        step("ACCEPTED"),
+        step("SENT_TO_SERVICE"),
+        step("RETURNED_FROM_SERVICE", "UNREPAIRABLE"),
+      ]),
+    });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const link = await screen.findByRole("link", { name: d.repairToDecision });
+    const target = document.getElementById(
+      (link.getAttribute("href") ?? "").slice(1),
+    );
+    expect(target).toBe(
+      screen.getByRole("region", { name: d.decisionHeading }),
+    );
+  });
+});

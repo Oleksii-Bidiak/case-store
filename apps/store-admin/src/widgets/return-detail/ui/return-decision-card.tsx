@@ -76,7 +76,14 @@ function HistoryEntry({ event }: { event: ReturnDecisionEventEntity }) {
  * The decide form (`features/return-decide`) sits at the bottom for a session
  * holding `returns:write`; it hides itself on a REFUNDED return.
  */
-export function ReturnDecisionCard({ rma }: { rma: ReturnEntity }) {
+export function ReturnDecisionCard({
+  rma,
+  id,
+}: {
+  rma: ReturnEntity;
+  /** Anchor for links from elsewhere on the page (the repair panel's hint). */
+  id?: string;
+}) {
   const headingId = useId();
   const historyId = useId();
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -85,8 +92,12 @@ export function ReturnDecisionCard({ rma }: { rma: ReturnEntity }) {
 
   return (
     <section
+      id={id}
+      // Focusable from code only: following the anchor lands focus here, so the
+      // next Tab reaches «Змінити рішення…».
+      tabIndex={id ? -1 : undefined}
       aria-labelledby={headingId}
-      className="flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-card"
+      className="flex scroll-mt-4 flex-col gap-3 rounded-lg border bg-card p-4 shadow-card outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <h3 id={headingId} className="text-sm font-semibold text-foreground">
         {d.decisionHeading}

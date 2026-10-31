@@ -27,6 +27,7 @@ import {
   orderBalanceOf,
   returnedValueOf,
 } from "@/features/return-resolve";
+import { ReturnRepairPanel } from "@/features/return-repair";
 import { toast } from "@/shared/ui/toast";
 import { Badge, RowActionsMenu, Stepper } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -48,6 +49,9 @@ const d = dict.returns;
 interface ReturnDetailViewProps {
   returnId: string;
 }
+
+/** The «Рішення» card's anchor — the repair panel's hint links to it. */
+const DECISION_ANCHOR_ID = "return-decision";
 
 /** Kopiykas, so a sum of «29.99» lines does not drift. */
 const toCents = (value: string) => Math.round(Number(value) * 100);
@@ -221,12 +225,15 @@ export function ReturnDetailView({ returnId }: ReturnDetailViewProps) {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* First in the DOM: on a phone the decision follows the steps (Р5). */}
         <div className="flex flex-col gap-6 lg:col-start-3 lg:row-start-1">
-          <ReturnDecisionCard rma={rma} />
+          <ReturnDecisionCard rma={rma} id={DECISION_ANCHOR_ID} />
           <ReturnResolveForm rma={rma} orderBalance={orderBalance} />
         </div>
 
         <div className="flex flex-col gap-6 lg:col-span-2 lg:col-start-1 lg:row-start-1">
           <ReturnDatesCard rma={rma} />
+
+          {/* TASK-2045 — renders only under a REPAIR decision. */}
+          <ReturnRepairPanel rma={rma} decisionAnchorId={DECISION_ANCHOR_ID} />
 
           <RequestCard rma={rma} />
 
