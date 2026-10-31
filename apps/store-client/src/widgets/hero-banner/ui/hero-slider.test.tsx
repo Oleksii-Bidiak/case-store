@@ -35,13 +35,13 @@ describe("HeroSlider", () => {
     render(<HeroSlider />);
 
     expect(
-      screen.getByRole("heading", { level: 1, name: slides[0].title }),
+      screen.getByRole("heading", { level: 2, name: slides[0].title }),
     ).toBeInTheDocument();
 
     act(() => jest.advanceTimersByTime(AUTOPLAY_MS));
 
     expect(
-      screen.getByRole("heading", { level: 1, name: slides[1].title }),
+      screen.getByRole("heading", { level: 2, name: slides[1].title }),
     ).toBeInTheDocument();
   });
 
@@ -50,14 +50,14 @@ describe("HeroSlider", () => {
     render(<HeroSlider />);
 
     expect(
-      screen.getByRole("heading", { level: 1, name: slides[0].title }),
+      screen.getByRole("heading", { level: 2, name: slides[0].title }),
     ).toBeInTheDocument();
 
     act(() => jest.advanceTimersByTime(AUTOPLAY_MS * 2));
 
     // Still on the first slide — the autoplay interval never armed.
     expect(
-      screen.getByRole("heading", { level: 1, name: slides[0].title }),
+      screen.getByRole("heading", { level: 2, name: slides[0].title }),
     ).toBeInTheDocument();
   });
 
@@ -82,7 +82,7 @@ describe("HeroSlider", () => {
 
     // Paused: the slide never advanced past the first.
     expect(
-      screen.getByRole("heading", { level: 1, name: slides[0].title }),
+      screen.getByRole("heading", { level: 2, name: slides[0].title }),
     ).toBeInTheDocument();
   });
 
@@ -119,7 +119,7 @@ describe("HeroSlider — responsive height (TASK-878)", () => {
     window.matchMedia = originalMatchMedia;
   });
 
-  it("reserves the tallest slide's height with inert, invisible sizers — one h1, no hidden links", () => {
+  it("reserves the tallest slide's height with inert, invisible sizers — one slide h2, no h1, no hidden links", () => {
     setReducedMotion(true);
     const { container } = render(<HeroSlider />);
 
@@ -129,11 +129,13 @@ describe("HeroSlider — responsive height (TASK-878)", () => {
       expect(sizer).toHaveAttribute("aria-hidden", "true");
       expect(sizer).toHaveAttribute("inert");
       expect(sizer.className).toContain("invisible");
-      expect(sizer.querySelector("h1, a")).toBeNull();
+      expect(sizer.querySelector("h1, h2, a")).toBeNull();
     }
 
-    // Exactly one page h1 and one CTA link — the active slide's.
-    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    // Exactly one slide heading and one CTA link — the active slide's; the
+    // page h1 is the device picker above the block (TASK-1952).
+    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1);
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
     expect(container.querySelectorAll("a")).toHaveLength(1);
 
     // No fixed height at any width: the box grows with the copy above a min
@@ -154,7 +156,7 @@ describe("HeroSlider — responsive height (TASK-878)", () => {
     setReducedMotion(true);
     render(<HeroSlider />);
 
-    const layer = screen.getByRole("heading", { level: 1 }).parentElement
+    const layer = screen.getByRole("heading", { level: 2 }).parentElement
       ?.parentElement as HTMLElement;
     expect(layer).toHaveClass("px-6", "sm:px-24");
     expect(layer).not.toHaveClass("px-16");
@@ -225,7 +227,7 @@ describe("HeroSlider — banner pictures (TASK-740)", () => {
     );
 
     expect(
-      screen.getByRole("heading", { level: 1, name: "Без картинки" }),
+      screen.getByRole("heading", { level: 2, name: "Без картинки" }),
     ).toBeInTheDocument();
     expect(container.querySelector("img")).toBeNull();
   });

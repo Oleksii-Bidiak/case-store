@@ -119,6 +119,9 @@ export function renderHomeBlock(
 ): ReactNode {
   switch (block.type) {
     case "HERO":
+      // The «Акції» block — slider + promo tiles (TASK-2013). Since TASK-1952
+      // it follows the device picker, which `page.tsx` renders before every
+      // block as the page h1; the slide titles here are h2.
       return (
         <HeroBanner
           key={block.id}

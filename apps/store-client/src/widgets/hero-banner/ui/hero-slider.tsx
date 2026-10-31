@@ -12,6 +12,7 @@ import {
 import { BannerBackdrop, Button } from "@/shared/ui";
 import { dict, FOCUS_ON_DARK_CLASS, HERO_CLASS } from "@/shared/config";
 import { useReducedMotion } from "@/shared/lib/use-reduced-motion";
+import { cn } from "@/shared/lib/utils";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
 /** Normalised slide shape rendered by the slider (banner- or dictionary-driven). */
@@ -106,8 +107,8 @@ const CONTROL =
 
 /**
  * The copy block of one slide. `sizer` renders the same box without semantics
- * (a `p` instead of the page h1, a `span` instead of the link) for the invisible
- * height-reserving layers — the page keeps exactly one h1 and no hidden links.
+ * (a `p` instead of the slide's h2, a `span` instead of the link) for the
+ * invisible height-reserving layers — one slide heading and no hidden links.
  */
 function SlideCopy({
   slide,
@@ -118,7 +119,10 @@ function SlideCopy({
   theme: SlideTheme;
   sizer?: boolean;
 }) {
-  const Title = sizer ? "p" : "h1";
+  // h2 since TASK-1952: the device picker above the «Акції» block is the
+  // page h1. The hero role keeps its weight and tracking, but steps down to
+  // the mockup's 28 → 36px (here 30 → 36) so a slide never out-shouts the h1.
+  const Title = sizer ? "p" : "h2";
   return (
     <div className="relative z-10 max-w-xl">
       {slide.eyebrow && (
@@ -129,7 +133,10 @@ function SlideCopy({
         </span>
       )}
       <Title
-        className={`mt-4 ${HERO_CLASS} text-balance lg:text-4xl xl:text-5xl`}
+        className={cn(
+          `${HERO_CLASS}`,
+          "mt-4 text-3xl text-balance md:text-4xl",
+        )}
       >
         {slide.title}
       </Title>
@@ -173,7 +180,7 @@ function SlideCopy({
  * proportions (420 / 440 px in Homepage.dc.html). From lg it is NOT pinned
  * (TASK-2013): it shares a row with promo tiles 1–2 in a 2/3-wide column, and
  * the tile column takes ITS height — a pinned box would clip the copy there.
- * In that column the title steps down to text-4xl / xl:text-5xl. Below sm the
+ * The slide title is an h2 at text-3xl / md:text-4xl (TASK-1952). Below sm the
  * arrows join the pause button in the bottom row so the copy gets the full
  * width; from sm they sit in the side gutters. Client Component (holds the
  * active-slide state).

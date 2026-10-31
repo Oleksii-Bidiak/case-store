@@ -273,20 +273,9 @@ export const dict = {
       resumeAutoplay: "Відновити автоперегортання слайдів",
     },
 
-    // Device model picker — UI-only stub (API has no model→accessory filter).
-    modelPicker: {
-      title: "Підібрати аксесуари",
-      subtitle: "за моделлю вашого пристрою",
-      brandPlaceholder: "Бренд",
-      brandAria: "Бренд пристрою",
-      modelPlaceholder: "Модель",
-      modelAria: "Модель пристрою",
-      submit: "Підібрати",
-      // Empty-state helpers for the cascade (TASK-190): the model select is
-      // disabled until a brand is chosen; brands/models come from the API now.
-      modelPlaceholderEmpty: "Спершу оберіть бренд",
-      loading: "Завантаження…",
-    },
+    // TASK-1952 — the active device panel's product rail on the homepage
+    // (the cards beside «Все для …»).
+    devicePicksAria: (device: string) => `Товари для ${device}`,
 
     // TASK-2013 — the «slider + promo tiles» block of the first screen.
     promoAria: "Акції",
@@ -316,10 +305,13 @@ export const dict = {
       },
     ],
 
-    // Trust bar — four reassurance items (icon + title + subtitle).
+    // Trust bar — four reassurance items (icon + title + subtitle) under the
+    // «Акції» block (Д3-2 Homepage §5). «Відправка», not «Доставка»: the shop
+    // sends the same day, the carrier takes its own time.
+    trustAria: "Чому ми",
     trust: [
       {
-        title: "Доставка день у день",
+        title: "Відправка день у день",
         subtitle: "Нова Пошта по всій Україні",
       },
       {
@@ -331,8 +323,8 @@ export const dict = {
         subtitle: "Легкий обмін і повернення",
       },
       {
-        title: "Кредит 0%",
-        subtitle: "Оплата частинами до 24 міс.",
+        title: "Оплата частинами",
+        subtitle: "Від 3 платежів без переплат",
       },
     ],
 
