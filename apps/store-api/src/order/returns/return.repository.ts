@@ -21,7 +21,7 @@ import type {
   AssertRefundWithinBalance,
   AssertReturnClaimable,
   CreateReturnParams,
-  ReturnDecisionBasis,
+  ReturnTransitionBasis,
   ReturnDecisionChange,
   ReturnRepairStepRecord,
   ReturnWithItems,
@@ -373,7 +373,7 @@ export class ReturnRepository {
    *   since the service read it.
    */
   async resolve(
-    current: ReturnDecisionBasis,
+    current: ReturnTransitionBasis,
     fields: {
       status: ReturnStatus;
       operatorNotes?: string | null;
@@ -490,7 +490,7 @@ export class ReturnRepository {
    *   since the service read it; whatever `assertClaimable` throws.
    */
   async decide(
-    current: ReturnDecisionBasis,
+    current: ReturnTransitionBasis,
     change: ReturnDecisionChange,
     options: { assertClaimable?: AssertReturnClaimable } = {},
   ): Promise<ReturnWithItems> {

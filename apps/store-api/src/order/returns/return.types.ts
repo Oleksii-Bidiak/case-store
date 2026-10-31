@@ -164,11 +164,12 @@ export interface RefundLedger {
 export type AssertRefundWithinBalance = (ledger: RefundLedger) => void;
 
 /**
- * The state a decision was taken against (TASK-1961, TASK-2044). The repository
- * writes only if the row still holds this status and decision, so a decision
- * never lands on a return another operator has moved meanwhile.
+ * The state the service validated a transition against — a decision or a PATCH
+ * (TASK-1961, TASK-2044). The repository writes only if the row still holds
+ * this status and decision, so neither lands on a return another operator has
+ * moved meanwhile.
  */
-export interface ReturnDecisionBasis {
+export interface ReturnTransitionBasis {
   id: string;
   orderId: string;
   status: ReturnStatus;
