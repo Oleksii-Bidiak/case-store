@@ -1,5 +1,7 @@
+import { focusManager } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import {
+  act,
   renderWithProviders,
   screen,
   userEvent,
@@ -281,5 +283,27 @@ describe("GuestOrderReturnHistory (TASK-1965)", () => {
     expect(
       await screen.findByRole("region", { name: r.historyTitle }),
     ).toBeInTheDocument();
+  });
+
+  // The guest endpoint is throttled (20/min per IP): a refetch on every tab
+  // switch would let an ordinary guest lock themselves out.
+  it("does not ask again when the window regains focus", async () => {
+    let calls = 0;
+    server.use(
+      http.get("*/api/orders/guest/:token/returns", () => {
+        calls += 1;
+        return HttpResponse.json({ data: [makeReturn()] });
+      }),
+    );
+    renderWithProviders(<GuestOrderReturnHistory token="guest-token" />);
+    await screen.findByRole("region", { name: r.historyTitle });
+    expect(calls).toBe(1);
+
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(calls).toBe(1);
   });
 });

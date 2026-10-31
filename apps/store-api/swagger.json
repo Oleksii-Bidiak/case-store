@@ -14682,6 +14682,7 @@
         ]
       },
       "patch": {
+        "description": "With a status: a guarded transition (RECEIVED or REFUNDED), optionally with notes, refundedAmount and restock. Without a status: saves operatorNotes alone on a return of any status — no transition, resolvedAt and the decision untouched.",
         "operationId": "adminReturnControllerResolve",
         "parameters": [
           {
@@ -14716,7 +14717,7 @@
             }
           },
           "400": {
-            "description": "error: RETURN_USE_DECISION_ENDPOINT (APPROVED and REJECTED are set only by a decision), RETURN_RESTOCK_REQUIRES_RECEIVED (restock requested for a status other than RECEIVED), RETURN_REFUND_EXCEEDS_RETURNED_VALUE or RETURN_REFUND_EXCEEDS_ORDER_BALANCE"
+            "description": "error: RETURN_UPDATE_EMPTY (neither a status nor operatorNotes), RETURN_STATUS_REQUIRED (refundedAmount or restock without a status), RETURN_USE_DECISION_ENDPOINT (APPROVED and REJECTED are set only by a decision), RETURN_RESTOCK_REQUIRES_RECEIVED (restock requested for a status other than RECEIVED), RETURN_REFUND_EXCEEDS_RETURNED_VALUE or RETURN_REFUND_EXCEEDS_ORDER_BALANCE"
           },
           "404": {
             "description": "Return not found — error: RETURN_NOT_FOUND"
@@ -14730,7 +14731,7 @@
             "access-token": []
           }
         ],
-        "summary": "Resolve a return (admin)",
+        "summary": "Resolve a return, or save its operator notes (admin)",
         "tags": [
           "Admin Returns"
         ]
@@ -30904,7 +30905,7 @@
         "properties": {
           "status": {
             "type": "string",
-            "description": "New return status: RECEIVED or REFUNDED. Validated against the return state machine; REFUNDED needs a REFUND decision. APPROVED and REJECTED are set only by a decision (POST /admin/returns/:returnId/decision) and are refused here with RETURN_USE_DECISION_ENDPOINT.",
+            "description": "New return status: RECEIVED or REFUNDED. Validated against the return state machine; REFUNDED needs a REFUND decision. APPROVED and REJECTED are set only by a decision (POST /admin/returns/:returnId/decision) and are refused here with RETURN_USE_DECISION_ENDPOINT. Omit it to save operatorNotes alone on a return of any status — no transition, resolvedAt and the decision untouched; refundedAmount and restock are then refused with RETURN_STATUS_REQUIRED.",
             "enum": [
               "REQUESTED",
               "APPROVED",
@@ -30930,10 +30931,7 @@
             "description": "Credit the returned units back to sellable stock. Only meaningful when moving to RECEIVED — the goods are physically back. Guarded so the same return can never be restocked twice.",
             "example": true
           }
-        },
-        "required": [
-          "status"
-        ]
+        }
       },
       "DecideReturnDto": {
         "type": "object",

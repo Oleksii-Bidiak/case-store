@@ -8,6 +8,7 @@ import type { ReturnEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
 import { Button } from "@/shared/ui";
 import { cn } from "@/shared/lib/utils";
+import { guestReturnsQueryOptions } from "../model/guest-returns-query";
 import { ReturnHistory } from "./return-history";
 
 interface FetchedReturnHistoryProps {
@@ -109,7 +110,10 @@ export function GuestOrderReturnHistory({
   token,
   className,
 }: GuestOrderReturnHistoryProps) {
-  const { data, isError, isFetching, refetch } = useGetGuestOrderReturns(token);
+  const { data, isError, isFetching, refetch } = useGetGuestOrderReturns(
+    token,
+    { query: guestReturnsQueryOptions },
+  );
 
   return (
     <FetchedReturnHistory

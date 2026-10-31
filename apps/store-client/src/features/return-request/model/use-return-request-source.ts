@@ -5,6 +5,7 @@ import {
   getGetGuestOrderReturnsQueryKey,
   getGetMyReturnsQueryKey,
   getGetOrderReturnsQueryKey,
+  guestReturnsQueryOptions,
   useCreateGuestReturn,
   useCreateReturn,
   useGetGuestOrderReturns,
@@ -66,7 +67,8 @@ export function useReturnRequestSource(
     query: { enabled: enabled && !isGuest },
   });
   const guestLedger = useGetGuestOrderReturns(token, {
-    query: { enabled: enabled && isGuest },
+    // Throttled endpoint: no refetch on focus (see guestReturnsQueryOptions).
+    query: { ...guestReturnsQueryOptions, enabled: enabled && isGuest },
   });
   const ledger = isGuest ? guestLedger : accountLedger;
   const ledgerKey = isGuest

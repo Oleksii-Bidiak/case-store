@@ -50,3 +50,6 @@ export {
   GuestOrderReturnHistory,
 } from "./ui/order-return-history";
 export { ReturnSummaryBadge } from "./ui/return-summary-badge";
+// The guest returns query must not refetch on focus — the endpoint is
+// throttled (20/min per IP).
+export { guestReturnsQueryOptions } from "./model/guest-returns-query";

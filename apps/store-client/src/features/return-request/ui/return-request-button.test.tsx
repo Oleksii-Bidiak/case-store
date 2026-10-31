@@ -1,3 +1,4 @@
+import { focusManager } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import {
   act,
@@ -752,5 +753,29 @@ describe("ReturnRequestButton on a guest order", () => {
       await screen.findByText(dict.returnRequest.success),
     ).toBeInTheDocument();
     expect(accountCalls).toHaveLength(0);
+  });
+
+  // The guest endpoint is throttled (20/min per IP): switching tabs while the
+  // dialog is open must not spend that budget.
+  it("does not re-read what is claimed when the window regains focus", async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    server.use(
+      http.get("*/api/orders/guest/:token/returns", () => {
+        calls += 1;
+        return HttpResponse.json({ data: [] });
+      }),
+    );
+
+    renderButton({ kind: "guest", token: "guest-token" });
+    await open(user);
+    expect(calls).toBe(1);
+
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(calls).toBe(1);
   });
 });
