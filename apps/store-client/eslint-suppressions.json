@@ -304,11 +304,6 @@
       "count": 3
     }
   },
-  "src/widgets/product-detail/ui/product-rail.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 5
-    }
-  },
   "src/widgets/product-detail/ui/product-specs-tabs.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 4

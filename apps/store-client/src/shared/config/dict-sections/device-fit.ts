@@ -46,6 +46,9 @@ export const deviceFitDict = {
     titleNone: "До цього товару беруть",
     allFor: (device: string) => `Все для ${device}`,
     seeAll: "Дивитись усі",
+    // Rail 2 — the product's own category («Інші чохли» in the mockup; the
+    // category name is a plural noun, so it is quoted rather than inflected).
+    categoryTitle: (category: string) => `Ще з категорії «${category}»`,
     categoryLink: "Усі в категорії",
   },
 

@@ -30,7 +30,7 @@ import { ProductSiblingNavigator } from "./product-sibling-navigator";
 import { ProductTrustBadges } from "./product-trust-badges";
 import { ProductSpecsTabs } from "./product-specs-tabs";
 import { ProductHighlights } from "./product-highlights";
-import { ProductRail } from "./product-rail";
+import { ProductRails } from "./product-rails";
 import { ProductCompatRow } from "./product-compat-row";
 import { MobileAtcBar } from "./mobile-atc-bar";
 import { ProductInCartButton } from "./product-in-cart-button";
@@ -365,20 +365,10 @@ export function ProductDetailView({
         modelVariants={otherModelVariants(group, product.attributes)}
       />
 
-      {product.compatibleDeviceModels?.[0] && (
-        <ProductRail
-          title={dict.product.compatibleTitle}
-          headingId="compatible-heading"
-          filter={{ deviceModelId: product.compatibleDeviceModels[0].id }}
-          excludeId={product.id}
-        />
-      )}
-
-      <ProductRail
-        title={dict.product.relatedTitle}
-        headingId="related-heading"
-        filter={{ categoryId: category.id }}
-        excludeId={product.id}
+      <ProductRails
+        productId={product.id}
+        compatibleModels={product.compatibleDeviceModels}
+        category={category}
       />
 
       <MobileAtcBar
