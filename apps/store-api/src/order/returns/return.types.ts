@@ -14,6 +14,11 @@ import {
 export interface ReturnActorRow {
   id: string;
   email: string;
+  /**
+   * The readable email of a soft-deleted account (TASK-104), whose `email` is
+   * mangled to `deleted:<id>:<email>`; null for a live one.
+   */
+  originalEmail?: string | null;
   firstName: string | null;
   lastName: string | null;
 }

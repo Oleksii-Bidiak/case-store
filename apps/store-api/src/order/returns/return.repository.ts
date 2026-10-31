@@ -58,6 +58,8 @@ const HISTORY_ORDER = [{ createdAt: 'asc' as const }, { id: 'asc' as const }];
 const ACTOR_SELECT = {
   id: true,
   email: true,
+  // A soft-deleted account's `email` is mangled; this is the readable one (TASK-104).
+  originalEmail: true,
   firstName: true,
   lastName: true,
 } satisfies Prisma.UserSelect;

@@ -72,10 +72,18 @@ export class ReturnActorEntity {
     if (!row) return null;
     const entity = new ReturnActorEntity();
     entity.id = row.id;
+    entity.email = readableEmail(row);
     entity.name = displayName(row);
-    entity.email = row.email;
     return entity;
   }
+}
+
+/**
+ * A soft-deleted account (TASK-104) keeps its readable email in
+ * `originalEmail`; `email` is mangled. Same fallback as the audit log.
+ */
+function readableEmail(row: ReturnActorRow): string {
+  return row.originalEmail ?? row.email;
 }
 
 function displayName(row: ReturnActorRow): string {
@@ -83,7 +91,7 @@ function displayName(row: ReturnActorRow): string {
     .map((part) => part?.trim())
     .filter(Boolean)
     .join(' ');
-  return name || row.email;
+  return name || readableEmail(row);
 }
 
 /** One row of a return's decision history (TASK-1961, TASK-2044) — admin only. */
