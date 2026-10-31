@@ -558,17 +558,155 @@ describe("ReturnResolveForm — operator notes, shown once (TASK-794, TASK-1056)
     );
     expect(bodies).toHaveLength(0);
   });
+});
 
-  it("offers no «Змінити» on a closed return — the note can no longer be saved", () => {
+/**
+ * Since approve/reject moved to POST /decision (TASK-1961/2044), a REQUESTED or
+ * REJECTED return has no step for the notes to ride on — they are saved on
+ * their own, by a notes-only PATCH (no status), on every status.
+ */
+describe("ReturnResolveForm — «Зберегти примітки» on every status", () => {
+  const editNotes = async (text: string) => {
+    await userEvent.click(screen.getByRole("button", { name: d.notesEdit }));
+    const field = screen.getByLabelText(d.operatorNotes);
+    await userEvent.clear(field);
+    if (text) await userEvent.type(field, text);
+  };
+
+  it.each([
+    ["REQUESTED", null],
+    ["APPROVED", "REFUND"],
+    ["RECEIVED", "REPAIR"],
+    ["REJECTED", "REJECT"],
+    ["REFUNDED", "REFUND"],
+  ] as const)(
+    "saves the notes alone on a %s return — no status in the body",
+    async (status, decision) => {
+      const bodies = stubResolve(() =>
+        HttpResponse.json({
+          data: makeReturn({ status, decision, operatorNotes: "Дзвонив" }),
+        }),
+      );
+      renderAsWriter(
+        <ReturnResolveForm rma={makeReturn({ status, decision })} />,
+      );
+
+      await editNotes("  Дзвонив ");
+      await userEvent.click(screen.getByRole("button", { name: d.notesSave }));
+
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toEqual({ operatorNotes: "Дзвонив" });
+      await waitFor(() =>
+        expect(toastSuccess).toHaveBeenCalledWith(d.notesSaved),
+      );
+      // The editor closes once the notes are saved.
+      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    },
+  );
+
+  it("clears the notes with null when the field is emptied", async () => {
+    const bodies = stubResolve(() =>
+      HttpResponse.json({ data: makeReturn({ status: "REJECTED" }) }),
+    );
     renderAsWriter(
       <ReturnResolveForm
-        rma={makeReturn({ status: "REFUNDED", operatorNotes: "Готово" })}
+        rma={makeReturn({
+          status: "REJECTED",
+          decision: "REJECT",
+          operatorNotes: "Стара нотатка",
+        })}
       />,
     );
-    expect(screen.getByText("Готово")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: d.notesEdit }),
-    ).not.toBeInTheDocument();
+
+    await editNotes("");
+    await userEvent.click(screen.getByRole("button", { name: d.notesSave }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ operatorNotes: null });
+  });
+
+  it("keeps an over-long note out of the request and says why", async () => {
+    const bodies = stubResolve(() => HttpResponse.json({ data: makeReturn() }));
+    renderAsWriter(
+      <ReturnResolveForm
+        rma={makeReturn({ status: "REQUESTED", decision: null })}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: d.notesEdit }));
+    fireEvent.change(screen.getByLabelText(d.operatorNotes), {
+      target: { value: "н".repeat(2001) },
+    });
+    await userEvent.click(screen.getByRole("button", { name: d.notesSave }));
+
+    expect(await screen.findByText(d.operatorNotesTooLong)).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("puts the server's refusal of the notes under the field", async () => {
+    stubResolve(() =>
+      HttpResponse.json(
+        {
+          error: "Bad Request",
+          message: [
+            "operatorNotes must be shorter than or equal to 2000 characters",
+          ],
+          statusCode: 400,
+        },
+        { status: 400 },
+      ),
+    );
+    renderAsWriter(
+      <ReturnResolveForm
+        rma={makeReturn({ status: "REQUESTED", decision: null })}
+      />,
+    );
+
+    await editNotes("x");
+    await userEvent.click(screen.getByRole("button", { name: d.notesSave }));
+
+    expect(await screen.findByText(d.operatorNotesTooLong)).toBeInTheDocument();
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("says the notes were not saved when the server fails", async () => {
+    stubResolve(() => HttpResponse.json({}, { status: 500 }));
+    renderAsWriter(
+      <ReturnResolveForm
+        rma={makeReturn({ status: "REQUESTED", decision: null })}
+      />,
+    );
+
+    await editNotes("x");
+    await userEvent.click(screen.getByRole("button", { name: d.notesSave }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(d.notesSaveFailed),
+    );
+    // The text survives the failure, so a retry needs no retyping.
+    expect(screen.getByLabelText(d.operatorNotes)).toHaveValue("x");
+  });
+
+  it("spins and blocks a second click while the notes are saving", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const bodies = stubResolve(async () => {
+      await gate;
+      return HttpResponse.json({ data: makeReturn() });
+    });
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
+
+    await editNotes("x");
+    await userEvent.click(screen.getByRole("button", { name: d.notesSave }));
+
+    const saving = await screen.findByRole("button", { name: d.saving });
+    expect(saving).toBeDisabled();
+    // The step's action waits too — one PATCH at a time.
+    expect(screen.getByRole("button", { name: d.markReceived })).toBeDisabled();
+    release();
+    await waitFor(() => expect(bodies).toHaveLength(1));
   });
 });
 

@@ -3,6 +3,7 @@ import { formatCurrency } from "@/shared/lib";
 import {
   OPERATOR_NOTES_MAX_LENGTH,
   createResolveReturnSchema,
+  notesOnlyDto,
   orderBalanceOf,
   refundCapOf,
   returnedValueOf,
@@ -188,5 +189,15 @@ describe("refundCapOf — «Можна повернути максимум» (TA
   it("is the one it knows, or nothing", () => {
     expect(refundCapOf({ returnedValue: "499.00" })).toBe("499.00");
     expect(refundCapOf({ returnedValue: null, orderBalance: null })).toBeNull();
+  });
+});
+
+describe("notesOnlyDto — the notes-only PATCH body", () => {
+  it("carries the trimmed notes and nothing else — no status, amount or restock", () => {
+    expect(notesOnlyDto("  Дзвонив  ")).toEqual({ operatorNotes: "Дзвонив" });
+  });
+
+  it("clears the notes with null when the field is blank", () => {
+    expect(notesOnlyDto("   ")).toEqual({ operatorNotes: null });
   });
 });
