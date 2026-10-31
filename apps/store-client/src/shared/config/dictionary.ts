@@ -270,23 +270,25 @@ export const dict = {
       // Left category rail (reuses real category data; these are labels only).
       allCategories: "Усі категорії",
       sidebarAria: "Категорії товарів",
-      // Three promotional slides. `href` targets real routes so CTAs work.
+      // The fallback slides — shown only while the owner has published no
+      // HERO_SLIDE banner. `href` targets real routes so CTAs work.
+      // Direction В (TASK-2013): the slide tone is a device family or the
+      // ink panel, never a hue picked for variety, and the copy promises no
+      // discount the store may not be running (the old «−50% до неділі» slide
+      // was flagged by the 2026-10-29 content audit). `big` is the display
+      // word on the art panel; `icon` its placeholder art until the slide has
+      // a picture.
       slides: [
         {
-          eyebrow: "Новинки сезону",
-          title: "Аксесуари, що тримають темп твого дня",
+          eyebrow: "Для iPhone",
+          title: "Чохли, скло й зарядки для iPhone",
           subtitle:
-            "Чохли, зарядки, аудіо та захист від офіційних брендів. Гарантія та швидка доставка по всій Україні.",
-          cta: "Перейти до каталогу",
-          href: "/products",
-        },
-        {
-          eyebrow: "Тиждень знижок",
-          title: "Знижки до −50% на топові аксесуари",
-          subtitle:
-            "Лише до неділі — встигни оновити комплект для свого смартфона за найкращою ціною.",
-          cta: "Переглянути товари",
-          href: "/products",
+            "Оберіть модель — покажемо лише те, що їй справді підходить.",
+          cta: "Підібрати для iPhone",
+          href: "/search?q=iPhone",
+          tone: "iphone" as const,
+          icon: "smartphone" as const,
+          big: "iPhone",
         },
         {
           eyebrow: "Доставка",
@@ -295,8 +297,25 @@ export const dict = {
             "Нова Пошта за тарифом перевізника · відправка день у день · оплата під час отримання.",
           cta: "Переглянути новинки",
           href: "/products?sortBy=createdAt&sortOrder=desc",
+          tone: "ink" as const,
+          icon: "truck" as const,
+          big: undefined,
+        },
+        {
+          eyebrow: "Для Galaxy",
+          title: "Аксесуари для Samsung Galaxy",
+          subtitle: "Чохли, захисне скло й зарядки — підбір за вашою моделлю.",
+          cta: "Підібрати для Galaxy",
+          href: "/search?q=Galaxy",
+          tone: "galaxy" as const,
+          icon: "smartphone" as const,
+          big: "Galaxy",
         },
       ],
+      // TASK-2013 — the carousel and slide names (WAI-ARIA carousel pattern).
+      carouselAria: "Акції магазину",
+      slideAria: (n: number, total: number, title: string) =>
+        `${n} з ${total}: ${title}`,
       prevSlide: "Попередній слайд",
       nextSlide: "Наступний слайд",
       goToSlide: (n: number) => `Перейти до слайда ${n}`,

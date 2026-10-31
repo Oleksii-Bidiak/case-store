@@ -9,11 +9,17 @@ import {
   Pause,
   Play,
 } from "lucide-react";
-import { BannerBackdrop, Button } from "@/shared/ui";
-import { dict, FOCUS_ON_DARK_CLASS, HERO_CLASS } from "@/shared/config";
+import { dict, HERO_CLASS } from "@/shared/config";
 import { useReducedMotion } from "@/shared/lib/use-reduced-motion";
 import { cn } from "@/shared/lib/utils";
 import type { BannerEntity } from "@/shared/api/generated/models";
+import { SlideArt, hasSlideArt, type SlideArtIcon } from "./slide-art";
+import {
+  SLIDE_TONES,
+  slideToneFor,
+  type SlideTone,
+  type SlideToneKey,
+} from "./slide-tone";
 
 /** Normalised slide shape rendered by the slider (banner- or dictionary-driven). */
 type HeroSlide = {
@@ -23,12 +29,24 @@ type HeroSlide = {
   cta?: string;
   /** CTA target; a slide without one shows no button (TASK-873). */
   href?: string;
-  /** Admin banner picture (TASK-740); the theme gradient shows without one. */
+  /** Device family, sale or the ink panel (direction В colour rule). */
+  tone: SlideToneKey;
+  /** Admin banner picture (TASK-740), drawn in the art panel from md. */
   imageUrl?: string;
+  /**
+   * Big display figure on the art panel («−15%»). The dictionary fallback
+   * sets it; `BannerEntity` has no such field yet, so admin slides go
+   * without one.
+   */
+  big?: string;
+  /** Placeholder art while the slide has no picture (fallback slides). */
+  icon?: SlideArtIcon;
 };
 
 /** The hardcoded fallback slides — rendered when no HERO_SLIDE banners exist. */
-const FALLBACK_SLIDES: readonly HeroSlide[] = dict.home.hero.slides;
+const FALLBACK_SLIDES: readonly HeroSlide[] = dict.home.hero.slides.map(
+  (s) => ({ ...s, big: s.big ?? undefined }),
+);
 
 /** Map admin-managed HERO_SLIDE banners onto the slider's normalised shape. */
 function bannersToSlides(banners: BannerEntity[]): HeroSlide[] {
@@ -37,73 +55,30 @@ function bannersToSlides(banners: BannerEntity[]): HeroSlide[] {
     subtitle: b.subtitle ?? undefined,
     cta: b.ctaLabel ?? undefined,
     href: b.ctaHref?.trim() || undefined,
+    tone: slideToneFor(b.theme),
     imageUrl: b.imageUrl ?? undefined,
   }));
 }
 
 const AUTOPLAY_MS = 7000;
 
-// Per-slide visual theme (copy lives in the dictionary; visuals stay in code).
-// Each slide gets its own gradient, text colour, eyebrow pill and CTA button:
-//   0 · ink panel with a violet cast · white text
-//   1 · inverse (foreground panel, background text) · sale eyebrow
-//   2 · deep success green · white text
-// (TASK-2013: the decorative striped "product" panel is gone — in the 2/3-wide
-// column beside the promo tiles it ran into the copy.)
-// All gradients are token-derived (color-mix/oklch). Slides 0 and 2 carry white
-// copy, so they are built from tones that stay dark in BOTH themes (TASK-1951):
-// the theme-invariant footer ink, and success mixed well towards black (the
-// dark-theme success is a light green). Never from `primary`: since direction В
-// it is graphite in light and near-white in dark.
-type SlideTheme = {
-  gradient: string;
-  text: string;
-  eyebrow: string;
-  cta: string;
-  /** Tint over an admin picture, in the gradient's colour family (TASK-740). */
-  scrim: string;
-};
-
-const THEMES: SlideTheme[] = [
-  {
-    gradient:
-      "linear-gradient(120deg, color-mix(in oklab, var(--color-footer) 90%, black) 0%, var(--color-footer) 52%, color-mix(in oklab, var(--color-footer) 75%, oklch(0.45 0.12 290)) 100%)",
-    text: "text-white",
-    eyebrow: "bg-white/15 text-white ring-1 ring-white/25 backdrop-blur-sm",
-    cta: "bg-white text-footer hover:bg-white/90",
-    scrim: "bg-black/45",
-  },
-  {
-    gradient:
-      "linear-gradient(120deg, var(--color-foreground) 0%, color-mix(in oklab, var(--color-foreground) 72%, var(--color-primary)) 100%)",
-    text: "text-background",
-    eyebrow: "bg-sale text-sale-foreground",
-    cta: "bg-background text-foreground hover:bg-background/90",
-    scrim: "bg-foreground/60",
-  },
-  {
-    gradient:
-      "linear-gradient(120deg, color-mix(in oklab, var(--color-success) 50%, black) 0%, color-mix(in oklab, var(--color-success) 60%, black) 60%, color-mix(in oklab, oklch(0.6 0.13 175) 62%, black) 100%)",
-    text: "text-white",
-    eyebrow: "bg-white/18 text-white ring-1 ring-white/25 backdrop-blur-sm",
-    cta: "bg-white text-footer hover:bg-white/90",
-    scrim: "bg-black/45",
-  },
-];
-
 /**
  * One grid cell shared by every slide layer: the active slide and the invisible
- * sizers stack in it, so the slider is as tall as its tallest slide. Below sm the
- * controls live in the bottom row, so the copy takes the full width (px-6); from
- * sm it is padded clear of the side arrows (px-24). pb keeps the bottom row
- * (dots, arrows on a phone, pause) clear of the CTA.
+ * sizers stack in it, so the slider is as tall as its tallest slide. Padding
+ * per the Homepage mockup — 28 / 24 / 72 on a phone, 40 / 40 / 80 from md; the
+ * deep bottom keeps the control row clear of the CTA. From md the slide is two
+ * columns, copy 1.2fr and art 1fr (6 + 5 of 11).
  */
 const SLIDE_LAYER =
-  "col-start-1 row-start-1 flex items-center px-6 pt-10 pb-20 sm:px-24 sm:pt-12";
+  "col-start-1 row-start-1 grid content-center items-center gap-4 px-6 pt-7 pb-18 md:grid-cols-11 md:gap-6 md:p-10 md:pb-20";
 
-/** The white round controls over the banner (prev / next / pause). */
+/** The round controls of the bottom row (pause / prev / next). */
 const CONTROL =
-  "absolute z-10 flex size-11 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-lift transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white";
+  "flex size-11 shrink-0 items-center justify-center rounded-full bg-card/85 text-foreground transition duration-120 ease-out hover:bg-muted active:scale-94 motion-reduce:transition-none motion-reduce:active:scale-100";
+
+/** A slim 8px dot (24px when active) with a centred 44px invisible hit-area. */
+const DOT =
+  "relative h-2 rounded-full transition-all duration-180 ease-out before:absolute before:top-1/2 before:left-1/2 before:size-11 before:-translate-x-1/2 before:-translate-y-1/2 motion-reduce:transition-none";
 
 /**
  * The copy block of one slide. `sizer` renders the same box without semantics
@@ -112,98 +87,108 @@ const CONTROL =
  */
 function SlideCopy({
   slide,
-  theme,
+  tone,
+  wide,
   sizer = false,
 }: {
   slide: HeroSlide;
-  theme: SlideTheme;
+  tone: SlideTone;
+  /** No art panel: the copy takes both columns. */
+  wide: boolean;
   sizer?: boolean;
 }) {
   // h2 since TASK-1952: the device picker above the «Акції» block is the
   // page h1. The hero role keeps its weight and tracking, but steps down to
   // the mockup's 28 → 36px (here 30 → 36) so a slide never out-shouts the h1.
   const Title = sizer ? "p" : "h2";
+  const ctaClass = cn(
+    "inline-flex h-12 items-center gap-2 self-start rounded-full px-5.5 text-sm font-semibold shadow-card transition duration-120 ease-out hover:ring-4 hover:ring-current/15 active:scale-98 motion-reduce:transition-none motion-reduce:active:scale-100",
+    tone.cta,
+    tone.focus,
+  );
   return (
-    <div className="relative z-10 max-w-xl">
+    <div
+      className={cn(
+        "flex min-w-0 flex-col items-start gap-3.5",
+        wide ? "md:col-span-11" : "md:col-span-6",
+      )}
+    >
       {slide.eyebrow && (
-        <span
-          className={`inline-block rounded-full px-3.5 py-1.5 text-xs font-semibold tracking-wide uppercase ${theme.eyebrow}`}
-        >
+        // A pill tinted with the slide's own text colour, so it reads on
+        // every tone without a hue of its own.
+        <span className="rounded-full bg-current/12 px-3 py-1 text-xs font-bold">
           {slide.eyebrow}
         </span>
       )}
       <Title
         className={cn(
           `${HERO_CLASS}`,
-          "mt-4 text-3xl text-balance md:text-4xl",
+          "max-w-130 text-3xl leading-tight text-balance md:text-4xl",
         )}
       >
         {slide.title}
       </Title>
       {slide.subtitle && (
-        <p className="mt-3 max-w-md text-base opacity-90 sm:text-[17px]">
+        <p className="max-w-110 text-base leading-normal opacity-85">
           {slide.subtitle}
         </p>
       )}
       {slide.cta && slide.href && (
-        <Button
-          asChild
-          className={`mt-6 h-[52px] rounded-xl px-6 text-base font-bold shadow-lift ${theme.cta} ${FOCUS_ON_DARK_CLASS}`}
-        >
+        <div className="mt-1">
           {sizer ? (
-            <span>
+            <span className={ctaClass}>
               {slide.cta}
               <ArrowRight className="size-4" />
             </span>
           ) : (
-            <Link href={slide.href}>
+            <Link href={slide.href} className={ctaClass}>
               {slide.cta}
-              <ArrowRight className="size-4" />
+              <ArrowRight aria-hidden="true" className="size-4" />
             </Link>
           )}
-        </Button>
+        </div>
       )}
     </div>
   );
 }
 
 /**
- * HeroSlider — the homepage hero carousel. Three promotional slides, each with
- * its own token-derived colour theme, prev/next controls, dot indicators and
- * gentle autoplay. Copy comes from the dictionary; CTAs link to real routes.
+ * HeroSlider — the homepage promo carousel, the 2/3 column of the «Акції»
+ * block (TASK-2013, Homepage mockup).
  *
- * The gradient sits on the outer container (updated per slide) so there is no
- * flash between slides, while the slide content cross-fades. The height is not
- * fixed (TASK-878): every slide's copy is stacked in one grid cell — the
- * inactive ones invisible — so the slider fits its longest copy at any width and
- * never jumps between slides; `min-h-105 sm:min-h-110` keeps the mockup
- * proportions (420 / 440 px in Homepage.dc.html). From lg it is NOT pinned
- * (TASK-2013): it shares a row with promo tiles 1–2 in a 2/3-wide column, and
- * the tile column takes ITS height — a pinned box would clip the copy there.
- * The slide title is an h2 at text-3xl / md:text-4xl (TASK-1952). Below sm the
- * arrows join the pause button in the bottom row so the copy gets the full
- * width; from sm they sit in the side gutters. Client Component (holds the
- * active-slide state).
+ * Each slide carries its own tone (direction В: a device family, a sale, or
+ * the ink panel — from the banner `theme`), so the colour means something.
+ * From md a slide is two columns: the copy, and an art panel with the banner
+ * picture and an optional big figure; on a phone the copy takes the slide.
+ * One bottom control row: the dots on the left, then pause, previous and next
+ * as light 44px buttons; the dots and focus outlines take the slide's text
+ * colour, so they read on every tone.
+ *
+ * The height is not pinned (TASK-878): every slide's layer is stacked in one
+ * grid cell — the inactive ones invisible — so the slider fits its longest
+ * copy at any width and never jumps between slides, above `min-h-105
+ * sm:min-h-110`. From lg it shares a row with promo tiles 1–2, which take ITS
+ * height.
+ *
+ * Autoplay every 7s, stopped by the pause toggle, by hover or focus inside the
+ * carousel, and never started under reduced motion (WCAG 2.2.2). WAI-ARIA
+ * carousel pattern: a named region, each slide a group «1 з 3: …», and the
+ * slide container is `aria-live="polite"` only while autoplay is off.
  *
  * `banners` (HERO_SLIDE placement) is the data source when the admin has
- * published any; otherwise the hardcoded fallback slides render unchanged.
+ * published any; otherwise the dictionary fallback slides render.
  */
 interface HeroSliderProps {
   banners?: BannerEntity[];
 }
 
 export function HeroSlider({ banners }: HeroSliderProps = {}) {
-  // Banner-driven when the admin has published HERO_SLIDE banners; otherwise the
-  // hardcoded fallback slides keep the homepage looking complete.
   const slides: readonly HeroSlide[] =
     banners && banners.length > 0 ? bannersToSlides(banners) : FALLBACK_SLIDES;
 
   const [index, setIndex] = useState(0);
   const count = slides.length;
 
-  // Autoplay gates: an explicit pause toggle, pointer/keyboard presence within
-  // the slider (hover / focus-within), and the OS reduced-motion preference —
-  // any one of them stops the carousel from auto-advancing (design-system §7).
   const [paused, setPaused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const reducedMotion = useReducedMotion();
@@ -231,110 +216,140 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
   }, [autoplayActive, activeIndex, go]);
 
   const slide = slides[activeIndex];
-  const theme = THEMES[activeIndex % THEMES.length];
+  const tone = SLIDE_TONES[slide.tone];
 
   return (
     <div
-      className="relative isolate grid min-h-105 overflow-hidden rounded-panel shadow-elevated sm:min-h-110"
-      style={{ backgroundImage: theme.gradient }}
+      role="region"
+      aria-roledescription="carousel"
+      aria-label={dict.home.hero.carouselAria}
+      data-slide-tone={slide.tone}
+      className={cn(
+        "relative isolate grid min-h-105 overflow-hidden rounded-panel shadow-elevated transition-colors duration-500 motion-reduce:transition-none sm:min-h-110",
+        tone.surface,
+      )}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocus={() => setHovered(true)}
       onBlur={() => setHovered(false)}
     >
-      {/* Admin picture for the active slide (TASK-740) — over the gradient,
-          under the copy; renders nothing without a usable URL. The first slide
-          is the homepage LCP, so only it is preloaded. */}
-      <BannerBackdrop
-        key={`backdrop-${activeIndex}`}
-        src={slide.imageUrl}
-        sizes="(max-width: 1023px) 100vw, 880px"
-        scrimClassName={theme.scrim}
-        preload={activeIndex === 0}
-      />
-
-      {/* Height reservers — every other slide's copy, invisible and inert, in
-          the same grid cell, so the slider never jumps between slides. */}
-      {slides.map((s, i) =>
-        i === activeIndex ? null : (
-          <div
-            key={`sizer-${i}`}
-            aria-hidden="true"
-            inert
-            data-slide-sizer=""
-            className={`invisible ${SLIDE_LAYER}`}
-          >
-            <SlideCopy slide={s} theme={THEMES[i % THEMES.length]} sizer />
-          </div>
-        ),
-      )}
-
-      {/* Active slide — re-keyed so the copy fades in on change. */}
       <div
-        key={activeIndex}
-        className={`relative ${SLIDE_LAYER} duration-500 animate-in fade-in-0 ${theme.text}`}
+        aria-live={autoplayActive ? "off" : "polite"}
+        className="col-start-1 row-start-1 grid"
       >
-        <SlideCopy slide={slide} theme={theme} />
-      </div>
+        {/* Height reservers — every other slide, invisible and inert, in the
+            same grid cell, so the slider never jumps between slides. */}
+        {slides.map((s, i) => {
+          if (i === activeIndex) return null;
+          const art = hasSlideArt(s);
+          return (
+            <div
+              key={`sizer-${i}`}
+              aria-hidden="true"
+              inert
+              data-slide-sizer=""
+              className={cn("invisible", SLIDE_LAYER)}
+            >
+              <SlideCopy
+                slide={s}
+                tone={SLIDE_TONES[s.tone]}
+                wide={!art}
+                sizer
+              />
+              {art && <SlideArt big={s.big} icon={s.icon} sizer />}
+            </div>
+          );
+        })}
 
-      {/* Prev / next controls — below sm in the bottom row left of the pause
-          button (44px each, 4px apart), so the copy keeps the full width; from
-          sm in the side gutters, vertically centred. */}
-      <button
-        type="button"
-        onClick={() => go(activeIndex - 1)}
-        aria-label={dict.home.hero.prevSlide}
-        className={`${CONTROL} right-28 bottom-4 sm:top-1/2 sm:right-auto sm:bottom-auto sm:left-4 sm:-translate-y-1/2`}
-      >
-        <ChevronLeft className="size-5" />
-      </button>
-      <button
-        type="button"
-        onClick={() => go(activeIndex + 1)}
-        aria-label={dict.home.hero.nextSlide}
-        className={`${CONTROL} right-16 bottom-4 sm:top-1/2 sm:right-4 sm:bottom-auto sm:-translate-y-1/2`}
-      >
-        <ChevronRight className="size-5" />
-      </button>
-
-      {/* Dot indicators — aligned to the content, below it (pb reserves space);
-          below sm centred on the bottom control row.
-          Each dot keeps its slim visual footprint but carries a centred 44px
-          invisible hit-area (`before:` pseudo) for a comfortable tap target. */}
-      <div className="absolute bottom-9 left-6 z-10 flex items-center gap-2 sm:bottom-6 sm:left-24">
-        {slides.map((_, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => go(i)}
-            aria-label={dict.home.hero.goToSlide(i + 1)}
-            aria-current={i === activeIndex}
-            // eslint-disable-next-line tailwindcss/no-arbitrary-value -- pseudo-element requires an explicit content value; empty string is the only correct one
-            className={`relative h-1.5 rounded-full transition-all before:absolute before:top-1/2 before:left-1/2 before:size-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] ${
-              i === activeIndex
-                ? "w-6 bg-white"
-                : "w-1.5 bg-white/50 hover:bg-white/80"
-            }`}
-          />
-        ))}
-      </div>
-
-      {/* Autoplay pause / resume — bottom-right, clear of the dots and arrows. */}
-      {count > 1 && (
-        <button
-          type="button"
-          onClick={() => setPaused((v) => !v)}
-          aria-pressed={paused}
-          aria-label={
-            paused
-              ? dict.home.hero.resumeAutoplay
-              : dict.home.hero.pauseAutoplay
-          }
-          className={`${CONTROL} right-4 bottom-4 sm:bottom-6`}
+        {/* Active slide — re-keyed so it fades in on change. */}
+        <div
+          key={activeIndex}
+          role="group"
+          aria-roledescription="slide"
+          aria-label={dict.home.hero.slideAria(
+            activeIndex + 1,
+            count,
+            slide.title,
+          )}
+          className={cn(
+            "relative",
+            SLIDE_LAYER,
+            "duration-500 animate-in fade-in-0 motion-reduce:animate-none",
+          )}
         >
-          {paused ? <Play className="size-4" /> : <Pause className="size-4" />}
-        </button>
-      )}
+          <SlideCopy slide={slide} tone={tone} wide={!hasSlideArt(slide)} />
+          {hasSlideArt(slide) && (
+            <SlideArt
+              imageUrl={slide.imageUrl}
+              big={slide.big}
+              icon={slide.icon}
+              preload={activeIndex === 0}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* One control row (Homepage mockup): dots on the left, then pause,
+          previous and next. 24px in from the sides, 20px up from the bottom. */}
+      <div className="absolute inset-x-6 bottom-5 z-10 flex items-center gap-2">
+        <div className="flex flex-1 items-center gap-1.5">
+          {count > 1 &&
+            slides.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => go(i)}
+                aria-label={dict.home.hero.goToSlide(i + 1)}
+                aria-current={i === activeIndex}
+                className={cn(
+                  DOT,
+                  i === activeIndex
+                    ? "w-6 bg-current"
+                    : "w-2 bg-current/35 hover:bg-current/60",
+                  tone.focus,
+                )}
+              />
+            ))}
+        </div>
+
+        {count > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={() => setPaused((v) => !v)}
+              aria-pressed={paused}
+              aria-label={
+                paused
+                  ? dict.home.hero.resumeAutoplay
+                  : dict.home.hero.pauseAutoplay
+              }
+              className={cn(CONTROL, tone.focus)}
+            >
+              {paused ? (
+                <Play aria-hidden="true" className="size-4" />
+              ) : (
+                <Pause aria-hidden="true" className="size-4" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => go(activeIndex - 1)}
+              aria-label={dict.home.hero.prevSlide}
+              className={cn(CONTROL, tone.focus)}
+            >
+              <ChevronLeft aria-hidden="true" className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => go(activeIndex + 1)}
+              aria-label={dict.home.hero.nextSlide}
+              className={cn(CONTROL, tone.focus)}
+            >
+              <ChevronRight aria-hidden="true" className="size-4" />
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -254,11 +254,6 @@
       "count": 3
     }
   },
-  "src/widgets/hero-banner/ui/hero-slider.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 2
-    }
-  },
   "src/widgets/hero-banner/ui/model-picker.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 1
