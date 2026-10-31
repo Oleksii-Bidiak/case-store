@@ -61,6 +61,8 @@ const DYNAMIC_ACCESS: Record<string, string> = {
     "features/carousel-form/ui/carousel-form.tsx — RadioCard description per source",
   "catalogImport.status":
     "widgets/catalog-import-view/ui/catalog-import-view.tsx — d.status[run.status]",
+  "categoryForm.icon.labels":
+    "entities/category/model/category-icons.ts — labels[icon] per icon key",
   "auditLog.entityLabels":
     "widgets/audit-log/model/action-label.ts, ui/AuditLogView.tsx — per entity type",
   "auditLog.actionVerbs":
