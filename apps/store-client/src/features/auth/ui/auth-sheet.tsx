@@ -43,7 +43,7 @@ export function AuthSheet({ open, onOpenChange }: AuthSheetProps) {
         className="w-full gap-0 p-0 sm:max-w-md"
         aria-describedby={undefined}
       >
-        <SheetHeader className="border-b border-border px-5 py-4">
+        <SheetHeader className="border-b border-border py-4 pr-16 pl-5">
           <SheetTitle className="font-display text-lg font-bold text-foreground">
             {dict.auth.sheet.title}
           </SheetTitle>

@@ -161,7 +161,7 @@ export function Header({
                 className="max-h-dvh w-72 max-w-full overflow-y-auto overscroll-contain"
                 aria-describedby={undefined}
               >
-                <SheetHeader>
+                <SheetHeader className="pr-16">
                   {/* The Sheet's accessible name — the wordmark (or the logo's
                       alt text) is the store name either way. */}
                   <SheetTitle>

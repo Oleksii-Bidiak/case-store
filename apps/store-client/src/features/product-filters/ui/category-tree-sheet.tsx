@@ -60,7 +60,7 @@ export function CategoryTreeSheet({
           type="button"
           disabled={pending}
           className={cn(
-            "inline-flex h-11 min-w-0 shrink-0 items-center justify-center gap-2 rounded-xl border-chip border-border bg-card px-4 text-sm font-semibold text-foreground outline-none transition-colors duration-150 ease-out hover:border-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-disabled disabled:text-disabled-foreground motion-reduce:transition-none lg:hidden",
+            "inline-flex h-11 min-w-0 shrink-0 items-center justify-center gap-2 rounded-xl border-chip border-border bg-card px-4 text-sm font-semibold text-foreground transition-interactive hover:border-foreground/35 hover:bg-muted active:scale-98 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring disabled:cursor-not-allowed disabled:border-transparent disabled:bg-disabled disabled:text-disabled-foreground disabled:active:scale-100 motion-reduce:active:scale-100 lg:hidden",
             className,
           )}
         >
@@ -73,8 +73,13 @@ export function CategoryTreeSheet({
         // A fixed sheet's percentage height is of the viewport: ≈83% leaves the
         // page visible above it, so it reads as a sheet over the listing.
         className="max-h-5/6 gap-0 rounded-t-xl p-0"
+        // The sheet is named «Підкатегорії» (Catalog mockup) while its visible
+        // title stays «Категорія». Radix wires `aria-labelledby` to the title,
+        // and labelledby beats aria-label — `undefined` removes it (TASK-2139).
+        aria-label={dict.sheets.subcategoriesAria}
+        aria-labelledby={undefined}
       >
-        <SheetHeader className="border-b border-border">
+        <SheetHeader className="border-b border-border pr-16">
           <SheetTitle className="font-display text-lg font-bold">
             {dict.filters.categoryTreeTitle}
           </SheetTitle>
@@ -86,7 +91,7 @@ export function CategoryTreeSheet({
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            className="h-12 w-full rounded-xl bg-primary text-base font-bold text-primary-foreground outline-none transition-colors duration-150 ease-out hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
+            className="h-12 w-full rounded-xl bg-primary text-base font-bold text-primary-foreground transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100"
           >
             {resultCount === 0
               ? dict.filters.subcategoriesNothing

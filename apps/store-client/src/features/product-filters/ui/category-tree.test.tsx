@@ -282,9 +282,20 @@ describe("CategoryTreeSheet — the same tree below lg", () => {
     await user.click(
       screen.getByRole("button", { name: dict.filters.subcategoriesButton(2) }),
     );
+    // TASK-2139: the sheet is named «Підкатегорії» (its visible title stays
+    // «Категорія»), and its round close button is «Закрити».
     const dialog = screen.getByRole("dialog", {
-      name: dict.filters.categoryTreeTitle,
+      name: dict.sheets.subcategoriesAria,
     });
+    expect(dict.sheets.subcategoriesAria).toBe("Підкатегорії");
+    expect(
+      within(dialog).getByRole("heading", {
+        name: dict.filters.categoryTreeTitle,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "Закрити" }),
+    ).toBeInTheDocument();
     expect(within(dialog).getByRole("link", { name: "Чохли" })).toHaveAttribute(
       "aria-current",
       "page",

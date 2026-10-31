@@ -12,6 +12,7 @@ import { devicePagesDict } from "./dict-sections/device-pages";
 import { devicePickerDict } from "./dict-sections/device-picker";
 import { searchDeviceDict } from "./dict-sections/search-device";
 import { catalogMenuDict } from "./dict-sections/catalog-menu";
+import { sheetsDict } from "./dict-sections/sheets";
 import { pluralUk } from "./plural";
 
 // Ukrainian labels for the order/payment status enums (TASK-129). Keyed by the
@@ -2811,6 +2812,7 @@ export const dict = {
   devicePages: devicePagesDict,
   searchDevice: searchDeviceDict,
   catalogMenu: catalogMenuDict,
+  sheets: sheetsDict,
 } as const;
 
 export type Dictionary = typeof dict;
