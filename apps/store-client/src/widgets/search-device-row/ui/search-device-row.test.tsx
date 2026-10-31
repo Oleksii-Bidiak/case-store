@@ -241,6 +241,18 @@ describe("SearchDeviceRow — the /search model row (TASK-2069)", () => {
     ).toHaveFocus();
   });
 
+  it("«шукати точно» (?exact=1) → no row, no device block", async () => {
+    currentQuery = `q=${encodeURIComponent("айфон 15 про")}&exact=1`;
+    const { container } = renderWithProviders(
+      <SearchDeviceRow query="айфон 15 про" />,
+    );
+
+    // Give the model list time to land — it must still recognise nothing.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(container).toBeEmptyDOMElement();
+    expect(lookups).toHaveLength(0);
+  });
+
   it("renders nothing for a query without a model", async () => {
     const { container } = renderRow("чохол");
 

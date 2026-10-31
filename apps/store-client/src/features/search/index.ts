@@ -24,6 +24,26 @@ export {
   type SearchDeviceMatch,
   type SearchDeviceModel,
 } from "./model/use-search-device-model";
+// /search page state (TASK-2069): the model the page is about (honours the
+// «шукати точно» mode), the rail-less results grid and the empty state.
+export {
+  EXACT_SEARCH_PARAM,
+  exactSearchHref,
+  isExactSearch,
+} from "./model/exact-search";
+export {
+  useSearchPageModel,
+  type SearchPageModel,
+} from "./model/use-search-page-model";
+export {
+  SEARCH_GRID_CLASS,
+  SEARCH_GRID_IMAGE_SIZES,
+  SEARCH_GRID_ROW,
+} from "./model/search-grid";
+export {
+  POPULAR_MODELS_LIMIT,
+  SearchEmptyState,
+} from "./ui/search-empty-state";
 export {
   useModelDeviceState,
   type ModelDeviceState,

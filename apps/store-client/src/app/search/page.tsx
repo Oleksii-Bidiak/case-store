@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { permanentRedirect } from "next/navigation";
 import { SearchResultsView } from "@/widgets";
-import { SearchDeviceRow } from "@/widgets/search-device-row";
+import { SearchDeviceRow, SearchFixLine } from "@/widgets/search-device-row";
 import {
   resolveLegacyCatalogParams,
   withQuery,
@@ -121,6 +121,9 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
             ? dict.search.resultsTitle(trimmed)
             : dict.search.resultsTitleEmpty}
         </h1>
+        {/* «Шукаємо як … · шукати точно «…»» (TASK-2069, Д3-2 §3.2) — only
+            when the query had to be read to find the model. */}
+        {trimmed && <SearchFixLine query={q} />}
       </div>
       {/* The model row (TASK-2069) sits ABOVE the results, not inside them:
           it answers "you mean this model" before the filters and the grid. */}

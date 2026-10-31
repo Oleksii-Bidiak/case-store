@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import { useSearchParams } from "next/navigation";
 
 import {
   getDeviceFamily,
@@ -13,7 +12,7 @@ import {
   deviceBlockPlacement,
   deviceKindOf,
   showNotSoldLine,
-  useSearchDeviceModel,
+  useSearchPageModel,
   type SearchDeviceMatch,
 } from "@/features/search";
 import { useCatalogLandingControllerFindDeviceHub } from "@/shared/api/generated/catalog/catalog";
@@ -47,11 +46,9 @@ interface SearchDeviceRowProps {
  * renders until the model list is there and recognises the query.
  */
 export function SearchDeviceRow({ query }: SearchDeviceRowProps) {
-  const searchParams = useSearchParams();
-  // The live URL wins over the server-resolved prop (they agree on first
-  // render), exactly like `SearchResultsView`.
-  const q = (searchParams.get("q") ?? query).trim();
-  const match = useSearchDeviceModel(q, { enabled: q.length > 0 });
+  // The live URL wins over the server prop; «шукати точно» (`?exact=1`)
+  // turns recognition off — no row, no alternatives, no device block.
+  const { match } = useSearchPageModel(query);
   if (!match) return null;
   // A new model starts from a clean slate — no counts of the previous one.
   return <SearchDeviceRowContent key={match.model.id} match={match} />;

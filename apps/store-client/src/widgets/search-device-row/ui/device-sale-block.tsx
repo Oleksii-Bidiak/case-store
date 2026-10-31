@@ -5,9 +5,13 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import type { PublicProductEntity } from "@/shared/api/generated/models";
-import { SEARCH_DEVICE_FOCUS, type DeviceKind } from "@/features/search";
+import {
+  SEARCH_DEVICE_FOCUS,
+  SEARCH_GRID_CLASS,
+  SEARCH_GRID_IMAGE_SIZES,
+  type DeviceKind,
+} from "@/features/search";
 import { dict } from "@/shared/config";
-import { PRODUCT_GRID_CLASS } from "@/shared/config/product-grid";
 import { formatMoney } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import { ProductCard } from "@/shared/ui";
@@ -76,11 +80,16 @@ export function DeviceSaleBlock({
           <ArrowRight aria-hidden="true" className="size-4 shrink-0" />
         </Link>
       </div>
-      <div className={PRODUCT_GRID_CLASS}>
+      {/* The rail-less /search grid (Д3-2 §3.6), not the catalogue's: the
+          block spans the full container, and the catalogue grid caps at 4
+          columns for a page WITH the rail — that made these cards ~300px
+          against ~230px results right below. */}
+      <div className={SEARCH_GRID_CLASS}>
         {products.map((product) => (
           <ProductCard
             key={product.id}
             product={product}
+            imageSizes={SEARCH_GRID_IMAGE_SIZES}
             action={<ProductCardActions product={product} />}
             hoverAction={<ProductQuickViewTrigger product={product} />}
           />

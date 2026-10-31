@@ -9,7 +9,11 @@ import {
   detectDeviceModelInQuery,
   type MatchableDeviceModel,
 } from "@/entities/device";
-import { parseDeviceQuery, type DeviceKind } from "@/features/search";
+import {
+  SEARCH_GRID_ROW,
+  parseDeviceQuery,
+  type DeviceKind,
+} from "@/features/search";
 
 /**
  * The category a device of each kind is filed under (seed slugs — a contract,
@@ -24,8 +28,8 @@ export const DEVICE_SALE_CATEGORY: Readonly<Record<DeviceKind, string>> = {
   tablet: "tablets",
 };
 
-/** How many device cards the block shows — one row of the grid at `xl`. */
-export const MAX_SOLD_DEVICES = 4;
+/** How many device cards the block shows — one row of the /search grid at `xl`. */
+export const MAX_SOLD_DEVICES = SEARCH_GRID_ROW;
 
 /**
  * The products that ARE the model. `models` is the full model list — the name

@@ -54,6 +54,24 @@ export const searchDeviceDict = {
     "watch-bands": "Ремінці",
   },
 
+  // ── /search: the fix line under the h1 (Д3-2 §3.2) ──
+  fix: {
+    /** «Шукаємо як iPhone 15 Pro · шукати точно «…»». */
+    lead: "Шукаємо як",
+    /** With an accessory word: «чохли для iPhone 15 Pro». */
+    productFor: (title: string, name: string) =>
+      `${title.toLocaleLowerCase("uk")} для ${name}`,
+    exact: (q: string) => `шукати точно «${q}»`,
+  },
+
+  // ── /search: nothing found — «never a dead end» (Д3-2 §3.8) ──
+  empty: {
+    heading: (q: string) => `За запитом «${q}» нічого немає`,
+    body: "Перевірте написання або шукайте за моделлю пристрою — наприклад, «чохол iPhone 15».",
+    popularLead: "Або оберіть популярну модель:",
+    popularAria: "Популярні моделі",
+  },
+
   // ── /search: «Сам … у продажу» — the device itself (owner, 2026-10-30) ──
   sale: {
     kickerFirst: "Сам пристрій",
