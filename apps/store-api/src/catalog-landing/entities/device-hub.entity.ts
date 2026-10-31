@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { PublicProductEntity } from '../../product';
+import { CATEGORY_ICON_API_PROPERTY, type CategoryIconKey } from '../../category';
 
 /**
  * The device model a hub page is about (TASK-1954) — «Все для iPhone 15 Pro».
@@ -78,6 +79,10 @@ export class DeviceHubCategoryEntity {
 
   @ApiProperty({ description: 'Category slug', example: 'cases' })
   slug!: string;
+
+  /** The section heading's glyph (TASK-1956); null → «folder». */
+  @ApiProperty(CATEGORY_ICON_API_PROPERTY)
+  icon!: CategoryIconKey | null;
 }
 
 /** One section of the hub: a top-level category and its first products for the model. */

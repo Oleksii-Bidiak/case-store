@@ -97,7 +97,7 @@ describe('Device model hub (integration, TASK-1954)', () => {
     const category = async (
       key: string,
       name: string,
-      extra: { parent?: string; sortOrder?: number; isActive?: boolean } = {},
+      extra: { parent?: string; sortOrder?: number; isActive?: boolean; icon?: string } = {},
     ) => {
       const row = await prisma.category.create({
         data: {
@@ -106,11 +106,12 @@ describe('Device model hub (integration, TASK-1954)', () => {
           parentId: extra.parent ? categoryIds[extra.parent] : null,
           sortOrder: extra.sortOrder ?? 0,
           isActive: extra.isActive ?? true,
+          icon: extra.icon ?? null,
         },
       });
       categoryIds[key] = row.id;
     };
-    await category('glass', 'z glass', { sortOrder: 0 });
+    await category('glass', 'z glass', { sortOrder: 0, icon: 'glass' });
     await category('bcases', 'b cases', { sortOrder: 1 });
     await category('leaf', 'cases leaf', { parent: 'bcases' });
     await category('dead', 'cases dead', { parent: 'bcases', isActive: false });
@@ -207,6 +208,8 @@ describe('Device model hub (integration, TASK-1954)', () => {
       // 9 in stock + 1 sold out; never the inactive, deleted or dead-category ones.
       [slug('bcases'), 10],
     ]);
+    // The section glyph is the root's own icon (TASK-1956); no icon → null («folder»).
+    expect(hub.groups.map((group) => group.category.icon)).toEqual(['glass', null, null]);
     // `gone` is withdrawn, and with it its active child's product (TASK-1032).
     expect(hub.groups.map((group) => group.category.slug)).not.toContain(slug('gone'));
     expect(hub.productCount).toBe(12);

@@ -1,4 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
+import {
+  CATEGORY_ICON_API_PROPERTY,
+  toCategoryIconKey,
+  type CategoryIconKey,
+} from '../category-icons';
 
 /**
  * Domain entity representing a category with its product counts.
@@ -55,6 +60,10 @@ export class CategoryWithCountEntity {
   })
   parentId!: string | null;
 
+  /** Backs the admin list's soft «Без іконки» marker on root rows (TASK-1956). */
+  @ApiProperty(CATEGORY_ICON_API_PROPERTY)
+  icon!: CategoryIconKey | null;
+
   @ApiProperty({ description: 'Whether the category is active', example: true })
   isActive!: boolean;
 
@@ -93,6 +102,7 @@ export class CategoryWithCountEntity {
       description: string | null;
       image: string | null;
       parentId: string | null;
+      icon?: string | null;
       isActive: boolean;
       sortOrder: number;
       createdAt: Date;
@@ -108,6 +118,7 @@ export class CategoryWithCountEntity {
     entity.description = category.description;
     entity.image = category.image;
     entity.parentId = category.parentId;
+    entity.icon = toCategoryIconKey(category.icon);
     entity.isActive = category.isActive;
     entity.sortOrder = category.sortOrder;
     entity.createdAt = category.createdAt;

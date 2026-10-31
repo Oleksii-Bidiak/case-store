@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { toCategoryIconKey } from '../category-icons';
 import { CategoryTreeNodeEntity } from './category-tree-node.entity';
 
 /**
@@ -18,6 +19,7 @@ export interface AdminCategoryTreeRow {
   metaDescription: string | null;
   keywords: string[];
   ogImage: string | null;
+  icon: string | null;
   updatedAt: Date;
   _count: { products: number };
 }
@@ -91,6 +93,7 @@ export class AdminCategoryTreeNodeEntity extends CategoryTreeNodeEntity {
     entity.metaDescription = row.metaDescription;
     entity.keywords = row.keywords;
     entity.ogImage = row.ogImage;
+    entity.icon = toCategoryIconKey(row.icon);
     entity.updatedAt = row.updatedAt;
     entity.parentId = row.parentId;
     entity.productCount = row._count.products;

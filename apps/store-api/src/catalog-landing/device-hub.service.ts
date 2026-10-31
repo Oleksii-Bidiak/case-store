@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { CategoryRepository } from '../category';
+import { CategoryRepository, toCategoryIconKey } from '../category';
 import { DeviceRepository } from '../device';
 import { ProductService } from '../product';
 import { CatalogLandingRepository } from './catalog-landing.repository';
@@ -86,7 +86,12 @@ export class DeviceHubService {
       if (products.length === 0) continue;
       entries.push({
         group: {
-          category: { id: category.id, name: category.name, slug: category.slug },
+          category: {
+            id: category.id,
+            name: category.name,
+            slug: category.slug,
+            icon: toCategoryIconKey(category.icon),
+          },
           productCount: group.productCount,
           products,
         },

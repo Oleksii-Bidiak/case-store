@@ -411,6 +411,12 @@ model Category {
   /// and over the global `SeoSettings.defaultOgImage` in `buildOgImages`; null
   /// keeps the automatic chain. See Product.ogImage.
   ogImage         String?    @map("og_image")
+  /// Category icon (TASK-1956): a key into the storefront SVG sprite
+  /// (`public/icons/categories.svg`), one of `CATEGORY_ICON_KEYS` in
+  /// `src/category/category-icons.ts`. A plain string, not a Postgres enum, so a new
+  /// icon is a code change (sprite + allow-list) with no migration. Null — or a key
+  /// the sprite no longer has — renders the generic «folder» glyph.
+  icon            String?
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
   // Audit tombstone (TASK-651, decision B-2 of plan 178). Independent of

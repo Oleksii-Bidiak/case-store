@@ -17555,6 +17555,23 @@
           "type"
         ]
       },
+      "CategoryIcon": {
+        "type": "string",
+        "enum": [
+          "cases",
+          "glass",
+          "chargers",
+          "cables",
+          "power-banks",
+          "headphones",
+          "watches",
+          "speakers",
+          "holders",
+          "smartphones",
+          "memory"
+        ],
+        "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear."
+      },
       "CategoryEntity": {
         "type": "object",
         "properties": {
@@ -17629,6 +17646,16 @@
             "description": "Open Graph image for this category; wins over the global default (TASK-437).",
             "example": "https://cdn.example.com/og/cases.jpg",
             "nullable": true
+          },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
           },
           "createdAt": {
             "format": "date-time",
@@ -17722,6 +17749,16 @@
             "example": "https://cdn.example.com/og/cases.jpg",
             "nullable": true
           },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string",
@@ -17781,6 +17818,16 @@
             "description": "Parent category ID (null for root)",
             "example": "550e8400-e29b-41d4-a716-446655440000",
             "nullable": true
+          },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
           },
           "isActive": {
             "type": "boolean",
@@ -17977,6 +18024,16 @@
             "description": "Open Graph image for this category — first tier of the storefront’s `buildOgImages` chain (TASK-437).",
             "example": "https://cdn.example.com/og/cases.jpg",
             "nullable": true
+          },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
           },
           "updatedAt": {
             "format": "date-time",
@@ -18236,6 +18293,16 @@
             "example": "https://cdn.example.com/og/cases.jpg",
             "nullable": true
           },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -18486,6 +18553,16 @@
             "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
             "example": "https://cdn.example.com/og/iphone-15-case.jpg",
             "nullable": true
+          },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
           }
         },
         "required": [
@@ -18555,6 +18632,16 @@
             "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
             "example": "https://cdn.example.com/og/iphone-15-case.jpg",
             "nullable": true
+          },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
           }
         }
       },
@@ -25109,6 +25196,16 @@
             "type": "string",
             "description": "Category slug",
             "example": "cases"
+          },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
           }
         },
         "required": [

@@ -35,12 +35,19 @@ describe('DeviceHubService', () => {
     description: null,
     brand: { name: 'Apple', slug: 'apple' },
   });
-  const category = (id: string, name: string, sortOrder: number, isActive = true) => ({
+  const category = (
+    id: string,
+    name: string,
+    sortOrder: number,
+    isActive = true,
+    icon: string | null = null,
+  ) => ({
     id,
     name,
     slug: id,
     sortOrder,
     isActive,
+    icon,
     deletedAt: null,
   });
   const card = (id: string) => ({ id, slug: id, compatibleDeviceModelIds: ['model-1'] });
@@ -108,9 +115,10 @@ describe('DeviceHubService', () => {
     ]);
     // Returned in an arbitrary order — the service sorts.
     categoryRepository.findByIds.mockResolvedValue([
-      category('chargers', 'Зарядні пристрої', 2),
+      // A key retired from the sprite reads as null, never as an off-contract string.
+      category('chargers', 'Зарядні пристрої', 2, true, 'retired-icon'),
       category('cables', 'Кабелі', 2),
-      category('cases', 'Чохли', 0),
+      category('cases', 'Чохли', 0, true, 'cases'),
     ]);
     // Cards come back in their own order; the service restores the rank order.
     productService.getCardsByIds.mockResolvedValue([
@@ -141,8 +149,9 @@ describe('DeviceHubService', () => {
     expect(hub.productCount).toBe(16);
     // sortOrder 0 first; the two sortOrder-2 groups by name («Зарядні» < «Кабелі»).
     expect(hub.groups.map((group) => group.category.slug)).toEqual(['cases', 'chargers', 'cables']);
+    expect(hub.groups.map((group) => group.category.icon)).toEqual(['cases', null, null]);
     expect(hub.groups[0]).toEqual({
-      category: { id: 'cases', name: 'Чохли', slug: 'cases' },
+      category: { id: 'cases', name: 'Чохли', slug: 'cases', icon: 'cases' },
       productCount: 12,
       products: [card('k2'), card('k1')],
     });

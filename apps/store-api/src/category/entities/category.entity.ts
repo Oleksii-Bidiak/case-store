@@ -1,4 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
+import {
+  CATEGORY_ICON_API_PROPERTY,
+  toCategoryIconKey,
+  type CategoryIconKey,
+} from '../category-icons';
 
 /**
  * Domain entity representing a category.
@@ -96,6 +101,9 @@ export class CategoryEntity {
   })
   ogImage!: string | null;
 
+  @ApiProperty(CATEGORY_ICON_API_PROPERTY)
+  icon!: CategoryIconKey | null;
+
   @ApiProperty({ description: 'Creation timestamp', example: '2024-01-01T00:00:00.000Z' })
   createdAt!: Date;
 
@@ -119,6 +127,7 @@ export class CategoryEntity {
     metaDescription?: string | null;
     keywords?: string[];
     ogImage?: string | null;
+    icon?: string | null;
     createdAt: Date;
     updatedAt: Date;
   }): CategoryEntity {
@@ -135,6 +144,7 @@ export class CategoryEntity {
     entity.metaDescription = category.metaDescription ?? null;
     entity.keywords = category.keywords ?? [];
     entity.ogImage = category.ogImage ?? null;
+    entity.icon = toCategoryIconKey(category.icon);
     entity.createdAt = category.createdAt;
     entity.updatedAt = category.updatedAt;
     return entity;

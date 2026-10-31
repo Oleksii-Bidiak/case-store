@@ -1,3 +1,4 @@
+import type { CategoryIconKey } from '../../../src/category/category-icons';
 import { STORE_NAME } from '../lib/store';
 
 /**
@@ -26,13 +27,20 @@ interface CategoryNode {
    * route passes no page image of its own.
    */
   demoOgImage?: boolean;
-  children?: Omit<CategoryNode, 'children'>[];
+  /**
+   * Sprite key (TASK-1956) — set on every ROOT, so the storefront menu, the
+   * mega-menu and the device hub show the «Дуотон» glyph instead of «folder».
+   * Subcategories carry none, like a freshly created category would.
+   */
+  icon?: CategoryIconKey;
+  children?: Omit<CategoryNode, 'children' | 'icon'>[];
 }
 
 export const categoryTree: CategoryNode[] = [
   {
     name: 'Смартфони',
     slug: 'smartphones',
+    icon: 'smartphones',
     description:
       'Смартфони Apple, Samsung і Xiaomi з офіційною гарантією — від доступних моделей до флагманів.',
     metaTitle: `Смартфони — купити в Україні | ${STORE_NAME}`,
@@ -65,6 +73,7 @@ export const categoryTree: CategoryNode[] = [
   {
     name: 'Навушники',
     slug: 'headphones',
+    icon: 'headphones',
     description:
       'Бездротові вкладиші, накладні навушники з шумозаглушенням і перевірена класика з дротом.',
     metaTitle: `Навушники — бездротові та дротові | ${STORE_NAME}`,
@@ -96,6 +105,7 @@ export const categoryTree: CategoryNode[] = [
   {
     name: 'Смарт-годинники та браслети',
     slug: 'smartwatches',
+    icon: 'watches',
     description:
       'Годинники й фітнес-браслети для тренувань, сну та сповіщень, а також ремінці до них.',
     metaTitle: `Смарт-годинники та фітнес-браслети | ${STORE_NAME}`,
@@ -122,6 +132,7 @@ export const categoryTree: CategoryNode[] = [
   {
     name: 'Портативні колонки',
     slug: 'speakers',
+    icon: 'speakers',
     description: 'Bluetooth-колонки для дому, поїздок і вечірок — від кишенькових до вечіркових.',
     metaTitle: `Портативні Bluetooth-колонки | ${STORE_NAME}`,
     metaDescription:
@@ -142,6 +153,7 @@ export const categoryTree: CategoryNode[] = [
   {
     name: 'Павербанки',
     slug: 'power-banks',
+    icon: 'power-banks',
     description:
       'Зовнішні акумулятори на кожен день і на випадок відключень — від кишенькових до 26 800 мА·год.',
     metaTitle: `Павербанки — зовнішні акумулятори | ${STORE_NAME}`,
@@ -168,6 +180,7 @@ export const categoryTree: CategoryNode[] = [
   {
     name: 'Чохли',
     slug: 'cases',
+    icon: 'cases',
     description: 'Чохли для смартфонів — від тонких силіконових до броньованих із підставкою.',
     metaTitle: `Чохли для смартфонів | ${STORE_NAME}`,
     metaDescription:
@@ -196,6 +209,7 @@ export const categoryTree: CategoryNode[] = [
   {
     name: 'Захисне скло та плівки',
     slug: 'screen-protectors',
+    icon: 'glass',
     description: 'Захист екрана й камери: гартоване скло, гідрогель і накладки на модуль камери.',
     metaTitle: `Захисне скло та плівки для смартфонів | ${STORE_NAME}`,
     metaDescription:
@@ -224,6 +238,7 @@ export const categoryTree: CategoryNode[] = [
   {
     name: 'Кабелі та перехідники',
     slug: 'cables',
+    icon: 'cables',
     description: 'Кабелі для заряджання й передавання даних, а також перехідники та USB-хаби.',
     metaTitle: `Кабелі та перехідники | ${STORE_NAME}`,
     metaDescription:
@@ -257,6 +272,7 @@ export const categoryTree: CategoryNode[] = [
   {
     name: 'Зарядні пристрої',
     slug: 'chargers',
+    icon: 'chargers',
     description: 'Мережеві, автомобільні та бездротові зарядки — від 20 Вт до 100 Вт.',
     metaTitle: `Зарядні пристрої для телефонів | ${STORE_NAME}`,
     metaDescription:
@@ -285,6 +301,7 @@ export const categoryTree: CategoryNode[] = [
   {
     name: 'Тримачі та підставки',
     slug: 'holders',
+    icon: 'holders',
     description: 'Автотримачі, настільні підставки й попсокети — щоб телефон завжди був під рукою.',
     metaTitle: `Тримачі та підставки для телефона | ${STORE_NAME}`,
     metaDescription:
@@ -313,6 +330,7 @@ export const categoryTree: CategoryNode[] = [
   {
     name: "Карти пам'яті та флешки",
     slug: 'memory-cards',
+    icon: 'memory',
     description:
       'Карти microSD для камер і консолей та USB-флешки для щоденного перенесення файлів.',
     metaTitle: `Карти пам'яті microSD та USB-флешки | ${STORE_NAME}`,
@@ -366,6 +384,7 @@ export const categoriesData = categoryTree.map((node, index) => ({
   metaDescription: node.metaDescription ?? null,
   keywords: node.keywords ?? [],
   demoOgImage: node.demoOgImage ?? false,
+  icon: node.icon ?? null,
   sortOrder: index + 1,
 }));
 
@@ -383,6 +402,7 @@ export function buildSubcategories(categories: Record<string, { id: string }>) {
       metaDescription: child.metaDescription ?? null,
       keywords: child.keywords ?? [],
       demoOgImage: child.demoOgImage ?? false,
+      icon: null,
       parentId: categories[root.slug].id,
       sortOrder: index + 1,
     })),
