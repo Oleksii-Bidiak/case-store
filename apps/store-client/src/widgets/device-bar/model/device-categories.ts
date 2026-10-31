@@ -17,12 +17,16 @@ export interface CompatPageLike {
 
 export interface RootCategoryLike {
   id: string;
+  /** `Category.icon` — a sprite key (TASK-1956); null/absent → folder. */
+  icon?: string | null;
 }
 
 export interface DeviceCategory {
   id: string;
   slug: string;
   name: string;
+  /** The root's sprite key (TASK-1956) — compat-pages rows carry none. */
+  icon: string | null;
   productCount: number;
 }
 
@@ -36,6 +40,7 @@ export function selectDeviceCategories(
   roots: readonly RootCategoryLike[],
 ): DeviceCategory[] {
   const rootOrder = new Map(roots.map((root, index) => [root.id, index]));
+  const rootIcon = new Map(roots.map((root) => [root.id, root.icon ?? null]));
   return pages
     .filter(
       (page) =>
@@ -47,6 +52,7 @@ export function selectDeviceCategories(
       id: page.categoryId,
       slug: page.categorySlug,
       name: page.categoryName,
+      icon: rootIcon.get(page.categoryId) ?? null,
       productCount: page.productCount,
     }))
     .sort(

@@ -22,10 +22,10 @@ function page(
 
 // Owner's root order: cases, glass, chargers, cables.
 const ROOTS = [
-  { id: "cases" },
-  { id: "glass" },
+  { id: "cases", icon: "cases" },
+  { id: "glass", icon: null },
   { id: "chargers" },
-  { id: "cables" },
+  { id: "cables", icon: "cables" },
 ];
 
 describe("selectDeviceCategories", () => {
@@ -70,7 +70,25 @@ describe("selectDeviceCategories", () => {
         "iphone-15",
         ROOTS,
       ),
-    ).toEqual([{ id: "cases", slug: "cases", name: "CASES", productCount: 3 }]);
+    ).toEqual([
+      {
+        id: "cases",
+        slug: "cases",
+        name: "CASES",
+        icon: "cases",
+        productCount: 3,
+      },
+    ]);
+  });
+
+  // TASK-1956: compat-pages rows carry no icon — the matching root does.
+  it("takes the icon from the matching root, null when it has none", () => {
+    const icons = selectDeviceCategories(
+      [page("cases", "x", 3), page("glass", "x", 2), page("chargers", "x", 1)],
+      "x",
+      ROOTS,
+    ).map((c) => c.icon);
+    expect(icons).toEqual(["cases", null, null]);
   });
 });
 

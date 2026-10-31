@@ -4,12 +4,14 @@ import type { MouseEvent } from "react";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { useReducedMotion } from "@/shared/lib/use-reduced-motion";
+import { CategoryIcon } from "@/shared/ui";
 import { hubSectionHeadingId, hubSectionId } from "../model/hub-copy";
-import { HubCategoryIcon } from "./hub-icons";
 
 export interface HubChip {
   slug: string;
   name: string;
+  /** `Category.icon` (TASK-1956) — null/unknown renders the folder. */
+  icon: string | null | undefined;
   count: number;
 }
 
@@ -60,9 +62,10 @@ export function DeviceHubChips({
                 "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
               )}
             >
-              <HubCategoryIcon
-                slug={chip.slug}
-                className="size-4 text-muted-foreground"
+              <CategoryIcon
+                icon={chip.icon}
+                size={16}
+                className="text-muted-foreground"
               />
               {chip.name}
               <small className="text-sm font-medium text-muted-foreground tabular-nums">

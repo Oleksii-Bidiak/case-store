@@ -14,7 +14,7 @@ import type {
 } from "@/shared/api/generated/models";
 import { H1_CLASS, PAGE_CONTAINER, dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
-import { ProductCard } from "@/shared/ui";
+import { CategoryIcon, ProductCard } from "@/shared/ui";
 import {
   HUB_RAIL_SIZE,
   buildHubLede,
@@ -27,7 +27,7 @@ import {
 } from "../model/hub-copy";
 import { DeviceHubChips } from "./device-hub-chips";
 import { DeviceHubActions, DeviceHubKicker } from "./device-hub-state";
-import { HubCategoryIcon, HubFamilyIcon } from "./hub-icons";
+import { HubFamilyIcon } from "./hub-icons";
 
 export interface DeviceHubViewProps {
   hub: DeviceHubEntity;
@@ -143,6 +143,7 @@ export function DeviceHubView({
             chips={hub.groups.map((group) => ({
               slug: group.category.slug,
               name: group.category.name,
+              icon: group.category.icon,
               count: group.productCount,
             }))}
           />
@@ -204,7 +205,7 @@ function HubSection({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex size-12 shrink-0 items-center justify-center rounded-menu bg-card text-foreground shadow-card">
-            <HubCategoryIcon slug={category.slug} className="size-5.5" />
+            <CategoryIcon icon={category.icon} size={24} />
           </span>
           <div className="min-w-0">
             {/* H3-role sizing (design-system §3), not H2_CLASS: a hub has many

@@ -17,8 +17,14 @@ import {
 } from "@/shared/config";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { cn } from "@/shared/lib/utils";
-import { Button, CategoryTileImage, JsonLd, Skeleton } from "@/shared/ui";
-import { categoryGradient, pickCategoryIcon } from "../model/category-visuals";
+import {
+  Button,
+  CategoryIcon,
+  CategoryTileImage,
+  JsonLd,
+  Skeleton,
+} from "@/shared/ui";
+import { categoryGradient } from "../model/category-visuals";
 
 const activeOnly = (nodes: CategoryTreeNodeEntity[]) =>
   nodes.filter((n) => n.isActive).sort((a, b) => a.sortOrder - b.sortOrder);
@@ -178,7 +184,6 @@ export function CategoriesView() {
           className="-mx-4 -mt-1 flex gap-2 overflow-x-auto px-4 py-1 sm:-mx-6 sm:px-6 lg:mx-0 lg:mt-0 lg:flex-col lg:gap-0 lg:overflow-visible lg:p-0"
         >
           {roots.map((root) => {
-            const Icon = pickCategoryIcon(root.name, root.slug);
             const active = root.id === activeRoot.id;
             return (
               <button
@@ -205,9 +210,10 @@ export function CategoriesView() {
                     className="absolute top-[9px] bottom-[9px] left-0 hidden w-[3px] rounded-full bg-primary lg:block"
                   />
                 )}
-                <Icon
-                  className={`hidden size-5 shrink-0 lg:block ${active ? "text-primary" : "text-muted-foreground"}`}
-                  aria-hidden="true"
+                <CategoryIcon
+                  icon={root.icon}
+                  size={20}
+                  className={`hidden lg:block ${active ? "text-primary" : "text-muted-foreground"}`}
                 />
                 <span className="lg:flex-1">{root.name}</span>
                 {!active && (
@@ -250,7 +256,6 @@ export function CategoriesView() {
         {children.length > 0 ? (
           <div className={TILE_GRID}>
             {children.map((child, index) => {
-              const Icon = pickCategoryIcon(child.name, child.slug);
               return (
                 <Link
                   key={child.id}
@@ -267,9 +272,9 @@ export function CategoriesView() {
                           className="flex size-full items-center justify-center"
                           style={{ background: categoryGradient(index) }}
                         >
-                          <Icon
+                          <CategoryIcon
+                            icon={child.icon}
                             className="size-8 text-white md:size-10"
-                            aria-hidden="true"
                           />
                         </div>
                       }

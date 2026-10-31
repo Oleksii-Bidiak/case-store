@@ -1,19 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {
-  ArrowRight,
-  BatteryCharging,
-  Cable,
-  CircleHelp,
-  Headphones,
-  Package,
-  Shield,
-  Smartphone,
-  Watch,
-  Zap,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowRight, CircleHelp } from "lucide-react";
 
 import type { DeviceFamilyTone } from "@/entities/device";
 import {
@@ -29,6 +17,7 @@ import {
 } from "@/features/search";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
+import { CategoryIcon } from "@/shared/ui";
 
 import { formatCount } from "../model/sold-devices";
 
@@ -36,23 +25,10 @@ import { formatCount } from "../model/sold-devices";
 export interface ModelRowCategory {
   slug: string;
   name: string;
+  /** `Category.icon` (TASK-1956) — null/unknown renders the folder. */
+  icon: string | null;
   count: number;
 }
-
-/**
- * Temporary category glyphs by root slug — TASK-1956 brings real category
- * icons. Unknown slug → a neutral box.
- */
-const CATEGORY_ICON: Readonly<Record<string, LucideIcon>> = {
-  cases: Smartphone,
-  "screen-protectors": Shield,
-  chargers: Zap,
-  cables: Cable,
-  "power-banks": BatteryCharging,
-  smartwatches: Watch,
-  "watch-bands": Watch,
-  headphones: Headphones,
-};
 
 /** Hover only where a pointer hovers; no lift or scale under reduced motion. */
 const PILL_MOTION =
@@ -176,7 +152,6 @@ export function ModelRow({
           className="flex flex-wrap gap-1.5 md:basis-full"
         >
           {categories.map((category) => {
-            const Icon = CATEGORY_ICON[category.slug] ?? Package;
             return (
               <li key={category.slug}>
                 <Link
@@ -187,9 +162,10 @@ export function ModelRow({
                     SEARCH_DEVICE_FOCUS,
                   )}
                 >
-                  <Icon
-                    aria-hidden="true"
-                    className="size-3.5 shrink-0 text-muted-foreground"
+                  <CategoryIcon
+                    icon={category.icon}
+                    size={16}
+                    className="text-muted-foreground"
                   />
                   {category.name}
                   <small className="text-xs font-medium text-muted-foreground tabular-nums">

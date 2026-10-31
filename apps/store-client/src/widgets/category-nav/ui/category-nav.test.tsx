@@ -12,6 +12,7 @@ function makeCategory(overrides: Partial<CategoryEntity> = {}): CategoryEntity {
     id: "cat-1",
     name: "Чохли",
     slug: "cases",
+    icon: "cases",
     description: null,
     image: null,
     parentId: null,
@@ -63,6 +64,41 @@ describe("CategoryNav — tile images (TASK-083)", () => {
       "/categories/cases",
     );
     expect(tileImg()).not.toBeInTheDocument();
+  });
+
+  // TASK-1956: the fallback is `Category.icon` from the sprite on a neutral
+  // pad — no keyword guessing, no colour tint; null/unknown → the folder.
+  it("draws Category.icon on a neutral pad, the folder when it is unset or unknown", async () => {
+    setupHandlers([
+      makeCategory(),
+      makeCategory({ id: "cat-2", name: "Кабелі", slug: "cables", icon: null }),
+      makeCategory({
+        id: "cat-3",
+        name: "Ракети",
+        slug: "rockets",
+        icon: "rocket" as CategoryEntity["icon"],
+      }),
+    ]);
+    renderWithProviders(<CategoryNav />);
+
+    const href = (name: RegExp) =>
+      screen.getByRole("link", { name }).querySelector("use");
+    await screen.findByRole("link", { name: /Чохли/ });
+    expect(href(/Чохли/)).toHaveAttribute(
+      "href",
+      "/icons/categories.svg#cat-cases",
+    );
+    expect(href(/Кабелі/)).toHaveAttribute(
+      "href",
+      "/icons/categories.svg#cat-folder",
+    );
+    expect(href(/Ракети/)).toHaveAttribute(
+      "href",
+      "/icons/categories.svg#cat-folder",
+    );
+    const pad = href(/Чохли/)?.closest("svg")?.parentElement;
+    expect(pad).toHaveClass("bg-muted", "text-foreground");
+    expect(pad?.className).not.toMatch(/text-(primary|warning|success)/);
   });
 
   it("renders the image when image is set", async () => {

@@ -8,8 +8,8 @@ import { getDeviceFamilyHoverSurface } from "@/entities/device";
 import type { MyDevice } from "@/entities/my-devices";
 import { dict, PAGE_CONTAINER } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
+import { CategoryIcon } from "@/shared/ui";
 
-import { categoryGlyph } from "../model/category-glyph";
 import {
   deviceCategoryHref,
   deviceHubHref,
@@ -76,7 +76,6 @@ export function DeviceBarPanel({
 
         <ul className="grid grid-cols-3 gap-2 xl:grid-cols-4">
           {categories.map((category) => {
-            const Glyph = categoryGlyph(category.slug);
             return (
               <li key={category.id}>
                 <Link
@@ -92,7 +91,7 @@ export function DeviceBarPanel({
                     aria-hidden="true"
                     className="grid size-11 shrink-0 place-items-center rounded-menu bg-card"
                   >
-                    <Glyph className="size-5" />
+                    <CategoryIcon icon={category.icon} size={20} />
                   </span>
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate text-sm font-semibold">

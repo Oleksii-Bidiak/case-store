@@ -63,10 +63,21 @@ const S24 = device("galaxy-s24", "Galaxy S24", {
   family: "galaxy",
 });
 
+// Icons (TASK-1956): one set, one null, one key the sprite does not have.
 const TREE = [
-  { id: "cases", slug: "cases", name: "Чохли" },
-  { id: "glass", slug: "screen-protectors", name: "Захисне скло та плівки" },
-  { id: "chargers", slug: "chargers", name: "Зарядні пристрої" },
+  { id: "cases", slug: "cases", name: "Чохли", icon: "cases" },
+  {
+    id: "glass",
+    slug: "screen-protectors",
+    name: "Захисне скло та плівки",
+    icon: null,
+  },
+  {
+    id: "chargers",
+    slug: "chargers",
+    name: "Зарядні пристрої",
+    icon: "rocket",
+  },
 ].map((c, i) => ({ ...c, isActive: true, sortOrder: i, children: [] }));
 
 function compatPage(
@@ -262,6 +273,14 @@ describe("DeviceBar — tier 2 and the «Усі категорії» panel (TASK
       "/catalog/chargers/iphone-15-pro",
       "/catalog/screen-protectors/iphone-15-pro",
     ]);
+    // TASK-1956: the root's sprite key; null and unknown keys → folder.
+    expect(
+      links.map((a) => a.querySelector("use")?.getAttribute("href")),
+    ).toEqual([
+      "/icons/categories.svg#cat-cases",
+      "/icons/categories.svg#cat-folder",
+      "/icons/categories.svg#cat-folder",
+    ]);
     // Subcategory rows from compat-pages are not repeated here.
     expect(within(nav).queryByText("Чохли для iPhone")).not.toBeInTheDocument();
     expect(
@@ -297,6 +316,12 @@ describe("DeviceBar — tier 2 and the «Усі категорії» panel (TASK
       t.openModelPage(dict.devicePicker.productCount(80)),
     );
     expect(within(panel).getAllByRole("listitem")).toHaveLength(3);
+    expect(
+      within(panel)
+        .getAllByRole("listitem")[0]
+        .querySelector("use")
+        ?.getAttribute("href"),
+    ).toBe("/icons/categories.svg#cat-cases");
     expect(panel).toHaveTextContent(dict.devicePicker.productCount(40));
 
     await user.keyboard("{Escape}");

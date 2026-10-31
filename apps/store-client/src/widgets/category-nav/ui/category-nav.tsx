@@ -1,66 +1,24 @@
 "use client";
 
-import type { ComponentType } from "react";
 import Link from "next/link";
-import {
-  Smartphone,
-  Zap,
-  Cable,
-  ShieldCheck,
-  Headphones,
-  Package,
-  ChevronRight,
-} from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import {
   ACTIVE_ROOT_CATEGORIES_PARAMS,
   useCategoryControllerGetRootCategories,
   type CategoryEntity,
 } from "@/entities/category";
 import { dict, H2_CLASS, PAGE_CONTAINER } from "@/shared/config";
-import { CategoryTileImage } from "@/shared/ui";
+import { CategoryIcon, CategoryTileImage } from "@/shared/ui";
 import { CategoryNavSkeleton } from "./category-nav-skeleton";
-
-// Map a category to an icon + accent by matching keywords in its slug/name, so
-// tiles look intentional even though categories carry no image of their own.
-const CATEGORY_STYLES: {
-  match: RegExp;
-  icon: ComponentType<{ className?: string }>;
-  tile: string;
-}[] = [
-  { match: /case|чох/i, icon: Smartphone, tile: "bg-primary/12 text-primary" },
-  { match: /charg|заряд/i, icon: Zap, tile: "bg-warning/12 text-warning" },
-  { match: /cable|кабел/i, icon: Cable, tile: "bg-success/12 text-success" },
-  // Token tints only (TASK-879): the protection and audio tiles were raw
-  // sky / violet palette hues; they take the brand tint.
-  {
-    match: /screen|protect|скло|захис/i,
-    icon: ShieldCheck,
-    tile: "bg-primary/12 text-primary",
-  },
-  {
-    match: /audio|headph|навуш|аудіо/i,
-    icon: Headphones,
-    tile: "bg-primary/12 text-primary",
-  },
-];
-
-function styleFor(category: { slug: string; name: string }) {
-  const haystack = `${category.slug} ${category.name}`;
-  return (
-    CATEGORY_STYLES.find((s) => s.match.test(haystack)) ?? {
-      icon: Package,
-      tile: "bg-muted text-muted-foreground",
-    }
-  );
-}
 
 /**
  * CategoryTile — one homepage category tile. Shows `Category.image` (admin-set
- * URL, TASK-083) in the 48px slot when present/loadable; the keyword-matched
- * icon + tinted background remains the fallback for missing/broken images.
+ * URL, TASK-083) in the 48px slot when present/loadable; otherwise the
+ * admin-chosen `Category.icon` from the sprite (TASK-1956) on a neutral pad —
+ * categories never take a colour tint (Д3 colour rule), and an icon-less
+ * category gets the generic folder.
  */
 function CategoryTile({ category }: { category: CategoryEntity }) {
-  const { icon: Icon, tile } = styleFor(category);
   return (
     <Link
       href={`/categories/${category.slug}`}
@@ -75,10 +33,12 @@ function CategoryTile({ category }: { category: CategoryEntity }) {
           alt=""
           className="size-full object-cover"
           fallback={
-            <span
-              className={`flex size-full items-center justify-center ${tile}`}
-            >
-              <Icon className="size-6 transition-transform duration-200 group-hover:scale-110" />
+            <span className="flex size-full items-center justify-center bg-muted text-foreground">
+              <CategoryIcon
+                icon={category.icon}
+                size={22}
+                className="transition-transform duration-200 group-hover:scale-110 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+              />
             </span>
           }
         />

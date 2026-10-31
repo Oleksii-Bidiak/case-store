@@ -1,51 +1,12 @@
-import {
-  BatteryCharging,
-  Cable,
-  Camera,
-  Gamepad2,
-  Headphones,
-  Keyboard,
-  Laptop,
-  Package,
-  ShieldCheck,
-  Smartphone,
-  Speaker,
-  Tablet,
-  Tv,
-  Watch,
-  type LucideIcon,
-} from "lucide-react";
-
-// Categories carry no icon of their own, so we pick a lucide icon by matching
-// keywords in the name/slug (same idea as the homepage CategoryNav) and derive a
-// token-driven oklch gradient per tile index — no invented data, no raw hex.
+// Tile cover gradients for the /categories page — a token-driven oklch
+// gradient per tile index, no invented data, no raw hex.
 //
 // Since TASK-083 this is explicitly the FALLBACK tier: tiles render the
 // admin-set `Category.image` (via `shared/ui` CategoryTileImage) when present
-// and loadable, and only fall back to the icon + gradient below when the image
-// is missing or fails to load.
-
-const ICON_RULES: { match: RegExp; icon: LucideIcon }[] = [
-  { match: /tablet|планшет/i, icon: Tablet },
-  { match: /phone|смартфон|телефон/i, icon: Smartphone },
-  { match: /laptop|ноут|моноблок|пк|монітор/i, icon: Laptop },
-  { match: /watch|годинник|браслет|band|ремін/i, icon: Watch },
-  { match: /headph|навуш|гарнітур/i, icon: Headphones },
-  { match: /speaker|колонк|аудіо|audio/i, icon: Speaker },
-  { match: /tv|телевізор/i, icon: Tv },
-  { match: /gam|ігр|консол|геймпад/i, icon: Gamepad2 },
-  { match: /cable|кабел|перехідник/i, icon: Cable },
-  { match: /charg|заряд|батар|power|павербанк/i, icon: BatteryCharging },
-  { match: /screen|glass|скло|плівк|захис/i, icon: ShieldCheck },
-  { match: /keyboard|клавіат/i, icon: Keyboard },
-  { match: /camera|фото|штатив|селфі/i, icon: Camera },
-];
-
-/** Pick an icon for a category by keyword (fallback: a generic box). */
-export function pickCategoryIcon(name: string, slug: string): LucideIcon {
-  const haystack = `${slug} ${name}`;
-  return ICON_RULES.find((rule) => rule.match.test(haystack))?.icon ?? Package;
-}
+// and loadable, and only fall back to the category icon + gradient when the
+// image is missing or fails to load. The icon itself is the admin-chosen
+// `Category.icon` from the shared sprite (`shared/ui` CategoryIcon, TASK-1956)
+// — no keyword guessing; a category without one gets the generic folder.
 
 // Cycled hues for the tile cover gradients (token-driven oklch, theme-following).
 const GRADIENT_HUES = [265, 200, 40, 150, 320, 25, 285, 175, 235, 305, 120, 90];

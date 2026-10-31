@@ -47,12 +47,17 @@ const hub = {
   productCount: 1290,
   groups: [
     {
-      category: { id: "c1", name: "Чохли", slug: "cases" },
+      category: { id: "c1", name: "Чохли", slug: "cases", icon: "cases" },
       productCount: 1250,
       products: Array.from({ length: 8 }, (_, i) => product(`case-${i}`)),
     },
     {
-      category: { id: "c2", name: "Захисне скло", slug: "screen-protectors" },
+      category: {
+        id: "c2",
+        name: "Захисне скло",
+        slug: "screen-protectors",
+        icon: null,
+      },
       productCount: 40,
       products: [product("glass-1")],
     },
@@ -107,6 +112,45 @@ describe("DeviceHubView", () => {
     expect(
       within(chips).getByRole("link", { name: "Захисне скло: 40 товарів" }),
     ).toHaveAttribute("href", "#screen-protectors");
+  });
+
+  // TASK-1956: chips and section pads draw `Category.icon` from the sprite;
+  // a category without an icon (or with an unknown key) gets the folder.
+  it("draws each category's sprite icon on its chip and section, folder when missing", () => {
+    const withUnknown = {
+      ...hub,
+      groups: [
+        ...hub.groups,
+        {
+          category: {
+            id: "c3",
+            name: "Кабелі",
+            slug: "cables",
+            icon: "rocket",
+          },
+          productCount: 3,
+          products: [product("cable-1")],
+        },
+      ],
+    } as unknown as DeviceHubEntity;
+    render(<DeviceHubView hub={withUnknown} siblings={[]} />);
+    const href = (el: HTMLElement) =>
+      el.querySelector("use")?.getAttribute("href");
+
+    const chips = screen.getByRole("navigation", {
+      name: "Категорії для моделі",
+    });
+    expect(within(chips).getAllByRole("link").map(href)).toEqual([
+      "/icons/categories.svg#cat-cases",
+      "/icons/categories.svg#cat-folder",
+      "/icons/categories.svg#cat-folder",
+    ]);
+    expect(href(screen.getByRole("region", { name: "Чохли" }))).toBe(
+      "/icons/categories.svg#cat-cases",
+    );
+    expect(href(screen.getByRole("region", { name: "Кабелі" }))).toBe(
+      "/icons/categories.svg#cat-folder",
+    );
   });
 
   it("links the rest of the series to their hubs, and hides the panel without siblings", () => {

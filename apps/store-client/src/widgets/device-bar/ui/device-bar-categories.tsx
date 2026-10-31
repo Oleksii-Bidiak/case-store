@@ -7,9 +7,8 @@ import { ChevronDown } from "lucide-react";
 import type { MyDevice } from "@/entities/my-devices";
 import { dict, PAGE_CONTAINER } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
-import { Skeleton } from "@/shared/ui";
+import { CategoryIcon, Skeleton } from "@/shared/ui";
 
-import { categoryGlyph } from "../model/category-glyph";
 import {
   deviceCategoryHref,
   type DeviceCategory,
@@ -89,26 +88,24 @@ export const DeviceBarCategories = forwardRef<
               ref={rowRef}
               className="flex h-13 min-w-0 flex-1 flex-wrap content-start items-center gap-1 overflow-hidden p-1"
             >
-              {categories.map((category, index) => {
-                const Glyph = categoryGlyph(category.slug);
-                return (
-                  <Link
-                    key={category.id}
-                    href={deviceCategoryHref(category.slug, device.slug)}
-                    className={cn(
-                      "inline-flex h-11 shrink-0 items-center gap-2 rounded-full px-3.5 text-sm font-medium whitespace-nowrap text-foreground transition-shadow hover:bg-card hover:shadow-card",
-                      FOCUS_RING,
-                      fit !== null && index >= fit && "invisible",
-                    )}
-                  >
-                    <Glyph
-                      aria-hidden="true"
-                      className="size-4.5 shrink-0 text-muted-foreground"
-                    />
-                    <span>{category.name}</span>
-                  </Link>
-                );
-              })}
+              {categories.map((category, index) => (
+                <Link
+                  key={category.id}
+                  href={deviceCategoryHref(category.slug, device.slug)}
+                  className={cn(
+                    "inline-flex h-11 shrink-0 items-center gap-2 rounded-full px-3.5 text-sm font-medium whitespace-nowrap text-foreground transition-shadow hover:bg-card hover:shadow-card",
+                    FOCUS_RING,
+                    fit !== null && index >= fit && "invisible",
+                  )}
+                >
+                  <CategoryIcon
+                    icon={category.icon}
+                    size={16}
+                    className="text-muted-foreground"
+                  />
+                  <span>{category.name}</span>
+                </Link>
+              ))}
             </div>
 
             <button

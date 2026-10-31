@@ -76,6 +76,7 @@ function SearchDeviceRowContent({ match }: { match: SearchDeviceMatch }) {
       (hub.data?.data.groups ?? []).map((group) => ({
         slug: group.category.slug,
         name: group.category.name,
+        icon: group.category.icon ?? null,
         count: group.productCount,
       })),
     [hub.data],

@@ -88,7 +88,12 @@ beforeEach(() => {
           productCount: 128,
           groups: [
             {
-              category: { id: "c1", name: "Чохли", slug: "cases" },
+              category: {
+                id: "c1",
+                name: "Чохли",
+                slug: "cases",
+                icon: "cases",
+              },
               productCount: 44,
               products: [],
             },
@@ -97,6 +102,7 @@ beforeEach(() => {
                 id: "c2",
                 name: "Захисне скло",
                 slug: "screen-protectors",
+                icon: null,
               },
               productCount: 23,
               products: [],
@@ -150,9 +156,20 @@ describe("SearchDeviceRow — the /search model row (TASK-2069)", () => {
       }),
     ).toHaveAttribute("href", "/devices/iphone-15-pro");
     // The model's categories, with counts, to the compat landings.
+    const casesPill = await within(section).findByRole("link", {
+      name: /Чохли\s*44/,
+    });
+    expect(casesPill).toHaveAttribute("href", "/catalog/cases/iphone-15-pro");
+    // TASK-1956: the sprite icon from `Category.icon`; none → the folder.
+    expect(casesPill.querySelector("use")).toHaveAttribute(
+      "href",
+      "/icons/categories.svg#cat-cases",
+    );
     expect(
-      await within(section).findByRole("link", { name: /Чохли\s*44/ }),
-    ).toHaveAttribute("href", "/catalog/cases/iphone-15-pro");
+      within(section)
+        .getByRole("link", { name: /Захисне скло\s*23/ })
+        .querySelector("use"),
+    ).toHaveAttribute("href", "/icons/categories.svg#cat-folder");
 
     const heading = await saleHeading("iPhone 15 Pro", PRICE);
     expect(
