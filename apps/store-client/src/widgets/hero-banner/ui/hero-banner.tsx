@@ -1,42 +1,38 @@
 import type { BannerEntity } from "@/shared/api/generated/models";
-import { PAGE_CONTAINER } from "@/shared/config";
+import { PAGE_CONTAINER, dict } from "@/shared/config";
 import { HeroSlider } from "./hero-slider";
-import { HeroCategorySidebar } from "./hero-category-sidebar";
 import { ModelPicker } from "./model-picker";
-import { PromoTiles } from "./promo-tiles";
+import { PromoShowcase } from "./promo-tiles";
 
 interface HeroBannerProps {
   /** HERO_SLIDE banners (falls back to hardcoded slides when empty). */
   heroSlides?: BannerEntity[];
-  /** PROMO_TILE banners (falls back to hardcoded tiles when empty). */
+  /** PROMO_TILE banners (falls back to hardcoded tiles when empty), ≤ 5. */
   promoTiles?: BannerEntity[];
 }
 
 /**
- * HeroBanner — the homepage hero block. Composes the category sidebar and the
- * promotional slider (side by side on desktop), the device model picker, and a
- * row of promo tiles. Stays a Server Component; the interactive children
- * (slider, sidebar, picker) opt into "use client" themselves.
+ * HeroBanner — the homepage first screen. The «Акції» block puts the slider
+ * beside promo tiles 1–2, with tiles 3–5 in a row beneath it (TASK-2013,
+ * direction В: the category sidebar is no longer part of the first screen —
+ * the «Категорії» section below carries category access). The device model
+ * picker follows. Stays a Server Component; the interactive children (slider,
+ * picker) opt into "use client" themselves.
  *
  * The slider and promo tiles are driven by admin banners (HERO_SLIDE /
  * PROMO_TILE) when published, and fall back to hardcoded content otherwise.
  */
 export function HeroBanner({ heroSlides, promoTiles }: HeroBannerProps = {}) {
   return (
-    <section aria-label="Головний банер" className={`${PAGE_CONTAINER} pt-6`}>
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
-      <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
-        <HeroCategorySidebar />
-        <HeroSlider banners={heroSlides} />
-      </div>
+    <div className={`${PAGE_CONTAINER} flex flex-col gap-5 pt-6`}>
+      <section aria-label={dict.home.promoAria}>
+        <PromoShowcase
+          slider={<HeroSlider banners={heroSlides} />}
+          banners={promoTiles}
+        />
+      </section>
 
-      <div className="mt-5">
-        <ModelPicker />
-      </div>
-
-      <div className="mt-5">
-        <PromoTiles banners={promoTiles} />
-      </div>
-    </section>
+      <ModelPicker />
+    </div>
   );
 }

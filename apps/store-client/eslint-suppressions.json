@@ -266,7 +266,7 @@
   },
   "src/widgets/hero-banner/ui/hero-slider.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 3
+      "count": 2
     }
   },
   "src/widgets/hero-banner/ui/model-picker.tsx": {

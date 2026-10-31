@@ -288,28 +288,31 @@ export const dict = {
       loading: "Завантаження…",
     },
 
-    // Static promo tiles under the hero — the fallback when the owner has
+    // TASK-2013 — the «slider + promo tiles» block of the first screen.
+    promoAria: "Акції",
+
+    // Static promo tiles beside the slider — the fallback when the owner has
     // published no PROMO_TILE banner. TASK-873: every tile leads to a real page;
     // the «Покупка частинами» and «Trade-in» tiles pointed at `#` (no such page,
-    // no trade-in service) and are gone.
+    // no trade-in service) and are gone. TASK-2013 (direction В): neutral white
+    // tiles with an icon box — the badge and the accent rotation are gone (a
+    // hue only means a device family, or a sale the owner picked).
     promoTiles: [
       {
-        badge: "−30%",
+        icon: "percent" as const,
         title: "Розпродаж аксесуарів",
         text: "Чохли, зарядки та захисне скло за зниженою ціною.",
         cta: "Дивитись акцію",
         href: "/promo",
-        accent: "sale" as const,
       },
       {
         // TASK-1661 — was «ВІД 1 000 ₴ / Безкоштовна доставка»: a threshold
         // Nova Poshta never had.
-        badge: "НОВА ПОШТА",
+        icon: "truck" as const,
         title: "Доставка по всій Україні",
         text: "Відділення й поштомати за тарифом перевізника — відправка день у день.",
         cta: "Умови доставки",
         href: "/info#delivery",
-        accent: "primary" as const,
       },
     ],
 

@@ -43,11 +43,12 @@ function bannersToSlides(banners: BannerEntity[]): HeroSlide[] {
 const AUTOPLAY_MS = 7000;
 
 // Per-slide visual theme (copy lives in the dictionary; visuals stay in code).
-// Each slide gets its own gradient, text colour, eyebrow pill, CTA button and an
-// optional decorative "product" glass panel on the right — mirroring the mockup:
-//   0 · ink panel with a violet cast · white text · frosted panel
-//   1 · inverse (foreground panel, background text) · sale eyebrow · no panel
-//   2 · deep success green · white text · frosted panel
+// Each slide gets its own gradient, text colour, eyebrow pill and CTA button:
+//   0 · ink panel with a violet cast · white text
+//   1 · inverse (foreground panel, background text) · sale eyebrow
+//   2 · deep success green · white text
+// (TASK-2013: the decorative striped "product" panel is gone — in the 2/3-wide
+// column beside the promo tiles it ran into the copy.)
 // All gradients are token-derived (color-mix/oklch). Slides 0 and 2 carry white
 // copy, so they are built from tones that stay dark in BOTH themes (TASK-1951):
 // the theme-invariant footer ink, and success mixed well towards black (the
@@ -58,7 +59,6 @@ type SlideTheme = {
   text: string;
   eyebrow: string;
   cta: string;
-  panel: boolean;
   /** Tint over an admin picture, in the gradient's colour family (TASK-740). */
   scrim: string;
 };
@@ -70,7 +70,6 @@ const THEMES: SlideTheme[] = [
     text: "text-white",
     eyebrow: "bg-white/15 text-white ring-1 ring-white/25 backdrop-blur-sm",
     cta: "bg-white text-footer hover:bg-white/90",
-    panel: true,
     scrim: "bg-black/45",
   },
   {
@@ -79,7 +78,6 @@ const THEMES: SlideTheme[] = [
     text: "text-background",
     eyebrow: "bg-sale text-sale-foreground",
     cta: "bg-background text-foreground hover:bg-background/90",
-    panel: false,
     scrim: "bg-foreground/60",
   },
   {
@@ -88,7 +86,6 @@ const THEMES: SlideTheme[] = [
     text: "text-white",
     eyebrow: "bg-white/18 text-white ring-1 ring-white/25 backdrop-blur-sm",
     cta: "bg-white text-footer hover:bg-white/90",
-    panel: true,
     scrim: "bg-black/45",
   },
 ];
@@ -131,7 +128,11 @@ function SlideCopy({
           {slide.eyebrow}
         </span>
       )}
-      <Title className={`mt-4 ${HERO_CLASS} text-balance`}>{slide.title}</Title>
+      <Title
+        className={`mt-4 ${HERO_CLASS} text-balance lg:text-4xl xl:text-5xl`}
+      >
+        {slide.title}
+      </Title>
       {slide.subtitle && (
         <p className="mt-3 max-w-md text-base opacity-90 sm:text-[17px]">
           {slide.subtitle}
@@ -169,13 +170,13 @@ function SlideCopy({
  * fixed (TASK-878): every slide's copy is stacked in one grid cell — the
  * inactive ones invisible — so the slider fits its longest copy at any width and
  * never jumps between slides; `min-h-105 sm:min-h-110` keeps the mockup
- * proportions (420 / 440 px in Homepage.dc.html). From lg, where it shares a
- * grid row with the category sidebar, it is pinned at `lg:h-110` (440 px) so the
- * row never stretches it to the sidebar's height. Below sm the arrows join the
- * pause button in the bottom row so the copy gets the full width; from sm they
- * sit in the side gutters. A decorative frosted panel fills the right half on
- * themed slides (xl only, so it never crowds the text). Client Component
- * (holds the active-slide state).
+ * proportions (420 / 440 px in Homepage.dc.html). From lg it is NOT pinned
+ * (TASK-2013): it shares a row with promo tiles 1–2 in a 2/3-wide column, and
+ * the tile column takes ITS height — a pinned box would clip the copy there.
+ * In that column the title steps down to text-4xl / xl:text-5xl. Below sm the
+ * arrows join the pause button in the bottom row so the copy gets the full
+ * width; from sm they sit in the side gutters. Client Component (holds the
+ * active-slide state).
  *
  * `banners` (HERO_SLIDE placement) is the data source when the admin has
  * published any; otherwise the hardcoded fallback slides render unchanged.
@@ -227,7 +228,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
 
   return (
     <div
-      className="relative isolate grid min-h-105 overflow-hidden rounded-2xl shadow-elevated sm:min-h-110 lg:h-110"
+      className="relative isolate grid min-h-105 overflow-hidden rounded-panel shadow-elevated sm:min-h-110"
       style={{ backgroundImage: theme.gradient }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -240,7 +241,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
       <BannerBackdrop
         key={`backdrop-${activeIndex}`}
         src={slide.imageUrl}
-        sizes="(max-width: 1280px) 100vw, 1280px"
+        sizes="(max-width: 1023px) 100vw, 880px"
         scrimClassName={theme.scrim}
         preload={activeIndex === 0}
       />
@@ -267,19 +268,6 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
         className={`relative ${SLIDE_LAYER} duration-500 animate-in fade-in-0 ${theme.text}`}
       >
         <SlideCopy slide={slide} theme={theme} />
-
-        {/* Decorative frosted "product" panel — visual only, hidden on smaller
-            viewports where the hero title (HERO_CLASS) needs the full width. */}
-        {theme.panel && (
-          <div
-            aria-hidden="true"
-            className="absolute top-1/2 right-10 hidden size-[280px] -translate-y-1/2 rounded-3xl border border-white/25 xl:block"
-            style={{
-              background:
-                "repeating-linear-gradient(135deg, rgb(255 255 255 / 0.10) 0 14px, rgb(255 255 255 / 0.04) 14px 28px)",
-            }}
-          />
-        )}
       </div>
 
       {/* Prev / next controls — below sm in the bottom row left of the pause
