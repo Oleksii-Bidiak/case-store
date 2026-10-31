@@ -7,6 +7,16 @@ export { ProductCategoryEntity } from './product-category.entity';
 export { ProductBrandEntity } from './product-brand.entity';
 export { ProductCompatibleDeviceEntity } from './product-compatible-device.entity';
 export {
+  BulkDeviceCompatResultEntity,
+  DeviceModelCoverageEntity,
+  CoverageCategoryEntity,
+  CoverageCountEntity,
+  CoverageModelEntity,
+  CoverageSiblingEntity,
+  CoverageStatsEntity,
+  CoverageSuspectEntity,
+} from './device-model-coverage.entity';
+export {
   ProductGroupEntity,
   ProductSiblingEntity,
   ProductGroupAxisEntity,

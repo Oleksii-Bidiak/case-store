@@ -21,6 +21,7 @@ import { DeviceService } from '../src/device/device.service';
 import { DiscountService } from '../src/discount/discount.service';
 import { FaqService } from '../src/faq/faq.service';
 import { PageService } from '../src/pages/pages.service';
+import { ProductDeviceCompatService } from '../src/product/product-device-compat.service';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
@@ -135,6 +136,16 @@ const SECTIONS: readonly Section[] = [
       ['patch', `/api/admin/devices/models/${ID}/activate`],
       ['patch', `/api/admin/devices/models/${ID}/deactivate`],
     ],
+  },
+  {
+    // TASK-1955: the device-side compat routes live in the product module
+    // (`AdminDeviceCompatController`) but answer to the same devices keys.
+    name: 'devices — compatibility',
+    read: 'devices:read',
+    write: 'devices:write',
+    service: ProductDeviceCompatService,
+    reads: [`/api/admin/devices/models/${ID}/coverage`],
+    writes: [['put', '/api/admin/devices/compat/bulk']],
   },
   {
     name: 'attributes',

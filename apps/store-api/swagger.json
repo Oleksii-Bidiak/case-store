@@ -4014,6 +4014,92 @@
         ]
       }
     },
+    "/api/admin/devices/compat/bulk": {
+      "put": {
+        "operationId": "adminDeviceCompatControllerBulkUpdateCompat",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkDeviceCompatDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkDeviceCompatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, no models after series expansion, or unknown ids / series"
+          },
+          "403": {
+            "description": "Forbidden — devices:write required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Add, remove or replace device compatibility on many products (admin)",
+        "tags": [
+          "Devices"
+        ]
+      }
+    },
+    "/api/admin/devices/models/{id}/coverage": {
+      "get": {
+        "operationId": "adminDeviceCompatControllerGetModelCoverage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Device model UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Coverage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceModelCoverageResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — devices:read required"
+          },
+          "404": {
+            "description": "Device model not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Assortment of a device model next to its series, with holes (admin)",
+        "tags": [
+          "Devices"
+        ]
+      }
+    },
     "/api/admin/uploads/categories": {
       "post": {
         "operationId": "uploadsControllerUploadCategoryImage",
@@ -20664,6 +20750,300 @@
         },
         "required": [
           "items"
+        ]
+      },
+      "BulkCompatMode": {
+        "type": "string",
+        "enum": [
+          "add",
+          "remove",
+          "replace"
+        ],
+        "description": "`add` keeps what the products already have, `remove` drops only the named models, `replace` makes the named models the whole set."
+      },
+      "BulkDeviceCompatDto": {
+        "type": "object",
+        "properties": {
+          "productIds": {
+            "description": "Ids of the products whose compatibility changes.",
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "description": "`add` keeps what the products already have, `remove` drops only the named models, `replace` makes the named models the whole set.",
+            "example": "add",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BulkCompatMode"
+              }
+            ]
+          },
+          "deviceModelIds": {
+            "description": "Device model ids to add / remove / set.",
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "series": {
+            "description": "Whole series («iPhone 15»): expanded to every model of that series, active or not.",
+            "maxItems": 100,
+            "example": [
+              "iPhone 15"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "productIds",
+          "mode"
+        ]
+      },
+      "BulkDeviceCompatResultEntity": {
+        "type": "object",
+        "properties": {
+          "updatedProducts": {
+            "type": "number",
+            "description": "Products whose compatibility set actually changed",
+            "example": 3
+          },
+          "added": {
+            "type": "number",
+            "description": "Product ↔ model links created",
+            "example": 12
+          },
+          "removed": {
+            "type": "number",
+            "description": "Product ↔ model links removed",
+            "example": 0
+          }
+        },
+        "required": [
+          "updatedProducts",
+          "added",
+          "removed"
+        ]
+      },
+      "BulkDeviceCompatResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkDeviceCompatResultEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CoverageModelEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "example": "iPhone 15 Pro"
+          },
+          "slug": {
+            "type": "string",
+            "example": "iphone-15-pro"
+          },
+          "series": {
+            "type": "string",
+            "nullable": true,
+            "example": "iPhone 15"
+          },
+          "brandName": {
+            "type": "string",
+            "example": "Apple"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the model is shown on the storefront",
+            "example": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "series",
+          "brandName",
+          "isActive"
+        ]
+      },
+      "CoverageSiblingEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440001"
+          },
+          "name": {
+            "type": "string",
+            "example": "iPhone 15 Pro Max"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "CoverageStatsEntity": {
+        "type": "object",
+        "properties": {
+          "compatibleProducts": {
+            "type": "number",
+            "description": "Products shown on the storefront that are compatible with the model",
+            "example": 128
+          },
+          "inStockProducts": {
+            "type": "number",
+            "description": "Of those, how many have stock > 0",
+            "example": 117
+          },
+          "holes": {
+            "type": "number",
+            "description": "Top-level categories where the model has 0 products and a sibling has > 0",
+            "example": 2
+          }
+        },
+        "required": [
+          "compatibleProducts",
+          "inStockProducts",
+          "holes"
+        ]
+      },
+      "CoverageCountEntity": {
+        "type": "object",
+        "properties": {
+          "deviceModelId": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "productCount": {
+            "type": "number",
+            "example": 44
+          }
+        },
+        "required": [
+          "deviceModelId",
+          "productCount"
+        ]
+      },
+      "CoverageCategoryEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440010"
+          },
+          "name": {
+            "type": "string",
+            "example": "Чохли"
+          },
+          "slug": {
+            "type": "string",
+            "example": "chokhly"
+          },
+          "icon": {
+            "type": "object"
+          },
+          "counts": {
+            "description": "The model first, then its siblings in `siblings` order",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageCountEntity"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "icon",
+          "counts"
+        ]
+      },
+      "CoverageSuspectEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440020"
+          },
+          "name": {
+            "type": "string",
+            "example": "Захист камери ESR для iPhone 15 Pro"
+          },
+          "slug": {
+            "type": "string",
+            "example": "zakhyst-kamery-esr-iphone-15-pro"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug"
+        ]
+      },
+      "DeviceModelCoverageEntity": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "$ref": "#/components/schemas/CoverageModelEntity"
+          },
+          "siblings": {
+            "description": "Active models of the same brand and series, excluding this one",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageSiblingEntity"
+            }
+          },
+          "stats": {
+            "$ref": "#/components/schemas/CoverageStatsEntity"
+          },
+          "categories": {
+            "description": "Top-level categories where the model or a sibling has ≥ 1 product, tree order",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageCategoryEntity"
+            }
+          },
+          "suspects": {
+            "description": "Up to 10 active products whose name mentions the model but lack compat with it",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageSuspectEntity"
+            }
+          }
+        },
+        "required": [
+          "model",
+          "siblings",
+          "stats",
+          "categories",
+          "suspects"
+        ]
+      },
+      "DeviceModelCoverageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DeviceModelCoverageEntity"
+          }
+        },
+        "required": [
+          "data"
         ]
       },
       "UploadedImageEntity": {

@@ -31,7 +31,11 @@ import {
   PRODUCT_LIST_PREFIX,
 } from '../cache';
 import { ProductIndexer } from '../search/product-indexer';
-import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
+import {
+  CATALOGUE_REVALIDATE_TARGET,
+  DEVICE_HUBS_REVALIDATE_TARGET,
+  RevalidationNotifier,
+} from '../publishing';
 import {
   CatalogueFilterResolver,
   UNRESOLVED_FILTER_ID,
@@ -625,6 +629,29 @@ describe('ProductService', () => {
       // No cache interaction: the admin table must always be fresh.
       expect(cacheServiceMock.get).not.toHaveBeenCalled();
       expect(cacheServiceMock.set).not.toHaveBeenCalled();
+    });
+
+    // TASK-1955: the bulk compat dialog reads each selected row's current set.
+    it('hydrates each row with its compatible devices in one batched read', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [mockProduct], total: 1 });
+      deviceCompatRepositoryMock.getDeviceCompatByProductIds.mockResolvedValue(
+        new Map([
+          [
+            mockProduct.id,
+            [{ id: 'm1', name: 'iPhone 15', slug: 'iphone-15', brandName: 'Apple' }],
+          ],
+        ]),
+      );
+
+      const result = await service.adminFindAll({ page: 1, limit: 20 });
+
+      expect(deviceCompatRepositoryMock.getDeviceCompatByProductIds).toHaveBeenCalledTimes(1);
+      expect(deviceCompatRepositoryMock.getDeviceCompatByProductIds).toHaveBeenCalledWith([
+        mockProduct.id,
+      ]);
+      expect(result.items[0].compatibleDeviceModels).toEqual([
+        expect.objectContaining({ id: 'm1', name: 'iPhone 15', brandName: 'Apple' }),
+      ]);
     });
 
     // TASK-297: the operator must still SEE the products a category deactivation
@@ -2858,6 +2885,57 @@ describe('ProductService', () => {
       expect(productIndexerMock.index).not.toHaveBeenCalledWith('p2');
       expect(productIndexerMock.remove).toHaveBeenCalledWith('p2');
       expect(productIndexerMock.remove).not.toHaveBeenCalledWith('p1');
+    });
+  });
+
+  // ─── device hubs (TASK-1955) ───────────────────────────────────────────────
+  // A hub «Все для <модель>» is built from compat rows; until TASK-1955 only a
+  // DEVICE write purged it, so a compat change reached the hub on the ISR timer.
+
+  describe('device hub purge after a compat write', () => {
+    it('updateDeviceCompat purges the hubs and the catalogue', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      deviceRepositoryMock.findModelsByIds.mockResolvedValue([{ id: 'm1' }]);
+
+      await service.updateDeviceCompat(mockProduct.id, ['m1']);
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(DEVICE_HUBS_REVALIDATE_TARGET);
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(CATALOGUE_REVALIDATE_TARGET);
+    });
+
+    it('updateGroupDeviceCompat purges the hubs', async () => {
+      deviceCompatRepositoryMock.countGroupPositions.mockResolvedValue(1);
+      deviceRepositoryMock.findModelsByIds.mockResolvedValue([{ id: 'm1' }]);
+      deviceCompatRepositoryMock.setDeviceCompatForGroup.mockResolvedValue({
+        updatedCount: 1,
+        positions: [{ id: 'p1', slug: 'case-red', isActive: true }],
+      });
+
+      await service.updateGroupDeviceCompat('g1', ['m1']);
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(DEVICE_HUBS_REVALIDATE_TARGET);
+    });
+
+    it('afterDeviceCompatWrite evicts, re-indexes and survives a failing hub purge', async () => {
+      revalidationMock.revalidate.mockImplementation((target: unknown) =>
+        target === DEVICE_HUBS_REVALIDATE_TARGET
+          ? Promise.reject(new Error('ECONNREFUSED'))
+          : Promise.resolve(undefined),
+      );
+
+      await expect(
+        service.afterDeviceCompatWrite([{ id: 'p1', slug: 'case-red', isActive: false }]),
+      ).resolves.toBeUndefined();
+
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey('case-red'));
+      expect(productIndexerMock.remove).toHaveBeenCalledWith('p1');
+    });
+
+    it('afterDeviceCompatWrite with no products purges nothing', async () => {
+      await service.afterDeviceCompatWrite([]);
+
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
     });
   });
 

@@ -3,6 +3,8 @@ import { ProductRepository } from './product.repository';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
 import { ProductService } from './product.service';
 import { ProductController } from './product.controller';
+import { AdminDeviceCompatController } from './admin-device-compat.controller';
+import { ProductDeviceCompatService } from './product-device-compat.service';
 import { ProductImageRepository } from './product-image.repository';
 import { ProductImageService } from './product-image.service';
 import { ProductImageController } from './product-image.controller';
@@ -44,10 +46,13 @@ import { PreviewTokenModule } from '../preview-token';
     // nothing from here.
     MediaModule,
   ],
-  controllers: [ProductController, ProductImageController],
+  // AdminDeviceCompatController (TASK-1955) serves `/admin/devices/compat/bulk` and
+  // `/admin/devices/models/:id/coverage` from here: a compat write is a product write.
+  controllers: [ProductController, ProductImageController, AdminDeviceCompatController],
   providers: [
     ProductRepository,
     ProductDeviceCompatRepository,
+    ProductDeviceCompatService,
     ProductService,
     ProductImageRepository,
     ProductImageService,

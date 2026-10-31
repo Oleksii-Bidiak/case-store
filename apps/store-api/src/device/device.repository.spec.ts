@@ -319,6 +319,26 @@ describe('DeviceRepository', () => {
     });
   });
 
+  describe('findModelsBySeries (TASK-1955)', () => {
+    it('short-circuits to [] without series (no query)', async () => {
+      await expect(repo.findModelsBySeries([])).resolves.toEqual([]);
+      expect(prismaMock.deviceModel.findMany).not.toHaveBeenCalled();
+    });
+
+    it('matches the series exactly, active AND inactive, with the brand', async () => {
+      prismaMock.deviceModel.findMany.mockResolvedValue([]);
+
+      await repo.findModelsBySeries(['iPhone 15', 'Galaxy S24']);
+
+      const arg = prismaMock.deviceModel.findMany.mock.calls[0][0] as {
+        where: Record<string, unknown>;
+        include: unknown;
+      };
+      expect(arg.where).toEqual({ series: { in: ['iPhone 15', 'Galaxy S24'] } });
+      expect(arg.include).toEqual({ brand: { select: { name: true } } });
+    });
+  });
+
   describe('findModelsByIds', () => {
     it('short-circuits to [] for an empty id set (no query)', async () => {
       const result = await repo.findModelsByIds([]);

@@ -479,6 +479,23 @@ export class DeviceRepository {
     });
   }
 
+  /**
+   * Every model of the named series (TASK-1955), with brand — active AND inactive:
+   * the bulk compat write expands «весь iPhone 15» to the whole series, and a model
+   * hidden today is still the same physical phone tomorrow. Ordered by name so the
+   * result is deterministic. Exact series match, as the admin list filter does.
+   */
+  findModelsBySeries(series: string[]): Promise<DeviceModelWithBrand[]> {
+    if (series.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.prisma.deviceModel.findMany({
+      where: { series: { in: series } },
+      include: { brand: { select: { name: true } } },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+  }
+
   createModel(data: CreateDeviceModelInput & { slug: string }): Promise<DeviceModel> {
     return this.prisma.deviceModel.create({
       data: {
