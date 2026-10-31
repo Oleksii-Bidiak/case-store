@@ -49,11 +49,6 @@
       "count": 1
     }
   },
-  "src/features/product-filters/ui/brand-filter.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 2
-    }
-  },
   "src/features/product-filters/ui/device-model-filter.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 2
@@ -62,11 +57,6 @@
   "src/features/product-filters/ui/sort-select.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 2
-    }
-  },
-  "src/features/product-filters/ui/spec-facets.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
     }
   },
   "src/shared/ui/badge.tsx": {

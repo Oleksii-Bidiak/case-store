@@ -10,12 +10,14 @@ export const FILTER_SECTION_ORDER = [
   // TASK-2077 — «З урахуванням моїх пристроїв» tops the filters (after the
   // category tree, which is not a filter section).
   "myDevices",
-  "search",
+  // Д3-2 Catalog §12 — then ONE «Фільтри товарів» panel in this order. No
+  // keyword box any more (the header search is the one), and «Зі знижкою»
+  // is a row under the price, not a card of its own.
   "availability",
+  "price",
   "onSale",
   "brand",
   "device",
-  "price",
   "specs",
 ] as const;
 

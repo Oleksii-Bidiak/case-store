@@ -55,8 +55,11 @@ export function FilterCheckbox({
   return (
     <label
       htmlFor={id}
-      className={`flex items-center gap-3 py-1.5 text-sm text-foreground ${
-        disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+      // Disabled reads through the disabled token, not opacity (TASK-736).
+      className={`flex min-h-8 items-center gap-3 py-1.5 text-sm ${
+        disabled
+          ? "cursor-not-allowed text-disabled-foreground"
+          : "cursor-pointer text-foreground"
       }`}
     >
       <input

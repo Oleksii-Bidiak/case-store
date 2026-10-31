@@ -172,29 +172,34 @@ describe("ProductFilters collapsible mobile drawer (TASK-084)", () => {
     const { container } = renderWithProviders(
       <ProductFilters
         collapsible
-        currentParams={{ search: "case" }}
+        currentParams={{ inStock: true }}
         onFilterChange={() => {}}
       />,
     );
 
-    // The device summary appears only in the collapsible layout — awaiting it
-    // also flushes the (empty) brand presence query so the section count is stable.
+    // Awaiting the device section also lets the (empty) brand query settle,
+    // so the section count is stable from here.
     await screen.findByText(dict.filters.deviceTitle);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-filter-section="brand"]'),
+      ).toBeNull(),
+    );
 
-    // Brands are stubbed empty and no category is set, so brand + specs self-hide;
-    // the five rendered disclosures are search / availability / sale / device /
-    // price in DOM order (availability added by TASK-414, sale by TASK-742).
-    const sections = container.querySelectorAll("details");
-    expect(sections).toHaveLength(5);
-    // Search carries the active value → open; the rest start collapsed.
+    // Brands are stubbed empty and no category is set, so brand + specs drop
+    // out; the panel's disclosures are availability / price (with «Зі
+    // знижкою» inside) / device, in the Д3-2 Catalog §12 order.
+    const sections = [...container.querySelectorAll("details")];
+    expect(
+      sections.map((section) => section.getAttribute("data-filter-section")),
+    ).toEqual(["availability", "price", "device"]);
+    // Availability carries the active value → open; the rest start collapsed.
     expect(sections[0]).toHaveAttribute("open");
     expect(sections[1]).not.toHaveAttribute("open");
     expect(sections[2]).not.toHaveAttribute("open");
-    expect(sections[3]).not.toHaveAttribute("open");
-    expect(sections[4]).not.toHaveAttribute("open");
   });
 
-  it("opens the price section (and not search) when only a price bound is active", async () => {
+  it("opens the price section (and nothing else) when only a price bound is active", async () => {
     const { container } = renderWithProviders(
       <ProductFilters
         collapsible
@@ -205,24 +210,64 @@ describe("ProductFilters collapsible mobile drawer (TASK-084)", () => {
 
     await screen.findByText(dict.filters.deviceTitle);
 
-    const sections = container.querySelectorAll("details");
-    // Order: [0] search, [1] availability, [2] sale, [3] device, [4] price.
-    expect(sections[0]).not.toHaveAttribute("open");
-    expect(sections[4]).toHaveAttribute("open");
+    expect(
+      container.querySelector('details[data-filter-section="price"]'),
+    ).toHaveAttribute("open");
+    expect(
+      container.querySelector('details[data-filter-section="availability"]'),
+    ).not.toHaveAttribute("open");
+  });
+});
+
+/**
+ * Д3-2 Catalog §12 — one «Фільтри товарів» panel, sections split by a
+ * hairline, each with «· n» and its own «Скинути».
+ */
+describe("ProductFilters — the one filters panel (Д3-2 Catalog §12)", () => {
+  it("keeps every section inside the panel, with no keyword box", async () => {
+    renderWithProviders(
+      <ProductFilters currentParams={{}} onFilterChange={() => {}} />,
+    );
+    const panel = screen.getByRole("region", { name: dict.filters.panelAria });
+    expect(panel).toContainElement(
+      screen.getByRole("checkbox", { name: dict.filters.inStockOnly }),
+    );
+    expect(panel).toContainElement(
+      screen.getByRole("checkbox", { name: dict.filters.onSaleOnly }),
+    );
+    // The header search is the one keyword box.
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    await screen.findByText(dict.filters.deviceTitle);
   });
 
-  it("opens the availability section when the in-stock filter is on", async () => {
-    const { container } = renderWithProviders(
+  it("marks a section's selection and resets just that section", async () => {
+    const user = userEvent.setup();
+    const onFilterChange = jest.fn();
+    renderWithProviders(
       <ProductFilters
-        collapsible
-        currentParams={{ inStock: true }}
-        onFilterChange={() => {}}
+        currentParams={{ minPrice: 500, inStock: true }}
+        onFilterChange={onFilterChange}
       />,
     );
 
+    const price = document.querySelector('[data-filter-section="price"]')!;
+    expect(price).toHaveTextContent(dict.filters.sectionSelected(1));
+    await user.click(
+      screen.getByRole("button", {
+        name: dict.filters.sectionResetAria(dict.filters.priceTitle),
+      }),
+    );
+    expect(onFilterChange).toHaveBeenLastCalledWith({
+      minPrice: undefined,
+      maxPrice: undefined,
+    });
+    // A single checkbox needs no «Скинути» of its own.
+    expect(
+      screen.queryByRole("button", {
+        name: dict.filters.sectionResetAria(dict.filters.availabilityTitle),
+      }),
+    ).not.toBeInTheDocument();
     await screen.findByText(dict.filters.deviceTitle);
-
-    expect(container.querySelectorAll("details")[1]).toHaveAttribute("open");
   });
 });
 
@@ -402,7 +447,10 @@ describe("ProductFilters — on sale (TASK-742)", () => {
 
     await screen.findByText(dict.filters.deviceTitle);
 
-    expect(container.querySelectorAll("details")[2]).toHaveAttribute("open");
+    // «Зі знижкою» is a row of the price section (Д3-2 Catalog §12).
+    expect(
+      container.querySelector('details[data-filter-section="price"]'),
+    ).toHaveAttribute("open");
   });
 
   // `/search` has no `onSale` param — a box there would do nothing.
@@ -498,9 +546,8 @@ describe("ProductFilters — hideSpecFacets (TASK-523)", () => {
       );
       const titleOf: Record<FilterSectionId, string | null> = {
         myDevices: dict.filters.myDevices.title, // opt-in, not in these rails
-        search: null, // the keyword card has no heading on desktop
         availability: dict.filters.availabilityTitle,
-        onSale: dict.filters.saleTitle,
+        onSale: null, // a row of the price section, no heading of its own
         brand: dict.filters.brandTitle,
         device: dict.filters.deviceTitle,
         price: dict.filters.priceTitle,
@@ -569,12 +616,10 @@ describe("ProductFilters — hideSpecFacets (TASK-523)", () => {
  * rail was a card short and the device and price cards jumped up, then back.
  */
 describe("ProductFilters — «Виробник» holds its place (TASK-515)", () => {
-  const sectionsInRail = (root: HTMLElement) =>
-    [...root.querySelectorAll("[data-section]")].map((node) =>
-      node.getAttribute("data-section"),
-    );
+  const brandSection = (root: HTMLElement) =>
+    root.querySelector('[data-filter-section="brand"]');
 
-  it("keeps the brand card's box in the sidebar until the brand list is in", async () => {
+  it("keeps the brand section with placeholder rows until the list is in", async () => {
     server.use(
       http.get("*/api/brands", () =>
         HttpResponse.json({
@@ -587,38 +632,94 @@ describe("ProductFilters — «Виробник» holds its place (TASK-515)", (
       <ProductFilters currentParams={{}} onFilterChange={jest.fn()} />,
     );
 
-    // Between «Знижки» and «Сумісний пристрій» — where the card will land.
-    expect(sectionsInRail(container)).toEqual(["brand"]);
-    const placeholder = container.querySelector('[data-section="brand"]');
-    expect(placeholder?.previousElementSibling).toHaveTextContent(
-      dict.filters.onSaleOnly,
+    // Right after the price section — where the options will land.
+    expect(brandSection(container)?.previousElementSibling).toHaveAttribute(
+      "data-filter-section",
+      "price",
     );
+    expect(screen.getByTestId("brand-filter-pending")).toBeInTheDocument();
 
-    await screen.findByText(dict.filters.brandTitle);
-    expect(sectionsInRail(container)).toEqual([]);
+    expect(
+      await screen.findByRole("checkbox", { name: "Apple" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("brand-filter-pending")).toBeNull();
   });
 
-  it("gives the box up when there turn out to be no brands", async () => {
+  it("gives the section up when there turn out to be no brands", async () => {
     const { container } = renderWithProviders(
       <ProductFilters currentParams={{}} onFilterChange={jest.fn()} />,
     );
 
-    expect(sectionsInRail(container)).toEqual(["brand"]);
-    await screen.findByText(dict.filters.deviceTitle);
-    await screen.findByText(dict.filters.priceTitle);
-    await waitFor(() => expect(sectionsInRail(container)).toEqual([]));
+    expect(brandSection(container)).not.toBeNull();
+    await waitFor(() => expect(brandSection(container)).toBeNull());
     expect(screen.queryByText(dict.filters.brandTitle)).not.toBeInTheDocument();
   });
+});
 
-  it("draws no placeholder box in the drawer, whose disclosures gate on data", () => {
-    const { container } = renderWithProviders(
+/**
+ * Д3-2 Catalog §12 — «Виробник» as checkbox rows: five, then «Ще N». One
+ * brand at a time while `?brand=` takes a single slug.
+ */
+describe("ProductFilters — «Виробник» rows", () => {
+  const BRANDS = [
+    "Apple",
+    "Baseus",
+    "ESR",
+    "Spigen",
+    "Anker",
+    "Ugreen",
+    "Xiaomi",
+  ];
+
+  beforeEach(() => {
+    server.use(
+      http.get("*/api/brands", () =>
+        HttpResponse.json({
+          data: BRANDS.map((name) => ({
+            id: `b-${name}`,
+            name,
+            slug: name.toLowerCase(),
+          })),
+        }),
+      ),
+    );
+  });
+
+  it("shows five brands and «Ще N» for the rest", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ProductFilters currentParams={{}} onFilterChange={jest.fn()} />,
+    );
+
+    await screen.findByRole("checkbox", { name: "Apple" });
+    expect(screen.queryByRole("checkbox", { name: "Ugreen" })).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: dict.filters.moreOptions(2) }),
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Xiaomi" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.filters.fewerOptions }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps a selected brand past the fold visible, and replaces the selection on a new tick", async () => {
+    const user = userEvent.setup();
+    const onFilterChange = jest.fn();
+    renderWithProviders(
       <ProductFilters
-        collapsible
-        currentParams={{}}
-        onFilterChange={jest.fn()}
+        currentParams={{ brand: "xiaomi" }}
+        onFilterChange={onFilterChange}
       />,
     );
 
-    expect(sectionsInRail(container)).toEqual([]);
+    expect(
+      await screen.findByRole("checkbox", { name: "Xiaomi" }),
+    ).toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "Apple" }));
+    expect(onFilterChange).toHaveBeenLastCalledWith({ brand: "apple" });
+    await user.click(screen.getByRole("checkbox", { name: "Xiaomi" }));
+    expect(onFilterChange).toHaveBeenLastCalledWith({ brand: undefined });
   });
 });

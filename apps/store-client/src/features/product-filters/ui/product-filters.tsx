@@ -17,9 +17,9 @@ import {
   isMyDevicesFilterOn,
   parseDeviceParam,
 } from "../model/my-devices-filter";
+import { parseSpecParam } from "../model/spec-facet";
 import { useMyDevicesFilter } from "../model/use-my-devices-filter";
 import { MyDevicesFilter } from "./my-devices-filter";
-import { SearchInput } from "./search-input";
 import { BrandFilter } from "./brand-filter";
 import { DeviceModelFilter } from "./device-model-filter";
 import { SpecFacets } from "./spec-facets";
@@ -96,17 +96,27 @@ interface ProductFiltersProps {
   withMyDevices?: boolean;
 }
 
-const cardClass =
-  "rounded-2xl border border-border bg-card p-[18px] shadow-card";
-const cardTitleClass =
-  "font-display text-[15px] font-bold tracking-tight text-card-foreground";
+/** The one «Фільтри товарів» panel — the rail's other panels' shell. */
+const panelClass =
+  "rounded-2xl border border-border bg-card px-3.5 py-2 shadow-card";
+/**
+ * One section of it: a hairline above every section but the first (Catalog
+ * §12). `first:` / `last:` trim the outer padding against the panel's own.
+ */
+const sectionClass =
+  "border-t border-border px-1.5 py-3.5 first:border-t-0 first:pt-2 last:pb-2";
+const sectionTitleClass = "text-sm font-bold text-card-foreground";
 
 /**
- * Filter panel for the product list page, styled as stacked cards (keyword
- * search, price). Each control writes its change back to the URL via
- * `onFilterChange`; sorting and the grid/list toggle live in the page toolbar.
- * Category selection is the category tree that tops the rail (TASK-2011;
- * a chips row above the grid since TASK-216) and is not part of this stack.
+ * The catalogue's filter column (Д3-2 Catalog §12): «З урахуванням моїх
+ * пристроїв» on top, then ONE «Фільтри товарів» panel whose sections are split
+ * by a hairline — Наявність → Ціна (with «Зі знижкою») → Виробник → Сумісний
+ * пристрій → the category's spec facets (Матеріал, Колір…). A section with a
+ * selection says how many («· 2») and offers its own «Скинути». Each control
+ * writes its change back to the URL via `onFilterChange`; sorting and the
+ * grid/list toggle live in the page toolbar, the category is the tree above
+ * (TASK-2011), and a keyword is the header search's job — the panel no longer
+ * carries a second search box.
  */
 export function ProductFilters({
   currentParams,
@@ -167,20 +177,19 @@ export function ProductFilters({
     !(sections.has("myDevices") && isMyDevicesFilterOn(myDevices.state)) &&
     parseDeviceParam(currentParams.device).length <= 1;
 
-  // Presence gates for the collapsible mobile drawer only: BrandFilter and
-  // SpecFacets self-hide (return null) when they have no data, but a `<details>`
-  // wrapper would still show a bare header. So in collapsible mode we mirror
-  // their own emptiness check here to skip the disclosure entirely. Both hooks
-  // are deduped by React Query (the list view already fetches brands; SpecFacets
-  // itself refetches the same key) and are gated off on desktop.
-  const { data: brandsData } = useBrandControllerFindAll(
-    // Same category scope BrandFilter itself uses (TASK-414), so the drawer's
-    // presence gate and the control agree — otherwise the disclosure could open
-    // onto a control that self-hides.
-    categoryId ? { categoryId } : undefined,
-    { query: { enabled: collapsible } },
-  );
-  const hasBrands = (brandsData?.data.length ?? 0) > 0;
+  // Presence gates: BrandFilter and SpecFacets self-hide (return null) when
+  // they have no data, but the section around them would still show a bare
+  // header. So the panel mirrors their emptiness check to skip the section.
+  // Both hooks are deduped by React Query (the list view already fetches
+  // brands; SpecFacets itself reads the same facet key).
+  const { data: brandsData, isPending: brandsPending } =
+    useBrandControllerFindAll(
+      // Same category scope BrandFilter itself uses (TASK-414), so the
+      // section's presence gate and the control agree.
+      categoryId ? { categoryId } : undefined,
+    );
+  // While the list is in flight the section holds its place (TASK-515).
+  const showBrands = brandsPending || (brandsData?.data.length ?? 0) > 0;
   const { data: specsData } = useCategoryControllerGetFilterableSpecs(
     categoryId ?? "",
     // The SAME params `SpecFacets` sends (TASK-489), or this gate would fetch a
@@ -189,57 +198,114 @@ export function ProductFilters({
     toFacetQueryParams(currentParams),
     {
       query: {
-        enabled: collapsible && sections.has("specs"),
+        enabled: sections.has("specs") && Boolean(categoryId),
         // Same as `SpecFacets` (TASK-515): a tick refetches the counts, and
-        // the disclosure must not vanish while they are in flight.
+        // the section must not vanish while they are in flight.
         placeholderData: keepFacetsOfCategory(categoryId),
       },
     },
   );
   const hasSpecs = sections.has("specs") && (specsData?.data.length ?? 0) > 0;
+  const specsSelected = parseSpecParam(currentParams.specs).reduce(
+    (sum, entry) => sum + entry.values.length,
+    0,
+  );
+
+  const priceActive =
+    currentParams.minPrice != null || currentParams.maxPrice != null;
+  // «Зі знижкою» is a row of the price section — it counts there.
+  const saleActive = sections.has("onSale") && currentParams.onSale === true;
 
   /**
-   * Render one filter section's chrome. In `collapsible` mode it is a native
-   * `<details>` card (summary = title + rotating chevron, no JS state — `<details
-   * open>` is the single source of truth); otherwise the existing always-expanded
-   * card `<div>` (desktop layout unchanged). `title == null` (search) renders no
-   * heading in the flat layout, matching today's markup.
+   * One section of the panel. Flat in the rail: a header (title, «· n»,
+   * «Скинути») over the control. In the drawer (`collapsible`) a native
+   * `<details>` — summary = title + rotating chevron, no JS state, open where
+   * a filter is active — so a returning shopper sees what is applied without
+   * scrolling every section open.
    */
-  const renderSection = (
-    title: string | null,
-    control: ReactNode,
-    activeDefaultOpen: boolean,
-  ) => {
+  const renderSection = ({
+    id,
+    title,
+    control,
+    selected = 0,
+    onReset,
+    hideTitle = false,
+  }: {
+    id: string;
+    title: string;
+    control: ReactNode;
+    /** How many of its options are on — «· n» and the drawer's open state. */
+    selected?: number;
+    /** The section's own reset, offered while something is selected. */
+    onReset?: () => void;
+    /** The control brings its own headings (the spec facets' legends). */
+    hideTitle?: boolean;
+  }) => {
+    const resetButton =
+      onReset && selected > 0 ? (
+        <button
+          type="button"
+          onClick={onReset}
+          aria-label={dict.filters.sectionResetAria(title)}
+          className="shrink-0 rounded-sm text-xs font-semibold text-muted-foreground underline underline-offset-3 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
+        >
+          {dict.filters.sectionReset}
+        </button>
+      ) : null;
+    const heading = (
+      <span className={sectionTitleClass}>
+        {title}
+        {selected > 0 && (
+          <span className="ml-1 text-xs font-semibold text-muted-foreground">
+            {dict.filters.sectionSelected(selected)}
+          </span>
+        )}
+      </span>
+    );
+
     if (!collapsible) {
       return (
-        <div className={cardClass}>
-          {title && <h3 className={`${cardTitleClass} mb-4`}>{title}</h3>}
+        <div key={id} className={sectionClass} data-filter-section={id}>
+          {/* With `hideTitle` the control's own (sr-only) heading names it. */}
+          {!hideTitle && (
+            <div className="mb-2 flex items-baseline justify-between gap-2">
+              <h3 className="min-w-0">{heading}</h3>
+              {resetButton}
+            </div>
+          )}
           {control}
         </div>
       );
     }
     return (
       <details
-        className="group rounded-2xl border border-border bg-card shadow-card"
-        open={activeDefaultOpen}
+        key={id}
+        className={`group ${sectionClass}`}
+        data-filter-section={id}
+        open={selected > 0}
       >
         <summary
-          aria-label={dict.filters.sectionToggleAria(title ?? "")}
-          className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-2xl p-4 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [&::-webkit-details-marker]:hidden"
+          aria-label={dict.filters.sectionToggleAria(title)}
+          className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-menu outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden"
         >
-          <span className={cardTitleClass}>{title}</span>
+          {heading}
           <ChevronDown
             aria-hidden="true"
             className="size-5 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none"
           />
         </summary>
-        <div className="px-4 pb-4">{control}</div>
+        <div className="pt-2">
+          {resetButton && (
+            <div className="mb-1 flex justify-end">{resetButton}</div>
+          )}
+          {control}
+        </div>
       </details>
     );
   };
 
   return (
-    <div className="flex flex-col gap-3.5">
+    <div className="flex flex-col gap-3">
       {/* «З урахуванням моїх пристроїв» (TASK-2077) — the first block, always
           expanded, in the rail and the drawer alike. */}
       {sections.has("myDevices") && (
@@ -251,133 +317,125 @@ export function ProductFilters({
         />
       )}
 
-      {/* Keyword search */}
-      {renderSection(
-        collapsible ? dict.filters.searchLabel : null,
-        <SearchInput
-          id={`${idPrefix}-search`}
-          initialValue={currentParams.search ?? ""}
-          onSearch={(value) => onFilterChange({ search: value })}
-        />,
-        Boolean(currentParams.search),
-      )}
+      <section aria-label={dict.filters.panelAria} className={panelClass}>
+        {/* Availability — TASK-414. `?inStock=true`; the server reads it as
+            `stock > 0`. Absent rather than `false` when unticked, so an unused
+            filter never appears in a shared link (and never splits the cache). */}
+        {renderSection({
+          id: "availability",
+          title: dict.filters.availabilityTitle,
+          selected: currentParams.inStock === true ? 1 : 0,
+          control: (
+            <FilterCheckbox
+              id={`${idPrefix}-in-stock`}
+              label={dict.filters.inStockOnly}
+              checked={currentParams.inStock === true}
+              onCheckedChange={(checked) =>
+                onFilterChange({ inStock: checked ? "true" : undefined })
+              }
+            />
+          ),
+        })}
 
-      {/* Availability — TASK-414. `?inStock=true`; the server reads it as
-          `stock > 0`. Absent rather than `false` when unticked, so an unused
-          filter never appears in a shared link (and never splits the cache). */}
-      {renderSection(
-        dict.filters.availabilityTitle,
-        <FilterCheckbox
-          id={`${idPrefix}-in-stock`}
-          label={dict.filters.inStockOnly}
-          checked={currentParams.inStock === true}
-          onCheckedChange={(checked) =>
-            onFilterChange({ inStock: checked ? "true" : undefined })
-          }
-        />,
-        currentParams.inStock === true,
-      )}
+        {/* Price range — the inputs + two-thumb slider (TASK-208), shared with
+            the wishlist rail since TASK-1300; committed bounds come from the
+            URL. «Зі знижкою» (TASK-742, `?onSale=true`) rides along under it:
+            it is a price question too. Left out where the endpoint behind the
+            panel has no such param (`/search`) and on `/promo`, where the
+            route fixes it (TASK-1301) — both read from the section list. */}
+        {renderSection({
+          id: "price",
+          title: dict.filters.priceTitle,
+          selected: (priceActive ? 1 : 0) + (saleActive ? 1 : 0),
+          onReset: () =>
+            onFilterChange({
+              minPrice: undefined,
+              maxPrice: undefined,
+              ...(saleActive ? { onSale: undefined } : {}),
+            }),
+          control: (
+            <>
+              <PriceRangeFilter
+                idPrefix={idPrefix}
+                committedMin={currentParams.minPrice}
+                committedMax={currentParams.maxPrice}
+                onCommit={onFilterChange}
+              />
+              {sections.has("onSale") && (
+                <div className="mt-3">
+                  <FilterCheckbox
+                    id={`${idPrefix}-on-sale`}
+                    label={dict.filters.onSaleOnly}
+                    checked={currentParams.onSale === true}
+                    onCheckedChange={(checked) =>
+                      onFilterChange({ onSale: checked ? "true" : undefined })
+                    }
+                  />
+                </div>
+              )}
+            </>
+          ),
+        })}
 
-      {/* «Зі знижкою» — TASK-742. `?onSale=true`; the server reads it as
-          `compareAtPrice > price`. Same absent-when-unticked rule as the
-          availability box above. Hidden where the endpoint behind the panel
-          does not take the param (`/search`), so it can never be a control
-          that silently does nothing, and on `/promo`, where the route fixes it
-          (TASK-1301) — both read from the section list (TASK-515). */}
-      {sections.has("onSale") &&
-        renderSection(
-          dict.filters.saleTitle,
-          <FilterCheckbox
-            id={`${idPrefix}-on-sale`}
-            label={dict.filters.onSaleOnly}
-            checked={currentParams.onSale === true}
-            onCheckedChange={(checked) =>
-              onFilterChange({ onSale: checked ? "true" : undefined })
-            }
-          />,
-          currentParams.onSale === true,
-        )}
+        {/* Manufacturer (brand) — TASK-189; checkbox rows since Д3-2. Hidden
+            once the list turns out empty. */}
+        {showBrands &&
+          renderSection({
+            id: "brand",
+            title: dict.filters.brandTitle,
+            selected: currentParams.brand ? 1 : 0,
+            onReset: () => onFilterChange({ brand: undefined }),
+            control: (
+              <BrandFilter
+                idPrefix={idPrefix}
+                activeBrandSlug={currentParams.brand}
+                categoryId={categoryId}
+                onSelect={(brand) => onFilterChange({ brand })}
+              />
+            ),
+          })}
 
-      {/* Manufacturer (brand) filter — TASK-189. Hidden when no brands exist.
-          Collapsible drawer gates on `hasBrands` and strips BrandFilter's own
-          card chrome (the <details> provides it); desktop keeps its self-card. */}
-      {collapsible ? (
-        hasBrands &&
-        renderSection(
-          dict.filters.brandTitle,
-          <BrandFilter
-            activeBrandSlug={currentParams.brand}
-            categoryId={categoryId}
-            onSelect={(brand) => onFilterChange({ brand })}
-            cardClassName=""
-            titleClassName="sr-only"
-          />,
-          Boolean(currentParams.brand),
-        )
-      ) : (
-        <BrandFilter
-          activeBrandSlug={currentParams.brand}
-          categoryId={categoryId}
-          onSelect={(brand) => onFilterChange({ brand })}
-          cardClassName={cardClass}
-          titleClassName={`${cardTitleClass} mb-4`}
-        />
-      )}
+        {/* Device compatibility (TASK-190) — brand → model cascade, for a
+            shopper whose device the panel above does not drive. Absent when
+            the route already names the device (TASK-490). */}
+        {showDeviceCascade &&
+          renderSection({
+            id: "device",
+            title: dict.filters.deviceTitle,
+            selected: currentParams.device ? 1 : 0,
+            onReset: () => onFilterChange({ device: undefined }),
+            control: (
+              <DeviceModelFilter
+                idPrefix={idPrefix}
+                currentDeviceModelSlug={currentParams.device}
+                onChange={(device) => onFilterChange({ device })}
+              />
+            ),
+          })}
 
-      {/* Device compatibility (TASK-190) — brand → model cascade. Absent when
-          the route already names the device (TASK-490). */}
-      {showDeviceCascade &&
-        renderSection(
-          dict.filters.deviceTitle,
-          <DeviceModelFilter
-            idPrefix={idPrefix}
-            currentDeviceModelSlug={currentParams.device}
-            onChange={(device) => onFilterChange({ device })}
-          />,
-          Boolean(currentParams.device),
-        )}
-
-      {/* Price range */}
-      {renderSection(
-        dict.filters.priceTitle,
-        // The inputs + two-thumb slider (TASK-208), shared with the wishlist
-        // rail since TASK-1300. Committed bounds come from the URL.
-        <PriceRangeFilter
-          idPrefix={idPrefix}
-          committedMin={currentParams.minPrice}
-          committedMax={currentParams.maxPrice}
-          onCommit={onFilterChange}
-        />,
-        currentParams.minPrice != null || currentParams.maxPrice != null,
-      )}
-
-      {/* Structured-spec facets (TASK-191) — category-scoped; renders nothing
-          when no category is active or it has no filterable specs. Collapsible
-          drawer gates on `hasSpecs` and strips the facet card's own chrome.
-          Left out altogether with `hideSpecFacets` (TASK-523) or with no
-          category (TASK-515 — the section list says so either way). */}
-      {!sections.has("specs") ? null : collapsible ? (
-        hasSpecs &&
-        renderSection(
-          dict.filters.specsTitle,
-          <SpecFacets
-            categoryId={categoryId}
-            currentParams={currentParams}
-            onFilterChange={onFilterChange}
-            idPrefix={idPrefix}
-            cardClassName=""
-            titleClassName="sr-only"
-          />,
-          Boolean(currentParams.specs),
-        )
-      ) : (
-        <SpecFacets
-          categoryId={categoryId}
-          currentParams={currentParams}
-          onFilterChange={onFilterChange}
-          idPrefix={idPrefix}
-        />
-      )}
+        {/* Structured-spec facets (TASK-191) — category-scoped (Матеріал,
+            Колір…), each facet headed by its own legend. Left out with
+            `hideSpecFacets` (TASK-523), with no category (TASK-515) or when
+            the category has none. */}
+        {hasSpecs &&
+          renderSection({
+            id: "specs",
+            title: dict.filters.specsTitle,
+            selected: specsSelected,
+            onReset: () => onFilterChange({ specs: undefined }),
+            hideTitle: true,
+            control: (
+              <SpecFacets
+                categoryId={categoryId}
+                currentParams={currentParams}
+                onFilterChange={onFilterChange}
+                idPrefix={idPrefix}
+                cardClassName=""
+                titleClassName="sr-only"
+              />
+            ),
+          })}
+      </section>
 
       {hasActiveFilters && (
         <Button

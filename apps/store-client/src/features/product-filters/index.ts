@@ -41,7 +41,10 @@ export {
 export { CategoryTreeSheet } from "./ui/category-tree-sheet";
 // One filter card's placeholder (TASK-515): the catalogue skeleton's rail and
 // the brand / spec cards' own pending state are the same box.
-export { FilterCardSkeleton } from "./ui/filter-card-skeleton";
+export {
+  FilterCardSkeleton,
+  FilterPanelSkeleton,
+} from "./ui/filter-card-skeleton";
 // The tree's rows, its row count (what the skeleton reserves) and its links.
 export {
   categoryTreeView,

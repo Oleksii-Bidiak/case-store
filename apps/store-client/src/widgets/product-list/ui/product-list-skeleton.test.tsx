@@ -17,12 +17,18 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
         .getByTestId("filter-rail-skeleton")
         .querySelectorAll("[data-section]"),
     ].map((card) => card.getAttribute("data-section"));
+  // «Зі знижкою» is a row inside the price block (Д3-2 Catalog §12), not a
+  // block of its own.
+  const drawn = (sections: string[]) =>
+    sections.filter((section) => section !== "onSale");
 
   it("mirrors the default /products rail, «Знижки» included", () => {
     render(<ProductListSkeleton withSidebar />);
 
-    expect(railSections()).toEqual(filterRailSections({ withMyDevices: true }));
-    expect(railSections()).toContain("onSale");
+    expect(railSections()).toEqual(
+      drawn(filterRailSections({ withMyDevices: true })),
+    );
+    expect(screen.getByTestId("filter-panel-skeleton")).toBeInTheDocument();
     expect(railSections()).not.toContain("specs");
   });
 
@@ -30,7 +36,7 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     render(<ProductListSkeleton withSidebar hasCategory />);
 
     expect(railSections()).toEqual(
-      filterRailSections({ hasCategory: true, withMyDevices: true }),
+      drawn(filterRailSections({ hasCategory: true, withMyDevices: true })),
     );
     expect(railSections().at(-1)).toBe("specs");
   });
@@ -39,11 +45,13 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     render(<ProductListSkeleton withSidebar hasCategory lockedDevice />);
 
     expect(railSections()).toEqual(
-      filterRailSections({
-        hasCategory: true,
-        lockedDevice: true,
-        withMyDevices: true,
-      }),
+      drawn(
+        filterRailSections({
+          hasCategory: true,
+          lockedDevice: true,
+          withMyDevices: true,
+        }),
+      ),
     );
   });
 
@@ -51,7 +59,7 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     render(<ProductListSkeleton withSidebar lockedOnSale />);
 
     expect(railSections()).toEqual(
-      filterRailSections({ lockedOnSale: true, withMyDevices: true }),
+      drawn(filterRailSections({ lockedOnSale: true, withMyDevices: true })),
     );
     expect(railSections()).not.toContain("onSale");
   });
@@ -68,7 +76,7 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     for (const card of screen
       .getByTestId("filter-rail-skeleton")
       .querySelectorAll("[data-section]")) {
-      expect(card.className).toMatch(/\bh-\d+\b/);
+      expect(card.outerHTML).toMatch(/\bh-\d+\b/);
     }
   });
 

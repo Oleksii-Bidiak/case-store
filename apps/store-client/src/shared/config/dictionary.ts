@@ -998,6 +998,15 @@ export const dict = {
     // Manufacturer (brand) filter card — TASK-189.
     brandTitle: "Виробник",
     allBrands: "Всі виробники",
+    // Д3-2 Catalog §12 — the rail's one «Фільтри товарів» panel: sections
+    // split by a hairline, each header with «· n» for its selection and a
+    // «Скинути» of its own; long option lists show 5 and «Ще N».
+    panelAria: "Фільтри товарів",
+    sectionSelected: (n: number) => `· ${n}`,
+    sectionReset: "Скинути",
+    sectionResetAria: (section: string) => `Скинути «${section}»`,
+    moreOptions: (n: number) => `Ще ${n}`,
+    fewerOptions: "Згорнути",
     // Price filter card + mobile drawer.
     priceTitle: "Ціна, ₴",
     priceSliderAria: "Діапазон цін",

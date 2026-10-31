@@ -4,6 +4,7 @@ import { PRODUCT_GRID_CLASS } from "@/shared/config/product-grid";
 import {
   CategoryTreePanelSkeleton,
   FilterCardSkeleton,
+  FilterPanelSkeleton,
   filterRailSections,
   type CatalogView,
 } from "@/features/product-filters";
@@ -161,6 +162,15 @@ export function ProductListSkeleton({
     </div>
   );
 
+  const railSections = filterRailSections({
+    hasCategory,
+    lockedDevice,
+    lockedOnSale,
+    // The catalogue rail tops its filters with «З урахуванням моїх
+    // пристроїв» (TASK-2077); the section list drops it on compat pages.
+    withMyDevices: true,
+  });
+
   if (!withSidebar) {
     return results;
   }
@@ -200,7 +210,7 @@ export function ProductListSkeleton({
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors ProductListView's sidebar grid; a named grid-cols-N cannot express it */}
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
         <div
-          className="hidden flex-col gap-3.5 lg:flex"
+          className="hidden flex-col gap-3 lg:flex"
           data-testid="filter-rail-skeleton"
         >
           {/* The tree panel first, as in the rail (TASK-2011) — the feature's
@@ -208,22 +218,14 @@ export function ProductListSkeleton({
           {withCategoryTree && (
             <CategoryTreePanelSkeleton rows={categoryTreeRows} />
           )}
-          {/* WHICH cards, in what order, comes from `filterRailSections` — the
-              list `ProductFilters` gates its own sections on — and each card is
-              the feature's own placeholder: the same box «Виробник» and
-              «Характеристики» keep holding until their data lands, so the rail
-              does not lose a card on swap and regain it a second later
-              (TASK-515). A new section without a height fails typecheck. */}
-          {filterRailSections({
-            hasCategory,
-            lockedDevice,
-            lockedOnSale,
-            // The catalogue rail tops its filters with «З урахуванням моїх
-            // пристроїв» (TASK-2077); the section list drops it on compat pages.
-            withMyDevices: true,
-          }).map((section) => (
-            <FilterCardSkeleton key={section} section={section} />
-          ))}
+          {/* WHICH sections, in what order, comes from `filterRailSections` —
+              the list `ProductFilters` gates its own sections on (TASK-515):
+              the «Мої пристрої» card, then the one «Фільтри товарів» panel
+              with a block per section (Д3-2 Catalog §12). */}
+          {railSections.includes("myDevices") && (
+            <FilterCardSkeleton section="myDevices" />
+          )}
+          <FilterPanelSkeleton sections={railSections} />
         </div>
 
         <div className="min-w-0">{results}</div>

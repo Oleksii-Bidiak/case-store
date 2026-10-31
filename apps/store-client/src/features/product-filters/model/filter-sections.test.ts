@@ -6,14 +6,13 @@ import { FILTER_SECTION_ORDER, filterRailSections } from "./filter-sections";
  * `ProductFilters` renders it.
  */
 describe("filterRailSections", () => {
-  it("lists the six always-on sections on the default /products view", () => {
+  it("lists the five always-on sections in the panel order of Д3-2 Catalog §12", () => {
     expect(filterRailSections()).toEqual([
-      "search",
       "availability",
+      "price",
       "onSale",
       "brand",
       "device",
-      "price",
     ]);
   });
 
@@ -43,11 +42,10 @@ describe("filterRailSections", () => {
 
   it("drops «Знижки» on /promo, where the route fixes the discount", () => {
     expect(filterRailSections({ lockedOnSale: true })).toEqual([
-      "search",
       "availability",
+      "price",
       "brand",
       "device",
-      "price",
     ]);
   });
 
@@ -58,6 +56,6 @@ describe("filterRailSections", () => {
         hideSpecFacets: true,
         hasCategory: true,
       }),
-    ).toEqual(["search", "availability", "brand", "device", "price"]);
+    ).toEqual(["availability", "price", "brand", "device"]);
   });
 });
