@@ -17,8 +17,11 @@ export const KICKER =
 /**
  * The block's panel: both states share the slot, radius and padding, so the
  * swap after hydration keeps the frame. 24/16 → 32 (md) → 36 (lg).
+ * `grid-cols-1` is minmax(0, 1fr): an implicit `auto` track would grow to
+ * the search form's min-content and push the panel past a 390 viewport.
  */
-export const HERO_PANEL = "grid gap-6 rounded-panel px-4 py-6 md:p-8 lg:p-9";
+export const HERO_PANEL =
+  "grid grid-cols-1 gap-6 rounded-panel px-4 py-6 md:p-8 lg:p-9";
 
 /**
  * Tile motion (Homepage mockup / ComponentStates): lift 2px + `shadow-lift`

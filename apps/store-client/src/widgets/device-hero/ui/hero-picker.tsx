@@ -72,7 +72,7 @@ export function HeroPicker({
         className,
       )}
     >
-      <div className="lg:col-span-5">
+      <div className="min-w-0 lg:col-span-5">
         <h1
           className={cn(
             H1_CLASS,
@@ -93,7 +93,7 @@ export function HeroPicker({
         <p className="mt-2.5 ml-1.5 text-sm text-muted-foreground">{t.hint}</p>
       </div>
 
-      <div className="lg:col-span-7">
+      <div className="min-w-0 lg:col-span-7">
         <p className={cn(KICKER, "mb-2.5")}>{t.popularLabel}</p>
         {isError && models.length === 0 ? (
           <div
