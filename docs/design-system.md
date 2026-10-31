@@ -263,16 +263,20 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
   transform is off while a gesture drives it and under `prefers-reduced-motion`. Banners and category tiles keep `object-cover`: there the frame
   matters more than the edges of the subject.
 - **Sticky asides** (filter rails, summary panels, TOCs, side navs): the site header is
-  `sticky top-0 z-50` (64px), so any other sticky panel must clear it with a **96px** top
-  offset — `STICKY_ASIDE_TOP` (`top-24`) from `store-client/src/shared/config/layout.ts`,
-  paired with the breakpoint-prefixed `sticky` of the layout (`lg:sticky` on two-column
-  pages, `md:sticky` on the PDP buy box). The token carries no breakpoint: below the
-  `sticky` breakpoint the aside is not positioned and `top` is inert, so such an aside
-  must not also be `relative`/`absolute`. Scroll-spy / `scrollTo` math uses
-  `STICKY_HEADER_OFFSET` (96) from the same module. Never hardcode the offset. An aside that can
-  be taller than the screen (the catalogue and search filter rails) also takes
+  `sticky top-0 z-50` and, since the «Мої пристрої» bar (TASK-2074), its height varies
+  (~122px; ~175px from 1024 with a saved device). The header publishes its measured
+  height as `--header-height` on `<html>` (`useHeaderHeight`), and globals.css derives
+  `--sticky-header-offset` = header + 32px, with pre-hydration fallbacks. Any other sticky
+  panel clears it with `STICKY_ASIDE_TOP` (`top-(--sticky-header-offset)`) from
+  `store-client/src/shared/config/layout.ts`, paired with the breakpoint-prefixed `sticky`
+  of the layout (`lg:sticky` on two-column pages, `md:sticky` on the PDP buy box). The
+  token carries no breakpoint: below the `sticky` breakpoint the aside is not positioned
+  and `top` is inert, so such an aside must not also be `relative`/`absolute`. Anchor
+  targets use `scroll-mt-(--sticky-header-offset)`; scroll-spy / `scrollTo` math calls
+  `getStickyHeaderOffset()` from the same module. Never hardcode the offset. An aside that
+  can be taller than the screen (the catalogue and search filter rails) also takes
   `max-h-sticky-aside overflow-y-auto overscroll-contain`. The `--max-height-sticky-aside`
-  token is the viewport minus that 96px offset and a 16px gap, so the aside scrolls inside
+  token is the viewport minus that offset and a 16px gap, so the aside scrolls inside
   itself instead of running off a short laptop screen.
 - **Content pages at 390** (TASK-878): a document TOC that is a side column from `lg`
   collapses below `lg` into one disclosure row «Зміст документа · N розділів»
