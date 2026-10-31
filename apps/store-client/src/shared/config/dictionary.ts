@@ -2473,8 +2473,11 @@ export const dict = {
     inCart: "В кошику",
     /** Aria label for the in-cart card action — clicking opens the mini-cart. */
     inCartAria: (name: string) => `«${name}» вже в кошику — відкрити кошик`,
-    /** Availability line above the card action row. */
-    inStockLine: "В наявності · доставка 1–2 дні",
+    /**
+     * Availability line above the card action row. Stock only — the card makes
+     * no delivery-time promise (owner decision 2026-10-30, TASK-2080).
+     */
+    inStockLine: "В наявності",
     outOfStockLine: "Немає в наявності",
     /** Advertised "from {price}" prefix when a group has cheaper variants. */
     priceFrom: "від",

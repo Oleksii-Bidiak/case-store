@@ -117,6 +117,18 @@ describe("ProductCardActions — quick-add targets the card's own position (TASK
   });
 });
 
+describe("ProductCardActions — availability line (TASK-2080)", () => {
+  it("reads just «В наявності» with no delivery-time promise", () => {
+    renderWithProviders(<ProductCardActions product={makeDoublePack()} />);
+
+    const line = screen.getByText(dict.productCard.inStockLine, {
+      selector: "p",
+    });
+    expect(line).toHaveTextContent(/^●?\s*В наявності$/);
+    expect(line).not.toHaveTextContent(/доставка/i);
+  });
+});
+
 describe("ProductCardActions — persistent in-cart state (TASK-213)", () => {
   /** GET /api/cart returns a cart already containing the card's own position. */
   function seedCartWithOwnPosition() {
