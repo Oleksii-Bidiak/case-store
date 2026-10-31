@@ -90,7 +90,9 @@ function installCatalogHandlers({ empty = false } = {}) {
   server.use(
     http.get("*/api/products", ({ request }) => {
       const url = new URL(request.url);
-      productRequests.push(url);
+      // The listing's own requests only: the count line's unfiltered total
+      // (Catalog §3) is a `limit: 1` read beside them.
+      if (url.searchParams.get("limit") !== "1") productRequests.push(url);
       const data = empty ? [] : [makeProduct("p1", "Alpha Case")];
       return HttpResponse.json({
         data,
@@ -691,9 +693,13 @@ describe("ProductListView — adopts the server's prefetch (TASK-563)", () => {
 
     // Synchronously — no skeleton first, i.e. what hydration will see.
     expect(screen.getByText("Server Case")).toBeInTheDocument();
-    await screen.findByText(/Знайдено товарів: 1/);
+    await screen.findAllByText(dict.catalog.countProducts(1));
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(productRequests).toHaveLength(0);
+    // The listing itself is not refetched. (The count line's «з N товарів»
+    // reads the unfiltered total with a `limit: 1` request of its own.)
+    expect(
+      productRequests.filter((url) => url.searchParams.get("limit") !== "1"),
+    ).toHaveLength(0);
   });
 
   it("does the same on a category landing page, where the segment is the category", async () => {

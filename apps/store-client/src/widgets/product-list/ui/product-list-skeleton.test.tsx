@@ -105,16 +105,16 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     expect(rows()).toBe(9);
   });
 
-  // TASK-869 — the count line sits in the results column in every variant,
-  // the rail-less one (`ProductList`'s own pending state) and the list view.
-  it.each([
-    ["the sidebar shell", { withSidebar: true }],
-    ["the bare results", {}],
-    ["the list view", { view: "list" as const }],
-  ])("reserves the result-count line in %s", (_label, props) => {
-    render(<ProductListSkeleton {...props} />);
+  // Д3-2 Catalog §3 — the count line moved from the results column up under
+  // the H1: the shell reserves it on top, the bare results no longer do.
+  it("reserves the count line under the H1 in the shell only", () => {
+    const { unmount } = render(<ProductListSkeleton withSidebar />);
+    const placeholder = screen.getByTestId("result-count-skeleton");
+    expect(placeholder.parentElement).toHaveClass("mt-1.5", "min-h-5");
+    unmount();
 
-    expect(screen.getByTestId("result-count-skeleton")).toHaveClass("h-5");
+    render(<ProductListSkeleton />);
+    expect(screen.queryByTestId("result-count-skeleton")).toBeNull();
   });
 
   // TASK-869 — a grid cell is shaped like the ProductCard + actions pair, not a

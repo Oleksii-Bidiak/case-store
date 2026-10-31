@@ -153,13 +153,10 @@ export function ProductListSkeleton({
       </div>
     );
 
-  // The results column of `ProductList`: the «Знайдено товарів: N» line (one
-  // text-sm line, 20px) and the cards under it, `gap-6` apart. Without the line
-  // the cards sat 44px above where the real ones land, on every catalogue
-  // route (TASK-869).
+  // The results column of `ProductList`: the cards alone — the result count
+  // moved up under the H1 (Д3-2 Catalog §3), where the shell below reserves it.
   const results = (
     <div className="flex flex-col gap-6" aria-hidden="true">
-      <Skeleton className="h-5 w-40" data-testid="result-count-skeleton" />
       {items}
     </div>
   );
@@ -170,6 +167,12 @@ export function ProductListSkeleton({
 
   return (
     <div aria-hidden="true">
+      {/* The count line under the H1 — ListingCountLine's one text-sm line
+          (20px), 6px under the H1 like the view's. */}
+      <div className="mt-1.5 flex min-h-5 items-center">
+        <Skeleton className="h-4 w-40" data-testid="result-count-skeleton" />
+      </div>
+
       {/* Toolbar: the same rows and gaps as ProductListView. Every control is
           44px tall since the toggle became one pill shown at every width
           (TASK-1958): icon-only 44px below `sm`, «Списком» beside the icon
@@ -177,7 +180,7 @@ export function ProductListSkeleton({
           «Підкатегорії» share the first row below `md` and sort + view wrap
           under them. The sort trigger's width follows its «Спочатку: …»
           label. */}
-      <div className="mb-5 flex flex-wrap items-center gap-2 sm:gap-3">
+      <div className="mt-5 mb-3 flex flex-wrap items-center gap-2 sm:gap-3">
         {withCategoryTree ? (
           <div className="flex w-full gap-2 sm:gap-3 md:w-auto lg:hidden">
             <Skeleton className="h-11 flex-1 rounded-xl md:w-32 md:flex-none" />
@@ -186,7 +189,8 @@ export function ProductListSkeleton({
         ) : (
           <Skeleton className="h-11 w-32 rounded-xl lg:hidden" />
         )}
-        <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
+        <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-3">
+          <Skeleton className="mr-auto h-4 w-20 lg:hidden" />
           <Skeleton className="h-11 w-40 max-w-full rounded-xl sm:w-66" />
           <Skeleton className="h-11 w-11 shrink-0 rounded-xl sm:w-30" />
         </div>

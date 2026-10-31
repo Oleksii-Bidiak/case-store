@@ -1,7 +1,6 @@
-import { Suspense, Fragment, cache } from "react";
+import { Suspense, cache } from "react";
 import type { Metadata } from "next";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
-import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { ProductListSkeleton } from "@/widgets";
 import { CatalogListingView } from "@/app/products/(catalog)/catalog-listing-view";
@@ -43,7 +42,8 @@ import {
   resolveLegacyCatalogParams,
   withQuery,
 } from "@/shared/lib/legacy-catalog-params";
-import { SITE_URL, dict, PAGE_CONTAINER, H1_CLASS } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
+import { CatalogHead } from "@/app/products/(catalog)/catalog-head";
 
 interface CategoryLandingPageProps {
   params: Promise<{ slug: string }>;
@@ -280,6 +280,8 @@ export default async function CategoryLandingPage({
     })),
     { name: node.name, href: undefined },
   ];
+  // The back pill's one step up below `md`: the parent, or the catalogue.
+  const parent = path.length > 1 ? path.at(-2) : undefined;
 
   const schemas = buildCategoryPageSchemas(path, listing?.data);
 
@@ -288,46 +290,18 @@ export default async function CategoryLandingPage({
       {schemas?.breadcrumb && <JsonLd schema={schemas.breadcrumb} />}
       {schemas?.itemList && <JsonLd schema={schemas.itemList} />}
 
-      {/* Breadcrumbs */}
-      <nav
-        aria-label={dict.product.breadcrumbAria}
-        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
-      >
-        {trail.map((crumb, i) => {
-          const isLast = i === trail.length - 1;
-          return (
-            <Fragment key={`${crumb.name}-${i}`}>
-              {i > 0 && (
-                <span aria-hidden="true" className="opacity-50">
-                  ›
-                </span>
-              )}
-              {crumb.href && !isLast ? (
-                <Link
-                  href={crumb.href}
-                  className="transition-colors hover:text-foreground"
-                >
-                  {crumb.name}
-                </Link>
-              ) : (
-                <span
-                  className={isLast ? "font-medium text-foreground" : undefined}
-                >
-                  {crumb.name}
-                </span>
-              )}
-            </Fragment>
-          );
-        })}
-      </nav>
-
-      {/* Title */}
-      <div className="mb-4.5">
-        <h1 className={`${H1_CLASS} text-foreground`}>{node.name}</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          {node.description || dict.catalog.categorySubtitle(node.name)}
-        </p>
-      </div>
+      {/* Crumbs from `md`, one back pill below it — «‹ Каталог» on a
+          top-level category, else «‹ {батько}» — and the H1 (Catalog §3).
+          The count line under the H1 is the listing's own. */}
+      <CatalogHead
+        trail={trail}
+        back={
+          parent
+            ? { label: parent.name, href: `/categories/${parent.slug}` }
+            : { label: dict.catalog.backToCatalog, href: "/products" }
+        }
+        title={node.name}
+      />
 
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
         {/* The whole catalogue shell, like /products (TASK-416): the rail's
@@ -352,6 +326,15 @@ export default async function CategoryLandingPage({
           />
         </Suspense>
       </PrefetchBoundary>
+
+      {/* The category's own text, when the admin wrote one — after the
+          listing, where it informs without pushing the products down (the
+          head is H1 + count line, Catalog §3). */}
+      {node.description && (
+        <p className="mt-12 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+          {node.description}
+        </p>
+      )}
     </div>
   );
 }

@@ -1,6 +1,5 @@
-import { Suspense, Fragment, cache } from "react";
+import { Suspense, cache } from "react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { permanentRedirect } from "next/navigation";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import { ProductListSkeleton } from "@/widgets";
@@ -46,7 +45,8 @@ import {
 } from "@/shared/lib/seo";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { SITE_URL, dict, PAGE_CONTAINER, H1_CLASS } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
+import { CatalogHead } from "./catalog-head";
 
 /** Take the first value when a query param appears more than once. */
 function first(value: string | string[] | undefined): string | undefined {
@@ -308,7 +308,7 @@ export default async function ProductsPage({
     SITE_URL,
   );
 
-  const { trail, title, subtitle, currentPath } = buildCatalogHeader({
+  const { trail, title, currentPath } = buildCatalogHeader({
     categorySlug,
     categoryName,
     search,
@@ -326,46 +326,18 @@ export default async function ProductsPage({
       />
       {itemList && <JsonLd schema={itemList} />}
 
-      {/* Breadcrumbs */}
-      <nav
-        aria-label={dict.product.breadcrumbAria}
-        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
-      >
-        {trail.map((crumb, i) => {
-          const isLast = i === trail.length - 1;
-          return (
-            <Fragment key={`${crumb.name}-${i}`}>
-              {i > 0 && (
-                <span aria-hidden="true" className="opacity-50">
-                  ›
-                </span>
-              )}
-              {crumb.href && !isLast ? (
-                <Link
-                  href={crumb.href}
-                  className="transition-colors hover:text-foreground"
-                >
-                  {crumb.name}
-                </Link>
-              ) : (
-                <span
-                  className={isLast ? "font-medium text-foreground" : undefined}
-                >
-                  {crumb.name}
-                </span>
-              )}
-            </Fragment>
-          );
-        })}
-      </nav>
-
-      {/* Title */}
-      <div className="mb-4.5">
-        <h1 className={`${H1_CLASS} text-foreground`}>{title}</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          {subtitle}
-        </p>
-      </div>
+      {/* Crumbs from `md`, one back pill below it, the H1 (Catalog §3). The
+          count line under the H1 is the listing's own — it knows the filters
+          — so the generic subtitle that sat there is gone. */}
+      <CatalogHead
+        trail={trail}
+        back={
+          categorySlug || search
+            ? { label: dict.catalog.backToCatalog, href: "/products" }
+            : { label: dict.catalog.breadcrumbHome, href: "/" }
+        }
+        title={title}
+      />
 
       {/* The fallback stands in for ProductListView as a whole — toolbar and
           the 268px rail with its category tree included (TASK-416) — so the grid

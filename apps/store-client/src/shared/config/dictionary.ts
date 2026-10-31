@@ -566,6 +566,23 @@ export const dict = {
       "Спробуйте змінити параметри фільтра або скиньте їх, щоб побачити більше товарів.",
     clearFilters: "Скинути фільтри",
     countFound: (n: number) => `Знайдено товарів: ${n}`,
+    // Д3-2 Catalog §3 — the count line under the H1: «{shown} з {N товарів}»
+    // (just «{N товарів}» when nothing narrows the category), plus who the
+    // device filter is for. Numbers with uk-UA grouping («1 234»).
+    countProducts: (n: number) =>
+      `${n.toLocaleString("uk-UA")} ${pluralUk(n, "товар", "товари", "товарів")}`,
+    countLine: (shown: number, total: number) =>
+      shown === total
+        ? `${total.toLocaleString("uk-UA")} ${pluralUk(total, "товар", "товари", "товарів")}`
+        : `${shown.toLocaleString("uk-UA")} з ${total.toLocaleString("uk-UA")} ${pluralUk(total, "товару", "товарів", "товарів")}`,
+    countLineDevice: (line: string, shown: number, device: string) =>
+      `${line} ${pluralUk(shown, "підходить", "підходять", "підходять")} до ${device}`,
+    countLineAllDevices: (line: string, k: number) =>
+      `${line} — для ваших ${k} ${pluralUk(k, "пристрою", "пристроїв", "пристроїв")}`,
+    // Below `md` the crumbs give way to one back pill (Catalog §3): «Головна»
+    // on «Усі товари», «Каталог» on a top-level category, else the parent.
+    backToCatalog: "Каталог",
+    backAria: (label: string) => `Назад: ${label}`,
     // TASK-216 — «Показати ще» load-more append between the grid and pagination.
     // Ukrainian pluralization: 1 товар, 2–4 товари, 5+ товарів.
     loadMore: (n: number) => {

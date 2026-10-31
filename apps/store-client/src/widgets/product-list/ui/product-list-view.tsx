@@ -32,6 +32,8 @@ import {
   COMPAT_PARAM,
   clearFilterUpdates,
   countActiveFilters,
+  activeFilterKeys,
+  ListingCountLine,
   hasActiveFilters,
   type CatalogView,
   type MyDevicesFilterDefault,
@@ -185,20 +187,43 @@ export function ProductListView({
     searchParams.get("view") === "list" ? "list" : "grid";
   const currentSort = `${params.sortBy}:${params.sortOrder}`;
 
-  // Live result count for the mobile drawer's sticky "Apply" button (TASK-084).
-  // Same `params` (and therefore React Query cache key) the grid already fetches,
-  // so a warm cache resolves it with zero extra network round trips; gated on
-  // the drawer or the category sheet being open, so a closed one never
-  // subscribes. `keepPreviousData` holds the last count on screen while a
-  // post-filter-change refetch is in flight instead of flashing to a loading
-  // state.
+  // Live result count — the count line under the H1 (Catalog §3), the
+  // toolbar's short count below `lg` (§4) and the drawer's / sheet's «Показати
+  // N» (TASK-084). Same `params` (and therefore React Query cache key) the grid
+  // fetches, so it costs no request of its own. `keepPreviousData` holds the
+  // last count on screen while a post-filter-change refetch is in flight
+  // instead of flashing to a loading state.
   const { data: countData } = useProductControllerFindAll(params, {
-    query: {
-      enabled: filtersOpen || treeOpen,
-      placeholderData: keepPreviousData,
-    },
+    query: { placeholderData: keepPreviousData },
   });
   const resultCount = countData?.meta?.total;
+
+  // «з N товарів» — the category as the route fixes it (category, keyword,
+  // route locks), with no facet, price or device applied. A `limit: 1` read
+  // for `meta.total` only, and only when something does narrow the listing:
+  // otherwise the shown count IS the total.
+  const baseParams = {
+    ...buildCatalogListingParams(
+      (key) =>
+        key === "category" || key === "search" ? searchParams.get(key) : null,
+      {
+        categorySlug: lockedCategory?.slug,
+        deviceSlug: lockedDevice?.slug,
+        onSale: lockedOnSale,
+      },
+    ),
+    page: 1,
+    limit: 1,
+  };
+  const narrowed = activeFilterKeys(params, {
+    includeCategory: false,
+    includeDevice: !lockedDevice,
+    includeOnSale: !lockedOnSale,
+  }).some((key) => key !== "search");
+  const { data: totalData } = useProductControllerFindAll(baseParams, {
+    query: { enabled: narrowed, placeholderData: keepPreviousData },
+  });
+  const categoryTotal = narrowed ? totalData?.meta?.total : resultCount;
 
   // Count of active filters INSIDE the drawer/sidebar — drives the mobile
   // "Filters" badge. The category is excluded: its control is the category
@@ -393,13 +418,27 @@ export function ProductListView({
 
   return (
     <div>
+      {/* The count line right under the page's H1 (Catalog §3): «18 з 214
+          товарів», and with the device filter on, who it is for. */}
+      <ListingCountLine
+        className="mt-1.5"
+        shown={resultCount}
+        total={categoryTotal}
+        device={activeMyDevice}
+        allDevicesCount={
+          myDevices.state.mode === "all"
+            ? myDevices.state.devices.length
+            : undefined
+        }
+      />
+
       {/* Toolbar: «Фільтри» + «Підкатегорії · N» (below `lg`, where the rail
           is hidden) and sort + view toggle. The view toggle stays at every
           width (TASK-1958). Below `md` the two buttons share the first row
-          half and half and sort + view wrap to a second row (CatalogNav §4);
-          from `md` it is one row. Without the tree (compat pages) it is the
-          one-row toolbar it always was. */}
-      <div className="mb-5 flex flex-wrap items-center gap-2 sm:gap-3">
+          half and half and the count, sort + view wrap to a second row
+          (CatalogNav §4); from `md` it is one row. Without the tree (compat
+          pages) it is the one-row toolbar it always was. */}
+      <div className="mt-5 mb-3 flex flex-wrap items-center gap-2 sm:gap-3">
         <div
           className={`flex gap-2 sm:gap-3 lg:hidden ${withCategoryTree ? "w-full md:w-auto" : ""}`}
         >
@@ -424,8 +463,17 @@ export function ProductListView({
 
         {/* `min-w-0` lets the sort trigger shrink on a 320px phone (it
             truncates its label) instead of widening the page; the view
-            toggle beside it keeps its size. */}
-        <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
+            toggle beside it keeps its size. Below `lg` the shown count leads
+            this group (§4) — from `lg` the line under the H1 is enough. */}
+        <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-3">
+          {resultCount !== undefined && (
+            <span
+              aria-hidden="true"
+              className="mr-auto shrink-0 text-sm text-muted-foreground tabular-nums lg:hidden"
+            >
+              {dict.catalog.countProducts(resultCount)}
+            </span>
+          )}
           <SortSelect currentSort={currentSort} onChange={applyFilters} />
           <ViewToggle view={view} onChange={setView} />
         </div>

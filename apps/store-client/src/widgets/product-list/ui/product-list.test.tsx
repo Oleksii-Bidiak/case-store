@@ -264,27 +264,26 @@ describe("ProductList load-more append (TASK-216)", () => {
     expect(skeletonGrid?.className).toBe(realGrid?.className);
   });
 
-  // TASK-869 — the results column is the «Знайдено товарів: N» line and the
-  // cards, `gap-6` apart. The skeleton used to draw the cards alone, so every
-  // catalogue placeholder sat 44px above where the real cards land.
-  it("reserves the result-count line above the cards, in the same column (TASK-869)", async () => {
+  // TASK-869, Д3-2 Catalog §3 — the results column opens with the cards in
+  // both: the count line moved up under the H1, so neither the list nor its
+  // placeholder draws one here, and the cards land where the skeleton's did.
+  it("opens the results column with the cards, in the skeleton too", async () => {
     installProducts({ "": CAT_1_PAGES }, { limit: 2 });
 
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <ProductList {...baseProps} params={{ page: 1, limit: 2 }} />,
     );
-    const count = await screen.findByText(/Знайдено товарів/);
-    const realColumn = count.parentElement;
+    await screen.findByText("Alpha Case");
+    const realColumn = container.firstElementChild as HTMLElement;
 
-    const { getByTestId } = renderWithProviders(<ProductListSkeleton />);
-    const placeholder = getByTestId("result-count-skeleton");
-    const skeletonColumn = placeholder.parentElement;
+    const { container: skeleton } = renderWithProviders(
+      <ProductListSkeleton />,
+    );
+    const skeletonColumn = skeleton.firstElementChild as HTMLElement;
 
-    expect(skeletonColumn?.className).toBe(realColumn?.className);
-    // The count comes first in both, then the cards.
-    expect(skeletonColumn?.firstElementChild).toBe(placeholder);
-    expect(realColumn?.firstElementChild).toBe(count);
-    expect(skeletonColumn?.querySelector(".grid")).not.toBeNull();
+    expect(skeletonColumn.className).toBe(realColumn.className);
+    expect(screen.queryByText(/Знайдено товарів/)).toBeNull();
+    expect(skeletonColumn.firstElementChild?.className).toContain("grid");
   });
 
   // TASK-869 fix round — the skeleton cell reserves the title's second line,
@@ -432,7 +431,7 @@ describe("ProductList — refetch overlay (TASK-1995)", () => {
     );
 
     expect(screen.queryByText("Alpha Case")).not.toBeInTheDocument();
-    expect(screen.getByTestId("result-count-skeleton")).toBeInTheDocument();
+    expect(document.querySelector(".animate-pulse")).not.toBeNull();
     await screen.findByText("Xi Charger");
   });
 });

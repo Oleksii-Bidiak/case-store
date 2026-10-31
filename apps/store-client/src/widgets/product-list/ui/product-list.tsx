@@ -174,11 +174,9 @@ export function ProductList({
   };
 
   return (
+    // The result count is not repeated here: it is the line under the page's
+    // H1 (Д3-2 Catalog §3, `ListingCountLine` in the view), live region and all.
     <div className="flex flex-col gap-6">
-      <p aria-live="polite" className="text-sm text-muted-foreground">
-        {dict.catalog.countFound(meta?.total ?? products.length)}
-      </p>
-
       <div className="relative">
         {isRefetchingForNewParams && (
           <div

@@ -64,6 +64,12 @@ export {
   type ListingEmptyStateAction,
   type ListingEmptyStateProps,
 } from "./ui/listing-empty-state";
+// The count line under the catalogue H1 (Д3-2 Catalog §3).
+export {
+  ListingCountLine,
+  listingCountText,
+  type ListingCountLineProps,
+} from "./ui/listing-count-line";
 // The single definition of "the catalogue filters" (TASK-414) — widgets count
 // and clear through these rather than re-listing the params.
 export {
