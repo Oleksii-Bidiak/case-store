@@ -21,13 +21,11 @@ import {
   compatLandingPath,
   deviceHubPath,
   deviceHubTrail,
-  lowerFirst,
-} from "../model/hub-copy";
-import {
-  DeviceHubChips,
   hubSectionHeadingId,
   hubSectionId,
-} from "./device-hub-chips";
+  lowerFirst,
+} from "../model/hub-copy";
+import { DeviceHubChips } from "./device-hub-chips";
 import { DeviceHubActions, DeviceHubKicker } from "./device-hub-state";
 import { HubCategoryIcon, HubFamilyIcon } from "./hub-icons";
 

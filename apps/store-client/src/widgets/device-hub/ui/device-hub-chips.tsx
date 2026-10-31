@@ -4,22 +4,13 @@ import type { MouseEvent } from "react";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { useReducedMotion } from "@/shared/lib/use-reduced-motion";
+import { hubSectionHeadingId, hubSectionId } from "../model/hub-copy";
 import { HubCategoryIcon } from "./hub-icons";
 
 export interface HubChip {
   slug: string;
   name: string;
   count: number;
-}
-
-/** DOM id of a category section — also the deep-link hash (`#cases`). */
-export function hubSectionId(slug: string): string {
-  return slug;
-}
-
-/** Id of a section's heading (its accessible name and the focus target). */
-export function hubSectionHeadingId(slug: string): string {
-  return `dh-h-${slug}`;
 }
 
 /**

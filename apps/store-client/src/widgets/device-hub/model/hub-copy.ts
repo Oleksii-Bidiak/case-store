@@ -78,3 +78,17 @@ export function deviceHubTrail(
     { name: t.heading(modelName) },
   ];
 }
+
+// Section anchors live here, not in the client-only chips module: the server
+// view renders the section ids, and a server component cannot call a
+// function exported from a "use client" file.
+
+/** DOM id of a category section — also the deep-link hash (`#cases`). */
+export function hubSectionId(slug: string): string {
+  return slug;
+}
+
+/** Id of a section's heading (its accessible name and the focus target). */
+export function hubSectionHeadingId(slug: string): string {
+  return `dh-h-${slug}`;
+}
