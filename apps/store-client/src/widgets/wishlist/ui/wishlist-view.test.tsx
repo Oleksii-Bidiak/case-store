@@ -449,7 +449,7 @@ describe("WishlistView grid ↔ skeleton parity (TASK-415)", () => {
     return screen.getByRole("article").closest(".grid");
   }
 
-  it("renders the grid one-up under 390px, two-up from 390px and four-up from lg", () => {
+  it("renders the grid one-up under 390px, two-up from 390px, three-up from md and four-up from xl (TASK-1957)", () => {
     renderWithProviders(<WishlistView />, {
       queryClient: seededClient([buildItem()]),
     });
@@ -459,7 +459,8 @@ describe("WishlistView grid ↔ skeleton parity (TASK-415)", () => {
     expect(grid).toHaveClass(
       "grid-cols-1",
       "min-[390px]:grid-cols-2",
-      "lg:grid-cols-4",
+      "md:grid-cols-3",
+      "xl:grid-cols-4",
     );
     // Cards in a row share one height whatever their title/badge count.
     expect(grid).toHaveClass("items-stretch");
@@ -486,7 +487,8 @@ describe("WishlistView grid ↔ skeleton parity (TASK-415)", () => {
     expect(skeletonGrid).toHaveClass(
       "grid-cols-1",
       "min-[390px]:grid-cols-2",
-      "lg:grid-cols-4",
+      "md:grid-cols-3",
+      "xl:grid-cols-4",
     );
     // Byte-identical, not merely "both responsive": any drift here is a visible
     // reflow when the skeleton is replaced by cards.

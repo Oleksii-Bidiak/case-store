@@ -24,6 +24,7 @@ import { Pagination } from "@/shared/ui/pagination";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
+import { PRODUCT_GRID_CLASS } from "@/shared/config/product-grid";
 import { trackEvent } from "@/shared/lib";
 import { findCategoryIdBySlug } from "../model/find-category";
 import { SearchResultsSkeleton } from "./search-results-skeleton";
@@ -307,11 +308,10 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
             <Loader2 className="size-8 animate-spin text-primary" />
           </div>
         )}
-        {/* Same 1 / 2 / 4 grid as the catalog (TASK-415) — search results are
-            the same cards, so they must not jump to a different column count
-            than /products — and the same card rhythm, `gap-4 md:gap-6`
-            (TASK-876). Keep in sync with `SearchResultsSkeleton`. */}
-        <div className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
+        {/* The catalogue grid (TASK-415, TASK-1957) — search results are the
+            same cards, so they must not jump to a different column count than
+            /products. `SearchResultsSkeleton` uses the same constant. */}
+        <div className={PRODUCT_GRID_CLASS}>
           {products.map((product, index) => (
             <ProductCard
               key={product.id}

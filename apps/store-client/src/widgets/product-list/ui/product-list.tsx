@@ -17,6 +17,7 @@ import { Button, ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict } from "@/shared/config";
+import { PRODUCT_GRID_CLASS } from "@/shared/config/product-grid";
 import {
   accumulationKey,
   canLoadMore,
@@ -187,15 +188,11 @@ export function ProductList({
             ))}
           </div>
         ) : (
-          // 1 / 2 / 4 columns (TASK-415, owner's call): a single card below
-          // 390px so the smallest phones get a readable photo and price, two
-          // from 390px, four from `lg`. Keep this class list byte-identical to
-          // `ProductListSkeleton` — the skeleton must lay out in exactly the
-          // same columns as the cards that replace it, or the page reflows on
-          // every load. `items-stretch` is explicit: sibling cards in a row
-          // share one height whatever their title/badge count. The gap is the
-          // design-system card rhythm, `gap-4 md:gap-6` (TASK-500).
-          <div className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
+          // 1 / 2 / 3 / 4 columns (TASK-415, TASK-1957) — the shared
+          // `PRODUCT_GRID_CLASS`, which `ProductListSkeleton` uses too, so the
+          // skeleton lays out in exactly the columns of the cards that replace
+          // it. See the constant for the breakpoints and the gap.
+          <div className={PRODUCT_GRID_CLASS}>
             {products.map((product, index) => (
               <ProductCard
                 key={product.id}

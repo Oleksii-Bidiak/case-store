@@ -32,9 +32,8 @@ import { isInStock } from "../model/wishlist-catalog";
  * was SAVED, not the product's creation date the 30-day badge reads.
  *
  * The image takes `ProductCardImage`'s default `sizes` (TASK-530): the wishlist
- * grid is the catalogue's 1 / 2 / 4 ladder beside the same 268px rail, so the
- * slots are the same width — full viewport under 390px, half up to `lg`, at
- * most ~240px from there (four columns of the 1320px container minus the rail).
+ * grid is the catalogue's `PRODUCT_GRID_CLASS` beside the same 268px rail, so
+ * the slots are the same width and `PRODUCT_GRID_IMAGE_SIZES` fits them.
  */
 export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
   const { onSale, discountPercent } = getCardPricing({

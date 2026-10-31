@@ -333,7 +333,7 @@ describe("SearchResultsView", () => {
       );
     }
 
-    it("renders the grid one-up under 390px, two-up from 390px and four-up from lg", async () => {
+    it("renders the grid one-up under 390px, two-up from 390px, three-up from md and four-up from xl (TASK-1957)", async () => {
       installOneResult();
 
       renderWithProviders(<SearchResultsView query="айфон" page={1} />);
@@ -343,13 +343,14 @@ describe("SearchResultsView", () => {
       expect(grid).toHaveClass(
         "grid-cols-1",
         "min-[390px]:grid-cols-2",
-        "lg:grid-cols-4",
+        "md:grid-cols-3",
+        "xl:grid-cols-4",
       );
       // Cards in a row share one height whatever their title/badge count.
       expect(grid).toHaveClass("items-stretch");
-      // The old sm:2 / md:3 ladder is gone, not merely overridden.
+      // The old sm:2 ladder and the 4-up beside the rail are gone.
       expect(grid).not.toHaveClass("sm:grid-cols-2");
-      expect(grid).not.toHaveClass("md:grid-cols-3");
+      expect(grid).not.toHaveClass("lg:grid-cols-4");
     });
 
     it("lays the skeleton out in exactly the same columns as the real grid", async () => {
@@ -369,7 +370,8 @@ describe("SearchResultsView", () => {
       expect(skeletonGrid).toHaveClass(
         "grid-cols-1",
         "min-[390px]:grid-cols-2",
-        "lg:grid-cols-4",
+        "md:grid-cols-3",
+        "xl:grid-cols-4",
       );
       // Byte-identical, not merely "both responsive": any drift here is a
       // visible reflow when the skeleton is replaced by cards.

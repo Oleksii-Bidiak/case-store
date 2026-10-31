@@ -1,4 +1,5 @@
 import { renderWithProviders, screen } from "@/shared/test/render";
+import { PRODUCT_GRID_IMAGE_SIZES } from "@/shared/config/product-grid";
 import { BLUR_PLACEHOLDER } from "./image-placeholder";
 import { ProductCardImage } from "./product-card-image";
 
@@ -160,10 +161,10 @@ describe("ProductCardImage — lazy loading & sizes (TASK-210)", () => {
 
     expect(screen.getByRole("img", { name: "Clear case" })).toHaveAttribute(
       "data-sizes",
-      // First stop is 389px, not 639px: the grid goes two-up at 390px
-      // (TASK-415), so a 390–639px viewport must not be told to fetch a
-      // full-viewport candidate for a half-width card.
-      "(max-width: 389px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), 300px",
+      // The shared grid profile (TASK-1957). First stop is 389px, not 639px:
+      // the grid goes two-up at 390px (TASK-415), so a 390–639px viewport must
+      // not be told to fetch a full-viewport candidate for a half-width card.
+      PRODUCT_GRID_IMAGE_SIZES,
     );
   });
 

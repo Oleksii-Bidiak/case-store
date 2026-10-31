@@ -1,4 +1,5 @@
 import { Skeleton } from "@/shared/ui";
+import { PRODUCT_GRID_CLASS } from "@/shared/config/product-grid";
 
 /**
  * Loading fallback for the search results column: the «Знайдено N» line and
@@ -11,8 +12,8 @@ export function SearchResultsSkeleton() {
   return (
     <div className="flex flex-col gap-6" aria-hidden="true">
       <Skeleton className="h-5 w-40" data-testid="result-count-skeleton" />
-      {/* Byte-identical to the grid in `SearchResultsView` (1 / 2 / 4 columns). */}
-      <div className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
+      {/* The shared grid of `SearchResultsView` (1 / 2 / 3 / 4 columns). */}
+      <div className={PRODUCT_GRID_CLASS}>
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="flex flex-col gap-2">
             <Skeleton className="aspect-square w-full" />

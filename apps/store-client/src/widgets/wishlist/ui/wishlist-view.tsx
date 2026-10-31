@@ -22,6 +22,7 @@ import { Button } from "@/shared/ui";
 import { Pagination } from "@/shared/ui/pagination";
 import { formatMoney } from "@/shared/lib";
 import { dict, STICKY_ASIDE_TOP, H1_CLASS } from "@/shared/config";
+import { PRODUCT_GRID_CLASS } from "@/shared/config/product-grid";
 import {
   DEFAULT_WISHLIST_SORT,
   EMPTY_WISHLIST_FILTERS,
@@ -407,10 +408,10 @@ export function WishlistView() {
               ))}
             </div>
           ) : (
-            // Same 1 / 2 / 4 grid as the catalog (TASK-415) — the wishlist
-            // renders the same kind of card, so it must not use a different
-            // column count. Byte-identical to `WishlistSkeleton`.
-            <div className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
+            // The catalogue grid (TASK-415, TASK-1957) — the wishlist renders
+            // the same kind of card, so it must not use a different column
+            // count. `WishlistSkeleton` uses the same constant.
+            <div className={PRODUCT_GRID_CLASS}>
               {page.items.map((item) => (
                 <WishlistItemCard key={item.id} item={item} />
               ))}

@@ -226,7 +226,7 @@ describe("ProductList load-more append (TASK-216)", () => {
   // smallest phones were squeezing two unreadable cards side by side), two from
   // 390px, four from `lg`. The skeleton must declare the SAME columns, or the
   // page reflows the moment real cards replace it.
-  it("renders the grid one-up under 390px, two-up from 390px and four-up from lg (TASK-415)", async () => {
+  it("renders the grid one-up under 390px, two-up from 390px, three-up from md and four-up from xl (TASK-415, TASK-1957)", async () => {
     installProducts({ "": CAT_1_PAGES }, { limit: 2 });
 
     renderWithProviders(
@@ -239,7 +239,8 @@ describe("ProductList load-more append (TASK-216)", () => {
     expect(grid).toHaveClass(
       "grid-cols-1",
       "min-[390px]:grid-cols-2",
-      "lg:grid-cols-4",
+      "md:grid-cols-3",
+      "xl:grid-cols-4",
     );
     // Cards in a row share one height whatever their title/badge count.
     expect(grid).toHaveClass("items-stretch");

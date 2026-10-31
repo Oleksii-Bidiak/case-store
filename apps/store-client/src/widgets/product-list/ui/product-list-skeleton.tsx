@@ -1,5 +1,6 @@
 import { Skeleton } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { PRODUCT_GRID_CLASS } from "@/shared/config/product-grid";
 import {
   CategoryChipsSkeleton,
   FilterCardSkeleton,
@@ -141,14 +142,10 @@ export function ProductListSkeleton({
         ))}
       </div>
     ) : (
-      // Byte-identical to the real grid in `ProductList` (1 / 2 / 4 columns) —
+      // The same `PRODUCT_GRID_CLASS` as the real grid in `ProductList` —
       // same columns, same gap, so swapping skeletons for cards does not reflow.
-      // Guarded by a parity test in `product-list.test.tsx` (TASK-415): never
-      // edit this class list without editing `ProductList`'s to match.
-      <div
-        className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4"
-        aria-hidden="true"
-      >
+      // Guarded by a parity test in `product-list.test.tsx` (TASK-415).
+      <div className={PRODUCT_GRID_CLASS} aria-hidden="true">
         {Array.from({ length: 12 }).map((_, i) => (
           <ProductCardSkeleton key={i} />
         ))}
