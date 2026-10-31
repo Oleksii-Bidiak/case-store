@@ -22,7 +22,7 @@ import type { BannerEntity } from "@/shared/api/generated/models";
 import { DevicePicker } from "@/features/device-picker";
 import { DeviceBar } from "@/widgets/device-bar";
 import { SearchAutocomplete } from "@/features/search";
-import { ThemeToggle } from "@/features/theme";
+import { ThemeSwitchRow, ThemeToggleButton } from "@/features/theme";
 import { AnnouncementBar } from "./announcement-bar";
 import { HeaderSearch } from "./header-search";
 import { ACCOUNT_ACTION_CLASS, HeaderAuth } from "./header-auth";
@@ -260,12 +260,13 @@ export function Header({
                     ))}
                 </nav>
 
-                {/* Theme switch — a preference, not navigation, so it sits
-                    below the menu and outside the <nav> landmark. Always
-                    visible here: below `xl` this is the only place it appears,
-                    since the header row has no room for it (TASK-511/512). */}
+                {/* «Темна тема» switch (TASK-2073) — a preference, not
+                    navigation, so it sits below the menu and outside the <nav>
+                    landmark. Always visible here: below `xl` this is the only
+                    place it appears, since the header row has no room for it
+                    (TASK-511/512). «Системна» lives in the account card. */}
                 <div className="mt-2 border-t border-border px-2 pt-3 pb-4">
-                  <ThemeToggle variant="full" />
+                  <ThemeSwitchRow />
                 </div>
               </SheetContent>
             </Sheet>
@@ -321,8 +322,10 @@ export function Header({
               wordmark was cut to «CaseSt…» (100/103). Each icon already carries
               11px of padding either side, so the glyphs stay 24px apart. */}
           <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1.5">
-            {/* Theme switch — leftmost, so the commerce actions stay grouped
-                next to the cart.
+            {/* Theme button — leftmost, so the commerce actions stay grouped
+                next to the cart. One 44px button with the effective theme's
+                icon (TASK-2073): the old three-segment pill cost 130px and
+                left the search input under 240px at 1280 (TASK-2286).
 
                 It appears at exactly `xl`, the width where the slide-out menu —
                 the only other place it lives — disappears, so the two together
@@ -330,7 +333,7 @@ export function Header({
                 `min-[1100px]` gap). It waits for `xl`, not `lg`, because at
                 1024 it and the section links cost the search input everything
                 but ~79px (TASK-512); in the menu they cost the row nothing. */}
-            <ThemeToggle className="mr-1 hidden xl:flex" />
+            <ThemeToggleButton className="mr-1 hidden xl:inline-flex" />
             {/* Icon-only below `xl` (TASK-511): the caption is display:none
                 there and so drops out of the accessible name — the aria-label
                 carries it. 44×44 minimum either way. */}

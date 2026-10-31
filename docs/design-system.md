@@ -49,8 +49,11 @@ Use as Tailwind utilities: `bg-primary`, `text-primary-foreground`, `border-bord
 Every color has light + dark values. **Never** reference the hex directly.
 
 **Theme mechanism.** The theme is owned by next-themes (`app/providers.tsx`,
-`attribute="data-theme"`, `defaultTheme="system"`). The header switcher offers light / system /
-dark. Light sets `data-theme="light"` and dark sets `data-theme="dark"` (`:root[data-theme='dark']`).
+`attribute="data-theme"`, `defaultTheme="system"`). The header has ONE button with the
+effective theme's icon (sun / moon, swapped by `dark:` so it is right before hydration) that
+switches to the opposite; the slide-out menu has a «Темна тема» `role="switch"` row; only the
+account card «Оформлення» offers light / system / dark — the way back to «Системна»
+(`features/theme`, TASK-2073). Light sets `data-theme="light"` and dark sets `data-theme="dark"` (`:root[data-theme='dark']`).
 In "system" there is no `data-theme`, and only then does `@media (prefers-color-scheme: dark)`
 decide (`:root:not([data-theme='light'])`). Tailwind's `dark:` variant follows the same
 attribute. The two dark blocks in `globals.css` must stay in sync.

@@ -2712,6 +2712,12 @@ export const dict = {
     light: "Світла",
     system: "Системна",
     dark: "Темна",
+    /** Header theme button (TASK-2073): names what a click WILL do, from the
+     *  effective theme — a light page offers dark and vice versa. */
+    enableDark: "Увімкнути темну тему",
+    enableLight: "Увімкнути світлу тему",
+    /** The slide-out menu's row with the dark-theme switch (TASK-2073). */
+    darkRow: "Темна тема",
   },
 
   // --- Admin-managed recommendation carousels (TASK-139) ---------------------

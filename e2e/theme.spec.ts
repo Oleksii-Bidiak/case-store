@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "./fixtures/test";
 
 /**
- * Manual theme switch (TASK-412).
+ * Manual theme switch (TASK-412; one header button since TASK-2073).
  *
  * The one thing unit tests cannot see is WHEN the theme is applied. next-themes
  * writes `data-theme` from a blocking inline script it renders at the top of
@@ -55,12 +55,16 @@ async function recordThemeAtFirstContent(page: Page): Promise<void> {
 }
 
 /**
- * One option of the header switch. `exact` is not optional here: Playwright
- * matches accessible names as substrings, and "Темна" is a substring of
- * "Системна" — without it the locator resolves to two elements and fails.
+ * The header's one-button theme toggle (TASK-2073), by the theme a click
+ * will turn on. Its name says what a click WILL do and is computed from the
+ * effective theme after hydration (before it, the neutral «Тема оформлення») —
+ * so locating it by that name also waits until a click can actually land.
  */
-function themeOption(page: Page, name: string) {
-  return page.locator("header").getByRole("radio", { name, exact: true });
+function themeButton(page: Page, target: "dark" | "light") {
+  return page.locator("header").getByRole("button", {
+    name: target === "dark" ? "Увімкнути темну тему" : "Увімкнути світлу тему",
+    exact: true,
+  });
 }
 
 test.describe("manual theme switch", () => {
@@ -78,12 +82,13 @@ test.describe("manual theme switch", () => {
     // The header switch starts at `xl` (TASK-511/512; below it lives in the
     // slide-out menu); the default project viewport is 1280 wide, so it is on
     // screen here.
-    const dark = themeOption(page, "Темна");
+    const dark = themeButton(page, "dark");
     await expect(dark).toBeVisible();
     await dark.click();
 
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await expect(dark).toHaveAttribute("aria-checked", "true");
+    // The button now offers the way back.
+    await expect(themeButton(page, "light")).toBeVisible();
 
     await page.reload();
 
@@ -122,7 +127,7 @@ test.describe("manual theme switch", () => {
     // Untouched, the storefront follows the OS.
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
-    await themeOption(page, "Світла").click();
+    await themeButton(page, "light").click();
     await page.reload();
 
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
@@ -175,7 +180,7 @@ test.describe("manual theme switch", () => {
       "dark: did not apply on a dark OS with no explicit choice",
     ).not.toBe("rgba(0, 0, 0, 0)");
 
-    await themeOption(page, "Світла").click();
+    await themeButton(page, "light").click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
     expect(
@@ -218,7 +223,7 @@ test.describe("manual theme switch", () => {
     await expect(overrides).toHaveCount(0);
     expect(await effectiveThemeColor()).toBe("#111118");
 
-    await themeOption(page, "Світла").click();
+    await themeButton(page, "light").click();
     await expect(overrides).toHaveCount(1);
     expect(
       await effectiveThemeColor(),
@@ -238,7 +243,13 @@ test.describe("manual theme switch", () => {
     await expect(overrides).toHaveCount(1);
     expect(await effectiveThemeColor()).toBe("#f6f5f9");
 
-    await themeOption(page, "Системна").click();
+    // No header control returns to «Системна» any more (TASK-2073) — that is
+    // the account card «Оформлення». Clearing the stored choice is the same
+    // state next-themes starts from: the media pair decides again.
+    await page.evaluate(() => window.localStorage.removeItem("theme"));
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(themeButton(page, "light")).toBeVisible();
     await expect(overrides).toHaveCount(0);
     expect(await effectiveThemeColor()).toBe("#111118");
   });
