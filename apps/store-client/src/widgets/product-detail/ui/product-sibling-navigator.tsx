@@ -8,7 +8,32 @@ import {
   type ProductGroupEntity,
   type ProductSiblingEntity,
 } from "@/entities/product";
+import { getDeviceFamilyTone } from "@/entities/device";
+import {
+  EMPTY_DEVICES,
+  useMyDevices,
+  useMyDevicesHydrated,
+} from "@/entities/my-devices";
+import { dict } from "@/shared/config";
 import { colorSwatch, isColorAxis } from "@/shared/lib";
+import { cn } from "@/shared/lib/utils";
+import {
+  deviceForModelValue,
+  findVariantFor,
+  isModelAxis,
+  modelChipLabel,
+} from "../model/model-variants";
+
+/**
+ * A text chip (Product mockup §6.6): a 40px pill on the card surface, 600.
+ * 44px below `lg`, where a thumb picks it (touch-target minimum).
+ */
+const CHIP_CLASS =
+  "inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-semibold no-underline transition-[background-color,border-color,color,transform] duration-150 ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:scale-98 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 motion-reduce:transition-none motion-reduce:active:scale-100 lg:h-10";
+const CHIP_IDLE =
+  "border-border bg-card text-foreground hover:border-foreground/35 hover:bg-muted";
+const CHIP_SELECTED =
+  "border-primary bg-primary text-primary-foreground hover:bg-primary/90";
 
 interface ProductSiblingNavigatorProps {
   group: ProductGroupEntity;
@@ -78,8 +103,19 @@ export function ProductSiblingNavigator({
   currentSlug,
 }: ProductSiblingNavigatorProps) {
   const queryClient = useQueryClient();
+  // Saved devices mark «their» model chips — client-only, after hydration, so
+  // the cached HTML never carries them.
+  const hydrated = useMyDevicesHydrated();
+  const savedDevices = useMyDevices();
+  const devices = hydrated ? savedDevices : EMPTY_DEVICES;
+  // The model axis leads (Product mockup §6.1: model chips, then swatches);
+  // the rest keep the group's own order.
   const axes = [...group.axes]
-    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .sort(
+      (a, b) =>
+        Number(isModelAxis(b.name)) - Number(isModelAxis(a.name)) ||
+        a.sortOrder - b.sortOrder,
+    )
     .map((axis) => axis.name);
 
   if (axes.length === 0) {
@@ -116,30 +152,41 @@ export function ProductSiblingNavigator({
         }
 
         const isColor = isColorAxis(axis);
+        const isModel = isModelAxis(axis);
 
         return (
-          <fieldset key={axis} className="flex flex-col gap-2">
-            <legend className="mb-2 text-sm font-medium capitalize text-foreground">
+          <fieldset key={axis} className="flex flex-col">
+            <legend className="mb-2 text-sm font-semibold text-foreground first-letter:uppercase">
               {axis}
-              {/* Swatches hide the colour text, so surface the current one here. */}
-              {isColor && currentValue && (
+              {/* Swatches hide the colour text and model chips drop the
+                  «iPhone » prefix, so the full current value is named here. */}
+              {(isColor || isModel) && currentValue && (
                 <span className="font-normal text-muted-foreground">
                   : {currentValue}
                 </span>
               )}
             </legend>
-            <div className="flex flex-wrap gap-2">
+            <div
+              className={cn("flex flex-wrap", isColor ? "gap-2" : "gap-1.5")}
+            >
               {values.map((value) => {
                 const isSelected = value === currentValue;
+                // A model with no sibling in the current colour still has a
+                // variant: open it in its first colour rather than disable it.
                 const sibling = isSelected
                   ? null
-                  : resolveSibling(
+                  : (resolveSibling(
                       group.positions,
                       axes,
                       currentAttributes,
                       axis,
                       value,
-                    );
+                    ) ??
+                    (isModel
+                      ? findVariantFor(group, currentAttributes, {
+                          name: value,
+                        })
+                      : null));
                 const unavailable = !isSelected && sibling === null;
                 // A sibling resolving to the page we are already on is not a
                 // destination — it renders as the current value instead.
@@ -159,20 +206,56 @@ export function ProductSiblingNavigator({
                         ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
                         : "hover:scale-110"
                     }`
-                  : `rounded-lg border-2 px-4 py-2 text-sm font-medium capitalize no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${
-                      isSelected
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : "border-border text-foreground hover:border-primary"
-                    }`;
+                  : cn(CHIP_CLASS, isSelected ? CHIP_SELECTED : CHIP_IDLE);
                 const style = swatch ? { background: swatch.css } : undefined;
-                const content: ReactNode = swatch ? null : value;
+                // A model chip of one of the shopper's saved devices: a family
+                // dot before the name and a tag after it («ваш» / its label).
+                const mine = isModel
+                  ? deviceForModelValue(value, devices)
+                  : null;
+                const tag = mine
+                  ? (mine.label ?? dict.deviceFit.modelChips.mine)
+                  : null;
+                const content: ReactNode = swatch ? null : (
+                  <>
+                    {mine && (
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "size-2 shrink-0 rounded-full",
+                          getDeviceFamilyTone(mine.family).strong,
+                        )}
+                      />
+                    )}
+                    {isModel ? modelChipLabel(value) : value}
+                    {tag && mine && (
+                      <small
+                        className={cn(
+                          "rounded-full px-1.5 py-px text-xs leading-tight font-bold text-foreground",
+                          getDeviceFamilyTone(mine.family).surface,
+                        )}
+                      >
+                        {tag}
+                      </small>
+                    )}
+                  </>
+                );
+                // The chip drops «iPhone » and may carry a tag, so the full
+                // model (plus the tag) is the accessible name.
+                const label = swatch
+                  ? value
+                  : isModel
+                    ? tag
+                      ? `${value} · ${tag}`
+                      : value
+                    : undefined;
 
                 if (target) {
                   return (
                     <Link
                       key={value}
                       href={`/products/${target}`}
-                      aria-label={swatch ? value : undefined}
+                      aria-label={label}
                       title={swatch ? value : undefined}
                       onMouseEnter={() => prefetchSibling(target)}
                       onFocus={() => prefetchSibling(target)}
@@ -190,7 +273,7 @@ export function ProductSiblingNavigator({
                     key={value}
                     type="button"
                     aria-pressed={isSelected}
-                    aria-label={swatch ? value : undefined}
+                    aria-label={label}
                     title={swatch ? value : undefined}
                     disabled={unavailable}
                     style={style}
