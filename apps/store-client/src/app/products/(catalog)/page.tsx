@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { permanentRedirect } from "next/navigation";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
-import { ProductListView, ProductListSkeleton } from "@/widgets";
+import { ProductListSkeleton } from "@/widgets";
+import { CatalogListingView } from "./catalog-listing-view";
 import {
   buildCatalogHeader,
   buildCatalogListingParams,
@@ -380,7 +381,7 @@ export default async function ProductsPage({
             />
           }
         >
-          <ProductListView
+          <CatalogListingView
             initialParams={initialParams}
             categoryTreePrefetched={categoryTree !== null}
           />

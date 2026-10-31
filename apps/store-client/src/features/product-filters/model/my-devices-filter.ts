@@ -2,8 +2,9 @@
  * «З урахуванням моїх пристроїв» (TASK-2077) — the catalogue filter that reads
  * the shopper's saved devices, as pure state over the ONE `?device=` param.
  *
- * There is no second URL key (`compat=` / `scope=` in the mockup): the filter
- * writes explicit model slugs — `device=iphone-15-pro` for the active device,
+ * There is no `scope=` key (the mockup has `compat=` / `scope=`), and `compat=`
+ * only ever carries `off` — see `catalogDeviceParam`: the filter writes
+ * explicit model slugs — `device=iphone-15-pro` for the active device,
  * `device=iphone-15-pro,iphone-13` for «для всіх моїх» (the API OR-s them).
  * So a shared link reproduces the listing in any browser, saved devices or
  * not, and the brand → model cascade (TASK-190) and the chips row keep reading
@@ -91,6 +92,71 @@ export function allMyDevicesParam(devices: readonly MyDevice[]): string {
     .slice(0, MAX_DEVICE_FILTER_SLUGS)
     .map((d) => d.slug)
     .join(",");
+}
+
+// ── the catalogue default (Д3-2 Catalog §11 / §20, TASK-2076) ─────────────
+
+/**
+ * `?compat=off` — the one thing the URL has to say beyond `device=`: «the
+ * shopper switched the filter off here». Without it a catalogue URL with no
+ * `device=` takes the default below, so «off» could never stick.
+ */
+export const COMPAT_PARAM = "compat";
+export const COMPAT_OFF = "off";
+
+/** Where the catalogue filter starts — the «Мої пристрої» settings' shape. */
+export interface MyDevicesFilterDefault {
+  on: boolean;
+  scope: "active" | "all";
+}
+
+/**
+ * The catalogue default when no settings are passed in: ON for the active
+ * device (brief §20) — also what the «Мої пристрої» settings default to. The
+ * settings themselves (`compatOnly` / `compatScope`) live in a widget a
+ * feature cannot import, so the route's client shell reads them and hands
+ * them down as `defaults`.
+ */
+export const CATALOG_MY_DEVICES_DEFAULT: Readonly<MyDevicesFilterDefault> =
+  Object.freeze({ on: true, scope: "active" });
+
+/**
+ * The `device=` the catalogue lists by: the URL's own when it names one (a
+ * shared link reproduces itself), nothing after an explicit `compat=off`,
+ * else the default — the active device, or every saved device for
+ * «Для всіх моїх» (only meaningful with more than one).
+ */
+export function catalogDeviceParam(
+  urlDevice: string | null | undefined,
+  compat: string | null | undefined,
+  devices: readonly MyDevice[],
+  defaults: Readonly<MyDevicesFilterDefault> = CATALOG_MY_DEVICES_DEFAULT,
+): string | undefined {
+  if (urlDevice) return urlDevice;
+  if (compat === COMPAT_OFF || !defaults.on || devices.length === 0) {
+    return undefined;
+  }
+  return defaults.scope === "all" && devices.length > 1
+    ? allMyDevicesParam(devices)
+    : devices[0].slug;
+}
+
+/**
+ * Complete a filter update for the catalogue URL: whoever clears `device=`
+ * (the switch, the chip, «Очистити все», «Показати всі») also writes
+ * `compat=off` so the default does not put it straight back; whoever sets it
+ * drops the marker. Only where a default applies (saved devices and the
+ * default on) — elsewhere the marker would be noise in the link.
+ */
+export function withCompatMarker(
+  updates: Record<string, string | undefined>,
+  defaultApplies: boolean,
+): Record<string, string | undefined> {
+  if (!("device" in updates)) return updates;
+  return {
+    ...updates,
+    [COMPAT_PARAM]: updates.device || !defaultApplies ? undefined : COMPAT_OFF,
+  };
 }
 
 /**

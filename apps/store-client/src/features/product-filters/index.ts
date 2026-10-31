@@ -7,14 +7,20 @@ export { MyDevicesEmptyState } from "./ui/my-devices-empty-state";
 // (TASK-1300 — no radios there, on/off only).
 export { MyDevicesSwitch } from "./ui/my-devices-switch";
 export {
+  CATALOG_MY_DEVICES_DEFAULT,
+  COMPAT_PARAM,
   MAX_DEVICE_FILTER_SLUGS,
   allMyDevicesParam,
+  catalogDeviceParam,
   isMyDevicesFilterOn,
   parseDeviceParam,
   resolveMyDevicesFilter,
+  withCompatMarker,
+  type MyDevicesFilterDefault,
   type MyDevicesFilterState,
 } from "./model/my-devices-filter";
 export {
+  useCatalogDeviceParam,
   useMyDevicesFilter,
   type MyDevicesFilter,
 } from "./model/use-my-devices-filter";

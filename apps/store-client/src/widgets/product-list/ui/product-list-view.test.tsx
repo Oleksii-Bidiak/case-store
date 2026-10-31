@@ -9,6 +9,7 @@ import { renderToString } from "react-dom/server";
 import { getCategoryControllerGetCategoryTreeQueryKey } from "@/entities/category";
 import { getProductControllerFindAllQueryKey } from "@/entities/product";
 import { AuthContext } from "@/entities/session/model/auth.context";
+import { addDevice, clearMyDevices } from "@/entities/my-devices";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import {
   renderWithProviders,
@@ -485,18 +486,19 @@ describe("ProductListView — filters (TASK-414)", () => {
     );
   });
 
-  // A sticky aside with no height cap runs off the bottom of a short viewport
-  // and, being sticky, the page scroll never brings the overflow back.
-  it("gives the desktop sidebar its own scroll box", async () => {
+  // With the category tree on top, a capped sticky rail that scrolls inside
+  // itself hid every filter below its own fold (Д3 review) — the rail grows
+  // with the page instead, so page scroll reaches all of it.
+  it("lets the desktop rail grow with the page, not scroll inside itself", async () => {
     const { container } = renderWithProviders(
       <ProductListView initialParams={{ page: 1 }} />,
     );
     installCatalogHandlers();
 
     const aside = container.querySelector("aside")!;
-    expect(aside.className).toContain("lg:max-h-sticky-aside");
-    expect(aside.className).toContain("lg:overflow-y-auto");
-    expect(aside.className).toContain("lg:overscroll-contain");
+    expect(aside.className).not.toContain("lg:sticky");
+    expect(aside.className).not.toContain("lg:max-h-sticky-aside");
+    expect(aside.className).not.toContain("lg:overflow-y-auto");
   });
 });
 
@@ -894,5 +896,55 @@ describe("ProductListView — empty state (TASK-870)", () => {
     const cta = screen.getByRole("link", { name: dict.promo.dealsEmptyCta });
     expect(cta).toHaveAttribute("href", "/products");
     expect(cta).toHaveAttribute("data-variant", "default");
+  });
+});
+
+describe("ProductListView — the «Мої пристрої» default (TASK-2076)", () => {
+  const pro = {
+    modelId: "m-15p",
+    slug: "iphone-15-pro",
+    name: "iPhone 15 Pro",
+    brandName: "Apple",
+    family: "iphone" as const,
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    clearMyDevices();
+  });
+
+  it("lists by the active device when the URL names none", async () => {
+    const productRequests = installCatalogHandlers();
+    addDevice(pro);
+
+    renderWithProviders(
+      <ProductListView myDevicesDefault={{ on: true, scope: "active" }} />,
+    );
+
+    await screen.findByText("Alpha Case");
+    expect(
+      productRequests.some(
+        (url) => url.searchParams.get("device") === "iphone-15-pro",
+      ),
+    ).toBe(true);
+  });
+
+  it("applies no default after compat=off or without the opt-in", async () => {
+    const productRequests = installCatalogHandlers();
+    addDevice(pro);
+    currentQuery = "compat=off";
+
+    const { unmount } = renderWithProviders(
+      <ProductListView myDevicesDefault={{ on: true, scope: "active" }} />,
+    );
+    await screen.findByText("Alpha Case");
+    unmount();
+    currentQuery = "";
+    renderWithProviders(<ProductListView />);
+    await screen.findByText("Alpha Case");
+
+    expect(
+      productRequests.every((url) => !url.searchParams.has("device")),
+    ).toBe(true);
   });
 });

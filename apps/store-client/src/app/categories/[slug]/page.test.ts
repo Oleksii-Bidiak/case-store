@@ -5,6 +5,10 @@ jest.mock("@/widgets", () => ({
   ProductListView: () => null,
   ProductListSkeleton: () => null,
 }));
+// The listing's client shell (TASK-2076 default) — not rendered here either.
+jest.mock("@/app/products/(catalog)/catalog-listing-view", () => ({
+  CatalogListingView: () => null,
+}));
 // Category tree fetch used by resolveCategoryPath — an empty tree resolves the
 // slug to null (the tree is active-only), which is the route's 404 candidate.
 // The same read is handed to the rail's tree under its query key (TASK-2011).

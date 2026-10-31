@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
-import { ProductListView, ProductListSkeleton } from "@/widgets";
+import { ProductListSkeleton } from "@/widgets";
+import { CatalogListingView } from "@/app/products/(catalog)/catalog-listing-view";
 import { categoryTreeRowCount } from "@/features/product-filters";
 import {
   buildCatalogListingParams,
@@ -342,7 +343,7 @@ export default async function CategoryLandingPage({
             />
           }
         >
-          <ProductListView
+          <CatalogListingView
             initialParams={initialParams}
             // Slug for the listing filter, id for the id-addressed side
             // endpoints (brands-per-category, filterable specs) — TASK-420.

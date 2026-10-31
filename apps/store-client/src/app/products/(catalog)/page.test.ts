@@ -5,6 +5,10 @@ jest.mock("@/widgets", () => ({
   ProductListView: () => null,
   ProductListSkeleton: () => null,
 }));
+// The listing's client shell (TASK-2076 default) — not rendered here either.
+jest.mock("./catalog-listing-view", () => ({
+  CatalogListingView: () => null,
+}));
 jest.mock("@/shared/api/generated/categories/categories", () => ({
   categoryControllerGetCategoryTree: jest.fn(),
   getCategoryControllerGetCategoryTreeQueryKey: () => ["/api/categories/tree"],

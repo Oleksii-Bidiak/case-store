@@ -27,12 +27,16 @@ import {
   FiltersButton,
   MyDevicesEmptyState,
   useMyDevicesFilter,
+  useCatalogDeviceParam,
+  withCompatMarker,
+  COMPAT_PARAM,
   clearFilterUpdates,
   countActiveFilters,
   hasActiveFilters,
   type CatalogView,
+  type MyDevicesFilterDefault,
 } from "@/features/product-filters";
-import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
+import { dict } from "@/shared/config";
 import { findCategoryNodeBySlug } from "../model/catalog-header";
 import { buildCatalogListingParams } from "../model/listing-params";
 import { ProductList } from "./product-list";
@@ -48,7 +52,19 @@ const serverSnapshot = () => false;
  * CatalogNav §10.2): the view, the device and the sort order. Facets, price,
  * availability and the page belonged to the old category and are dropped.
  */
-const CATEGORY_NAV_KEEP = ["view", "device", "sortBy", "sortOrder"] as const;
+const CATEGORY_NAV_KEEP = [
+  "view",
+  "device",
+  COMPAT_PARAM,
+  "sortBy",
+  "sortOrder",
+] as const;
+
+/** No default device filter — `/promo` and any route that does not opt in. */
+const NO_MY_DEVICES_DEFAULT: Readonly<MyDevicesFilterDefault> = Object.freeze({
+  on: false,
+  scope: "active",
+});
 
 interface ProductListViewProps {
   /**
@@ -110,6 +126,13 @@ interface ProductListViewProps {
    * — claiming a tree the server did not have brings back TASK-534's mismatch.
    */
   categoryTreePrefetched?: boolean;
+  /**
+   * Where «З урахуванням моїх пристроїв» starts when the URL names no device
+   * (Д3-2 Catalog §11/§20, TASK-2076): the «Мої пристрої» settings, read by
+   * the route's client shell. Absent → no default (the filter starts off), as
+   * on `/promo`. A route-locked device ignores it.
+   */
+  myDevicesDefault?: Readonly<MyDevicesFilterDefault>;
 }
 
 /**
@@ -125,6 +148,7 @@ export function ProductListView({
   lockedOnSale = false,
   anchorId,
   categoryTreePrefetched = false,
+  myDevicesDefault = NO_MY_DEVICES_DEFAULT,
 }: ProductListViewProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -138,7 +162,20 @@ export function ProductListView({
   // server page prefetched the first page with (TASK-563): one set of rules on
   // both sides gives one React Query key, so the hydrated cards are this
   // query's own data — see `model/listing-params.ts` for why that matters.
-  const params = buildCatalogListingParams((key) => searchParams.get(key), {
+  //
+  // The one exception is `device=` (TASK-2077): with no device in the URL —
+  // and no `compat=off` — the listing filters by the «Мої пристрої» default.
+  // The saved devices are localStorage-only, so the server and the hydration
+  // render list what the URL says; the default lands on the next render.
+  const catalogDevice = useCatalogDeviceParam(
+    searchParams.get("device"),
+    searchParams.get(COMPAT_PARAM),
+    myDevicesDefault,
+  );
+  const hasDeviceDefault = catalogDevice.hasDevices && myDevicesDefault.on;
+  const readParam = (key: string) =>
+    key === "device" ? (catalogDevice.device ?? null) : searchParams.get(key);
+  const params = buildCatalogListingParams(readParam, {
     categorySlug: lockedCategory?.slug,
     deviceSlug: lockedDevice?.slug,
     onSale: lockedOnSale,
@@ -177,7 +214,13 @@ export function ProductListView({
   });
 
   const applyFilters = useCallback(
-    (updates: Record<string, string | undefined>) => {
+    (rawUpdates: Record<string, string | undefined>) => {
+      // Clearing `device=` where a default applies would only bring the
+      // default straight back — so it also writes `compat=off`, and setting a
+      // device drops the marker. Never on a route-locked device.
+      const updates = lockedDevice
+        ? rawUpdates
+        : withCompatMarker(rawUpdates, hasDeviceDefault);
       const next = new URLSearchParams(searchParams.toString());
       for (const [key, value] of Object.entries(updates)) {
         if (value) {
@@ -189,7 +232,7 @@ export function ProductListView({
       next.set("page", "1"); // reset pagination on any filter/sort change
       router.replace(`${pathname}?${next.toString()}${fragment}`);
     },
-    [searchParams, pathname, router, fragment],
+    [searchParams, pathname, router, fragment, lockedDevice, hasDeviceDefault],
   );
 
   // View toggle preserves the current page (it does not change the result set).
@@ -399,13 +442,12 @@ export function ProductListView({
 
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
-        {/* Desktop sidebar. A sticky aside with no height cap runs off a short
-            viewport, and page scroll never brings the overflow back — so it is
-            capped at `max-h-sticky-aside` and scrolls inside itself (TASK-414).
-            The category tree tops it (TASK-2011), then the filter cards. */}
-        <aside
-          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} lg:flex lg:max-h-sticky-aside lg:flex-col lg:gap-3.5 lg:self-start lg:overflow-y-auto lg:overscroll-contain`}
-        >
+        {/* Desktop rail: the category tree (TASK-2011), «З урахуванням моїх
+            пристроїв», then the filters (Catalog §9.1). It grows with the page
+            instead of being a sticky box that scrolls inside itself: with the
+            tree on top, a capped sticky rail hid every filter below its own
+            fold, where page scroll never reaches. */}
+        <aside className="hidden lg:flex lg:flex-col lg:gap-3 lg:self-start">
           {withCategoryTree &&
             (categoryTreePending ? (
               <CategoryTreePanelSkeleton />

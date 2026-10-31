@@ -11,7 +11,10 @@ import {
   type MyDevice,
 } from "@/entities/my-devices";
 import {
+  CATALOG_MY_DEVICES_DEFAULT,
+  catalogDeviceParam,
   resolveMyDevicesFilter,
+  type MyDevicesFilterDefault,
   type MyDevicesFilterState,
 } from "./my-devices-filter";
 
@@ -38,6 +41,27 @@ export function useMyDevicesFilter(
     hydrated,
     devices,
     state: resolveMyDevicesFilter(deviceParam, devices),
+  };
+}
+
+/**
+ * The catalogue's `device=` with the «Мої пристрої» default applied (Д3-2
+ * Catalog §11/§20): the URL's own, nothing after `compat=off`, else the
+ * active device. The saved list is localStorage-only, so the server render and
+ * the hydration render see no devices and list what the URL says — the server
+ * prefetch's own query; the default lands on the first client render after.
+ */
+export function useCatalogDeviceParam(
+  urlDevice: string | null | undefined,
+  compat: string | null | undefined,
+  defaults: Readonly<MyDevicesFilterDefault> = CATALOG_MY_DEVICES_DEFAULT,
+): { device: string | undefined; hasDevices: boolean } {
+  const hydrated = useMyDevicesHydrated();
+  const saved = useMyDevices();
+  const devices = hydrated ? saved : [];
+  return {
+    device: catalogDeviceParam(urlDevice, compat, devices, defaults),
+    hasDevices: devices.length > 0,
   };
 }
 

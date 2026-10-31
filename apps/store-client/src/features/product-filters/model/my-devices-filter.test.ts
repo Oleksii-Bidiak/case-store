@@ -2,6 +2,8 @@ import type { MyDevice } from "@/entities/my-devices";
 import {
   MAX_DEVICE_FILTER_SLUGS,
   allMyDevicesParam,
+  catalogDeviceParam,
+  withCompatMarker,
   isMyDevicesFilterOn,
   myDevicesSwitchUpdate,
   parseDeviceParam,
@@ -122,5 +124,60 @@ describe("myDevicesSwitchUpdate", () => {
 
   it("cannot turn on without a saved device", () => {
     expect(myDevicesSwitchUpdate(true, [])).toEqual({ device: undefined });
+  });
+});
+
+describe("catalogDeviceParam (the «Мої пристрої» default, TASK-2076)", () => {
+  it("keeps the URL's own device — a shared link reproduces itself", () => {
+    expect(catalogDeviceParam("galaxy-s24", null, saved)).toBe("galaxy-s24");
+    expect(catalogDeviceParam("galaxy-s24", "off", saved)).toBe("galaxy-s24");
+  });
+
+  it("defaults to the active device with no device in the URL", () => {
+    expect(catalogDeviceParam(null, null, saved)).toBe("iphone-15-pro");
+  });
+
+  it("defaults to every saved device for the «all» scope", () => {
+    expect(
+      catalogDeviceParam(null, null, saved, { on: true, scope: "all" }),
+    ).toBe("iphone-15-pro,iphone-13,watch-s10-46");
+    // One device: «all» is the active one.
+    expect(
+      catalogDeviceParam(null, null, [pro], { on: true, scope: "all" }),
+    ).toBe("iphone-15-pro");
+  });
+
+  it("applies no default after compat=off, with the setting off or no devices", () => {
+    expect(catalogDeviceParam(null, "off", saved)).toBeUndefined();
+    expect(
+      catalogDeviceParam(null, null, saved, { on: false, scope: "active" }),
+    ).toBeUndefined();
+    expect(catalogDeviceParam(null, null, [])).toBeUndefined();
+  });
+});
+
+describe("withCompatMarker", () => {
+  it("marks a cleared device as compat=off where a default applies", () => {
+    expect(withCompatMarker({ device: undefined }, true)).toEqual({
+      device: undefined,
+      compat: "off",
+    });
+  });
+
+  it("drops the marker when a device is set", () => {
+    expect(withCompatMarker({ device: "iphone-13" }, true)).toEqual({
+      device: "iphone-13",
+      compat: undefined,
+    });
+  });
+
+  it("leaves updates without a device — and listings without a default — alone", () => {
+    expect(withCompatMarker({ brand: "apple" }, true)).toEqual({
+      brand: "apple",
+    });
+    expect(withCompatMarker({ device: undefined }, false)).toEqual({
+      device: undefined,
+      compat: undefined,
+    });
   });
 });
