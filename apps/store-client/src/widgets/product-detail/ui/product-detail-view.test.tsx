@@ -373,8 +373,11 @@ describe("ProductDetailView — responsive hero grid (TASK-416)", () => {
     const hero = container.querySelector(".grid");
     expect(hero).toHaveClass("grid-cols-1", "lg:grid-cols-2", "lg:items-start");
     expect(hero?.children).toHaveLength(2);
-    // TASK-519: the shared 96px offset, not a hand-written `lg:top-24`.
-    expect(hero?.firstElementChild).toHaveClass("lg:sticky", "top-24");
+    // TASK-519: the shared header offset, not a hand-written `lg:top-24`.
+    expect(hero?.firstElementChild).toHaveClass(
+      "lg:sticky",
+      "top-(--sticky-header-offset)",
+    );
 
     // One info column carries the price and the buy row — no separate box.
     const info = hero?.lastElementChild as HTMLElement;

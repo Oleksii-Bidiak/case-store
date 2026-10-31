@@ -199,7 +199,7 @@ function HubSection({
     <section
       id={hubSectionId(category.slug)}
       aria-labelledby={headingId}
-      className="scroll-mt-24 pt-10"
+      className="scroll-mt-(--sticky-header-offset) pt-10"
     >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">

@@ -435,11 +435,12 @@
      through `PAGE_CONTAINER` (shared/config/layout.ts), not on its own. */
   --container-page: 1320px;
   /* Height cap of a sticky filter aside (TASK-414, TASK-517): the viewport
-     minus the 6rem sticky offset (`top-24`, STICKY_ASIDE_TOP) and a 1rem
-     breathing gap, so a tall aside scrolls inside itself instead of running
-     off a short screen. `--max-height-*` is Tailwind's max-height namespace →
-     `max-h-sticky-aside`. Pair with `overflow-y-auto overscroll-contain`. */
-  --max-height-sticky-aside: calc(100dvh - 7rem);
+     minus the sticky offset (`--sticky-header-offset`, STICKY_ASIDE_TOP) and a
+     1rem breathing gap, so a tall aside scrolls inside itself instead of
+     running off a short screen. `--max-height-*` is Tailwind's max-height
+     namespace → `max-h-sticky-aside`. Pair with `overflow-y-auto
+     overscroll-contain`. */
+  --max-height-sticky-aside: calc(100dvh - var(--sticky-header-offset) - 1rem);
   /* Height cap of a popover-anchored listbox (Combobox, TASK-502): the 15rem
      list it always had (`max-h-60`), shrunk to the room Radix measured on the
      side it opened towards — but never below 7.5rem (about three rows). The
@@ -585,6 +586,23 @@
         --spacing(4) + var(--mobile-bar-inset, 0px)
       );
     }
+  }
+}
+
+/* ─────────────────────────────────────────────
+   Sticky-header clearance (shared/config/layout.ts). The header publishes its
+   measured height as an inline `--header-height` on <html> (useHeaderHeight);
+   these are the pre-hydration fallbacks: the 64px row + 1px border + the
+   «Мої пристрої» tier 1 (1px + 56px) = 122px, plus tier 2 (1px + 52px) from
+   1024 when a saved device is known before paint (`data-has-device`).
+   ───────────────────────────────────────────── */
+:root {
+  --header-height: 122px;
+  --sticky-header-offset: calc(var(--header-height) + 2rem);
+}
+@media (width >= 64rem) {
+  html[data-has-device] {
+    --header-height: 175px;
   }
 }
 

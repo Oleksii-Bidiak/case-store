@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useHeaderHeight } from "@/shared/lib/use-header-height";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -72,6 +73,9 @@ export function Header({
   supportPhone,
 }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // Publishes the measured height for every sticky panel below (layout.ts).
+  const headerRef = useRef<HTMLElement>(null);
+  useHeaderHeight(headerRef);
   const router = useRouter();
   const queryClient = useQueryClient();
   const { isInitializing, isAuthenticated, clearTokens } = useAuth();
@@ -93,7 +97,11 @@ export function Header({
   return (
     <>
       <AnnouncementBar banner={announcement} phone={supportPhone} />
-      <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
+      <header
+        ref={headerRef}
+        data-site-header=""
+        className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80"
+      >
         <div
           className={`${PAGE_CONTAINER} flex h-16 items-center gap-2 sm:gap-3`}
         >
