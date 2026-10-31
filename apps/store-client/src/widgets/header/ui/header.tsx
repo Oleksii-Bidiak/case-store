@@ -19,6 +19,7 @@ import { dict, PAGE_CONTAINER } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import type { BannerEntity } from "@/shared/api/generated/models";
 import { DevicePicker } from "@/features/device-picker";
+import { DeviceBar } from "@/widgets/device-bar";
 import { SearchAutocomplete } from "@/features/search";
 import { ThemeToggle } from "@/features/theme";
 import { AnnouncementBar } from "./announcement-bar";
@@ -368,6 +369,12 @@ export function Header({
             <HeaderCartBadge className="sm:ml-1" />
           </div>
         </div>
+        {/* «Мої пристрої» (TASK-2074) — the second row, sticky with the
+            header at every width: the active device chip and the others,
+            and from 1024 the active device's categories. Client-only data
+            (localStorage), so tier 1 renders a placeholder of its exact
+            height until hydration and does not shift the page below it. */}
+        <DeviceBar />
       </header>
       {/* The ONE device picker (TASK-2070). The header is on every page, so
           every entry point — chip, homepage picker, PDP compat row, /devices,

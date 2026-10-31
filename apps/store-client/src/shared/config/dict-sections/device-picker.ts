@@ -76,4 +76,33 @@ export const devicePickerDict = {
     forgotten: (name: string) => `${name} забуто`,
     forgottenAll: "Усі пристрої забуто",
   },
+
+  // ── TASK-2074: the device bar under the header row (two tiers) ──
+  bar: {
+    groupAria: "Мої пристрої",
+    myDevices: "Мої пристрої",
+    yours: "Ваш:",
+    more: (n: number) => `ще ${n}`,
+    moreAria: (n: number) => `Усі мої пристрої: ще ${n}`,
+    add: "Додати пристрій",
+    pick: "Оберіть свій пристрій",
+    pickHint: "— покажемо, що підходить",
+    activeAria: (name: string, label?: string) =>
+      `Активний пристрій: ${name}${label ? ` (${label})` : ""}. Змінити або додати`,
+    forgetAria: (name: string) => `Забути пристрій ${name}`,
+    showForAria: (name: string, label?: string) =>
+      `Показувати для ${name}${label ? ` (${label})` : ""}`,
+
+    // Tier 2 — the active device's categories (≥ 1024).
+    categoriesFor: (name: string) => `Для ${name}:`,
+    categoriesAria: (name: string) => `Категорії для ${name}`,
+    allCategories: (n: number) => `Усі категорії · ${n}`,
+    noCategories: "Сумісних товарів поки немає —",
+    noCategoriesLink: "увесь каталог",
+
+    // The «Усі категорії» drop panel.
+    panelTitle: (name: string, label?: string) =>
+      `Усе для ${name}${label ? ` · ${label}` : ""}`,
+    openModelPage: (count: string) => `Відкрити сторінку моделі · ${count}`,
+  },
 } as const;
