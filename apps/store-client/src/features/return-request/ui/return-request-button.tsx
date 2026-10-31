@@ -52,6 +52,11 @@ const OUTCOME_CHOICES: readonly OutcomeChoice[] = [
   ReturnOutcome.REPAIR,
 ];
 
+/** True only when the browser itself says it has no connection. */
+function isBrowserOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
 /**
  * «Подати заяву на повернення» (TASK-373).
  *
@@ -70,8 +75,9 @@ const OUTCOME_CHOICES: readonly OutcomeChoice[] = [
  *
  * TASK-1964: the same dialog serves a guest order — `source` picks the pair of
  * generated hooks (see `useReturnRequestSource`). Nothing typed is ever lost:
- * a refusal keeps the dialog open, and without a connection the request waits
- * for the browser's `online` event and goes out once, by itself.
+ * a refusal keeps the dialog open, and while the browser is offline the request
+ * waits for its `online` event and goes out once, by itself. An unreachable API
+ * with the browser online is an ordinary failure: toast, dialog stays open.
  *
  * The dialog is the same controlled-`Dialog` pattern as `CancelOrderButton` —
  * never `window.confirm`, which cannot render a line list.
@@ -125,7 +131,7 @@ export function ReturnRequestButton({
   const handleSubmit = () => {
     if (nothingSelected) return;
     // Known offline: do not even try — keep everything and wait for `online`.
-    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    if (isBrowserOffline()) {
       setAwaitingNetwork(true);
       return;
     }
@@ -142,8 +148,12 @@ export function ReturnRequestButton({
           close();
         },
         onError: (error) => {
-          // The connection dropped mid-request: the same as being offline.
-          if (isNetworkError(error)) {
+          // The connection dropped mid-request: the same as being offline —
+          // but only if the browser agrees it is offline. Axios also reports
+          // ERR_NETWORK while online when the API is unreachable (store-api
+          // down behind Caddy: a 502 without CORS headers). No `online` event
+          // follows that, so it gets the generic retry toast (SF-ACC-31).
+          if (isNetworkError(error) && isBrowserOffline()) {
             setAwaitingNetwork(true);
             return;
           }

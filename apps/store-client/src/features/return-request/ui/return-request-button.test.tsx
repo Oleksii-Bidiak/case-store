@@ -530,7 +530,12 @@ describe("ReturnRequestButton offline (TASK-1964)", () => {
     server.use(
       http.post("*/api/orders/:orderId/returns", async ({ request }) => {
         attempts += 1;
-        if (attempts === 1) return HttpResponse.error();
+        if (attempts === 1) {
+          // A real drop: the request fails AND the browser now knows it is
+          // offline — which is what makes a later `online` event possible.
+          setOnline(false);
+          return HttpResponse.error();
+        }
         bodies.push(await request.json());
         return HttpResponse.json({ data: { id: "return-1" } }, { status: 201 });
       }),
@@ -551,8 +556,50 @@ describe("ReturnRequestButton offline (TASK-1964)", () => {
       screen.getByText(dict.returnRequest.dialogTitle),
     ).toBeInTheDocument();
 
+    setOnline(true);
     goOnline();
     await waitFor(() => expect(bodies).toHaveLength(1));
+  });
+
+  // The browser is online but the API cannot be reached — store-api down or
+  // restarting behind Caddy, whose 502 carries no CORS header, so axios sees
+  // ERR_NETWORK. No `online` event will ever come: promising an automatic send
+  // here would be a promise nobody keeps (SF-ACC-31).
+  it("says the send failed when the API is unreachable but the browser is online", async () => {
+    const user = userEvent.setup();
+    setOnline(true);
+    let attempts = 0;
+    server.use(
+      http.post("*/api/orders/:orderId/returns", () => {
+        attempts += 1;
+        return HttpResponse.error();
+      }),
+    );
+
+    renderButton();
+    await open(user);
+    await chooseOne(user);
+    await user.type(screen.getByLabelText(dict.returnRequest.reason), "брак");
+    await user.click(submitButton());
+
+    expect(
+      await screen.findByText(dict.returnRequest.error),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("status")).not.toHaveTextContent(
+      dict.returnRequest.offline,
+    );
+    // The dialog stays open with everything typed, ready for a manual retry.
+    expect(
+      screen.getByText(dict.returnRequest.dialogTitle),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(dict.returnRequest.quantityAria("Чохол")),
+    ).toHaveValue(1);
+    expect(screen.getByLabelText(dict.returnRequest.reason)).toHaveValue(
+      "брак",
+    );
+    expect(attempts).toBe(1);
+    expect(submitButton()).toBeEnabled();
   });
 
   it("cancels the automatic send when the dialog is closed", async () => {
