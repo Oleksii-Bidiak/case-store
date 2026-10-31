@@ -1,5 +1,6 @@
 "use client";
 
+import { useId, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { UserPlus } from "lucide-react";
@@ -9,19 +10,84 @@ import {
   orderDeliveryDetails,
   useGetGuestOrder,
 } from "@/entities/order";
+import { GuestOrderReturnHistory } from "@/entities/return";
 import { useAuth } from "@/entities/session";
 import { GUEST_ORDER_PLACED_PARAM } from "@/features/checkout";
+import { ReturnRequestButton } from "@/features/return-request";
 import { CheckoutTelegramCard } from "@/features/telegram-connect";
+import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
 import { dict, H1_CLASS } from "@/shared/config";
+import { RETURN_POLICY } from "@/shared/config/return-policy";
 import { displayPhone } from "@/shared/lib/phone";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
 import { OrderBillingAddress } from "./order-billing-address";
 
+/** The shop's support contacts, as the footer shows them. */
+export type GuestOrderContact = Pick<
+  SiteContactSettingsEntity,
+  "phone" | "email" | "workingHours"
+>;
+
 interface GuestOrderViewProps {
   /** Opaque access token from the confirmation email. */
   token: string;
+  /**
+   * The admin-managed support contacts (`fetchSiteContactSettings`, read by
+   * the page); `null` / absent falls back to the footer's defaults.
+   */
+  contact?: GuestOrderContact | null;
+}
+
+const textLink =
+  "font-medium text-primary underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+/**
+ * «Як повернути товар» (TASK-1965): the return door for an order with no
+ * account behind it, and the shop's contacts for anything the dialog does not
+ * cover. The contacts are the footer's — the same source and the same
+ * fallbacks — so a guest never sees a number the rest of the site does not.
+ */
+function GuestReturnHelp({
+  contact,
+  children,
+}: {
+  contact?: GuestOrderContact | null;
+  children: ReactNode;
+}) {
+  const titleId = useId();
+  const phone = contact?.phone ?? dict.footer.contactPhone;
+  const email = contact?.email ?? dict.footer.contactEmail;
+  const hours = contact?.workingHours ?? dict.footer.contactHours;
+  return (
+    <section
+      aria-labelledby={titleId}
+      className="flex flex-col items-start gap-3 rounded-card border border-border bg-card p-6 text-sm"
+    >
+      <h2 id={titleId} className="text-xl font-semibold text-foreground">
+        {dict.order.guest.returnHeading}
+      </h2>
+      <p className="text-muted-foreground">
+        {dict.order.guest.returnBody(RETURN_POLICY.days)}
+      </p>
+      {children}
+      <p className="text-muted-foreground">{dict.order.guest.returnContacts}</p>
+      <ul className="flex flex-col gap-1 text-foreground">
+        <li>
+          <a href={`tel:${phone.replace(/\s+/g, "")}`} className={textLink}>
+            {phone}
+          </a>
+        </li>
+        <li>
+          <a href={`mailto:${email}`} className={textLink}>
+            {email}
+          </a>
+        </li>
+        <li className="text-muted-foreground">{hours}</li>
+      </ul>
+    </section>
+  );
 }
 
 const primaryCta =
@@ -53,8 +119,15 @@ const primaryCta =
  * offer is a banner at the top on every visit — guest orders move into the
  * account once its email is confirmed (TASK-485) — and is withheld from a
  * visitor who is already signed in.
+ *
+ * ── Returns (TASK-1965, B-12 тема 1.8) ────────────────────────────────────────
+ * The token is the authorisation for returns too: a guest — or a shopper who
+ * ordered by phone — files a request with the account's dialog through the
+ * guest adapter, sees each request's status and decision here, and gets the
+ * shop's contacts. Only once the order has loaded, so a bad link still ends in
+ * the one not-found view and asks the returns endpoint nothing.
  */
-export function GuestOrderView({ token }: GuestOrderViewProps) {
+export function GuestOrderView({ token, contact }: GuestOrderViewProps) {
   const { data, isLoading, isError } = useGetGuestOrder(token, {
     query: {
       // A bad link is a permanent answer; retrying it just delays the message.
@@ -124,6 +197,23 @@ export function GuestOrderView({ token }: GuestOrderViewProps) {
       <div className="flex flex-col gap-8 lg:grid lg:grid-cols-3">
         <div className="flex flex-col gap-8 lg:col-span-2">
           <OrderItemList items={order.items} />
+          {/* TASK-1965: what became of each return request — status, the
+              decision and its reason. Nothing for an order without any. */}
+          <GuestOrderReturnHistory
+            token={token}
+            className="rounded-card border border-border bg-card p-6"
+          />
+          {/* DELIVERED only — the account's rule (TASK-373: a parcel still in
+              transit is not something to file a return about). */}
+          {order.status === "DELIVERED" && (
+            <GuestReturnHelp contact={contact}>
+              <ReturnRequestButton
+                source={{ kind: "guest", token }}
+                orderNumber={`#${order.id.slice(0, 8).toUpperCase()}`}
+                items={order.items}
+              />
+            </GuestReturnHelp>
+          )}
           <OrderDeliveryBlock order={order} />
           <OrderBillingAddress
             shippingAddress={order.shippingAddress}

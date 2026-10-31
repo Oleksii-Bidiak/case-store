@@ -206,8 +206,8 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
             {/* TASK-609: the same door as the order history, under the same
                 rule — DELIVERED only (see the note there on why not SHIPPED).
                 A customer arriving from the email link lands HERE, not on the
-                list. Not on the guest view: a guest order has no owner for the
-                customer return route to check against. */}
+                list. A guest order has its own door on the guest view, by the
+                order's access token (TASK-1965). */}
             {order.status === "DELIVERED" && (
               <ReturnRequestButton
                 source={{ kind: "account", orderId: order.id }}

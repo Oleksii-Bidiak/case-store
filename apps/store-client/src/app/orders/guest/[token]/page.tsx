@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { GuestOrderView, OrderConfirmationSkeleton } from "@/widgets";
+import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { dict, PAGE_CONTAINER } from "@/shared/config";
 
 interface GuestOrderPageProps {
@@ -29,13 +30,18 @@ export const metadata: Metadata = {
 
 export default async function GuestOrderPage({ params }: GuestOrderPageProps) {
   const { token } = await params;
+  // TASK-1965: the «Як повернути товар» block names the shop's contacts — read
+  // through the one tagged reader the footer uses (deduped with it), so an
+  // admin edit reaches this page as fast as the footer. `null` → the view
+  // falls back to the footer's defaults.
+  const contact = await fetchSiteContactSettings();
 
   return (
     // Same container as `app/orders/page.tsx` — without it this page ran edge
     // to edge on a wide screen while every sibling route did not (TASK-407).
     <div className={`${PAGE_CONTAINER} py-8`}>
       <Suspense fallback={<OrderConfirmationSkeleton />}>
-        <GuestOrderView token={token} />
+        <GuestOrderView token={token} contact={contact} />
       </Suspense>
     </div>
   );

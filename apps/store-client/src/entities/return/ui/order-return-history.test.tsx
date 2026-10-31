@@ -10,7 +10,10 @@ import { server } from "@/shared/test/msw-server";
 import { makeReturn } from "@/shared/test/msw-handlers";
 import type { ReturnEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
-import { OrderReturnHistory } from "./order-return-history";
+import {
+  GuestOrderReturnHistory,
+  OrderReturnHistory,
+} from "./order-return-history";
 
 const r = dict.returnRequest;
 
@@ -226,5 +229,55 @@ describe("OrderReturnHistory (TASK-1962)", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(calls()).toBe(0);
+  });
+});
+
+// TASK-1965: the same history on a guest order — by the access token, no
+// session, and never through the account endpoint.
+describe("GuestOrderReturnHistory (TASK-1965)", () => {
+  it("reads the guest-token endpoint without a session", async () => {
+    const tokens: unknown[] = [];
+    let accountCalls = 0;
+    server.use(
+      http.get("*/api/orders/guest/:token/returns", ({ params }) => {
+        tokens.push(params.token);
+        return HttpResponse.json({
+          data: [makeReturn({ id: "bbbb2222-x", channel: "GUEST_LINK" })],
+        });
+      }),
+      http.get("*/api/orders/:orderId/returns", () => {
+        accountCalls += 1;
+        return HttpResponse.json({ data: [] });
+      }),
+    );
+    renderWithProviders(<GuestOrderReturnHistory token="guest-token" />);
+
+    expect(
+      await screen.findByRole("heading", { level: 3, name: /#BBBB2222/ }),
+    ).toBeInTheDocument();
+    expect(tokens).toEqual(["guest-token"]);
+    expect(accountCalls).toBe(0);
+  });
+
+  it("says so and offers a retry when the history fails to load", async () => {
+    let fail = true;
+    server.use(
+      http.get("*/api/orders/guest/:token/returns", () =>
+        fail
+          ? new HttpResponse(null, { status: 500 })
+          : HttpResponse.json({ data: [makeReturn()] }),
+      ),
+    );
+    renderWithProviders(<GuestOrderReturnHistory token="guest-token" />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(r.loadError);
+    fail = false;
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.retry }),
+    );
+
+    expect(
+      await screen.findByRole("region", { name: r.historyTitle }),
+    ).toBeInTheDocument();
   });
 });

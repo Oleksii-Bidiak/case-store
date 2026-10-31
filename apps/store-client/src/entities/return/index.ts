@@ -44,5 +44,9 @@ export {
   type ReturnsSummaryTone,
 } from "./model/summarize-returns";
 export { ReturnHistory } from "./ui/return-history";
-export { OrderReturnHistory } from "./ui/order-return-history";
+export {
+  OrderReturnHistory,
+  // TASK-1965: the same history on a guest order, by its access token.
+  GuestOrderReturnHistory,
+} from "./ui/order-return-history";
 export { ReturnSummaryBadge } from "./ui/return-summary-badge";

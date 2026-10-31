@@ -412,6 +412,13 @@ export const handlers = [
     HttpResponse.json({ data: [] }),
   ),
 
+  // A guest order's returns, by its access token (TASK-1965). The guest order
+  // page shows the return history on every visit; "no returns" is what every
+  // suite that merely renders that page wants.
+  http.get("*/api/orders/guest/:token/returns", () =>
+    HttpResponse.json({ data: [] }),
+  ),
+
   // The visitor's wishlist (TASK-531). Every `ProductCard` mounts a
   // `WishlistToggleButton`, which asks for it — without a default each suite
   // that merely renders a card logged one "[MSW] intercepted a request without
