@@ -3896,6 +3896,12 @@ export const dict = {
       "Вартість доставки треба уточнити: зателефонуйте покупцю й погодьте перевізника та суму. Покупець оплачує при отриманні.",
     // НП із нульовою вартістю в замовленні: покупець платить перевізнику.
     deliveryCostNpTariff: "За тарифом НП",
+
+    // --- Заявки на повернення в картці замовлення (TASK-1962, B-12 §1) --------
+    // Позиції заявки з кількістю — щоб не відкривати кожну заявку окремо.
+    returnsForOrderItemsAria: (number: string) => `Позиції заявки ${number}`,
+    returnsForOrderLine: (name: string, quantity: number) =>
+      `${name} × ${quantity}`,
   },
 
   reviews: {
@@ -4440,7 +4446,6 @@ export const dict = {
     metaTitleDetail: (id: string) => `Повернення ${id} — Адмін`,
     heading: "Повернення",
     back: "← Повернення",
-    title: (id: string) => `Повернення #${id}`,
 
     filterStatusAria: "Фільтр за статусом повернення",
     allStatuses: "Усі статуси",
