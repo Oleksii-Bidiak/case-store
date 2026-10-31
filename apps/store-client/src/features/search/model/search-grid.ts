@@ -1,3 +1,5 @@
+import { PRODUCT_GRID_BASE_CLASS } from "@/shared/config/product-grid";
+
 // The /search card grid (Д3-2 §3.6). `/search` has no filter rail, so it runs
 // one column more than the catalogue from `lg` and keeps the catalogue's card
 // size: 2 → 3 (md) → 4 (lg) → 5 (xl). The device block («Сам … у продажу»)
@@ -7,8 +9,7 @@
  * Columns 1 / 2 / 3 / 4 / 5. One column below 390px, as on the catalogue
  * (TASK-415). Gap 12px on phones, 16px from `md`.
  */
-export const SEARCH_GRID_CLASS =
-  "grid grid-cols-1 items-stretch gap-3 min-[390px]:grid-cols-2 md:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5";
+export const SEARCH_GRID_CLASS = `${PRODUCT_GRID_BASE_CLASS} lg:grid-cols-4 xl:grid-cols-5`;
 
 /**
  * `sizes` for a card in {@link SEARCH_GRID_CLASS} (the Search mockup's value):
