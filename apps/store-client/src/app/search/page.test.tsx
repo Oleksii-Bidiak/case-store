@@ -11,6 +11,9 @@ jest.mock("@/widgets/search-device-row", () => ({
   SearchDeviceRow: ({ query }: { query: string }) => (
     <div data-testid="search-device-row">{query}</div>
   ),
+  SearchFixLine: ({ query }: { query: string }) => (
+    <div data-testid="search-fix-line">{query}</div>
+  ),
 }));
 
 // No legacy uuid params in these URLs, so no 308 — and no request either.
