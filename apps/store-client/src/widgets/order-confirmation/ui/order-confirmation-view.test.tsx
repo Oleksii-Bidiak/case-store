@@ -7,7 +7,7 @@ import {
   within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
-import { makeOrder } from "@/shared/test/msw-handlers";
+import { makeOrder, makeReturn } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
 import { statusBadgeStyle } from "@/entities/order";
 import { OrderConfirmationView } from "./order-confirmation-view";
@@ -148,6 +148,54 @@ describe("OrderConfirmationView", () => {
         ).not.toBeInTheDocument();
       },
     );
+  });
+
+  // ── TASK-1962: the order's return requests, not only the door to a new one ─
+  describe("return history", () => {
+    it("lists the order's return requests with their decision", async () => {
+      server.use(
+        http.get("*/api/orders/:id", () =>
+          HttpResponse.json(makeOrder({ status: "DELIVERED" })),
+        ),
+        http.get("*/api/orders/:orderId/returns", () =>
+          HttpResponse.json({
+            data: [
+              makeReturn({
+                status: "REJECTED",
+                decision: "REJECT",
+                decisionReason: "Сліди використання",
+                decidedAt: "2026-06-12T09:00:00.000Z",
+              }),
+            ],
+          }),
+        ),
+      );
+
+      renderWithProviders(<OrderConfirmationView orderId="order-1" />, authed);
+
+      const history = await screen.findByRole("region", {
+        name: dict.returnRequest.historyTitle,
+      });
+      expect(history).toHaveTextContent("Сліди використання");
+      expect(history).toHaveTextContent(
+        dict.returnRequest.decisionLabels.REJECT,
+      );
+    });
+
+    it("shows no history section for an order without returns", async () => {
+      server.use(
+        http.get("*/api/orders/:id", () =>
+          HttpResponse.json(makeOrder({ status: "DELIVERED" })),
+        ),
+      );
+
+      renderWithProviders(<OrderConfirmationView orderId="order-1" />, authed);
+      await screen.findByRole("heading", { name: dict.order.thankYou });
+
+      expect(
+        screen.queryByRole("region", { name: dict.returnRequest.historyTitle }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it("localizes the country code instead of rendering the raw ISO value", async () => {

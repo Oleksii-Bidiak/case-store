@@ -6,7 +6,11 @@ import {
   within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
-import { makeOrder, makeOrderItem } from "@/shared/test/msw-handlers";
+import {
+  makeOrder,
+  makeOrderItem,
+  makeReturn,
+} from "@/shared/test/msw-handlers";
 import type { OrderEntity } from "@/entities/order";
 import { dict } from "@/shared/config";
 import { formatTime } from "@/shared/lib";
@@ -405,6 +409,43 @@ describe("OrderDetailView (TASK-217)", () => {
       expect(screen.getByTestId("order-detail-notes")).toHaveTextContent(
         "Зателефонуйте перед відправкою.",
       );
+    });
+  });
+
+  // TASK-1962: the order's return requests, with what was decided and why.
+  describe("return history", () => {
+    it("lists every return request of the order", async () => {
+      server.use(
+        http.get("*/api/orders/:orderId/returns", () =>
+          HttpResponse.json({
+            data: [
+              makeReturn({ id: "aaaa1111-x", status: "REQUESTED" }),
+              makeReturn({
+                id: "bbbb2222-y",
+                status: "APPROVED",
+                decision: "REPAIR",
+                decisionReason: "Гарантійний випадок",
+                decidedAt: "2026-06-12T09:00:00.000Z",
+              }),
+            ],
+          }),
+        ),
+      );
+      await renderDetail({ status: "DELIVERED" });
+
+      const history = await screen.findByRole("region", {
+        name: dict.returnRequest.historyTitle,
+      });
+      expect(within(history).getAllByRole("article")).toHaveLength(2);
+      expect(history).toHaveTextContent("Гарантійний випадок");
+    });
+
+    it("shows no history section for an order without returns", async () => {
+      await renderDetail({ status: "DELIVERED" });
+
+      expect(
+        screen.queryByRole("region", { name: dict.returnRequest.historyTitle }),
+      ).not.toBeInTheDocument();
     });
   });
 

@@ -12,7 +12,7 @@ import {
   type GetOrdersParams,
   type OrderEntity,
 } from "@/entities/order";
-import { useGetMyReturns, type ReturnEntity } from "@/entities/return";
+import { summarizeReturnsByOrder, useGetMyReturns } from "@/entities/return";
 import { dict, H1_CLASS } from "@/shared/config";
 import { Button, Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
 import { Pagination } from "@/shared/ui/pagination";
@@ -28,22 +28,6 @@ import {
 import { OrderCard } from "./order-card";
 import { ORDER_LIST_CLASS } from "./order-card-class";
 import { OrderCardsSkeleton } from "./order-history-skeleton";
-
-/**
- * The status of the NEWEST return request per order (TASK-608). The API lists
- * newest first, so the first row seen for an order is the one to show — an
- * order can carry several requests (one unit now, another next week), and the
- * latest is what the customer is waiting on.
- */
-function latestReturnStatusByOrder(
-  returns: readonly ReturnEntity[],
-): Map<string, string> {
-  const byOrder = new Map<string, string>();
-  for (const row of returns) {
-    if (!byOrder.has(row.orderId)) byOrder.set(row.orderId, row.status);
-  }
-  return byOrder;
-}
 
 function tabParams(
   tab: OrderTab,
@@ -157,7 +141,9 @@ export function OrderHistoryView({ notice }: OrderHistoryViewProps) {
   }, [clampHref, router]);
 
   const accountEmpty = totals.all === 0;
-  const latestReturn = latestReturnStatusByOrder(myReturns?.data ?? []);
+  // TASK-1962: one badge per order summing up ALL its requests — showing only
+  // the newest let a refusal for one unit hide an approved request (SF-ACC-37).
+  const returnSummaries = summarizeReturnsByOrder(myReturns?.data ?? []);
   const selectedTotal = totals[tab];
 
   const header = (
@@ -271,7 +257,7 @@ export function OrderHistoryView({ notice }: OrderHistoryViewProps) {
                   <li key={order.id}>
                     <OrderCard
                       order={order}
-                      returnStatus={latestReturn.get(order.id)}
+                      returnSummary={returnSummaries.get(order.id)}
                       awaitingMinutes={awaitingPaymentMinutes(order, now)}
                     />
                   </li>

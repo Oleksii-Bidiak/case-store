@@ -2050,6 +2050,50 @@ export const dict = {
     // Plain sr-only prefix before the badge label (design-system §2: a <span>
     // without a role is not named by aria-label).
     statusSr: "Статус заяви на повернення",
+    // TASK-1962: кілька заяв на одне замовлення підсумовуються, а не
+    // показується лише остання — відмова на 1 шт. не ховає погоджену заяву.
+    // Погоджено = погоджено або товар уже отримано; завершено = кошти повернено.
+    summary: (parts: string) => `Повернення: ${parts}`,
+    summaryBuckets: {
+      pending: "на розгляді",
+      approved: "погоджено",
+      completed: "завершено",
+      rejected: "відхилено",
+    },
+    // Історія заяв у деталях замовлення й на сторінці підтвердження.
+    historyTitle: "Заяви на повернення",
+    historyItem: (ref: string, date: string) => `Заява #${ref} від ${date}`,
+    historyItemsAria: "Позиції заяви",
+    requestedOutcome: "Чого хотіли",
+    // Ключі — сирі значення ReturnOutcome / ReturnDecision з API.
+    outcomeLabels: {
+      REFUND: "Повернути гроші",
+      REPLACEMENT: "Заміна",
+      REPAIR: "Ремонт",
+    } as Record<string, string>,
+    decision: "Рішення",
+    decisionLabels: {
+      REFUND: "Повернення коштів",
+      REPLACEMENT: "Заміна",
+      REPAIR: "Ремонт",
+      REJECT: "Відмова",
+    } as Record<string, string>,
+    decidedOn: (date: string) => `від ${date}`,
+    decisionReason: "Причина",
+    decisionPending: "Заяву розглядаємо — рішення зʼявиться тут.",
+    // Рішення, ухвалене до B-12: причину тоді не записували.
+    decisionLegacy: "Причину не записано — рішення до B-12",
+    repairTitle: "Ремонт",
+    repairStepLabels: {
+      ACCEPTED: "Прийнято в ремонт",
+      SENT_TO_SERVICE: "Передано в сервіс",
+      RETURNED_FROM_SERVICE: "Повернуто з сервісу",
+      HANDED_TO_CUSTOMER: "Видано вам",
+    } as Record<string, string>,
+    repairResultLabels: {
+      REPAIRED: "відремонтовано",
+      UNREPAIRABLE: "не підлягає ремонту",
+    } as Record<string, string>,
   },
 
   auth: {
