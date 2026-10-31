@@ -37,6 +37,10 @@ export {
   EditDeviceModelView,
 } from "./device-model-form-view";
 export {
+  DeviceModelCoverageView,
+  DeviceModelCoverageSkeleton,
+} from "./device-model-coverage";
+export {
   AdminDiscountTable,
   AdminDiscountTableSkeleton,
 } from "./discount-list";

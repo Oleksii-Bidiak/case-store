@@ -33,6 +33,10 @@ export {
   useProductControllerUpdateGroupDeviceCompat,
   // Live compatibility landing pages (wave 198, TASK-1082).
   useCatalogLandingControllerFindCompatPages,
+  // Device-side compat (TASK-1955): bulk add/remove/replace and model coverage.
+  useAdminDeviceCompatControllerBulkUpdateCompat,
+  useAdminDeviceCompatControllerGetModelCoverage,
+  getAdminDeviceCompatControllerGetModelCoverageQueryKey,
 } from "@/shared/api";
 
 export { useLiveCompatPages } from "./model/use-live-compat-pages";
@@ -56,4 +60,11 @@ export type {
   AdminDeviceControllerFindModelsParams,
   CompatLandingPageEntity,
   DeviceControllerFindModelsParams,
+  BulkCompatMode,
+  BulkDeviceCompatDto,
+  BulkDeviceCompatResponse,
+  DeviceModelCoverageEntity,
+  CoverageCategoryEntity,
+  CoverageSiblingEntity,
+  CoverageSuspectEntity,
 } from "@/shared/api";

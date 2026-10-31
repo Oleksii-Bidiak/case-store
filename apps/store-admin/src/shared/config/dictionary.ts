@@ -1952,9 +1952,6 @@ export const dict = {
   // Product-form device-compatibility multiselect + bulk action (TASK-190).
   productCompat: {
     title: "Сумісні пристрої",
-    hint: "Оберіть моделі пристроїв, з якими сумісний цей товар.",
-    loading: "Завантаження пристроїв…",
-    empty: "Спершу створіть бренди та моделі пристроїв.",
     applyToGroup: "Застосувати до всіх позицій групи",
     applyToGroupHint:
       "Скопіювати цей набір сумісності на кожну позицію тієї ж групи.",
@@ -1969,14 +1966,129 @@ export const dict = {
     // TASK-726: the save button said the block's title («Сумісні пристрої»)
     // instead of the action — mirrors productSpecs.save.
     save: "Зберегти сумісність",
-    // Хвиля 198 (TASK-1050, Ф3): пошук, бренди-пігулки й «Лише вибрані».
-    searchPlaceholder: "Модель: iPhone 15, Galaxy S24…",
+    // TASK-1955: пошук, бренди й «Лише вибрані» з хвилі 198 переїхали у
+    // вибір за серіями (`seriesPicker`). Тут лишилось те, що стосується товару.
+  },
+
+  // --- Device series picker (TASK-1955, DeviceCompat artboards 1–2) ---------
+  // Shared by the product form's compat section and the products list's bulk
+  // «Сумісність…» dialog. Invented (not in the mockup): «Інші моделі», the series
+  // checkbox aria «Уся серія …».
+  seriesPicker: {
+    lead: "Позначте серію — відмітяться всі її моделі; зніміть зайві всередині.",
+    brandsAria: "Бренд пристрою",
+    searchPlaceholder: "Пошук моделі…",
     searchAria: "Пошук моделі пристрою",
-    onlySelected: "Лише вибрані",
-    selectedCount: (count: number) => `Вибрано ${count}`,
-    allBrands: (count: number) => `Усі ${count}`,
-    brandFilterAria: "Бренд пристрою",
+    loading: "Завантаження пристроїв…",
+    empty: "Спершу створіть бренди та моделі пристроїв.",
     nothingFound: "Нічого не знайдено",
+    otherModels: "Інші моделі",
+    seriesAria: (series: string) => `Уся серія ${series}`,
+    stateAll: "уся серія",
+    stateSome: (selected: number, total: number) => `${selected} з ${total}`,
+    stateNone: (total: number) =>
+      countLabel(total, ["модель", "моделі", "моделей"]),
+    summaryLead: (count: number) =>
+      `Обрано ${countLabel(count, ["модель", "моделі", "моделей"])}:`,
+    summaryWhole: (series: string, total: number) =>
+      `${series} — уся серія (${total})`,
+    clear: "Очистити",
+    reminderTitle: (model: string) => `${model} не позначено`,
+    // The mockup says «чохол»; products are not always cases.
+    reminderBody: (series: string, selected: number, total: number) =>
+      `У серії ${series} відмічено ${selected} з ${total}. Якщо товар справді не підходить (інший розмір) — все гаразд; це лише нагадування, не помилка.`,
+  },
+
+  // --- Bulk «Сумісність…» on the products list (TASK-1955, artboard 2) -------
+  // Invented, for the owner to veto: «та ще N з іншою сумісністю», the keep-many,
+  // remove, replace and no-change preview lines, and the replace confirmation.
+  bulkCompat: {
+    action: "Сумісність…",
+    title: (count: number) =>
+      `Сумісність для ${count.toLocaleString("uk-UA")} ${pluralUk(count, ["товару", "товарів", "товарів"])}`,
+    currentLead: "Зараз у вибраних:",
+    currentNone: (count: number) => `${count} без сумісності`,
+    currentGroup: (count: number, summary: string) => `${count} — ${summary}`,
+    currentMore: (count: number) => `та ще ${count} з іншою сумісністю`,
+    modeAria: "Що зробити з сумісністю",
+    modeAdd: "Додати",
+    modeAddHint: "до того, що вже є",
+    modeRemove: "Прибрати",
+    modeRemoveHint: "лише обрані моделі",
+    modeReplace: "Замінити",
+    // The mockup's «зтирається» is a typo.
+    modeReplaceHint: "старе стирається",
+    pickerAria: "Моделі пристроїв",
+    wholeSeries: (series: string) => `уся серія ${series}`,
+    previewChanged: (count: number) =>
+      `Зміниться ${countLabel(count, ["товар", "товари", "товарів"])}:`,
+    previewAdd: (models: number, summary: string) =>
+      `+${countLabel(models, ["модель", "моделі", "моделей"])} (${summary}).`,
+    previewRemove: (models: number, summary: string) =>
+      `−${countLabel(models, ["модель", "моделі", "моделей"])} (${summary}).`,
+    previewReplace: (summary: string) => `у всіх буде лише ${summary}.`,
+    previewKeepOne: (summary: string) =>
+      `У товару з ${summary} також залишиться ${summary}.`,
+    previewKeepMany: (count: number) =>
+      `У ${count.toLocaleString("uk-UA")} ${pluralUk(count, ["товару", "товарів", "товарів"])} також залишиться наявна сумісність.`,
+    previewUndoAdd:
+      "Дію запишемо в журнал дій; відмінити — тією ж дією «Прибрати».",
+    previewUndoRemove:
+      "Дію запишемо в журнал дій; відмінити — тією ж дією «Додати».",
+    previewReplaceNote:
+      "Стару сумісність буде стерто; дію запишемо в журнал дій.",
+    previewNothing: "Нічого не зміниться — вибрані товари вже мають саме це.",
+    apply: (count: number) =>
+      `Застосувати до ${count.toLocaleString("uk-UA")} ${pluralUk(count, ["товару", "товарів", "товарів"])}`,
+    replaceConfirm: (count: number) =>
+      `Сумісність ${count.toLocaleString("uk-UA")} ${pluralUk(count, ["товару", "товарів", "товарів"])} буде замінено. Попередній набір не зберігається.`,
+    replaceConfirmLabel: "Замінити",
+    announceSaving: (count: number) =>
+      `Змінюємо сумісність: ${countLabel(count, ["товар", "товари", "товарів"])}…`,
+    done: (count: number) =>
+      count === 0
+        ? "Сумісність не змінилася — у товарів уже було саме це"
+        : `Сумісність змінено: ${countLabel(count, ["товар", "товари", "товарів"])}`,
+    failed: "Не вдалося змінити сумісність",
+  },
+
+  // --- Device model coverage page (TASK-1955, artboard 3) --------------------
+  // Invented, for the owner to veto: «Покриття», «прихована», «Частка» (sr-only),
+  // «Інших моделей у серії немає…», «Ще немає жодного…», «Перевірте, чи…», the
+  // «Додати» aria-label and the counting note.
+  deviceCoverage: {
+    metaTitle: "Покриття моделі — Адмін",
+    link: "Покриття",
+    linkLong: "Покриття асортименту",
+    subtitleSeries: (series: string) => `серія ${series}`,
+    shown: "показана на сайті",
+    hidden: "прихована",
+    hubLink: (model: string) => `«Все для ${model}» на сайті`,
+    addProducts: "Додати товари",
+    statCompatible: "Сумісних товарів",
+    statInStock: "В наявності",
+    statHoles: "Категорій без товарів",
+    statsNote: "Рахуємо товари, які видно на сайті.",
+    matrixTitle: "Асортимент за категоріями",
+    matrixLead:
+      "Порівняно з іншими моделями серії — червоний нуль поруч із товарами в сусідів = дірка.",
+    matrixLeadAlone: "Інших моделей у серії немає — порівнювати нема з чим.",
+    matrixEmpty: "Ще немає жодного сумісного товару.",
+    columnCategory: "Категорія",
+    columnShare: "Частка",
+    holeTitle: (category: string) => `${category} — 0`,
+    holeFirst: (model: string, count: number) =>
+      `У ${model} цих товарів ${count}`,
+    holeNext: (model: string, count: number) => `у ${model} — ${count}`,
+    holeHint: (model: string) =>
+      `Перевірте, чи щось із них не підходить і ${model} — і додайте.`,
+    holeAction: "Переглянути товари",
+    suspectsTitle: "Можливо, забули позначити",
+    suspectsLead: (model: string) =>
+      `В назві є «${model}», але сумісності з ним немає.`,
+    suspectAdd: "Додати",
+    suspectAddAria: (model: string, product: string) =>
+      `Додати ${model} до «${product}»`,
   },
 
   // --- Product structured-spec values editor (TASK-191) -----------------------
