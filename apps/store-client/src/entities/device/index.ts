@@ -32,6 +32,20 @@ export {
   type DeviceFamilyTone,
 } from "./model/device-family";
 
+// Family hover fills (static class names) for neutral pills — TASK-2070.
+export {
+  DEVICE_FAMILY_HOVER_SURFACE,
+  getDeviceFamilyHoverSurface,
+} from "./model/device-family";
+
+// The shared popular-ordered model list (one cached request for the picker,
+// the homepage picker and search) — TASK-2070.
+export {
+  DEVICE_MODEL_CATALOG_PARAMS,
+  useDeviceModelCatalog,
+  type DeviceModelCatalog,
+} from "./model/use-device-model-catalog";
+
 export {
   damerauLevenshtein,
   detectDeviceModelInQuery,

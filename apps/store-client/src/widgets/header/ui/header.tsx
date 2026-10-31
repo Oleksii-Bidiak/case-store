@@ -18,6 +18,7 @@ import {
 import { dict, PAGE_CONTAINER } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import type { BannerEntity } from "@/shared/api/generated/models";
+import { DevicePicker } from "@/features/device-picker";
 import { SearchAutocomplete } from "@/features/search";
 import { ThemeToggle } from "@/features/theme";
 import { AnnouncementBar } from "./announcement-bar";
@@ -368,6 +369,11 @@ export function Header({
           </div>
         </div>
       </header>
+      {/* The ONE device picker (TASK-2070). The header is on every page, so
+          every entry point — chip, homepage picker, PDP compat row, /devices,
+          search — opens this instance via `openDevicePicker()`. Renders
+          nothing until opened; the model list is fetched on first open. */}
+      <DevicePicker />
     </>
   );
 }

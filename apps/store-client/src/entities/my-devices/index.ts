@@ -26,6 +26,22 @@ export {
   setDeviceLabelById as setLabel,
 } from "./model/my-devices-storage";
 
+// Device → store input (family resolved once) and the single picker's
+// open command, callable from any layer above entities (TASK-2070).
+export {
+  toMyDeviceInput,
+  type DeviceModelLike,
+} from "./model/to-my-device-input";
+
+export {
+  closeDevicePicker,
+  getDevicePickerState,
+  openDevicePicker,
+  useDevicePickerState,
+  type DevicePickerRequest,
+  type DevicePickerState,
+} from "./model/device-picker-request";
+
 export {
   useActiveDevice,
   useMyDevices,

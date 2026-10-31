@@ -87,6 +87,27 @@ export const DEVICE_FAMILY_TONE: Readonly<
   ipad: { surface: "bg-family-ipad", strong: "bg-family-ipad-strong" },
 };
 
+/**
+ * Hover fill per family for neutral pills that warm up to their family tone
+ * on hover (picker series chips, header idle pills). Static for the same
+ * Tailwind-scan reason as DEVICE_FAMILY_TONE; unknown family → `hover:bg-muted`.
+ */
+export const DEVICE_FAMILY_HOVER_SURFACE: Readonly<
+  Record<DeviceFamily, string>
+> = {
+  iphone: "hover:bg-family-iphone",
+  galaxy: "hover:bg-family-galaxy",
+  redmi: "hover:bg-family-redmi",
+  watch: "hover:bg-family-watch",
+  ipad: "hover:bg-family-ipad",
+};
+
+export function getDeviceFamilyHoverSurface(
+  family: DeviceFamily | null | undefined,
+): string {
+  return family ? DEVICE_FAMILY_HOVER_SURFACE[family] : "hover:bg-muted";
+}
+
 /** Fallback for an unknown family: categories and "not fitting" stay neutral. */
 export const NEUTRAL_FAMILY_TONE: DeviceFamilyTone = {
   surface: "bg-muted",
