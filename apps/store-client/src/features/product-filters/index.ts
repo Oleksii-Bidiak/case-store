@@ -3,6 +3,9 @@ export { ProductFilters } from "./ui/product-filters";
 // ProductFilters; the listing reads the same state for its empty state, and
 // the cards (K2, device-fit) can read which devices the filter names.
 export { MyDevicesEmptyState } from "./ui/my-devices-empty-state";
+// …and its switch, which the wishlist rail's simpler device panel reuses
+// (TASK-1300 — no radios there, on/off only).
+export { MyDevicesSwitch } from "./ui/my-devices-switch";
 export {
   MAX_DEVICE_FILTER_SLUGS,
   allMyDevicesParam,

@@ -2,20 +2,20 @@
 
 import Link from "next/link";
 import type { WishlistItemEntity } from "@/entities/wishlist";
-import { AddToCartButton } from "@/features/add-to-cart";
-import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { ProductCardImage } from "@/shared/ui";
 import { formatMoney, pickProductGradient } from "@/shared/lib";
-import { dict } from "@/shared/config";
 import { isOnSale } from "../model/wishlist-catalog";
+import { WishlistCardActions } from "./wishlist-card-actions";
+import { WishlistFitMark } from "./wishlist-fit-mark";
 
 /**
  * WishlistListItem — a saved product rendered as a horizontal row (the list view
- * of the redesigned wishlist). Reuses the shared image, the compact
- * AddToCartButton and the heart toggle (which removes the item here). Ratings are
- * not shown because the wishlist item summary carries none (unlike the catalog
- * ProductCard).
+ * of the redesigned wishlist). Reuses the shared image and the grid card's
+ * action block (`WishlistCardActions`: stock line, «Купити», the removing
+ * heart); the fit mark sits under the title, one truncating line, like the
+ * catalogue row (TASK-1300). Ratings are not shown because the wishlist item
+ * summary carries none (unlike the catalog ProductCard).
  *
  * Phones (TASK-1958 — the list view is offered at every width now): the row is
  * a 96px thumbnail beside the title, with the price and the buttons on a full-
@@ -24,11 +24,17 @@ import { isOnSale } from "../model/wishlist-catalog";
  * `sm`, so its title and buy block become the row's own flex items and wrap;
  * from `sm` it is the usual column beside a 150px thumbnail.
  */
-export function WishlistListItem({ item }: { item: WishlistItemEntity }) {
+export function WishlistListItem({
+  item,
+  compatibleDeviceModelIds,
+  onRemove,
+}: {
+  item: WishlistItemEntity;
+  /** From the product card (`useWishlistFacets`); `undefined` while it loads. */
+  compatibleDeviceModelIds: readonly string[] | undefined;
+  onRemove: (item: WishlistItemEntity) => void;
+}) {
   const onSale = isOnSale(item);
-  // maxQty is the API-side cap (min of the per-item limit and stock, TASK-231);
-  // 0 means out of stock — the raw stock figure never reaches the client.
-  const outOfStock = item.maxQty <= 0 || !item.isActive;
   const discount = onSale
     ? Math.round((1 - Number(item.price) / Number(item.compareAtPrice)) * 100)
     : 0;
@@ -67,19 +73,27 @@ export function WishlistListItem({ item }: { item: WishlistItemEntity }) {
       </div>
 
       <div className="contents sm:flex sm:min-w-0 sm:flex-1 sm:flex-col">
-        <h3 className="min-w-0 flex-1 text-sm leading-snug font-semibold text-foreground sm:flex-none sm:text-base">
-          <Link
-            href={`/products/${item.productSlug}`}
-            className="transition-colors hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {item.productName}
-          </Link>
-        </h3>
+        {/* Title + fit mark: beside the 96px thumbnail on a phone, the top
+            of the body column from `sm`. */}
+        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-none">
+          <h3 className="text-sm leading-snug font-semibold text-foreground sm:text-base">
+            <Link
+              href={`/products/${item.productSlug}`}
+              className="transition-colors hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {item.productName}
+            </Link>
+          </h3>
+          <WishlistFitMark
+            compatibleDeviceModelIds={compatibleDeviceModelIds}
+            layout="truncate"
+          />
+        </div>
 
         <div className="flex basis-full flex-wrap items-center justify-between gap-x-3 gap-y-2 sm:mt-auto sm:basis-auto sm:items-end sm:gap-4 sm:pt-4">
           <div className="flex flex-col leading-tight">
             {onSale && item.compareAtPrice && (
-              <span className="font-mono text-[13px] text-muted-foreground line-through">
+              <span className="font-mono text-xs text-muted-foreground line-through">
                 {formatMoney(item.compareAtPrice)}
               </span>
             )}
@@ -92,21 +106,13 @@ export function WishlistListItem({ item }: { item: WishlistItemEntity }) {
             </b>
           </div>
 
-          <div className="flex min-w-0 flex-1 basis-56 items-stretch gap-2 sm:w-70 sm:flex-none">
-            <div className="flex-1">
-              <AddToCartButton
-                productId={item.productId}
-                compact
-                outOfStock={outOfStock}
-                ariaLabel={dict.productCard.quickAddAria(item.productName)}
-              />
-            </div>
-            <WishlistToggleButton
-              productId={item.productId}
-              productName={item.productName}
-              variant="inline"
-            />
-          </div>
+          <WishlistCardActions
+            item={item}
+            compatibleDeviceModelIds={compatibleDeviceModelIds}
+            onRemove={onRemove}
+            showFit={false}
+            className="min-w-0 flex-1 basis-56 sm:w-70 sm:flex-none"
+          />
         </div>
       </div>
     </article>

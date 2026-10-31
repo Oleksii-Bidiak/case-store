@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 import type { WishlistItemEntity } from "@/entities/wishlist";
-import { AddToCartButton } from "@/features/add-to-cart";
-import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import {
   ProductCardBadges,
@@ -11,18 +9,20 @@ import {
   ProductCardSoldOutVeil,
 } from "@/shared/ui";
 import { formatMoney, getCardPricing, pickProductGradient } from "@/shared/lib";
-import { dict } from "@/shared/config";
 import { isInStock } from "../model/wishlist-catalog";
+import { WishlistCardActions } from "./wishlist-card-actions";
 
 /**
  * WishlistItemCard — a single saved product on the `/wishlist` grid.
  *
  * The wishlist API returns a trimmed product summary (name, slug, image, price,
  * maxQty) rather than the full `PublicProductEntity` the catalog `ProductCard`
- * expects (no rating / variant-summary), so this is a dedicated, lighter card.
- * It reuses the shared `ProductCardImage`, the heart toggle (which removes the
- * product here), and the compact AddToCartButton. The product position id is
- * directly buyable, so it doubles as the cart target.
+ * expects (no rating / variant-summary), so this is a dedicated, lighter card
+ * with the catalogue card's frame. Since Д3-2 (TASK-1300) its footer is the
+ * catalogue's action block too — `WishlistCardActions`: the fit mark for the
+ * saved devices, the stock line, «Купити» and the heart, which sits in the
+ * action row (not on the photo) and removes the product with an undo. The
+ * product position id is directly buyable, so it doubles as the cart target.
  *
  * Status parity with the catalogue card (TASK-875): the same
  * `ProductCardBadges` stack (sold out, then −N %) and the same
@@ -35,7 +35,16 @@ import { isInStock } from "../model/wishlist-catalog";
  * grid is the catalogue's `PRODUCT_GRID_CLASS` beside the same 268px rail, so
  * the slots are the same width and `PRODUCT_GRID_IMAGE_SIZES` fits them.
  */
-export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
+export function WishlistItemCard({
+  item,
+  compatibleDeviceModelIds,
+  onRemove,
+}: {
+  item: WishlistItemEntity;
+  /** From the product card (`useWishlistFacets`); `undefined` while it loads. */
+  compatibleDeviceModelIds: readonly string[] | undefined;
+  onRemove: (item: WishlistItemEntity) => void;
+}) {
   const { onSale, discountPercent } = getCardPricing({
     price: item.price,
     compareAtPrice: item.compareAtPrice,
@@ -62,14 +71,6 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
           discountPercent={onSale ? discountPercent : 0}
         />
 
-        {/* Heart removes the product from the wishlist (it is already saved). */}
-        <div className="absolute right-2.5 top-2.5 z-20">
-          <WishlistToggleButton
-            productId={item.productId}
-            productName={item.productName}
-          />
-        </div>
-
         {/* Quick-view — the same hover-reveal overlay the catalog ProductCard
             injects into its `hoverAction` slot: hidden (and non-interactive to
             pointers) until the card is hovered or receives keyboard focus, then
@@ -83,7 +84,7 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
       </div>
 
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <h3 className="line-clamp-2 text-sm font-medium text-card-foreground transition-colors group-hover:text-primary">
+        <h3 className="line-clamp-2 min-h-10 text-sm font-medium text-card-foreground transition-colors group-hover:text-primary">
           <Link
             href={`/products/${item.productSlug}`}
             data-card-link
@@ -106,16 +107,16 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
             </p>
           )}
         </div>
+      </div>
 
-        {/* Above the stretched link so it stays clickable. */}
-        <div className="relative z-20 pt-1">
-          <AddToCartButton
-            productId={item.productId}
-            compact
-            outOfStock={!inStock}
-            ariaLabel={dict.productCard.quickAddAria(item.productName)}
-          />
-        </div>
+      {/* Above the stretched link so its controls stay clickable — the
+          `ProductCard` `action` slot, same padding. */}
+      <div className="relative z-20 px-4 pb-4">
+        <WishlistCardActions
+          item={item}
+          compatibleDeviceModelIds={compatibleDeviceModelIds}
+          onRemove={onRemove}
+        />
       </div>
     </article>
   );

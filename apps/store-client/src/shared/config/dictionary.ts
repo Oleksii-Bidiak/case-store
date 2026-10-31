@@ -2498,11 +2498,13 @@ export const dict = {
     heading: "Обране",
     /** Count line under the heading. */
     count: (n: number) => `${n} ${n === 1 ? "товар" : "товарів"} збережено`,
-    /** Empty-state heading + body + CTA. */
+    /** Empty-state heading + body + CTA (Д3-2: the CTA leads to the active
+     *  device's hub when one is saved — `emptyDeviceCta` — else here). */
     emptyHeading: "В обраному поки порожньо",
     emptyBody:
-      "Збережіть товари, натиснувши на сердечко, щоб знайти їх пізніше.",
-    emptyCta: "Перейти до товарів",
+      "Натисніть ♡ на картці товару — він з’явиться тут, і ми скажемо, коли він подешевшає.",
+    emptyCta: "До каталогу",
+    emptyDeviceCta: (device: string) => `Все для ${device}`,
     /** Remove-from-list control on a saved card. */
     removeAria: (name: string) => `Прибрати «${name}» з обраного`,
     remove: "Прибрати",
@@ -2519,11 +2521,12 @@ export const dict = {
     countInList: (n: number) =>
       `${n} ${n === 1 ? "товар" : "товарів"} у списку`,
     sortAria: "Сортувати обране",
+    // Read after the trigger's «Спочатку:» prefix (Д3-2 Wishlist §5).
     sort: {
       recent: "Нещодавно додані",
-      priceAsc: "Найдешевші",
-      priceDesc: "Найдорожчі",
-      sale: "Акційні",
+      priceAsc: "Дешевші",
+      priceDesc: "Дорожчі",
+      sale: "Зі знижкою",
     },
     quickTitle: "Обирай швидко",
     quickSale: "Зі знижкою",
@@ -2531,8 +2534,9 @@ export const dict = {
     addAll: "Додати все в кошик",
     addAllDone: "Товари з обраного додано в кошик",
     addAllNone: "Немає доступних товарів для додавання",
-    noMatchHeading: "Немає товарів за фільтрами",
-    noMatchBody: "Спробуйте змінити параметри або скинути фільтри.",
+    noMatchHeading: "За цими фільтрами нічого немає",
+    noMatchBody: (total: number) =>
+      `В обраному ${total} ${pluralUk(total, "товар", "товари", "товарів")} — приберіть частину фільтрів.`,
     priceChip: (min: string, max: string) => `${min || "0"} – ${max || "∞"} ₴`,
     // TASK-1300 — /wishlist as «каталог №2»: category rail section, the fold
     // past five rows, the count line while filters narrow the list, and the
@@ -2543,6 +2547,34 @@ export const dict = {
     foundOf: (found: number, total: number) => `Знайдено: ${found} з ${total}`,
     categoryChip: (name: string) => `Категорія: ${name}`,
     priceRangeChip: (min: string, max: string) => `Ціна: ${min} — ${max}`,
+    // TASK-1300 · Д3-2 (Wishlist.dc.html): the catalogue's cards and filters,
+    // the device switch (off by default), the per-card fit mark for every
+    // saved device, and removal with an undo toast instead of a confirm.
+    /** Spoken form of the count beside the h1 («Обране 9»). */
+    headCountAria: (n: number) =>
+      `${n} ${pluralUk(n, "товар", "товари", "товарів")}`,
+    subWithDevice:
+      "Позначка на картці скаже, до якого з ваших пристроїв товар підходить",
+    subGuest: "Збережене на цьому пристрої; увійдіть, щоб бачити його скрізь",
+    /** Toolbar count while filters narrow the list: «7 з 9». */
+    shownOf: (shown: number, total: number) => `${shown} з ${total}`,
+    addAllCount: (n: number) => `Додати все в кошик · ${n}`,
+    addAllInCart: "Усе в кошику",
+    addAllInCartAria: "Усе з обраного вже в кошику — відкрити кошик",
+    devices: {
+      subNoDevice: "Оберіть пристрій — покажемо, що до нього підходить",
+      subOne: (device: string) => `Лише сумісне з ${device}`,
+      subMany: (n: number) =>
+        `Лише те, що підходить хоча б до одного з ${n} ваших`,
+      subOff: "Вимкнено — показуємо все; в обраному це типово",
+      chipMany: (n: number) => `Для моїх пристроїв · ${n}`,
+    },
+    /** Fit mark with several saved devices (one device: `dict.deviceFit`). */
+    fitsDevices: (devices: string) => `Підходить: ${devices}`,
+    fitsNone: "Не для ваших пристроїв",
+    removedToast: (name: string) => `Прибрали «${name}»`,
+    undoRemove: "Повернути",
+    undoError: "Не вдалося повернути товар в обране. Спробуйте ще раз.",
   },
 
   // TASK-188 — reusable newsletter subscribe form (features/newsletter-subscribe).

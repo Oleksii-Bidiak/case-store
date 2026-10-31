@@ -393,15 +393,5 @@
     "tailwindcss/no-arbitrary-value": {
       "count": 4
     }
-  },
-  "src/widgets/wishlist/ui/wishlist-list-item.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/wishlist/ui/wishlist-view.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 2
-    }
   }
 }

@@ -3,13 +3,73 @@ import {
   EMPTY_WISHLIST_FILTERS,
   collectFacetOptions,
   countActiveWishlistFilters,
+  effectiveWishlistFilters,
   filterWishlistItems,
+  fitsAnyDevice,
   paginateWishlist,
   parsePageParam,
   sortWishlistItems,
   wishlistPriceDomain,
+  withRestoredDates,
   type WishlistItemFacets,
 } from "./wishlist-catalog";
+
+describe("device switch (TASK-1300, Д3-2)", () => {
+  const ids = (list: readonly WishlistItemEntity[]) => list.map((i) => i.id);
+  const facetsWithCompat = new Map<string, WishlistItemFacets>([
+    ["a", { compatibleDeviceModelIds: ["ip15"] }],
+    ["b", { compatibleDeviceModelIds: ["s24"] }],
+    ["c", { compatibleDeviceModelIds: [] }],
+  ]);
+  const on = { ...EMPTY_WISHLIST_FILTERS, devicesOnly: true };
+
+  it("is off by default", () => {
+    expect(EMPTY_WISHLIST_FILTERS.devicesOnly).toBe(false);
+  });
+
+  it("keeps what fits any saved device, never a product without compat data", () => {
+    expect(
+      ids(filterWishlistItems(items, on, facetsWithCompat, ["ip15", "s24"])),
+    ).toEqual(["b", "a"]);
+    expect(
+      ids(filterWishlistItems(items, on, facetsWithCompat, ["ip15"])),
+    ).toEqual(["a"]);
+  });
+
+  it("drops a product whose compatibility has not landed yet", () => {
+    expect(filterWishlistItems(items, on, new Map(), ["ip15"])).toEqual([]);
+  });
+
+  it("means nothing — no filter, no badge — without a saved device", () => {
+    expect(effectiveWishlistFilters(on, 0).devicesOnly).toBe(false);
+    expect(effectiveWishlistFilters(on, 2)).toBe(on);
+    expect(countActiveWishlistFilters(effectiveWishlistFilters(on, 0))).toBe(0);
+    expect(countActiveWishlistFilters(on)).toBe(1);
+  });
+
+  it("reads an empty or missing compat list as «fits none»", () => {
+    expect(fitsAnyDevice(undefined, ["ip15"])).toBe(false);
+    expect(fitsAnyDevice([], ["ip15"])).toBe(false);
+    expect(fitsAnyDevice(["ip15", "ip13"], ["ip13"])).toBe(true);
+  });
+});
+
+describe("withRestoredDates («Повернути», TASK-1300)", () => {
+  it("puts a restored item back at its first-saved date", () => {
+    const readded = { ...cable, createdAt: "2026-07-01T00:00:00.000Z" };
+    const restored = withRestoredDates(
+      [cheapCase, readded, headphones],
+      new Map([["b", cable.createdAt]]),
+    );
+    expect(
+      sortWishlistItems(restored, "createdAt:desc").map((i) => i.id),
+    ).toEqual(["a", "b", "c"]);
+  });
+
+  it("returns the same list when nothing was restored", () => {
+    expect(withRestoredDates(items, new Map())).toBe(items);
+  });
+});
 
 function item(
   id: string,

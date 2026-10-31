@@ -24,6 +24,7 @@ import {
 } from "../model/use-my-devices-filter";
 import { useFollowPickedDevice } from "../model/use-follow-picked-device";
 import { FilterCardSkeleton } from "./filter-card-skeleton";
+import { MyDevicesSwitch } from "./my-devices-switch";
 
 const t = dict.filters.myDevices;
 
@@ -124,26 +125,14 @@ export function MyDevicesFilter({
           </p>
         </div>
         {active && (
-          <button
+          <MyDevicesSwitch
             id={switchId}
-            type="button"
-            role="switch"
-            aria-checked={on}
-            aria-labelledby={`${switchId}-label`}
-            onClick={() => onFilterChange(myDevicesSwitchUpdate(!on, devices))}
-            className={cn(
-              "relative mt-0.5 inline-flex h-7 w-11.5 shrink-0 cursor-pointer items-center rounded-full outline-none transition-all duration-200 hover:ring-4 hover:ring-foreground/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none",
-              on ? "bg-primary" : "bg-input",
-            )}
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "absolute top-0.75 left-0.75 size-5.5 rounded-full bg-card shadow-card transition-transform duration-200 ease-out motion-reduce:transition-none",
-                on && "translate-x-4.5",
-              )}
-            />
-          </button>
+            labelledBy={`${switchId}-label`}
+            checked={on}
+            onCheckedChange={(next) =>
+              onFilterChange(myDevicesSwitchUpdate(next, devices))
+            }
+          />
         )}
       </div>
 
