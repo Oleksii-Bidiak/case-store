@@ -646,7 +646,10 @@ describe("WishlistView catalogue toolbar (TASK-1300)", () => {
     const trigger = screen.getByRole("combobox", {
       name: dict.wishlist.sortAria,
     });
-    expect(trigger).toHaveTextContent(dict.wishlist.sort.recent);
+    // «Спочатку: нещодавно додані» — prefix + lowercase value, said once.
+    expect(trigger).toHaveTextContent(
+      `${dict.filters.sortPrefix}${dict.wishlist.sortValue.recent}`,
+    );
 
     await user.click(trigger);
     await user.click(

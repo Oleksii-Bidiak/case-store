@@ -40,14 +40,39 @@ function splitColumnSort(value: string): Record<string, string | undefined> {
 
 export interface SortOption {
   value: string;
+  /** The menu row — a whole phrase («Спочатку дешевші»). */
   label: string;
+  /**
+   * What the trigger shows after its «Спочатку:» prefix («дешевші», Д3-2
+   * Catalog §5). Without it the trigger shows `label` alone and no prefix —
+   * so a phrase that already starts with «Спочатку» is never doubled.
+   */
+  short?: string;
 }
 
+// Д3-2 Catalog §5. «З вищим рейтингом» and «зі знижкою» are not offered: the
+// listing API has no rating or discount order yet (`PRODUCT_LIST_SORT_FIELDS`).
 const SORT_OPTIONS: readonly SortOption[] = [
-  { value: "createdAt:desc", label: dict.filters.sort.newest },
-  { value: "price:asc", label: dict.filters.sort.priceAsc },
-  { value: "price:desc", label: dict.filters.sort.priceDesc },
-  { value: "name:asc", label: dict.filters.sort.nameAsc },
+  {
+    value: "bestselling:desc",
+    label: dict.filters.sort.popular,
+    short: dict.filters.sortValue.popular,
+  },
+  {
+    value: "price:asc",
+    label: dict.filters.sort.priceAsc,
+    short: dict.filters.sortValue.priceAsc,
+  },
+  {
+    value: "price:desc",
+    label: dict.filters.sort.priceDesc,
+    short: dict.filters.sortValue.priceDesc,
+  },
+  {
+    value: "createdAt:desc",
+    label: dict.filters.sort.newest,
+    short: dict.filters.sortValue.newest,
+  },
 ];
 
 /**
@@ -56,7 +81,7 @@ const SORT_OPTIONS: readonly SortOption[] = [
  * label renders in the brand colour to match the design.
  *
  * Narrow phones: the toolbar puts this beside the «Фільтри» button, and the
- * longest labels («Ціна: від низької до високої») are wider than a 320px row.
+ * longest labels («За релевантністю» on /search) can outgrow a 320px row.
  * So the trigger may shrink (`min-w-0`) and its label truncates with an
  * ellipsis instead of pushing the page sideways; the icon and the «Спочатку:»
  * prefix appear from `sm`, where there is room. The open list still shows every
@@ -69,9 +94,9 @@ export function SortSelect({
   ariaLabel = dict.filters.sortBy,
   toUpdates = splitColumnSort,
 }: SortSelectProps) {
-  const currentLabel = options.find(
-    (option) => option.value === currentSort,
-  )?.label;
+  const current = options.find((option) => option.value === currentSort);
+  const currentLabel = current?.short ?? current?.label;
+  const withPrefix = Boolean(current?.short);
 
   return (
     <Select
@@ -83,9 +108,11 @@ export function SortSelect({
         className="h-11 min-w-0 gap-2.5 rounded-xl border-[1.5px] border-border bg-card px-3 font-semibold text-foreground shadow-none *:data-[slot=select-value]:text-primary hover:border-primary sm:px-4"
       >
         <ArrowDownWideNarrow className="hidden size-[18px] sm:block" />
-        <span className="hidden font-medium text-muted-foreground sm:inline">
-          {dict.filters.sortPrefix}
-        </span>
+        {withPrefix && (
+          <span className="hidden font-medium text-muted-foreground sm:inline">
+            {dict.filters.sortPrefix}
+          </span>
+        )}
         <SelectValue className="min-w-0">
           {/* A block child so the ellipsis applies: the value slot itself is a
               flex box, where `text-overflow` has no effect. */}

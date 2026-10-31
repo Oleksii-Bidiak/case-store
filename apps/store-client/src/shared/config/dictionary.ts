@@ -933,11 +933,21 @@ export const dict = {
     maxPlaceholder: "До",
     sortBy: "Сортування",
     sortPrefix: "Спочатку:",
+    // Menu labels (Д3-2 Catalog §5) — each a whole phrase, so /search can
+    // list them without the prefix…
     sort: {
-      newest: "Спочатку нові",
-      priceAsc: "Ціна: від низької до високої",
-      priceDesc: "Ціна: від високої до низької",
-      nameAsc: "Назва: А–Я",
+      popular: "Спочатку популярні",
+      priceAsc: "Спочатку дешевші",
+      priceDesc: "Спочатку дорожчі",
+      newest: "Спочатку новинки",
+    },
+    // …and the lowercase value the trigger shows after «Спочатку:»
+    // («Спочатку: популярні»), so the word is never said twice.
+    sortValue: {
+      popular: "популярні",
+      priceAsc: "дешевші",
+      priceDesc: "дорожчі",
+      newest: "новинки",
     },
     clear: "Скинути фільтри",
     clearAll: "Очистити все",
@@ -2552,12 +2562,19 @@ export const dict = {
     countInList: (n: number) =>
       `${n} ${n === 1 ? "товар" : "товарів"} у списку`,
     sortAria: "Сортувати обране",
-    // Read after the trigger's «Спочатку:» prefix (Д3-2 Wishlist §5).
+    // Menu labels (Д3-2 Wishlist §5); the trigger shows `sortValue` after
+    // its «Спочатку:» prefix.
     sort: {
-      recent: "Нещодавно додані",
-      priceAsc: "Дешевші",
-      priceDesc: "Дорожчі",
-      sale: "Зі знижкою",
+      recent: "Спочатку нещодавно додані",
+      priceAsc: "Спочатку дешевші",
+      priceDesc: "Спочатку дорожчі",
+      sale: "Спочатку зі знижкою",
+    },
+    sortValue: {
+      recent: "нещодавно додані",
+      priceAsc: "дешевші",
+      priceDesc: "дорожчі",
+      sale: "зі знижкою",
     },
     quickTitle: "Обирай швидко",
     quickSale: "Зі знижкою",

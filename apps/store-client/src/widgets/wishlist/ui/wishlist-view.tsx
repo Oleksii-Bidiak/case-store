@@ -58,10 +58,26 @@ import { WishlistDevicesPanel } from "./wishlist-devices-panel";
 import { WishlistSkeleton } from "./wishlist-skeleton";
 
 const SORT_OPTIONS: readonly SortOption[] = [
-  { value: "createdAt:desc", label: dict.wishlist.sort.recent },
-  { value: "price:asc", label: dict.wishlist.sort.priceAsc },
-  { value: "price:desc", label: dict.wishlist.sort.priceDesc },
-  { value: "discount:desc", label: dict.wishlist.sort.sale },
+  {
+    value: "createdAt:desc",
+    label: dict.wishlist.sort.recent,
+    short: dict.wishlist.sortValue.recent,
+  },
+  {
+    value: "price:asc",
+    label: dict.wishlist.sort.priceAsc,
+    short: dict.wishlist.sortValue.priceAsc,
+  },
+  {
+    value: "price:desc",
+    label: dict.wishlist.sort.priceDesc,
+    short: dict.wishlist.sortValue.priceDesc,
+  },
+  {
+    value: "discount:desc",
+    label: dict.wishlist.sort.sale,
+    short: dict.wishlist.sortValue.sale,
+  },
 ];
 
 /**
