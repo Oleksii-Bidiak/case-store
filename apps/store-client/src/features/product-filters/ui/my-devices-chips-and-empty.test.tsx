@@ -124,13 +124,14 @@ describe("MyDevicesEmptyState", () => {
         currentParams={{ category: "chohly", device: "galaxy-s24" }}
         categoryName="Чохли"
         onFilterChange={onFilterChange}
+        fallback={<p>generic empty</p>}
       />,
     );
 
-    expect(screen.getByText(t.emptyHeading("Galaxy S24"))).toBeInTheDocument();
     expect(
       await screen.findByText(t.emptyBody("Galaxy S24", 34, "Чохли")),
     ).toBeInTheDocument();
+    expect(screen.getByText(t.emptyHeading("Galaxy S24"))).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: t.emptyHub("Galaxy S24") }),
     ).toHaveAttribute("href", "/devices/galaxy-s24");
@@ -146,5 +147,40 @@ describe("MyDevicesEmptyState", () => {
       screen.getByRole("button", { name: t.emptyShowAll(34) }),
     );
     expect(onFilterChange).toHaveBeenCalledWith({ device: undefined });
+    expect(screen.queryByText("generic empty")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the generic empty state when other filters empty the listing", async () => {
+    // Even without the device nothing matches (a nonsense keyword).
+    server.use(
+      http.get("*/api/products", () =>
+        HttpResponse.json({
+          data: [],
+          meta: { total: 0, page: 1, limit: 1, totalPages: 0 },
+        }),
+      ),
+    );
+    act(() => addDevice(galaxy));
+    const devices = readMyDevices();
+    renderWithProviders(
+      <MyDevicesEmptyState
+        device={devices[0]}
+        devices={devices}
+        currentParams={{ search: "zzzz", device: "galaxy-s24" }}
+        onFilterChange={jest.fn()}
+        fallback={<p>generic empty</p>}
+      />,
+    );
+
+    // Holds the box while the device-less total loads — no device copy yet.
+    expect(screen.getByRole("status")).toHaveAttribute("aria-busy", "true");
+    expect(
+      screen.queryByText(t.emptyHeading("Galaxy S24")),
+    ).not.toBeInTheDocument();
+
+    expect(await screen.findByText("generic empty")).toBeInTheDocument();
+    expect(
+      screen.queryByText(t.emptyHeading("Galaxy S24")),
+    ).not.toBeInTheDocument();
   });
 });

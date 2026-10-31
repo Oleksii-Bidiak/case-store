@@ -22,6 +22,7 @@ import {
   useDeviceFilterCounts,
   type MyDevicesFilter as MyDevicesFilterModel,
 } from "../model/use-my-devices-filter";
+import { useFollowPickedDevice } from "../model/use-follow-picked-device";
 import { FilterCardSkeleton } from "./filter-card-skeleton";
 
 const t = dict.filters.myDevices;
@@ -73,6 +74,12 @@ export function MyDevicesFilter({
     hydrated && on,
   );
 
+  // «Ще N — обрати інший»: the picker makes its pick active; follow it into
+  // the URL so the grid filters by the device the header now names.
+  const pickAnother = useFollowPickedDevice((picked) =>
+    onFilterChange({ device: picked.slug }),
+  );
+
   if (!hydrated) return <FilterCardSkeleton section="myDevices" />;
 
   const active = devices[0];
@@ -82,7 +89,9 @@ export function MyDevicesFilter({
       ? t.subtitleActive
       : state.mode === "all"
         ? t.subtitleAll
-        : t.subtitleOff;
+        : state.mode === "other"
+          ? t.subtitleOther
+          : t.subtitleOff;
   const switchId = `${idPrefix}-my-devices-switch`;
   const radioName = `${idPrefix}-my-devices-scope`;
 
@@ -170,7 +179,7 @@ export function MyDevicesFilter({
           {hidden > 0 && (
             <button
               type="button"
-              onClick={() => openDevicePicker()}
+              onClick={pickAnother}
               className="self-start rounded-menu py-1 pr-2 pl-9 text-left text-xs font-semibold text-muted-foreground underline-offset-3 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
             >
               {t.moreDevices(hidden)}
@@ -191,7 +200,9 @@ export function MyDevicesFilter({
 
       {active && !on && (
         <p className="mt-3 text-xs leading-snug text-muted-foreground">
-          {t.offNote(t.deviceName(active.name, active.label))}
+          {(state.mode === "other" ? t.otherNote : t.offNote)(
+            t.deviceName(active.name, active.label),
+          )}
         </p>
       )}
 

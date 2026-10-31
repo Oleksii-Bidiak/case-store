@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Ban } from "lucide-react";
 import {
   useProductControllerFindAll,
@@ -25,6 +26,12 @@ interface MyDevicesEmptyStateProps {
   /** The current category's name, for «У «Чохли» — 12 товарів…». */
   categoryName?: string;
   onFilterChange: (updates: Record<string, string | undefined>) => void;
+  /**
+   * The listing's generic empty state («За цими фільтрами нічого немає» +
+   * reset), shown instead when the listing is empty even WITHOUT the device
+   * — then other filters, not the device, emptied it.
+   */
+  fallback: ReactNode;
 }
 
 /**
@@ -32,7 +39,8 @@ interface MyDevicesEmptyStateProps {
  * Catalog §14 A) — never a dead end: the device's own page, the full listing
  * with the filter off, and the other saved devices that DO have items here.
  * Mounted only once the listing came back empty, so its count requests are
- * not paid on a normal page.
+ * not paid on a normal page. Checks the device-less total first: at 0 the
+ * device is not the reason, and `fallback` renders instead.
  */
 export function MyDevicesEmptyState({
   device,
@@ -40,15 +48,18 @@ export function MyDevicesEmptyState({
   currentParams,
   categoryName,
   onFilterChange,
+  fallback,
 }: MyDevicesEmptyStateProps) {
   const name = t.deviceName(device.name, device.label);
 
-  const { data: totalData } = useProductControllerFindAll({
-    ...currentParams,
-    device: undefined,
-    page: 1,
-    limit: 1,
-  });
+  const { data: totalData, isError: totalFailed } = useProductControllerFindAll(
+    {
+      ...currentParams,
+      device: undefined,
+      page: 1,
+      limit: 1,
+    },
+  );
   const total = totalData?.meta?.total;
 
   const others = devices
@@ -62,6 +73,26 @@ export function MyDevicesEmptyState({
   const withItems = others
     .map((d, i) => ({ device: d, count: counts[i] ?? 0 }))
     .filter((entry) => entry.count > 0);
+
+  // Not the device's fault: with the device filter lifted the listing is
+  // STILL empty (a keyword, a price range, «в наявності»…) — the generic
+  // «nothing matches the filters» with its reset is the honest answer.
+  // A failed count cannot tell either — fall back rather than spin forever.
+  if (total === 0 || (total === undefined && totalFailed)) return fallback;
+
+  // The device-less total decides which empty state this is; hold the
+  // box until it is known so neither one flashes in first.
+  if (total === undefined) {
+    return (
+      <div
+        role="status"
+        aria-busy="true"
+        className="h-72 animate-pulse rounded-card border border-border bg-card shadow-card motion-reduce:animate-none"
+      >
+        <span className="sr-only">{t.emptyLoading}</span>
+      </div>
+    );
+  }
 
   return (
     <ListingEmptyState

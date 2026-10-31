@@ -31,11 +31,16 @@ export type MyDevicesFilterState =
   | { mode: "off" }
   /** Exactly one slug, and it is a saved device. */
   | { mode: "active"; device: MyDevice }
-  /** Two or more slugs, every one a saved device («для всіх моїх»). */
+  /**
+   * Exactly the slugs «для всіх моїх» writes for the CURRENT saved list (the
+   * 20 most recent), in any order («для всіх моїх»).
+   */
   | { mode: "all"; devices: MyDevice[] }
   /**
-   * A device filter the saved list does not explain: the cascade's pick, or
-   * a shared link from another browser. Still applied; the panel shows off.
+   * A device filter the saved list does not explain: the cascade's pick, a
+   * shared link from another browser, or a stale «для всіх моїх» URL. Still
+   * applied; the panel's switch is off and its note says the listing is
+   * filtered by another device.
    */
   | { mode: "other"; slugs: string[] };
 
@@ -64,7 +69,15 @@ export function resolveMyDevicesFilter(
   if (matched.length !== slugs.length) return { mode: "other", slugs };
 
   if (matched.length === 1) return { mode: "active", device: matched[0] };
-  return { mode: "all", devices: matched };
+
+  // «Для всіх моїх» only while the URL names exactly what the switch would
+  // write now — a URL from before a device was added or forgotten is a
+  // stale subset and reads as «other», so no count disagrees with the grid.
+  const allSlugs = parseDeviceParam(allMyDevicesParam(devices));
+  const isAll =
+    allSlugs.length === slugs.length &&
+    allSlugs.every((slug) => slugs.includes(slug));
+  return isAll ? { mode: "all", devices: matched } : { mode: "other", slugs };
 }
 
 /** Is the panel's switch on — the device filter comes from «Мої пристрої»? */

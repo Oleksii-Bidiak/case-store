@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useCategoryControllerGetCategoryTree } from "@/entities/category";
@@ -306,24 +311,30 @@ export function ProductListView({
 
   // «З урахуванням моїх пристроїв» (TASK-2077): the filter is on for one saved
   // device and nothing fits — say so and offer the way out (Catalog §14 A),
-  // rather than the generic «nothing matches the filters».
+  // rather than the generic «nothing matches the filters». The card itself
+  // falls back to the generic state when the listing is empty even without
+  // the device (a keyword, a price range…): then the device is not why.
   const myDevices = useMyDevicesFilter(
     lockedDevice ? undefined : params.device,
   );
-  const myDeviceEmpty =
-    myDevices.state.mode === "active" ? (
-      <MyDevicesEmptyState
-        device={myDevices.state.device}
-        devices={myDevices.devices}
-        currentParams={params}
-        categoryName={
-          params.category
-            ? findCategoryNodeBySlug(categories, params.category)?.name
-            : undefined
-        }
-        onFilterChange={applyFilters}
-      />
-    ) : undefined;
+  const activeMyDevice =
+    myDevices.state.mode === "active" ? myDevices.state.device : null;
+  const myDeviceEmpty = activeMyDevice
+    ? (generic: ReactNode) => (
+        <MyDevicesEmptyState
+          device={activeMyDevice}
+          devices={myDevices.devices}
+          currentParams={params}
+          categoryName={
+            params.category
+              ? findCategoryNodeBySlug(categories, params.category)?.name
+              : undefined
+          }
+          onFilterChange={applyFilters}
+          fallback={generic}
+        />
+      )
+    : undefined;
 
   // Active brands power both the sidebar «Виробник» select and the removable
   // brand chip's label (slug → name). One shared query, deduped by React Query.

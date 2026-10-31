@@ -1017,6 +1017,11 @@ export const dict = {
         label ? `${name} · ${label}` : name,
       offNote: (name: string) =>
         `Показуємо всі товари, а на картках — чи підходить до ${name}.`,
+      // The switch is off, but `?device=` names something the saved list
+      // does not explain (the brand → model cascade, a shared or stale link).
+      subtitleOther: "Вимкнено — діє інший фільтр за пристроєм",
+      otherNote: (name: string) =>
+        `Товари вже відфільтровано за пристроєм — див. фільтри над списком. Увімкніть, щоб показати лише сумісне з ${name}.`,
       manage: "Мої пристрої",
       // Spoken count after a radio's name: «iPhone 13, 12 товарів».
       countAria: (n: number) =>
@@ -1045,6 +1050,8 @@ export const dict = {
         total === undefined ? "Показати всі" : `Показати всі ${total}`,
       emptyOtherDevices: "Для ваших інших пристроїв тут є:",
       emptyOtherDevice: (name: string, n: number) => `${name} — ${n}`,
+      // Read while the empty state checks the listing without the device.
+      emptyLoading: "Перевіряємо, що є в каталозі…",
     },
   },
 

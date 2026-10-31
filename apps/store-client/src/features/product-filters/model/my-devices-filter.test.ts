@@ -48,10 +48,19 @@ describe("resolveMyDevicesFilter", () => {
     });
   });
 
-  it("is «all» for several saved slugs, in the URL's order", () => {
-    expect(resolveMyDevicesFilter("iphone-13,iphone-15-pro", saved)).toEqual({
+  it("is «all» for every saved slug, in the URL's order", () => {
+    expect(
+      resolveMyDevicesFilter("iphone-13,watch-s10-46,iphone-15-pro", saved),
+    ).toEqual({
       mode: "all",
-      devices: [thirteen, pro],
+      devices: [thirteen, watch, pro],
+    });
+  });
+
+  it("reads a stale «all» link — a device added since — as «other»", () => {
+    expect(resolveMyDevicesFilter("iphone-13,iphone-15-pro", saved)).toEqual({
+      mode: "other",
+      slugs: ["iphone-13", "iphone-15-pro"],
     });
   });
 

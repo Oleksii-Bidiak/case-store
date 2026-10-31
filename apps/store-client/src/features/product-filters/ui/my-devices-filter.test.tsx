@@ -11,8 +11,10 @@ import type { ProductControllerFindAllParams } from "@/entities/product";
 import {
   addDevice,
   clearMyDevices,
+  closeDevicePicker,
   getDevicePickerState,
   readMyDevices,
+  setActiveDevice,
   type MyDeviceInput,
 } from "@/entities/my-devices";
 import { ProductFilters } from "./product-filters";
@@ -45,6 +47,7 @@ const TOTALS: Record<string, number> = {
 beforeEach(() => {
   window.localStorage.clear();
   clearMyDevices();
+  closeDevicePicker(); // module state — an earlier test may have opened it
   server.use(
     http.get("*/api/brands", () => HttpResponse.json({ data: [] })),
     http.get("*/api/device-brands", () => HttpResponse.json({ data: [] })),
@@ -186,5 +189,58 @@ describe("MyDevicesFilter", () => {
       "false",
     );
     expect(screen.getByText(dict.filters.deviceTitle)).toBeInTheDocument();
+    // The switch is off, but the copy must not claim «all products».
+    expect(screen.getByText(t.subtitleOther)).toBeInTheDocument();
+    expect(screen.getByText(t.otherNote("iPhone 15 Pro"))).toBeInTheDocument();
+    expect(screen.queryByText(t.subtitleOff)).not.toBeInTheDocument();
+  });
+
+  describe("«Ще N — обрати інший»", () => {
+    const more = (slug: string, i: number): MyDeviceInput => ({
+      modelId: `m-${slug}`,
+      slug,
+      name: `Device ${i}`,
+      brandName: "Apple",
+      family: "iphone",
+    });
+
+    function saveFive() {
+      act(() => {
+        addDevice(thirteen);
+        ["d-1", "d-2", "d-3"].forEach((slug, i) => addDevice(more(slug, i)));
+        addDevice(pro); // active
+      });
+    }
+
+    it("filters by the device picked in the picker", async () => {
+      saveFive();
+      const onFilterChange = renderRail({ device: "iphone-15-pro" });
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: t.moreDevices(1) }),
+      );
+      expect(getDevicePickerState().open).toBe(true);
+
+      // The picker adds (or activates) a device and closes itself.
+      act(() => {
+        addDevice(more("iphone-12", 12));
+        closeDevicePicker();
+      });
+      expect(onFilterChange).toHaveBeenCalledTimes(1);
+      expect(onFilterChange).toHaveBeenCalledWith({ device: "iphone-12" });
+    });
+
+    it("writes nothing when the picker closes without a new pick", async () => {
+      saveFive();
+      const onFilterChange = renderRail({ device: "iphone-15-pro" });
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: t.moreDevices(1) }),
+      );
+      act(() => closeDevicePicker());
+      // A later change elsewhere (the header chip) is not this panel's pick.
+      act(() => setActiveDevice("m-13"));
+      expect(onFilterChange).not.toHaveBeenCalled();
+    });
   });
 });

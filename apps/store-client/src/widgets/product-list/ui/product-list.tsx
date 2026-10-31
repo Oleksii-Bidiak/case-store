@@ -47,9 +47,11 @@ interface ProductListProps {
     /**
      * A whole empty state of the view's own — the «nothing fits your device»
      * card (TASK-2077). Mounted only when the list is empty, so whatever it
-     * fetches is not paid for on a normal page.
+     * fetches is not paid for on a normal page. Gets the generic state built
+     * from `heading` / `body` / `action`, to fall back to when it decides the
+     * emptiness is not its own.
      */
-    custom?: ReactNode;
+    custom?: (generic: ReactNode) => ReactNode;
   };
 }
 
@@ -141,8 +143,7 @@ export function ProductList({
   ]);
 
   if (products.length === 0) {
-    if (empty.custom) return empty.custom;
-    return (
+    const generic = (
       <ListingEmptyState
         icon={SearchX}
         heading={empty.heading}
@@ -150,6 +151,7 @@ export function ProductList({
         action={empty.action}
       />
     );
+    return empty.custom ? empty.custom(generic) : generic;
   }
 
   const nextCount = meta
