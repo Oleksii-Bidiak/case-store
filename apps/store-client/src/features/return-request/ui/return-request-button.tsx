@@ -1,15 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  getGetMyReturnsQueryKey,
-  getGetOrderReturnsQueryKey,
-  useCreateReturn,
-  useGetOrderReturns,
-} from "@/entities/return";
+import { ReturnOutcome } from "@/entities/return";
 import { dict } from "@/shared/config";
+import { isNetworkError } from "@/shared/lib";
 import {
   Button,
   Dialog,
@@ -23,14 +18,20 @@ import {
   Label,
   Textarea,
 } from "@/shared/ui";
+import { readReturnRequestError } from "../model/return-error";
 import {
   clampQuantity,
   returnableLines,
   type OrderLine,
 } from "../model/returnable-units";
+import {
+  useReturnRequestSource,
+  type ReturnRequestSource,
+} from "../model/use-return-request-source";
 
 interface ReturnRequestButtonProps {
-  orderId: string;
+  /** Which order, and through which door: the account or a guest link. */
+  source: ReturnRequestSource;
   /** Short order number, as it is written everywhere else on the storefront. */
   orderNumber: string;
   items: readonly OrderLine[];
@@ -40,6 +41,16 @@ interface ReturnRequestButtonProps {
    */
   className?: string;
 }
+
+/** «На розсуд магазину» is the empty choice: nothing is sent. */
+type OutcomeChoice = ReturnOutcome | "";
+
+const OUTCOME_CHOICES: readonly OutcomeChoice[] = [
+  "",
+  ReturnOutcome.REFUND,
+  ReturnOutcome.REPLACEMENT,
+  ReturnOutcome.REPAIR,
+];
 
 /**
  * «Подати заяву на повернення» (TASK-373).
@@ -57,64 +68,41 @@ interface ReturnRequestButtonProps {
  * (the full quantity) is the one the server refuses, and a customer reads that as
  * a broken shop rather than as arithmetic.
  *
+ * TASK-1964: the same dialog serves a guest order — `source` picks the pair of
+ * generated hooks (see `useReturnRequestSource`). Nothing typed is ever lost:
+ * a refusal keeps the dialog open, and without a connection the request waits
+ * for the browser's `online` event and goes out once, by itself.
+ *
  * The dialog is the same controlled-`Dialog` pattern as `CancelOrderButton` —
  * never `window.confirm`, which cannot render a line list.
  */
 export function ReturnRequestButton({
-  orderId,
+  source,
   orderNumber,
   items,
   className,
 }: ReturnRequestButtonProps) {
-  const queryClient = useQueryClient();
+  const baseId = useId();
+  const reasonId = `${baseId}-reason`;
+  const hintId = `${baseId}-hint`;
   const [open, setOpen] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [reason, setReason] = useState("");
+  const [outcome, setOutcome] = useState<OutcomeChoice>("");
+  // Set while a request is waiting for the connection to come back.
+  const [awaitingNetwork, setAwaitingNetwork] = useState(false);
 
   // Asked only while the dialog is open: on a history page of twenty orders,
   // twenty speculative requests for something nobody has clicked is a page that
   // loads slowly for everyone to help the one person who will.
-  const { data, isError } = useGetOrderReturns(orderId, {
-    query: { enabled: open },
-  });
+  const ledger = useReturnRequestSource(source, { enabled: open });
 
-  const createReturn = useCreateReturn({
-    mutation: {
-      onSuccess: () => {
-        void queryClient.invalidateQueries({
-          queryKey: getGetOrderReturnsQueryKey(orderId),
-        });
-        // TASK-608: the history shows the new request's status from this list.
-        void queryClient.invalidateQueries({
-          queryKey: getGetMyReturnsQueryKey(),
-        });
-        toast.success(dict.returnRequest.success);
-        close();
-      },
-      onError: (error) => {
-        // 400 is the server's "those units are no longer returnable" — a
-        // different instruction from "try again", because retrying the same
-        // numbers cannot work.
-        const status = (error as { response?: { status?: number } })?.response
-          ?.status;
-        toast.error(
-          status === 400
-            ? dict.returnRequest.conflict
-            : dict.returnRequest.error,
-        );
-      },
-    },
-  });
-
-  // TASK-631. `remaining` is only true once the ledger has arrived: before that
-  // every line looks fully returnable, so a quantity typed in that window could
-  // be larger than what the server will accept, and the form used to SHOW the
-  // typed number while SENDING the clamped one. The fields wait for the answer
-  // (or for a failure, after which the server's own cap is the backstop and the
-  // load error says so), and the value rendered is always the clamped one — so
-  // what is on screen is exactly what goes in the request.
-  const ledgerSettled = data !== undefined || isError;
-  const lines = returnableLines(items, data?.data ?? []);
+  // TASK-631. The fields wait for the "already returned" ledger: before it
+  // arrives every line looks fully returnable, so a quantity typed in that
+  // window could be larger than what the server will accept. The value rendered
+  // is always the clamped one — what is on screen is what goes in the request.
+  const ledgerSettled = ledger.returns !== undefined || ledger.isError;
+  const lines = returnableLines(items, ledger.returns ?? []);
   const selected = lines
     .map((line) => ({
       orderItemId: line.orderItemId,
@@ -124,23 +112,65 @@ export function ReturnRequestButton({
       ),
     }))
     .filter((line) => line.quantity > 0);
+  const nothingSelected = selected.length === 0;
 
   function close() {
     setOpen(false);
     setQuantities({});
     setReason("");
+    setOutcome("");
+    setAwaitingNetwork(false);
   }
 
   const handleSubmit = () => {
-    if (selected.length === 0) return;
-    createReturn.mutate({
-      orderId,
-      data: {
+    if (nothingSelected) return;
+    // Known offline: do not even try — keep everything and wait for `online`.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setAwaitingNetwork(true);
+      return;
+    }
+    setAwaitingNetwork(false);
+    ledger.submit(
+      {
         ...(reason.trim() ? { reason: reason.trim() } : {}),
+        ...(outcome ? { requestedOutcome: outcome } : {}),
         items: selected,
       },
-    });
+      {
+        onSuccess: () => {
+          toast.success(dict.returnRequest.success);
+          close();
+        },
+        onError: (error) => {
+          // The connection dropped mid-request: the same as being offline.
+          if (isNetworkError(error)) {
+            setAwaitingNetwork(true);
+            return;
+          }
+          // Any refusal keeps the dialog open with everything typed (SF-ACC-31).
+          const { message, refreshLedger } = readReturnRequestError(error);
+          if (refreshLedger) ledger.refreshLedger();
+          toast.error(message);
+        },
+      },
+    );
   };
+
+  // The `online` listener must send what is on screen THEN, not what was there
+  // when it was attached — the customer may keep editing while offline.
+  const submitRef = useRef(handleSubmit);
+  useEffect(() => {
+    submitRef.current = handleSubmit;
+  });
+
+  // One automatic attempt per wait, and only while the dialog is open: closing
+  // it removes the listener, so nothing is filed behind the customer's back.
+  useEffect(() => {
+    if (!open || !awaitingNetwork) return;
+    const onOnline = () => submitRef.current();
+    window.addEventListener("online", onOnline, { once: true });
+    return () => window.removeEventListener("online", onOnline);
+  }, [open, awaitingNetwork]);
 
   return (
     <Dialog
@@ -158,7 +188,10 @@ export function ReturnRequestButton({
         </Button>
       </DialogTrigger>
 
-      <DialogContent>
+      {/* TASK-1964: capped at the viewport and scrollable. Without it a phone
+          with the keyboard up pushed the footer — and the hint next to the
+          disabled button — below the screen with no way to scroll to it. */}
+      <DialogContent className="max-h-dvh overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{dict.returnRequest.dialogTitle}</DialogTitle>
           <DialogDescription>
@@ -166,7 +199,7 @@ export function ReturnRequestButton({
           </DialogDescription>
         </DialogHeader>
 
-        {isError ? (
+        {ledger.isError ? (
           <p role="alert" className="text-sm text-destructive">
             {dict.returnRequest.loadError}
           </p>
@@ -186,48 +219,86 @@ export function ReturnRequestButton({
                   <span className="text-sm text-foreground">
                     {line.productName}
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {line.remaining === 0
-                      ? dict.returnRequest.nothingLeft
-                      : dict.returnRequest.remainingOf(
-                          line.remaining,
-                          line.ordered,
-                        )}
-                  </span>
-                </span>
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={line.remaining}
-                  disabled={!ledgerSettled || line.remaining === 0}
-                  aria-label={dict.returnRequest.quantityAria(line.productName)}
-                  value={clampQuantity(
-                    quantities[line.orderItemId] ?? 0,
-                    line.remaining,
-                  )}
-                  onChange={(event) =>
-                    setQuantities((previous) => ({
-                      ...previous,
-                      [line.orderItemId]: clampQuantity(
-                        Number(event.target.value),
+                  {line.remaining > 0 ? (
+                    <span className="text-xs text-muted-foreground">
+                      {dict.returnRequest.remainingOf(
                         line.remaining,
-                      ),
-                    }))
-                  }
-                  className="w-20"
-                />
+                        line.ordered,
+                      )}
+                    </span>
+                  ) : null}
+                </span>
+                {/* SF-ACC-29: a line with nothing left says why in words,
+                    instead of a greyed-out «0» that reads like a broken field. */}
+                {line.remaining === 0 ? (
+                  <span className="text-sm font-medium text-muted-foreground">
+                    {line.underReview
+                      ? dict.returnRequest.alreadyClaimed
+                      : dict.returnRequest.nothingLeft}
+                  </span>
+                ) : (
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={line.remaining}
+                    disabled={!ledgerSettled}
+                    aria-label={dict.returnRequest.quantityAria(
+                      line.productName,
+                    )}
+                    value={clampQuantity(
+                      quantities[line.orderItemId] ?? 0,
+                      line.remaining,
+                    )}
+                    onChange={(event) =>
+                      setQuantities((previous) => ({
+                        ...previous,
+                        [line.orderItemId]: clampQuantity(
+                          Number(event.target.value),
+                          line.remaining,
+                        ),
+                      }))
+                    }
+                    className="w-20"
+                  />
+                )}
               </li>
             ))}
           </ul>
         </div>
 
+        {/* TASK-2044: what the customer would like — optional, the shop
+            decides either way, so the default sends nothing. */}
+        <fieldset className="flex flex-col gap-1">
+          <legend className="mb-1 text-sm font-semibold text-foreground">
+            {dict.returnRequest.outcomeLegend}
+          </legend>
+          <div className="flex flex-wrap gap-x-4">
+            {OUTCOME_CHOICES.map((choice) => (
+              <label
+                key={choice || "any"}
+                className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-foreground"
+              >
+                <input
+                  type="radio"
+                  name={`${baseId}-outcome`}
+                  value={choice}
+                  checked={outcome === choice}
+                  onChange={() => setOutcome(choice)}
+                  className="size-4 shrink-0 accent-primary"
+                />
+                {choice
+                  ? dict.returnRequest.outcomeLabels[choice]
+                  : dict.returnRequest.outcomeAny}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
         <div className="flex flex-col gap-2">
-          <Label htmlFor={`return-reason-${orderId}`}>
-            {dict.returnRequest.reason}
-          </Label>
+          <Label htmlFor={reasonId}>{dict.returnRequest.reason}</Label>
           <Textarea
-            id={`return-reason-${orderId}`}
+            id={reasonId}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             placeholder={dict.returnRequest.reasonPlaceholder}
@@ -238,22 +309,36 @@ export function ReturnRequestButton({
           </p>
         </div>
 
-        <DialogFooter className="items-center">
-          {/* A live hint rather than a disabled button with no explanation: a
-              control that does nothing and says nothing reads as a broken form. */}
-          {selected.length === 0 ? (
-            <p className="mr-auto text-xs text-muted-foreground">
-              {dict.returnRequest.nothingSelected}
-            </p>
-          ) : null}
+        {/* Always mounted so screen readers announce the text when it appears;
+            `empty:hidden` keeps the grid gap from opening an empty row. */}
+        <p
+          role="status"
+          className="text-sm font-medium text-foreground empty:hidden"
+        >
+          {awaitingNetwork ? dict.returnRequest.offline : null}
+        </p>
+
+        {/* SF-ACC-29: the hint used to be the FIRST child of the footer, whose
+            mobile layout is `flex-col-reverse` — so on a phone it was drawn
+            BELOW both buttons, at the very bottom edge of a dialog that could
+            not scroll, in 12px muted type. It now sits above the buttons and
+            is tied to the disabled one, so it is read with it. */}
+        {nothingSelected ? (
+          <p id={hintId} className="text-sm text-muted-foreground">
+            {dict.returnRequest.nothingSelected}
+          </p>
+        ) : null}
+
+        <DialogFooter>
           <Button variant="outline" onClick={close}>
             {dict.returnRequest.cancel}
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={selected.length === 0 || createReturn.isPending}
+            disabled={nothingSelected || ledger.isPending}
+            aria-describedby={nothingSelected ? hintId : undefined}
           >
-            {createReturn.isPending
+            {ledger.isPending
               ? dict.returnRequest.submitting
               : dict.returnRequest.submit}
           </Button>

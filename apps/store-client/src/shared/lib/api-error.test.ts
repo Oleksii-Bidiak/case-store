@@ -3,6 +3,7 @@ import {
   apiErrorMessage,
   apiErrorRetryAfterSeconds,
   apiErrorStatus,
+  isNetworkError,
 } from "./api-error";
 
 /**
@@ -86,5 +87,37 @@ describe("apiErrorRetryAfterSeconds (TASK-762)", () => {
     expect(
       apiErrorRetryAfterSeconds(new Error("Network Error")),
     ).toBeUndefined();
+  });
+});
+
+/**
+ * TASK-1964: a request that never got an answer is not a refusal. The return
+ * form keeps what the customer typed and sends it once the connection is back,
+ * which is only safe when no answer of any kind came back.
+ */
+describe("isNetworkError (TASK-1964)", () => {
+  it("is true for axios's no-response failure", () => {
+    expect(
+      isNetworkError({ code: "ERR_NETWORK", message: "Network Error" }),
+    ).toBe(true);
+    expect(isNetworkError(new Error("Network Error"))).toBe(true);
+  });
+
+  it("is false whenever the server answered, whatever the status", () => {
+    expect(
+      isNetworkError({
+        code: "ERR_NETWORK",
+        response: { status: 500, data: {} },
+      }),
+    ).toBe(false);
+    expect(isNetworkError(axiosError(429, {}))).toBe(false);
+  });
+
+  it("is false for a timeout, a cancel, or something that is not an error", () => {
+    expect(isNetworkError({ code: "ECONNABORTED", message: "timeout" })).toBe(
+      false,
+    );
+    expect(isNetworkError(undefined)).toBe(false);
+    expect(isNetworkError("Network Error")).toBe(false);
   });
 });

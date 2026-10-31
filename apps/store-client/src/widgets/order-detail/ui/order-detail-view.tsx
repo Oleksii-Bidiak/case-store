@@ -266,7 +266,7 @@ function OrderDetailContent({
               )}
               {canReturn && (
                 <ReturnRequestButton
-                  orderId={order.id}
+                  source={{ kind: "account", orderId: order.id }}
                   orderNumber={`#${ref}`}
                   items={order.items}
                   className={ACTION_CLASS}

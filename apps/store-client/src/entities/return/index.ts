@@ -17,7 +17,14 @@ export {
   // request's status without one request per order.
   useGetMyReturns,
   getGetMyReturnsQueryKey,
+  // TASK-1964: the same request dialog on a guest order, keyed by the order's
+  // access token instead of an owner.
+  useGetGuestOrderReturns,
+  getGetGuestOrderReturnsQueryKey,
+  useCreateGuestReturn,
 } from "@/shared/api/generated/returns/returns";
+
+export { ReturnOutcome } from "@/shared/api/generated/models";
 
 export type {
   ReturnEntity,

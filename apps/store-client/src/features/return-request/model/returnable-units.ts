@@ -18,7 +18,19 @@ export interface ReturnableLine {
   ordered: number;
   /** Ordered minus everything still claimed by a live return. Never negative. */
   remaining: number;
+  /**
+   * A live request on this line has not been answered by the goods coming back
+   * yet (REQUESTED / APPROVED). An exhausted line reads «Уже заявлено» then and
+   * «Уже повернено» once everything claimed is back (TASK-1964).
+   */
+  underReview: boolean;
 }
+
+/** Live statuses whose goods are not back with the shop yet. */
+const UNDER_REVIEW_STATUSES: ReadonlySet<string> = new Set([
+  "REQUESTED",
+  "APPROVED",
+]);
 
 /**
  * Return statuses that no longer hold a claim on the units they name.
@@ -53,14 +65,17 @@ export function returnableLines(
   existingReturns: readonly ExistingReturn[] = [],
 ): ReturnableLine[] {
   const claimed = new Map<string, number>();
+  const underReview = new Set<string>();
 
   for (const row of existingReturns) {
     if (DEAD_RETURN_STATUSES.has(row.status)) continue;
+    const pending = UNDER_REVIEW_STATUSES.has(row.status);
     for (const item of row.items) {
       claimed.set(
         item.orderItemId,
         (claimed.get(item.orderItemId) ?? 0) + item.quantity,
       );
+      if (pending) underReview.add(item.orderItemId);
     }
   }
 
@@ -69,6 +84,7 @@ export function returnableLines(
     productName: item.productName,
     ordered: item.quantity,
     remaining: Math.max(0, item.quantity - (claimed.get(item.id) ?? 0)),
+    underReview: underReview.has(item.id),
   }));
 }
 

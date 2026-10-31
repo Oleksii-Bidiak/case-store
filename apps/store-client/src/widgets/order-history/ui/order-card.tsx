@@ -231,7 +231,7 @@ export function OrderCard({
             parcel, which is an operator's job, not a form's. */}
         {order.status === "DELIVERED" && (
           <ReturnRequestButton
-            orderId={order.id}
+            source={{ kind: "account", orderId: order.id }}
             orderNumber={`#${ref}`}
             items={order.items}
             className={ACTION_CLASS}

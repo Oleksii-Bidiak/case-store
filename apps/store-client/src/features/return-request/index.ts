@@ -6,3 +6,4 @@ export {
   type ExistingReturn,
   type ReturnableLine,
 } from "./model/returnable-units";
+export type { ReturnRequestSource } from "./model/use-return-request-source";

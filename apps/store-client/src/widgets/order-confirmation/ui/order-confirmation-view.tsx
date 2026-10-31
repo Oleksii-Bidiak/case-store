@@ -210,7 +210,7 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
                 customer return route to check against. */}
             {order.status === "DELIVERED" && (
               <ReturnRequestButton
-                orderId={order.id}
+                source={{ kind: "account", orderId: order.id }}
                 orderNumber={`#${order.id.slice(0, 8).toUpperCase()}`}
                 items={order.items}
               />
