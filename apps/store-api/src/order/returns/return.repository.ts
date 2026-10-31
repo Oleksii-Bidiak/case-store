@@ -359,10 +359,21 @@ export class ReturnRepository {
    * committed amount — a read taken outside the transaction would let both spend
    * the same balance.
    *
-   * @throws ConflictException when the stock was already credited back.
+   * ── The state guard (TASK-1961, TASK-2044) ─────────────────────────────────
+   * The service validated the move against `current`, read outside this
+   * transaction. Both branches write conditionally on the row still holding
+   * that status and decision — the same guard `decide` uses — so a decision or
+   * another PATCH committed in between is refused with 409 rather than silently
+   * overwritten (a refusal turned into RECEIVED, money recorded on what had
+   * just become a replacement). The conditional write also row-locks the
+   * return, so transitions on one return serialise.
+   *
+   * @throws ConflictException RETURN_ALREADY_RESTOCKED when the stock was
+   *   already credited back; RETURN_TRANSITION_INVALID when the return moved
+   *   since the service read it.
    */
   async resolve(
-    returnId: string,
+    current: ReturnDecisionBasis,
     fields: {
       status: ReturnStatus;
       operatorNotes?: string | null;
@@ -371,6 +382,8 @@ export class ReturnRepository {
     },
     options: { restock?: boolean; assertRefundable?: AssertRefundWithinBalance } = {},
   ): Promise<ReturnWithItems> {
+    const returnId = current.id;
+    const unchanged = { id: returnId, status: current.status, decision: current.decision };
     const updated = (await this.prisma.$transaction(async (tx) => {
       const existing = await tx.return.findUniqueOrThrow({
         where: { id: returnId },
@@ -394,7 +407,7 @@ export class ReturnRepository {
         });
       }
 
-      const data: Prisma.ReturnUpdateInput = { status: fields.status };
+      const data: Prisma.ReturnUpdateManyMutationInput = { status: fields.status };
       if (fields.operatorNotes !== undefined) data.operatorNotes = fields.operatorNotes;
       if (fields.refundedAmount !== undefined) {
         data.refundedAmount =
@@ -403,7 +416,10 @@ export class ReturnRepository {
       if (fields.resolvedAt !== undefined) data.resolvedAt = fields.resolvedAt;
 
       if (!options.restock) {
-        await tx.return.update({ where: { id: returnId }, data });
+        const { count } = await tx.return.updateMany({ where: unchanged, data });
+        if (count === 0) {
+          throw invalidReturnTransitionError(current.status, fields.status);
+        }
         return tx.return.findUniqueOrThrow({
           where: { id: returnId },
           include: ADMIN_RETURN_DETAIL_INCLUDE,
@@ -412,12 +428,19 @@ export class ReturnRepository {
 
       // The arbiter. Runs BEFORE any stock write.
       const { count } = await tx.return.updateMany({
-        where: { id: returnId, restockedAt: null },
+        where: { ...unchanged, restockedAt: null },
         data: { ...data, restockedAt: new Date() },
       });
 
       if (count === 0) {
-        throw returnAlreadyRestockedError();
+        // Two reasons a guarded write matches nothing; the operator is told which.
+        const now = await tx.return.findUnique({
+          where: { id: returnId },
+          select: { restockedAt: true },
+        });
+        throw now?.restockedAt
+          ? returnAlreadyRestockedError()
+          : invalidReturnTransitionError(current.status, fields.status);
       }
 
       // The product is reached through the order line rather than stored on the

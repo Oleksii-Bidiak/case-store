@@ -396,7 +396,13 @@ export class ReturnService {
     }
 
     const resolved = await this.returnRepository.resolve(
-      returnId,
+      // TASK-1961/2044: the write is conditional on exactly what was validated.
+      {
+        id: existing.id,
+        orderId: existing.orderId,
+        status: existing.status,
+        decision: existing.decision,
+      },
       {
         status: dto.status,
         ...(dto.operatorNotes !== undefined ? { operatorNotes: dto.operatorNotes } : {}),

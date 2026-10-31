@@ -493,7 +493,8 @@ describe('Admin returns queue (e2e)', () => {
     beforeEach(() => {
       prismaServiceMock.return.findUnique.mockResolvedValue(received);
       prismaServiceMock.return.findUniqueOrThrow.mockResolvedValue(received);
-      prismaServiceMock.return.update.mockResolvedValue(received);
+      // The write is conditional on the validated status/decision (TASK-1961/2044).
+      prismaServiceMock.return.updateMany.mockResolvedValue({ count: 1 });
       // The order of three at 499.00, nothing refunded through its other returns.
       prismaServiceMock.$queryRaw.mockResolvedValue([{ total: '1497.00' }]);
       prismaServiceMock.return.findMany.mockResolvedValue([]);
@@ -504,7 +505,7 @@ describe('Admin returns queue (e2e)', () => {
 
       expect(response.body.error).toBe('RETURN_REFUND_EXCEEDS_RETURNED_VALUE');
       expect(response.body.message).toContain('499.00');
-      expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+      expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
     });
 
     it('rejects a refund larger than the order has left after earlier returns', async () => {
@@ -514,13 +515,13 @@ describe('Admin returns queue (e2e)', () => {
 
       expect(response.body.error).toBe('RETURN_REFUND_EXCEEDS_ORDER_BALANCE');
       expect(response.body.message).toContain('297.00');
-      expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+      expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
     });
 
     it('accepts "499.00" — the value of the unit coming back', async () => {
       await patch('499.00').expect(200);
 
-      expect(prismaServiceMock.return.update).toHaveBeenCalledTimes(1);
+      expect(prismaServiceMock.return.updateMany).toHaveBeenCalledTimes(1);
     });
   });
 
