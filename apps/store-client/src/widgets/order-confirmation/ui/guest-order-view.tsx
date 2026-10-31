@@ -25,7 +25,7 @@ interface GuestOrderViewProps {
 }
 
 const primaryCta =
-  "inline-block rounded-cta bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-block rounded-cta bg-primary px-6 py-3 font-semibold text-primary-foreground transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100";
 
 /**
  * GuestOrderView — a shopper without an account looking at their own order

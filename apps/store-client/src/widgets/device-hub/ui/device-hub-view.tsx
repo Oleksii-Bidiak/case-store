@@ -12,7 +12,7 @@ import type {
   DeviceModelListItemEntity,
   PublicProductEntity,
 } from "@/shared/api/generated/models";
-import { H1_CLASS, PAGE_CONTAINER, dict } from "@/shared/config";
+import { FOCUS_RING, H1_CLASS, PAGE_CONTAINER, dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { CategoryIcon, ProductCard } from "@/shared/ui";
 import {
@@ -39,9 +39,6 @@ export interface DeviceHubViewProps {
    */
   renderCardAction?: (product: PublicProductEntity) => ReactNode;
 }
-
-const FOCUS_RING =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 /** Card width in the rail: 2 → 3 → 4 → 5 visible (the mockup's steps). */
 const RAIL_IMAGE_SIZES = "(max-width: 767px) 50vw, 240px";
@@ -93,7 +90,7 @@ export function DeviceHubView({
               <Link
                 href={crumb.path}
                 className={cn(
-                  "rounded-sm underline-offset-3 transition-colors hover:text-foreground hover:underline",
+                  "rounded-sm underline-offset-3 transition-interactive hover:text-foreground hover:underline active:opacity-75",
                   FOCUS_RING,
                 )}
               >
@@ -227,7 +224,7 @@ function HubSection({
           href={compatLandingPath(category.slug, modelSlug)}
           className={cn(
             "inline-flex h-11 items-center gap-1.5 rounded-full border border-border bg-card px-3.5 text-sm font-semibold text-foreground",
-            "transition-all duration-200 ease-out hover:border-foreground/35 hover:bg-muted active:scale-98 motion-reduce:transition-none motion-reduce:active:scale-100",
+            "transition-interactive hover:border-foreground/35 hover:bg-muted active:scale-98 motion-reduce:active:scale-100",
             FOCUS_RING,
           )}
         >
@@ -307,8 +304,9 @@ function SiblingPill({
       aria-label={t.relatedPillAria(model.name, model.productCount)}
       className={cn(
         "inline-flex h-11 items-center gap-2.5 rounded-full px-4 text-sm font-semibold text-foreground",
-        "transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-lift active:scale-98",
-        "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
+        // A pill with the DeviceHub mockup's own lift (no resting shadow).
+        "transition-interactive hover:-translate-y-0.5 hover:shadow-lift active:scale-98",
+        "motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
         getDeviceFamilyTone(family).surface,
         FOCUS_RING,
       )}

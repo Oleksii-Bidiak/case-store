@@ -197,7 +197,8 @@ export function InfoContactForm() {
           <button
             type="submit"
             disabled={submit.isPending}
-            className="h-12 rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+            aria-busy={submit.isPending || undefined}
+            className="h-12 rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none disabled:cursor-progress disabled:hover:bg-primary disabled:hover:shadow-none disabled:active:scale-100 motion-reduce:active:scale-100"
           >
             {submit.isPending ? d.formSubmitting : d.formSubmit}
           </button>

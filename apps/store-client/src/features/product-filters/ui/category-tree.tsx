@@ -43,7 +43,7 @@ type RowKind = "anc" | "cur" | "node";
 // 36px in the rail.
 const rowClass = (kind: RowKind) =>
   cn(
-    "flex items-stretch rounded-menu transition-colors duration-150 ease-out motion-reduce:transition-none",
+    "flex items-stretch rounded-menu transition-interactive",
     kind === "cur"
       ? "bg-primary text-primary-foreground"
       : "text-foreground hover:bg-muted",
@@ -51,7 +51,7 @@ const rowClass = (kind: RowKind) =>
 
 const linkClass = (kind: RowKind, depth: number) =>
   cn(
-    "flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-menu py-1.5 pr-2.5 text-left text-sm leading-snug outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 lg:min-h-9",
+    "flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-menu py-1.5 pr-2.5 text-left text-sm leading-snug focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring lg:min-h-9",
     depthPadding(depth),
     kind === "anc" && "font-medium text-muted-foreground",
     kind === "cur" && "font-bold",
@@ -137,7 +137,7 @@ export function CategoryTree({
                   : dict.filters.categoryTreeExpand(node.name)
               }
               onClick={() => toggle(node.id)}
-              className="grid size-11 shrink-0 place-items-center rounded-menu text-muted-foreground outline-none transition-colors duration-150 ease-out hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none lg:size-9"
+              className="grid size-11 shrink-0 place-items-center rounded-menu text-muted-foreground transition-interactive hover:text-foreground active:scale-94 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring lg:size-9"
             >
               <ChevronRight
                 aria-hidden="true"

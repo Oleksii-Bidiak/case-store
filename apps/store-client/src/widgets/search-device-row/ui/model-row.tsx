@@ -32,7 +32,7 @@ export interface ModelRowCategory {
 
 /** Hover only where a pointer hovers; no lift or scale under reduced motion. */
 const PILL_MOTION =
-  "transition duration-150 ease-out active:scale-98 motion-reduce:transition-none motion-reduce:active:scale-100";
+  "transition-interactive active:scale-98 motion-reduce:active:scale-100";
 
 interface ModelRowProps {
   match: SearchDeviceMatch;
@@ -134,7 +134,7 @@ export function ModelRow({
           <Link
             href={main.href}
             className={cn(
-              "inline-flex min-h-11 max-w-full items-center gap-2 rounded-full bg-primary px-4.5 py-2 text-sm leading-tight font-semibold text-primary-foreground hover:bg-primary/86 hover:shadow-card",
+              "inline-flex min-h-11 max-w-full items-center gap-2 rounded-full bg-primary px-4.5 py-2 text-sm leading-tight font-semibold text-primary-foreground hover:bg-primary-hover hover:shadow-card active:bg-primary active:shadow-none",
               PILL_MOTION,
               SEARCH_DEVICE_FOCUS,
             )}

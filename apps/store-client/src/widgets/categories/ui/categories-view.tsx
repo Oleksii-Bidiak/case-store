@@ -260,7 +260,7 @@ export function CategoriesView() {
                 <Link
                   key={child.id}
                   href={`/categories/${child.slug}`}
-                  className="flex flex-col rounded-card border border-border bg-card p-3 no-underline shadow-card transition-[transform,box-shadow] hover:-translate-y-[3px] hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none motion-reduce:hover:translate-y-0 md:p-[18px]"
+                  className="flex flex-col rounded-card border border-border bg-card p-3 no-underline transition-interactive hover:-translate-y-0.5 hover:shadow-lift active:translate-y-0 active:scale-99 active:shadow-card motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-solid focus-visible:outline-ring md:p-[18px] shadow-card"
                 >
                   <div className="relative mb-3 aspect-square overflow-hidden rounded-cta md:mb-3.5">
                     <CategoryTileImage
@@ -290,7 +290,7 @@ export function CategoriesView() {
         ) : (
           <Link
             href={`/categories/${activeRoot.slug}`}
-            className="inline-flex h-12 items-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex h-12 items-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground no-underline transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100"
           >
             {dict.categories.viewAllInCategory}
           </Link>

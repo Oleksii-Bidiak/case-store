@@ -327,8 +327,11 @@ xl 28 · 2xl 32 and every `shared/ui` button and field (h-9…h-11) renders as a
 
 The role values are the named tokens `--radius-panel`, `--radius-card`, `--radius-pad`,
 `--radius-cta` and `--radius-menu` in `@theme inline` (`globals.css`, TASK-862 / TASK-1951).
-`panel` and `pad` are new for the Д3 screens and are not yet registered with `cn`'s
-tailwind-merge (below) — register them when the first component uses them. The card radius covers the whole
+All five are registered with `cn`'s tailwind-merge (below; `panel` and `pad` since TASK-2079).
+The product card is `rounded-card` + `shadow-card` + a 1px `border` (TASK-2171) — the border
+stays so the edge reads in dark; its skeletons (`ProductCardSkeleton`, the wishlist grid) draw the
+same frame. The checkbox square has no role token yet (6px, decision pending in TASK-2141
+together with the 12px tree/sort radius) and uses `rounded-xs` meanwhile. The card radius covers the whole
 funnel: cart, checkout, order confirmation, `/orders`, `/orders/status` and the guest order
 view all use `rounded-card`. New code picks the role from this table and does not invent a
 new radius: no `rounded-[..px]`.
@@ -348,11 +351,11 @@ move them over when you touch them. A horizontally scrolling chip row hides its 
 `scrollbar-none` and bleeds to the screen edge (`-mx-4 px-4 sm:-mx-6 sm:px-6`), so the
 half-clipped last chip says "scrolls".
 
-| Shadow            | Use                                                           |
-| ----------------- | ------------------------------------------------------------- |
-| `shadow-card`     | Resting product/info cards                                    |
-| `shadow-elevated` | Dropdowns, popovers, sticky header on scroll                  |
-| `shadow-lift`     | Card **hover** rise (pair with `-translate-y-0.5 transition`) |
+| Shadow            | Use                                                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `shadow-card`     | Resting cards **and tiles**; also the hover of a graphite button                                                                |
+| `shadow-elevated` | Dropdowns, popovers, sticky header on scroll                                                                                    |
+| `shadow-lift`     | Hover rise: tiles `-translate-y-0.5`, product card `-translate-y-1` (`LIFT_TILE` / `LIFT_CARD`, `shared/config/interaction.ts`) |
 
 In light the shadows are long, soft and slightly violet (`0 10px 28px -14px` at ~22 % for a
 card): white panels float on the lavender page, and the `border` token keeps the layer edge
@@ -361,11 +364,63 @@ on the surface step (`background` → `card` → `muted`) and a 1px `border`.
 
 ---
 
-## 6. Component states (every interactive element needs all five)
+## 6. Component states
 
-1. **Default** 2. **Hover** (lift/`accent` bg) 3. **Focus-visible** (`ring-2 ring-ring ring-offset-2`)
-2. **Active/Loading** (spinner or skeleton — never a dead frozen UI) 5. **Disabled**
-   (explicit tokens + `cursor-not-allowed` — **never `opacity-*`**, see below).
+Every interactive element has **default, hover, pressed, focus-visible, disabled**, and where it
+applies **selected** and **loading** (TASK-2079, `ComponentStates.dc.html`). The class fragments
+live in `apps/store-client/src/shared/config/interaction.ts` (`PRESS`, `PRESS_ICON`,
+`LIFT_TILE`, `LIFT_CARD`, `PRIMARY_STATES`, `LINK`, `PILL` / `PILL_SELECTED`, `ICON_BUTTON`,
+`RAIL_ARROW`, `MENU_ROW` / `MENU_ROW_ICON`) and `focus.ts` (`FOCUS_RING`); combine them with the
+`transition-interactive` utility (§7).
+
+1. **Hover** — only on devices with a mouse. Tailwind v4's `hover:` / `group-hover:` /
+   `peer-hover:` already compile to `@media (hover: hover)`, so nothing extra is needed; never
+   paint hover from JS (`onMouseEnter`) and never use an arbitrary `[&:hover]` variant (that one
+   is not gated). Graphite fill hovers to `bg-primary-hover` (+ `shadow-card`), never
+   `bg-primary/90` (ΔL≈1 %, invisible); card / bordered surfaces hover to `bg-muted` and a
+   `foreground/30–35` border (`hover:border-primary` is graphite on graphite — invisible too).
+2. **Pressed** (`active:`) — the only feedback on touch, so every tappable control has one:
+   buttons / pills / chips `scale-98`, 44px icon buttons `scale-94`, tiles back to rest
+   `scale-99` + `shadow-card`, product card `-translate-y-px` + `shadow-card`, device-chip halves
+   `bg-foreground/14`, links underline + `opacity-75`. Links never press-scale.
+3. **Focus-visible** — `FOCUS_RING`: a 2px `outline-ring`, 2px off the control (tiles and cards
+   `outline-offset-3`). An outline, not a `ring`, so a hover ring or shadow never hides it. No
+   `outline-none` base — in v4 the focus outline would inherit its `none` style. Fields are the
+   exception: `border-ring` + a soft `ring-4 ring-ring/20` halo.
+4. **Selected** — graphite fill (`border-primary bg-primary text-primary-foreground`, hover
+   `bg-primary-hover`, never back to `muted`) for pills, tabs and pagination; `aria-pressed` on
+   toggles, `aria-selected` on tabs, `aria-checked` on switch / checkbox. Saved device tiles and
+   chips: family surface + `border-foreground` + a check disc (the family colour rule). Menu
+   current: `bg-muted` + icon box `bg-card shadow-card`, `aria-current="page"`. Wishlist:
+   `bg-badge/14` + a filled heart in `text-sale` (the mockup's `badge` glyph is 2.85:1 on white,
+   under WCAG 1.4.11's 3:1).
+5. **Loading** — `<Button loading>`: keeps the fill and the width, a 16px spinner + a verb
+   («Додаємо…»), `aria-busy` + `aria-disabled`, clicks swallowed; never the native `disabled`
+   grey (it would also drop keyboard focus to `<body>` mid-action). For `<button>` only — with
+   `asChild` there is no child to put the spinner in. Page / section loading = skeletons (below).
+6. **Disabled** — tokens, never opacity (the table below) **plus `border-transparent` on bordered
+   controls** (outline button, pills, icon buttons, fields). A zero-count filter stays rendered,
+   disabled. Rail arrows disable at the row's ends (`useScrollEdges`, `shared/lib`).
+
+| Component        | Hover                                                                      | Pressed                              | Selected                                | Disabled                                            |
+| ---------------- | -------------------------------------------------------------------------- | ------------------------------------ | --------------------------------------- | --------------------------------------------------- |
+| Button primary   | `bg-primary-hover` + `shadow-card`                                         | `scale-98`, `bg-primary`, no shadow  | —                                       | disabled tokens                                     |
+| Button outline   | `border-foreground/30` + `bg-muted`                                        | `scale-98` + `bg-muted`              | —                                       | + `border-transparent`                              |
+| Button ghost     | `bg-muted`                                                                 | `scale-98` + `bg-foreground/10`      | —                                       | transparent bg                                      |
+| Icon button 44   | `bg-muted`                                                                 | `scale-94`                           | `bg-badge/14` (wishlist)                | + `border-transparent`                              |
+| Pill / tab       | `bg-muted` (selected: `bg-primary-hover`)                                  | `scale-98`                           | graphite fill                           | + `border-transparent`, stays visible               |
+| Field            | `border-foreground/35`                                                     | —                                    | —                                       | `border-transparent bg-disabled`                    |
+| Switch           | `ring-4 ring-foreground/10` (on: `bg-primary-hover`)                       | —                                    | `bg-primary`                            | —                                                   |
+| Checkbox         | box `border-foreground/45 bg-muted`                                        | box `scale-90`                       | `bg-primary` (hover `bg-primary-hover`) | box `bg-disabled`, label `text-disabled-foreground` |
+| Tile             | `-translate-y-0.5` + `shadow-lift`                                         | `translate-y-0 scale-99 shadow-card` | `border-foreground` + check             | `bg-disabled`, no shadow                            |
+| Product card     | `-translate-y-1` + `shadow-lift` + `border-foreground/25`, title underline | `-translate-y-px` + `shadow-card`    | —                                       | sold out: no lift                                   |
+| Device chip half | `bg-foreground/8`                                                          | `bg-foreground/14`                   | —                                       | —                                                   |
+| Menu row         | `bg-muted/60`                                                              | —                                    | `bg-muted`, icon `bg-card shadow-card`  | —                                                   |
+| Link             | underline, offset 4                                                        | underline + `opacity-75`             | —                                       | `text-disabled-foreground`                          |
+
+Sheets close with one button: a 40×40 round `bg-muted` «Закрити» (hover `bg-foreground/10`,
+press `scale-94`), top-right; a sheet whose purpose is not its title passes `closeLabel` («Закрити
+фільтри») and the headers under it reserve `pr-16` (TASK-2139).
 
 **Disabled rule (TASK-736).** Paint the inactive state with the `disabled` tokens, never by
 fading the control: `opacity-50` over text that is already grey gave ≈2.0:1
@@ -380,8 +435,8 @@ fading the control: `opacity-50` over text that is already grey gave ≈2.0:1
 | `TabsTrigger`                        | `disabled:text-disabled-foreground` (sits on the `bg-muted` list)                                       |
 | `Label`                              | `peer-disabled:` / `group-data-[disabled=true]:text-disabled-foreground`                                |
 
-Borders keep their enabled token (`border-input`); WCAG exempts inactive controls from the
-3:1 UI-component rule, and the grey fill already marks the state. `text-disabled-foreground`
+Bordered controls drop their border (`disabled:border-transparent`, TASK-2079 — the grey fill
+alone marks the state; WCAG exempts inactive controls from the 3:1 UI-component rule). `text-disabled-foreground`
 is ≥ 4.5:1 on `disabled`, `background`, `card`, `popover` and `muted` in both themes
 (light 7.18:1 on `disabled`, 7.80:1 on the page, 8.46:1 on white; dark 6.74:1 on `disabled`,
 8.09:1 on `background`) — pinned by `apps/store-client/src/app/globals-disabled-contrast.test.ts`.
@@ -478,8 +533,17 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
 
 ## 7. Motion
 
-- Durations: micro `150ms`, standard `200–250ms`. Easing: `ease-out` for enter, `ease-in`
-  for exit. Tailwind: `transition-* duration-200 ease-out`.
+- State changes (TASK-2079): colour / background / border **120ms**, shadow and movement
+  **180ms**, easing `ease-standard` (`cubic-bezier(.2,0,0,1)`). One utility does both:
+  `transition-interactive` (`globals.css`, registered with `cn`). Enter / exit of dialogs and
+  sheets keep the Radix / tw-animate defaults (`ease-out` in, `ease-in` out).
+- Tailwind v4 moves with the `translate` / `scale` properties, not `transform`:
+  `transition-[transform,…]` does not animate them — use `transition-interactive`, `transition`
+  or `transition-transform`.
+- `prefers-reduced-motion: reduce` → no transforms, colour only: `transition-interactive` drops
+  the motion properties, and every lift / press pairs with `motion-reduce:hover:translate-y-0` /
+  `motion-reduce:active:scale-100` (the `interaction.ts` constants already do); spinners
+  `motion-reduce:animate-none`.
 - Approved motions: hover lift on cards, fade/scale on dialogs & sheets (Radix defaults),
   fade-in on image load. No parallax, no auto-playing carousels that can't be paused.
 - Always wrap non-essential motion so it's disabled under `prefers-reduced-motion: reduce`.

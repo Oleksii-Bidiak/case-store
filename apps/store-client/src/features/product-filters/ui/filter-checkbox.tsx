@@ -56,10 +56,11 @@ export function FilterCheckbox({
     <label
       htmlFor={id}
       // Disabled reads through the disabled token, not opacity (TASK-736).
+      // `group` only when enabled: a disabled row gets no hover or press.
       className={`flex min-h-8 items-center gap-3 py-1.5 text-sm ${
         disabled
           ? "cursor-not-allowed text-disabled-foreground"
-          : "cursor-pointer text-foreground"
+          : "group cursor-pointer text-foreground"
       }`}
     >
       <input
@@ -73,10 +74,17 @@ export function FilterCheckbox({
       />
       <span
         aria-hidden="true"
-        className={`flex size-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 ${
-          checked
-            ? "border-primary bg-primary text-primary-foreground"
-            : "border-border bg-transparent"
+        // States (design-system §6, TASK-2079): the whole row is the target —
+        // hover darkens the box edge, press shrinks it to 90 %. Unchecked edge
+        // is `input` (3.65:1 on the card), not `border` (1.39:1, invisible to
+        // low vision). `rounded-xs` until the 6px checkbox radius token is
+        // decided (TASK-2141) — `rounded-md` drew a circle (a radio).
+        className={`flex size-5 shrink-0 items-center justify-center rounded-xs border-chip transition-interactive peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-solid peer-focus-visible:outline-ring group-active:scale-90 motion-reduce:group-active:scale-100 ${
+          disabled
+            ? "border-transparent bg-disabled text-disabled-foreground"
+            : checked
+              ? "border-primary bg-primary text-primary-foreground group-hover:border-primary-hover group-hover:bg-primary-hover"
+              : "border-input bg-card group-hover:border-foreground/45 group-hover:bg-muted"
         }`}
       >
         {checked && <Check className="size-3.5" strokeWidth={3} />}

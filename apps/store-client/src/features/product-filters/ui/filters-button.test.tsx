@@ -14,8 +14,10 @@ describe("FiltersButton", () => {
       name: dict.filters.filtersButton,
     });
     expect(button).toHaveClass("h-11", "shrink-0", "lg:hidden");
-    // A visible keyboard focus replacement for the removed outline.
-    expect(button).toHaveClass("outline-none", "focus-visible:ring-2");
+    // The house focus outline (TASK-2079) — never `outline-none`, which the
+    // focus-visible outline would inherit as its style.
+    expect(button).toHaveClass("focus-visible:outline-2");
+    expect(button).not.toHaveClass("outline-none");
   });
 
   it("badges the active filter count only when there is one", () => {

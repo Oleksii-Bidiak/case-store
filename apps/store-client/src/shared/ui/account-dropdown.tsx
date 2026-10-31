@@ -169,7 +169,7 @@ export function AccountDropdown({
           // min-h-11 min-w-11: a 44×44 touch target at minimum, while a
           // caption passed in `triggerContent` can still grow it.
           className={cn(
-            "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-foreground transition-interactive hover:bg-muted active:scale-94 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring",
             triggerClassName,
           )}
         >
@@ -215,7 +215,7 @@ export interface AccountDropdownItemProps {
  * (design-system §5).
  */
 const ITEM_CLASS =
-  "block w-full cursor-pointer rounded-menu px-3 py-2 text-left text-sm text-foreground outline-none transition-colors select-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-accent data-highlighted:text-accent-foreground";
+  "block w-full cursor-pointer rounded-menu px-3 py-2 text-left text-sm text-foreground transition-interactive select-none hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring data-disabled:pointer-events-none data-disabled:text-disabled-foreground data-highlighted:bg-muted data-highlighted:text-foreground";
 
 /**
  * AccountDropdownItem — a single `role="menuitem"` entry. Renders a Next.js

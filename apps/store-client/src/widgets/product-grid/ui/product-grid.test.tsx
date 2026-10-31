@@ -177,12 +177,14 @@ describe("PopularRail — admin-managed tabs (TASK-288)", () => {
         name: dict.home.popular.tabsAriaFor(dict.home.popular.heading),
       }),
     ).toBeInTheDocument();
-    await userEvent.click(
+    // One card fits on one screen (jsdom: no layout, the row measures 0 wide)
+    // → both arrows are greyed out, still named (TASK-2079).
+    expect(
       screen.getByRole("button", { name: dict.home.popular.prev }),
-    );
-    await userEvent.click(
+    ).toBeDisabled();
+    expect(
       screen.getByRole("button", { name: dict.home.popular.next }),
-    );
+    ).toBeDisabled();
     expect(screen.getByText("Чохол Alpha")).toBeInTheDocument();
   });
 });

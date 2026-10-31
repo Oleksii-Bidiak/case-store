@@ -116,7 +116,7 @@ export function SavedDevices({
                 aria-label={t.forget(device.name)}
                 onClick={() => onForget(device)}
                 className={cn(
-                  "grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:text-foreground",
+                  "grid size-11 shrink-0 place-items-center rounded-full text-muted-foreground transition-interactive hover:bg-muted hover:text-foreground active:scale-94 motion-reduce:active:scale-100",
                   FOCUS_RING,
                 )}
               >

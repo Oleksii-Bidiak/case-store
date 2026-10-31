@@ -50,7 +50,7 @@ export function DeviceChip({
         aria-haspopup="dialog"
         onClick={onChange}
         className={cn(
-          "inline-flex h-full min-w-0 flex-1 items-center gap-2 rounded-l-full pr-2 pl-3.5 text-sm transition-colors hover:bg-foreground/7",
+          "inline-flex h-full min-w-0 flex-1 items-center gap-2 rounded-l-full pr-2 pl-3.5 text-sm transition-interactive hover:bg-foreground/8 active:bg-foreground/14",
           FOCUS_RING,
         )}
       >
@@ -84,7 +84,7 @@ export function DeviceChip({
         aria-label={t.forgetAria(device.name)}
         onClick={onForget}
         className={cn(
-          "grid size-11 shrink-0 place-items-center rounded-r-full border-l border-foreground/14 transition-colors hover:bg-foreground/7",
+          "grid size-11 shrink-0 place-items-center rounded-r-full border-l border-foreground/14 transition-interactive hover:bg-foreground/8 active:bg-foreground/14",
           FOCUS_RING,
         )}
       >

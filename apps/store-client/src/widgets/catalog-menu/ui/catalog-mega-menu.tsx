@@ -35,7 +35,7 @@ export const ROOT_HOVER_INTENT_MS = 80;
 const TILE_LINK_ATTR = "data-catalog-tile-link";
 
 const PILL =
-  "inline-flex h-9 items-center rounded-full border border-border px-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted";
+  "inline-flex h-9 items-center rounded-full border border-border px-3.5 text-sm font-semibold text-foreground transition-interactive hover:bg-muted active:scale-98 motion-reduce:active:scale-100";
 
 export interface CatalogMegaMenuProps {
   /** Close the panel — every link and «Усі моделі» call it. */
@@ -163,7 +163,7 @@ export function CatalogMegaMenu({ onClose }: CatalogMegaMenuProps) {
                     onKeyDown={(event) => onRootKeyDown(event, index)}
                     onClick={onClose}
                     className={cn(
-                      "flex min-h-10.5 items-center gap-3 rounded-menu py-0.75 pr-2.5 pl-1 text-sm font-medium transition-colors",
+                      "flex min-h-10.5 items-center gap-3 rounded-menu py-0.75 pr-2.5 pl-1 text-sm font-medium transition-interactive",
                       active ? "bg-muted" : "hover:bg-muted/60",
                       FOCUS_RING,
                     )}
@@ -305,7 +305,7 @@ function Tile({ node, onClose }: { node: CatalogNode; onClose: () => void }) {
                 href={categoryHref(link)}
                 onClick={onClose}
                 className={cn(
-                  "block rounded-sm py-1 text-sm leading-snug text-muted-foreground transition-colors hover:text-foreground hover:underline",
+                  "block rounded-sm py-1 text-sm leading-snug text-muted-foreground transition-interactive hover:text-foreground hover:underline active:opacity-75",
                   FOCUS_RING,
                 )}
               >

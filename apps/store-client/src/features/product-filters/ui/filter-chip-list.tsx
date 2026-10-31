@@ -59,7 +59,7 @@ export function FilterChipList({ chips, onClearAll }: FilterChipListProps) {
           type="button"
           onClick={chip.onRemove}
           aria-label={chip.ariaLabel}
-          className={`inline-flex h-8.5 items-center gap-2 rounded-full border py-0 pr-2 pl-3.5 text-sm font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`inline-flex h-8.5 items-center gap-2 rounded-full border py-0 pr-2 pl-3.5 text-sm font-semibold transition-interactive hover:ring-2 hover:ring-foreground/18 active:scale-98 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring ${
             chip.isSearch
               ? "border-primary/30 bg-primary/10 text-primary"
               : chip.toneClassName
@@ -93,7 +93,7 @@ export function FilterChipList({ chips, onClearAll }: FilterChipListProps) {
       <button
         type="button"
         onClick={onClearAll}
-        className="text-sm font-semibold text-muted-foreground underline decoration-1 underline-offset-3 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="text-sm font-semibold text-muted-foreground underline decoration-1 underline-offset-3 rounded-sm transition-interactive hover:text-foreground active:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring"
       >
         {dict.filters.clearAll}
       </button>

@@ -90,7 +90,7 @@ export const DeviceBarCategories = forwardRef<
                   key={category.id}
                   href={deviceCategoryHref(category.slug, device.slug)}
                   className={cn(
-                    "inline-flex h-11 shrink-0 items-center gap-2 rounded-full px-3.5 text-sm font-medium whitespace-nowrap text-foreground transition-shadow hover:bg-card hover:shadow-card",
+                    "inline-flex h-11 shrink-0 items-center gap-2 rounded-full px-3.5 text-sm font-medium whitespace-nowrap text-foreground transition-interactive hover:bg-card hover:shadow-card active:scale-98 motion-reduce:active:scale-100",
                     FOCUS_RING,
                     fit !== null && index >= fit && "invisible",
                   )}

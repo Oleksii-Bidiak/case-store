@@ -8,7 +8,7 @@ import {
   getDeviceFamilyTone,
 } from "@/entities/device";
 import type { MyDevice } from "@/entities/my-devices";
-import { dict } from "@/shared/config";
+import { dict, LINK } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 
 import { BAR_PILL, FOCUS_RING, PRIMARY_CONTROL_ATTR } from "./bar-styles";
@@ -49,7 +49,7 @@ export function DeviceBarDevices({
         aria-haspopup="dialog"
         onClick={onOpenPicker}
         className={cn(
-          "inline-flex h-11 w-full max-w-full min-w-0 items-center gap-2 rounded-full border-chip border-dashed border-border bg-card px-3.5 text-sm font-semibold text-foreground transition-colors hover:border-solid min-[480px]:w-auto",
+          "inline-flex h-11 w-full max-w-full min-w-0 items-center gap-2 rounded-full border-chip border-dashed border-border bg-card px-3.5 text-sm font-semibold text-foreground transition-interactive hover:border-solid active:scale-98 motion-reduce:active:scale-100 min-[480px]:w-auto",
           FOCUS_RING,
         )}
       >
@@ -129,7 +129,7 @@ export function DeviceBarDevices({
           aria-haspopup="dialog"
           onClick={onOpenPicker}
           className={cn(
-            "grid size-11 shrink-0 place-items-center rounded-full border-chip border-dashed border-border text-foreground transition-colors hover:border-solid hover:bg-card",
+            "grid size-11 shrink-0 place-items-center rounded-full border-chip border-dashed border-border text-foreground transition-interactive hover:border-solid hover:bg-card active:scale-94 motion-reduce:active:scale-100",
             FOCUS_RING,
           )}
         >
@@ -140,7 +140,8 @@ export function DeviceBarDevices({
       <Link
         href="/devices"
         className={cn(
-          "ml-auto hidden min-h-11 shrink-0 items-center gap-1.5 rounded-sm px-1.5 text-sm font-semibold text-foreground underline-offset-3 hover:underline lg:inline-flex",
+          "ml-auto hidden min-h-11 shrink-0 items-center gap-1.5 px-1.5 text-sm lg:inline-flex",
+          LINK,
           FOCUS_RING,
         )}
       >

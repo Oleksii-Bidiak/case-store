@@ -131,7 +131,9 @@ export function AddToCartButton({
     ? dict.addToCart.adding
     : dict.addToCart.idle;
 
-  const isDisabled = disabled || outOfStock || addToCart.isPending;
+  // Pending is `loading` on the Button (spinner + aria-busy, keeps the fill
+  // and focus), not `disabled` — TASK-2079.
+  const isDisabled = disabled || outOfStock;
 
   if (outOfStock) {
     return <OutOfStockButton compact={compact} className={className} />;
@@ -150,11 +152,9 @@ export function AddToCartButton({
         size="sm"
         onClick={handleClick}
         disabled={isDisabled}
+        loading={addToCart.isPending}
         aria-label={ariaLabel}
-        className={cn(
-          "w-full font-semibold transition-all active:scale-99 motion-reduce:active:scale-100",
-          className,
-        )}
+        className={cn("w-full font-semibold", className)}
       >
         {compactLabel}
       </Button>
@@ -163,17 +163,19 @@ export function AddToCartButton({
 
   return (
     <div className="flex flex-col gap-2">
-      <button
+      <Button
         type="button"
+        size="lg"
         onClick={handleClick}
         disabled={isDisabled}
+        loading={addToCart.isPending}
         className={cn(
-          "w-full rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+          "h-12 w-full rounded-cta px-6 text-base font-semibold",
           className,
         )}
       >
         {label}
-      </button>
+      </Button>
       {addToCart.isError && (
         <p role="alert" className="text-sm text-destructive">
           {dict.addToCart.error}

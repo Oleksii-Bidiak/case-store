@@ -22,7 +22,7 @@ import { dict } from "@/shared/config";
  * Also the guest's «Статус замовлення» action beside it (TASK-1999).
  */
 export const ACCOUNT_ACTION_CLASS =
-  "flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-accent hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-foreground transition-interactive hover:bg-muted active:scale-94 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring";
 
 /** Icon + caption; the caption is display:none below `xl`, so aria-label names it. */
 const accountActionContent = (

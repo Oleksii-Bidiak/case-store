@@ -35,7 +35,7 @@ export function FiltersButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border-chip border-border bg-card px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:border-primary focus-visible:ring-2 focus-visible:ring-ring lg:hidden",
+        "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border-chip border-border bg-card px-4 text-sm font-semibold text-foreground transition-interactive hover:border-foreground/35 hover:bg-muted active:scale-98 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring lg:hidden",
         className,
       )}
     >

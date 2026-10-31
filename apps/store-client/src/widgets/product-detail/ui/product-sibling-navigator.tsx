@@ -33,7 +33,7 @@ const CHIP_CLASS =
 const CHIP_IDLE =
   "border-border bg-card text-foreground hover:border-foreground/35 hover:bg-muted";
 const CHIP_SELECTED =
-  "border-primary bg-primary text-primary-foreground hover:bg-primary/90";
+  "border-primary bg-primary text-primary-foreground hover:bg-primary-hover";
 
 interface ProductSiblingNavigatorProps {
   group: ProductGroupEntity;

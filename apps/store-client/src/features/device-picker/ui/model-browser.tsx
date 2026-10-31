@@ -8,7 +8,7 @@ import {
   getDeviceFamilyTone,
   type DeviceFamily,
 } from "@/entities/device";
-import { dict } from "@/shared/config";
+import { dict, LIFT_TILE, PRESS } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import {
   Button,
@@ -163,7 +163,7 @@ export function ModelBrowser({
 }
 
 const TAB_CLASS =
-  "h-11 flex-none gap-2 rounded-full border border-border bg-card px-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none";
+  "h-11 flex-none gap-2 rounded-full border border-border bg-card px-3.5 text-sm font-semibold text-foreground transition-interactive hover:bg-muted active:scale-98 motion-reduce:active:scale-100 data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none data-[state=active]:hover:bg-primary-hover";
 
 function PopularTile({
   model,
@@ -182,10 +182,12 @@ function PopularTile({
       aria-pressed={saved}
       onClick={() => onChoose(model)}
       className={cn(
-        "relative flex min-h-29 flex-col items-start rounded-card border-2 p-3.5 text-left transition-shadow hover:shadow-lift motion-reduce:transition-none",
+        "relative flex min-h-29 flex-col items-start rounded-card border-2 p-3.5 text-left transition-interactive",
+        LIFT_TILE,
         tone.surface,
         saved ? "border-foreground" : "border-transparent",
         FOCUS_RING,
+        "focus-visible:outline-offset-3",
       )}
     >
       <span
@@ -258,7 +260,8 @@ function SeriesGroups({
                   aria-pressed={saved}
                   onClick={() => onChoose(model)}
                   className={cn(
-                    "h-11 rounded-full border px-3.5 text-sm text-foreground transition-colors",
+                    "h-11 rounded-full border px-3.5 text-sm text-foreground transition-interactive",
+                    PRESS,
                     saved
                       ? cn("border-foreground font-bold", tone.surface)
                       : cn(

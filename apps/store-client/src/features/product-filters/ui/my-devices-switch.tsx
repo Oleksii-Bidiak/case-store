@@ -32,14 +32,16 @@ export function MyDevicesSwitch({
       aria-labelledby={labelledBy}
       onClick={() => onCheckedChange(!checked)}
       className={cn(
-        "relative mt-0.5 inline-flex h-7 w-11.5 shrink-0 cursor-pointer items-center rounded-full outline-none transition-all duration-200 hover:ring-4 hover:ring-foreground/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none",
-        checked ? "bg-primary" : "bg-input",
+        // Hover halo is a `ring` (box-shadow) and focus an outline, so a
+        // hovered, focused switch keeps its focus indicator (TASK-2079).
+        "relative mt-0.5 inline-flex h-7 w-11.5 shrink-0 cursor-pointer items-center rounded-full transition-interactive hover:ring-4 hover:ring-foreground/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring motion-reduce:transition-none",
+        checked ? "bg-primary hover:bg-primary-hover" : "bg-input",
       )}
     >
       <span
         aria-hidden="true"
         className={cn(
-          "absolute top-0.75 left-0.75 size-5.5 rounded-full bg-card shadow-card transition-transform duration-200 ease-out motion-reduce:transition-none",
+          "absolute top-0.75 left-0.75 size-5.5 rounded-full bg-card shadow-card transition-transform duration-180 ease-standard motion-reduce:transition-none",
           checked && "translate-x-4.5",
         )}
       />

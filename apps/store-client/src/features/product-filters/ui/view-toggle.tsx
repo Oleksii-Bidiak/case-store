@@ -38,7 +38,7 @@ export function ViewToggle({ view, onChange, className }: ViewToggleProps) {
       title={ariaLabel}
       onClick={() => onChange(next)}
       // eslint-disable-next-line tailwindcss/no-arbitrary-value -- the toolbar's 1.5px control border, shared with FiltersButton and SortSelect; no border-width token yet
-      className={`inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl border-[1.5px] border-border bg-card px-3 text-sm font-semibold whitespace-nowrap text-foreground outline-none transition-colors hover:border-primary focus-visible:ring-2 focus-visible:ring-ring sm:px-4 ${className ?? ""}`}
+      className={`inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl border-[1.5px] border-border bg-card px-3 text-sm font-semibold whitespace-nowrap text-foreground transition-interactive hover:border-foreground/35 hover:bg-muted active:scale-98 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring sm:px-4 ${className ?? ""}`}
     >
       <Icon aria-hidden="true" className="size-4.5" />
       <span className="hidden sm:inline">{label}</span>

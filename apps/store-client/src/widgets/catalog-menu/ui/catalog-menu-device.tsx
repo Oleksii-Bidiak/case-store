@@ -44,7 +44,7 @@ const KICKER =
   "flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase";
 
 const PRIMARY_PILL =
-  "inline-flex h-11 items-center justify-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90";
+  "inline-flex h-11 items-center justify-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition-interactive hover:bg-primary-hover hover:shadow-card active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100";
 
 interface CatalogMenuDeviceProps {
   onClose: () => void;
@@ -157,7 +157,7 @@ function SavedDevice({
                 href={deviceCategoryHref(category.slug, device.slug)}
                 onClick={onClose}
                 className={cn(
-                  "flex min-h-11 items-center gap-3 rounded-menu bg-card px-3 text-sm font-medium text-foreground transition-shadow hover:shadow-card",
+                  "flex min-h-11 items-center gap-3 rounded-menu bg-card px-3 text-sm font-medium text-foreground transition-interactive hover:shadow-card active:scale-99 motion-reduce:active:scale-100",
                   FOCUS_RING,
                 )}
               >
@@ -227,7 +227,7 @@ function NoDevice({
                 type="button"
                 onClick={() => onChoose(model)}
                 className={cn(
-                  "inline-flex h-9 items-center gap-2 rounded-full bg-card px-3 text-sm font-semibold text-foreground transition-shadow hover:shadow-card",
+                  "inline-flex h-9 items-center gap-2 rounded-full bg-card px-3 text-sm font-semibold text-foreground transition-interactive hover:shadow-card active:scale-98 motion-reduce:active:scale-100",
                   FOCUS_RING,
                 )}
               >

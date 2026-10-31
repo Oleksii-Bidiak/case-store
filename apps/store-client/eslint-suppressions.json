@@ -64,19 +64,9 @@
       "count": 2
     }
   },
-  "src/shared/ui/button.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/shared/ui/dialog.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 5
-    }
-  },
-  "src/shared/ui/input.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 2
     }
   },
   "src/shared/ui/pagination/pagination.tsx": {
@@ -86,22 +76,12 @@
   },
   "src/shared/ui/select.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 5
+      "count": 3
     }
   },
   "src/shared/ui/slider.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 1
-    }
-  },
-  "src/shared/ui/tabs.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 2
-    }
-  },
-  "src/shared/ui/textarea.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 2
     }
   },
   "src/widgets/account/ui/account-bonuses-section.tsx": {
@@ -156,12 +136,12 @@
   },
   "src/widgets/blog/ui/blog-post-card.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 12
+      "count": 11
     }
   },
   "src/widgets/blog/ui/blog-related-card.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 7
+      "count": 6
     }
   },
   "src/widgets/blog/ui/blog-view.tsx": {
@@ -176,7 +156,7 @@
   },
   "src/widgets/cart/ui/cart-sheet.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 3
+      "count": 1
     }
   },
   "src/widgets/cart/ui/cart-summary.tsx": {
@@ -191,7 +171,7 @@
   },
   "src/widgets/categories/ui/categories-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 12
+      "count": 10
     }
   },
   "src/widgets/checkout/ui/checkout-order-summary.tsx": {
@@ -244,11 +224,6 @@
       "count": 3
     }
   },
-  "src/widgets/hero-banner/ui/model-picker.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/widgets/info-support/ui/info-contact-form.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 4
@@ -276,7 +251,7 @@
   },
   "src/widgets/legal-doc/ui/legal-hub-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 19
+      "count": 17
     }
   },
   "src/widgets/not-found/ui/not-found-view.tsx": {

@@ -6,7 +6,7 @@ import { ArrowRight } from "lucide-react";
 
 import { getDeviceFamilyHoverSurface } from "@/entities/device";
 import type { MyDevice } from "@/entities/my-devices";
-import { dict, PAGE_CONTAINER } from "@/shared/config";
+import { dict, LINK, PAGE_CONTAINER } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { CategoryIcon } from "@/shared/ui";
 
@@ -63,7 +63,8 @@ export function DeviceBarPanel({
             href={deviceHubHref(device.slug)}
             onClick={onNavigate}
             className={cn(
-              "inline-flex shrink-0 items-center gap-1.5 rounded-sm text-sm font-semibold text-foreground underline-offset-3 hover:underline",
+              "inline-flex shrink-0 items-center gap-1.5 text-sm",
+              LINK,
               FOCUS_RING,
             )}
           >
@@ -82,7 +83,7 @@ export function DeviceBarPanel({
                   href={deviceCategoryHref(category.slug, device.slug)}
                   onClick={onNavigate}
                   className={cn(
-                    "flex min-h-15 items-center gap-3 rounded-pad bg-background py-2 pr-3.5 pl-2 text-foreground transition-colors",
+                    "flex min-h-15 items-center gap-3 rounded-pad bg-background py-2 pr-3.5 pl-2 text-foreground transition-interactive active:scale-99 motion-reduce:active:scale-100",
                     hover,
                     FOCUS_RING,
                   )}

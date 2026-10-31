@@ -117,7 +117,7 @@ export function ProductCardActions({
             onClick={openCartSheet}
             aria-label={dict.productCard.inCartAria(product.name)}
             className={cn(
-              "h-10 flex-1 border-success/40 font-semibold text-success transition-all hover:bg-success/10 hover:text-success active:scale-99 motion-reduce:active:scale-100",
+              "h-10 flex-1 border-success/40 font-semibold text-success hover:border-success/60 hover:bg-success/10 hover:text-success active:bg-success/10",
               list && "flex-none px-5 md:flex-1",
             )}
           >

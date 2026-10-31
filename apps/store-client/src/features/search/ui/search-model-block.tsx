@@ -84,7 +84,7 @@ export function SearchModelBlock({
                 onClick={onFollowLink}
                 className={cn(
                   "inline-flex h-10 max-w-full items-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground",
-                  "transition duration-150 ease-out hover:bg-primary/86 hover:shadow-card motion-reduce:transition-none",
+                  "transition-interactive hover:bg-primary-hover hover:shadow-card active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100",
                   SEARCH_DEVICE_FOCUS,
                 )}
               >

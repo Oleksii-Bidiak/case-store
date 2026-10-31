@@ -1,12 +1,13 @@
 "use client";
 
-import { useId, useRef } from "react";
+import { useId } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { PublicCarouselEntity } from "@/shared/api/generated/models";
 import { ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
-import { dict, H2_CLASS, PAGE_CONTAINER } from "@/shared/config";
+import { dict, H2_CLASS, PAGE_CONTAINER, RAIL_ARROW } from "@/shared/config";
+import { useScrollEdges } from "@/shared/lib/use-scroll-edges";
 
 /** Rail slides are fixed-width (`w-[244px] sm:w-[260px]`), not grid-fluid.
  *  Own copy per rail widget (PopularRail/RecentlyViewed do the same) — copied,
@@ -27,16 +28,11 @@ interface CarouselRailProps {
  * for the scroll-arrow interactivity only.
  */
 export function CarouselRail({ carousel }: CarouselRailProps) {
-  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // Arrows grey out at the row's ends (TASK-2079).
+  const { setScroller, atStart, atEnd, scrollByPage } = useScrollEdges();
   // Per instance, not per carousel: the same carousel may stand in two
   // CAROUSEL blocks of the homepage (TASK-663), and ids must stay unique.
   const headingId = useId();
-
-  function scroll(direction: 1 | -1) {
-    const el = scrollerRef.current;
-    if (!el) return;
-    el.scrollBy({ left: direction * el.clientWidth * 0.8, behavior: "smooth" });
-  }
 
   return (
     <section aria-labelledby={headingId} className={PAGE_CONTAINER}>
@@ -48,25 +44,27 @@ export function CarouselRail({ carousel }: CarouselRailProps) {
         <div className="flex items-center gap-2.5 pb-3">
           <button
             type="button"
-            onClick={() => scroll(-1)}
+            onClick={() => scrollByPage(-1)}
+            disabled={atStart}
             aria-label={dict.carousels.prevAria}
-            className="hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+            className={RAIL_ARROW}
           >
-            <ChevronLeft className="size-5" />
+            <ChevronLeft aria-hidden="true" className="size-5" />
           </button>
           <button
             type="button"
-            onClick={() => scroll(1)}
+            onClick={() => scrollByPage(1)}
+            disabled={atEnd}
             aria-label={dict.carousels.nextAria}
-            className="hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+            className={RAIL_ARROW}
           >
-            <ChevronRight className="size-5" />
+            <ChevronRight aria-hidden="true" className="size-5" />
           </button>
         </div>
       </div>
 
       <div
-        ref={scrollerRef}
+        ref={setScroller}
         className="flex snap-x snap-mandatory gap-5 overflow-x-auto scroll-smooth pb-3"
       >
         {carousel.products.map((product) => (

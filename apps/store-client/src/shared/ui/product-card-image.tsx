@@ -86,7 +86,7 @@ export function ProductCardImage({
         // second `[&_img]:transition-transform [&_img]:duration-500` on top of
         // this one (the descendant selector won, so the declared 300ms never
         // ran). One declaration, one duration, reduced-motion aware.
-        className="absolute inset-0 h-full w-full object-contain transition-transform duration-200 ease-out group-hover:scale-105 motion-reduce:transition-none"
+        className="absolute inset-0 h-full w-full object-contain transition-transform duration-180 ease-standard group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
       />
     );
   }

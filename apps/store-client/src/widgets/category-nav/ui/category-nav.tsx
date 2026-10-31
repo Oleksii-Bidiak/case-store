@@ -22,7 +22,7 @@ function CategoryTile({ category }: { category: CategoryEntity }) {
   return (
     <Link
       href={`/categories/${category.slug}`}
-      className="group flex h-full flex-col gap-3 rounded-2xl border border-border bg-card p-5 transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="group flex h-full flex-col gap-3 rounded-2xl border border-border bg-card p-5 transition-interactive hover:-translate-y-0.5 hover:border-foreground/25 hover:shadow-lift active:translate-y-0 active:scale-99 active:shadow-card motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-solid focus-visible:outline-ring"
     >
       <span
         className="inline-flex size-12 items-center justify-center overflow-hidden rounded-xl"

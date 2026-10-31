@@ -105,7 +105,7 @@ export function SortSelect({
     >
       <SelectTrigger
         aria-label={ariaLabel}
-        className="h-11 min-w-0 gap-2.5 rounded-xl border-[1.5px] border-border bg-card px-3 font-semibold text-foreground shadow-none *:data-[slot=select-value]:text-primary hover:border-primary sm:px-4"
+        className="h-11 min-w-0 gap-2.5 rounded-xl border-[1.5px] border-border bg-card px-3 font-semibold text-foreground shadow-none *:data-[slot=select-value]:text-primary enabled:hover:border-foreground/35 enabled:hover:bg-muted active:scale-98 motion-reduce:active:scale-100 sm:px-4"
       >
         <ArrowDownWideNarrow className="hidden size-[18px] sm:block" />
         {withPrefix && (

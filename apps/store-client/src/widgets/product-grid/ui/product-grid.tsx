@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, type RefObject } from "react";
+import { useId, useState, type Ref } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
@@ -14,7 +14,16 @@ import type {
 import { ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
-import { dict, H2_CLASS, PAGE_CONTAINER } from "@/shared/config";
+import {
+  dict,
+  FOCUS_RING,
+  H2_CLASS,
+  LINK,
+  PAGE_CONTAINER,
+  RAIL_ARROW,
+} from "@/shared/config";
+import { useScrollEdges } from "@/shared/lib/use-scroll-edges";
+import { cn } from "@/shared/lib/utils";
 import { isCarouselTab, toTabs } from "../model/popular-tabs";
 import { PopularRailSkeleton } from "./product-grid-skeleton";
 
@@ -48,14 +57,9 @@ export function PopularRail({
   const active = tabs.find((tab) => tab.key === selectedKey) ?? tabs[0];
 
   // Points at the active tab's scroll container. Only the active rail is
-  // mounted, so this ref always tracks the visible one.
-  const scrollerRef = useRef<HTMLDivElement | null>(null);
-
-  function scroll(direction: 1 | -1) {
-    const el = scrollerRef.current;
-    if (!el) return;
-    el.scrollBy({ left: direction * el.clientWidth * 0.8, behavior: "smooth" });
-  }
+  // mounted, so this callback ref always tracks the visible one — and the
+  // arrows re-measure their edges after a tab switch (TASK-2079).
+  const { setScroller, atStart, atEnd, scrollByPage } = useScrollEdges();
 
   return (
     <section aria-labelledby={headingId} className={PAGE_CONTAINER}>
@@ -78,7 +82,7 @@ export function PopularRail({
                   role="tab"
                   aria-selected={isActive}
                   onClick={() => setSelectedKey(key)}
-                  className={`px-0.5 py-3.5 font-display text-base font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`rounded-sm px-0.5 py-3.5 font-display text-base font-semibold transition-interactive active:opacity-75 ${FOCUS_RING} ${
                     isActive
                       ? // eslint-disable-next-line tailwindcss/no-arbitrary-value -- one-off inset active-tab underline, not a reusable elevation token
                         "text-foreground shadow-[inset_0_-2px_0_0_var(--color-primary)]"
@@ -95,23 +99,25 @@ export function PopularRail({
         <div className="flex items-center gap-2.5 pb-3">
           <button
             type="button"
-            onClick={() => scroll(-1)}
+            onClick={() => scrollByPage(-1)}
+            disabled={atStart}
             aria-label={dict.home.popular.prev}
-            className="hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+            className={RAIL_ARROW}
           >
-            <ChevronLeft className="size-5" />
+            <ChevronLeft aria-hidden="true" className="size-5" />
           </button>
           <button
             type="button"
-            onClick={() => scroll(1)}
+            onClick={() => scrollByPage(1)}
+            disabled={atEnd}
             aria-label={dict.home.popular.next}
-            className="hidden size-9 items-center justify-center rounded-lg border border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+            className={RAIL_ARROW}
           >
-            <ChevronRight className="size-5" />
+            <ChevronRight aria-hidden="true" className="size-5" />
           </button>
           <Link
             href="/products"
-            className="ml-1.5 text-sm font-semibold text-primary hover:underline"
+            className={cn("ml-1.5 text-sm", LINK, FOCUS_RING)}
           >
             {dict.home.popular.viewAll} →
           </Link>
@@ -122,13 +128,13 @@ export function PopularRail({
         <RailSlides
           key={active.key}
           products={active.products}
-          scrollerRef={scrollerRef}
+          scrollerRef={setScroller}
         />
       ) : (
         <QueryRail
           key={active.key}
           params={active.params}
-          scrollerRef={scrollerRef}
+          scrollerRef={setScroller}
         />
       )}
     </section>
@@ -141,7 +147,7 @@ function QueryRail({
   scrollerRef,
 }: {
   params: ProductControllerFindAllParams;
-  scrollerRef: RefObject<HTMLDivElement | null>;
+  scrollerRef: Ref<HTMLDivElement>;
 }) {
   const { data, isPending, isError } = useProductControllerFindAll(params);
 
@@ -170,7 +176,7 @@ function RailSlides({
   scrollerRef,
 }: {
   products: PublicProductEntity[];
-  scrollerRef: RefObject<HTMLDivElement | null>;
+  scrollerRef: Ref<HTMLDivElement>;
 }) {
   return (
     <div

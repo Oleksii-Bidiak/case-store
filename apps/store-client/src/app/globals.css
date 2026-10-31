@@ -416,6 +416,16 @@
   --shadow-elevated: var(--shadow-elevated);
   --shadow-lift: var(--shadow-lift);
 
+  /* Interaction (TASK-2079): graphite hover mixes towards the page — `bg-primary/90`
+     was ΔL≈1 % on the light page, invisible. Inline, so it resolves per theme. */
+  --color-primary-hover: color-mix(
+    in oklab,
+    var(--color-primary) 86%,
+    var(--color-background)
+  );
+  /* Standard easing of every state change (ComponentStates.dc.html). */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
   /* Radius */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -486,6 +496,26 @@
    `border-[1.5px]` under suppressions and can move over one by one. */
 @utility border-chip {
   border-width: 1.5px;
+}
+
+/* One transition for every interactive state (TASK-2079, ComponentStates.dc.html):
+   colour / background / border / outline 120ms, shadow and motion 180ms, standard
+   ease. Tailwind v4 moves with the `translate` / `scale` properties, not
+   `transform`, so they are listed by name. Reduced motion keeps colour only — the
+   transforms themselves are reset per control with `motion-reduce:` variants (a
+   utility cannot outrank the later hover: utilities). */
+@utility transition-interactive {
+  transition-property:
+    color, background-color, border-color, outline-color, text-decoration-color,
+    fill, opacity, box-shadow, translate, scale;
+  transition-duration:
+    120ms, 120ms, 120ms, 120ms, 120ms, 120ms, 120ms, 180ms, 180ms, 180ms;
+  transition-timing-function: var(--ease-standard);
+  @media (prefers-reduced-motion: reduce) {
+    transition-property:
+      color, background-color, border-color, outline-color,
+      text-decoration-color, fill, opacity;
+  }
 }
 
 /* A horizontal chip strip that scrolls without a visible bar (the account

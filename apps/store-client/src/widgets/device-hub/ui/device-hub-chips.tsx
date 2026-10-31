@@ -1,7 +1,7 @@
 "use client";
 
 import type { MouseEvent } from "react";
-import { dict } from "@/shared/config";
+import { dict, FOCUS_RING } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { useReducedMotion } from "@/shared/lib/use-reduced-motion";
 import { CategoryIcon } from "@/shared/ui";
@@ -57,9 +57,9 @@ export function DeviceHubChips({
               aria-label={t.chipAria(chip.name, chip.count)}
               className={cn(
                 "inline-flex h-11 items-center gap-2 rounded-full bg-card px-3.5 text-sm font-semibold text-foreground",
-                "transition-all duration-200 ease-out hover:-translate-y-px hover:shadow-card active:scale-98",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
+                "transition-interactive hover:-translate-y-px hover:shadow-card active:scale-98",
+                FOCUS_RING,
+                "motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
               )}
             >
               <CategoryIcon

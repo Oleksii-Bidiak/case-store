@@ -2,13 +2,8 @@
 
 import type { DeviceFamily } from "@/entities/device";
 
-/**
- * Visible keyboard focus: a 2px ring-coloured outline, 2px off the control
- * (DevicePicker mockup). No `outline-none` base — in Tailwind v4 it sets the
- * outline style to `none`, which the focus outline would then inherit.
- */
-export const FOCUS_RING =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring";
+/** The house focus outline — one definition in `shared/config/focus.ts`. */
+export { FOCUS_RING } from "@/shared/config";
 
 /** Small uppercase section label («Додати ще один», series names). */
 export const KICKER =

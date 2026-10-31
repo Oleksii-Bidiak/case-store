@@ -268,7 +268,7 @@ export function HeaderSearch({
               aria-expanded={compactOpen}
               aria-controls={compactPanelId}
               aria-label={dict.search.openPanel}
-              className="flex h-full w-12 shrink-0 items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:hidden"
+              className="flex h-full w-12 shrink-0 items-center justify-center bg-primary text-primary-foreground transition-interactive hover:bg-primary-hover active:bg-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:hidden"
             >
               <Search className="size-5" aria-hidden="true" />
             </button>
@@ -278,7 +278,7 @@ export function HeaderSearch({
             <button
               type="submit"
               aria-label={dict.search.submitAria}
-              className="hidden h-full w-[54px] shrink-0 items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:flex"
+              className="hidden h-full w-[54px] shrink-0 items-center justify-center bg-primary text-primary-foreground transition-interactive hover:bg-primary-hover active:bg-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:flex"
             >
               <Search className="size-5" aria-hidden="true" />
             </button>

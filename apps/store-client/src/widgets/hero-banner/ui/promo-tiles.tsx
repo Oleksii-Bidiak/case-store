@@ -91,7 +91,7 @@ const TILE_BASE =
 
 /** Lift on hover, press on tap, focus ring; transforms off under reduced motion. */
 const TILE_LINK =
-  "transition-[box-shadow,transform] duration-180 ease-out hover:-translate-y-0.5 hover:shadow-lift active:scale-99 active:shadow-card focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100";
+  "transition-interactive hover:-translate-y-0.5 hover:shadow-lift active:translate-y-0 active:scale-99 active:shadow-card focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-solid focus-visible:outline-ring motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100";
 
 function PromoTileCard({ tile, sizes }: { tile: PromoTile; sizes: string }) {
   const Icon = tile.icon ? ICONS[tile.icon] : undefined;

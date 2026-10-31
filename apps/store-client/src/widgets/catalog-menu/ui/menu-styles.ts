@@ -2,9 +2,8 @@
 // step-by-step catalog (TASK-2072). Static strings, so Tailwind's scanner sees
 // every class.
 
-/** The storefront's focus ring: `outline-none` only beside its replacement. */
-export const FOCUS_RING =
-  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+/** The house focus outline — one definition in `shared/config/focus.ts`. */
+export { FOCUS_RING } from "@/shared/config";
 
 /** The neutral icon square in front of a level-1 row. */
 export const ICON_SQUARE =

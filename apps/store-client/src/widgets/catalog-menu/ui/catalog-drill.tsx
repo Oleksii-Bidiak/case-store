@@ -20,7 +20,7 @@ import { FOCUS_RING, ICON_SQUARE } from "./menu-styles";
 const t = dict.catalogMenu.drill;
 
 const ROW =
-  "flex min-h-12 w-full items-center gap-3 rounded-menu py-1 pr-2.5 text-left text-base font-medium text-foreground transition-colors hover:bg-muted";
+  "flex min-h-12 w-full items-center gap-3 rounded-menu py-1 pr-2.5 text-left text-base font-medium text-foreground transition-interactive hover:bg-muted active:bg-muted";
 
 export interface CatalogDrillProps {
   /** Close the host sheet — every link and the device picker call it. */
@@ -139,7 +139,7 @@ export function CatalogDrill({ onNavigate }: CatalogDrillProps) {
           onClick={back}
           aria-label={t.backAria(backLabel)}
           className={cn(
-            "inline-flex min-h-11 items-center gap-1.5 self-start rounded-full bg-muted pr-3.5 pl-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent",
+            "inline-flex min-h-11 items-center gap-1.5 self-start rounded-full bg-muted pr-3.5 pl-2 text-sm font-semibold text-foreground transition-interactive hover:bg-foreground/10 active:scale-98 motion-reduce:active:scale-100",
             FOCUS_RING,
           )}
         >
@@ -163,7 +163,7 @@ export function CatalogDrill({ onNavigate }: CatalogDrillProps) {
           href={categoryHref(current)}
           onClick={onNavigate}
           className={cn(
-            "flex min-h-12 items-center justify-between gap-3 rounded-menu bg-card px-3 text-base font-semibold text-foreground shadow-card transition-colors hover:bg-muted",
+            "flex min-h-12 items-center justify-between gap-3 rounded-menu bg-card px-3 text-base font-semibold text-foreground shadow-card transition-interactive hover:bg-muted active:scale-99 motion-reduce:active:scale-100",
             FOCUS_RING,
           )}
         >
