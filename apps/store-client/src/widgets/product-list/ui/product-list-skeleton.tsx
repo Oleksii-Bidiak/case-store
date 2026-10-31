@@ -53,12 +53,12 @@ interface ProductListSkeletonProps {
  * rating row (16px), the colour-dots row (14px) and the price (`text-lg`,
  * 28px, pushed down by `mt-auto`);
  * then the `px-4 pb-4` action block — the stock line and the 40px Buy +
- * heart row. The stock line («В наявності · доставка 1–2 дні») wraps onto a
- * second line wherever the card is narrower than ~216px — two columns up to
- * ~455px and four columns from `lg` to ~1296px — which no breakpoint pair
- * follows, so the placeholder sets the same dictionary copy in the same
- * `text-xs` flex row, transparent on a pulsing background: it wraps exactly
- * where the real line does, at every width.
+ * heart row. The stock line is stock only — «В наявності», no delivery promise
+ * since TASK-2080 — and fits one line at every card width today. The
+ * placeholder still sets the same dictionary copy (`inStockLine`) in the same
+ * `text-xs` flex row, transparent on a pulsing background, so if the copy ever
+ * grows again it wraps exactly where the real line does, with no width to
+ * keep in sync.
  *
  * The second title line, the rating row and the colour-dots row are drawn for
  * every cell, and `ProductList` renders its cards with `reserveRows`, which
