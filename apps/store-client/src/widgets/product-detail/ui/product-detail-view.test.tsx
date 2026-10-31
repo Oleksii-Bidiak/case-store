@@ -366,30 +366,30 @@ describe("ProductDetailView — responsive hero grid (TASK-416)", () => {
     return renderWithProviders(<ProductDetailView slug="glass-blue-single" />);
   };
 
-  it("switches to two columns at md and three at lg", async () => {
+  it("stacks below lg and splits into two equal halves from lg, the gallery sticky (Д3-2 §6.1)", async () => {
     const { container } = arrange();
     await screen.findByRole("heading", { level: 1 });
 
     const hero = container.querySelector(".grid");
-    expect(hero).toHaveClass(
-      "grid-cols-1",
-      "md:grid-cols-[1fr_360px]",
-      "lg:grid-cols-[1fr_1fr_360px]",
-    );
+    expect(hero).toHaveClass("grid-cols-1", "lg:grid-cols-2", "lg:items-start");
+    expect(hero?.children).toHaveLength(2);
+    // TASK-519: the shared 96px offset, not a hand-written `lg:top-24`.
+    expect(hero?.firstElementChild).toHaveClass("lg:sticky", "top-24");
 
-    // Placement is what folds three children into two columns without
-    // reordering the DOM: info under the gallery, buy box spanning both rows.
-    const info = container.querySelector(".md\\:row-start-2");
-    expect(info).toHaveClass("md:col-start-1", "lg:col-start-2");
-    const buyBox = container.querySelector(".md\\:row-span-2");
-    expect(buyBox).toHaveClass(
-      "md:col-start-2",
-      "md:sticky",
-      // TASK-519: the shared 96px offset, not a hand-written `md:top-24`.
-      "top-24",
-      "lg:col-start-3",
-      "lg:row-span-1",
-    );
+    // One info column carries the price and the buy row — no separate box.
+    const info = hero?.lastElementChild as HTMLElement;
+    expect(within(info).getByRole("heading", { level: 1 })).toBeInTheDocument();
+    expect(
+      within(info).getByRole("button", { name: dict.addToCart.idle }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the mobile buy bar from lg, not md", async () => {
+    arrange();
+    await screen.findByRole("heading", { level: 1 });
+    const bar = screen.getByTestId("mobile-atc-bar");
+    expect(bar).toHaveClass("lg:hidden", "bg-card/94");
+    expect(bar).not.toHaveClass("md:hidden");
   });
 
   it("gives the skeleton the identical hero grid", async () => {
@@ -440,20 +440,23 @@ describe("ProductDetailView — gallery overlays (TASK-832)", () => {
     );
   });
 
-  it("stacks the wishlist heart above the full-frame zoom trigger", async () => {
-    renderWithProviders(<ProductDetailView slug="glass-blue-single" />);
+  it("keeps the gallery free for the zoom trigger — the heart sits in the buy row (Д3-2 §6.1)", async () => {
+    const { container } = renderWithProviders(
+      <ProductDetailView slug="glass-blue-single" />,
+    );
     await screen.findByRole("heading", { level: 1 });
 
     const zoom = screen.getByRole("button", { name: dict.product.zoomAria });
     expect(zoom).toHaveClass("absolute", "inset-0", "z-20");
 
+    // Exactly one heart, and not over the photo (TASK-832's tap conflict
+    // cannot come back): a 56px pill beside the CTA.
     const heart = screen.getByRole("button", {
       name: dict.productCard.wishlistAddAria(baseProduct.name),
     });
-    expect(heart.parentElement).toHaveClass("absolute", "z-30");
-    // The overlay variant's 44px hit-area, not the old `size-10` override.
-    expect(heart).toHaveClass("size-11");
-    expect(heart).not.toHaveClass("size-10");
+    const gallery = container.querySelector(".grid")?.firstElementChild;
+    expect(gallery?.contains(heart)).toBe(false);
+    expect(heart).toHaveClass("size-14");
   });
 });
 
@@ -467,16 +470,16 @@ describe("ProductDetailSkeleton — buy box (TASK-832)", () => {
     renderWithProviders(<ProductDetailSkeleton />);
 
     const buyBox = screen.getByTestId("product-detail-skeleton-buy-box");
-    // One full-width 48px bar — the old skeleton drew a second one for the
-    // «Купити в 1 клік» stub (the price figure is an h-12 too, but w-36).
-    expect(buyBox.querySelectorAll(".h-12.w-full")).toHaveLength(1);
-    expect(buyBox.querySelector(".size-12")).toBeNull();
+    // One 56px CTA and the heart — the old skeleton drew a second bar for
+    // the «Купити в 1 клік» stub and a square for «Порівняти».
+    expect(buyBox.querySelectorAll(".h-14.w-full")).toHaveLength(1);
+    expect(buyBox.children).toHaveLength(2);
     expect(screen.getByTestId("product-detail-skeleton-cta")).toHaveClass(
       "w-full",
     );
   });
 
-  it("uses the view's sticky rail and card chrome for the buy box", async () => {
+  it("uses the view's sticky gallery and services-card chrome", async () => {
     server.use(
       http.get("*/api/products/:slug", () =>
         HttpResponse.json(detailEnvelope()),
@@ -493,15 +496,22 @@ describe("ProductDetailSkeleton — buy box (TASK-832)", () => {
       <ProductDetailView slug="glass-blue-single" />,
     );
     await screen.findByRole("heading", { level: 1 });
-    const viewRail = container.querySelector(".md\\:row-span-2");
-
-    const { getByTestId } = renderWithProviders(<ProductDetailSkeleton />);
-    const skeletonRail = getByTestId("product-detail-skeleton-buy-box");
-
-    expect(skeletonRail.className).toBe(viewRail?.className);
-    expect(skeletonRail.firstElementChild?.className).toBe(
-      viewRail?.firstElementChild?.className,
+    const viewGallery = container.querySelector(".grid")?.firstElementChild;
+    const viewServices = container.querySelector(
+      '[data-slot="product-services"]',
     );
+
+    const { container: skeleton } = renderWithProviders(
+      <ProductDetailSkeleton />,
+    );
+    const skeletonGallery = skeleton.querySelector(".grid")?.firstElementChild;
+
+    expect(skeletonGallery?.className).toBe(viewGallery?.className);
+    // The services card's chrome is the last block of both info columns.
+    expect(
+      skeleton.querySelector(".grid")?.lastElementChild?.lastElementChild
+        ?.className,
+    ).toBe(viewServices?.className);
   });
 });
 

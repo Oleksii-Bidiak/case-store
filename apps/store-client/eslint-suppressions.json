@@ -299,16 +299,6 @@
       "count": 3
     }
   },
-  "src/widgets/product-detail/ui/product-detail-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 4
-    }
-  },
-  "src/widgets/product-detail/ui/product-detail-view.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 5
-    }
-  },
   "src/widgets/product-detail/ui/product-highlights.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 3
@@ -322,11 +312,6 @@
   "src/widgets/product-detail/ui/product-specs-tabs.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 4
-    }
-  },
-  "src/widgets/product-detail/ui/product-trust-badges.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 3
     }
   },
   "src/widgets/product-grid/ui/product-grid-skeleton.tsx": {
