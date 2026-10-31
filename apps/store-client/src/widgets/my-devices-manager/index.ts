@@ -14,7 +14,8 @@ export {
   parseMyDevicesSettings,
   readMyDevicesSettings,
   updateMyDevicesSettings,
-  useMyDevicesSettings,
   type CompatScope,
   type MyDevicesSettings,
 } from "./model/my-devices-settings";
+// "use client" module: the barrel is imported by server pages.
+export { useMyDevicesSettings } from "./model/use-my-devices-settings";

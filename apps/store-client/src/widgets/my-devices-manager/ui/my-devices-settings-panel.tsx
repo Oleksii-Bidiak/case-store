@@ -4,10 +4,8 @@ import { useId } from "react";
 import type { MyDevice } from "@/entities/my-devices";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
-import {
-  updateMyDevicesSettings,
-  useMyDevicesSettings,
-} from "../model/my-devices-settings";
+import { updateMyDevicesSettings } from "../model/my-devices-settings";
+import { useMyDevicesSettings } from "../model/use-my-devices-settings";
 import { FOCUS_RING } from "./styles";
 
 /** How many saved devices the «для всіх» hint names as its example. */
