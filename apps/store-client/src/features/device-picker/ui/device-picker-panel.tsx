@@ -33,7 +33,7 @@ import {
 } from "../model/picker-models";
 import { CatalogStatus, ModelBrowser } from "./model-browser";
 import { ModelSearchResults } from "./model-search-results";
-import { FOCUS_RING, KICKER } from "./picker-styles";
+import { FOCUS_RING, KICKER, isDialogLayout } from "./picker-styles";
 import { SavedDevices } from "./saved-devices";
 
 const t = dict.devicePicker.dialog;
@@ -63,6 +63,7 @@ export function DevicePickerPanel({
   const [confirmClear, setConfirmClear] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const helpId = useId();
 
   const models = useMemo(() => withFamily(catalog.models), [catalog.models]);
@@ -103,11 +104,19 @@ export function DevicePickerPanel({
     closeDevicePicker();
   };
 
-  // The ✕ that had focus is gone with its row — park focus on the field.
+  // The control that had focus is gone with its row — park focus somewhere
+  // stable. Dialog (≥ 640): the search field, ready for the next model.
+  // Sheet: the title — focusing the field there would pop the on-screen
+  // keyboard over the sheet after every ✕.
+  const parkFocus = () => {
+    if (isDialogLayout()) searchInputRef.current?.focus();
+    else titleRef.current?.focus();
+  };
+
   const forget = (device: MyDevice) => {
     removeDevice(device.modelId);
     setAnnouncement(t.forgotten(device.name));
-    searchInputRef.current?.focus();
+    parkFocus();
   };
 
   const forgetAll = () => {
@@ -115,7 +124,7 @@ export function DevicePickerPanel({
     setConfirmClear(false);
     setExpanded(false);
     setAnnouncement(t.forgottenAll);
-    searchInputRef.current?.focus();
+    parkFocus();
   };
 
   return (
@@ -135,7 +144,12 @@ export function DevicePickerPanel({
         <X aria-hidden="true" className="size-4.5" />
       </DialogClose>
 
-      <DialogTitle className="mt-1.5 mr-14 font-display text-xl leading-tight font-bold tracking-tight text-foreground sm:mt-0 sm:text-2xl">
+      {/* Programmatic focus target only (tabIndex -1), never tabbed to. */}
+      <DialogTitle
+        ref={titleRef}
+        tabIndex={-1}
+        className="mt-1.5 mr-14 font-display text-xl leading-tight font-bold tracking-tight text-foreground outline-none sm:mt-0 sm:text-2xl"
+      >
         {hasDevices ? t.titleSaved(devices.length) : t.titleEmpty}
       </DialogTitle>
       <DialogDescription className="-mt-1.5 text-sm leading-normal text-muted-foreground">

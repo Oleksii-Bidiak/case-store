@@ -7,9 +7,7 @@ import { closeDevicePicker, useDevicePickerState } from "@/entities/my-devices";
 import { Dialog, DialogContent } from "@/shared/ui";
 
 import { DevicePickerPanel } from "./device-picker-panel";
-
-/** `sm` — the dialog layout starts here; below it the panel is a sheet. */
-const DIALOG_MEDIA_QUERY = "(min-width: 40rem)";
+import { isDialogLayout } from "./picker-styles";
 
 /**
  * The ONE device picker (TASK-2070). Mount it once — the header does — and
@@ -44,7 +42,7 @@ export function DevicePicker() {
           // Desktop: straight into the search field. Phone: leave Radix's
           // default (the close button) so the keyboard does not cover the
           // sheet before the shopper has seen the tiles.
-          if (window.matchMedia?.(DIALOG_MEDIA_QUERY).matches) {
+          if (isDialogLayout()) {
             event.preventDefault();
             searchInputRef.current?.focus();
           }
@@ -56,8 +54,11 @@ export function DevicePicker() {
           // (alphabetical) cascade; a variant is emitted after every base
           // utility and wins either way.
           "@container top-auto right-0 bottom-0 left-0 flex max-h-11/12 w-full max-w-none translate-x-0 translate-y-0 flex-col gap-3.5 overflow-y-auto overscroll-contain rounded-none rounded-t-panel border-0 bg-card px-4 pt-2.5 pb-6 max-sm:shadow-elevated max-sm:data-[state=closed]:slide-out-to-bottom-8 max-sm:data-[state=open]:slide-in-from-bottom-8 motion-reduce:animate-none",
-          // Dialog (≥ 640): left/right 16px + auto margins centre it.
-          "sm:top-1/12 sm:right-4 sm:bottom-auto sm:left-4 sm:mx-auto sm:max-h-5/6 sm:max-w-190 sm:gap-4 sm:shadow-elevated sm:rounded-panel sm:px-7 sm:pt-7 sm:pb-5.5",
+          // Dialog (≥ 640): left/right 16px size it, `w-auto` lets them (a
+          // `w-full` here over-constrains the box at 640–791px and it runs off
+          // the right edge), and once `max-w-190` caps it the auto margins
+          // centre it.
+          "sm:top-1/12 sm:right-4 sm:bottom-auto sm:left-4 sm:mx-auto sm:w-auto sm:max-h-5/6 sm:max-w-190 sm:gap-4 sm:shadow-elevated sm:rounded-panel sm:px-7 sm:pt-7 sm:pb-5.5",
         ].join(" ")}
       >
         <DevicePickerPanel

@@ -284,7 +284,35 @@ describe("DevicePicker (TASK-2070)", () => {
     expect(
       within(dialog).getByText(t.forgotten("iPhone 15 Pro")),
     ).toBeInTheDocument();
-    expect(within(dialog).getByRole("searchbox")).toHaveFocus();
+    // Sheet (< 640, jsdom's default): focus parks on the title, not the
+    // search field — that would pop the on-screen keyboard over the sheet.
+    expect(
+      within(dialog).getByRole("heading", { name: t.titleSaved(1) }),
+    ).toHaveFocus();
+    expect(within(dialog).getByRole("searchbox")).not.toHaveFocus();
+  });
+
+  it("✕ in the dialog layout (≥ 640) parks focus on the search field", async () => {
+    const realMatchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      ...realMatchMedia(query),
+      matches: true,
+    })) as typeof window.matchMedia;
+    try {
+      const user = userEvent.setup();
+      seedDevices(["iPhone 15 Pro", "iPhone 13"]);
+      renderWithProviders(<DevicePicker />);
+      const dialog = await openPicker();
+      expect(within(dialog).getByRole("searchbox")).toHaveFocus();
+
+      await user.click(
+        within(dialog).getByRole("button", { name: t.forget("iPhone 13") }),
+      );
+      expect(readMyDevices().map((d) => d.name)).toEqual(["iPhone 15 Pro"]);
+      expect(within(dialog).getByRole("searchbox")).toHaveFocus();
+    } finally {
+      window.matchMedia = realMatchMedia;
+    }
   });
 
   it("«Забути всі пристрої» asks once more, then clears the list", async () => {
@@ -304,7 +332,15 @@ describe("DevicePicker (TASK-2070)", () => {
     expect(readMyDevices()).toHaveLength(0);
     expect(
       within(dialog).getByRole("heading", { name: t.titleEmpty }),
-    ).toBeInTheDocument();
+    ).toHaveFocus();
+  });
+
+  it("≥ 640 the dialog is sized by its insets, not `w-full` (no overflow at 640–791px)", async () => {
+    renderWithProviders(<DevicePicker />);
+    const dialog = await openPicker();
+    // jsdom has no layout; guard the class contract that the Chromium
+    // measurement depends on: `w-full` + left/right insets over-constrain it.
+    expect(dialog).toHaveClass("sm:left-4", "sm:right-4", "sm:w-auto");
   });
 
   it("«Як дізнатися свою модель?» toggles the help", async () => {
