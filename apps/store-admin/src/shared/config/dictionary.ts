@@ -5443,6 +5443,9 @@ export const dict = {
       activateBrand: "активовано бренд",
       activateModel: "активовано модель",
       activateUser: "активовано акаунт",
+      // TASK-2045: POST /admin/returns/:returnId/repair-steps — one step of a
+      // repair (received, sent to the service centre, back, handed over), each once.
+      addRepairStep: "додано етап ремонту",
       apply: "застосовано",
       approve: "схвалено",
       // TASK-441 — фото з медіатеки, прикріплене до галереї товару. Окреме
@@ -5464,6 +5467,9 @@ export const dict = {
       // TASK-675: POST /admin/notifications/telegram/link — одноразове посилання,
       // за яким чат підключається до сповіщень магазину.
       createTelegramLink: "створено посилання для підключення Telegram",
+      // TASK-2044: POST /admin/returns/:returnId/decision — the operator's decision
+      // on a return (refund / replacement / repair / reject), separate from status.
+      decide: "ухвалено рішення",
       deactivate: "деактивовано",
       deactivateBrand: "деактивовано бренд",
       deactivateModel: "деактивовано модель",
