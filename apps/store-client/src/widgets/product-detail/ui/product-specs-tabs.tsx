@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Truck, Package, MapPin } from "lucide-react";
+import type { ProductCompatibleDeviceEntity } from "@/shared/api/generated/models";
 import {
   RichText,
   Tabs,
@@ -14,6 +15,8 @@ import { dict } from "@/shared/config";
 import type { ProductSpecEntity } from "@/entities/product";
 import { ProductReviewsWidget } from "@/widgets/product-reviews";
 import { formatSpecValue } from "./format-spec";
+import { ProductCompatTab } from "./product-compat-tab";
+import type { ModelVariant } from "../model/model-variants";
 
 // Icons for the static delivery-method rows, matched to dict.product.deliveryOptions.
 const DELIVERY_ICONS = [Truck, Package, MapPin] as const;
@@ -25,7 +28,13 @@ const DELIVERY_ICONS = [Truck, Package, MapPin] as const;
  * distinct URL), and a shopper who never touched the tabs should be able to
  * copy a clean link.
  */
-const TAB_VALUES = ["description", "specs", "reviews", "delivery"] as const;
+const TAB_VALUES = [
+  "description",
+  "specs",
+  "compat",
+  "reviews",
+  "delivery",
+] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 const DEFAULT_TAB: TabValue = TAB_VALUES[0];
 
@@ -39,7 +48,8 @@ export function resolveTabParam(raw: string | null): TabValue {
 }
 
 /**
- * ProductSpecsTabs — Description / Specifications / Reviews / Delivery tabs for
+ * ProductSpecsTabs — Description / Specifications / [Compatibility] / Reviews /
+ * Delivery tabs for
  * the PDP. The Specifications tab renders the product's structured specs
  * (TASK-191), falling back to the empty-state copy when a product has none; the
  * Reviews tab renders the live {@link ProductReviewsWidget}; Delivery lists the
@@ -57,16 +67,29 @@ export function ProductSpecsTabs({
   description,
   productId,
   specs,
+  compatibleModels = null,
+  modelVariants = [],
 }: {
   description: string | null;
   productId: string;
   specs: ProductSpecEntity[];
+  /**
+   * The models THIS position fits. A non-empty list adds the «Сумісність»
+   * tab between «Характеристики» and «Відгуки» (Product mockup §6.8).
+   */
+  compatibleModels?: readonly ProductCompatibleDeviceEntity[] | null;
+  /** The group's other models, each with the sibling to open. */
+  modelVariants?: readonly ModelVariant[];
 }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
 
-  const value = resolveTabParam(searchParams.get("tab"));
+  const hasCompat = (compatibleModels?.length ?? 0) > 0;
+  const requested = resolveTabParam(searchParams.get("tab"));
+  // A shared «?tab=compat» link to a product without compatibility data
+  // opens the description rather than an empty tab.
+  const value = requested === "compat" && !hasCompat ? DEFAULT_TAB : requested;
 
   const handleValueChange = useCallback(
     (next: string) => {
@@ -91,6 +114,9 @@ export function ProductSpecsTabs({
           {dict.product.tabDescription}
         </TabsTrigger>
         <TabsTrigger value="specs">{dict.product.tabSpecs}</TabsTrigger>
+        {hasCompat && (
+          <TabsTrigger value="compat">{dict.deviceFit.tab.title}</TabsTrigger>
+        )}
         <TabsTrigger value="reviews">{dict.product.tabReviews}</TabsTrigger>
         <TabsTrigger value="delivery">{dict.product.tabDelivery}</TabsTrigger>
       </TabsList>
@@ -131,6 +157,15 @@ export function ProductSpecsTabs({
           </p>
         )}
       </TabsContent>
+
+      {hasCompat && compatibleModels && (
+        <TabsContent value="compat" className="pt-5">
+          <ProductCompatTab
+            models={compatibleModels}
+            variants={modelVariants}
+          />
+        </TabsContent>
+      )}
 
       <TabsContent value="reviews" className="pt-5">
         <ProductReviewsWidget productId={productId} />

@@ -34,6 +34,7 @@ import { ProductRail } from "./product-rail";
 import { ProductCompatRow } from "./product-compat-row";
 import { MobileAtcBar } from "./mobile-atc-bar";
 import { ProductInCartButton } from "./product-in-cart-button";
+import { otherModelVariants } from "../model/model-variants";
 import { usePreselectDeviceVariant } from "../model/use-preselect-device-variant";
 
 /** The buy row's CTA and heart: 56px (Product mockup §6.1). */
@@ -360,6 +361,8 @@ export function ProductDetailView({
         description={product.description ?? null}
         productId={product.id}
         specs={product.specs}
+        compatibleModels={product.compatibleDeviceModels}
+        modelVariants={otherModelVariants(group, product.attributes)}
       />
 
       {product.compatibleDeviceModels?.[0] && (
