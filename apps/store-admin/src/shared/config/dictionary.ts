@@ -2781,7 +2781,8 @@ export const dict = {
       ANNOUNCEMENT_BAR:
         "Тонка смуга над шапкою на всіх сторінках. Тільки заголовок і посилання.",
       HERO_SLIDE: "Перший екран головної, слайди по черзі у цьому порядку.",
-      PROMO_TILE: "Ряд із трьох плиток під слайдером.",
+      // TASK-2013: up to five — two beside the slider, three in a row under it.
+      PROMO_TILE: "До 5 плиток: 1–2 праворуч від слайдера, 3–5 рядом під ним.",
       PROMO_BANNER: "Широка смуга посередині головної.",
     },
     addHere: "Додати сюди",
@@ -2895,7 +2896,7 @@ export const dict = {
       HERO_SLIDE:
         "Для слайдера — широке, ≈ 2,2:1, від 1936×880 px. JPEG, PNG, WebP або GIF — до 20 МБ.",
       PROMO_TILE:
-        "Для плитки — ≈ 1/3 ширини ряду, висота за текстом; від 800×600 px. JPEG, PNG, WebP або GIF — до 20 МБ.",
+        "Для плитки — ≈ 1/3 ширини сторінки, висота за текстом; від 800×600 px. JPEG, PNG, WebP або GIF — до 20 МБ.",
       PROMO_BANNER:
         "Для промо-банера — на всю ширину, ≈ 1280 px; висота за текстом. JPEG, PNG, WebP або GIF — до 20 МБ.",
       ANNOUNCEMENT_BAR:
@@ -2909,7 +2910,9 @@ export const dict = {
     },
     themeCustom: "Своє…",
     themeCustomLabel: "Свій ключ оформлення",
-    themeHint: "«Автоматично» — кольори чергуються за порядком, як зараз.",
+    // TASK-2013 (direction В): no more rotation by position — a tile with no
+    // colour is a white card.
+    themeHint: "«Автоматично» — біла плитка без кольору.",
     themeTilesOnly: "Колір зараз враховують лише промо-плитки.",
     errorSummary: (fields: readonly string[]) => {
       const quoted = fields.map((field) => `«${field}»`);
@@ -2918,6 +2921,18 @@ export const dict = {
           ? `${quoted.slice(0, -1).join(", ")} і ${quoted[quoted.length - 1]}`
           : (quoted[0] ?? "");
       return `Перевірте ${countLabel(fields.length, ["поле", "поля", "полів"])}: ${list}. Банер не збережено.`;
+    },
+    // TASK-2013: the promo-tile slots, explained before the API refuses.
+    promoSlots: {
+      counter: (used: number, max: number) =>
+        `Зайнято місць для промоплиток: ${used} з ${max}`,
+      layout:
+        "Плитки 1–2 стоять праворуч від слайдера, 3–5 — рядом під ним. Опубліковані й заплановані плитки займають місце, чернетка — ні.",
+      position: (n: number) =>
+        n <= 2
+          ? `Ця плитка стане №${n} — праворуч від слайдера.`
+          : `Ця плитка стане №${n} — у ряду під слайдером.`,
+      full: "Усі 5 місць уже зайнято — опублікувати чи запланувати цю плитку не вийде. Збережіть її як чернетку або зніміть з публікації одну з наявних.",
     },
     barNew: "Новий банер ще не збережений",
     barErrors: (count: number) =>
@@ -2938,11 +2953,14 @@ export const dict = {
     // which shape it is modelling — and, for the two placements that genuinely
     // have no fixed proportions, admit that instead of inventing one.
     scaleNote: "Прев'ю зменшене: пропорції відповідають сайту, розмір — ні.",
+    // TASK-2013: the slider stand-in of the promo-tile layout.
+    sliderGhost: "Слайдер",
+    tileSlot: (n: number) => `Місце ${n}`,
     shape: {
       HERO_SLIDE:
         "Пропорції як на головній: ≈968×440 (2,2:1). На мобільному — на всю ширину, висота 420 px.",
       PROMO_TILE:
-        "На сайті три плитки в рядку — кожна ≈1/3 ширини (сірі рамки поруч). Висота не фіксована: залежить від обсягу тексту.",
+        "До 5 плиток: 1–2 праворуч від слайдера (ділять його висоту), 3–5 — рядом під ним, кожна ≈1/3 ширини. Сірі рамки — інші місця. Висота плиток під слайдером залежить від тексту.",
       PROMO_BANNER:
         "На всю ширину контенту (≈1280 px). Висота не фіксована: залежить від обсягу тексту.",
       ANNOUNCEMENT_BAR: "Смуга фіксованої висоти 40 px на всю ширину сторінки.",
