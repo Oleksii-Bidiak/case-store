@@ -184,6 +184,17 @@ export interface ReturnDecisionChange {
   decidedAt: Date;
 }
 
+/** One repair step as the service hands it to the repository (TASK-2045). */
+export interface ReturnRepairStepRecord {
+  step: ReturnRepairStep;
+  result: RepairResult | null;
+  destination: string | null;
+  ttn: string | null;
+  note: string | null;
+  actorId: string;
+  createdAt: Date;
+}
+
 /** What the service hands the repository to open a return (TASK-340). */
 export interface CreateReturnParams {
   orderId: string;

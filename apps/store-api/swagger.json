@@ -14796,6 +14796,66 @@
         ]
       }
     },
+    "/api/admin/returns/{returnId}/repair-steps": {
+      "post": {
+        "description": "Steps go strictly in order — ACCEPTED → SENT_TO_SERVICE → RETURNED_FROM_SERVICE → HANDED_TO_CUSTOMER — none skipped or repeated, and only while the decision is REPAIR. RETURNED_FROM_SERVICE requires a result; no other step takes one. UNREPAIRABLE does not change the decision: change it through POST /admin/returns/:returnId/decision, with a reason. Answers with the return card, repair steps included.",
+        "operationId": "adminReturnControllerAddRepairStep",
+        "parameters": [
+          {
+            "name": "returnId",
+            "required": true,
+            "in": "path",
+            "description": "Return UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddRepairStepDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Repair step recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReturnResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "error: RETURN_REPAIR_RESULT_REQUIRED (RETURNED_FROM_SERVICE without a result), RETURN_REPAIR_RESULT_NOT_ALLOWED (a result on any other step), or a validation error (unknown step or result, destination over 300, ttn over 64, note over 2000 characters)"
+          },
+          "403": {
+            "description": "Forbidden — returns:write required"
+          },
+          "404": {
+            "description": "Return not found — error: RETURN_NOT_FOUND"
+          },
+          "409": {
+            "description": "error: RETURN_REPAIR_STEP_INVALID (the return is not an open REPAIR, the step is out of order or the repair is complete — the message names the step expected — or the same step was recorded concurrently)"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Record a repair step (admin)",
+        "tags": [
+          "Admin Returns"
+        ]
+      }
+    },
     "/api/admin/orders/{orderId}/returns": {
       "get": {
         "operationId": "adminOrderReturnControllerFindForOrder",
@@ -30896,6 +30956,49 @@
         },
         "required": [
           "decision"
+        ]
+      },
+      "AddRepairStepDto": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "description": "The step, strictly in order: ACCEPTED → SENT_TO_SERVICE → RETURNED_FROM_SERVICE → HANDED_TO_CUSTOMER. None is skipped or repeated.",
+            "example": "ACCEPTED",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnRepairStep"
+              }
+            ]
+          },
+          "result": {
+            "description": "The outcome — required on RETURNED_FROM_SERVICE and refused on every other step. UNREPAIRABLE does not change the decision; the operator does that, with a reason.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RepairResult"
+              }
+            ]
+          },
+          "destination": {
+            "type": "string",
+            "description": "The service centre, free text. Shown to the customer. Trimmed; blank → null.",
+            "nullable": true,
+            "maxLength": 300
+          },
+          "ttn": {
+            "type": "string",
+            "description": "Nova Poshta waybill (ТТН). Shown to the customer. Trimmed; blank → null.",
+            "nullable": true,
+            "maxLength": 64
+          },
+          "note": {
+            "type": "string",
+            "description": "Operator-only note — never shown to the customer. Trimmed; blank → null.",
+            "nullable": true,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "step"
         ]
       },
       "NpCityDto": {

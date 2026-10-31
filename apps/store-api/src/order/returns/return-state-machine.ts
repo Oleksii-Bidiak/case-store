@@ -1,4 +1,4 @@
-import { ReturnDecision, ReturnStatus } from '@prisma/client';
+import { ReturnDecision, ReturnRepairStep, ReturnStatus } from '@prisma/client';
 
 /**
  * The return (RMA) state machine (TASK-340).
@@ -102,4 +102,45 @@ export function decisionPermitsTransition(
     return decision === ReturnDecision.REFUND;
   }
   return true;
+}
+
+/**
+ * The steps of a repair, in the only order they can happen (TASK-2045, B-12
+ * theme 1.7): taken from the customer → sent to the service centre → back from
+ * it → handed to the customer. None is skipped and none repeats.
+ */
+export const REPAIR_STEP_ORDER: readonly ReturnRepairStep[] = Object.freeze([
+  ReturnRepairStep.ACCEPTED,
+  ReturnRepairStep.SENT_TO_SERVICE,
+  ReturnRepairStep.RETURNED_FROM_SERVICE,
+  ReturnRepairStep.HANDED_TO_CUSTOMER,
+]);
+
+/**
+ * The step that may be recorded next, given the steps already recorded (oldest
+ * first), or `null` once the goods are back with the customer.
+ */
+export function nextRepairStep(done: readonly ReturnRepairStep[]): ReturnRepairStep | null {
+  return REPAIR_STEP_ORDER[done.length] ?? null;
+}
+
+/**
+ * Whether repair steps may be recorded on a return (TASK-2045): only under a
+ * REPAIR decision, and not on a closed return.
+ *
+ * An UNREPAIRABLE result does not change the decision by itself — the operator
+ * changes it (to a replacement or a refund, with a reason), and from then on
+ * this refuses further steps.
+ */
+export function repairAcceptsSteps(status: ReturnStatus, decision: ReturnDecision | null): boolean {
+  return (
+    decision === ReturnDecision.REPAIR &&
+    status !== ReturnStatus.REJECTED &&
+    status !== ReturnStatus.REFUNDED
+  );
+}
+
+/** Whether a step carries the repair's outcome — the one coming back from the service. */
+export function repairStepRequiresResult(step: ReturnRepairStep): boolean {
+  return step === ReturnRepairStep.RETURNED_FROM_SERVICE;
 }

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import type { ReturnDecision, ReturnStatus } from '@prisma/client';
+import type { ReturnDecision, ReturnRepairStep, ReturnStatus } from '@prisma/client';
 
 /**
  * Stable, machine-readable error codes for return resolution (TASK-785).
@@ -41,6 +41,15 @@ export const ReturnErrorCode = {
   DECISION_UNCHANGED: 'RETURN_DECISION_UNCHANGED',
   /** PATCH was asked to set APPROVED or REJECTED, which only a decision may do (TASK-2044). */
   USE_DECISION_ENDPOINT: 'RETURN_USE_DECISION_ENDPOINT',
+  /**
+   * A repair step on a return not (or no longer) decided as REPAIR, out of order,
+   * or already recorded (TASK-2045).
+   */
+  REPAIR_STEP_INVALID: 'RETURN_REPAIR_STEP_INVALID',
+  /** RETURNED_FROM_SERVICE without its outcome (TASK-2045). */
+  REPAIR_RESULT_REQUIRED: 'RETURN_REPAIR_RESULT_REQUIRED',
+  /** An outcome on a step other than RETURNED_FROM_SERVICE (TASK-2045). */
+  REPAIR_RESULT_NOT_ALLOWED: 'RETURN_REPAIR_RESULT_NOT_ALLOWED',
 } as const;
 
 export type ReturnErrorCode = (typeof ReturnErrorCode)[keyof typeof ReturnErrorCode];
@@ -208,5 +217,64 @@ export function useDecisionEndpointError(requested: ReturnStatus): BadRequestExc
   return new BadRequestException({
     error: ReturnErrorCode.USE_DECISION_ENDPOINT,
     message: `${requested} is set by a decision — use POST /admin/returns/:returnId/decision`,
+  });
+}
+
+/*
+ * TASK-2045 — repair steps (B-12 theme 1.7).
+ */
+
+/**
+ * 409 for a repair step on a return that is not an open REPAIR: never decided
+ * as one, moved to another decision (an UNREPAIRABLE item), or closed.
+ */
+export function repairNotInProgressError(): ConflictException {
+  return new ConflictException({
+    error: ReturnErrorCode.REPAIR_STEP_INVALID,
+    message: 'Repair steps are recorded only on an open return decided as REPAIR',
+  });
+}
+
+/**
+ * 409 for a step out of order — skipped, repeated, or after the repair ended.
+ * The step expected next is named, since it is the one the operator needs.
+ */
+export function repairStepOutOfOrderError(
+  expected: ReturnRepairStep | null,
+  requested: ReturnRepairStep,
+): ConflictException {
+  return new ConflictException({
+    error: ReturnErrorCode.REPAIR_STEP_INVALID,
+    message:
+      expected === null
+        ? 'The repair is complete — no step follows HANDED_TO_CUSTOMER'
+        : `The next repair step is ${expected}, not ${requested}`,
+  });
+}
+
+/** 409 for a step a concurrent request recorded first (the unique index fired). */
+export function repairStepAlreadyRecordedError(step: ReturnRepairStep): ConflictException {
+  return new ConflictException({
+    error: ReturnErrorCode.REPAIR_STEP_INVALID,
+    message: `The repair step ${step} has already been recorded`,
+  });
+}
+
+/** 400 for an item back from the service with no word on whether it was fixed. */
+export function repairResultRequiredError(step: ReturnRepairStep): BadRequestException {
+  return new BadRequestException({
+    error: ReturnErrorCode.REPAIR_RESULT_REQUIRED,
+    message: `${step} needs a result: REPAIRED or UNREPAIRABLE`,
+  });
+}
+
+/** 400 for an outcome sent with a step that does not carry one. */
+export function repairResultNotAllowedError(
+  carrier: ReturnRepairStep,
+  step: ReturnRepairStep,
+): BadRequestException {
+  return new BadRequestException({
+    error: ReturnErrorCode.REPAIR_RESULT_NOT_ALLOWED,
+    message: `A result is recorded only on ${carrier}, not on ${step}`,
   });
 }

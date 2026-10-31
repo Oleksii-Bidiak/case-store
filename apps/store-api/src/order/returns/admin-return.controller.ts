@@ -35,7 +35,13 @@ import {
   ReturnItemEntity,
   ReturnRepairStepEntity,
 } from './entities';
-import { CreateReturnDto, DecideReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
+import {
+  AddRepairStepDto,
+  CreateReturnDto,
+  DecideReturnDto,
+  ResolveReturnDto,
+  ReturnListQueryDto,
+} from './dto';
 
 class AdminReturnPaginationMeta {
   @ApiProperty({ example: 42 })
@@ -70,7 +76,9 @@ class AdminReturnResponseEnvelope {
  * Admin endpoints (ADMIN role required):
  *   GET   /admin/returns             — The returns queue
  *   GET   /admin/returns/:returnId   — One return in full
- *   PATCH /admin/returns/:returnId   — Record the operator's decision
+ *   PATCH /admin/returns/:returnId   — Move the goods and the money on
+ *   POST  /admin/returns/:returnId/decision     — The operator's decision
+ *   POST  /admin/returns/:returnId/repair-steps — One step of a repair (TASK-2045)
  */
 @ApiTags('Admin Returns')
 @ApiExtraModels(
@@ -205,6 +213,61 @@ export class AdminReturnController {
     @Body() dto: DecideReturnDto,
   ): Promise<AdminReturnResponseEnvelope> {
     const data = await this.returnService.decideReturn(returnId, actor.id, dto);
+    return { data };
+  }
+
+  /**
+   * POST /api/admin/returns/:returnId/repair-steps
+   *
+   * One step of a repair (TASK-2045): accepted from the customer → sent to the
+   * service → back from it (with the outcome) → handed to the customer. Only on
+   * a return decided as REPAIR, strictly in order, each step once. The author is
+   * the actor the permission guard resolved; the audit row is
+   * `return.addRepairStep`.
+   */
+  @Post(':returnId/repair-steps')
+  @RequirePermission('returns:write')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiBearerAuth('access-token')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Record a repair step (admin)',
+    description:
+      'Steps go strictly in order — ACCEPTED → SENT_TO_SERVICE → RETURNED_FROM_SERVICE → ' +
+      'HANDED_TO_CUSTOMER — none skipped or repeated, and only while the decision is REPAIR. ' +
+      'RETURNED_FROM_SERVICE requires a result; no other step takes one. UNREPAIRABLE does not ' +
+      'change the decision: change it through POST /admin/returns/:returnId/decision, with a ' +
+      'reason. Answers with the return card, repair steps included.',
+    operationId: 'adminReturnControllerAddRepairStep',
+  })
+  @ApiParam({ name: 'returnId', description: 'Return UUID' })
+  @ApiResponse({
+    status: 201,
+    description: 'Repair step recorded',
+    type: AdminReturnResponseEnvelope,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'error: RETURN_REPAIR_RESULT_REQUIRED (RETURNED_FROM_SERVICE without a result), ' +
+      'RETURN_REPAIR_RESULT_NOT_ALLOWED (a result on any other step), or a validation error ' +
+      '(unknown step or result, destination over 300, ttn over 64, note over 2000 characters)',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — returns:write required' })
+  @ApiResponse({ status: 404, description: 'Return not found — error: RETURN_NOT_FOUND' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'error: RETURN_REPAIR_STEP_INVALID (the return is not an open REPAIR, the step is out of ' +
+      'order or the repair is complete — the message names the step expected — or the same ' +
+      'step was recorded concurrently)',
+  })
+  async addRepairStep(
+    @CurrentActor() actor: PermissionActor,
+    @Param('returnId') returnId: string,
+    @Body() dto: AddRepairStepDto,
+  ): Promise<AdminReturnResponseEnvelope> {
+    const data = await this.returnService.addRepairStep(returnId, actor.id, dto);
     return { data };
   }
 }

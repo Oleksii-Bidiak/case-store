@@ -2611,7 +2611,9 @@ model ReturnRepairEvent {
   actor       User?            @relation("ReturnRepairActor", fields: [actorId], references: [id], onDelete: SetNull)
   createdAt   DateTime         @default(now()) @map("created_at")
 
-  @@index([returnId])
+  /// Each step happens once per repair (TASK-2045). Stops a double click from
+  /// recording a step twice; its leading column also serves lookups by return.
+  @@unique([returnId, step])
   @@map("return_repair_events")
 }
 

@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderStatus, ReturnChannel, ReturnDecision, ReturnStatus } from '@prisma/client';
+import {
+  OrderStatus,
+  ReturnChannel,
+  ReturnDecision,
+  ReturnRepairStep,
+  ReturnStatus,
+} from '@prisma/client';
 import { ReturnRepository } from './return.repository';
 import { OrderRepository } from '../order.repository';
 import { ShopNotifier } from '../../notification';
@@ -9,10 +15,23 @@ import {
   RESTOCK_ON_STATUS,
   canTransitionReturn,
   decisionPermitsTransition,
+  nextRepairStep,
+  repairAcceptsSteps,
+  repairStepRequiresResult,
   returnStatusAfterDecision,
 } from './return-state-machine';
-import type { CreateReturnDto, DecideReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
+import type {
+  AddRepairStepDto,
+  CreateReturnDto,
+  DecideReturnDto,
+  ResolveReturnDto,
+  ReturnListQueryDto,
+} from './dto';
 import {
+  repairNotInProgressError,
+  repairResultNotAllowedError,
+  repairResultRequiredError,
+  repairStepOutOfOrderError,
   decisionLockedError,
   decisionReasonRequiredError,
   decisionUnchangedError,
@@ -493,6 +512,76 @@ export class ReturnService {
     );
 
     return ReturnEntity.fromPrisma(decided, { includeInternal: true });
+  }
+
+  /**
+   * Admin — record one step of a repair (TASK-2045; B-12 theme 1.7), with its
+   * author, a time and, depending on the step, the service centre, the waybill
+   * and the outcome.
+   *
+   * - The outcome belongs to RETURNED_FROM_SERVICE alone: required there,
+   *   refused anywhere else.
+   * - Steps are recorded only under a REPAIR decision on an open return, in
+   *   {@link REPAIR_STEP_ORDER}, each once.
+   * - UNREPAIRABLE does not change the decision. The operator changes it through
+   *   {@link decideReturn}, with a reason; from then on steps are refused.
+   *
+   * @throws BadRequestException RETURN_REPAIR_RESULT_REQUIRED,
+   *   RETURN_REPAIR_RESULT_NOT_ALLOWED
+   * @throws NotFoundException RETURN_NOT_FOUND
+   * @throws ConflictException RETURN_REPAIR_STEP_INVALID
+   */
+  async addRepairStep(
+    returnId: string,
+    actorId: string,
+    dto: AddRepairStepDto,
+  ): Promise<ReturnEntity> {
+    const result = dto.result ?? null;
+    if (repairStepRequiresResult(dto.step) && result === null) {
+      throw repairResultRequiredError(dto.step);
+    }
+    if (!repairStepRequiresResult(dto.step) && result !== null) {
+      throw repairResultNotAllowedError(ReturnRepairStep.RETURNED_FROM_SERVICE, dto.step);
+    }
+
+    const existing = await this.returnRepository.findById(returnId);
+
+    if (!existing) {
+      throw returnNotFoundError();
+    }
+
+    if (!repairAcceptsSteps(existing.status, existing.decision)) {
+      throw repairNotInProgressError();
+    }
+
+    const expected = nextRepairStep((existing.repairEvents ?? []).map((event) => event.step));
+    if (dto.step !== expected) {
+      throw repairStepOutOfOrderError(expected, dto.step);
+    }
+
+    const recorded = await this.returnRepository.addRepairStep(returnId, {
+      step: dto.step,
+      result,
+      destination: dto.destination ?? null,
+      ttn: dto.ttn ?? null,
+      note: dto.note ?? null,
+      actorId,
+      createdAt: new Date(),
+    });
+
+    this.logger.info(
+      {
+        event: 'return.repairStep',
+        returnId,
+        orderId: existing.orderId,
+        actorId,
+        step: dto.step,
+        result,
+      },
+      'Repair step recorded',
+    );
+
+    return ReturnEntity.fromPrisma(recorded, { includeInternal: true });
   }
 
   /**

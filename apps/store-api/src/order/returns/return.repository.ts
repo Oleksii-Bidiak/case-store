@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, ReturnStatus } from '@prisma/client';
+import { Prisma, ReturnDecision, ReturnStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma';
-import { invalidReturnTransitionError, returnAlreadyRestockedError } from './return.errors';
+import {
+  invalidReturnTransitionError,
+  repairNotInProgressError,
+  repairStepAlreadyRecordedError,
+  returnAlreadyRestockedError,
+} from './return.errors';
 import {
   CacheService,
   productDetailIdKey,
@@ -18,6 +23,7 @@ import type {
   CreateReturnParams,
   ReturnDecisionBasis,
   ReturnDecisionChange,
+  ReturnRepairStepRecord,
   ReturnWithItems,
 } from './return.types';
 
@@ -509,6 +515,54 @@ export class ReturnRepository {
         include: ADMIN_RETURN_DETAIL_INCLUDE,
       });
     }) as Promise<ReturnWithItems>;
+  }
+
+  /**
+   * Record one repair step (TASK-2045): stamp the return and write the step row
+   * in ONE transaction, then answer with the admin card.
+   *
+   * ── The two guards ──────────────────────────────────────────────────────────
+   * The service checked the decision and the order of steps against a read
+   * taken outside this transaction.
+   * - The stamp is conditional on the return still being an open REPAIR, so a
+   *   step never lands after another operator changed the decision (an
+   *   UNREPAIRABLE item moved to a refund). It also row-locks the return, so
+   *   steps on one return serialise.
+   * - Two clicks on the same step both pass the service's check. The unique
+   *   index on (return_id, step) fails the second insert; it is answered as a
+   *   409 rather than a 500.
+   *
+   * @throws ConflictException (RETURN_REPAIR_STEP_INVALID) on either guard.
+   */
+  async addRepairStep(returnId: string, event: ReturnRepairStepRecord): Promise<ReturnWithItems> {
+    try {
+      return (await this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.return.updateMany({
+          where: {
+            id: returnId,
+            decision: ReturnDecision.REPAIR,
+            status: { notIn: [ReturnStatus.REJECTED, ReturnStatus.REFUNDED] },
+          },
+          // `resolvedAt` stays "the last change" (plan 2026-10, Модель даних).
+          data: { resolvedAt: event.createdAt },
+        });
+        if (count === 0) {
+          throw repairNotInProgressError();
+        }
+
+        await tx.returnRepairEvent.create({ data: { returnId, ...event } });
+
+        return tx.return.findUniqueOrThrow({
+          where: { id: returnId },
+          include: ADMIN_RETURN_DETAIL_INCLUDE,
+        });
+      })) as ReturnWithItems;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw repairStepAlreadyRecordedError(event.step);
+      }
+      throw error;
+    }
   }
 
   /**
