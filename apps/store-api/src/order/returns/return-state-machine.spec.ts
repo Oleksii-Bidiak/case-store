@@ -1,10 +1,14 @@
-import { ReturnDecision, ReturnStatus } from '@prisma/client';
+import { ReturnDecision, ReturnRepairStep, ReturnStatus } from '@prisma/client';
 import {
+  REPAIR_STEP_ORDER,
   RETURN_TRANSITIONS,
   RESTOCK_ON_STATUS,
   allowedReturnTransitions,
   canTransitionReturn,
   decisionPermitsTransition,
+  nextRepairStep,
+  repairAcceptsSteps,
+  repairStepRequiresResult,
   returnStatusAfterDecision,
 } from './return-state-machine';
 
@@ -158,5 +162,77 @@ describe('return-state-machine (TASK-340)', () => {
         expect(decisionPermitsTransition(ReturnStatus.RECEIVED, decision)).toBe(true);
       },
     );
+  });
+
+  describe('repair steps (TASK-2045)', () => {
+    it('orders the four steps of a repair, and names every step exactly once', () => {
+      expect(REPAIR_STEP_ORDER).toEqual([
+        ReturnRepairStep.ACCEPTED,
+        ReturnRepairStep.SENT_TO_SERVICE,
+        ReturnRepairStep.RETURNED_FROM_SERVICE,
+        ReturnRepairStep.HANDED_TO_CUSTOMER,
+      ]);
+      expect([...REPAIR_STEP_ORDER].sort()).toEqual(Object.values(ReturnRepairStep).sort());
+    });
+
+    describe('nextRepairStep', () => {
+      it('starts with ACCEPTED', () => {
+        expect(nextRepairStep([])).toBe(ReturnRepairStep.ACCEPTED);
+      });
+
+      it.each([
+        [[ReturnRepairStep.ACCEPTED], ReturnRepairStep.SENT_TO_SERVICE],
+        [
+          [ReturnRepairStep.ACCEPTED, ReturnRepairStep.SENT_TO_SERVICE],
+          ReturnRepairStep.RETURNED_FROM_SERVICE,
+        ],
+        [
+          [
+            ReturnRepairStep.ACCEPTED,
+            ReturnRepairStep.SENT_TO_SERVICE,
+            ReturnRepairStep.RETURNED_FROM_SERVICE,
+          ],
+          ReturnRepairStep.HANDED_TO_CUSTOMER,
+        ],
+      ])('after %j comes %s', (done, next) => {
+        expect(nextRepairStep(done)).toBe(next);
+      });
+
+      it('is null once the goods are handed back — a repair ends there', () => {
+        expect(nextRepairStep([...REPAIR_STEP_ORDER])).toBeNull();
+      });
+    });
+
+    describe('repairAcceptsSteps', () => {
+      it.each([ReturnStatus.REQUESTED, ReturnStatus.APPROVED, ReturnStatus.RECEIVED])(
+        'accepts steps on a REPAIR decision at %s',
+        (status) => {
+          expect(repairAcceptsSteps(status, ReturnDecision.REPAIR)).toBe(true);
+        },
+      );
+
+      it.each([ReturnStatus.REJECTED, ReturnStatus.REFUNDED])(
+        'refuses steps on a closed return (%s), whatever the decision says',
+        (status) => {
+          expect(repairAcceptsSteps(status, ReturnDecision.REPAIR)).toBe(false);
+        },
+      );
+
+      it.each([ReturnDecision.REFUND, ReturnDecision.REPLACEMENT, ReturnDecision.REJECT, null])(
+        'refuses steps under decision %s — an unrepairable item moved to another decision stops here',
+        (decision) => {
+          expect(repairAcceptsSteps(ReturnStatus.APPROVED, decision)).toBe(false);
+        },
+      );
+    });
+
+    describe('repairStepRequiresResult', () => {
+      it('requires the outcome on the way back from the service, and nowhere else', () => {
+        expect(repairStepRequiresResult(ReturnRepairStep.RETURNED_FROM_SERVICE)).toBe(true);
+        expect(repairStepRequiresResult(ReturnRepairStep.ACCEPTED)).toBe(false);
+        expect(repairStepRequiresResult(ReturnRepairStep.SENT_TO_SERVICE)).toBe(false);
+        expect(repairStepRequiresResult(ReturnRepairStep.HANDED_TO_CUSTOMER)).toBe(false);
+      });
+    });
   });
 });

@@ -8,9 +8,11 @@ import {
 import { PinoLogger } from 'nestjs-pino';
 import {
   OrderStatus,
+  RepairResult,
   ReturnChannel,
   ReturnDecision,
   ReturnOutcome,
+  ReturnRepairStep,
   ReturnStatus,
 } from '@prisma/client';
 import { MY_RETURNS_LIMIT, ReturnService } from './return.service';
@@ -98,6 +100,7 @@ const returnRepositoryMock = {
   findAll: jest.fn(),
   resolve: jest.fn(),
   decide: jest.fn(),
+  addRepairStep: jest.fn(),
 };
 
 const orderRepositoryMock = {
@@ -1609,6 +1612,316 @@ describe('ReturnService (TASK-340)', () => {
           },
         });
         expect(decided).toHaveLength(0);
+      });
+    });
+  });
+
+  // ─── addRepairStep (TASK-2045) ────────────────────────────────────────────────
+
+  describe('addRepairStep (TASK-2045)', () => {
+    const OPERATOR_ID = 'operator-uuid-1';
+
+    /** What the mocked repository wrote — only steps that passed every check. */
+    let written: Array<{ returnId: string; event: Record<string, unknown> }>;
+
+    beforeEach(() => {
+      written = [];
+      returnRepositoryMock.addRepairStep.mockImplementation(
+        async (returnId: string, event: Record<string, unknown>) => {
+          written.push({ returnId, event });
+          return makeReturn({ decision: ReturnDecision.REPAIR, status: ReturnStatus.APPROVED });
+        },
+      );
+    });
+
+    /** A return decided as REPAIR, with the steps already recorded on it. */
+    const repairing = (
+      steps: ReturnRepairStep[] = [],
+      overrides: Partial<ReturnWithItems> = {},
+    ): ReturnWithItems =>
+      makeReturn({
+        status: ReturnStatus.APPROVED,
+        decision: ReturnDecision.REPAIR,
+        decisionReason: null,
+        repairEvents: steps.map((step, index) => ({
+          id: `repair-${index}`,
+          step,
+          result: step === ReturnRepairStep.RETURNED_FROM_SERVICE ? RepairResult.REPAIRED : null,
+          destination: null,
+          ttn: null,
+          note: null,
+          actor: null,
+          createdAt: now,
+        })),
+        ...overrides,
+      });
+
+    const refusal = async (promise: Promise<unknown>) => {
+      const caught = (await promise.then(
+        () => {
+          throw new Error('expected a refusal');
+        },
+        (error: unknown) => error,
+      )) as HttpException;
+      expect(caught).toBeInstanceOf(HttpException);
+      return {
+        status: caught.getStatus(),
+        body: caught.getResponse() as { error: string; message: string },
+      };
+    };
+
+    describe('recording a step', () => {
+      it('records ACCEPTED as the first step, with its author and a time', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(repairing());
+
+        const result = await service.addRepairStep(RETURN_ID, OPERATOR_ID, {
+          step: ReturnRepairStep.ACCEPTED,
+          note: 'Коробка без пломби',
+        });
+
+        expect(written).toHaveLength(1);
+        expect(written[0].returnId).toBe(RETURN_ID);
+        expect(written[0].event).toEqual({
+          step: ReturnRepairStep.ACCEPTED,
+          result: null,
+          destination: null,
+          ttn: null,
+          note: 'Коробка без пломби',
+          actorId: OPERATOR_ID,
+          createdAt: expect.any(Date),
+        });
+        expect(result).toBeInstanceOf(ReturnEntity);
+      });
+
+      it('answers with the admin card — the operator sees internal fields', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(repairing());
+        returnRepositoryMock.addRepairStep.mockResolvedValue(
+          repairing([ReturnRepairStep.ACCEPTED], { operatorNotes: 'internal' }),
+        );
+
+        const result = await service.addRepairStep(RETURN_ID, OPERATOR_ID, {
+          step: ReturnRepairStep.ACCEPTED,
+        });
+
+        expect(result.operatorNotes).toBe('internal');
+      });
+
+      it('records the service and the waybill on the way to the service', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(repairing([ReturnRepairStep.ACCEPTED]));
+
+        await service.addRepairStep(RETURN_ID, OPERATOR_ID, {
+          step: ReturnRepairStep.SENT_TO_SERVICE,
+          destination: 'СЦ Apple, Київ',
+          ttn: '20450000000001',
+        });
+
+        expect(written[0].event).toMatchObject({
+          step: ReturnRepairStep.SENT_TO_SERVICE,
+          destination: 'СЦ Apple, Київ',
+          ttn: '20450000000001',
+          result: null,
+        });
+      });
+
+      it.each([RepairResult.REPAIRED, RepairResult.UNREPAIRABLE])(
+        'records RETURNED_FROM_SERVICE with result %s',
+        async (repairResult) => {
+          returnRepositoryMock.findById.mockResolvedValue(
+            repairing([ReturnRepairStep.ACCEPTED, ReturnRepairStep.SENT_TO_SERVICE]),
+          );
+
+          await service.addRepairStep(RETURN_ID, OPERATOR_ID, {
+            step: ReturnRepairStep.RETURNED_FROM_SERVICE,
+            result: repairResult,
+          });
+
+          expect(written[0].event).toMatchObject({
+            step: ReturnRepairStep.RETURNED_FROM_SERVICE,
+            result: repairResult,
+          });
+        },
+      );
+
+      it('UNREPAIRABLE does not change the decision — the operator does that, with a reason', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          repairing([ReturnRepairStep.ACCEPTED, ReturnRepairStep.SENT_TO_SERVICE]),
+        );
+
+        await service.addRepairStep(RETURN_ID, OPERATOR_ID, {
+          step: ReturnRepairStep.RETURNED_FROM_SERVICE,
+          result: RepairResult.UNREPAIRABLE,
+        });
+
+        expect(returnRepositoryMock.decide).not.toHaveBeenCalled();
+        expect(written[0].event).not.toHaveProperty('decision');
+      });
+
+      it('records HANDED_TO_CUSTOMER after the item came back', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          repairing([
+            ReturnRepairStep.ACCEPTED,
+            ReturnRepairStep.SENT_TO_SERVICE,
+            ReturnRepairStep.RETURNED_FROM_SERVICE,
+          ]),
+        );
+
+        await service.addRepairStep(RETURN_ID, OPERATOR_ID, {
+          step: ReturnRepairStep.HANDED_TO_CUSTOMER,
+          ttn: '20450000000002',
+        });
+
+        expect(written[0].event).toMatchObject({ step: ReturnRepairStep.HANDED_TO_CUSTOMER });
+      });
+    });
+
+    describe('what is refused', () => {
+      it('404 RETURN_NOT_FOUND for an unknown return', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(null);
+
+        const result = await refusal(
+          service.addRepairStep(RETURN_ID, OPERATOR_ID, { step: ReturnRepairStep.ACCEPTED }),
+        );
+
+        expect(result).toEqual({
+          status: 404,
+          body: { error: 'RETURN_NOT_FOUND', message: 'Return not found' },
+        });
+        expect(written).toHaveLength(0);
+      });
+
+      it.each([ReturnDecision.REFUND, ReturnDecision.REPLACEMENT, ReturnDecision.REJECT, null])(
+        '409 RETURN_REPAIR_STEP_INVALID under decision %s, writing nothing',
+        async (decision) => {
+          returnRepositoryMock.findById.mockResolvedValue(repairing([], { decision }));
+
+          const result = await refusal(
+            service.addRepairStep(RETURN_ID, OPERATOR_ID, { step: ReturnRepairStep.ACCEPTED }),
+          );
+
+          expect(result).toEqual({
+            status: 409,
+            body: {
+              error: 'RETURN_REPAIR_STEP_INVALID',
+              message: 'Repair steps are recorded only on an open return decided as REPAIR',
+            },
+          });
+          expect(written).toHaveLength(0);
+        },
+      );
+
+      it.each([ReturnStatus.REJECTED, ReturnStatus.REFUNDED])(
+        '409 RETURN_REPAIR_STEP_INVALID on a closed return (%s)',
+        async (status) => {
+          returnRepositoryMock.findById.mockResolvedValue(repairing([], { status }));
+
+          const result = await refusal(
+            service.addRepairStep(RETURN_ID, OPERATOR_ID, { step: ReturnRepairStep.ACCEPTED }),
+          );
+
+          expect(result.status).toBe(409);
+          expect(result.body.error).toBe('RETURN_REPAIR_STEP_INVALID');
+          expect(written).toHaveLength(0);
+        },
+      );
+
+      it('409 RETURN_REPAIR_STEP_INVALID for a skipped step, naming the one expected', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(repairing());
+
+        const result = await refusal(
+          service.addRepairStep(RETURN_ID, OPERATOR_ID, {
+            step: ReturnRepairStep.SENT_TO_SERVICE,
+          }),
+        );
+
+        expect(result).toEqual({
+          status: 409,
+          body: {
+            error: 'RETURN_REPAIR_STEP_INVALID',
+            message: 'The next repair step is ACCEPTED, not SENT_TO_SERVICE',
+          },
+        });
+        expect(written).toHaveLength(0);
+      });
+
+      it('409 RETURN_REPAIR_STEP_INVALID for a repeated step', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(repairing([ReturnRepairStep.ACCEPTED]));
+
+        const result = await refusal(
+          service.addRepairStep(RETURN_ID, OPERATOR_ID, { step: ReturnRepairStep.ACCEPTED }),
+        );
+
+        expect(result.status).toBe(409);
+        expect(result.body).toEqual({
+          error: 'RETURN_REPAIR_STEP_INVALID',
+          message: 'The next repair step is SENT_TO_SERVICE, not ACCEPTED',
+        });
+      });
+
+      it('409 RETURN_REPAIR_STEP_INVALID once the repair is complete', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          repairing([
+            ReturnRepairStep.ACCEPTED,
+            ReturnRepairStep.SENT_TO_SERVICE,
+            ReturnRepairStep.RETURNED_FROM_SERVICE,
+            ReturnRepairStep.HANDED_TO_CUSTOMER,
+          ]),
+        );
+
+        const result = await refusal(
+          service.addRepairStep(RETURN_ID, OPERATOR_ID, {
+            step: ReturnRepairStep.HANDED_TO_CUSTOMER,
+          }),
+        );
+
+        expect(result).toEqual({
+          status: 409,
+          body: {
+            error: 'RETURN_REPAIR_STEP_INVALID',
+            message: 'The repair is complete — no step follows HANDED_TO_CUSTOMER',
+          },
+        });
+      });
+
+      it('400 RETURN_REPAIR_RESULT_REQUIRED when the item comes back without an outcome', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          repairing([ReturnRepairStep.ACCEPTED, ReturnRepairStep.SENT_TO_SERVICE]),
+        );
+
+        const result = await refusal(
+          service.addRepairStep(RETURN_ID, OPERATOR_ID, {
+            step: ReturnRepairStep.RETURNED_FROM_SERVICE,
+          }),
+        );
+
+        expect(result).toEqual({
+          status: 400,
+          body: {
+            error: 'RETURN_REPAIR_RESULT_REQUIRED',
+            message: 'RETURNED_FROM_SERVICE needs a result: REPAIRED or UNREPAIRABLE',
+          },
+        });
+        expect(written).toHaveLength(0);
+      });
+
+      it.each([
+        ReturnRepairStep.ACCEPTED,
+        ReturnRepairStep.SENT_TO_SERVICE,
+        ReturnRepairStep.HANDED_TO_CUSTOMER,
+      ])('400 RETURN_REPAIR_RESULT_NOT_ALLOWED for a result on %s', async (step) => {
+        returnRepositoryMock.findById.mockResolvedValue(repairing());
+
+        const result = await refusal(
+          service.addRepairStep(RETURN_ID, OPERATOR_ID, { step, result: RepairResult.REPAIRED }),
+        );
+
+        expect(result).toEqual({
+          status: 400,
+          body: {
+            error: 'RETURN_REPAIR_RESULT_NOT_ALLOWED',
+            message: `A result is recorded only on RETURNED_FROM_SERVICE, not on ${step}`,
+          },
+        });
+        expect(written).toHaveLength(0);
       });
     });
   });

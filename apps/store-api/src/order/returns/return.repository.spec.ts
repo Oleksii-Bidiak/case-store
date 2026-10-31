@@ -2,7 +2,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { ReturnChannel, ReturnDecision, ReturnOutcome, ReturnStatus } from '@prisma/client';
+import {
+  Prisma,
+  ReturnChannel,
+  ReturnDecision,
+  ReturnOutcome,
+  ReturnRepairStep,
+  ReturnStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma';
 import { CacheService } from '../../cache';
 import { ProductIndexer } from '../../search/product-indexer';
@@ -747,6 +754,137 @@ describe('ReturnRepository.decide — one transaction per decision (TASK-1961, T
       error: 'RETURN_TRANSITION_INVALID',
     });
     expect(txMock.returnDecisionEvent.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReturnRepository.addRepairStep — one transaction per step (TASK-2045)', () => {
+  const RETURN_ID = 'return-uuid-1';
+  const OPERATOR_ID = 'operator-uuid-1';
+  const createdAt = new Date('2026-10-31T12:00:00.000Z');
+
+  const event = {
+    step: ReturnRepairStep.SENT_TO_SERVICE,
+    result: null,
+    destination: 'СЦ Apple, Київ',
+    ttn: '20450000000001',
+    note: 'Подряпина на кутку',
+    actorId: OPERATOR_ID,
+    createdAt,
+  };
+  const cardRow = { id: RETURN_ID, decision: ReturnDecision.REPAIR, items: [] };
+
+  /** Every statement, in the order the transaction issued it. */
+  let issued: string[];
+  let repository: ReturnRepository;
+
+  const txMock = {
+    return: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+    returnRepairEvent: { create: jest.fn() },
+  };
+  const txPrismaMock = {
+    $transaction: jest.fn((fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock)),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    issued = [];
+    txMock.return.updateMany.mockImplementation(async () => {
+      issued.push('touch');
+      return { count: 1 };
+    });
+    txMock.returnRepairEvent.create.mockImplementation(async () => {
+      issued.push('event');
+      return {};
+    });
+    txMock.return.findUniqueOrThrow.mockImplementation(async () => {
+      issued.push('read');
+      return cardRow;
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReturnRepository,
+        { provide: PrismaService, useValue: txPrismaMock },
+        { provide: CacheService, useValue: cacheMock },
+        { provide: ProductIndexer, useValue: productIndexerMock },
+      ],
+    }).compile();
+
+    repository = module.get(ReturnRepository);
+  });
+
+  const caughtFrom = (promise: Promise<unknown>) =>
+    promise.then(
+      () => {
+        throw new Error('expected a refusal');
+      },
+      (error: unknown) => error,
+    );
+
+  it('stamps the return, writes the step and reads the card back — in one transaction', async () => {
+    const result = await repository.addRepairStep(RETURN_ID, event);
+
+    expect(txPrismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(issued).toEqual(['touch', 'event', 'read']);
+    expect(result).toBe(cardRow);
+  });
+
+  it('stamps resolvedAt only while the return is still an open REPAIR — the guard and the row lock', async () => {
+    await repository.addRepairStep(RETURN_ID, event);
+
+    expect(txMock.return.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: RETURN_ID,
+        decision: ReturnDecision.REPAIR,
+        status: { notIn: [ReturnStatus.REJECTED, ReturnStatus.REFUNDED] },
+      },
+      // `resolvedAt` stays "the last change" (plan, Модель даних).
+      data: { resolvedAt: createdAt },
+    });
+  });
+
+  it('writes the step with its author, its time and every detail', async () => {
+    await repository.addRepairStep(RETURN_ID, event);
+
+    expect(txMock.returnRepairEvent.create).toHaveBeenCalledWith({
+      data: { returnId: RETURN_ID, ...event },
+    });
+  });
+
+  it('409 RETURN_REPAIR_STEP_INVALID when the decision changed meanwhile, writing no step', async () => {
+    txMock.return.updateMany.mockResolvedValue({ count: 0 });
+
+    const caught = await caughtFrom(repository.addRepairStep(RETURN_ID, event));
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toEqual({
+      error: 'RETURN_REPAIR_STEP_INVALID',
+      message: 'Repair steps are recorded only on an open return decided as REPAIR',
+    });
+    expect(txMock.returnRepairEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('409 RETURN_REPAIR_STEP_INVALID when a concurrent request recorded the same step first', async () => {
+    // The unique index on (return_id, step) is what stops a double click: both
+    // requests passed the service's order check against the same read.
+    txMock.returnRepairEvent.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: '7' }),
+    );
+
+    const caught = await caughtFrom(repository.addRepairStep(RETURN_ID, event));
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toEqual({
+      error: 'RETURN_REPAIR_STEP_INVALID',
+      message: 'The repair step SENT_TO_SERVICE has already been recorded',
+    });
+  });
+
+  it('lets any other database error through untouched', async () => {
+    const boom = new Error('connection lost');
+    txMock.returnRepairEvent.create.mockRejectedValue(boom);
+
+    await expect(repository.addRepairStep(RETURN_ID, event)).rejects.toBe(boom);
   });
 });
 

@@ -4,7 +4,14 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { ReturnDecision, ReturnStatus, UserRole } from '@prisma/client';
+import {
+  Prisma,
+  RepairResult,
+  ReturnDecision,
+  ReturnRepairStep,
+  ReturnStatus,
+  UserRole,
+} from '@prisma/client';
 import { createHash } from 'crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -96,6 +103,8 @@ describe('Admin returns queue (e2e)', () => {
     notificationBinding: { findMany: jest.fn() },
     // TASK-1961/2044: the history row every decision writes in its transaction.
     returnDecisionEvent: { create: jest.fn() },
+    // TASK-2045: the step row every repair step writes in its transaction.
+    returnRepairEvent: { create: jest.fn() },
     // The list path uses the ARRAY form of $transaction; awaiting the operations
     // it was handed is what the real client does with that form.
     $transaction: jest.fn(),
@@ -788,6 +797,157 @@ describe('Admin returns queue (e2e)', () => {
           .send({ decision: ReturnDecision.REFUND })
           .expect(403);
         expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+      } finally {
+        permissionRepositoryMock.setGrants(UserRole.MANAGER, []);
+      }
+    });
+  });
+
+  describe('POST /api/admin/returns/:returnId/repair-steps (TASK-2045)', () => {
+    const returnId = '550e8400-e29b-41d4-a716-446655440000';
+    const adminToken = () => `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`;
+    const addStep = (body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .post(`${url}/${returnId}/repair-steps`)
+        .set('Authorization', adminToken())
+        .send(body);
+
+    /** A return decided as REPAIR, carrying the given steps. */
+    const repairRow = (steps: Array<Record<string, unknown>> = [], overrides = {}) =>
+      makeReturnRow({
+        status: ReturnStatus.APPROVED,
+        decision: ReturnDecision.REPAIR,
+        repairEvents: steps,
+        ...overrides,
+      });
+
+    const stepRow = (step: ReturnRepairStep, extra: Record<string, unknown> = {}) => ({
+      id: `repair-${step}`,
+      step,
+      result: null,
+      destination: null,
+      ttn: null,
+      note: null,
+      actorId: testAdmin.id,
+      actor: null,
+      createdAt: now,
+      ...extra,
+    });
+
+    beforeEach(() => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(repairRow());
+      prismaServiceMock.return.updateMany.mockResolvedValue({ count: 1 });
+      prismaServiceMock.returnRepairEvent.create.mockResolvedValue({});
+      prismaServiceMock.return.findUniqueOrThrow.mockResolvedValue(
+        repairRow([stepRow(ReturnRepairStep.ACCEPTED, { note: 'Без пломби' })]),
+      );
+    });
+
+    it('records the step with its author and answers with the card', async () => {
+      const response = await addStep({
+        step: ReturnRepairStep.ACCEPTED,
+        note: '  Без пломби ',
+      }).expect(201);
+
+      expect(response.body.data).toMatchObject({
+        id: returnId,
+        decision: 'REPAIR',
+        repairSteps: [expect.objectContaining({ step: 'ACCEPTED', note: 'Без пломби' })],
+      });
+      expect(prismaServiceMock.return.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: returnId,
+          decision: ReturnDecision.REPAIR,
+          status: { notIn: [ReturnStatus.REJECTED, ReturnStatus.REFUNDED] },
+        },
+        data: { resolvedAt: expect.any(Date) },
+      });
+      expect(prismaServiceMock.returnRepairEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          returnId,
+          step: ReturnRepairStep.ACCEPTED,
+          note: 'Без пломби',
+          actorId: testAdmin.id,
+        }),
+      });
+    });
+
+    it('writes an audit row return.addRepairStep keyed by the return', async () => {
+      await addStep({ step: ReturnRepairStep.ACCEPTED }).expect(201);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(prismaServiceMock.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'return.addRepairStep',
+          entityType: 'return',
+          entityId: returnId,
+        }),
+      });
+    });
+
+    it('409 RETURN_REPAIR_STEP_INVALID on a return not decided as REPAIR, writing nothing', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(
+        repairRow([], { decision: ReturnDecision.REFUND }),
+      );
+
+      const response = await addStep({ step: ReturnRepairStep.ACCEPTED }).expect(409);
+
+      expect(response.body.error).toBe('RETURN_REPAIR_STEP_INVALID');
+      expect(prismaServiceMock.returnRepairEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('409 RETURN_REPAIR_STEP_INVALID for a step out of order', async () => {
+      const response = await addStep({ step: ReturnRepairStep.SENT_TO_SERVICE }).expect(409);
+
+      expect(response.body.error).toBe('RETURN_REPAIR_STEP_INVALID');
+      expect(prismaServiceMock.returnRepairEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('409 RETURN_REPAIR_STEP_INVALID when a double click lands the same step twice', async () => {
+      prismaServiceMock.returnRepairEvent.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: '7' }),
+      );
+
+      const response = await addStep({ step: ReturnRepairStep.ACCEPTED }).expect(409);
+
+      expect(response.body.error).toBe('RETURN_REPAIR_STEP_INVALID');
+    });
+
+    it('400 RETURN_REPAIR_RESULT_REQUIRED when the item comes back without an outcome', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(
+        repairRow([stepRow(ReturnRepairStep.ACCEPTED), stepRow(ReturnRepairStep.SENT_TO_SERVICE)]),
+      );
+
+      const response = await addStep({ step: ReturnRepairStep.RETURNED_FROM_SERVICE }).expect(400);
+
+      expect(response.body.error).toBe('RETURN_REPAIR_RESULT_REQUIRED');
+      expect(prismaServiceMock.returnRepairEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('400 RETURN_REPAIR_RESULT_NOT_ALLOWED for a result on any other step', async () => {
+      const response = await addStep({
+        step: ReturnRepairStep.ACCEPTED,
+        result: RepairResult.REPAIRED,
+      }).expect(400);
+
+      expect(response.body.error).toBe('RETURN_REPAIR_RESULT_NOT_ALLOWED');
+    });
+
+    it('400 on a step outside the enum and on an over-long waybill', async () => {
+      await addStep({ step: 'IN_REPAIR' }).expect(400);
+      await addStep({ step: ReturnRepairStep.ACCEPTED, ttn: '1'.repeat(65) }).expect(400);
+      expect(prismaServiceMock.returnRepairEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a manager who may only read returns', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['returns:read']);
+      try {
+        await request(app.getHttpServer())
+          .post(`${url}/${returnId}/repair-steps`)
+          .set('Authorization', `Bearer ${generateAccessToken(testManager.id, 'MANAGER')}`)
+          .send({ step: ReturnRepairStep.ACCEPTED })
+          .expect(403);
+        expect(prismaServiceMock.returnRepairEvent.create).not.toHaveBeenCalled();
       } finally {
         permissionRepositoryMock.setGrants(UserRole.MANAGER, []);
       }
