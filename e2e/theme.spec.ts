@@ -109,7 +109,8 @@ test.describe("manual theme switch", () => {
     expect(
       background,
       "the dark tokens did not apply on a light OS — data-theme is cosmetic",
-    ).toBe("rgb(10, 10, 10)");
+      // `--color-background` dark, #111118 (direction В, TASK-1951).
+    ).toBe("rgb(17, 17, 24)");
   });
 
   test("an explicit light choice beats a dark OS preference", async ({
@@ -132,7 +133,8 @@ test.describe("manual theme switch", () => {
     expect(
       background,
       "the light tokens did not win over the dark media query",
-    ).toBe("rgb(255, 255, 255)");
+      // `--color-background` light, #f6f5f9 (direction В, TASK-1951).
+    ).toBe("rgb(246, 245, 249)");
   });
 
   /**
@@ -152,20 +154,20 @@ test.describe("manual theme switch", () => {
     await page.emulateMedia({ colorScheme: "dark" });
     await page.goto("/products");
 
-    // The catalogue's filter field, not the header search. Both are named
-    // «Пошук товарів» (the filter's `aria-label` overrides its visible «Пошук»
-    // `<label>`, which is why `getByLabel('Пошук')` never matched — TASK-752),
-    // but the header one is a `role="combobox"`, so the `searchbox` role alone
-    // tells them apart. Strict on purpose: a second match should fail loudly.
-    const filterSearch = page.getByRole("searchbox", {
-      name: "Пошук товарів",
+    // The desktop filter rail's «Мінімальна ціна» field — a plain `Input` with
+    // no background of its own. (Until TASK-1951 this was the rail's text
+    // search, which direction В dropped.) The mobile drawer renders the same
+    // field as `filter-m-min-price`, so the id pins the rail. Strict on
+    // purpose: a second match should fail loudly.
+    const priceField = page.getByRole("spinbutton", {
+      name: "Мінімальна ціна",
       exact: true,
     });
-    await expect(filterSearch).toBeVisible();
-    await expect(filterSearch).toHaveAttribute("id", "filter-search");
+    await expect(priceField).toBeVisible();
+    await expect(priceField).toHaveAttribute("id", "filter-min-price");
 
     const backgroundOf = () =>
-      filterSearch.evaluate((el) => getComputedStyle(el).backgroundColor);
+      priceField.evaluate((el) => getComputedStyle(el).backgroundColor);
 
     // Untouched on a dark OS: the variant fires, so the field is not transparent.
     expect(
@@ -192,6 +194,9 @@ test.describe("manual theme switch", () => {
    * `theme-color` meta whose media matches — in a real engine, across a reload
    * and a client-side navigation (React owns `<head>`, so a soft navigation is
    * where a foreign tag would get dropped).
+   *
+   * Since TASK-1951 the chrome takes the page background (`THEME_COLOR`,
+   * #f6f5f9 / #111118), not the primary.
    */
   test("the theme-color meta follows the explicit choice", async ({ page }) => {
     const effectiveThemeColor = () =>
@@ -211,18 +216,18 @@ test.describe("manual theme switch", () => {
 
     // «Системна»: the media pair decides, nothing is layered on top.
     await expect(overrides).toHaveCount(0);
-    expect(await effectiveThemeColor()).toBe("#6366f1");
+    expect(await effectiveThemeColor()).toBe("#111118");
 
     await themeOption(page, "Світла").click();
     await expect(overrides).toHaveCount(1);
     expect(
       await effectiveThemeColor(),
       "the address bar stayed dark over a page the visitor switched to light",
-    ).toBe("#4f46e5");
+    ).toBe("#f6f5f9");
 
     await page.reload();
     await expect(overrides).toHaveCount(1);
-    expect(await effectiveThemeColor()).toBe("#4f46e5");
+    expect(await effectiveThemeColor()).toBe("#f6f5f9");
 
     // A soft navigation re-renders the head; the override must survive it.
     await page
@@ -231,10 +236,10 @@ test.describe("manual theme switch", () => {
       .click();
     await expect(page).toHaveURL(/\/products/);
     await expect(overrides).toHaveCount(1);
-    expect(await effectiveThemeColor()).toBe("#4f46e5");
+    expect(await effectiveThemeColor()).toBe("#f6f5f9");
 
     await themeOption(page, "Системна").click();
     await expect(overrides).toHaveCount(0);
-    expect(await effectiveThemeColor()).toBe("#6366f1");
+    expect(await effectiveThemeColor()).toBe("#111118");
   });
 });
