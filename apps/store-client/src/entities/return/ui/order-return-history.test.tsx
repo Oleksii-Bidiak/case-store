@@ -132,7 +132,7 @@ describe("OrderReturnHistory (TASK-1962)", () => {
     expect(card.queryByText(r.decisionPending)).not.toBeInTheDocument();
   });
 
-  it("marks a legacy decision with no reason as made before B-12", async () => {
+  it("says a legacy decision has no reason, without internal jargon", async () => {
     await renderHistory([
       makeReturn({
         status: "APPROVED",
@@ -146,7 +146,9 @@ describe("OrderReturnHistory (TASK-1962)", () => {
 
     const card = await returnCard("RETURN-1");
     expect(card.getByText(r.decisionLabels.REFUND)).toBeInTheDocument();
-    expect(card.getByText(r.decisionLegacy)).toBeInTheDocument();
+    expect(card.getByText("Причину не вказано")).toBeInTheDocument();
+    // «B-12» is the shop's internal milestone — customers never see it.
+    expect(card.queryByText(/B-12/)).not.toBeInTheDocument();
     // The date falls back to when the request was resolved.
     expect(
       card.getByText(r.decidedOn("11 червня 2026"), { exact: false }),

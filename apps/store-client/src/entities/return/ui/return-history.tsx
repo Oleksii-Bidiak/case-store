@@ -133,8 +133,9 @@ interface ReturnHistoryProps {
 /**
  * ReturnHistory — every return request of one order, read-only (TASK-1962):
  * when it was filed, the lines × quantities, its status, what the customer
- * asked for, the decision with its reason and date (or «до B-12» for a legacy
- * decision that never had a reason), and the repair steps.
+ * asked for, the decision with its reason and date (or a neutral «Причину не
+ * вказано» for a legacy decision that never had a reason — the internal «до
+ * B-12» label stays in the admin), and the repair steps.
  *
  * Presentational: the caller fetches. The account and the confirmation page
  * go through {@link OrderReturnHistory}; a guest view can feed its own list.
