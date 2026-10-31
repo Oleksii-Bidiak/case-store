@@ -629,6 +629,45 @@ describe("ReturnRequestButton offline (TASK-1964)", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(post.bodies).toHaveLength(0);
   });
+
+  // Clearing every quantity withdraws the request: the «we will send it»
+  // promise must go, and a later `online` must not file whatever the
+  // customer types next without them pressing «Надіслати» again.
+  it("ends the wait when the customer clears every quantity", async () => {
+    const user = userEvent.setup();
+    const post = stubCreate(() =>
+      HttpResponse.json({ data: { id: "return-1" } }, { status: 201 }),
+    );
+
+    renderButton();
+    await open(user);
+    await chooseOne(user);
+    setOnline(false);
+    await user.click(submitButton());
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      dict.returnRequest.offline,
+    );
+
+    const quantity = screen.getByLabelText(
+      dict.returnRequest.quantityAria("Чохол"),
+    );
+    await user.clear(quantity);
+    await waitFor(() =>
+      expect(screen.getByRole("status")).not.toHaveTextContent(
+        dict.returnRequest.offline,
+      ),
+    );
+
+    // Typing a line back in is a new, unsent request.
+    await user.type(quantity, "1");
+    setOnline(true);
+    goOnline();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(post.bodies).toHaveLength(0);
+    expect(screen.getByRole("status")).not.toHaveTextContent(
+      dict.returnRequest.offline,
+    );
+  });
 });
 
 // TASK-1964: the same dialog on a guest order — keyed by the access token, no

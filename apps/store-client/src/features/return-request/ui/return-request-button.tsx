@@ -120,6 +120,12 @@ export function ReturnRequestButton({
     .filter((line) => line.quantity > 0);
   const nothingSelected = selected.length === 0;
 
+  // Clearing every quantity withdraws the request: the wait ends (and its
+  // `online` listener with it — see the effect below), so a later reconnect
+  // never files lines typed afterwards without a fresh «Надіслати».
+  // Render-time guard, not an effect: no frame shows the stale promise.
+  if (awaitingNetwork && nothingSelected) setAwaitingNetwork(false);
+
   function close() {
     setOpen(false);
     setQuantities({});
@@ -129,7 +135,10 @@ export function ReturnRequestButton({
   }
 
   const handleSubmit = () => {
-    if (nothingSelected) return;
+    if (nothingSelected) {
+      setAwaitingNetwork(false);
+      return;
+    }
     // Known offline: do not even try — keep everything and wait for `online`.
     if (isBrowserOffline()) {
       setAwaitingNetwork(true);
@@ -176,11 +185,11 @@ export function ReturnRequestButton({
   // One automatic attempt per wait, and only while the dialog is open: closing
   // it removes the listener, so nothing is filed behind the customer's back.
   useEffect(() => {
-    if (!open || !awaitingNetwork) return;
+    if (!open || !awaitingNetwork || nothingSelected) return;
     const onOnline = () => submitRef.current();
     window.addEventListener("online", onOnline, { once: true });
     return () => window.removeEventListener("online", onOnline);
-  }, [open, awaitingNetwork]);
+  }, [open, awaitingNetwork, nothingSelected]);
 
   return (
     <Dialog
