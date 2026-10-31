@@ -1,8 +1,13 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, within } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  within,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
+import { formatCurrency, formatDateTime } from "@/shared/lib";
 import { ReturnDetailView } from "./return-detail-view";
 
 const d = dict.returns;
@@ -32,6 +37,25 @@ function makeReturn(overrides: Record<string, unknown> = {}) {
     resolvedAt: "2026-09-22T14:02:00.000Z",
     restockedAt: null,
     refundedAmount: null,
+    requestedOutcome: "REFUND",
+    channel: "ACCOUNT",
+    decision: "REFUND",
+    decisionReason: null,
+    decidedAt: "2026-09-22T14:02:00.000Z",
+    decisionLegacy: false,
+    decidedBy: { id: "u-1", name: "Ірина Коваль", email: "iryna@shop.ua" },
+    createdBy: null,
+    decisionHistory: [
+      {
+        decision: "REFUND",
+        reason: null,
+        legacy: false,
+        createdAt: "2026-09-22T14:02:00.000Z",
+        actor: { id: "u-1", name: "Ірина Коваль", email: "iryna@shop.ua" },
+      },
+    ],
+    repairSteps: [],
+    orderCreatedAt: "2026-09-20T10:00:00.000Z",
     items: [
       {
         id: "ri-1",
@@ -188,7 +212,7 @@ describe("ReturnDetailView — what comes back and the ceiling (TASK-959)", () =
     expect(within(card).queryByText(d.maxRefund)).not.toBeInTheDocument();
   });
 
-  it("keeps the refunded amount and the restock date on the card", async () => {
+  it("keeps the refunded amount on the card", async () => {
     serve({
       rma: makeReturn({
         status: "REFUNDED",
@@ -205,9 +229,6 @@ describe("ReturnDetailView — what comes back and the ceiling (TASK-959)", () =
       within(card).getByText(d.refundedAmount).closest("[data-row]")
         ?.textContent,
     ).toContain(formatCurrency("1299.00"));
-    expect(
-      within(card).getByText(d.restockedAt, { exact: false }),
-    ).toBeInTheDocument();
   });
 
   it("shows the next step and the notes beside the goods", async () => {
@@ -222,5 +243,250 @@ describe("ReturnDetailView — what comes back and the ceiling (TASK-959)", () =
     expect(screen.getAllByText("Клієнт відправляє Новою Поштою")).toHaveLength(
       1,
     );
+  });
+});
+
+/** The value printed next to a `<dt>` in a description list. */
+function valueOf(scope: HTMLElement, term: string) {
+  return within(scope).getByText(term).nextElementSibling?.textContent;
+}
+
+describe("ReturnDetailView — three dates (TASK-1961, AD-RET-05/06)", () => {
+  it("prints «Подано», «Вирішено» and «На склад не повертали» apart", async () => {
+    serve();
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const dates = await screen.findByRole("region", { name: d.datesAria });
+    expect(valueOf(dates, d.dateRequested)).toBe(
+      formatDateTime("2026-09-22T12:15:00.000Z"),
+    );
+    expect(valueOf(dates, d.dateDecided)).toBe(
+      formatDateTime("2026-09-22T14:02:00.000Z"),
+    );
+    expect(valueOf(dates, d.restockedAt)).toBe(d.notRestocked);
+  });
+
+  it("prints the restock date once the goods are back on the shelf", async () => {
+    serve({
+      rma: makeReturn({
+        status: "RECEIVED",
+        restockedAt: "2026-09-25T09:00:00.000Z",
+      }),
+    });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const dates = await screen.findByRole("region", { name: d.datesAria });
+    expect(valueOf(dates, d.restockedAt)).toBe(
+      formatDateTime("2026-09-25T09:00:00.000Z"),
+    );
+  });
+
+  it("says a fresh request is not decided yet", async () => {
+    serve({
+      rma: makeReturn({
+        status: "REQUESTED",
+        decision: null,
+        decidedAt: null,
+        decidedBy: null,
+        resolvedAt: null,
+        decisionHistory: [],
+      }),
+    });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const dates = await screen.findByRole("region", { name: d.datesAria });
+    expect(valueOf(dates, d.dateDecided)).toBe(d.dateNotDecided);
+    const card = screen.getByRole("region", { name: d.decisionHeading });
+    expect(within(card).getByText(d.decisionNone)).toBeInTheDocument();
+  });
+});
+
+describe("ReturnDetailView — the decision (TASK-1961, TASK-2044, AD-RET-07)", () => {
+  const refused = () =>
+    makeReturn({
+      status: "REJECTED",
+      decision: "REJECT",
+      decisionReason: "Сліди удару на корпусі",
+      decidedAt: "2026-09-23T09:30:00.000Z",
+    });
+
+  it("shows the decision, its reason marked «бачить покупець», the author and the date", async () => {
+    serve({ rma: refused() });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const card = await screen.findByRole("region", {
+      name: d.decisionHeading,
+    });
+    expect(within(card).getByText(d.decisionREJECT)).toBeInTheDocument();
+    expect(
+      within(card).getByText("Сліди удару на корпусі"),
+    ).toBeInTheDocument();
+    expect(within(card).getByText(d.decisionReasonHint)).toBeVisible();
+    expect(valueOf(card, d.decisionAuthor)).toBe("Ірина Коваль");
+    expect(valueOf(card, d.decisionDate)).toBe(
+      formatDateTime("2026-09-23T09:30:00.000Z"),
+    );
+  });
+
+  it("marks a legacy decision «до B-12» instead of an empty reason", async () => {
+    serve({
+      rma: makeReturn({
+        decisionLegacy: true,
+        decidedBy: null,
+        decisionHistory: [
+          {
+            decision: "REFUND",
+            reason: null,
+            legacy: true,
+            createdAt: "2026-09-22T14:02:00.000Z",
+            actor: null,
+          },
+        ],
+      }),
+    });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const card = await screen.findByRole("region", {
+      name: d.decisionHeading,
+    });
+    expect(within(card).getByText(d.decisionLegacyMarker)).toBeInTheDocument();
+    expect(within(card).getByText(d.decisionLegacyHint)).toBeInTheDocument();
+    expect(
+      within(card).queryByText(d.decisionNoReason),
+    ).not.toBeInTheDocument();
+  });
+
+  it("folds the history of changes, oldest first, and opens it on demand", async () => {
+    serve({
+      rma: makeReturn({
+        status: "APPROVED",
+        decision: "REFUND",
+        decisionReason: "Ремонт неможливий",
+        decidedAt: "2026-09-26T10:00:00.000Z",
+        decisionHistory: [
+          {
+            decision: "REFUND",
+            reason: null,
+            legacy: true,
+            createdAt: "2026-09-22T14:02:00.000Z",
+            actor: null,
+          },
+          {
+            decision: "REPAIR",
+            reason: "Клієнт погодився на ремонт",
+            legacy: false,
+            createdAt: "2026-09-24T10:00:00.000Z",
+            actor: { id: "u-2", name: "Петро Мельник", email: "p@shop.ua" },
+          },
+          {
+            decision: "REFUND",
+            reason: "Ремонт неможливий",
+            legacy: false,
+            createdAt: "2026-09-26T10:00:00.000Z",
+            actor: { id: "u-1", name: "Ірина Коваль", email: "iryna@shop.ua" },
+          },
+        ],
+      }),
+    });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const card = await screen.findByRole("region", {
+      name: d.decisionHeading,
+    });
+    const toggle = within(card).getByRole("button", {
+      name: d.decisionHistoryToggle(3),
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      within(card).queryByText("Клієнт погодився на ремонт"),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const entries = within(
+      within(card).getByRole("list", { name: d.decisionHistoryToggle(3) }),
+    ).getAllByRole("listitem");
+    expect(entries).toHaveLength(3);
+    expect(entries[0]).toHaveTextContent(d.decisionLegacyMarker);
+    expect(entries[1]).toHaveTextContent(d.decisionREPAIR);
+    expect(entries[1]).toHaveTextContent("Клієнт погодився на ремонт");
+    expect(entries[1]).toHaveTextContent("Петро Мельник");
+  });
+
+  it("puts the decide form in the card for a writer, not the old approve/reject", async () => {
+    serve({
+      rma: makeReturn({
+        status: "REQUESTED",
+        decision: null,
+        decidedAt: null,
+        decidedBy: null,
+        decisionHistory: [],
+      }),
+    });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const card = await screen.findByRole("region", {
+      name: d.decisionHeading,
+    });
+    expect(
+      within(card).getByRole("radio", { name: d.decisionREJECT }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Схвалити|Відхилити/ }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("ReturnDetailView — what the customer asked for (TASK-2044, TASK-1961)", () => {
+  it("prints the wish and labels the reason as the customer's own words", async () => {
+    serve({ rma: makeReturn({ requestedOutcome: "REPAIR" }) });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const card = await screen.findByRole("region", { name: d.reason });
+    expect(valueOf(card, d.requestedOutcome)).toBe(d.decisionREPAIR);
+    expect(within(card).getByText("Не підійшов колір")).toBeInTheDocument();
+  });
+
+  it("says «не вказано» when the customer did not choose", async () => {
+    serve({
+      rma: makeReturn({ requestedOutcome: null, channel: "GUEST_LINK" }),
+    });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const card = await screen.findByRole("region", { name: d.reason });
+    expect(valueOf(card, d.requestedOutcome)).toBe(d.outcomeNotGiven);
+  });
+
+  it("calls an operator-filed reason «Коментар оператора»", async () => {
+    serve({ rma: makeReturn({ channel: "OPERATOR" }) });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    expect(
+      await screen.findByRole("region", { name: d.reasonOperator }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: d.reason }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -18,11 +18,20 @@ export {
   getAdminOrderReturnControllerFindForOrderQueryKey,
   // Status enum value object (filters, badge mapping, the resolve picker).
   ReturnEntityStatus,
+  // TASK-2044 (B-12 §1.1) — the decision is its own write, with a reason the
+  // customer sees, an author and a history.
+  useAdminReturnControllerDecide,
+  ReturnDecision,
+  ReturnOutcome,
+  ReturnChannel,
 } from "@/shared/api";
 
 export type {
   ReturnEntity,
   ReturnItemEntity,
+  ReturnDecisionEventEntity,
+  ReturnActorEntity,
+  DecideReturnDto,
   ResolveReturnDto,
   CreateReturnDto,
   ReturnItemDto,
@@ -33,4 +42,14 @@ export type {
 
 export { returnStatusLabel } from "./status-label";
 export { returnStatusBadgeVariant } from "./status-badge";
-export { allowedReturnTransitions, RESTOCK_ON_STATUS } from "./transitions";
+export {
+  allowedReturnTransitions,
+  availableDecisions,
+  nextResolveStep,
+  RESTOCK_ON_STATUS,
+} from "./transitions";
+export {
+  returnDecisionLabel,
+  returnOutcomeLabel,
+  returnReasonHeading,
+} from "./decision-label";

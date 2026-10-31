@@ -1,5 +1,10 @@
-import { ReturnEntityStatus } from "@/shared/api";
-import { RESTOCK_ON_STATUS, allowedReturnTransitions } from "./transitions";
+import { ReturnDecision, ReturnEntityStatus } from "@/shared/api";
+import {
+  RESTOCK_ON_STATUS,
+  allowedReturnTransitions,
+  availableDecisions,
+  nextResolveStep,
+} from "./transitions";
 
 /**
  * This table is a MIRROR of `order/returns/return-state-machine.ts` — returns
@@ -29,9 +34,9 @@ describe("allowedReturnTransitions — mirror of the backend table (TASK-340)", 
     ]);
   });
 
-  it("lets nothing leave REJECTED or REFUNDED", () => {
-    // A refusal was communicated to a customer; rewriting it in place erases
-    // that it happened. A successful appeal is a NEW request.
+  it("lets no status step leave REJECTED or REFUNDED", () => {
+    // Re-opening a refusal is a DECISION (TASK-2044), recorded with a reason
+    // and an author — never a bare status write. See `availableDecisions`.
     expect(allowedReturnTransitions(ReturnEntityStatus.REJECTED)).toEqual([]);
     expect(allowedReturnTransitions(ReturnEntityStatus.REFUNDED)).toEqual([]);
   });
@@ -54,5 +59,81 @@ describe("allowedReturnTransitions — mirror of the backend table (TASK-340)", 
     // Stock is about where the item is; money is about who holds it. A shop that
     // waits for the refund to restock has sellable inventory invisible in a box.
     expect(RESTOCK_ON_STATUS).toBe(ReturnEntityStatus.RECEIVED);
+  });
+});
+
+/**
+ * TASK-2044 (B-12 §1.1) — APPROVED and REJECTED are set only by a decision
+ * (`POST /admin/returns/:id/decision`); the PATCH keeps RECEIVED and REFUNDED.
+ * Mirrors `returnStatusAfterDecision` and `decisionPermitsTransition` in
+ * `order/returns/return-state-machine.ts`.
+ */
+describe("availableDecisions — what the decide form may offer (TASK-2044)", () => {
+  const ALL = [
+    ReturnDecision.REFUND,
+    ReturnDecision.REPLACEMENT,
+    ReturnDecision.REPAIR,
+    ReturnDecision.REJECT,
+  ];
+
+  it("offers all four on a fresh, an approved and a refused request", () => {
+    // A refusal is re-opened by a positive decision with a reason.
+    for (const status of [
+      ReturnEntityStatus.REQUESTED,
+      ReturnEntityStatus.APPROVED,
+      ReturnEntityStatus.REJECTED,
+    ]) {
+      expect(availableDecisions(status)).toEqual(ALL);
+    }
+  });
+
+  it("refuses a refusal once the goods are back — RECEIVED cannot become REJECTED", () => {
+    expect(availableDecisions(ReturnEntityStatus.RECEIVED)).toEqual([
+      ReturnDecision.REFUND,
+      ReturnDecision.REPLACEMENT,
+      ReturnDecision.REPAIR,
+    ]);
+  });
+
+  it("offers nothing once the money went back — the decision is locked", () => {
+    expect(availableDecisions(ReturnEntityStatus.REFUNDED)).toEqual([]);
+    expect(availableDecisions("NOT_A_STATUS")).toEqual([]);
+  });
+});
+
+describe("nextResolveStep — the one PATCH step the card offers (TASK-2044)", () => {
+  it("is «Товар отримано» after any positive decision", () => {
+    for (const decision of [
+      ReturnDecision.REFUND,
+      ReturnDecision.REPLACEMENT,
+      ReturnDecision.REPAIR,
+    ]) {
+      expect(nextResolveStep(ReturnEntityStatus.APPROVED, decision)).toBe(
+        ReturnEntityStatus.RECEIVED,
+      );
+    }
+  });
+
+  it("is «Гроші повернуто» on received goods only under a REFUND decision", () => {
+    expect(
+      nextResolveStep(ReturnEntityStatus.RECEIVED, ReturnDecision.REFUND),
+    ).toBe(ReturnEntityStatus.REFUNDED);
+    expect(
+      nextResolveStep(ReturnEntityStatus.RECEIVED, ReturnDecision.REPAIR),
+    ).toBeNull();
+    expect(
+      nextResolveStep(ReturnEntityStatus.RECEIVED, ReturnDecision.REPLACEMENT),
+    ).toBeNull();
+    expect(nextResolveStep(ReturnEntityStatus.RECEIVED, null)).toBeNull();
+  });
+
+  it("is never APPROVED or REJECTED — those belong to the decision", () => {
+    expect(nextResolveStep(ReturnEntityStatus.REQUESTED, null)).toBeNull();
+    expect(
+      nextResolveStep(ReturnEntityStatus.REJECTED, ReturnDecision.REJECT),
+    ).toBeNull();
+    expect(
+      nextResolveStep(ReturnEntityStatus.REFUNDED, ReturnDecision.REFUND),
+    ).toBeNull();
   });
 });

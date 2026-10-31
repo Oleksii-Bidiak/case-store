@@ -4601,15 +4601,9 @@ export const dict = {
     maxRefund: "Можна повернути максимум",
     // «Наступний крок» — лише дії, доречні для статусу (Р3–Р5).
     nextRequested: "Перевірте причину й вирішіть, чи приймаєте повернення.",
-    approve: "Схвалити заявку",
     nextApproved: "Коли посилка від клієнта прийде й ви її перевірите:",
     restockUnits: (count: number) => `Повернути товар на склад (${count} шт.)`,
     markReceived: "Товар отримано",
-    reject: "Відхилити заявку…",
-    rejectConfirmTitle: "Відхилити заявку?",
-    rejectConfirmDescription:
-      "Клієнт побачить, що в поверненні відмовлено. Змінити це рішення потім не можна — нове звернення буде новою заявкою.",
-    rejectConfirm: "Відхилити",
     nextReceived: (restocked: boolean) =>
       restocked
         ? "Товар отримано й повернуто на склад. Лишилось повернути гроші клієнту."
@@ -4622,6 +4616,66 @@ export const dict = {
     notesEdit: "Змінити",
     notesEditHint: "Збережеться разом із наступним кроком.",
     notesEmpty: "Приміток немає.",
+
+    // --- Рішення за заявкою (TASK-1961, TASK-2044; B-12 §1.1) -----------------
+    // Одна заявка — різні рішення. Ті самі слова для «чого хоче покупець», щоб
+    // оператор одразу бачив розбіжність «хоче ремонт» / «рішення: гроші».
+    decisionREFUND: "Гроші",
+    decisionREPLACEMENT: "Заміна",
+    decisionREPAIR: "Ремонт",
+    decisionREJECT: "Відмова",
+    requestedOutcome: "Чого хоче покупець",
+    outcomeNotGiven: "не вказано",
+    // Заявку, яку оператор заводить за покупця, підписує оператор.
+    reasonOperator: "Коментар оператора",
+    // Три позначки часу (AD-RET-05): у житті вони розходяться на дні.
+    datesAria: "Дати заявки",
+    dateRequested: "Подано",
+    dateDecided: "Вирішено",
+    dateNotDecided: "Ще не вирішено",
+    decisionHeading: "Рішення",
+    decisionNone: "Рішення ще не ухвалено.",
+    decisionReason: "Причина",
+    decisionReasonHint: "бачить покупець",
+    decisionNoReason: "Без причини",
+    decisionAuthor: "Автор",
+    decisionAuthorUnknown: "невідомо",
+    decisionDate: "Дата",
+    // Рішення, перенесені з даних до B-12: ні причини, ні автора тоді не писали.
+    decisionLegacyMarker: "до B-12",
+    decisionLegacyHint:
+      "Ухвалено до B-12 — причину й автора тоді не записували.",
+    decisionHistoryToggle: (count: number) => `Історія рішень (${count})`,
+    // Форма рішення (features/return-decide).
+    decideHeading: (hasDecision: boolean) =>
+      hasDecision ? "Змінити рішення" : "Ухвалити рішення",
+    decideOpen: "Змінити рішення…",
+    decideReason: "Причина для покупця",
+    decideReasonPlaceholder:
+      "Наприклад: на корпусі сліди удару — це не гарантійний випадок",
+    decideReasonHint:
+      "Бачить покупець. Обов'язкова при відмові та при зміні рішення.",
+    decideSubmit: "Зберегти рішення",
+    decideSuccess: "Рішення збережено.",
+    decideDecisionRequired: "Оберіть рішення.",
+    decideReasonRequired: "Вкажіть причину — її побачить покупець.",
+    decideReasonTooLong: "Причина має містити не більше 1000 символів.",
+    decideUnchanged: "Рішення й причина ті самі — змініть хоча б одне.",
+    decideLocked:
+      "Гроші за цією заявкою вже повернуто — рішення більше не змінюється.",
+    decideConflict:
+      "Заявка вже змінилася — сторінку оновлено, перевірте рішення ще раз.",
+    decideQuantityExceeded:
+      "Прийняти заявку знову не можна: частину цих позицій уже заявлено в іншій заявці.",
+    decideNotFound: "Заявку не знайдено — можливо, її вже видалили.",
+    decideFailed: "Не вдалося зберегти рішення. Спробуйте ще раз.",
+    // «Наступний крок» після рішення: статуси «Схвалено» / «Відхилено» ставить
+    // рішення, а не кнопка.
+    nextRejected: "Заявку відхилено. Щоб прийняти її, змініть рішення.",
+    nextReceivedNoRefund: (decision: string | null) =>
+      decision
+        ? `Товар отримано. Рішення — «${decision}», тож гроші за цією заявкою не повертають.`
+        : "Товар отримано. Гроші повертають лише за рішенням «Гроші».",
   },
 
   // --- Operator-created (phone) orders (TASK-341) ------------------------------

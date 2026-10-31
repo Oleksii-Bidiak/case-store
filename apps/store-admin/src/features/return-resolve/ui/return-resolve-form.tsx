@@ -8,9 +8,10 @@ import { Loader2 } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
   ReturnEntityStatus,
-  allowedReturnTransitions,
   getAdminReturnControllerFindAllQueryKey,
   getAdminReturnControllerFindByIdQueryKey,
+  nextResolveStep,
+  returnDecisionLabel,
   useAdminReturnControllerResolve,
   type ReturnEntity,
 } from "@/entities/return";
@@ -23,7 +24,6 @@ import {
   Input,
   Label,
   Textarea,
-  useConfirmDialog,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
@@ -70,11 +70,16 @@ interface ReturnResolveFormProps {
  * One card that offers ONLY what the state machine allows from here, as named
  * actions instead of a status select and one «Зберегти рішення»:
  *
- *   REQUESTED → «Схвалити заявку» · «Відхилити заявку…»
- *   APPROVED  → «Повернути товар на склад (N шт.)» ☑ + «Товар отримано» ·
- *               «Відхилити заявку…»
- *   RECEIVED  → «Сума повернення, ₴ *» + «Гроші повернуто»
- *   REJECTED / REFUNDED → nothing: a communicated decision is not rewritten.
+ *   REQUESTED → nothing yet: the decision comes first
+ *   APPROVED  → «Повернути товар на склад (N шт.)» ☑ + «Товар отримано»
+ *   RECEIVED  → «Сума повернення, ₴ *» + «Гроші повернуто» — under a REFUND
+ *               decision only; a repair or a replacement returns no money
+ *   REJECTED  → nothing: re-opening a refusal is a change of the decision
+ *   REFUNDED  → nothing: the return is closed.
+ *
+ * Since B-12 (TASK-2044) «Схвалити / Відхилити…» are gone from here: APPROVED
+ * and REJECTED follow from a decision (`features/return-decide`), and this
+ * PATCH refuses them (`RETURN_USE_DECISION_ENDPOINT`).
  *
  * Every action is the same `PATCH /admin/returns/:id` the old form sent, behind
  * the same `returns:write` (TASK-716) — a reader sees the step and the notes,
@@ -196,10 +201,9 @@ function NotesCard({
 function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
   const queryClient = useQueryClient();
   const resolve = useAdminReturnControllerResolve();
-  const { confirm, confirmDialog } = useConfirmDialog();
   const [editingNotes, setEditingNotes] = useState(false);
 
-  const allowed = allowedReturnTransitions(rma.status);
+  const next = nextResolveStep(rma.status, rma.decision);
   const returnedValue = returnedValueOf(rma.items);
   // The hint names a maximum only when the card knows BOTH ceilings — the
   // same rule as «Можна повернути максимум» beside it; the returned value
@@ -326,16 +330,6 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
     })();
   };
 
-  const askReject = async () => {
-    const confirmed = await confirm({
-      title: d.rejectConfirmTitle,
-      description: d.rejectConfirmDescription,
-      confirmLabel: d.rejectConfirm,
-      destructive: true,
-    });
-    if (confirmed) submitStep(ReturnEntityStatus.REJECTED);
-  };
-
   const actionButton = (status: string, label: string) => {
     const busy = pendingStatus === status;
     return (
@@ -361,45 +355,28 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
     );
   };
 
-  const rejectButton = allowed.includes(ReturnEntityStatus.REJECTED) ? (
-    <Button
-      type="button"
-      variant="ghost"
-      className="w-full text-destructive hover:text-destructive"
-      disabled={resolve.isPending}
-      onClick={() => void askReject()}
-    >
-      {pendingStatus === ReturnEntityStatus.REJECTED ? (
-        <>
-          <Loader2
-            aria-hidden="true"
-            className="animate-spin motion-reduce:animate-none"
-          />
-          {d.saving}
-        </>
-      ) : (
-        d.reject
-      )}
-    </Button>
-  ) : null;
-
   const amountError = errors.refundedAmount?.message;
   const notesError = errors.operatorNotes?.message;
 
   let step: ReactNode;
-  if (allowed.length === 0) {
+  if (rma.status === ReturnEntityStatus.REQUESTED) {
+    step = <p className="text-sm text-muted-foreground">{d.nextRequested}</p>;
+  } else if (rma.status === ReturnEntityStatus.REJECTED) {
+    step = <p className="text-sm text-muted-foreground">{d.nextRejected}</p>;
+  } else if (rma.status === ReturnEntityStatus.RECEIVED && next === null) {
+    // A repair or a replacement: the goods are here, no money goes back.
+    step = (
+      <p className="text-sm text-muted-foreground">
+        {d.nextReceivedNoRefund(
+          rma.decision === null ? null : returnDecisionLabel(rma.decision),
+        )}
+      </p>
+    );
+  } else if (next === null) {
     step = (
       <p className="text-sm text-muted-foreground">{d.resolveNoTransitions}</p>
     );
-  } else if (rma.status === ReturnEntityStatus.REQUESTED) {
-    step = (
-      <>
-        <p className="text-sm text-muted-foreground">{d.nextRequested}</p>
-        {actionButton(ReturnEntityStatus.APPROVED, d.approve)}
-        {rejectButton}
-      </>
-    );
-  } else if (rma.status === ReturnEntityStatus.APPROVED) {
+  } else if (next === ReturnEntityStatus.RECEIVED) {
     const restockAvailable = canRestock(
       ReturnEntityStatus.RECEIVED,
       rma.restockedAt,
@@ -435,11 +412,10 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
           </p>
         )}
         {actionButton(ReturnEntityStatus.RECEIVED, d.markReceived)}
-        {rejectButton}
       </>
     );
   } else {
-    // RECEIVED — the only move left is the money.
+    // RECEIVED under a REFUND decision — the only move left is the money.
     step = (
       <>
         <p className="text-sm text-muted-foreground">
@@ -490,7 +466,8 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
     );
   }
 
-  const canEditNotes = allowed.length > 0;
+  // The notes ride on a step — the API has no notes-only write.
+  const canEditNotes = next !== null;
 
   return (
     <form
@@ -498,7 +475,7 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
       className="flex flex-col gap-6"
       noValidate
     >
-      <StepCard active={allowed.length > 0}>{step}</StepCard>
+      <StepCard active={next !== null}>{step}</StepCard>
       <NotesCard
         notes={rma.operatorNotes ?? null}
         onEdit={canEditNotes ? () => setEditingNotes(true) : undefined}
@@ -542,7 +519,6 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
           ) : undefined
         }
       />
-      {confirmDialog}
     </form>
   );
 }
