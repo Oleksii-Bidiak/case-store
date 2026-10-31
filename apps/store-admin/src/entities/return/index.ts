@@ -53,3 +53,11 @@ export {
   returnOutcomeLabel,
   returnReasonHeading,
 } from "./decision-label";
+// TASK-1963 — what is still returnable on an order (REJECTED frees units).
+export {
+  clampQuantity,
+  returnableLines,
+  type ExistingReturn,
+  type OrderLine,
+  type ReturnableLine,
+} from "./model/returnable-units";

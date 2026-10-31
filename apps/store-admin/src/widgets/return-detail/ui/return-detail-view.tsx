@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowUpRightIcon } from "lucide-react";
 import {
+  ReturnChannel,
   returnOutcomeLabel,
   returnReasonHeading,
   returnStatusBadgeVariant,
@@ -265,6 +266,15 @@ function RequestCard({ rma }: { rma: ReturnEntity }) {
           {returnOutcomeLabel(rma.requestedOutcome)}
         </dd>
       </dl>
+      {/* TASK-1963 (AD-RET-15): who filed it for the buyer — the name, not just
+          the fact; a deleted account leaves only the fact. */}
+      {rma.channel === ReturnChannel.OPERATOR ? (
+        <p className="text-sm text-muted-foreground">
+          {rma.createdBy
+            ? d.createdByOperatorName(rma.createdBy.name)
+            : d.createdByOperator}
+        </p>
+      ) : null}
       <div className="flex flex-col gap-1">
         <h3 id={headingId} className="text-sm font-semibold text-foreground">
           {returnReasonHeading(rma.channel)}

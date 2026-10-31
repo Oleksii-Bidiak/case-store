@@ -489,4 +489,50 @@ describe("ReturnDetailView — what the customer asked for (TASK-2044, TASK-1961
       screen.queryByRole("region", { name: d.reason }),
     ).not.toBeInTheDocument();
   });
+
+  // AD-RET-15: the author used to be visible only in the audit log.
+  it("names the operator who filed the request (TASK-1963)", async () => {
+    serve({
+      rma: makeReturn({
+        channel: "OPERATOR",
+        createdBy: { id: "op-1", name: "Олена Коваль", email: "o@shop.ua" },
+      }),
+    });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const card = await screen.findByRole("region", { name: d.reasonOperator });
+    expect(
+      within(card).getByText(d.createdByOperatorName("Олена Коваль")),
+    ).toBeInTheDocument();
+  });
+
+  it("still says an operator filed it when the account is gone", async () => {
+    serve({ rma: makeReturn({ channel: "OPERATOR", createdBy: null }) });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    const card = await screen.findByRole("region", { name: d.reasonOperator });
+    expect(within(card).getByText(d.createdByOperator)).toBeInTheDocument();
+  });
+
+  it("says nothing about an operator on the buyer's own request", async () => {
+    serve({
+      rma: makeReturn({
+        channel: "ACCOUNT",
+        createdBy: { id: "u-1", name: "Покупець", email: "b@shop.ua" },
+      }),
+    });
+    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
+      auth: READER_OF_ORDERS,
+    });
+
+    await screen.findByRole("region", { name: d.reason });
+    expect(screen.queryByText(d.createdByOperator)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(d.createdByOperatorName("Покупець")),
+    ).not.toBeInTheDocument();
+  });
 });
