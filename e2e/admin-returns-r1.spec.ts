@@ -275,7 +275,11 @@ test.describe("returns wave R1 — file, refuse, read (TASK-1963/1961/1962)", ()
     expect(filed.items.map((item) => item.quantity)).toEqual([2]);
     expect(filed.order.status).toBe("DELIVERED");
 
-    await dialog.getByRole("button", { name: A.close }).click();
+    // The footer «Закрити», not the corner ✕ (also named «Закрити» for screen readers).
+    await dialog
+      .getByRole("button", { name: A.close })
+      .and(dialog.locator('[data-slot="button"]'))
+      .click();
     await expect(dialog).toBeHidden();
 
     // --- 2. The order card: status unchanged, the return listed ---------------
