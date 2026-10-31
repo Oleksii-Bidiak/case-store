@@ -967,7 +967,14 @@ describe('ReturnRepository.addRepairStep — one transaction per step (TASK-2045
 });
 
 describe('ReturnRepository — what each read loads (TASK-1963, TASK-2044, TASK-2045)', () => {
-  const ACTOR_SELECT = { id: true, email: true, firstName: true, lastName: true };
+  // `originalEmail`: a soft-deleted account's readable email (TASK-104).
+  const ACTOR_SELECT = {
+    id: true,
+    email: true,
+    originalEmail: true,
+    firstName: true,
+    lastName: true,
+  };
   const HISTORY_ORDER = [{ createdAt: 'asc' }, { id: 'asc' }];
 
   const readMock = {

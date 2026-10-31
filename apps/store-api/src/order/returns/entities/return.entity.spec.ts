@@ -126,6 +126,45 @@ describe('ReturnEntity — admin projection (includeInternal)', () => {
     expect(result.decidedBy).toBeNull();
   });
 
+  // TASK-104 soft delete mangles the unique email to `deleted:<id>:<email>` and
+  // keeps the readable one in `originalEmail`. "Who decided" must stay readable
+  // after the operator leaves — same fallback as the audit log and user notes.
+  describe('a soft-deleted staff account', () => {
+    const departed = {
+      id: 'operator-3',
+      email: 'deleted:operator-3:ivan@shop.test',
+      originalEmail: 'ivan@shop.test',
+      firstName: null,
+      lastName: null,
+    };
+
+    it('shows the original email, not the mangled one', () => {
+      const row = makeRow({ decidedBy: departed });
+      expect(ReturnEntity.fromPrisma(row, { includeInternal: true }).decidedBy).toEqual({
+        id: departed.id,
+        name: 'ivan@shop.test',
+        email: 'ivan@shop.test',
+      });
+    });
+
+    it('does the same in the decision history and the repair steps', () => {
+      const row = makeRow({
+        decisionEvents: [{ ...makeRow().decisionEvents![1], actor: departed }],
+        repairEvents: [{ ...makeRow().repairEvents![0], actor: departed }],
+      });
+      const result = ReturnEntity.fromPrisma(row, { includeInternal: true });
+      expect(result.decisionHistory?.[0].actor?.email).toBe('ivan@shop.test');
+      expect(result.repairSteps?.[0].actor?.email).toBe('ivan@shop.test');
+    });
+
+    it('keeps the stored email for a live account (originalEmail is null)', () => {
+      const row = makeRow({ decidedBy: { ...nameless, originalEmail: null } });
+      expect(ReturnEntity.fromPrisma(row, { includeInternal: true }).decidedBy?.email).toBe(
+        nameless.email,
+      );
+    });
+  });
+
   it('carries the decision history in order, legacy rows with no actor', () => {
     expect(entity().decisionHistory).toEqual([
       { decision: 'REFUND', reason: null, legacy: true, createdAt: t0, actor: null },
