@@ -50,7 +50,7 @@ export function WishlistSkeleton() {
             {Array.from({ length: 8 }).map((_, index) => (
               <div
                 key={index}
-                className="flex flex-col overflow-hidden rounded-xl border border-border bg-card"
+                className="flex flex-col overflow-hidden rounded-card border border-border bg-card shadow-card"
               >
                 <Skeleton className="aspect-square w-full rounded-none" />
                 {/* Title (two lines) and price — the card's `p-4 gap-2`. */}

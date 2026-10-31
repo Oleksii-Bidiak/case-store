@@ -139,9 +139,11 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
       "flex",
       "flex-col",
       "overflow-hidden",
-      "rounded-xl",
+      // The ProductCard frame (TASK-2171): role radius + resting shadow.
+      "rounded-card",
       "border-border",
       "bg-card",
+      "shadow-card",
     );
     // Edge-to-edge square image, as in ProductCard.
     expect(card.firstElementChild).toHaveClass(

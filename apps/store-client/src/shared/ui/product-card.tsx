@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
 import { formatMoney, getCardPricing, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
+import { cn } from "@/shared/lib/utils";
 import {
   ProductCardBadges,
   ProductCardSoldOutVeil,
@@ -99,7 +100,18 @@ export function ProductCard({
   const gradient = pickProductGradient(product.slug || product.name);
 
   return (
-    <article className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lift has-[[data-card-link]:focus-visible]:ring-2 has-[[data-card-link]:focus-visible]:ring-ring has-[[data-card-link]:focus-visible]:ring-offset-2 has-[[data-card-link]:focus-visible]:ring-offset-background">
+    // Frame (TASK-2171): `rounded-card` + `shadow-card`, the 1px border kept so
+    // the edge reads in dark. States (TASK-2079, design-system §6): hover lifts
+    // 4px onto `shadow-lift`, press settles to -1px — in-stock cards only, a
+    // sold-out card gets the border hover alone. Focus = the outline on the
+    // whole card, 3px off, while the stretched title link has focus.
+    <article
+      className={cn(
+        "group relative flex h-full flex-col overflow-hidden rounded-card border border-border bg-card shadow-card transition-interactive hover:border-foreground/25 has-[[data-card-link]:focus-visible]:outline-2 has-[[data-card-link]:focus-visible]:outline-offset-3 has-[[data-card-link]:focus-visible]:outline-solid has-[[data-card-link]:focus-visible]:outline-ring",
+        product.inStock &&
+          "hover:-translate-y-1 hover:shadow-lift active:-translate-y-px active:shadow-card motion-reduce:hover:translate-y-0 motion-reduce:active:translate-y-0",
+      )}
+    >
       {/* Fixed square box, gradient behind it: the photo is letterboxed
           (`object-contain` inside `ProductCardImage`), never cropped — and the
           hover zoom is declared there too, so it is not duplicated per card. */}
@@ -139,7 +151,7 @@ export function ProductCard({
             pointers) until hover or keyboard focus enters the card, then slides
             up. */}
         {hoverAction && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 translate-y-2 p-2.5 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 motion-reduce:transition-none">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 translate-y-1.5 p-2.5 opacity-0 transition-interactive group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 motion-reduce:translate-y-0">
             {hoverAction}
           </div>
         )}
@@ -147,7 +159,7 @@ export function ProductCard({
 
       <div className="flex flex-1 flex-col gap-2 p-4">
         <h3
-          className={`line-clamp-2 text-sm font-medium text-card-foreground transition-colors group-hover:text-primary ${reserveRows ? "min-h-10" : ""}`}
+          className={`line-clamp-2 text-sm font-medium text-card-foreground decoration-1 underline-offset-3 group-hover:underline ${reserveRows ? "min-h-10" : ""}`}
         >
           <Link
             href={`/products/${product.slug}`}

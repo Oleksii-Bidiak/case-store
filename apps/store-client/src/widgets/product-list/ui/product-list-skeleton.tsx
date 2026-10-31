@@ -73,7 +73,7 @@ interface ProductListSkeletonProps {
  */
 function ProductCardSkeleton() {
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
+    <div className="flex flex-col overflow-hidden rounded-card border border-border bg-card shadow-card">
       <Skeleton className="aspect-square w-full rounded-none" />
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex flex-col gap-2">

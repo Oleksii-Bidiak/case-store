@@ -9,6 +9,7 @@ import {
   ProductCardSoldOutVeil,
 } from "@/shared/ui";
 import { formatMoney, getCardPricing, pickProductGradient } from "@/shared/lib";
+import { cn } from "@/shared/lib/utils";
 import { isInStock } from "../model/wishlist-catalog";
 import { WishlistCardActions } from "./wishlist-card-actions";
 
@@ -56,7 +57,15 @@ export function WishlistItemCard({
   const gradient = pickProductGradient(item.productSlug || item.productName);
 
   return (
-    <article className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lift has-[[data-card-link]:focus-visible]:ring-2 has-[[data-card-link]:focus-visible]:ring-ring has-[[data-card-link]:focus-visible]:ring-offset-2 has-[[data-card-link]:focus-visible]:ring-offset-background">
+    // The ProductCard frame and states (TASK-2171, TASK-2079) — keep the two
+    // identical (TASK-875): lift only while in stock.
+    <article
+      className={cn(
+        "group relative flex h-full flex-col overflow-hidden rounded-card border border-border bg-card shadow-card transition-interactive hover:border-foreground/25 has-[[data-card-link]:focus-visible]:outline-2 has-[[data-card-link]:focus-visible]:outline-offset-3 has-[[data-card-link]:focus-visible]:outline-solid has-[[data-card-link]:focus-visible]:outline-ring",
+        inStock &&
+          "hover:-translate-y-1 hover:shadow-lift active:-translate-y-px active:shadow-card motion-reduce:hover:translate-y-0 motion-reduce:active:translate-y-0",
+      )}
+    >
       <div
         className={`relative aspect-square w-full overflow-hidden bg-gradient-to-br ${gradient}`}
       >
@@ -76,7 +85,7 @@ export function WishlistItemCard({
             pointers) until the card is hovered or receives keyboard focus, then
             slides up. Above the stretched link (z-20) so it opens without
             navigating. The trigger only needs the item's name + slug. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 translate-y-2 p-2.5 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 motion-reduce:transition-none">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 translate-y-1.5 p-2.5 opacity-0 transition-interactive group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 motion-reduce:translate-y-0">
           <ProductQuickViewTrigger
             product={{ name: item.productName, slug: item.productSlug }}
           />
@@ -84,7 +93,7 @@ export function WishlistItemCard({
       </div>
 
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <h3 className="line-clamp-2 min-h-10 text-sm font-medium text-card-foreground transition-colors group-hover:text-primary">
+        <h3 className="line-clamp-2 min-h-10 text-sm font-medium text-card-foreground decoration-1 underline-offset-3 group-hover:underline">
           <Link
             href={`/products/${item.productSlug}`}
             data-card-link
