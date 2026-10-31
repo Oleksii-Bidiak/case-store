@@ -435,6 +435,13 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
     ],
   };
   const siblings = [{ refundedAmount: { toString: () => '100.00' } }, { refundedAmount: null }];
+  /** What the service validated the move against (TASK-1961/2044). */
+  const current = {
+    id: RETURN_ID,
+    orderId: ORDER_ID,
+    status: ReturnStatus.RECEIVED,
+    decision: ReturnDecision.REFUND,
+  };
 
   /** Every statement, in the order the transaction issued it. */
   let issued: string[];
@@ -444,6 +451,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
     $queryRaw: jest.fn(),
     return: {
       findUniqueOrThrow: jest.fn(),
+      findUnique: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
@@ -469,9 +477,9 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
       issued.push('ledger');
       return siblings;
     });
-    txMock.return.update.mockImplementation(async () => {
+    txMock.return.updateMany.mockImplementation(async () => {
       issued.push('write');
-      return existing;
+      return { count: 1 };
     });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -493,7 +501,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
       issued.push('check');
     });
 
-    await repository.resolve(RETURN_ID, fields, { assertRefundable });
+    await repository.resolve(current, fields, { assertRefundable });
 
     expect(txPrismaMock.$transaction).toHaveBeenCalledTimes(1);
     expect(issued.slice(0, 5)).toEqual(['read', 'lock', 'ledger', 'check', 'write']);
@@ -502,7 +510,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
   it("hands the check the order total, the OTHER returns and this return's priced lines", async () => {
     const assertRefundable = jest.fn();
 
-    await repository.resolve(RETURN_ID, fields, { assertRefundable });
+    await repository.resolve(current, fields, { assertRefundable });
 
     const [ledger] = assertRefundable.mock.calls[0] as unknown as [
       {
@@ -519,7 +527,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
   });
 
   it('takes a row lock (FOR UPDATE) on the order the return belongs to', async () => {
-    await repository.resolve(RETURN_ID, fields, { assertRefundable: jest.fn() });
+    await repository.resolve(current, fields, { assertRefundable: jest.fn() });
 
     const [strings, ...values] = txMock.$queryRaw.mock.calls[0] as [
       TemplateStringsArray,
@@ -530,7 +538,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
   });
 
   it("reads every OTHER return of the order — this one's old amount is being replaced", async () => {
-    await repository.resolve(RETURN_ID, fields, { assertRefundable: jest.fn() });
+    await repository.resolve(current, fields, { assertRefundable: jest.fn() });
 
     expect(txMock.return.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { orderId: ORDER_ID, id: { not: RETURN_ID } } }),
@@ -541,7 +549,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
     const refusal = new Error('over the ceiling');
 
     await expect(
-      repository.resolve(RETURN_ID, fields, {
+      repository.resolve(current, fields, {
         assertRefundable: () => {
           throw refusal;
         },
@@ -552,7 +560,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
   });
 
   it('takes no lock when there is no refund to check', async () => {
-    await repository.resolve(RETURN_ID, { status: ReturnStatus.APPROVED });
+    await repository.resolve(current, { status: ReturnStatus.APPROVED });
 
     expect(txMock.$queryRaw).not.toHaveBeenCalled();
     expect(txMock.return.findMany).not.toHaveBeenCalled();
@@ -563,9 +571,14 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
   // otherwise the admin panel shows two different messages for one fact.
   it('409 RETURN_ALREADY_RESTOCKED when the stamp was taken meanwhile, touching no product', async () => {
     txMock.return.updateMany.mockResolvedValue({ count: 0 });
+    txMock.return.findUnique.mockResolvedValue({ restockedAt: new Date() });
 
     const caught = await repository
-      .resolve(RETURN_ID, { status: ReturnStatus.RECEIVED }, { restock: true })
+      .resolve(
+        { ...current, status: ReturnStatus.APPROVED },
+        { status: ReturnStatus.RECEIVED },
+        { restock: true },
+      )
       .then(
         () => {
           throw new Error('expected a refusal');
@@ -577,6 +590,71 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
     expect((caught as ConflictException).getResponse()).toEqual({
       error: 'RETURN_ALREADY_RESTOCKED',
       message: 'These returned goods have already been credited back to inventory',
+    });
+    expect(txMock.product.update).not.toHaveBeenCalled();
+  });
+
+  // ── The state guard (TASK-1961, TASK-2044) ─────────────────────────────────
+  // The service validated the move against a read taken OUTSIDE this
+  // transaction. A decision committed in between (a refusal, a switch to
+  // replacement) must not be overwritten by a write keyed on the id alone.
+
+  it('writes only while the return still holds the status and decision the service validated', async () => {
+    await repository.resolve(current, { status: ReturnStatus.REFUNDED });
+
+    expect(txMock.return.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: RETURN_ID, status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND },
+      }),
+    );
+    expect(txMock.return.update).not.toHaveBeenCalled();
+  });
+
+  it('409 RETURN_TRANSITION_INVALID when the return moved meanwhile', async () => {
+    txMock.return.updateMany.mockResolvedValue({ count: 0 });
+
+    const caught = await repository
+      .resolve(current, { status: ReturnStatus.REFUNDED })
+      .catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toMatchObject({
+      error: 'RETURN_TRANSITION_INVALID',
+    });
+  });
+
+  it('guards the restock stamp with the validated status and decision too', async () => {
+    const approved = { ...current, status: ReturnStatus.APPROVED };
+
+    await repository.resolve(approved, { status: ReturnStatus.RECEIVED }, { restock: true });
+
+    expect(txMock.return.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: RETURN_ID,
+          status: ReturnStatus.APPROVED,
+          decision: ReturnDecision.REFUND,
+          restockedAt: null,
+        },
+      }),
+    );
+  });
+
+  it('409 RETURN_TRANSITION_INVALID when a restock lost to another transition, touching no product', async () => {
+    txMock.return.updateMany.mockResolvedValue({ count: 0 });
+    txMock.return.findUnique.mockResolvedValue({ restockedAt: null });
+
+    const caught = await repository
+      .resolve(
+        { ...current, status: ReturnStatus.APPROVED },
+        { status: ReturnStatus.RECEIVED },
+        { restock: true },
+      )
+      .catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toMatchObject({
+      error: 'RETURN_TRANSITION_INVALID',
     });
     expect(txMock.product.update).not.toHaveBeenCalled();
   });

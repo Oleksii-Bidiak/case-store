@@ -751,9 +751,13 @@ describe('ReturnService (TASK-340)', () => {
   // ─── resolveReturn ──────────────────────────────────────────────────────────
 
   describe('resolveReturn', () => {
+    /** Whatever else the basis carries, it names this return. */
+    const RESOLVE_BASIS: unknown = expect.objectContaining({ id: RETURN_ID });
+
     beforeEach(() => {
-      returnRepositoryMock.resolve.mockImplementation((_id: string, fields: { status: string }) =>
-        Promise.resolve(makeReturn({ status: fields.status as ReturnStatus })),
+      returnRepositoryMock.resolve.mockImplementation(
+        (_current: unknown, fields: { status: string }) =>
+          Promise.resolve(makeReturn({ status: fields.status as ReturnStatus })),
       );
     });
 
@@ -765,8 +769,30 @@ describe('ReturnService (TASK-340)', () => {
       await service.resolveReturn(RETURN_ID, { status: ReturnStatus.RECEIVED });
 
       expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
-        RETURN_ID,
+        RESOLVE_BASIS,
         expect.objectContaining({ status: ReturnStatus.RECEIVED, resolvedAt: expect.any(Date) }),
+        { restock: false },
+      );
+    });
+
+    // The service validates against a read taken OUTSIDE the write; the
+    // repository makes the write conditional on exactly what was validated, so a
+    // decision committed in between is never overwritten (TASK-1961/2044).
+    it('hands the repository the status and decision it validated the move against', async () => {
+      returnRepositoryMock.findById.mockResolvedValue(
+        makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
+      );
+
+      await service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED });
+
+      expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
+        {
+          id: RETURN_ID,
+          orderId: ORDER_ID,
+          status: ReturnStatus.RECEIVED,
+          decision: ReturnDecision.REFUND,
+        },
+        expect.anything(),
         { restock: false },
       );
     });
@@ -852,9 +878,13 @@ describe('ReturnService (TASK-340)', () => {
 
         await service.resolveReturn(RETURN_ID, { status: ReturnStatus.RECEIVED, restock: true });
 
-        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(RETURN_ID, expect.anything(), {
-          restock: true,
-        });
+        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
+          RESOLVE_BASIS,
+          expect.anything(),
+          {
+            restock: true,
+          },
+        );
       });
 
       it('refuses to restock a return whose goods were already credited back', async () => {
@@ -889,9 +919,13 @@ describe('ReturnService (TASK-340)', () => {
 
         // Goods can come back broken, opened, or not ours at all. Only the
         // operator can see which.
-        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(RETURN_ID, expect.anything(), {
-          restock: false,
-        });
+        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
+          RESOLVE_BASIS,
+          expect.anything(),
+          {
+            restock: false,
+          },
+        );
       });
 
       it('never restocks on the refund step (the goods came back at RECEIVED)', async () => {
@@ -905,9 +939,13 @@ describe('ReturnService (TASK-340)', () => {
 
         await service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED });
 
-        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(RETURN_ID, expect.anything(), {
-          restock: false,
-        });
+        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
+          RESOLVE_BASIS,
+          expect.anything(),
+          {
+            restock: false,
+          },
+        );
       });
     });
 
@@ -1058,7 +1096,7 @@ describe('ReturnService (TASK-340)', () => {
         await refund('499.00');
 
         expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
-          RETURN_ID,
+          RESOLVE_BASIS,
           expect.objectContaining({ refundedAmount: '499.00' }),
           { restock: false, assertRefundable: expect.any(Function) },
         );
@@ -1067,16 +1105,20 @@ describe('ReturnService (TASK-340)', () => {
       it('asks nothing when no amount is being recorded', async () => {
         await service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED });
 
-        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(RETURN_ID, expect.anything(), {
-          restock: false,
-        });
+        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
+          RESOLVE_BASIS,
+          expect.anything(),
+          {
+            restock: false,
+          },
+        );
       });
 
       it('lets an operator clear a mistyped amount — null is never over any ceiling', async () => {
         await refund(null);
 
         expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
-          RETURN_ID,
+          RESOLVE_BASIS,
           expect.objectContaining({ refundedAmount: null }),
           { restock: false },
         );
