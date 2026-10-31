@@ -1764,6 +1764,53 @@ export const dict = {
           ? "своя картинка для соцмереж"
           : "картинка для соцмереж — автоматична",
       ].join(" · "),
+
+    // --- TASK-1956: the category icon (CategoryIconPicker mockup) -----------
+    // One block for the picker, its preview, the read-only view and the tree's
+    // «Без іконки» badge/banner, so the vocabulary stays in one place.
+    icon: {
+      label: "Іконка",
+      // Singular labels from the mockup's picker grid, by sprite key.
+      labels: {
+        cases: "Чохол",
+        glass: "Захисне скло",
+        chargers: "Зарядка",
+        cables: "Кабель",
+        "power-banks": "Павербанк",
+        headphones: "Навушники",
+        watches: "Годинник",
+        speakers: "Колонка",
+        holders: "Тримач",
+        smartphones: "Смартфон",
+        memory: "Карта пам’яті",
+      },
+      folder: "Загальна (папка)",
+      placeholder: "Оберіть іконку",
+      none: "Без іконки",
+      gridAria: "Іконки категорій",
+      searchPlaceholder: "Пошук: зарядка, charger, кабель…",
+      searchPlaceholderShort: "Пошук",
+      searchAria: "Пошук іконки",
+      noResults: "Нічого не знайдено",
+      used: "вже в іншій кореневій категорії",
+      keysHint: "← → ↑ ↓ — перехід, Enter — обрати",
+      sheetTitle: "Іконка категорії",
+      choose: (label: string) => `Обрати «${label}»`,
+      // Soft: the API does not require an icon; the folder stands in.
+      rootHint:
+        "Коренева категорія без іконки показується на сайті із загальною «папкою».",
+      unknownKey: "Оберіть іконку зі списку",
+      emptyConsequence: "На сайті показується загальна «папка»",
+      previewTitle: "Як це виглядатиме на сайті",
+      previewSub: "Оновлюється одразу, ще до збереження.",
+      previewMenu: "Меню «Каталог»",
+      previewTiles: "Плитки на головній",
+      previewNewName: "Нова категорія",
+      // The categories list (treegrid).
+      missingRoots: (count: number) =>
+        `${countLabel(count, ["коренева категорія", "кореневі категорії", "кореневих категорій"])} без іконки.`,
+      missingRootsBody: "На сайті вони показуються із загальною «папкою».",
+    },
   },
 
   // --- Devices: compatibility taxonomy (TASK-190) -----------------------------

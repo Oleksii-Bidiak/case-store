@@ -33,7 +33,10 @@ import {
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, GripVertical, RefreshCwIcon } from "lucide-react";
-import { flattenAdminCategoryTree } from "@/entities/category";
+import {
+  flattenAdminCategoryTree,
+  isCategoryIconKey,
+} from "@/entities/category";
 import { useAuth } from "@/entities/session";
 import { PERM } from "@/entities/permission";
 import {
@@ -66,6 +69,7 @@ import {
   Badge,
   Button,
   Callout,
+  CategoryIcon,
   Checkbox,
   DropHintPill,
   LiveAnnouncer,
@@ -86,6 +90,7 @@ import { AdminCategoryTreeSkeleton } from "./admin-category-tree-skeleton";
 
 const t = dict.categories.tree;
 const b = dict.categories.tree.bulk;
+const ic = dict.categoryForm.icon;
 const a = dict.reorderTree.announce;
 
 export const EXPANDED_STORAGE_KEY = "admin:category-tree:expanded";
@@ -393,6 +398,16 @@ function CategoryTreeView() {
   const items = moveState?.preview ?? reorder.items;
   const metaById = useMemo(
     () => new Map(serverItems.map((i) => [i.id, i])),
+    [serverItems],
+  );
+
+  // TASK-1956: roots the storefront draws with the generic folder — active or
+  // hidden alike. A soft nudge: the API does not require an icon.
+  const rootsWithoutIcon = useMemo(
+    () =>
+      serverItems.filter(
+        (i) => i.parentId === null && !isCategoryIconKey(i.icon),
+      ).length,
     [serverItems],
   );
 
@@ -1109,6 +1124,7 @@ function CategoryTreeView() {
         id={row.item.id}
         name={row.item.label}
         slug={meta?.slug ?? ""}
+        icon={meta?.icon ?? null}
         productCount={meta?.productCount ?? 0}
         subtreeProductCount={
           meta?.subtreeProductCount ?? meta?.productCount ?? 0
@@ -1223,6 +1239,12 @@ function CategoryTreeView() {
 
       {readOnlyNotice ? (
         <Callout variant="muted">{dict.categories.readOnly.treeNotice}</Callout>
+      ) : null}
+
+      {canWrite && rootsWithoutIcon > 0 ? (
+        <Callout variant="warning" title={ic.missingRoots(rootsWithoutIcon)}>
+          {ic.missingRootsBody}
+        </Callout>
       ) : null}
 
       {isLocked && canWrite && (
@@ -1369,6 +1391,8 @@ interface CategoryTreeRowProps {
   id: string;
   name: string;
   slug: string;
+  /** `Category.icon` — a sprite key (TASK-1956); null = the generic folder. */
+  icon: string | null;
   /** ACTIVE products filed directly on this category. */
   productCount: number;
   /** ACTIVE products in this category AND its whole subtree (TASK-408). */
@@ -1424,6 +1448,7 @@ function CategoryTreeRow({
   id,
   name,
   slug,
+  icon,
   productCount,
   subtreeProductCount,
   hiddenByParent,
@@ -1488,6 +1513,13 @@ function CategoryTreeRow({
    */
   const shown = isActive && !hiddenByParent;
   const statusLabel = shown ? t.statusShown : t.statusHidden;
+
+  // TASK-1956: a root always shows its icon box — dashed, with «Без іконки»,
+  // when the storefront falls back to the folder. A subcategory shows a box
+  // only when it has an icon of its own (optional for it).
+  const hasIcon = isCategoryIconKey(icon);
+  const isRoot = level === 1;
+  const missingIcon = isRoot && !hasIcon;
 
   return (
     <TableRow
@@ -1579,10 +1611,32 @@ function CategoryTreeRow({
               />
             </Button>
           )}
+          {hasIcon || missingIcon ? (
+            <span
+              aria-hidden="true"
+              data-icon-box={missingIcon ? "missing" : "set"}
+              className={cn(
+                "mr-1 grid size-8 shrink-0 place-items-center rounded-sm",
+                missingIcon
+                  ? "border border-dashed border-warning/70 text-muted-foreground"
+                  : "bg-muted text-foreground",
+              )}
+            >
+              <CategoryIcon icon={icon} className="size-5" />
+            </span>
+          ) : null}
           <div className="min-w-0">
             <span className={level === 1 ? "font-semibold" : undefined}>
               {highlight(name, matched ? search : "")}
             </span>
+            {missingIcon ? (
+              <Badge
+                variant="outline"
+                className="ml-2 border-transparent bg-warning/22 text-foreground"
+              >
+                {ic.none}
+              </Badge>
+            ) : null}
             {dropHint?.mode === "nest" ? (
               <DropHintPill>{dropHint.label}</DropHintPill>
             ) : null}

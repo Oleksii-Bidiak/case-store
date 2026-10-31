@@ -976,3 +976,87 @@ describe("CategoryForm — uploads land in the media library (TASK-2002)", () =>
     expect(categoryRoute).toEqual([]);
   });
 });
+
+describe("CategoryForm — icon field (TASK-1956)", () => {
+  const ic = dict.categoryForm.icon;
+  /** The trigger is named by its label, «Іконка». */
+  const iconTrigger = () => screen.getByRole("button", { name: ic.label });
+  const preview = () =>
+    document.querySelector<HTMLElement>(
+      '[data-slot="category-icon-preview"]',
+    ) as HTMLElement;
+
+  function stubIconTree() {
+    // Not fresh literals at the call — the extra `icon` passes the row type.
+    const rows = [
+      { ...makeCategoryRow(UUID_A, "Чохли"), icon: "cases" },
+      { ...makeCategoryRow(UUID_B, "Кабелі"), icon: null },
+    ];
+    stubCategories(rows);
+  }
+
+  it("CREATE: a root without an icon gets the soft hint, saves anyway, and the pick is submitted", async () => {
+    stubIconTree();
+    const onSubmit = jest.fn();
+    renderWithProviders(<CategoryForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(nameInput(), "Зарядні пристрої");
+    expect(iconTrigger()).toHaveTextContent(ic.placeholder);
+    expect(screen.getByText(ic.rootHint)).toBeInTheDocument();
+    expect(iconTrigger()).toHaveAccessibleDescription(ic.rootHint);
+
+    await userEvent.click(iconTrigger());
+    // Another root already uses «Чохол» — a hint, not a block.
+    expect(
+      await screen.findByRole("radio", { name: `Чохол — ${ic.used}` }),
+    ).toBeEnabled();
+    await userEvent.click(screen.getByRole("radio", { name: "Зарядка" }));
+
+    expect(iconTrigger()).toHaveTextContent("Зарядка");
+    expect(screen.queryByText(ic.rootHint)).not.toBeInTheDocument();
+    // The live preview follows the form before saving: the new category is
+    // appended to the roots with its typed name and picked icon.
+    const [current] = within(preview()).getAllByText("Зарядні пристрої");
+    expect(
+      current.closest("li")?.querySelector("use")?.getAttribute("href"),
+    ).toBe("/icons/categories.svg#cat-chargers");
+    expect(within(preview()).getByText("Чохли")).toBeInTheDocument();
+
+    await submitForm();
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ icon: "chargers" });
+  });
+
+  it("CREATE: an icon-less root still submits (the requirement is soft)", async () => {
+    stubIconTree();
+    const onSubmit = jest.fn();
+    renderWithProviders(<CategoryForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(nameInput(), "Без іконки");
+    await submitForm();
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ icon: "" });
+  });
+
+  it("EDIT: seeds the icon from defaultValues and takes a new pick", async () => {
+    stubIconTree();
+    renderWithProviders(
+      <CategoryForm
+        id="cat-9"
+        defaultValues={{ name: "Кабелі", icon: "cables" }}
+        onSubmit={jest.fn()}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() => expect(iconTrigger()).toHaveTextContent("Кабель"));
+    await userEvent.click(iconTrigger());
+    await userEvent.click(
+      await screen.findByRole("radio", { name: "Павербанк" }),
+    );
+    expect(iconTrigger()).toHaveTextContent("Павербанк");
+    expect(
+      screen.getByRole("button", { name: /Зберегти категорію/ }),
+    ).toBeEnabled();
+  });
+});

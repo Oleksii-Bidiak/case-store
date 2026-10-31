@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { CreateCategoryDto, UpdateCategoryDto } from "@/entities/category";
+import {
+  isCategoryIconKey,
+  type CreateCategoryDto,
+  type UpdateCategoryDto,
+} from "@/entities/category";
 import { dict } from "@/shared/config";
 import { SLUG_PATTERN } from "@/shared/lib/slug";
 import { ogImageField, seoTextFields } from "@/shared/lib/seo-fields-schema";
@@ -51,6 +55,20 @@ export const categorySchema = z.object({
     .or(z.literal("")),
 
   isActive: z.boolean().optional(),
+
+  // TASK-1956: a key into the category icon sprite; "" = no icon (the
+  // storefront draws the generic folder). Deliberately NOT required for a root:
+  // the approved plan keeps that soft — a hint under the field and the tree's
+  // «Без іконки» badge — so an icon-less root still saves. An unknown key is
+  // rejected (the API validates the same allow-list).
+  icon: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine(
+      (value) => !value || isCategoryIconKey(value),
+      dict.categoryForm.icon.unknownKey,
+    ),
 
   // SEO overrides (TASK-236). Optional free text; storefront <head> wiring is
   // deferred to Phase D, this only persists the values.
@@ -105,6 +123,7 @@ export function categoryFormValuesToDto(
   const metaTitle = values.metaTitle?.trim();
   const metaDescription = values.metaDescription?.trim();
   const ogImage = values.ogImage?.trim();
+  const icon = values.icon && isCategoryIconKey(values.icon) ? values.icon : "";
 
   return {
     name: values.name,
@@ -113,6 +132,9 @@ export function categoryFormValuesToDto(
     image: image ? image : undefined,
     parentId: parentId ? parentId : options.isUpdate ? null : undefined,
     isActive: values.isActive,
+    // TASK-1956: no icon clears it on UPDATE (explicit null), is omitted on
+    // CREATE — the same rule as the SEO overrides below.
+    icon: icon ? icon : options.isUpdate ? null : undefined,
     // Blank clears the override on UPDATE (explicit null so Prisma writes it),
     // and is simply omitted on CREATE (same rule as parentId, TASK-236).
     metaTitle: metaTitle ? metaTitle : options.isUpdate ? null : undefined,
