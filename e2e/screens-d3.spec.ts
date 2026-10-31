@@ -21,7 +21,9 @@ import { API_PORT } from "./fixtures/ports";
 
 const MODE = process.env.D3_SHOTS;
 const ENABLED = MODE === "before" || MODE === "after";
-const OUT_DIR = path.resolve(__dirname, "../docs/images/d3", MODE ?? "off");
+/** `D3_SET` keeps one session's pair apart from another's (SД3a → `d3`, SД3b → `d3b`). */
+const SET = process.env.D3_SET ?? "d3";
+const OUT_DIR = path.resolve(__dirname, "../docs/images", SET, MODE ?? "off");
 
 const VIEWPORTS = [
   { label: "1440", width: 1440, height: 900 },
@@ -105,6 +107,46 @@ test("search by model", async ({ page }) => {
 
 test("wishlist", async ({ page }) => {
   await shoot(page, "wishlist", "/wishlist");
+});
+
+/**
+ * The «Каталог» menu, open (TASK-2072): from lg the header pill opens the mega
+ * menu; below lg the burger opens the menu sheet, and — once SД3b lands — its
+ * «Каталог» row opens the step-by-step catalog. Viewport-only shots: the open
+ * popover is what matters, not the page under it.
+ */
+test("catalog menu", async ({ page }) => {
+  for (const vp of VIEWPORTS) {
+    try {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto("/products", {
+        waitUntil: "networkidle",
+        timeout: RENDER_TIMEOUT_MS,
+      });
+      if (vp.width >= 1024) {
+        await page
+          .locator("header")
+          .getByRole("button", { name: /Каталог/ })
+          .first()
+          .click();
+      } else {
+        await page.getByRole("button", { name: "Відкрити меню" }).click();
+        const drill = page
+          .getByRole("dialog")
+          .getByRole("button", { name: /^Каталог/ })
+          .first();
+        if (await drill.isVisible().catch(() => false)) await drill.click();
+      }
+      await page.waitForTimeout(600);
+      await page.screenshot({
+        path: path.join(OUT_DIR, `catalog-menu-${vp.label}.png`),
+      });
+    } catch (error) {
+      note(
+        `skipped catalog-menu @ ${vp.label}: ${(error as Error).message.split("\n")[0]}`,
+      );
+    }
+  }
 });
 
 test("my devices", async ({ page }) => {
