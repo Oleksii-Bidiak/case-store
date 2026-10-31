@@ -14,6 +14,8 @@ const DECIDED_AT = "2026-09-03T12:30:00.000Z";
 interface ReturnOverrides {
   status?: string;
   createdByUserId?: string | null;
+  createdBy?: { id: string; name: string; email: string } | null;
+  channel?: "ACCOUNT" | "GUEST_LINK" | "OPERATOR";
   decision?: string | null;
   decisionReason?: string | null;
   decidedAt?: string | null;
@@ -36,8 +38,9 @@ function makeReturn(id: string, overrides: ReturnOverrides = {}) {
       overrides.createdByUserId === undefined
         ? BUYER_ID
         : overrides.createdByUserId,
+    createdBy: overrides.createdBy ?? null,
     requestedOutcome: null,
-    channel: "ACCOUNT",
+    channel: overrides.channel ?? "ACCOUNT",
     decision: overrides.decision ?? null,
     decisionReason: overrides.decisionReason ?? null,
     decidedAt: overrides.decidedAt ?? null,
@@ -90,10 +93,9 @@ describe("OrderReturnsSection (TASK-724)", () => {
       makeReturn("ret00002-bbbb", { status: "REFUNDED" }),
     ]);
 
-    renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={BUYER_ID} />,
-      { auth: READER },
-    );
+    renderWithProviders(<OrderReturnsSection orderId={ORDER_ID} />, {
+      auth: READER,
+    });
 
     expect(
       screen.getByRole("heading", { name: dict.orders.returnsForOrder }),
@@ -108,60 +110,84 @@ describe("OrderReturnsSection (TASK-724)", () => {
     expect(screen.getByText(returnStatusLabel("REFUNDED"))).toBeInTheDocument();
   });
 
-  it("marks a return filed by an operator, and not one filed by the buyer", async () => {
+  // The channel says who filed it, not a comparison of account ids: an
+  // account return filed after the buyer's account changed, or a guest-link
+  // return, would otherwise be read as the shop's doing.
+  it("marks a return of the operator channel with the operator's name", async () => {
     serveReturns([
-      makeReturn("ret00001-aaaa", { createdByUserId: BUYER_ID }),
-      makeReturn("ret00002-bbbb", { createdByUserId: "operator-uuid-1" }),
+      makeReturn("ret00001-aaaa", { channel: "ACCOUNT" }),
+      makeReturn("ret00002-bbbb", {
+        channel: "OPERATOR",
+        createdByUserId: "operator-uuid-1",
+        createdBy: {
+          id: "operator-uuid-1",
+          name: "Олена Коваль",
+          email: "olena@example.com",
+        },
+      }),
     ]);
 
-    renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={BUYER_ID} />,
-      { auth: READER },
-    );
+    renderWithProviders(<OrderReturnsSection orderId={ORDER_ID} />, {
+      auth: READER,
+    });
 
     const operatorRow = await findRow("ret00002-bbbb");
     const buyerRow = await findRow("ret00001-aaaa");
 
-    expect(operatorRow).toHaveTextContent(dict.returns.createdByOperator);
+    expect(operatorRow).toHaveTextContent(
+      dict.returns.createdByOperatorName("Олена Коваль"),
+    );
     expect(buyerRow).not.toHaveTextContent(dict.returns.createdByOperator);
   });
 
-  it("treats any author of a guest order's return as an operator", async () => {
+  it("marks an operator return whose author account is gone without a name", async () => {
     serveReturns([
-      makeReturn("ret00001-aaaa", { createdByUserId: "operator-uuid-1" }),
+      makeReturn("ret00001-aaaa", {
+        channel: "OPERATOR",
+        createdByUserId: null,
+        createdBy: null,
+      }),
     ]);
 
-    renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={null} />,
-      { auth: READER },
-    );
+    renderWithProviders(<OrderReturnsSection orderId={ORDER_ID} />, {
+      auth: READER,
+    });
 
+    const row = await findRow("ret00001-aaaa");
     expect(
-      await screen.findByText(dict.returns.createdByOperator),
+      within(row).getByText(dict.returns.createdByOperator),
     ).toBeInTheDocument();
   });
 
-  it("does not mark a legacy row whose author is unknown", async () => {
-    serveReturns([makeReturn("ret00001-aaaa", { createdByUserId: null })]);
+  it("does not mark a buyer's return whose author differs from the order's account", async () => {
+    serveReturns([
+      makeReturn("ret00001-aaaa", {
+        channel: "GUEST_LINK",
+        createdByUserId: null,
+      }),
+      makeReturn("ret00002-bbbb", {
+        channel: "ACCOUNT",
+        createdByUserId: "another-account-uuid",
+      }),
+    ]);
 
-    renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={null} />,
-      { auth: READER },
-    );
+    renderWithProviders(<OrderReturnsSection orderId={ORDER_ID} />, {
+      auth: READER,
+    });
 
     await findRow("ret00001-aaaa");
+    await findRow("ret00002-bbbb");
     expect(
-      screen.queryByText(dict.returns.createdByOperator),
+      screen.queryByText(dict.returns.createdByOperator, { exact: false }),
     ).not.toBeInTheDocument();
   });
 
   it("says so when the order has no returns", async () => {
     serveReturns([]);
 
-    renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={BUYER_ID} />,
-      { auth: READER },
-    );
+    renderWithProviders(<OrderReturnsSection orderId={ORDER_ID} />, {
+      auth: READER,
+    });
 
     expect(
       await screen.findByText(dict.orders.returnsForOrderEmpty),
@@ -172,7 +198,7 @@ describe("OrderReturnsSection (TASK-724)", () => {
     const lookups = serveReturns([makeReturn("ret00001-aaaa")]);
 
     const { container } = renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={BUYER_ID} />,
+      <OrderReturnsSection orderId={ORDER_ID} />,
       { auth: { permissions: ["orders:read", "orders:write"] } },
     );
 
@@ -190,10 +216,9 @@ describe("OrderReturnsSection — what each return holds (TASK-1962)", () => {
   it("names the return the way its own page does, with the full id on hover", async () => {
     serveReturns([makeReturn("7c1e9a42-ffff-4000-8000-000000000001")]);
 
-    renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={BUYER_ID} />,
-      { auth: READER },
-    );
+    renderWithProviders(<OrderReturnsSection orderId={ORDER_ID} />, {
+      auth: READER,
+    });
 
     const link = await screen.findByRole("link", {
       name: `${dict.returns.heading} #7C1E9A42`,
@@ -213,10 +238,9 @@ describe("OrderReturnsSection — what each return holds (TASK-1962)", () => {
       }),
     ]);
 
-    renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={BUYER_ID} />,
-      { auth: READER },
-    );
+    renderWithProviders(<OrderReturnsSection orderId={ORDER_ID} />, {
+      auth: READER,
+    });
 
     const row = await findRow("ret00001-aaaa");
     const lines = within(row).getByRole("list", {
@@ -244,10 +268,9 @@ describe("OrderReturnsSection — what each return holds (TASK-1962)", () => {
       }),
     ]);
 
-    renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={BUYER_ID} />,
-      { auth: READER },
-    );
+    renderWithProviders(<OrderReturnsSection orderId={ORDER_ID} />, {
+      auth: READER,
+    });
 
     const row = await findRow("ret00001-aaaa");
     expect(row).toHaveTextContent(returnDecisionLabel("REJECT"));
@@ -267,10 +290,9 @@ describe("OrderReturnsSection — what each return holds (TASK-1962)", () => {
       }),
     ]);
 
-    renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={BUYER_ID} />,
-      { auth: READER },
-    );
+    renderWithProviders(<OrderReturnsSection orderId={ORDER_ID} />, {
+      auth: READER,
+    });
 
     const row = await findRow("ret00001-aaaa");
     expect(row).toHaveTextContent(returnDecisionLabel("REFUND"));
@@ -289,10 +311,9 @@ describe("OrderReturnsSection — what each return holds (TASK-1962)", () => {
       }),
     ]);
 
-    renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={BUYER_ID} />,
-      { auth: READER },
-    );
+    renderWithProviders(<OrderReturnsSection orderId={ORDER_ID} />, {
+      auth: READER,
+    });
 
     const row = await findRow("ret00001-aaaa");
     expect(row).toHaveTextContent(returnDecisionLabel("REPAIR"));
@@ -303,10 +324,9 @@ describe("OrderReturnsSection — what each return holds (TASK-1962)", () => {
   it("says when nobody has decided yet", async () => {
     serveReturns([makeReturn("ret00001-aaaa")]);
 
-    renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={BUYER_ID} />,
-      { auth: READER },
-    );
+    renderWithProviders(<OrderReturnsSection orderId={ORDER_ID} />, {
+      auth: READER,
+    });
 
     const row = await findRow("ret00001-aaaa");
     expect(row).toHaveTextContent(dict.returns.decisionNone);
@@ -324,10 +344,9 @@ describe("OrderReturnsSection — what each return holds (TASK-1962)", () => {
       }),
     ]);
 
-    renderWithProviders(
-      <OrderReturnsSection orderId={ORDER_ID} orderUserId={BUYER_ID} />,
-      { auth: READER },
-    );
+    renderWithProviders(<OrderReturnsSection orderId={ORDER_ID} />, {
+      auth: READER,
+    });
 
     await findRow("ret00002-bbbb");
     expect(lookups.count).toBe(1);

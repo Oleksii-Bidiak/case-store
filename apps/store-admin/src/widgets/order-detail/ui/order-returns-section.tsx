@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import {
+  ReturnChannel,
   returnDecisionLabel,
   returnStatusBadgeVariant,
   returnStatusLabel,
@@ -76,8 +77,6 @@ function ReturnDecisionSummary({ rma }: { rma: ReturnEntity }) {
 
 interface OrderReturnsSectionProps {
   orderId: string;
-  /** The buyer's account, or null for a guest order — see `createdByOperator`. */
-  orderUserId: string | null | undefined;
 }
 
 /**
@@ -98,14 +97,12 @@ interface OrderReturnsSectionProps {
  * one request for both.
  *
  * «Заявку створив оператор» marks a request the shop filed on the buyer's
- * behalf: somebody other than the order's own account opened it. On a guest
- * order (`userId` null) any author is an operator — a guest has no account to
- * file one with.
+ * behalf — read from its `channel === OPERATOR`, with the operator's name when
+ * the account still exists (same rule as the /returns/[id] card). Comparing
+ * the author with the order's account mislabelled guest-link returns and any
+ * return whose author was not the order's current account.
  */
-export function OrderReturnsSection({
-  orderId,
-  orderUserId,
-}: OrderReturnsSectionProps) {
+export function OrderReturnsSection({ orderId }: OrderReturnsSectionProps) {
   const { can } = useAuth();
   const canReadReturns = can(PERM.returnsRead);
   const { data, isLoading, isError } =
@@ -135,9 +132,7 @@ export function OrderReturnsSection({
       ) : (
         <ul className="flex flex-col divide-y divide-border">
           {returns.map((rma) => {
-            const byOperator =
-              rma.createdByUserId != null &&
-              rma.createdByUserId !== orderUserId;
+            const byOperator = rma.channel === ReturnChannel.OPERATOR;
             const number = formatOrderNumber(rma.id);
             return (
               <li
@@ -163,7 +158,11 @@ export function OrderReturnsSection({
                     )}
                   </span>
                   {byOperator ? (
-                    <Badge variant="secondary">{d.createdByOperator}</Badge>
+                    <Badge variant="secondary">
+                      {rma.createdBy
+                        ? d.createdByOperatorName(rma.createdBy.name)
+                        : d.createdByOperator}
+                    </Badge>
                   ) : null}
                 </div>
                 {rma.items.length > 0 ? (

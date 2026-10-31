@@ -518,7 +518,7 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
 
           {/* TASK-724: the order's return requests (absent without
               `returns:read`). */}
-          <OrderReturnsSection orderId={order.id} orderUserId={order.userId} />
+          <OrderReturnsSection orderId={order.id} />
 
           {/* TASK-484 / 623: the buyer's link — guest orders only. */}
           <div id="order-access-link" className="scroll-mt-20">
