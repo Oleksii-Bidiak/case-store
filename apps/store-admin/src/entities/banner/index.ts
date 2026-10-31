@@ -37,3 +37,5 @@ export {
   type BannerDisplayState,
 } from "./lib/display-state";
 export { duplicateBannerPayload } from "./lib/duplicate";
+// TASK-2013: Ukrainian wording for the API's coded banner-write refusals.
+export { bannerWriteErrorMessage } from "./lib/write-error";

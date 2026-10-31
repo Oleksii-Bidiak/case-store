@@ -2751,6 +2751,10 @@ export const dict = {
     toastStatusFailed: "Не вдалося змінити статус банера",
     toastDeleted: "Банер видалено",
     toastDeleteFailed: "Не вдалося видалити банер",
+    // TASK-2013: the API refuses a sixth active promo tile (409
+    // `BANNER_PROMO_TILE_LIMIT`); scheduled tiles hold a slot too.
+    errorPromoTileLimit:
+      "Промоплиток може бути не більше 5 одночасно — опублікованих і запланованих разом. Зніміть з публікації одну з наявних або збережіть цю як чернетку.",
 
     // Wave 198 (TASK-1073, BannersProposal БН1–БН4). The display state is
     // derived from `status` + the publication window, never stored:

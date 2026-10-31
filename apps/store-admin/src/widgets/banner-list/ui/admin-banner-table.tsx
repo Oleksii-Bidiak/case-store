@@ -35,6 +35,7 @@ import {
   BannerEntityPlacement,
   bannerDisplayState,
   bannerWindowLines,
+  bannerWriteErrorMessage,
   duplicateBannerPayload,
   getAdminBannerControllerFindAllQueryKey,
   useAdminBannerControllerCreate,
@@ -213,7 +214,8 @@ function AdminBannerView() {
           void invalidateList();
           toast.success(isPublished ? d.toastUnpublished : d.toastPublished);
         },
-        onError: () => toast.error(d.toastStatusFailed),
+        onError: (error) =>
+          toast.error(bannerWriteErrorMessage(error) ?? d.toastStatusFailed),
       },
     );
   };
@@ -242,7 +244,8 @@ function AdminBannerView() {
           void invalidateList();
           toast.success(d.toastMoved(d.placements[target]));
         },
-        onError: () => toast.error(d.toastMoveFailed),
+        onError: (error) =>
+          toast.error(bannerWriteErrorMessage(error) ?? d.toastMoveFailed),
       },
     );
   };

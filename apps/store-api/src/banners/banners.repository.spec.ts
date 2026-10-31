@@ -555,6 +555,39 @@ describe('BannerRepository', () => {
     });
   });
 
+  describe('countByPlacementAndStatus (TASK-2013)', () => {
+    it('counts the placement rows in the given statuses, leaving out the banner being written', async () => {
+      prismaMock.banner.count.mockResolvedValue(3);
+
+      const count = await repository.countByPlacementAndStatus(
+        BannerPlacement.PROMO_TILE,
+        [PublishStatus.PUBLISHED, PublishStatus.SCHEDULED],
+        'banner-uuid-1',
+      );
+
+      expect(count).toBe(3);
+      expect(prismaMock.banner.count).toHaveBeenCalledWith({
+        where: {
+          placement: BannerPlacement.PROMO_TILE,
+          status: { in: [PublishStatus.PUBLISHED, PublishStatus.SCHEDULED] },
+          id: { not: 'banner-uuid-1' },
+        },
+      });
+    });
+
+    it('adds no id filter when there is no banner to exclude (a create)', async () => {
+      prismaMock.banner.count.mockResolvedValue(0);
+
+      await repository.countByPlacementAndStatus(BannerPlacement.PROMO_TILE, [
+        PublishStatus.PUBLISHED,
+      ]);
+
+      expect(prismaMock.banner.count).toHaveBeenCalledWith({
+        where: { placement: BannerPlacement.PROMO_TILE, status: { in: [PublishStatus.PUBLISHED] } },
+      });
+    });
+  });
+
   describe('delete', () => {
     it('hard-deletes by id', async () => {
       prismaMock.banner.delete.mockResolvedValue(mockBanner);

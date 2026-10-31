@@ -10745,6 +10745,9 @@
           },
           "403": {
             "description": "Forbidden — admin access required"
+          },
+          "409": {
+            "description": "BANNER_PROMO_TILE_LIMIT — the write would make more than 5 PROMO_TILE banners published or scheduled at once; nothing was written"
           }
         },
         "security": [
@@ -10891,6 +10894,9 @@
           },
           "404": {
             "description": "Banner not found"
+          },
+          "409": {
+            "description": "BANNER_PROMO_TILE_LIMIT — the write would make more than 5 PROMO_TILE banners published or scheduled at once; nothing was written"
           }
         },
         "security": [
@@ -10968,6 +10974,9 @@
           },
           "404": {
             "description": "Banner not found"
+          },
+          "409": {
+            "description": "BANNER_PROMO_TILE_LIMIT — the write would make more than 5 PROMO_TILE banners published or scheduled at once; nothing was written"
           }
         },
         "security": [
