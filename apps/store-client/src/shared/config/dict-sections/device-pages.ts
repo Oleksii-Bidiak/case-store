@@ -55,9 +55,14 @@ export const devicePagesDict = {
 
     sectionCount: (count: number, model: string) =>
       `${productCount(count)} для ${model}`,
-    // «Усі чохли для iPhone 15 Pro» — the group's compatibility landing.
-    seeAll: (categoryLower: string, model: string) =>
-      `Усі ${categoryLower} для ${model}`,
+    // «Усі 44 →» — the group's compatibility landing. The visible label is
+    // just the count (the h2 already names category + model); seeAllContext
+    // is screen-reader-only and completes the name to «Усі 44 — чохли для
+    // iPhone 15 Pro», keeping the visible text as its prefix (label-in-name).
+    // Leading space: name computation may or may not add one between spans.
+    seeAll: (count: number) => `Усі ${formatCount(count)}`,
+    seeAllContext: (categoryLower: string, model: string) =>
+      ` — ${categoryLower} для ${model}`,
     railAria: (category: string) => `Товари: ${category}`,
 
     relatedAria: "Інші моделі",

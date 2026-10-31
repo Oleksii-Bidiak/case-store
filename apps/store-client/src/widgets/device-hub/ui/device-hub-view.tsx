@@ -12,7 +12,7 @@ import type {
   DeviceModelListItemEntity,
   PublicProductEntity,
 } from "@/shared/api/generated/models";
-import { H1_CLASS, H2_CLASS, PAGE_CONTAINER, dict } from "@/shared/config";
+import { H1_CLASS, PAGE_CONTAINER, dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { ProductCard } from "@/shared/ui";
 import {
@@ -209,10 +209,13 @@ function HubSection({
             <HubCategoryIcon slug={category.slug} className="size-5.5" />
           </span>
           <div className="min-w-0">
+            {/* H3-role sizing (design-system §3), not H2_CLASS: a hub has many
+                category sections, and a 30px heading would sit right under the
+                36px hero H1 and flatten the hierarchy. */}
             <h2
               id={headingId}
               tabIndex={-1}
-              className={`${H2_CLASS} text-foreground outline-none`}
+              className="font-display text-xl leading-tight font-bold text-foreground outline-none"
             >
               {category.name}
             </h2>
@@ -229,7 +232,10 @@ function HubSection({
             FOCUS_RING,
           )}
         >
-          {t.seeAll(lowerFirst(category.name), modelName)}
+          {t.seeAll(group.productCount)}
+          <span className="sr-only">
+            {t.seeAllContext(lowerFirst(category.name), modelName)}
+          </span>
           <ArrowRight aria-hidden="true" className="size-4" />
         </Link>
       </div>

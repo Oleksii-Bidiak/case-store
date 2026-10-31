@@ -88,9 +88,12 @@ describe("DeviceHubView", () => {
     const cases = screen.getByRole("region", { name: "Чохли" });
     expect(cases).toHaveAttribute("id", "cases");
     expect(within(cases).getAllByText(/^action /)).toHaveLength(5);
-    expect(
-      within(cases).getByRole("link", { name: /Усі чохли для iPhone 15 Pro/ }),
-    ).toHaveAttribute("href", "/catalog/cases/iphone-15-pro");
+    // Visible «Усі 1 250 →»; the accessible name keeps that text as its
+    // prefix and adds the category + model for screen readers.
+    const seeAll = within(cases).getByRole("link", {
+      name: /^Усі 1\s250\s+— чохли для iPhone 15 Pro$/,
+    });
+    expect(seeAll).toHaveAttribute("href", "/catalog/cases/iphone-15-pro");
     expect(
       within(cases).getByText(/^1\s250 товарів для iPhone 15 Pro$/),
     ).toBeInTheDocument();
