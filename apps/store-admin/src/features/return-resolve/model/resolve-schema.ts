@@ -209,3 +209,15 @@ export function resolveValuesToDto(
     ...(restock ? { restock: true } : {}),
   };
 }
+
+/**
+ * The notes-only PATCH body: no status, so no transition — the API saves the
+ * notes on a return of any status. Nothing else may ride along: the API refuses
+ * an amount or a restock without a status (RETURN_STATUS_REQUIRED).
+ */
+export function notesOnlyDto(operatorNotes: string): ResolveReturnDto {
+  return {
+    operatorNotes:
+      nullableTextField<ResolveReturnDto["operatorNotes"]>(operatorNotes),
+  };
+}
