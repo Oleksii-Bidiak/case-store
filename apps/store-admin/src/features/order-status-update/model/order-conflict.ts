@@ -25,6 +25,18 @@ export const ORDER_CONFLICT_CODE = {
    * fully returned (review of plan 180).
    */
   REVIVE_REFUNDED_PAYMENT: "ORDER_REVIVE_REFUNDED_PAYMENT",
+  /*
+   * AD-ORD-51 (TASK-1966) — reviving a cancelled order re-claims the promo slot
+   * its cancel released (TASK-771). `OrderRepository.reclaimRedemption` refuses
+   * with these `discount.errors.ts` codes as a 409, and the order stays
+   * CANCELLED. The API offers no "revive without the code" yet (TASK-1982).
+   */
+  /** The code's `maxRedemptions` was used up by another order meanwhile. */
+  PROMO_EXHAUSTED: "DISCOUNT_MAX_REDEMPTIONS_REACHED",
+  /** The customer used the code up to its `perUserLimit` on another order. */
+  PROMO_USER_LIMIT: "DISCOUNT_USER_LIMIT_REACHED",
+  /** The code was deleted after the order was cancelled. */
+  PROMO_GONE: "DISCOUNT_NOT_FOUND",
 } as const;
 
 export type OrderConflictCode =
@@ -88,6 +100,15 @@ export function orderConflictMessage(
   if (code === ORDER_CONFLICT_CODE.REVIVE_REFUNDED_PAYMENT) {
     return dict.orderStatus.conflict.ORDER_REVIVE_REFUNDED_PAYMENT;
   }
+  if (code === ORDER_CONFLICT_CODE.PROMO_EXHAUSTED) {
+    return dict.orderStatus.conflict.DISCOUNT_MAX_REDEMPTIONS_REACHED;
+  }
+  if (code === ORDER_CONFLICT_CODE.PROMO_USER_LIMIT) {
+    return dict.orderStatus.conflict.DISCOUNT_USER_LIMIT_REACHED;
+  }
+  if (code === ORDER_CONFLICT_CODE.PROMO_GONE) {
+    return dict.orderStatus.conflict.DISCOUNT_NOT_FOUND;
+  }
   return dict.orderStatus.conflictUnknown;
 }
 
@@ -103,11 +124,15 @@ export function orderConflictMessage(
  * FALSE for REVIVE_REFUNDED_PAYMENT too, and for a stronger reason: nothing is
  * out of date there. The refusal is about what the order IS, not about what the
  * screen knows, and reloading would show the operator the same order and the
- * same refusal (review of plan 180).
+ * same refusal (review of plan 180). The promo-code refusals of a revive
+ * (AD-ORD-51) are the same kind: the code is spent, whatever the screen shows.
  */
 const NO_RELOAD_CODES: readonly string[] = [
   ORDER_CONFLICT_CODE.TRANSITION_INVALID,
   ORDER_CONFLICT_CODE.REVIVE_REFUNDED_PAYMENT,
+  ORDER_CONFLICT_CODE.PROMO_EXHAUSTED,
+  ORDER_CONFLICT_CODE.PROMO_USER_LIMIT,
+  ORDER_CONFLICT_CODE.PROMO_GONE,
 ];
 
 export function requiresReload(

@@ -295,6 +295,41 @@ describe("OrderStatusSelect — 409 conflicts (TASK-332, edge case E-11)", () =>
     // And the backend's English prose never reaches the operator.
     expect(alert).not.toHaveTextContent("cannot move from");
   });
+
+  it("names the exhausted promo code when a revive is refused (AD-ORD-51)", async () => {
+    stubOrder({ status: "CANCELLED" });
+    stubTransitions(["PENDING"]);
+    stubStatusPatch(() =>
+      HttpResponse.json(
+        {
+          statusCode: 409,
+          error: "DISCOUNT_MAX_REDEMPTIONS_REACHED",
+          message:
+            'Promo code "SALE1" has reached its redemption limit — cannot revive the order',
+        },
+        { status: 409 },
+      ),
+    );
+
+    renderSelect();
+    await openPicker();
+    await userEvent.click(
+      await screen.findByRole("menuitem", {
+        name: orderStatusLabel("PENDING"),
+      }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      dict.orderStatus.conflict.DISCOUNT_MAX_REDEMPTIONS_REACHED,
+    );
+    expect(alert).not.toHaveTextContent(dict.orderStatus.conflictUnknown);
+    expect(alert).not.toHaveTextContent("redemption limit");
+    // Reloading would show the same order and the same refusal.
+    expect(
+      screen.queryByRole("button", { name: dict.orderStatus.reloadCta }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 /**

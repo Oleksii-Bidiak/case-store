@@ -37,11 +37,36 @@ describe("decideErrorOf — the decide endpoint's refusals in Ukrainian (TASK-20
     });
   });
 
-  it("explains a re-open refused because the units were claimed again", () => {
+  it("explains a re-open refused because the units were claimed again, with what is left (TASK-1966)", () => {
+    expect(
+      decideErrorOf(
+        failure(
+          409,
+          "RETURN_QUANTITY_EXCEEDED",
+          "Cannot return 2 of that item — 1 remain returnable",
+        ),
+      ),
+    ).toEqual({
+      kind: "toast",
+      message: d.decideQuantityExceeded(1),
+      refetch: true,
+    });
+    expect(d.decideQuantityExceeded(1)).toMatch(/лишилось 1 шт/);
     expect(decideErrorOf(failure(409, "RETURN_QUANTITY_EXCEEDED"))).toEqual({
       kind: "toast",
-      message: d.decideQuantityExceeded,
+      message: d.decideQuantityExceeded(null),
       refetch: true,
+    });
+  });
+
+  it("names any other return refusal instead of «try again» (TASK-1966)", () => {
+    expect(decideErrorOf(failure(400, "RETURN_USE_DECISION_ENDPOINT"))).toEqual(
+      { kind: "toast", message: d.refusalUseDecision, refetch: true },
+    );
+    expect(decideErrorOf(failure(403, "Forbidden"))).toEqual({
+      kind: "toast",
+      message: d.refusalForbidden,
+      refetch: false,
     });
   });
 
@@ -58,7 +83,7 @@ describe("decideErrorOf — the decide endpoint's refusals in Ukrainian (TASK-20
   it("says the return is gone on a 404", () => {
     expect(decideErrorOf(failure(404, "RETURN_NOT_FOUND"))).toEqual({
       kind: "toast",
-      message: d.decideNotFound,
+      message: d.refusalNotFound,
       refetch: true,
     });
   });

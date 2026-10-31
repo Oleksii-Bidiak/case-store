@@ -7,11 +7,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
+  RETURN_ERROR_CODE,
   ReturnEntityStatus,
   getAdminReturnControllerFindAllQueryKey,
   getAdminReturnControllerFindByIdQueryKey,
   nextResolveStep,
   returnDecisionLabel,
+  returnRefusalOf,
   useAdminReturnControllerResolve,
   type ReturnEntity,
 } from "@/entities/return";
@@ -26,12 +28,7 @@ import {
   Textarea,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import {
-  apiErrorCode,
-  apiErrorMessage,
-  apiErrorStatus,
-  formatCurrency,
-} from "@/shared/lib";
+import { apiErrorMessage, apiErrorStatus, formatCurrency } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import {
   OPERATOR_NOTES_MAX_LENGTH,
@@ -45,13 +42,14 @@ import {
 
 const d = dict.returns;
 
-/** The API's TASK-785 refusal codes, carried in the 400 body's `error`. */
-const REFUND_CEILING_MESSAGES: Record<string, () => string> = {
-  RETURN_REFUND_EXCEEDS_RETURNED_VALUE: () =>
-    d.resolveRefundExceedsReturnedValue(),
-  RETURN_REFUND_EXCEEDS_ORDER_BALANCE: () =>
-    d.resolveRefundExceedsOrderBalance(),
-};
+/**
+ * The API's TASK-785 refusal codes — both go under the amount, since that
+ * number is what is wrong. Worded by the shared `returnRefusalOf` (TASK-1966).
+ */
+const REFUND_CEILING_CODES: ReadonlyArray<string | null> = [
+  RETURN_ERROR_CODE.REFUND_EXCEEDS_RETURNED_VALUE,
+  RETURN_ERROR_CODE.REFUND_EXCEEDS_ORDER_BALANCE,
+];
 
 interface ReturnResolveFormProps {
   rma: ReturnEntity;
@@ -255,31 +253,37 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
         },
         onError: (error) => {
           const status = apiErrorStatus(error);
-          if (status === 409) {
+          const refusal = returnRefusalOf(error);
+          if (refusal && REFUND_CEILING_CODES.includes(refusal.code)) {
+            // Under the amount, not in a toast: that number is what is wrong.
+            form.setError(
+              "refundedAmount",
+              { type: "server", message: refusal.message },
+              { shouldFocus: true },
+            );
+            return;
+          }
+          if (status === 409 || refusal?.refetch) {
             // The server's state machine is authoritative — the client-side
             // mirror losing to it is exactly the drift its docblock warns
-            // about, so refetch and say so plainly.
+            // about, so refetch and say so plainly. A coded refusal names what
+            // moved (TASK-1966); a bare transition refusal keeps the old line.
             void queryClient.invalidateQueries({
               queryKey: getAdminReturnControllerFindByIdQueryKey(rma.id),
             });
-            toast.error(d.resolveConflict);
+            toast.error(
+              refusal && refusal.code !== RETURN_ERROR_CODE.TRANSITION_INVALID
+                ? refusal.message
+                : d.resolveConflict,
+            );
+            return;
+          }
+          if (refusal) {
+            // A 403, or a coded 400 the form cannot place under a field.
+            toast.error(refusal.message);
             return;
           }
           if (status === 400) {
-            const code = apiErrorCode(error);
-            const ceiling =
-              typeof code === "string"
-                ? REFUND_CEILING_MESSAGES[code]
-                : undefined;
-            if (ceiling) {
-              // Under the amount, not in a toast: that number is what is wrong.
-              form.setError(
-                "refundedAmount",
-                { type: "server", message: ceiling() },
-                { shouldFocus: true },
-              );
-              return;
-            }
             // TASK-956: a DTO refusal names its field — put it under that
             // field. Anything else gets a sentence that is true.
             const message = apiErrorMessage(error) ?? "";

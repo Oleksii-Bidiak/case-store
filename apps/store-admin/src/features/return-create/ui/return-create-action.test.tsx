@@ -316,8 +316,69 @@ describe("ReturnCreateAction — the dialog (TASK-1963)", () => {
       within(dialog).getByRole("button", { name: d.createSubmit }),
     );
 
+    // AD-RET-18: the second tab is told the line is taken and how much is left
+    // — not «Спробуйте ще раз», which can never succeed.
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent(d.refusalQuantityExceeded(0));
+    expect(alert).toHaveTextContent(/вже заявлено/);
+    expect(alert).not.toHaveTextContent(/Спробуйте ще раз/);
+    expect(alert).not.toHaveTextContent("remain returnable");
+  });
+
+  it("names an order that can no longer be returned (TASK-1966)", async () => {
+    stubCreate(() =>
+      HttpResponse.json(
+        {
+          statusCode: 400,
+          error: "RETURN_ORDER_NOT_RETURNABLE",
+          message:
+            "Only shipped or delivered orders can be returned — cancel the order instead",
+        },
+        { status: 400 },
+      ),
+    );
+    renderWithProviders(<ReturnCreateAction order={makeOrder()} />, {
+      auth: WRITER,
+    });
+    const dialog = await openDialog();
+
+    await userEvent.click(
+      await within(dialog).findByRole("button", {
+        name: d.createIncrease("Кабель"),
+      }),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.createSubmit }),
+    );
+
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      d.createQuantityExceeded,
+      d.refusalOrderNotReturnable,
+    );
+  });
+
+  it("keeps «try again» for a failure that may pass on retry", async () => {
+    stubCreate(() =>
+      HttpResponse.json(
+        { statusCode: 500, error: "Internal Server Error", message: "boom" },
+        { status: 500 },
+      ),
+    );
+    renderWithProviders(<ReturnCreateAction order={makeOrder()} />, {
+      auth: WRITER,
+    });
+    const dialog = await openDialog();
+
+    await userEvent.click(
+      await within(dialog).findByRole("button", {
+        name: d.createIncrease("Кабель"),
+      }),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.createSubmit }),
+    );
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      d.createFailed,
     );
   });
 

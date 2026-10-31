@@ -481,6 +481,27 @@ describe("ReturnResolveForm — 400 texts (TASK-956)", () => {
       expect(toastError).toHaveBeenCalledWith(d.resolveConflict),
     );
   });
+
+  it("names a coded 409 instead of the generic «повернення змінилося» (TASK-1966)", async () => {
+    stubResolve(() =>
+      HttpResponse.json(
+        {
+          error: "RETURN_ALREADY_RESTOCKED",
+          message:
+            "These returned goods have already been credited back to inventory",
+          statusCode: 409,
+        },
+        { status: 409 },
+      ),
+    );
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: d.markReceived }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(d.resolveRestockAlreadyDone),
+    );
+  });
 });
 
 describe("ReturnResolveForm — operator notes, shown once (TASK-794, TASK-1056)", () => {

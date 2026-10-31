@@ -52,7 +52,23 @@ describe("repairErrorOf — the repair-step refusals in Ukrainian (TASK-2045)", 
   it("says the return is gone on a 404", () => {
     expect(repairErrorOf(failure(404, "RETURN_NOT_FOUND"))).toEqual({
       kind: "toast",
-      message: d.repairNotFound,
+      message: d.refusalNotFound,
+      refetch: true,
+    });
+  });
+
+  it("names a missing grant instead of «try again» (TASK-1966)", () => {
+    expect(repairErrorOf(failure(403, "Forbidden"))).toEqual({
+      kind: "toast",
+      message: d.refusalForbidden,
+      refetch: false,
+    });
+  });
+
+  it("still reads an unknown 409 as a stale page", () => {
+    expect(repairErrorOf(failure(409, "Conflict"))).toEqual({
+      kind: "toast",
+      message: d.repairStepInvalid,
       refetch: true,
     });
   });

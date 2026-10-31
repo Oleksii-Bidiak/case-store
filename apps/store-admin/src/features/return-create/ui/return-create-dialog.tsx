@@ -3,13 +3,18 @@
 import { useId, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatOrderNumber, type OrderEntity } from "@/entities/order";
+import {
+  formatOrderNumber,
+  getAdminOrderControllerFindByIdQueryKey,
+  type OrderEntity,
+} from "@/entities/order";
 import {
   clampQuantity,
   getAdminOrderReturnControllerFindForOrderQueryKey,
   getAdminReturnControllerFindAllQueryKey,
   returnableLines,
   returnOutcomeLabel,
+  returnRefusalOf,
   ReturnOutcome,
   useAdminOrderReturnControllerCreate,
   useAdminOrderReturnControllerFindForOrder,
@@ -33,7 +38,6 @@ import {
 } from "@/shared/ui";
 import { toast } from "@/shared/ui/toast";
 import { dict } from "@/shared/config";
-import { apiErrorCode } from "@/shared/lib";
 
 const d = dict.returns;
 
@@ -183,18 +187,22 @@ function ReturnCreateForm({
           setCreated({ id: response.data.id });
         },
         onError: (failure) => {
-          if (apiErrorCode(failure) === "RETURN_QUANTITY_EXCEEDED") {
-            // Somebody else claimed these units meanwhile — re-read the claims
-            // so the steppers show what is really left.
+          // TASK-1966: a refusal says what happened — «Спробуйте ще раз» is
+          // left to failures a retry can cure (network, 5xx).
+          const refusal = returnRefusalOf(failure);
+          if (refusal?.refetch) {
+            // Somebody else claimed these units, or the order moved, meanwhile
+            // — re-read so the steppers and the card show what is really true.
             void queryClient.invalidateQueries({
               queryKey: getAdminOrderReturnControllerFindForOrderQueryKey(
                 order.id,
               ),
             });
-            setError(d.createQuantityExceeded);
-            return;
+            void queryClient.invalidateQueries({
+              queryKey: getAdminOrderControllerFindByIdQueryKey(order.id),
+            });
           }
-          setError(d.createFailed);
+          setError(refusal?.message ?? d.createFailed);
         },
       },
     );

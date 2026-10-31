@@ -59,6 +59,14 @@ export {
   returnOutcomeLabel,
   returnReasonHeading,
 } from "./decision-label";
+// TASK-1966 — every RETURN_* refusal as a sentence the operator can act on.
+export {
+  RETURN_ERROR_CODE,
+  returnRefusalOf,
+  returnRemainingOf,
+  type ReturnErrorCode,
+  type ReturnRefusal,
+} from "./model/return-error";
 // TASK-1963 — what is still returnable on an order (REJECTED frees units).
 export {
   clampQuantity,
