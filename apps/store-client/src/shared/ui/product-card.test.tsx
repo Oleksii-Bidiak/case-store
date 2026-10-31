@@ -194,3 +194,19 @@ describe("ProductCard — badge stack beside the heart (TASK-875)", () => {
     );
   });
 });
+
+describe("ProductCard — price row in a narrow card (TASK-1957)", () => {
+  // At 390 the 2-up grid leaves ~173px per card: «42 999 ₴ 47 999 ₴» was cut
+  // off at the card edge by the one-line flex row inside `overflow-hidden`.
+  it("lets the old price wrap under the new one, each amount kept whole", () => {
+    const { container } = renderWithProviders(
+      <ProductCard
+        product={product({ price: "42999.00", compareAtPrice: "47999.00" })}
+      />,
+    );
+
+    const oldPrice = container.querySelector(".line-through");
+    expect(oldPrice).toHaveClass("whitespace-nowrap");
+    expect(oldPrice?.parentElement).toHaveClass("flex-wrap");
+  });
+});

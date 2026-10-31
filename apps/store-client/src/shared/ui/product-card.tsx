@@ -181,19 +181,23 @@ export function ProductCard({
             <div aria-hidden="true" className="h-3.5" data-row-slot="colors" />
           )
         )}
-        <div className="mt-auto flex items-baseline gap-2">
+        {/* Wraps (TASK-1957): in the 2-up grid at 390 a card is ~173px wide,
+            and «від 42 999 ₴ 47 999 ₴» does not fit one line — the old price
+            drops under the new one instead of being clipped at the card edge.
+            Each amount stays whole (`whitespace-nowrap`). */}
+        <div className="mt-auto flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           {showFrom && (
             <span className="text-xs text-muted-foreground">
               {dict.productCard.priceFrom}
             </span>
           )}
           <p
-            className={`text-lg font-bold tracking-tight font-display ${onSale ? "text-sale" : "text-foreground"}`}
+            className={`whitespace-nowrap text-lg font-bold tracking-tight font-display ${onSale ? "text-sale" : "text-foreground"}`}
           >
             {formatMoney(advertisedPrice)}
           </p>
           {onSale && product.compareAtPrice && (
-            <p className="text-sm text-muted-foreground line-through">
+            <p className="whitespace-nowrap text-sm text-muted-foreground line-through">
               {formatMoney(product.compareAtPrice)}
             </p>
           )}
