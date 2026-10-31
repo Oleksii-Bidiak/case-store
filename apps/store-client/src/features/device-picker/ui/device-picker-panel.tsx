@@ -15,6 +15,7 @@ import {
   addDevice,
   clearMyDevices,
   closeDevicePicker,
+  readMyDevices,
   removeDevice,
   setActiveDevice,
   toMyDeviceInput,
@@ -94,14 +95,23 @@ export function DevicePickerPanel({
   const hasDevices = devices.length > 0;
   const searching = trimmed !== "";
 
+  // The opener may go on from here (the homepage hero opens the hub) —
+  // told after the store is written and the picker is closed.
+  const notifyChosen = () => {
+    const active = readMyDevices()[0];
+    if (active) request.onChoose?.(active);
+  };
+
   const choose = (model: PickerModel) => {
     addDevice(toMyDeviceInput(model));
     closeDevicePicker();
+    notifyChosen();
   };
 
   const activate = (modelId: string) => {
     setActiveDevice(modelId);
     closeDevicePicker();
+    notifyChosen();
   };
 
   // The control that had focus is gone with its row — park focus somewhere

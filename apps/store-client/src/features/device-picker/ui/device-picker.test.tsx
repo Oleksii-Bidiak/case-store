@@ -141,6 +141,34 @@ describe("DevicePicker (TASK-2070)", () => {
     });
   });
 
+  it("tells the opener which device is now active (TASK-1952: hero → hub)", async () => {
+    const user = userEvent.setup();
+    seedDevices(["iPhone 13"]);
+    const onChoose = jest.fn();
+    renderWithProviders(<DevicePicker />);
+    const dialog = await openPicker({ onChoose });
+
+    // Forgetting is not a choice — no call.
+    await user.click(
+      within(dialog).getByRole("button", { name: t.forget("iPhone 13") }),
+    );
+    expect(onChoose).not.toHaveBeenCalled();
+
+    await user.click(
+      await within(dialog).findByRole("button", { name: /Galaxy S24 Ultra/ }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    expect(onChoose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelId: "galaxy-s24-ultra",
+        slug: "galaxy-s24-ultra",
+      }),
+    );
+  });
+
   it("family tabs list the family's models grouped by series", async () => {
     const user = userEvent.setup();
     renderWithProviders(<DevicePicker />);

@@ -13,11 +13,20 @@ import { useSyncExternalStore } from "react";
 
 import type { DeviceFamily } from "@/entities/device/model/device-family";
 
+import type { MyDevice } from "./my-devices";
+
 export interface DevicePickerRequest {
   /** Preset search text — the picker opens in results mode. */
   query?: string;
   /** Preset family tab (ignored when the family has no models). */
   family?: DeviceFamily;
+  /**
+   * Runs after the shopper chooses a model or switches to a saved device —
+   * the store is already updated and the picker closed — with the now-active
+   * device. The homepage hero uses it to go on to the device's hub
+   * (TASK-1952). Not called when a device is forgotten.
+   */
+  onChoose?: (device: MyDevice) => void;
 }
 
 export interface DevicePickerState {

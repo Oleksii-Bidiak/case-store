@@ -105,4 +105,43 @@ export const devicePickerDict = {
       `Усе для ${name}${label ? ` · ${label}` : ""}`,
     openModelPage: (count: string) => `Відкрити сторінку моделі · ${count}`,
   },
+
+  // ── TASK-1952: the homepage first block — picker, or the active device ──
+  hero: {
+    // State A — no saved device.
+    sectionAria: "Підібрати аксесуари",
+    title: "Для якого пристрою шукаєте?",
+    lede: "Оберіть модель — і каталог покаже лише те, що до неї підходить. Можна зберегти кілька — свої й рідних.",
+    searchAria: "Знайти модель пристрою",
+    searchPlaceholder: "Модель, наприклад iPhone 15 Pro",
+    searchSubmit: "Знайти",
+    hint: "Розуміємо й «айфон 15 про», «галаксі с24»",
+    suggestionsAria: "Моделі за запитом",
+    noMatch: "Такої моделі поки немає в каталозі.",
+    noMatchAction: "Переглянути всі моделі",
+    popularLabel: "Популярні моделі",
+    allModels: "Усі моделі",
+    // «Понад 40 моделей» — rounded down to tens; a thin catalogue says the
+    // exact number instead of «Понад 0».
+    modelsTotal: (n: number) =>
+      n >= 10
+        ? `Понад ${Math.floor(n / 10) * 10} моделей`
+        : `${n} ${pluralUk(n, "модель", "моделі", "моделей")}`,
+
+    // State B — a device is saved: the active device's panel.
+    panelAria: (name: string) => `Для вашого ${name}`,
+    kicker: "Для вашого пристрою",
+    kickerLabel: (label: string) => `Для пристрою · ${label}`,
+    fits: (count: string) =>
+      `${count} підходить — чохли, скло, зарядки й решта`,
+    noneFit:
+      "Саме для цієї моделі товарів поки немає — загляньте в каталог або оберіть інший пристрій.",
+    cta: (name: string) => `Все для ${name}`,
+    catalogCta: "Перейти в каталог",
+    categoriesAria: (name: string) => `Категорії для ${name}`,
+    alsoYours: "Також у вас:",
+    showFor: (name: string, label?: string) =>
+      `Показувати для ${name}${label ? ` (${label})` : ""}`,
+    otherDevice: "Інший пристрій",
+  },
 } as const;
