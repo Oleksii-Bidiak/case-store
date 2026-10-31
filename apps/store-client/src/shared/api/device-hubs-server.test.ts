@@ -106,9 +106,93 @@ describe("device-hubs-server", () => {
         "iphone-15-plus",
       ]);
       const [url, init] = fetchMock.mock.calls[0];
-      expect(url).toContain("search=iPhone+15");
+      // No name search: a series need not appear in its models' names.
+      expect(url).not.toContain("search=");
       expect(url).toContain("sort=popular");
+      expect(url).toContain("limit=200");
       expect(init.next.tags).toEqual(["device-hubs"]);
+    });
+
+    it("lists the model's brand by slug and finds a series its names do not spell out", async () => {
+      const fetchMock = jest.fn(async (url: string) => {
+        if (url.endsWith("/api/device-brands")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [
+                { id: "b-samsung", slug: "samsung" },
+                { id: "b-apple", slug: "apple" },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [
+              sibling(
+                "w-s10-46",
+                "Apple Watch Series 10",
+                40,
+                "Watch S10 46 мм",
+              ),
+              sibling(
+                "w-s10-42",
+                "Apple Watch Series 10",
+                31,
+                "Watch S10 42 мм",
+              ),
+              sibling("w-ultra-2", "Apple Watch Ultra", 22, "Watch Ultra 2"),
+            ],
+          }),
+        };
+      });
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const result = await fetchSeriesSiblings({
+        id: "w-s10-42",
+        series: "Apple Watch Series 10",
+        brandSlug: "apple",
+      });
+
+      expect(result.map((m) => m.id)).toEqual(["w-s10-46"]);
+      const modelsCall = fetchMock.mock.calls.find(([url]) =>
+        url.includes("/api/device-models?"),
+      );
+      expect(modelsCall?.[0]).toContain("deviceBrandId=b-apple");
+      expect(modelsCall?.[0]).not.toContain("search=");
+      for (const [, init] of fetchMock.mock.calls as unknown as [
+        string,
+        { next: { tags: string[] } },
+      ][]) {
+        expect(init.next.tags).toEqual(["device-hubs"]);
+      }
+    });
+
+    it("falls back to the store-wide popular list when the brand is unknown", async () => {
+      const fetchMock = jest.fn(async (url: string) => ({
+        ok: true,
+        status: 200,
+        json: async () =>
+          url.endsWith("/api/device-brands")
+            ? { data: [{ id: "b-apple", slug: "apple" }] }
+            : { data: [sibling("p8a", "Pixel 8", 3)] },
+      }));
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const result = await fetchSeriesSiblings({
+        id: "p8",
+        series: "Pixel 8",
+        brandSlug: "google",
+      });
+
+      expect(result.map((m) => m.id)).toEqual(["p8a"]);
+      const modelsCall = fetchMock.mock.calls.find(([url]) =>
+        url.includes("/api/device-models?"),
+      );
+      expect(modelsCall?.[0]).not.toContain("deviceBrandId=");
     });
 
     it("caps the list", async () => {

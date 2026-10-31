@@ -93,7 +93,13 @@ export default async function DeviceHubPage({ params }: DeviceHubPageProps) {
       <DeviceHubView
         hub={hub}
         siblings={siblings}
-        renderCardAction={(product) => <ProductCardActions product={product} />}
+        renderCardAction={(product) => (
+          // No «Підходить / Не для <модель>» mark here: everything on the
+          // hub fits THIS model, and a mark for the shopper's other active
+          // device would contradict the hero's «Усе тут підходить» (mockup
+          // DeviceHub §1.6).
+          <ProductCardActions product={product} showFit={false} />
+        )}
       />
     </>
   );

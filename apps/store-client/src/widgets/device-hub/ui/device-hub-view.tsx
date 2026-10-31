@@ -101,13 +101,15 @@ export function DeviceHubView({
               >
                 {crumb.name}
               </Link>
-            ) : (
+            ) : i === trail.length - 1 ? (
               <span
                 aria-current="page"
                 className="font-semibold text-foreground"
               >
                 {crumb.name}
               </span>
+            ) : (
+              <span>{crumb.name}</span>
             )}
           </Fragment>
         ))}

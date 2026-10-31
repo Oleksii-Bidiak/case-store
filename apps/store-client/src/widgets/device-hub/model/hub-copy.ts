@@ -51,15 +51,32 @@ export function compatLandingPath(categorySlug: string, modelSlug: string) {
   return `/catalog/${categorySlug}/${modelSlug}`;
 }
 
-/** The visible crumb trail; the last crumb is the hub itself (no link). */
-export function deviceHubTrail(modelName: string): {
+/**
+ * Where «Пристрої» links to — the device index `/devices`, or `null` while that
+ * page does not exist. It ships with TASK-2076; until then the crumb is plain
+ * text and the BreadcrumbList skips it, so neither the visible trail nor the
+ * structured data points at a 404. Set to `"/devices"` together with
+ * `app/devices/page.tsx`.
+ */
+export const DEVICES_INDEX_PATH: string | null = null;
+
+/**
+ * The visible crumb trail. The last crumb is the hub itself (current page, no
+ * link); an earlier crumb without `path` renders as plain text.
+ */
+export function deviceHubTrail(
+  modelName: string,
+  devicesIndexPath: string | null = DEVICES_INDEX_PATH,
+): {
   name: string;
   path?: string;
 }[] {
   const t = dict.devicePages.hub;
   return [
     { name: t.crumbHome, path: "/" },
-    { name: t.crumbDevices, path: "/devices" },
+    devicesIndexPath
+      ? { name: t.crumbDevices, path: devicesIndexPath }
+      : { name: t.crumbDevices },
     { name: t.heading(modelName) },
   ];
 }

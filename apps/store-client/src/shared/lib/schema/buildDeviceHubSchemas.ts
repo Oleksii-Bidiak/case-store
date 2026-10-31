@@ -15,7 +15,9 @@ export interface DeviceHubSchemaInput {
   description?: string;
   /**
    * The visible crumb trail, in order, as on the page. The last crumb is the
-   * hub itself; an entry without `path` resolves to the hub URL.
+   * hub itself and resolves to the hub URL; an EARLIER crumb without `path`
+   * is plain text on the page (its target does not exist yet) and is left out
+   * of the BreadcrumbList — structured data never names a URL that 404s.
    */
   trail: ReadonlyArray<{ name: string; path?: string }>;
   /** Group name in the ItemList — «Чохли для iPhone 15 Pro». */
@@ -36,7 +38,10 @@ export interface DeviceHubSchemas {
  *
  * The device is described as a `Thing` under `about`, not a `Product`: the
  * store sells accessories FOR the model, and a `Product` without offers is
- * exactly what Google's rich-result validator flags. Pure — unit-tested.
+ * exactly what Google's rich-result validator flags. Its maker is a SEPARATE
+ * `Brand` entry of `about`: `brand` is not a property of `Thing` (only of
+ * Product/Organization/Person/Service), and the validator flags it there.
+ * Pure — unit-tested.
  */
 export function buildDeviceHubSchemas(
   input: DeviceHubSchemaInput,
@@ -50,13 +55,12 @@ export function buildDeviceHubSchemas(
     url: hubUrl,
     inLanguage: "uk-UA",
     ...(input.description ? { description: input.description } : {}),
-    about: {
-      "@type": "Thing",
-      name: input.model.name,
-      ...(input.model.brandName
-        ? { brand: { "@type": "Brand", name: input.model.brandName } }
-        : {}),
-    },
+    about: input.model.brandName
+      ? [
+          { "@type": "Thing", name: input.model.name },
+          { "@type": "Brand", name: input.model.brandName },
+        ]
+      : { "@type": "Thing", name: input.model.name },
     mainEntity: {
       "@type": "ItemList",
       numberOfItems: input.groups.length,
@@ -69,11 +73,14 @@ export function buildDeviceHubSchemas(
     },
   };
 
+  const lastIndex = input.trail.length - 1;
   const breadcrumb = buildBreadcrumbSchema(
-    input.trail.map((crumb) => ({
-      name: crumb.name,
-      item: crumb.path ? `${input.siteUrl}${crumb.path}` : hubUrl,
-    })),
+    input.trail.flatMap((crumb, index) => {
+      if (crumb.path) {
+        return [{ name: crumb.name, item: `${input.siteUrl}${crumb.path}` }];
+      }
+      return index === lastIndex ? [{ name: crumb.name, item: hubUrl }] : [];
+    }),
   );
 
   return { collectionPage, breadcrumb };

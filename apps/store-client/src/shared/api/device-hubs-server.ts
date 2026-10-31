@@ -1,4 +1,5 @@
 import type {
+  DeviceBrandListResponse,
   DeviceHubEntity,
   DeviceHubResponse,
   DeviceModelListItemEntity,
@@ -39,8 +40,12 @@ function hubReadInit(): ServerFetchInit {
   };
 }
 
-/** How many models one series lookup asks for — a series is a handful. */
-const SERIES_LOOKUP_LIMIT = 50;
+/**
+ * How many models one series lookup asks for — the API's maximum. The list is
+ * the BRAND's models, most compatible products first, so every model that has
+ * a hub at all sorts ahead of the ones that do not.
+ */
+const SERIES_LOOKUP_LIMIT = 200;
 
 /**
  * The hub of one device model, or `null` when there is none (an unknown or
@@ -69,28 +74,52 @@ export async function fetchDeviceHub(
   return body.data;
 }
 
+/** The id of an active device brand by its slug, or `null` (never throws). */
+async function fetchDeviceBrandId(brandSlug: string): Promise<string | null> {
+  try {
+    const res = await serverFetch(
+      `${API_BASE_URL}/api/device-brands`,
+      hubReadInit(),
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as DeviceBrandListResponse;
+    return (
+      (body?.data ?? []).find((brand) => brand.slug === brandSlug)?.id ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The other models of a series that have a hub of their own — for «Інші
  * моделі iPhone 15». Popular first, the current model excluded, only models
  * with ≥ 1 visible compatible product (a link to a model without one would be
  * a link to a 404), at most `limit`.
  *
- * `GET /device-models` has no series filter, so this searches by the series
- * text (every model of «iPhone 15» has it in its name) and keeps the exact
- * series matches. Decorative: never throws, `[]` on any failure.
+ * The public `GET /device-models` has no `series` filter, and a name search
+ * by the series text misses a series its models' names do not spell out
+ * («Apple Watch Series 10» → «Watch S10 46 мм»). So this lists the model's
+ * BRAND (slug → id via `GET /device-brands`, both tagged reads) by popularity
+ * and keeps the exact series matches; if the brand cannot be resolved, it
+ * falls back to the store-wide popular list. Decorative: never throws, `[]`
+ * on any failure.
  */
 export async function fetchSeriesSiblings(
-  model: { id: string; series: string | null },
+  model: { id: string; series: string | null; brandSlug?: string },
   limit = 5,
 ): Promise<DeviceModelListItemEntity[]> {
   const series = model.series?.trim();
   if (!series) return [];
   try {
     const params = new URLSearchParams({
-      search: series,
       sort: "popular",
       limit: String(SERIES_LOOKUP_LIMIT),
     });
+    const brandId = model.brandSlug
+      ? await fetchDeviceBrandId(model.brandSlug)
+      : null;
+    if (brandId) params.set("deviceBrandId", brandId);
     const res = await serverFetch(
       `${API_BASE_URL}/api/device-models?${params.toString()}`,
       hubReadInit(),

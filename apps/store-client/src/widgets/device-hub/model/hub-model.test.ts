@@ -4,6 +4,7 @@ import type {
 } from "@/shared/api/generated/models";
 import { SITE_URL } from "@/shared/config";
 import {
+  DEVICES_INDEX_PATH,
   buildHubLede,
   compatLandingPath,
   deviceHubTrail,
@@ -57,11 +58,23 @@ describe("hub copy", () => {
     expect(buildHubLede(hub({}, 3))).not.toContain("й решта");
   });
 
-  it("links a group to its compatibility landing and the trail to /devices", () => {
+  it("links a group to its compatibility landing", () => {
     expect(compatLandingPath("cases", "iphone-15-pro")).toBe(
       "/catalog/cases/iphone-15-pro",
     );
+  });
+
+  it("leaves «Пристрої» unlinked while the /devices index does not exist", () => {
+    expect(DEVICES_INDEX_PATH).toBeNull();
     expect(deviceHubTrail("iPhone 15 Pro")).toEqual([
+      { name: "Головна", path: "/" },
+      { name: "Пристрої" },
+      { name: "Все для iPhone 15 Pro" },
+    ]);
+  });
+
+  it("links «Пристрої» once an index path is given", () => {
+    expect(deviceHubTrail("iPhone 15 Pro", "/devices")).toEqual([
       { name: "Головна", path: "/" },
       { name: "Пристрої", path: "/devices" },
       { name: "Все для iPhone 15 Pro" },

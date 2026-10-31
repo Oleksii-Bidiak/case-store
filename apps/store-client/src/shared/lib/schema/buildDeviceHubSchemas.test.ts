@@ -37,12 +37,17 @@ describe("buildDeviceHubSchemas", () => {
       url: `${SITE}/devices/iphone-15-pro`,
       inLanguage: "uk-UA",
       description: "Опис",
-      about: {
-        "@type": "Thing",
-        name: "iPhone 15 Pro",
-        brand: { "@type": "Brand", name: "Apple" },
-      },
+      about: [
+        { "@type": "Thing", name: "iPhone 15 Pro" },
+        { "@type": "Brand", name: "Apple" },
+      ],
     });
+  });
+
+  it("never puts `brand` on the Thing — it is not a Thing property", () => {
+    const { collectionPage } = build();
+    const about = collectionPage.about as Record<string, unknown>[];
+    for (const node of about) expect(node).not.toHaveProperty("brand");
   });
 
   it("lists every group as its compatibility landing, in page order", () => {
@@ -88,6 +93,25 @@ describe("buildDeviceHubSchemas", () => {
         },
       ],
     });
+  });
+
+  it("leaves a path-less middle crumb (no index page yet) out of the BreadcrumbList", () => {
+    const { breadcrumb } = build({
+      trail: [
+        { name: "Головна", path: "/" },
+        { name: "Пристрої" },
+        { name: "Все для iPhone 15 Pro" },
+      ],
+    });
+    expect(breadcrumb.itemListElement).toEqual([
+      { "@type": "ListItem", position: 1, name: "Головна", item: `${SITE}/` },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: "Все для iPhone 15 Pro",
+        item: `${SITE}/devices/iphone-15-pro`,
+      },
+    ]);
   });
 
   it("omits an empty description and brand", () => {

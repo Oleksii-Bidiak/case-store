@@ -126,14 +126,21 @@ describe("DeviceHubView", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows the neutral kicker and the crumb trail to «Пристрої»", () => {
+  it("shows the neutral kicker and «Пристрої» as plain text until /devices exists", () => {
     render(<DeviceHubView hub={hub} siblings={[]} />);
     expect(screen.getByText("Apple · iPhone 15")).toBeInTheDocument();
     const crumbs = screen.getByRole("navigation", {
       name: "Навігаційний ланцюжок",
     });
+    // TASK-2076 ships the index; until then the crumb must not link to a 404.
     expect(
-      within(crumbs).getByRole("link", { name: "Пристрої" }),
-    ).toHaveAttribute("href", "/devices");
+      within(crumbs).queryByRole("link", { name: "Пристрої" }),
+    ).not.toBeInTheDocument();
+    const devices = within(crumbs).getByText("Пристрої");
+    expect(devices).not.toHaveAttribute("aria-current");
+    expect(within(crumbs).getByText("Все для iPhone 15 Pro")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 });
