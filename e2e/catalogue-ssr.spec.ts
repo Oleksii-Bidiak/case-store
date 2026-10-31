@@ -44,9 +44,10 @@ test.describe("catalogue SSR", () => {
   for (const route of [
     "/products",
     `/categories/${E2E_CATEGORY_SLUG}`,
-    // The PDP links on through its «Схожі товари» rail — the sold-out fixture
-    // shares the category.
-    `/products/${E2E_PRODUCT_SLUG}`,
+    // The PDP links on through its «Схожі товари» rail. The rails list
+    // in-stock products only (Д3), so it is the sold-out fixture's page that
+    // links on — to the in-stock product sharing its category.
+    `/products/${E2E_SOLD_OUT_PRODUCT_SLUG}`,
     "/",
   ]) {
     test(`${route} — the raw HTML already links to products`, async ({

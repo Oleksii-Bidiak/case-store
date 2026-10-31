@@ -38,12 +38,16 @@ test.describe("catalogue hydration", () => {
     for (let visit = 0; visit < 2; visit += 1) {
       await page.goto("/products");
       const main = page.getByRole("main");
-      // The chips row is the part that used to disagree — wait until the
-      // client has it, i.e. until the tree has arrived and been rendered.
+      // The category tree is the part that used to disagree (then as the
+      // chips row, since TASK-2011 the rail's «Категорія» panel) — wait until
+      // the client has it, i.e. until the tree has arrived and been rendered.
       await expect(
-        main.getByRole("group", { name: "Фільтр за категорією" }),
+        main.getByRole("navigation", { name: "Категорія", exact: true }),
       ).toBeVisible();
-      await expect(main.getByText(/Знайдено товарів: \d+/)).toBeVisible();
+      // The count line under the H1 (Д3-2 Catalog §3), «N товарів».
+      await expect(
+        main.getByText(/^[\d\s]+ товар/).filter({ visible: true }),
+      ).toBeVisible();
     }
 
     expect(errors).toEqual([]);

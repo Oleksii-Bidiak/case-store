@@ -24,7 +24,12 @@ test.describe("catalogue availability filter", () => {
     await page.goto(`/products?category=${E2E_CATEGORY_SLUG}`);
 
     const main = page.getByRole("main");
-    await expect(main.getByText("Знайдено товарів: 2")).toBeVisible();
+    // The count line under the H1 (Д3-2 Catalog §3): «2 товари», then «1 з 2
+    // товарів» once a filter narrows the category. `visible` skips the
+    // toolbar's short count, which repeats the number below `lg` only.
+    const countLine = (text: string) =>
+      main.getByText(text, { exact: true }).filter({ visible: true });
+    await expect(countLine("2 товари")).toBeVisible();
     await expect(main.getByText(E2E_SOLD_OUT_PRODUCT_NAME)).toBeVisible();
 
     // The native input is `sr-only` under a painted box (FilterCheckbox), so a
@@ -38,7 +43,7 @@ test.describe("catalogue availability filter", () => {
     await expect(inStockOnly).toBeChecked();
 
     await expect(page).toHaveURL(/[?&]inStock=true/);
-    await expect(main.getByText("Знайдено товарів: 1")).toBeVisible();
+    await expect(countLine("1 з 2 товарів")).toBeVisible();
     await expect(main.getByText(E2E_SOLD_OUT_PRODUCT_NAME)).toHaveCount(0);
     await expect(main.getByText(/E2E Test Product/)).toBeVisible();
   });
