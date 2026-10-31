@@ -30,6 +30,7 @@ import { ProductTrustBadges } from "./product-trust-badges";
 import { ProductSpecsTabs } from "./product-specs-tabs";
 import { ProductHighlights } from "./product-highlights";
 import { ProductRail } from "./product-rail";
+import { ProductCompatRow } from "./product-compat-row";
 import { MobileAtcBar } from "./mobile-atc-bar";
 import { ProductInCartButton } from "./product-in-cart-button";
 
@@ -250,6 +251,11 @@ export function ProductDetailView({
               </span>
             )}
           </div>
+
+          {/* «Чи підійде до мого пристрою?» — the store's main question,
+              answered under the title and before the variant pickers
+              (TASK-1953). Renders nothing without compatibility data. */}
+          <ProductCompatRow models={product.compatibleDeviceModels} />
 
           {group && (
             <ProductSiblingNavigator

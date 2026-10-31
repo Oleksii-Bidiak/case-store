@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
 import { AddToCartButton } from "@/features/add-to-cart";
+import { DeviceFitMark } from "@/features/device-fit";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
@@ -24,11 +25,22 @@ import { dict } from "@/shared/config";
  * Clicking the in-cart button opens the mini-cart sheet — the same slide-out the
  * header badge opens. The sheet is mounted lazily on first open so a grid of
  * cards doesn't mount dozens of idle sheets.
+ *
+ * Above the availability line sits the «Підходить до / Не для <модель>» mark
+ * for the shopper's active device (TASK-1953). It appears only after the
+ * device store hydrates, into a one-line slot reserved for products that have
+ * compatibility data, so it never shifts the card.
  */
 export function ProductCardActions({
   product,
+  showFit = true,
 }: {
   product: PublicProductEntity;
+  /**
+   * Render the device-fit mark here. The catalog list row turns it off and
+   * places the mark under the rating instead (Catalog mockup §4).
+   */
+  showFit?: boolean;
 }) {
   // Every card is ONE first-class position (TASK-142), so quick-add must target
   // THIS product and reflect ITS availability. `variantSummary.defaultVariantId`
@@ -54,6 +66,12 @@ export function ProductCardActions({
 
   return (
     <div className="flex flex-col gap-2">
+      {showFit && (
+        <DeviceFitMark
+          compatibleDeviceModelIds={product.compatibleDeviceModelIds}
+          reserveSpace
+        />
+      )}
       <p
         className={`flex items-center gap-1.5 text-xs ${
           inStock ? "text-success" : "text-muted-foreground"

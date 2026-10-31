@@ -3,6 +3,7 @@ import type { PublicProductEntity } from "@/shared/api/generated/models";
 import { formatMoney, getCardPricing, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { Badge, ProductCardImage, RatingStars } from "@/shared/ui";
+import { DeviceFitMark } from "@/features/device-fit";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 
@@ -77,6 +78,16 @@ export function ProductListItem({ product }: { product: PublicProductEntity }) {
             count={product.ratingCount}
           />
         </div>
+        {/* «Підходить до / Не для <модель>» (TASK-1953) — under the rating in
+            a list row (Catalog mockup §4), one truncating line; the full text
+            is in its `title`. The slot is reserved for products with
+            compatibility data, so the mark appears without moving the row. */}
+        <DeviceFitMark
+          compatibleDeviceModelIds={product.compatibleDeviceModelIds}
+          layout="truncate"
+          reserveSpace
+          className="mt-2"
+        />
 
         <div className="mt-auto flex flex-wrap items-end justify-between gap-4 pt-4">
           <div className="flex items-baseline gap-2">
@@ -99,7 +110,7 @@ export function ProductListItem({ product }: { product: PublicProductEntity }) {
             )}
           </div>
           <div className="w-full sm:w-[280px]">
-            <ProductCardActions product={product} />
+            <ProductCardActions product={product} showFit={false} />
           </div>
         </div>
       </div>
