@@ -328,11 +328,14 @@ export function ReturnRequestButton({
           </p>
         </div>
 
-        {/* Always mounted so screen readers announce the text when it appears;
-            `empty:hidden` keeps the grid gap from opening an empty row. */}
+        {/* Always mounted so screen readers announce the text when it appears.
+            `empty:sr-only`, never `empty:hidden`: `display: none` drops the
+            empty region from the accessibility tree and the announcement is
+            lost; sr-only keeps it there while its absolute position stops the
+            grid gap from opening an empty row. */}
         <p
           role="status"
-          className="text-sm font-medium text-foreground empty:hidden"
+          className="text-sm font-medium text-foreground empty:sr-only"
         >
           {awaitingNetwork ? dict.returnRequest.offline : null}
         </p>

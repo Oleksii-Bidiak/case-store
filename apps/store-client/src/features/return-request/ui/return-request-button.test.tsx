@@ -668,6 +668,21 @@ describe("ReturnRequestButton offline (TASK-1964)", () => {
       dict.returnRequest.offline,
     );
   });
+
+  // The live region is mounted up front so the offline text is announced when
+  // it appears. `display: none` (e.g. `empty:hidden`) would take the empty
+  // region out of the accessibility tree, and the announcement with it.
+  it("keeps the empty status region in the accessibility tree", async () => {
+    const user = userEvent.setup();
+    renderButton();
+    await open(user);
+
+    const status = screen.getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+    const classes = status.className.split(/\s+/);
+    expect(classes).not.toContain("hidden");
+    expect(classes.some((name) => name.endsWith(":hidden"))).toBe(false);
+  });
 });
 
 // TASK-1964: the same dialog on a guest order — keyed by the access token, no
