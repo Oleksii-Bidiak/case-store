@@ -1,10 +1,36 @@
 import {
   commonDeviceFamily,
   deviceDisplayName,
+  deviceHubHref,
+  deviceShortName,
   getDeviceFit,
   hasCompatData,
   summarizeModelNames,
 } from "./device-fit";
+
+describe("deviceShortName (TASK-1953)", () => {
+  it.each([
+    ["Apple Watch Series 10 46mm", "Watch S10 46mm"],
+    ["Apple Watch Ultra 2 49mm", "Watch Ultra 2 49mm"],
+    ["iPad 10th gen", "iPad 10"],
+    ["iPad 10-го покоління", "iPad 10"],
+  ])("condenses «%s» to «%s»", (name, short) => {
+    expect(deviceShortName(name)).toBe(short);
+  });
+
+  it.each(["iPhone 15 Pro", "Galaxy S24 Ultra", 'iPad Air 13" (M2)'])(
+    "leaves «%s» as is",
+    (name) => {
+      expect(deviceShortName(name)).toBe(name);
+    },
+  );
+});
+
+describe("deviceHubHref (TASK-1954)", () => {
+  it("links to the model hub", () => {
+    expect(deviceHubHref("galaxy-s24")).toBe("/devices/galaxy-s24");
+  });
+});
 
 describe("getDeviceFit (TASK-1953)", () => {
   it("fits when the product lists the active device's model id", () => {

@@ -29,7 +29,7 @@ export const deviceFitDict = {
     fitsTitle: (device: string) => `Підходить до вашого ${device}`,
     fitsTitleLabelled: (device: string, label: string) =>
       `Підходить до ${device} · ${label}`,
-    fitsSub: "Сумісність перевірена саме для цієї моделі.",
+    fitsSub: "Перевірено за моделлю: розмір, кнопки й виріз камери збігаються.",
 
     // The active device does not fit.
     noFitTitle: (device: string) => `Не підходить до ${device}`,

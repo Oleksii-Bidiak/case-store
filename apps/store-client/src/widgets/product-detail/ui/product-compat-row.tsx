@@ -15,6 +15,8 @@ import { openDevicePicker, type MyDevice } from "@/entities/my-devices";
 import {
   commonDeviceFamily,
   deviceDisplayName,
+  deviceHubHref,
+  deviceShortName,
   getDeviceFit,
   summarizeModelNames,
   useDeviceFit,
@@ -113,9 +115,10 @@ export function ProductCompatRow({
         </div>
       </div>
 
-      {/* Indented under the text from `sm`; on a phone the full width keeps
-          both pills on one line. `min-h-10` holds the row while pending. */}
-      <div className="mt-3 flex min-h-10 flex-wrap gap-2 sm:ml-14">
+      {/* Indented under the text at every width (mockup §6.3) — on a phone
+          the two pills wrap with or without the indent. `min-h-10` holds the
+          row while pending. */}
+      <div className="mt-3 ml-14 flex min-h-10 flex-wrap gap-2">
         {state === "ask" && (
           <Button
             type="button"
@@ -128,8 +131,8 @@ export function ProductCompatRow({
         )}
         {state === "no-fit" && device && (
           <Button asChild className={ACTION_BASE}>
-            <Link href={`/products?device=${encodeURIComponent(device.slug)}`}>
-              {dict.deviceFit.row.allForDevice(device.name)}
+            <Link href={deviceHubHref(device.slug)}>
+              {dict.deviceFit.row.allForDevice(deviceShortName(device.name))}
               <ArrowRight aria-hidden="true" />
             </Link>
           </Button>
@@ -148,7 +151,7 @@ export function ProductCompatRow({
       </div>
 
       {others.length > 0 && (
-        <div className="mt-3.5 border-t border-foreground/10 pt-2.5 sm:ml-14">
+        <div className="mt-3.5 ml-14 border-t border-foreground/10 pt-2.5">
           <p className="mb-1.5 text-xs font-semibold text-muted-foreground">
             {dict.deviceFit.row.otherDevicesTitle}
           </p>

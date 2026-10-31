@@ -98,7 +98,7 @@ describe("ProductCompatRow", () => {
     ).toBeInTheDocument();
   });
 
-  it("says it does not fit — neutral, with a link to everything for the device", () => {
+  it("says it does not fit — neutral, with a link to the device hub", () => {
     addDevice(galaxyS24);
     render(<ProductCompatRow models={models} />);
     expect(region()).toHaveAttribute("data-state", "no-fit");
@@ -107,7 +107,7 @@ describe("ProductCompatRow", () => {
     expect(screen.getByText(row.noFitTitle("Galaxy S24"))).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: row.allForDevice("Galaxy S24") }),
-    ).toHaveAttribute("href", "/products?device=galaxy-s24");
+    ).toHaveAttribute("href", "/devices/galaxy-s24");
     expect(
       screen.getByRole("button", { name: row.otherDevice }),
     ).toBeInTheDocument();

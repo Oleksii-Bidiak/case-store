@@ -7,6 +7,8 @@ export { useDeviceFit, type DeviceFitState } from "./model/use-device-fit";
 export {
   commonDeviceFamily,
   deviceDisplayName,
+  deviceHubHref,
+  deviceShortName,
   getDeviceFit,
   hasCompatData,
   summarizeModelNames,

@@ -28,8 +28,13 @@ import { dict } from "@/shared/config";
  *
  * Above the availability line sits the «Підходить до / Не для <модель>» mark
  * for the shopper's active device (TASK-1953). It appears only after the
- * device store hydrates, into a one-line slot reserved for products that have
- * compatibility data, so it never shifts the card.
+ * device store hydrates, into a fixed two-line slot that every product with
+ * compatibility data holds from the server render on; the mark is clamped to
+ * those two lines, so it never shifts the card. Trade-off: without a saved
+ * device the slot stays empty, and in a row that mixes compat and non-compat
+ * products the compat cards' prices sit one slot higher than their
+ * neighbours' (stock lines and buttons still align). Collapsing the slot for
+ * visitors without a device needs a pre-paint flag in the root layout.
  */
 export function ProductCardActions({
   product,

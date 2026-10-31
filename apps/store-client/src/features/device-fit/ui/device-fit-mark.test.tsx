@@ -66,24 +66,68 @@ describe("DeviceFitMark", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("keeps an aria-hidden one-line slot when asked to reserve space and there is no verdict", () => {
+  it("keeps an empty, aria-hidden two-line slot when asked to reserve space and there is no verdict", () => {
     const { container } = render(
       <DeviceFitMark compatibleDeviceModelIds={["m-15pro"]} reserveSpace />,
     );
-    const slot = container.querySelector(
-      "[data-slot='device-fit-placeholder']",
-    );
+    const slot = container.querySelector("[data-slot='device-fit-slot']");
     expect(slot).toHaveAttribute("aria-hidden", "true");
-    expect(slot).toHaveClass("h-6");
+    expect(slot).toHaveClass("h-9.5");
+    expect(slot).toBeEmptyDOMElement();
   });
 
-  it("renders no verdict on the server, even with a saved device", () => {
+  it("puts the mark INSIDE the same fixed-height slot, clamped to two lines, so it cannot grow the card", () => {
+    addDevice(iphone15Pro);
+    const { container } = render(
+      <DeviceFitMark compatibleDeviceModelIds={["m-15pro"]} reserveSpace />,
+    );
+    const slot = container.querySelector("[data-slot='device-fit-slot']");
+    expect(slot).toHaveClass("h-9.5");
+    expect(slot).not.toHaveAttribute("aria-hidden");
+    const text = screen.getByText(dict.deviceFit.fits("iPhone 15 Pro"));
+    expect(text).toHaveClass("line-clamp-2");
+    expect(slot).toContainElement(text);
+  });
+
+  it("reserves one line in the list-row layout", () => {
+    const { container } = render(
+      <DeviceFitMark
+        compatibleDeviceModelIds={["m-15pro"]}
+        layout="truncate"
+        reserveSpace
+      />,
+    );
+    expect(
+      container.querySelector("[data-slot='device-fit-slot']"),
+    ).toHaveClass("h-6");
+  });
+
+  it("uses the short model name on the card («Watch S10 46mm»), the full one in title too", () => {
+    addDevice({
+      modelId: "m-w10",
+      slug: "apple-watch-series-10-46mm",
+      name: "Apple Watch Series 10 46mm",
+      brandName: "Apple",
+      family: "watch" as const,
+    });
+    render(<DeviceFitMark compatibleDeviceModelIds={["m-w10"]} />);
+    const pill = screen
+      .getByText(dict.deviceFit.fits("Watch S10 46mm"))
+      .closest("[data-slot='device-fit-mark']");
+    expect(pill).toHaveAttribute(
+      "title",
+      dict.deviceFit.fits("Watch S10 46mm"),
+    );
+  });
+
+  it("renders no verdict on the server, even with a saved device, but the same slot", () => {
     addDevice(iphone15Pro);
     const html = renderToString(
       <DeviceFitMark compatibleDeviceModelIds={["m-15pro"]} reserveSpace />,
     );
     expect(html).not.toContain(dict.deviceFit.fits("iPhone 15 Pro"));
-    expect(html).toContain("device-fit-placeholder");
+    expect(html).toContain("device-fit-slot");
+    expect(html).toContain("h-9.5");
   });
 
   it("updates live when the active device changes", () => {

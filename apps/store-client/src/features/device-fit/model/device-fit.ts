@@ -43,6 +43,27 @@ export function deviceDisplayName(
 }
 
 /**
+ * The compact name a card mark uses («Watch S10 46mm», «iPad 10») — the
+ * mockup's `short`. The device store keeps only the full catalogue name, so
+ * the few long, predictable phrasings are condensed here; anything else is
+ * returned unchanged. Not for places where the full name matters (PDP titles).
+ */
+export function deviceShortName(name: string): string {
+  return name
+    .replace(/^Apple\s+(?=Watch\b)/, "")
+    .replace(/\bSeries\s+(\d+)/, "S$1")
+    .replace(/\b(\d+)(?:st|nd|rd|th)\s+gen(?:eration)?\b/i, "$1")
+    .replace(/(\d+)-(?:го|ого)\s+покоління/, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** «Все для <модель>» — the device hub (TASK-1954). */
+export function deviceHubHref(slug: string): string {
+  return `/devices/${encodeURIComponent(slug)}`;
+}
+
+/**
  * The first `limit` model names joined with commas, plus how many are left
  * unnamed — the caller words the tail («та ще 3 моделі»).
  */
