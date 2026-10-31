@@ -9,10 +9,7 @@ import { dict, PAGE_CONTAINER } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { CategoryIcon, Skeleton } from "@/shared/ui";
 
-import {
-  deviceCategoryHref,
-  type DeviceCategory,
-} from "../model/device-categories";
+import { deviceCategoryHref, type DeviceCategory } from "@/entities/device";
 import { useFitCount } from "../model/use-fit-count";
 import { BAR_PILL, FOCUS_RING } from "./bar-styles";
 

@@ -56,3 +56,21 @@ export {
   type DeviceModelMatch,
   type MatchableDeviceModel,
 } from "./model/match-device-model";
+
+// The active device's root categories with real product counts (compat pages ×
+// the category tree) and the two device hrefs. Shared by the device bar and the
+// «Каталог» mega menu's «Ваш пристрій» column — moved down from
+// `widgets/device-bar` so neither widget imports the other (TASK-2072).
+export {
+  deviceCategoryHref,
+  deviceHubHref,
+  selectDeviceCategories,
+  totalProductCount,
+  type CompatPageLike,
+  type DeviceCategory,
+  type RootCategoryLike,
+} from "./model/device-categories";
+export {
+  useDeviceCategories,
+  type DeviceCategoriesState,
+} from "./model/use-device-categories";

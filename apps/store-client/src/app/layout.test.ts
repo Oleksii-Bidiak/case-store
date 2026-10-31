@@ -24,7 +24,7 @@ jest.mock("@/shared/api/site-contact-server", () => ({
   fetchSiteContactSettings: jest.fn().mockResolvedValue(null),
   SITE_CONTACT_TAG: "site-contact",
 }));
-jest.mock("@/widgets/header", () => ({ Header: () => null }));
+jest.mock("./site-header", () => ({ SiteHeader: () => null }));
 jest.mock("@/widgets", () => ({ Footer: () => null }));
 jest.mock("./providers", () => ({ Providers: () => null }));
 // next/font/google is a build-time macro (compiled away by Next's SWC plugin);

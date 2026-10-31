@@ -15,7 +15,7 @@ import {
   deviceHubHref,
   totalProductCount,
   type DeviceCategory,
-} from "../model/device-categories";
+} from "@/entities/device";
 import { FOCUS_RING } from "./bar-styles";
 
 const t = dict.devicePicker.bar;

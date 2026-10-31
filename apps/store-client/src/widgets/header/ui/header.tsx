@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useHeaderHeight } from "@/shared/lib/use-header-height";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -24,14 +24,20 @@ import { DeviceBar } from "@/widgets/device-bar";
 import { SearchAutocomplete } from "@/features/search";
 import { ThemeSwitchRow, ThemeToggleButton } from "@/features/theme";
 import { AnnouncementBar } from "./announcement-bar";
-import { HeaderSearch } from "./header-search";
+import { HeaderSearch, type CatalogMenuSlotProps } from "./header-search";
 import { ACCOUNT_ACTION_CLASS, HeaderAuth } from "./header-auth";
 import { HeaderCartBadge } from "./header-cart-badge";
 import { HeaderWishlistBadge } from "./header-wishlist-badge";
-import {
-  HeaderMobileCategories,
-  MOBILE_LINK_CLASS,
-} from "./header-mobile-categories";
+
+/** Shared styling for the links in the slide-out menu. */
+const MOBILE_LINK_CLASS =
+  "rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+/** What the header hands the sheet's catalog (TASK-2072). */
+export interface CatalogDrillSlotProps {
+  /** Close the slide-out menu (a link was picked, or the picker opens). */
+  onNavigate: () => void;
+}
 
 const NAV_LINKS = [
   { href: "/products", label: dict.nav.products },
@@ -53,6 +59,14 @@ interface HeaderProps {
    * announcement bar hides it when unset (TASK-873).
    */
   supportPhone?: string | null;
+  /**
+   * The «Каталог» mega menu's content (lg+) and the sheet's step-by-step
+   * catalog (TASK-2072). Slots, not imports: both live in
+   * `widgets/catalog-menu`, and widgets do not import each other — the app
+   * layer composes them (`app/site-header.tsx`).
+   */
+  renderCatalogMenu?: (props: CatalogMenuSlotProps) => ReactNode;
+  renderCatalogDrill?: (props: CatalogDrillSlotProps) => ReactNode;
 }
 
 /**
@@ -71,6 +85,8 @@ export function Header({
   logoUrl,
   siteName,
   supportPhone,
+  renderCatalogMenu,
+  renderCatalogDrill,
 }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   // Publishes the measured height for every sticky panel below (layout.ts).
@@ -102,8 +118,10 @@ export function Header({
         data-site-header=""
         className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80"
       >
+        {/* `relative`: the «Каталог» panel anchors to this row (TASK-2072),
+            so its left edge lines up with the logo at every width. */}
         <div
-          className={`${PAGE_CONTAINER} flex h-16 items-center gap-2 sm:gap-3`}
+          className={`${PAGE_CONTAINER} relative flex h-16 items-center gap-2 sm:gap-3`}
         >
           {/* Left: mobile menu trigger + logo. `min-w-0` (here and on the logo
               link) makes this the cluster that yields on a 320px screen — the
@@ -194,10 +212,17 @@ export function Header({
                     {dict.wishlist.navLabel}
                   </Link>
 
-                  {/* Catalog categories — tree accordion (TASK-082-B). */}
-                  <HeaderMobileCategories
-                    onNavigate={() => setMenuOpen(false)}
-                  />
+                  {/* The step-by-step catalog (TASK-2072): device row, roots,
+                      and in place down to level 4. Inline, not a nested
+                      dialog — Escape keeps closing the sheet. */}
+                  {renderCatalogDrill && (
+                    <>
+                      <hr className="my-1 border-border" />
+                      {renderCatalogDrill({
+                        onNavigate: () => setMenuOpen(false),
+                      })}
+                    </>
+                  )}
 
                   {/* Auth area — hidden until the session bootstrap settles. */}
                   {!isInitializing &&
@@ -286,8 +311,12 @@ export function Header({
             </Link>
           </div>
 
-          {/* Search pill (Каталог + search + submit) — desktop. */}
-          <HeaderSearch />
+          {/* Search pill (Каталог + search + submit) — desktop. Below `lg`
+              its «Каталог» opens this menu sheet (TASK-2072). */}
+          <HeaderSearch
+            renderCatalogMenu={renderCatalogMenu}
+            onOpenMenu={() => setMenuOpen(true)}
+          />
 
           {/* Section links — the desktop half of NAV_LINKS (TASK-413). They
               appear at exactly the width the slide-out menu that carries them

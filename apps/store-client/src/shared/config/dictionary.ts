@@ -11,6 +11,7 @@ import { deviceFitDict } from "./dict-sections/device-fit";
 import { devicePagesDict } from "./dict-sections/device-pages";
 import { devicePickerDict } from "./dict-sections/device-picker";
 import { searchDeviceDict } from "./dict-sections/search-device";
+import { catalogMenuDict } from "./dict-sections/catalog-menu";
 import { pluralUk } from "./plural";
 
 // Ukrainian labels for the order/payment status enums (TASK-129). Keyed by the
@@ -2809,6 +2810,7 @@ export const dict = {
   deviceFit: deviceFitDict,
   devicePages: devicePagesDict,
   searchDevice: searchDeviceDict,
+  catalogMenu: catalogMenuDict,
 } as const;
 
 export type Dictionary = typeof dict;

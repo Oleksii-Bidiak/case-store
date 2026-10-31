@@ -308,3 +308,58 @@ describe("Header — the order-status lookup for guests (TASK-1999)", () => {
     ).toBeNull();
   });
 });
+
+// TASK-2072: the «Каталог» menus are slots the app layer fills
+// (app/site-header.tsx) — the header only mounts them.
+describe("Header — the catalog slots (TASK-2072)", () => {
+  function renderWithSlots() {
+    server.use(
+      http.get("*/api/categories/tree", () => HttpResponse.json({ data: [] })),
+      http.get("*/api/wishlist", () =>
+        HttpResponse.json({ data: { items: [], itemCount: 0 } }),
+      ),
+    );
+    return renderWithProviders(
+      <ThemeProvider attribute="data-theme" defaultTheme="system" enableSystem>
+        <Header
+          siteName={STORE_NAME}
+          renderCatalogMenu={() => <p>mega-slot</p>}
+          renderCatalogDrill={({ onNavigate }) => (
+            <button type="button" onClick={onNavigate}>
+              drill-slot
+            </button>
+          )}
+        />
+      </ThemeProvider>,
+    );
+  }
+
+  it("mounts the drill inside the slide-out menu and lets it close the menu", async () => {
+    const user = userEvent.setup();
+    renderWithSlots();
+
+    await user.click(
+      screen.getByRole("button", { name: dict.header.openMenu }),
+    );
+    const menu = await screen.findByRole("dialog");
+    await user.click(within(menu).getByRole("button", { name: "drill-slot" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("below lg, «Каталог» opens the slide-out menu instead of the mega menu", async () => {
+    // jsdom's matchMedia stub matches nothing: a viewport below `lg`.
+    const user = userEvent.setup();
+    renderWithSlots();
+
+    await user.click(
+      screen.getByRole("button", { name: dict.header.catalogAria }),
+    );
+
+    const menu = await screen.findByRole("dialog");
+    expect(
+      within(menu).getByRole("button", { name: "drill-slot" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("mega-slot")).not.toBeInTheDocument();
+  });
+});

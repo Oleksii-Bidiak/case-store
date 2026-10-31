@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 
-import { useCategoryControllerGetCategoryTree } from "@/entities/category";
+import { useCategoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
 import { useCatalogLandingControllerFindCompatPages } from "@/shared/api/generated/catalog/catalog";
 
 import {
@@ -26,7 +26,9 @@ export interface DeviceCategoriesState {
  * or a viewport below 1024 where tier 2 does not exist) sends no request: the
  * compat-pages list covers the whole catalogue, so a phone never downloads it
  * for a tier it cannot see. The category tree is the header's own query (the
- * «Каталог» menu fires it on mount), so it costs no extra request.
+ * «Каталог» menu fires it on mount), so it costs no extra request. Lives in
+ * `entities/device` (moved from `widgets/device-bar`, TASK-2072) so the
+ * catalog mega menu can read it without a widget → widget import.
  */
 export function useDeviceCategories(
   deviceSlug: string | undefined,

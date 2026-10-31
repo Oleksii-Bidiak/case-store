@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Onest, Unbounded } from "next/font/google";
 import Script from "next/script";
 import { Providers } from "./providers";
-import { Header } from "@/widgets/header";
+import { SiteHeader } from "./site-header";
 import { Footer } from "@/widgets";
 import { PreviewBar } from "@/widgets/preview-bar";
 import { ThemeColorSync } from "@/features/theme";
@@ -213,7 +213,7 @@ export default async function RootLayout({
           >
             {dict.nav.skipToContent}
           </a>
-          <Header
+          <SiteHeader
             announcement={announcement}
             logoUrl={seo?.logoUrl}
             siteName={siteName}

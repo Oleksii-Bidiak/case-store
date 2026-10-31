@@ -15,7 +15,7 @@ import { PAGE_CONTAINER } from "@/shared/config";
 import { Skeleton } from "@/shared/ui";
 
 import { RESERVE_TIER_TWO_SCRIPT } from "../model/reserve-tier-two";
-import { useDeviceCategories } from "../model/use-device-categories";
+import { useDeviceCategories } from "@/entities/device";
 import { useWideViewport } from "../model/use-wide-viewport";
 import { PRIMARY_CONTROL_ATTR } from "./bar-styles";
 import { DeviceBarCategories } from "./device-bar-categories";
