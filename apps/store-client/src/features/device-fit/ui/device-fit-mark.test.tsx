@@ -4,9 +4,10 @@
 import { act, render, screen } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 
-import { addDevice, clearMyDevices } from "@/entities/my-devices";
+import { addDevice, clearMyDevices, setLabel } from "@/entities/my-devices";
 import { dict } from "@/shared/config";
 
+import { DeviceFitScopeProvider } from "../model/fit-scope";
 import { DeviceFitMark } from "./device-fit-mark";
 
 const iphone15Pro = {
@@ -155,5 +156,44 @@ describe("DeviceFitMark", () => {
     expect(screen.getByText(dict.deviceFit.fits("iPhone 15 Pro"))).toHaveClass(
       "truncate",
     );
+  });
+});
+
+describe("DeviceFitMark — mode B, «для всіх моїх» (Catalog mockup §2.3)", () => {
+  const renderAll = (ids: string[]) =>
+    render(
+      <DeviceFitScopeProvider scope="all">
+        <DeviceFitMark compatibleDeviceModelIds={ids} />
+      </DeviceFitScopeProvider>,
+    );
+
+  it("lists every saved device the product fits, with its label", () => {
+    addDevice(iphone15Pro);
+    setLabel("m-15pro", "Мама");
+    addDevice(galaxyS24);
+    // Fits the second device only — mode A would say «Не для Galaxy S24».
+    renderAll(["m-15pro"]);
+    const pill = screen
+      .getByText(dict.deviceFit.fitsAny(["iPhone 15 Pro · Мама"]))
+      .closest("[data-slot='device-fit-mark']");
+    expect(pill).toHaveAttribute("data-mode", "all");
+    expect(pill).toHaveAttribute("data-verdict", "fits");
+  });
+
+  it("says «Не для ваших пристроїв» when none of them fits", () => {
+    addDevice(iphone15Pro);
+    addDevice(galaxyS24);
+    renderAll(["m-other"]);
+    expect(screen.getByText(dict.deviceFit.notForAny)).toHaveClass(
+      "line-clamp-2",
+    );
+  });
+
+  it("falls back to mode A with a single saved device", () => {
+    addDevice(galaxyS24);
+    renderAll(["m-15pro"]);
+    expect(
+      screen.getByText(dict.deviceFit.notFor("Galaxy S24")),
+    ).toBeInTheDocument();
   });
 });

@@ -58,6 +58,31 @@ export function deviceShortName(name: string): string {
     .trim();
 }
 
+/**
+ * The mockup's `_dn(x)`: the SHORT name plus the owner's label, if any —
+ * «Watch S10 46 мм · Мама». For marks, chips and verdict titles.
+ */
+export function deviceShortDisplayName(
+  device: Pick<MyDevice, "name" | "label">,
+): string {
+  return deviceDisplayName({
+    name: deviceShortName(device.name),
+    label: device.label,
+  });
+}
+
+/**
+ * Mode B (Catalog mockup §2.3): the saved devices a product fits, in saved
+ * order. `null` = the product carries no compatibility data, so no mark.
+ */
+export function fittingDevices<D extends Pick<MyDevice, "modelId">>(
+  compatibleDeviceModelIds: readonly string[] | null | undefined,
+  devices: readonly D[],
+): D[] | null {
+  if (!compatibleDeviceModelIds?.length) return null;
+  return devices.filter((d) => compatibleDeviceModelIds.includes(d.modelId));
+}
+
 /** «Все для <модель>» — the device hub (TASK-1954). */
 export function deviceHubHref(slug: string): string {
   return `/devices/${encodeURIComponent(slug)}`;

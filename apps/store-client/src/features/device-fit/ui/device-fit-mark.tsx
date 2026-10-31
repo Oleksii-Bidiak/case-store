@@ -6,8 +6,47 @@ import { Ban, Check } from "lucide-react";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 
-import { deviceShortName, hasCompatData } from "../model/device-fit";
+import type { MyDevice } from "@/entities/my-devices";
+
+import {
+  deviceShortDisplayName,
+  deviceShortName,
+  fittingDevices,
+  hasCompatData,
+  type DeviceFitVerdict,
+} from "../model/device-fit";
+import { useDeviceFitScope } from "../model/fit-scope";
 import { useDeviceFit } from "../model/use-device-fit";
+
+interface MarkAnswer {
+  fits: boolean;
+  text: string;
+}
+
+/** Mode A: the active device only, by its short name (no label on cards). */
+function modeAAnswer(verdict: DeviceFitVerdict, device: MyDevice): MarkAnswer {
+  const fits = verdict === "fits";
+  const name = deviceShortName(device.name);
+  return {
+    fits,
+    text: fits ? dict.deviceFit.fits(name) : dict.deviceFit.notFor(name),
+  };
+}
+
+/** Mode B: every saved device the product fits, each with its label. */
+function modeBAnswer(
+  ids: readonly string[] | null | undefined,
+  devices: readonly MyDevice[],
+): MarkAnswer | null {
+  const fitting = fittingDevices(ids, devices);
+  if (!fitting) return null;
+  return fitting.length > 0
+    ? {
+        fits: true,
+        text: dict.deviceFit.fitsAny(fitting.map(deviceShortDisplayName)),
+      }
+    : { fits: false, text: dict.deviceFit.notForAny };
+}
 
 export interface DeviceFitMarkProps {
   /** `product.compatibleDeviceModelIds` straight from the API. */
@@ -38,6 +77,10 @@ export interface DeviceFitMarkProps {
  * compatibility data. Fitting is `success`; not fitting is neutral `muted`,
  * never an alarm colour. Not interactive — the text is the accessible name,
  * the icon is decorative. Cards use the short model name (mockup `short`).
+ *
+ * Inside a `DeviceFitScopeProvider scope="all"` (the catalogue's «для всіх
+ * моїх» filter) with ≥ 2 saved devices, the mark answers for all of them:
+ * «Підходить: iPhone 15 Pro, iPhone 13 · Мама» / «Не для ваших пристроїв».
  */
 export function DeviceFitMark({
   compatibleDeviceModelIds,
@@ -45,19 +88,27 @@ export function DeviceFitMark({
   reserveSpace = false,
   className,
 }: DeviceFitMarkProps) {
-  const { device, verdict } = useDeviceFit(compatibleDeviceModelIds);
+  const { device, devices, verdict } = useDeviceFit(compatibleDeviceModelIds);
+  const scope = useDeviceFitScope();
   const wrap = layout === "wrap";
 
+  // Mode B only with ≥ 2 saved devices — with one it reads exactly like A.
+  const modeB = scope === "all" && devices.length >= 2;
+  const answer = modeB
+    ? modeBAnswer(compatibleDeviceModelIds, devices)
+    : verdict && device
+      ? modeAAnswer(verdict, device)
+      : null;
+
   let mark: ReactNode = null;
-  if (verdict && device) {
-    const fits = verdict === "fits";
-    const name = deviceShortName(device.name);
-    const text = fits ? dict.deviceFit.fits(name) : dict.deviceFit.notFor(name);
+  if (answer) {
+    const { fits, text } = answer;
     const Icon = fits ? Check : Ban;
     mark = (
       <span
         data-slot="device-fit-mark"
-        data-verdict={verdict}
+        data-verdict={fits ? "fits" : "no-fit"}
+        data-mode={modeB ? "all" : "active"}
         title={text}
         className={cn(
           "inline-flex min-h-6 max-w-full gap-1.5 self-start py-1 pr-2.5 pl-2 text-xs leading-tight font-semibold",

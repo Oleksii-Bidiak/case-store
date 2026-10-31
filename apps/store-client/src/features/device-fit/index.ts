@@ -4,11 +4,20 @@
 // wishlist; the PDP builds its big compatibility row from the same hook.
 export { DeviceFitMark, type DeviceFitMarkProps } from "./ui/device-fit-mark";
 export { useDeviceFit, type DeviceFitState } from "./model/use-device-fit";
+// Mode B of the card mark — the catalogue listing sets `all` while its
+// «для всіх моїх» filter is on (TASK-2077).
+export {
+  DeviceFitScopeProvider,
+  useDeviceFitScope,
+  type DeviceFitScope,
+} from "./model/fit-scope";
 export {
   commonDeviceFamily,
   deviceDisplayName,
   deviceHubHref,
+  deviceShortDisplayName,
   deviceShortName,
+  fittingDevices,
   getDeviceFit,
   hasCompatData,
   summarizeModelNames,

@@ -2,11 +2,41 @@ import {
   commonDeviceFamily,
   deviceDisplayName,
   deviceHubHref,
+  deviceShortDisplayName,
   deviceShortName,
+  fittingDevices,
   getDeviceFit,
   hasCompatData,
   summarizeModelNames,
 } from "./device-fit";
+
+describe("deviceShortDisplayName — the mockup's _dn()", () => {
+  it("joins the short name and the label", () => {
+    expect(
+      deviceShortDisplayName({
+        name: "Apple Watch Series 10 46mm",
+        label: "Мама",
+      }),
+    ).toBe("Watch S10 46mm · Мама");
+    expect(deviceShortDisplayName({ name: "iPhone 13" })).toBe("iPhone 13");
+  });
+});
+
+describe("fittingDevices — mode B", () => {
+  const a = { modelId: "a" };
+  const b = { modelId: "b" };
+
+  it("keeps the saved devices the product fits, in saved order", () => {
+    expect(fittingDevices(["b", "a"], [a, b])).toEqual([a, b]);
+    expect(fittingDevices(["b"], [a, b])).toEqual([b]);
+    expect(fittingDevices(["c"], [a, b])).toEqual([]);
+  });
+
+  it("answers null for a product without compatibility data", () => {
+    expect(fittingDevices([], [a])).toBeNull();
+    expect(fittingDevices(null, [a])).toBeNull();
+  });
+});
 
 describe("deviceShortName (TASK-1953)", () => {
   it.each([
