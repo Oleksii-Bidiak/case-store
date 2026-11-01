@@ -515,6 +515,12 @@ export class ReturnRepository {
         throw refundRecordedError(change.decision);
       }
 
+      // R2 pre-merge review: read the cover BEFORE the write, so a decision that
+      // breaks it can take the order out of its derived REFUNDED.
+      const wasFullyRefunded = options.credit
+        ? await this.money.isFullyRefunded(tx, current.orderId)
+        : false;
+
       const credit: Prisma.ReturnUpdateManyMutationInput =
         options.credit === 'compute'
           ? {
@@ -556,7 +562,9 @@ export class ReturnRepository {
 
       // The credit is part of the order's balance — recompute it in this tx.
       if (options.credit) {
-        await this.money.recompute(tx, current.orderId, options.actorId ?? null);
+        await this.money.recompute(tx, current.orderId, options.actorId ?? null, {
+          coverageLost: wasFullyRefunded,
+        });
       }
 
       return tx.return.findUniqueOrThrow({
@@ -589,6 +597,9 @@ export class ReturnRepository {
         computedKop: await this.computeCredit(tx, current.orderId, current.id),
         paidOutKop: await this.money.returnPaidOutKop(tx, current.id),
       });
+      // R2 pre-merge review: raising a credit back above its payouts breaks the
+      // cover — the order must leave a REFUNDED it got from the lowered credit.
+      const wasFullyRefunded = await this.money.isFullyRefunded(tx, current.orderId);
 
       const { count } = await tx.return.updateMany({
         where: { id: current.id, decision: ReturnDecision.REFUND, creditKop: { not: null } },
@@ -598,7 +609,9 @@ export class ReturnRepository {
         throw creditNotRefundError();
       }
 
-      await this.money.recompute(tx, current.orderId, options.actorId);
+      await this.money.recompute(tx, current.orderId, options.actorId, {
+        coverageLost: wasFullyRefunded,
+      });
       await this.money.syncReturnStatus(tx, current.id);
 
       return tx.return.findUniqueOrThrow({

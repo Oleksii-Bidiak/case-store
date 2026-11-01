@@ -23,10 +23,12 @@ import {
   deriveOrderStatus,
   derivePaymentStatus,
   directionOf,
+  isOrderFullyRefunded,
   ledgerTotals,
   returnStatusAfterPayouts,
   reversalDraft,
   type LedgerRow,
+  type OrderStatusDerivationInput,
 } from './order-money';
 import { DERIVED_REFUNDED_FROM } from './order-state-machine';
 import {
@@ -327,6 +329,15 @@ export class OrderMoneyRepository {
        * order back (`deriveOrderStatus`, TASK-1969).
        */
       payoutUndone?: boolean;
+      /**
+       * The order WAS fully refunded before this transaction changed a return's
+       * credit or decision (read with {@link isFullyRefunded} under the lock).
+       * Lets a REFUNDED order move back exactly like an undone payout does —
+       * otherwise raising a credit back left it REFUNDED with no exit (R2
+       * pre-merge review). A legacy hand-set REFUNDED order was never covered,
+       * so it is not touched.
+       */
+      coverageLost?: boolean;
     } = {},
   ): Promise<MoneyTotals> {
     const order = await tx.order.findUniqueOrThrow({
@@ -348,7 +359,7 @@ export class OrderMoneyRepository {
       orderId,
       refundedKop,
       rows,
-      payoutUndone: options.payoutUndone === true,
+      payoutUndone: options.payoutUndone === true || options.coverageLost === true,
     });
     // A refund label the backfill could not put an amount behind is kept until
     // real money out is recorded (see `PaymentStatusInput.legacyRefundLabel`).
@@ -441,18 +452,7 @@ export class OrderMoneyRepository {
       return current;
     }
     const { orderId, refundedKop, rows, payoutUndone } = input;
-    const lines = await tx.orderItem.findMany({
-      where: { orderId },
-      select: { id: true, quantity: true },
-    });
-    const returns = await tx.return.findMany({
-      where: { orderId, decision: ReturnDecision.REFUND },
-      select: {
-        id: true,
-        creditKop: true,
-        items: { select: { orderItemId: true, quantity: true } },
-      },
-    });
+    const { lines, refundReturns } = await this.loadCover(tx, orderId, rows);
     const lastIntoRefunded =
       current === OrderStatus.REFUNDED
         ? await tx.orderStatusHistory.findFirst({
@@ -469,14 +469,61 @@ export class OrderMoneyRepository {
       orderStatus: current,
       refundedKop,
       lines,
-      refundReturns: returns.map((ret) => ({
-        creditKop: ret.creditKop,
-        items: ret.items,
-        paidOutKop: ledgerTotals(rows.filter((row) => row.returnId === ret.id)).refundedKop,
-      })),
+      refundReturns,
       payoutUndone,
       refundedFrom: lastIntoRefunded?.fromStatus ?? null,
     });
+  }
+
+  /**
+   * Whether the order is fully refunded right now (`isOrderFullyRefunded`) —
+   * read BEFORE a credit or decision change, so the change can tell
+   * {@link recompute} it broke the cover (`coverageLost`, R2 pre-merge review).
+   * Call under the order-row lock.
+   */
+  async isFullyRefunded(tx: Tx, orderId: string): Promise<boolean> {
+    const rows = await tx.orderMoneyEntry.findMany({
+      where: { orderId },
+      select: {
+        direction: true,
+        amountKop: true,
+        reversalOfId: true,
+        voidedAt: true,
+        returnId: true,
+      },
+    });
+    const { refundedKop } = ledgerTotals(rows);
+    return isOrderFullyRefunded({ refundedKop, ...(await this.loadCover(tx, orderId, rows)) });
+  }
+
+  /** The order's lines and its REFUND-decided returns as the derivation reads them. */
+  private async loadCover(
+    tx: Tx,
+    orderId: string,
+    rows: ReadonlyArray<LedgerRow & { returnId: string | null }>,
+  ): Promise<Pick<OrderStatusDerivationInput, 'lines' | 'refundReturns'>> {
+    const lines = await tx.orderItem.findMany({
+      where: { orderId },
+      select: { id: true, quantity: true },
+    });
+    const returns = await tx.return.findMany({
+      where: { orderId, decision: ReturnDecision.REFUND },
+      select: {
+        id: true,
+        status: true,
+        creditKop: true,
+        items: { select: { orderItemId: true, quantity: true } },
+      },
+    });
+    return {
+      lines,
+      refundReturns: returns.map((ret) => ({
+        creditKop: ret.creditKop,
+        status: ret.status,
+        items: ret.items,
+        paidOutKop: ledgerTotals(rows.filter((row) => row.returnId === ret.id)).refundedKop,
+      })),
+    };
   }
 
   // ── The LiqPay path (TASK-1500 / TASK-2047, R2 step A2) ────────────────────

@@ -149,12 +149,23 @@ function dueKop(input: BalanceInput): number {
 
 // ── The order's own REFUNDED (TASK-1969 / TASK-1970) ────────────────────────
 
+/**
+ * Return statuses at which the goods are back: their money may go out, and
+ * they count towards the order's own REFUNDED.
+ */
+const PAYABLE_RETURN_STATUSES: readonly ReturnStatus[] = [
+  ReturnStatus.RECEIVED,
+  ReturnStatus.REFUNDED,
+];
+
 /** A REFUND-decided return as the derivation reads it. */
 export interface RefundReturnCover {
   /** «До повернення»; null reads as 0. */
   creditKop: number | null;
   /** Σ of its payouts, net of reversals, voided ignored (REQUESTED counts). */
   paidOutKop: number;
+  /** Covers its lines only once the goods are back (RECEIVED / REFUNDED). */
+  status: ReturnStatus;
   items: ReadonlyArray<{ orderItemId: string; quantity: number }>;
 }
 
@@ -176,6 +187,11 @@ export interface OrderStatusDerivationInput {
  * order line's quantity is covered by REFUND-decided returns, each of those is
  * paid out up to its credit, and some money actually went back. Shipping and
  * add-ons are not lines, so a shop that keeps them still reaches REFUNDED.
+ *
+ * Only returns whose goods are back (RECEIVED / REFUNDED) cover anything (R2
+ * pre-merge review): a REFUND return still on its way, with its credit lowered
+ * to 0, used to read as «paid out in full» and turn the order REFUNDED with
+ * the goods still at the customer.
  */
 export function isOrderFullyRefunded(
   input: Pick<OrderStatusDerivationInput, 'refundedKop' | 'lines' | 'refundReturns'>,
@@ -186,6 +202,9 @@ export function isOrderFullyRefunded(
   }
   const returned = new Map<string, number>();
   for (const ret of input.refundReturns) {
+    if (!PAYABLE_RETURN_STATUSES.includes(ret.status)) {
+      continue;
+    }
     assertKopecks(ret.paidOutKop, ret.creditKop ?? 0);
     if (ret.paidOutKop < (ret.creditKop ?? 0)) {
       return false;
@@ -545,12 +564,6 @@ const LIVE_STATUSES: readonly OrderStatus[] = [
   OrderStatus.PENDING,
   OrderStatus.CONFIRMED,
   OrderStatus.PROCESSING,
-];
-
-/** Return statuses at which the goods are back, so their money may go out. */
-const PAYABLE_RETURN_STATUSES: readonly ReturnStatus[] = [
-  ReturnStatus.RECEIVED,
-  ReturnStatus.REFUNDED,
 ];
 
 export type PayoutVerdict =

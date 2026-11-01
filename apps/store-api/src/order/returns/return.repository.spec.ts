@@ -20,6 +20,7 @@ import { OrderMoneyRepository } from '../order-money.repository';
 const moneyRepositoryMock = {
   recompute: jest.fn(),
   returnPaidOutKop: jest.fn().mockResolvedValue(0),
+  isFullyRefunded: jest.fn().mockResolvedValue(false),
   syncReturnStatus: jest.fn(),
 };
 import { RETURN_SORT_FIELDS, ReturnListQueryDto } from './dto';

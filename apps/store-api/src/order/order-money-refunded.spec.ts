@@ -1,4 +1,4 @@
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, ReturnStatus } from '@prisma/client';
 import {
   type OrderStatusDerivationInput,
   deriveBalance,
@@ -22,6 +22,7 @@ describe('order-money — derived order REFUNDED (TASK-1969)', () => {
 
   const everythingBack = {
     creditKop: 150_000,
+    status: ReturnStatus.RECEIVED,
     paidOutKop: 150_000,
     items: [
       { orderItemId: 'line-case', quantity: 2 },
@@ -51,11 +52,13 @@ describe('order-money — derived order REFUNDED (TASK-1969)', () => {
             refundReturns: [
               {
                 creditKop: 50_000,
+                status: ReturnStatus.RECEIVED,
                 paidOutKop: 50_000,
                 items: [{ orderItemId: 'line-case', quantity: 1 }],
               },
               {
                 creditKop: 100_000,
+                status: ReturnStatus.RECEIVED,
                 paidOutKop: 100_000,
                 items: [
                   { orderItemId: 'line-case', quantity: 1 },
@@ -75,6 +78,7 @@ describe('order-money — derived order REFUNDED (TASK-1969)', () => {
             refundReturns: [
               {
                 creditKop: 100_000,
+                status: ReturnStatus.RECEIVED,
                 paidOutKop: 100_000,
                 items: [{ orderItemId: 'line-case', quantity: 2 }],
               },
@@ -124,6 +128,43 @@ describe('order-money — derived order REFUNDED (TASK-1969)', () => {
     it('is false for an order without lines', () => {
       expect(isOrderFullyRefunded(input({ lines: [], refundReturns: [] }))).toBe(false);
     });
+
+    // R2 pre-merge review: goods still at the customer cover nothing — even a
+    // return whose credit was lowered to 0 (paid out 0 ≥ credit 0).
+    it.each([ReturnStatus.REQUESTED, ReturnStatus.APPROVED])(
+      'is false while a covering return is still %s (goods not back)',
+      (status) => {
+        expect(
+          isOrderFullyRefunded(
+            input({
+              refundedKop: 50_000,
+              refundReturns: [
+                {
+                  creditKop: 50_000,
+                  paidOutKop: 50_000,
+                  status: ReturnStatus.RECEIVED,
+                  items: [{ orderItemId: 'line-case', quantity: 2 }],
+                },
+                {
+                  creditKop: 0,
+                  paidOutKop: 0,
+                  status,
+                  items: [{ orderItemId: 'line-charger', quantity: 1 }],
+                },
+              ],
+            }),
+          ),
+        ).toBe(false);
+      },
+    );
+
+    it('counts a return already REFUNDED (goods back, paid out)', () => {
+      expect(
+        isOrderFullyRefunded(
+          input({ refundReturns: [{ ...everythingBack, status: ReturnStatus.REFUNDED }] }),
+        ),
+      ).toBe(true);
+    });
   });
 
   describe('deriveOrderStatus', () => {
@@ -142,6 +183,7 @@ describe('order-money — derived order REFUNDED (TASK-1969)', () => {
             refundReturns: [
               {
                 creditKop: 100_000,
+                status: ReturnStatus.RECEIVED,
                 paidOutKop: 100_000,
                 items: [{ orderItemId: 'line-case', quantity: 2 }],
               },

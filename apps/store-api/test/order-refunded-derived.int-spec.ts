@@ -255,6 +255,52 @@ describe('Order REFUNDED derived from the money ledger (integration, R2 A4)', ()
     ]);
   });
 
+  // R2 pre-merge review: a REFUND return whose goods are still on their way,
+  // with its credit lowered to 0, read as «paid out in full» — the order turned
+  // REFUNDED with the charger still at the customer, and had no way back.
+  it('a return not received yet covers nothing, even with its credit lowered to 0', async () => {
+    await createOrder(OrderStatus.DELIVERED);
+    await receiveCod();
+    const first = await returnLines([0, 1]);
+    await payOut((await orderRow()).returnCreditKop, first);
+
+    const opened = await returns.adminCreateReturn(operatorId, orderId, {
+      items: [{ orderItemId: lineIds[2], quantity: 1 }],
+    });
+    await returns.decideReturn(opened.id, operatorId, { decision: ReturnDecision.REFUND });
+    await returns.reduceReturnCredit(opened.id, operatorId, { creditKop: 0, reason: 'брак' });
+
+    expect((await orderRow()).status).toBe(OrderStatus.DELIVERED);
+    expect(await statusRows()).toEqual([]);
+  });
+
+  it('raising a lowered credit back takes the order out of the REFUNDED it caused', async () => {
+    await createOrder(OrderStatus.DELIVERED);
+    await receiveCod();
+    const first = await returnLines([0, 1]);
+    await payOut((await orderRow()).returnCreditKop, first);
+    const second = await returnLines([2]);
+    const computed = (await prisma.return.findUniqueOrThrow({ where: { id: second } })).creditKop!;
+
+    // The charger came back incomplete: nothing is owed for it — everything is back.
+    await returns.reduceReturnCredit(second, operatorId, { creditKop: 0, reason: 'неповний' });
+    expect((await orderRow()).status).toBe(OrderStatus.REFUNDED);
+
+    // A mistake: it was complete after all.
+    await returns.reduceReturnCredit(second, operatorId, {
+      creditKop: computed,
+      reason: 'комплект повний',
+    });
+    expect(await orderRow()).toMatchObject({
+      status: OrderStatus.DELIVERED,
+      balanceKop: -computed,
+    });
+    expect(await statusRows()).toEqual([
+      { fromStatus: OrderStatus.DELIVERED, toStatus: OrderStatus.REFUNDED, changedBy: operatorId },
+      { fromStatus: OrderStatus.REFUNDED, toStatus: OrderStatus.DELIVERED, changedBy: operatorId },
+    ]);
+  });
+
   it('one line not returned keeps the order DELIVERED, payment PARTIALLY_REFUNDED', async () => {
     await createOrder(OrderStatus.DELIVERED);
     await receiveCod();
