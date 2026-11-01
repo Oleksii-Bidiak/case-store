@@ -314,7 +314,7 @@
         },
         "responses": {
           "200": {
-            "description": "Address verified; `claimedOrders` counts guest orders moved onto the account",
+            "description": "Address verified; `claimedOrders` counts guest orders moved onto the account. For a password-less account (checkout / Google) `session` signs the clicker in — the refresh token is set as the HttpOnly cookie, every older session was revoked. Absent for a password account (the caller is already signed in, and stays so).",
             "content": {
               "application/json": {
                 "schema": {
@@ -325,8 +325,16 @@
           },
           "400": {
             "description": "Invalid, used, expired or superseded token"
+          },
+          "403": {
+            "description": "`VERIFY_SIGN_IN_REQUIRED` — the account has a password and the request is not signed in as it. The link is NOT spent: sign in and send it again (or reset the password)."
           }
         },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
         "summary": "Confirm an email address with a single-use token",
         "tags": [
           "Auth"
@@ -7678,6 +7686,9 @@
           },
           "409": {
             "description": "Code redemption cap reached (global or per-user)"
+          },
+          "429": {
+            "description": "Too many requests — 6 a minute for a guest, 20 for a signed-in shopper"
           }
         },
         "security": [
@@ -13113,7 +13124,7 @@
         ],
         "responses": {
           "201": {
-            "description": "Account created and signed in; the refresh token is set as the HttpOnly cookie. The order now belongs to the account.",
+            "description": "Account created and signed in; the refresh token is set as the HttpOnly cookie (`data` is empty if signing in failed after the commit). The order now belongs to the account.",
             "content": {
               "application/json": {
                 "schema": {
@@ -17081,6 +17092,14 @@
             "type": "number",
             "example": 2,
             "description": "How many orders placed as a guest with this address were attached to the account. 0 for anyone who never ordered as a guest, and on a second confirm — claiming is idempotent."
+          },
+          "session": {
+            "description": "Password-less accounts only (TASK-2010): a fresh session for the device that opened the link. Every older session of an unverified account was revoked first.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthTokens"
+              }
+            ]
           }
         },
         "required": [
@@ -30432,11 +30451,20 @@
           "data"
         ]
       },
+      "GuestOrderAccountCreated": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "Access token of the new session. Absent when the account was created but signing in failed — the «Задайте пароль» letter is the way in."
+          }
+        }
+      },
       "GuestOrderAccountResponseEnvelope": {
         "type": "object",
         "properties": {
           "data": {
-            "$ref": "#/components/schemas/AuthTokens"
+            "$ref": "#/components/schemas/GuestOrderAccountCreated"
           }
         },
         "required": [
@@ -30494,7 +30522,7 @@
           },
           "createAccount": {
             "type": "boolean",
-            "description": "«Створити акаунт на цю пошту» (TASK-2010). True → the order is placed for a password-less account created in the same transaction: the response carries `data.session` (and the refresh cookie), no `guestAccessToken`, and a «Задайте пароль» letter goes to `email`. Required for a guest `discountCode` (else 400 DISCOUNT_ACCOUNT_REQUIRED) and for ONLINE / INSTALLMENTS (else 400 PAYMENT_ACCOUNT_REQUIRED). 409 ACCOUNT_EXISTS when the address already has an account. Limited to 5 per hour per address. Ignored for a signed-in shopper.",
+            "description": "«Створити акаунт на цю пошту» (TASK-2010). True → the order is placed for a password-less account created in the same transaction: the response carries `data.session` (and the refresh cookie), no `guestAccessToken`, and a «Задайте пароль» letter goes to `email`. Required for a guest `discountCode` (else 400 DISCOUNT_ACCOUNT_REQUIRED) and for ONLINE / INSTALLMENTS (else 400 PAYMENT_ACCOUNT_REQUIRED). 409 ACCOUNT_EXISTS when the address already has an account. Limited to 5 per hour per client IP. Ignored for a signed-in shopper.",
             "default": false
           }
         },
