@@ -65,6 +65,8 @@ const M = {
   cash: "Готівкою на точці",
   liqpay: "Через LiqPay",
   amount: "Сума, ₴",
+  reason: "Причина",
+  reasonRequired: "Напишіть причину.",
   liqpayToast:
     "Запит на повернення надіслано в LiqPay — запис чекає підтвердження.",
   cashToast: "Виплату записано",
@@ -203,7 +205,11 @@ test.describe("order money — refund a cancelled paid order (R2, TASK-2047)", (
     const dialog = page.getByRole("dialog", { name: M.payoutTitle });
     await dialog.getByRole("radio", { name: M.liqpay }).click();
     await dialog.getByLabel(M.amount).fill("499,50");
+    // Without a return the reason is the only «why» — a blank one is not sent.
+    await dialog.getByRole("button", { name: /^Повернути 499,5\s₴/ }).click();
+    await expect(dialog.getByText(M.reasonRequired)).toBeVisible();
     expect(payoutBodies).toHaveLength(0);
+    await dialog.getByLabel(M.reason).fill("Замовлення скасовано");
     await dialog.getByRole("button", { name: /^Повернути 499,5\s₴/ }).click();
 
     await expect(page.getByText(M.liqpayToast)).toBeVisible();
@@ -214,6 +220,7 @@ test.describe("order money — refund a cancelled paid order (R2, TASK-2047)", (
       kind: "LIQPAY_REFUND",
       amountKop: 49_950,
       paymentId,
+      reason: "Замовлення скасовано",
     });
 
     // Intercepted: nothing was written for real.
@@ -235,6 +242,7 @@ test.describe("order money — refund a cancelled paid order (R2, TASK-2047)", (
     await expect(dialog.getByRole("radio", { name: M.cash })).toBeChecked();
     // Prefilled with everything that may go back.
     await expect(dialog.getByLabel(M.amount)).toHaveValue("1299");
+    await dialog.getByLabel(M.reason).fill("Замовлення скасовано");
     await dialog.getByRole("button", { name: /^Повернути 1\s299\s₴$/ }).click();
 
     await expect(page.getByText(M.cashToast)).toBeVisible();

@@ -4601,6 +4601,8 @@ export const dict = {
     payoutAttemptOption: (id: string, amount: string) =>
       `${id} · можна повернути ${amount}`,
     payoutCommentLabel: "Коментар",
+    // Без заявки ніщо інше в журналі не каже, чому гроші пішли.
+    payoutReasonHint: "Наприклад: замовлення скасовано, покупець переплатив.",
     payoutSubmit: (amount: string) => `Повернути ${amount}`,
     payoutSubmitBare: "Повернути",
     payoutToast: "Виплату записано",
@@ -4650,6 +4652,8 @@ export const dict = {
         "Такий вид надходження не підходить до способу доставки цього замовлення. Оберіть варіант зі списку.",
       ORDER_MONEY_OVERPAYMENT_REASON_REQUIRED:
         "Сума більша, ніж покупець ще винен. Напишіть причину переплати або зменшіть суму.",
+      ORDER_MONEY_PAYOUT_REASON_REQUIRED:
+        "Повернення без заявки потребує причини. Напишіть, чому гроші повертаються.",
       ORDER_MONEY_NOTHING_PAID:
         "За цим замовленням немає сплачених грошей, які можна повернути.",
       ORDER_MONEY_ORDER_LIVE:

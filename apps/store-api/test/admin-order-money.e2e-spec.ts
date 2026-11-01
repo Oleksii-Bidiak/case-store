@@ -215,6 +215,7 @@ describe('Admin order money — receipts and payouts (e2e, R2 A3)', () => {
       kind: MoneyEntryKind.CASH_REFUND,
       amountKop: 40_000,
       expectedUpdatedAt: fresh,
+      reason: 'Замовлення скасовано',
       ...extra,
     });
 
@@ -242,6 +243,18 @@ describe('Admin order money — receipts and payouts (e2e, R2 A3)', () => {
         harness.tx,
         expect.objectContaining({ kind: MoneyEntryKind.CASH_REFUND, returnId: null }),
       );
+    });
+
+    // R2 pre-merge review: without a return, the reason is the only «why».
+    it('400 ORDER_MONEY_PAYOUT_REASON_REQUIRED without a return and without a reason', async () => {
+      harness.state.locked.status = OrderStatus.CANCELLED;
+      const res = await request(server)
+        .post(`${moneyUrl}/out`)
+        .set('Authorization', harness.token('refunder-money'))
+        .send(payout({ reason: '  ' }))
+        .expect(400);
+      expect(res.body).toMatchObject({ error: 'ORDER_MONEY_PAYOUT_REASON_REQUIRED' });
+      expect(repository.insertEntry).not.toHaveBeenCalled();
     });
 
     it('403 for payments:refund alone when the payout settles a return (AD-RET-16/23)', async () => {

@@ -49,6 +49,11 @@ export const OrderErrorCode = {
   MONEY_IN_KIND_NOT_ALLOWED: 'ORDER_MONEY_IN_KIND_NOT_ALLOWED',
   /** A receipt beyond what is owed, without a reason (R2 A3). */
   MONEY_OVERPAYMENT_REASON_REQUIRED: 'ORDER_MONEY_OVERPAYMENT_REASON_REQUIRED',
+  /**
+   * Money out WITHOUT a return (a cancelled order, an overpayment), with no
+   * reason: nothing else in the journal says why it went (R2 pre-merge review).
+   */
+  MONEY_PAYOUT_REASON_REQUIRED: 'ORDER_MONEY_PAYOUT_REASON_REQUIRED',
   /** A payout on an order that holds no money (`paid − refunded = 0`) (R2 A3, TASK-2046). */
   MONEY_NOTHING_PAID: 'ORDER_MONEY_NOTHING_PAID',
   /** A payout without a return on a live order — cancel it first (R2 A3). */
@@ -249,6 +254,14 @@ export function moneyReversalRefusedError(reason: string): ConflictException {
 /** 400 for a malformed ledger write (R2). */
 export function moneyEntryInvalidError(message: string): BadRequestException {
   return new BadRequestException({ error: OrderErrorCode.MONEY_ENTRY_INVALID, message });
+}
+
+/** 400 for money out without a return and without a reason (R2 pre-merge review). */
+export function moneyPayoutReasonRequiredError(): BadRequestException {
+  return new BadRequestException({
+    error: OrderErrorCode.MONEY_PAYOUT_REASON_REQUIRED,
+    message: 'Money going back without a return needs a reason',
+  });
 }
 
 /** 400 for a receipt the operator may not record as asked (R2 A3, `assessReceipt`). */

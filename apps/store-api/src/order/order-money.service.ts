@@ -38,6 +38,7 @@ import {
 } from './order-money.repository';
 import {
   moneyEntryInvalidError,
+  moneyPayoutReasonRequiredError,
   moneyPayoutRefusedError,
   moneyReceiptRefusedError,
   moneyVoidRefusedError,
@@ -219,7 +220,8 @@ export class OrderMoneyService {
    *
    * @throws ForbiddenException a return payout without `returns:write`
    * @throws BadRequestException ORDER_MONEY_ENTRY_INVALID (paymentId missing on
-   *   a LiqPay refund, or given on another kind)
+   *   a LiqPay refund, or given on another kind), ORDER_MONEY_PAYOUT_REASON_REQUIRED
+   *   (no return and no reason)
    * @throws NotFoundException the return is not one of this order's
    * @throws ConflictException ORDER_STALE, ORDER_MONEY_NOTHING_PAID,
    *   ORDER_MONEY_ORDER_LIVE, ORDER_MONEY_RETURN_REQUIRED,
@@ -237,6 +239,10 @@ export class OrderMoneyService {
       throw new ForbiddenException('Admin access required');
     }
     const reason = blankToNull(input.reason);
+    // A return is its own why; without one the reason is the only record of it.
+    if (returnId === null && reason === null) {
+      throw moneyPayoutReasonRequiredError();
+    }
     const guard = (tx: Tx, order: LockedOrder) => this.assertPayable(tx, order, input);
 
     if (input.kind === MoneyEntryKind.LIQPAY_REFUND) {

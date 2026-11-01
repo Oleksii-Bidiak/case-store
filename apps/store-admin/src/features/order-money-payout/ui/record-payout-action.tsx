@@ -151,7 +151,11 @@ function PayoutDialogBody({
   const [rawAmount, setRawAmount] = useState(() => kopToInput(opened.maxKop));
   const [reason, setReason] = useState("");
   const [amountError, setAmountError] = useState<string | null>(null);
+  const [reasonError, setReasonError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  // A return is its own «why»; without one the reason is the only record of it
+  // (R2 pre-merge review — the server refuses a blank one too).
+  const reasonRequired = !forReturn;
 
   const attempt: OrderMoneyRefundablePaymentEntity | undefined =
     kind === MoneyOutKind.LIQPAY_REFUND
@@ -171,8 +175,10 @@ function PayoutDialogBody({
     setFormError(null);
     const amount = checkMoneyAmount(rawAmount, maxKop);
     setAmountError(amount.ok ? null : amount.message);
-    if (!amount.ok) return;
     const trimmed = reason.trim();
+    const reasonMissing = reasonRequired && trimmed.length === 0;
+    setReasonError(reasonMissing ? m.reasonRequired : null);
+    if (!amount.ok || reasonMissing) return;
 
     payout.mutate(
       {
@@ -302,13 +308,37 @@ function PayoutDialogBody({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={reasonId}>{m.payoutCommentLabel}</Label>
+          <Label htmlFor={reasonId}>
+            {reasonRequired ? m.reasonLabel : m.payoutCommentLabel}
+          </Label>
           <Textarea
             id={reasonId}
             value={reason}
             maxLength={500}
-            onChange={(event) => setReason(event.target.value)}
+            required={reasonRequired}
+            aria-required={reasonRequired || undefined}
+            aria-invalid={reasonError ? true : undefined}
+            aria-describedby={
+              reasonError
+                ? `${reasonId}-error`
+                : reasonRequired
+                  ? `${reasonId}-hint`
+                  : undefined
+            }
+            onChange={(event) => {
+              setReason(event.target.value);
+              setReasonError(null);
+            }}
           />
+          {reasonRequired ? (
+            <p
+              id={`${reasonId}-hint`}
+              className="text-xs text-muted-foreground"
+            >
+              {m.payoutReasonHint}
+            </p>
+          ) : null}
+          <FieldError id={`${reasonId}-error`}>{reasonError}</FieldError>
         </div>
 
         <FormAlert>{formError}</FormAlert>

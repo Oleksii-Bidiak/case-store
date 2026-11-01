@@ -162,7 +162,9 @@ export class RecordMoneyOutDto {
   paymentId?: string;
 
   @ApiProperty({
-    description: 'Free text for the journal. Blank becomes null.',
+    description:
+      'Free text for the journal. Blank becomes null. Required without `returnId` (a ' +
+      'cancelled order, an overpayment) — ORDER_MONEY_PAYOUT_REASON_REQUIRED otherwise.',
     required: false,
     nullable: true,
     maxLength: 500,

@@ -653,11 +653,16 @@ describe("OrderPaymentBlock — «Повернути гроші» (R2, TASK-951)
         text(m.amountTooLarge(formatKop(100000))),
       ),
     ).toBeVisible();
+    // No return here: the reason is required too (R2 pre-merge review).
+    const reason = within(dialog).getByLabelText(m.reasonLabel);
+    expect(reason).toBeRequired();
+    expect(await within(dialog).findByText(m.reasonRequired)).toBeVisible();
     expect(bodies).toHaveLength(0);
 
     const amount = within(dialog).getByLabelText(m.amountLabel);
     await user.clear(amount);
     await user.type(amount, "1000");
+    await user.type(reason, "Замовлення скасовано");
     await user.click(
       within(dialog).getByRole("button", { name: /^Повернути/ }),
     );
@@ -667,7 +672,7 @@ describe("OrderPaymentBlock — «Повернути гроші» (R2, TASK-951)
       kind: "LIQPAY_REFUND",
       amountKop: 100000,
       paymentId: "pay-abcdef12",
-      reason: null,
+      reason: "Замовлення скасовано",
       expectedUpdatedAt: UPDATED_AT,
     });
     expect(toast.success).toHaveBeenCalledWith(m.payoutLiqpayToast);
@@ -707,6 +712,10 @@ describe("OrderPaymentBlock — «Повернути гроші» (R2, TASK-951)
         name: m.payoutMethods.LIQPAY_REFUND,
       }),
     ).not.toBeInTheDocument();
+    await user.type(
+      within(dialog).getByLabelText(m.reasonLabel),
+      "Замовлення скасовано",
+    );
     await user.click(
       within(dialog).getByRole("button", { name: /^Повернути/ }),
     );

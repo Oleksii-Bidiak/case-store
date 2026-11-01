@@ -240,6 +240,7 @@ describe('OrderMoneyService', () => {
       await service.recordPayout(ORDER_ID, admin, {
         kind: MoneyEntryKind.CASH_REFUND,
         amountKop: 60_000,
+        reason: 'замовлення скасовано',
         expectedUpdatedAt: UPDATED_AT,
       });
       expect(repo.insertEntry).toHaveBeenCalledWith(tx, {
@@ -248,7 +249,7 @@ describe('OrderMoneyService', () => {
         amountKop: 60_000,
         returnId: null,
         actorId: admin.id,
-        reason: null,
+        reason: 'замовлення скасовано',
       });
       expect(repo.recompute).toHaveBeenCalledWith(tx, ORDER_ID, admin.id);
       expect(repo.syncReturnStatus).not.toHaveBeenCalled();
@@ -265,6 +266,7 @@ describe('OrderMoneyService', () => {
           service.recordPayout(ORDER_ID, admin, {
             kind: MoneyEntryKind.CASH_REFUND,
             amountKop: 1,
+            reason: 'замовлення скасовано',
             expectedUpdatedAt: UPDATED_AT,
           }),
         ),
@@ -279,11 +281,33 @@ describe('OrderMoneyService', () => {
           service.recordPayout(ORDER_ID, admin, {
             kind: MoneyEntryKind.TRANSFER_REFUND,
             amountKop: 1,
+            reason: 'замовлення скасовано',
             expectedUpdatedAt: UPDATED_AT,
           }),
         ),
       ).toBe(OrderErrorCode.MONEY_NOTHING_PAID);
     });
+
+    // R2 pre-merge review: without a return the reason is the only record of why
+    // the money went — a blank one is refused before any lock is taken.
+    it.each([undefined, null, '   '])(
+      'refuses money out without a return and without a reason (%p)',
+      async (reason) => {
+        paidDelivered();
+        locked.status = OrderStatus.CANCELLED;
+        expect(
+          await codeOf(
+            service.recordPayout(ORDER_ID, admin, {
+              kind: MoneyEntryKind.CASH_REFUND,
+              amountKop: 1,
+              reason,
+              expectedUpdatedAt: UPDATED_AT,
+            }),
+          ),
+        ).toBe(OrderErrorCode.MONEY_PAYOUT_REASON_REQUIRED);
+        expect(repo.transaction).not.toHaveBeenCalled();
+      },
+    );
 
     describe('for a return', () => {
       beforeEach(() => {
@@ -389,6 +413,7 @@ describe('OrderMoneyService', () => {
             service.recordPayout(ORDER_ID, admin, {
               kind: MoneyEntryKind.LIQPAY_REFUND,
               amountKop: 1,
+              reason: 'замовлення скасовано',
               expectedUpdatedAt: UPDATED_AT,
             }),
           ),
@@ -402,6 +427,7 @@ describe('OrderMoneyService', () => {
               kind: MoneyEntryKind.CASH_REFUND,
               amountKop: 1,
               paymentId: 'pay-1',
+              reason: 'замовлення скасовано',
               expectedUpdatedAt: UPDATED_AT,
             }),
           ),
@@ -414,6 +440,7 @@ describe('OrderMoneyService', () => {
           amountKop: 5_000,
           paymentId: 'pay-1',
           returnId: undefined,
+          reason: 'замовлення скасовано',
           expectedUpdatedAt: UPDATED_AT,
         });
         expect(repo.insertEntry).not.toHaveBeenCalled();
@@ -424,7 +451,7 @@ describe('OrderMoneyService', () => {
             amountKop: 5_000,
             actorId: admin.id,
             returnId: null,
-            reason: null,
+            reason: 'замовлення скасовано',
             guard: expect.any(Function),
           }),
         );
@@ -684,6 +711,7 @@ describe('OrderMoneyService', () => {
       service.recordPayout(ORDER_ID, admin, {
         kind: MoneyEntryKind.CASH_REFUND,
         amountKop: 1,
+        reason: 'замовлення скасовано',
         expectedUpdatedAt: UPDATED_AT,
       }),
     ).rejects.toThrow(ConflictException);

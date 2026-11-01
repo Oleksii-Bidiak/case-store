@@ -246,6 +246,7 @@ describe('Admin payments — attempt list and LiqPay payout (e2e, TASK-371, R2 A
       amountKop,
       paymentId: PAYMENT_ID,
       expectedUpdatedAt: LEDGER_ORDER_UPDATED_AT.toISOString(),
+      reason: 'Замовлення скасовано',
       ...extra,
     });
 
