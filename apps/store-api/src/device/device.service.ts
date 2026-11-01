@@ -207,6 +207,8 @@ export class DeviceService {
       throw new ConflictException('A device model with this slug already exists');
     }
     const model = await this.deviceRepository.createModel({ ...input, slug });
+    // The storefront may have ISR-cached a 404 for this slug (TASK-1954).
+    await this.purgeDeviceHubs();
     const withBrand = await this.deviceRepository.findModelById(model.id);
     return DeviceModelEntity.fromPrisma(withBrand ?? model);
   }

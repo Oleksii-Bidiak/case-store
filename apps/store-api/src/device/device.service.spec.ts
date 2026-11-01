@@ -263,6 +263,17 @@ describe('DeviceService', () => {
       );
       expect(result).toMatchObject({ id: 'model-1', brandName: 'Apple' });
     });
+
+    it('purges the storefront model hubs, so a 404 cached for the new slug clears', async () => {
+      deviceRepositoryMock.findBrandById.mockResolvedValue(mockBrand);
+      deviceRepositoryMock.findModelBySlug.mockResolvedValue(null);
+      deviceRepositoryMock.createModel.mockResolvedValue(mockModel);
+      deviceRepositoryMock.findModelById.mockResolvedValue(mockModel);
+
+      await service.createModel({ deviceBrandId: 'brand-1', name: 'iPhone 15 Pro' });
+
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith(DEVICE_HUBS_REVALIDATE_TARGET);
+    });
   });
 
   // TASK-699: `/catalog/<категорія>/<модель>` is a public, indexed address (TASK-490),
