@@ -217,9 +217,18 @@ function MoneyBody({
           ) : null}
         </p>
         {totals.balanceKop > 0 ? (
-          <p className="font-semibold text-destructive tabular-nums">
-            {m.debt(formatKop(totals.balanceKop))}
-          </p>
+          // «Борг» is a DELIVERED order that still owes — the header mark and
+          // the server's `hasDebt` say the same (TASK-1968). Before that the
+          // same figure is simply what is still to pay.
+          money.orderStatus === OrderEntityStatus.DELIVERED ? (
+            <p className="font-semibold text-destructive tabular-nums">
+              {m.debt(formatKop(totals.balanceKop))}
+            </p>
+          ) : (
+            <p className="font-medium text-foreground tabular-nums">
+              {m.toPay(formatKop(totals.balanceKop))}
+            </p>
+          )
         ) : totals.balanceKop < 0 ? (
           <p className="font-semibold text-warning tabular-nums">
             {/* The sign is the server's way of saying "we owe"; the operator

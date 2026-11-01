@@ -1,4 +1,8 @@
-import { orderStatusLabel, paymentStatusLabel } from "./status-label";
+import {
+  orderHeadlineStatusLabel,
+  orderStatusLabel,
+  paymentStatusLabel,
+} from "./status-label";
 
 describe("orderStatusLabel (TASK-129)", () => {
   it.each([
@@ -49,5 +53,40 @@ describe("paymentStatusLabel (TASK-129)", () => {
     expect(paymentStatusLabel("REFUNDED")).not.toBe(
       orderStatusLabel("REFUNDED"),
     );
+  });
+});
+
+describe("orderHeadlineStatusLabel (TASK-1970)", () => {
+  const base = { paidKop: 120000, refundedKop: 0, refundedAfterCancel: false };
+
+  it("reads as the plain status label when no money went back after a cancel", () => {
+    expect(orderHeadlineStatusLabel({ ...base, status: "CANCELLED" })).toBe(
+      "Скасовано",
+    );
+    expect(orderHeadlineStatusLabel({ ...base, status: "DELIVERED" })).toBe(
+      "Доставлено",
+    );
+  });
+
+  it("says «Скасовано · кошти повернено» when everything paid came back", () => {
+    expect(
+      orderHeadlineStatusLabel({
+        status: "CANCELLED",
+        paidKop: 120000,
+        refundedKop: 120000,
+        refundedAfterCancel: true,
+      }),
+    ).toBe("Скасовано · кошти повернено");
+  });
+
+  it("says «Скасовано · повернуто частково» while part of it is still held", () => {
+    expect(
+      orderHeadlineStatusLabel({
+        status: "CANCELLED",
+        paidKop: 120000,
+        refundedKop: 50000,
+        refundedAfterCancel: true,
+      }),
+    ).toBe("Скасовано · повернуто частково");
   });
 });

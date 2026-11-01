@@ -16,10 +16,8 @@ import {
   OrderEntityPaymentMethod,
   OrderEntityPaymentStatus,
   OrderEntityStatus,
-  formatOrderNumber,
   type UpdateOrderStatusDto,
 } from "@/entities/order";
-import { useAdminOrderReturnControllerFindForOrder } from "@/entities/return";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
@@ -42,22 +40,23 @@ import {
   requiresReload,
   type ApiErrorLike,
 } from "../model/order-conflict";
-import { RefundNoReturnDialog } from "./refund-no-return-dialog";
 import { UnpaidShipDialog } from "./unpaid-ship-dialog";
 
 interface OrderStatusSelectProps {
   orderId: string;
   /** Drawn at the end of the button row — the card's «⋯» menu. */
   trailing?: ReactNode;
-  /**
-   * Open «Оформити повернення» (TASK-1963). The dialog is another feature, so
-   * the order card composes the two: this control only asks for it from the
-   * REFUNDED-without-a-return warning. Without it the warning is not shown.
-   */
-  onCreateReturn?: () => void;
 }
 
-/** Every order status, lifecycle first — the menu's order. */
+/**
+ * The statuses an operator can set, lifecycle first — the menu's order.
+ *
+ * REFUNDED is not among them (R2, TASK-1969): it is no status anyone picks. The
+ * server sets it when the payouts on the order's returns cover the goods that
+ * came back, and takes it back when a payout is reversed — so it is neither
+ * offered nor listed as «Недоступно зараз». It still reads as the CURRENT
+ * status when the order is there.
+ */
 const LIFECYCLE: readonly string[] = [
   OrderEntityStatus.PENDING,
   OrderEntityStatus.CONFIRMED,
@@ -65,7 +64,6 @@ const LIFECYCLE: readonly string[] = [
   OrderEntityStatus.SHIPPED,
   OrderEntityStatus.DELIVERED,
   OrderEntityStatus.CANCELLED,
-  OrderEntityStatus.REFUNDED,
 ];
 
 /** The forward path, for «назад не можна». */
@@ -104,7 +102,6 @@ const NEXT_STEP: Readonly<Record<string, { status: string; label: string }>> = {
 export function unavailableReason(current: string, target: string): string {
   const s = dict.orderStatus;
   if (current === OrderEntityStatus.REFUNDED) return s.reasonRefundedFinal;
-  if (target === OrderEntityStatus.REFUNDED) return s.reasonRefundAfterShipment;
   if (current === OrderEntityStatus.CANCELLED) return s.reasonReviveFirst;
   if (
     FORWARD.includes(current) &&
@@ -128,19 +125,6 @@ export function unavailableReason(current: string, target: string): string {
 const UNCONFIRMED_PAYMENT: readonly string[] = [
   OrderEntityPaymentStatus.PENDING,
   OrderEntityPaymentStatus.FAILED,
-];
-
-/**
- * Statuses the server will accept a return on — mirrors
- * `RETURNABLE_ORDER_STATUSES` in `return.service.ts` (review of plan 180).
- *
- * The goods have to have travelled before there is anything to send back. A
- * cancelled order fails this, and offering «Створити заявку» there produced a
- * 400 the operator could do nothing with.
- */
-const RETURNABLE_STATUSES: readonly string[] = [
-  OrderEntityStatus.SHIPPED,
-  OrderEntityStatus.DELIVERED,
 ];
 
 /**
@@ -174,10 +158,8 @@ export function OrderStatusSelect(props: OrderStatusSelectProps) {
 function OrderStatusSelectControl({
   orderId,
   trailing,
-  onCreateReturn,
 }: OrderStatusSelectProps) {
   const queryClient = useQueryClient();
-  const { can } = useAuth();
   const transitions = useAdminOrderControllerGetAllowedTransitions(orderId);
   const updateStatus = useAdminOrderControllerUpdateStatus();
 
@@ -188,28 +170,14 @@ function OrderStatusSelectControl({
   const { data: orderData } = useAdminOrderControllerFindById(orderId);
   const order = orderData?.data;
 
-  // TASK-469: "has anyone opened a return on this order?". The endpoint is a
-  // READ (`returns:read`, the whole `AdminOrderReturnController`), so the request
-  // is gated on the read right — gating it on `returns:write` (TASK-630) fired a
-  // guaranteed 403 on every order card of an operator who could write returns
-  // but not list them. The same query key feeds the card's returns section
-  // (TASK-724), so React Query issues it once for both.
-  //
-  // Offering to OPEN a return still needs both: the list, to know there is none
-  // yet (read), and the create call (write) — plus the card wiring the dialog.
-  const canReadReturns = can(PERM.returnsRead);
-  const canOpenReturns =
-    canReadReturns && can(PERM.returnsWrite) && onCreateReturn !== undefined;
-  const { data: returnsData } = useAdminOrderReturnControllerFindForOrder(
-    orderId,
-    { query: { enabled: canReadReturns } },
-  );
-
-  // Which move is waiting behind a dialog. `null` means nothing is pending —
+  // Which move is waiting behind the dialog. `null` means nothing is pending —
   // the state holds the STATUS rather than a boolean so the confirm handler
   // cannot possibly apply a different one than the operator picked.
+  //
+  // The second dialog — «Повернення коштів без заявки?» (TASK-469 → TASK-1963)
+  // — is gone with the REFUNDED option itself (R2, TASK-1969): money for
+  // returned goods goes out from the return's page, and the status follows.
   const [unpaidShipTarget, setUnpaidShipTarget] = useState<string | null>(null);
-  const [refundTarget, setRefundTarget] = useState<string | null>(null);
 
   const { allowed, expectedUpdatedAt } = toTransitionOptions(transitions.data);
 
@@ -219,63 +187,22 @@ function OrderStatusSelectControl({
   const showReload = requiresReload(updateStatus.error as ApiErrorLike);
 
   /**
-   * The two soft warnings of decision B-1, in the order they can occur.
-   *
-   * Neither BLOCKS: the owner's rule is that we hard-refuse only the physically
-   * impossible (that is the server's state machine, and it answers 409) and make
-   * everything else visible. An operator who cannot move an order will mark it
-   * paid falsely instead, and then the shop has lost the truth about its money in
-   * exchange for a rule.
+   * The soft warning of decision B-1: shipping an online order whose payment
+   * has not arrived. It does not BLOCK: the owner's rule is that we hard-refuse
+   * only the physically impossible (that is the server's state machine, and it
+   * answers 409) and make everything else visible.
    */
-  const warningFor = (
-    value: string,
-  ): "unpaidShip" | "refundNoReturn" | null => {
-    if (!order) return null;
-
-    if (
-      value === OrderEntityStatus.SHIPPED &&
-      order.paymentMethod === OrderEntityPaymentMethod.ONLINE &&
-      UNCONFIRMED_PAYMENT.includes(order.paymentStatus)
-    ) {
-      return "unpaidShip";
-    }
-
-    // Only when the operator could act on the answer, and only once the list has
-    // actually loaded: `returnsData` undefined means "not known yet", and
-    // treating that as "there are none" would pop the dialog on orders that
-    // already have a return.
-    //
-    // And only from a status the server would actually accept a return on
-    // (review of plan 180). `ORDER_TRANSITIONS[CANCELLED]` contains REFUNDED,
-    // but `RETURNABLE_ORDER_STATUSES` is {SHIPPED, DELIVERED} — so on a cancelled
-    // order the dialog's primary button could only ever produce a 400 and a
-    // generic toast, with nothing on screen saying that the secondary button is
-    // the one that works. Refunding a cancelled order is the ordinary case, not
-    // an exotic one, so it must not be the one that dead-ends.
-    if (
-      value === OrderEntityStatus.REFUNDED &&
-      canOpenReturns &&
-      order.status !== undefined &&
-      RETURNABLE_STATUSES.includes(order.status) &&
-      returnsData?.data?.length === 0
-    ) {
-      return "refundNoReturn";
-    }
-
-    return null;
-  };
+  const asksAboutPayment = (value: string): boolean =>
+    order !== undefined &&
+    value === OrderEntityStatus.SHIPPED &&
+    order.paymentMethod === OrderEntityPaymentMethod.ONLINE &&
+    UNCONFIRMED_PAYMENT.includes(order.paymentStatus);
 
   const handleChange = (value: string) => {
-    const warning = warningFor(value);
-    if (warning === "unpaidShip") {
+    if (asksAboutPayment(value)) {
       setUnpaidShipTarget(value);
       return;
     }
-    if (warning === "refundNoReturn") {
-      setRefundTarget(value);
-      return;
-    }
-
     applyStatus(value);
   };
 
@@ -369,25 +296,6 @@ function OrderStatusSelectControl({
     if (target) applyStatus(target, { confirmUnpaidShipment: true });
   };
 
-  /**
-   * «Оформити повернення» — hand over to the return dialog and leave the status
-   * alone (TASK-1963). Filing a request records what the buyer asked for; it is
-   * not the refund, so the order does not move with it. The whole-order return
-   * this used to file on REFUNDED is gone: the operator picks lines and
-   * quantities in the dialog instead.
-   */
-  const handleOpenReturn = () => {
-    setRefundTarget(null);
-    onCreateReturn?.();
-  };
-
-  /** «Лише змінити статус» — a real answer, not a cancel (TASK-469). */
-  const handleSkipReturn = () => {
-    const target = refundTarget;
-    setRefundTarget(null);
-    if (target) applyStatus(target);
-  };
-
   const handleReload = () => {
     updateStatus.reset();
     void queryClient.invalidateQueries({
@@ -426,7 +334,7 @@ function OrderStatusSelectControl({
   );
   const next = NEXT_STEP[current];
   const nextAction = next && allowed.includes(next.status) ? next : null;
-  const askPayment = (status: string) => warningFor(status) === "unpaidShip";
+  const askPayment = asksAboutPayment;
 
   return (
     <>
@@ -546,20 +454,6 @@ function OrderStatusSelectControl({
           }}
           total={order.total}
           onConfirm={handleUnpaidShipConfirm}
-          disabled={updateStatus.isPending}
-        />
-      ) : null}
-
-      {/* TASK-469 → TASK-1963 — REFUNDED with no Return on the order. */}
-      {order ? (
-        <RefundNoReturnDialog
-          open={refundTarget !== null}
-          onOpenChange={(next) => {
-            if (!next) setRefundTarget(null);
-          }}
-          orderNumber={formatOrderNumber(order.id)}
-          onCreateReturn={handleOpenReturn}
-          onSkip={handleSkipReturn}
           disabled={updateStatus.isPending}
         />
       ) : null}

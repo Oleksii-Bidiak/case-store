@@ -82,6 +82,7 @@ export type {
   OrderMoneyEntity,
   OrderMoneyEntryEntity,
   OrderMoneyRefundablePaymentEntity,
+  OrderMoneyReturnEntity,
   AdminOrderMoneyResponse,
   RecordMoneyInDto,
   RecordMoneyOutDto,
@@ -93,7 +94,11 @@ export {
   paymentStatusBadgeVariant,
 } from "./status-badge";
 
-export { orderStatusLabel, paymentStatusLabel } from "./status-label";
+export {
+  orderHeadlineStatusLabel,
+  orderStatusLabel,
+  paymentStatusLabel,
+} from "./status-label";
 
 export { isPreShipmentStatus } from "./is-pre-shipment-status";
 
@@ -133,6 +138,7 @@ export {
   moneyKindLabel,
   payoutKindLabel,
   receiptKindLabel,
+  returnPayoutDueKop,
 } from "./lib/order-money";
 export {
   ORDER_MONEY_ERROR,

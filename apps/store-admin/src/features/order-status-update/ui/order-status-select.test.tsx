@@ -63,60 +63,29 @@ function stubOrder(
   );
 }
 
-/** Stub "which returns already exist on this order" (TASK-469). */
-function stubOrderReturns(count: number) {
-  server.use(
-    http.get("*/api/admin/orders/:orderId/returns", () =>
-      HttpResponse.json({
-        data: Array.from({ length: count }, (_, index) => ({
-          id: `return-${index}`,
-          orderId: ORDER_ID,
-          status: "REQUESTED",
-          reason: null,
-          requestedAt: "2026-09-01T10:00:00.000Z",
-          resolvedAt: null,
-          restockedAt: null,
-          refundedAmount: null,
-          items: [],
-        })),
-      }),
-    ),
-  );
-}
-
 /**
- * Render the picker inside a session context — it asks `can('returns:read')`
- * before looking for returns and `can('returns:write')` before offering to open
- * one, so there has to be a session to ask.
+ * Render the picker inside a session context — it asks `can('orders:write')`
+ * before drawing anything, so there has to be a session to ask.
  */
 function renderSelect(
   options: {
     permissions?: string[];
     isOwner?: boolean;
-    /** The card's «Оформити повернення» opener (TASK-1963); null = not wired. */
-    onCreateReturn?: (() => void) | null;
   } = {},
 ) {
   const {
     permissions = ["orders:write", "returns:read", "returns:write"],
     isOwner = false,
-    onCreateReturn = jest.fn(),
   } = options;
   return renderWithProviders(
     <WithAuth isOwner={isOwner} permissions={permissions}>
-      <OrderStatusSelect
-        orderId={ORDER_ID}
-        onCreateReturn={onCreateReturn ?? undefined}
-      />
+      <OrderStatusSelect orderId={ORDER_ID} />
     </WithAuth>,
   );
 }
 
 beforeEach(() => {
   stubOrder();
-  // Default: the order already carries a return, so REFUNDED asks nothing. The
-  // "no return yet" case is set up explicitly by the tests that are about it.
-  stubOrderReturns(1);
 });
 
 /** Stub the allowed-transitions read with a specific server answer. */
@@ -455,277 +424,68 @@ describe("OrderStatusSelect — shipping an unpaid online order (TASK-468)", () 
 });
 
 /**
- * TASK-469 → TASK-1963 — «Повернення коштів без заявки?»
+ * R2 (TASK-1969) — REFUNDED is derived, never picked.
  *
- * `Return` is the source of truth about a return; `OrderStatus.REFUNDED` is a
- * derived label. Setting the label with no record behind it is edge case E-12.
- * The warning used to file a return on the WHOLE order and then move the status;
- * since TASK-1963 it only points at «Оформити повернення» (lines and quantities,
- * status untouched) — and still does not block, because plenty of refunds have
- * no returning goods at all.
+ * The server sets it when the payouts on the order's returns cover the goods
+ * that came back (and takes it back when a payout is reversed); the
+ * allowed-transitions answer never lists it. The menu does not name it either —
+ * not as a move and not under «Недоступно зараз» — and the «Повернення коштів
+ * без заявки?» dialog (TASK-469 → TASK-1963) is gone with it, together with
+ * the returns lookup that fed it.
  */
-describe("OrderStatusSelect — refunding with no return on file (TASK-469, TASK-1963)", () => {
-  const pickRefunded = async () => {
+describe("OrderStatusSelect — REFUNDED is not a manual move (TASK-1969)", () => {
+  it("lists REFUNDED nowhere in the menu of a shipped order", async () => {
+    stubTransitions(["DELIVERED", "CANCELLED"]);
+
+    renderSelect();
     await openPicker();
-    await userEvent.click(
-      await screen.findByRole("menuitem", {
-        name: orderStatusLabel("REFUNDED"),
-      }),
-    );
-  };
 
-  /** Count any return creation — the control must never file one itself. */
-  function countCreates(): { count: number } {
-    const counter = { count: 0 };
+    expect(
+      await screen.findByRole("group", { name: dict.orderStatus.menuAllowed }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", {
+        name: new RegExp(orderStatusLabel("REFUNDED")),
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still names REFUNDED as the current status, with no move out of it", async () => {
+    stubOrder({ status: "REFUNDED", paymentStatus: "REFUNDED" });
     server.use(
-      http.post("*/api/admin/orders/:orderId/returns", () => {
-        counter.count += 1;
-        return HttpResponse.json({ data: {} }, { status: 201 });
-      }),
-    );
-    return counter;
-  }
-
-  it("warns before refunding an order with no return, without moving it", async () => {
-    stubTransitions(["REFUNDED"]);
-    stubOrderReturns(0);
-    const patch = stubStatusPatch(() =>
-      HttpResponse.json({ data: { id: ORDER_ID } }),
+      http.get("*/api/admin/orders/:orderId/allowed-transitions", () =>
+        HttpResponse.json({
+          data: {
+            current: "REFUNDED",
+            allowed: [],
+            updatedAt: "2026-06-01T10:00:00.000Z",
+          },
+        }),
+      ),
     );
 
     renderSelect();
-    await pickRefunded();
 
     expect(
-      await screen.findByText(dict.orderStatus.refundNoReturnTitle),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(dict.orderStatus.refundNoReturnDescription("#ORDER-UU")),
-    ).toBeInTheDocument();
-    expect(patch.bodies).toHaveLength(0);
-  });
-
-  it("«Оформити повернення» opens the return dialog and leaves the status alone", async () => {
-    stubTransitions(["REFUNDED"]);
-    stubOrderReturns(0);
-    const creates = countCreates();
-    const patch = stubStatusPatch(() =>
-      HttpResponse.json({ data: { id: ORDER_ID } }),
-    );
-    const onCreateReturn = jest.fn();
-
-    renderSelect({ onCreateReturn });
-    await pickRefunded();
-    await userEvent.click(
-      await screen.findByRole("button", {
-        name: dict.orderStatus.refundNoReturnCreate,
-      }),
-    );
-
-    expect(onCreateReturn).toHaveBeenCalledTimes(1);
-    await waitFor(() =>
-      expect(
-        screen.queryByText(dict.orderStatus.refundNoReturnTitle),
-      ).not.toBeInTheDocument(),
-    );
-    // No whole-order return is filed behind the operator's back, and the
-    // status does not move with the request.
-    expect(creates.count).toBe(0);
-    expect(patch.bodies).toHaveLength(0);
-  });
-
-  it("does not block — «лише змінити статус» is a real answer", async () => {
-    stubTransitions(["REFUNDED"]);
-    stubOrderReturns(0);
-    const creates = countCreates();
-    const patch = stubStatusPatch(() =>
-      HttpResponse.json({ data: { id: ORDER_ID } }),
-    );
-    const onCreateReturn = jest.fn();
-
-    renderSelect({ onCreateReturn });
-    await pickRefunded();
-    await userEvent.click(
-      await screen.findByRole("button", {
-        name: dict.orderStatus.refundNoReturnSkip,
-      }),
-    );
-
-    await waitFor(() => expect(patch.bodies).toHaveLength(1));
-    expect(patch.bodies[0]).toMatchObject({ status: "REFUNDED" });
-    expect(creates.count).toBe(0);
-    expect(onCreateReturn).not.toHaveBeenCalled();
-  });
-
-  it("asks nothing when the card has not wired the return dialog", async () => {
-    stubTransitions(["REFUNDED"]);
-    stubOrderReturns(0);
-    const patch = stubStatusPatch(() =>
-      HttpResponse.json({ data: { id: ORDER_ID } }),
-    );
-
-    renderSelect({ onCreateReturn: null });
-    await pickRefunded();
-
-    await waitFor(() => expect(patch.bodies).toHaveLength(1));
-    expect(
-      screen.queryByText(dict.orderStatus.refundNoReturnTitle),
-    ).not.toBeInTheDocument();
-  });
-
-  it("asks nothing on a CANCELLED order, where the server would refuse the return", async () => {
-    // `ORDER_TRANSITIONS[CANCELLED]` contains REFUNDED — refunding a cancelled
-    // order is the ordinary path, not an exotic one. But
-    // `RETURNABLE_ORDER_STATUSES` is {SHIPPED, DELIVERED}, so «Створити заявку»
-    // could only ever answer 400 and leave the operator in an open dialog with
-    // no hint that the secondary button is the working one (review of plan 180).
-    stubOrder({ status: "CANCELLED" });
-    stubTransitions(["REFUNDED"]);
-    stubOrderReturns(0);
-    const patch = stubStatusPatch(() =>
-      HttpResponse.json({ data: { id: ORDER_ID } }),
-    );
-
-    renderSelect();
-    await pickRefunded();
-
-    // Straight through: the status moves and no dialog appears.
-    await waitFor(() => expect(patch.bodies).toHaveLength(1));
-    expect(patch.bodies[0]).toMatchObject({ status: "REFUNDED" });
-    expect(
-      screen.queryByText(dict.orderStatus.refundNoReturnTitle),
-    ).not.toBeInTheDocument();
-  });
-
-  it("still asks on a DELIVERED order — the case the dialog was built for", async () => {
-    stubOrder({ status: "DELIVERED" });
-    stubTransitions(["REFUNDED"]);
-    stubOrderReturns(0);
-    stubStatusPatch(() => HttpResponse.json({ data: { id: ORDER_ID } }));
-
-    renderSelect();
-    await pickRefunded();
-
-    expect(
-      await screen.findByText(dict.orderStatus.refundNoReturnTitle),
+      await screen.findByText(dict.orderStatus.noTransitions),
     ).toBeInTheDocument();
   });
 
-  it("asks nothing when the order already carries a return", async () => {
-    stubTransitions(["REFUNDED"]);
-    stubOrderReturns(1);
-    const patch = stubStatusPatch(() =>
-      HttpResponse.json({ data: { id: ORDER_ID } }),
-    );
-
-    renderSelect();
-    await pickRefunded();
-
-    await waitFor(() => expect(patch.bodies).toHaveLength(1));
-    expect(
-      screen.queryByText(dict.orderStatus.refundNoReturnTitle),
-    ).not.toBeInTheDocument();
-  });
-
-  it("asks nothing of an operator who could not open one anyway", async () => {
-    stubTransitions(["REFUNDED"]);
-    stubOrderReturns(0);
-    const patch = stubStatusPatch(() =>
-      HttpResponse.json({ data: { id: ORDER_ID } }),
-    );
-
-    // No `returns:write`: the dialog would have nothing to offer but a 403.
-    renderSelect({ permissions: ["orders:write"] });
-    await pickRefunded();
-
-    await waitFor(() => expect(patch.bodies).toHaveLength(1));
-    expect(
-      screen.queryByText(dict.orderStatus.refundNoReturnTitle),
-    ).not.toBeInTheDocument();
-  });
-});
-
-/**
- * TASK-630 — the "is there a return already?" lookup is a READ.
- *
- * `GET /admin/orders/:id/returns` sits behind `returns:read` for the whole
- * controller. Gating it on `returns:write` meant an operator holding only the
- * write right got a 403 on every order card, and one holding only the read
- * right never had it asked for them at all.
- */
-describe("OrderStatusSelect — returns lookup follows returns:read (TASK-630)", () => {
-  /** Count the lookups actually sent — the thing a 403 would be answering. */
-  function countReturnLookups(): { count: number } {
-    const counter = { count: 0 };
+  it("no longer reads the order's returns", async () => {
+    stubTransitions(["DELIVERED"]);
+    let lookups = 0;
     server.use(
       http.get("*/api/admin/orders/:orderId/returns", () => {
-        counter.count += 1;
+        lookups += 1;
         return HttpResponse.json({ data: [] });
       }),
     );
-    return counter;
-  }
 
-  const pickRefunded = async () => {
+    renderSelect();
     await openPicker();
-    await userEvent.click(
-      await screen.findByRole("menuitem", {
-        name: orderStatusLabel("REFUNDED"),
-      }),
-    );
-  };
+    await screen.findByRole("group", { name: dict.orderStatus.menuAllowed });
 
-  it("never asks with returns:write alone — no 403, and no dialog", async () => {
-    stubTransitions(["REFUNDED"]);
-    const lookups = countReturnLookups();
-    const patch = stubStatusPatch(() =>
-      HttpResponse.json({ data: { id: ORDER_ID } }),
-    );
-
-    renderSelect({ permissions: ["orders:write", "returns:write"] });
-    await pickRefunded();
-
-    await waitFor(() => expect(patch.bodies).toHaveLength(1));
-    expect(lookups.count).toBe(0);
-    expect(
-      screen.queryByText(dict.orderStatus.refundNoReturnTitle),
-    ).not.toBeInTheDocument();
-  });
-
-  it("asks with returns:read, but offers no return it could not create", async () => {
-    stubTransitions(["REFUNDED"]);
-    const lookups = countReturnLookups();
-    const patch = stubStatusPatch(() =>
-      HttpResponse.json({ data: { id: ORDER_ID } }),
-    );
-
-    renderSelect({ permissions: ["orders:write", "returns:read"] });
-    await waitFor(() => expect(lookups.count).toBeGreaterThan(0));
-    await pickRefunded();
-
-    await waitFor(() => expect(patch.bodies).toHaveLength(1));
-    expect(
-      screen.queryByText(dict.orderStatus.refundNoReturnTitle),
-    ).not.toBeInTheDocument();
-  });
-
-  it("warns about a refund with no return when the operator can read AND write", async () => {
-    stubTransitions(["REFUNDED"]);
-    const lookups = countReturnLookups();
-    const patch = stubStatusPatch(() =>
-      HttpResponse.json({ data: { id: ORDER_ID } }),
-    );
-
-    renderSelect({
-      permissions: ["orders:write", "returns:read", "returns:write"],
-    });
-    await waitFor(() => expect(lookups.count).toBeGreaterThan(0));
-    await pickRefunded();
-
-    expect(
-      await screen.findByText(dict.orderStatus.refundNoReturnTitle),
-    ).toBeInTheDocument();
-    expect(patch.bodies).toHaveLength(0);
+    expect(lookups).toBe(0);
   });
 });
 
@@ -799,11 +559,12 @@ describe("OrderStatusSelect — menu-button and next step (TASK-1046)", () => {
     });
     expect(back).toHaveAttribute("aria-disabled", "true");
     expect(back).toHaveTextContent(dict.orderStatus.reasonNoWayBack);
+    // REFUNDED is set by the ledger, not picked — not even listed (TASK-1969).
     expect(
-      unavailable.getByRole("menuitem", {
+      unavailable.queryByRole("menuitem", {
         name: new RegExp(orderStatusLabel("REFUNDED")),
       }),
-    ).toHaveTextContent(dict.orderStatus.reasonRefundAfterShipment);
+    ).not.toBeInTheDocument();
   });
 
   it("offers «Відправити» as the primary step and asks about an unpaid online order first", async () => {

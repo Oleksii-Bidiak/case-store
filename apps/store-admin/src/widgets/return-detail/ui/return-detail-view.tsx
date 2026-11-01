@@ -9,8 +9,8 @@ import {
   returnOutcomeLabel,
   returnReasonHeading,
   returnStatusBadgeVariant,
+  returnLinesValueKop,
   returnStatusLabel,
-  useAdminOrderReturnControllerFindForOrder,
   useAdminReturnControllerFindById,
   type ReturnEntity,
 } from "@/entities/return";
@@ -22,11 +22,7 @@ import {
 } from "@/entities/order";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
-import {
-  ReturnResolveForm,
-  orderBalanceOf,
-  returnedValueOf,
-} from "@/features/return-resolve";
+import { ReturnResolveForm } from "@/features/return-resolve";
 import { ReturnRepairPanel } from "@/features/return-repair";
 import { toast } from "@/shared/ui/toast";
 import { Badge, RowActionsMenu, Stepper } from "@/shared/ui";
@@ -35,14 +31,17 @@ import {
   countLabel,
   formatCurrency,
   formatDateTime,
+  formatKop,
   formatUAPhone,
   isValidUAPhone,
+  parseKop,
 } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import { returnSteps } from "../model/return-steps";
 import { ReturnDatesCard } from "./return-dates-card";
 import { ReturnDecisionCard } from "./return-decision-card";
 import { ReturnDetailSkeleton } from "./return-detail-skeleton";
+import { ReturnMoneyCard } from "./return-money-card";
 
 const d = dict.returns;
 
@@ -52,10 +51,6 @@ interface ReturnDetailViewProps {
 
 /** The «Рішення» card's anchor — the repair panel's hint links to it. */
 const DECISION_ANCHOR_ID = "return-decision";
-
-/** Kopiykas, so a sum of «29.99» lines does not drift. */
-const toCents = (value: string) => Math.round(Number(value) * 100);
-const fromCents = (cents: number) => (cents / 100).toFixed(2);
 
 /** «Оксана Шевченко · +380 50 318 22 47» — from the order, when it was read. */
 function clientLine(order: OrderEntity | undefined): string | null {
@@ -96,16 +91,16 @@ function copy(value: string, success: string) {
 /**
  * One return in full (TASK-340), laid out as ReturnsProposal Р3–Р5 (wave 198,
  * TASK-1056): the header with the shared numbers (TASK-1038), the request's
- * path as steps, what comes back with the ceiling «Можна повернути максимум»
- * (TASK-959), and ONE «Наступний крок» card beside it. Below lg the decision
- * comes straight after the steps (Р5) — the DOM order is the phone's order,
- * and the grid places the cards side by side from lg.
+ * path as steps, what comes back, and ONE «Наступний крок» card beside it.
+ * Below lg the decision comes straight after the steps (Р5) — the DOM order is
+ * the phone's order, and the grid places the cards side by side from lg.
  *
- * The ceiling needs two reads the return itself does not carry: the order's
- * other returns (`returns:read`, which this page already requires) and the
- * order's total (`orders:read`). Without the latter the card prints the sum of
- * the lines and what was already refunded, and no maximum it cannot know; the
- * server still enforces it, and its 400 lands under the amount field.
+ * Since R2 (TASK-2046) the money is its own card under the step — «Гроші за
+ * заявкою»: «До повернення» (the server's figure, less the promo share), the
+ * payouts from the order money journal and «Виплатити». The old client-side
+ * ceilings («Уже повернуто», «Можна повернути максимум») are gone with the
+ * amount field they bounded: the server computes what is owed, and caps a
+ * payout by it and by what the order still holds.
  *
  * Since B-12 (TASK-1961, TASK-2044) the page also carries the three dates
  * «Подано / Вирішено / Повернуто на склад», what the customer asked for, and
@@ -113,8 +108,7 @@ function copy(value: string, success: string) {
  * author, date and history, and the decide form for a writer.
  *
  * Not drawn, because the API does not provide them (TASK-1056's API tails):
- * the add-on services that come back with a line (TASK-949) and the refund
- * method.
+ * the add-on services that come back with a line (TASK-949).
  */
 export function ReturnDetailView({ returnId }: ReturnDetailViewProps) {
   const router = useRouter();
@@ -132,9 +126,6 @@ export function ReturnDetailView({ returnId }: ReturnDetailViewProps) {
   }, [isNotFound, router]);
 
   const orderId = rma?.orderId ?? "";
-  const siblingsQuery = useAdminOrderReturnControllerFindForOrder(orderId, {
-    query: { enabled: Boolean(orderId) },
-  });
   const orderQuery = useAdminOrderControllerFindById(orderId, {
     query: { enabled: Boolean(orderId) && can(PERM.ordersRead) },
   });
@@ -156,16 +147,6 @@ export function ReturnDetailView({ returnId }: ReturnDetailViewProps) {
   }
 
   const order = orderQuery.data?.data;
-  // Every OTHER return counts, whatever its status — REJECTED included, as the
-  // API counts it (see `orderBalanceOf`).
-  const otherRefunds = siblingsQuery.data?.data
-    ? siblingsQuery.data.data
-        .filter((other) => other.id !== rma.id)
-        .map((other) => other.refundedAmount)
-    : null;
-  const orderBalance =
-    order && otherRefunds ? orderBalanceOf(order.total, otherRefunds) : null;
-
   const client = clientLine(order);
   const orderHref = `/orders/${rma.orderId}`;
   const number = formatOrderNumber(rma.id);
@@ -226,7 +207,7 @@ export function ReturnDetailView({ returnId }: ReturnDetailViewProps) {
         {/* First in the DOM: on a phone the decision follows the steps (Р5). */}
         <div className="flex flex-col gap-6 lg:col-start-3 lg:row-start-1">
           <ReturnDecisionCard rma={rma} id={DECISION_ANCHOR_ID} />
-          <ReturnResolveForm rma={rma} orderBalance={orderBalance} />
+          <ReturnResolveForm rma={rma} money={<ReturnMoneyCard rma={rma} />} />
         </div>
 
         <div className="flex flex-col gap-6 lg:col-span-2 lg:col-start-1 lg:row-start-1">
@@ -237,11 +218,7 @@ export function ReturnDetailView({ returnId }: ReturnDetailViewProps) {
 
           <RequestCard rma={rma} />
 
-          <ItemsCard
-            rma={rma}
-            otherRefunds={otherRefunds}
-            orderBalance={orderBalance}
-          />
+          <ItemsCard rma={rma} />
         </div>
       </div>
     </div>
@@ -326,32 +303,16 @@ function MoneyRow({
   );
 }
 
-function ItemsCard({
-  rma,
-  otherRefunds,
-  orderBalance,
-}: {
-  rma: ReturnEntity;
-  otherRefunds: ReadonlyArray<string | null> | null;
-  orderBalance: string | null;
-}) {
+function ItemsCard({ rma }: { rma: ReturnEntity }) {
   const headingId = useId();
   const units = rma.items.reduce((sum, item) => sum + item.quantity, 0);
-  const returnedValue = returnedValueOf(rma.items);
-  const alreadyRefunded = otherRefunds
-    ? fromCents(
-        otherRefunds.reduce(
-          (sum, amount) => sum + (amount === null ? 0 : toCents(amount)),
-          0,
-        ),
-      )
-    : null;
-  const maxRefund =
-    orderBalance !== null && returnedValue !== null
-      ? fromCents(Math.min(toCents(orderBalance), toCents(returnedValue)))
-      : null;
-  const lineSum = (price: string | null, quantity: number) =>
-    price === null ? "—" : formatCurrency(fromCents(toCents(price) * quantity));
+  // Integer kopecks (R2): the gross value of the lines. What is owed back —
+  // less the promo share — is «До повернення» on the money card.
+  const returnedValueKop = returnLinesValueKop(rma.items);
+  const lineSum = (price: string | null, quantity: number) => {
+    const unitKop = price === null ? null : parseKop(price);
+    return unitKop === null ? "—" : formatKop(unitKop * quantity);
+  };
 
   return (
     <section
@@ -426,29 +387,9 @@ function ItemsCard({
       <div className="flex flex-col gap-1.5 p-4 text-sm">
         <MoneyRow
           label={d.itemsTotal}
-          value={returnedValue === null ? "—" : formatCurrency(returnedValue)}
+          value={returnedValueKop === null ? "—" : formatKop(returnedValueKop)}
+          strong
         />
-        {alreadyRefunded !== null ? (
-          <MoneyRow
-            label={d.alreadyRefunded}
-            value={formatCurrency(alreadyRefunded)}
-          />
-        ) : null}
-        {maxRefund !== null ? (
-          <MoneyRow
-            label={d.maxRefund}
-            value={formatCurrency(maxRefund)}
-            strong
-          />
-        ) : null}
-        {rma.refundedAmount !== null ? (
-          // Null is not zero — "nothing refunded yet" is no row at all.
-          <MoneyRow
-            label={d.refundedAmount}
-            value={formatCurrency(rma.refundedAmount)}
-            strong={maxRefund === null}
-          />
-        ) : null}
       </div>
     </section>
   );

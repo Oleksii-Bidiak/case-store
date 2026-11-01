@@ -2284,6 +2284,7 @@
 | TASK-2344 | [вітрина, тести, flaky] `apps/store-client/src/widgets/catalog-menu/ui/catalog-mega-menu.test.tsx` «does not switch the pane when the pointer only passes over a root» залежить від таймінгу (`setTimeout(120)`): упав раз у повному прогоні `--runInBand`, окремо проходить — перевести на fake timers | ⬜ | — |
 | TASK-2345 | [інструменти, env, знайдено в R2] `node scripts/env-check.js --audit` червоний на develop: `NEXT_PHASE` читають `apps/store-client/src/app/home-blocks.tsx` і `shared/api/seo-settings-server.ts`, але його немає у VARS — це змінна, яку ставить сам Next.js під час збірки, тож потрібен запис в EXCEPTIONS з причиною, а не рядок матриці | ⬜ | — |
 | TASK-2346 | [оплата, адмінка, R2 B1] Діалог «Записати надходження» не дає вказати, коли гроші надійшли (`occurredAt` у `RecordMoneyInDto` є, за замовчуванням — «зараз»): переказ НП, записаний через тиждень, стоїть у журналі й аналітиці датою запису — додати необов'язкове поле дати (Kyiv, `fromKyivDateTimeLocal`, не в майбутньому) | ⬜ | — |
+| TASK-2347 | [повернення, адмінка + API, R2 B2] Вкладка черги «Повернути гроші» — це лише `?status=RECEIVED`: туди потрапляють заявки з рішенням «Ремонт» / «Заміна» (гроші не повертаються) і заявки неоплачених замовлень, а «винні» видно лише в колонці «До повернення» — додати серверний фільтр «є що виплатити» (`decision = REFUND ∧ RECEIVED ∧ creditKop > paidOut ∧ order.paidKop > order.refundedKop`) і перевести вкладку на нього | ⬜ | — |
 
 ### R3 — замовлення оператора (після R2)
 

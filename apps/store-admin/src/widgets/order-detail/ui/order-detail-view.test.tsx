@@ -599,12 +599,65 @@ describe("OrderDetailView — the derived marks of B-1 (TASK-470/471/472)", () =
       ),
     );
 
-  it("shows «Борг» in the header of a delivered, unpaid order", async () => {
-    stub({ status: "DELIVERED", paymentStatus: "PENDING", total: "1200.00" });
+  it("shows «Борг» in the header of a delivered, unpaid order — the ledger balance", async () => {
+    stub({
+      status: "DELIVERED",
+      paymentStatus: "PENDING",
+      total: "1200.00",
+      paidKop: 0,
+      refundedKop: 0,
+      returnCreditKop: 0,
+      balanceKop: 120000,
+    });
 
     renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
 
-    expect(await screen.findByText(/Борг\s/)).toHaveTextContent(/1\s?200/);
+    expect(
+      await screen.findByText((_, node) =>
+        Boolean(
+          node?.matches("[data-slot='badge']") &&
+          // `\s` covers the NBSP the grouping is written with.
+          /^Борг\s1\s?200/.test(node.textContent ?? ""),
+        ),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("reads «Скасовано · кошти повернено» on a cancelled order whose money went back (TASK-1970)", async () => {
+    stub({
+      status: "CANCELLED",
+      paymentStatus: "REFUNDED",
+      paidKop: 2999,
+      refundedKop: 2999,
+      returnCreditKop: 0,
+      balanceKop: 0,
+      refundedAfterCancel: true,
+    });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(
+      await screen.findByText(dict.orderStatus.cancelledRefunded),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Скасовано")).not.toBeInTheDocument();
+  });
+
+  it("reads «Скасовано · повернуто частково» while part of the money is still held", async () => {
+    stub({
+      status: "CANCELLED",
+      paymentStatus: "PARTIALLY_REFUNDED",
+      paidKop: 2999,
+      refundedKop: 1000,
+      returnCreditKop: 0,
+      balanceKop: 0,
+      refundedAfterCancel: true,
+    });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(
+      await screen.findByText(dict.orderStatus.cancelledPartlyRefunded),
+    ).toBeInTheDocument();
   });
 
   it("counts down the payment window of a card order", async () => {
@@ -813,9 +866,9 @@ describe("OrderDetailView — returns on the card (TASK-724)", () => {
 });
 
 /**
- * TASK-1963 — «Оформити повернення» is an action on the card, and the status
- * control's REFUNDED warning opens the same dialog (composed here: the two are
- * separate features).
+ * TASK-1963 — «Оформити повернення» is an action on the card. Since R2 the
+ * status control no longer opens it: REFUNDED is not a move anyone picks
+ * (TASK-1969), so the «без заявки?» warning went with it.
  */
 describe("OrderDetailView — «Оформити повернення» (TASK-1963)", () => {
   const WRITER = [
@@ -837,7 +890,7 @@ describe("OrderDetailView — «Оформити повернення» (TASK-19
         HttpResponse.json({
           data: {
             current: status,
-            allowed: ["REFUNDED"],
+            allowed: ["CANCELLED"],
             updatedAt: "2026-06-01T10:00:00.000Z",
           },
         }),
@@ -872,39 +925,6 @@ describe("OrderDetailView — «Оформити повернення» (TASK-19
     expect(
       screen.queryByRole("button", { name: dict.returns.createAction }),
     ).not.toBeInTheDocument();
-  });
-
-  it("opens the dialog from the REFUNDED warning without changing the status", async () => {
-    serve();
-    let statusWrites = 0;
-    server.use(
-      http.patch("*/api/admin/orders/:orderId/status", () => {
-        statusWrites += 1;
-        return HttpResponse.json({ data: {} });
-      }),
-    );
-    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
-      auth: { permissions: WRITER },
-    });
-
-    await userEvent.click(
-      await screen.findByRole("button", { name: dict.orders.updateStatus }),
-    );
-    await userEvent.click(
-      await screen.findByRole("menuitem", { name: "Повернення коштів" }),
-    );
-    await userEvent.click(
-      await screen.findByRole("button", {
-        name: dict.orderStatus.refundNoReturnCreate,
-      }),
-    );
-
-    expect(
-      await screen.findByRole("dialog", {
-        name: dict.returns.createTitle("#ORDER-UU"),
-      }),
-    ).toBeInTheDocument();
-    expect(statusWrites).toBe(0);
   });
 });
 

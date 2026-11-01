@@ -37,10 +37,23 @@ import { formatKop, kopToInput, parseKop } from "@/shared/lib";
 
 const m = dict.orderMoney;
 
+/**
+ * A payout FOR a return (R2, TASK-2046): the return it settles and what may
+ * still go out on it — `returnPayoutDueKop`, i.e. what is owed on the return
+ * capped by what the order still holds. The amount is prefilled with it and
+ * may be lowered: a return is paid out in parts.
+ */
+export interface PayoutForReturn {
+  returnId: string;
+  dueKop: number;
+}
+
 interface RecordPayoutActionProps {
   money: OrderMoneyEntity;
   /** See `RecordReceiptAction` — the fresh payload, or `null` to refetch. */
   onWritten: (fresh: OrderMoneyEntity | null) => void;
+  /** Present on the return page; absent on the order's «Оплата» block. */
+  forReturn?: PayoutForReturn;
 }
 
 /**
@@ -60,15 +73,23 @@ interface RecordPayoutActionProps {
  *   typed for «499,0».
  *
  * Absent without `payments:refund`.
+ *
+ * With `forReturn` (R2, TASK-2046) the same dialog is «Виплатити» on the return
+ * page: it sends `returnId`, is capped by what is due on that return, and
+ * needs `returns:write` as well — the server asks for both.
  */
 export function RecordPayoutAction({
   money,
   onWritten,
+  forReturn,
 }: RecordPayoutActionProps) {
   const { can } = useAuth();
   const [open, setOpen] = useState(false);
 
-  if (!can(PERM.paymentsRefund) || money.outWithoutReturnMaxKop <= 0) {
+  if (!can(PERM.paymentsRefund)) return null;
+  if (forReturn) {
+    if (!can(PERM.returnsWrite) || forReturn.dueKop <= 0) return null;
+  } else if (money.outWithoutReturnMaxKop <= 0) {
     return null;
   }
 
@@ -76,17 +97,18 @@ export function RecordPayoutAction({
     <>
       <Button
         type="button"
-        variant="outline"
+        variant={forReturn ? "default" : "outline"}
         size="sm"
         onClick={() => setOpen(true)}
       >
         <BanknoteArrowUpIcon aria-hidden="true" />
-        {m.payoutAction}
+        {forReturn ? m.payoutForReturnAction : m.payoutAction}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         {open ? (
           <PayoutDialogBody
             money={money}
+            forReturn={forReturn}
             onClose={() => setOpen(false)}
             onWritten={onWritten}
           />
@@ -98,10 +120,12 @@ export function RecordPayoutAction({
 
 function PayoutDialogBody({
   money,
+  forReturn,
   onClose,
   onWritten,
 }: {
   money: OrderMoneyEntity;
+  forReturn?: PayoutForReturn;
   onClose: () => void;
   onWritten: (fresh: OrderMoneyEntity | null) => void;
 }) {
@@ -110,7 +134,7 @@ function PayoutDialogBody({
   // Mount-time snapshot: the decision is taken on the version it was opened on.
   const [opened] = useState(() => ({
     updatedAt: money.updatedAt,
-    maxKop: money.outWithoutReturnMaxKop,
+    maxKop: forReturn ? forReturn.dueKop : money.outWithoutReturnMaxKop,
     attempts: (money.refundablePayments ?? []).filter(
       (attempt) => attempt.remainingKop > 0,
     ),
@@ -156,6 +180,7 @@ function PayoutDialogBody({
         data: {
           kind,
           amountKop: amount.kop,
+          ...(forReturn ? { returnId: forReturn.returnId } : {}),
           ...(kind === MoneyOutKind.LIQPAY_REFUND ? { paymentId } : {}),
           reason: trimmed.length > 0 ? trimmed : null,
           expectedUpdatedAt: opened.updatedAt,
@@ -190,9 +215,13 @@ function PayoutDialogBody({
     <DialogContent>
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <DialogHeader>
-          <DialogTitle>{m.payoutTitle}</DialogTitle>
+          <DialogTitle>
+            {forReturn ? m.payoutForReturnTitle : m.payoutTitle}
+          </DialogTitle>
           <DialogDescription>
-            {m.payoutDescription(formatKop(opened.maxKop))}
+            {forReturn
+              ? m.payoutForReturnDescription(formatKop(opened.maxKop))
+              : m.payoutDescription(formatKop(opened.maxKop))}
           </DialogDescription>
         </DialogHeader>
 
@@ -299,8 +328,12 @@ function PayoutDialogBody({
             disabled={payout.isPending}
           >
             {typedKop !== null && typedKop > 0
-              ? m.payoutSubmit(formatKop(typedKop))
-              : m.payoutSubmitBare}
+              ? forReturn
+                ? m.payoutForReturnSubmit(formatKop(typedKop))
+                : m.payoutSubmit(formatKop(typedKop))
+              : forReturn
+                ? m.payoutForReturnAction
+                : m.payoutSubmitBare}
           </Button>
         </DialogFooter>
       </form>

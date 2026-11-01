@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
   RETURN_ERROR_CODE,
+  ReturnDecision,
   ReturnEntityStatus,
   getAdminReturnControllerFindAllQueryKey,
   getAdminReturnControllerFindByIdQueryKey,
@@ -19,93 +20,61 @@ import {
 } from "@/entities/return";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
-import {
-  Button,
-  Checkbox,
-  FieldError,
-  Input,
-  Label,
-  Textarea,
-} from "@/shared/ui";
+import { Button, Checkbox, FieldError, Label, Textarea } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { apiErrorMessage, apiErrorStatus, formatCurrency } from "@/shared/lib";
+import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import {
   OPERATOR_NOTES_MAX_LENGTH,
   canRestock,
-  createResolveReturnSchema,
   notesOnlyDto,
-  refundCapOf,
+  resolveReturnSchema,
   resolveValuesToDto,
-  returnedValueOf,
   type ResolveReturnFormValues,
 } from "../model/resolve-schema";
 
 const d = dict.returns;
 
-/**
- * The API's TASK-785 refusal codes — both go under the amount, since that
- * number is what is wrong. Worded by the shared `returnRefusalOf` (TASK-1966).
- */
-const REFUND_CEILING_CODES: ReadonlyArray<string | null> = [
-  RETURN_ERROR_CODE.REFUND_EXCEEDS_RETURNED_VALUE,
-  RETURN_ERROR_CODE.REFUND_EXCEEDS_ORDER_BALANCE,
-];
-
 interface ReturnResolveFormProps {
   rma: ReturnEntity;
   /**
-   * What the order still has to give back — `order.total` less the other
-   * returns' refunds (TASK-959, see `orderBalanceOf`). `null`/absent when the
-   * card could not compute it (no `orders:read`); the server still enforces it.
+   * The return's money card (R2, TASK-2046), composed by the page: drawn
+   * between «Наступний крок» and the notes, because on a received REFUND return
+   * the next step IS the payout. Another feature's UI, so it arrives as a node.
    */
-  orderBalance?: string | null;
+  money?: ReactNode;
 }
 
 /**
  * «Наступний крок» + «Внутрішні примітки» of a return (TASK-340, wave 198
  * TASK-1056, ReturnsProposal Р3–Р5).
  *
- * One card that offers ONLY what the state machine allows from here, as named
- * actions instead of a status select and one «Зберегти рішення»:
+ * One card that offers ONLY what is still a manual step from here:
  *
  *   REQUESTED → nothing yet: the decision comes first
  *   APPROVED  → «Повернути товар на склад (N шт.)» ☑ + «Товар отримано»
- *   RECEIVED  → «Сума повернення, ₴ *» + «Гроші повернуто» — under a REFUND
- *               decision only; a repair or a replacement returns no money
+ *   RECEIVED  → nothing to press here. Under a REFUND decision the money goes
+ *               out from the money card (`money`), payout by payout; a repair
+ *               or a replacement returns no money
  *   REJECTED  → nothing: re-opening a refusal is a change of the decision
- *   REFUNDED  → nothing: the return is closed.
+ *   REFUNDED  → nothing: it follows from the payouts.
  *
- * Since B-12 (TASK-2044) «Схвалити / Відхилити…» are gone from here: APPROVED
- * and REJECTED follow from a decision (`features/return-decide`), and this
- * PATCH refuses them (`RETURN_USE_DECISION_ENDPOINT`).
+ * Since B-12 (TASK-2044) APPROVED and REJECTED are decisions
+ * (`features/return-decide`); since R2 (TASK-2046) REFUNDED is derived from
+ * the order money ledger — the old «Сума повернення» + «Гроші повернуто»
+ * recorded a figure no other screen saw, and two of them could exceed what was
+ * paid (TASK-951). The PATCH refuses both (`RETURN_USE_DECISION_ENDPOINT`,
+ * `RETURN_REFUND_DERIVED`).
  *
- * Every action is the same `PATCH /admin/returns/:id` the old form sent, behind
- * the same `returns:write` (TASK-716) — a reader sees the step and the notes,
- * and one line saying the return is view-only. Nothing renders while the
- * grant set is loading: `can()` answers false in that window for everyone.
+ * Every action is `PATCH /admin/returns/:id` behind `returns:write`
+ * (TASK-716) — a reader sees the step and the notes, and one line saying the
+ * return is view-only. Nothing renders while the grant set is loading.
  *
- * Deliberate absences, each of which would otherwise be a control that lies:
- *  - The amount appears only on the refund step (§6 of the problems list).
- *    Its value is still carried on the other steps, so moving an old return
- *    along never clears an amount recorded earlier.
- *  - No refund button that moves money: «Гроші повернуто» records an amount;
- *    the provider-side refund lives with the payment. The artboard's «Переказом
- *    / готівкою · Через LiqPay» is not drawn — the API stores no refund method
- *    (TASK-1056's API tail, TASK-951).
- *  - Restock is offered only at «Товар отримано» and only once; ticked by
- *    default since wave 198 (most parcels come back sellable — «Зніміть, якщо…»).
- *
- * The notes are shown ONCE (they were on the card twice); «Змінити» turns them
- * into a field with its own «Зберегти примітки» — a PATCH without a status,
- * which the API applies on ANY status with no transition. Since approving and
- * refusing became decisions, a REQUESTED or REJECTED return has no step for
- * the notes to ride on. Where a step exists, the notes still go with it too.
+ * The notes are shown ONCE; «Змінити» turns them into a field with its own
+ * «Зберегти примітки» — a PATCH without a status, which the API applies on ANY
+ * status with no transition. Where a step exists, the notes go with it too.
  */
-export function ReturnResolveForm({
-  rma,
-  orderBalance,
-}: ReturnResolveFormProps) {
+export function ReturnResolveForm({ rma, money }: ReturnResolveFormProps) {
   const { can, arePermissionsLoading } = useAuth();
   if (arePermissionsLoading) return null;
   if (!can(PERM.returnsWrite)) {
@@ -116,11 +85,12 @@ export function ReturnResolveForm({
             {dict.common.viewOnly}
           </p>
         </StepCard>
+        {money}
         <NotesCard notes={rma.operatorNotes ?? null} />
       </div>
     );
   }
-  return <ReturnResolveEditor rma={rma} orderBalance={orderBalance} />;
+  return <ReturnResolveEditor rma={rma} money={money} />;
 }
 
 /* ── Cards ──────────────────────────────────────────────────────────────── */
@@ -199,31 +169,21 @@ function NotesCard({
 
 /* ── Editor ─────────────────────────────────────────────────────────────── */
 
-function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
+function ReturnResolveEditor({ rma, money }: ReturnResolveFormProps) {
   const queryClient = useQueryClient();
   const resolve = useAdminReturnControllerResolve();
   const [editingNotes, setEditingNotes] = useState(false);
 
-  const next = nextResolveStep(rma.status, rma.decision);
-  const returnedValue = returnedValueOf(rma.items);
-  // The hint names a maximum only when the card knows BOTH ceilings — the
-  // same rule as «Можна повернути максимум» beside it; the returned value
-  // alone may overstate what the order has left.
-  const cap =
-    orderBalance != null ? refundCapOf({ returnedValue, orderBalance }) : null;
+  const next = nextResolveStep(rma.status);
   const units = rma.items.reduce((sum, item) => sum + item.quantity, 0);
 
   const form = useForm<ResolveReturnFormValues>({
-    // TASK-785 / TASK-959: both API ceilings, as far as this card knows them.
-    resolver: zodResolver(
-      createResolveReturnSchema({ returnedValue, orderBalance }),
-    ),
+    resolver: zodResolver(resolveReturnSchema),
     // forms.md Rule 2a — the entity id is stable for the life of this page, and
     // `keepDirtyValues` protects a half-written note from a background refetch.
     values: {
       status: "",
       operatorNotes: rma.operatorNotes ?? "",
-      refundedAmount: rma.refundedAmount ?? "",
       restock: rma.restockedAt === null,
     },
     resetOptions: { keepDirtyValues: true },
@@ -252,20 +212,10 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
   const onResolveError = (error: unknown, fallback: string) => {
     const status = apiErrorStatus(error);
     const refusal = returnRefusalOf(error);
-    if (refusal && REFUND_CEILING_CODES.includes(refusal.code)) {
-      // Under the amount, not in a toast: that number is what is wrong.
-      form.setError(
-        "refundedAmount",
-        { type: "server", message: refusal.message },
-        { shouldFocus: true },
-      );
-      return;
-    }
     if (status === 409 || refusal?.refetch) {
-      // The server's state machine is authoritative — the client-side
-      // mirror losing to it is exactly the drift its docblock warns
-      // about, so refetch and say so plainly. A coded refusal names what
-      // moved (TASK-1966); a bare transition refusal keeps the old line.
+      // The server's state machine is authoritative — refetch and say so
+      // plainly. A coded refusal names what moved (TASK-1966); a bare
+      // transition refusal keeps the old line.
       void queryClient.invalidateQueries({
         queryKey: getAdminReturnControllerFindByIdQueryKey(rma.id),
       });
@@ -291,14 +241,6 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
           type: "server",
           message: d.operatorNotesTooLong,
         });
-        return;
-      }
-      if (/refundedAmount/.test(message)) {
-        form.setError(
-          "refundedAmount",
-          { type: "server", message: d.resolveRefundedAmountInvalid },
-          { shouldFocus: true },
-        );
         return;
       }
       toast.error(d.resolveBadRequest);
@@ -328,8 +270,8 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
   const saveNotes = async () => {
     if (resolve.isPending) return;
     form.clearErrors();
-    // The schema's other fields (the step not chosen, the amount) are not
-    // part of this write — only the notes have to be valid.
+    // The step not chosen is not part of this write — only the notes have to
+    // be valid.
     if (!(await form.trigger("operatorNotes"))) return;
     const notes = form.getValues("operatorNotes");
     resolve.mutate(
@@ -351,18 +293,6 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
     if (resolve.isPending) return;
     form.clearErrors();
     form.setValue("status", status, { shouldDirty: true });
-    if (
-      status === ReturnEntityStatus.REFUNDED &&
-      form.getValues("refundedAmount").trim() === ""
-    ) {
-      // «Гроші повернуто» without a sum records nothing anyone can check.
-      form.setError(
-        "refundedAmount",
-        { type: "required", message: d.resolveRefundedAmountRequired },
-        { shouldFocus: true },
-      );
-      return;
-    }
     void form.handleSubmit(onSubmit, (fieldErrors) => {
       // A note refused by the schema is only visible in its editor.
       if (fieldErrors.operatorNotes) setEditingNotes(true);
@@ -394,7 +324,6 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
     );
   };
 
-  const amountError = errors.refundedAmount?.message;
   const notesError = errors.operatorNotes?.message;
 
   let step: ReactNode;
@@ -402,7 +331,17 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
     step = <p className="text-sm text-muted-foreground">{d.nextRequested}</p>;
   } else if (rma.status === ReturnEntityStatus.REJECTED) {
     step = <p className="text-sm text-muted-foreground">{d.nextRejected}</p>;
-  } else if (rma.status === ReturnEntityStatus.RECEIVED && next === null) {
+  } else if (
+    rma.status === ReturnEntityStatus.RECEIVED &&
+    rma.decision === ReturnDecision.REFUND
+  ) {
+    // The goods are here; what is left is money — on the money card below.
+    step = (
+      <p className="text-sm text-muted-foreground">
+        {d.nextReceived(rma.restockedAt !== null)}
+      </p>
+    );
+  } else if (rma.status === ReturnEntityStatus.RECEIVED) {
     // A repair or a replacement: the goods are here, no money goes back.
     step = (
       <p className="text-sm text-muted-foreground">
@@ -410,10 +349,6 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
           rma.decision === null ? null : returnDecisionLabel(rma.decision),
         )}
       </p>
-    );
-  } else if (next === null) {
-    step = (
-      <p className="text-sm text-muted-foreground">{d.resolveNoTransitions}</p>
     );
   } else if (next === ReturnEntityStatus.RECEIVED) {
     const restockAvailable = canRestock(
@@ -454,54 +389,8 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
       </>
     );
   } else {
-    // RECEIVED under a REFUND decision — the only move left is the money.
     step = (
-      <>
-        <p className="text-sm text-muted-foreground">
-          {d.nextReceived(rma.restockedAt !== null)}
-        </p>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="return-refunded-amount" required>
-            {d.resolveRefundedAmount}
-          </Label>
-          <Input
-            id="return-refunded-amount"
-            inputMode="decimal"
-            autoComplete="off"
-            required
-            placeholder={d.resolveRefundedAmountPlaceholder}
-            aria-describedby={
-              amountError
-                ? "return-refunded-amount-error"
-                : "return-refunded-amount-hint"
-            }
-            aria-invalid={amountError ? true : undefined}
-            {...form.register("refundedAmount")}
-            // The form has no submit button (each step is its own action), so
-            // Enter in the step's only text field must do the step itself.
-            onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              submitStep(ReturnEntityStatus.REFUNDED);
-            }}
-          />
-          {amountError ? (
-            <FieldError id="return-refunded-amount-error" className="text-xs">
-              {amountError}
-            </FieldError>
-          ) : (
-            <p
-              id="return-refunded-amount-hint"
-              className="text-xs text-muted-foreground"
-            >
-              {cap === null
-                ? d.resolveRefundedAmountHint
-                : d.refundCapHint(formatCurrency(cap))}
-            </p>
-          )}
-        </div>
-        {actionButton(ReturnEntityStatus.REFUNDED, d.markRefunded)}
-      </>
+      <p className="text-sm text-muted-foreground">{d.resolveNoTransitions}</p>
     );
   }
 
@@ -512,6 +401,7 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
       noValidate
     >
       <StepCard active={next !== null}>{step}</StepCard>
+      {money}
       <NotesCard
         notes={rma.operatorNotes ?? null}
         onEdit={() => setEditingNotes(true)}

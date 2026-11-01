@@ -10,7 +10,7 @@ import {
   isShippingCostPending,
   orderDerivedMarks,
   orderStatusBadgeVariant,
-  orderStatusLabel,
+  orderHeadlineStatusLabel,
   paymentStatusBadgeVariant,
   paymentStatusLabel,
   useAdminOrderControllerFindById,
@@ -20,8 +20,8 @@ import {
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { OrderStatusSelect } from "@/features/order-status-update";
-// TASK-1963: «Оформити повернення» — composed here because the status control
-// (another feature) opens the same dialog from its REFUNDED warning.
+// TASK-1963: «Оформити повернення» — composed here because the «Оплата» block
+// points at the same dialog when money for shipped goods goes back by return.
 import { ReturnCreateAction } from "@/features/return-create";
 // TASK-484: "give the buyer a link to their own order" — a mutation with its own
 // one-shot state, so it lives in features, not here.
@@ -238,8 +238,10 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
             </Button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* TASK-1970: «Скасовано · кошти повернено» — a cancelled order
+                never becomes REFUNDED, so its money going back is said here. */}
             <Badge variant={orderStatusBadgeVariant(order.status)}>
-              {orderStatusLabel(order.status)}
+              {orderHeadlineStatusLabel(order)}
             </Badge>
             <Badge variant={paymentStatusBadgeVariant(order.paymentStatus)}>
               {paymentStatusLabel(order.paymentStatus)}
@@ -284,7 +286,6 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                   {more}
                 </>
               }
-              onCreateReturn={() => setReturnDialogOpen(true)}
             />
           ) : isReadOnly ? (
             <div className="flex flex-wrap items-center gap-2">

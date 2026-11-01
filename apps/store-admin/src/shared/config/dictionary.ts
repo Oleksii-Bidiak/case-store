@@ -3833,12 +3833,19 @@ export const dict = {
     //
     // Жодна з них нічого не блокує: це сигнал оператору, а не заборона.
     markDebt: (amount: string) => `Борг ${amount}`,
+    // R2 (TASK-1968): той самий баланс із журналу, але з іншого боку — магазин
+    // винен покупцю (повернений товар ще не виплачено або переплата).
+    markOwedToCustomer: (amount: string) => `Винні покупцю ${amount}`,
     // Хвилини, а не час: оператор питає «скільки ще чекати», а не «коли спливе».
     // Число живе рівно стільки, скільки живе відрендерений рядок.
     markAwaitingPayment: (minutes: number) => `Очікує оплати · ${minutes} хв`,
     markReservationExpired: "Резерв сплив",
-    markPartiallyRefunded: (refunded: string, total: string) =>
-      `Частково повернуто ${refunded} з ${total}`,
+    // «з N» — вартість поверненого товару («до повернення» заявок), не сума
+    // замовлення (R2, TASK-1968; AD-RET-17).
+    markPartiallyRefunded: (refunded: string, credit: string) =>
+      `Частково повернуто ${refunded} з ${credit}`,
+    // Повернення без заявки (скасоване замовлення, переплата) — без «з N».
+    markRefunded: (amount: string) => `Повернуто ${amount}`,
     // На РЯДКУ позиції, не на замовленні: недоступна конкретна позиція, і саме
     // про неї оператор телефонує покупцеві. Автоматичного листа немає навмисно
     // (B-1 п.3) — вибір «замінити / повернути гроші / зачекати» робить людина.
@@ -4459,7 +4466,8 @@ export const dict = {
     menuUnavailable: "Недоступно зараз",
     menuAskPayment: "спитаємо про оплату",
     reasonNoWayBack: "назад не можна",
-    reasonRefundAfterShipment: "лише після відправлення",
+    // «Повернення коштів» у меню більше немає (R2, TASK-1969): статус ставиться
+    // сам, коли виплати за заявками покривають повернений товар.
     reasonRefundedFinal: "кошти вже повернено",
     reasonReviveFirst: "спершу відновіть замовлення",
     reasonOther: "не з поточного статусу",
@@ -4467,14 +4475,10 @@ export const dict = {
     nextConfirm: "Підтвердити",
     nextShip: "Відправити",
     nextDeliver: "Позначити доставленим",
-    // «Повернення коштів» без жодної заявки (TASK-469 → TASK-1963): заявку
-    // тепер оформлюють окремою дією з позиціями, а не на все замовлення.
-    refundNoReturnTitle: "Повернення коштів без заявки?",
-    refundNoReturnDescription: (number: string) =>
-      `По замовленню ${number} немає жодної заявки на повернення. Оформіть її з позиціями й кількостями — статус при цьому не зміниться — або просто змініть статус.`,
-    refundNoReturnCreate: "Оформити повернення",
-    // «Не блокує»: оператор має право відмовитись і просто поставити статус.
-    refundNoReturnSkip: "Лише змінити статус",
+    // Скасоване замовлення ніколи не стає «Повернення коштів» (R2, TASK-1970):
+    // гроші, що повернулися після скасування, видно на самому бейджі статусу.
+    cancelledRefunded: "Скасовано · кошти повернено",
+    cancelledPartlyRefunded: "Скасовано · повернуто частково",
   },
 
   // --- Оплата з одного місця (R2: TASK-1967 / 1807 / 2047) --------------------
@@ -4488,7 +4492,10 @@ export const dict = {
     summaryAria: "Підсумок оплати",
     paidOf: (paid: string, total: string) => `Сплачено ${paid} з ${total}`,
     refunded: (amount: string) => `Повернуто ${amount}`,
+    // «Борг» — лише на доставленому замовленні (як мітка в шапці й фільтр
+    // `hasDebt`, TASK-1968); до того та сама сума — просто «До сплати».
     debt: (amount: string) => `Борг ${amount}`,
+    toPay: (amount: string) => `До сплати ${amount}`,
     owedToCustomer: (amount: string) => `Винні покупцю ${amount}`,
 
     // TASK-1807: на що чекаємо — за способом оплати й доставки, а не один текст
@@ -4607,6 +4614,12 @@ export const dict = {
     payoutViaReturnAction: "Оформити повернення на позиції",
     payoutViaReturnNoAccess:
       "Заявку оформлює працівник із правом на повернення.",
+    // --- «Виплатити» за заявкою (R2, TASK-2046) — той самий діалог ----------
+    payoutForReturnAction: "Виплатити",
+    payoutForReturnTitle: "Виплатити за заявкою",
+    payoutForReturnDescription: (due: string) =>
+      `За заявкою до виплати ${due}. Можна виплатити частинами — решта лишиться до виплати.`,
+    payoutForReturnSubmit: (amount: string) => `Виплатити ${amount}`,
 
     // --- Сторно й анулювання (payments:correct) -----------------------------
     reverseAction: "Сторнувати",
@@ -4661,6 +4674,48 @@ export const dict = {
       generic:
         "Не вдалося зберегти: сервер не відповів. Перевірте з'єднання й спробуйте ще раз.",
     },
+  },
+
+  // --- Гроші за заявкою на повернення (R2, TASK-2046) -------------------------
+  // «До повернення» — вартість повернених позицій мінус частка промокоду; її
+  // можна лише зменшити з причиною. Виплати — записи журналу грошей замовлення
+  // з цією заявкою; «Гроші повернуто» ставиться сам, коли вони покривають суму.
+  returnMoney: {
+    heading: "Гроші за заявкою",
+    loading: "Завантажуємо виплати…",
+    loadError: "Не вдалося завантажити виплати за заявкою. Оновіть сторінку.",
+    creditLabel: "До повернення",
+    creditReason: (reason: string) => `Зменшено: ${reason}`,
+    paidOutLabel: "Виплачено",
+    owedToCustomer: (amount: string) => `Винні покупцю ${amount}`,
+    unpaidOrder: "Оплати не було — гроші не повертаються, лише товар.",
+    nothingHeld:
+      "Усі сплачені за замовленням гроші вже повернуто — виплачувати нічого.",
+    awaitingGoods: "Виплатити можна, коли товар отримано.",
+    payoutsHeading: "Виплати",
+    payoutsEmpty: "Виплат за заявкою ще не було.",
+    reversedChip: "Сторновано",
+    // Без `orders:read` журнал замовлення недоступний — суми з самої заявки.
+    payoutsNoAccess: "Журнал виплат бачить працівник із правом на замовлення.",
+
+    // «Зменшити» (returns:write).
+    reduceAction: "Зменшити",
+    reduceActionAria: "Зменшити суму до повернення",
+    reduceTitle: "Зменшити суму до повернення",
+    reduceDescription: (current: string, paidOut: string) =>
+      `Зараз до повернення ${current}. Суму можна лише зменшити, і не нижче за вже виплачене (${paidOut}).`,
+    reduceAmountLabel: "Нова сума, ₴",
+    reduceAboveCurrent: (current: string) =>
+      `Не більше за поточну суму ${current} — її можна лише зменшити.`,
+    reduceBelowPaidOut: (paidOut: string) =>
+      `Не менше за вже виплачене ${paidOut}. Щоб зменшити ще — спершу сторнуйте виплату.`,
+    reduceReasonLabel: "Причина",
+    reduceReasonHint: "Збережеться в заявці й у журналі дій.",
+    reduceSubmit: (amount: string) => `Зменшити до ${amount}`,
+    reduceSubmitBare: "Зменшити",
+    reduceToast: "Суму до повернення зменшено.",
+    reduceFailed:
+      "Не вдалося зберегти: сервер не відповів. Перевірте з'єднання й спробуйте ще раз.",
   },
 
   // --- Посилання для покупця (TASK-484) ---------------------------------------
@@ -4724,7 +4779,12 @@ export const dict = {
     // Одиниці, а не рядки (TASK-1056): «2» — це два чохли, не дві позиції.
     colItems: "Шт.",
     colRequested: "Подано",
-    colRefunded: "Повернуто",
+    // R2 (TASK-2046): гроші заявки — з журналу. Колонка сортується за «до
+    // повернення» (`creditKop`), тож так і названа; під сумою — що ще винні
+    // (товар отримано) або що вже виплачено.
+    colCredit: "До повернення",
+    creditOwed: (amount: string) => `винні ${amount}`,
+    creditPaidOut: (amount: string) => `виплачено ${amount}`,
     rowAria: (id: string) => `Повернення ${id}`,
     viewOrder: "Замовлення",
 
@@ -4744,7 +4804,6 @@ export const dict = {
     operatorNotesHint: "Бачить лише команда.",
     restockedAt: "Повернуто на склад",
     notRestocked: "На склад не повертали",
-    refundedAmount: "Повернуто коштів",
     itemsHeading: "Що повертають",
     itemProduct: "Товар",
     itemQty: "Шт.",
@@ -4756,25 +4815,6 @@ export const dict = {
     resolveHeading: "Наступний крок",
     resolveNoTransitions:
       "Це повернення завершене — змінити його статус більше не можна.",
-    resolveRefundedAmount: "Сума повернення, ₴",
-    resolveRefundedAmountPlaceholder: "499.00",
-    // Partial refunds are normal: shipping is not always refundable and a
-    // customer may be returning one line out of three.
-    resolveRefundedAmountHint:
-      "Скільки фактично повернули клієнту. Може бути меншим за суму позицій — доставка повертається не завжди.",
-    resolveRefundedAmountInvalid:
-      "Сума має бути у форматі 499 або 499.00 (до двох знаків).",
-    // TASK-785 — the two ceilings the API enforces, in its order. The amount is
-    // named when the form knows it; the server's own 400 carries no localized
-    // number, so the same sentence is shown without one.
-    resolveRefundExceedsReturnedValue: (max?: string) =>
-      max
-        ? `Сума більша за вартість позицій, що повертаються (${max}). Перевірте, чи не пропущено крапку.`
-        : "Сума більша за вартість позицій, що повертаються. Перевірте, чи не пропущено крапку.",
-    resolveRefundExceedsOrderBalance: (max?: string) =>
-      max
-        ? `Не більше ${max} — це все, що ще можна повернути за цим замовленням.`
-        : "Сума більша за те, що ще можна повернути за цим замовленням з урахуванням знижки та інших повернень.",
     // TASK-794 — the limit is `ResolveReturnDto.operatorNotes` (@MaxLength).
     operatorNotesTooLong: "Примітка має містити не більше 2000 символів.",
     // `restock` is explicit rather than inferred from the status because "the
@@ -4845,8 +4885,8 @@ export const dict = {
     sortRequestedAsc: "подано, старі зверху",
     sortStatusAsc: "статус, від нових до завершених",
     sortStatusDesc: "статус, від завершених до нових",
-    sortRefundedDesc: "повернуто, більші зверху",
-    sortRefundedAsc: "повернуто, менші зверху",
+    sortRefundedDesc: "до повернення, більші зверху",
+    sortRefundedAsc: "до повернення, менші зверху",
     rowOpen: "Відкрити",
     rowOpenNewTab: "Відкрити в новій вкладці",
     rowCopyNumber: "Скопіювати номер",
@@ -4864,21 +4904,17 @@ export const dict = {
       `${linesLabel} · ${units} шт.`,
     itemSum: "Сума",
     itemsTotal: "Сума позицій",
-    alreadyRefunded: "Уже повернуто за замовленням",
-    maxRefund: "Можна повернути максимум",
     // «Наступний крок» — лише дії, доречні для статусу (Р3–Р5).
     nextRequested: "Перевірте причину й вирішіть, чи приймаєте повернення.",
     nextApproved: "Коли посилка від клієнта прийде й ви її перевірите:",
     restockUnits: (count: number) => `Повернути товар на склад (${count} шт.)`,
     markReceived: "Товар отримано",
+    // R2 (TASK-2046): гроші виплачують у картці «Гроші за заявкою» нижче —
+    // статус «Гроші повернуто» ставиться сам, коли виплати покриють суму.
     nextReceived: (restocked: boolean) =>
       restocked
-        ? "Товар отримано й повернуто на склад. Лишилось повернути гроші клієнту."
-        : "Товар отримано. Лишилось повернути гроші клієнту.",
-    refundCapHint: (max: string) =>
-      `Максимум ${max}. Доставку повертають не завжди.`,
-    resolveRefundedAmountRequired: "Вкажіть суму, яку повернули клієнту.",
-    markRefunded: "Гроші повернуто",
+        ? "Товар отримано й повернуто на склад. Лишилось виплатити гроші — нижче, у «Гроші за заявкою»."
+        : "Товар отримано. Лишилось виплатити гроші — нижче, у «Гроші за заявкою».",
     saving: "Зберігаємо…",
     notesEdit: "Змінити",
     notesEditHint: "Збережеться разом із наступним кроком.",
@@ -5047,6 +5083,15 @@ export const dict = {
       "Повернути товар на склад можна лише на кроці «Товар отримано» — заявку оновлено.",
     refusalUseDecision:
       "Схвалити чи відхилити заявку можна лише рішенням — оберіть його в картці «Рішення».",
+    // R2 (TASK-2046): гроші за заявкою — журнал виплат і «до повернення».
+    refusalRefundDerived:
+      "«Гроші повернуто» ставиться само, коли виплати покриють суму до повернення — запишіть виплату в картці «Гроші за заявкою». Заявку оновлено.",
+    refusalCreditNotRefund:
+      "Суму до повернення можна змінити лише за рішенням «Гроші» — рішення вже інше, заявку оновлено.",
+    refusalCreditAboveComputed:
+      "Суму можна лише зменшити — вона більша за вартість повернених позицій. Заявку оновлено, перевірте суму.",
+    refusalCreditBelowPaidOut:
+      "За заявкою вже виплатили більше, ніж нова сума. Щоб зменшити ще — спершу сторнуйте виплату. Заявку оновлено.",
     refusalForbidden:
       "У вас немає права змінювати повернення — зміну не збережено. Попросіть власника магазину надати доступ.",
 

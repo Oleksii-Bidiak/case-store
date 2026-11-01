@@ -4,18 +4,24 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   ReturnChannel,
+  ReturnEntityStatus,
   returnDecisionLabel,
   returnStatusBadgeVariant,
   returnStatusLabel,
   useAdminOrderReturnControllerFindForOrder,
   type ReturnEntity,
 } from "@/entities/return";
-import { formatOrderNumber } from "@/entities/order";
+import {
+  formatOrderNumber,
+  returnPayoutDueKop,
+  useAdminOrderMoneyControllerGet,
+} from "@/entities/order";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { Badge } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatDateTime } from "@/shared/lib";
+import { formatDateTime, formatKop } from "@/shared/lib";
+import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 
 const d = dict.returns;
 
@@ -109,10 +115,30 @@ export function OrderReturnsSection({ orderId }: OrderReturnsSectionProps) {
     useAdminOrderReturnControllerFindForOrder(orderId, {
       query: { enabled: canReadReturns },
     });
+  // R2 (TASK-2046): what is still owed on each REFUND return — the same cache
+  // entry the «Оплата» block reads, so no second request.
+  const moneyQuery = useAdminOrderMoneyControllerGet(orderId, {
+    query: {
+      ...OPERATIONAL_LIST_QUERY,
+      enabled: canReadReturns && can(PERM.ordersRead),
+    },
+  });
+  const money = moneyQuery.data?.data;
 
   if (!canReadReturns) return null;
 
   const returns = data?.data ?? [];
+  /**
+   * «Винні покупцю X» on a return — what may still go out on it, or 0. Only
+   * once the goods are back: before that the server pays nothing out.
+   */
+  const dueOn = (returnId: string): number => {
+    const ledger = money?.returns.find((row) => row.returnId === returnId);
+    if (!money || !ledger || ledger.status !== ReturnEntityStatus.RECEIVED) {
+      return 0;
+    }
+    return returnPayoutDueKop(ledger, money.totals);
+  };
 
   return (
     <section className="flex flex-col gap-3 rounded-md border border-border p-4">
@@ -134,6 +160,7 @@ export function OrderReturnsSection({ orderId }: OrderReturnsSectionProps) {
           {returns.map((rma) => {
             const byOperator = rma.channel === ReturnChannel.OPERATOR;
             const number = formatOrderNumber(rma.id);
+            const dueKop = dueOn(rma.id);
             return (
               <li
                 key={rma.id}
@@ -162,6 +189,11 @@ export function OrderReturnsSection({ orderId }: OrderReturnsSectionProps) {
                       {rma.createdBy
                         ? d.createdByOperatorName(rma.createdBy.name)
                         : d.createdByOperator}
+                    </Badge>
+                  ) : null}
+                  {dueKop > 0 ? (
+                    <Badge variant="warning">
+                      {dict.returnMoney.owedToCustomer(formatKop(dueKop))}
                     </Badge>
                   ) : null}
                 </div>

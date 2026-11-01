@@ -125,7 +125,7 @@ beforeEach(() => {
 });
 
 describe("OrderPaymentBlock — what the money is (R2, TASK-2047)", () => {
-  it("shows paid of total, the refund and «Борг» straight from the payload", async () => {
+  it("shows paid of total, the refund and «До сплати» straight from the payload", async () => {
     serveMoney(
       makeMoney({
         paymentStatus: "PARTIALLY_PAID",
@@ -139,10 +139,27 @@ describe("OrderPaymentBlock — what the money is (R2, TASK-2047)", () => {
       text(m.paidOf(formatKop(50000), formatKop(129900))),
     );
     expect(group).toHaveTextContent(text(m.refunded(formatKop(10000))));
-    // The balance is the server's — 89 900, not 129 900 − 50 000 + 10 000.
-    expect(group).toHaveTextContent(text(m.debt(formatKop(89900))));
+    // The balance is the server's — 89 900, not 129 900 − 50 000 + 10 000. An
+    // order not yet delivered owes nothing YET: «До сплати», not «Борг».
+    expect(group).toHaveTextContent(text(m.toPay(formatKop(89900))));
+    expect(group).not.toHaveTextContent(/Борг/);
     expect(group).not.toHaveTextContent(m.owedToCustomer("").trim());
     expect(screen.getByText("Частково оплачено")).toBeInTheDocument();
+  });
+
+  it("says «Борг» once the order is DELIVERED — as the header mark does (TASK-1968)", async () => {
+    serveMoney(
+      makeMoney({
+        orderStatus: "DELIVERED",
+        paymentStatus: "PARTIALLY_PAID",
+        totals: { paidKop: 50000, balanceKop: 79900 },
+      }),
+    );
+    renderBlock(["orders:read"]);
+
+    const group = await summary();
+    expect(group).toHaveTextContent(text(m.debt(formatKop(79900))));
+    expect(group).not.toHaveTextContent(/До сплати/);
   });
 
   it("says «Винні покупцю» on a negative balance, unsigned", async () => {
@@ -436,7 +453,7 @@ describe("OrderPaymentBlock — «Записати надходження»", ()
     );
     expect(toast.success).toHaveBeenCalledWith(m.receiptToast);
     // The fresh payload the write answered with replaces the block's numbers.
-    expect(await summary()).toHaveTextContent(text(m.debt(formatKop(24900))));
+    expect(await summary()).toHaveTextContent(text(m.toPay(formatKop(24900))));
   });
 
   it("requires a reason for an overpayment and sends it as the note", async () => {

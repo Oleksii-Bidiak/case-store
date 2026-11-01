@@ -1,4 +1,8 @@
-import { OrderEntityStatus, OrderEntityPaymentStatus } from "@/shared/api";
+import {
+  OrderEntityStatus,
+  OrderEntityPaymentStatus,
+  type OrderEntity,
+} from "@/shared/api";
 import { dict } from "@/shared/config";
 
 /**
@@ -46,6 +50,26 @@ const PAYMENT_STATUS_LABELS: Record<OrderEntityPaymentStatus, string> = {
 /** Map a raw order-status enum to its Ukrainian label (falls back to input). */
 export function orderStatusLabel(status: string): string {
   return ORDER_STATUS_LABELS[status as OrderEntityStatus] ?? status;
+}
+
+/**
+ * The status badge of an ORDER as the card header and the list row show it
+ * (TASK-1970). A cancelled order never becomes REFUNDED (R2 A4), so the money
+ * that went back after the cancel is said on the badge itself: «Скасовано ·
+ * кошти повернено» when everything paid came back, «Скасовано · повернуто
+ * частково» while part of it is still held. Every other status reads as
+ * `orderStatusLabel`.
+ */
+export function orderHeadlineStatusLabel(
+  order: Pick<
+    OrderEntity,
+    "status" | "refundedAfterCancel" | "paidKop" | "refundedKop"
+  >,
+): string {
+  if (!order.refundedAfterCancel) return orderStatusLabel(order.status);
+  return order.refundedKop < order.paidKop
+    ? dict.orderStatus.cancelledPartlyRefunded
+    : dict.orderStatus.cancelledRefunded;
 }
 
 /** Map a raw payment-status enum to its Ukrainian label (falls back to input). */

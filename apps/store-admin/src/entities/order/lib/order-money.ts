@@ -8,6 +8,7 @@ import {
   OrderEntityStatus,
   type OrderMoneyEntity,
   type OrderMoneyEntryEntity,
+  type OrderMoneyReturnEntity,
 } from "@/shared/api";
 import { dict } from "@/shared/config";
 import { formatKop, parseKop } from "@/shared/lib";
@@ -108,6 +109,21 @@ export function payoutKindLabel(kind: MoneyOutKind): string {
     default:
       return kind;
   }
+}
+
+/**
+ * What may still be paid out on ONE return (R2, TASK-2046): what is owed on it
+ * (`owedKop` = credit − its payouts, the server's) capped by what the order
+ * still holds (paid − refunded) — the same `min` the server's payout ceiling
+ * takes. 0 when nothing is owed, or when the order holds no money (an unpaid
+ * order returns goods, not money). The server stays the boundary.
+ */
+export function returnPayoutDueKop(
+  ret: Pick<OrderMoneyReturnEntity, "owedKop">,
+  totals: Pick<OrderMoneyEntity["totals"], "paidKop" | "refundedKop">,
+): number {
+  const heldKop = Math.max(0, totals.paidKop - totals.refundedKop);
+  return Math.max(0, Math.min(ret.owedKop, heldKop));
 }
 
 const PROVIDER_KINDS: readonly string[] = [
