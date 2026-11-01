@@ -201,7 +201,7 @@ describe('review submission is capped per ACCOUNT and per ADDRESS (TASK-588)', (
 
 // ─── TASK-2010: account creation at checkout ──────────────────────────────────
 
-describe('checkout sign-up is capped at five accounts an hour per address (TASK-2010)', () => {
+describe('checkout sign-up is capped at five accounts an hour per client IP (TASK-2010)', () => {
   let checkoutSignup: ThrottlerOptions;
 
   /** A context whose request carries `body` — `skipIf` reads it raw (guards run before pipes). */
@@ -218,7 +218,7 @@ describe('checkout sign-up is capped at five accounts an hour per address (TASK-
     ).checkoutSignup;
   });
 
-  it('allows five an hour, counted per address (no tracker of its own)', () => {
+  it('allows five an hour, counted per client IP (no tracker of its own)', () => {
     expect(checkoutSignup).toMatchObject({ limit: 5, ttl: 60 * 60 * 1000 });
     expect(checkoutSignup.getTracker).toBeUndefined();
   });

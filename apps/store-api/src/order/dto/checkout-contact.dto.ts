@@ -20,7 +20,7 @@ export class CheckoutContactDto extends GuestContactDto {
       'refresh cookie), no `guestAccessToken`, and a «Задайте пароль» letter goes to `email`. ' +
       'Required for a guest `discountCode` (else 400 DISCOUNT_ACCOUNT_REQUIRED) and for ' +
       'ONLINE / INSTALLMENTS (else 400 PAYMENT_ACCOUNT_REQUIRED). 409 ACCOUNT_EXISTS when the ' +
-      'address already has an account. Limited to 5 per hour per address. Ignored for a ' +
+      'address already has an account. Limited to 5 per hour per client IP. Ignored for a ' +
       'signed-in shopper.',
     default: false,
   })

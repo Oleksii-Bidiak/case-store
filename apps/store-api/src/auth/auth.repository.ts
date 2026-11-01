@@ -285,6 +285,23 @@ export class AuthRepository {
     });
   }
 
+  /**
+   * Whether an unused link of `purpose` was issued for this ADDRESS since
+   * `since` — whichever account it belongs to (TASK-2010 review: at most one
+   * «Задайте пароль» letter per address per hour, however many requests ask).
+   */
+  async hasRecentUnusedEmailToken(
+    email: string,
+    purpose: EmailTokenPurpose,
+    since: Date,
+    tx?: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    const count = await (tx ?? this.prisma).emailVerificationToken.count({
+      where: { email, purpose, usedAt: null, createdAt: { gte: since } },
+    });
+    return count > 0;
+  }
+
   /** Look up a verification token by its raw value, with the owning user. */
   findEmailVerificationToken(rawToken: string): Promise<EmailVerificationTokenWithUser | null> {
     return this.prisma.emailVerificationToken.findUnique({

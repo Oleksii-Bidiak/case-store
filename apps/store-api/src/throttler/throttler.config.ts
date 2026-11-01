@@ -298,12 +298,15 @@ export function createOrderNumberTracker(
 // ─── TASK-2010: accounts created at checkout ──────────────────────────────────
 
 /**
- * Accounts one ADDRESS may create at checkout per hour (B-12 тема 2 (е)).
+ * Accounts one CLIENT IP may create at checkout per hour (B-12 тема 2 (е)).
+ * Counted per IP, not per e-mail: the e-mail side is capped elsewhere — one
+ * account per address (409 ACCOUNT_EXISTS) and one «Задайте пароль» letter per
+ * address per hour (`EmailVerificationService.issueAccountSetupLink`).
  *
  * Five matches the per-account review bucket and is far above what one
  * household checking out needs, while a script creating accounts on scraped
  * addresses — each one a real «Задайте пароль» letter to a stranger — stops at
- * five an hour per address. `/auth/register` has its own 5/min; this bucket is
+ * five an hour per IP. `/auth/register` has its own 5/min; this bucket is
  * deliberately tighter, because here no password is typed, so nothing slows a
  * script down. No `getTracker`: it inherits `ClientIpThrottlerGuard`'s per-IP one.
  */

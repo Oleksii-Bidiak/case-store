@@ -17,7 +17,7 @@ export const CHECKOUT_SIGNUP_THROTTLER = 'checkoutSignup';
 export type CheckoutSignupThrottleMode = 'always' | 'createAccount';
 
 /**
- * Opt a route into the five-accounts-an-hour-per-address bucket (TASK-2010,
+ * Opt a route into the five-accounts-an-hour-per-client-IP bucket (TASK-2010,
  * B-12 тема 2 (е): «rate limit на створення акаунта в чекауті»).
  *
  * The limit lives in `throttler.config.ts`, next to the other named buckets;

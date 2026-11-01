@@ -13,6 +13,9 @@ import { GUEST_ORDER_CLAIM_PORT, type GuestOrderClaimPort } from '../common/port
 /** Bytes of entropy for an opaque verification token (→ 64 hex chars). */
 const VERIFICATION_TOKEN_BYTES = 32;
 
+/** At most one «Задайте пароль» letter per address within this window (TASK-2010 review). */
+const ACCOUNT_SETUP_LETTER_WINDOW_MS = 60 * 60 * 1000;
+
 /** Default lifetime of a verification link. */
 const DEFAULT_EXPIRATION = '24h';
 
@@ -261,6 +264,25 @@ export class EmailVerificationService {
     user: { id: string; email: string },
     tx: Prisma.TransactionClient,
   ): Promise<void> {
+    // Review of S5-API: one letter per address per hour. The account is
+    // created all the same; a second request inside the hour only sends nothing
+    // more to an inbox that may not be the requester's.
+    const since = new Date(Date.now() - ACCOUNT_SETUP_LETTER_WINDOW_MS);
+    if (
+      await this.authRepository.hasRecentUnusedEmailToken(
+        user.email,
+        EmailTokenPurpose.ACCOUNT_SETUP,
+        since,
+        tx,
+      )
+    ) {
+      this.logger.info(
+        { event: 'user.accountSetupLinkSuppressed', userId: user.id },
+        'Account setup letter skipped — one went to this address within the hour',
+      );
+      return;
+    }
+
     const rawToken = randomBytes(VERIFICATION_TOKEN_BYTES).toString('hex');
     const expiresAt = new Date(Date.now() + parseDurationToMs(this.expiration));
 
