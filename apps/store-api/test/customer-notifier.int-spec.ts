@@ -30,6 +30,7 @@ import {
 } from '../src/notification/notification-binding.service';
 import { CustomerNotifier } from '../src/notification/customer-notifier.service';
 import { ShopNotifier } from '../src/notification/shop-notifier.service';
+import { CheckoutAccountService } from '../src/auth/checkout-account.service';
 import { NotificationOutboxRepository } from '../src/notification-outbox/notification-outbox.repository';
 import { NotificationOutboxService } from '../src/notification-outbox/notification-outbox.service';
 import { NOTIFICATION_OUTBOX_CLOCK } from '../src/notification-outbox/notification-outbox.clock';
@@ -133,6 +134,8 @@ describe('CustomerNotifier (integration, TASK-680)', () => {
         { provide: DiscountService, useValue: {} },
         { provide: OrderLookupRepository, useValue: {} },
         { provide: ShopNotifier, useValue: { enqueueNewOrder: jest.fn().mockResolvedValue(0) } },
+        // TASK-2010: only an order whose guest ticked «Створити акаунт» reaches it.
+        { provide: CheckoutAccountService, useValue: {} },
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },
         {
           provide: ProductIndexer,

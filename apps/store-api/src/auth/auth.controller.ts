@@ -127,8 +127,8 @@ class CheckoutEmailStatus {
   @ApiProperty({
     example: false,
     description:
-      'True when an account already exists on this address (any account — deactivated and ' +
-      'deleted ones included, exactly what /auth/register refuses with 409). The checkout then ' +
+      'True when an account row holds this address (a deactivated one included — exactly what ' +
+      '/auth/register refuses with 409). The checkout then ' +
       'offers to sign in instead of «Створити акаунт».',
   })
   hasAccount!: boolean;

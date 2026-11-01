@@ -9,8 +9,8 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
  */
 export const CheckoutAccountErrorCode = {
   /**
-   * The address already has an account — any account row, deactivated and
-   * deleted ones included, exactly as `POST /auth/register` decides it. Answered
+   * The address already has an account — any account row (a deactivated one
+   * included), exactly as `POST /auth/register` decides it. Answered
    * by `POST /orders` with `contact.createAccount: true` and by
    * `POST /orders/guest/{token}/account`; the storefront offers to sign in
    * instead. Never a second account on one address (B-12 тема 2 (б)).

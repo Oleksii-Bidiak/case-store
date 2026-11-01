@@ -366,7 +366,7 @@ export class OrderService {
     }
 
     // Never a second account on one address (B-12 тема 2 (б)): any account row
-    // on it — deactivated and deleted ones included — is a 409 the storefront
+    // on it — a deactivated one included, the lookup `register` uses — is a 409 the storefront
     // answers with «Увійти». Checked before anything is written; a sign-up racing
     // this one is caught again by the unique index inside the transaction.
     if (signupEmail) {

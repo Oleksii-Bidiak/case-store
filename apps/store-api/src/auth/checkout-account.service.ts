@@ -60,9 +60,11 @@ export class CheckoutAccountService {
   }
 
   /**
-   * Whether any account row holds this address — deactivated and deleted ones
-   * included, exactly the lookup `register` refuses on. The owner accepted on
-   * 2026-11-01 that `POST /auth/checkout/email-status` answers this out loud:
+   * Whether any account row holds this address — a deactivated one included,
+   * exactly the lookup `register` refuses on. A soft-deleted account no longer
+   * holds its address (the delete mangles `email`), so it is free here as there.
+   * The owner accepted on 2026-11-01 that `POST /auth/checkout/email-status`
+   * answers this out loud:
    * `/register` already reveals it through its 409, and the route is throttled
    * and fail-closed like `/register`.
    */

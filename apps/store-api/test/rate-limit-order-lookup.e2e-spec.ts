@@ -11,7 +11,7 @@ import type { ThrottlerRedisHealth } from '../src/throttler/throttler-redis-heal
 import { applyProxyTrust } from '../src/config/trust-proxy';
 import { OrderController } from '../src/order/order.controller';
 import { OrderService } from '../src/order/order.service';
-import { JwtAuthGuard } from '../src/auth';
+import { AuthSessionResponder, JwtAuthGuard } from '../src/auth';
 import { OptionalJwtAuthGuard } from '../src/cart/guards';
 import { CartIdentityInterceptor } from '../src/cart/interceptors';
 
@@ -73,6 +73,8 @@ describe('Order lookup is rate-limited per order number (e2e, TASK-624)', () => 
       providers: [
         { provide: APP_GUARD, useClass: ClientIpThrottlerGuard },
         { provide: OrderService, useValue: orderService },
+        // TASK-2010: the checkout sign-up's cookie half; no route under test signs in.
+        { provide: AuthSessionResponder, useValue: {} },
       ],
     })
     class LookupModule {}
