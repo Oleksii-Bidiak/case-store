@@ -49,6 +49,13 @@
 --      (created_at, id) order, then telescoped over partial returns — exactly
 --      `allocateReturnCredit` + `unitsCreditKop` in src/order/order-money.ts.
 --      Add-ons and shipping are not part of it (plan assumption 1);
+--   8b. returns.credit_kop for a return with money out but no REFUND decision
+--      (R1 left a REQUESTED one undecided): its legacy payout, capped at the
+--      gross of its units — otherwise that payout reads as a debt (R2
+--      pre-merge review). Money out with NO return (a provider refund, a
+--      REFUNDED label) on a live order still reads as a debt — the ledger has
+--      no goodwill discount — and is only listed by an AFTER notice for the
+--      manual review of TASK-2333;
 --   9. orders.paid_kop / refunded_kop (net of reversals, voided ignored) /
 --      return_credit_kop / balance_kop (= due − paid + refunded) — exactly
 --      `deriveBalance` in src/order/order-money.ts: due = 0 for a CANCELLED
@@ -432,6 +439,29 @@ WHERE r."id" = c.return_id
   AND r."decision" = 'REFUND'
   AND r."credit_kop" IS NULL;
 
+-- 8b. Money already paid back on a return R1 left without a REFUND decision (a
+-- REQUESTED one, or a refusal with money out): the goods it covers are what
+-- that money paid for, so its credit is the payout — never above the gross of
+-- its units. Without it the payout reads as debt («Борг») on a delivered order
+-- (R2 pre-merge review).
+UPDATE "returns" AS r
+SET "credit_kop" = LEAST(
+      out_kop.kop,
+      COALESCE((SELECT sum(ROUND(oi."price" * 100)::bigint * ri."quantity")
+                  FROM "return_items" AS ri
+                  JOIN "order_items" AS oi ON oi."id" = ri."order_item_id"
+                 WHERE ri."return_id" = r."id"), 0))::int
+FROM (
+  SELECT e."return_id", sum(e."amount_kop") AS kop
+  FROM "order_money_entries" AS e
+  WHERE e."legacy" AND e."direction" = 'OUT' AND e."return_id" IS NOT NULL
+    AND e."voided_at" IS NULL AND e."reversal_of_id" IS NULL
+  GROUP BY e."return_id"
+) AS out_kop
+WHERE out_kop."return_id" = r."id"
+  AND r."decision" IS DISTINCT FROM 'REFUND'
+  AND r."credit_kop" IS NULL;
+
 -- 9. The four totals on every order, from the ledger and the returns.
 WITH ledger AS (
   SELECT e."order_id",
@@ -623,5 +653,13 @@ BEGIN
   RAISE NOTICE 'R2 money AFTER: returns with credit_kop % (Σ % kop)',
     (SELECT count(*) FROM "returns" WHERE "credit_kop" IS NOT NULL),
     (SELECT COALESCE(sum("credit_kop"), 0) FROM "returns");
+  -- Money that went back with no return behind it (a provider refund, a
+  -- REFUNDED label) on an order that is not cancelled reads as a debt: the
+  -- ledger has no «goodwill discount». Not invented here — listed for the
+  -- manual review of TASK-2333.
+  SELECT count(*), COALESCE(string_agg("id", ', ' ORDER BY "id"), '-') INTO bad, ids
+  FROM "orders"
+  WHERE "status" NOT IN ('CANCELLED', 'REFUNDED') AND "balance_kop" > 0 AND "refunded_kop" > 0;
+  RAISE NOTICE 'R2 money AFTER: orders showing a debt after money went back (review, TASK-2333): % — %', bad, ids;
 END $$;
 -- VERIFY:END

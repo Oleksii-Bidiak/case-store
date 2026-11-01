@@ -786,6 +786,132 @@ describe('Order money backfill (TASK-2047/2046/951) — integration', () => {
     });
   });
 
+  /**
+   * R2 pre-merge review: the balance and the label after money went back,
+   * per source of that money — VERIFY recomputes the same formula, so only
+   * these pin what an operator will actually see on the card.
+   */
+  describe('balance after legacy refunds (R only, P only, R ∩ P)', () => {
+    /** One 1 000 ₴ line on the order; returns the line id. */
+    async function insertLine(tx: Tx, orderId: string): Promise<string> {
+      const suffix = randomUUID().slice(0, 8);
+      const category = await tx.category.create({
+        data: { name: `money-cat-${suffix}`, slug: `money-cat-${suffix}` },
+      });
+      const product = await tx.product.create({
+        data: {
+          name: `money-prod-${suffix}`,
+          slug: `money-prod-${suffix}`,
+          price: 1000,
+          stock: 10,
+          categoryId: category.id,
+        },
+      });
+      const id = randomUUID();
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "order_items" ("id", "order_id", "product_id", "quantity", "price")
+         VALUES ($1, $2, $3, 1, 1000::numeric)`,
+        id,
+        orderId,
+        product.id,
+      );
+      return id;
+    }
+
+    async function returnLine(tx: Tx, returnId: string, orderItemId: string): Promise<void> {
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "return_items" ("id", "return_id", "order_item_id", "quantity")
+         VALUES ($1, $2, $3, 1)`,
+        randomUUID(),
+        returnId,
+        orderItemId,
+      );
+    }
+
+    it('R only, return left undecided by R1: its payout becomes its credit — no false debt', async () => {
+      await inRolledBackTx(async (tx) => {
+        const orderId = await insertOrder(tx, {
+          total: '1000.00',
+          paymentStatus: 'PARTIALLY_REFUNDED',
+        });
+        const line = await insertLine(tx, orderId);
+        const returnId = await insertReturn(tx, { orderId, refundedAmount: '300.00' });
+        await returnLine(tx, returnId, line);
+
+        await runBackfill(tx);
+        await runVerify(tx);
+
+        expect(await orderOf(tx, orderId)).toEqual({
+          status: 'DELIVERED',
+          payment_status: 'PARTIALLY_REFUNDED',
+          paid_kop: 100_000,
+          refunded_kop: 30_000,
+          return_credit_kop: 30_000,
+          balance_kop: 0,
+        });
+      });
+    });
+
+    it('R ∩ P on the same money: one payout, credited to the return — balance 0', async () => {
+      await inRolledBackTx(async (tx) => {
+        const orderId = await insertOrder(tx, {
+          total: '1000.00',
+          paymentStatus: 'PARTIALLY_REFUNDED',
+          paymentMethod: 'ONLINE',
+        });
+        const line = await insertLine(tx, orderId);
+        await insertPayment(tx, {
+          orderId,
+          amount: '1000.00',
+          status: 'SUCCEEDED',
+          refundedAmount: '400.00',
+        });
+        const returnId = await insertReturn(tx, { orderId, refundedAmount: '400.00' });
+        await returnLine(tx, returnId, line);
+
+        await runBackfill(tx);
+        await runVerify(tx);
+
+        expect(await orderOf(tx, orderId)).toMatchObject({
+          payment_status: 'PARTIALLY_REFUNDED',
+          paid_kop: 100_000,
+          refunded_kop: 40_000,
+          return_credit_kop: 40_000,
+          balance_kop: 0,
+        });
+      });
+    });
+
+    it('P only (no return) on a delivered order reads as a debt — listed for TASK-2333, not invented away', async () => {
+      await inRolledBackTx(async (tx) => {
+        const orderId = await insertOrder(tx, {
+          total: '1000.00',
+          paymentStatus: 'PARTIALLY_REFUNDED',
+          paymentMethod: 'ONLINE',
+        });
+        await insertLine(tx, orderId);
+        await insertPayment(tx, {
+          orderId,
+          amount: '1000.00',
+          status: 'SUCCEEDED',
+          refundedAmount: '400.00',
+        });
+
+        await runBackfill(tx);
+        await runVerify(tx);
+
+        // The ledger has no goodwill discount: 400 went back, the goods stayed.
+        expect(await orderOf(tx, orderId)).toMatchObject({
+          payment_status: 'PARTIALLY_REFUNDED',
+          paid_kop: 100_000,
+          refunded_kop: 40_000,
+          return_credit_kop: 0,
+          balance_kop: 40_000,
+        });
+      });
+    });
+  });
+
   describe('replay and VERIFY', () => {
     async function seedMixed(tx: Tx): Promise<string[]> {
       const a = await insertOrder(tx, { total: '1000.00', paymentStatus: 'REFUNDED' });
