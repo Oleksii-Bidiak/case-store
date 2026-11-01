@@ -544,7 +544,8 @@ export class AuthController {
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Confirm an email address with a single-use token',
-    operationId: 'confirmEmailVerification',
+    // No operationId on purpose: the storefront already imports the generated
+    // `useAuthControllerConfirmEmailVerification`, and renaming it is not this task.
   })
   @ApiResponse({
     status: 200,
