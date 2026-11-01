@@ -65,6 +65,9 @@ import { AuditService } from '../audit';
 /** Fallback TTL (seconds) when REDIS_CACHE_TTL_SECONDS is not configured. */
 const DEFAULT_CACHE_TTL_SECONDS = 300;
 
+/** How many products a compat write evicts and re-indexes at once (TASK-1955). */
+const COMPAT_WRITE_SYNC_BATCH = 10;
+
 /**
  * Undo the `deleted:<id>:` mangling of a tombstone's slug/SKU (TASK-656). Only the
  * EXACT prefix is removed — a value that itself contains `:` survives intact. A value
@@ -1262,9 +1265,16 @@ export class ProductService {
       return;
     }
     await this.invalidateProductLists();
-    for (const product of products) {
-      await this.evictProductDetail(product.id, product.slug);
-      await this.syncSearchIndex(product);
+    // The bulk path can hand over up to 500 products; one at a time that is a
+    // long serial chain of Redis + Meilisearch round trips inside the request.
+    // Bounded batches keep it short without flooding either backend.
+    for (let start = 0; start < products.length; start += COMPAT_WRITE_SYNC_BATCH) {
+      await Promise.all(
+        products.slice(start, start + COMPAT_WRITE_SYNC_BATCH).map(async (product) => {
+          await this.evictProductDetail(product.id, product.slug);
+          await this.syncSearchIndex(product);
+        }),
+      );
     }
     try {
       await this.revalidation.revalidate(DEVICE_HUBS_REVALIDATE_TARGET);

@@ -2931,6 +2931,28 @@ describe('ProductService', () => {
       expect(productIndexerMock.remove).toHaveBeenCalledWith('p1');
     });
 
+    it('afterDeviceCompatWrite re-indexes a bulk set in parallel batches of at most 10', async () => {
+      let inFlight = 0;
+      let peak = 0;
+      productIndexerMock.index.mockImplementation(async () => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setImmediate(resolve));
+        inFlight -= 1;
+      });
+      const products = Array.from({ length: 25 }, (_, i) => ({
+        id: `p${i}`,
+        slug: `case-${i}`,
+        isActive: true,
+      }));
+
+      await service.afterDeviceCompatWrite(products);
+
+      expect(productIndexerMock.index).toHaveBeenCalledTimes(25);
+      expect(peak).toBe(10);
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey('case-24'));
+    });
+
     it('afterDeviceCompatWrite with no products purges nothing', async () => {
       await service.afterDeviceCompatWrite([]);
 
