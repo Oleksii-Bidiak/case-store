@@ -18,6 +18,10 @@ import {
   useAdminReturnControllerResolve,
   type ReturnEntity,
 } from "@/entities/return";
+import {
+  getAdminOrderControllerFindByIdQueryKey,
+  getAdminOrderMoneyControllerGetQueryKey,
+} from "@/entities/order";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { Button, Checkbox, FieldError, Label, Textarea } from "@/shared/ui";
@@ -205,6 +209,14 @@ function ReturnResolveEditor({ rma, money }: ReturnResolveFormProps) {
     });
     void queryClient.invalidateQueries({
       queryKey: getAdminReturnControllerFindAllQueryKey(),
+    });
+    // «Товар отримано» moves the order too (restock, recompute → new
+    // updatedAt): the money card must not pay out with the stale one (TASK-2350).
+    void queryClient.invalidateQueries({
+      queryKey: getAdminOrderMoneyControllerGetQueryKey(rma.orderId),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: getAdminOrderControllerFindByIdQueryKey(rma.orderId),
     });
   };
 

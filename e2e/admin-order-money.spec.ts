@@ -243,12 +243,8 @@ test.describe("order money — receipt, return payouts, reversal (R2)", () => {
       .click();
     await expect(status).toHaveText(A.statusReceived);
 
-    // TASK-2350: the decision (it sets the credit and recomputes the order)
-    // does not refresh the order's money on this page, so the first «Виплатити»
-    // would carry a stale `expectedUpdatedAt` and get 409 ORDER_STALE. Drop this
-    // reload once the decide / resolve forms invalidate `GET …/money`.
-    await page.reload();
-    await expect(status).toHaveText(A.statusReceived);
+    // No reload: the decide / resolve forms refetch `GET …/money` (TASK-2350),
+    // so the first «Виплатити» carries the fresh `expectedUpdatedAt`.
 
     // --- 3. Two payouts ------------------------------------------------------
     const card = page.getByRole("region", { name: A.returnMoney, exact: true });

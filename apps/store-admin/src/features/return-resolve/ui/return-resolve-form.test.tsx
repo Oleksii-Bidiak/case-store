@@ -1,5 +1,10 @@
 import type { ReactElement } from "react";
 import { http, HttpResponse } from "msw";
+import { QueryClient } from "@tanstack/react-query";
+import {
+  getAdminOrderControllerFindByIdQueryKey,
+  getAdminOrderMoneyControllerGetQueryKey,
+} from "@/entities/order";
 import {
   fireEvent,
   renderWithProviders,
@@ -291,6 +296,34 @@ describe("ReturnResolveForm — a received REFUND return (R2, TASK-2046)", () =>
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).not.toHaveProperty("refundedAmount");
     expect(bodies[0].status).toBe("RECEIVED");
+  });
+
+  it("refetches the order money journal after «Товар отримано» (TASK-2350)", async () => {
+    stubResolve(() => HttpResponse.json({ data: received() }));
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const invalidate = jest.spyOn(queryClient, "invalidateQueries");
+    renderWithProviders(<ReturnResolveForm rma={makeReturn()} />, {
+      queryClient,
+      auth: WRITER,
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: d.markReceived }));
+
+    // The step recomputes the order (new updatedAt) — a payout built from the
+    // stale journal would be refused as ORDER_STALE.
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: getAdminOrderMoneyControllerGetQueryKey("order-uuid-1234"),
+      }),
+    );
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: getAdminOrderControllerFindByIdQueryKey("order-uuid-1234"),
+    });
   });
 
   it("names the derived status when a stale page is refused (RETURN_REFUND_DERIVED)", async () => {
