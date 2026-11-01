@@ -115,6 +115,8 @@ describe('OrderController (e2e)', () => {
     // TASK-2010: the checkout sign-up writes the account and its setup link.
     createPasswordlessUser: jest.fn(),
     saveEmailVerificationToken: jest.fn(),
+    // TASK-2010 review: one setup letter per address per hour.
+    hasRecentUnusedEmailToken: jest.fn(),
   };
 
   const userRepositoryMock = {

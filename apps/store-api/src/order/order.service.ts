@@ -628,7 +628,7 @@ export class OrderService {
     // TASK-2010: sign the new account in — after the commit, so a failed
     // checkout never mints a session for an account that does not exist.
     const session =
-      signupEmail && order.userId ? await this.checkoutAccounts.startSession(order.userId) : null;
+      signupEmail && order.userId ? await this.startSignupSession(order.userId) : null;
 
     this.logger.info(
       {
@@ -661,7 +661,7 @@ export class OrderService {
    * @throws BadRequestException for an operator phone order with no e-mail
    * @throws ConflictException 409 `ACCOUNT_EXISTS` when the e-mail has an account
    */
-  async createAccountFromGuestOrder(rawToken: string): Promise<{ session: IssuedSession }> {
+  async createAccountFromGuestOrder(rawToken: string): Promise<{ session: IssuedSession | null }> {
     const order = await this.findOrderByGuestToken(rawToken);
 
     if (order.userId !== null) {
@@ -692,7 +692,27 @@ export class OrderService {
       'Account created from a guest order',
     );
 
-    return { session: await this.checkoutAccounts.startSession(userId) };
+    return { session: await this.startSignupSession(userId) };
+  }
+
+  /**
+   * Sign in an account a checkout has just COMMITTED (review of S5-API).
+   *
+   * By now the order and the account exist; a failure to mint the session (the
+   * refresh-token insert) must not become a 500 that the buyer retries into a
+   * second order or a 409. It is logged loudly and answered without a session —
+   * the «Задайте пароль» letter, already queued in the transaction, is the way in.
+   */
+  private async startSignupSession(userId: string): Promise<IssuedSession | null> {
+    try {
+      return await this.checkoutAccounts.startSession(userId);
+    } catch (err) {
+      this.logger.error(
+        { event: 'order.signup_session_failed', userId, err },
+        'Checkout account committed, but its session could not be opened',
+      );
+      return null;
+    }
   }
 
   /**

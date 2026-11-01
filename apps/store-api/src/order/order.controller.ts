@@ -148,12 +148,24 @@ class CreatedOrderEntity extends OrderEntity {
 }
 
 /**
- * `POST /orders/guest/{token}/account` answers with the new session (TASK-2010):
- * the access token in the body, the refresh token in the HttpOnly cookie.
+ * What `POST /orders/guest/{token}/account` answers (TASK-2010): the new
+ * session — the access token in the body, the refresh token in the HttpOnly
+ * cookie. `accessToken` is absent only when the account was created but the
+ * session could not be opened (review of S5-API): the account exists, the
+ * «Задайте пароль» letter is on its way, and the storefront says so.
  */
+class GuestOrderAccountCreated {
+  @ApiPropertyOptional({
+    description:
+      'Access token of the new session. Absent when the account was created but signing in ' +
+      'failed — the «Задайте пароль» letter is the way in.',
+  })
+  accessToken?: string;
+}
+
 class GuestOrderAccountResponseEnvelope {
-  @ApiProperty({ type: AuthTokens })
-  data!: AuthTokens;
+  @ApiProperty({ type: GuestOrderAccountCreated })
+  data!: GuestOrderAccountCreated;
 }
 
 /**
@@ -218,6 +230,7 @@ function orderCreationLimit(context: ExecutionContext): number {
   PublicOrderLookupResponseEnvelope,
   // TASK-2010: the checkout sign-up.
   AuthTokens,
+  GuestOrderAccountCreated,
   GuestOrderAccountResponseEnvelope,
   // Kept in the contract by name: `CheckoutContactDto` extends it, and the
   // clients import the base type (the operator form, the storefront entity).
@@ -339,7 +352,8 @@ export class OrderController {
   @ApiResponse({
     status: 201,
     description:
-      'Account created and signed in; the refresh token is set as the HttpOnly cookie. The order ' +
+      'Account created and signed in; the refresh token is set as the HttpOnly cookie (`data` is ' +
+      'empty if signing in failed after the commit). The order ' +
       'now belongs to the account.',
     type: GuestOrderAccountResponseEnvelope,
   })
@@ -359,8 +373,11 @@ export class OrderController {
     @Param('token') token: string,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<{ data: AuthTokens }> {
+  ): Promise<{ data: GuestOrderAccountCreated }> {
     const { session } = await this.orderService.createAccountFromGuestOrder(token);
+    if (!session) {
+      return { data: {} };
+    }
     return { data: await this.sessionResponder.attach(request, response, session) };
   }
 
