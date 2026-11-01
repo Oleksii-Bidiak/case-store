@@ -16,6 +16,7 @@ import {
   ApiProperty,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { FailClosedThrottle, accountAwareLimit } from '../throttler';
 import { DiscountService } from './discount.service';
 import { PreviewDiscountDto } from './dto';
 import { DiscountPreviewEntity } from './entities';
@@ -25,6 +26,10 @@ import {
   OptionalJwtAuthGuard,
   type ResolvedCartIdentity,
 } from '../cart';
+
+/** Previews a minute: an account, and a guest (TASK-2010 review). */
+const ACCOUNT_PREVIEW_LIMIT = 20;
+const GUEST_PREVIEW_LIMIT = 6;
 
 /**
  * Response envelope for a discount preview.
@@ -68,8 +73,16 @@ export class DiscountController {
   @UseGuards(OptionalJwtAuthGuard)
   @UseInterceptors(CartIdentityInterceptor)
   // Code-guessing is a brute-force vector — cap previews well below the global
-  // rate. Kept as is now that guests reach it: the cap is per address either way.
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  // rate. Since TASK-2010 guests reach it, and an anonymous caller costs nothing
+  // to rotate, so a guest gets 6 a minute and an account keeps 20 (the account
+  // is recognised by verifying its token — see accountAwareLimit for why
+  // `request.user` cannot be used here).
+  @Throttle({
+    default: { limit: accountAwareLimit(ACCOUNT_PREVIEW_LIMIT, GUEST_PREVIEW_LIMIT), ttl: 60000 },
+  })
+  // An anonymous oracle for "is this a live code?": with the limiter down it
+  // would answer unlimited guesses — refuse instead (TASK-401 rule).
+  @FailClosedThrottle()
   @ApiOperation({
     summary: 'Preview a promo code against the current cart (account or guest)',
     operationId: 'previewDiscount',
@@ -83,6 +96,10 @@ export class DiscountController {
   })
   @ApiResponse({ status: 400, description: 'Invalid, inactive, expired, or below-minimum code' })
   @ApiResponse({ status: 409, description: 'Code redemption cap reached (global or per-user)' })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests — 6 a minute for a guest, 20 for a signed-in shopper',
+  })
   async preview(
     @CartIdentity() identity: ResolvedCartIdentity,
     @Body() dto: PreviewDiscountDto,

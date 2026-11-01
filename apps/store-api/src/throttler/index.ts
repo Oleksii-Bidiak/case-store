@@ -1,4 +1,5 @@
 export { ClientIpThrottlerGuard } from './client-ip-throttler.guard';
+export { accountAwareLimit } from './account-aware-limit';
 export { FailClosedThrottle, FAIL_CLOSED_THROTTLE_KEY } from './fail-closed-throttle.decorator';
 export {
   ReviewSubmissionThrottle,
