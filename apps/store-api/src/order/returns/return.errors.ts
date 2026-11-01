@@ -39,6 +39,8 @@ export const ReturnErrorCode = {
   DECISION_LOCKED: 'RETURN_DECISION_LOCKED',
   /** The same decision with the same reason — nothing would change (TASK-2044). */
   DECISION_UNCHANGED: 'RETURN_DECISION_UNCHANGED',
+  /** A goods outcome over a return whose refund amount is already recorded (SR1 review). */
+  REFUND_RECORDED: 'RETURN_REFUND_RECORDED',
   /** PATCH was asked to set APPROVED or REJECTED, which only a decision may do (TASK-2044). */
   USE_DECISION_ENDPOINT: 'RETURN_USE_DECISION_ENDPOINT',
   /**
@@ -205,6 +207,18 @@ export function decisionLockedError(): ConflictException {
   return new ConflictException({
     error: ReturnErrorCode.DECISION_LOCKED,
     message: 'The return has been refunded — its decision can no longer change',
+  });
+}
+
+/**
+ * 409 for moving a return away from REFUND while its refund amount is recorded:
+ * the amount keeps counting against the order's refund balance, so a replacement
+ * or a repair on top of it would leave money booked with no refund behind it.
+ */
+export function refundRecordedError(decision: ReturnDecision): ConflictException {
+  return new ConflictException({
+    error: ReturnErrorCode.REFUND_RECORDED,
+    message: `The return already has a refund amount recorded — it cannot become ${decision}`,
   });
 }
 

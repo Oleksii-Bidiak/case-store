@@ -208,7 +208,8 @@ export class AdminReturnController {
   @ApiResponse({
     status: 409,
     description:
-      'error: RETURN_DECISION_LOCKED (the return was refunded), RETURN_DECISION_UNCHANGED ' +
+      'error: RETURN_DECISION_LOCKED (the return was refunded), RETURN_REFUND_RECORDED ' +
+      '(replacement or repair over a recorded refund amount), RETURN_DECISION_UNCHANGED ' +
       '(same decision and reason), RETURN_TRANSITION_INVALID (refusing goods already ' +
       'received, or the return changed meanwhile) or RETURN_QUANTITY_EXCEEDED (re-opening a ' +
       'refusal whose units a newer request now holds; the message names the remainder)',

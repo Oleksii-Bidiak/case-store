@@ -33,6 +33,7 @@ import {
   repairResultRequiredError,
   repairStepOutOfOrderError,
   decisionLockedError,
+  refundRecordedError,
   decisionReasonRequiredError,
   decisionUnchangedError,
   invalidReturnTransitionError,
@@ -497,8 +498,8 @@ export class ReturnService {
    *
    * @throws NotFoundException RETURN_NOT_FOUND
    * @throws BadRequestException RETURN_DECISION_REASON_REQUIRED
-   * @throws ConflictException RETURN_DECISION_LOCKED, RETURN_DECISION_UNCHANGED,
-   *   RETURN_TRANSITION_INVALID, RETURN_QUANTITY_EXCEEDED
+   * @throws ConflictException RETURN_DECISION_LOCKED, RETURN_REFUND_RECORDED,
+   *   RETURN_DECISION_UNCHANGED, RETURN_TRANSITION_INVALID, RETURN_QUANTITY_EXCEEDED
    */
   async decideReturn(
     returnId: string,
@@ -513,6 +514,16 @@ export class ReturnService {
 
     if (existing.status === ReturnStatus.REFUNDED) {
       throw decisionLockedError();
+    }
+
+    // A recorded amount counts against the order's refund balance until R2's
+    // payout ledger replaces it; only a refund (or a refusal, which the state
+    // machine refuses on RECEIVED anyway) may stand on top of it.
+    if (
+      existing.refundedAmount !== null &&
+      (dto.decision === ReturnDecision.REPLACEMENT || dto.decision === ReturnDecision.REPAIR)
+    ) {
+      throw refundRecordedError(dto.decision);
     }
 
     const reason = dto.reason ?? null;

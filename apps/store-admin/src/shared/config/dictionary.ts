@@ -4676,6 +4676,8 @@ export const dict = {
     decideUnchanged: "Рішення й причина ті самі — змініть хоча б одне.",
     decideLocked:
       "Гроші за цією заявкою вже повернуто — рішення більше не змінюється.",
+    decideRefundRecorded:
+      "У заявці вже записано суму повернення — заміну чи ремонт обрати не можна.",
     decideConflict:
       "Заявка вже змінилася — сторінку оновлено, перевірте рішення ще раз.",
     // TASK-1966: the remainder comes from the server's RETURN_QUANTITY_EXCEEDED.
