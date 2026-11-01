@@ -541,6 +541,19 @@ export class AuthRepository {
   }
 
   /**
+   * Remove the account's password (review of S5-API). Used when Google proves
+   * the mailbox of an account that was registered — unproven — with a password:
+   * that password may be an attacker's, so it must not survive the owner
+   * taking the account over. The owner can set one through «Забули пароль?».
+   */
+  async clearPasswordHash(userId: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: null },
+    });
+  }
+
+  /**
    * Delete all RefreshToken rows that are expired (`expiresAt < now`) or revoked.
    *
    * When `retentionDays` is greater than 0, revoked rows are only deleted once

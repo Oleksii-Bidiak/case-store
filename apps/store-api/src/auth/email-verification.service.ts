@@ -3,7 +3,8 @@ import { ModuleRef } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { randomBytes } from 'crypto';
-import { EmailTokenPurpose, type Prisma } from '@prisma/client';
+import { EmailTokenPurpose, type Prisma, type UserRole } from '@prisma/client';
+import { verifySignInRequiredError } from './checkout-account.errors';
 import { AuthRepository } from './auth.repository';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
 import { NotificationOutboxService } from '../notification-outbox';
@@ -117,11 +118,34 @@ export class EmailVerificationService {
    * typed that stranger's email into the signup form, because signing in with an
    * unverified address is not blocked today (B-5 §5).
    *
-   * @returns the proven address and how many guest orders moved onto the account
-   *   (0 for the overwhelming majority — most people never ordered as a guest).
-   * @throws BadRequestException with a single generic message for every failure.
+   * ── Review of S5-API: WHO may finish the link ─────────────────────────────
+   * Proving the mailbox is not enough for an account WITH a password: an
+   * attacker can register the victim's address with a password of their own,
+   * and the automatic signup letter lands in the victim's inbox. If the victim's
+   * click verified the account, the victim's guest orders would move into an
+   * account whose password the attacker knows. So:
+   *  - password account → completes only when `requesterId` IS that account
+   *    (the click proves the mailbox, the session the password). Nobody is
+   *    signed out. Anyone else gets 403 `VERIFY_SIGN_IN_REQUIRED` and the link
+   *    stays usable — the owner signs in and retries, or resets the password.
+   *  - password-less account (checkout, Google) → nobody holds a password to
+   *    abuse: `adoptProvenAddress` (revoke → stamp → claim) and `signIn` asks
+   *    the caller to open a session for the clicker, who is the proven owner.
+   *
+   * @param requesterId the signed-in caller, or null for an anonymous click
+   * @returns the proven address, how many guest orders moved onto the account
+   *   (0 for the overwhelming majority), and whom to sign in (or null).
+   * @throws BadRequestException with a single generic message for every bad link
+   * @throws ForbiddenException `VERIFY_SIGN_IN_REQUIRED` (see above)
    */
-  async confirm(rawToken: string): Promise<{ email: string; claimedOrders: number }> {
+  async confirm(
+    rawToken: string,
+    requesterId: string | null = null,
+  ): Promise<{
+    email: string;
+    claimedOrders: number;
+    signIn: { userId: string; role: UserRole } | null;
+  }> {
     const stored = await this.authRepository.findEmailVerificationToken(rawToken);
 
     const isInvalid =
@@ -160,16 +184,34 @@ export class EmailVerificationService {
       throw new BadRequestException(INVALID_VERIFICATION_TOKEN_MESSAGE);
     }
 
+    const user = stored.user;
+
+    if (user.passwordHash) {
+      // Checked BEFORE the link is spent: refusing must leave it usable.
+      if (requesterId !== user.id) {
+        this.logger.warn(
+          { event: 'user.emailVerificationSignInRequired', userId: user.id },
+          'Verification of a password account refused: the request is not signed in as it',
+        );
+        throw verifySignInRequiredError();
+      }
+
+      await this.authRepository.markEmailVerificationTokenUsed(stored.id);
+      if (!user.emailVerifiedAt) {
+        await this.authRepository.markEmailVerified(user.id, new Date());
+      }
+      this.logger.info({ event: 'user.emailVerified', userId: user.id }, 'Email address verified');
+
+      const claimedOrders = await this.claimGuestOrders(user.id, stored.email);
+      return { email: stored.email, claimedOrders, signIn: null };
+    }
+
     await this.authRepository.markEmailVerificationTokenUsed(stored.id);
+    this.logger.info({ event: 'user.emailVerified', userId: user.id }, 'Email address verified');
 
-    this.logger.info(
-      { event: 'user.emailVerified', userId: stored.user.id },
-      'Email address verified',
-    );
+    const claimedOrders = await this.adoptProvenAddress(user, stored.email);
 
-    const claimedOrders = await this.adoptProvenAddress(stored.user, stored.email);
-
-    return { email: stored.email, claimedOrders };
+    return { email: stored.email, claimedOrders, signIn: { userId: user.id, role: user.role } };
   }
 
   /**

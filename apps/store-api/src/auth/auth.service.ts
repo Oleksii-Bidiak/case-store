@@ -460,6 +460,16 @@ export class AuthService {
     // address change proves the old mailbox, not the current), and strictly
     // BEFORE the session below is minted, or the revoke would take it too.
     if (!user.emailVerifiedAt && user.email === email) {
+      // Review of S5-API, the pre-hijack: an UNPROVEN account with a password
+      // may have been registered on the owner's address by somebody else. That
+      // password dies first, so nothing the registrant knows survives.
+      if (user.passwordHash) {
+        await this.authRepository.clearPasswordHash(user.id);
+        this.logger.warn(
+          { event: 'user.unprovenPasswordCleared', userId: user.id },
+          'Google proved the address of an unverified password account — password removed',
+        );
+      }
       await this.emailVerification.adoptProvenAddress(user, email);
     }
 
@@ -631,13 +641,28 @@ export class AuthService {
     );
 
     // TASK-2010: the reset link was mailed to this address, so using it proves
-    // the mailbox exactly as a verification link does. An unproven account —
-    // possibly a checkout sign-up on somebody else's address — is adopted now;
-    // setPassword above has already revoked every session, so whoever created
-    // it is out before the guest orders move in.
-    if (!stored.user.emailVerifiedAt) {
-      await this.emailVerification.adoptProvenAddress(stored.user, stored.user.email);
-    }
+    // the mailbox exactly as a verification link does — and, unlike one, it has
+    // just REPLACED the password and ended every session (setPassword above).
+    // So whoever proved the mailbox now holds the only key, and the address is
+    // adopted whatever its state: an unproven one is stamped, and its guest
+    // orders are claimed even when it was already verified (review of S5-API).
+    await this.emailVerification.adoptProvenAddress(stored.user, stored.user.email);
+  }
+
+  /**
+   * `POST /auth/email/verify/confirm` (TASK-342, TASK-2010 review): confirm the
+   * link — see {@link EmailVerificationService.confirm} for who may — and, for a
+   * password-less account, open a session for the clicker AFTER the adoption,
+   * whose revoke would otherwise take it (closes TASK-2341: the clicker is no
+   * longer signed out by proving their own address).
+   */
+  async confirmEmailVerification(
+    rawToken: string,
+    requesterId: string | null,
+  ): Promise<{ claimedOrders: number; session: IssuedSession | null }> {
+    const { claimedOrders, signIn } = await this.emailVerification.confirm(rawToken, requesterId);
+    const session = signIn ? await this.generateTokenPair(signIn.userId, signIn.role) : null;
+    return { claimedOrders, session };
   }
 
   /**

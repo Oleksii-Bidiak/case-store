@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 
 /**
  * Stable, machine-readable error codes of the checkout sign-up (TASK-2010).
@@ -22,6 +22,13 @@ export const CheckoutAccountErrorCode = {
    * for all of them, so a random token learns nothing about any account.
    */
   ACCOUNT_SETUP_INVALID: 'ACCOUNT_SETUP_INVALID',
+  /**
+   * A verification link for an account WITH a password, opened by a request
+   * that is not signed in as that account (review of S5-API, the /register
+   * pre-hijack). The link is not spent: the storefront asks the shopper to sign
+   * in and retries; whoever does not know the password resets it instead.
+   */
+  VERIFY_SIGN_IN_REQUIRED: 'VERIFY_SIGN_IN_REQUIRED',
 } as const;
 
 export type CheckoutAccountErrorCode =
@@ -33,6 +40,18 @@ export function accountExistsError(): ConflictException {
     error: CheckoutAccountErrorCode.ACCOUNT_EXISTS,
     // Shopper-facing: the storefront may show it verbatim, like the delivery codes.
     message: 'На цю пошту вже є акаунт — увійдіть, щоб продовжити',
+  });
+}
+
+/**
+ * 403 — a password account's verification link needs the request to be signed
+ * in as that account. Not 401: the storefront's 401 handling refreshes and
+ * retries, which would only loop here.
+ */
+export function verifySignInRequiredError(): ForbiddenException {
+  return new ForbiddenException({
+    error: CheckoutAccountErrorCode.VERIFY_SIGN_IN_REQUIRED,
+    message: 'Увійдіть у свій акаунт, щоб підтвердити пошту, — або скиньте пароль',
   });
 }
 

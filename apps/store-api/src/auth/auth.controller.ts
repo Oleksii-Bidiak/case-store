@@ -22,6 +22,7 @@ import {
   ApiExcludeEndpoint,
   ApiExtraModels,
   ApiProperty,
+  ApiPropertyOptional,
 } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { AuthService } from './auth.service';
@@ -44,6 +45,7 @@ import { AuthSessionResponder } from './auth-session-responder';
 import { CheckoutAccountService } from './checkout-account.service';
 import { ConfirmAccountSetupDto, CheckoutEmailStatusDto } from './dto/checkout-account.dto';
 import { PermissionService, type EffectivePermissions } from './permissions';
+import { OptionalJwtAuthGuard } from '../cart';
 
 /**
  * Response envelope for register / login / refresh.
@@ -91,6 +93,14 @@ class EmailVerificationConfirmed {
       '0 for anyone who never ordered as a guest, and on a second confirm — claiming is idempotent.',
   })
   claimedOrders!: number;
+
+  @ApiPropertyOptional({
+    type: AuthTokens,
+    description:
+      'Password-less accounts only (TASK-2010): a fresh session for the device that opened the ' +
+      'link. Every older session of an unverified account was revoked first.',
+  })
+  session?: AuthTokens;
 }
 
 class EmailVerificationConfirmEnvelope {
@@ -528,24 +538,49 @@ export class AuthController {
   // decorator's stated criterion: an unauthenticated write whose only defence IS
   // the limiter. Every sibling public write on this controller already has it.
   @FailClosedThrottle()
-  @ApiOperation({ summary: 'Confirm an email address with a single-use token' })
+  // TASK-2010 review: the JWT is OPTIONAL — a password account's link completes
+  // only for a request signed in as that account (the /register pre-hijack).
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Confirm an email address with a single-use token',
+    operationId: 'confirmEmailVerification',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Address verified; `claimedOrders` counts guest orders moved onto the account',
+    description:
+      'Address verified; `claimedOrders` counts guest orders moved onto the account. For a ' +
+      'password-less account (checkout / Google) `session` signs the clicker in — the refresh ' +
+      'token is set as the HttpOnly cookie, every older session was revoked. Absent for a ' +
+      'password account (the caller is already signed in, and stays so).',
     type: EmailVerificationConfirmEnvelope,
   })
   @ApiResponse({ status: 400, description: 'Invalid, used, expired or superseded token' })
+  @ApiResponse({
+    status: 403,
+    description:
+      '`VERIFY_SIGN_IN_REQUIRED` — the account has a password and the request is not signed in ' +
+      'as it. The link is NOT spent: sign in and send it again (or reset the password).',
+  })
   async confirmEmailVerification(
     @Body() dto: ConfirmEmailVerificationDto,
+    @CurrentUser('id') requesterId: string | undefined,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<{ data: EmailVerificationConfirmed }> {
     // TASK-485: proving the address is what makes earlier guest orders provably
     // this person's, so they are attached here. The count is reported so the
     // storefront can say what happened instead of silently growing the list.
-    const { claimedOrders } = await this.emailVerificationService.confirm(dto.token);
+    const { claimedOrders, session } = await this.authService.confirmEmailVerification(
+      dto.token,
+      requesterId ?? null,
+    );
 
-    return {
-      data: { message: 'Email address verified.', claimedOrders },
-    };
+    const data: EmailVerificationConfirmed = { message: 'Email address verified.', claimedOrders };
+    if (session) {
+      data.session = await this.sessionResponder.attach(request, response, session);
+    }
+    return { data };
   }
 
   /**
