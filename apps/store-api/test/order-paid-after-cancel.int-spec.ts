@@ -12,6 +12,7 @@ import { SalesRepository } from '../src/analytics/reports/sales.repository';
 import { CacheService } from '../src/cache';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import { PrismaService } from '../src/prisma';
 import { ProductIndexer } from '../src/search/product-indexer';
 
@@ -52,6 +53,7 @@ describe('«Оплачено після скасування»: dashboard tile �
         ProductsReportRepository,
         SalesRepository,
         OrderRepository,
+        OrderMoneyRepository,
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },
         {
           provide: ProductIndexer,

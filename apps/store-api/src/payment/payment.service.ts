@@ -17,10 +17,11 @@ import {
 } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 import { centsToString, toCents } from '../addon-service';
-import type { OrderEntity } from '../order';
+import type { LedgerRefundRequest, OrderEntity, ProviderRefundPort } from '../order';
 import {
   deliveryPaymentNotAllowedError,
   isPaymentAllowedForDelivery,
+  moneyRefundExceedsPaidError,
   OrderService,
 } from '../order';
 import { PAYMENT_CLOCK, type Clock } from './payment.clock';
@@ -53,7 +54,7 @@ const PAYABLE_STATUSES: ReadonlySet<OrderStatus> = new Set([
  *    {@link OrderService.applyPaymentEvent}, or they drift apart.
  */
 @Injectable()
-export class PaymentService {
+export class PaymentService implements ProviderRefundPort {
   constructor(
     private readonly paymentRepository: PaymentRepository,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
@@ -303,11 +304,59 @@ export class PaymentService {
       throw refundExceedsBalanceError(amount ?? available, available);
     }
 
-    const refundAmount = centsToString(request.amountKop);
+    await this.askProviderToRefund(payment, request.entryId, request.amountKop);
+  }
+
+  /**
+   * The operator's LIQPAY_REFUND payout (R2 A3) — `PROVIDER_REFUND_PORT`, bound to
+   * this class in `PaymentModule`. The same REQUESTED → provider → void flow as
+   * {@link refund}; the order module's payout rules (`request.guard`) run inside
+   * the transaction that writes the entry, right after the order-row lock, and
+   * the entry carries the return it settles and the operator's reason.
+   *
+   * @throws NotFoundException when the payment does not exist or is not this order's.
+   * @throws ConflictException when the attempt never succeeded, whatever the
+   *   guard throws, or ORDER_MONEY_REFUND_EXCEEDS_PAID over what is left on the
+   *   attempt.
+   */
+  async requestLedgerRefund(request: LedgerRefundRequest): Promise<void> {
+    const payment = await this.paymentRepository.findById(request.paymentId);
+
+    // A payment of another order is reported exactly like a missing one.
+    if (!payment || payment.orderId !== request.orderId) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    this.assertRefundable(payment);
+
+    const written = await this.orderService.requestProviderRefund({
+      orderId: request.orderId,
+      paymentId: payment.id,
+      amountKop: request.amountKop,
+      actorId: request.actorId,
+      returnId: request.returnId,
+      reason: request.reason,
+      guard: request.guard,
+    });
+
+    if (written.status === 'exceeds') {
+      throw moneyRefundExceedsPaidError(request.amountKop, written.availableKop);
+    }
+
+    await this.askProviderToRefund(payment, written.entryId, written.amountKop);
+  }
+
+  /** Ask LiqPay for a refund already REQUESTED on the ledger; void it if LiqPay refuses. */
+  private async askProviderToRefund(
+    payment: Payment,
+    entryId: string,
+    amountKop: number,
+  ): Promise<void> {
+    const refundAmount = centsToString(amountKop);
     try {
       await this.provider.refund({ paymentId: payment.id, amount: refundAmount });
     } catch (err) {
-      await this.voidRefund(payment, request.entryId, err);
+      await this.voidRefund(payment, entryId, err);
       throw err;
     }
 
@@ -316,7 +365,7 @@ export class PaymentService {
         event: 'payment.refund.requested',
         paymentId: payment.id,
         orderId: payment.orderId,
-        entryId: request.entryId,
+        entryId,
         amount: refundAmount,
       },
       'Refund requested; awaiting the provider callback that confirms it',

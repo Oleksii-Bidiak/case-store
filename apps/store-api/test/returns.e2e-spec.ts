@@ -20,6 +20,7 @@ import { RETURN_SORT_FIELDS } from '../src/order/returns/dto';
 import { ReturnService } from '../src/order/returns/return.service';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
@@ -93,6 +94,8 @@ describe('Admin returns queue (e2e)', () => {
     // The order-scoped return routes read the order first (review of plan 180).
     order: {
       findFirst: jest.fn(),
+      // R2 A3: the lines and the promo a return's credit is computed from.
+      findUniqueOrThrow: jest.fn(),
       // Never called by a return path — asserted (TASK-1963).
       update: jest.fn(),
       updateMany: jest.fn(),
@@ -113,6 +116,15 @@ describe('Admin returns queue (e2e)', () => {
   // Named rather than inline so the RBAC block below can drive the MANAGER's
   // grants through `setGrants` and assert what the NEXT request sees.
   const permissionRepositoryMock = createPermissionRepositoryMock();
+
+  // R2 A3: a REFUND decision and a credit change recompute the order's money
+  // and re-derive the return through the ledger repository — the double here
+  // (its own suites cover it against Postgres).
+  const moneyRepositoryMock = {
+    recompute: jest.fn(),
+    returnPaidOutKop: jest.fn(),
+    syncReturnStatus: jest.fn(),
+  };
 
   const testAdmin = { id: 'admin-e2e-1', role: 'ADMIN' as const };
   const testCustomer = { id: 'customer-e2e-1', role: 'CUSTOMER' as const };
@@ -170,6 +182,8 @@ describe('Admin returns queue (e2e)', () => {
       .useValue(permissionRepositoryMock)
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
+      .overrideProvider(OrderMoneyRepository)
+      .useValue(moneyRepositoryMock)
       .overrideProvider(APP_GUARD)
       .useClass(ThrottlerGuardPassThrough)
       .compile();
@@ -201,6 +215,9 @@ describe('Admin returns queue (e2e)', () => {
     jest.clearAllMocks();
     prismaServiceMock.return.count.mockResolvedValue(0);
     prismaServiceMock.return.findMany.mockResolvedValue([]);
+    prismaServiceMock.order.findUniqueOrThrow.mockResolvedValue({ discount: '0', items: [] });
+    moneyRepositoryMock.recompute.mockResolvedValue({});
+    moneyRepositoryMock.returnPaidOutKop.mockResolvedValue(0);
     // Both forms of $transaction: the list path hands it an ARRAY, the resolve
     // path an interactive callback, which runs against the same double.
     prismaServiceMock.$transaction.mockImplementation((operations: unknown) =>
@@ -445,83 +462,141 @@ describe('Admin returns queue (e2e)', () => {
     });
   });
 
-  // ─── Refund ceilings (TASK-785) ─────────────────────────────────────────────
+  // ─── Money on a return is a ledger payout now (R2 A3, TASK-2046) ────────────
   //
-  // `refundedAmount` used to be checked for shape only: "49900" typed for
-  // "499.00" matched the decimal regex, was stored, and flowed into the order's
-  // `refundedTotal` and the B-8 reports. The real service and repository run
-  // here, so this pins the whole chain: DTO → service ceilings → the check the
-  // repository runs inside its transaction → a 400 with a stable code.
+  // `refundedAmount` and a hand-set REFUNDED are gone from the PATCH: what goes
+  // back is a payout on the order (`POST /admin/orders/:orderId/money/out`), and
+  // REFUNDED follows from the payouts. What stays here is «до повернення» —
+  // computed when the decision becomes REFUND, lowered by `PATCH …/credit`.
 
-  describe('PATCH /api/admin/returns/:returnId — refund ceilings', () => {
+  describe('PATCH /api/admin/returns/:returnId — no money on the return (R2 A3)', () => {
     const returnId = '550e8400-e29b-41d4-a716-446655440000';
     const adminToken = () => `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`;
 
-    /** One unit of a 499.00 line, back at the shop and waiting for its money. */
-    const received = makeReturnRow({
-      status: ReturnStatus.RECEIVED,
-      // Money goes out only on a REFUND decision (TASK-2044).
-      decision: ReturnDecision.REFUND,
-      items: [
-        {
-          id: '550e8400-e29b-41d4-a716-446655440010',
-          returnId,
-          orderItemId: '550e8400-e29b-41d4-a716-446655440001',
-          quantity: 1,
-          createdAt: now,
-          orderItem: {
-            id: '550e8400-e29b-41d4-a716-446655440001',
-            productId: '550e8400-e29b-41d4-a716-446655440002',
-            quantity: 3,
-            price: '499.00',
-            product: {
-              id: '550e8400-e29b-41d4-a716-446655440002',
-              name: 'Чохол',
-              slug: 'chokhol',
-            },
-          },
-        },
-      ],
+    beforeEach(() => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(
+        makeReturnRow({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
+      );
     });
 
-    const patch = (refundedAmount: string) =>
-      request(app.getHttpServer())
+    it('400 for the retired refundedAmount field (forbidNonWhitelisted), writing nothing', async () => {
+      await request(app.getHttpServer())
         .patch(`${url}/${returnId}`)
         .set('Authorization', adminToken())
-        .send({ status: ReturnStatus.REFUNDED, refundedAmount });
+        .send({ status: ReturnStatus.RECEIVED, refundedAmount: '499.00' })
+        .expect(400);
+
+      expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('400 RETURN_REFUND_DERIVED for a hand-set REFUNDED, writing nothing', async () => {
+      const response = await request(app.getHttpServer())
+        .patch(`${url}/${returnId}`)
+        .set('Authorization', adminToken())
+        .send({ status: ReturnStatus.REFUNDED })
+        .expect(400);
+
+      expect(response.body.error).toBe('RETURN_REFUND_DERIVED');
+      expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('PATCH /api/admin/returns/:returnId/credit (R2 A3, TASK-2046)', () => {
+    const returnId = '550e8400-e29b-41d4-a716-446655440000';
+    const lineId = '550e8400-e29b-41d4-a716-446655440001';
+    const credit = (body: Record<string, unknown>, role: 'ADMIN' | 'MANAGER' = 'ADMIN') =>
+      request(app.getHttpServer())
+        .patch(`${url}/${returnId}/credit`)
+        .set(
+          'Authorization',
+          `Bearer ${generateAccessToken(role === 'ADMIN' ? testAdmin.id : testManager.id, role)}`,
+        )
+        .send(body);
+
+    /** One of three 499.00 units back, nothing paid out: computed credit 49 900. */
+    const refundReturn = makeReturnRow({
+      status: ReturnStatus.RECEIVED,
+      decision: ReturnDecision.REFUND,
+      creditKop: 49_900,
+      items: [{ id: 'ri-1', returnId, orderItemId: lineId, quantity: 1, createdAt: now }],
+    });
 
     beforeEach(() => {
-      prismaServiceMock.return.findUnique.mockResolvedValue(received);
-      prismaServiceMock.return.findUniqueOrThrow.mockResolvedValue(received);
-      // The write is conditional on the validated status/decision (TASK-1961/2044).
+      prismaServiceMock.return.findUnique.mockResolvedValue(refundReturn);
+      prismaServiceMock.return.findUniqueOrThrow.mockResolvedValue({
+        ...refundReturn,
+        creditKop: 40_000,
+        creditReason: 'Без зарядного блока',
+      });
+      prismaServiceMock.$queryRaw.mockResolvedValue([{ id: refundReturn.orderId }]);
+      prismaServiceMock.order.findUniqueOrThrow.mockResolvedValue({
+        discount: '0',
+        items: [{ id: lineId, quantity: 3, price: '499.00' }],
+      });
+      prismaServiceMock.return.findMany.mockResolvedValue([
+        { id: returnId, creditKop: 49_900, items: [{ orderItemId: lineId, quantity: 1 }] },
+      ]);
       prismaServiceMock.return.updateMany.mockResolvedValue({ count: 1 });
-      // The order of three at 499.00, nothing refunded through its other returns.
-      prismaServiceMock.$queryRaw.mockResolvedValue([{ total: '1497.00' }]);
-      prismaServiceMock.return.findMany.mockResolvedValue([]);
     });
 
-    it('rejects "49900" typed for "499.00" with 400 and writes nothing', async () => {
-      const response = await patch('49900').expect(400);
+    it('200 — lowers it with the reason, recomputes the order, answers with the card', async () => {
+      const response = await credit({ creditKop: 40_000, reason: 'Без зарядного блока' }).expect(
+        200,
+      );
 
-      expect(response.body.error).toBe('RETURN_REFUND_EXCEEDS_RETURNED_VALUE');
-      expect(response.body.message).toContain('499.00');
+      expect(prismaServiceMock.return.updateMany).toHaveBeenCalledWith({
+        where: { id: returnId, decision: ReturnDecision.REFUND, creditKop: { not: null } },
+        data: { creditKop: 40_000, creditReason: 'Без зарядного блока' },
+      });
+      expect(moneyRepositoryMock.recompute).toHaveBeenCalledWith(
+        prismaServiceMock,
+        refundReturn.orderId,
+        testAdmin.id,
+      );
+      expect(moneyRepositoryMock.syncReturnStatus).toHaveBeenCalledWith(
+        prismaServiceMock,
+        returnId,
+      );
+      expect(response.body.data).toMatchObject({
+        creditKop: 40_000,
+        creditReason: 'Без зарядного блока',
+      });
+    });
+
+    it('400 RETURN_CREDIT_ABOVE_COMPUTED — it may only be lowered', async () => {
+      const response = await credit({ creditKop: 49_901, reason: 'x' }).expect(400);
+      expect(response.body.error).toBe('RETURN_CREDIT_ABOVE_COMPUTED');
       expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
     });
 
-    it('rejects a refund larger than the order has left after earlier returns', async () => {
-      prismaServiceMock.return.findMany.mockResolvedValue([{ refundedAmount: '1200.00' }]);
+    it('409 RETURN_CREDIT_BELOW_PAID_OUT under what was already paid out', async () => {
+      moneyRepositoryMock.returnPaidOutKop.mockResolvedValue(30_000);
+      const response = await credit({ creditKop: 29_999, reason: 'x' }).expect(409);
+      expect(response.body.error).toBe('RETURN_CREDIT_BELOW_PAID_OUT');
+    });
 
-      const response = await patch('499.00').expect(400);
-
-      expect(response.body.error).toBe('RETURN_REFUND_EXCEEDS_ORDER_BALANCE');
-      expect(response.body.message).toContain('297.00');
+    it('400 without a reason or with a decimal amount', async () => {
+      await credit({ creditKop: 40_000 }).expect(400);
+      await credit({ creditKop: 40_000, reason: '  ' }).expect(400);
+      await credit({ creditKop: 399.5, reason: 'x' }).expect(400);
       expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
     });
 
-    it('accepts "499.00" — the value of the unit coming back', async () => {
-      await patch('499.00').expect(200);
+    it('409 RETURN_CREDIT_NOT_REFUND on a replacement', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(
+        makeReturnRow({ status: ReturnStatus.APPROVED, decision: ReturnDecision.REPLACEMENT }),
+      );
+      const response = await credit({ creditKop: 1, reason: 'x' }).expect(409);
+      expect(response.body.error).toBe('RETURN_CREDIT_NOT_REFUND');
+    });
 
-      expect(prismaServiceMock.return.updateMany).toHaveBeenCalledTimes(1);
+    it('403 for a manager with returns:read only, 200 once returns:write is granted', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['returns:read']);
+      await credit({ creditKop: 40_000, reason: 'x' }, 'MANAGER').expect(403);
+
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['returns:read', 'returns:write']);
+      await credit({ creditKop: 40_000, reason: 'x' }, 'MANAGER').expect(200);
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, []);
     });
   });
 
@@ -555,28 +630,14 @@ describe('Admin returns queue (e2e)', () => {
       const response = await request(app.getHttpServer())
         .patch(`${url}/${returnId}`)
         .set('Authorization', adminToken())
-        .send({ status: ReturnStatus.REFUNDED })
+        .send({ status: ReturnStatus.RECEIVED })
         .expect(409);
 
       expect(response.body).toMatchObject({
         error: 'RETURN_TRANSITION_INVALID',
-        message: 'A return cannot move from REQUESTED to REFUNDED',
+        message: 'A return cannot move from REQUESTED to RECEIVED',
       });
       expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
-    });
-
-    it('PATCH /admin/returns/:id → 400 RETURN_RESTOCK_REQUIRES_RECEIVED', async () => {
-      prismaServiceMock.return.findUnique.mockResolvedValue(
-        makeReturnRow({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
-      );
-
-      const response = await request(app.getHttpServer())
-        .patch(`${url}/${returnId}`)
-        .set('Authorization', adminToken())
-        .send({ status: ReturnStatus.REFUNDED, restock: true })
-        .expect(400);
-
-      expect(response.body.error).toBe('RETURN_RESTOCK_REQUIRES_RECEIVED');
     });
 
     it('PATCH /admin/returns/:id → 409 RETURN_ALREADY_RESTOCKED', async () => {
@@ -1029,7 +1090,7 @@ describe('Admin returns queue (e2e)', () => {
       expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
     });
 
-    it.each([{ refundedAmount: '499.00' }, { restock: true }])(
+    it.each([{ restock: true }])(
       '400 RETURN_STATUS_REQUIRED for %o without a status',
       async (body) => {
         const response = await patch({ operatorNotes: 'x', ...body }).expect(400);

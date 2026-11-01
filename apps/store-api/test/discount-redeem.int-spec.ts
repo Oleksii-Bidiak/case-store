@@ -5,6 +5,7 @@ import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { CacheService } from '../src/cache';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import { ProductIndexer } from '../src/search/product-indexer';
 import { DiscountRepository } from '../src/discount/discount.repository';
 import { DiscountService } from '../src/discount/discount.service';
@@ -219,6 +220,7 @@ describe('OrderRepository cancel/revive — promo redemption lifecycle (integrat
       providers: [
         PrismaService,
         OrderRepository,
+        OrderMoneyRepository,
         DiscountRepository,
         {
           provide: DiscountService,

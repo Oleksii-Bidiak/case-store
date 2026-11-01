@@ -256,12 +256,36 @@ export class ReturnEntity {
   restockedAt!: Date | null;
 
   @ApiProperty({
-    description: 'What was actually refunded, as a string; null until money moves',
+    description:
+      'Legacy pre-R2 amount, no longer written — payouts live on the order ledger ' +
+      '(GET /admin/orders/:orderId/money → returns[]). Kept one release for old rows.',
     type: String,
     nullable: true,
     example: '499.00',
+    deprecated: true,
   })
   refundedAmount!: string | null;
+
+  @ApiProperty({
+    description:
+      'Admin only. «До повернення» in integer kopecks (R2, TASK-2046): the returned lines ' +
+      'value less their promo share, set when the decision becomes REFUND, null otherwise. ' +
+      'Lowered with PATCH /admin/returns/:returnId/credit. What was paid out against it is ' +
+      'on the order ledger (GET /admin/orders/:orderId/money → returns[]).',
+    required: false,
+    type: Number,
+    nullable: true,
+    example: 33333,
+  })
+  creditKop?: number | null;
+
+  @ApiProperty({
+    description: 'Admin only. Why the credit was lowered; null while it is the computed value.',
+    required: false,
+    type: String,
+    nullable: true,
+  })
+  creditReason?: string | null;
 
   /**
    * Who opened the request (TASK-469).
@@ -440,6 +464,8 @@ export class ReturnEntity {
         );
       }
       if (row.order?.createdAt) entity.orderCreatedAt = row.order.createdAt;
+      entity.creditKop = row.creditKop ?? null;
+      entity.creditReason = row.creditReason ?? null;
     }
     if (row.repairEvents) {
       entity.repairSteps = row.repairEvents.map((event) =>

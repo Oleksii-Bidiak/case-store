@@ -65,3 +65,31 @@ export function isPaymentAllowedForDelivery(
 export function allowedPaymentMethods(delivery: DeliveryMethod): PaymentMethod[] {
   return [...DELIVERY_PAYMENT_MATRIX[delivery]];
 }
+
+/**
+ * The OPERATOR's matrix (R2 A3, TASK-2047): the storefront's, plus
+ * `BANK_TRANSFER` («Переказ на рахунок ФОП») with every delivery method — a
+ * phone order the customer pays by transfer. Admin-only: the storefront
+ * checkout refuses it (`CHECKOUT_PAYMENT_METHODS` in `create-order.dto.ts`) and
+ * `GET /api/delivery/methods` serves the storefront table above, never this one.
+ * It fits OTHER too: a transfer is made for an amount the operator quotes, so
+ * there is no signed amount to get wrong.
+ */
+export const ADMIN_DELIVERY_PAYMENT_MATRIX: Readonly<
+  Record<DeliveryMethod, readonly PaymentMethod[]>
+> = Object.freeze(
+  Object.fromEntries(
+    Object.entries(DELIVERY_PAYMENT_MATRIX).map(([delivery, methods]) => [
+      delivery,
+      Object.freeze([...methods, PaymentMethod.BANK_TRANSFER]),
+    ]),
+  ) as Record<DeliveryMethod, readonly PaymentMethod[]>,
+);
+
+/** Whether an order the OPERATOR creates with `delivery` may be paid by `payment`. */
+export function isPaymentAllowedForAdminDelivery(
+  delivery: DeliveryMethod,
+  payment: PaymentMethod,
+): boolean {
+  return ADMIN_DELIVERY_PAYMENT_MATRIX[delivery].includes(payment);
+}

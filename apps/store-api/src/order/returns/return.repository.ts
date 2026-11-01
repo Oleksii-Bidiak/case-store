@@ -2,11 +2,16 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, ReturnDecision, ReturnStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma';
 import {
+  creditNotRefundError,
   invalidReturnTransitionError,
+  refundRecordedError,
   repairNotInProgressError,
   repairStepAlreadyRecordedError,
   returnAlreadyRestockedError,
 } from './return.errors';
+import { toCents } from '../../addon-service';
+import { returnCreditFor } from '../order-money';
+import { OrderMoneyRepository } from '../order-money.repository';
 import {
   CacheService,
   productDetailIdKey,
@@ -18,9 +23,10 @@ import { ProductIndexer } from '../../search';
 import { RETURN_SORT_FIELDS } from './dto';
 import type { ReturnSortField } from './dto';
 import type {
-  AssertRefundWithinBalance,
   AssertReturnClaimable,
+  AssertReturnCredit,
   CreateReturnParams,
+  ReturnDecideOptions,
   ReturnTransitionBasis,
   ReturnDecisionChange,
   ReturnRepairStepRecord,
@@ -158,6 +164,9 @@ export class ReturnRepository {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly productIndexer: ProductIndexer,
+    // R2 A3 (TASK-2046): a decision or a credit change moves the order's money
+    // totals (`returnCreditKop`, balance) in the same locked transaction.
+    private readonly money: OrderMoneyRepository,
   ) {}
 
   /**
@@ -352,14 +361,8 @@ export class ReturnRepository {
    * lock, re-evaluates after it commits, matches zero rows, and aborts before
    * touching a single product.
    *
-   * ── The refund ceilings (TASK-785) ─────────────────────────────────────────
-   * When the service passes `assertRefundable`, the order row is locked
-   * (`FOR UPDATE`, the same lock `create` takes) and the order's total plus the
-   * amounts already recorded on its OTHER returns are read under it, then handed
-   * to the check before anything is written. Two operators refunding two returns
-   * of one order at once therefore serialise, and the second sees the first's
-   * committed amount — a read taken outside the transaction would let both spend
-   * the same balance.
+   * Money is not written here since R2 A3 (TASK-2046): payouts are ledger
+   * entries (`OrderMoneyService.recordPayout`) and REFUNDED follows from them.
    *
    * ── The state guard (TASK-1961, TASK-2044) ─────────────────────────────────
    * The service validated the move against `current`, read outside this
@@ -379,10 +382,9 @@ export class ReturnRepository {
     fields: {
       status: ReturnStatus;
       operatorNotes?: string | null;
-      refundedAmount?: string | null;
       resolvedAt?: Date | null;
     },
-    options: { restock?: boolean; assertRefundable?: AssertRefundWithinBalance } = {},
+    options: { restock?: boolean } = {},
   ): Promise<ReturnWithItems> {
     const returnId = current.id;
     const unchanged = { id: returnId, status: current.status, decision: current.decision };
@@ -392,29 +394,8 @@ export class ReturnRepository {
         include: RETURN_LINES_INCLUDE,
       });
 
-      if (options.assertRefundable) {
-        const [order] = await tx.$queryRaw<Array<{ total: Prisma.Decimal }>>`
-          SELECT total FROM orders WHERE id = ${existing.orderId} FOR UPDATE`;
-        const otherRefunds = await tx.return.findMany({
-          where: { orderId: existing.orderId, id: { not: returnId } },
-          select: { refundedAmount: true },
-        });
-        options.assertRefundable({
-          orderTotal: order.total,
-          otherRefunds,
-          items: existing.items.map((item) => ({
-            quantity: item.quantity,
-            unitPrice: item.orderItem.price,
-          })),
-        });
-      }
-
       const data: Prisma.ReturnUpdateManyMutationInput = { status: fields.status };
       if (fields.operatorNotes !== undefined) data.operatorNotes = fields.operatorNotes;
-      if (fields.refundedAmount !== undefined) {
-        data.refundedAmount =
-          fields.refundedAmount === null ? null : new Prisma.Decimal(fields.refundedAmount);
-      }
       if (fields.resolvedAt !== undefined) data.resolvedAt = fields.resolvedAt;
 
       if (!options.restock) {
@@ -507,7 +488,7 @@ export class ReturnRepository {
   async decide(
     current: ReturnTransitionBasis,
     change: ReturnDecisionChange,
-    options: { assertClaimable?: AssertReturnClaimable } = {},
+    options: ReturnDecideOptions = {},
   ): Promise<ReturnWithItems> {
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM orders WHERE id = ${current.orderId} FOR UPDATE`;
@@ -519,6 +500,22 @@ export class ReturnRepository {
         });
         options.assertClaimable(ledger);
       }
+
+      // R2 A3 (TASK-2046): "money already went out" is the ledger's answer,
+      // read under the same lock every payout takes.
+      if (options.refuseIfPaidOut && (await this.money.returnPaidOutKop(tx, current.id)) > 0) {
+        throw refundRecordedError(change.decision);
+      }
+
+      const credit: Prisma.ReturnUpdateManyMutationInput =
+        options.credit === 'compute'
+          ? {
+              creditKop: await this.computeCredit(tx, current.orderId, current.id),
+              creditReason: null,
+            }
+          : options.credit === 'clear'
+            ? { creditKop: null, creditReason: null }
+            : {};
 
       const { count } = await tx.return.updateMany({
         where: { id: current.id, status: current.status, decision: current.decision },
@@ -532,6 +529,7 @@ export class ReturnRepository {
           decisionLegacy: false,
           // `resolvedAt` stays "the last change" (plan 2026-10, Модель даних).
           resolvedAt: change.decidedAt,
+          ...credit,
         },
       });
       if (count === 0) {
@@ -548,11 +546,112 @@ export class ReturnRepository {
         },
       });
 
+      // The credit is part of the order's balance — recompute it in this tx.
+      if (options.credit) {
+        await this.money.recompute(tx, current.orderId, options.actorId ?? null);
+      }
+
       return tx.return.findUniqueOrThrow({
         where: { id: current.id },
         include: ADMIN_RETURN_DETAIL_INCLUDE,
       });
     }) as Promise<ReturnWithItems>;
+  }
+
+  /**
+   * Lower a refund return's credit («до повернення», R2 A3, TASK-2046), in ONE
+   * transaction under the order-row lock — the lock every payout takes:
+   *
+   * 1. the ceilings are read fresh — the credit as computed now, and the
+   *    payouts already made on the return — and handed to the service's rule;
+   * 2. the write is conditional on the return still being a REFUND with a
+   *    credit (a decision changed meanwhile → 409 RETURN_CREDIT_NOT_REFUND);
+   * 3. the order's totals are recomputed and the return's status re-derived (a
+   *    credit lowered to what was paid out makes it REFUNDED).
+   */
+  async setCredit(
+    current: ReturnTransitionBasis,
+    change: { creditKop: number; creditReason: string },
+    options: { assertCredit: AssertReturnCredit; actorId: string },
+  ): Promise<ReturnWithItems> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM orders WHERE id = ${current.orderId} FOR UPDATE`;
+
+      options.assertCredit({
+        computedKop: await this.computeCredit(tx, current.orderId, current.id),
+        paidOutKop: await this.money.returnPaidOutKop(tx, current.id),
+      });
+
+      const { count } = await tx.return.updateMany({
+        where: { id: current.id, decision: ReturnDecision.REFUND, creditKop: { not: null } },
+        data: { creditKop: change.creditKop, creditReason: change.creditReason },
+      });
+      if (count === 0) {
+        throw creditNotRefundError();
+      }
+
+      await this.money.recompute(tx, current.orderId, options.actorId);
+      await this.money.syncReturnStatus(tx, current.id);
+
+      return tx.return.findUniqueOrThrow({
+        where: { id: current.id },
+        include: ADMIN_RETURN_DETAIL_INCLUDE,
+      });
+    }) as Promise<ReturnWithItems>;
+  }
+
+  /**
+   * The credit this return would carry now (TASK-2046): its lines' value less
+   * their share of the order's promo discount, telescoped over the units the
+   * order's OTHER refund returns already credited (`returnCreditFor`). Integer
+   * kopecks; lines in `(createdAt, id)` order, as the R2 backfill reads them.
+   */
+  private async computeCredit(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    returnId: string,
+  ): Promise<number> {
+    // Sequential: one transaction is one connection — no parallel queries on it.
+    const order = await tx.order.findUniqueOrThrow({
+      where: { id: orderId },
+      select: {
+        discount: true,
+        items: {
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: { id: true, quantity: true, price: true },
+        },
+      },
+    });
+    const returns = await tx.return.findMany({
+      where: { orderId },
+      select: {
+        id: true,
+        creditKop: true,
+        items: { select: { orderItemId: true, quantity: true } },
+      },
+    });
+
+    const creditedBefore = new Map<string, number>();
+    for (const other of returns) {
+      if (other.id === returnId || other.creditKop === null) continue;
+      for (const item of other.items) {
+        creditedBefore.set(
+          item.orderItemId,
+          (creditedBefore.get(item.orderItemId) ?? 0) + item.quantity,
+        );
+      }
+    }
+
+    return returnCreditFor({
+      lines: order.items.map((line) => ({
+        id: line.id,
+        quantity: line.quantity,
+        grossKop: toCents(line.price) * line.quantity,
+      })),
+      discountKop: toCents(order.discount),
+      items: returns.find((ret) => ret.id === returnId)?.items ?? [],
+      creditedBefore,
+    });
   }
 
   /**

@@ -4,6 +4,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OrderStatus, PaymentAttemptStatus, PaymentStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import { CacheService } from '../src/cache';
 import { PrismaService } from '../src/prisma';
 import { ProductIndexer } from '../src/search/product-indexer';
@@ -46,6 +47,7 @@ describe('OrderRepository.cancelAndRestock — concurrency (integration)', () =>
       providers: [
         PrismaService,
         OrderRepository,
+        OrderMoneyRepository,
         // The repository only evicts caches after the transaction commits; the
         // concurrency guarantee under test does not involve Redis.
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },

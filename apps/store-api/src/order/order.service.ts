@@ -29,15 +29,12 @@ import { DeliveryService, isDeliveryNotConfigured } from '../delivery';
 import { DiscountService } from '../discount';
 import { OrderEntity, OrderStatusHistoryEntity, PublicOrderEntity } from './entities';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
-import {
-  allowedPaymentTransitions,
-  allowedTransitions,
-  canTransition,
-  canTransitionPayment,
-  canCorrectPayment,
-} from './order-state-machine';
+import { allowedTransitions, canTransition, canTransitionPayment } from './order-state-machine';
 // TASK-643: the delivery × payment matrix and the non-NP pricing rules.
-import { isPaymentAllowedForDelivery } from './delivery-payment-matrix';
+import {
+  isPaymentAllowedForAdminDelivery,
+  isPaymentAllowedForDelivery,
+} from './delivery-payment-matrix';
 import {
   ALREADY_PAID_STATUSES,
   confirmsPaymentOfLiveOrder,
@@ -51,11 +48,8 @@ import {
   deliveryPaymentNotAllowedError,
   deliveryPickupPointRequiredError,
   deliveryPickupPointUnavailableError,
-  invalidPaymentTransitionError,
   manualOrderDeliveryPaymentNotAllowedError,
-  paymentCorrectionProviderRefundError,
   invalidTransitionError,
-  refundRequiresClosedOrderError,
   reviveRefundedPaymentError,
   staleOrderError,
 } from './order.errors';
@@ -821,7 +815,7 @@ export class OrderService {
    * nothing extra: a repeat callback is stopped by the PaymentEvent unique
    * index, and a repeat SUCCEEDED on a paid order has no plan at all.
    *
-   * The admin's manual «оплачено» (`adminUpdatePaymentStatus`) never comes
+   * The operator's manual receipt (`OrderMoneyService.recordReceipt`) never comes
    * through here — staff are the trigger there, so the shop is not told.
    */
   private async shopPingOnPaid(
@@ -1367,7 +1361,7 @@ export class OrderService {
     // TASK-151: order status and payment status are decoupled. Advancing the
     // order status leaves the existing payment status untouched (forwarded
     // unchanged); the admin manages payment independently via
-    // adminUpdatePaymentStatus. (Previously TASK-123 auto-derived PAID here.)
+    // the order money ledger (R2 A3). (Previously TASK-123 auto-derived PAID here.)
     //
     // TASK-254: a plain transition that crosses the pre-shipment boundary
     // (e.g. PROCESSING→SHIPPED, CONFIRMED→DELIVERED, or CANCELLED→PROCESSING)
@@ -1547,7 +1541,7 @@ export class OrderService {
     // checkout nicety — an OTHER phone order paid online would send the customer
     // a link for an amount whose shipping nobody has quoted yet. Checked before
     // anything is read or reserved.
-    if (!isPaymentAllowedForDelivery(deliveryMethod, paymentMethod)) {
+    if (!isPaymentAllowedForAdminDelivery(deliveryMethod, paymentMethod)) {
       throw manualOrderDeliveryPaymentNotAllowedError(deliveryMethod);
     }
 
@@ -1945,68 +1939,9 @@ export class OrderService {
   }
 
   /**
-   * Admin — which PAYMENT statuses this order may move to right now (TASK-431).
+   * «Fully refunded money» vs a live order, asked of the ORDER (review of plan 180).
    *
-   * Mirrors {@link getAllowedTransitions} down to the `updatedAt` token, and for
-   * the same reason: the payment picker used to offer "every value except the
-   * current one", so an operator could pick REFUNDED on a delivered order and
-   * only then learn it was never possible.
-   *
-   * The cross-rule is applied HERE too, not only on the write. A target the PATCH
-   * would refuse has no business being in the list the picker renders — offering
-   * it and then rejecting it is precisely the behaviour this endpoint exists to
-   * end.
-   *
-   * @throws NotFoundException when the order does not exist or is soft-deleted.
-   */
-  async getAllowedPaymentTransitions(
-    orderId: string,
-  ): Promise<{ current: PaymentStatus; allowed: PaymentStatus[]; updatedAt: Date }> {
-    const existing = await this.orderRepository.findById(orderId);
-
-    if (!existing) {
-      throw new NotFoundException('Order not found');
-    }
-
-    return {
-      current: existing.paymentStatus,
-      allowed: allowedPaymentTransitions(existing.paymentStatus).filter((to) =>
-        this.isPaymentTargetReachable(existing.status, to),
-      ),
-      updatedAt: existing.updatedAt,
-    };
-  }
-
-  /**
-   * The cross-rule the payment table cannot hold, because it reads two columns
-   * at once (TASK-431, owner decision B-1 §1).
-   *
-   * A FULL refund is allowed only while the order itself is CANCELLED or
-   * REFUNDED. Anything else would assert that the shop returned all of the money
-   * for an order it still considers live — the customer has the goods AND the
-   * cash. The operator's path is the honest one: cancel (or refund) the order,
-   * then record the money.
-   *
-   * PARTIALLY_REFUNDED is deliberately NOT constrained: refunding one line out of
-   * three on a DELIVERED order is an ordinary day, and it is exactly the case
-   * that used to force the operator to choose between two lies.
-   *
-   * Asked on BOTH doors, like the table itself — the admin write answers a
-   * violation with 409, {@link planPaymentApplication} with a refusal row — and
-   * on the webhook door it is asked of the status the plan will LEAVE the order
-   * in, since a refund that closes the order in the same transaction lands
-   * consistent. Keeping it in one place is the point: a cross-rule enforced on
-   * one door only is not a rule, it is a preference of that door.
-   */
-  private isPaymentTargetReachable(orderStatus: OrderStatus, to: PaymentStatus): boolean {
-    if (to !== PaymentStatus.REFUNDED) return true;
-    return orderStatus === OrderStatus.CANCELLED || orderStatus === OrderStatus.REFUNDED;
-  }
-
-  /**
-   * The same cross-rule, asked of the OTHER column (review of plan 180).
-   *
-   * {@link isPaymentTargetReachable} refuses «full refund on a live order» when
+   * The payment side refused «full refund on a live order» when
    * the PAYMENT moves. The identical pair was reachable when the ORDER moved
    * instead: CANCELLED + REFUNDED is legal and ordinary, and reviving such an
    * order into PENDING/CONFIRMED/PROCESSING produced exactly the state the other
@@ -2042,174 +1977,6 @@ export class OrderService {
     if (existing.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
       throw staleOrderError();
     }
-  }
-
-  /**
-   * Admin — set an order's payment status directly, independently of its order
-   * status (TASK-151). This is the manual stand-in for the payment webhook and
-   * the supported way to mark an order paid/unpaid/refunded. Authorization
-   * (ADMIN role) is enforced at the controller.
-   *
-   * ── The FIRST of the two doors onto `paymentStatus` (TASK-431) ──────────────
-   * This one is human, synchronous and has a screen in front of it, so an illegal
-   * move is answered with a 409 the operator can read and act on. The other door
-   * — {@link planPaymentApplication}, serving the LiqPay webhook and the
-   * reconcile worker — must NOT raise: a 409 to a payment provider is an
-   * infinite retry, not a refusal. Same table, two reactions, on purpose.
-   *
-   * @throws NotFoundException when the order does not exist.
-   * @throws ConflictException when the payment state machine forbids the move, or
-   *   when a full refund is asked for on an order that is still live.
-   */
-  async adminUpdatePaymentStatus(
-    orderId: string,
-    paymentStatus: PaymentStatus,
-    changedBy: string | null,
-  ): Promise<OrderEntity> {
-    const existing = await this.orderRepository.findById(orderId);
-
-    if (!existing) {
-      throw new NotFoundException('Order not found');
-    }
-
-    if (!canTransitionPayment(existing.paymentStatus, paymentStatus)) {
-      this.logger.warn(
-        {
-          event: 'order.payment_status_transition_refused',
-          orderId,
-          from: existing.paymentStatus,
-          to: paymentStatus,
-          changedBy,
-        },
-        'Refused an illegal payment-status transition',
-      );
-      throw invalidPaymentTransitionError(existing.paymentStatus, paymentStatus);
-    }
-
-    // The cross-rule, checked AFTER the table so the operator gets the more
-    // specific of the two messages: "cancel the order first" tells them what to
-    // do, "that move is impossible" only tells them what not to.
-    if (!this.isPaymentTargetReachable(existing.status, paymentStatus)) {
-      this.logger.warn(
-        {
-          event: 'order.payment_refund_refused_open_order',
-          orderId,
-          status: existing.status,
-          from: existing.paymentStatus,
-          changedBy,
-        },
-        'Refused a full refund on an order that is neither cancelled nor refunded',
-      );
-      throw refundRequiresClosedOrderError(existing.status);
-    }
-
-    // Conditional on the status both checks above were made against (review of
-    // plan 180). Without it two operators picking different LEGAL moves in the
-    // same second compose into one the table forbids — see the repository's
-    // docblock. `null` means the premise is gone; the honest answer is the same
-    // 409 this method would have raised had the newer value been read.
-    const order = await this.orderRepository.updatePaymentStatus(
-      orderId,
-      paymentStatus,
-      changedBy,
-      { expectedFrom: existing.paymentStatus },
-    );
-
-    if (!order) {
-      this.logger.warn(
-        {
-          event: 'order.payment_status_lost_update',
-          orderId,
-          expectedFrom: existing.paymentStatus,
-          to: paymentStatus,
-          changedBy,
-        },
-        'Refused a payment-status write whose starting status had changed underneath it',
-      );
-      throw invalidPaymentTransitionError(existing.paymentStatus, paymentStatus);
-    }
-
-    this.logger.info(
-      { event: 'order.payment_status_updated', orderId, paymentStatus },
-      'Order payment status updated',
-    );
-
-    return OrderEntity.fromPrisma(order);
-  }
-
-  /**
-   * Admin — correct a mistaken REFUNDED mark (TASK-620, decision B-11 №7).
-   *
-   * REFUNDED is terminal for facts ({@link PAYMENT_TRANSITIONS} rule 4) and stays
-   * so: this is a separate door for an operator's typo, with its own rule
-   * ({@link canCorrectPayment}), its own key (`payments:correct`, checked by the
-   * controller) and a mandatory reason (written to the action log by the audit
-   * interceptor together with the request body).
-   *
-   * Only a mark an OPERATOR set may be lifted. The provider's `reversed`
-   * callback writes REFUNDED with `changedBy = null`: that is LiqPay reporting
-   * where the money is, and a correction would make the ledger lie. No mark on
-   * record at all is refused the same way — nothing proves an operator set it.
-   *
-   * The write is conditional on REFUNDED still holding (the same
-   * `expectedFrom` guard every admin payment write uses), so a concurrent change
-   * turns into a 409 rather than a silent overwrite.
-   *
-   * @throws NotFoundException when the order does not exist.
-   * @throws ConflictException `ORDER_PAYMENT_TRANSITION_INVALID` when the payment
-   *   is not REFUNDED or the target is not a legal correction;
-   *   `ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND` when no operator set the mark.
-   */
-  async adminCorrectRefundedPayment(
-    orderId: string,
-    paymentStatus: PaymentStatus,
-    reason: string,
-    changedBy: string,
-  ): Promise<OrderEntity> {
-    const existing = await this.orderRepository.findById(orderId);
-
-    if (!existing) {
-      throw new NotFoundException('Order not found');
-    }
-
-    if (!canCorrectPayment(existing.paymentStatus, paymentStatus)) {
-      throw invalidPaymentTransitionError(existing.paymentStatus, paymentStatus);
-    }
-
-    const mark = await this.orderRepository.findLastPaymentMark(orderId, existing.paymentStatus);
-    if (!mark || mark.changedBy === null) {
-      this.logger.warn(
-        { event: 'order.payment_correction_refused_provider_mark', orderId, changedBy },
-        'Refused to correct a REFUNDED mark that no operator set',
-      );
-      throw paymentCorrectionProviderRefundError();
-    }
-
-    const order = await this.orderRepository.updatePaymentStatus(
-      orderId,
-      paymentStatus,
-      changedBy,
-      { expectedFrom: existing.paymentStatus },
-    );
-
-    if (!order) {
-      throw invalidPaymentTransitionError(existing.paymentStatus, paymentStatus);
-    }
-
-    this.logger.info(
-      {
-        event: 'order.payment_mark_corrected',
-        orderId,
-        from: existing.paymentStatus,
-        to: paymentStatus,
-        markSetBy: mark.changedBy,
-        changedBy,
-        reason,
-      },
-      'A mistaken REFUNDED mark was corrected',
-    );
-
-    return OrderEntity.fromPrisma(order);
   }
 
   /**

@@ -11,6 +11,8 @@ import {
   PaymentMethod,
   PaymentStatus,
   Prisma,
+  ReturnDecision,
+  ReturnStatus,
 } from '@prisma/client';
 import { toCents } from '../addon-service';
 import { PrismaService } from '../prisma';
@@ -20,6 +22,7 @@ import {
   derivePaymentStatus,
   directionOf,
   ledgerTotals,
+  returnStatusAfterPayouts,
   reversalDraft,
 } from './order-money';
 import {
@@ -39,6 +42,8 @@ export interface LockedOrder {
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod;
   deliveryMethod: DeliveryMethod;
+  /** The optimistic-lock token of the operator's screen (`assertFresh`, R2 A3). */
+  updatedAt: Date;
 }
 
 /** One ledger row, as the domain reads it (not the Prisma model). */
@@ -86,6 +91,64 @@ export interface ReverseMoneyEntry {
   reason: string;
   occurredAt?: Date;
 }
+
+/** A return's money as a payout reads it (R2 A3). */
+export interface ReturnMoneyRow {
+  id: string;
+  status: ReturnStatus;
+  decision: ReturnDecision | null;
+  creditKop: number | null;
+  /** Σ of its payouts, net of reversals, voided ignored (REQUESTED counts). */
+  paidOutKop: number;
+}
+
+/** What the payout and receipt rules read under the order lock (R2 A3). */
+export interface MoneyBasis {
+  paidKop: number;
+  refundedKop: number;
+  /** Every return of the order. */
+  returns: ReturnMoneyRow[];
+}
+
+/** A ledger row for the operator's journal: who wrote it, and what reversed it. */
+export interface MoneyEntryRow extends MoneyEntry {
+  /** First and last name, or the email; null for LiqPay/system rows and deleted accounts. */
+  actorName: string | null;
+  reversedById: string | null;
+}
+
+/** Everything `GET /admin/orders/:orderId/money` is built from (R2 A3). */
+export interface OrderMoneySnapshot {
+  id: string;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  paymentMethod: PaymentMethod;
+  deliveryMethod: DeliveryMethod;
+  totalKop: number;
+  paidKop: number;
+  refundedKop: number;
+  returnCreditKop: number;
+  balanceKop: number;
+  updatedAt: Date;
+  /** Oldest first: by when the money moved, then by when it was written. */
+  entries: MoneyEntryRow[];
+  /** The order's REFUND-decided returns (those with a credit). */
+  returns: Array<{
+    id: string;
+    status: ReturnStatus;
+    decision: ReturnDecision | null;
+    creditKop: number | null;
+    creditReason: string | null;
+  }>;
+}
+
+/** An account as the journal names it. */
+const ACTOR_SELECT = {
+  email: true,
+  originalEmail: true,
+  firstName: true,
+  lastName: true,
+} satisfies Prisma.UserSelect;
 
 /** The order's money as it stands after {@link OrderMoneyRepository.recompute}. */
 export interface MoneyTotals {
@@ -137,8 +200,10 @@ export class OrderMoneyRepository {
         payment_status: PaymentStatus;
         payment_method: PaymentMethod;
         delivery_method: DeliveryMethod;
+        updated_at: Date;
       }>
-    >`SELECT "id", "total", "status", "payment_status", "payment_method", "delivery_method"
+    >`SELECT "id", "total", "status", "payment_status", "payment_method", "delivery_method",
+             "updated_at"
         FROM "orders" WHERE "id" = ${orderId} FOR UPDATE`;
     if (!row) {
       throw new NotFoundException(`Order ${orderId} not found`);
@@ -150,6 +215,7 @@ export class OrderMoneyRepository {
       paymentStatus: row.payment_status,
       paymentMethod: row.payment_method,
       deliveryMethod: row.delivery_method,
+      updatedAt: row.updated_at,
     };
   }
 
@@ -389,6 +455,133 @@ export class OrderMoneyRepository {
     return count === 1;
   }
 
+  // ── The operator's door (R2 step A3) ───────────────────────────────────────
+
+  /**
+   * What the payout and receipt rules read: the order's ledger totals and every
+   * return with what has been paid out on it. Call under {@link lockOrder}.
+   */
+  async readBasis(tx: Tx, orderId: string): Promise<MoneyBasis> {
+    // Sequential: one transaction is one connection — no parallel queries on it.
+    const rows = await tx.orderMoneyEntry.findMany({
+      where: { orderId },
+      select: {
+        direction: true,
+        amountKop: true,
+        reversalOfId: true,
+        voidedAt: true,
+        returnId: true,
+      },
+    });
+    const returns = await tx.return.findMany({
+      where: { orderId },
+      select: { id: true, status: true, decision: true, creditKop: true },
+      orderBy: [{ requestedAt: 'asc' }, { id: 'asc' }],
+    });
+    const { paidKop, refundedKop } = ledgerTotals(rows);
+    return {
+      paidKop,
+      refundedKop,
+      returns: returns.map((ret) => ({
+        ...ret,
+        paidOutKop: ledgerTotals(rows.filter((row) => row.returnId === ret.id)).refundedKop,
+      })),
+    };
+  }
+
+  /** One entry of this order, or null. */
+  async findEntry(tx: Tx, orderId: string, entryId: string): Promise<MoneyEntry | null> {
+    const row = await tx.orderMoneyEntry.findFirst({ where: { id: entryId, orderId } });
+    return row ? toMoneyEntry(row) : null;
+  }
+
+  /**
+   * Re-derive a return's status from its payouts (TASK-2046): RECEIVED ⇄
+   * REFUNDED, `returnStatusAfterPayouts`. Conditional on the status read here,
+   * stamping `resolvedAt` ("the last change") as R1 does for every status move.
+   * Call under {@link lockOrder}, after the entries of this transaction.
+   */
+  async syncReturnStatus(tx: Tx, returnId: string): Promise<ReturnStatus | null> {
+    const ret = await tx.return.findUnique({
+      where: { id: returnId },
+      select: { status: true, decision: true, creditKop: true },
+    });
+    if (!ret) {
+      return null;
+    }
+    const next = returnStatusAfterPayouts({
+      ...ret,
+      paidOutKop: await this.returnPaidOutKop(tx, returnId),
+    });
+    if (next !== ret.status) {
+      await tx.return.updateMany({
+        where: { id: returnId, status: ret.status },
+        data: { status: next, resolvedAt: new Date() },
+      });
+    }
+    return next;
+  }
+
+  /** Σ payouts on one return, net of reversals, voided ignored (REQUESTED counts). */
+  async returnPaidOutKop(tx: Tx, returnId: string): Promise<number> {
+    const rows = await tx.orderMoneyEntry.findMany({
+      where: { returnId, direction: MoneyDirection.OUT },
+      select: { direction: true, amountKop: true, reversalOfId: true, voidedAt: true },
+    });
+    return ledgerTotals(rows).refundedKop;
+  }
+
+  /** Everything the operator's money view is built from, or null for an unknown order. */
+  async findSnapshot(orderId: string): Promise<OrderMoneySnapshot | null> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      select: {
+        id: true,
+        status: true,
+        paymentStatus: true,
+        paymentMethod: true,
+        deliveryMethod: true,
+        total: true,
+        paidKop: true,
+        refundedKop: true,
+        returnCreditKop: true,
+        balanceKop: true,
+        updatedAt: true,
+        moneyEntries: {
+          orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+          include: {
+            actor: { select: ACTOR_SELECT },
+            reversedBy: { select: { id: true } },
+          },
+        },
+        returns: {
+          where: { creditKop: { not: null } },
+          orderBy: [{ requestedAt: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true,
+            status: true,
+            decision: true,
+            creditKop: true,
+            creditReason: true,
+          },
+        },
+      },
+    });
+    if (!order) {
+      return null;
+    }
+    const { moneyEntries, total, ...rest } = order;
+    return {
+      ...rest,
+      totalKop: toCents(total),
+      entries: moneyEntries.map(({ actor, reversedBy, ...row }) => ({
+        ...toMoneyEntry(row),
+        actorName: actor ? actorDisplayName(actor) : null,
+        reversedById: reversedBy?.id ?? null,
+      })),
+    };
+  }
+
   /** Σ IN and Σ OUT of the order straight from its ledger. Call under {@link lockOrder}. */
   async totalsFromLedger(
     tx: Tx,
@@ -408,6 +601,20 @@ function assertAmount(amountKop: number): void {
       `Amount must be a positive whole number of kopecks, got ${amountKop}`,
     );
   }
+}
+
+/** Same rule as the returns card: the name, or the readable email (TASK-104). */
+function actorDisplayName(actor: {
+  email: string;
+  originalEmail: string | null;
+  firstName: string | null;
+  lastName: string | null;
+}): string {
+  const name = [actor.firstName, actor.lastName]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(' ');
+  return name || (actor.originalEmail ?? actor.email);
 }
 
 function toMoneyEntry(row: Prisma.OrderMoneyEntryGetPayload<object>): MoneyEntry {

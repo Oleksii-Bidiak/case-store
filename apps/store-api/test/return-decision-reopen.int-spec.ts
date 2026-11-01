@@ -5,6 +5,7 @@ import { OrderStatus, PaymentStatus, ReturnDecision, ReturnStatus, UserRole } fr
 import { PinoLogger } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import { ReturnRepository } from '../src/order/returns/return.repository';
 import { ReturnService } from '../src/order/returns/return.service';
 import { ShopNotifier } from '../src/notification/shop-notifier.service';
@@ -49,6 +50,7 @@ describe('ReturnService.decideReturn — re-opening a refusal under concurrency 
       providers: [
         PrismaService,
         OrderRepository,
+        OrderMoneyRepository,
         ReturnRepository,
         ReturnService,
         {

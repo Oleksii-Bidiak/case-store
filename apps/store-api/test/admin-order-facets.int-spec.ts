@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DeliveryMethod, PaymentMethod, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import { CacheService } from '../src/cache';
 import { PrismaService } from '../src/prisma';
 import { ProductIndexer } from '../src/search/product-indexer';
@@ -32,6 +33,7 @@ describe('OrderRepository — delivery filters and facets (integration, TASK-648
       providers: [
         PrismaService,
         OrderRepository,
+        OrderMoneyRepository,
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },
         {
           provide: ProductIndexer,

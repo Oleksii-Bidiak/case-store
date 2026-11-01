@@ -664,4 +664,85 @@ describe('PaymentService', () => {
       await expect(buildService().refund('ghost')).rejects.toThrow(NotFoundException);
     });
   });
+
+  // R2 A3: the operator's LIQPAY_REFUND payout (POST /admin/orders/:id/money/out)
+  // reaches the provider through PROVIDER_REFUND_PORT. Same REQUESTED → provider
+  // → void flow as `refund`, plus the order module's guard, the return and the
+  // reason, and a payment that must belong to the order.
+  describe('requestLedgerRefund (PROVIDER_REFUND_PORT)', () => {
+    const guard = jest.fn();
+    const request = {
+      orderId: 'order-1',
+      paymentId: 'pay-1',
+      amountKop: 20_000,
+      actorId: 'admin-1',
+      returnId: 'ret-1',
+      reason: 'повернення',
+      guard,
+    };
+
+    beforeEach(() => {
+      repositoryMock.findById.mockResolvedValue(
+        makePayment({ status: PaymentAttemptStatus.SUCCEEDED }),
+      );
+      orderServiceMock.requestProviderRefund.mockResolvedValue({
+        status: 'requested',
+        entryId: 'entry-1',
+        amountKop: 20_000,
+      });
+      orderServiceMock.voidProviderRefund.mockResolvedValue(undefined);
+    });
+
+    it('hands the guard, the return and the reason to the ledger write, then asks LiqPay', async () => {
+      await buildService().requestLedgerRefund(request);
+
+      expect(orderServiceMock.requestProviderRefund).toHaveBeenCalledWith({
+        orderId: 'order-1',
+        paymentId: 'pay-1',
+        amountKop: 20_000,
+        actorId: 'admin-1',
+        returnId: 'ret-1',
+        reason: 'повернення',
+        guard,
+      });
+      expect(providerMock.refund).toHaveBeenCalledWith({ paymentId: 'pay-1', amount: '200.00' });
+    });
+
+    it('404s a payment of another order, asking nobody', async () => {
+      await expect(
+        buildService().requestLedgerRefund({ ...request, orderId: 'order-2' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(orderServiceMock.requestProviderRefund).not.toHaveBeenCalled();
+    });
+
+    it('409s an attempt that never succeeded', async () => {
+      repositoryMock.findById.mockResolvedValue(
+        makePayment({ status: PaymentAttemptStatus.FAILED }),
+      );
+      await expect(buildService().requestLedgerRefund(request)).rejects.toThrow(ConflictException);
+    });
+
+    it('answers over the attempt ceiling with the ledger code ORDER_MONEY_REFUND_EXCEEDS_PAID', async () => {
+      orderServiceMock.requestProviderRefund.mockResolvedValue({
+        status: 'exceeds',
+        availableKop: 5_000,
+      });
+      const error = (await buildService()
+        .requestLedgerRefund(request)
+        .catch((e: unknown) => e)) as ConflictException;
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.getResponse()).toMatchObject({ error: 'ORDER_MONEY_REFUND_EXCEEDS_PAID' });
+      expect(providerMock.refund).not.toHaveBeenCalled();
+    });
+
+    it('voids the entry when LiqPay refuses, and rethrows', async () => {
+      providerMock.refund.mockRejectedValue(new Error('LiqPay said no'));
+      await expect(buildService().requestLedgerRefund(request)).rejects.toThrow('LiqPay said no');
+      expect(orderServiceMock.voidProviderRefund).toHaveBeenCalledWith(
+        'order-1',
+        'entry-1',
+        expect.stringContaining('LiqPay said no'),
+      );
+    });
+  });
 });

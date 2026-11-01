@@ -26,7 +26,12 @@ export interface LedgerOrderState {
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod;
   deliveryMethod: DeliveryMethod;
+  /** The optimistic-lock token the lock returns (R2 A3); defaults to {@link LEDGER_ORDER_UPDATED_AT}. */
+  updatedAt?: Date;
 }
+
+/** The order row's `updated_at` unless a suite sets its own. */
+export const LEDGER_ORDER_UPDATED_AT = new Date('2026-11-01T10:00:00.000Z');
 
 export type LedgerRow = Record<string, unknown> & { id: string };
 
@@ -65,6 +70,7 @@ export function createLedgerPrismaMock(order: () => LedgerOrderState) {
           payment_status: o.paymentStatus,
           payment_method: o.paymentMethod,
           delivery_method: o.deliveryMethod,
+          updated_at: o.updatedAt ?? LEDGER_ORDER_UPDATED_AT,
         },
       ];
     }),
@@ -101,13 +107,64 @@ export function createLedgerPrismaMock(order: () => LedgerOrderState) {
         },
       ),
     },
-    /** `recompute` reads Σ return credit — no returns in these suites. */
-    return: { aggregate: jest.fn(async () => ({ _sum: { creditKop: null } })) },
+    /**
+     * `recompute` reads Σ return credit, the operator's payout rules (R2 A3)
+     * read the order's returns — no returns in these suites.
+     */
+    return: {
+      aggregate: jest.fn(async () => ({ _sum: { creditKop: null } })),
+      findMany: jest.fn(async () => []),
+    },
   };
+
+  /**
+   * `OrderMoneyRepository.findSnapshot` (R2 A3): the order with its entries as
+   * the operator's money view reads them. Spread into the suite's `order` mock.
+   */
+  const findSnapshot = jest.fn(async () => {
+    const o = order();
+    const rows = [...entries].sort(
+      (a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime(),
+    );
+    const sum = (direction: string) =>
+      rows
+        .filter((row) => row.direction === direction && row.voidedAt === null)
+        .reduce(
+          (total, row) => total + (row.reversalOfId === null ? 1 : -1) * (row.amountKop as number),
+          0,
+        );
+    return {
+      id: o.id,
+      status: o.status,
+      paymentStatus: o.paymentStatus,
+      paymentMethod: o.paymentMethod,
+      deliveryMethod: o.deliveryMethod,
+      total: new Prisma.Decimal(o.total),
+      paidKop: sum('IN'),
+      refundedKop: sum('OUT'),
+      returnCreditKop: 0,
+      balanceKop: 0,
+      updatedAt: o.updatedAt ?? LEDGER_ORDER_UPDATED_AT,
+      moneyEntries: rows.map((row) => ({
+        returnId: null,
+        paymentId: null,
+        providerRef: null,
+        providerState: null,
+        actorId: null,
+        reason: null,
+        occurredAt: row.createdAt,
+        ...row,
+        actor: null,
+        reversedBy: null,
+      })),
+      returns: [],
+    };
+  });
 
   return {
     prisma,
     entries,
+    findSnapshot,
     /** Forget every entry and call (call from `beforeEach`). */
     reset(): void {
       entries.length = 0;

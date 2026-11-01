@@ -11,6 +11,7 @@ import {
 import { randomUUID } from 'crypto';
 import { CacheService } from '../src/cache';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import type { PaymentApplyPlan } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
 import { ProductIndexer } from '../src/search/product-indexer';
@@ -48,6 +49,7 @@ describe('applyPaymentOutcome × the shop ping (integration, TASK-678)', () => {
       providers: [
         PrismaService,
         OrderRepository,
+        OrderMoneyRepository,
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },
         {
           provide: ProductIndexer,

@@ -5,6 +5,7 @@ import { OrderStatus, PaymentStatus, ReturnDecision, ReturnStatus, UserRole } fr
 import { PinoLogger } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import { ReturnRepository } from '../src/order/returns/return.repository';
 import { ReturnService } from '../src/order/returns/return.service';
 import { ShopNotifier } from '../src/notification/shop-notifier.service';
@@ -54,6 +55,7 @@ describe('ReturnService.resolveReturn — a stale PATCH never overwrites a newer
       providers: [
         PrismaService,
         OrderRepository,
+        OrderMoneyRepository,
         ReturnRepository,
         ReturnService,
         {
@@ -195,21 +197,12 @@ describe('ReturnService.resolveReturn — a stale PATCH never overwrites a newer
       reason: 'Пошкоджено покупцем',
     });
 
-  const switchToReplacement = () =>
-    service.decideReturn(returnId, operatorId, {
-      decision: ReturnDecision.REPLACEMENT,
-      reason: 'Покупець погодився на заміну',
-    });
-
   const markReceived = (restock = false) =>
     service.resolveReturn(returnId, {
       status: ReturnStatus.RECEIVED,
       operatorNotes: 'Посилка на складі',
       ...(restock ? { restock: true } : {}),
     });
-
-  const markRefunded = () =>
-    service.resolveReturn(returnId, { status: ReturnStatus.REFUNDED, refundedAmount: '100.00' });
 
   /** The 409 every loser of a transition race gets. */
   function expectStaleTransition(caught: unknown) {
@@ -250,18 +243,6 @@ describe('ReturnService.resolveReturn — a stale PATCH never overwrites a newer
       restockedAt: null,
     });
     expect(await stock()).toBe(PRODUCT_STOCK);
-  });
-
-  it('refuses a refund that lost the race to a switch to replacement — 409, no money recorded', async () => {
-    await seedReturn(ReturnStatus.RECEIVED);
-
-    const caught = await interleave(markRefunded, switchToReplacement).catch((e: unknown) => e);
-
-    expectStaleTransition(caught);
-    const row = await prisma.return.findUniqueOrThrow({ where: { id: returnId } });
-    expect(row.status).toBe(ReturnStatus.RECEIVED);
-    expect(row.decision).toBe(ReturnDecision.REPLACEMENT);
-    expect(row.refundedAmount).toBeNull();
   });
 
   it('lets only the first of two stale "received" clicks through', async () => {

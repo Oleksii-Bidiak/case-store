@@ -85,7 +85,15 @@ export interface ReturnWithItems {
    * restock here too.
    */
   restockedAt: Date | null;
+  /** Legacy (pre-R2) amount — no longer written; the ledger holds the payouts. */
   refundedAmount: { toString(): string } | null;
+  /**
+   * «До повернення» in kopecks (R2, TASK-2046): set when the decision becomes
+   * REFUND, null otherwise. Optional only for hand-built fixtures.
+   */
+  creditKop?: number | null;
+  /** Why the operator lowered the credit; null while it is the computed value. */
+  creditReason?: string | null;
   /**
    * Who OPENED the request (TASK-469) — the customer's own id from the account
    * page, the operator's id when the shop filed it for them, null for rows that
@@ -145,30 +153,6 @@ export interface ReturnClaimRow {
 export type AssertReturnClaimable = (ledger: ReturnClaimRow[]) => void;
 
 /**
- * What the refund ceilings are measured against (TASK-785), read by the
- * repository INSIDE the resolve transaction under a lock on the order row.
- */
-export interface RefundLedger {
-  /** `Order.total` — what the customer actually paid, discount and shipping included. */
-  orderTotal: { toString(): string };
-  /**
-   * Every OTHER return of the order, whatever its status: money recorded as paid
-   * out is gone whether the return was later rejected or not. This return is
-   * left out because its own amount is the one being replaced.
-   */
-  otherRefunds: Array<{ refundedAmount: { toString(): string } | null }>;
-  /** This return's lines, priced at the order line's unit price. */
-  items: Array<{ quantity: number; unitPrice: { toString(): string } }>;
-}
-
-/**
- * The service's refund ceilings, run by the repository against a
- * {@link RefundLedger} inside the resolve transaction (TASK-785). Throwing aborts
- * the write.
- */
-export type AssertRefundWithinBalance = (ledger: RefundLedger) => void;
-
-/**
  * The state the service validated a transition against — a decision or a PATCH
  * (TASK-1961, TASK-2044). The repository writes only if the row still holds
  * this status and decision, so neither lands on a return another operator has
@@ -213,3 +197,32 @@ export interface CreateReturnParams {
   channel: ReturnChannel;
   items: Array<{ orderItemId: string; quantity: number }>;
 }
+
+/**
+ * What a decision does to the return's credit («до повернення», R2 A3,
+ * TASK-2046): `compute` when the decision BECOMES a refund (the lines' value
+ * less their promo share, under the order lock), `clear` when it stops being
+ * one. A re-worded refund keeps its credit.
+ */
+export type ReturnCreditEffect = 'compute' | 'clear';
+
+/** Extra work `ReturnRepository.decide` does inside its locked transaction. */
+export interface ReturnDecideOptions {
+  assertClaimable?: AssertReturnClaimable;
+  /** Refuse (RETURN_REFUND_RECORDED) when payouts are recorded on this return. */
+  refuseIfPaidOut?: boolean;
+  credit?: ReturnCreditEffect;
+  /** Who decided — the author of the order's PAYMENT_STATUS row, if one follows. */
+  actorId?: string;
+}
+
+/** The two numbers a credit change is measured against, read under the order lock. */
+export interface ReturnCreditCeilings {
+  /** The credit as `returnCreditFor` computes it now. */
+  computedKop: number;
+  /** Σ payouts on this return, net of reversals, voided ignored. */
+  paidOutKop: number;
+}
+
+/** The service's reduce-only rule, run by the repository against fresh ceilings. */
+export type AssertReturnCredit = (ceilings: ReturnCreditCeilings) => void;

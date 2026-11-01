@@ -5,6 +5,8 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  ReturnDecision,
+  ReturnStatus,
 } from '@prisma/client';
 
 /**
@@ -326,4 +328,243 @@ export function reversalDraft(entry: ReversibleEntry): {
     amountKop: entry.amountKop,
     reversalOfId: entry.id,
   };
+}
+
+// ── What an operator may record (R2 step A3) ────────────────────────────────
+//
+// TASK-2047 / TASK-2046 / TASK-1968 / TASK-951. The rules below answer "may
+// this money move, and up to how much" from numbers read under the order-row
+// lock. They know nothing about who is asking — permissions are the
+// controller's business — so the same answer reaches every caller.
+
+export type ReceiptRefusal = 'IN_KIND_NOT_ALLOWED' | 'OVERPAYMENT_REASON_REQUIRED';
+
+export interface ReceiptInput {
+  kind: MoneyEntryKind;
+  amountKop: number;
+  reason: string | null;
+  paymentMethod: PaymentMethod;
+  deliveryMethod: DeliveryMethod;
+  /** What is still owed before this receipt (`deriveBalance`). */
+  balanceKop: number;
+}
+
+/**
+ * Whether an operator may record this receipt: the kind must be one the order's
+ * delivery admits ({@link allowedInKinds} — never LIQPAY_PAYMENT), a part
+ * payment is fine, and money beyond what is owed needs a reason — an
+ * overpayment is legal (it becomes «Винні покупцю») but never silent.
+ */
+export function assessReceipt(
+  input: ReceiptInput,
+): { ok: true } | { ok: false; refusal: ReceiptRefusal } {
+  assertKopecks(input.amountKop, input.balanceKop);
+  if (!allowedInKinds(input.paymentMethod, input.deliveryMethod).includes(input.kind)) {
+    return { ok: false, refusal: 'IN_KIND_NOT_ALLOWED' };
+  }
+  const hasReason = (input.reason ?? '').trim().length > 0;
+  if (input.amountKop > input.balanceKop && !hasReason) {
+    return { ok: false, refusal: 'OVERPAYMENT_REASON_REQUIRED' };
+  }
+  return { ok: true };
+}
+
+export type PayoutRefusal =
+  | 'NOTHING_PAID'
+  | 'ORDER_LIVE'
+  | 'RETURN_REQUIRED'
+  | 'RETURN_NOT_REFUND'
+  | 'RETURN_NOT_RECEIVED'
+  | 'EXCEEDS';
+
+/** The order's money as a payout sees it, read under the order-row lock. */
+export interface PayoutBasis {
+  orderStatus: OrderStatus;
+  paidKop: number;
+  refundedKop: number;
+  balanceKop: number;
+  /** Σ over REFUND-decided returns of what is still owed on them. */
+  outstandingReturnCreditKop: number;
+}
+
+/** The return a payout settles, if any. */
+export interface PayoutReturn {
+  decision: ReturnDecision | null;
+  status: ReturnStatus;
+  creditKop: number | null;
+  /** Σ of its payouts, net of reversals, voided ignored. */
+  paidOutKop: number;
+}
+
+/** Orders still being prepared: their money goes back only after a cancel. */
+const LIVE_STATUSES: readonly OrderStatus[] = [
+  OrderStatus.PENDING,
+  OrderStatus.CONFIRMED,
+  OrderStatus.PROCESSING,
+];
+
+/** Return statuses at which the goods are back, so their money may go out. */
+const PAYABLE_RETURN_STATUSES: readonly ReturnStatus[] = [
+  ReturnStatus.RECEIVED,
+  ReturnStatus.REFUNDED,
+];
+
+export type PayoutVerdict =
+  { ok: true; availableKop: number } | { ok: false; refusal: PayoutRefusal; availableKop: number };
+
+function payoutCeiling(basis: PayoutBasis, ret?: PayoutReturn): PayoutVerdict {
+  const { orderStatus, paidKop, refundedKop, balanceKop, outstandingReturnCreditKop } = basis;
+  assertKopecks(paidKop, refundedKop, balanceKop, outstandingReturnCreditKop);
+  const heldKop = paidKop - refundedKop;
+  const refuse = (refusal: PayoutRefusal): PayoutVerdict => ({
+    ok: false,
+    refusal,
+    availableKop: 0,
+  });
+
+  if (heldKop <= 0) {
+    return refuse('NOTHING_PAID');
+  }
+
+  if (ret) {
+    if (ret.decision !== ReturnDecision.REFUND) {
+      return refuse('RETURN_NOT_REFUND');
+    }
+    if (!PAYABLE_RETURN_STATUSES.includes(ret.status)) {
+      return refuse('RETURN_NOT_RECEIVED');
+    }
+    const owedKop = Math.max(0, (ret.creditKop ?? 0) - ret.paidOutKop);
+    return { ok: true, availableKop: Math.min(owedKop, heldKop) };
+  }
+
+  // A cancelled (or, until A4, refunded) order owes nothing for goods: every
+  // kopeck still held goes back.
+  if (NOTHING_DUE.includes(orderStatus)) {
+    return { ok: true, availableKop: heldKop };
+  }
+
+  // Otherwise only an overpayment — what is owed back beyond the returns' own
+  // credit, which must leave through its return.
+  const overpaidKop = Math.min(heldKop, Math.max(0, -balanceKop - outstandingReturnCreditKop));
+  if (overpaidKop > 0) {
+    return { ok: true, availableKop: overpaidKop };
+  }
+  return refuse(LIVE_STATUSES.includes(orderStatus) ? 'ORDER_LIVE' : 'RETURN_REQUIRED');
+}
+
+/**
+ * Whether `amountKop` may be paid back, and the ceiling it was measured against.
+ *
+ * - Nothing held (`paid − refunded = 0`) → nothing can go back (TASK-2046: on an
+ *   unpaid order a return only brings the goods back).
+ * - With a return: REFUND-decided, goods RECEIVED (or later); up to its credit
+ *   less its payouts, and never above what the order holds (TASK-951).
+ * - Without one: a CANCELLED order up to `paid − refunded`; any other order only
+ *   an overpayment (up to `−balance`, the returns' unpaid credit excluded). A
+ *   SHIPPED/DELIVERED order otherwise needs a return; a live one is cancelled
+ *   first — this closes the A2 path where a refund on a CONFIRMED order derived
+ *   REFUNDED.
+ */
+export function assessPayout(
+  basis: PayoutBasis,
+  amountKop: number,
+  ret?: PayoutReturn,
+): PayoutVerdict {
+  assertKopecks(amountKop);
+  const verdict = payoutCeiling(basis, ret);
+  if (!verdict.ok) {
+    return verdict;
+  }
+  if (amountKop > verdict.availableKop) {
+    return { ok: false, refusal: 'EXCEEDS', availableKop: verdict.availableKop };
+  }
+  return verdict;
+}
+
+/** The most that may go back WITHOUT a return right now; 0 when none may. */
+export function outWithoutReturnMaxKop(basis: PayoutBasis): number {
+  const verdict = payoutCeiling(basis);
+  return verdict.ok ? verdict.availableKop : 0;
+}
+
+/** Σ over returns of what is still owed on each (credit − payouts, never < 0). */
+export function outstandingReturnCreditKop(
+  returns: ReadonlyArray<{ creditKop: number | null; paidOutKop: number }>,
+): number {
+  return returns.reduce((sum, ret) => sum + Math.max(0, (ret.creditKop ?? 0) - ret.paidOutKop), 0);
+}
+
+/**
+ * A return's status after its payouts changed (TASK-2046): REFUNDED is derived.
+ * A RECEIVED refund return whose payouts cover its credit becomes REFUNDED; a
+ * reversal that breaks the cover sends it back to RECEIVED. Nothing paid out
+ * never counts as refunded (a credit lowered to 0 stays RECEIVED). Any other
+ * return is left where it is.
+ */
+export function returnStatusAfterPayouts(ret: {
+  status: ReturnStatus;
+  decision: ReturnDecision | null;
+  creditKop: number | null;
+  paidOutKop: number;
+}): ReturnStatus {
+  if (!PAYABLE_RETURN_STATUSES.includes(ret.status) || ret.decision !== ReturnDecision.REFUND) {
+    return ret.status;
+  }
+  const covered = ret.paidOutKop > 0 && ret.paidOutKop >= (ret.creditKop ?? 0);
+  return covered ? ReturnStatus.REFUNDED : ReturnStatus.RECEIVED;
+}
+
+export interface ReturnCreditInput {
+  /** Every line of the order, in `(createdAt, id)` order (see {@link allocateReturnCredit}). */
+  lines: ReadonlyArray<{ id: string; quantity: number; grossKop: number }>;
+  discountKop: number;
+  /** This return's lines. */
+  items: ReadonlyArray<{ orderItemId: string; quantity: number }>;
+  /** Units of each line already credited by the order's OTHER refund returns. */
+  creditedBefore: ReadonlyMap<string, number>;
+}
+
+/**
+ * «До повернення» for a return (TASK-2046): the returned units' value less their
+ * share of the promo discount, telescoped over earlier returns of the same line
+ * so a line returned in parts sums to its net value exactly. Add-ons and
+ * shipping are not part of it (plan assumption 1).
+ */
+export function returnCreditFor(input: ReturnCreditInput): number {
+  const net = allocateReturnCredit(input.lines, input.discountKop);
+  const netById = new Map(input.lines.map((line, index) => [line.id, { line, net: net[index] }]));
+  const counted = new Map(input.creditedBefore);
+  let creditKop = 0;
+  for (const item of input.items) {
+    const entry = netById.get(item.orderItemId);
+    if (!entry) {
+      continue;
+    }
+    const before = counted.get(item.orderItemId) ?? 0;
+    creditKop += unitsCreditKop(entry.net, entry.line.quantity, before, item.quantity);
+    counted.set(item.orderItemId, before + item.quantity);
+  }
+  return creditKop;
+}
+
+export type CreditRefusal = 'ABOVE_COMPUTED' | 'BELOW_PAID_OUT';
+
+/**
+ * Whether the operator may set a return's credit to `requestedKop` (TASK-2046):
+ * only down from the computed value — never above it — and never below what was
+ * already paid out on the return.
+ */
+export function assessCreditChange(input: {
+  computedKop: number;
+  paidOutKop: number;
+  requestedKop: number;
+}): { ok: true } | { ok: false; refusal: CreditRefusal } {
+  assertKopecks(input.computedKop, input.paidOutKop, input.requestedKop);
+  if (input.requestedKop > input.computedKop) {
+    return { ok: false, refusal: 'ABOVE_COMPUTED' };
+  }
+  if (input.requestedKop < input.paidOutKop) {
+    return { ok: false, refusal: 'BELOW_PAID_OUT' };
+  }
+  return { ok: true };
 }

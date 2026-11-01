@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, Optional } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import {
   Prisma,
   DeliveryMethod,
@@ -319,19 +319,15 @@ const LIQPAY_RECEIPT_REF = 'success';
 export class OrderRepository {
   private readonly logger = new Logger(OrderRepository.name);
 
-  private readonly money: OrderMoneyRepository;
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly productIndexer: ProductIndexer,
     // TASK-1500 / TASK-2047 (R2 A2): the payment path writes money through the
-    // ledger. Optional only so the many test modules that wire this repository
-    // by hand keep compiling — it is stateless over the same PrismaService.
-    @Optional() money?: OrderMoneyRepository,
-  ) {
-    this.money = money ?? new OrderMoneyRepository(prisma);
-  }
+    // ledger. Required since A3 — every module that provides this repository
+    // provides the ledger's too.
+    private readonly money: OrderMoneyRepository,
+  ) {}
 
   /**
    * Create an order from a cart inside a single transaction:
@@ -1390,96 +1386,6 @@ export class OrderRepository {
   }
 
   /**
-   * Update an order's payment status. Called by the admin payment action and,
-   * in future, the payment webhook handler (TASK-034).
-   *
-   * TASK-251: converted from a bare update to a $transaction so the change and
-   * its audit-log row commit atomically. A lightweight `select: { paymentStatus }`
-   * read inside the tx captures the fromPaymentStatus for the history row.
-   *
-   * ── `expectedFrom`: the compare-and-set the table needs (review of plan 180) ─
-   * The service validates the move against a status it read in an EARLIER query,
-   * so between the read and this write another operator can land a different
-   * legal move. Both pass validation, the second overwrites the first, and the
-   * pair that actually occurred is one `PAYMENT_TRANSITIONS` forbids — two legal
-   * moves composing into an illegal one. It also leaves a timeline describing a
-   * sequence that never happened, since both history rows record the same `from`.
-   *
-   * So the write is conditional on the status the caller validated against, in
-   * the same spirit as `updateDetails`'s `expectedUpdatedAt` guard — but keyed on
-   * `paymentStatus` rather than `updatedAt`, because that is the column the rule
-   * is about: an unrelated edit to the order must not make a legal payment move
-   * fail. `count === 0` means the premise is gone, and the caller turns that into
-   * the same 409 it would have raised had it read the newer value.
-   *
-   * Optional so a caller that has not validated against a specific `from` (none
-   * today; the webhook has its own planning path) is not forced to invent one.
-   *
-   * @returns null when the row no longer matches `expectedFrom` — nothing written.
-   */
-  async updatePaymentStatus(
-    orderId: string,
-    paymentStatus: PaymentStatus,
-    changedBy: string | null,
-    options: { expectedFrom?: PaymentStatus } = {},
-  ): Promise<OrderWithItems | null> {
-    return (await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.order.findUniqueOrThrow({
-        where: { id: orderId },
-        select: { paymentStatus: true },
-      });
-
-      if (options.expectedFrom !== undefined) {
-        const { count } = await tx.order.updateMany({
-          where: { id: orderId, paymentStatus: options.expectedFrom },
-          data: { paymentStatus },
-        });
-        // Someone else moved the payment between the service's read and this
-        // write. Nothing is written — not even the history row, because a change
-        // that did not take effect is not an event.
-        if (count === 0) return null;
-      } else {
-        await tx.order.update({ where: { id: orderId }, data: { paymentStatus } });
-      }
-
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId,
-          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
-          fromPaymentStatus: existing.paymentStatus,
-          toPaymentStatus: paymentStatus,
-          changedBy,
-        },
-      });
-
-      return tx.order.findUniqueOrThrow({
-        where: { id: orderId },
-        include: ORDERS_INCLUDE,
-      });
-    })) as OrderWithItems | null;
-  }
-
-  /**
-   * Who set the order's newest `toPaymentStatus = status` mark (TASK-620):
-   * `changedBy` is the operator's id, or null for the provider callback and the
-   * reconcile worker. Null when no such row exists.
-   */
-  findLastPaymentMark(
-    orderId: string,
-    status: PaymentStatus,
-  ): Promise<{ changedBy: string | null } | null> {
-    return this.prisma.orderStatusHistory.findFirst({
-      where: {
-        orderId,
-        changeType: OrderHistoryChangeType.PAYMENT_STATUS,
-        toPaymentStatus: status,
-      },
-      orderBy: { changedAt: 'desc' },
-      select: { changedBy: true },
-    });
-  }
-
-  /**
    * Update the operator-editable, lifecycle-neutral fields of an order
    * (TASK-335 / TASK-336).
    *
@@ -1965,7 +1871,12 @@ export class OrderRepository {
    * caller gets `exceeds`.
    */
   requestProviderRefund(input: ProviderRefundRequestInput): Promise<ProviderRefundRequest> {
-    return this.money.transaction(input.orderId, async (tx) => {
+    return this.money.transaction(input.orderId, async (tx, locked) => {
+      // R2 A3: the operator's payout rules (freshness, return, order status),
+      // against the same locked numbers this write commits on.
+      if (input.guard) {
+        await input.guard(tx, locked);
+      }
       const attempt = await this.money.paymentProviderTotals(tx, input.paymentId);
       const order = await this.money.totalsFromLedger(tx, input.orderId);
       const availableKop = providerRefundAvailableKop({
@@ -1987,8 +1898,14 @@ export class OrderRepository {
         providerRef: randomUUID(),
         providerState: MoneyProviderState.REQUESTED,
         actorId: input.actorId,
+        returnId: input.returnId ?? null,
+        reason: input.reason ?? null,
       });
       await this.money.recompute(tx, input.orderId, input.actorId);
+      // A REQUESTED refund counts as paid out, so it may already cover the return.
+      if (input.returnId) {
+        await this.money.syncReturnStatus(tx, input.returnId);
+      }
       return { status: 'requested', entryId: entry.id, amountKop } as const;
     });
   }
@@ -2002,6 +1919,11 @@ export class OrderRepository {
     await this.money.transaction(orderId, async (tx) => {
       if (await this.money.voidEntry(tx, entryId, reason)) {
         await this.money.recompute(tx, orderId, null);
+        // R2 A3: the payout stops counting — its return may no longer be covered.
+        const entry = await this.money.findEntry(tx, orderId, entryId);
+        if (entry?.returnId) {
+          await this.money.syncReturnStatus(tx, entry.returnId);
+        }
       }
     });
   }

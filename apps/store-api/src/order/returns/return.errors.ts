@@ -9,10 +9,17 @@ import type { ReturnDecision, ReturnRepairStep, ReturnStatus } from '@prisma/cli
  * reworded. They reach the wire through the envelope's `error` field.
  */
 export const ReturnErrorCode = {
-  /** `refundedAmount` is more than the returned lines are worth. */
-  REFUND_EXCEEDS_RETURNED_VALUE: 'RETURN_REFUND_EXCEEDS_RETURNED_VALUE',
-  /** `refundedAmount` is more than the order has left after earlier refunds. */
-  REFUND_EXCEEDS_ORDER_BALANCE: 'RETURN_REFUND_EXCEEDS_ORDER_BALANCE',
+  /**
+   * PATCH was asked to set REFUNDED, which follows from the payouts on the order
+   * ledger since R2 A3 (TASK-2046).
+   */
+  REFUND_DERIVED: 'RETURN_REFUND_DERIVED',
+  /** The credit («до повернення») of a return not decided as REFUND (R2 A3). */
+  CREDIT_NOT_REFUND: 'RETURN_CREDIT_NOT_REFUND',
+  /** A credit above the computed value — it may only be lowered (R2 A3). */
+  CREDIT_ABOVE_COMPUTED: 'RETURN_CREDIT_ABOVE_COMPUTED',
+  /** A credit below what was already paid out on the return (R2 A3). */
+  CREDIT_BELOW_PAID_OUT: 'RETURN_CREDIT_BELOW_PAID_OUT',
   /**
    * The order a return was asked against does not exist — or is not the
    * caller's, which the customer door deliberately reports identically
@@ -39,7 +46,7 @@ export const ReturnErrorCode = {
   DECISION_LOCKED: 'RETURN_DECISION_LOCKED',
   /** The same decision with the same reason — nothing would change (TASK-2044). */
   DECISION_UNCHANGED: 'RETURN_DECISION_UNCHANGED',
-  /** A goods outcome over a return whose refund amount is already recorded (SR1 review). */
+  /** A goods outcome over a return with money already paid out on it (SR1 review; ledger since R2 A3). */
   REFUND_RECORDED: 'RETURN_REFUND_RECORDED',
   /** PATCH was asked to set APPROVED or REJECTED, which only a decision may do (TASK-2044). */
   USE_DECISION_ENDPOINT: 'RETURN_USE_DECISION_ENDPOINT',
@@ -54,38 +61,45 @@ export const ReturnErrorCode = {
   REPAIR_RESULT_NOT_ALLOWED: 'RETURN_REPAIR_RESULT_NOT_ALLOWED',
   /** PATCH with neither a status nor operatorNotes — nothing to write. */
   UPDATE_EMPTY: 'RETURN_UPDATE_EMPTY',
-  /** refundedAmount or restock sent without the status they belong to. */
+  /** restock sent without the status it belongs to. */
   STATUS_REQUIRED: 'RETURN_STATUS_REQUIRED',
 } as const;
 
 export type ReturnErrorCode = (typeof ReturnErrorCode)[keyof typeof ReturnErrorCode];
 
-/**
- * 400 for a refund larger than the goods coming back (TASK-785) — "49900" typed
- * for "499.00". The ceiling is named in the message so the operator sees the
- * number they should have typed.
- */
-export function refundExceedsReturnedValueError(
-  requested: string,
-  returnedValue: string,
-): BadRequestException {
+/** 400 for PATCH asked to set REFUNDED — it follows from the payouts (R2 A3, TASK-2046). */
+export function refundIsDerivedError(): BadRequestException {
   return new BadRequestException({
-    error: ReturnErrorCode.REFUND_EXCEEDS_RETURNED_VALUE,
-    message: `Refund of ${requested} exceeds the value of the returned items (${returnedValue})`,
+    error: ReturnErrorCode.REFUND_DERIVED,
+    message:
+      'A return becomes REFUNDED when its payouts cover what is owed — record the payout on ' +
+      'the order (POST /admin/orders/:orderId/money/out)',
   });
 }
 
-/**
- * 400 for a refund larger than what the order still has to give back (TASK-785):
- * `order.total` less everything already refunded through its other returns.
- */
-export function refundExceedsOrderBalanceError(
-  requested: string,
-  remaining: string,
-): BadRequestException {
+/** 409 for the credit of a return that is not decided as a refund (R2 A3). */
+export function creditNotRefundError(): ConflictException {
+  return new ConflictException({
+    error: ReturnErrorCode.CREDIT_NOT_REFUND,
+    message: 'Only a return decided as a refund has an amount to give back',
+  });
+}
+
+/** 400 for a credit above the computed value (R2 A3): it may only be lowered. */
+export function creditAboveComputedError(computedKop: number): BadRequestException {
   return new BadRequestException({
-    error: ReturnErrorCode.REFUND_EXCEEDS_ORDER_BALANCE,
-    message: `Refund of ${requested} exceeds what is left to refund on this order (${remaining})`,
+    error: ReturnErrorCode.CREDIT_ABOVE_COMPUTED,
+    message: `The amount to give back may only be lowered — at most ${computedKop} kop`,
+  });
+}
+
+/** 409 for a credit below the payouts already made on the return (R2 A3). */
+export function creditBelowPaidOutError(paidOutKop: number): ConflictException {
+  return new ConflictException({
+    error: ReturnErrorCode.CREDIT_BELOW_PAID_OUT,
+    message:
+      `${paidOutKop} kop were already paid out on this return — the amount cannot be lower. ` +
+      'Reverse a payout first.',
   });
 }
 
@@ -211,14 +225,15 @@ export function decisionLockedError(): ConflictException {
 }
 
 /**
- * 409 for moving a return away from REFUND while its refund amount is recorded:
- * the amount keeps counting against the order's refund balance, so a replacement
- * or a repair on top of it would leave money booked with no refund behind it.
+ * 409 for moving a return away from REFUND once money was paid out on it (R2
+ * A3: payouts on the order ledger, net of reversals): a replacement or a repair
+ * on top of it would leave money gone with no refund behind it. Reverse the
+ * payouts first.
  */
 export function refundRecordedError(decision: ReturnDecision): ConflictException {
   return new ConflictException({
     error: ReturnErrorCode.REFUND_RECORDED,
-    message: `The return already has a refund amount recorded — it cannot become ${decision}`,
+    message: `Money was already paid out on this return — it cannot become ${decision}`,
   });
 }
 
@@ -246,11 +261,11 @@ export function returnUpdateEmptyError(): BadRequestException {
   });
 }
 
-/** 400 for money or stock sent on a notes-only PATCH — both belong to a status step. */
+/** 400 for a restock sent on a notes-only PATCH — it belongs to a status step. */
 export function returnStatusRequiredError(): BadRequestException {
   return new BadRequestException({
     error: ReturnErrorCode.STATUS_REQUIRED,
-    message: 'refundedAmount and restock move a return on — send them with a status',
+    message: 'restock moves a return on — send it with a status',
   });
 }
 

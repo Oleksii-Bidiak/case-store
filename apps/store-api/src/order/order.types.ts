@@ -11,6 +11,7 @@ import {
 import type { CartWithItems } from '../cart';
 import type { AddressDto } from './dto';
 import type { OrderEntity } from './entities/order.entity';
+import type { LockedOrder } from './order-money.repository';
 
 /**
  * A single order-status-history audit row as returned by the repository
@@ -414,6 +415,15 @@ export interface ProviderRefundRequestInput {
   amountKop?: number;
   /** The operator; null for a system request. */
   actorId: string | null;
+  /** R2 A3: the return this payout settles — its status is re-derived. */
+  returnId?: string | null;
+  /** R2 A3: the operator's note on the entry. */
+  reason?: string | null;
+  /**
+   * R2 A3: the operator's payout rules, run right after the order-row lock and
+   * before the ceiling read; throwing rolls back and nothing is written.
+   */
+  guard?: (tx: Prisma.TransactionClient, order: LockedOrder) => Promise<void>;
 }
 
 /**

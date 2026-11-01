@@ -161,15 +161,14 @@ export function allowedTransitions(from: OrderStatus): OrderStatus[] {
  * no clock — and a status is never its own successor, so a re-asserted status
  * never appends a second history row.
  *
- * ── One cross-rule lives NOT here, on purpose ───────────────────────────────
- * "A full REFUNDED is allowed only while the order itself is CANCELLED or
- * REFUNDED" reads two columns at once, so it is not expressible in a
- * `from → to` table. It is enforced in the service, `OrderService`, by the
- * private predicate `isPaymentTargetReachable(orderStatus, to)` — asked on the
- * admin write (a 409), by the allowed-transitions list and on the webhook plan
- * path — and by its mirror `isOrderTargetReachable(paymentStatus, to)` for the
- * case where the ORDER column moves instead. Grep those two names to find both
- * halves of the rule together.
+ * ── Since R2 A3 nobody sets this column by hand ─────────────────────────────
+ * The operator's payment picker, the correction door and their
+ * allowed-transitions list are gone: the payment status is DERIVED from the
+ * order money ledger (`order-money.ts`, `OrderMoneyRepository.recompute`), and
+ * "a refund on a live order" is refused where money moves
+ * (`assessPayout` — cancel first). What still asks this table is the LiqPay
+ * webhook plan (`planPaymentApplication`), which ignores a move it forbids and
+ * records that it did.
  */
 export const PAYMENT_TRANSITIONS: Readonly<Record<PaymentStatus, readonly PaymentStatus[]>> =
   Object.freeze({
@@ -195,47 +194,12 @@ export const PAYMENT_TRANSITIONS: Readonly<Record<PaymentStatus, readonly Paymen
 /**
  * Whether an order's payment may move from `from` to `to`.
  *
- * The single question every payment writer asks — the admin endpoint, the LiqPay
- * webhook and the reconcile worker alike. What differs between them is the
- * REACTION to a `false`, never the answer: the admin door raises a 409 the
- * operator can read, while the callback door ignores the move and records that
- * it did, because a 409 to a provider is an infinite retry loop.
+ * Asked by the LiqPay webhook and the reconcile worker (the admin door is the
+ * money ledger since R2 A3). A `false` is ignored and recorded, never raised:
+ * a 409 to a provider is an infinite retry loop.
  *
  * `false` for a same-status "transition" — see the table's docblock.
  */
 export function canTransitionPayment(from: PaymentStatus, to: PaymentStatus): boolean {
   return PAYMENT_TRANSITIONS[from].includes(to);
-}
-
-/**
- * Every payment status reachable from `from`, as a fresh (caller-owned) array.
- *
- * Backs `GET /api/admin/orders/:orderId/allowed-payment-transitions`, so the
- * admin panel offers exactly the legal targets instead of "everything except the
- * current value" and letting the operator discover the truth from a 409.
- */
-export function allowedPaymentTransitions(from: PaymentStatus): PaymentStatus[] {
-  return [...PAYMENT_TRANSITIONS[from]];
-}
-
-/**
- * Corrections of a mistaken payment MARK (TASK-620, owner decision B-11 №7).
- *
- * Deliberately NOT an edge of {@link PAYMENT_TRANSITIONS}: rule 4 (REFUNDED is
- * terminal) stays true for every writer that records FACTS — the LiqPay
- * callback, the reconcile worker, the ordinary admin payment select. This table
- * answers a different question: "an operator typed REFUNDED by mistake — what
- * may it be put back to?" Only the states REFUNDED can have been reached from,
- * and only through its own door (`OrderService.adminCorrectRefundedPayment`),
- * which additionally requires the `payments:correct` key, a reason, and that
- * the mark was set by an operator rather than reported by the provider.
- */
-const PAYMENT_CORRECTIONS: Readonly<Partial<Record<PaymentStatus, readonly PaymentStatus[]>>> =
-  Object.freeze({
-    [PaymentStatus.REFUNDED]: Object.freeze([PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED]),
-  });
-
-/** Whether a mistaken `from` mark may be corrected to `to` (TASK-620). */
-export function canCorrectPayment(from: PaymentStatus, to: PaymentStatus): boolean {
-  return PAYMENT_CORRECTIONS[from]?.includes(to) ?? false;
 }

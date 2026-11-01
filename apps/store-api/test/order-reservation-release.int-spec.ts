@@ -4,6 +4,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OrderStatus, PaymentAttemptStatus, PaymentStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import type { PaymentApplyPlan } from '../src/order/order.types';
 import { CacheService } from '../src/cache';
 import { PrismaService } from '../src/prisma';
@@ -51,6 +52,7 @@ describe('ORDER_RESERVATION_EXPIRY=release — stock under concurrent writes (in
       providers: [
         PrismaService,
         OrderRepository,
+        OrderMoneyRepository,
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },
         {
           provide: ProductIndexer,

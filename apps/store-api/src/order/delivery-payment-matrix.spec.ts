@@ -1,7 +1,9 @@
 import { DeliveryMethod, PaymentMethod } from '@prisma/client';
 import {
+  ADMIN_DELIVERY_PAYMENT_MATRIX,
   DELIVERY_PAYMENT_MATRIX,
   allowedPaymentMethods,
+  isPaymentAllowedForAdminDelivery,
   isPaymentAllowedForDelivery,
 } from './delivery-payment-matrix';
 
@@ -64,6 +66,33 @@ describe('delivery × payment matrix', () => {
     it('the table is frozen', () => {
       expect(Object.isFrozen(DELIVERY_PAYMENT_MATRIX)).toBe(true);
       expect(Object.isFrozen(DELIVERY_PAYMENT_MATRIX.OTHER)).toBe(true);
+    });
+  });
+
+  // R2 A3 (TASK-2047): «Переказ на рахунок ФОП» is the operator's — a phone
+  // order paid by transfer. Every delivery method admits it in the admin; the
+  // storefront table above never does.
+  describe('the admin matrix (BANK_TRANSFER)', () => {
+    const ADMIN_EXPECTED: Record<DeliveryMethod, Record<PaymentMethod, boolean>> = {
+      NOVA_POSHTA: { ...EXPECTED.NOVA_POSHTA, BANK_TRANSFER: true },
+      PICKUP: { ...EXPECTED.PICKUP, BANK_TRANSFER: true },
+      COURIER: { ...EXPECTED.COURIER, BANK_TRANSFER: true },
+      OTHER: { ...EXPECTED.OTHER, BANK_TRANSFER: true },
+    };
+
+    const cells = Object.values(DeliveryMethod).flatMap((delivery) =>
+      Object.values(PaymentMethod).map(
+        (payment) => [delivery, payment, ADMIN_EXPECTED[delivery][payment]] as const,
+      ),
+    );
+
+    it.each(cells)('admin: %s + %s → %s', (delivery, payment, allowed) => {
+      expect(isPaymentAllowedForAdminDelivery(delivery, payment)).toBe(allowed);
+    });
+
+    it('is frozen too', () => {
+      expect(Object.isFrozen(ADMIN_DELIVERY_PAYMENT_MATRIX)).toBe(true);
+      expect(Object.isFrozen(ADMIN_DELIVERY_PAYMENT_MATRIX.PICKUP)).toBe(true);
     });
   });
 });

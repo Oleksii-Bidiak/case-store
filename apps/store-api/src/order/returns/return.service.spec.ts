@@ -20,6 +20,7 @@ import { ReturnRepository } from './return.repository';
 import { OrderRepository } from '../order.repository';
 import { ReturnEntity } from './entities';
 import type { ReturnWithItems } from './return.types';
+import { refundRecordedError } from './return.errors';
 import type { OrderWithItems } from '../order.types';
 import { ShopNotifier } from '../../notification/shop-notifier.service';
 
@@ -102,6 +103,7 @@ const returnRepositoryMock = {
   updateNotes: jest.fn(),
   decide: jest.fn(),
   addRepairStep: jest.fn(),
+  setCredit: jest.fn(),
 };
 
 const orderRepositoryMock = {
@@ -109,7 +111,6 @@ const orderRepositoryMock = {
   // Every write the order repository has that could touch status or payment —
   // mocked so a test can prove a return path calls none of them (TASK-1963).
   updateStatus: jest.fn(),
-  updatePaymentStatus: jest.fn(),
   cancelAndRestock: jest.fn(),
   updateDetails: jest.fn(),
   applyPaymentOutcome: jest.fn(),
@@ -567,7 +568,6 @@ describe('ReturnService (TASK-340)', () => {
       });
 
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
-      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
       expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
       expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
@@ -781,22 +781,41 @@ describe('ReturnService (TASK-340)', () => {
     // decision committed in between is never overwritten (TASK-1961/2044).
     it('hands the repository the status and decision it validated the move against', async () => {
       returnRepositoryMock.findById.mockResolvedValue(
-        makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
+        makeReturn({ status: ReturnStatus.APPROVED, decision: ReturnDecision.REFUND }),
       );
 
-      await service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED });
+      await service.resolveReturn(RETURN_ID, { status: ReturnStatus.RECEIVED });
 
       expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
         {
           id: RETURN_ID,
           orderId: ORDER_ID,
-          status: ReturnStatus.RECEIVED,
+          status: ReturnStatus.APPROVED,
           decision: ReturnDecision.REFUND,
         },
         expect.anything(),
         { restock: false },
       );
     });
+
+    // R2 A3 (TASK-2046): REFUNDED follows from the payouts on the order ledger
+    // (POST /admin/orders/:orderId/money/out); nobody sets it by hand.
+    it.each([ReturnDecision.REFUND, ReturnDecision.REPLACEMENT, null])(
+      'refuses to set REFUNDED by hand (decision %s) — 400 RETURN_REFUND_DERIVED, writing nothing',
+      async (decision) => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.RECEIVED, decision }),
+        );
+
+        const caught = (await service
+          .resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED })
+          .catch((error: unknown) => error)) as HttpException;
+
+        expect(caught).toBeInstanceOf(BadRequestException);
+        expect(caught.getResponse()).toMatchObject({ error: 'RETURN_REFUND_DERIVED' });
+        expect(returnRepositoryMock.resolve).not.toHaveBeenCalled();
+      },
+    );
 
     // TASK-1961/2044: approving and refusing are DECISIONS now — with an author,
     // a reason the customer sees and a history row. PATCH setting them directly
@@ -816,31 +835,14 @@ describe('ReturnService (TASK-340)', () => {
       },
     );
 
-    it.each([ReturnDecision.REPLACEMENT, ReturnDecision.REPAIR])(
-      'refuses to pay money out on a %s decision — 409 RETURN_TRANSITION_INVALID',
-      async (decision) => {
-        returnRepositoryMock.findById.mockResolvedValue(
-          makeReturn({ status: ReturnStatus.RECEIVED, decision }),
-        );
-
-        const caught = (await service
-          .resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED })
-          .catch((error: unknown) => error)) as HttpException;
-
-        expect(caught).toBeInstanceOf(ConflictException);
-        expect(caught.getResponse()).toMatchObject({ error: 'RETURN_TRANSITION_INVALID' });
-        expect(returnRepositoryMock.resolve).not.toHaveBeenCalled();
-      },
-    );
-
     it('rejects a transition the state machine forbids, without writing', async () => {
       returnRepositoryMock.findById.mockResolvedValue(
         makeReturn({ status: ReturnStatus.REQUESTED }),
       );
 
-      // Money before the goods are back is how a shop refunds twice.
+      // Goods cannot arrive on a request nobody has decided.
       await expect(
-        service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED }),
+        service.resolveReturn(RETURN_ID, { status: ReturnStatus.RECEIVED }),
       ).rejects.toThrow(ConflictException);
       expect(returnRepositoryMock.resolve).not.toHaveBeenCalled();
     });
@@ -928,202 +930,6 @@ describe('ReturnService (TASK-340)', () => {
           },
         );
       });
-
-      it('never restocks on the refund step (the goods came back at RECEIVED)', async () => {
-        returnRepositoryMock.findById.mockResolvedValue(
-          makeReturn({
-            status: ReturnStatus.RECEIVED,
-            decision: ReturnDecision.REFUND,
-            restockedAt: new Date(),
-          }),
-        );
-
-        await service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED });
-
-        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
-          RESOLVE_BASIS,
-          expect.anything(),
-          {
-            restock: false,
-          },
-        );
-      });
-    });
-
-    // ── The refund ceilings (TASK-785) ──────────────────────────────────────────
-    //
-    // `refundedAmount` used to be checked for SHAPE only, so "49900" typed for
-    // "499.00" was accepted, summed into the order's `refundedTotal` and reported
-    // by B-8 as money that had gone back. Two ceilings now, both checked by the
-    // repository inside the resolve transaction, against a ledger read under a
-    // lock on the order row — the same shape as the quantity cap of TASK-784.
-
-    describe('refund ceilings (TASK-785)', () => {
-      /** What the repository reads under the lock and hands the service's check. */
-      let refundLedger: {
-        orderTotal: { toString(): string };
-        otherRefunds: Array<{ refundedAmount: { toString(): string } | null }>;
-        items: Array<{ quantity: number; unitPrice: { toString(): string } }>;
-      };
-      /** Only the resolves whose check passed — what the mocked repository "wrote". */
-      let written: unknown[];
-
-      const money = (value: string) => ({ toString: () => value });
-
-      beforeEach(() => {
-        written = [];
-        // Order of three at 499.00, nothing refunded yet; this return holds one unit.
-        refundLedger = {
-          orderTotal: money('1497.00'),
-          otherRefunds: [],
-          items: [{ quantity: 1, unitPrice: money('499.00') }],
-        };
-        returnRepositoryMock.findById.mockResolvedValue(
-          makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
-        );
-        returnRepositoryMock.resolve.mockImplementation(
-          async (
-            _id: string,
-            fields: { status: string },
-            options?: { assertRefundable?: (ledger: typeof refundLedger) => void },
-          ) => {
-            options?.assertRefundable?.(refundLedger);
-            written.push(fields);
-            return makeReturn({ status: fields.status as ReturnStatus });
-          },
-        );
-      });
-
-      const refund = (refundedAmount: string | null) =>
-        service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED, refundedAmount });
-
-      /** The `{ error, message }` body the exception carries to the wire. */
-      const bodyOf = async (promise: Promise<unknown>) => {
-        const error = await promise.then(
-          () => {
-            throw new Error('expected a refusal');
-          },
-          (caught: unknown) => caught,
-        );
-        expect(error).toBeInstanceOf(BadRequestException);
-        return (error as BadRequestException).getResponse() as { error: string; message: string };
-      };
-
-      it('accepts a refund of exactly the value of the returned lines', async () => {
-        await refund('499.00');
-
-        expect(written).toHaveLength(1);
-      });
-
-      it('accepts a partial refund — shipping is not always refundable', async () => {
-        await refund('450.50');
-
-        expect(written).toHaveLength(1);
-      });
-
-      it('refuses "49900" typed for "499.00" — more than the returned lines are worth', async () => {
-        const body = await bodyOf(refund('49900'));
-
-        expect(body.error).toBe('RETURN_REFUND_EXCEEDS_RETURNED_VALUE');
-        expect(body.message).toContain('499.00');
-        expect(written).toHaveLength(0);
-      });
-
-      it('refuses even one kopiyka over the returned value', async () => {
-        const body = await bodyOf(refund('499.01'));
-
-        expect(body.error).toBe('RETURN_REFUND_EXCEEDS_RETURNED_VALUE');
-        expect(written).toHaveLength(0);
-      });
-
-      it('values the returned lines at unit price × returned quantity', async () => {
-        refundLedger.items = [
-          { quantity: 2, unitPrice: money('499.00') },
-          { quantity: 1, unitPrice: money('0.10') },
-        ];
-
-        await refund('998.10');
-        expect(written).toHaveLength(1);
-
-        const body = await bodyOf(refund('998.11'));
-        expect(body.error).toBe('RETURN_REFUND_EXCEEDS_RETURNED_VALUE');
-      });
-
-      it('refuses more than the order has left once earlier returns were paid out', async () => {
-        // 1497.00 paid, 1200.00 already back through other returns: 297.00 left,
-        // although the unit on THIS return is worth 499.00.
-        refundLedger.otherRefunds = [
-          { refundedAmount: money('700.00') },
-          { refundedAmount: money('500.00') },
-        ];
-
-        const body = await bodyOf(refund('499.00'));
-
-        expect(body.error).toBe('RETURN_REFUND_EXCEEDS_ORDER_BALANCE');
-        expect(body.message).toContain('297.00');
-        expect(written).toHaveLength(0);
-      });
-
-      it('accepts exactly what the order has left', async () => {
-        refundLedger.otherRefunds = [{ refundedAmount: money('1200.00') }];
-
-        await refund('297.00');
-
-        expect(written).toHaveLength(1);
-      });
-
-      it('ignores other returns that have paid nothing out yet', async () => {
-        refundLedger.otherRefunds = [{ refundedAmount: null }, { refundedAmount: null }];
-
-        await refund('499.00');
-
-        expect(written).toHaveLength(1);
-      });
-
-      it('caps by the order total, so a discounted order never refunds its gross price', async () => {
-        // The discount is order-level, not allocated to lines: one 499.00 case
-        // bought for 400.00 after a coupon. The line is worth 499.00 gross, but
-        // only 400.00 was ever paid.
-        refundLedger.orderTotal = money('400.00');
-
-        const body = await bodyOf(refund('499.00'));
-        expect(body.error).toBe('RETURN_REFUND_EXCEEDS_ORDER_BALANCE');
-
-        await refund('400.00');
-        expect(written).toHaveLength(1);
-      });
-
-      it('hands the check to the repository instead of deciding against its own earlier read', async () => {
-        await refund('499.00');
-
-        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
-          RESOLVE_BASIS,
-          expect.objectContaining({ refundedAmount: '499.00' }),
-          { restock: false, assertRefundable: expect.any(Function) },
-        );
-      });
-
-      it('asks nothing when no amount is being recorded', async () => {
-        await service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED });
-
-        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
-          RESOLVE_BASIS,
-          expect.anything(),
-          {
-            restock: false,
-          },
-        );
-      });
-
-      it('lets an operator clear a mistyped amount — null is never over any ceiling', async () => {
-        await refund(null);
-
-        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
-          RESOLVE_BASIS,
-          expect.objectContaining({ refundedAmount: null }),
-          { restock: false },
-        );
-      });
     });
 
     // Approving and refusing moved to POST /decision (TASK-1961/2044), so a
@@ -1183,7 +989,6 @@ describe('ReturnService (TASK-340)', () => {
       });
 
       it.each([
-        ['refundedAmount', { operatorNotes: 'x', refundedAmount: '499.00' }],
         ['restock', { operatorNotes: 'x', restock: true }],
         ['restock: false', { restock: false }],
       ])('400 RETURN_STATUS_REQUIRED for %s without a status', async (_name, dto) => {
@@ -1192,7 +997,7 @@ describe('ReturnService (TASK-340)', () => {
         expect(caught).toBeInstanceOf(BadRequestException);
         expect((caught as HttpException).getResponse()).toEqual({
           error: 'RETURN_STATUS_REQUIRED',
-          message: 'refundedAmount and restock move a return on — send them with a status',
+          message: 'restock moves a return on — send it with a status',
         });
         expect(returnRepositoryMock.updateNotes).not.toHaveBeenCalled();
         expect(returnRepositoryMock.resolve).not.toHaveBeenCalled();
@@ -1327,17 +1132,17 @@ describe('ReturnService (TASK-340)', () => {
       returnRepositoryMock.findById.mockResolvedValue(makeReturn());
 
       expect(
-        await refusalOf(service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED })),
+        await refusalOf(service.resolveReturn(RETURN_ID, { status: ReturnStatus.RECEIVED })),
       ).toEqual({
         status: 409,
         body: {
           error: 'RETURN_TRANSITION_INVALID',
-          message: 'A return cannot move from REQUESTED to REFUNDED',
+          message: 'A return cannot move from REQUESTED to RECEIVED',
         },
       });
     });
 
-    it('400 RETURN_RESTOCK_REQUIRES_RECEIVED for a restock on any other status', async () => {
+    it('400 RETURN_REFUND_DERIVED for REFUNDED — restock or not, it follows from the payouts', async () => {
       returnRepositoryMock.findById.mockResolvedValue(
         makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
       );
@@ -1349,8 +1154,10 @@ describe('ReturnService (TASK-340)', () => {
       ).toEqual({
         status: 400,
         body: {
-          error: 'RETURN_RESTOCK_REQUIRES_RECEIVED',
-          message: 'Stock is credited back when a return is marked RECEIVED, not REFUNDED',
+          error: 'RETURN_REFUND_DERIVED',
+          message:
+            'A return becomes REFUNDED when its payouts cover what is owed — record the ' +
+            'payout on the order (POST /admin/orders/:orderId/money/out)',
         },
       });
     });
@@ -1553,43 +1360,52 @@ describe('ReturnService (TASK-340)', () => {
         expect(returnRepositoryMock.decide).not.toHaveBeenCalled();
       });
 
+      // R2 A3 (TASK-2046): "money already went out" is read from the ledger —
+      // the payouts on this return — under the order lock, by the repository.
       it.each([ReturnDecision.REPLACEMENT, ReturnDecision.REPAIR])(
-        '409 RETURN_REFUND_RECORDED moving to %s while a refund amount is recorded',
+        'moving REFUND to %s asks the repository to refuse when payouts exist, and to clear the credit',
         async (decision) => {
           returnRepositoryMock.findById.mockResolvedValue(
-            makeReturn({
-              status: ReturnStatus.RECEIVED,
-              decision: ReturnDecision.REFUND,
-              refundedAmount: { toString: () => '499.00' } as never,
-            }),
+            makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
           );
 
-          const result = await refusal(
-            service.decideReturn(RETURN_ID, OPERATOR_ID, {
-              decision,
-              reason: 'Покупець передумав',
-            }),
-          );
+          await service.decideReturn(RETURN_ID, OPERATOR_ID, {
+            decision,
+            reason: 'Покупець передумав',
+          });
 
-          // The amount still counts against the order's refund balance; a goods
-          // outcome on top of it would leave money recorded with no refund behind it.
-          expect(result.status).toBe(409);
-          expect(result.body.error).toBe('RETURN_REFUND_RECORDED');
-          expect(returnRepositoryMock.decide).not.toHaveBeenCalled();
+          expect(returnRepositoryMock.decide).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            { refuseIfPaidOut: true, credit: 'clear', actorId: OPERATOR_ID },
+          );
         },
       );
 
-      it('lets a recorded refund keep REFUND with a new reason', async () => {
+      it('surfaces the repository refusal as 409 RETURN_REFUND_RECORDED', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
+        );
+        returnRepositoryMock.decide.mockRejectedValue(refundRecordedError(ReturnDecision.REPAIR));
+
+        const result = await refusal(
+          service.decideReturn(RETURN_ID, OPERATOR_ID, {
+            decision: ReturnDecision.REPAIR,
+            reason: 'Ремонт',
+          }),
+        );
+
+        expect(result.status).toBe(409);
+        expect(result.body.error).toBe('RETURN_REFUND_RECORDED');
+      });
+
+      it('re-wording a REFUND keeps its credit untouched', async () => {
         returnRepositoryMock.findById.mockResolvedValue(
           makeReturn({
             status: ReturnStatus.RECEIVED,
             decision: ReturnDecision.REFUND,
             decisionReason: 'Брак',
-            refundedAmount: { toString: () => '499.00' } as never,
           }),
-        );
-        returnRepositoryMock.decide.mockResolvedValue(
-          makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
         );
 
         await service.decideReturn(RETURN_ID, OPERATOR_ID, {
@@ -1597,7 +1413,23 @@ describe('ReturnService (TASK-340)', () => {
           reason: 'Брак екрана',
         });
 
-        expect(returnRepositoryMock.decide).toHaveBeenCalled();
+        expect(returnRepositoryMock.decide).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.anything(),
+          {},
+        );
+      });
+
+      it('a REFUND decision computes the credit (TASK-2046 «до повернення»)', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(makeReturn());
+
+        await service.decideReturn(RETURN_ID, OPERATOR_ID, { decision: ReturnDecision.REFUND });
+
+        expect(returnRepositoryMock.decide).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.anything(),
+          { credit: 'compute', actorId: OPERATOR_ID },
+        );
       });
 
       it('409 RETURN_DECISION_UNCHANGED for the same decision with the same reason', async () => {
@@ -1697,7 +1529,7 @@ describe('ReturnService (TASK-340)', () => {
       it('takes no claim check when the units were never released', async () => {
         returnRepositoryMock.findById.mockResolvedValue(makeReturn());
 
-        await service.decideReturn(RETURN_ID, OPERATOR_ID, { decision: ReturnDecision.REFUND });
+        await service.decideReturn(RETURN_ID, OPERATOR_ID, { decision: ReturnDecision.REPAIR });
 
         expect(returnRepositoryMock.decide).toHaveBeenCalledWith(
           expect.anything(),
@@ -1731,7 +1563,7 @@ describe('ReturnService (TASK-340)', () => {
         expect(returnRepositoryMock.decide).toHaveBeenCalledWith(
           expect.anything(),
           expect.anything(),
-          { assertClaimable: expect.any(Function) },
+          { assertClaimable: expect.any(Function), credit: 'compute', actorId: OPERATOR_ID },
         );
       });
 
@@ -1795,6 +1627,101 @@ describe('ReturnService (TASK-340)', () => {
   });
 
   // ─── addRepairStep (TASK-2045) ────────────────────────────────────────────────
+
+  // ─── reduceReturnCredit (R2 A3, TASK-2046) ─────────────────────────────────
+  //
+  // «До повернення» is computed when the decision becomes REFUND; the operator
+  // may only lower it (an incomplete set, a scratched case), with a reason, and
+  // never below what was already paid out. The ceiling is re-computed under the
+  // order lock by the repository and handed to the service's rule.
+
+  describe('reduceReturnCredit (R2 A3, TASK-2046)', () => {
+    const OPERATOR_ID = 'operator-uuid-1';
+    let ceilings = { computedKop: 40_000, paidOutKop: 10_000 };
+
+    beforeEach(() => {
+      ceilings = { computedKop: 40_000, paidOutKop: 10_000 };
+      returnRepositoryMock.setCredit.mockImplementation(
+        async (
+          _current: unknown,
+          change: { creditKop: number },
+          options: { assertCredit: (c: typeof ceilings) => void },
+        ) => {
+          options.assertCredit(ceilings);
+          return makeReturn({ creditKop: change.creditKop } as Partial<ReturnWithItems>);
+        },
+      );
+    });
+
+    const refundReturn = () =>
+      makeReturn({
+        status: ReturnStatus.RECEIVED,
+        decision: ReturnDecision.REFUND,
+        creditKop: 40_000,
+      } as Partial<ReturnWithItems>);
+
+    it('lowers the credit with the reason, under the lock, and answers with the card', async () => {
+      returnRepositoryMock.findById.mockResolvedValue(refundReturn());
+
+      const result = await service.reduceReturnCredit(RETURN_ID, OPERATOR_ID, {
+        creditKop: 35_000,
+        reason: 'Без зарядного блока',
+      });
+
+      expect(returnRepositoryMock.setCredit).toHaveBeenCalledWith(
+        {
+          id: RETURN_ID,
+          orderId: ORDER_ID,
+          status: ReturnStatus.RECEIVED,
+          decision: ReturnDecision.REFUND,
+        },
+        { creditKop: 35_000, creditReason: 'Без зарядного блока' },
+        { assertCredit: expect.any(Function), actorId: OPERATOR_ID },
+      );
+      expect(result).toBeInstanceOf(ReturnEntity);
+      expect(result.creditKop).toBe(35_000);
+    });
+
+    it('400 RETURN_CREDIT_ABOVE_COMPUTED above the computed value', async () => {
+      returnRepositoryMock.findById.mockResolvedValue(refundReturn());
+      const caught = (await service
+        .reduceReturnCredit(RETURN_ID, OPERATOR_ID, { creditKop: 40_001, reason: 'x' })
+        .catch((e: unknown) => e)) as HttpException;
+      expect(caught.getStatus()).toBe(400);
+      expect(caught.getResponse()).toMatchObject({ error: 'RETURN_CREDIT_ABOVE_COMPUTED' });
+    });
+
+    it('409 RETURN_CREDIT_BELOW_PAID_OUT below what was already paid out', async () => {
+      returnRepositoryMock.findById.mockResolvedValue(refundReturn());
+      const caught = (await service
+        .reduceReturnCredit(RETURN_ID, OPERATOR_ID, { creditKop: 9_999, reason: 'x' })
+        .catch((e: unknown) => e)) as HttpException;
+      expect(caught.getStatus()).toBe(409);
+      expect(caught.getResponse()).toMatchObject({ error: 'RETURN_CREDIT_BELOW_PAID_OUT' });
+    });
+
+    it.each([ReturnDecision.REPLACEMENT, null])(
+      '409 RETURN_CREDIT_NOT_REFUND on a return decided %s, writing nothing',
+      async (decision) => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.APPROVED, decision }),
+        );
+        const caught = (await service
+          .reduceReturnCredit(RETURN_ID, OPERATOR_ID, { creditKop: 1, reason: 'x' })
+          .catch((e: unknown) => e)) as HttpException;
+        expect(caught.getStatus()).toBe(409);
+        expect(caught.getResponse()).toMatchObject({ error: 'RETURN_CREDIT_NOT_REFUND' });
+        expect(returnRepositoryMock.setCredit).not.toHaveBeenCalled();
+      },
+    );
+
+    it('404 for a missing return', async () => {
+      returnRepositoryMock.findById.mockResolvedValue(null);
+      await expect(
+        service.reduceReturnCredit('missing', OPERATOR_ID, { creditKop: 1, reason: 'x' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
 
   describe('addRepairStep (TASK-2045)', () => {
     const OPERATOR_ID = 'operator-uuid-1';

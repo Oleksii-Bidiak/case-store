@@ -39,6 +39,7 @@ import {
   AddRepairStepDto,
   CreateReturnDto,
   DecideReturnDto,
+  ReduceReturnCreditDto,
   ResolveReturnDto,
   ReturnListQueryDto,
 } from './dto';
@@ -140,9 +141,11 @@ export class AdminReturnController {
   @ApiOperation({
     summary: 'Resolve a return, or save its operator notes (admin)',
     description:
-      'With a status: a guarded transition (RECEIVED or REFUNDED), optionally with notes, ' +
-      'refundedAmount and restock. Without a status: saves operatorNotes alone on a return of ' +
-      'any status — no transition, resolvedAt and the decision untouched.',
+      'With a status: the guarded move to RECEIVED (the goods are back), optionally with notes ' +
+      'and restock. Without a status: saves operatorNotes alone on a return of any status — ' +
+      'no transition, resolvedAt and the decision untouched. No money here: payouts are ' +
+      'recorded on the order (POST /admin/orders/:orderId/money/out) and REFUNDED follows ' +
+      'from them.',
     operationId: 'adminReturnControllerResolve',
   })
   @ApiParam({ name: 'returnId', description: 'Return UUID' })
@@ -151,23 +154,67 @@ export class AdminReturnController {
     status: 400,
     description:
       'error: RETURN_UPDATE_EMPTY (neither a status nor operatorNotes), ' +
-      'RETURN_STATUS_REQUIRED (refundedAmount or restock without a status), ' +
+      'RETURN_STATUS_REQUIRED (restock without a status), ' +
       'RETURN_USE_DECISION_ENDPOINT (APPROVED and REJECTED are set only by a decision), ' +
-      'RETURN_RESTOCK_REQUIRES_RECEIVED (restock requested for a status other than ' +
-      'RECEIVED), RETURN_REFUND_EXCEEDS_RETURNED_VALUE or RETURN_REFUND_EXCEEDS_ORDER_BALANCE',
+      'RETURN_REFUND_DERIVED (REFUNDED follows from the payouts), or a validation error ' +
+      '(an unknown field such as the retired refundedAmount)',
   })
   @ApiResponse({ status: 404, description: 'Return not found — error: RETURN_NOT_FOUND' })
   @ApiResponse({
     status: 409,
     description:
-      'error: RETURN_TRANSITION_INVALID (illegal transition, or REFUNDED without a REFUND ' +
-      'decision) or RETURN_ALREADY_RESTOCKED (the goods were already credited back to inventory)',
+      'error: RETURN_TRANSITION_INVALID (illegal transition) or RETURN_ALREADY_RESTOCKED ' +
+      '(the goods were already credited back to inventory)',
   })
   async resolve(
     @Param('returnId') returnId: string,
     @Body() dto: ResolveReturnDto,
   ): Promise<AdminReturnResponseEnvelope> {
     const data = await this.returnService.resolveReturn(returnId, dto);
+    return { data };
+  }
+
+  /**
+   * PATCH /api/admin/returns/:returnId/credit
+   *
+   * Lower «до повернення» on a refund return (R2 A3, TASK-2046): reduce-only,
+   * with a reason. The order's balance and the return's derived status follow.
+   */
+  @Patch(':returnId/credit')
+  @RequirePermission('returns:write')
+  @ApiBearerAuth('access-token')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Lower the amount owed back on a refund return (admin)',
+    description:
+      'Reduce-only: at most the computed value (the returned lines less their promo share), ' +
+      'at least what was already paid out on the return; the reason is required and kept as ' +
+      'creditReason. Recomputes the order balance; a credit lowered to what was paid out ' +
+      'makes the return REFUNDED.',
+    operationId: 'adminReturnControllerReduceCredit',
+  })
+  @ApiParam({ name: 'returnId', description: 'Return UUID' })
+  @ApiResponse({ status: 200, description: 'Credit lowered', type: AdminReturnResponseEnvelope })
+  @ApiResponse({
+    status: 400,
+    description:
+      'error: RETURN_CREDIT_ABOVE_COMPUTED (more than the computed value), or a validation ' +
+      'error (creditKop not a whole number ≥ 0, blank reason)',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — returns:write required' })
+  @ApiResponse({ status: 404, description: 'Return not found — error: RETURN_NOT_FOUND' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'error: RETURN_CREDIT_NOT_REFUND (the return is not decided as a refund) or ' +
+      'RETURN_CREDIT_BELOW_PAID_OUT (less than was already paid out — reverse a payout first)',
+  })
+  async reduceCredit(
+    @CurrentActor() actor: PermissionActor,
+    @Param('returnId') returnId: string,
+    @Body() dto: ReduceReturnCreditDto,
+  ): Promise<AdminReturnResponseEnvelope> {
+    const data = await this.returnService.reduceReturnCredit(returnId, actor.id, dto);
     return { data };
   }
 

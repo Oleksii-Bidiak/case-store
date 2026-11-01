@@ -4,8 +4,6 @@ export { CreateOrderDto } from './create-order.dto';
 export { UpdateOrderStatusDto } from './update-order-status.dto';
 export { UpdateOrderDetailsDto } from './update-order-details.dto';
 export { CreateManualOrderDto, ManualOrderItemDto } from './create-manual-order.dto';
-export { UpdateOrderPaymentStatusDto } from './update-order-payment-status.dto';
-export { CorrectPaymentStatusDto, PAYMENT_CORRECTION_TARGETS } from './correct-payment-status.dto';
 export {
   OrderLookupDto,
   ORDER_NUMBER_LENGTH,
