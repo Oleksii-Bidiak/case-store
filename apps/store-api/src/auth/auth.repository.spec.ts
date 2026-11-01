@@ -426,6 +426,19 @@ describe('AuthRepository', () => {
     });
   });
 
+  describe('clearPasswordHash (TASK-2010 review)', () => {
+    it('removes the password, so the account signs in only through a proven channel', async () => {
+      prismaMock.user.update.mockResolvedValue({ ...mockUser, passwordHash: null });
+
+      await repository.clearPasswordHash('user-uuid-1');
+
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-uuid-1' },
+        data: { passwordHash: null },
+      });
+    });
+  });
+
   // ─── deleteExpiredAndRevoked ────────────────────────────────────────────────
 
   describe('deleteExpiredAndRevoked', () => {

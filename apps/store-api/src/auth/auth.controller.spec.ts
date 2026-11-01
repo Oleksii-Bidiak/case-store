@@ -255,10 +255,15 @@ describe('AuthController — checkout sign-up routes (TASK-2010)', () => {
   };
 
   let checkoutAccounts: { confirmSetup: jest.Mock; hasAccount: jest.Mock };
+  let confirmEmailVerification: jest.Mock;
   let controller: AuthController;
 
   beforeEach(() => {
-    const authService = { refreshTokenTtlMs: 7 * 24 * 60 * 60 * 1000 } as unknown as AuthService;
+    confirmEmailVerification = jest.fn();
+    const authService = {
+      refreshTokenTtlMs: 7 * 24 * 60 * 60 * 1000,
+      confirmEmailVerification,
+    } as unknown as AuthService;
     const config = { get: jest.fn() } as unknown as ConfigService;
     checkoutAccounts = {
       confirmSetup: jest.fn().mockResolvedValue({ session, claimedOrders: 2 }),
@@ -293,6 +298,48 @@ describe('AuthController — checkout sign-up routes (TASK-2010)', () => {
       'refresh-token-value',
       expect.objectContaining({ httpOnly: true, sameSite: 'strict' }),
     );
+  });
+
+  it('email/verify/confirm signs a password-less clicker in on this device (TASK-2341)', async () => {
+    confirmEmailVerification.mockResolvedValue({ claimedOrders: 1, session });
+    const response = { cookie: jest.fn() };
+
+    const result = await controller.confirmEmailVerification(
+      { token: 'raw' },
+      undefined,
+      { cookies: {} } as unknown as Request,
+      response as unknown as Response,
+    );
+
+    expect(confirmEmailVerification).toHaveBeenCalledWith('raw', null);
+    expect(result).toEqual({
+      data: {
+        message: 'Email address verified.',
+        claimedOrders: 1,
+        session: { accessToken: 'opaque-access-token' },
+      },
+    });
+    expect(response.cookie).toHaveBeenCalledWith(
+      'refreshToken',
+      'refresh-token-value',
+      expect.objectContaining({ httpOnly: true }),
+    );
+  });
+
+  it('email/verify/confirm passes the signed-in caller and sets no cookie when no session is minted', async () => {
+    confirmEmailVerification.mockResolvedValue({ claimedOrders: 0, session: null });
+    const response = { cookie: jest.fn() };
+
+    const result = await controller.confirmEmailVerification(
+      { token: 'raw' },
+      'user-1',
+      { cookies: {} } as unknown as Request,
+      response as unknown as Response,
+    );
+
+    expect(confirmEmailVerification).toHaveBeenCalledWith('raw', 'user-1');
+    expect(result).toEqual({ data: { message: 'Email address verified.', claimedOrders: 0 } });
+    expect(response.cookie).not.toHaveBeenCalled();
   });
 
   it('checkout/email-status answers whether the address already has an account', async () => {
