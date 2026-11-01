@@ -15,6 +15,8 @@ import {
   E2E_ADMIN_EMAIL,
   E2E_PRODUCT_SLUG,
   E2E_SOLD_OUT_PRODUCT_SLUG,
+  clearMoneyEntries,
+  moneyColumns,
 } from "./fixtures/seed-e2e";
 
 /**
@@ -172,7 +174,12 @@ test.describe("returns wave R1 — file, refuse, read (TASK-1963/1961/1962)", ()
           id: ORDER_ID,
           userId: customer.id,
           status: "DELIVERED",
-          paymentStatus: "PAID",
+          // R2: paid = a journal entry, the columns derived from it.
+          ...moneyColumns({
+            total: "1896.00",
+            status: "DELIVERED",
+            paidKop: 189_600,
+          }),
           paymentMethod: "ON_DELIVERY",
           paidAt: deliveredAt,
           subtotal: "1896.00",
@@ -182,6 +189,16 @@ test.describe("returns wave R1 — file, refuse, read (TASK-1963/1961/1962)", ()
             create: [
               { productId: product.id, quantity: 3, price: "499.00" },
               { productId: otherProduct.id, quantity: 1, price: "399.00" },
+            ],
+          },
+          moneyEntries: {
+            create: [
+              {
+                direction: "IN",
+                kind: "COD_NOVA_POSHTA",
+                amountKop: 189_600,
+                occurredAt: deliveredAt,
+              },
             ],
           },
         },
@@ -197,8 +214,9 @@ test.describe("returns wave R1 — file, refuse, read (TASK-1963/1961/1962)", ()
 
   test.afterAll(async () => {
     await withPrisma(async (prisma) => {
-      // Return → order → customer: Return.order and Order.user are Restrict.
+      // Journal → return → order → customer: each one Restricts the next.
       // Return items and decision events cascade with the return.
+      await clearMoneyEntries(prisma, [ORDER_ID]);
       await prisma.return.deleteMany({ where: { orderId: ORDER_ID } });
       await prisma.order.deleteMany({ where: { id: ORDER_ID } });
       await prisma.user.deleteMany({ where: { email: CUSTOMER_EMAIL } });
@@ -220,7 +238,11 @@ test.describe("returns wave R1 — file, refuse, read (TASK-1963/1961/1962)", ()
       page.getByRole("heading", { name: A.orderHeading }),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: A.createAction }).click();
+    // Exact: a paid, delivered order's «Оплата» block also offers «Оформити
+    // повернення на позиції» (R2).
+    await page
+      .getByRole("button", { name: A.createAction, exact: true })
+      .click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
