@@ -1835,6 +1835,28 @@ describe('OrderController (e2e)', () => {
       );
     });
 
+    // Review of S5-API: the app's ValidationPipe runs with
+    // `enableImplicitConversion`, which turned "true" and 1 into `true` and let
+    // them through @IsBoolean — while the sign-up throttler, reading the raw
+    // body, did not count them. The box must be a real JSON boolean.
+    it.each([
+      ['"true"', 'true'],
+      ['1', 1],
+      ['"false"', 'false'],
+    ])(
+      'refuses a non-boolean createAccount (%s) with 400 — nothing written',
+      async (_label, createAccount) => {
+        await request(app.getHttpServer())
+          .post('/api/orders')
+          .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+          .send({ shippingAddress: validAddress, contact: { ...contact, createAccount } })
+          .expect(400);
+
+        expect(authRepositoryMock.createPasswordlessUser).not.toHaveBeenCalled();
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      },
+    );
+
     it('409 ACCOUNT_EXISTS when the address already has an account — nothing written', async () => {
       authRepositoryMock.findByEmail.mockResolvedValue({ id: 'existing', email: contact.email });
 

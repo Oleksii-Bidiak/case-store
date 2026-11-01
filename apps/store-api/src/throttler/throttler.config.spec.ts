@@ -238,16 +238,23 @@ describe('checkout sign-up is capped at five accounts an hour per address (TASK-
     const route = () => undefined;
     Reflect.defineMetadata(CHECKOUT_SIGNUP_THROTTLE_KEY, 'createAccount', route);
 
-    expect(checkoutSignup.skipIf?.(contextWith(route, { contact: { createAccount: true } }))).toBe(
-      false,
-    );
-    // Anything but a literal `true` creates no account, so it is not counted:
-    // the order route keeps its own 3/min guest limit for those.
+    // Counted for ANY value that is not plainly absent or `false`. The guard
+    // sees the raw body (guards run before pipes), so it must not try to
+    // predict what validation will make of `"true"` or `1` — a value it
+    // skipped and the pipe then accepted would be an uncounted account
+    // (review of S5-API: `enableImplicitConversion` turns "true" into true).
+    for (const createAccount of [true, 'true', 1, 'yes', 'false', 0, {}]) {
+      expect(checkoutSignup.skipIf?.(contextWith(route, { contact: { createAccount } }))).toBe(
+        false,
+      );
+    }
+    // Only an absent or explicitly-false box creates no account; the order
+    // route keeps its own 3/min guest limit for those.
     for (const body of [
       {},
       { contact: {} },
       { contact: { createAccount: false } },
-      { contact: { createAccount: 'true' } },
+      { contact: { createAccount: null } },
       null,
     ]) {
       expect(checkoutSignup.skipIf?.(contextWith(route, body))).toBe(true);
