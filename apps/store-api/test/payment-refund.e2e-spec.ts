@@ -273,7 +273,7 @@ describe('LiqPay reversed callback → the order ledger (e2e, TASK-618 / TASK-15
     expect(prismaServiceMock.paymentEvent.delete).not.toHaveBeenCalled();
   });
 
-  it('confirms a requested FULL refund: attempt REFUNDED, the DELIVERED order REFUNDED', async () => {
+  it('confirms a requested FULL refund: attempt REFUNDED; the order stays DELIVERED (TASK-1969)', async () => {
     seedPaidOrder();
     await seedRequestedRefund(CHARGED_KOP, 'req-1');
     orderRow.paymentStatus = PaymentStatus.REFUNDED;
@@ -288,15 +288,10 @@ describe('LiqPay reversed callback → the order ledger (e2e, TASK-618 / TASK-15
       where: { id: PAYMENT_ID },
       data: { status: PaymentAttemptStatus.REFUNDED },
     });
-    expect(orderRow.status).toBe(OrderStatus.REFUNDED);
-    expect(historyRows()).toEqual([
-      expect.objectContaining({
-        changeType: OrderHistoryChangeType.STATUS,
-        fromStatus: OrderStatus.DELIVERED,
-        toStatus: OrderStatus.REFUNDED,
-        changedBy: null,
-      }),
-    ]);
+    // R2 A4: a provider refund alone never ends an order — its REFUNDED is
+    // derived from returns covering every line, and this order has none.
+    expect(orderRow.status).toBe(OrderStatus.DELIVERED);
+    expect(historyRows()).toEqual([]);
   });
 
   it('two partial reversals with different stamps are two events, both confirmed', async () => {

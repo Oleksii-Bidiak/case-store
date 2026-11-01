@@ -6,6 +6,8 @@ export type {
   OrderItemEntity,
   OrderEntityStatus,
   OrderEntityPaymentStatus,
+  // R2 (TASK-2047): includes the operator-only BANK_TRANSFER.
+  OrderEntityPaymentMethod,
   OrderShippingAddressEntity,
   OrderListResponseEnvelope,
   OrderResponseEnvelope,

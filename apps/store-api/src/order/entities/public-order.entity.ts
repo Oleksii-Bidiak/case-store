@@ -29,6 +29,8 @@ export interface PublicOrderRow {
   addonsTotal: { toString(): string } | null;
   total: { toString(): string };
   trackingNumber: string | null;
+  /** Σ IN of the order money ledger, kopecks (R2). Optional only for old fixtures. */
+  paidKop?: number;
   shippingAddress: unknown;
   items: Array<{
     quantity: number;
@@ -224,6 +226,20 @@ export class PublicOrderEntity {
   @ApiProperty({ description: 'Grand total as string', example: '668.00' })
   total!: string;
 
+  @ApiProperty({
+    description: 'Grand total in integer kopecks — the Y of «Сплачено X з Y» next to paidKop (R2).',
+    example: 66800,
+  })
+  totalKop!: number;
+
+  @ApiProperty({
+    description:
+      'Money received for this order so far, integer kopecks (R2, TASK-2047) — the X of ' +
+      '«Сплачено X з Y» on a PARTIALLY_PAID order. The ledger entries are never exposed.',
+    example: 0,
+  })
+  paidKop!: number;
+
   @ApiProperty({ description: 'Delivery destination', type: () => PublicOrderDeliveryEntity })
   delivery!: PublicOrderDeliveryEntity;
 
@@ -265,6 +281,8 @@ export class PublicOrderEntity {
     entity.shippingCost = toTwoDecimals(row.shippingCost);
     entity.addonsTotal = toTwoDecimals(row.addonsTotal ?? '0');
     entity.total = toTwoDecimals(row.total);
+    entity.totalKop = toCents(row.total);
+    entity.paidKop = row.paidKop ?? 0;
     // Picked field by field, never spread: anything not named here — the
     // street above all — cannot reach this page (TASK-1030).
     const isPickup = deliveryMethod === DeliveryMethod.PICKUP;

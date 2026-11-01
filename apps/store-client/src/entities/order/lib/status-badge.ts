@@ -17,6 +17,8 @@
  * - in progress (`PENDING`, `CONFIRMED`, `PROCESSING`, `SHIPPED`) — shades of
  *   `primary`, one step darker per stage, so the pill fills as the order moves;
  * - `DELIVERED`, `PAID` — `success`;
+ * - `PARTIALLY_PAID` (R2) — the first `primary` tint: money is on its way in,
+ *   nothing is wrong and nothing is finished;
  * - `REFUNDED`, `PARTIALLY_REFUNDED` — `muted`: money went back, nothing is
  *   wrong, and red here read as an error;
  * - `CANCELLED`, `FAILED` — `destructive`.
@@ -41,6 +43,7 @@ export const STATUS_BADGE: Readonly<Record<string, StatusBadgeStyle>> = {
   SHIPPED: { variant: "tint-primary", shade: "bg-primary/30" },
   DELIVERED: { variant: "tint-success" },
   PAID: { variant: "tint-success" },
+  PARTIALLY_PAID: { variant: "tint-primary" },
   REFUNDED: { variant: "tint-muted" },
   PARTIALLY_REFUNDED: { variant: "tint-muted" },
   CANCELLED: { variant: "tint-destructive" },

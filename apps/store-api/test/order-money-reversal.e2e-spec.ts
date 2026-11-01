@@ -44,7 +44,11 @@ describe('Money corrections — reversal and void (e2e, R2 A3)', () => {
   beforeEach(() => {
     harness.reset();
     harness.state.locked.status = OrderStatus.CANCELLED;
-    repository.reverseEntry.mockResolvedValue({ id: 'reversal-1', returnId: null });
+    repository.reverseEntry.mockResolvedValue({
+      id: 'reversal-1',
+      returnId: null,
+      direction: MoneyDirection.OUT,
+    });
     repository.findEntry.mockResolvedValue({
       id: ENTRY_ID,
       orderId: ORDER_ID,
@@ -91,7 +95,10 @@ describe('Money corrections — reversal and void (e2e, R2 A3)', () => {
         actorId: 'corrector-money',
         reason: 'Касир вніс суму двічі',
       });
-      expect(repository.recompute).toHaveBeenCalledWith(harness.tx, ORDER_ID, 'corrector-money');
+      // TASK-1969: a payout taken back may move a REFUNDED order back.
+      expect(repository.recompute).toHaveBeenCalledWith(harness.tx, ORDER_ID, 'corrector-money', {
+        payoutUndone: true,
+      });
       expect(res.body.data).toMatchObject({
         orderId: ORDER_ID,
         updatedAt: UPDATED_AT.toISOString(),

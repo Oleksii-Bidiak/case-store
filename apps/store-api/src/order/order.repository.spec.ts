@@ -896,19 +896,22 @@ describe('OrderRepository', () => {
   describe('reviveAndReserve', () => {
     const seedTx = () => {
       const tx = makeTx();
-      tx.order.findUniqueOrThrow.mockResolvedValue({
-        id: 'order-1',
-        status: OrderStatus.CANCELLED,
-        items: [
-          { productId: 'product-uuid-1', quantity: 2, product: { name: 'iPhone 15 Pro Case' } },
-          { productId: 'product-uuid-2', quantity: 1, product: { name: 'Screen Protector' } },
-        ],
-      });
-      tx.order.update.mockResolvedValue({
-        id: 'order-1',
-        status: OrderStatus.PENDING,
-        items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
-      });
+      // First read: the order as it stands; last read (after the R2 A4 recompute):
+      // the revived order the caches are evicted from.
+      tx.order.findUniqueOrThrow
+        .mockResolvedValueOnce({
+          id: 'order-1',
+          status: OrderStatus.CANCELLED,
+          items: [
+            { productId: 'product-uuid-1', quantity: 2, product: { name: 'iPhone 15 Pro Case' } },
+            { productId: 'product-uuid-2', quantity: 1, product: { name: 'Screen Protector' } },
+          ],
+        })
+        .mockResolvedValue({
+          id: 'order-1',
+          status: OrderStatus.PENDING,
+          items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
+        });
       // TASK-627: the restockedAt arbiter claims the row before any stock moves.
       tx.order.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
@@ -964,8 +967,10 @@ describe('OrderRepository', () => {
           paymentStatus: PaymentStatus.PAID,
           restockedAt: null,
         },
-        include: expect.any(Object),
       });
+      // R2 A4: the balance moves with the status, in the same transaction.
+      expect(moneyMock.lockOrder).toHaveBeenCalledWith(tx, 'order-1');
+      expect(moneyMock.recompute).toHaveBeenCalledWith(tx, 'order-1', null);
     });
 
     // ── TASK-251: history row uses the pre-revive status (CANCELLED) as fromStatus ──
@@ -1042,7 +1047,8 @@ describe('OrderRepository', () => {
     describe('promo redemption re-claim (TASK-771)', () => {
       const seedPromoTx = () => {
         const tx = seedTx();
-        tx.order.findUniqueOrThrow.mockResolvedValue({
+        // Every read answers with the promo order (mockReset drops seedTx's queue).
+        tx.order.findUniqueOrThrow.mockReset().mockResolvedValue({
           id: 'order-1',
           userId: 'user-uuid-1',
           discountCode: 'SPRING10',
@@ -1689,7 +1695,7 @@ describe('OrderRepository', () => {
           paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
         },
         attemptStatus: PaymentAttemptStatus.SUCCEEDED,
-        providerRefund: { refundOrder: { from: OrderStatus.DELIVERED, to: OrderStatus.REFUNDED } },
+        providerRefund: {},
       };
 
       const seedRefundTx = () => {
@@ -1717,7 +1723,7 @@ describe('OrderRepository', () => {
         expect(moneyMock.insertEntry).not.toHaveBeenCalled();
       });
 
-      it('once everything is back: the attempt is REFUNDED and the order follows', async () => {
+      it('once everything is back: the attempt is REFUNDED; the order is left to the ledger', async () => {
         const tx = seedRefundTx();
         moneyMock.recompute.mockResolvedValue({ paymentStatus: PaymentStatus.REFUNDED });
         moneyMock.paymentProviderTotals.mockResolvedValue({ inKop: 100_000, refundedKop: 100_000 });
@@ -1728,19 +1734,10 @@ describe('OrderRepository', () => {
           where: { id: 'payment-1' },
           data: { status: PaymentAttemptStatus.REFUNDED },
         });
-        expect(tx.order.updateMany).toHaveBeenCalledWith({
-          where: { id: 'order-1', status: OrderStatus.DELIVERED },
-          data: { status: OrderStatus.REFUNDED },
-        });
-        expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
-          data: {
-            orderId: 'order-1',
-            changeType: OrderHistoryChangeType.STATUS,
-            fromStatus: OrderStatus.DELIVERED,
-            toStatus: OrderStatus.REFUNDED,
-            changedBy: null,
-          },
-        });
+        // TASK-1969 (R2 A4): the order's REFUNDED is derived inside recompute
+        // (returns + payouts), never moved here by the callback.
+        expect(tx.order.updateMany).not.toHaveBeenCalled();
+        expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
       });
 
       it('a refund nobody requested writes no money — one PROVIDER_REFUND_UNMATCHED row', async () => {
@@ -2227,11 +2224,11 @@ describe('OrderRepository', () => {
   });
 
   describe('findAll — unpaidInTransit filter (TASK-248)', () => {
-    // "money we still expect" AND status NOT IN (CANCELLED, REFUNDED).
-    // PARTIALLY_REFUNDED sits with PAID: it is only reachable FROM PAID, so the
-    // money arrived and the shop is owed nothing.
+    // R2 A4: "money we still expect" is the ledger balance — balanceKop > 0 —
+    // on an order that has not ended. A partly paid (PARTIALLY_PAID) order is
+    // owed its remainder; a partly refunded one usually nothing.
     const UNPAID_IN_TRANSIT = {
-      paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+      balanceKop: { gt: 0 },
       status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
     };
 
@@ -2250,13 +2247,14 @@ describe('OrderRepository', () => {
       expect(where.deletedAt).toBeNull();
     });
 
-    it('does not count a partially refunded order as unpaid', async () => {
+    it('reads the ledger balance, never a payment-status list (R2 A4)', async () => {
       prismaMock.$transaction.mockResolvedValue([0, []]);
 
       await repository.findAll({ unpaidInTransit: true });
 
       const where = prismaMock.order.count.mock.calls[0][0].where;
-      expect(where.AND[0].paymentStatus.notIn).toContain(PaymentStatus.PARTIALLY_REFUNDED);
+      expect(where.AND[0].balanceKop).toEqual({ gt: 0 });
+      expect(where.AND[0].paymentStatus).toBeUndefined();
     });
 
     it('composes the unpaidInTransit filter with the created-at date range', async () => {
@@ -2551,7 +2549,7 @@ describe('OrderRepository', () => {
       });
 
       expect(where.AND).toContainEqual({
-        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+        balanceKop: { gt: 0 },
         status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
       });
       expect(where.AND).toContainEqual({ paymentStatus: PaymentStatus.PENDING });
@@ -2763,12 +2761,12 @@ describe('OrderRepository', () => {
       jest.useRealTimers();
     });
 
-    it('«Борг» is DELIVERED and paid neither fully nor back', async () => {
+    it('«Борг» is a DELIVERED order with a positive ledger balance (R2 A4)', async () => {
       const where = await whereFor({ hasDebt: true });
 
       expect(where.AND).toContainEqual({
+        balanceKop: { gt: 0 },
         status: OrderStatus.DELIVERED,
-        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
       });
     });
 
@@ -2842,12 +2840,12 @@ describe('OrderRepository', () => {
       const where = await whereFor({ unpaidInTransit: true, hasDebt: true });
 
       expect(where.AND).toContainEqual({
-        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+        balanceKop: { gt: 0 },
         status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
       });
       expect(where.AND).toContainEqual({
+        balanceKop: { gt: 0 },
         status: OrderStatus.DELIVERED,
-        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
       });
     });
 

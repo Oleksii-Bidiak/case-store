@@ -7,6 +7,8 @@ import {
   ReturnRepairStep,
   ReturnStatus,
 } from '@prisma/client';
+import { centsToString } from '../../../addon-service';
+import { ledgerTotals } from '../../order-money';
 import type {
   ReturnActorRow,
   ReturnDecisionEventRow,
@@ -257,14 +259,21 @@ export class ReturnEntity {
 
   @ApiProperty({
     description:
-      'Legacy pre-R2 amount, no longer written — payouts live on the order ledger ' +
-      '(GET /admin/orders/:orderId/money → returns[]). Kept one release for old rows.',
+      'What was paid out on this return, in hryvnias as a string — Σ of its payouts on the ' +
+      'order money ledger, net of reversals, voided ignored (R2, TASK-2339); null while ' +
+      'nothing was paid out. The legacy returns.refunded_amount column is no longer read.',
     type: String,
     nullable: true,
     example: '499.00',
-    deprecated: true,
   })
   refundedAmount!: string | null;
+
+  @ApiProperty({
+    description: 'Admin only. The same payouts as refundedAmount, integer kopecks (R2, TASK-2339).',
+    required: false,
+    example: 49900,
+  })
+  paidOutKop?: number;
 
   @ApiProperty({
     description:
@@ -441,6 +450,8 @@ export class ReturnEntity {
     options: { includeInternal?: boolean } = {},
   ): ReturnEntity {
     const admin = options.includeInternal === true;
+    // TASK-2339: payouts from the ledger; a fixture without them paid nothing.
+    const paidOutKop = ledgerTotals(row.moneyEntries ?? []).refundedKop;
     const entity = new ReturnEntity();
     entity.id = row.id;
     entity.orderId = row.orderId;
@@ -465,6 +476,7 @@ export class ReturnEntity {
       }
       if (row.order?.createdAt) entity.orderCreatedAt = row.order.createdAt;
       entity.creditKop = row.creditKop ?? null;
+      entity.paidOutKop = paidOutKop;
       entity.creditReason = row.creditReason ?? null;
     }
     if (row.repairEvents) {
@@ -475,7 +487,7 @@ export class ReturnEntity {
     entity.requestedAt = row.requestedAt;
     entity.resolvedAt = row.resolvedAt;
     entity.restockedAt = row.restockedAt;
-    entity.refundedAmount = row.refundedAmount ? row.refundedAmount.toString() : null;
+    entity.refundedAmount = paidOutKop > 0 ? centsToString(paidOutKop) : null;
     entity.items = row.items.map((item) => ReturnItemEntity.fromPrisma(item));
     return entity;
   }

@@ -10,6 +10,7 @@ import {
   OrderStatus,
   Payment,
   PaymentAttemptStatus,
+  PaymentMethod,
   PaymentStatus,
   Prisma,
 } from '@prisma/client';
@@ -17,6 +18,7 @@ import type { PinoLogger } from 'nestjs-pino';
 import type { OrderEntity } from '../order';
 import { DeliveryOrderErrorCode, OrderService } from '../order';
 import type { Clock } from './payment.clock';
+import { PaymentErrorCode } from './payment.errors';
 import type { PaymentProvider } from './payment.port';
 import { PaymentRepository } from './payment.repository';
 import { PaymentService } from './payment.service';
@@ -216,6 +218,36 @@ describe('PaymentService', () => {
         buildService().createCheckout(makeOrder({ paymentStatus: PaymentStatus.PAID })),
       ).rejects.toThrow(ConflictException);
       expect(repositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    // TASK-2340 (R2 A4): an online attempt always charges the whole total, so it
+    // must not open where money already came in or where the customer pays by
+    // bank transfer — that is how a prepaid order got charged twice.
+    it('refuses an order paid by bank transfer (409 PAYMENT_CHECKOUT_BANK_TRANSFER)', async () => {
+      const attempt = buildService().createCheckout(
+        makeOrder({ paymentMethod: PaymentMethod.BANK_TRANSFER }),
+      );
+      await expect(attempt).rejects.toThrow(ConflictException);
+      await expect(attempt).rejects.toMatchObject({
+        response: { error: PaymentErrorCode.CHECKOUT_BANK_TRANSFER },
+      });
+      expect(repositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an order with money already in (409 PAYMENT_CHECKOUT_PARTLY_PAID)', async () => {
+      const attempt = buildService().createCheckout(
+        makeOrder({ paymentStatus: PaymentStatus.PARTIALLY_PAID, paidKop: 20_000 }),
+      );
+      await expect(attempt).rejects.toThrow(ConflictException);
+      await expect(attempt).rejects.toMatchObject({
+        response: { error: PaymentErrorCode.CHECKOUT_PARTLY_PAID },
+      });
+      expect(repositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('still opens an attempt for an unpaid online order (paidKop 0)', async () => {
+      await buildService().createCheckout(makeOrder({ paidKop: 0 }));
+      expect(repositoryMock.create).toHaveBeenCalled();
     });
 
     it('refuses to open an attempt for a cancelled order', async () => {

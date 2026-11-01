@@ -249,4 +249,9 @@ describe("paymentMethodTitle", () => {
       expect(paymentMethodTitle(option.method)).toBe(option.title);
     }
   });
+
+  // R2 (TASK-2047): a method the storefront never offers, set by the operator.
+  it("names an operator-only bank transfer on the shopper's own order", () => {
+    expect(paymentMethodTitle("BANK_TRANSFER")).toBe("Переказ на рахунок");
+  });
 });

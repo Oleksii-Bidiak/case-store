@@ -149,7 +149,8 @@ describe('order-money', () => {
       ).toBe(-40_000);
     });
 
-    it.each([OrderStatus.CANCELLED, OrderStatus.REFUNDED])(
+    // REFUNDED (derived since TASK-1969) has its own rule — order-money-refunded.spec.ts.
+    it.each([OrderStatus.CANCELLED])(
       'a %s order owes nothing for goods: unpaid → 0, paid → the shop owes it all back',
       (orderStatus) => {
         expect(

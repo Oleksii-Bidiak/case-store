@@ -9,7 +9,7 @@ import { SALES_BASE_STATUSES } from './sales-base';
 export interface SalesTotals {
   /** Σ `orders.total` of the sales base created in the range. */
   sales: number;
-  /** Money that went back in the range — returns plus the full-refund residual. */
+  /** Money that went back in the range — the ledger's OUT entries, net of reversals. */
   refunds: number;
   /** Orders of the sales base created in the range. */
   orders: number;
@@ -171,59 +171,27 @@ function saleEvents(): Prisma.Sql {
 }
 
 /**
- * Every refund the shop made, one row per event: `(at, amount)`.
+ * Every refund the shop made, one row per ledger entry: `(at, amount)` in
+ * hryvnias (R2 A4, TASK-2047 / TASK-1500).
  *
- * (a) **Returns.** A return in REFUNDED with an amount and a resolution date is
- *     money sent back on `resolved_at`. A return in any other status is goods in
- *     transit, not money; one without an amount or a date cannot be put on a day
- *     and is left out rather than guessed.
+ * The order money ledger is the one record of money going back: every OUT entry
+ * — a cash or transfer payout, a LiqPay refund (requested or confirmed, partial
+ * or full) — dated by `occurred_at`, when the money actually moved. A reversal
+ * (сторно) is subtracted on ITS own day, so a month already reported is never
+ * rewritten (the same rule that keeps a refund out of its sale's month). A
+ * voided LiqPay request never moved money and is left out.
  *
- * (b) **The full-refund residual.** Three paths move an order's payment to
- *     REFUNDED without creating a Return: a cancellation after payment, LiqPay's
- *     REFUNDED callback, and an operator's manual payment-status change. Counting
- *     returns alone would leave that money in the net forever. So an order whose
- *     CURRENT payment is REFUNDED contributes what its REFUNDED returns did not
- *     already cover — `total − Σ returns`, floored at 0 — which is 0 for a full
- *     refund done through Returns (no double count) and the whole total for a
- *     cancellation after payment.
- *
- *     It is dated by the order's LATEST history row that MOVED the payment into
- *     REFUNDED (a mark that was corrected back to PAID and set again counts from
- *     the second time; a mark corrected away for good fails the "current
- *     payment is REFUNDED" test and contributes nothing). Two kinds of row are
- *     not such a move and are skipped:
- *     - a row with a `note` — an event the shop recorded but did not act on;
- *     - a `REFUNDED → REFUNDED` row — `applyPaymentOutcome` records a provider
- *       event it REFUSED as `current → current` with no note (e.g. a late
- *       "success" on an order already refunded). Taken as the latest move, it
- *       would re-date an old refund to the day the stray callback arrived.
- *     An order with no qualifying row (history older than TASK-251, or a row
- *     written by hand) has no day to be put on and contributes nothing.
+ * This replaces the pre-R2 rule — REFUNDED Return rows plus a "full-refund
+ * residual" dated from the payment-status history — which could not see partial
+ * LiqPay refunds at all; the R2 backfill wrote those residuals as entries.
  */
 function refundEvents(): Prisma.Sql {
   return Prisma.sql`
-    SELECT r.resolved_at AS at, r.refunded_amount AS amount
-    FROM returns r
-    WHERE r.status = 'REFUNDED'
-      AND r.refunded_amount IS NOT NULL
-      AND r.resolved_at IS NOT NULL
-    UNION ALL
-    SELECT moved.at, GREATEST(o.total - COALESCE(returned.amount, 0), 0) AS amount
-    FROM orders o
-    JOIN LATERAL (
-      SELECT MAX(h.changed_at) AS at
-      FROM order_status_history h
-      WHERE h.order_id = o.id
-        AND h.change_type = 'PAYMENT_STATUS'
-        AND h.to_payment_status = 'REFUNDED'
-        AND h.from_payment_status IS DISTINCT FROM 'REFUNDED'
-        AND h.note IS NULL
-    ) moved ON moved.at IS NOT NULL
-    LEFT JOIN LATERAL (
-      SELECT SUM(r.refunded_amount) AS amount
-      FROM returns r
-      WHERE r.order_id = o.id AND r.status = 'REFUNDED'
-    ) returned ON TRUE
-    WHERE o.payment_status = 'REFUNDED'
+    SELECT m.occurred_at AS at,
+           (CASE WHEN m.reversal_of_id IS NULL THEN m.amount_kop ELSE -m.amount_kop END)::numeric
+             / 100 AS amount
+    FROM order_money_entries m
+    WHERE m.direction = 'OUT'
+      AND m.voided_at IS NULL
   `;
 }

@@ -1,5 +1,6 @@
 import { OrderStatus, PaymentStatus } from '@prisma/client';
 import {
+  DERIVED_REFUNDED_FROM,
   ORDER_TRANSITIONS,
   PAYMENT_TRANSITIONS,
   allowedTransitions,
@@ -91,29 +92,23 @@ describe('order-state-machine (TASK-332)', () => {
       expect(canTransition(from, OrderStatus.CANCELLED)).toBe(true);
     });
 
-    it('allows the terminal pair REFUNDED → CANCELLED', () => {
-      expect(canTransition(OrderStatus.REFUNDED, OrderStatus.CANCELLED)).toBe(true);
+    it('rejects REFUNDED → CANCELLED (REFUNDED is derived and terminal, TASK-1969)', () => {
+      expect(canTransition(OrderStatus.REFUNDED, OrderStatus.CANCELLED)).toBe(false);
     });
   });
 
   // ─── Refund ─────────────────────────────────────────────────────────────────
-  // Money can only come back after it plausibly moved: the goods left the
-  // warehouse, or the order was cancelled after being paid for.
+  // TASK-1969 (R2 A4): REFUNDED is derived from the money ledger
+  // (`OrderMoneyRepository.recompute`), never set by a writer of this table.
 
   describe('refund', () => {
-    it.each([OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED])(
-      'allows %s → REFUNDED',
-      (from) => {
-        expect(canTransition(from, OrderStatus.REFUNDED)).toBe(true);
-      },
-    );
+    it.each(ALL_STATUSES)('rejects %s → REFUNDED (derived, never set by hand)', (from) => {
+      expect(canTransition(from, OrderStatus.REFUNDED)).toBe(false);
+    });
 
-    it.each([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
-      'rejects %s → REFUNDED (nothing shipped, cancel it instead)',
-      (from) => {
-        expect(canTransition(from, OrderStatus.REFUNDED)).toBe(false);
-      },
-    );
+    it('derives REFUNDED only from SHIPPED and DELIVERED', () => {
+      expect([...DERIVED_REFUNDED_FROM]).toEqual([OrderStatus.SHIPPED, OrderStatus.DELIVERED]);
+    });
   });
 
   // ─── Revive ─────────────────────────────────────────────────────────────────
@@ -139,13 +134,7 @@ describe('order-state-machine (TASK-332)', () => {
   // ─── REFUNDED is (almost) terminal ──────────────────────────────────────────
 
   describe('REFUNDED', () => {
-    it.each([
-      OrderStatus.PENDING,
-      OrderStatus.CONFIRMED,
-      OrderStatus.PROCESSING,
-      OrderStatus.SHIPPED,
-      OrderStatus.DELIVERED,
-    ])('rejects REFUNDED → %s (the money is already back with the customer)', (to) => {
+    it.each(ALL_STATUSES)('rejects REFUNDED → %s (only a reversal of a payout undoes it)', (to) => {
       expect(canTransition(OrderStatus.REFUNDED, to)).toBe(false);
     });
   });
@@ -184,7 +173,7 @@ describe('order-state-machine (TASK-332)', () => {
   // A guard against a future edit that strands a status: every status must be
   // reachable from PENDING (where every order starts).
 
-  it('makes every status reachable from PENDING', () => {
+  it('makes every status but the derived REFUNDED reachable from PENDING', () => {
     const seen = new Set<OrderStatus>([OrderStatus.PENDING]);
     const queue: OrderStatus[] = [OrderStatus.PENDING];
 
@@ -197,7 +186,9 @@ describe('order-state-machine (TASK-332)', () => {
       }
     }
 
-    expect([...seen].sort()).toEqual([...ALL_STATUSES].sort());
+    expect([...seen].sort()).toEqual(
+      ALL_STATUSES.filter((status) => status !== OrderStatus.REFUNDED).sort(),
+    );
   });
 });
 

@@ -25,7 +25,11 @@ import {
   OrderService,
 } from '../order';
 import { PAYMENT_CLOCK, type Clock } from './payment.clock';
-import { refundExceedsBalanceError } from './payment.errors';
+import {
+  checkoutBankTransferError,
+  checkoutPartlyPaidError,
+  refundExceedsBalanceError,
+} from './payment.errors';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment.port';
 import { isDuplicateEventError, PaymentRepository } from './payment.repository';
 import { PaymentOutcome, type PaymentApplyResult, type PaymentEventInput } from './payment.types';
@@ -93,6 +97,16 @@ export class PaymentService implements ProviderRefundPort {
 
     if (order.paymentStatus === PaymentStatus.PAID) {
       throw new ConflictException('Order is already paid');
+    }
+
+    // TASK-2340 (R2 A4): an attempt charges the WHOLE total. A bank-transfer
+    // order is paid outside LiqPay, and an order with money already in
+    // (PARTIALLY_PAID, or anything paid since) would be charged twice.
+    if (order.paymentMethod === PaymentMethod.BANK_TRANSFER) {
+      throw checkoutBankTransferError();
+    }
+    if ((order.paidKop ?? 0) > 0) {
+      throw checkoutPartlyPaidError();
     }
 
     if (!PAYABLE_STATUSES.has(order.status)) {

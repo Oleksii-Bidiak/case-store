@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, ReturnDecision, ReturnStatus } from '@prisma/client';
+import { MoneyDirection, Prisma, ReturnDecision, ReturnStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma';
 import {
   creditNotRefundError,
@@ -51,6 +51,12 @@ const RETURN_LINES_INCLUDE = {
         },
       },
     },
+  },
+  // TASK-2339 (R2 A4): what was paid out on the return — Σ of these, net of
+  // reversals, voided ignored (`ledgerTotals`). Never the legacy column.
+  moneyEntries: {
+    where: { direction: MoneyDirection.OUT },
+    select: { direction: true, amountKop: true, reversalOfId: true, voidedAt: true },
   },
 } satisfies Prisma.ReturnInclude;
 
@@ -135,10 +141,14 @@ const SEARCH_PHONE_MIN_DIGITS = 3;
  *    different order on every query. Paginating over an unstable ordering makes
  *    rows appear on two pages and others on none — an operator working a queue
  *    would see a return vanish without anyone having touched it.
- * 2. **NULL refunds sort last in both directions.** Postgres puts NULLs first on
- *    DESC, so "sort by refunded, biggest first" would otherwise open with a wall
- *    of unresolved returns that have no amount at all — the opposite of what the
- *    click asked for.
+ * 2. **NULL amounts sort last in both directions.** Postgres puts NULLs first on
+ *    DESC, so "biggest first" would otherwise open with a wall of returns that
+ *    have no amount at all — the opposite of what the click asked for.
+ *
+ * The money column (`sortBy=refundedAmount`, name kept for the API) orders by
+ * «До повернення» — `creditKop` — since R2 A4 (TASK-2339): the legacy
+ * `refunded_amount` column is no longer written, and the payouts are a sum over
+ * the ledger, not a column Prisma can order by.
  *
  * The `sortBy` value is already allow-listed by `@IsIn` at the boundary; the
  * fallback here is the defensive default for internal callers.
@@ -151,9 +161,7 @@ function buildReturnOrderBy(
   const field = sortBy && RETURN_SORT_FIELDS.includes(sortBy) ? sortBy : DEFAULT_SORT_BY;
 
   const primary: Prisma.ReturnOrderByWithRelationInput =
-    field === 'refundedAmount'
-      ? { refundedAmount: { sort: order, nulls: 'last' } }
-      : { [field]: order };
+    field === 'refundedAmount' ? { creditKop: { sort: order, nulls: 'last' } } : { [field]: order };
 
   return [primary, { id: 'asc' }];
 }

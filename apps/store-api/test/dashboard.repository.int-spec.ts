@@ -3,11 +3,12 @@ import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import {
+  MoneyDirection,
+  MoneyEntryKind,
   NotificationChannel,
   NotificationOutboxStatus,
   OrderStatus,
   PaymentStatus,
-  ReturnStatus,
   OrderHistoryChangeType,
   ReviewTextStatus,
 } from '@prisma/client';
@@ -55,6 +56,22 @@ describe('DashboardRepository (integration)', () => {
   // Only the PAID order counts toward revenue: qty 3 @ $10 = $30.
   const EXPECTED_TOP_REVENUE = 30;
 
+  /**
+   * Wipe every order-side row, children before parents — each of these is
+   * Restrict on the next: ledger reversals → ledger rows → returns (their lines
+   * and events cascade) → order lines → payment attempts → orders. The old
+   * wipe started at order lines, so a `return_items` row a previous suite left
+   * behind broke this whole file with an FK error (order-dependent flake, R2 A3).
+   */
+  async function wipeOrders(): Promise<void> {
+    await prisma.orderMoneyEntry.deleteMany({ where: { reversalOfId: { not: null } } });
+    await prisma.orderMoneyEntry.deleteMany({});
+    await prisma.return.deleteMany({});
+    await prisma.orderItem.deleteMany({});
+    await prisma.payment.deleteMany({});
+    await prisma.order.deleteMany({});
+  }
+
   beforeAll(async () => {
     const url = process.env.DATABASE_URL ?? '';
     if (!/test/i.test(url)) {
@@ -73,10 +90,7 @@ describe('DashboardRepository (integration)', () => {
     repo = moduleRef.get(DashboardRepository);
 
     // Deterministic revenue aggregates: start from zero orders.
-    await prisma.orderItem.deleteMany({});
-    await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-    await prisma.payment.deleteMany({});
-    await prisma.order.deleteMany({});
+    await wipeOrders();
 
     const suffix = randomUUID();
 
@@ -162,6 +176,8 @@ describe('DashboardRepository (integration)', () => {
         paymentStatus: PaymentStatus.PENDING,
         subtotal: '40.00',
         total: '40.00',
+        // R2 A4: what the ledger recompute writes for an unpaid 40 ₴ order.
+        balanceKop: 4_000,
         items: { create: [{ productId: unpaidProductId, quantity: 2, price: '20.00' }] },
       },
     });
@@ -183,10 +199,7 @@ describe('DashboardRepository (integration)', () => {
     if (!prisma) {
       return;
     }
-    await prisma.orderItem.deleteMany({});
-    await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-    await prisma.payment.deleteMany({});
-    await prisma.order.deleteMany({});
+    await wipeOrders();
     await prisma.product.deleteMany({
       where: {
         id: { in: [paidProductId, unpaidProductId, cancelledProductId, soldOutProductId] },
@@ -321,7 +334,7 @@ describe('DashboardRepository (integration)', () => {
   });
 
   describe('getRevenueMetrics — unrealized revenue', () => {
-    it('sums Order.total for active unpaid orders only, leaving earned revenue untouched (TASK-137)', async () => {
+    it('sums the balance still owed on active orders only, leaving earned revenue untouched (TASK-137, R2 A4)', async () => {
       const revenue = await repo.getRevenueMetrics();
 
       // Only the CONFIRMED + PENDING order (qty 2 @ $20 = $40) is unrealized.
@@ -373,10 +386,7 @@ describe('DashboardRepository (integration)', () => {
    */
   describe('getRevenueMetrics — average order value', () => {
     beforeAll(async () => {
-      await prisma.orderItem.deleteMany({});
-      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-      await prisma.payment.deleteMany({});
-      await prisma.order.deleteMany({});
+      await wipeOrders();
 
       // Two PAID orders in the window: $100 + $50 = $150 over 2 orders → AOV $75.
       await prisma.order.create({
@@ -415,9 +425,7 @@ describe('DashboardRepository (integration)', () => {
     });
 
     it('returns 0 (no divide-by-zero) when there are no paid orders in the window', async () => {
-      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-      await prisma.payment.deleteMany({});
-      await prisma.order.deleteMany({});
+      await wipeOrders();
       const revenue = await repo.getRevenueMetrics();
       expect(revenue.averageOrderValueLast30Days).toBe(0);
     });
@@ -434,10 +442,7 @@ describe('DashboardRepository (integration)', () => {
 
     beforeAll(async () => {
       sales = app.get(SalesRepository);
-      await prisma.orderItem.deleteMany({});
-      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-      await prisma.payment.deleteMany({});
-      await prisma.order.deleteMany({});
+      await wipeOrders();
 
       // 1 000 ₴ with 200 ₴ returned: stays in sales in full, the 200 is a refund.
       ({ id: partialOrderId } = await prisma.order.create({
@@ -449,12 +454,14 @@ describe('DashboardRepository (integration)', () => {
           total: '1000.00',
         },
       }));
-      await prisma.return.create({
+      // R2 A4: refunds are the ledger's OUT entries, dated when the money moved.
+      await prisma.orderMoneyEntry.create({
         data: {
           orderId: partialOrderId,
-          status: ReturnStatus.REFUNDED,
-          refundedAmount: '200.00',
-          resolvedAt: new Date(),
+          direction: MoneyDirection.OUT,
+          kind: MoneyEntryKind.CASH_REFUND,
+          amountKop: 20_000,
+          occurredAt: new Date(),
         },
       });
 
@@ -474,8 +481,8 @@ describe('DashboardRepository (integration)', () => {
     });
 
     afterAll(async () => {
-      // Returns are Restrict on the order: they go first.
-      await prisma.return.deleteMany({ where: { orderId: partialOrderId } });
+      // Ledger rows are Restrict on the order: they go first.
+      await prisma.orderMoneyEntry.deleteMany({ where: { orderId: partialOrderId } });
       await prisma.order.deleteMany({ where: { id: { in: [partialOrderId, earlyOrderId] } } });
     });
 
@@ -529,10 +536,7 @@ describe('DashboardRepository (integration)', () => {
     let singleUserId: string;
 
     beforeAll(async () => {
-      await prisma.orderItem.deleteMany({});
-      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-      await prisma.payment.deleteMany({});
-      await prisma.order.deleteMany({});
+      await wipeOrders();
 
       const suffix = randomUUID();
       const repeatUser = await prisma.user.create({
@@ -607,9 +611,7 @@ describe('DashboardRepository (integration)', () => {
     });
 
     afterAll(async () => {
-      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-      await prisma.payment.deleteMany({});
-      await prisma.order.deleteMany({});
+      await wipeOrders();
       await prisma.user.deleteMany({
         where: { id: { in: [repeatUserId, mixedUserId, singleUserId] } },
       });
@@ -640,10 +642,7 @@ describe('DashboardRepository (integration)', () => {
   describe('getNeedsAction', () => {
     beforeAll(async () => {
       // Deterministic baseline — wipe every table the four counters read.
-      await prisma.orderItem.deleteMany({});
-      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-      await prisma.payment.deleteMany({});
-      await prisma.order.deleteMany({});
+      await wipeOrders();
       await prisma.review.deleteMany({});
       await prisma.notificationOutbox.deleteMany({});
 
@@ -656,6 +655,7 @@ describe('DashboardRepository (integration)', () => {
           paymentStatus: PaymentStatus.PENDING,
           subtotal: '10.00',
           total: '10.00',
+          balanceKop: 1_000,
         },
       });
       await prisma.order.create({
@@ -665,6 +665,19 @@ describe('DashboardRepository (integration)', () => {
           paymentStatus: PaymentStatus.PENDING,
           subtotal: '20.00',
           total: '20.00',
+          balanceKop: 2_000,
+        },
+      });
+      // R2 A4: a delivered order paid in full with part of it refunded owes
+      // nothing (balance 0) — not "in transit", whatever its payment label.
+      await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+          subtotal: '25.00',
+          total: '25.00',
+          balanceKop: 0,
         },
       });
       await prisma.order.create({
@@ -767,7 +780,8 @@ describe('DashboardRepository (integration)', () => {
       // Only the review whose TEXT is still PENDING. Both rows have an invisible
       // rating; if the counter still looked at rating visibility it would say 2.
       expect(needsAction.pendingReviews).toBe(1);
-      // PENDING + CONFIRMED-unpaid; the CANCELLED order is excluded.
+      // PENDING + CONFIRMED-unpaid (balance > 0); the CANCELLED and the settled
+      // partly refunded orders are excluded.
       expect(needsAction.unpaidInTransit).toBe(2);
       // Only the FAILED EMAIL outbox row; the SENT row and the FAILED Telegram
       // rows are excluded (TASK-1090 — before it this said 3).
@@ -786,10 +800,7 @@ describe('DashboardRepository (integration)', () => {
   describe('getNeedsAction — pendingOver48h boundary (TASK-251)', () => {
     beforeAll(async () => {
       await prisma.orderStatusHistory.deleteMany({});
-      await prisma.orderItem.deleteMany({});
-      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-      await prisma.payment.deleteMany({});
-      await prisma.order.deleteMany({});
+      await wipeOrders();
 
       const now = Date.now();
       // 49h old → past the 48h threshold, counts.
@@ -817,9 +828,7 @@ describe('DashboardRepository (integration)', () => {
     });
 
     afterAll(async () => {
-      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-      await prisma.payment.deleteMany({});
-      await prisma.order.deleteMany({});
+      await wipeOrders();
     });
 
     it('counts only PENDING orders older than 48 hours (49h yes, 47h no)', async () => {
@@ -840,10 +849,7 @@ describe('DashboardRepository (integration)', () => {
   describe('getSummary — average processing hours (TASK-251)', () => {
     beforeAll(async () => {
       await prisma.orderStatusHistory.deleteMany({});
-      await prisma.orderItem.deleteMany({});
-      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-      await prisma.payment.deleteMany({});
-      await prisma.order.deleteMany({});
+      await wipeOrders();
 
       // (a) Order created 10 days ago, first shipped exactly 48h later.
       const created = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
@@ -883,9 +889,7 @@ describe('DashboardRepository (integration)', () => {
 
     afterAll(async () => {
       await prisma.orderStatusHistory.deleteMany({});
-      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-      await prisma.payment.deleteMany({});
-      await prisma.order.deleteMany({});
+      await wipeOrders();
     });
 
     it('averages creation→first-SHIPPED only for shipped orders (48h)', async () => {
@@ -896,9 +900,7 @@ describe('DashboardRepository (integration)', () => {
 
     it('returns 0 when no order has shipped yet', async () => {
       await prisma.orderStatusHistory.deleteMany({});
-      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
-      await prisma.payment.deleteMany({});
-      await prisma.order.deleteMany({});
+      await wipeOrders();
       await prisma.order.create({
         data: {
           userId,

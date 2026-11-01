@@ -19,12 +19,15 @@ import { PrismaService } from '../prisma';
 import {
   canReverse,
   deriveBalance,
+  deriveOrderStatus,
   derivePaymentStatus,
   directionOf,
   ledgerTotals,
   returnStatusAfterPayouts,
   reversalDraft,
+  type LedgerRow,
 } from './order-money';
+import { DERIVED_REFUNDED_FROM } from './order-state-machine';
 import {
   moneyEntryInvalidError,
   moneyReceiptReversalBelowRefundedError,
@@ -157,6 +160,8 @@ export interface MoneyTotals {
   returnCreditKop: number;
   balanceKop: number;
   paymentStatus: PaymentStatus;
+  /** The order status after the derivation (TASK-1969). */
+  status: OrderStatus;
 }
 
 /**
@@ -313,13 +318,37 @@ export class OrderMoneyRepository {
     tx: Tx,
     orderId: string,
     actorId: string | null,
-    options: { note?: OrderHistoryNote } = {},
+    options: {
+      note?: OrderHistoryNote;
+      /**
+       * This transaction took a payout back (a reversal of an OUT entry, or a
+       * void of a REQUESTED refund) — the only event that may move a REFUNDED
+       * order back (`deriveOrderStatus`, TASK-1969).
+       */
+      payoutUndone?: boolean;
+    } = {},
   ): Promise<MoneyTotals> {
     const order = await tx.order.findUniqueOrThrow({
       where: { id: orderId },
       select: { total: true, status: true, paymentStatus: true },
     });
-    const { paidKop, refundedKop } = await this.totalsFromLedger(tx, orderId);
+    const rows = await tx.orderMoneyEntry.findMany({
+      where: { orderId },
+      select: {
+        direction: true,
+        amountKop: true,
+        reversalOfId: true,
+        voidedAt: true,
+        returnId: true,
+      },
+    });
+    const { paidKop, refundedKop } = ledgerTotals(rows);
+    const status = await this.deriveStatus(tx, order.status, {
+      orderId,
+      refundedKop,
+      rows,
+      payoutUndone: options.payoutUndone === true,
+    });
     // A refund label the backfill could not put an amount behind is kept until
     // real money out is recorded (see `PaymentStatusInput.legacyRefundLabel`).
     const legacyUnknown =
@@ -351,13 +380,27 @@ export class OrderMoneyRepository {
       returnCreditKop,
       paidKop,
       refundedKop,
-      orderStatus: order.status,
+      orderStatus: status,
     });
 
     await tx.order.update({
       where: { id: orderId },
-      data: { paidKop, refundedKop, returnCreditKop, balanceKop, paymentStatus },
+      data: { paidKop, refundedKop, returnCreditKop, balanceKop, paymentStatus, status },
     });
+
+    // TASK-1969: the order's own REFUNDED moved with the money — one STATUS row,
+    // authored by whoever wrote the money (null for LiqPay / the system).
+    if (status !== order.status) {
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: order.status,
+          toStatus: status,
+          changedBy: actorId,
+        },
+      });
+    }
 
     if (paymentStatus !== order.paymentStatus) {
       await tx.orderStatusHistory.create({
@@ -372,7 +415,67 @@ export class OrderMoneyRepository {
       });
     }
 
-    return { paidKop, refundedKop, returnCreditKop, balanceKop, paymentStatus };
+    return { paidKop, refundedKop, returnCreditKop, balanceKop, paymentStatus, status };
+  }
+
+  /**
+   * The order status its ledger implies (`deriveOrderStatus`, TASK-1969). Reads
+   * the lines and the REFUND-decided returns only when the answer can change:
+   * a SHIPPED/DELIVERED order, or a REFUNDED one after a payout was undone.
+   */
+  private async deriveStatus(
+    tx: Tx,
+    current: OrderStatus,
+    input: {
+      orderId: string;
+      refundedKop: number;
+      rows: ReadonlyArray<LedgerRow & { returnId: string | null }>;
+      payoutUndone: boolean;
+    },
+  ): Promise<OrderStatus> {
+    const mayMove =
+      DERIVED_REFUNDED_FROM.includes(current) ||
+      (current === OrderStatus.REFUNDED && input.payoutUndone);
+    if (!mayMove) {
+      return current;
+    }
+    const { orderId, refundedKop, rows, payoutUndone } = input;
+    const lines = await tx.orderItem.findMany({
+      where: { orderId },
+      select: { id: true, quantity: true },
+    });
+    const returns = await tx.return.findMany({
+      where: { orderId, decision: ReturnDecision.REFUND },
+      select: {
+        id: true,
+        creditKop: true,
+        items: { select: { orderItemId: true, quantity: true } },
+      },
+    });
+    const lastIntoRefunded =
+      current === OrderStatus.REFUNDED
+        ? await tx.orderStatusHistory.findFirst({
+            where: {
+              orderId,
+              changeType: OrderHistoryChangeType.STATUS,
+              toStatus: OrderStatus.REFUNDED,
+            },
+            orderBy: [{ changedAt: 'desc' }, { id: 'desc' }],
+            select: { fromStatus: true },
+          })
+        : null;
+    return deriveOrderStatus({
+      orderStatus: current,
+      refundedKop,
+      lines,
+      refundReturns: returns.map((ret) => ({
+        creditKop: ret.creditKop,
+        items: ret.items,
+        paidOutKop: ledgerTotals(rows.filter((row) => row.returnId === ret.id)).refundedKop,
+      })),
+      payoutUndone,
+      refundedFrom: lastIntoRefunded?.fromStatus ?? null,
+    });
   }
 
   // ── The LiqPay path (TASK-1500 / TASK-2047, R2 step A2) ────────────────────

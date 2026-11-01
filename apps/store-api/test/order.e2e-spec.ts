@@ -1141,6 +1141,37 @@ describe('OrderController (e2e)', () => {
       expect(response.body.data.id).toBe('order-e2e-1');
     });
 
+    // R2 A4 (TASK-2047 / TASK-2340): the storefront renders «Сплачено X з Y» for a
+    // partly paid order from these totals — integer kopecks, never the journal.
+    it('carries the ledger totals in kopecks for the storefront (R2 A4)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({
+          paymentStatus: PaymentStatus.PARTIALLY_PAID,
+          paidKop: 2_000,
+          refundedKop: 0,
+          returnCreditKop: 0,
+          balanceKop: 3_998,
+        }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/api/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data).toMatchObject({
+        paymentStatus: PaymentStatus.PARTIALLY_PAID,
+        total: '59.98',
+        paidKop: 2_000,
+        refundedKop: 0,
+        balanceKop: 3_998,
+        refundedAfterCancel: false,
+      });
+      expect(response.body.data).not.toHaveProperty('moneyEntries');
+      expect(response.body.data).not.toHaveProperty('refundedTotal');
+    });
+
     it('should return 404 when the order belongs to another user (IDOR)', async () => {
       const token = generateAccessToken(userB.id, userB.role);
       orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: userA.id }));
@@ -1554,6 +1585,37 @@ describe('OrderController (e2e)', () => {
       expect(response.body.data.userId).toBe(userB.id);
     });
 
+    // R2 A4 (TASK-1969 / TASK-1970): the admin card reads money from the ledger.
+    it('carries the ledger money and «Скасовано · кошти повернено» (R2 A4)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.CANCELLED,
+          paymentStatus: PaymentStatus.REFUNDED,
+          paidKop: 5_998,
+          refundedKop: 5_998,
+          returnCreditKop: 0,
+          balanceKop: 0,
+          returns: [],
+        }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data).toMatchObject({
+        status: OrderStatus.CANCELLED,
+        paidKop: 5_998,
+        refundedKop: 5_998,
+        returnCreditKop: 0,
+        balanceKop: 0,
+        refundedAfterCancel: true,
+        refundedTotal: '59.98',
+      });
+    });
+
     it('should still identify a guest order that has no email (TASK-426)', async () => {
       const token = generateAccessToken(admin.id, admin.role);
       // The order an operator takes over the phone: a name and a number, no
@@ -1891,6 +1953,28 @@ describe('OrderController (e2e)', () => {
   // ─── PATCH /api/admin/orders/:orderId/status (admin) ────────────────────────────
 
   describe('PATCH /api/admin/orders/:orderId/status', () => {
+    // TASK-1969 (R2 A4): REFUNDED is derived from the money ledger; no operator
+    // sets it — not from DELIVERED, not from CANCELLED.
+    it.each([OrderStatus.DELIVERED, OrderStatus.SHIPPED, OrderStatus.CANCELLED])(
+      'refuses REFUNDED as a target from %s (409 ORDER_TRANSITION_INVALID) and writes nothing',
+      async (from) => {
+        const token = generateAccessToken(admin.id, admin.role);
+        orderRepositoryMock.findById.mockResolvedValue(
+          makeOrder({ status: from, paymentStatus: PaymentStatus.PAID }),
+        );
+
+        const response = await request(app.getHttpServer())
+          .patch('/api/admin/orders/order-e2e-1/status')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ status: OrderStatus.REFUNDED })
+          .expect(409);
+
+        expect(response.body.error).toBe('ORDER_TRANSITION_INVALID');
+        expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+        expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      },
+    );
+
     it('should update the order status for an admin (200)', async () => {
       const token = generateAccessToken(admin.id, admin.role);
       orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.CONFIRMED }));
@@ -2176,9 +2260,9 @@ describe('OrderController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      // ORDER_TRANSITIONS[CANCELLED] is [PENDING, CONFIRMED, PROCESSING, REFUNDED];
-      // only the terminal correction survives the cross-rule.
-      expect(response.body.data.allowed).toEqual([OrderStatus.REFUNDED]);
+      // ORDER_TRANSITIONS[CANCELLED] is [PENDING, CONFIRMED, PROCESSING] — every one
+      // refused by the cross-rule; REFUNDED is derived, never offered (TASK-1969).
+      expect(response.body.data.allowed).toEqual([]);
     });
   });
 

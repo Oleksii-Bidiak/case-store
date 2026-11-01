@@ -1312,18 +1312,14 @@ export class OrderService {
     // a later re-cancel would credit it a second time. TASK-627: the same holds
     // for a LIVE order whose hold ORDER_RESERVATION_EXPIRY=release gave back —
     // the operator moving it on (PENDING → CONFIRMED, …) re-takes the units
-    // first, or gets the 409 that says they are gone. Moving between the
-    // terminal statuses (CANCELLED ↔ REFUNDED) keeps the flag and touches
-    // nothing. The repository re-reserves with the same conditional-decrement
+    // first, or gets the 409 that says they are gone. (REFUNDED is derived and
+    // never a target here — TASK-1969.) The repository re-reserves with the same conditional-decrement
     // guard as order creation, so an impossible revive gets a 409 and the
     // order keeps its terminal status.
     // `!= null` (not `!== null`): only an actual restock timestamp marks the
     // order as needing a re-reserve — fixtures/rows without the field must
     // behave like unflagged orders.
-    const isRevive =
-      existing.restockedAt != null &&
-      status !== OrderStatus.CANCELLED &&
-      status !== OrderStatus.REFUNDED;
+    const isRevive = existing.restockedAt != null && status !== OrderStatus.CANCELLED;
     if (isRevive) {
       const revived = await this.orderRepository.reviveAndReserve(
         orderId,
@@ -1951,12 +1947,13 @@ export class OrderService {
    * PARTIALLY_REFUNDED must stay revivable: one line refunded out of three is
    * the ordinary case B-1 §1 went out of its way to keep legal.
    *
-   * The terminal statuses stay reachable — CANCELLED ⇄ REFUNDED is how an
-   * operator corrects a mislabelled ending, and both are stock-neutral.
+   * CANCELLED stays reachable (a re-cancel is the state machine's call). The
+   * order's REFUNDED is derived from the ledger since R2 A4 (TASK-1969) and is
+   * nobody's target here.
    */
   private isOrderTargetReachable(paymentStatus: PaymentStatus, to: OrderStatus): boolean {
     if (paymentStatus !== PaymentStatus.REFUNDED) return true;
-    return to === OrderStatus.CANCELLED || to === OrderStatus.REFUNDED;
+    return to === OrderStatus.CANCELLED;
   }
 
   /**
@@ -2326,18 +2323,10 @@ export class OrderService {
         // by itself. Stock is deliberately NOT credited back: the goods have to
         // physically return first (TASK-124's rule, unchanged).
         //
-        // The one order-status side effect kept from before: once everything
-        // paid is back (derived REFUNDED), an order the state machine lets
-        // become REFUNDED does so. A4 derives that status from the ledger.
-        const refundOrder =
-          order.status !== OrderStatus.REFUNDED && canTransition(order.status, OrderStatus.REFUNDED)
-            ? { from: order.status, to: OrderStatus.REFUNDED }
-            : undefined;
-        return {
-          ...base,
-          attemptStatus: payment.status,
-          providerRefund: refundOrder ? { refundOrder } : {},
-        };
+        // No order move either (TASK-1969, R2 A4): the order's REFUNDED is
+        // derived from returns and payouts by the recompute the confirmation
+        // runs — a provider refund alone never ends an order.
+        return { ...base, attemptStatus: payment.status, providerRefund: {} };
       }
 
       case PaymentOutcome.IGNORED:

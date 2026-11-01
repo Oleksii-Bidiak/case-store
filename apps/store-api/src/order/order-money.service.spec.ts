@@ -446,7 +446,7 @@ describe('OrderMoneyService', () => {
 
   describe('reverseEntry', () => {
     it('reverses with the reason, recomputes, and re-derives the return', async () => {
-      repo.reverseEntry.mockResolvedValue({ id: 'rev-1', returnId: 'ret-1' });
+      repo.reverseEntry.mockResolvedValue({ id: 'rev-1', returnId: 'ret-1', direction: 'OUT' });
       await service.reverseEntry(ORDER_ID, 'entry-1', admin, {
         reason: 'помилка каси',
         expectedUpdatedAt: UPDATED_AT,
@@ -457,7 +457,8 @@ describe('OrderMoneyService', () => {
         actorId: admin.id,
         reason: 'помилка каси',
       });
-      expect(repo.recompute).toHaveBeenCalledWith(tx, ORDER_ID, admin.id);
+      // TASK-1969: an OUT reversal may move a REFUNDED order back.
+      expect(repo.recompute).toHaveBeenCalledWith(tx, ORDER_ID, admin.id, { payoutUndone: true });
       expect(repo.syncReturnStatus).toHaveBeenCalledWith(tx, 'ret-1');
     });
 
@@ -502,7 +503,7 @@ describe('OrderMoneyService', () => {
         expectedUpdatedAt: UPDATED_AT,
       });
       expect(repo.voidEntry).toHaveBeenCalledWith(tx, 'entry-1', 'LiqPay відхилив');
-      expect(repo.recompute).toHaveBeenCalledWith(tx, ORDER_ID, admin.id);
+      expect(repo.recompute).toHaveBeenCalledWith(tx, ORDER_ID, admin.id, { payoutUndone: true });
       expect(repo.syncReturnStatus).toHaveBeenCalledWith(tx, 'ret-1');
     });
 

@@ -267,7 +267,9 @@ describe('Admin returns queue (e2e)', () => {
         await get({ sortBy: field, sortOrder: 'asc' }).expect(200);
 
         const orderBy = lastOrderBy() as Array<Record<string, unknown>>;
-        expect(Object.keys(orderBy[0])).toEqual([field]);
+        // TASK-2339 (R2 A4): the money column keeps its API name but orders by
+        // «До повернення» — the legacy refunded_amount column is not written.
+        expect(Object.keys(orderBy[0])).toEqual([field === 'refundedAmount' ? 'creditKop' : field]);
         // The tiebreaker is what makes pagination stable: `status` and
         // `refundedAmount` are massively non-unique, and without a unique last
         // key Postgres may order ties differently per query — a row would show
@@ -276,20 +278,18 @@ describe('Admin returns queue (e2e)', () => {
       },
     );
 
-    it('pushes unrefunded returns to the bottom in BOTH directions', async () => {
-      // Postgres sorts NULLs first on DESC, so "biggest refund first" would
-      // otherwise open on a wall of returns with no amount at all.
+    it('pushes returns without a credit to the bottom in BOTH directions', async () => {
+      // Postgres sorts NULLs first on DESC, so "biggest first" would otherwise
+      // open on a wall of returns with no amount at all. TASK-2339: the key is
+      // the credit («До повернення»).
       await get({ sortBy: 'refundedAmount', sortOrder: 'desc' }).expect(200);
       expect(lastOrderBy()).toEqual([
-        { refundedAmount: { sort: 'desc', nulls: 'last' } },
+        { creditKop: { sort: 'desc', nulls: 'last' } },
         { id: 'asc' },
       ]);
 
       await get({ sortBy: 'refundedAmount', sortOrder: 'asc' }).expect(200);
-      expect(lastOrderBy()).toEqual([
-        { refundedAmount: { sort: 'asc', nulls: 'last' } },
-        { id: 'asc' },
-      ]);
+      expect(lastOrderBy()).toEqual([{ creditKop: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }]);
     });
 
     it('sorts the queue by the lifecycle when asked for status, not by the alphabet', () => {

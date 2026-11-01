@@ -115,6 +115,11 @@ export function createLedgerPrismaMock(order: () => LedgerOrderState) {
       aggregate: jest.fn(async () => ({ _sum: { creditKop: null } })),
       findMany: jest.fn(async () => []),
     },
+    /**
+     * The order's lines, which the derived order REFUNDED (R2 A4, TASK-1969)
+     * reads for a SHIPPED/DELIVERED order — none here, so it never derives.
+     */
+    orderItem: { findMany: jest.fn(async () => []) },
   };
 
   /**

@@ -136,20 +136,14 @@ const ADMIN_ORDERS_INCLUDE = {
     select: { id: true, email: true, firstName: true, lastName: true },
   },
   /**
-   * Just the refunded amounts (TASK-472) — never the return rows themselves.
+   * Just the ids (TASK-472, R2 A4) — the marker that this read is an admin one,
+   * so the entity reports `refundedTotal`. The amount is the ledger total
+   * `orders.refunded_kop` since R2 A4 (TASK-2047): the legacy
+   * `Return.refundedAmount` it used to sum is no longer written.
    *
-   * The "Повернуто X з Y" label needs one number per order, Σ `refundedAmount`,
-   * and it is computed ON READ rather than stored: a column holding the same sum
-   * would have to be maintained by every path that touches a return, and the
-   * first one that forgets leaves the order claiming an amount that no return
-   * supports (owner decision B-1, closing paragraph: all five labels are
-   * derived).
-   *
-   * Admin include only. The label belongs to the admin list and order card; the
-   * storefront reads returns through the returns endpoints, so a customer-facing
-   * order read should not pay for this join.
+   * Admin include only. The label belongs to the admin list and order card.
    */
-  returns: { select: { refundedAmount: true } },
+  returns: { select: { id: true } },
 } satisfies Prisma.OrderInclude;
 
 /**
@@ -828,17 +822,16 @@ export class OrderRepository {
     const and: Prisma.OrderWhereInput[] = [];
 
     // TASK-248: active-but-unpaid ("in-transit") deep-link filter — the same
-    // compound condition as DashboardRepository's unrealized-revenue figure, so
-    // the tile's count and the rows behind the click are the same set.
+    // condition as DashboardRepository's unrealized-revenue figure, so the
+    // tile's count and the rows behind the click are the same set.
     //
-    // `PARTIALLY_REFUNDED` sits with `PAID` rather than on the unpaid side
-    // (review of plan 180) — it is only reachable FROM `PAID`, so the money did
-    // arrive and the shop is owed nothing. See the twin's docblock in
-    // `DashboardRepository.unrealizedOrderWhere` for why this differs from the
-    // «Борг» mark below, which deliberately casts a wider net.
+    // R2 A4 (TASK-2047): read from the money ledger — the order still owes
+    // something (`balanceKop > 0`) and has not ended. That covers a partly paid
+    // (PARTIALLY_PAID) order's remainder, which the old payment-status list
+    // could not express, and stops a partly refunded order from looking unpaid.
     if (query.unpaidInTransit) {
       and.push({
-        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+        balanceKop: { gt: 0 },
         status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
       });
     }
@@ -870,10 +863,13 @@ export class OrderRepository {
     // renders. The two are kept identical by the marks being derived on both
     // sides from the same columns, never stored: there is no third copy that can
     // go stale between them.
+    // «Борг» (R2 A4): the goods are with the customer and the ledger says they
+    // still owe — one definition, the same one `balanceKop` gives the order card.
+    // A partly refunded order owes nothing unless its balance says so.
     if (query.hasDebt) {
       and.push({
+        balanceKop: { gt: 0 },
         status: OrderStatus.DELIVERED,
-        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
       });
     }
     // `gt` / `lte` against a single `now` taken here, so the two flags partition
@@ -1041,6 +1037,9 @@ export class OrderRepository {
     // plain transition), not re-read here — see plan 134 Design Decision 4.
     const expectedUpdatedAt = options.expectedUpdatedAt;
     const updated = (await this.prisma.$transaction(async (tx) => {
+      // R2 A4: the order row first — the one lock order every money writer
+      // follows — because the status change re-derives the balance below.
+      await this.money.lockOrder(tx, orderId);
       if (expectedUpdatedAt) {
         const { count } = await tx.order.updateMany({
           where: { id: orderId, updatedAt: expectedUpdatedAt },
@@ -1065,6 +1064,8 @@ export class OrderRepository {
           ...(options.note ? { note: options.note } : {}),
         },
       });
+      // The balance depends on the status (nothing is due on a CANCELLED order).
+      await this.money.recompute(tx, orderId, changedBy);
       return tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: ORDERS_INCLUDE,
@@ -1121,6 +1122,8 @@ export class OrderRepository {
   ): Promise<OrderWithItems> {
     const expectedUpdatedAt = options.expectedUpdatedAt;
     const updated = (await this.prisma.$transaction(async (tx) => {
+      // R2 A4: lock the order row first (orders → products, the money lock order).
+      await this.money.lockOrder(tx, orderId);
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: ORDERS_INCLUDE,
@@ -1196,6 +1199,9 @@ export class OrderRepository {
         },
       });
 
+      // Nothing is due on a cancelled order: money kept on it is owed back.
+      await this.money.recompute(tx, orderId, changedBy);
+
       return tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: ORDERS_INCLUDE,
@@ -1227,6 +1233,8 @@ export class OrderRepository {
   ): Promise<OrderWithItems> {
     const expectedUpdatedAt = options.expectedUpdatedAt;
     const updated = (await this.prisma.$transaction(async (tx) => {
+      // R2 A4: lock the order row first (orders → products, the money lock order).
+      await this.money.lockOrder(tx, orderId);
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: ORDERS_INCLUDE,
@@ -1281,11 +1289,13 @@ export class OrderRepository {
         },
       });
 
-      return tx.order.update({
+      await tx.order.update({
         where: { id: orderId },
         data: { status, paymentStatus, restockedAt: null },
-        include: ORDERS_INCLUDE,
       });
+      // A live order is due again: the balance moves with the status.
+      await this.money.recompute(tx, orderId, changedBy);
+      return tx.order.findUniqueOrThrow({ where: { id: orderId }, include: ORDERS_INCLUDE });
     })) as OrderWithItems;
 
     // Reservation changed position stock — evict the same caches as createFromCart.
@@ -1809,7 +1819,7 @@ export class OrderRepository {
   private async applyProviderRefund(
     tx: Prisma.TransactionClient,
     plan: PaymentApplyPlan,
-    locked: { status: OrderStatus; paymentStatus: PaymentStatus },
+    locked: { paymentStatus: PaymentStatus },
   ): Promise<void> {
     const confirmed = await this.money.confirmOldestRequestedRefund(tx, plan.paymentId);
 
@@ -1830,30 +1840,14 @@ export class OrderRepository {
       return;
     }
 
-    const totals = await this.money.recompute(tx, plan.orderId, null, {});
+    // Derives the payment status AND the order's own REFUNDED (TASK-1969).
+    await this.money.recompute(tx, plan.orderId, null, {});
 
     const attempt = await this.money.paymentProviderTotals(tx, plan.paymentId);
     if (attempt.inKop > 0 && attempt.refundedKop >= attempt.inKop) {
       await tx.payment.update({
         where: { id: plan.paymentId },
         data: { status: PaymentAttemptStatus.REFUNDED },
-      });
-    }
-
-    const move = plan.providerRefund?.refundOrder;
-    if (move && totals.paymentStatus === PaymentStatus.REFUNDED && locked.status === move.from) {
-      await tx.order.updateMany({
-        where: { id: plan.orderId, status: move.from },
-        data: { status: move.to },
-      });
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: plan.orderId,
-          changeType: OrderHistoryChangeType.STATUS,
-          fromStatus: move.from,
-          toStatus: move.to,
-          changedBy: null,
-        },
       });
     }
   }
@@ -1918,7 +1912,7 @@ export class OrderRepository {
   async voidProviderRefund(orderId: string, entryId: string, reason: string): Promise<void> {
     await this.money.transaction(orderId, async (tx) => {
       if (await this.money.voidEntry(tx, entryId, reason)) {
-        await this.money.recompute(tx, orderId, null);
+        await this.money.recompute(tx, orderId, null, { payoutUndone: true });
         // R2 A3: the payout stops counting — its return may no longer be covered.
         const entry = await this.money.findEntry(tx, orderId, entryId);
         if (entry?.returnId) {

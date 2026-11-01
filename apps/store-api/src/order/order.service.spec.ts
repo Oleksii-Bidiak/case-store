@@ -1857,13 +1857,24 @@ describe('OrderService', () => {
       expect(result.allowed).not.toContain(OrderStatus.SHIPPED);
     });
 
-    it('returns an empty-but-not-broken set for the most terminal status', async () => {
+    it('returns an empty-but-not-broken set for the derived, terminal REFUNDED (TASK-1969)', async () => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.REFUNDED }));
 
       const result = await service.getAllowedTransitions('order-uuid-1');
 
-      expect(result.allowed).toEqual([OrderStatus.CANCELLED]);
+      expect(result.allowed).toEqual([]);
     });
+
+    it.each([OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED])(
+      'never offers REFUNDED from %s — it is derived from the money ledger (TASK-1969)',
+      async (status) => {
+        orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status }));
+
+        const result = await service.getAllowedTransitions('order-uuid-1');
+
+        expect(result.allowed).not.toContain(OrderStatus.REFUNDED);
+      },
+    );
 
     it('throws NotFoundException when the order does not exist', async () => {
       orderRepositoryMock.findById.mockResolvedValue(null);
@@ -1914,15 +1925,13 @@ describe('OrderService', () => {
       expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
 
-    it('still allows the terminal pair to be corrected (CANCELLED → REFUNDED)', async () => {
+    it('refuses CANCELLED → REFUNDED (409): a cancelled order stays cancelled (TASK-1970)', async () => {
       seedRefunded(OrderStatus.CANCELLED);
-      orderRepositoryMock.updateStatus.mockResolvedValue(
-        makeOrder({ status: OrderStatus.REFUNDED, paymentStatus: PaymentStatus.REFUNDED }),
-      );
 
       await expect(
         service.updateStatus('order-uuid-1', OrderStatus.REFUNDED, ADMIN_ID),
-      ).resolves.toBeDefined();
+      ).rejects.toMatchObject({ response: { error: 'ORDER_TRANSITION_INVALID' } });
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
 
     it('leaves a PARTIALLY_REFUNDED order revivable — one line back is an ordinary day', async () => {
@@ -1949,8 +1958,8 @@ describe('OrderService', () => {
 
       const result = await service.getAllowedTransitions('order-uuid-1');
 
-      // ORDER_TRANSITIONS[CANCELLED] is [PENDING, CONFIRMED, PROCESSING, REFUNDED].
-      expect(result.allowed).toEqual([OrderStatus.REFUNDED]);
+      // ORDER_TRANSITIONS[CANCELLED] is [PENDING, CONFIRMED, PROCESSING] — all refused here.
+      expect(result.allowed).toEqual([]);
     });
   });
 
@@ -1993,20 +2002,17 @@ describe('OrderService', () => {
       expect(result.paymentStatus).toBe(PaymentStatus.PENDING);
     });
 
-    it('does NOT auto-set REFUNDED when an order is moved to REFUNDED (payment preserved)', async () => {
-      seedAndEcho({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID });
+    it.each([OrderStatus.SHIPPED, OrderStatus.DELIVERED])(
+      'refuses an operator move %s → REFUNDED (409, TASK-1969: derived, never set by hand)',
+      async (from) => {
+        seedAndEcho({ status: from, paymentStatus: PaymentStatus.PAID });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED, ADMIN_ID);
-
-      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
-        'order-uuid-1',
-        OrderStatus.DELIVERED,
-        OrderStatus.REFUNDED,
-        PaymentStatus.PAID,
-        ADMIN_ID,
-        expect.anything(),
-      );
-    });
+        await expect(
+          service.updateStatus('order-uuid-1', OrderStatus.REFUNDED, ADMIN_ID),
+        ).rejects.toMatchObject({ response: { error: 'ORDER_TRANSITION_INVALID' } });
+        expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      },
+    );
 
     it('leaves an already-PAID order PAID when advanced further', async () => {
       seedAndEcho({ status: OrderStatus.PROCESSING, paymentStatus: PaymentStatus.PAID });
@@ -2267,22 +2273,12 @@ describe('OrderService', () => {
       },
     );
 
-    it('does NOT auto-restock when refunding a delivered order (manual return required)', async () => {
+    it('does NOT auto-restock when cancelling a delivered order (manual return required)', async () => {
       seed({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED, ADMIN_ID);
+      await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED, ADMIN_ID);
 
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
-      // TASK-151: paymentStatus is preserved (PAID), not auto-set to REFUNDED.
-      // Payment status is derived from the order money ledger (R2 A3).
-      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
-        'order-uuid-1',
-        OrderStatus.DELIVERED,
-        OrderStatus.REFUNDED,
-        PaymentStatus.PAID,
-        ADMIN_ID,
-        expect.anything(),
-      );
     });
 
     // TASK-332 supersedes the old "CANCELLED → CANCELLED is a harmless no-op"
@@ -2386,21 +2382,16 @@ describe('OrderService', () => {
       },
     );
 
-    it('keeps the flag and touches no stock when moving a restocked CANCELLED order to REFUNDED', async () => {
+    it('refuses a restocked CANCELLED order → REFUNDED (409) and touches no stock (TASK-1969)', async () => {
       seed({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID, restockedAt });
 
-      await service.updateStatus('order-uuid-1', OrderStatus.REFUNDED, ADMIN_ID);
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.REFUNDED, ADMIN_ID),
+      ).rejects.toThrow(ConflictException);
 
       expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
-      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
-        'order-uuid-1',
-        OrderStatus.CANCELLED,
-        OrderStatus.REFUNDED,
-        PaymentStatus.PAID,
-        ADMIN_ID,
-        expect.anything(),
-      );
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
 
     // TASK-332: REFUNDED is terminal but for its twin. The money is already back
@@ -4434,9 +4425,9 @@ describe('OrderService', () => {
 
           expect(result).toEqual({ applied: true, orderId: 'order-uuid-1' });
           const plan = lastPlan();
-          expect(plan.providerRefund).toEqual({
-            refundOrder: { from: OrderStatus.DELIVERED, to: OrderStatus.REFUNDED },
-          });
+          // TASK-1969 (R2 A4): no order move in the plan — the order's REFUNDED is
+          // derived by the ledger recompute the repository runs.
+          expect(plan.providerRefund).toEqual({});
           // The attempt keeps what it is; the repository marks it REFUNDED once
           // its confirmed refunds cover its receipt.
           expect(plan.attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
@@ -4448,7 +4439,7 @@ describe('OrderService', () => {
         });
 
         it.each([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
-          'offers no order move on a live %s order — it cannot become REFUNDED',
+          'plans no order move on a live %s order either',
           async (status) => {
             seed(makePayment({ status, paymentStatus: PaymentStatus.PAID }));
 
@@ -4994,9 +4985,9 @@ describe('OrderService', () => {
     });
   });
 
-  // ─── OrderEntity.fromPrisma — refundedTotal (TASK-472) ────────────────────────
-  // The X of "Повернуто X з Y": Σ Return.refundedAmount, derived at read time and
-  // stored nowhere.
+  // ─── OrderEntity.fromPrisma — refundedTotal (TASK-472, R2 A4) ────────────────
+  // The X of "Повернуто X з Y": the ledger's refundedKop since R2 A4, reported
+  // only on admin reads (the ones that join the returns).
 
   describe('OrderEntity.fromPrisma — refundedTotal', () => {
     it('omits the field entirely when the read did not join the returns', () => {
@@ -5008,35 +4999,16 @@ describe('OrderService', () => {
       expect('refundedTotal' in entity).toBe(false);
     });
 
-    it('reports 0.00 for an order that has no returns at all', () => {
+    it('reports 0.00 for an admin read of an order nothing went back on', () => {
       const entity = OrderEntity.fromPrisma(makeOrder({ returns: [] }));
 
       expect(entity.refundedTotal).toBe('0.00');
     });
 
-    it('sums several partial refunds in cents (no floating-point drift)', () => {
-      const entity = OrderEntity.fromPrisma(
-        makeOrder({
-          returns: [
-            { refundedAmount: { toString: () => '33.33' } },
-            { refundedAmount: { toString: () => '33.33' } },
-            { refundedAmount: { toString: () => '33.33' } },
-          ],
-        }),
-      );
+    it('is the ledger Σ OUT in kopecks, padded like every money string', () => {
+      const entity = OrderEntity.fromPrisma(makeOrder({ returns: [], refundedKop: 9_999 }));
 
       expect(entity.refundedTotal).toBe('99.99');
-    });
-
-    it('skips a return that has not paid anything out yet (null amount)', () => {
-      const entity = OrderEntity.fromPrisma(
-        makeOrder({
-          returns: [{ refundedAmount: { toString: () => '499' } }, { refundedAmount: null }],
-        }),
-      );
-
-      // Also pads, like every other money string on the entity.
-      expect(entity.refundedTotal).toBe('499.00');
     });
   });
 });

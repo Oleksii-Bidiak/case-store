@@ -1,4 +1,5 @@
 import {
+  MoneyDirection,
   RepairResult,
   ReturnChannel,
   ReturnDecision,
@@ -85,8 +86,19 @@ export interface ReturnWithItems {
    * restock here too.
    */
   restockedAt: Date | null;
-  /** Legacy (pre-R2) amount — no longer written; the ledger holds the payouts. */
+  /** Legacy (pre-R2) amount — neither written nor read since R2 A4 (TASK-2339). */
   refundedAmount: { toString(): string } | null;
+  /**
+   * This return's payouts on the order money ledger (OUT rows, reversals
+   * included), joined by every read since R2 A4 (TASK-2339). Optional only for
+   * hand-built fixtures; absent reads as nothing paid out.
+   */
+  moneyEntries?: ReadonlyArray<{
+    direction: MoneyDirection;
+    amountKop: number;
+    reversalOfId: string | null;
+    voidedAt: Date | null;
+  }>;
   /**
    * «До повернення» in kopecks (R2, TASK-2046): set when the decision becomes
    * REFUND, null otherwise. Optional only for hand-built fixtures.

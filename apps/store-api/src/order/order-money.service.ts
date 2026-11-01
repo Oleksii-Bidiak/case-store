@@ -307,7 +307,10 @@ export class OrderMoneyService {
         actorId: actor.id,
         reason: input.reason,
       });
-      await this.money.recompute(tx, orderId, actor.id);
+      // TASK-1969: a payout taken back may move a REFUNDED order back.
+      await this.money.recompute(tx, orderId, actor.id, {
+        payoutUndone: reversal.direction === MoneyDirection.OUT,
+      });
       if (reversal.returnId) {
         await this.money.syncReturnStatus(tx, reversal.returnId);
       }
@@ -347,7 +350,7 @@ export class OrderMoneyService {
       if (!(await this.money.voidEntry(tx, entryId, input.reason))) {
         throw moneyVoidRefusedError();
       }
-      await this.money.recompute(tx, orderId, actor.id);
+      await this.money.recompute(tx, orderId, actor.id, { payoutUndone: true });
       if (entry.returnId) {
         await this.money.syncReturnStatus(tx, entry.returnId);
       }

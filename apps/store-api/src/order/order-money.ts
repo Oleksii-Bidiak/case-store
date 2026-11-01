@@ -8,6 +8,7 @@ import {
   ReturnDecision,
   ReturnStatus,
 } from '@prisma/client';
+import { DERIVED_REFUNDED_FROM } from './order-state-machine';
 
 /**
  * The order money ledger's derived rules (TASK-2047 / TASK-2046 / TASK-951; R2
@@ -104,9 +105,6 @@ export function derivePaymentStatus(input: PaymentStatusInput): PaymentStatus {
 
 // ── Balance ─────────────────────────────────────────────────────────────────
 
-/** Order statuses in which the customer owes nothing for the goods. */
-const NOTHING_DUE: readonly OrderStatus[] = [OrderStatus.CANCELLED, OrderStatus.REFUNDED];
-
 export interface BalanceInput {
   totalKop: number;
   returnCreditKop: number;
@@ -119,15 +117,114 @@ export interface BalanceInput {
  * What is still owed, in kopecks: > 0 the customer owes the shop ("Борг"), < 0
  * the shop owes the customer ("Винні покупцю").
  *
- * `due − paid + refunded`, where `due = total − returnCredit` for a live order and
- * 0 for a cancelled or refunded one — a cancelled order is not a debt, and money
- * kept on it is owed back.
+ * `due − paid + refunded`, where `due` is:
+ * - `total − returnCredit` for a live, shipped or delivered order;
+ * - 0 for a CANCELLED one — a cancelled order is not a debt, and money kept on
+ *   it is owed back;
+ * - for a REFUNDED one (TASK-1969) what the shop may keep, `total − returnCredit`
+ *   (the shipping and add-ons no return credits), but never more than it still
+ *   holds: a refunded order never shows a debt. That also keeps a LEGACY
+ *   REFUNDED order (set by hand before R2, everything paid back, no return
+ *   credit) at 0 instead of «Борг = total». An overpayment still shows as owed
+ *   back.
  */
 export function deriveBalance(input: BalanceInput): number {
-  const { totalKop, returnCreditKop, paidKop, refundedKop, orderStatus } = input;
+  const { totalKop, returnCreditKop, paidKop, refundedKop } = input;
   assertKopecks(totalKop, returnCreditKop, paidKop, refundedKop);
-  const dueKop = NOTHING_DUE.includes(orderStatus) ? 0 : totalKop - returnCreditKop;
-  return dueKop - paidKop + refundedKop;
+  return dueKop(input) - paidKop + refundedKop;
+}
+
+function dueKop(input: BalanceInput): number {
+  const { totalKop, returnCreditKop, paidKop, refundedKop, orderStatus } = input;
+  if (orderStatus === OrderStatus.CANCELLED) {
+    return 0;
+  }
+  const goodsKeptKop = totalKop - returnCreditKop;
+  if (orderStatus === OrderStatus.REFUNDED) {
+    return Math.max(0, Math.min(goodsKeptKop, paidKop - refundedKop));
+  }
+  return goodsKeptKop;
+}
+
+// ── The order's own REFUNDED (TASK-1969 / TASK-1970) ────────────────────────
+
+/** A REFUND-decided return as the derivation reads it. */
+export interface RefundReturnCover {
+  /** «До повернення»; null reads as 0. */
+  creditKop: number | null;
+  /** Σ of its payouts, net of reversals, voided ignored (REQUESTED counts). */
+  paidOutKop: number;
+  items: ReadonlyArray<{ orderItemId: string; quantity: number }>;
+}
+
+export interface OrderStatusDerivationInput {
+  orderStatus: OrderStatus;
+  /** The order's Σ OUT, net of reversals. */
+  refundedKop: number;
+  lines: ReadonlyArray<{ id: string; quantity: number }>;
+  /** Every return of the order whose decision is REFUND. */
+  refundReturns: ReadonlyArray<RefundReturnCover>;
+  /** The money write of this transaction took a payout back (a reversal or a void). */
+  payoutUndone: boolean;
+  /** `fromStatus` of the last STATUS history row INTO REFUNDED, if any. */
+  refundedFrom: OrderStatus | null;
+}
+
+/**
+ * Everything the customer bought came back and was paid out (TASK-1969): every
+ * order line's quantity is covered by REFUND-decided returns, each of those is
+ * paid out up to its credit, and some money actually went back. Shipping and
+ * add-ons are not lines, so a shop that keeps them still reaches REFUNDED.
+ */
+export function isOrderFullyRefunded(
+  input: Pick<OrderStatusDerivationInput, 'refundedKop' | 'lines' | 'refundReturns'>,
+): boolean {
+  assertKopecks(input.refundedKop);
+  if (input.refundedKop <= 0 || input.lines.length === 0) {
+    return false;
+  }
+  const returned = new Map<string, number>();
+  for (const ret of input.refundReturns) {
+    assertKopecks(ret.paidOutKop, ret.creditKop ?? 0);
+    if (ret.paidOutKop < (ret.creditKop ?? 0)) {
+      return false;
+    }
+    for (const item of ret.items) {
+      returned.set(item.orderItemId, (returned.get(item.orderItemId) ?? 0) + item.quantity);
+    }
+  }
+  return input.lines.every((line) => (returned.get(line.id) ?? 0) >= line.quantity);
+}
+
+/**
+ * The order status the ledger implies (TASK-1969):
+ * - SHIPPED/DELIVERED and {@link isOrderFullyRefunded} → REFUNDED;
+ * - REFUNDED that no longer is, AFTER a payout was taken back (reversal or
+ *   void) → the status it came from (SHIPPED/DELIVERED only);
+ * - anything else stays where it is. CANCELLED never becomes REFUNDED.
+ *
+ * Why a REFUNDED order only moves back after an undone payout: orders set
+ * REFUNDED by hand before R2 have no returns covering their lines, so they
+ * never pass the test. A receipt, a credit change or an order-status recompute
+ * on such an order must not quietly turn it into DELIVERED — only a reversal,
+ * which says in so many words that the money did not all go back, may.
+ */
+export function deriveOrderStatus(input: OrderStatusDerivationInput): OrderStatus {
+  const { orderStatus, payoutUndone, refundedFrom } = input;
+  const fullyRefunded = isOrderFullyRefunded(input);
+  if (DERIVED_REFUNDED_FROM.includes(orderStatus)) {
+    return fullyRefunded ? OrderStatus.REFUNDED : orderStatus;
+  }
+  if (
+    orderStatus === OrderStatus.REFUNDED &&
+    !fullyRefunded &&
+    payoutUndone &&
+    refundedFrom !== null &&
+    DERIVED_REFUNDED_FROM.includes(refundedFrom)
+  ) {
+    return refundedFrom;
+  }
+  return orderStatus;
 }
 
 // ── "To refund" per return ──────────────────────────────────────────────────
@@ -437,9 +534,10 @@ function payoutCeiling(basis: PayoutBasis, ret?: PayoutReturn): PayoutVerdict {
     return { ok: true, availableKop: Math.min(owedKop, heldKop) };
   }
 
-  // A cancelled (or, until A4, refunded) order owes nothing for goods: every
-  // kopeck still held goes back.
-  if (NOTHING_DUE.includes(orderStatus)) {
+  // A cancelled order owes nothing for goods: every kopeck still held goes back.
+  // A REFUNDED one (TASK-1969) keeps what no return credits (shipping, add-ons)
+  // and falls through to the overpayment rule below, like a delivered order.
+  if (orderStatus === OrderStatus.CANCELLED) {
     return { ok: true, availableKop: heldKop };
   }
 

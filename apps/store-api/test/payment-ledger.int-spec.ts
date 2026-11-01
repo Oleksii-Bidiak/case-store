@@ -356,8 +356,10 @@ describe('LiqPay money through the ledger (integration, TASK-1500 / TASK-2047)',
         }),
       ]);
       expect(outs[0].providerRef).not.toBe(outs[1].providerRef);
+      // R2 A4 (TASK-1969): everything paid is back, yet no return covers the
+      // lines — the ORDER stays DELIVERED; only the payment reads REFUNDED.
       expect(await totalsOf(orderId)).toMatchObject({
-        status: OrderStatus.REFUNDED,
+        status: OrderStatus.DELIVERED,
         paymentStatus: PaymentStatus.REFUNDED,
         paidKop: 100_000,
         refundedKop: 100_000,

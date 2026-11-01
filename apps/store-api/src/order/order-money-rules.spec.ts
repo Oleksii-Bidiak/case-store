@@ -143,18 +143,35 @@ describe('order-money — operator rules (R2 A3)', () => {
       },
     );
 
-    it.each([OrderStatus.CANCELLED, OrderStatus.REFUNDED])(
-      'pays a %s order back up to paid − refunded',
-      (status) => {
-        const basis = paid(status, { refundedKop: 30_000, balanceKop: -70_000 });
-        expect(assessPayout(basis, 70_000)).toEqual({ ok: true, availableKop: 70_000 });
-        expect(assessPayout(basis, 70_001)).toEqual({
-          ok: false,
-          refusal: 'EXCEEDS',
-          availableKop: 70_000,
-        });
-      },
-    );
+    it('pays a CANCELLED order back up to paid − refunded', () => {
+      const basis = paid(OrderStatus.CANCELLED, { refundedKop: 30_000, balanceKop: -70_000 });
+      expect(assessPayout(basis, 70_000)).toEqual({ ok: true, availableKop: 70_000 });
+      expect(assessPayout(basis, 70_001)).toEqual({
+        ok: false,
+        refusal: 'EXCEEDS',
+        availableKop: 70_000,
+      });
+    });
+
+    it('keeps the shipping a derived REFUNDED order holds (TASK-1969): only an overpayment goes out', () => {
+      // Goods 1 500 paid back through returns; the 70 ₴ shipping stays — balance 0.
+      const settled = paid(OrderStatus.REFUNDED, {
+        paidKop: 157_000,
+        refundedKop: 150_000,
+        balanceKop: 0,
+      });
+      expect(assessPayout(settled, 1)).toEqual({
+        ok: false,
+        refusal: 'RETURN_REQUIRED',
+        availableKop: 0,
+      });
+      const overpaid = paid(OrderStatus.REFUNDED, {
+        paidKop: 314_000,
+        refundedKop: 150_000,
+        balanceKop: -157_000,
+      });
+      expect(assessPayout(overpaid, 157_000)).toEqual({ ok: true, availableKop: 157_000 });
+    });
 
     it('pays an overpayment back on a delivered or a live order, up to −balance', () => {
       for (const status of [OrderStatus.DELIVERED, OrderStatus.CONFIRMED]) {

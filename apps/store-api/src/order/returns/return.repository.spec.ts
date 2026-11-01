@@ -89,18 +89,19 @@ describe('ReturnRepository — admin queue sorting (TASK-354)', () => {
     }
   });
 
-  it('pushes unrefunded returns to the bottom in BOTH directions', async () => {
-    // Postgres puts NULLs first on DESC, so "biggest refund first" would open on
-    // a wall of returns that have no amount at all.
+  it('sorts the money column by «До повернення» (creditKop), no-credit returns last both ways', async () => {
+    // TASK-2339 (R2 A4): the legacy refunded_amount column is no longer written,
+    // so the sort key reads the credit column; the sum of payouts is not a column.
+    // Postgres puts NULLs first on DESC — they would open the list otherwise.
     await repository.findAll({ sortBy: 'refundedAmount', sortOrder: 'desc' });
     expect(orderByOfLastFindMany()).toEqual([
-      { refundedAmount: { sort: 'desc', nulls: 'last' } },
+      { creditKop: { sort: 'desc', nulls: 'last' } },
       { id: 'asc' },
     ]);
 
     await repository.findAll({ sortBy: 'refundedAmount', sortOrder: 'asc' });
     expect(orderByOfLastFindMany()).toEqual([
-      { refundedAmount: { sort: 'asc', nulls: 'last' } },
+      { creditKop: { sort: 'asc', nulls: 'last' } },
       { id: 'asc' },
     ]);
   });

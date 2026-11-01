@@ -259,19 +259,22 @@ export interface OrderWithItems {
     lastName: string | null;
   };
   /**
-   * Refunded amounts of this order's return requests (TASK-472), selected only by
-   * the admin read paths via `ADMIN_ORDERS_INCLUDE`.
-   *
-   * Optional and deliberately thin: the entity needs a SUM, not the returns. An
-   * absent array means "this read did not ask", which is why
-   * {@link OrderEntity.fromPrisma} omits `refundedTotal` rather than reporting a
-   * zero it did not measure — a zero would read as "nothing was refunded" on
-   * every customer-facing response.
-   *
-   * `refundedAmount` is null until a return is actually paid out, so nulls are
-   * skipped rather than counted.
+   * The order's returns, joined only by the admin read paths
+   * (`ADMIN_ORDERS_INCLUDE`) — a marker that this is an admin read, so
+   * {@link OrderEntity.fromPrisma} reports `refundedTotal` (TASK-472). The
+   * amount itself comes from the ledger total `refundedKop` since R2 A4; the
+   * legacy `Return.refundedAmount` is no longer read.
    */
-  returns?: Array<{ refundedAmount: { toString(): string } | null }>;
+  returns?: ReadonlyArray<object>;
+  /**
+   * The order money ledger's totals (R2, TASK-2047), integer kopecks, written
+   * only by `OrderMoneyRepository.recompute`. Optional only for fixtures that
+   * predate the columns — absent reads as 0.
+   */
+  paidKop?: number;
+  refundedKop?: number;
+  returnCreditKop?: number;
+  balanceKop?: number;
 }
 
 /**
@@ -518,11 +521,10 @@ export interface PaymentApplyPlan {
    * A `reversed` callback / status poll (TASK-1500, R2 A2): confirm the oldest
    * REQUESTED `LIQPAY_REFUND` of this attempt, or — when the shop never asked
    * for one (a refund made in the LiqPay cabinet) — write no money and leave a
-   * `PROVIDER_REFUND_UNMATCHED` history row. `refundOrder` is the order-status
-   * move the state machine allows once everything paid is back (the old
-   * full-refund side effect), taken only if the derived status is REFUNDED.
+   * `PROVIDER_REFUND_UNMATCHED` history row. It carries no order move: the
+   * order's REFUNDED is derived by that recompute (TASK-1969, R2 A4).
    */
-  providerRefund?: { refundOrder?: { from: OrderStatus; to: OrderStatus } };
+  providerRefund?: Record<string, never>;
   /** Set when money settled; null leaves the column untouched. */
   paidAt?: Date | null;
   /**
