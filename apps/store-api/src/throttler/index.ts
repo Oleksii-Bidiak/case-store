@@ -9,6 +9,11 @@ export {
   ORDER_LOOKUP_NUMBER_THROTTLER,
   ORDER_LOOKUP_THROTTLE_KEY,
 } from './order-lookup-throttle.decorator';
+export {
+  CheckoutSignupThrottle,
+  CHECKOUT_SIGNUP_THROTTLE_KEY,
+  CHECKOUT_SIGNUP_THROTTLER,
+} from './checkout-signup-throttle.decorator';
 export { RedisThrottlerStorage } from './redis-throttler-storage';
 export {
   authorFromAccessToken,

@@ -160,6 +160,42 @@ export function staleOrderError(): ConflictException {
   });
 }
 
+// ─── What a guest checkout needs an account for (TASK-2010) ─────────────────
+
+/**
+ * Stable codes for a GUEST checkout refused because the request needs an
+ * account behind the order (B-12 тема 2, B-13 (ж)). The storefront can create
+ * one in the same request (`contact.createAccount: true`), and keys its
+ * auto-ticked «Створити акаунт» off these codes. Shopper-facing messages, like
+ * the delivery codes below.
+ */
+export const CheckoutErrorCode = {
+  /** A promo code is applied only to an order with an account behind it. */
+  DISCOUNT_ACCOUNT_REQUIRED: 'DISCOUNT_ACCOUNT_REQUIRED',
+  /** ONLINE / INSTALLMENTS can only be paid from an account. */
+  PAYMENT_ACCOUNT_REQUIRED: 'PAYMENT_ACCOUNT_REQUIRED',
+} as const;
+
+export type CheckoutErrorCode = (typeof CheckoutErrorCode)[keyof typeof CheckoutErrorCode];
+
+/** 400 — a guest's promo code without `contact.createAccount`. */
+export function discountAccountRequiredError(): BadRequestException {
+  return new BadRequestException({
+    error: CheckoutErrorCode.DISCOUNT_ACCOUNT_REQUIRED,
+    message: 'Промокод діє лише з акаунтом — позначте «Створити акаунт на цю пошту» або увійдіть',
+  });
+}
+
+/** 400 — a guest's card payment without `contact.createAccount`. */
+export function paymentAccountRequiredError(): BadRequestException {
+  return new BadRequestException({
+    error: CheckoutErrorCode.PAYMENT_ACCOUNT_REQUIRED,
+    message:
+      'Оплата карткою доступна лише з акаунтом — позначте «Створити акаунт на цю пошту» або ' +
+      'оберіть оплату при отриманні',
+  });
+}
+
 // ─── Delivery method at checkout (TASK-643) ─────────────────────────────────
 
 /**

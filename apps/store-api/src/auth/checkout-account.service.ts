@@ -12,8 +12,9 @@ import { normalizeEmailAddress } from '../common/validators';
 export interface CheckoutAccountInput {
   email: string;
   /** The buyer's name as typed — split into first name and surname. */
-  name: string;
-  phone: string;
+  name: string | null;
+  /** Absent for an operator phone order taken without one (the one-click path). */
+  phone: string | null;
 }
 
 /** What finishing the account from the «Задайте пароль» link hands back. */
@@ -86,15 +87,15 @@ export class CheckoutAccountService {
     input: CheckoutAccountInput,
     tx: Prisma.TransactionClient,
   ): Promise<string> {
-    const [firstName, ...surname] = input.name.trim().split(/\s+/);
+    const [firstName, ...surname] = (input.name ?? '').trim().split(/\s+/);
 
     try {
       const user = await this.authRepository.createPasswordlessUser(
         {
           email: input.email,
-          firstName,
+          firstName: firstName || undefined,
           lastName: surname.length > 0 ? surname.join(' ') : undefined,
-          phone: input.phone,
+          phone: input.phone ?? undefined,
         },
         tx,
       );

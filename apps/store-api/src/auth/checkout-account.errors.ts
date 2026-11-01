@@ -31,7 +31,8 @@ export type CheckoutAccountErrorCode =
 export function accountExistsError(): ConflictException {
   return new ConflictException({
     error: CheckoutAccountErrorCode.ACCOUNT_EXISTS,
-    message: 'An account with this email already exists — sign in to continue',
+    // Shopper-facing: the storefront may show it verbatim, like the delivery codes.
+    message: 'На цю пошту вже є акаунт — увійдіть, щоб продовжити',
   });
 }
 
@@ -39,6 +40,6 @@ export function accountExistsError(): ConflictException {
 export function accountSetupInvalidError(): BadRequestException {
   return new BadRequestException({
     error: CheckoutAccountErrorCode.ACCOUNT_SETUP_INVALID,
-    message: 'Invalid or expired account setup link',
+    message: 'Посилання недійсне або застаріло — попросіть новий лист',
   });
 }

@@ -1236,6 +1236,7 @@ describe('OrderService', () => {
           'SUMMER10',
           SUBTOTAL,
           USER_ID,
+          '380501234567',
         );
       });
     });

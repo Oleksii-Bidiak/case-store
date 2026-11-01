@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   Prisma,
   DeliveryMethod,
@@ -409,9 +409,14 @@ export class OrderRepository {
     // ───────────────────────────────────────────────────────────────────────────
 
     const order = await this.prisma.$transaction(async (tx) => {
+      // TASK-2010: a checkout sign-up's account is written first, through this
+      // tx, and owns the order outright — so anything below that throws (stock
+      // gone, a promo cap, the outbox) takes the account down with the order.
+      const ownerId = params.account ? await params.account.create(tx) : userId;
+
       const created = await tx.order.create({
         data: {
-          userId,
+          userId: ownerId,
           // TASK-338: exactly one of `userId` and this block is populated. The
           // contact details are a snapshot of what was typed at checkout and are
           // never rewritten, not even when an account later claims the order.
@@ -484,7 +489,7 @@ export class OrderRepository {
       // and inserts the (orderId-unique) redemption. A cap race or a mid-flight
       // deactivation throws here and rolls back the entire order.
       if (discountParam) {
-        await discountParam.redeem(created.id, tx);
+        await discountParam.redeem(created.id, tx, ownerId);
       }
 
       // Empty the originating cart so it cannot be ordered twice.
@@ -1631,6 +1636,41 @@ export class OrderRepository {
       data: { userId },
     });
     return count;
+  }
+
+  /**
+   * The one-click account from a guest's success page (TASK-2010 (д)): create
+   * the account and attach THIS order to it, in one transaction.
+   *
+   * Only this order — its access token is the proof it is the caller's. The
+   * address's OTHER guest orders move only once the mailbox is proven
+   * (`claimGuestOrders`, on verification). `userId: null` in the WHERE keeps an
+   * order claimed in between from being re-pointed: then nothing is written,
+   * the account included, and the caller gets the guest-link 404.
+   *
+   * @param account writes the account through the tx and returns its id
+   * @param afterAssign in-transaction tail (the «Задайте пароль» link + letter)
+   * @returns the new account's id
+   */
+  async assignGuestOrderToNewAccount(
+    orderId: string,
+    account: { create: (tx: Prisma.TransactionClient) => Promise<string> },
+    afterAssign: (tx: Prisma.TransactionClient, userId: string) => Promise<void>,
+  ): Promise<string> {
+    return this.prisma.$transaction(async (tx) => {
+      const userId = await account.create(tx);
+
+      const { count } = await tx.order.updateMany({
+        where: { id: orderId, userId: null, deletedAt: null },
+        data: { userId },
+      });
+      if (count === 0) {
+        throw new NotFoundException('Order not found');
+      }
+
+      await afterAssign(tx, userId);
+      return userId;
+    });
   }
 
   /**
