@@ -1873,6 +1873,19 @@ describe('OrderController (e2e)', () => {
       );
     });
 
+    it('201 with the order and no session when signing in fails after the commit', async () => {
+      authRepositoryMock.saveRefreshToken.mockRejectedValue(new Error('refresh insert failed'));
+
+      const response = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({ shippingAddress: validAddress, contact: { ...contact, createAccount: true } })
+        .expect(201);
+
+      expect(response.body.data.userId).toBe(NEW_USER_ID);
+      expect(response.body.data.session).toBeUndefined();
+    });
+
     it('a guest order WITHOUT the box on a taken address goes through as before', async () => {
       authRepositoryMock.findByEmail.mockResolvedValue({ id: 'existing', email: contact.email });
 
@@ -2034,6 +2047,18 @@ describe('OrderController (e2e)', () => {
       );
       const cookies = ([] as string[]).concat(response.headers['set-cookie'] ?? []);
       expect(cookies.find((c) => c.startsWith('refreshToken='))).toContain('HttpOnly');
+    });
+
+    it('201 without a session (and no cookie) when signing in fails after the commit', async () => {
+      authRepositoryMock.saveRefreshToken.mockRejectedValue(new Error('refresh insert failed'));
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/orders/guest/${RAW_TOKEN}/account`)
+        .expect(201);
+
+      expect(response.body.data).toEqual({});
+      const cookies = ([] as string[]).concat(response.headers['set-cookie'] ?? []);
+      expect(cookies.some((c) => c.startsWith('refreshToken='))).toBe(false);
     });
 
     it('409 ACCOUNT_EXISTS when the order e-mail already has an account', async () => {

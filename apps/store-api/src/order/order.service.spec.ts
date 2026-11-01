@@ -4030,6 +4030,23 @@ describe('OrderService', () => {
       expect(created).toBeLessThan(signedIn);
     });
 
+    // Review of S5-API: the order and the account are COMMITTED by the time the
+    // session is minted. A failure there must not turn a placed order into a
+    // 500 the buyer would retry into a second order — log it, answer without a
+    // session; the «Задайте пароль» letter is the way in.
+    it('answers without a session, not with an error, when signing in fails after the commit', async () => {
+      checkoutAccountsMock.startSession.mockRejectedValue(new Error('refresh insert failed'));
+
+      const result = await service.placeOrder(signupActor, createDto);
+
+      expect(result.session).toBeNull();
+      expect(result.order.id).toBe(createdOrder.id);
+      expect(pinoLoggerMock.error).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'order.signup_session_failed', userId: NEW_USER_ID }),
+        expect.any(String),
+      );
+    });
+
     it('sends the confirmation to the typed address, with no guest status link', async () => {
       configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
 
@@ -4150,6 +4167,16 @@ describe('OrderService', () => {
         txMock,
       );
       expect(checkoutAccountsMock.startSession).toHaveBeenCalledWith(NEW_USER_ID);
+    });
+
+    it('answers with no session, not an error, when signing in fails after the commit', async () => {
+      checkoutAccountsMock.startSession.mockRejectedValue(new Error('refresh insert failed'));
+
+      await expect(service.createAccountFromGuestOrder(RAW)).resolves.toEqual({ session: null });
+      expect(pinoLoggerMock.error).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'order.signup_session_failed', userId: NEW_USER_ID }),
+        expect.any(String),
+      );
     });
 
     it('answers 409 ACCOUNT_EXISTS when the order e-mail already has an account', async () => {
