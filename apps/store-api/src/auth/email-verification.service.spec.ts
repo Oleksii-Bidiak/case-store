@@ -16,6 +16,7 @@ const authRepositoryMock = {
   markEmailVerificationTokenUsed: jest.fn(),
   markEmailVerified: jest.fn(),
   revokeAllUserTokens: jest.fn(),
+  hasRecentUnusedEmailToken: jest.fn(),
 };
 
 const mailOutboxMock = {
@@ -85,6 +86,7 @@ describe('EmailVerificationService (TASK-342)', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     claimPortMock.claimGuestOrders.mockResolvedValue(0);
+    authRepositoryMock.hasRecentUnusedEmailToken.mockResolvedValue(false);
     moduleRefMock.get.mockImplementation((token: unknown) => {
       if (token === GUEST_ORDER_CLAIM_PORT) {
         return claimPortMock;
@@ -469,6 +471,27 @@ describe('EmailVerificationService (TASK-342)', () => {
         },
         tx,
       );
+    });
+
+    // Review of S5-API: at most ONE «Задайте пароль» letter per address per hour,
+    // whatever the IP. The account is still created — just no second letter.
+    it('sends no second letter to an address that got one in the last hour', async () => {
+      authRepositoryMock.hasRecentUnusedEmailToken.mockResolvedValue(true);
+      const before = Date.now();
+
+      await service.issueAccountSetupLink({ id: 'user-1', email: 'new@example.com' }, tx);
+
+      expect(authRepositoryMock.hasRecentUnusedEmailToken).toHaveBeenCalledWith(
+        'new@example.com',
+        'ACCOUNT_SETUP',
+        expect.any(Date),
+        tx,
+      );
+      const since = authRepositoryMock.hasRecentUnusedEmailToken.mock.calls[0][2] as Date;
+      expect(before - since.getTime()).toBeGreaterThanOrEqual(60 * 60 * 1000 - 50);
+      expect(before - since.getTime()).toBeLessThanOrEqual(60 * 60 * 1000 + 50);
+      expect(authRepositoryMock.saveEmailVerificationToken).not.toHaveBeenCalled();
+      expect(mailOutboxMock.enqueueAccountSetup).not.toHaveBeenCalled();
     });
 
     it('gives the link the same 24-hour life as a verification link', async () => {

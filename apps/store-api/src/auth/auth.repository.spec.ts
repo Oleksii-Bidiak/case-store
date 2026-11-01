@@ -426,6 +426,31 @@ describe('AuthRepository', () => {
     });
   });
 
+  describe('hasRecentUnusedEmailToken (TASK-2010 review)', () => {
+    it('looks for an unused link of that purpose for the ADDRESS, whoever owns it, since the cut-off', async () => {
+      const txMock = { emailVerificationToken: { count: jest.fn().mockResolvedValue(1) } };
+      const since = new Date('2026-11-01T10:00:00.000Z');
+
+      await expect(
+        repository.hasRecentUnusedEmailToken(
+          'a@example.com',
+          'ACCOUNT_SETUP',
+          since,
+          txMock as never,
+        ),
+      ).resolves.toBe(true);
+
+      expect(txMock.emailVerificationToken.count).toHaveBeenCalledWith({
+        where: {
+          email: 'a@example.com',
+          purpose: 'ACCOUNT_SETUP',
+          usedAt: null,
+          createdAt: { gte: since },
+        },
+      });
+    });
+  });
+
   describe('clearPasswordHash (TASK-2010 review)', () => {
     it('removes the password, so the account signs in only through a proven channel', async () => {
       prismaMock.user.update.mockResolvedValue({ ...mockUser, passwordHash: null });
