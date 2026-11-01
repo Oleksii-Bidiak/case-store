@@ -296,6 +296,30 @@ describe('NotificationOutboxService', () => {
     });
   });
 
+  // ─── TASK-2010: «Задайте пароль» ──────────────────────────────────────────────
+
+  describe('account-setup letter (TASK-2010)', () => {
+    it('enqueues the letter to the address being set up, inside the caller tx', async () => {
+      const tx = { marker: 'tx' } as never;
+      const payload = {
+        to: 'new@example.com',
+        setupUrl: 'http://localhost:3000/account-setup?token=a',
+        expiresInHuman: '24 години',
+      };
+
+      await service.enqueueAccountSetup(payload, tx);
+
+      expect(repositoryMock.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'account-setup',
+          recipientAddress: 'new@example.com',
+          payload,
+        }),
+        tx,
+      );
+    });
+  });
+
   // ─── «оплату не отримано» (TASK-352 (b)) ──────────────────────────────────────
 
   describe('order-payment-expired letter (TASK-352)', () => {

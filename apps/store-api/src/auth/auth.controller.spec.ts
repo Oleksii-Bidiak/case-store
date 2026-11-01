@@ -8,12 +8,15 @@ import { GuestStateMergeService } from './guest-state-merge.service';
 import { PermissionService } from './permissions';
 import { EmailVerificationService } from './email-verification.service';
 import { EmailChangeService } from './email-change.service';
+import { AuthSessionResponder } from './auth-session-responder';
+import { CheckoutAccountService } from './checkout-account.service';
 
 // Constructor collaborators the routes under test never reach.
 const untouchedCollaborators = [
   {} as PermissionService,
   {} as EmailVerificationService,
   {} as EmailChangeService,
+  {} as CheckoutAccountService,
 ] as const;
 
 /**
@@ -68,7 +71,11 @@ describe('AuthController — google oauth callback', () => {
     controller = new AuthController(
       authService as unknown as AuthService,
       configMock as unknown as ConfigService,
-      guestStateMergeMock as unknown as GuestStateMergeService,
+      new AuthSessionResponder(
+        authService as unknown as AuthService,
+        configMock as unknown as ConfigService,
+        guestStateMergeMock as unknown as GuestStateMergeService,
+      ),
       ...untouchedCollaborators,
     );
   });
@@ -165,10 +172,15 @@ describe('AuthController — guest state on login', () => {
       refreshTokenTtlMs: 7 * 24 * 60 * 60 * 1000,
     };
     guestStateMerge = { mergeInto: jest.fn() };
+    const config = { get: jest.fn() } as unknown as ConfigService;
     controller = new AuthController(
       authService as unknown as AuthService,
-      { get: jest.fn() } as unknown as ConfigService,
-      guestStateMerge as unknown as GuestStateMergeService,
+      config,
+      new AuthSessionResponder(
+        authService as unknown as AuthService,
+        config,
+        guestStateMerge as unknown as GuestStateMergeService,
+      ),
       ...untouchedCollaborators,
     );
   });
@@ -227,5 +239,68 @@ describe('AuthController — guest state on login', () => {
     );
 
     expect(guestStateMerge.mergeInto).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * TASK-2010: the two public routes of the checkout sign-up on the auth side —
+ * finishing the account from the «Задайте пароль» letter, and the early
+ * "this address already has an account" signal for the checkout form.
+ */
+describe('AuthController — checkout sign-up routes (TASK-2010)', () => {
+  const session: IssuedSession = {
+    userId: 'user-1',
+    accessToken: 'opaque-access-token',
+    refreshToken: 'refresh-token-value',
+  };
+
+  let checkoutAccounts: { confirmSetup: jest.Mock; hasAccount: jest.Mock };
+  let controller: AuthController;
+
+  beforeEach(() => {
+    const authService = { refreshTokenTtlMs: 7 * 24 * 60 * 60 * 1000 } as unknown as AuthService;
+    const config = { get: jest.fn() } as unknown as ConfigService;
+    checkoutAccounts = {
+      confirmSetup: jest.fn().mockResolvedValue({ session, claimedOrders: 2 }),
+      hasAccount: jest.fn(),
+    };
+    controller = new AuthController(
+      authService,
+      config,
+      new AuthSessionResponder(authService, config, {
+        mergeInto: jest.fn(),
+      } as unknown as GuestStateMergeService),
+      {} as PermissionService,
+      {} as EmailVerificationService,
+      {} as EmailChangeService,
+      checkoutAccounts as unknown as CheckoutAccountService,
+    );
+  });
+
+  it('account-setup/confirm opens a session on this device and reports the claimed orders', async () => {
+    const response = { cookie: jest.fn() };
+
+    const result = await controller.confirmAccountSetup(
+      { token: 'raw', password: 'newpassword1' },
+      { cookies: {} } as unknown as Request,
+      response as unknown as Response,
+    );
+
+    expect(checkoutAccounts.confirmSetup).toHaveBeenCalledWith('raw', 'newpassword1');
+    expect(result).toEqual({ data: { accessToken: 'opaque-access-token', claimedOrders: 2 } });
+    expect(response.cookie).toHaveBeenCalledWith(
+      'refreshToken',
+      'refresh-token-value',
+      expect.objectContaining({ httpOnly: true, sameSite: 'strict' }),
+    );
+  });
+
+  it('checkout/email-status answers whether the address already has an account', async () => {
+    checkoutAccounts.hasAccount.mockResolvedValue(true);
+
+    await expect(controller.checkoutEmailStatus({ email: 'a@example.com' })).resolves.toEqual({
+      data: { hasAccount: true },
+    });
+    expect(checkoutAccounts.hasAccount).toHaveBeenCalledWith('a@example.com');
   });
 });

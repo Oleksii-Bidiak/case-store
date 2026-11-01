@@ -15,10 +15,12 @@ const authRepositoryMock = {
   findEmailVerificationToken: jest.fn(),
   markEmailVerificationTokenUsed: jest.fn(),
   markEmailVerified: jest.fn(),
+  revokeAllUserTokens: jest.fn(),
 };
 
 const mailOutboxMock = {
   enqueueEmailVerification: jest.fn(),
+  enqueueAccountSetup: jest.fn(),
 };
 
 const loggerMock = {
@@ -291,6 +293,113 @@ describe('EmailVerificationService (TASK-342)', () => {
         email: 'current@example.com',
         claimedOrders: 0,
       });
+    });
+  });
+
+  // ─── TASK-2010 (B-12 тема 2, п.3): the "taken address" defence ──────────────
+  //
+  // A checkout sign-up creates an account on whatever address was typed, with no
+  // proof. If the real owner of that mailbox later proves it, whoever created the
+  // account must lose it BEFORE the owner's guest orders move onto it — so every
+  // refresh token is revoked first, then the address is stamped, then claimed.
+
+  describe('confirm — revoking the sessions of an unproven account', () => {
+    it('revokes every refresh token BEFORE verifying and claiming', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(tokenRow());
+
+      await service.confirm('raw');
+
+      const revoked = authRepositoryMock.revokeAllUserTokens.mock.invocationCallOrder[0];
+      const verified = authRepositoryMock.markEmailVerified.mock.invocationCallOrder[0];
+      const claimed = claimPortMock.claimGuestOrders.mock.invocationCallOrder[0];
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith('user-1');
+      expect(revoked).toBeLessThan(verified);
+      expect(verified).toBeLessThan(claimed);
+    });
+
+    it('signs nobody out when the address was already proven', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(
+        tokenRow({ user: { ...activeUser, emailVerifiedAt: new Date('2026-10-01') } }),
+      );
+
+      await service.confirm('raw');
+
+      expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
+      expect(claimPortMock.claimGuestOrders).toHaveBeenCalledWith('user-1', 'current@example.com');
+    });
+  });
+
+  describe('adoptProvenAddress', () => {
+    it('revokes, stamps and claims, in that order, for an unproven account', async () => {
+      claimPortMock.claimGuestOrders.mockResolvedValue(2);
+
+      await expect(
+        service.adoptProvenAddress({ id: 'user-1', emailVerifiedAt: null }, 'a@example.com'),
+      ).resolves.toBe(2);
+
+      const revoked = authRepositoryMock.revokeAllUserTokens.mock.invocationCallOrder[0];
+      const verified = authRepositoryMock.markEmailVerified.mock.invocationCallOrder[0];
+      const claimed = claimPortMock.claimGuestOrders.mock.invocationCallOrder[0];
+      expect(revoked).toBeLessThan(verified);
+      expect(verified).toBeLessThan(claimed);
+      expect(claimPortMock.claimGuestOrders).toHaveBeenCalledWith('user-1', 'a@example.com');
+    });
+
+    it('neither revokes nor re-stamps an already proven account, and still claims', async () => {
+      await service.adoptProvenAddress(
+        { id: 'user-1', emailVerifiedAt: new Date('2026-10-01') },
+        'a@example.com',
+      );
+
+      expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
+      expect(authRepositoryMock.markEmailVerified).not.toHaveBeenCalled();
+      expect(claimPortMock.claimGuestOrders).toHaveBeenCalledWith('user-1', 'a@example.com');
+    });
+  });
+
+  // ─── TASK-2010: the «Задайте пароль» link of a checkout sign-up ─────────────
+
+  describe('issueAccountSetupLink', () => {
+    const tx = { marker: 'tx' } as never;
+
+    it('stores an ACCOUNT_SETUP token for the address and queues the letter, in the caller tx', async () => {
+      await service.issueAccountSetupLink({ id: 'user-1', email: 'new@example.com' }, tx);
+
+      expect(authRepositoryMock.saveEmailVerificationToken).toHaveBeenCalledWith(
+        'user-1',
+        'new@example.com',
+        expect.stringMatching(/^[0-9a-f]{64}$/),
+        expect.any(Date),
+        { purpose: 'ACCOUNT_SETUP' },
+        tx,
+      );
+      const rawToken = authRepositoryMock.saveEmailVerificationToken.mock.calls[0][2] as string;
+      expect(mailOutboxMock.enqueueAccountSetup).toHaveBeenCalledWith(
+        {
+          to: 'new@example.com',
+          setupUrl: `http://localhost:3000/account-setup?token=${rawToken}`,
+          expiresInHuman: expect.any(String),
+        },
+        tx,
+      );
+    });
+
+    it('gives the link the same 24-hour life as a verification link', async () => {
+      const before = Date.now();
+
+      await service.issueAccountSetupLink({ id: 'user-1', email: 'new@example.com' }, tx);
+
+      const expiresAt = authRepositoryMock.saveEmailVerificationToken.mock.calls[0][3] as Date;
+      const day = 24 * 60 * 60 * 1000;
+      expect(expiresAt.getTime()).toBeGreaterThanOrEqual(before + day);
+      expect(expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + day);
+    });
+
+    it('never logs the raw token or the link', async () => {
+      await service.issueAccountSetupLink({ id: 'user-1', email: 'new@example.com' }, tx);
+
+      const rawToken = authRepositoryMock.saveEmailVerificationToken.mock.calls[0][2] as string;
+      expect(JSON.stringify(loggerMock.info.mock.calls)).not.toContain(rawToken);
     });
   });
 });

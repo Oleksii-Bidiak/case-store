@@ -605,6 +605,86 @@ describe('AuthRepository', () => {
         },
       });
     });
+
+    it('stamps the address verified when the caller says the provider proved it (TASK-2010)', async () => {
+      const txMock = {
+        user: { create: jest.fn().mockResolvedValue(oauthUser) },
+        oAuthAccount: { create: jest.fn().mockResolvedValue(oauthAccount) },
+      };
+      prismaMock.$transaction.mockImplementation(
+        async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
+      );
+      const verifiedAt = new Date('2026-11-01T10:00:00.000Z');
+
+      await repository.createUserFromOAuth({
+        email: 'test@example.com',
+        provider: 'GOOGLE',
+        providerId: 'google-sub-123',
+        emailVerifiedAt: verifiedAt,
+      });
+
+      expect(txMock.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ emailVerifiedAt: verifiedAt, role: 'CUSTOMER' }),
+      });
+    });
+  });
+
+  // ─── createPasswordlessUser (TASK-2010) ─────────────────────────────────────
+
+  describe('createPasswordlessUser', () => {
+    it('writes an unverified, password-less CUSTOMER through the caller transaction', async () => {
+      const txMock = { user: { create: jest.fn().mockResolvedValue(mockUser) } };
+
+      const result = await repository.createPasswordlessUser(
+        {
+          email: 'olena@example.com',
+          firstName: 'Олена',
+          lastName: 'Шевченко',
+          phone: '380501234567',
+        },
+        txMock as never,
+      );
+
+      expect(result).toBe(mockUser);
+      // The role is pinned, like createUserFromOAuth: an account created by
+      // whoever typed an address at checkout must never arrive privileged.
+      // No passwordHash, no emailVerifiedAt — the «Задайте пароль» letter
+      // supplies both.
+      expect(txMock.user.create).toHaveBeenCalledWith({
+        data: {
+          email: 'olena@example.com',
+          firstName: 'Олена',
+          lastName: 'Шевченко',
+          phone: '380501234567',
+          role: 'CUSTOMER',
+        },
+      });
+      expect(prismaMock.user.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('saveEmailVerificationToken through a transaction (TASK-2010)', () => {
+    it('writes through the caller tx when one is given', async () => {
+      const txMock = { emailVerificationToken: { create: jest.fn().mockResolvedValue({}) } };
+
+      await repository.saveEmailVerificationToken(
+        'user-1',
+        'a@example.com',
+        'raw-token',
+        new Date('2026-11-02T00:00:00.000Z'),
+        { purpose: 'ACCOUNT_SETUP' },
+        txMock as never,
+      );
+
+      expect(txMock.emailVerificationToken.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          userId: 'user-1',
+          email: 'a@example.com',
+          purpose: 'ACCOUNT_SETUP',
+          token: createHash('sha256').update('raw-token').digest('hex'),
+        }),
+      });
+    });
   });
 
   // ─── failed-login lockout (TASK-314) ────────────────────────────────────────
