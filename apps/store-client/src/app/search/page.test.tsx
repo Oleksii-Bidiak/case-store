@@ -7,6 +7,14 @@ import SearchPage from "./page";
 jest.mock("@/widgets", () => ({
   SearchResultsView: () => <div data-testid="search-results" />,
 }));
+jest.mock("@/widgets/search-device-row", () => ({
+  SearchDeviceRow: ({ query }: { query: string }) => (
+    <div data-testid="search-device-row">{query}</div>
+  ),
+  SearchFixLine: ({ query }: { query: string }) => (
+    <div data-testid="search-fix-line">{query}</div>
+  ),
+}));
 
 // No legacy uuid params in these URLs, so no 308 — and no request either.
 jest.mock("@/shared/lib/legacy-catalog-params", () => ({
@@ -68,5 +76,27 @@ describe("/search page shell (TASK-876)", () => {
     expect(h1.className).toBe(`${H1_CLASS} text-foreground`);
     expect(h1.parentElement).toHaveClass("mb-4.5");
     expect(screen.getByTestId("search-results")).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-2069 — the model row is mounted by the page ABOVE the results widget
+ * (not inside it), and only when there is a query to recognise.
+ */
+describe("/search model row mount (TASK-2069)", () => {
+  it("renders the model row before the results for a query", async () => {
+    await renderPage({ q: "айфон 15 про" });
+
+    const row = screen.getByTestId("search-device-row");
+    const results = screen.getByTestId("search-results");
+    expect(row).toHaveTextContent("айфон 15 про");
+    expect(
+      row.compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("renders no model row on the blank search page", async () => {
+    await renderPage({ q: "   " });
+    expect(screen.queryByTestId("search-device-row")).not.toBeInTheDocument();
   });
 });

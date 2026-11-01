@@ -134,7 +134,7 @@ describe('buildProductListWhere', () => {
       const where = buildProductListWhere({
         categoryIds: ['root', 'child'],
         brandId: 'brand-1',
-        deviceModelId: 'model-1',
+        deviceModelIds: ['model-1'],
       });
 
       expect(where).toEqual({
@@ -142,6 +142,18 @@ describe('buildProductListWhere', () => {
         categoryId: { in: ['root', 'child'] },
         brandId: 'brand-1',
         deviceCompat: { some: { deviceModelId: 'model-1' } },
+      });
+    });
+
+    it('ORs several device models with IN (TASK-2077)', () => {
+      expect(buildProductListWhere({ deviceModelIds: ['m-1', 'm-2'] }).deviceCompat).toEqual({
+        some: { deviceModelId: { in: ['m-1', 'm-2'] } },
+      });
+    });
+
+    it('keeps an EMPTY device id set as an empty IN (filtered, never widened)', () => {
+      expect(buildProductListWhere({ deviceModelIds: [] }).deviceCompat).toEqual({
+        some: { deviceModelId: { in: [] } },
       });
     });
 

@@ -220,6 +220,11 @@ function DeviceModelRegistry() {
         href: compatProductsHref(model),
       });
     }
+    // TASK-1955: the model's assortment next to its series, with the holes.
+    items.push({
+      label: dict.deviceCoverage.link,
+      href: `/devices/models/${encodeURIComponent(model.id)}/coverage`,
+    });
     // Owner decision 2026-10-01: only what is live on the site is linked.
     if (model.isActive) {
       items.push({

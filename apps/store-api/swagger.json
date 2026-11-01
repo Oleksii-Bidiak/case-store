@@ -2297,9 +2297,9 @@
             "name": "device",
             "required": false,
             "in": "query",
-            "description": "Narrow to products compatible with one device model, by SLUG (TASK-420).",
+            "description": "Narrow to products compatible with a device model, by SLUG (TASK-420), or with ANY of up to 20 comma-separated slugs (OR, TASK-2077). Unknown slugs in a list are ignored; when nothing resolves the result is empty.",
             "schema": {
-              "example": "iphone-15",
+              "example": "iphone-15,galaxy-s24",
               "type": "string"
             }
           },
@@ -2590,9 +2590,9 @@
             "name": "device",
             "required": false,
             "in": "query",
-            "description": "Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420). Same unknown-value behaviour as `category`. Wins over the legacy `deviceModelId`.",
+            "description": "Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420) — or a comma-separated list of up to 20 slugs with OR semantics (`?device=iphone-15,galaxy-s24` = compatible with ANY of them, TASK-2077). In a list, unknown slugs are ignored; when nothing resolves the filter matches nothing (an empty 200 page), same as an unknown single slug. Wins over the legacy `deviceModelId`.",
             "schema": {
-              "example": "iphone-15",
+              "example": "iphone-15,galaxy-s24",
               "type": "string"
             }
           },
@@ -2850,9 +2850,9 @@
             "name": "device",
             "required": false,
             "in": "query",
-            "description": "Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420). Same unknown-value behaviour as `category`. Wins over the legacy `deviceModelId`.",
+            "description": "Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420) — or a comma-separated list of up to 20 slugs with OR semantics (`?device=iphone-15,galaxy-s24` = compatible with ANY of them, TASK-2077). In a list, unknown slugs are ignored; when nothing resolves the filter matches nothing (an empty 200 page), same as an unknown single slug. Wins over the legacy `deviceModelId`.",
             "schema": {
-              "example": "iphone-15",
+              "example": "iphone-15,galaxy-s24",
               "type": "string"
             }
           },
@@ -4014,6 +4014,92 @@
         ]
       }
     },
+    "/api/admin/devices/compat/bulk": {
+      "put": {
+        "operationId": "adminDeviceCompatControllerBulkUpdateCompat",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkDeviceCompatDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkDeviceCompatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, no models after series expansion, or unknown ids / series"
+          },
+          "403": {
+            "description": "Forbidden — devices:write required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Add, remove or replace device compatibility on many products (admin)",
+        "tags": [
+          "Devices"
+        ]
+      }
+    },
+    "/api/admin/devices/models/{id}/coverage": {
+      "get": {
+        "operationId": "adminDeviceCompatControllerGetModelCoverage",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Device model UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Coverage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceModelCoverageResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — devices:read required"
+          },
+          "404": {
+            "description": "Device model not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Assortment of a device model next to its series, with holes (admin)",
+        "tags": [
+          "Devices"
+        ]
+      }
+    },
     "/api/admin/uploads/categories": {
       "post": {
         "operationId": "uploadsControllerUploadCategoryImage",
@@ -4639,6 +4725,15 @@
             "schema": {
               "example": true,
               "type": "boolean"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "List order. `name` — alphabetical; `popular` — by the number of compatible publicly visible products (desc), then name. Omitted — newest release year first, then name.",
+            "schema": {
+              "$ref": "#/components/schemas/DeviceModelSort"
             }
           }
         ],
@@ -5637,9 +5732,9 @@
             "name": "device",
             "required": false,
             "in": "query",
-            "description": "Active compatible device-model SLUG — `?device=iphone-15` (TASK-420).",
+            "description": "Active compatible device-model SLUG — `?device=iphone-15` (TASK-420) — or a comma-separated list of up to 20 slugs, OR-ed (TASK-2077); same grammar as the listing twin.",
             "schema": {
-              "example": "iphone-15",
+              "example": "iphone-15,galaxy-s24",
               "type": "string"
             }
           },
@@ -9142,6 +9237,42 @@
         ]
       }
     },
+    "/api/catalog/device-hubs/{deviceSlug}": {
+      "get": {
+        "operationId": "catalogLandingControllerFindDeviceHub",
+        "parameters": [
+          {
+            "name": "deviceSlug",
+            "required": true,
+            "in": "path",
+            "description": "Device model slug",
+            "schema": {
+              "example": "iphone-15-pro",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The hub: the model plus every non-empty top-level category group (≤ 8 cards each). Its existence is the 200 itself.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceHubResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown or deactivated model, or no visible product is compatible with it"
+          }
+        },
+        "summary": "Get one device model's hub — its accessories grouped by top-level category",
+        "tags": [
+          "Catalog"
+        ]
+      }
+    },
     "/api/catalog/compat-pages": {
       "get": {
         "operationId": "catalogLandingControllerFindCompatPages",
@@ -10700,6 +10831,9 @@
           },
           "403": {
             "description": "Forbidden — admin access required"
+          },
+          "409": {
+            "description": "BANNER_PROMO_TILE_LIMIT — the write would make more than 5 PROMO_TILE banners published or scheduled at once; nothing was written"
           }
         },
         "security": [
@@ -10846,6 +10980,9 @@
           },
           "404": {
             "description": "Banner not found"
+          },
+          "409": {
+            "description": "BANNER_PROMO_TILE_LIMIT — the write would make more than 5 PROMO_TILE banners published or scheduled at once; nothing was written"
           }
         },
         "security": [
@@ -10923,6 +11060,9 @@
           },
           "404": {
             "description": "Banner not found"
+          },
+          "409": {
+            "description": "BANNER_PROMO_TILE_LIMIT — the write would make more than 5 PROMO_TILE banners published or scheduled at once; nothing was written"
           }
         },
         "security": [
@@ -17501,6 +17641,23 @@
           "type"
         ]
       },
+      "CategoryIcon": {
+        "type": "string",
+        "enum": [
+          "cases",
+          "glass",
+          "chargers",
+          "cables",
+          "power-banks",
+          "headphones",
+          "watches",
+          "speakers",
+          "holders",
+          "smartphones",
+          "memory"
+        ],
+        "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear."
+      },
       "CategoryEntity": {
         "type": "object",
         "properties": {
@@ -17575,6 +17732,16 @@
             "description": "Open Graph image for this category; wins over the global default (TASK-437).",
             "example": "https://cdn.example.com/og/cases.jpg",
             "nullable": true
+          },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
           },
           "createdAt": {
             "format": "date-time",
@@ -17668,6 +17835,16 @@
             "example": "https://cdn.example.com/og/cases.jpg",
             "nullable": true
           },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string",
@@ -17727,6 +17904,16 @@
             "description": "Parent category ID (null for root)",
             "example": "550e8400-e29b-41d4-a716-446655440000",
             "nullable": true
+          },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
           },
           "isActive": {
             "type": "boolean",
@@ -17923,6 +18110,16 @@
             "description": "Open Graph image for this category — first tier of the storefront’s `buildOgImages` chain (TASK-437).",
             "example": "https://cdn.example.com/og/cases.jpg",
             "nullable": true
+          },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
           },
           "updatedAt": {
             "format": "date-time",
@@ -18182,6 +18379,16 @@
             "example": "https://cdn.example.com/og/cases.jpg",
             "nullable": true
           },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -18432,6 +18639,16 @@
             "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
             "example": "https://cdn.example.com/og/iphone-15-case.jpg",
             "nullable": true
+          },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
           }
         },
         "required": [
@@ -18501,6 +18718,16 @@
             "description": "Open Graph / social-preview image URL for this row. Wins over the row’s own image and over the global SeoSettings.defaultOgImage. Send null to clear.",
             "example": "https://cdn.example.com/og/iphone-15-case.jpg",
             "nullable": true
+          },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
           }
         }
       },
@@ -18949,6 +19176,16 @@
               "$ref": "#/components/schemas/ProductCompatibleDeviceEntity"
             }
           },
+          "compatibleDeviceModelIds": {
+            "description": "Ids of every device model this position is compatible with (TASK-1953). Present on every public product response — list, cards, search and detail — so the storefront can mark «підходить до вашого пристрою» against the shopper’s locally stored device without a per-product request. Empty when the position declares no compatibility.",
+            "example": [
+              "550e8400-e29b-41d4-a716-446655440000"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "specs": {
             "description": "Structured specifications (TASK-191): hydrated key/label/unit/value rows for the PDP \"Характеристики\" table. Empty on list responses and for products with no specs.",
             "type": "array",
@@ -18979,6 +19216,7 @@
           "ratingAverage",
           "ratingCount",
           "variantSummary",
+          "compatibleDeviceModelIds",
           "specs",
           "highlights"
         ]
@@ -20514,6 +20752,300 @@
           "items"
         ]
       },
+      "BulkCompatMode": {
+        "type": "string",
+        "enum": [
+          "add",
+          "remove",
+          "replace"
+        ],
+        "description": "`add` keeps what the products already have, `remove` drops only the named models, `replace` makes the named models the whole set."
+      },
+      "BulkDeviceCompatDto": {
+        "type": "object",
+        "properties": {
+          "productIds": {
+            "description": "Ids of the products whose compatibility changes.",
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mode": {
+            "description": "`add` keeps what the products already have, `remove` drops only the named models, `replace` makes the named models the whole set.",
+            "example": "add",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BulkCompatMode"
+              }
+            ]
+          },
+          "deviceModelIds": {
+            "description": "Device model ids to add / remove / set.",
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "series": {
+            "description": "Whole series («iPhone 15»): expanded to every model of that series, active or not.",
+            "maxItems": 100,
+            "example": [
+              "iPhone 15"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "productIds",
+          "mode"
+        ]
+      },
+      "BulkDeviceCompatResultEntity": {
+        "type": "object",
+        "properties": {
+          "updatedProducts": {
+            "type": "number",
+            "description": "Products whose compatibility set actually changed",
+            "example": 3
+          },
+          "added": {
+            "type": "number",
+            "description": "Product ↔ model links created",
+            "example": 12
+          },
+          "removed": {
+            "type": "number",
+            "description": "Product ↔ model links removed",
+            "example": 0
+          }
+        },
+        "required": [
+          "updatedProducts",
+          "added",
+          "removed"
+        ]
+      },
+      "BulkDeviceCompatResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkDeviceCompatResultEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CoverageModelEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "example": "iPhone 15 Pro"
+          },
+          "slug": {
+            "type": "string",
+            "example": "iphone-15-pro"
+          },
+          "series": {
+            "type": "string",
+            "nullable": true,
+            "example": "iPhone 15"
+          },
+          "brandName": {
+            "type": "string",
+            "example": "Apple"
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the model is shown on the storefront",
+            "example": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "series",
+          "brandName",
+          "isActive"
+        ]
+      },
+      "CoverageSiblingEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440001"
+          },
+          "name": {
+            "type": "string",
+            "example": "iPhone 15 Pro Max"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "CoverageStatsEntity": {
+        "type": "object",
+        "properties": {
+          "compatibleProducts": {
+            "type": "number",
+            "description": "Products shown on the storefront that are compatible with the model",
+            "example": 128
+          },
+          "inStockProducts": {
+            "type": "number",
+            "description": "Of those, how many have stock > 0",
+            "example": 117
+          },
+          "holes": {
+            "type": "number",
+            "description": "Top-level categories where the model has 0 products and a sibling has > 0",
+            "example": 2
+          }
+        },
+        "required": [
+          "compatibleProducts",
+          "inStockProducts",
+          "holes"
+        ]
+      },
+      "CoverageCountEntity": {
+        "type": "object",
+        "properties": {
+          "deviceModelId": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "productCount": {
+            "type": "number",
+            "example": 44
+          }
+        },
+        "required": [
+          "deviceModelId",
+          "productCount"
+        ]
+      },
+      "CoverageCategoryEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440010"
+          },
+          "name": {
+            "type": "string",
+            "example": "Чохли"
+          },
+          "slug": {
+            "type": "string",
+            "example": "chokhly"
+          },
+          "icon": {
+            "type": "object"
+          },
+          "counts": {
+            "description": "The model first, then its siblings in `siblings` order",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageCountEntity"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "icon",
+          "counts"
+        ]
+      },
+      "CoverageSuspectEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440020"
+          },
+          "name": {
+            "type": "string",
+            "example": "Захист камери ESR для iPhone 15 Pro"
+          },
+          "slug": {
+            "type": "string",
+            "example": "zakhyst-kamery-esr-iphone-15-pro"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug"
+        ]
+      },
+      "DeviceModelCoverageEntity": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "$ref": "#/components/schemas/CoverageModelEntity"
+          },
+          "siblings": {
+            "description": "Active models of the same brand and series, excluding this one",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageSiblingEntity"
+            }
+          },
+          "stats": {
+            "$ref": "#/components/schemas/CoverageStatsEntity"
+          },
+          "categories": {
+            "description": "Top-level categories where the model or a sibling has ≥ 1 product, tree order",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageCategoryEntity"
+            }
+          },
+          "suspects": {
+            "description": "Up to 10 active products whose name mentions the model but lack compat with it",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CoverageSuspectEntity"
+            }
+          }
+        },
+        "required": [
+          "model",
+          "siblings",
+          "stats",
+          "categories",
+          "suspects"
+        ]
+      },
+      "DeviceModelCoverageResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DeviceModelCoverageEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "UploadedImageEntity": {
         "type": "object",
         "properties": {
@@ -20809,13 +21341,46 @@
             "type": "string",
             "description": "URL-friendly slug",
             "example": "iphone-15-pro"
+          },
+          "series": {
+            "type": "string",
+            "description": "Series grouping (e.g. \"iPhone 15\"); null when not set",
+            "example": "iPhone 15",
+            "nullable": true
+          },
+          "releaseYear": {
+            "type": "integer",
+            "description": "Release year; null when not set",
+            "example": 2023,
+            "nullable": true
+          },
+          "brandName": {
+            "type": "string",
+            "description": "Owning device brand name",
+            "example": "Apple"
+          },
+          "brandSlug": {
+            "type": "string",
+            "description": "Owning device brand slug",
+            "example": "apple"
+          },
+          "productCount": {
+            "type": "integer",
+            "description": "Number of publicly visible products (active, not deleted, in a visible category) compatible with this model",
+            "example": 42,
+            "minimum": 0
           }
         },
         "required": [
           "id",
           "deviceBrandId",
           "name",
-          "slug"
+          "slug",
+          "series",
+          "releaseYear",
+          "brandName",
+          "brandSlug",
+          "productCount"
         ]
       },
       "DeviceBrandListResponse": {
@@ -20837,7 +21402,7 @@
         "type": "object",
         "properties": {
           "data": {
-            "description": "Active device models (id, brand, name, slug)",
+            "description": "Active device models (id, brand id/name/slug, name, slug, series, release year, number of compatible visible products)",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DeviceModelListItemEntity"
@@ -20846,6 +21411,13 @@
         },
         "required": [
           "data"
+        ]
+      },
+      "DeviceModelSort": {
+        "type": "string",
+        "enum": [
+          "name",
+          "popular"
         ]
       },
       "DeviceModelEntity": {
@@ -24916,6 +25488,167 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/CompatLandingDetailEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "DeviceHubModelEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Device model identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Device model display name",
+            "example": "iPhone 15 Pro"
+          },
+          "slug": {
+            "type": "string",
+            "description": "Device model slug — the hub URL segment",
+            "example": "iphone-15-pro"
+          },
+          "brandName": {
+            "type": "string",
+            "description": "Owning device brand display name",
+            "example": "Apple"
+          },
+          "brandSlug": {
+            "type": "string",
+            "description": "Owning device brand slug",
+            "example": "apple"
+          },
+          "series": {
+            "type": "string",
+            "description": "Product-line series the model belongs to, if set",
+            "example": "iPhone 15",
+            "nullable": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "Admin override of the page's <title>; null → generated",
+            "example": null,
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "Admin override of the page's meta description; null → generated",
+            "example": null,
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "description": "Admin-written intro text for the model, if any",
+            "example": null,
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "brandName",
+          "brandSlug",
+          "series",
+          "metaTitle",
+          "metaDescription",
+          "description"
+        ]
+      },
+      "DeviceHubCategoryEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Category identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Category display name",
+            "example": "Чохли"
+          },
+          "slug": {
+            "type": "string",
+            "description": "Category slug",
+            "example": "cases"
+          },
+          "icon": {
+            "description": "Category icon — a key into the storefront SVG sprite (TASK-1956). Null means no icon: clients render the generic «folder» glyph. Send null to clear.",
+            "example": "cases",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryIcon"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug"
+        ]
+      },
+      "DeviceHubGroupEntity": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/DeviceHubCategoryEntity"
+          },
+          "productCount": {
+            "type": "number",
+            "description": "Visible products of this category subtree compatible with the model — the same number the landing /catalog/<category>/<model> lists. Always ≥ 1.",
+            "example": 44
+          },
+          "products": {
+            "description": "The first products of the group (at most 8): in stock first, then newest — the catalogue's default order. Same card shape as GET /products/cards, including `compatibleDeviceModelIds`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicProductEntity"
+            }
+          }
+        },
+        "required": [
+          "category",
+          "productCount",
+          "products"
+        ]
+      },
+      "DeviceHubEntity": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "$ref": "#/components/schemas/DeviceHubModelEntity"
+          },
+          "productCount": {
+            "type": "number",
+            "description": "Visible products compatible with the model, across all groups. Each product sits in exactly one group, so this is the sum of the group counts. Always ≥ 1.",
+            "example": 128
+          },
+          "groups": {
+            "description": "Non-empty groups, ordered by category sortOrder, then name",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceHubGroupEntity"
+            }
+          }
+        },
+        "required": [
+          "model",
+          "productCount",
+          "groups"
+        ]
+      },
+      "DeviceHubResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DeviceHubEntity"
           }
         },
         "required": [

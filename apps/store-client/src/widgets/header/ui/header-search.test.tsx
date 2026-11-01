@@ -12,7 +12,10 @@ import { dict } from "@/shared/config";
 import type { BlogPostSuggestionEntity } from "@/entities/blog";
 import type { CategoryTreeNodeEntity } from "@/entities/category";
 import type { SearchSuggestionEntity } from "@/entities/search";
-import { HeaderSearch } from "./header-search";
+// Test-only composition: the app layer plugs the mega menu into the slot
+// (app/site-header.tsx); the widget itself never imports it.
+import { CatalogMegaMenu } from "@/widgets/catalog-menu";
+import { HeaderSearch, MEGA_MENU_QUERY } from "./header-search";
 
 // next/navigation is unavailable under jsdom — mock the router used by pick/submit.
 const mockPush = jest.fn();
@@ -20,9 +23,46 @@ jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
+const originalMatchMedia = window.matchMedia;
+
+/** `lg` and up (the mega menu exists) or below it (the sheet takes over). */
+function setWide(wide: boolean): void {
+  window.matchMedia = (query: string) =>
+    ({
+      matches: wide && query === MEGA_MENU_QUERY,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }) as MediaQueryList;
+}
+
 beforeEach(() => {
   mockPush.mockClear();
+  setWide(true);
 });
+
+afterEach(() => {
+  window.matchMedia = originalMatchMedia;
+});
+
+/** The pill with the real mega menu in its slot, as the site header has it. */
+function renderSearch(onOpenMenu: () => void = jest.fn()) {
+  return renderWithProviders(
+    <HeaderSearch
+      renderCatalogMenu={({ onClose }) => <CatalogMegaMenu onClose={onClose} />}
+      onOpenMenu={onOpenMenu}
+    />,
+  );
+}
+
+/** The open catalog panel, or null. */
+function catalogPanel() {
+  return screen.queryByRole("group", { name: dict.header.catalogAria });
+}
 
 /** Build a product suggestion with sensible defaults; override per-test. */
 function makeSuggestion(
@@ -433,181 +473,6 @@ describe("HeaderSearch — APG combobox ARIA contract (TASK-275)", () => {
   });
 });
 
-describe("HeaderSearch — mega-menu flyout (TASK-082)", () => {
-  /** Render and open the "Каталог" panel. */
-  async function openCatalog() {
-    const user = userEvent.setup();
-    renderWithProviders(<HeaderSearch />);
-    await user.click(
-      screen.getByRole("button", { name: dict.header.catalogAria }),
-    );
-    return { user };
-  }
-
-  /** The right pane (subcategories of the active root). */
-  function subPane() {
-    return screen.getByRole("group", {
-      name: dict.header.catalogSubcategoriesAria,
-    });
-  }
-
-  it("defaults the right pane to the first root's children on open", async () => {
-    setupHandlers({ categories: makeTree() });
-    await openCatalog();
-
-    const first = await screen.findByRole("menuitem", { name: "Смартфони" });
-    expect(first).toHaveAttribute("aria-expanded", "true");
-    expect(first).toHaveAttribute("aria-haspopup", "true");
-    expect(screen.getByRole("menuitem", { name: "Аудіо" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    // Childless root carries neither attribute.
-    const childless = screen.getByRole("menuitem", { name: "Кабелі" });
-    expect(childless).not.toHaveAttribute("aria-haspopup");
-    expect(childless).not.toHaveAttribute("aria-expanded");
-
-    const pane = subPane();
-    expect(
-      within(pane).getByRole("menuitem", { name: "Чохли" }),
-    ).toHaveAttribute("href", "/categories/cases");
-    expect(
-      within(pane).getByRole("menuitem", { name: "Скло" }),
-    ).toBeInTheDocument();
-  });
-
-  it("reveals another root's children on hover", async () => {
-    setupHandlers({ categories: makeTree() });
-    const { user } = await openCatalog();
-
-    await user.hover(await screen.findByRole("menuitem", { name: "Аудіо" }));
-
-    const pane = subPane();
-    expect(
-      within(pane).getByRole("menuitem", { name: "Навушники" }),
-    ).toBeInTheDocument();
-    expect(
-      within(pane).queryByRole("menuitem", { name: "Чохли" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("reveals another root's children on keyboard focus", async () => {
-    setupHandlers({ categories: makeTree() });
-    await openCatalog();
-
-    const audio = await screen.findByRole("menuitem", { name: "Аудіо" });
-    act(() => audio.focus());
-
-    expect(
-      within(subPane()).getByRole("menuitem", { name: "Навушники" }),
-    ).toBeInTheDocument();
-  });
-
-  it("hides the right pane while a childless root is active", async () => {
-    setupHandlers({ categories: makeTree() });
-    const { user } = await openCatalog();
-
-    await user.hover(await screen.findByRole("menuitem", { name: "Кабелі" }));
-
-    expect(
-      screen.queryByRole("group", {
-        name: dict.header.catalogSubcategoriesAria,
-      }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("keeps a root-with-children navigating on click and closes the panel", async () => {
-    setupHandlers({ categories: makeTree() });
-    const { user } = await openCatalog();
-
-    const first = await screen.findByRole("menuitem", { name: "Смартфони" });
-    expect(first).toHaveAttribute("href", "/categories/phones");
-
-    await user.click(first);
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  });
-
-  it("moves focus between panes with ArrowRight/ArrowLeft", async () => {
-    setupHandlers({ categories: makeTree() });
-    const { user } = await openCatalog();
-
-    const first = await screen.findByRole("menuitem", { name: "Смартфони" });
-    act(() => first.focus());
-
-    await user.keyboard("{ArrowRight}");
-    const child = within(subPane()).getByRole("menuitem", { name: "Чохли" });
-    expect(child).toHaveFocus();
-
-    await user.keyboard("{ArrowLeft}");
-    expect(first).toHaveFocus();
-  });
-
-  it("returns focus to the trigger when Escape closes the panel", async () => {
-    setupHandlers({ categories: makeTree() });
-    const { user } = await openCatalog();
-    await screen.findByRole("menuitem", { name: "Смартфони" });
-
-    await user.keyboard("{Escape}");
-
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: dict.header.catalogAria }),
-    ).toHaveFocus();
-  });
-
-  it("shows skeleton rows while the tree is loading", async () => {
-    server.use(
-      http.get("*/api/categories/tree", async () => {
-        await delay("infinite");
-        return HttpResponse.json({ data: [] });
-      }),
-      http.get("*/api/search/suggest", () => HttpResponse.json({ data: [] })),
-      http.get("*/api/blog/suggest", () => HttpResponse.json({ data: [] })),
-    );
-    await openCatalog();
-
-    // Skeletons live in an aria-hidden container — query the hidden tree.
-    expect(screen.getAllByRole("status", { hidden: true })).toHaveLength(6);
-    expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
-  });
-
-  it("shows the error state when the tree request fails", async () => {
-    server.use(
-      http.get("*/api/categories/tree", () =>
-        HttpResponse.json(
-          { error: "Internal", message: "boom", statusCode: 500 },
-          { status: 500 },
-        ),
-      ),
-      http.get("*/api/search/suggest", () => HttpResponse.json({ data: [] })),
-      http.get("*/api/blog/suggest", () => HttpResponse.json({ data: [] })),
-    );
-    await openCatalog();
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      dict.catalog.categoriesError,
-    );
-  });
-
-  it("shows the empty state without a right pane when there are no roots", async () => {
-    setupHandlers({ categories: [] });
-    await openCatalog();
-
-    expect(
-      await screen.findByText(dict.catalog.noCategories),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("group", {
-        name: dict.header.catalogSubcategoriesAria,
-      }),
-    ).not.toBeInTheDocument();
-    // The "Усі категорії" footer link is still there.
-    expect(
-      screen.getByRole("menuitem", { name: dict.header.catalogAll }),
-    ).toHaveAttribute("href", "/categories");
-  });
-});
-
 describe("HeaderSearch — hover, Enter and the compact trigger (TASK-411)", () => {
   /** The product listbox itself (the one named by the input's aria-label). */
   function productList() {
@@ -777,25 +642,25 @@ describe("HeaderSearch — hover, Enter and the compact trigger (TASK-411)", () 
   it("closes the catalog panel when the magnifier opens the search panel", async () => {
     setupHandlers({ categories: makeTree() });
     const user = userEvent.setup();
-    renderWithProviders(<HeaderSearch />);
+    renderSearch();
 
     await user.click(
       screen.getByRole("button", { name: dict.header.catalogAria }),
     );
-    await screen.findByRole("menuitem", { name: "Смартфони" });
+    await screen.findByRole("link", { name: "Смартфони" });
 
     await user.click(
       screen.getByRole("button", { name: dict.search.openPanel }),
     );
 
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(catalogPanel()).not.toBeInTheDocument();
     expect(document.getElementById("compact-search")).toBeInTheDocument();
   });
 
   it("closes the search panel when the catalog trigger opens the mega-menu", async () => {
     setupHandlers({ categories: makeTree() });
     const user = userEvent.setup();
-    renderWithProviders(<HeaderSearch />);
+    renderSearch();
 
     const magnifier = screen.getByRole("button", {
       name: dict.search.openPanel,
@@ -807,7 +672,7 @@ describe("HeaderSearch — hover, Enter and the compact trigger (TASK-411)", () 
       name: dict.header.catalogAria,
     });
     await user.click(catalogTrigger);
-    await screen.findByRole("menuitem", { name: "Смартфони" });
+    await screen.findByRole("link", { name: "Смартфони" });
 
     // The other direction of the same exclusivity: the search panel must go,
     // or two absolutely positioned panels overlap with a focused input buried
@@ -818,220 +683,107 @@ describe("HeaderSearch — hover, Enter and the compact trigger (TASK-411)", () 
   });
 });
 
-describe("HeaderSearch — mega-menu keyboard, scroll-lock and the second exit (TASK-413)", () => {
+// The panel's box and lifecycle (TASK-082, TASK-413, TASK-2072). Its content —
+// roots, tiles, keyboard, device column — is CatalogMegaMenu's own suite.
+describe("HeaderSearch — the catalog panel", () => {
   /** Render and open the "Каталог" panel; hands back RTL's unmount too. */
-  async function openCatalog() {
+  async function openCatalog(onOpenMenu?: () => void) {
     const user = userEvent.setup();
-    const view = renderWithProviders(<HeaderSearch />);
-    await user.click(
-      screen.getByRole("button", { name: dict.header.catalogAria }),
-    );
+    const view = renderSearch(onOpenMenu);
+    await user.click(trigger());
     return { user, unmount: view.unmount };
   }
 
-  function subPane() {
-    return screen.getByRole("group", {
-      name: dict.header.catalogSubcategoriesAria,
-    });
+  function trigger() {
+    return screen.getByRole("button", { name: dict.header.catalogAria });
   }
 
-  /** Open the panel and put focus on the first root, ready for an arrow key. */
-  async function openOnFirstRoot() {
-    const opened = await openCatalog();
-    const first = await screen.findByRole("menuitem", { name: "Смартфони" });
-    act(() => first.focus());
-    return { ...opened, first };
-  }
+  it("opens a labelled panel the trigger controls, with the slot's content", async () => {
+    setupHandlers({ categories: makeTree() });
+    await openCatalog();
 
-  describe("vertical traversal", () => {
-    it("walks the root list downwards and wraps past the last root", async () => {
-      setupHandlers({ categories: makeTree() });
-      const { user } = await openOnFirstRoot();
-
-      await user.keyboard("{ArrowDown}");
-      expect(screen.getByRole("menuitem", { name: "Аудіо" })).toHaveFocus();
-      await user.keyboard("{ArrowDown}");
-      expect(screen.getByRole("menuitem", { name: "Кабелі" })).toHaveFocus();
-
-      // Wrapping is what keeps ↓ from being a dead key on the last row.
-      await user.keyboard("{ArrowDown}");
-      expect(screen.getByRole("menuitem", { name: "Смартфони" })).toHaveFocus();
-    });
-
-    it("walks the root list upwards and wraps past the first root", async () => {
-      setupHandlers({ categories: makeTree() });
-      const { user } = await openOnFirstRoot();
-
-      await user.keyboard("{ArrowUp}");
-      expect(screen.getByRole("menuitem", { name: "Кабелі" })).toHaveFocus();
-      await user.keyboard("{ArrowUp}");
-      expect(screen.getByRole("menuitem", { name: "Аудіо" })).toHaveFocus();
-    });
-
-    it("jumps to the last and first root with End and Home", async () => {
-      setupHandlers({ categories: makeTree() });
-      const { user } = await openOnFirstRoot();
-
-      await user.keyboard("{End}");
-      expect(screen.getByRole("menuitem", { name: "Кабелі" })).toHaveFocus();
-      await user.keyboard("{Home}");
-      expect(screen.getByRole("menuitem", { name: "Смартфони" })).toHaveFocus();
-    });
-
-    it("previews the children of whichever root an arrow key lands on", async () => {
-      setupHandlers({ categories: makeTree() });
-      const { user } = await openOnFirstRoot();
-
-      await user.keyboard("{ArrowDown}");
-
-      // Arrows drive the right pane exactly as hovering does — otherwise the
-      // keyboard reads a pane that belongs to a different root.
-      expect(
-        within(subPane()).getByRole("menuitem", { name: "Навушники" }),
-      ).toBeInTheDocument();
-    });
-
-    it("walks the subcategory pane with ArrowDown/ArrowUp/Home/End", async () => {
-      setupHandlers({ categories: makeTree() });
-      const { user } = await openOnFirstRoot();
-
-      await user.keyboard("{ArrowRight}");
-      const cases = within(subPane()).getByRole("menuitem", { name: "Чохли" });
-      const glass = within(subPane()).getByRole("menuitem", { name: "Скло" });
-      expect(cases).toHaveFocus();
-
-      await user.keyboard("{ArrowDown}");
-      expect(glass).toHaveFocus();
-      await user.keyboard("{ArrowDown}");
-      expect(cases).toHaveFocus();
-      await user.keyboard("{End}");
-      expect(glass).toHaveFocus();
-      await user.keyboard("{Home}");
-      expect(cases).toHaveFocus();
-      await user.keyboard("{ArrowUp}");
-      expect(glass).toHaveFocus();
-    });
-
-    it("closes the panel when focus leaves it altogether", async () => {
-      setupHandlers({ categories: makeTree() });
-      await openOnFirstRoot();
-
-      // Somewhere outside the widget — a Tab-out, in effect. Leaving the panel
-      // open behind departed focus would strand the visitor under a
-      // scroll-locked page.
-      const outside = document.createElement("button");
-      document.body.append(outside);
-      act(() => outside.focus());
-
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-      outside.remove();
-    });
-
-    it("leaves ArrowLeft and Escape doing what they always did", async () => {
-      setupHandlers({ categories: makeTree() });
-      const { user, first } = await openOnFirstRoot();
-
-      await user.keyboard("{ArrowRight}{ArrowLeft}");
-      expect(first).toHaveFocus();
-
-      await user.keyboard("{Escape}");
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-      expect(
-        screen.getByRole("button", { name: dict.header.catalogAria }),
-      ).toHaveFocus();
-    });
+    expect(trigger()).toHaveAttribute("aria-expanded", "true");
+    // Disclosure navigation, not an ARIA menu (TASK-2072).
+    expect(trigger()).not.toHaveAttribute("aria-haspopup");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    const panel = catalogPanel();
+    expect(panel).toHaveAttribute(
+      "id",
+      trigger().getAttribute("aria-controls"),
+    );
+    expect(
+      await within(panel!).findByRole("link", { name: "Смартфони" }),
+    ).toHaveAttribute("href", "/categories/phones");
   });
 
-  describe("roving tab stops", () => {
-    it("gives each pane exactly one tabbable row", async () => {
-      setupHandlers({ categories: makeTree() });
-      await openCatalog();
-      await screen.findByRole("menuitem", { name: "Смартфони" });
+  it("anchors the panel to the header row, aligned with the logo", async () => {
+    setupHandlers({ categories: makeTree() });
+    await openCatalog();
 
-      // Root pane: the active root holds the stop.
-      expect(
-        screen.getByRole("menuitem", { name: "Смартфони" }),
-      ).toHaveAttribute("tabindex", "0");
-      expect(screen.getByRole("menuitem", { name: "Аудіо" })).toHaveAttribute(
-        "tabindex",
-        "-1",
-      );
-      expect(screen.getByRole("menuitem", { name: "Кабелі" })).toHaveAttribute(
-        "tabindex",
-        "-1",
-      );
-
-      // Child pane: its own stop, defaulting to the first row.
-      const pane = subPane();
-      expect(
-        within(pane).getByRole("menuitem", { name: "Чохли" }),
-      ).toHaveAttribute("tabindex", "0");
-      expect(
-        within(pane).getByRole("menuitem", { name: "Скло" }),
-      ).toHaveAttribute("tabindex", "-1");
-    });
-
-    it("moves the root pane's tab stop with the selection", async () => {
-      setupHandlers({ categories: makeTree() });
-      const { user } = await openOnFirstRoot();
-
-      await user.keyboard("{ArrowDown}");
-
-      expect(screen.getByRole("menuitem", { name: "Аудіо" })).toHaveAttribute(
-        "tabindex",
-        "0",
-      );
-      expect(
-        screen.getByRole("menuitem", { name: "Смартфони" }),
-      ).toHaveAttribute("tabindex", "-1");
-    });
-
-    it("moves the child pane's tab stop, and resets it for a new root", async () => {
-      setupHandlers({ categories: makeTree() });
-      const { user } = await openOnFirstRoot();
-
-      await user.keyboard("{ArrowRight}{ArrowDown}");
-      expect(
-        within(subPane()).getByRole("menuitem", { name: "Скло" }),
-      ).toHaveAttribute("tabindex", "0");
-      expect(
-        within(subPane()).getByRole("menuitem", { name: "Чохли" }),
-      ).toHaveAttribute("tabindex", "-1");
-
-      // A different root renders a different list; the remembered id matches
-      // nothing there, so the stop falls back to that list's first row.
-      await user.hover(screen.getByRole("menuitem", { name: "Аудіо" }));
-      expect(
-        within(subPane()).getByRole("menuitem", { name: "Навушники" }),
-      ).toHaveAttribute("tabindex", "0");
-    });
+    // Positioned by the row (header.tsx), not by the pill: hung off the
+    // pill's left edge the ≈1142px panel ran past a 1280 viewport.
+    expect(catalogPanel()).toHaveClass("absolute", "top-full", "lg:left-8");
+    expect(catalogPanel()?.parentElement).not.toHaveClass("relative");
   });
 
-  describe("the panel footer", () => {
-    it("offers the flat catalogue beside the category index", async () => {
-      setupHandlers({ categories: makeTree() });
-      await openCatalog();
-      await screen.findByRole("menuitem", { name: "Смартфони" });
+  it("closes on a second click of the trigger", async () => {
+    setupHandlers({ categories: makeTree() });
+    const { user } = await openCatalog();
 
-      expect(
-        screen.getByRole("menuitem", { name: dict.header.catalogAll }),
-      ).toHaveAttribute("href", "/categories");
-      expect(
-        screen.getByRole("menuitem", { name: dict.header.catalogAllProducts }),
-      ).toHaveAttribute("href", "/products");
-    });
+    await user.click(trigger());
 
-    it("closes the panel when the flat catalogue is picked", async () => {
-      setupHandlers({ categories: makeTree() });
-      const { user } = await openCatalog();
-      await screen.findByRole("menuitem", { name: "Смартфони" });
+    expect(catalogPanel()).not.toBeInTheDocument();
+    expect(trigger()).toHaveAttribute("aria-expanded", "false");
+  });
 
-      await user.click(
-        screen.getByRole("menuitem", { name: dict.header.catalogAllProducts }),
-      );
+  it("closes when a category link is picked", async () => {
+    setupHandlers({ categories: makeTree() });
+    const { user } = await openCatalog();
 
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    });
+    await user.click(await screen.findByRole("link", { name: "Скло" }));
+
+    expect(catalogPanel()).not.toBeInTheDocument();
+  });
+
+  it("returns focus to the trigger when Escape closes the panel", async () => {
+    setupHandlers({ categories: makeTree() });
+    const { user } = await openCatalog();
+    const root = await screen.findByRole("link", { name: "Смартфони" });
+    act(() => root.focus());
+
+    await user.keyboard("{Escape}");
+
+    expect(catalogPanel()).not.toBeInTheDocument();
+    expect(trigger()).toHaveFocus();
+  });
+
+  it("closes the panel when focus leaves it altogether", async () => {
+    setupHandlers({ categories: makeTree() });
+    await openCatalog();
+    const root = await screen.findByRole("link", { name: "Смартфони" });
+    act(() => root.focus());
+
+    // Somewhere outside the widget — a Tab-out, in effect. Leaving the panel
+    // open behind departed focus would strand the visitor under a
+    // scroll-locked page.
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    act(() => outside.focus());
+
+    expect(catalogPanel()).not.toBeInTheDocument();
+    outside.remove();
+  });
+
+  it("below lg opens the menu sheet instead of the panel", async () => {
+    setupHandlers({ categories: makeTree() });
+    setWide(false);
+    const onOpenMenu = jest.fn();
+    await openCatalog(onOpenMenu);
+
+    expect(onOpenMenu).toHaveBeenCalledTimes(1);
+    expect(catalogPanel()).not.toBeInTheDocument();
+    expect(trigger()).toHaveAttribute("aria-expanded", "false");
+    expect(document.body).not.toHaveAttribute("data-scroll-locked");
   });
 
   describe("scroll-lock", () => {
@@ -1052,7 +804,7 @@ describe("HeaderSearch — mega-menu keyboard, scroll-lock and the second exit (
       setupHandlers({ categories: makeTree() });
       expectLocked(false);
       await openCatalog();
-      await screen.findByRole("menuitem", { name: "Смартфони" });
+      await screen.findByRole("link", { name: "Смартфони" });
 
       // The attribute name is not free: globals.css keys `scrollbar-gutter`
       // off `body[data-scroll-locked]`, so any other name would drop the
@@ -1063,22 +815,22 @@ describe("HeaderSearch — mega-menu keyboard, scroll-lock and the second exit (
     it("releases the lock when Escape closes the panel", async () => {
       setupHandlers({ categories: makeTree() });
       const { user } = await openCatalog();
-      await screen.findByRole("menuitem", { name: "Смартфони" });
+      await screen.findByRole("link", { name: "Смартфони" });
 
       await user.keyboard("{Escape}");
 
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(catalogPanel()).not.toBeInTheDocument();
       expectLocked(false);
     });
 
     it("releases the lock when a click outside closes the panel", async () => {
       setupHandlers({ categories: makeTree() });
       const { user } = await openCatalog();
-      await screen.findByRole("menuitem", { name: "Смартфони" });
+      await screen.findByRole("link", { name: "Смартфони" });
 
       await user.click(document.body);
 
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(catalogPanel()).not.toBeInTheDocument();
       expectLocked(false);
     });
 
@@ -1086,18 +838,16 @@ describe("HeaderSearch — mega-menu keyboard, scroll-lock and the second exit (
       setupHandlers({ categories: makeTree() });
       const { user } = await openCatalog();
 
-      await user.click(
-        await screen.findByRole("menuitem", { name: "Смартфони" }),
-      );
+      await user.click(await screen.findByRole("link", { name: "Смартфони" }));
 
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(catalogPanel()).not.toBeInTheDocument();
       expectLocked(false);
     });
 
     it("releases the lock when the header unmounts with the panel open", async () => {
       setupHandlers({ categories: makeTree() });
       const { unmount } = await openCatalog();
-      await screen.findByRole("menuitem", { name: "Смартфони" });
+      await screen.findByRole("link", { name: "Смартфони" });
       expectLocked(true);
 
       // A route change can tear the header down mid-panel; a lock that only
@@ -1112,7 +862,7 @@ describe("HeaderSearch — mega-menu keyboard, scroll-lock and the second exit (
       // Stand in for a Radix overlay that already owns the page.
       document.body.setAttribute("data-scroll-locked", "");
       const { user } = await openCatalog();
-      await screen.findByRole("menuitem", { name: "Смартфони" });
+      await screen.findByRole("link", { name: "Смартфони" });
 
       await user.keyboard("{Escape}");
 

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "./fixtures/test";
 
 /**
- * Manual theme switch (TASK-412).
+ * Manual theme switch (TASK-412; one header button since TASK-2073).
  *
  * The one thing unit tests cannot see is WHEN the theme is applied. next-themes
  * writes `data-theme` from a blocking inline script it renders at the top of
@@ -55,12 +55,16 @@ async function recordThemeAtFirstContent(page: Page): Promise<void> {
 }
 
 /**
- * One option of the header switch. `exact` is not optional here: Playwright
- * matches accessible names as substrings, and "Темна" is a substring of
- * "Системна" — without it the locator resolves to two elements and fails.
+ * The header's one-button theme toggle (TASK-2073), by the theme a click
+ * will turn on. Its name says what a click WILL do and is computed from the
+ * effective theme after hydration (before it, the neutral «Тема оформлення») —
+ * so locating it by that name also waits until a click can actually land.
  */
-function themeOption(page: Page, name: string) {
-  return page.locator("header").getByRole("radio", { name, exact: true });
+function themeButton(page: Page, target: "dark" | "light") {
+  return page.locator("header").getByRole("button", {
+    name: target === "dark" ? "Увімкнути темну тему" : "Увімкнути світлу тему",
+    exact: true,
+  });
 }
 
 test.describe("manual theme switch", () => {
@@ -78,12 +82,13 @@ test.describe("manual theme switch", () => {
     // The header switch starts at `xl` (TASK-511/512; below it lives in the
     // slide-out menu); the default project viewport is 1280 wide, so it is on
     // screen here.
-    const dark = themeOption(page, "Темна");
+    const dark = themeButton(page, "dark");
     await expect(dark).toBeVisible();
     await dark.click();
 
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await expect(dark).toHaveAttribute("aria-checked", "true");
+    // The button now offers the way back.
+    await expect(themeButton(page, "light")).toBeVisible();
 
     await page.reload();
 
@@ -109,7 +114,8 @@ test.describe("manual theme switch", () => {
     expect(
       background,
       "the dark tokens did not apply on a light OS — data-theme is cosmetic",
-    ).toBe("rgb(10, 10, 10)");
+      // `--color-background` dark, #111118 (direction В, TASK-1951).
+    ).toBe("rgb(17, 17, 24)");
   });
 
   test("an explicit light choice beats a dark OS preference", async ({
@@ -121,7 +127,7 @@ test.describe("manual theme switch", () => {
     // Untouched, the storefront follows the OS.
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
-    await themeOption(page, "Світла").click();
+    await themeButton(page, "light").click();
     await page.reload();
 
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
@@ -132,7 +138,8 @@ test.describe("manual theme switch", () => {
     expect(
       background,
       "the light tokens did not win over the dark media query",
-    ).toBe("rgb(255, 255, 255)");
+      // `--color-background` light, #f6f5f9 (direction В, TASK-1951).
+    ).toBe("rgb(246, 245, 249)");
   });
 
   /**
@@ -152,20 +159,20 @@ test.describe("manual theme switch", () => {
     await page.emulateMedia({ colorScheme: "dark" });
     await page.goto("/products");
 
-    // The catalogue's filter field, not the header search. Both are named
-    // «Пошук товарів» (the filter's `aria-label` overrides its visible «Пошук»
-    // `<label>`, which is why `getByLabel('Пошук')` never matched — TASK-752),
-    // but the header one is a `role="combobox"`, so the `searchbox` role alone
-    // tells them apart. Strict on purpose: a second match should fail loudly.
-    const filterSearch = page.getByRole("searchbox", {
-      name: "Пошук товарів",
+    // The desktop filter rail's «Мінімальна ціна» field — a plain `Input` with
+    // no background of its own. (Until TASK-1951 this was the rail's text
+    // search, which direction В dropped.) The mobile drawer renders the same
+    // field as `filter-m-min-price`, so the id pins the rail. Strict on
+    // purpose: a second match should fail loudly.
+    const priceField = page.getByRole("spinbutton", {
+      name: "Мінімальна ціна",
       exact: true,
     });
-    await expect(filterSearch).toBeVisible();
-    await expect(filterSearch).toHaveAttribute("id", "filter-search");
+    await expect(priceField).toBeVisible();
+    await expect(priceField).toHaveAttribute("id", "filter-min-price");
 
     const backgroundOf = () =>
-      filterSearch.evaluate((el) => getComputedStyle(el).backgroundColor);
+      priceField.evaluate((el) => getComputedStyle(el).backgroundColor);
 
     // Untouched on a dark OS: the variant fires, so the field is not transparent.
     expect(
@@ -173,7 +180,7 @@ test.describe("manual theme switch", () => {
       "dark: did not apply on a dark OS with no explicit choice",
     ).not.toBe("rgba(0, 0, 0, 0)");
 
-    await themeOption(page, "Світла").click();
+    await themeButton(page, "light").click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
     expect(
@@ -192,6 +199,9 @@ test.describe("manual theme switch", () => {
    * `theme-color` meta whose media matches — in a real engine, across a reload
    * and a client-side navigation (React owns `<head>`, so a soft navigation is
    * where a foreign tag would get dropped).
+   *
+   * Since TASK-1951 the chrome takes the page background (`THEME_COLOR`,
+   * #f6f5f9 / #111118), not the primary.
    */
   test("the theme-color meta follows the explicit choice", async ({ page }) => {
     const effectiveThemeColor = () =>
@@ -211,18 +221,18 @@ test.describe("manual theme switch", () => {
 
     // «Системна»: the media pair decides, nothing is layered on top.
     await expect(overrides).toHaveCount(0);
-    expect(await effectiveThemeColor()).toBe("#6366f1");
+    expect(await effectiveThemeColor()).toBe("#111118");
 
-    await themeOption(page, "Світла").click();
+    await themeButton(page, "light").click();
     await expect(overrides).toHaveCount(1);
     expect(
       await effectiveThemeColor(),
       "the address bar stayed dark over a page the visitor switched to light",
-    ).toBe("#4f46e5");
+    ).toBe("#f6f5f9");
 
     await page.reload();
     await expect(overrides).toHaveCount(1);
-    expect(await effectiveThemeColor()).toBe("#4f46e5");
+    expect(await effectiveThemeColor()).toBe("#f6f5f9");
 
     // A soft navigation re-renders the head; the override must survive it.
     await page
@@ -231,10 +241,16 @@ test.describe("manual theme switch", () => {
       .click();
     await expect(page).toHaveURL(/\/products/);
     await expect(overrides).toHaveCount(1);
-    expect(await effectiveThemeColor()).toBe("#4f46e5");
+    expect(await effectiveThemeColor()).toBe("#f6f5f9");
 
-    await themeOption(page, "Системна").click();
+    // No header control returns to «Системна» any more (TASK-2073) — that is
+    // the account card «Оформлення». Clearing the stored choice is the same
+    // state next-themes starts from: the media pair decides again.
+    await page.evaluate(() => window.localStorage.removeItem("theme"));
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(themeButton(page, "light")).toBeVisible();
     await expect(overrides).toHaveCount(0);
-    expect(await effectiveThemeColor()).toBe("#6366f1");
+    expect(await effectiveThemeColor()).toBe("#111118");
   });
 });

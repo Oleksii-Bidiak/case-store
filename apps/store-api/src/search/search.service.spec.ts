@@ -1,5 +1,6 @@
 import { PinoLogger } from 'nestjs-pino';
 import { ProductRepository } from '../product/product.repository';
+import { ProductDeviceCompatRepository } from '../product/product-device-compat.repository';
 import { CategoryRepository } from '../category';
 import { BrandRepository } from '../brand';
 import { DeviceRepository } from '../device';
@@ -116,7 +117,13 @@ describe('SearchService', () => {
   };
   // TASK-420 — the two repositories the slug → id resolver adds.
   let brandRepo: { findBySlug: jest.Mock; findById: jest.Mock };
-  let deviceRepo: { findModelBySlug: jest.Mock; findModelById: jest.Mock };
+  let deviceRepo: {
+    findModelBySlug: jest.Mock;
+    findModelById: jest.Mock;
+    findModelsBySlugs: jest.Mock;
+  };
+  // TASK-1953: compat ids for the SKU / Postgres paths (the engine path reads the hit).
+  let compatRepo: { getDeviceModelIdsByProductIds: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -159,6 +166,14 @@ describe('SearchService', () => {
     deviceRepo = {
       findModelBySlug: jest.fn((slug: string) => Promise.resolve({ id: `id-of-${slug}`, slug })),
       findModelById: jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` })),
+      findModelsBySlugs: jest.fn((slugs: string[]) =>
+        Promise.resolve(slugs.map((slug) => ({ id: `id-of-${slug}`, slug }))),
+      ),
+    };
+    compatRepo = {
+      getDeviceModelIdsByProductIds: jest.fn((ids: string[]) =>
+        Promise.resolve(new Map(ids.map((id) => [id, [`compat-of-${id}`]]))),
+      ),
     };
     categoryRepo.findBySlug = jest.fn((slug: string) =>
       Promise.resolve({ id: `id-of-${slug}`, slug }),
@@ -175,6 +190,7 @@ describe('SearchService', () => {
         brandRepo as unknown as BrandRepository,
         deviceRepo as unknown as DeviceRepository,
       ),
+      compatRepo as unknown as ProductDeviceCompatRepository,
     );
   });
 
@@ -250,6 +266,7 @@ describe('SearchService', () => {
           brandRepo as unknown as BrandRepository,
           deviceRepo as unknown as DeviceRepository,
         ),
+        compatRepo as unknown as ProductDeviceCompatRepository,
         synonyms as unknown as SearchSynonymsService,
       );
     });
@@ -603,6 +620,46 @@ describe('SearchService', () => {
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 20, totalPages: 1 });
     });
 
+    // TASK-1953: the storefront's «підходить» check reads these ids.
+    it('carries each hit’s deviceModelIds as compatibleDeviceModelIds, with no extra query', async () => {
+      meili.search.mockResolvedValue({
+        hits: [
+          { id: 'product-2', deviceModelIds: ['m-2'] },
+          { id: 'product-1', deviceModelIds: [] },
+        ] as never,
+        totalHits: 2,
+      });
+      repo.findByIdsForCards.mockResolvedValue([
+        makeProduct({ id: 'product-1' }),
+        makeProduct({ id: 'product-2' }),
+      ] as never);
+
+      const result = await service.search('case', 1, 20);
+
+      expect(result.items.map((p) => p.compatibleDeviceModelIds)).toEqual([['m-2'], []]);
+      expect(compatRepo.getDeviceModelIdsByProductIds).not.toHaveBeenCalled();
+    });
+
+    it('loads compat ids in ONE batched query on the Postgres fallback (TASK-1953)', async () => {
+      meili.search.mockResolvedValue(null);
+      repo.findAll.mockResolvedValue({
+        products: [makeProduct({ id: 'product-1' }), makeProduct({ id: 'product-2' })],
+        total: 2,
+      } as never);
+
+      const result = await service.search('case', 1, 20);
+
+      expect(compatRepo.getDeviceModelIdsByProductIds).toHaveBeenCalledTimes(1);
+      expect(compatRepo.getDeviceModelIdsByProductIds).toHaveBeenCalledWith([
+        'product-1',
+        'product-2',
+      ]);
+      expect(result.items.map((p) => p.compatibleDeviceModelIds)).toEqual([
+        ['compat-of-product-1'],
+        ['compat-of-product-2'],
+      ]);
+    });
+
     it('asks the engine for the requested page by number (TASK-537)', async () => {
       meili.search.mockResolvedValue({ hits: [{ id: 'product-1' }] as never, totalHits: 25 });
       repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
@@ -724,7 +781,7 @@ describe('SearchService', () => {
       await service.search('case', 1, 20, {
         categoryId: 'cat-1',
         brandId: 'brand-1',
-        deviceModelId: 'dm-1',
+        deviceModelIds: ['dm-1'],
         inStock: true,
         minPrice: 10,
         maxPrice: 50,
@@ -743,6 +800,32 @@ describe('SearchService', () => {
             'price <= 50',
           ],
         }),
+      );
+    });
+
+    it('ORs several device models with IN on the engine path (TASK-2077)', async () => {
+      meili.search.mockResolvedValue({ hits: [{ id: 'product-1' }] as never, totalHits: 1 });
+      repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
+
+      await service.searchFromQuery({ q: 'case', device: 'iphone-15,galaxy-s24' });
+
+      expect(deviceRepo.findModelsBySlugs).toHaveBeenCalledTimes(1);
+      expect(meili.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({
+          filter: ['isActive = true', 'deviceModelIds IN ["id-of-galaxy-s24", "id-of-iphone-15"]'],
+        }),
+      );
+    });
+
+    it('ORs several device models on the Postgres fallback too (TASK-2077)', async () => {
+      meili.search.mockResolvedValue(null);
+      repo.findAll.mockResolvedValue({ products: [], total: 0 } as never);
+
+      await service.searchFromQuery({ q: 'case', device: 'iphone-15,galaxy-s24' });
+
+      expect(repo.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ deviceModelIds: ['id-of-galaxy-s24', 'id-of-iphone-15'] }),
       );
     });
 
@@ -783,7 +866,7 @@ describe('SearchService', () => {
       await service.search('case', 2, 12, {
         categoryId: 'cat-1',
         brandId: 'brand-1',
-        deviceModelId: 'dm-1',
+        deviceModelIds: ['dm-1'],
         inStock: true,
         minPrice: 10,
         maxPrice: 50,
@@ -800,7 +883,7 @@ describe('SearchService', () => {
           categoryActiveOnly: true,
           categoryIds: ['cat-1', 'cat-1-a'],
           brandId: 'brand-1',
-          deviceModelId: 'dm-1',
+          deviceModelIds: ['dm-1'],
           inStock: true,
           minPrice: 10,
           maxPrice: 50,

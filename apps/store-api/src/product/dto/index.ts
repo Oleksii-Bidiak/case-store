@@ -18,3 +18,8 @@ export { UpdateProductSpecsDto, ProductSpecValueDto } from './update-product-spe
 export { BulkProductStatusDto } from './bulk-product-status.dto';
 export { BulkProductGroupDto } from './bulk-product-group.dto';
 export { BulkProductColorDto, MAX_COLOR_LENGTH } from './bulk-product-color.dto';
+export {
+  BulkDeviceCompatDto,
+  BULK_COMPAT_MODES,
+  type BulkCompatMode,
+} from './bulk-device-compat.dto';

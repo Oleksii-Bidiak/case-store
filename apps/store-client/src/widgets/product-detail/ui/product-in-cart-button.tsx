@@ -16,6 +16,8 @@ interface ProductInCartButtonProps {
    * it replaces, so the bar does not change height when the state flips.
    */
   compact?: boolean;
+  /** Size overrides — the PDP buy row is a 56px pill. */
+  className?: string;
 }
 
 /**
@@ -33,6 +35,7 @@ export function ProductInCartButton({
   inStock,
   onOpenCart,
   compact = false,
+  className,
 }: ProductInCartButtonProps) {
   return (
     <Button
@@ -51,6 +54,8 @@ export function ProductInCartButton({
         inStock
           ? "border-success/40 text-success hover:bg-success/10 hover:text-success"
           : "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive",
+        !compact && "rounded-cta",
+        className,
       )}
     >
       {inStock ? (

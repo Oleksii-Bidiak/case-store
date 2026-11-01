@@ -6,7 +6,7 @@ export type ProductRailFilter = Pick<
   "categoryId" | "deviceModelId"
 >;
 
-/** Eight other products plus the current one, which the rail filters out. */
+/** Eight other in-stock products plus the current one, which the rail filters out. */
 export const PRODUCT_RAIL_LIMIT = 9;
 
 /**
@@ -23,6 +23,8 @@ export function buildProductRailParams(
   return {
     ...filter,
     isActive: true,
+    // The rails sell: nothing sold out (Product mockup §6.9).
+    inStock: true,
     page: 1,
     limit: PRODUCT_RAIL_LIMIT,
     sortBy: "createdAt",

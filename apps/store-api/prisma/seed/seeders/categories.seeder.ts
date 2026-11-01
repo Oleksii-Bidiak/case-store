@@ -14,6 +14,8 @@ interface CategoryInput {
   keywords: string[];
   /** TASK-437 demo: reuse the rendered tile as this category's OG image. */
   demoOgImage: boolean;
+  /** Sprite key (TASK-1956) — roots only; null renders «folder». */
+  icon: string | null;
   sortOrder: number;
   parentId?: string;
 }
@@ -53,6 +55,9 @@ export async function seedCategories(prisma: PrismaClient) {
       // Written on every run, null included, so dropping the demo flag actually
       // clears the column instead of leaving the previous run's value behind.
       ogImage: cat.demoOgImage ? image : null,
+      // Same rule as `ogImage`: written on update too, so a re-seed of an existing
+      // database picks the icons up (TASK-1956).
+      icon: cat.icon,
       sortOrder: cat.sortOrder,
       parentId: cat.parentId ?? null,
       isActive: true,

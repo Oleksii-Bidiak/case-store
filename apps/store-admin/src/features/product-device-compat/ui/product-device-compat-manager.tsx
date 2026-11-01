@@ -9,7 +9,6 @@ import {
   type Ref,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { SearchIcon } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
   useDeviceControllerFindBrands,
@@ -18,9 +17,9 @@ import {
   useProductControllerUpdateGroupDeviceCompat,
 } from "@/entities/device";
 import { getProductControllerFindByIdQueryKey } from "@/entities/product";
+import { DeviceSeriesPicker } from "@/features/device-series-picker";
 import type { SectionSaveController } from "@/shared/lib/section-save";
-import { cn } from "@/shared/lib/utils";
-import { Badge, Button, Checkbox, Input, Label } from "@/shared/ui";
+import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
 const c = dict.productCompat;
@@ -63,16 +62,18 @@ function sameSet(a: ReadonlySet<string>, b: readonly string[]): boolean {
 
 /**
  * ProductDeviceCompatManager — the admin «Сумісні пристрої» control (TASK-190).
- * A checkbox per device model, bound to the product's compat set via the
- * dedicated `PUT /products/:id/device-compat` endpoint (compat is not part of
- * the product create/update DTO). When the product belongs to a group,
- * «Застосувати до всіх позицій групи» copies the same set to every sibling
- * position (`PUT /products/group/:groupId/device-compat`) — immediately, as
- * before: it writes OTHER products, so it is not part of this form's save.
+ * Bound to the product's compat set via the dedicated
+ * `PUT /products/:id/device-compat` endpoint (compat is not part of the product
+ * create/update DTO). When the product belongs to a group, «Застосувати до всіх
+ * позицій групи» copies the same set to every sibling position
+ * (`PUT /products/group/:groupId/device-compat`) — immediately, as before: it
+ * writes OTHER products, so it is not part of this form's save.
  *
- * Wave 198 (ProductFormProposal Ф3): a model search, brand pills with counts,
- * «Лише вибрані» and a «Вибрано N» badge — finding one model among two hundred
- * by scrolling brand blocks was the complaint.
+ * TASK-1955 (DeviceCompat artboard 1): the models are picked BY SERIES — brand
+ * tabs, a tri-state checkbox per series, the «Обрано N моделей» summary and the
+ * partial-series reminder — through the shared {@link DeviceSeriesPicker}. The
+ * section stays one block of the product form (stacked, not the mockup's two
+ * columns: the form already has its own aside), under the page's one «Зберегти».
  *
  * `selected` seeds once from `initialModelIds` at mount — the parent only renders
  * this component after the product has loaded (docs/conventions/forms.md).
@@ -92,9 +93,6 @@ export function ProductDeviceCompatManager({
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(initialModelIds),
   );
-  const [search, setSearch] = useState("");
-  const [brandFilter, setBrandFilter] = useState("");
-  const [onlySelected, setOnlySelected] = useState(false);
 
   const { data: brandsData } = useDeviceControllerFindBrands();
   const { data: modelsData, isLoading } = useDeviceControllerFindModels({
@@ -106,35 +104,7 @@ export function ProductDeviceCompatManager({
   const update = useProductControllerUpdateDeviceCompat();
   const updateGroup = useProductControllerUpdateGroupDeviceCompat();
 
-  const countByBrand = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const model of models) {
-      map.set(model.deviceBrandId, (map.get(model.deviceBrandId) ?? 0) + 1);
-    }
-    return map;
-  }, [models]);
-
-  const brandName = useMemo(
-    () => new Map(brands.map((brand) => [brand.id, brand.name])),
-    [brands],
-  );
-
-  const needle = search.trim().toLocaleLowerCase("uk-UA");
-  const visibleModels = models.filter(
-    (model) =>
-      (!brandFilter || model.deviceBrandId === brandFilter) &&
-      (!onlySelected || selected.has(model.id)) &&
-      (!needle ||
-        model.name.toLocaleLowerCase("uk-UA").includes(needle) ||
-        (brandName.get(model.deviceBrandId) ?? "")
-          .toLocaleLowerCase("uk-UA")
-          .includes(needle)),
-  );
-
-  const toggle = (modelId: string, checked: boolean) => {
-    const next = new Set(selected);
-    if (checked) next.add(modelId);
-    else next.delete(modelId);
+  const change = (next: Set<string>) => {
     setSelected(next);
     // STAGED mode: the parent is the only place this selection survives until
     // the product exists, so it learns about every tick as it happens.
@@ -209,113 +179,21 @@ export function ProductDeviceCompatManager({
   };
 
   const pending = update.isPending || updateGroup.isPending;
-
-  if (isLoading) {
-    return <p className="text-sm text-muted-foreground">{c.loading}</p>;
-  }
-
-  if (models.length === 0) {
-    return <p className="text-sm text-muted-foreground">{c.empty}</p>;
-  }
-
-  const pill = (active: boolean) =>
-    cn(
-      "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border bg-background px-3 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
-      active && "border-primary bg-primary/10 text-primary hover:text-primary",
-    );
+  const ready = !isLoading && models.length > 0;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">{c.hint}</p>
-        <Badge variant="secondary">{c.selectedCount(selected.size)}</Badge>
-      </div>
+    <div className="flex flex-col gap-4">
+      <DeviceSeriesPicker
+        models={models}
+        brands={brands}
+        isLoading={isLoading}
+        value={selected}
+        onChange={change}
+        idPrefix="compat"
+        showCounts
+      />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1">
-          <SearchIcon
-            aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            type="search"
-            aria-label={c.searchAria}
-            placeholder={c.searchPlaceholder}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <Button
-          type="button"
-          variant={onlySelected ? "secondary" : "outline"}
-          aria-pressed={onlySelected}
-          onClick={() => setOnlySelected((value) => !value)}
-        >
-          {c.onlySelected}
-        </Button>
-      </div>
-
-      <div
-        role="group"
-        aria-label={c.brandFilterAria}
-        className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1"
-      >
-        {brands.map((brand) => {
-          const count = countByBrand.get(brand.id) ?? 0;
-          if (count === 0) return null;
-          const active = brandFilter === brand.id;
-          return (
-            <button
-              key={brand.id}
-              type="button"
-              aria-pressed={active}
-              onClick={() => setBrandFilter(active ? "" : brand.id)}
-              className={pill(active)}
-            >
-              {brand.name}
-              <span className="text-xs tabular-nums">{count}</span>
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          aria-pressed={brandFilter === ""}
-          onClick={() => setBrandFilter("")}
-          className={pill(brandFilter === "")}
-        >
-          {c.allBrands(models.length)}
-        </button>
-      </div>
-
-      {visibleModels.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{c.nothingFound}</p>
-      ) : (
-        <ul className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
-          {visibleModels.map((model) => {
-            const inputId = `compat-${model.id}`;
-            return (
-              <li key={model.id} className="flex items-center gap-2">
-                <Checkbox
-                  id={inputId}
-                  checked={selected.has(model.id)}
-                  onCheckedChange={(checked) =>
-                    toggle(model.id, checked === true)
-                  }
-                />
-                <Label
-                  htmlFor={inputId}
-                  className="text-sm font-normal text-foreground"
-                >
-                  {model.name}
-                </Label>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {productId ? (
+      {!ready ? null : productId ? (
         <div className="flex flex-wrap items-center gap-3">
           {controllerRef ? null : (
             <Button type="button" onClick={handleSave} disabled={pending}>

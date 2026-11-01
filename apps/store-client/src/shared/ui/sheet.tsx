@@ -5,7 +5,7 @@ import { XIcon } from "lucide-react";
 import { Dialog as SheetPrimitive } from "radix-ui";
 
 import { cn } from "@/shared/lib/utils";
-import { dict } from "@/shared/config";
+import { dict, FOCUS_RING, PRESS_ICON } from "@/shared/config";
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
@@ -61,10 +61,13 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  closeLabel = dict.common.close,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left";
   showCloseButton?: boolean;
+  /** Accessible name of the close button (default «Закрити»). */
+  closeLabel?: string;
 }) {
   return (
     <SheetPortal>
@@ -87,9 +90,19 @@ function SheetContent({
       >
         {children}
         {showCloseButton && (
-          <SheetPrimitive.Close className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary">
-            <XIcon className="size-4" />
-            <span className="sr-only">{dict.common.close}</span>
+          // TASK-2139 (Catalog `.cg-x`): a 40×40 round `bg-muted` close. Its
+          // centre (10 + 20 = 30px) lines up with a `p-4` header's `text-lg`
+          // title; headers under it reserve `pr-16` so a title never runs
+          // beneath it.
+          <SheetPrimitive.Close
+            className={cn(
+              "absolute top-2.5 right-4 grid size-10 place-items-center rounded-full bg-muted text-foreground transition-interactive hover:bg-foreground/10 disabled:pointer-events-none",
+              PRESS_ICON,
+              FOCUS_RING,
+            )}
+          >
+            <XIcon aria-hidden="true" className="size-4" />
+            <span className="sr-only">{closeLabel}</span>
           </SheetPrimitive.Close>
         )}
       </SheetPrimitive.Content>

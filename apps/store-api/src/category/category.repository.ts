@@ -127,6 +127,8 @@ export interface CreateCategoryInput {
   metaDescription?: string | null;
   keywords?: string[];
   ogImage?: string | null;
+  /** Sprite key (TASK-1956) — already checked against CATEGORY_ICON_KEYS by the DTO. */
+  icon?: string | null;
 }
 
 /**
@@ -147,6 +149,8 @@ export interface UpdateCategoryInput {
   /** Absent leaves the stored tags alone; `[]` clears them (TASK-437). */
   keywords?: string[];
   ogImage?: string | null;
+  /** Absent leaves the icon alone; `null` clears it (TASK-1956). */
+  icon?: string | null;
 }
 
 /**
@@ -552,6 +556,7 @@ export class CategoryRepository {
         metaDescription: true,
         keywords: true,
         ogImage: true,
+        icon: true,
         updatedAt: true,
         _count: { select: { products: { where: { isActive: true } } } },
       },
@@ -1021,6 +1026,7 @@ export class CategoryRepository {
         description: cat.description,
         image: cat.image,
         parentId: cat.parentId,
+        icon: cat.icon,
         isActive: cat.isActive,
         sortOrder: cat.sortOrder,
         createdAt: cat.createdAt,
@@ -1094,6 +1100,7 @@ export class CategoryRepository {
           metaDescription: data.metaDescription ?? null,
           keywords: data.keywords ?? [],
           ogImage: data.ogImage ?? null,
+          icon: data.icon ?? null,
         },
       });
     });

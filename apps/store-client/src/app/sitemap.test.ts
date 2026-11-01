@@ -245,7 +245,8 @@ describe("sitemap", () => {
 
       const routes = await sitemap();
 
-      expect(routes).toHaveLength(STATIC_ROUTE_COUNT + 2);
+      // Two pairs + the two models' hubs (TASK-1954).
+      expect(routes).toHaveLength(STATIC_ROUTE_COUNT + 4);
       expect(routes.map((route) => route.url)).toEqual(
         expect.arrayContaining([
           `${SITE_URL}/catalog/chohly/iphone-15-pro`,
@@ -253,6 +254,33 @@ describe("sitemap", () => {
         ]),
       );
       expect(captureException).not.toHaveBeenCalled();
+    });
+
+    // TASK-1954 — the model hubs `/devices/<модель>` ride the same list.
+    it("lists one hub per model that has at least one compat page", async () => {
+      compat.mockResolvedValue([
+        { categorySlug: "cases", deviceSlug: "iphone-15-pro" },
+        { categorySlug: "screen-protectors", deviceSlug: "iphone-15-pro" },
+        { categorySlug: "cases", deviceSlug: "galaxy-s24" },
+      ]);
+
+      const routes = await sitemap();
+      const hubs = routes
+        .map((route) => route.url)
+        .filter((url) => url.includes("/devices/"));
+
+      expect(hubs).toEqual([
+        `${SITE_URL}/devices/iphone-15-pro`,
+        `${SITE_URL}/devices/galaxy-s24`,
+      ]);
+      expect(compat).toHaveBeenCalledTimes(1);
+    });
+
+    it("lists no hub when no model has a compat page", async () => {
+      const routes = await sitemap();
+      expect(routes.some((route) => route.url.includes("/devices/"))).toBe(
+        false,
+      );
     });
 
     it("keeps the other sources when the pair source dies", async () => {
@@ -267,6 +295,9 @@ describe("sitemap", () => {
         `${SITE_URL}/categories/chohly`,
       );
       expect(routes.some((route) => route.url.includes("/catalog/"))).toBe(
+        false,
+      );
+      expect(routes.some((route) => route.url.includes("/devices/"))).toBe(
         false,
       );
       expect(captureException).toHaveBeenCalledWith(

@@ -16,8 +16,13 @@ components and styling your own layout glue with the token-bound utility classes
   white), so the surface follows the tokens in both themes.
 - Components are **controlled / presentational**: pass data and handlers via props
   (e.g. `ProductCard` takes a `product` object; `PhoneInput`/`Combobox` are controlled).
-- The fonts are real brand fonts loaded by `styles.css`: **Geist** (sans), **Geist Mono**,
-  **Sora** (display — used for headings and prices).
+- The fonts are real brand fonts loaded by `styles.css`, all with full Ukrainian Cyrillic:
+  **Onest** (text, UI and prices), **Unbounded** (display — headings, hero, logo), **Geist
+  Mono** (SKUs and codes only).
+- **Visual direction «Кольоровий»**: a light lavender page (`bg-background`), white panels
+  (`bg-card shadow-card`), round shapes (pills for buttons and chips), a graphite primary
+  pill. Hue carries meaning only: a device family (`family-*`) or the product's own colour;
+  categories stay neutral, sale is `sale`.
 
 ## Copy
 
@@ -30,20 +35,23 @@ components and styling your own layout glue with the token-bound utility classes
 NEVER hardcode hex colors. Style with these utility families; the color names are
 semantic tokens (use each as `bg-<name>`, `text-<name>`, `border-<name>`):
 
-| Family            | Names                                                                                                                                                                          |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Surfaces          | `background`, `foreground`, `card` (`card-foreground`), `popover` (`popover-foreground`), `muted` (`muted-foreground`), `accent` (`accent-foreground`)                         |
-| Brand / actions   | `primary` (`primary-foreground`), `secondary` (`secondary-foreground`)                                                                                                         |
-| Commerce status   | `sale` (`sale-foreground`), `success` (`success-foreground`), `warning` (`warning-foreground`), `destructive` (`destructive-foreground`)                                       |
-| Inactive / chrome | `disabled` (`disabled-foreground`) for inactive controls — never fade with `opacity-*`; `footer` (`footer-foreground`) for the footer & announcement bar (dark in both themes) |
-| Lines / focus     | `border-border`, `border-input`; focus rings only as `focus-visible:ring-ring`                                                                                                 |
-| Radius            | `rounded-sm` · `rounded-md` · `rounded-lg` · `rounded-xl` · `rounded-2xl` (base `--radius` = 0.75rem)                                                                          |
-| Elevation         | `shadow-card` · `shadow-elevated` · `shadow-lift` (use `shadow-lift` on hover-raise)                                                                                           |
-| Fonts             | `font-sans` (Geist) · `font-mono` · `font-display` (Sora — headings & prices)                                                                                                  |
+| Family            | Names                                                                                                                                                                                           |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Surfaces          | `background`, `foreground`, `card` (`card-foreground`), `popover` (`popover-foreground`), `muted` (`muted-foreground`), `accent` (`accent-foreground`)                                          |
+| Brand / actions   | `primary` (`primary-foreground`) — graphite, light in dark; `secondary` (`secondary-foreground`); `badge` (`badge-foreground`) — coral cart / wishlist counters                                 |
+| Device families   | `family-iphone` · `family-galaxy` · `family-redmi` · `family-watch` · `family-ipad` (tile tone, text `text-foreground`/`text-muted-foreground` on it) and `family-<f>-strong` (icon disc / dot) |
+| Photo pads        | `bg-pad-1` … `bg-pad-4` — soft tint under a product photo                                                                                                                                       |
+| Commerce status   | `sale` (`sale-foreground`), `success` (`success-foreground`), `warning` (`warning-foreground`), `destructive` (`destructive-foreground`)                                                        |
+| Inactive / chrome | `disabled` (`disabled-foreground`) for inactive controls — never fade with `opacity-*`; `footer` (`footer-foreground`) for the footer & announcement bar (dark in both themes)                  |
+| Lines / focus     | `border-border`, `border-input`; focus rings only as `focus-visible:ring-ring`                                                                                                                  |
+| Radius            | roles: `rounded-panel` (32) · `rounded-card` (26) · `rounded-pad` (18) · `rounded-cta` (pill) · `rounded-menu` (16); scale `rounded-sm` … `rounded-2xl` (base `--radius` = 24px)                |
+| Elevation         | `shadow-card` · `shadow-elevated` · `shadow-lift` (use `shadow-lift` on hover-raise)                                                                                                            |
+| Fonts             | `font-sans` (Onest) · `font-display` (Unbounded — headings) · `font-mono` (Geist Mono — SKUs, codes)                                                                                            |
 
 Examples: a page surface is `bg-background text-foreground`; a panel is
-`bg-card text-card-foreground rounded-xl shadow-card border border-border`; a price is
-`font-display font-bold` and, when discounted, `text-sale`.
+`bg-card text-card-foreground rounded-panel shadow-card`; a product card is `rounded-card` with a
+`bg-pad-1 rounded-pad` photo pad; a price is `font-bold tabular-nums` in the text font and, when
+discounted, `text-sale`.
 
 ## Commerce conventions
 
@@ -57,7 +65,7 @@ Examples: a page surface is `bg-background text-foreground`; a panel is
 - **Lists**: `Pagination` (`currentPage`, `totalPages`, `buildHref`) for every paged list.
 - **Content**: `RichText` renders admin-authored HTML (headings, lists, tables); `Logo` is
   the store mark; `Slider` is the two-thumb price range of the catalogue filters.
-- **Buttons**: `variant` default (the one primary CTA per view), `secondary`, `outline`,
+- **Buttons**: `variant` default (the one primary CTA per view — the graphite pill), `secondary`, `outline`,
   `ghost`, `destructive`, `link`; sizes `sm`/`default`/`lg` (+ `icon*`).
 - **Confirmations** use `Dialog` (never a browser confirm); side panels use `Sheet`.
 

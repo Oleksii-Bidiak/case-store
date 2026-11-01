@@ -44,7 +44,7 @@ describe("BannerPlacementPreview (TASK-265)", () => {
     expect(tile.className).toContain("bg-success/10");
   });
 
-  it("PROMO_TILE falls back to the primary accent for a non-accent theme", () => {
+  it("PROMO_TILE is a white card for a non-accent theme — no rotation (TASK-2013)", () => {
     render(
       <BannerPlacementPreview
         placement="PROMO_TILE"
@@ -53,9 +53,9 @@ describe("BannerPlacementPreview (TASK-265)", () => {
       />,
     );
 
-    expect(screen.getByTestId("banner-preview-promo-tile").className).toContain(
-      "bg-primary/10",
-    );
+    const tile = screen.getByTestId("banner-preview-promo-tile");
+    expect(tile.className).toContain("bg-card");
+    expect(tile.className).not.toContain("bg-primary/10");
   });
 
   it("PROMO_BANNER renders the CTA button only when BOTH label and href are set", () => {
@@ -168,12 +168,38 @@ describe("BannerPlacementPreview — real placement shapes (TASK-429)", () => {
     expect(bar.querySelector(".h-10")).not.toBeNull();
   });
 
-  it("shows PROMO_TILE at a third of the row, beside its two neighbours", () => {
+  it("shows PROMO_TILE in the «slider + tiles» block: slider, then five slots (TASK-2013)", () => {
     render(<BannerPlacementPreview placement="PROMO_TILE" title="Плитка" />);
 
-    const row = screen.getByTestId("banner-preview-promo-tile-row");
-    expect(row.className).toContain("grid-cols-3");
-    expect(row.children).toHaveLength(3);
+    const layout = screen.getByTestId("banner-preview-promo-layout");
+    expect(layout.className).toContain("grid-cols-3");
+    // The slider stand-in over two thirds and two rows, then slots 1–5.
+    expect(layout.children).toHaveLength(6);
+    expect(layout.children[0]).toHaveTextContent(d.sliderGhost);
+    expect(layout.children[0].className).toContain("col-span-2");
+    expect(layout.children[0].className).toContain("row-span-2");
+    // Default slot is 1 — right of the slider; the rest are numbered frames.
+    expect(layout.children[1]).toContainElement(
+      screen.getByTestId("banner-preview-promo-tile"),
+    );
+    expect(layout.children[2]).toHaveTextContent(d.tileSlot(2));
+  });
+
+  it.each([2, 4])("draws the tile in slot %i it will take", (slot) => {
+    render(
+      <BannerPlacementPreview
+        placement="PROMO_TILE"
+        title="Плитка"
+        promoTileSlot={slot}
+      />,
+    );
+
+    const cell = screen
+      .getByTestId("banner-preview-promo-tile")
+      .closest("[data-promo-slot]");
+    expect(cell).toHaveAttribute("data-promo-slot", String(slot));
+    expect(screen.getByText(d.tileSlot(1))).toBeInTheDocument();
+    expect(screen.queryByText(d.tileSlot(slot))).not.toBeInTheDocument();
   });
 
   it("drops PROMO_TILE to one full-width column in mobile mode", async () => {
@@ -183,9 +209,9 @@ describe("BannerPlacementPreview — real placement shapes (TASK-429)", () => {
       screen.getByRole("button", { name: d.viewportMobile }),
     );
 
-    // The storefront grid is `sm:grid-cols-3` — one column below that.
+    // Below lg the storefront stacks the tiles full width.
     expect(
-      screen.queryByTestId("banner-preview-promo-tile-row"),
+      screen.queryByTestId("banner-preview-promo-layout"),
     ).not.toBeInTheDocument();
     expect(screen.getByTestId("banner-preview-promo-tile")).toBeInTheDocument();
   });

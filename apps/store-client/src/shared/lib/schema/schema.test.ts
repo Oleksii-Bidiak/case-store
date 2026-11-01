@@ -300,6 +300,7 @@ const baseProduct: PublicProductEntity = {
   updatedAt: "2026-02-01T00:00:00.000Z",
   ratingAverage: null,
   ratingCount: 0,
+  compatibleDeviceModelIds: [],
   variantSummary: {
     groupId: null,
     variantCount: 1,

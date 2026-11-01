@@ -9,10 +9,16 @@ import {
   FindAdminBrandsParams,
 } from './device.repository';
 import { DeviceBrandEntity, DeviceModelEntity, DeviceModelListItemEntity } from './entities';
-import { DeviceModelListQueryDto, DeviceBrandListQueryDto, ReorderDeviceBrandsDto } from './dto';
+import {
+  DeviceModelListQueryDto,
+  DeviceBrandListQueryDto,
+  PublicDeviceModelListQueryDto,
+  ReorderDeviceBrandsDto,
+} from './dto';
 import { generateSlug } from '../common/utils';
 import { reorderErrorToHttp } from '../common/reorder';
 import type { Paginated, PaginationMeta } from '../common/pagination';
+import { DEVICE_HUBS_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 /**
  * DeviceService — business logic for the device-compatibility taxonomy
@@ -30,6 +36,7 @@ export class DeviceService {
   constructor(
     private readonly deviceRepository: DeviceRepository,
     private readonly logger: PinoLogger,
+    private readonly revalidation: RevalidationNotifier,
   ) {
     this.logger.setContext(DeviceService.name);
   }
@@ -93,6 +100,8 @@ export class DeviceService {
       }
     }
     const updated = await this.deviceRepository.updateBrand(id, input);
+    // The model hub shows the brand's name and links its slug (TASK-1954).
+    await this.purgeDeviceHubs();
     return DeviceBrandEntity.fromPrisma(updated);
   }
 
@@ -101,13 +110,11 @@ export class DeviceService {
    * refreshed ADMIN list — with model counts — so the panel resyncs in one round-trip,
    * exactly as the category reorder does.
    *
-   * NO REVALIDATION, deliberately: devices have NO storefront cache tag (unlike banners'
-   * `['banners']` or the blog's `['blog']`), and the storefront reads brands CLIENT-SIDE
-   * through the public `GET /api/devices/brands` — there is no cached server render of this
-   * list to purge. Calling `RevalidationNotifier` here would be a no-op at best and a
-   * misleading one at worst. Do not "fix" this by inventing a tag; if devices ever gain a
-   * server-rendered, cached surface, the tag goes in with it. The structured log line below
-   * is the audit trail.
+   * NO REVALIDATION, deliberately: the storefront reads brands CLIENT-SIDE through the
+   * public `GET /api/devices/brands` — there is no cached server render of this list to
+   * purge. The one cached device surface, the model hub (TASK-1954, tag `device-hubs`),
+   * shows a brand's name but never the brand ORDER, so a reorder does not touch it. The
+   * structured log line below is the audit trail.
    */
   async reorderBrands(
     dto: ReorderDeviceBrandsDto,
@@ -150,15 +157,17 @@ export class DeviceService {
   /**
    * Public — list active device models (optionally scoped to a brand/search) as
    * the light {@link DeviceModelListItemEntity} projection (TASK-702): the
-   * compat-landing SEO copy stays on the landing and admin routes.
+   * compat-landing SEO copy stays on the landing and admin routes. `sort` picks the
+   * order (TASK-1952 / TASK-2070); omitted keeps newest-first.
    */
-  async getModels(query: DeviceModelListQueryDto): Promise<DeviceModelListItemEntity[]> {
+  async getModels(query: PublicDeviceModelListQueryDto): Promise<DeviceModelListItemEntity[]> {
     const models = await this.deviceRepository.findPublicModels({
       limit: query.limit ?? 200,
       deviceBrandId: query.deviceBrandId,
       search: query.search,
+      sort: query.sort,
     });
-    return models.map((m) => DeviceModelListItemEntity.fromPrisma(m));
+    return models.map((m) => DeviceModelListItemEntity.fromRow(m));
   }
 
   /** Admin — paginated device model list across all statuses (or an explicit filter). */
@@ -198,6 +207,8 @@ export class DeviceService {
       throw new ConflictException('A device model with this slug already exists');
     }
     const model = await this.deviceRepository.createModel({ ...input, slug });
+    // The storefront may have ISR-cached a 404 for this slug (TASK-1954).
+    await this.purgeDeviceHubs();
     const withBrand = await this.deviceRepository.findModelById(model.id);
     return DeviceModelEntity.fromPrisma(withBrand ?? model);
   }
@@ -228,6 +239,8 @@ export class DeviceService {
     const slugRename =
       model.isActive && slugChanging ? { oldSlug: model.slug, newSlug: input.slug! } : undefined;
     await this.deviceRepository.updateModel(id, input, slugRename);
+    // Name, SEO copy, series or slug of a model hub (TASK-1954) just changed.
+    await this.purgeDeviceHubs();
     const withBrand = await this.deviceRepository.findModelById(id);
     return DeviceModelEntity.fromPrisma(withBrand!);
   }
@@ -239,8 +252,25 @@ export class DeviceService {
       throw new NotFoundException('Device model not found');
     }
     await this.deviceRepository.updateModel(id, { isActive });
+    // A hidden model's hub must 404, a re-shown one must answer again (TASK-1954).
+    await this.purgeDeviceHubs();
     const withBrand = await this.deviceRepository.findModelById(id);
     return DeviceModelEntity.fromPrisma(withBrand!);
+  }
+
+  /**
+   * Purge the storefront's ISR model hubs `/devices/<модель>` (TASK-1954) — the
+   * one server-rendered, cached surface devices have. Best-effort: the notifier
+   * already swallows its own failures, and the `catch` is the same
+   * belt-and-braces guard the catalogue writers carry, so an unreachable
+   * storefront can never fail an admin write.
+   */
+  private async purgeDeviceHubs(): Promise<void> {
+    try {
+      await this.revalidation.revalidate(DEVICE_HUBS_REVALIDATE_TARGET);
+    } catch {
+      // Swallowed: purging the storefront is never allowed to fail the write.
+    }
   }
 
   private buildMeta(total: number, page: number, limit: number): PaginationMeta {

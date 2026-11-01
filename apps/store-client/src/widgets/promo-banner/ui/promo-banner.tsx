@@ -32,7 +32,7 @@ export function PromoBanner({ banner }: PromoBannerProps = {}) {
 
   return (
     <section className={PAGE_CONTAINER}>
-      <div className="relative isolate flex flex-wrap items-center justify-between gap-8 overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 to-primary p-10 sm:p-12">
+      <div className="relative isolate flex flex-wrap items-center justify-between gap-8 overflow-hidden rounded-2xl bg-brand-gradient p-10 sm:p-12">
         {/* Admin picture under the copy (TASK-740); the gradient without one.
             The veil is the `overlay` scrim token at 75% → black at 60% in both
             themes: at least as dark as the old slate-900/60, so white copy
@@ -44,7 +44,7 @@ export function PromoBanner({ banner }: PromoBannerProps = {}) {
         />
         <div className="max-w-2xl text-white">
           {eyebrow && (
-            <span className="inline-block rounded-full bg-primary px-3 py-1 text-xs font-bold tracking-wide text-primary-foreground uppercase">
+            <span className="inline-block rounded-full bg-white/15 px-3 py-1 text-xs font-bold tracking-wide text-white uppercase ring-1 ring-white/25">
               {eyebrow}
             </span>
           )}

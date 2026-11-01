@@ -27,6 +27,33 @@ function product(over: Partial<PublicProductEntity> = {}): PublicProductEntity {
   } as PublicProductEntity;
 }
 
+describe("ProductCard — frame and states (TASK-2171, TASK-2079)", () => {
+  it("draws the role-radius card with a resting shadow", () => {
+    renderWithProviders(<ProductCard product={product()} />);
+
+    const card = screen.getByRole("article");
+    expect(card).toHaveClass("rounded-card", "shadow-card");
+    expect(card).not.toHaveClass("rounded-xl");
+  });
+
+  it("lifts on hover only while in stock", () => {
+    const { unmount } = renderWithProviders(
+      <ProductCard product={product({ inStock: true })} />,
+    );
+    expect(screen.getByRole("article")).toHaveClass(
+      "hover:-translate-y-1",
+      "hover:shadow-lift",
+    );
+    unmount();
+
+    renderWithProviders(<ProductCard product={product({ inStock: false })} />);
+    const soldOut = screen.getByRole("article");
+    expect(soldOut).not.toHaveClass("hover:-translate-y-1");
+    // The border hover stays — the card still reacts to the pointer.
+    expect(soldOut).toHaveClass("hover:border-foreground/25");
+  });
+});
+
 describe("ProductCard — availability (TASK-362)", () => {
   // Before this, a sold-out product looked identical to an available one in the
   // grid; a shopper only found out on the product page.
@@ -192,5 +219,21 @@ describe("ProductCard — badge stack beside the heart (TASK-875)", () => {
     expect(available.container.querySelector("[data-sold-out-veil]")).toBe(
       null,
     );
+  });
+});
+
+describe("ProductCard — price row in a narrow card (TASK-1957)", () => {
+  // At 390 the 2-up grid leaves ~173px per card: «42 999 ₴ 47 999 ₴» was cut
+  // off at the card edge by the one-line flex row inside `overflow-hidden`.
+  it("lets the old price wrap under the new one, each amount kept whole", () => {
+    const { container } = renderWithProviders(
+      <ProductCard
+        product={product({ price: "42999.00", compareAtPrice: "47999.00" })}
+      />,
+    );
+
+    const oldPrice = container.querySelector(".line-through");
+    expect(oldPrice).toHaveClass("whitespace-nowrap");
+    expect(oldPrice?.parentElement).toHaveClass("flex-wrap");
   });
 });

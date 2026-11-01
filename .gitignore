@@ -49,6 +49,9 @@ logs/
 
 # Testing
 coverage/
+# …but not the admin's device-model coverage ROUTE (TASK-1955,
+# `/devices/models/[id]/coverage`) — app-router source, not a jest report.
+!apps/store-admin/src/app/**/coverage/
 .nyc_output/
 test-results/
 playwright-report/

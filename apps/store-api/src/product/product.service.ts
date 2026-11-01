@@ -55,11 +55,18 @@ import {
 } from '../cache';
 import { CatalogueFilterResolver, type ResolvedCatalogueFilters } from '../catalog-filter';
 import { ProductIndexer } from '../search';
-import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
+import {
+  CATALOGUE_REVALIDATE_TARGET,
+  DEVICE_HUBS_REVALIDATE_TARGET,
+  RevalidationNotifier,
+} from '../publishing';
 import { AuditService } from '../audit';
 
 /** Fallback TTL (seconds) when REDIS_CACHE_TTL_SECONDS is not configured. */
 const DEFAULT_CACHE_TTL_SECONDS = 300;
+
+/** How many products a compat write evicts and re-indexes at once (TASK-1955). */
+const COMPAT_WRITE_SYNC_BATCH = 10;
 
 /**
  * Undo the `deleted:<id>:` mangling of a tombstone's slug/SKU (TASK-656). Only the
@@ -292,11 +299,19 @@ export class ProductService {
   async getCardsByIds(ids: string[]): Promise<PublicProductEntity[]> {
     const uniqueIds = [...new Set(ids)];
     const products = await this.productRepository.findByIdsForCards(uniqueIds);
+    const compatIds = await this.deviceCompatRepository.getDeviceModelIdsByProductIds(
+      products.map((product) => product.id),
+    );
     const byId = new Map(products.map((product) => [product.id, product]));
     return uniqueIds
       .map((id) => byId.get(id))
       .filter((product): product is NonNullable<typeof product> => product != null)
-      .map((product) => PublicProductEntity.fromPrisma(product));
+      .map((product) =>
+        PublicProductEntity.fromPrisma({
+          ...product,
+          compatibleDeviceModelIds: compatIds.get(product.id) ?? [],
+        }),
+      );
   }
 
   /**
@@ -318,7 +333,7 @@ export class ProductService {
       limit: query.limit ?? 20,
       // Ids only — the repository layer never learns what a slug is (TASK-420).
       brandId: filters.brandId,
-      deviceModelId: filters.deviceModelId,
+      deviceModelIds: filters.deviceModelIds,
       isActive: query.isActive,
       outOfStock: query.outOfStock,
       minPrice: query.minPrice,
@@ -353,13 +368,25 @@ export class ProductService {
     return this.categoryRepository.findSubtreeIds(categoryId);
   }
 
-  /** Run the repository listing and map it onto one page of public entities. */
+  /**
+   * Run the repository listing and map it onto one page of public entities.
+   * The compatible device-model ids of the whole page arrive in ONE batched
+   * query (TASK-1953), never one per card.
+   */
   private async listFromDb(params: FindAllParams): Promise<Paginated<PublicProductEntity>> {
     const { products, total } = await this.productRepository.findAll(params);
+    const compatIds = await this.deviceCompatRepository.getDeviceModelIdsByProductIds(
+      products.map((product) => product.id),
+    );
     const totalPages = Math.ceil(total / params.limit);
 
     return {
-      items: products.map((product) => PublicProductEntity.fromPrisma(product)),
+      items: products.map((product) =>
+        PublicProductEntity.fromPrisma({
+          ...product,
+          compatibleDeviceModelIds: compatIds.get(product.id) ?? [],
+        }),
+      ),
       meta: {
         total,
         page: params.page,
@@ -383,6 +410,11 @@ export class ProductService {
     const { products, total } = await this.productRepository.findAll(params);
     const productIds = products.map((product) => product.id);
     const reservedByProductId = await this.productRepository.getReservedQtyByProductId(productIds);
+    // TASK-1955: the bulk «Сумісність…» dialog summarises what the selected rows
+    // already have («Зараз у вибраних: 2 без сумісності…») — one batched query per
+    // page, no N+1. Before this every admin row came back with `[]`.
+    const compatByProductId =
+      await this.deviceCompatRepository.getDeviceCompatByProductIds(productIds);
     const deletedByProductId = params.deleted
       ? await this.findDeleters(productIds)
       : new Map<string, ProductActorEntity>();
@@ -391,7 +423,11 @@ export class ProductService {
     return {
       items: products.map((product) =>
         AdminProductListItemEntity.fromListRow(
-          { ...product, reservedQty: reservedByProductId.get(product.id) ?? 0 },
+          {
+            ...product,
+            reservedQty: reservedByProductId.get(product.id) ?? 0,
+            compatibleDeviceModels: compatByProductId.get(product.id) ?? [],
+          },
           deletedByProductId.get(product.id) ?? null,
         ),
       ),
@@ -1170,9 +1206,7 @@ export class ProductService {
     await this.assertDeviceModelsExist(deviceModelIds);
     await this.deviceCompatRepository.setDeviceCompat(productId, deviceModelIds);
 
-    await this.invalidateProductLists();
-    await this.evictProductDetail(productId, product.slug);
-    await this.syncSearchIndex(product);
+    await this.afterDeviceCompatWrite([product]);
 
     const compatibleDeviceModels = await this.deviceCompatRepository.getDeviceCompat(productId);
     return ProductEntity.fromPrisma({
@@ -1203,17 +1237,50 @@ export class ProductService {
       deviceModelIds,
     );
 
-    // Every affected position may change on any list page and its detail caches;
-    // bust the list prefix once, then evict BOTH detail keys of each position —
-    // the public PDP is cached by slug (TASK-826) — and index or de-index it by
-    // its real isActive, exactly as the single-product updateDeviceCompat does.
-    await this.invalidateProductLists();
-    for (const position of positions) {
-      await this.evictProductDetail(position.id, position.slug);
-      await this.syncSearchIndex(position);
-    }
+    await this.afterDeviceCompatWrite(positions);
 
     return { updatedCount };
+  }
+
+  /**
+   * Everything downstream of a compatibility write, for the products it touched —
+   * the one obligation every compat path shares (single product, group, and the
+   * bulk `PUT /admin/devices/compat/bulk`, TASK-1955):
+   *
+   * - bust the list prefix once (and the storefront homepage with it);
+   * - evict BOTH detail keys of each product — the public PDP is cached by slug
+   *   (TASK-826) — and index or de-index it by its real `isActive`;
+   * - purge the storefront device hubs «Все для <модель>» (TASK-1955). Their
+   *   sections are built from compat rows, and until this task only a DEVICE write
+   *   purged them, so a product newly linked to a model reached that model's hub
+   *   only when the ISR timer expired. Best-effort, like the catalogue purge.
+   *
+   * Public so the bulk compat service reuses it instead of re-spelling the list;
+   * it writes nothing of its own. No products → nothing to purge.
+   */
+  async afterDeviceCompatWrite(
+    products: ReadonlyArray<{ id: string; slug: string; isActive: boolean }>,
+  ): Promise<void> {
+    if (products.length === 0) {
+      return;
+    }
+    await this.invalidateProductLists();
+    // The bulk path can hand over up to 500 products; one at a time that is a
+    // long serial chain of Redis + Meilisearch round trips inside the request.
+    // Bounded batches keep it short without flooding either backend.
+    for (let start = 0; start < products.length; start += COMPAT_WRITE_SYNC_BATCH) {
+      await Promise.all(
+        products.slice(start, start + COMPAT_WRITE_SYNC_BATCH).map(async (product) => {
+          await this.evictProductDetail(product.id, product.slug);
+          await this.syncSearchIndex(product);
+        }),
+      );
+    }
+    try {
+      await this.revalidation.revalidate(DEVICE_HUBS_REVALIDATE_TARGET);
+    } catch {
+      // Swallowed: purging the storefront is never allowed to fail the write.
+    }
   }
 
   /**

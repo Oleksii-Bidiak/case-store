@@ -1,9 +1,9 @@
-import { Suspense, Fragment, cache } from "react";
+import { Suspense, cache } from "react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { permanentRedirect } from "next/navigation";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
-import { ProductListView, ProductListSkeleton } from "@/widgets";
+import { ProductListSkeleton } from "@/widgets";
+import { CatalogListingView } from "./catalog-listing-view";
 import {
   buildCatalogHeader,
   buildCatalogListingParams,
@@ -14,7 +14,7 @@ import {
   resolveLegacyCatalogParams,
   withQuery,
 } from "@/shared/lib/legacy-catalog-params";
-import { subcategoryChipsOf } from "@/features/product-filters";
+import { categoryTreeRowCount } from "@/features/product-filters";
 import type {
   CategoryTreeNodeEntity,
   CategoryTreeResponse,
@@ -45,7 +45,8 @@ import {
 } from "@/shared/lib/seo";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { SITE_URL, dict, PAGE_CONTAINER, H1_CLASS } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
+import { CatalogHead } from "./catalog-head";
 
 /** Take the first value when a query param appears more than once. */
 function first(value: string | string[] | undefined): string | undefined {
@@ -72,9 +73,9 @@ const resolveCategoryNode = cache(
 /**
  * The public category tree, once per request (React `cache()`), or null on
  * any failure. Read for the selected category's name AND handed to the client
- * under the key `ProductListView`'s chips query uses (TASK-515), so one
- * download serves both — and the chips row is in the first HTML instead of
- * appearing after hydration and pushing the whole grid down.
+ * under the key `ProductListView`'s tree query uses (TASK-515), so one
+ * download serves both — and the rail's category tree is in the first HTML as
+ * links (TASK-2011) instead of appearing after hydration.
  */
 const fetchCategoryTree = cache(
   async (): Promise<CategoryTreeResponse | null> => {
@@ -286,8 +287,8 @@ export default async function ProductsPage({
     fetchCategoryTree(),
     prefetchQueries(queryClient, [listingQuery]),
   ]);
-  // The chips row's data, under the chips query's own key (TASK-515). Absent
-  // when the read failed — the view then shows the row's placeholder and
+  // The rail tree's data, under the tree query's own key (TASK-515). Absent
+  // when the read failed — the view then shows the panel's placeholder and
   // fetches the tree itself, as it did before.
   if (categoryTree) {
     queryClient.setQueryData(
@@ -295,8 +296,10 @@ export default async function ProductsPage({
       categoryTree,
     );
   }
-  const withSubcategoryChips =
-    subcategoryChipsOf(categoryTree?.data ?? [], categorySlug).length > 0;
+  // The fallback's tree panel reserves exactly the rows the tree will draw.
+  const categoryTreeRows = categoryTree
+    ? categoryTreeRowCount(categoryTree.data ?? [], categorySlug)
+    : undefined;
 
   // ItemList from the same fetch as the grid (TASK-556 tail): the structured
   // data lists exactly the cards the page shows.
@@ -305,7 +308,7 @@ export default async function ProductsPage({
     SITE_URL,
   );
 
-  const { trail, title, subtitle, currentPath } = buildCatalogHeader({
+  const { trail, title, currentPath } = buildCatalogHeader({
     categorySlug,
     categoryName,
     search,
@@ -323,49 +326,21 @@ export default async function ProductsPage({
       />
       {itemList && <JsonLd schema={itemList} />}
 
-      {/* Breadcrumbs */}
-      <nav
-        aria-label={dict.product.breadcrumbAria}
-        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
-      >
-        {trail.map((crumb, i) => {
-          const isLast = i === trail.length - 1;
-          return (
-            <Fragment key={`${crumb.name}-${i}`}>
-              {i > 0 && (
-                <span aria-hidden="true" className="opacity-50">
-                  ›
-                </span>
-              )}
-              {crumb.href && !isLast ? (
-                <Link
-                  href={crumb.href}
-                  className="transition-colors hover:text-foreground"
-                >
-                  {crumb.name}
-                </Link>
-              ) : (
-                <span
-                  className={isLast ? "font-medium text-foreground" : undefined}
-                >
-                  {crumb.name}
-                </span>
-              )}
-            </Fragment>
-          );
-        })}
-      </nav>
+      {/* Crumbs from `md`, one back pill below it, the H1 (Catalog §3). The
+          count line under the H1 is the listing's own — it knows the filters
+          — so the generic subtitle that sat there is gone. */}
+      <CatalogHead
+        trail={trail}
+        back={
+          categorySlug || search
+            ? { label: dict.catalog.backToCatalog, href: "/products" }
+            : { label: dict.catalog.breadcrumbHome, href: "/" }
+        }
+        title={title}
+      />
 
-      {/* Title */}
-      <div className="mb-4.5">
-        <h1 className={`${H1_CLASS} text-foreground`}>{title}</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          {subtitle}
-        </p>
-      </div>
-
-      {/* The fallback stands in for ProductListView as a whole — chips row,
-          toolbar and the 268px filter rail included (TASK-416) — so the grid
+      {/* The fallback stands in for ProductListView as a whole — toolbar and
+          the 268px rail with its category tree included (TASK-416) — so the grid
           does not render full-width and then shrink into a column. With a
           `?category=` the rail also reserves «Характеристики» (TASK-515). */}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
@@ -373,12 +348,12 @@ export default async function ProductsPage({
           fallback={
             <ProductListSkeleton
               withSidebar
-              withSubcategoryChips={withSubcategoryChips}
+              categoryTreeRows={categoryTreeRows}
               hasCategory={Boolean(categorySlug)}
             />
           }
         >
-          <ProductListView
+          <CatalogListingView
             initialParams={initialParams}
             categoryTreePrefetched={categoryTree !== null}
           />

@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import { renderWithProviders, screen } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import type { PublicCarouselEntity } from "@/shared/api/generated/models";
@@ -133,7 +133,7 @@ describe("CarouselRail", () => {
     expect(screen.getByText("Скло Beta")).toBeInTheDocument();
   });
 
-  it("scroll arrows are present and clicking them does not crash", async () => {
+  it("scroll arrows are present and grey out when the row fits (TASK-2079)", () => {
     // jsdom implements no scrolling — stub scrollBy so the arrow handler runs.
     Element.prototype.scrollBy =
       Element.prototype.scrollBy ?? (jest.fn() as never);
@@ -146,12 +146,13 @@ describe("CarouselRail", () => {
       />,
     );
 
-    await userEvent.click(
+    // One card, no jsdom layout → the row fits: both arrows disabled.
+    expect(
       screen.getByRole("button", { name: dict.carousels.prevAria }),
-    );
-    await userEvent.click(
+    ).toBeDisabled();
+    expect(
       screen.getByRole("button", { name: dict.carousels.nextAria }),
-    );
+    ).toBeDisabled();
 
     expect(screen.getByText("Чохол Alpha")).toBeInTheDocument();
   });

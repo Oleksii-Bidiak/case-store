@@ -62,6 +62,7 @@ const mockCategory: Category = {
   metaDescription: null,
   keywords: [],
   ogImage: null,
+  icon: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   deletedAt: null,
@@ -81,6 +82,7 @@ const mockChildCategory: Category = {
   metaDescription: null,
   keywords: [],
   ogImage: null,
+  icon: null,
   createdAt: new Date('2026-01-02T00:00:00.000Z'),
   updatedAt: new Date('2026-01-02T00:00:00.000Z'),
   deletedAt: null,
@@ -497,6 +499,28 @@ describe('CategoryService', () => {
       );
       expect(result.metaTitle).toBe('Phone Cases — Premium Protection');
       expect(result.metaDescription).toBe('Shop premium protective phone cases.');
+    });
+
+    it('forwards the icon key (TASK-1956) and returns it; a stored key off the list reads as null', async () => {
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.create.mockResolvedValue({ ...mockCategory, icon: 'cases' });
+
+      const result = await service.create({
+        name: 'Phone Cases',
+        slug: 'phone-cases',
+        icon: 'cases',
+      });
+
+      expect(categoryRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ icon: 'cases' }),
+      );
+      expect(result.icon).toBe('cases');
+
+      // An icon retired from the sprite after an admin picked it: the response contract
+      // (the generated `CategoryIcon` enum) must not carry an off-list string.
+      categoryRepositoryMock.create.mockResolvedValue({ ...mockCategory, icon: 'retired-icon' });
+      const stale = await service.create({ name: 'Phone Cases', slug: 'phone-cases' });
+      expect(stale.icon).toBeNull();
     });
 
     it('should auto-generate slug from name when slug is not provided', async () => {

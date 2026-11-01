@@ -27,7 +27,7 @@ export function AccountPlaceholderSection({
         <p className="text-[15px] text-foreground">{body}</p>
         <Link
           href={ctaHref}
-          className="inline-flex h-11 items-center rounded-menu bg-primary px-5 text-sm font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-11 items-center rounded-menu bg-primary px-5 text-sm font-semibold text-primary-foreground no-underline transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100"
         >
           {ctaLabel}
         </Link>

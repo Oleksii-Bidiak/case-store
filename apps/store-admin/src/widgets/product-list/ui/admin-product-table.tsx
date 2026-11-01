@@ -19,6 +19,10 @@ import { useProductStatusSetter } from "@/features/product-status-toggle";
 import { useProductBulkStatus } from "@/features/product-bulk-status";
 import { useProductBulkColor } from "@/features/product-bulk-color";
 import { useProductBulkGroup } from "@/features/product-bulk-group";
+import {
+  BulkCompatDialog,
+  useProductBulkCompat,
+} from "@/features/product-bulk-compat";
 import { useProductBulkUndo } from "@/features/product-bulk-undo";
 import { ProductDeleteAction } from "@/features/product-delete";
 import {
@@ -370,10 +374,27 @@ function AdminProductTableView() {
     },
   });
 
+  // TASK-1955: «Сумісність…» — a devices:write action, so it has its own gate
+  // inside the products:write bulk bar. No undo toast: add and remove undo each
+  // other, and the action log keeps every run.
+  const canEditCompat = can(PERM.devicesWrite);
+  const [isCompatDialogOpen, setCompatDialogOpen] = useState(false);
+  // The selected rows, captured when the dialog opens: the selection survives
+  // paging, so they come from every row seen this visit, with their current
+  // compat (the admin list carries it since TASK-1955).
+  const [compatRows, setCompatRows] = useState<ProductEntity[]>([]);
+  const bulkCompat = useProductBulkCompat({
+    onSuccess: () => {
+      selection.clear();
+      setCompatDialogOpen(false);
+    },
+  });
+
   const isMutating =
     bulk.isPending ||
     bulkGroup.isPending ||
     bulkColor.isPending ||
+    bulkCompat.isPending ||
     bulkUndo.isPending;
   // An undo replayed while a newer forward write is in flight would land first
   // and let that write commit an offer that can never be reached (TASK-837).
@@ -733,6 +754,19 @@ function AdminProductTableView() {
           ],
           actions: (
             <>
+              {canEditCompat ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isMutating}
+                  onClick={() => {
+                    setCompatRows(snapshotRows(selectedIds()));
+                    setCompatDialogOpen(true);
+                  }}
+                >
+                  {dict.bulkCompat.action}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
@@ -789,6 +823,15 @@ function AdminProductTableView() {
       {/* TASK-812: the hide / clear-colour AlertDialogs (portalled). */}
       {bulk.confirmDialog}
       {bulkColor.confirmDialog}
+      {bulkCompat.confirmDialog}
+
+      <BulkCompatDialog
+        open={isCompatDialogOpen}
+        onOpenChange={setCompatDialogOpen}
+        rows={compatRows}
+        isPending={bulkCompat.isPending}
+        onConfirm={(change) => bulkCompat.run(selectedIds(), change)}
+      />
 
       <MoveToGroupDialog
         open={isGroupDialogOpen}

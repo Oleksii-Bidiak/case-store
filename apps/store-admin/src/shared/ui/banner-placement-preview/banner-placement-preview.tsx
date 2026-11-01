@@ -27,6 +27,9 @@ export interface BannerPlacementPreviewProps {
   ctaLabel?: string;
   ctaHref?: string;
   theme?: string;
+  /** PROMO_TILE only (TASK-2013): which of the five storefront slots this tile
+   *  takes, 1-based — the form derives it from the banner list. Defaults to 1. */
+  promoTileSlot?: number;
 }
 
 /**
@@ -43,10 +46,12 @@ export interface BannerPlacementPreviewProps {
  *   3 gradient themes by array position (`THEMES[index % 3]`). A standalone
  *   preview has no position, so it always renders THEMES[0] (indigo→violet,
  *   white text). Carousel chrome (arrows/dots/autoplay) is omitted.
- * - PROMO_TILE (`hero-banner/ui/promo-tiles.tsx`): accent resolves from `theme`
- *   when it literally matches "sale" | "primary" | "success"; the storefront
- *   otherwise rotates accents by position, which a single preview can't
- *   reconstruct — it defaults to "primary".
+ * - PROMO_TILE (`hero-banner/ui/promo-tiles.tsx`): the tint resolves from
+ *   `theme` when it literally matches "sale" | "primary" | "success"; anything
+ *   else is a white card, as on the storefront since TASK-2013 (no rotation by
+ *   position any more). The storefront also honours device-family keys
+ *   (iphone, galaxy…) — the admin has no family tokens yet, so those preview
+ *   as the white card.
  * - PROMO_BANNER (`promo-banner/ui/promo-banner.tsx`): the CTA button renders
  *   only when BOTH `ctaLabel` and `ctaHref` are present — mirrored exactly.
  * - ANNOUNCEMENT_BAR (`header/ui/announcement-bar.tsx`): the real strip uses
@@ -67,9 +72,12 @@ export interface BannerPlacementPreviewProps {
  * - HERO_SLIDE       fixed shape: ≈968×440 desktop (`aspect-banner-hero`), and
  *                    375×420 on a phone (`aspect-banner-hero-mobile`) — below `lg`
  *                    the slider is full width, so the shape is TALLER than wide.
- * - PROMO_TILE       NO fixed ratio (content height). Rendered one-third wide in a
- *                    three-column row — the storefront's `sm:grid-cols-3` — with
- *                    two dimmed placeholders standing in for its neighbours.
+ * - PROMO_TILE       The «slider + tiles» block (TASK-2013): slider 2/3 with slots
+ *                    1–2 stacked beside it, slots 3–5 in a row of thirds under it.
+ *                    The tile is drawn in ITS slot (`promoTileSlot`), the other
+ *                    slots and the slider as dimmed numbered frames. Below `lg`
+ *                    the storefront stacks tiles full width, so the phone view
+ *                    shows the tile alone.
  * - PROMO_BANNER     NO fixed ratio (content height), full content width.
  * - ANNOUNCEMENT_BAR fixed 40px strip (`h-10`), full page width.
  *
@@ -91,6 +99,7 @@ export function BannerPlacementPreview({
   ctaLabel,
   ctaHref,
   theme,
+  promoTileSlot,
 }: BannerPlacementPreviewProps) {
   const [viewport, setViewport] = useState<Viewport>("desktop");
 
@@ -102,6 +111,7 @@ export function BannerPlacementPreview({
     ctaHref: ctaHref?.trim() || undefined,
     theme: theme?.trim() || undefined,
     viewport,
+    promoTileSlot,
   };
 
   return (
@@ -201,6 +211,7 @@ interface VariantProps {
   /** Drives the shapes that genuinely differ between breakpoints (hero ratio,
    *  promo-tile column count) — see the component header. */
   viewport: Viewport;
+  promoTileSlot?: number;
 }
 
 /**
@@ -301,17 +312,20 @@ function HeroSlidePreview({
   );
 }
 
-// Accent styles from the storefront promo tiles (token-based, admin has the
-// same sale/primary/success tokens in globals.css).
-const TILE_ACCENTS = {
-  sale: { surface: "bg-sale/10 border-sale/25", cta: "text-sale" },
-  primary: { surface: "bg-primary/10 border-primary/25", cta: "text-primary" },
-  success: { surface: "bg-success/10 border-success/25", cta: "text-success" },
+// Tile surfaces from the storefront promo tiles (TASK-2013): a tint only for
+// the three accents the admin palette offers, a white card otherwise.
+const TILE_TINTS = {
+  sale: "bg-sale/10 border-sale/25",
+  primary: "bg-primary/10 border-primary/25",
+  success: "bg-success/10 border-success/25",
 } as const;
 
-type TileAccent = keyof typeof TILE_ACCENTS;
+type TileTint = keyof typeof TILE_TINTS;
 
-const TILE_ACCENT_NAMES = Object.keys(TILE_ACCENTS) as TileAccent[];
+const TILE_TINT_NAMES = Object.keys(TILE_TINTS) as TileTint[];
+
+/** The storefront's five promo-tile slots: two beside the slider, three under. */
+const PROMO_SLOTS = [1, 2, 3, 4, 5] as const;
 
 function PromoTilePreview({
   title,
@@ -320,22 +334,20 @@ function PromoTilePreview({
   ctaLabel,
   theme,
   viewport,
+  promoTileSlot,
 }: VariantProps) {
-  // `theme` wins only when it literally names an accent; otherwise the
-  // storefront rotates by position — a single preview defaults to "primary"
-  // (documented simplification, see header comment).
-  const accent =
-    TILE_ACCENTS[TILE_ACCENT_NAMES.find((a) => a === theme) ?? "primary"];
+  const tint = TILE_TINT_NAMES.find((a) => a === theme?.toLowerCase());
+  const slot = Math.min(Math.max(Math.round(promoTileSlot ?? 1), 1), 5);
 
   const tile = (
     <div
       data-testid="banner-preview-promo-tile"
       className={cn(
-        "relative isolate flex flex-col overflow-hidden rounded-2xl border p-3",
-        accent.surface,
+        "relative isolate flex h-full flex-col overflow-hidden rounded-2xl border p-3",
+        tint ? TILE_TINTS[tint] : "border-border bg-card shadow-sm",
       )}
     >
-      <PreviewBackdrop src={imageUrl} scrimClassName="bg-background/80" />
+      <PreviewBackdrop src={imageUrl} scrimClassName="bg-card/80" />
       <TitleText
         title={title}
         className="font-display text-sm font-bold text-foreground"
@@ -344,12 +356,7 @@ function PromoTilePreview({
         <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
       )}
       {ctaLabel && (
-        <span
-          className={cn(
-            "mt-3 inline-flex items-center gap-1 text-xs font-semibold",
-            accent.cta,
-          )}
-        >
+        <span className="mt-auto inline-flex items-center gap-1 pt-3 text-xs font-semibold text-foreground">
           {ctaLabel}
           <ArrowRight className="size-3.5" />
         </span>
@@ -357,33 +364,57 @@ function PromoTilePreview({
     </div>
   );
 
-  // Below `sm` the storefront grid is a single column, so the phone view shows the
-  // tile full width. On a desktop it is one of THREE in a row — deliberately shown
-  // at its real third-of-the-row width, with the neighbours it will actually stand
-  // beside. NO aspect ratio: these cards are content-height on the site, and the
-  // panel says so rather than inventing one.
+  // Below `lg` the storefront stacks every tile full width, so the phone view
+  // shows the tile alone. On a desktop it is the «slider + tiles» block: the
+  // slider over two thirds and two rows, slots 1–2 beside it, slots 3–5 in a row
+  // under it — the tile in ITS slot, every other place a numbered frame. Auto
+  // placement does the layout: slider first, then the slots in order. NO aspect
+  // ratio on the tiles: they are content-height on the site.
   if (viewport === "mobile") return tile;
 
   return (
     <div
-      data-testid="banner-preview-promo-tile-row"
-      className="grid grid-cols-3 gap-2 items-start"
+      data-testid="banner-preview-promo-layout"
+      className="grid grid-cols-3 gap-1.5"
     >
-      {tile}
-      <GhostTile />
-      <GhostTile />
+      <GhostFrame
+        label={d.sliderGhost}
+        className="col-span-2 row-span-2 min-h-28"
+      />
+      {PROMO_SLOTS.map((n) =>
+        n === slot ? (
+          <div key={n} data-promo-slot={n} className="min-w-0">
+            {tile}
+          </div>
+        ) : (
+          <GhostFrame key={n} label={d.tileSlot(n)} className="min-h-12" />
+        ),
+      )}
     </div>
   );
 }
 
-/** A neighbouring promo tile, drawn as an empty frame: it conveys the column width
- *  without pretending to be content. `aria-hidden` — there is nothing to read. */
-function GhostTile() {
+/** A neighbouring place in the block, drawn as an empty numbered frame: it
+ *  conveys the layout without pretending to be content. `aria-hidden` — the
+ *  shape note under the preview says the same thing in words. */
+function GhostFrame({
+  label,
+  className,
+}: {
+  label: string;
+  className: string;
+}) {
   return (
     <div
       aria-hidden="true"
-      className="h-full min-h-16 rounded-2xl border border-dashed border-border bg-muted/30"
-    />
+      data-ghost-frame=""
+      className={cn(
+        "flex items-center justify-center rounded-2xl border border-dashed border-border bg-muted/30 text-xs text-muted-foreground",
+        className,
+      )}
+    >
+      {label}
+    </div>
   );
 }
 

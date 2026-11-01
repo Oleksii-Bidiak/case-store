@@ -130,7 +130,7 @@ export function CartView() {
         <p className="text-muted-foreground">{dict.cart.emptySubtitle}</p>
         <Link
           href="/products"
-          className="rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100"
         >
           {dict.cart.shopNow}
         </Link>

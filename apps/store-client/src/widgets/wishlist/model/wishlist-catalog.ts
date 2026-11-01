@@ -9,20 +9,33 @@ import type { WishlistItemEntity } from "@/entities/wishlist";
  * (items, facets, state), which keeps the view thin and the behaviour testable
  * without rendering.
  *
- * Category and brand are not part of the wishlist item summary; they come from
- * the product cards endpoint and arrive here as `facetsById`. An item missing
- * from that map (a withdrawn product, or one still loading) simply does not
- * match an active category/brand filter — it is never guessed into one.
+ * Category, brand and compatible devices are not part of the wishlist item
+ * summary; they come from the product cards endpoint and arrive here as
+ * `facetsById`. An item missing from that map (a withdrawn product, or one
+ * still loading) simply does not match an active category / brand / device
+ * filter — it is never guessed into one.
  */
 
-/** Category / brand of one saved product, keyed by `productId`. */
+/** Category / brand / compatibility of one saved product, by `productId`. */
 export interface WishlistItemFacets {
   categoryId?: string;
   brandId?: string;
   brandName?: string;
+  /**
+   * Device models the product fits (`compatibleDeviceModelIds` on the card).
+   * Empty for a product that is not device-specific.
+   */
+  compatibleDeviceModelIds?: readonly string[];
 }
 
 export interface WishlistFilterState {
+  /**
+   * «З урахуванням моїх пристроїв» (Д3-2 Wishlist mockup): only what fits at
+   * least one saved device. OFF by default — a wishlist holds things for the
+   * whole family, not just for the active phone. Means nothing without a
+   * saved device (see `effectiveWishlistFilters`).
+   */
+  devicesOnly: boolean;
   saleOnly: boolean;
   inStockOnly: boolean;
   /** Ticked categories — an item matches ANY of them. */
@@ -36,6 +49,7 @@ export interface WishlistFilterState {
 }
 
 export const EMPTY_WISHLIST_FILTERS: WishlistFilterState = {
+  devicesOnly: false,
   saleOnly: false,
   inStockOnly: false,
   categoryIds: [],
@@ -82,6 +96,20 @@ export function isWishlistSortKey(value: string): value is WishlistSortKey {
   );
 }
 
+/**
+ * The filter state as it actually applies: the device switch means nothing
+ * without a saved device (the panel hides it then), so a stale `devicesOnly`
+ * — the last device was forgotten in another tab — neither filters nor badges.
+ */
+export function effectiveWishlistFilters(
+  filters: WishlistFilterState,
+  deviceCount: number,
+): WishlistFilterState {
+  return filters.devicesOnly && deviceCount === 0
+    ? { ...filters, devicesOnly: false }
+    : filters;
+}
+
 /** Whether any filter narrows the list. */
 export function hasActiveWishlistFilters(
   filters: WishlistFilterState,
@@ -97,6 +125,7 @@ export function countActiveWishlistFilters(
   filters: WishlistFilterState,
 ): number {
   return (
+    (filters.devicesOnly ? 1 : 0) +
     (filters.saleOnly ? 1 : 0) +
     (filters.inStockOnly ? 1 : 0) +
     filters.categoryIds.length +
@@ -105,11 +134,31 @@ export function countActiveWishlistFilters(
   );
 }
 
-/** Apply the filter state (AND across sections, OR within a section). */
+/**
+ * Whether a product with these compatible models fits at least one of the
+ * saved devices. A product without compatibility data (headphones, a power
+ * bank) fits none — the reading the catalogue's `?device=a,b` filter gives on
+ * the API side, so «only for my devices» means the same on both pages.
+ */
+export function fitsAnyDevice(
+  compatibleDeviceModelIds: readonly string[] | undefined,
+  deviceModelIds: readonly string[],
+): boolean {
+  if (!compatibleDeviceModelIds?.length) return false;
+  return deviceModelIds.some((id) => compatibleDeviceModelIds.includes(id));
+}
+
+/**
+ * Apply the filter state (AND across sections, OR within a section).
+ * `deviceModelIds` are the saved devices' models, read only when
+ * `devicesOnly` is on — pass the state through `effectiveWishlistFilters`
+ * first, so an empty device list cannot filter everything out.
+ */
 export function filterWishlistItems(
   items: readonly WishlistItemEntity[],
   filters: WishlistFilterState,
   facetsById: ReadonlyMap<string, WishlistItemFacets>,
+  deviceModelIds: readonly string[] = [],
 ): WishlistItemEntity[] {
   const categories = new Set(filters.categoryIds);
   const brands = new Set(filters.brandIds);
@@ -120,6 +169,12 @@ export function filterWishlistItems(
     if (filters.saleOnly && !isOnSale(item)) return false;
     if (filters.inStockOnly && !isInStock(item)) return false;
     const facets = facetsById.get(item.productId);
+    if (
+      filters.devicesOnly &&
+      !fitsAnyDevice(facets?.compatibleDeviceModelIds, deviceModelIds)
+    ) {
+      return false;
+    }
     if (categories.size > 0) {
       if (!facets?.categoryId || !categories.has(facets.categoryId)) {
         return false;
@@ -150,6 +205,26 @@ export function sortWishlistItems(
       default:
         return recentFirst(a, b);
     }
+  });
+}
+
+/**
+ * Put restored items back where they were (Д3-2 «Повернути»). Undo re-adds
+ * the product and the server stamps it with a NEW `createdAt`, so under
+ * «нещодавно додані» it would jump to the top. `restoredAt` maps a product id
+ * to the date it was first saved; the list reads that date instead for as
+ * long as the page is open. Returns the input untouched when nothing applies.
+ */
+export function withRestoredDates(
+  items: readonly WishlistItemEntity[],
+  restoredAt: ReadonlyMap<string, string>,
+): readonly WishlistItemEntity[] {
+  if (restoredAt.size === 0) return items;
+  return items.map((item) => {
+    const original = restoredAt.get(item.productId);
+    return original && original !== item.createdAt
+      ? { ...item, createdAt: original }
+      : item;
   });
 }
 

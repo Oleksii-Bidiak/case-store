@@ -10,7 +10,11 @@ import {
 describe('CatalogueFilterResolver (TASK-420)', () => {
   let categoryRepo: { findBySlug: jest.Mock; findById: jest.Mock };
   let brandRepo: { findBySlug: jest.Mock; findById: jest.Mock };
-  let deviceRepo: { findModelBySlug: jest.Mock; findModelById: jest.Mock };
+  let deviceRepo: {
+    findModelBySlug: jest.Mock;
+    findModelById: jest.Mock;
+    findModelsBySlugs: jest.Mock;
+  };
   let resolver: CatalogueFilterResolver;
 
   beforeEach(() => {
@@ -25,6 +29,14 @@ describe('CatalogueFilterResolver (TASK-420)', () => {
     deviceRepo = {
       findModelBySlug: jest.fn().mockResolvedValue({ id: 'model-1', slug: 'iphone-15' }),
       findModelById: jest.fn().mockResolvedValue({ id: 'model-1', slug: 'iphone-15' }),
+      // TASK-2077: echoes back every requested slug except `nope*` ones.
+      findModelsBySlugs: jest.fn((slugs: string[]) =>
+        Promise.resolve(
+          slugs
+            .filter((slug) => !slug.startsWith('nope'))
+            .map((slug) => ({ id: `id-of-${slug}`, slug })),
+        ),
+      ),
     };
     resolver = new CatalogueFilterResolver(
       categoryRepo as unknown as CategoryRepository,
@@ -39,7 +51,7 @@ describe('CatalogueFilterResolver (TASK-420)', () => {
     expect(resolved).toEqual({
       categoryId: undefined,
       brandId: undefined,
-      deviceModelId: undefined,
+      deviceModelIds: undefined,
       categoryKey: undefined,
       brandKey: undefined,
       deviceKey: undefined,
@@ -60,7 +72,7 @@ describe('CatalogueFilterResolver (TASK-420)', () => {
     expect(resolved).toEqual({
       categoryId: 'cat-1',
       brandId: 'brand-1',
-      deviceModelId: 'model-1',
+      deviceModelIds: ['model-1'],
       categoryKey: 'phone-cases',
       brandKey: 'apple',
       deviceKey: 'iphone-15',
@@ -79,7 +91,7 @@ describe('CatalogueFilterResolver (TASK-420)', () => {
 
     expect(resolved.categoryId).toBe('cat-1');
     expect(resolved.brandId).toBe('brand-1');
-    expect(resolved.deviceModelId).toBe('model-1');
+    expect(resolved.deviceModelIds).toEqual(['model-1']);
   });
 
   // The point of resolving an id at all (it is already the id the repository
@@ -118,7 +130,7 @@ describe('CatalogueFilterResolver (TASK-420)', () => {
 
     expect(resolved.categoryId).toBe(UNRESOLVED_FILTER_ID);
     expect(resolved.brandId).toBe(UNRESOLVED_FILTER_ID);
-    expect(resolved.deviceModelId).toBe(UNRESOLVED_FILTER_ID);
+    expect(resolved.deviceModelIds).toEqual([UNRESOLVED_FILTER_ID]);
     expect(resolved.categoryKey).toBe(UNRESOLVED_FILTER_KEY);
     expect(resolved.brandKey).toBe(UNRESOLVED_FILTER_KEY);
     expect(resolved.deviceKey).toBe(UNRESOLVED_FILTER_KEY);
@@ -155,5 +167,59 @@ describe('CatalogueFilterResolver (TASK-420)', () => {
     await resolver.resolve({ category: 'phone-cases' });
 
     expect(categoryRepo.findBySlug).toHaveBeenCalledWith('phone-cases', { activeOnly: false });
+  });
+
+  describe('multi-device list (TASK-2077)', () => {
+    it('resolves a comma list in ONE query, OR-ing the ids', async () => {
+      const resolved = await resolver.resolve({ device: 'iphone-15,galaxy-s24' });
+
+      expect(deviceRepo.findModelsBySlugs).toHaveBeenCalledTimes(1);
+      expect(deviceRepo.findModelsBySlugs).toHaveBeenCalledWith(['iphone-15', 'galaxy-s24']);
+      expect(deviceRepo.findModelBySlug).not.toHaveBeenCalled();
+      expect(resolved.deviceModelIds).toEqual(['id-of-galaxy-s24', 'id-of-iphone-15']);
+    });
+
+    it('keys the list on the sorted resolved slugs, whatever the order sent', async () => {
+      const ab = await resolver.resolve({ device: 'iphone-15,galaxy-s24' });
+      const ba = await resolver.resolve({ device: 'galaxy-s24, iphone-15,iphone-15' });
+
+      expect(ab.deviceKey).toBe('galaxy-s24,iphone-15');
+      expect(ba.deviceKey).toBe(ab.deviceKey);
+    });
+
+    it('ignores unknown slugs in a list', async () => {
+      const resolved = await resolver.resolve({ device: 'iphone-15,nope-x,galaxy-s24' });
+
+      expect(resolved.deviceModelIds).toEqual(['id-of-galaxy-s24', 'id-of-iphone-15']);
+      expect(resolved.deviceKey).toBe('galaxy-s24,iphone-15');
+    });
+
+    it('collapses a list with one known slug onto the single-slug cache key', async () => {
+      const resolved = await resolver.resolve({ device: 'iphone-15,nope-x' });
+
+      expect(resolved.deviceKey).toBe('iphone-15');
+      expect(resolved.deviceModelIds).toEqual(['id-of-iphone-15']);
+    });
+
+    it('matches nothing when no slug in the list resolves', async () => {
+      const resolved = await resolver.resolve({ device: 'nope-a,nope-b' });
+
+      expect(resolved.deviceModelIds).toEqual([UNRESOLVED_FILTER_ID]);
+      expect(resolved.deviceKey).toBe(UNRESOLVED_FILTER_KEY);
+    });
+
+    it('keeps the single-slug path on its own findUnique', async () => {
+      await resolver.resolve({ device: 'iphone-15' });
+
+      expect(deviceRepo.findModelBySlug).toHaveBeenCalledWith('iphone-15');
+      expect(deviceRepo.findModelsBySlugs).not.toHaveBeenCalled();
+    });
+
+    it('reads a list that dedupes to one slug as the single-slug form', async () => {
+      await resolver.resolve({ device: 'iphone-15,iphone-15,' });
+
+      expect(deviceRepo.findModelBySlug).toHaveBeenCalledWith('iphone-15');
+      expect(deviceRepo.findModelsBySlugs).not.toHaveBeenCalled();
+    });
   });
 });

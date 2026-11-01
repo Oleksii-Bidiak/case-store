@@ -12,6 +12,9 @@ import {
   pickFromLibrary,
   stubMediaLibrary,
 } from "@/features/media-picker/model/media-picker.fixture";
+import { http, HttpResponse } from "msw";
+import { server } from "@/shared/test/msw-server";
+import type { BannerEntity } from "@/entities/banner";
 import { BannerForm } from "./banner-form";
 
 const f = dict.bannerForm;
@@ -430,5 +433,119 @@ describe("BannerForm — the upload lands in the media library (TASK-2002)", () 
         makeMediaAsset("up-1").url,
       ),
     );
+  });
+});
+
+describe("BannerForm — promo-tile slots (TASK-2013)", () => {
+  const slots = () => screen.getByTestId("banner-promo-slots");
+
+  function activeTile(id: string): BannerEntity {
+    return {
+      id,
+      placement: "PROMO_TILE",
+      title: id,
+      subtitle: null,
+      imageUrl: null,
+      imageBlurDataUrl: null,
+      ctaLabel: null,
+      ctaHref: null,
+      theme: null,
+      sortOrder: 0,
+      status: "PUBLISHED",
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    };
+  }
+
+  function stubTiles(count: number) {
+    server.use(
+      http.get("*/api/admin/banners", () =>
+        HttpResponse.json({
+          data: Array.from({ length: count }, (_, i) =>
+            activeTile(`t${i + 1}`),
+          ),
+          meta: { total: count, page: 1, limit: count, totalPages: 1 },
+        }),
+      ),
+    );
+  }
+
+  it("shows no counter for the other placements", async () => {
+    stubTiles(2);
+    renderWithProviders(<BannerForm onSubmit={noop} isPending={false} />);
+
+    // Let the list request land, then make sure nothing shows for a slide.
+    await userEvent.type(titleInput(), "Слайд");
+    expect(screen.queryByTestId("banner-promo-slots")).not.toBeInTheDocument();
+  });
+
+  it("counts the taken slots and follows the status switch live", async () => {
+    stubTiles(2);
+    renderWithProviders(
+      <BannerForm
+        onSubmit={noop}
+        isPending={false}
+        defaultValues={{ placement: "PROMO_TILE" }}
+      />,
+    );
+
+    // A draft holds no slot: 2 of 5.
+    expect(await screen.findByTestId("banner-promo-slots")).toHaveTextContent(
+      f.promoSlots.counter(2, 5),
+    );
+    expect(slots()).toHaveTextContent(f.promoSlots.layout);
+
+    await chooseStatus(f.statusPublished);
+
+    // Published, it takes the third place — the row under the slider — and the
+    // preview draws it there.
+    expect(slots()).toHaveTextContent(f.promoSlots.counter(3, 5));
+    expect(slots()).toHaveTextContent(f.promoSlots.position(3));
+    expect(
+      within(previewPanel())
+        .getByTestId("banner-preview-promo-tile")
+        .closest("[data-promo-slot]"),
+    ).toHaveAttribute("data-promo-slot", "3");
+  });
+
+  it("explains the limit when all five slots are taken", async () => {
+    stubTiles(5);
+    renderWithProviders(
+      <BannerForm
+        onSubmit={noop}
+        isPending={false}
+        defaultValues={{ placement: "PROMO_TILE", status: "PUBLISHED" }}
+      />,
+    );
+
+    expect(await screen.findByTestId("banner-promo-slots")).toHaveTextContent(
+      f.promoSlots.full,
+    );
+    expect(slots()).toHaveTextContent(f.promoSlots.counter(5, 5));
+
+    // Saving it as a draft is the way out — the warning goes away.
+    await chooseStatus(f.statusDraft);
+    expect(slots()).not.toHaveTextContent(f.promoSlots.full);
+  });
+
+  it("lets a tile that already holds a slot be edited without a warning", async () => {
+    stubTiles(5);
+    renderWithProviders(
+      <BannerForm
+        id="t4"
+        onSubmit={noop}
+        isPending={false}
+        defaultValues={{
+          placement: "PROMO_TILE",
+          status: "PUBLISHED",
+          title: "t4",
+        }}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(slots()).toHaveTextContent(f.promoSlots.position(4)),
+    );
+    expect(slots()).not.toHaveTextContent(f.promoSlots.full);
   });
 });

@@ -305,7 +305,7 @@ describe("OrderLookupForm (TASK-483)", () => {
       for (const name of [d.fieldNumber, d.fieldPhone]) {
         const field = screen.getByRole("textbox", { name });
         expect(field).toHaveAttribute("data-slot", "input");
-        expect(field).toHaveClass("h-11", "focus-visible:ring-ring/50");
+        expect(field).toHaveClass("h-11", "focus-visible:ring-ring/20");
       }
       expect(screen.getByRole("button", { name: d.submit })).toHaveAttribute(
         "data-slot",

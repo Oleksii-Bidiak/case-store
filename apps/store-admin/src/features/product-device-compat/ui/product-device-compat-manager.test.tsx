@@ -7,7 +7,6 @@ import {
   renderWithProviders,
   screen,
   waitFor,
-  within,
 } from "@/shared/test/render";
 import type { SectionSaveController } from "@/shared/lib/section-save";
 import { server } from "@/shared/test/msw-server";
@@ -108,6 +107,7 @@ describe("ProductDeviceCompatManager — save button (TASK-726)", () => {
 });
 
 const c = dict.productCompat;
+const p = dict.seriesPicker;
 
 function stubManyDevices() {
   const queries: string[] = [];
@@ -124,9 +124,30 @@ function stubManyDevices() {
       queries.push(new URL(request.url).search);
       return HttpResponse.json({
         data: [
-          { id: "m-1", name: "iPhone 15", slug: "i15", deviceBrandId: "b-1" },
-          { id: "m-2", name: "iPhone 14", slug: "i14", deviceBrandId: "b-1" },
-          { id: "m-3", name: "Galaxy S24", slug: "s24", deviceBrandId: "b-2" },
+          {
+            id: "m-1",
+            name: "iPhone 15",
+            slug: "i15",
+            series: "iPhone 15",
+            releaseYear: 2023,
+            deviceBrandId: "b-1",
+          },
+          {
+            id: "m-2",
+            name: "iPhone 14",
+            slug: "i14",
+            series: "iPhone 14",
+            releaseYear: 2022,
+            deviceBrandId: "b-1",
+          },
+          {
+            id: "m-3",
+            name: "Galaxy S24",
+            slug: "s24",
+            series: "Galaxy S24",
+            releaseYear: 2024,
+            deviceBrandId: "b-2",
+          },
         ],
       });
     }),
@@ -134,47 +155,41 @@ function stubManyDevices() {
   return queries;
 }
 
-describe("ProductDeviceCompatManager — search, brands, «Лише вибрані» (TASK-1050, Ф3)", () => {
+describe("ProductDeviceCompatManager — by series (TASK-1955)", () => {
   it("asks for every model the endpoint can return, not its default 50", async () => {
     const queries = stubManyDevices();
     renderWithProviders(<ProductDeviceCompatManager productId={PRODUCT_ID} />);
-    await screen.findByLabelText("iPhone 15");
+    await screen.findByLabelText(p.seriesAria("iPhone 15"));
     expect(queries[0]).toContain("limit=200");
   });
 
   it("narrows by the typed model name across brands", async () => {
     stubManyDevices();
     renderWithProviders(<ProductDeviceCompatManager productId={PRODUCT_ID} />);
-    await screen.findByLabelText("iPhone 15");
+    await screen.findByLabelText(p.seriesAria("iPhone 15"));
 
     await userEvent.type(
-      screen.getByRole("searchbox", { name: c.searchAria }),
-      "15",
+      screen.getByRole("searchbox", { name: p.searchAria }),
+      "s24",
     );
-    expect(screen.getByLabelText("iPhone 15")).toBeInTheDocument();
-    expect(screen.queryByLabelText("iPhone 14")).toBeNull();
-    expect(screen.queryByLabelText("Galaxy S24")).toBeNull();
+    // Another brand's model, found without switching the tab; its series opens.
+    expect(screen.getByLabelText("Galaxy S24")).toBeInTheDocument();
+    expect(screen.queryByLabelText(p.seriesAria("iPhone 15"))).toBeNull();
   });
 
-  it("filters by a brand pill, with counts, and back to all", async () => {
+  it("switches brands with the tabs", async () => {
     stubManyDevices();
     renderWithProviders(<ProductDeviceCompatManager productId={PRODUCT_ID} />);
-    await screen.findByLabelText("iPhone 15");
+    await screen.findByLabelText(p.seriesAria("iPhone 15"));
 
-    const brands = screen.getByRole("group", { name: c.brandFilterAria });
-    await userEvent.click(
-      within(brands).getByRole("button", { name: /Samsung/ }),
-    );
-    expect(screen.getByLabelText("Galaxy S24")).toBeInTheDocument();
-    expect(screen.queryByLabelText("iPhone 15")).toBeNull();
-
-    await userEvent.click(
-      within(brands).getByRole("button", { name: c.allBrands(3) }),
-    );
-    expect(screen.getByLabelText("iPhone 15")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: /Samsung/ }));
+    expect(
+      screen.getByLabelText(p.seriesAria("Galaxy S24")),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(p.seriesAria("iPhone 15"))).toBeNull();
   });
 
-  it("«Лише вибрані» leaves only the ticked models, and the badge counts them", async () => {
+  it("opens on the brand of the ticked model and summarises the selection", async () => {
     stubManyDevices();
     renderWithProviders(
       <ProductDeviceCompatManager
@@ -182,12 +197,12 @@ describe("ProductDeviceCompatManager — search, brands, «Лише вибран
         initialModelIds={["m-3"]}
       />,
     );
-    await screen.findByLabelText("iPhone 15");
-    expect(screen.getByText(c.selectedCount(1))).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: c.onlySelected }));
-    expect(screen.getByLabelText("Galaxy S24")).toBeChecked();
-    expect(screen.queryByLabelText("iPhone 15")).toBeNull();
+    // Samsung is active, and the series with a tick is open.
+    expect(await screen.findByLabelText("Galaxy S24")).toBeChecked();
+    expect(screen.getByText(p.summaryLead(1))).toBeInTheDocument();
+    expect(
+      screen.getByText(p.summaryWhole("Galaxy S24", 1)),
+    ).toBeInTheDocument();
   });
 
   it("under the form's one «Зберегти»: no own button, reports dirty, saves on command", async () => {
@@ -215,14 +230,15 @@ describe("ProductDeviceCompatManager — search, brands, «Лише вибран
     await screen.findByLabelText("iPhone 15");
     expect(screen.queryByRole("button", { name: c.save })).toBeNull();
 
-    await userEvent.click(screen.getByLabelText("iPhone 14"));
+    await userEvent.click(screen.getByLabelText(p.seriesAria("iPhone 14")));
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
 
     act(() => controller.current?.discard());
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
-    expect(screen.getByLabelText("iPhone 14")).not.toBeChecked();
+    expect(screen.getByLabelText(p.seriesAria("iPhone 14"))).not.toBeChecked();
 
-    await userEvent.click(screen.getByLabelText("Galaxy S24"));
+    await userEvent.click(screen.getByRole("radio", { name: /Samsung/ }));
+    await userEvent.click(screen.getByLabelText(p.seriesAria("Galaxy S24")));
     await act(async () => {
       await controller.current?.save();
     });

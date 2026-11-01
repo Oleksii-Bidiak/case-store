@@ -4,8 +4,58 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { getGetCartQueryKey, useAddToCart } from "@/entities/cart";
 import { Button } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, FEATURE_STUBS } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
+import { cn } from "@/shared/lib/utils";
+
+/**
+ * The out-of-stock CTA (Product / Catalog mockups §3): an OUTLINE button on
+ * the card surface — sold out is a fact, not a disabled grey slab.
+ *
+ * «Повідомити» / «Повідомити про надходження» is the design, but the
+ * back-in-stock subscription does not exist yet (TASK-1066). So, like every
+ * other parked control (compare, 1-click — TASK-419), it shows only behind
+ * `FEATURE_STUBS`, as a «незабаром» toast; TASK-1066 replaces the handler.
+ * Without the flag the button stays honest: disabled, outlined, and its label
+ * says why («Немає в наявності»).
+ */
+function OutOfStockButton({
+  compact,
+  className,
+}: {
+  compact: boolean;
+  className: string;
+}) {
+  const shape = compact ? "w-full font-semibold" : "h-12 w-full font-semibold";
+  const outline =
+    "border-border bg-card text-foreground shadow-none hover:bg-muted hover:text-foreground disabled:border-border disabled:bg-card disabled:text-muted-foreground dark:bg-card";
+
+  if (FEATURE_STUBS) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size={compact ? "sm" : "default"}
+        onClick={() => toast(dict.deviceFit.notify.stub)}
+        className={cn(shape, outline, className)}
+      >
+        {compact ? dict.deviceFit.notify.short : dict.deviceFit.notify.long}
+      </Button>
+    );
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size={compact ? "sm" : "default"}
+      disabled
+      className={cn(shape, outline, className)}
+    >
+      {dict.addToCart.outOfStock}
+    </Button>
+  );
+}
 
 interface AddToCartButtonProps {
   productId: string;
@@ -19,11 +69,9 @@ interface AddToCartButtonProps {
    */
   compact?: boolean;
   /**
-   * The product position is out of stock. Disables the button and, in compact
-   * (card) rendering, swaps the label to "Немає в наявності" so the unavailable
-   * state is communicated without a separate stock indicator. On the PDP the
-   * `ProductStockIndicator` already shows the message, so callers there pass
-   * `disabled` instead and leave this unset.
+   * The product position is out of stock: renders the outline out-of-stock
+   * CTA instead (see `OutOfStockButton` — «Повідомити» behind FEATURE_STUBS,
+   * otherwise a disabled «Немає в наявності»). Used by cards and the PDP.
    */
   outOfStock?: boolean;
   /**
@@ -83,17 +131,20 @@ export function AddToCartButton({
     ? dict.addToCart.adding
     : dict.addToCart.idle;
 
-  const isDisabled = disabled || outOfStock || addToCart.isPending;
+  // Pending is `loading` on the Button (spinner + aria-busy, keeps the fill
+  // and focus), not `disabled` — TASK-2079.
+  const isDisabled = disabled || outOfStock;
+
+  if (outOfStock) {
+    return <OutOfStockButton compact={compact} className={className} />;
+  }
 
   if (compact) {
-    // Card "Купити" button (mockup): a filled primary CTA. Out-of-stock takes
-    // precedence so the card communicates the state inline via the label.
+    // Card "Купити" button (mockup): a filled primary CTA.
     // No `isSuccess` branch here either — see the note on `label` above.
-    const compactLabel = outOfStock
-      ? dict.addToCart.outOfStock
-      : addToCart.isPending
-        ? dict.addToCart.adding
-        : dict.addToCart.buy;
+    const compactLabel = addToCart.isPending
+      ? dict.addToCart.adding
+      : dict.addToCart.buy;
 
     return (
       <Button
@@ -101,10 +152,9 @@ export function AddToCartButton({
         size="sm"
         onClick={handleClick}
         disabled={isDisabled}
-        // Out of stock: drop the override so the visible "Немає в наявності"
-        // label remains the accessible name (conveys WHY it is disabled).
-        aria-label={outOfStock ? undefined : ariaLabel}
-        className={`w-full font-semibold transition-all active:scale-[0.99] ${className}`}
+        loading={addToCart.isPending}
+        aria-label={ariaLabel}
+        className={cn("w-full font-semibold", className)}
       >
         {compactLabel}
       </Button>
@@ -113,14 +163,19 @@ export function AddToCartButton({
 
   return (
     <div className="flex flex-col gap-2">
-      <button
+      <Button
         type="button"
+        size="lg"
         onClick={handleClick}
         disabled={isDisabled}
-        className={`w-full rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+        loading={addToCart.isPending}
+        className={cn(
+          "h-12 w-full rounded-cta px-6 text-base font-semibold",
+          className,
+        )}
       >
         {label}
-      </button>
+      </Button>
       {addToCart.isError && (
         <p role="alert" className="text-sm text-destructive">
           {dict.addToCart.error}

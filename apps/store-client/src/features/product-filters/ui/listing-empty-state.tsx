@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/shared/ui";
 import { cn } from "@/shared/lib/utils";
@@ -17,7 +18,40 @@ export interface ListingEmptyStateProps {
   body?: string;
   /** The primary action (design-system §6) — a reset or a link out. */
   action: ListingEmptyStateAction;
+  /** An outline action beside the primary one (TASK-2077 «Показати всі»). */
+  secondaryAction?: ListingEmptyStateAction;
+  /**
+   * The icon disc surface — `bg-muted` by default; the device empty state
+   * takes the active device family tone (`bg-family-*`, TASK-2077).
+   */
+  iconClassName?: string;
+  /** Extra content under the actions (the «other devices» chips). */
+  children?: ReactNode;
   className?: string;
+}
+
+function EmptyStateAction({
+  action,
+  variant,
+}: {
+  action: ListingEmptyStateAction;
+  variant: "default" | "outline";
+}) {
+  return action.href !== undefined ? (
+    <Button asChild size="lg" variant={variant} className="h-11">
+      <Link href={action.href}>{action.label}</Link>
+    </Button>
+  ) : (
+    <Button
+      type="button"
+      size="lg"
+      variant={variant}
+      className="h-11"
+      onClick={action.onClick}
+    >
+      {action.label}
+    </Button>
+  );
 }
 
 /**
@@ -36,6 +70,9 @@ export function ListingEmptyState({
   heading,
   body,
   action,
+  secondaryAction,
+  iconClassName,
+  children,
   className,
 }: ListingEmptyStateProps) {
   return (
@@ -47,7 +84,10 @@ export function ListingEmptyState({
     >
       <span
         aria-hidden="true"
-        className="mb-4 inline-flex size-18 items-center justify-center rounded-full bg-muted text-muted-foreground"
+        className={cn(
+          "mb-4 inline-flex size-18 items-center justify-center rounded-full text-muted-foreground",
+          iconClassName ?? "bg-muted",
+        )}
       >
         <Icon className="size-8" strokeWidth={1.6} />
       </span>
@@ -57,20 +97,13 @@ export function ListingEmptyState({
       {body && (
         <p className="mt-2.5 max-w-md text-sm text-muted-foreground">{body}</p>
       )}
-      {action.href !== undefined ? (
-        <Button asChild size="lg" className="mt-5 h-11">
-          <Link href={action.href}>{action.label}</Link>
-        </Button>
-      ) : (
-        <Button
-          type="button"
-          size="lg"
-          className="mt-5 h-11"
-          onClick={action.onClick}
-        >
-          {action.label}
-        </Button>
-      )}
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+        <EmptyStateAction action={action} variant="default" />
+        {secondaryAction && (
+          <EmptyStateAction action={secondaryAction} variant="outline" />
+        )}
+      </div>
+      {children}
     </div>
   );
 }

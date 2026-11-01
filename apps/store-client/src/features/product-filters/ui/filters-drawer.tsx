@@ -79,8 +79,9 @@ export function FiltersDrawer({
         // a drawer; a viewport fraction has no spacing-token equivalent.
         // eslint-disable-next-line tailwindcss/no-arbitrary-value -- viewport-fraction cap, see above
         className="w-86 max-w-[88vw] gap-0 overflow-y-auto overscroll-contain p-0"
+        closeLabel={dict.sheets.closeFilters}
       >
-        <SheetHeader className="border-b border-border">
+        <SheetHeader className="border-b border-border pr-16">
           <SheetTitle className="font-display text-lg font-bold">
             {dict.filters.legend}
           </SheetTitle>
@@ -103,7 +104,7 @@ export function FiltersDrawer({
             // 15px is the catalogue drawer's CTA size from the mockup (TASK-084),
             // carried over verbatim — the type scale has no 15px step.
             // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mockup CTA size, see above
-            className="h-12 w-full rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90"
+            className="h-12 w-full rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100"
           >
             {nothingMatches
               ? resetLabel

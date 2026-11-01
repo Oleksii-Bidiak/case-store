@@ -207,6 +207,25 @@ export class BannerRepository implements PublishablePort {
   }
 
   /**
+   * Count the banners in `placement` whose status is one of `statuses`, leaving out
+   * `excludeId` (the banner being written) — the read behind the promo-tile limit
+   * (TASK-2013). The service owns which statuses count as "active".
+   */
+  countByPlacementAndStatus(
+    placement: BannerPlacement,
+    statuses: readonly PublishStatus[],
+    excludeId?: string,
+  ): Promise<number> {
+    return this.prisma.banner.count({
+      where: {
+        placement,
+        status: { in: [...statuses] },
+        ...(excludeId !== undefined && { id: { not: excludeId } }),
+      },
+    });
+  }
+
+  /**
    * Find a banner by ID regardless of status (admin use).
    */
   findById(id: string): Promise<Banner | null> {

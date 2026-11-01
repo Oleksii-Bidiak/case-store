@@ -13,6 +13,7 @@ import {
 } from "@/features/banner-form";
 import {
   bannerDisplayState,
+  bannerWriteErrorMessage,
   bannerWindowLines,
   duplicateBannerPayload,
   getAdminBannerControllerFindAllQueryKey,
@@ -94,8 +95,8 @@ export function EditBannerView({ bannerId }: EditBannerViewProps) {
           toast.success(d.toastUpdated);
           router.push("/banners");
         },
-        onError: () => {
-          toast.error(d.toastUpdateFailed);
+        onError: (error) => {
+          toast.error(bannerWriteErrorMessage(error) ?? d.toastUpdateFailed);
         },
       },
     );

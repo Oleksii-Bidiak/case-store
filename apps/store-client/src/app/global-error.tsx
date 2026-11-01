@@ -46,7 +46,7 @@ export default function GlobalError({
             <button
               type="button"
               onClick={() => retry()}
-              className="inline-flex h-12 items-center justify-center rounded-cta bg-primary px-6 font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="inline-flex h-12 items-center justify-center rounded-cta bg-primary px-6 font-bold text-primary-foreground transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100"
             >
               {c.retry}
             </button>

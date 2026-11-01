@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 import { DeviceRepository } from '../src/device/device.repository';
 import { DeviceService } from '../src/device/device.service';
 import { PrismaService } from '../src/prisma';
+import { RevalidationNotifier } from '../src/publishing';
 import { SlugRedirectRepository, SlugRedirectService } from '../src/slug-redirect';
 
 /**
@@ -59,6 +60,8 @@ describe('DeviceModel slug rename → SlugRedirect (integration, TASK-699)', () 
           provide: PinoLogger,
           useValue: { setContext: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
         },
+        // The model-hub purge (TASK-1954) — no storefront in this test.
+        { provide: RevalidationNotifier, useValue: { revalidate: jest.fn() } },
       ],
     }).compile();
 

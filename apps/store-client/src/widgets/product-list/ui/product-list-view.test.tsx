@@ -9,6 +9,7 @@ import { renderToString } from "react-dom/server";
 import { getCategoryControllerGetCategoryTreeQueryKey } from "@/entities/category";
 import { getProductControllerFindAllQueryKey } from "@/entities/product";
 import { AuthContext } from "@/entities/session/model/auth.context";
+import { addDevice, clearMyDevices } from "@/entities/my-devices";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import {
   renderWithProviders,
@@ -89,7 +90,9 @@ function installCatalogHandlers({ empty = false } = {}) {
   server.use(
     http.get("*/api/products", ({ request }) => {
       const url = new URL(request.url);
-      productRequests.push(url);
+      // The listing's own requests only: the count line's unfiltered total
+      // (Catalog §3) is a `limit: 1` read beside them.
+      if (url.searchParams.get("limit") !== "1") productRequests.push(url);
       const data = empty ? [] : [makeProduct("p1", "Alpha Case")];
       return HttpResponse.json({
         data,
@@ -124,16 +127,29 @@ beforeEach(() => {
 });
 
 describe("ProductListView — unlocked (/products, unchanged behavior)", () => {
-  it("renders the category chips row and follows ?category= from the URL", async () => {
+  it("renders the category tree and follows ?category= from the URL", async () => {
     const productRequests = installCatalogHandlers();
-    currentQuery = "category=chargers";
+    currentQuery = "category=chargers&view=list&brand=apple";
 
     renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
 
     await screen.findByText("Alpha Case");
+    const tree = await screen.findByRole("navigation", {
+      name: dict.filters.categoryTreeTitle,
+    });
+    // TASK-2011: the URL's category is the tree's current node, and every
+    // node links to its own landing page, keeping the view but not the facets.
+    expect(within(tree).getByRole("link", { name: "Зарядні" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(tree).getByRole("link", { name: "Чохли" })).toHaveAttribute(
+      "href",
+      "/categories/cases?view=list",
+    );
     expect(
-      screen.getByRole("group", { name: dict.filters.categoryChipsAria }),
-    ).toBeInTheDocument();
+      within(tree).getByRole("link", { name: dict.filters.allCategories }),
+    ).toHaveAttribute("href", "/products?view=list");
     // TASK-420: the listing is filtered by the SLUG, and no uuid rides along.
     expect(productRequests.at(-1)?.searchParams.get("category")).toBe(
       "chargers",
@@ -143,7 +159,7 @@ describe("ProductListView — unlocked (/products, unchanged behavior)", () => {
 });
 
 describe("ProductListView — lockedCategory (/categories/[slug], TASK-277)", () => {
-  it("hides the category chips row and queries the locked category", async () => {
+  it("marks the locked category current in the tree and queries it", async () => {
     const productRequests = installCatalogHandlers();
     currentPathname = "/categories/cases";
 
@@ -155,9 +171,17 @@ describe("ProductListView — lockedCategory (/categories/[slug], TASK-277)", ()
     );
 
     await screen.findByText("Alpha Case");
-    expect(
-      screen.queryByRole("group", { name: dict.filters.categoryChipsAria }),
-    ).not.toBeInTheDocument();
+    const tree = await screen.findByRole("navigation", {
+      name: dict.filters.categoryTreeTitle,
+    });
+    expect(within(tree).getByRole("link", { name: "Чохли" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(tree).getByRole("link", { name: "Зарядні" })).toHaveAttribute(
+      "href",
+      "/categories/chargers",
+    );
     expect(productRequests.at(-1)?.searchParams.get("category")).toBe("cases");
   });
 
@@ -226,19 +250,23 @@ describe("ProductListView — lockedOnSale (/promo, TASK-1301)", () => {
     expect(lastRequest.searchParams.get("category")).toBe("cases");
   });
 
-  it("keeps the catalogue chips row, but neither the discount control nor its chip", async () => {
+  it("keeps the category tree, but neither the discount control nor its chip", async () => {
     installCatalogHandlers();
     currentPathname = "/promo";
     currentQuery = "inStock=true";
 
-    renderWithProviders(<ProductListView lockedOnSale />);
+    renderWithProviders(<ProductListView lockedOnSale anchorId="deals" />);
     await screen.findByText("Alpha Case");
 
-    expect(
-      await screen.findByRole("group", {
-        name: dict.filters.categoryChipsAria,
-      }),
-    ).toBeInTheDocument();
+    // TASK-2011: the deals have no per-category landing, so the tree narrows
+    // them by ?category= on /promo itself and lands back on the listing.
+    const tree = await screen.findByRole("navigation", {
+      name: dict.filters.categoryTreeTitle,
+    });
+    expect(within(tree).getByRole("link", { name: "Зарядні" })).toHaveAttribute(
+      "href",
+      "/promo?category=chargers#deals",
+    );
     expect(
       screen.queryByRole("checkbox", { name: dict.filters.onSaleOnly }),
     ).not.toBeInTheDocument();
@@ -460,18 +488,73 @@ describe("ProductListView — filters (TASK-414)", () => {
     );
   });
 
-  // A sticky aside with no height cap runs off the bottom of a short viewport
-  // and, being sticky, the page scroll never brings the overflow back.
-  it("gives the desktop sidebar its own scroll box", async () => {
+  // With the category tree on top, a capped sticky rail that scrolls inside
+  // itself hid every filter below its own fold (Д3 review) — the rail grows
+  // with the page instead, so page scroll reaches all of it.
+  it("lets the desktop rail grow with the page, not scroll inside itself", async () => {
     const { container } = renderWithProviders(
       <ProductListView initialParams={{ page: 1 }} />,
     );
     installCatalogHandlers();
 
     const aside = container.querySelector("aside")!;
-    expect(aside.className).toContain("lg:max-h-sticky-aside");
-    expect(aside.className).toContain("lg:overflow-y-auto");
-    expect(aside.className).toContain("lg:overscroll-contain");
+    expect(aside.className).not.toContain("lg:sticky");
+    expect(aside.className).not.toContain("lg:max-h-sticky-aside");
+    expect(aside.className).not.toContain("lg:overflow-y-auto");
+  });
+});
+
+/**
+ * TASK-1958 — the grid / list toggle used to be `hidden lg:flex`, so phones and
+ * tablets had no list view at all. It now sits in the toolbar at every width
+ * and keeps the choice in the URL (`?view=list`, grid = no param).
+ */
+describe("ProductListView — view toggle at every width (TASK-1958)", () => {
+  it("renders the toggle with no responsive hiding on it or its toolbar group", async () => {
+    installCatalogHandlers();
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText("Alpha Case");
+
+    const toggle = screen.getByRole("button", {
+      name: dict.filters.viewListAria,
+    });
+    expect(toggle.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    expect(toggle.parentElement?.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+  });
+
+  it("writes ?view=list and keeps the other params", async () => {
+    const user = userEvent.setup();
+    installCatalogHandlers();
+    currentQuery = "category=chargers&page=2";
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText("Alpha Case");
+
+    await user.click(
+      screen.getByRole("button", { name: dict.filters.viewListAria }),
+    );
+
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    const params = new URLSearchParams(target.split("?")[1]);
+    expect(params.get("view")).toBe("list");
+    expect(params.get("category")).toBe("chargers");
+    expect(params.get("page")).toBe("2");
+  });
+
+  it("offers the grid back once the list is shown", async () => {
+    const user = userEvent.setup();
+    installCatalogHandlers();
+    currentQuery = "view=list";
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText("Alpha Case");
+
+    await user.click(
+      screen.getByRole("button", { name: dict.filters.viewGridAria }),
+    );
+
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    expect(new URLSearchParams(target.split("?")[1] ?? "").has("view")).toBe(
+      false,
+    );
   });
 });
 
@@ -610,9 +693,13 @@ describe("ProductListView — adopts the server's prefetch (TASK-563)", () => {
 
     // Synchronously — no skeleton first, i.e. what hydration will see.
     expect(screen.getByText("Server Case")).toBeInTheDocument();
-    await screen.findByText(/Знайдено товарів: 1/);
+    await screen.findAllByText(dict.catalog.countProducts(1));
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(productRequests).toHaveLength(0);
+    // The listing itself is not refetched. (The count line's «з N товарів»
+    // reads the unfiltered total with a `limit: 1` request of its own.)
+    expect(
+      productRequests.filter((url) => url.searchParams.get("limit") !== "1"),
+    ).toHaveLength(0);
   });
 
   it("does the same on a category landing page, where the segment is the category", async () => {
@@ -636,13 +723,12 @@ describe("ProductListView — adopts the server's prefetch (TASK-563)", () => {
 });
 
 /**
- * TASK-515 — the chips row is 60px of page above the toolbar and the grid. It
- * used to be absent from the server HTML (no tree there) and mount after
- * hydration, so the grid first rose out of the skeleton's place and then fell
- * back. Now the row is in the first HTML when the route prefetched the tree,
- * and a same-size placeholder stands in whenever there is no tree yet.
+ * TASK-515 / TASK-2011 — the category tree tops the rail. It is in the first
+ * HTML (as crawlable links) when the route prefetched the tree, and a
+ * same-size placeholder stands in whenever there is no tree yet, so the filter
+ * cards under it do not move when it lands.
  */
-describe("ProductListView — the category chips row holds its place (TASK-515)", () => {
+describe("ProductListView — the category tree holds its place (TASK-515, TASK-2011)", () => {
   const tree = {
     data: [
       treeNode("cat-locked", "cases", "Чохли"),
@@ -669,7 +755,7 @@ describe("ProductListView — the category chips row holds its place (TASK-515)"
       </QueryClientProvider>,
     );
 
-  it("puts the chips into the server HTML when the route prefetched the tree", () => {
+  it("puts the tree's links into the server HTML when the route prefetched the tree", () => {
     const prefetched = new QueryClient();
     prefetched.setQueryData(
       getCategoryControllerGetCategoryTreeQueryKey(),
@@ -682,16 +768,16 @@ describe("ProductListView — the category chips row holds its place (TASK-515)"
       </PrefetchBoundary>,
     );
 
-    expect(html).toContain(`aria-label="${dict.filters.categoryChipsAria}"`);
+    expect(html).toContain('href="/categories/chargers"');
     expect(html).toContain("Зарядні");
-    expect(html).not.toContain('data-testid="category-chips-skeleton"');
+    expect(html).not.toContain('data-testid="category-tree-skeleton"');
   });
 
-  it("reserves the row with its placeholder when the server had no tree", () => {
+  it("reserves the panel with its placeholder when the server had no tree", () => {
     const html = serverHtml(<ProductListView />);
 
-    expect(html).toContain('data-testid="category-chips-skeleton"');
-    expect(html).not.toContain(dict.filters.categoryChipsAria);
+    expect(html).toContain('data-testid="category-tree-skeleton"');
+    expect(html).not.toContain('href="/categories/chargers"');
   });
 
   it("keeps the placeholder on the client until the tree arrives", async () => {
@@ -703,38 +789,59 @@ describe("ProductListView — the category chips row holds its place (TASK-515)"
     renderWithProviders(<ProductListView />);
 
     await screen.findByText("Alpha Case");
-    expect(screen.getByTestId("category-chips-skeleton")).toBeInTheDocument();
+    expect(screen.getByTestId("category-tree-skeleton")).toBeInTheDocument();
     expect(
-      screen.queryByRole("group", { name: dict.filters.categoryChipsAria }),
+      screen.queryByRole("navigation", {
+        name: dict.filters.categoryTreeTitle,
+      }),
     ).not.toBeInTheDocument();
+    // The sheet's button keeps its place, neutral and inert, meanwhile.
+    expect(
+      screen.getByRole("button", { name: dict.filters.categoryTreeTitle }),
+    ).toBeDisabled();
   });
 
-  it("swaps the placeholder for the chips once the tree is there", async () => {
+  it("swaps the placeholder for the tree once it is there", async () => {
     installCatalogHandlers();
 
     renderWithProviders(<ProductListView />);
 
     expect(
-      await screen.findByRole("group", {
-        name: dict.filters.categoryChipsAria,
+      await screen.findByRole("navigation", {
+        name: dict.filters.categoryTreeTitle,
       }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByTestId("category-chips-skeleton"),
+      screen.queryByTestId("category-tree-skeleton"),
     ).not.toBeInTheDocument();
+    // Below lg: «Підкатегорії · 2» — the two roots on «Усі товари».
+    expect(
+      screen.getByRole("button", { name: dict.filters.subcategoriesButton(2) }),
+    ).toBeEnabled();
   });
 
-  it("draws no row at all on a category landing page, placeholder included", async () => {
+  it("draws no tree on a compat page, where the route fixes the device", async () => {
     installCatalogHandlers();
-    currentPathname = "/categories/cases";
+    currentPathname = "/catalog/cases/iphone-15";
 
     renderWithProviders(
-      <ProductListView lockedCategory={{ id: "cat-locked", slug: "cases" }} />,
+      <ProductListView
+        lockedCategory={{ id: "cat-locked", slug: "cases" }}
+        lockedDevice={{ slug: "iphone-15" }}
+      />,
     );
 
     await screen.findByText("Alpha Case");
     expect(
-      screen.queryByTestId("category-chips-skeleton"),
+      screen.queryByTestId("category-tree-skeleton"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("navigation", {
+        name: dict.filters.categoryTreeTitle,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Підкатегорії|^Категорія$/ }),
     ).not.toBeInTheDocument();
   });
 });
@@ -795,5 +902,55 @@ describe("ProductListView — empty state (TASK-870)", () => {
     const cta = screen.getByRole("link", { name: dict.promo.dealsEmptyCta });
     expect(cta).toHaveAttribute("href", "/products");
     expect(cta).toHaveAttribute("data-variant", "default");
+  });
+});
+
+describe("ProductListView — the «Мої пристрої» default (TASK-2076)", () => {
+  const pro = {
+    modelId: "m-15p",
+    slug: "iphone-15-pro",
+    name: "iPhone 15 Pro",
+    brandName: "Apple",
+    family: "iphone" as const,
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    clearMyDevices();
+  });
+
+  it("lists by the active device when the URL names none", async () => {
+    const productRequests = installCatalogHandlers();
+    addDevice(pro);
+
+    renderWithProviders(
+      <ProductListView myDevicesDefault={{ on: true, scope: "active" }} />,
+    );
+
+    await screen.findByText("Alpha Case");
+    expect(
+      productRequests.some(
+        (url) => url.searchParams.get("device") === "iphone-15-pro",
+      ),
+    ).toBe(true);
+  });
+
+  it("applies no default after compat=off or without the opt-in", async () => {
+    const productRequests = installCatalogHandlers();
+    addDevice(pro);
+    currentQuery = "compat=off";
+
+    const { unmount } = renderWithProviders(
+      <ProductListView myDevicesDefault={{ on: true, scope: "active" }} />,
+    );
+    await screen.findByText("Alpha Case");
+    unmount();
+    currentQuery = "";
+    renderWithProviders(<ProductListView />);
+    await screen.findByText("Alpha Case");
+
+    expect(
+      productRequests.every((url) => !url.searchParams.has("device")),
+    ).toBe(true);
   });
 });

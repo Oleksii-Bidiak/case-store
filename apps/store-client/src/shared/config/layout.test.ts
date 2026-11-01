@@ -81,7 +81,7 @@ describe("spacing scale (TASK-500, TASK-517)", () => {
     const css = readFileSync(join(SRC, "app", "globals.css"), "utf8");
     const theme = css.slice(css.indexOf("@theme inline"));
     expect(theme).toMatch(
-      /--max-height-sticky-aside:\s*calc\(100dvh - 7rem\);/,
+      /--max-height-sticky-aside:\s*calc\(100dvh - var\(--sticky-header-offset\) - 1rem\);/,
     );
   });
 
@@ -101,9 +101,15 @@ describe("spacing scale (TASK-500, TASK-517)", () => {
 describe("sticky aside offset (TASK-519)", () => {
   const files = sourceFiles(SRC);
 
-  it("is the bare 96px top utility, matching STICKY_HEADER_OFFSET", () => {
-    expect(STICKY_ASIDE_TOP).toBe("top-24");
+  it("reads the measured header offset, with a 96px fallback", () => {
+    // TASK-2074: the header grew the «Мої пристрої» bar, so the offset is the
+    // --sticky-header-offset custom property (measured header height + 32px).
+    expect(STICKY_ASIDE_TOP).toBe("top-(--sticky-header-offset)");
     expect(STICKY_HEADER_OFFSET).toBe(96);
+    const css = readFileSync(join(SRC, "app", "globals.css"), "utf8");
+    expect(css).toMatch(
+      /--sticky-header-offset:\s*calc\(var\(--header-height\) \+ 2rem\);/,
+    );
   });
 
   it("pairs every consumer with a breakpoint-prefixed sticky", () => {

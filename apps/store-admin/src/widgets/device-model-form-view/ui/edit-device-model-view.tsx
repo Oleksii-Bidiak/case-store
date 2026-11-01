@@ -158,6 +158,13 @@ export function EditDeviceModelView({ modelId }: EditDeviceModelViewProps) {
                   {livePages === undefined ? "—" : livePages.length}
                 </span>
               </Fact>
+              {/* TASK-1955: the model's assortment next to its series. */}
+              <Link
+                href={`/devices/models/${encodeURIComponent(modelId)}/coverage`}
+                className="mt-1 w-fit rounded-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                {dict.deviceCoverage.linkLong} →
+              </Link>
             </div>
           }
         />

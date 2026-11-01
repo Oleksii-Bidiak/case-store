@@ -1,7 +1,12 @@
 import { IsBoolean, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { SLUG_MAX_LENGTH, blankToUndefined } from '../../catalog-filter';
+import {
+  IsDeviceSlugList,
+  MAX_DEVICE_FILTER_SLUGS,
+  SLUG_MAX_LENGTH,
+  blankToUndefined,
+} from '../../catalog-filter';
 
 /**
  * The ACTIVE catalogue filters, as sent alongside a facet request (TASK-489).
@@ -32,14 +37,17 @@ export class FilterableSpecsQueryDto {
   brand?: string;
 
   @ApiProperty({
-    description: 'Active compatible device-model SLUG — `?device=iphone-15` (TASK-420).',
-    example: 'iphone-15',
+    description:
+      'Active compatible device-model SLUG — `?device=iphone-15` (TASK-420) — or a ' +
+      `comma-separated list of up to ${MAX_DEVICE_FILTER_SLUGS} slugs, OR-ed (TASK-2077); ` +
+      'same grammar as the listing twin.',
+    example: 'iphone-15,galaxy-s24',
     required: false,
   })
   @IsOptional()
   @Transform(blankToUndefined)
   @IsString()
-  @MaxLength(SLUG_MAX_LENGTH, { message: 'device must be at most 120 characters' })
+  @IsDeviceSlugList()
   device?: string;
 
   @ApiProperty({ description: 'Active minimum price filter', example: '10.00', required: false })

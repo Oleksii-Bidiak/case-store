@@ -1,20 +1,20 @@
-import { Suspense, Fragment, cache } from "react";
+import { Suspense, cache } from "react";
 import type { Metadata } from "next";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
-import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
-import {
-  ProductListView,
-  ProductListSkeleton,
-  SubcategoryChips,
-} from "@/widgets";
+import { ProductListSkeleton } from "@/widgets";
+import { CatalogListingView } from "@/app/products/(catalog)/catalog-listing-view";
+import { categoryTreeRowCount } from "@/features/product-filters";
 import {
   buildCatalogListingParams,
   findCategoryPathBySlug,
   readSearchParamsRecord,
 } from "@/widgets/product-list";
 import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
-import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
+import {
+  categoryControllerGetCategoryTree,
+  getCategoryControllerGetCategoryTreeQueryKey,
+} from "@/shared/api/generated/categories/categories";
 import { getProductControllerFindAllQueryOptions } from "@/shared/api/generated/products/products";
 import {
   createServerQueryClient,
@@ -42,7 +42,8 @@ import {
   resolveLegacyCatalogParams,
   withQuery,
 } from "@/shared/lib/legacy-catalog-params";
-import { SITE_URL, dict, PAGE_CONTAINER, H1_CLASS } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
+import { CatalogHead } from "@/app/products/(catalog)/catalog-head";
 
 interface CategoryLandingPageProps {
   params: Promise<{ slug: string }>;
@@ -71,10 +72,17 @@ function first(value: string | string[] | undefined): string | undefined {
  */
 const resolveCategoryPath = cache(
   async (slug: string): Promise<CategoryTreeNodeEntity[] | null> => {
-    const { data } = await categoryControllerGetCategoryTree();
+    const { data } = await fetchCategoryTree();
     return findCategoryPathBySlug(data ?? [], slug);
   },
 );
+
+/**
+ * The public tree, once per request (React `cache()`). Resolves the path AND
+ * goes to the client under the rail tree's query key (TASK-2011), so the tree
+ * — ancestors, siblings, subcategories — is in the first HTML as links.
+ */
+const fetchCategoryTree = cache(() => categoryControllerGetCategoryTree());
 
 /**
  * Serve the 308 from a pre-TASK-420 uuid query to its slug form, if this is one.
@@ -249,6 +257,18 @@ export default async function CategoryLandingPage({
   });
   await prefetchQueries(queryClient, [listingQuery]);
   const listing = queryClient.getQueryData(listingQuery.queryKey);
+  // The rail's category tree (TASK-2011): the tree this page already read to
+  // resolve its path (one `cache()`d request), under the key the view's tree
+  // query reads — so its links are in the first HTML.
+  const categoryTree = await fetchCategoryTree();
+  queryClient.setQueryData(
+    getCategoryControllerGetCategoryTreeQueryKey(),
+    categoryTree,
+  );
+  const categoryTreeRows = categoryTreeRowCount(
+    categoryTree.data ?? [],
+    node.slug,
+  );
 
   // «Головна → [батько →] категорія» — one crumb per tree ancestor, each an
   // ancestor's own landing page (no generic hub crumb).
@@ -260,6 +280,8 @@ export default async function CategoryLandingPage({
     })),
     { name: node.name, href: undefined },
   ];
+  // The back pill's one step up below `md`: the parent, or the catalogue.
+  const parent = path.length > 1 ? path.at(-2) : undefined;
 
   const schemas = buildCategoryPageSchemas(path, listing?.data);
 
@@ -268,71 +290,51 @@ export default async function CategoryLandingPage({
       {schemas?.breadcrumb && <JsonLd schema={schemas.breadcrumb} />}
       {schemas?.itemList && <JsonLd schema={schemas.itemList} />}
 
-      {/* Breadcrumbs */}
-      <nav
-        aria-label={dict.product.breadcrumbAria}
-        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
-      >
-        {trail.map((crumb, i) => {
-          const isLast = i === trail.length - 1;
-          return (
-            <Fragment key={`${crumb.name}-${i}`}>
-              {i > 0 && (
-                <span aria-hidden="true" className="opacity-50">
-                  ›
-                </span>
-              )}
-              {crumb.href && !isLast ? (
-                <Link
-                  href={crumb.href}
-                  className="transition-colors hover:text-foreground"
-                >
-                  {crumb.name}
-                </Link>
-              ) : (
-                <span
-                  className={isLast ? "font-medium text-foreground" : undefined}
-                >
-                  {crumb.name}
-                </span>
-              )}
-            </Fragment>
-          );
-        })}
-      </nav>
-
-      {/* Title */}
-      <div className="mb-4.5">
-        <h1 className={`${H1_CLASS} text-foreground`}>{node.name}</h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          {node.description || dict.catalog.categorySubtitle(node.name)}
-        </p>
-      </div>
-
-      {/* Direct subcategories — navigation links, not filter toggles */}
-      <SubcategoryChips categories={node.children ?? []} />
+      {/* Crumbs from `md`, one back pill below it — «‹ Каталог» on a
+          top-level category, else «‹ {батько}» — and the H1 (Catalog §3).
+          The count line under the H1 is the listing's own. */}
+      <CatalogHead
+        trail={trail}
+        back={
+          parent
+            ? { label: parent.name, href: `/categories/${parent.slug}` }
+            : { label: dict.catalog.backToCatalog, href: "/products" }
+        }
+        title={node.name}
+      />
 
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
-        {/* The whole catalogue shell, like /products (TASK-416), minus the
-            category chips the locked view never shows, plus «Характеристики»
-            — a category is always set here (TASK-515). */}
+        {/* The whole catalogue shell, like /products (TASK-416): the rail's
+            category tree — this category current, its subcategories under it
+            (TASK-2011) — plus «Характеристики», a category is always set here
+            (TASK-515). */}
         <Suspense
           fallback={
             <ProductListSkeleton
               withSidebar
-              withCategoryChips={false}
+              categoryTreeRows={categoryTreeRows}
               hasCategory
             />
           }
         >
-          <ProductListView
+          <CatalogListingView
             initialParams={initialParams}
             // Slug for the listing filter, id for the id-addressed side
             // endpoints (brands-per-category, filterable specs) — TASK-420.
             lockedCategory={{ id: node.id, slug: node.slug }}
+            categoryTreePrefetched
           />
         </Suspense>
       </PrefetchBoundary>
+
+      {/* The category's own text, when the admin wrote one — after the
+          listing, where it informs without pushing the products down (the
+          head is H1 + count line, Catalog §3). */}
+      {node.description && (
+        <p className="mt-12 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+          {node.description}
+        </p>
+      )}
     </div>
   );
 }

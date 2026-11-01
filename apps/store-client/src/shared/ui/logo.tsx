@@ -90,6 +90,8 @@ export function Logo({
   // way (TASK-410): a flex item's default `min-width: auto` is its intrinsic
   // width, which on a 320px screen would push the action cluster off-canvas.
   // The monogram keeps its size (`shrink-0`) and the wordmark truncates instead.
+  // The wordmark is a step smaller below sm: Unbounded (TASK-1951) is a wide
+  // face, and at text-xl the name already truncated on a 390px header.
   const wrapper = cn("inline-flex min-w-0 items-center gap-2", className);
 
   if (!src) {
@@ -104,7 +106,7 @@ export function Logo({
         >
           {siteName.charAt(0)}
         </span>
-        <span className="truncate font-display text-xl font-bold tracking-tight">
+        <span className="truncate font-display text-base font-bold tracking-tight sm:text-xl">
           {siteName}
         </span>
       </span>

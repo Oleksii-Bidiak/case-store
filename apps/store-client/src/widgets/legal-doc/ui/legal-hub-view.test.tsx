@@ -67,7 +67,8 @@ describe("LegalHubView", () => {
     expect(filled[0]).toBe(
       screen.getByRole("link", { name: dict.legal.hub.supportCta }),
     );
-    expect(filled[0].className).toMatch(/focus-visible:ring/);
+    // The house focus outline (TASK-2079), not a ring.
+    expect(filled[0].className).toMatch(/focus-visible:outline-ring/);
   });
 
   it("shows the §6 empty state with the support action as its one primary (TASK-870)", () => {

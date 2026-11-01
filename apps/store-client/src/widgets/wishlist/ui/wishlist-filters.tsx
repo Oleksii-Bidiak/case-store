@@ -121,9 +121,10 @@ function FacetCheckboxList({
  *  - «Ціна, ₴»: the catalogue's inputs + two-thumb slider (`PriceRangeFilter`)
  *    over the list's own price domain.
  *
- * «Сумісний пристрій» from the mockup is left out on purpose: no data source
- * carries compatibility for these items (see `useWishlistFacets`), and a
- * control that filters nothing is worse than none.
+ * Devices are not a section here: since Д3-2 they are the
+ * «З урахуванням моїх пристроїв» panel above these cards
+ * (`WishlistDevicesPanel`, off by default), fed by the cards'
+ * `compatibleDeviceModelIds`.
  */
 export function WishlistFilters({
   items,

@@ -45,7 +45,7 @@ export function ProductQuickViewTrigger({
         onClick={openQuickView}
         aria-label={dict.quickView.trigger(product.name)}
         className={cn(
-          "inline-flex size-9 items-center justify-center rounded-lg bg-background/85 text-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          "inline-flex size-9 items-center justify-center rounded-lg bg-background/85 text-foreground shadow-sm backdrop-blur-sm transition-interactive hover:bg-background active:scale-94 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring",
           className,
         )}
       >

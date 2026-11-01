@@ -44,6 +44,7 @@ function combineFacets(
         categoryId: card.categoryId,
         brandId: card.brand?.id,
         brandName: card.brand?.name,
+        compatibleDeviceModelIds: card.compatibleDeviceModelIds ?? [],
       });
     }
   }
@@ -51,7 +52,8 @@ function combineFacets(
 }
 
 /**
- * Category and brand for every saved product (TASK-1300).
+ * Category, brand and compatible device models for every saved product
+ * (TASK-1300).
  *
  * The wishlist item summary carries neither (it is name, price, stock and an
  * image), so the rail asks the product cards endpoint for the same ids — the
@@ -60,10 +62,9 @@ function combineFacets(
  * or removing an item refetches its batch. Category NAMES come from the
  * category tree every catalogue page already caches.
  *
- * Compatible devices are deliberately not read: the cards endpoint does not
- * hydrate `compatibleDeviceModels` (it is always empty there), so a
- * «Сумісний пристрій» section would be a control with nothing behind it
- * (TASK-1616).
+ * Compatible devices come from the same cards: `compatibleDeviceModelIds` is
+ * filled in one batched query per page (SД3), so the «З урахуванням моїх
+ * пристроїв» switch and the fit mark on each card need no extra request.
  */
 export function useWishlistFacets(productIds: readonly string[]): {
   facetsById: ReadonlyMap<string, WishlistItemFacets>;

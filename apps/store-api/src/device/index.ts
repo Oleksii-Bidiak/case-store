@@ -11,6 +11,7 @@ export {
   type FindModelsParams,
   type PaginatedDeviceModelsResult,
   type DeviceModelWithBrand,
+  type DeviceModelWithBrandSlug,
   type DeviceBrandWithCount,
   type FindAdminBrandsParams,
   type PaginatedDeviceBrandsResult,

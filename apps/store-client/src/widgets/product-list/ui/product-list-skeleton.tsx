@@ -1,8 +1,10 @@
 import { Skeleton } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { PRODUCT_GRID_CLASS } from "@/shared/config/product-grid";
 import {
-  CategoryChipsSkeleton,
+  CategoryTreePanelSkeleton,
   FilterCardSkeleton,
+  FilterPanelSkeleton,
   filterRailSections,
   type CatalogView,
 } from "@/features/product-filters";
@@ -19,18 +21,19 @@ interface ProductListSkeletonProps {
    */
   withSidebar?: boolean;
   /**
-   * Draw the category chips row (`withSidebar` only). `ProductListView` hides
-   * it when the route locks the category — `/categories/[slug]` and
-   * `/catalog/[category]/[device]` — so those fallbacks pass `false`, or the
-   * placeholder row would collapse and pull everything up on mount.
+   * Draw the category tree — its panel at the top of the rail and its
+   * «Підкатегорії» button in the toolbar below `lg` (`withSidebar` only,
+   * TASK-2011). `ProductListView` leaves the tree out only where the route
+   * fixes the device (`/catalog/[category]/[device]`), so that fallback passes
+   * `false`.
    */
-  withCategoryChips?: boolean;
+  withCategoryTree?: boolean;
   /**
-   * Reserve the subcategory chips row under it (`subcategoryChipsOf` is
-   * non-empty for the active category). Only a page that has the category tree
-   * can know; a `loading.tsx` gets no searchParams and leaves it out.
+   * Rows the tree panel will draw — `categoryTreeRowCount` of the page's tree
+   * and category. Only a page that has the tree can know; a `loading.tsx` gets
+   * no searchParams and takes the panel's default.
    */
-  withSubcategoryChips?: boolean;
+  categoryTreeRows?: number;
   /** A category is active → the rail ends with «Характеристики» (TASK-515). */
   hasCategory?: boolean;
   /** The route fixes the device → the rail has no «Сумісний пристрій». */
@@ -51,12 +54,12 @@ interface ProductListSkeletonProps {
  * rating row (16px), the colour-dots row (14px) and the price (`text-lg`,
  * 28px, pushed down by `mt-auto`);
  * then the `px-4 pb-4` action block — the stock line and the 40px Buy +
- * heart row. The stock line («В наявності · доставка 1–2 дні») wraps onto a
- * second line wherever the card is narrower than ~216px — two columns up to
- * ~455px and four columns from `lg` to ~1296px — which no breakpoint pair
- * follows, so the placeholder sets the same dictionary copy in the same
- * `text-xs` flex row, transparent on a pulsing background: it wraps exactly
- * where the real line does, at every width.
+ * heart row. The stock line is stock only — «В наявності», no delivery promise
+ * since TASK-2080 — and fits one line at every card width today. The
+ * placeholder still sets the same dictionary copy (`inStockLine`) in the same
+ * `text-xs` flex row, transparent on a pulsing background, so if the copy ever
+ * grows again it wraps exactly where the real line does, with no width to
+ * keep in sync.
  *
  * The second title line, the rating row and the colour-dots row are drawn for
  * every cell, and `ProductList` renders its cards with `reserveRows`, which
@@ -70,7 +73,7 @@ interface ProductListSkeletonProps {
  */
 function ProductCardSkeleton() {
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
+    <div className="flex flex-col overflow-hidden rounded-card border border-border bg-card shadow-card">
       <Skeleton className="aspect-square w-full rounded-none" />
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex flex-col gap-2">
@@ -117,8 +120,8 @@ function ProductCardSkeleton() {
 export function ProductListSkeleton({
   view = "grid",
   withSidebar = false,
-  withCategoryChips = true,
-  withSubcategoryChips = false,
+  withCategoryTree = true,
+  categoryTreeRows,
   hasCategory = false,
   lockedDevice = false,
   lockedOnSale = false,
@@ -141,30 +144,32 @@ export function ProductListSkeleton({
         ))}
       </div>
     ) : (
-      // Byte-identical to the real grid in `ProductList` (1 / 2 / 4 columns) —
+      // The same `PRODUCT_GRID_CLASS` as the real grid in `ProductList` —
       // same columns, same gap, so swapping skeletons for cards does not reflow.
-      // Guarded by a parity test in `product-list.test.tsx` (TASK-415): never
-      // edit this class list without editing `ProductList`'s to match.
-      <div
-        className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4"
-        aria-hidden="true"
-      >
+      // Guarded by a parity test in `product-list.test.tsx` (TASK-415).
+      <div className={PRODUCT_GRID_CLASS} aria-hidden="true">
         {Array.from({ length: 12 }).map((_, i) => (
           <ProductCardSkeleton key={i} />
         ))}
       </div>
     );
 
-  // The results column of `ProductList`: the «Знайдено товарів: N» line (one
-  // text-sm line, 20px) and the cards under it, `gap-6` apart. Without the line
-  // the cards sat 44px above where the real ones land, on every catalogue
-  // route (TASK-869).
+  // The results column of `ProductList`: the cards alone — the result count
+  // moved up under the H1 (Д3-2 Catalog §3), where the shell below reserves it.
   const results = (
     <div className="flex flex-col gap-6" aria-hidden="true">
-      <Skeleton className="h-5 w-40" data-testid="result-count-skeleton" />
       {items}
     </div>
   );
+
+  const railSections = filterRailSections({
+    hasCategory,
+    lockedDevice,
+    lockedOnSale,
+    // The catalogue rail tops its filters with «З урахуванням моїх
+    // пристроїв» (TASK-2077); the section list drops it on compat pages.
+    withMyDevices: true,
+  });
 
   if (!withSidebar) {
     return results;
@@ -172,23 +177,32 @@ export function ProductListSkeleton({
 
   return (
     <div aria-hidden="true">
-      {/* Category chips — the feature's own placeholder, the one the view
-          shows until its category tree is there, so the two are the same box
-          row for row (TASK-515). */}
-      {withCategoryChips && (
-        <CategoryChipsSkeleton withSubcategories={withSubcategoryChips} />
-      )}
+      {/* The count line under the H1 — ListingCountLine's one text-sm line
+          (20px), 6px under the H1 like the view's. */}
+      <div className="mt-1.5 flex min-h-5 items-center">
+        <Skeleton className="h-4 w-40" data-testid="result-count-skeleton" />
+      </div>
 
-      {/* Toolbar: mobile filters button (left) + view toggle & sort (right).
-          The toggle is two 44px buttons in a padded, bordered segment — 54px
-          tall, not 44 — and it sets the row's height on desktop, so a 44px
-          placeholder left the whole grid 10px too high until the swap
-          (TASK-515). The sort trigger's width follows its «Спочатку: …» label. */}
-      <div className="mb-5 flex items-center gap-3">
-        <Skeleton className="h-11 w-32 rounded-xl lg:hidden" />
-        <div className="ml-auto flex min-w-0 items-center gap-3">
-          <Skeleton className="hidden h-13.5 w-25.5 rounded-xl lg:block" />
-          <Skeleton className="h-11 w-48 max-w-full rounded-xl sm:w-66" />
+      {/* Toolbar: the same rows and gaps as ProductListView. Every control is
+          44px tall since the toggle became one pill shown at every width
+          (TASK-1958): icon-only 44px below `sm`, «Списком» beside the icon
+          from `sm`. With the category tree (TASK-2011), «Фільтри» and
+          «Підкатегорії» share the first row below `md` and sort + view wrap
+          under them. The sort trigger's width follows its «Спочатку: …»
+          label. */}
+      <div className="mt-5 mb-3 flex flex-wrap items-center gap-2 sm:gap-3">
+        {withCategoryTree ? (
+          <div className="flex w-full gap-2 sm:gap-3 md:w-auto lg:hidden">
+            <Skeleton className="h-11 flex-1 rounded-xl md:w-32 md:flex-none" />
+            <Skeleton className="h-11 flex-1 rounded-xl md:w-44 md:flex-none" />
+          </div>
+        ) : (
+          <Skeleton className="h-11 w-32 rounded-xl lg:hidden" />
+        )}
+        <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-3">
+          <Skeleton className="mr-auto h-4 w-20 lg:hidden" />
+          <Skeleton className="h-11 w-40 max-w-full rounded-xl sm:w-66" />
+          <Skeleton className="h-11 w-11 shrink-0 rounded-xl sm:w-30" />
         </div>
       </div>
 
@@ -196,22 +210,22 @@ export function ProductListSkeleton({
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors ProductListView's sidebar grid; a named grid-cols-N cannot express it */}
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
         <div
-          className="hidden flex-col gap-3.5 lg:flex"
+          className="hidden flex-col gap-3 lg:flex"
           data-testid="filter-rail-skeleton"
         >
-          {/* WHICH cards, in what order, comes from `filterRailSections` — the
-              list `ProductFilters` gates its own sections on — and each card is
-              the feature's own placeholder: the same box «Виробник» and
-              «Характеристики» keep holding until their data lands, so the rail
-              does not lose a card on swap and regain it a second later
-              (TASK-515). A new section without a height fails typecheck. */}
-          {filterRailSections({
-            hasCategory,
-            lockedDevice,
-            lockedOnSale,
-          }).map((section) => (
-            <FilterCardSkeleton key={section} section={section} />
-          ))}
+          {/* The tree panel first, as in the rail (TASK-2011) — the feature's
+              own placeholder, the one the view shows until its tree is there. */}
+          {withCategoryTree && (
+            <CategoryTreePanelSkeleton rows={categoryTreeRows} />
+          )}
+          {/* WHICH sections, in what order, comes from `filterRailSections` —
+              the list `ProductFilters` gates its own sections on (TASK-515):
+              the «Мої пристрої» card, then the one «Фільтри товарів» panel
+              with a block per section (Д3-2 Catalog §12). */}
+          {railSections.includes("myDevices") && (
+            <FilterCardSkeleton section="myDevices" />
+          )}
+          <FilterPanelSkeleton sections={railSections} />
         </div>
 
         <div className="min-w-0">{results}</div>

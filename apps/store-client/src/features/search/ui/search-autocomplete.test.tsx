@@ -73,6 +73,14 @@ function productList() {
   return screen.getByRole("listbox", { name: dict.search.inputAria });
 }
 
+// The popup asks for the device-model list (TASK-2069). No models by default —
+// the suites below are about products and articles; the model block has its own.
+beforeEach(() => {
+  server.use(
+    http.get("*/api/device-models", () => HttpResponse.json({ data: [] })),
+  );
+});
+
 describe("SearchAutocomplete", () => {
   beforeEach(() => mockPush.mockClear());
 

@@ -430,6 +430,26 @@ describe('CategoryRepository branch visibility (integration, TASK-1032)', () => 
     expect(underRoot.ancestorsActive).toBe(true);
   });
 
+  // TASK-1956 — not a visibility case, but this block owns a live repository + a test DB.
+  it('round-trips Category.icon: create writes it, the admin reads carry it, null clears it', async () => {
+    const iconed = await repo.create({ name: 'iconed', slug: `iconed-${s}`, icon: 'cases' });
+    created.push(iconed.id);
+    expect(iconed.icon).toBe('cases');
+
+    const tree = await repo.findCategoryTreeForAdmin();
+    expect(tree.find((node) => node.id === iconed.id)?.icon).toBe('cases');
+
+    const { categories } = await repo.findAllWithProductCount({
+      page: 1,
+      limit: 100,
+      search: 'iconed',
+    });
+    expect(categories.find((row) => row.category.id === iconed.id)?.category.icon).toBe('cases');
+
+    const { category } = await repo.update(iconed.id, { icon: null });
+    expect(category.icon).toBeNull();
+  });
+
   it('findBySlug (public) answers null for an active subcategory under an inactive ancestor', async () => {
     await repo.setActiveMany([rootV], false);
     try {

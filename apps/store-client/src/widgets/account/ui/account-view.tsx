@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/entities/session";
 import { useUserControllerGetProfile, type UserEntity } from "@/entities/user";
+import { MyDevicesManager } from "@/widgets/my-devices-manager";
 import { dict, FEATURE_STUBS } from "@/shared/config";
 import {
   ACCOUNT_ORDERS_PATH,
@@ -62,6 +63,10 @@ function AccountContent({
   switch (section) {
     case "profile":
       return <AccountProfileSection user={user} />;
+    case "devices":
+      // The guest page /devices in the account frame (TASK-2076); the list is
+      // still this browser's until account sync (TASK-1959).
+      return <MyDevicesManager shell="account" />;
     case "bonuses":
       return <AccountBonusesSection />;
     case "settings":

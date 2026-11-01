@@ -49,6 +49,12 @@ import {
   useUploadsControllerUploadCategoryImage,
 } from "@/features/content-image-upload";
 import { MediaPicker } from "@/features/media-picker";
+import {
+  CategoryIconPicker,
+  CategoryIconPreview,
+  buildIconPreviewRows,
+  usedRootIcons,
+} from "@/features/category-icon-picker";
 import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
   categorySchema,
@@ -73,6 +79,7 @@ const MAIN_FIELDS = [
   "slug",
   "description",
   "parentId",
+  "icon",
   "isActive",
 ] as const;
 const IMAGE_FIELDS = ["image"] as const;
@@ -126,6 +133,7 @@ const EMPTY_VALUES: CategoryFormInput = {
   description: "",
   image: "",
   parentId: "",
+  icon: "",
   isActive: true,
   metaTitle: "",
   metaDescription: "",
@@ -242,6 +250,25 @@ export function CategoryForm({
   // storefront would render for this category page through the same three-tier
   // precedence.
   const nameValue = useWatch({ control, name: "name" }) ?? "";
+
+  // TASK-1956: the icon field — the «used» hint and the live preview read the
+  // admin tree already loaded for the parent Select (no extra request).
+  const iconValue = useWatch({ control, name: "icon" }) ?? "";
+  const parentValue = useWatch({ control, name: "parentId" }) ?? "";
+  const isRoot = !parentValue;
+  const usedIcons = useMemo(
+    () => usedRootIcons(treeItems, id),
+    [treeItems, id],
+  );
+  const iconPreviewRows = buildIconPreviewRows({
+    items: treeItems,
+    editedId: id,
+    parentId: parentValue,
+    name: nameValue,
+    icon: iconValue,
+    fallbackName: f.icon.previewNewName,
+  });
+
   const descriptionValue = useWatch({ control, name: "description" }) ?? "";
   const metaTitleValue = useWatch({ control, name: "metaTitle" }) ?? "";
   const metaDescriptionValue =
@@ -449,6 +476,52 @@ export function CategoryForm({
                 <FieldError id={errorId("parentId")}>
                   {errors.parentId?.message}
                 </FieldError>
+              </div>
+
+              {/* TASK-1956: the icon right after the parent — whether it is a
+                  root decides the soft hint — with the live preview beside it
+                  from md, under it on a phone. */}
+              <div className="grid gap-4 md:col-span-2 md:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="category-icon">{f.icon.label}</Label>
+                  <Controller
+                    control={control}
+                    name="icon"
+                    render={({ field }) => (
+                      <CategoryIconPicker
+                        id="category-icon"
+                        value={field.value ?? ""}
+                        onChange={(key) =>
+                          setValue("icon", key, {
+                            shouldDirty: true,
+                            shouldValidate: true,
+                          })
+                        }
+                        usedKeys={usedIcons}
+                        allowClear={!isRoot}
+                        disabled={isPending}
+                        {...fieldA11y(
+                          "icon",
+                          isRoot && !iconValue
+                            ? "category-icon-hint"
+                            : undefined,
+                        )}
+                      />
+                    )}
+                  />
+                  {isRoot && !iconValue && (
+                    <p
+                      id="category-icon-hint"
+                      className="text-xs text-muted-foreground"
+                    >
+                      {f.icon.rootHint}
+                    </p>
+                  )}
+                  <FieldError id={errorId("icon")}>
+                    {errors.icon?.message}
+                  </FieldError>
+                </div>
+                <CategoryIconPreview rows={iconPreviewRows} />
               </div>
 
               <div className="flex flex-col gap-1.5 md:col-span-2">

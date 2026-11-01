@@ -33,10 +33,12 @@ export interface ProductListWhereParams {
   brandId?: string;
   /**
    * Device-compatibility filter (TASK-190): when set, only products with a
-   * `ProductDeviceCompat` row for this device model are returned. Applied as a
-   * nested relation filter through the join table.
+   * `ProductDeviceCompat` row for ANY of these device models are returned
+   * (OR semantics since TASK-2077 — «усі мої пристрої»). Applied as a nested
+   * relation filter through the join table. An empty array matches nothing —
+   * "filtered by no device" is never read as "unfiltered".
    */
-  deviceModelId?: string;
+  deviceModelIds?: string[];
   isActive?: boolean;
   /**
    * Withdraw the products of DEACTIVATED categories from the result set
@@ -176,8 +178,12 @@ export function buildProductListWhere(
   // Device-compatibility filter (TASK-190): match products that have a compat
   // join row for the requested device model. The `@@index([deviceModelId])` on
   // `ProductDeviceCompat` covers this lookup direction.
-  if (params.deviceModelId !== undefined) {
-    where.deviceCompat = { some: { deviceModelId: params.deviceModelId } };
+  // One id keeps the plain equality it always had; several are OR-ed by `in`.
+  if (params.deviceModelIds !== undefined) {
+    const ids = params.deviceModelIds;
+    where.deviceCompat = {
+      some: { deviceModelId: ids.length === 1 ? ids[0] : { in: ids } },
+    };
   }
 
   // Admin scope only — the public scope already carries it (see above).

@@ -47,8 +47,8 @@ export interface ActiveFilterOptions {
    * Count/clear the category alongside the rest. Defaults to `true`.
    *
    * Set `false` where the category is NOT this control's to touch: the sidebar
-   * panel and the mobile drawer badge (the category's control is the chips row
-   * above the grid since TASK-216), and the `/categories/[slug]` landing page
+   * panel and the mobile drawer badge (the category's control is the tree
+   * in the rail since TASK-2011), and the `/categories/[slug]` landing page
    * (the category is the route itself — «скинути всі» must not un-lock it).
    */
   includeCategory?: boolean;

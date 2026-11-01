@@ -142,6 +142,10 @@ const ENTITY_TYPE_BY_CONTROLLER: ReadonlyMap<string, string> = new Map([
   // A Map, not an object literal: a lookup on `{}` walks Object.prototype, so a
   // class named `constructor` would "find" Object itself (TASK-628).
   ['AdminOrderReturnController', 'return'],
+  // TASK-1955: the bulk compat route lives in the product module but sits under
+  // `/admin/devices` and is a device-section action — it files under `device`
+  // next to the other device writes, not under a made-up `deviceCompat`.
+  ['AdminDeviceCompatController', 'device'],
 ]);
 
 /**

@@ -29,7 +29,7 @@ export const PRODUCT_DETAIL_ID_PREFIX = 'product:detail:id';
  * Bump it in every key whose cached value changes shape. Redis outlives a deploy,
  * so without it the new code would read an entry the old code wrote and hand the
  * old shape on as if it were the new one — for the whole TTL. Sitting below the
- * prefix (`product:list:v2:…`, not `product:list-v2:…`) keeps
+ * prefix (`product:list:v3:…`, not `product:list-v3:…`) keeps
  * `delByPrefix(PRODUCT_LIST_PREFIX)` / `delByPrefix(BRAND_LIST_PREFIX)` purging
  * both generations, so nothing the old code left behind can outlive a write.
  *
@@ -37,8 +37,12 @@ export const PRODUCT_DETAIL_ID_PREFIX = 'product:detail:id';
  * envelope. The product listing caches `{ items, meta }`, the slug detail the
  * `{ product, category, group, images }` wrapper, the brand list the bare array. The id detail always cached the bare
  * entity and the facet counts never held an envelope, so their keys are unchanged.
+ *
+ * `v3` (TASK-1953): every public product entity gained `compatibleDeviceModelIds`
+ * (listing items and the slug detail). The brand list did not change, but it
+ * shares this constant — one extra cold miss per category after the deploy.
  */
-const VALUE_SHAPE_VERSION = 'v2';
+const VALUE_SHAPE_VERSION = 'v3';
 
 /**
  * Prefix shared by all public brand-list cache entries (TASK-414). Its own

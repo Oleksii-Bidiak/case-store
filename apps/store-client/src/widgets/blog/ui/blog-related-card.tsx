@@ -10,7 +10,7 @@ export function BlogRelatedCard({ post }: { post: BlogPostView }) {
   return (
     <Link
       href={`/blog/${post.slug}`}
-      className="flex flex-col overflow-hidden rounded-card border border-border bg-card no-underline shadow-card transition-[transform,box-shadow] duration-150 hover:-translate-y-1 hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex flex-col overflow-hidden rounded-card border border-border bg-card no-underline shadow-card transition-interactive hover:-translate-y-0.5 hover:shadow-lift active:translate-y-0 active:scale-99 active:shadow-card motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-solid focus-visible:outline-ring"
     >
       <div
         className="relative h-[172px]"

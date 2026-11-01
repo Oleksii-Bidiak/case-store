@@ -4,8 +4,9 @@ import { dict } from "@/shared/config";
 const { delivery, warranty, returns } = dict.product.buyBoxInfo;
 
 /**
- * ProductTrustBadges — the reassurance rows inside the PDP buy box (delivery,
- * warranty, returns), each an icon + title + subtitle. Static presentational
+ * ProductTrustBadges — the PDP services card (Product mockup §6.1, last item
+ * of the info column): delivery, warranty and returns, each an icon tile +
+ * title + subtitle. Static presentational
  * component; copy lives in `dict.product.buyBoxInfo`. The warranty row names
  * the admin-managed store (`resolveSiteName(seo)`, TASK-1639), so the page
  * passes `siteName` down.
@@ -18,13 +19,18 @@ export function ProductTrustBadges({ siteName }: { siteName: string }) {
   ];
 
   return (
-    <div className="mt-[18px] flex flex-col gap-[13px] border-t border-border pt-4">
+    <div
+      data-slot="product-services"
+      className="flex flex-col gap-3 rounded-card border border-border bg-card p-4 shadow-card md:p-5"
+    >
       {items.map(({ icon: Icon, title, text }) => (
-        <div key={title} className="flex items-start gap-[11px]">
-          <Icon
-            className="size-5 shrink-0 text-muted-foreground"
+        <div key={title} className="flex items-center gap-3">
+          <span
             aria-hidden="true"
-          />
+            className="grid size-10 shrink-0 place-items-center rounded-menu bg-muted text-foreground"
+          >
+            <Icon className="size-5" />
+          </span>
           <div>
             <b className="block text-sm font-semibold text-foreground">
               {title}

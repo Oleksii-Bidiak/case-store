@@ -38,6 +38,10 @@ import {
   type BannerPlacementValue,
   type BannerStatusValue,
 } from "../model/banner-schema";
+import {
+  usePromoTileSlots,
+  type PromoTileSlots,
+} from "../model/promo-tile-slots";
 
 const f = dict.bannerForm;
 const FORM_ID = "banner-form";
@@ -198,6 +202,14 @@ export function BannerForm({
   const ctaHrefValue = useWatch({ control, name: "ctaHref" }) ?? "";
   const themeValue = useWatch({ control, name: "theme" }) ?? "";
 
+  // TASK-2013: the five promo-tile slots, counted live against the form's
+  // placement + status so the limit is explained before the API refuses.
+  const promoSlots = usePromoTileSlots({
+    bannerId: id,
+    placement: placementValue,
+    status: statusValue ?? "DRAFT",
+  });
+
   // TASK-424: the artwork field takes a FILE as well as a pasted link. The
   // uploaded URL is written with `setValue`, which also refreshes the live
   // preview above — it reads the same `imageUrlValue` watcher.
@@ -332,6 +344,9 @@ export function BannerForm({
                 </RadioCardGroup>
               )}
             />
+            {placementValue === "PROMO_TILE" && promoSlots && (
+              <PromoSlotCounter slots={promoSlots} />
+            )}
           </FormSectionCard>
 
           <FormSectionCard title={f.sectionText}>
@@ -558,6 +573,7 @@ export function BannerForm({
             ctaLabel={ctaLabelValue}
             ctaHref={ctaHrefValue}
             theme={themeValue}
+            promoTileSlot={promoSlots?.position}
           />
         </aside>
       </div>
@@ -591,6 +607,54 @@ function PlacementSchema({ placement }: { placement: BannerPlacementValue }) {
         )}
       />
     </span>
+  );
+}
+
+/**
+ * «Зайнято місць для промоплиток: 3 з 5» with a five-segment meter, the layout
+ * rule, and either where this tile lands or — when all five are taken by other
+ * banners — why the save would be refused and the way out (TASK-2013). A
+ * polite live region: switching «Показ» to «Чернетка» frees the slot audibly.
+ */
+function PromoSlotCounter({ slots }: { slots: PromoTileSlots }) {
+  const p = f.promoSlots;
+  return (
+    <div
+      role="status"
+      data-testid="banner-promo-slots"
+      className={cn(
+        "flex flex-col gap-1.5 rounded-md border p-3 text-xs",
+        slots.full
+          ? "border-warning/40 bg-warning/10"
+          : "border-border bg-muted/40",
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-medium text-foreground tabular-nums">
+          {p.counter(slots.used, slots.max)}
+        </p>
+        <span aria-hidden="true" className="flex shrink-0 gap-1">
+          {Array.from({ length: slots.max }, (_, i) => (
+            <span
+              key={i}
+              data-slot-filled={i < slots.used ? "" : undefined}
+              className={cn(
+                "h-1.5 w-4 rounded-full",
+                i < slots.used ? "bg-primary" : "bg-border",
+              )}
+            />
+          ))}
+        </span>
+      </div>
+      <p className="text-muted-foreground">{p.layout}</p>
+      {slots.full ? (
+        // Foreground, not text-warning: amber on its own tint misses 4.5:1 at
+        // this size — the box's amber border and tint carry the tone.
+        <p className="font-medium text-foreground">{p.full}</p>
+      ) : slots.position !== undefined ? (
+        <p className="text-foreground">{p.position(slots.position)}</p>
+      ) : null}
+    </div>
   );
 }
 

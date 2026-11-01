@@ -53,6 +53,12 @@ export interface SearchSuggestionsPopupModel {
   onPickBlogPost: (slug: string) => void;
   /** The "show all results" exit row was clicked (its `href` navigates). */
   onShowAll: () => void;
+  /**
+   * Any other link of the popup was followed (the model block's «Все для …»
+   * and «Також:», TASK-2069) — closes the popup and runs `onNavigate`; the
+   * link's own `href` navigates.
+   */
+  onFollowLink: () => void;
 }
 
 /** The props the owner spreads onto its `<input>`. */
@@ -274,6 +280,10 @@ export function useSearchAutocomplete({
     onPickProduct: (slug) => navigate(`/products/${slug}`),
     onPickBlogPost: (slug) => navigate(`/blog/${slug}`),
     onShowAll: () => {
+      close();
+      onNavigate?.();
+    },
+    onFollowLink: () => {
       close();
       onNavigate?.();
     },

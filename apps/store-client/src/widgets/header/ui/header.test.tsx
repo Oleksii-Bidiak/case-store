@@ -94,20 +94,21 @@ describe("Header — responsive class contract (TASK-539)", () => {
     expect(classesOf(trigger)).not.toContain("lg:hidden");
   });
 
-  it("shows the header theme switch from exactly xl", () => {
+  it("shows the one-button theme toggle from exactly xl (TASK-2073)", () => {
     renderHeader();
 
-    // With the menu closed, the header's own switch is the only radiogroup.
-    const group = screen.getByRole("radiogroup", {
-      name: dict.theme.groupAria,
-    });
-    const host = group.parentElement;
+    // jsdom's matchMedia stub answers `false`, so "system" resolves to light
+    // and the button offers dark. No radiogroup in the row any more.
+    const button = screen.getByRole("button", { name: dict.theme.enableDark });
+    expect(screen.queryByRole("radiogroup")).toBeNull();
     // The same `xl` the menu trigger disappears at — together they cover every
-    // width with no gap (TASK-504 caught the old `min-[1100px]` gap).
-    expect(classesOf(host)).toEqual(
-      expect.arrayContaining(["hidden", "xl:flex"]),
+    // width with no gap (TASK-504 caught the old `min-[1100px]` gap). 44×44.
+    expect(classesOf(button)).toEqual(
+      expect.arrayContaining(["hidden", "xl:inline-flex", "size-11"]),
     );
-    expect(classesOf(host)).not.toContain("lg:flex");
+    expect(classesOf(button)).not.toContain("lg:inline-flex");
+    // tailwind-merge must drop the base `inline-flex`, or it shows below xl.
+    expect(classesOf(button)).not.toContain("inline-flex");
   });
 
   it("shows the Товари / Блог row from exactly xl (TASK-512)", () => {
@@ -181,8 +182,8 @@ describe("Header — responsive class contract (TASK-539)", () => {
       within(menu).getByRole("link", { name: dict.nav.blog }),
     ).toHaveAttribute("href", "/blog");
     expect(
-      within(menu).getByRole("radiogroup", { name: dict.theme.groupAria }),
-    ).toBeInTheDocument();
+      within(menu).getByRole("switch", { name: dict.theme.darkRow }),
+    ).toHaveAttribute("aria-checked", "false");
   });
 
   it("lets the brand cluster, not the commerce actions, yield on a narrow row", () => {
@@ -240,9 +241,9 @@ describe("Header — the order-status lookup for guests (TASK-1999)", () => {
   });
 
   it("reserves the action's box while the session restores — no shift for guests", () => {
-    // The theme switch is the cluster's leftmost item, so an action that only
+    // The theme button is the cluster's leftmost item, so an action that only
     // appears once auth settles moved it under the cursor: a click aimed at
-    // «Світла» landed on the radiogroup between segments (e2e/theme.spec.ts).
+    // the old «Світла» segment landed between segments (e2e/theme.spec.ts).
     renderHeader({ auth: { isInitializing: true } });
 
     expect(
@@ -305,5 +306,60 @@ describe("Header — the order-status lookup for guests (TASK-1999)", () => {
     expect(
       within(menu).queryByRole("link", { name: dict.header.orderStatusLink }),
     ).toBeNull();
+  });
+});
+
+// TASK-2072: the «Каталог» menus are slots the app layer fills
+// (app/site-header.tsx) — the header only mounts them.
+describe("Header — the catalog slots (TASK-2072)", () => {
+  function renderWithSlots() {
+    server.use(
+      http.get("*/api/categories/tree", () => HttpResponse.json({ data: [] })),
+      http.get("*/api/wishlist", () =>
+        HttpResponse.json({ data: { items: [], itemCount: 0 } }),
+      ),
+    );
+    return renderWithProviders(
+      <ThemeProvider attribute="data-theme" defaultTheme="system" enableSystem>
+        <Header
+          siteName={STORE_NAME}
+          renderCatalogMenu={() => <p>mega-slot</p>}
+          renderCatalogDrill={({ onNavigate }) => (
+            <button type="button" onClick={onNavigate}>
+              drill-slot
+            </button>
+          )}
+        />
+      </ThemeProvider>,
+    );
+  }
+
+  it("mounts the drill inside the slide-out menu and lets it close the menu", async () => {
+    const user = userEvent.setup();
+    renderWithSlots();
+
+    await user.click(
+      screen.getByRole("button", { name: dict.header.openMenu }),
+    );
+    const menu = await screen.findByRole("dialog");
+    await user.click(within(menu).getByRole("button", { name: "drill-slot" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("below lg, «Каталог» opens the slide-out menu instead of the mega menu", async () => {
+    // jsdom's matchMedia stub matches nothing: a viewport below `lg`.
+    const user = userEvent.setup();
+    renderWithSlots();
+
+    await user.click(
+      screen.getByRole("button", { name: dict.header.catalogAria }),
+    );
+
+    const menu = await screen.findByRole("dialog");
+    expect(
+      within(menu).getByRole("button", { name: "drill-slot" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("mega-slot")).not.toBeInTheDocument();
   });
 });

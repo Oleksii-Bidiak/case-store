@@ -6,4 +6,5 @@ export * from "./dictionary";
 export * from "./layout";
 export * from "./typography";
 export * from "./focus";
+export * from "./interaction";
 export * from "./hub-pages";

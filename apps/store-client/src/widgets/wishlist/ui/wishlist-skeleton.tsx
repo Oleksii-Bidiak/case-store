@@ -1,59 +1,71 @@
 import { Skeleton } from "@/shared/ui";
+import { PRODUCT_GRID_CLASS } from "@/shared/config/product-grid";
 
 /**
  * WishlistSkeleton — placeholder shown while the wishlist query is in flight
  * (and as the `/wishlist` route Suspense fallback).
  *
- * It mirrors `WishlistView`: the same sidebar + content split on `lg`, and a
- * card grid whose class string is byte-identical to the real one, so swapping
- * placeholders for cards never changes the column count (TASK-415). Before that
- * the fallback drew an `sm:2 / md:3 / lg:4` ladder against a `1 / 2 / 4` grid
- * and the page re-flowed on every load.
+ * It mirrors `WishlistView` (TASK-1300, Д3-2): the head row, the toolbar row,
+ * the same rail + content split on `lg`, and a card grid with the same
+ * `PRODUCT_GRID_CLASS` as the real one, so swapping placeholders for cards
+ * never changes the column count (TASK-415).
  */
 export function WishlistSkeleton() {
   return (
     <div>
-      {/* The header of the loaded list (TASK-869): breadcrumb, title + count,
-          and the toolbar on the same wrapping row. It used to be one 32px bar
-          with a 24px gap, so the rail and the grid started 68px too high on a
-          desktop and 184px too high on a phone, where the toolbar wraps under
-          the title onto two rows. Heights are the real line boxes (text-sm
-          20px, H1_CLASS 36px / 40px from md, 44px controls, the 54px view
-          toggle); widths are the real controls' at 390 and 1440, so the row
-          wraps at the same widths the real one does. */}
+      {/* Head (TASK-869): breadcrumb; h1 + count over the sub-line on the
+          left, «Додати все в кошик · N» (44px pill) on the right. Heights
+          are the real line boxes — text-sm 20px, H1_CLASS 36px / 40px from
+          md. Then the toolbar: «Фільтри» below `lg`, sort + view (44px). */}
       <div aria-hidden="true">
         <Skeleton className="mb-4.5 h-5 w-44" />
-        <div className="mb-4.5 flex flex-wrap items-end justify-between gap-5">
-          <div className="flex flex-col gap-2">
-            <Skeleton className="h-9 w-56 max-w-full md:h-10 md:w-68" />
-            <Skeleton className="h-5 w-32" />
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Skeleton className="h-9 w-40 max-w-full md:h-10 md:w-48" />
+            <Skeleton className="h-5 w-72 max-w-full" />
           </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-3">
-            <Skeleton className="h-11 w-29 rounded-xl lg:hidden" />
-            <Skeleton className="hidden h-13.5 w-25.5 rounded-xl lg:block" />
-            <Skeleton className="h-11 w-46 rounded-xl sm:w-74" />
-            <Skeleton className="h-11 w-43 rounded-xl" />
+          <Skeleton className="h-11 w-60 rounded-full" />
+        </div>
+        <div className="mb-5 flex flex-wrap items-center gap-2 sm:gap-3">
+          <Skeleton className="h-11 w-29 rounded-xl lg:hidden" />
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <Skeleton className="h-11 w-36 rounded-xl sm:w-60" />
+            <Skeleton className="h-11 w-11 rounded-xl sm:w-30" />
           </div>
         </div>
       </div>
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- same fixed+fluid split as WishlistView, which has no grid-cols-N equivalent */}
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
-        {/* Desktop filters sidebar placeholder — without it the content column
-            would be full-width here and narrow once the real toolbar renders. */}
-        <div className="hidden animate-pulse rounded-2xl bg-muted lg:block lg:h-96" />
+        {/* Rail: the device panel, then the filter cards — without it the
+            content column would be full-width here and narrow once the real
+            rail renders. */}
+        <div aria-hidden="true" className="hidden flex-col gap-3.5 lg:flex">
+          <Skeleton className="h-32 rounded-2xl" />
+          <Skeleton className="h-36 rounded-2xl" />
+          <Skeleton className="h-56 rounded-2xl" />
+        </div>
         <div className="min-w-0">
-          {/* Byte-identical to the WishlistView card grid; any drift is a visible reflow. */}
-          <div className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
+          {/* The shared grid of WishlistView; any drift is a visible reflow. */}
+          <div className={PRODUCT_GRID_CLASS}>
             {Array.from({ length: 8 }).map((_, index) => (
               <div
                 key={index}
-                className="flex flex-col overflow-hidden rounded-xl border border-border bg-card"
+                className="flex flex-col overflow-hidden rounded-card border border-border bg-card shadow-card"
               >
-                <div className="aspect-square w-full animate-pulse bg-muted" />
-                <div className="flex flex-col gap-3 p-4">
-                  <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
-                  <div className="h-5 w-1/3 animate-pulse rounded bg-muted" />
-                  <div className="h-9 w-full animate-pulse rounded bg-muted" />
+                <Skeleton className="aspect-square w-full rounded-none" />
+                {/* Title (two lines) and price — the card's `p-4 gap-2`. */}
+                <div className="flex flex-1 flex-col gap-2 p-4">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="mt-auto h-7 w-20" />
+                </div>
+                {/* Action block: stock line, then «Купити» + heart (40px). */}
+                <div className="flex flex-col gap-2 px-4 pb-4">
+                  <Skeleton className="h-4 w-24" />
+                  <div className="flex gap-2">
+                    <Skeleton className="h-10 flex-1" />
+                    <Skeleton className="h-10 w-10.5 shrink-0 rounded-lg" />
+                  </div>
                 </div>
               </div>
             ))}

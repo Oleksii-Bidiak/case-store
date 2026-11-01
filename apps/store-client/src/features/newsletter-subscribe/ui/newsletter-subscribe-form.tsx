@@ -108,8 +108,9 @@ export function NewsletterSubscribeForm({
         <button
           type="submit"
           disabled={subscribe.isPending}
+          aria-busy={subscribe.isPending || undefined}
           className={cn(
-            "h-12 shrink-0 rounded-xl bg-primary px-6 text-sm font-bold whitespace-nowrap text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
+            "h-12 shrink-0 rounded-xl bg-primary px-6 text-sm font-bold whitespace-nowrap text-primary-foreground transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none disabled:cursor-progress disabled:hover:bg-primary disabled:hover:shadow-none disabled:active:scale-100 motion-reduce:active:scale-100",
             buttonClassName,
           )}
         >
