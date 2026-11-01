@@ -105,10 +105,13 @@ describe('ProductEntity and PublicProductEntity shared fields (TASK-814)', () =>
     const pub = PublicProductEntity.fromPrisma(row);
 
     const { stock, reservedQty, physicalQty, ...adminShared } = admin;
-    const { inStock, lowStock, variantSummary, ...publicShared } = pub;
+    // `compatibleDeviceModelIds` is public-only (TASK-1953): the storefront card's
+    // «підходить» check; the admin reads the full `compatibleDeviceModels`.
+    const { inStock, lowStock, variantSummary, compatibleDeviceModelIds, ...publicShared } = pub;
 
     expect([stock, reservedQty, physicalQty]).toEqual([7, 2, 9]);
     expect([inStock, lowStock, variantSummary.defaultVariantId]).toEqual([true, false, 'p1']);
+    expect(compatibleDeviceModelIds).toEqual(['d1']);
     expect({ ...publicShared }).toEqual({ ...adminShared });
     expect(adminShared.ratingAverage).toBe(4.3);
   });

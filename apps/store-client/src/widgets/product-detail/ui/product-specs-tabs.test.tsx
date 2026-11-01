@@ -259,3 +259,67 @@ describe("ProductHighlights (TASK-191)", () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+/** Д3-2 Product §6.8 — the «Сумісність» tab, only for compatibility products. */
+describe("ProductSpecsTabs — compatibility tab (TASK-1953)", () => {
+  const models = [
+    {
+      id: "m-15pro",
+      name: "iPhone 15 Pro",
+      slug: "iphone-15-pro",
+      brandName: "Apple",
+    },
+  ];
+  const variants = [{ model: "iPhone 13", slug: "case-13-black" }];
+
+  it("sits between «Характеристики» and «Відгуки» and lists fits and variants", async () => {
+    renderWithProviders(
+      <ProductSpecsTabs
+        description="desc"
+        productId="p1"
+        specs={[]}
+        compatibleModels={models}
+        modelVariants={variants}
+      />,
+    );
+
+    const names = screen.getAllByRole("tab").map((tab) => tab.textContent);
+    expect(names).toEqual([
+      dict.product.tabDescription,
+      dict.product.tabSpecs,
+      dict.deviceFit.tab.title,
+      dict.product.tabReviews,
+      dict.product.tabDelivery,
+    ]);
+
+    await userEvent.click(
+      screen.getByRole("tab", { name: dict.deviceFit.tab.title }),
+    );
+    expect(mockReplace).toHaveBeenCalledWith(
+      "/products/glass-blue-single?tab=compat",
+      { scroll: false },
+    );
+    expect(
+      screen.getByRole("heading", { name: dict.deviceFit.tab.fitsHeading }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("iPhone 15 Pro")).toHaveClass("text-success");
+    expect(screen.getByText(dict.deviceFit.tab.note)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "iPhone 13" })).toHaveAttribute(
+      "href",
+      "/products/case-13-black",
+    );
+  });
+
+  it("has no tab without compatibility data, and ?tab=compat opens the description", () => {
+    mockSearch = "tab=compat";
+    renderWithProviders(
+      <ProductSpecsTabs description="Опис товару" productId="p1" specs={[]} />,
+    );
+    expect(
+      screen.queryByRole("tab", { name: dict.deviceFit.tab.title }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("tab", { name: dict.product.tabDescription }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+});

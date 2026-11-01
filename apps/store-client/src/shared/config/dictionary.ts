@@ -7,6 +7,12 @@
 // If multi-locale is ever required, this object's shape already matches a
 // next-intl message catalog, so migration is mechanical.
 
+import { deviceFitDict } from "./dict-sections/device-fit";
+import { devicePagesDict } from "./dict-sections/device-pages";
+import { devicePickerDict } from "./dict-sections/device-picker";
+import { searchDeviceDict } from "./dict-sections/search-device";
+import { catalogMenuDict } from "./dict-sections/catalog-menu";
+import { sheetsDict } from "./dict-sections/sheets";
 import { pluralUk } from "./plural";
 
 // Ukrainian labels for the order/payment status enums (TASK-129). Keyed by the
@@ -155,11 +161,45 @@ export const dict = {
     // literal — the owner renames the store in /settings/seo.
     rights: (year: number, siteName: string) =>
       `© ${year} ${siteName}. Усі права захищено.`,
+    // TASK-2078 — direction В (SiteFooter mockup).
     tagline:
-      "Інтернет-магазин аксесуарів та ґаджетів. Оригінальна продукція з офіційною гарантією та доставкою по Україні.",
+      "Аксесуари для смартфонів, годинників і планшетів — оригінальні, з офіційною гарантією та доставкою по Україні.",
+    // The footer's trust strip (TASK-2078). Never «безкоштовно» about delivery
+    // (B-12, TASK-1661 / 2053 / 2054): Nova Poshta charges its own tariff. The
+    // return window is the homepage's and RETURN_POLICY's — 14 days; a test
+    // keeps the two strips in step.
+    trustAria: "Наші гарантії",
+    trust: [
+      { title: "Безпечна оплата", subtitle: "LiqPay або при отриманні" },
+      {
+        title: "Відправка день у день",
+        subtitle: "Нова Пошта по всій Україні",
+      },
+      { title: "Повернення 14 днів", subtitle: "Обмін або гроші назад" },
+      { title: "Офіційна гарантія", subtitle: "Лише оригінальні аксесуари" },
+    ],
+    // «Мої пристрої» row (TASK-2078): the active device → its hub, none → the picker.
+    device: {
+      aria: "Мої пристрої",
+      activeLead: "Ваш активний пристрій:",
+      more: (count: number) => ` · ще ${count} у списку`,
+      hubCta: (device: string) => `Все для ${device}`,
+      myDevices: "Мої пристрої",
+      emptyLead: "Оберіть свій пристрій",
+      emptyText:
+        "— покажемо, що до нього підходить, у каталозі й на сторінках товарів.",
+      choose: "Обрати пристрій",
+    },
+    catalogAllCategories: "Усі категорії",
+    buyersTitle: "Покупцям",
+    buyersMyDevices: "Мої пристрої",
+    companyPromo: "Акції",
+    // Said only when the number really is a free line (0 800 …) — a city
+    // number is not free to call.
+    callsFree: "Дзвінки безкоштовні",
+    legalAria: "Правова інформація",
     shopTitle: "Магазин",
     shopAll: "Усі товари",
-    shopCart: "Кошик",
     supportTitle: "Підтримка",
     supportFaq: "Часті запитання",
     supportReturns: "Повернення та обмін",
@@ -176,15 +216,12 @@ export const dict = {
     // Redesigned footer (TASK-167-B).
     catalogTitle: "Каталог",
     catalogAll: "Усі товари",
-    catalogNew: "Новинки",
     catalogWishlist: "Обране",
-    infoTitle: "Інформація",
     infoAbout: "Про нас",
     infoFaq: "Часті питання",
     /** TASK-483 — публічна форма «номер + телефон» у колонці «Інформація». */
     infoOrderStatus: "Статус замовлення",
     infoBlog: "Блог",
-    freeCallout: "Безкоштовно по Україні",
     socialsAria: "Ми в соцмережах",
     payments: ["Visa", "Mastercard", "Apple Pay", "Google Pay", "Privat24"],
     // TASK-834 — the two hubs, so every published page has a way in.
@@ -235,23 +272,25 @@ export const dict = {
       // Left category rail (reuses real category data; these are labels only).
       allCategories: "Усі категорії",
       sidebarAria: "Категорії товарів",
-      // Three promotional slides. `href` targets real routes so CTAs work.
+      // The fallback slides — shown only while the owner has published no
+      // HERO_SLIDE banner. `href` targets real routes so CTAs work.
+      // Direction В (TASK-2013): the slide tone is a device family or the
+      // ink panel, never a hue picked for variety, and the copy promises no
+      // discount the store may not be running (the old «−50% до неділі» slide
+      // was flagged by the 2026-10-29 content audit). `big` is the display
+      // word on the art panel; `icon` its placeholder art until the slide has
+      // a picture.
       slides: [
         {
-          eyebrow: "Новинки сезону",
-          title: "Аксесуари, що тримають темп твого дня",
+          eyebrow: "Для iPhone",
+          title: "Чохли, скло й зарядки для iPhone",
           subtitle:
-            "Чохли, зарядки, аудіо та захист від офіційних брендів. Гарантія та швидка доставка по всій Україні.",
-          cta: "Перейти до каталогу",
-          href: "/products",
-        },
-        {
-          eyebrow: "Тиждень знижок",
-          title: "Знижки до −50% на топові аксесуари",
-          subtitle:
-            "Лише до неділі — встигни оновити комплект для свого смартфона за найкращою ціною.",
-          cta: "Переглянути товари",
-          href: "/products",
+            "Оберіть модель — покажемо лише те, що їй справді підходить.",
+          cta: "Підібрати для iPhone",
+          href: "/search?q=iPhone",
+          tone: "iphone" as const,
+          icon: "smartphone" as const,
+          big: "iPhone",
         },
         {
           eyebrow: "Доставка",
@@ -260,8 +299,25 @@ export const dict = {
             "Нова Пошта за тарифом перевізника · відправка день у день · оплата під час отримання.",
           cta: "Переглянути новинки",
           href: "/products?sortBy=createdAt&sortOrder=desc",
+          tone: "ink" as const,
+          icon: "truck" as const,
+          big: undefined,
+        },
+        {
+          eyebrow: "Для Galaxy",
+          title: "Аксесуари для Samsung Galaxy",
+          subtitle: "Чохли, захисне скло й зарядки — підбір за вашою моделлю.",
+          cta: "Підібрати для Galaxy",
+          href: "/search?q=Galaxy",
+          tone: "galaxy" as const,
+          icon: "smartphone" as const,
+          big: "Galaxy",
         },
       ],
+      // TASK-2013 — the carousel and slide names (WAI-ARIA carousel pattern).
+      carouselAria: "Акції магазину",
+      slideAria: (n: number, total: number, title: string) =>
+        `${n} з ${total}: ${title}`,
       prevSlide: "Попередній слайд",
       nextSlide: "Наступний слайд",
       goToSlide: (n: number) => `Перейти до слайда ${n}`,
@@ -269,50 +325,45 @@ export const dict = {
       resumeAutoplay: "Відновити автоперегортання слайдів",
     },
 
-    // Device model picker — UI-only stub (API has no model→accessory filter).
-    modelPicker: {
-      title: "Підібрати аксесуари",
-      subtitle: "за моделлю вашого пристрою",
-      brandPlaceholder: "Бренд",
-      brandAria: "Бренд пристрою",
-      modelPlaceholder: "Модель",
-      modelAria: "Модель пристрою",
-      submit: "Підібрати",
-      // Empty-state helpers for the cascade (TASK-190): the model select is
-      // disabled until a brand is chosen; brands/models come from the API now.
-      modelPlaceholderEmpty: "Спершу оберіть бренд",
-      loading: "Завантаження…",
-    },
+    // TASK-1952 — the active device panel's product rail on the homepage
+    // (the cards beside «Все для …»).
+    devicePicksAria: (device: string) => `Товари для ${device}`,
 
-    // Static promo tiles under the hero — the fallback when the owner has
+    // TASK-2013 — the «slider + promo tiles» block of the first screen.
+    promoAria: "Акції",
+
+    // Static promo tiles beside the slider — the fallback when the owner has
     // published no PROMO_TILE banner. TASK-873: every tile leads to a real page;
     // the «Покупка частинами» and «Trade-in» tiles pointed at `#` (no such page,
-    // no trade-in service) and are gone.
+    // no trade-in service) and are gone. TASK-2013 (direction В): neutral white
+    // tiles with an icon box — the badge and the accent rotation are gone (a
+    // hue only means a device family, or a sale the owner picked).
     promoTiles: [
       {
-        badge: "−30%",
+        icon: "percent" as const,
         title: "Розпродаж аксесуарів",
         text: "Чохли, зарядки та захисне скло за зниженою ціною.",
         cta: "Дивитись акцію",
         href: "/promo",
-        accent: "sale" as const,
       },
       {
         // TASK-1661 — was «ВІД 1 000 ₴ / Безкоштовна доставка»: a threshold
         // Nova Poshta never had.
-        badge: "НОВА ПОШТА",
+        icon: "truck" as const,
         title: "Доставка по всій Україні",
         text: "Відділення й поштомати за тарифом перевізника — відправка день у день.",
         cta: "Умови доставки",
         href: "/info#delivery",
-        accent: "primary" as const,
       },
     ],
 
-    // Trust bar — four reassurance items (icon + title + subtitle).
+    // Trust bar — four reassurance items (icon + title + subtitle) under the
+    // «Акції» block (Д3-2 Homepage §5). «Відправка», not «Доставка»: the shop
+    // sends the same day, the carrier takes its own time.
+    trustAria: "Чому ми",
     trust: [
       {
-        title: "Доставка день у день",
+        title: "Відправка день у день",
         subtitle: "Нова Пошта по всій Україні",
       },
       {
@@ -324,8 +375,8 @@ export const dict = {
         subtitle: "Легкий обмін і повернення",
       },
       {
-        title: "Кредит 0%",
-        subtitle: "Оплата частинами до 24 міс.",
+        title: "Оплата частинами",
+        subtitle: "Від 3 платежів без переплат",
       },
     ],
 
@@ -517,6 +568,23 @@ export const dict = {
       "Спробуйте змінити параметри фільтра або скиньте їх, щоб побачити більше товарів.",
     clearFilters: "Скинути фільтри",
     countFound: (n: number) => `Знайдено товарів: ${n}`,
+    // Д3-2 Catalog §3 — the count line under the H1: «{shown} з {N товарів}»
+    // (just «{N товарів}» when nothing narrows the category), plus who the
+    // device filter is for. Numbers with uk-UA grouping («1 234»).
+    countProducts: (n: number) =>
+      `${n.toLocaleString("uk-UA")} ${pluralUk(n, "товар", "товари", "товарів")}`,
+    countLine: (shown: number, total: number) =>
+      shown === total
+        ? `${total.toLocaleString("uk-UA")} ${pluralUk(total, "товар", "товари", "товарів")}`
+        : `${shown.toLocaleString("uk-UA")} з ${total.toLocaleString("uk-UA")} ${pluralUk(total, "товару", "товарів", "товарів")}`,
+    countLineDevice: (line: string, shown: number, device: string) =>
+      `${line} ${pluralUk(shown, "підходить", "підходять", "підходять")} до ${device}`,
+    countLineAllDevices: (line: string, k: number) =>
+      `${line} — для ваших ${k} ${pluralUk(k, "пристрою", "пристроїв", "пристроїв")}`,
+    // Below `md` the crumbs give way to one back pill (Catalog §3): «Головна»
+    // on «Усі товари», «Каталог» on a top-level category, else the parent.
+    backToCatalog: "Каталог",
+    backAria: (label: string) => `Назад: ${label}`,
     // TASK-216 — «Показати ще» load-more append between the grid and pagination.
     // Ukrainian pluralization: 1 товар, 2–4 товари, 5+ товарів.
     loadMore: (n: number) => {
@@ -881,11 +949,21 @@ export const dict = {
   filters: {
     legend: "Фільтри",
     category: "Категорія",
-    allCategories: "Всі категорії",
-    // TASK-216 — horizontal category chips row above the catalog grid.
-    categoryChipsAria: "Фільтр за категорією",
-    // TASK-236 — secondary row of subcategory chips under the active root.
-    subcategoryChipsAria: "Фільтр за підкатегорією",
+    // TASK-2011 — the category tree in the filter rail («дерево в рейці») and
+    // its sheet below `lg`. The tree's first row, linking to every product.
+    allCategories: "Усі категорії",
+    // The rail panel's small-caps heading — also the tree's nav name.
+    categoryTreeTitle: "Категорія",
+    // A disclosure beside a node that has children: peek into them in place.
+    categoryTreeExpand: (name: string) => `Показати підкатегорії «${name}»`,
+    categoryTreeCollapse: (name: string) => `Сховати підкатегорії «${name}»`,
+    // Toolbar button below `lg` that opens the tree in a bottom sheet: the
+    // current category's children (or the top-level count on «Усі товари»);
+    // a leaf has none, so the button names the panel instead.
+    subcategoriesButton: (n: number) =>
+      n > 0 ? `Підкатегорії · ${n}` : "Категорія",
+    // The sheet's footer when the current selection yields nothing.
+    subcategoriesNothing: "Нічого не знайдено",
     priceRange: "Ціновий діапазон",
     minPrice: "Мінімальна ціна",
     maxPrice: "Максимальна ціна",
@@ -893,23 +971,44 @@ export const dict = {
     maxPlaceholder: "До",
     sortBy: "Сортування",
     sortPrefix: "Спочатку:",
+    // Menu labels (Д3-2 Catalog §5) — each a whole phrase, so /search can
+    // list them without the prefix…
     sort: {
-      newest: "Спочатку нові",
-      priceAsc: "Ціна: від низької до високої",
-      priceDesc: "Ціна: від високої до низької",
-      nameAsc: "Назва: А–Я",
+      popular: "Спочатку популярні",
+      priceAsc: "Спочатку дешевші",
+      priceDesc: "Спочатку дорожчі",
+      newest: "Спочатку новинки",
+    },
+    // …and the lowercase value the trigger shows after «Спочатку:»
+    // («Спочатку: популярні»), so the word is never said twice.
+    sortValue: {
+      popular: "популярні",
+      priceAsc: "дешевші",
+      priceDesc: "дорожчі",
+      newest: "новинки",
     },
     clear: "Скинути фільтри",
     clearAll: "Очистити все",
     removeFilter: "Прибрати фільтр",
     filtersButton: "Фільтри",
-    // Grid / list results view toggle (catalog toolbar).
-    viewGrid: "Плитка",
-    viewList: "Список",
-    viewToggleAria: "Перемкнути вигляд",
+    // Grid / list results view toggle (listing toolbars, TASK-1958). One pill
+    // that names the OTHER view; the word shows from `sm`, the aria-label always.
+    viewGrid: "Плиткою",
+    viewList: "Списком",
+    viewGridAria: "Показати плиткою",
+    viewListAria: "Показати списком",
     // Manufacturer (brand) filter card — TASK-189.
     brandTitle: "Виробник",
     allBrands: "Всі виробники",
+    // Д3-2 Catalog §12 — the rail's one «Фільтри товарів» panel: sections
+    // split by a hairline, each header with «· n» for its selection and a
+    // «Скинути» of its own; long option lists show 5 and «Ще N».
+    panelAria: "Фільтри товарів",
+    sectionSelected: (n: number) => `· ${n}`,
+    sectionReset: "Скинути",
+    sectionResetAria: (section: string) => `Скинути «${section}»`,
+    moreOptions: (n: number) => `Ще ${n}`,
+    fewerOptions: "Згорнути",
     // Price filter card + mobile drawer.
     priceTitle: "Ціна, ₴",
     priceSliderAria: "Діапазон цін",
@@ -980,6 +1079,60 @@ export const dict = {
     saleTitle: "Знижки",
     onSaleOnly: "Зі знижкою",
     onSaleChip: "Зі знижкою",
+    // TASK-2077 — «З урахуванням моїх пристроїв», the rail's first block. The
+    // state is the `?device=` slugs themselves, so a link opens the same way.
+    myDevices: {
+      title: "З урахуванням моїх пристроїв",
+      subtitleNoDevice:
+        "Оберіть пристрій — і покажемо лише те, що до нього підходить",
+      subtitleOff: "Вимкнено",
+      subtitleActive: "Лише сумісне з активним пристроєм",
+      subtitleAll: "Сумісне хоча б з одним з ваших пристроїв",
+      pickDevice: "Обрати пристрій",
+      radiogroupAria: "Для якого пристрою",
+      moreDevices: (n: number) => `Ще ${n} — обрати інший`,
+      allDevices: (n: number) => `Для всіх моїх · ${n}`,
+      // «iPhone 13 · Мама» — the owner's label after the model name.
+      deviceName: (name: string, label?: string) =>
+        label ? `${name} · ${label}` : name,
+      offNote: (name: string) =>
+        `Показуємо всі товари, а на картках — чи підходить до ${name}.`,
+      // The switch is off, but `?device=` names something the saved list
+      // does not explain (the brand → model cascade, a shared or stale link).
+      subtitleOther: "Вимкнено — діє інший фільтр за пристроєм",
+      otherNote: (name: string) =>
+        `Товари вже відфільтровано за пристроєм — див. фільтри над списком. Увімкніть, щоб показати лише сумісне з ${name}.`,
+      manage: "Мої пристрої",
+      // Spoken count after a radio's name: «iPhone 13, 12 товарів».
+      countAria: (n: number) =>
+        `${n} ${pluralUk(n, "товар", "товари", "товарів")}`,
+      // Active-filter chips above the grid.
+      chipFor: (name: string) => `Для ${name}`,
+      chipAll: (n: number) => `Для всіх моїх · ${n}`,
+      chipOther: (names: string) => `Пристрої: ${names}`,
+      chipRemoveAria: "Зняти фільтр за пристроєм",
+      // Empty state — the filter is on and nothing in the listing fits.
+      emptyHeading: (name: string) => `Для ${name} тут нічого немає`,
+      emptyBody: (
+        name: string,
+        total: number | undefined,
+        category: string | undefined,
+      ) => {
+        const where = category ? `У «${category}»` : "У каталозі";
+        const count =
+          total === undefined
+            ? "є товари"
+            : `— ${total} ${pluralUk(total, "товар", "товари", "товарів")}`;
+        return `${where} ${count}, але жоден не підходить до ${name}. Подивіться все, що є саме для нього, або вимкніть фільтр.`;
+      },
+      emptyHub: (name: string) => `Все для ${name}`,
+      emptyShowAll: (total: number | undefined) =>
+        total === undefined ? "Показати всі" : `Показати всі ${total}`,
+      emptyOtherDevices: "Для ваших інших пристроїв тут є:",
+      emptyOtherDevice: (name: string, n: number) => `${name} — ${n}`,
+      // Read while the empty state checks the listing without the device.
+      emptyLoading: "Перевіряємо, що є в каталозі…",
+    },
   },
 
   product: {
@@ -2475,8 +2628,11 @@ export const dict = {
     inCart: "В кошику",
     /** Aria label for the in-cart card action — clicking opens the mini-cart. */
     inCartAria: (name: string) => `«${name}» вже в кошику — відкрити кошик`,
-    /** Availability line above the card action row. */
-    inStockLine: "В наявності · доставка 1–2 дні",
+    /**
+     * Availability line above the card action row. Stock only — the card makes
+     * no delivery-time promise (owner decision 2026-10-30, TASK-2080).
+     */
+    inStockLine: "В наявності",
     outOfStockLine: "Немає в наявності",
     /** Advertised "from {price}" prefix when a group has cheaper variants. */
     priceFrom: "від",
@@ -2498,11 +2654,13 @@ export const dict = {
     heading: "Обране",
     /** Count line under the heading. */
     count: (n: number) => `${n} ${n === 1 ? "товар" : "товарів"} збережено`,
-    /** Empty-state heading + body + CTA. */
+    /** Empty-state heading + body + CTA (Д3-2: the CTA leads to the active
+     *  device's hub when one is saved — `emptyDeviceCta` — else here). */
     emptyHeading: "В обраному поки порожньо",
     emptyBody:
-      "Збережіть товари, натиснувши на сердечко, щоб знайти їх пізніше.",
-    emptyCta: "Перейти до товарів",
+      "Натисніть ♡ на картці товару — він з’явиться тут, і ми скажемо, коли він подешевшає.",
+    emptyCta: "До каталогу",
+    emptyDeviceCta: (device: string) => `Все для ${device}`,
     /** Remove-from-list control on a saved card. */
     removeAria: (name: string) => `Прибрати «${name}» з обраного`,
     remove: "Прибрати",
@@ -2519,11 +2677,19 @@ export const dict = {
     countInList: (n: number) =>
       `${n} ${n === 1 ? "товар" : "товарів"} у списку`,
     sortAria: "Сортувати обране",
+    // Menu labels (Д3-2 Wishlist §5); the trigger shows `sortValue` after
+    // its «Спочатку:» prefix.
     sort: {
-      recent: "Нещодавно додані",
-      priceAsc: "Найдешевші",
-      priceDesc: "Найдорожчі",
-      sale: "Акційні",
+      recent: "Спочатку нещодавно додані",
+      priceAsc: "Спочатку дешевші",
+      priceDesc: "Спочатку дорожчі",
+      sale: "Спочатку зі знижкою",
+    },
+    sortValue: {
+      recent: "нещодавно додані",
+      priceAsc: "дешевші",
+      priceDesc: "дорожчі",
+      sale: "зі знижкою",
     },
     quickTitle: "Обирай швидко",
     quickSale: "Зі знижкою",
@@ -2531,8 +2697,9 @@ export const dict = {
     addAll: "Додати все в кошик",
     addAllDone: "Товари з обраного додано в кошик",
     addAllNone: "Немає доступних товарів для додавання",
-    noMatchHeading: "Немає товарів за фільтрами",
-    noMatchBody: "Спробуйте змінити параметри або скинути фільтри.",
+    noMatchHeading: "За цими фільтрами нічого немає",
+    noMatchBody: (total: number) =>
+      `В обраному ${total} ${pluralUk(total, "товар", "товари", "товарів")} — приберіть частину фільтрів.`,
     priceChip: (min: string, max: string) => `${min || "0"} – ${max || "∞"} ₴`,
     // TASK-1300 — /wishlist as «каталог №2»: category rail section, the fold
     // past five rows, the count line while filters narrow the list, and the
@@ -2543,6 +2710,34 @@ export const dict = {
     foundOf: (found: number, total: number) => `Знайдено: ${found} з ${total}`,
     categoryChip: (name: string) => `Категорія: ${name}`,
     priceRangeChip: (min: string, max: string) => `Ціна: ${min} — ${max}`,
+    // TASK-1300 · Д3-2 (Wishlist.dc.html): the catalogue's cards and filters,
+    // the device switch (off by default), the per-card fit mark for every
+    // saved device, and removal with an undo toast instead of a confirm.
+    /** Spoken form of the count beside the h1 («Обране 9»). */
+    headCountAria: (n: number) =>
+      `${n} ${pluralUk(n, "товар", "товари", "товарів")}`,
+    subWithDevice:
+      "Позначка на картці скаже, до якого з ваших пристроїв товар підходить",
+    subGuest: "Збережене на цьому пристрої; увійдіть, щоб бачити його скрізь",
+    /** Toolbar count while filters narrow the list: «7 з 9». */
+    shownOf: (shown: number, total: number) => `${shown} з ${total}`,
+    addAllCount: (n: number) => `Додати все в кошик · ${n}`,
+    addAllInCart: "Усе в кошику",
+    addAllInCartAria: "Усе з обраного вже в кошику — відкрити кошик",
+    devices: {
+      subNoDevice: "Оберіть пристрій — покажемо, що до нього підходить",
+      subOne: (device: string) => `Лише сумісне з ${device}`,
+      subMany: (n: number) =>
+        `Лише те, що підходить хоча б до одного з ${n} ваших`,
+      subOff: "Вимкнено — показуємо все; в обраному це типово",
+      chipMany: (n: number) => `Для моїх пристроїв · ${n}`,
+    },
+    /** Fit mark with several saved devices (one device: `dict.deviceFit`). */
+    fitsDevices: (devices: string) => `Підходить: ${devices}`,
+    fitsNone: "Не для ваших пристроїв",
+    removedToast: (name: string) => `Прибрали «${name}»`,
+    undoRemove: "Повернути",
+    undoError: "Не вдалося повернути товар в обране. Спробуйте ще раз.",
   },
 
   // TASK-188 — reusable newsletter subscribe form (features/newsletter-subscribe).
@@ -2587,6 +2782,12 @@ export const dict = {
     light: "Світла",
     system: "Системна",
     dark: "Темна",
+    /** Header theme button (TASK-2073): names what a click WILL do, from the
+     *  effective theme — a light page offers dark and vice versa. */
+    enableDark: "Увімкнути темну тему",
+    enableLight: "Увімкнути світлу тему",
+    /** The slide-out menu's row with the dark-theme switch (TASK-2073). */
+    darkRow: "Темна тема",
   },
 
   // --- Admin-managed recommendation carousels (TASK-139) ---------------------
@@ -2673,6 +2874,13 @@ export const dict = {
     invalid:
       "Посилання на прев'ю недійсне або вже не діє. Показуємо сторінку такою, якою її бачать покупці зараз.",
   },
+  // SД3 sections live in ./dict-sections/* — one module per cluster.
+  devicePicker: devicePickerDict,
+  deviceFit: deviceFitDict,
+  devicePages: devicePagesDict,
+  searchDevice: searchDeviceDict,
+  catalogMenu: catalogMenuDict,
+  sheets: sheetsDict,
 } as const;
 
 export type Dictionary = typeof dict;

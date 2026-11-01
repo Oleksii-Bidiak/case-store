@@ -12,7 +12,9 @@ import { extendTailwindMerge } from "tailwind-merge";
 const twMerge = extendTailwindMerge({
   extend: {
     theme: {
-      radius: ["card", "cta", "menu"],
+      radius: ["card", "cta", "menu", "pad", "panel"],
+      // `ease-standard` (TASK-2079) — the easing of every state change.
+      ease: ["standard"],
     },
     // `border-chip` (the 1.5px chip outline, a `@utility` in globals.css) is a
     // border WIDTH. Unregistered, tailwind-merge reads any `border-<word>` as a
@@ -20,6 +22,10 @@ const twMerge = extendTailwindMerge({
     // the chip silently lost its outline (TASK-217).
     classGroups: {
       "border-w": [{ border: ["chip"] }],
+      // `transition-interactive` (TASK-2079, a `@utility` in globals.css) is a
+      // transition PROPERTY set: registered, it replaces a component's
+      // `transition-colors` / `transition-all` instead of sitting beside it.
+      transition: [{ transition: ["interactive"] }],
     },
   },
 });

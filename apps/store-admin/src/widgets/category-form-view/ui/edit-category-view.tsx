@@ -22,6 +22,7 @@ import {
   AdminFormSkeleton,
   Badge,
   Button,
+  CategoryIcon,
   ReadOnlyBool,
   ReadOnlyField,
   ReadOnlyImage,
@@ -35,7 +36,9 @@ import {
 import { formatKeywords } from "@/shared/lib/seo";
 import { descendantsOf } from "@/shared/lib/sortable-tree";
 import {
+  categoryIconLabel,
   flattenAdminCategoryTree,
+  isCategoryIconKey,
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   getAdminCategoryControllerFindByIdQueryKey,
   getCategoryControllerGetAdminTreeQueryKey,
@@ -376,6 +379,26 @@ function ReadOnlyCategoryBody({
             </ReadOnlyRelation>
           ) : null}
         </ReadOnlyField>
+        {/* TASK-1956: the icon as the site draws it; an icon-less root says
+            what the storefront shows instead. */}
+        <ReadOnlyField
+          label={f.icon.label}
+          emptyConsequence={
+            category.parentId ? undefined : f.icon.emptyConsequence
+          }
+        >
+          {isCategoryIconKey(category.icon) ? (
+            <span className="inline-flex items-center gap-2.5">
+              <span
+                aria-hidden="true"
+                className="grid size-8 place-items-center rounded-sm bg-muted"
+              >
+                <CategoryIcon icon={category.icon} className="size-5" />
+              </span>
+              {categoryIconLabel(category.icon)}
+            </span>
+          ) : null}
+        </ReadOnlyField>
         <ReadOnlyField label={ro.fieldDescription} multiline>
           {category.description}
         </ReadOnlyField>
@@ -430,6 +453,7 @@ function mapCategoryToFormValues(category: {
   description?: string | null;
   image?: string | null;
   parentId?: string | null;
+  icon?: string | null;
   isActive: boolean;
   metaTitle?: string | null;
   metaDescription?: string | null;
@@ -442,6 +466,8 @@ function mapCategoryToFormValues(category: {
     description: category.description ?? "",
     image: category.image ?? "",
     parentId: category.parentId ?? "",
+    // TASK-1956: null → "" (no icon); the picker reads "" as unset.
+    icon: category.icon ?? "",
     isActive: category.isActive,
     metaTitle: category.metaTitle ?? "",
     metaDescription: category.metaDescription ?? "",

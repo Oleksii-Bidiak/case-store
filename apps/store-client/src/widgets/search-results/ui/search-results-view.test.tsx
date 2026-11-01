@@ -333,7 +333,7 @@ describe("SearchResultsView", () => {
       );
     }
 
-    it("renders the grid one-up under 390px, two-up from 390px and four-up from lg", async () => {
+    it("renders the grid one-up under 390px, two-up from 390px, three-up from md and four-up from xl (TASK-1957)", async () => {
       installOneResult();
 
       renderWithProviders(<SearchResultsView query="айфон" page={1} />);
@@ -343,13 +343,14 @@ describe("SearchResultsView", () => {
       expect(grid).toHaveClass(
         "grid-cols-1",
         "min-[390px]:grid-cols-2",
-        "lg:grid-cols-4",
+        "md:grid-cols-3",
+        "xl:grid-cols-4",
       );
       // Cards in a row share one height whatever their title/badge count.
       expect(grid).toHaveClass("items-stretch");
-      // The old sm:2 / md:3 ladder is gone, not merely overridden.
+      // The old sm:2 ladder and the 4-up beside the rail are gone.
       expect(grid).not.toHaveClass("sm:grid-cols-2");
-      expect(grid).not.toHaveClass("md:grid-cols-3");
+      expect(grid).not.toHaveClass("lg:grid-cols-4");
     });
 
     it("lays the skeleton out in exactly the same columns as the real grid", async () => {
@@ -369,7 +370,8 @@ describe("SearchResultsView", () => {
       expect(skeletonGrid).toHaveClass(
         "grid-cols-1",
         "min-[390px]:grid-cols-2",
-        "lg:grid-cols-4",
+        "md:grid-cols-3",
+        "xl:grid-cols-4",
       );
       // Byte-identical, not merely "both responsive": any drift here is a
       // visible reflow when the skeleton is replaced by cards.
@@ -582,33 +584,39 @@ describe("SearchResultsView", () => {
 
     /**
      * TASK-523 — the category filter on /search. `GET /api/search` rolls a
-     * category up over its subtree; the page now picks one from the catalogue's
-     * chips row, and the panel is told its id (brand scope) while keeping the
-     * spec facets away (the endpoint has no `?specs=`).
+     * category up over its subtree; the page picks one from the catalogue's
+     * category tree (TASK-2011; a chips row before), and the panel is told its
+     * id (brand scope) while keeping the spec facets away (the endpoint has no
+     * `?specs=`).
      */
     describe("category (TASK-523)", () => {
-      it("writes ?category=<slug> from the chips row and keeps the query", async () => {
-        currentQuery = "q=case&page=2";
+      const treeLink = async (name: string) =>
+        within(
+          await screen.findByRole("navigation", {
+            name: dict.filters.categoryTreeTitle,
+          }),
+        ).getByRole("link", { name });
+
+      it("links each tree node to ?category=<slug>, keeping the query but not the page or facets", async () => {
+        currentQuery = "q=case&page=2&brand=apple&sort=price_asc";
         installSearch();
 
         renderWithProviders(<SearchResultsView query="case" page={2} />);
         await screen.findByText("iPhone 15 Case");
 
-        await userEvent.click(
-          await screen.findByRole("button", { name: "Зарядні" }),
-        );
-
-        await waitFor(() => expect(mockReplace).toHaveBeenCalled());
         const target = new URL(
-          mockReplace.mock.calls.at(-1)?.[0] as string,
+          (await treeLink("Зарядні")).getAttribute("href")!,
           "http://localhost",
         );
+        expect(target.pathname).toBe("/search");
         expect(target.searchParams.get("category")).toBe("power");
         expect(target.searchParams.get("q")).toBe("case");
-        expect(target.searchParams.get("page")).toBe("1");
+        expect(target.searchParams.get("sort")).toBe("price_asc");
+        expect(target.searchParams.has("page")).toBe(false);
+        expect(target.searchParams.has("brand")).toBe(false);
       });
 
-      it("forwards the URL category to the search request and marks its chip", async () => {
+      it("forwards the URL category to the search request and marks its node current", async () => {
         currentQuery = "q=case&category=cases";
         const requests = installSearch();
 
@@ -616,9 +624,7 @@ describe("SearchResultsView", () => {
         await screen.findByText("iPhone 15 Case");
 
         expect(requests[0].searchParams.get("category")).toBe("cases");
-        expect(
-          await screen.findByRole("button", { name: "Чохли" }),
-        ).toHaveAttribute("aria-pressed", "true");
+        expect(await treeLink("Чохли")).toHaveAttribute("aria-current", "page");
       });
 
       it("scopes the brand list by the category id but offers no spec facets", async () => {
@@ -641,22 +647,15 @@ describe("SearchResultsView", () => {
         ).not.toBeInTheDocument();
       });
 
-      it("drops the category with the «Всі категорії» chip", async () => {
+      it("drops the category with «Усі категорії»", async () => {
         currentQuery = "q=case&category=cases";
         installSearch();
 
         renderWithProviders(<SearchResultsView query="case" page={1} />);
         await screen.findByText("iPhone 15 Case");
 
-        await userEvent.click(
-          await screen.findByRole("button", {
-            name: dict.filters.allCategories,
-          }),
-        );
-
-        await waitFor(() => expect(mockReplace).toHaveBeenCalled());
         const target = new URL(
-          mockReplace.mock.calls.at(-1)?.[0] as string,
+          (await treeLink(dict.filters.allCategories)).getAttribute("href")!,
           "http://localhost",
         );
         expect(target.searchParams.has("category")).toBe(false);
@@ -876,7 +875,7 @@ describe("SearchResultsView — the page holds its place while loading (TASK-515
     expect(line.parentElement).toHaveClass("flex", "flex-col", "gap-6");
   });
 
-  it("keeps the chips row's placeholder until the category tree arrives", async () => {
+  it("keeps the tree panel's placeholder until the category tree arrives", async () => {
     currentQuery = "q=case";
     installOneResult();
     holdTheTree();
@@ -884,40 +883,27 @@ describe("SearchResultsView — the page holds its place while loading (TASK-515
     renderWithProviders(<SearchResultsView query="case" page={1} />);
 
     await screen.findByText("iPhone 15 Case");
-    expect(screen.getByTestId("category-chips-skeleton").children).toHaveLength(
-      1,
-    );
+    expect(screen.getByTestId("category-tree-skeleton")).toBeInTheDocument();
     expect(
-      screen.queryByRole("group", { name: dict.filters.categoryChipsAria }),
+      screen.queryByRole("navigation", {
+        name: dict.filters.categoryTreeTitle,
+      }),
     ).not.toBeInTheDocument();
   });
 
-  it("reserves the subcategory row too when a category is selected", async () => {
-    currentQuery = "q=case&category=cases";
-    installOneResult();
-    holdTheTree();
-
-    renderWithProviders(<SearchResultsView query="case" page={1} />);
-
-    await screen.findByText("iPhone 15 Case");
-    expect(screen.getByTestId("category-chips-skeleton").children).toHaveLength(
-      2,
-    );
-  });
-
-  it("swaps the placeholder for the chips once the tree is there", async () => {
+  it("swaps the placeholder for the tree once it is there", async () => {
     currentQuery = "q=case";
     installOneResult();
 
     renderWithProviders(<SearchResultsView query="case" page={1} />);
 
     expect(
-      await screen.findByRole("group", {
-        name: dict.filters.categoryChipsAria,
+      await screen.findByRole("navigation", {
+        name: dict.filters.categoryTreeTitle,
       }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByTestId("category-chips-skeleton"),
+      screen.queryByTestId("category-tree-skeleton"),
     ).not.toBeInTheDocument();
   });
 });

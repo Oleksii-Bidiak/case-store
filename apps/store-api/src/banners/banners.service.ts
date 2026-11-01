@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PublishStatus } from '@prisma/client';
+import { BannerPlacement, PublishStatus } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 import {
   BannerRepository,
@@ -9,6 +9,12 @@ import {
   FindAllAdminParams,
 } from './banners.repository';
 import { BannerEntity } from './entities';
+import {
+  ACTIVE_BANNER_STATUSES,
+  MAX_ACTIVE_PROMO_TILES,
+  occupiesPromoTileSlot,
+  promoTileLimitException,
+} from './banners.errors';
 import {
   CreateBannerDto,
   UpdateBannerDto,
@@ -125,6 +131,8 @@ export class BannerService {
       scheduledUntil: this.resolveScheduledUntil(publishState.status, dto.scheduledUntil),
     };
 
+    await this.assertPromoTileSlot({ placement: input.placement, status: input.status });
+
     const banner = await this.bannerRepository.create(input);
     const entity = BannerEntity.fromPrisma(banner);
     if (entity.status === PublishStatus.PUBLISHED) {
@@ -185,6 +193,11 @@ export class BannerService {
           : resolved.publishedAt;
     }
 
+    await this.assertPromoTileSlot(
+      { placement: dto.placement ?? banner.placement, status: input.status ?? banner.status },
+      banner,
+    );
+
     const updated = targetPlacement
       ? await this.bannerRepository.updateWithPlacementMove(id, input, targetPlacement)
       : await this.bannerRepository.update(id, input);
@@ -211,6 +224,11 @@ export class BannerService {
     if (!existing) {
       throw new NotFoundException('Banner not found');
     }
+
+    await this.assertPromoTileSlot(
+      { placement: existing.placement, status: PublishStatus.PUBLISHED },
+      existing,
+    );
 
     const now = new Date();
     const keptWindow =
@@ -323,6 +341,37 @@ export class BannerService {
       limit: effectiveLimit,
       totalPages: effectiveLimit === 0 ? 0 : Math.ceil(total / effectiveLimit),
     };
+  }
+
+  /**
+   * Enforce the promo-tile limit (TASK-2013): at most {@link MAX_ACTIVE_PROMO_TILES}
+   * PROMO_TILE banners PUBLISHED or SCHEDULED at once — on create, update and publish.
+   *
+   * Only a write that makes the banner START occupying a slot is checked: one that lands
+   * active in PROMO_TILE while it was not there (or not active) before. A banner that
+   * already holds a slot keeps it on every re-save — SCHEDULED → PUBLISHED included — so
+   * a placement that is ALREADY over the limit (rows from before the rule) can still be
+   * edited and taken down instead of locking every one of its banners.
+   *
+   * Check-then-write, not under a lock: the writers are a handful of admins, and the
+   * worst two simultaneous saves can do is one extra tile, which every later activation
+   * then refuses until the placement is back under the limit.
+   */
+  private async assertPromoTileSlot(
+    next: { placement: BannerPlacement; status: PublishStatus },
+    current?: { id: string; placement: BannerPlacement; status: PublishStatus },
+  ): Promise<void> {
+    if (!occupiesPromoTileSlot(next.placement, next.status)) return;
+    if (current && occupiesPromoTileSlot(current.placement, current.status)) return;
+
+    const others = await this.bannerRepository.countByPlacementAndStatus(
+      BannerPlacement.PROMO_TILE,
+      ACTIVE_BANNER_STATUSES,
+      current?.id,
+    );
+    if (others >= MAX_ACTIVE_PROMO_TILES) {
+      throw promoTileLimitException();
+    }
   }
 
   private async ensureExists(id: string): Promise<void> {

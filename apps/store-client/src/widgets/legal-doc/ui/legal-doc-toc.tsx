@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { dict, STICKY_ASIDE_TOP, STICKY_HEADER_OFFSET } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP, getStickyHeaderOffset } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import type { DocSection } from "../model/extract-sections";
 
@@ -27,7 +27,7 @@ export function LegalDocToc({ sections }: { sections: DocSection[] }) {
 
     function spy() {
       raf = 0;
-      const threshold = window.scrollY + STICKY_HEADER_OFFSET + 14;
+      const threshold = window.scrollY + getStickyHeaderOffset() + 14;
       let idx = 0;
       sections.forEach((section, i) => {
         const el = document.getElementById(section.id);
@@ -60,7 +60,7 @@ export function LegalDocToc({ sections }: { sections: DocSection[] }) {
     const el = document.getElementById(section.id);
     if (!el) return;
     const y =
-      el.getBoundingClientRect().top + window.scrollY - STICKY_HEADER_OFFSET;
+      el.getBoundingClientRect().top + window.scrollY - getStickyHeaderOffset();
     window.scrollTo({ top: y, behavior: "smooth" });
     setActive(i);
   }

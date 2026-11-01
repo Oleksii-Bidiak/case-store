@@ -33,6 +33,14 @@ export {
 
 export { categoryNamesById } from "./lib/category-names";
 
+// TASK-1956: the assignable icon keys and their admin labels.
+export {
+  CATEGORY_ICON_KEYS,
+  categoryIconLabel,
+  isCategoryIconKey,
+  type CategoryIconKey,
+} from "./model/category-icons";
+
 export type {
   CategoryEntity,
   CategoryWithCountEntity,

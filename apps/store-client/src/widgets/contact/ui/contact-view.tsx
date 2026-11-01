@@ -200,7 +200,7 @@ export function ContactView({
           {/* Messengers */}
           <div
             id="messengers"
-            className="scroll-mt-24 rounded-card border border-border bg-card p-[30px] shadow-card"
+            className="scroll-mt-(--sticky-header-offset) rounded-card border border-border bg-card p-[30px] shadow-card"
           >
             <h2 className="mb-1.5 font-display text-xl font-bold text-foreground">
               {d.messengersHeading}

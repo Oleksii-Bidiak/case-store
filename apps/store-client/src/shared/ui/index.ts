@@ -70,6 +70,17 @@ export { JsonLd } from "./json-ld";
 export { RichText, RICH_TEXT_PROSE, looksLikeHtml } from "./rich-text";
 export { Logo } from "./logo";
 export { CategoryTileImage } from "./category-tile-image";
+// Category icon from the shared sprite (TASK-1956).
+export {
+  CategoryIcon,
+  CATEGORY_ICON_KEYS,
+  CATEGORY_ICON_SPRITE,
+  categoryIconSymbol,
+  isCategoryIconKey,
+  type CategoryIconKey,
+  type CategoryIconProps,
+  type CategoryIconSize,
+} from "./category-icon";
 // Admin banner pictures behind the homepage banners (TASK-740).
 export { BannerBackdrop } from "./banner-backdrop";
 // Plain <img> for admin URLs with a load-failure fallback (TASK-759).

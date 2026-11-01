@@ -7,6 +7,8 @@ import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { FallbackImg } from "@/shared/ui";
 import type { SearchSuggestionsPopupModel } from "../model/use-search-autocomplete";
+import { useSearchDeviceModel } from "../model/use-search-device-model";
+import { SearchModelBlock } from "./search-model-block";
 
 interface SearchSuggestionsPopupProps {
   model: SearchSuggestionsPopupModel;
@@ -39,7 +41,12 @@ export function SearchSuggestionsPopup({
     onPickProduct,
     onPickBlogPost,
     onShowAll,
+    onFollowLink,
   } = model;
+  // The device model the query names (TASK-2069) — the same typo-tolerant
+  // matcher as the device picker. Nothing recognised → the popup is exactly
+  // as before.
+  const deviceMatch = useSearchDeviceModel(query);
   // Anything the popup can offer — products OR articles. Counting products
   // alone printed "нічого не знайдено" above a list of matching posts.
   const hasSuggestions = products.length > 0 || blogPosts.length > 0;
@@ -69,6 +76,13 @@ export function SearchSuggestionsPopup({
         className,
       )}
     >
+      {deviceMatch && (
+        <>
+          <SearchModelBlock match={deviceMatch} onFollowLink={onFollowLink} />
+          <hr aria-hidden="true" className="mx-3 my-2 border-t border-border" />
+        </>
+      )}
+
       <ul
         id={listboxId}
         role="listbox"

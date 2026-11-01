@@ -6,6 +6,8 @@ import { ProductRepository, ProductIndexSource } from '../product/product.reposi
 import { CategoryRepository } from '../category/category.repository';
 // eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > search barrel > this file
 import { PublicProductEntity } from '../product/entities';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > search barrel > this file
+import { ProductDeviceCompatRepository } from '../product/product-device-compat.repository';
 import {
   MeiliClient,
   ProductSearchDocument,
@@ -96,7 +98,8 @@ export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
 export interface SearchFilters {
   categoryId?: string;
   brandId?: string;
-  deviceModelId?: string;
+  /** Compatible with ANY of these device models (OR, TASK-2077). */
+  deviceModelIds?: string[];
   inStock?: boolean;
   minPrice?: number;
   maxPrice?: number;
@@ -108,7 +111,7 @@ function hasFacets(filters: SearchFilters): boolean {
   return (
     filters.categoryId != null ||
     filters.brandId != null ||
-    filters.deviceModelId != null ||
+    filters.deviceModelIds != null ||
     filters.inStock === true ||
     filters.minPrice != null ||
     filters.maxPrice != null
@@ -171,6 +174,9 @@ export class SearchService implements OnModuleInit {
     private readonly categoryRepository: CategoryRepository,
     private readonly logger: PinoLogger,
     private readonly catalogueFilters: CatalogueFilterResolver,
+    // TASK-1953: the compatible device-model ids of the paths that do not read
+    // them off a Meilisearch hit (exact SKU, Postgres fallback).
+    private readonly deviceCompatRepository: ProductDeviceCompatRepository,
     // The admin-edited synonym list (TASK-559). Optional only so the unit specs
     // that build this service by hand keep working; the module always provides
     // it. Absent → the built-in dictionary.
@@ -199,7 +205,7 @@ export class SearchService implements OnModuleInit {
     return this.search(query.q ?? '', query.page ?? 1, query.limit ?? DEFAULT_SEARCH_LIMIT, {
       categoryId: filters.categoryId,
       brandId: filters.brandId,
-      deviceModelId: filters.deviceModelId,
+      deviceModelIds: filters.deviceModelIds,
       inStock: query.inStock,
       minPrice: query.minPrice,
       maxPrice: query.maxPrice,
@@ -398,13 +404,22 @@ export class SearchService implements OnModuleInit {
       }
       if (result && result.hits.length > 0) {
         const ids = result.hits.map((hit) => hit.id);
+        // The document already carries the compat set (TASK-1953) — no extra
+        // query. It is as fresh as the document: every compat write re-indexes
+        // the product it touches.
+        const compatById = new Map(result.hits.map((hit) => [hit.id, hit.deviceModelIds ?? []]));
         const products = await this.productRepository.findByIdsForCards(ids);
         const byId = new Map(products.map((p) => [p.id, p]));
         // Preserve Meilisearch's relevance ordering.
         const items = ids
           .map((id) => byId.get(id))
           .filter((p): p is NonNullable<typeof p> => p != null)
-          .map((p) => PublicProductEntity.fromPrisma(p));
+          .map((p) =>
+            PublicProductEntity.fromPrisma({
+              ...p,
+              compatibleDeviceModelIds: compatById.get(p.id) ?? [],
+            }),
+          );
         // Nothing survived the visibility-gated re-read (TASK-297 drops products
         // whose category was withdrawn). Answering "nothing found" over a live
         // catalogue would be a lie told by a stale index, so let Postgres have
@@ -458,9 +473,10 @@ export class SearchService implements OnModuleInit {
 
     const [card] = await this.productRepository.findByIdsForCards([match.id]);
     if (!card) return null;
+    const [item] = await this.withCompatIds([card]);
 
     return {
-      items: [PublicProductEntity.fromPrisma(card)],
+      items: [item],
       meta: { total: 1, page: 1, limit, totalPages: 1 },
     };
   }
@@ -475,7 +491,15 @@ export class SearchService implements OnModuleInit {
     const expressions = ['isActive = true'];
     if (filters.categoryId) expressions.push(`categoryIds = "${filters.categoryId}"`);
     if (filters.brandId) expressions.push(`brandId = "${filters.brandId}"`);
-    if (filters.deviceModelId) expressions.push(`deviceModelIds = "${filters.deviceModelId}"`);
+    // One id keeps the plain equality; several are OR-ed with `IN` (TASK-2077).
+    // The ids are resolver-produced uuids, never shopper text, so quoting them
+    // cannot be broken out of.
+    const deviceIds = filters.deviceModelIds;
+    if (deviceIds && deviceIds.length === 1) {
+      expressions.push(`deviceModelIds = "${deviceIds[0]}"`);
+    } else if (deviceIds && deviceIds.length > 1) {
+      expressions.push(`deviceModelIds IN [${deviceIds.map((id) => `"${id}"`).join(', ')}]`);
+    }
     if (filters.inStock === true) expressions.push('inStock = true');
     if (filters.minPrice != null) expressions.push(`price >= ${filters.minPrice}`);
     if (filters.maxPrice != null) expressions.push(`price <= ${filters.maxPrice}`);
@@ -578,7 +602,7 @@ export class SearchService implements OnModuleInit {
       search: query || undefined,
       categoryIds,
       brandId: filters.brandId,
-      deviceModelId: filters.deviceModelId,
+      deviceModelIds: filters.deviceModelIds,
       inStock: filters.inStock === true ? true : undefined,
       minPrice: filters.minPrice,
       maxPrice: filters.maxPrice,
@@ -586,9 +610,25 @@ export class SearchService implements OnModuleInit {
       sortOrder,
     });
     return {
-      items: products.map((p) => PublicProductEntity.fromPrisma(p)),
+      items: await this.withCompatIds(products),
       meta: this.buildMeta(total, page, limit),
     };
+  }
+
+  /**
+   * Map card rows to public entities with their compatible device-model ids,
+   * loaded for the whole page in ONE query (TASK-1953) — the Postgres/SKU twin of
+   * reading `deviceModelIds` off the Meilisearch hits.
+   */
+  private async withCompatIds(
+    products: Parameters<typeof PublicProductEntity.fromPrisma>[0][],
+  ): Promise<PublicProductEntity[]> {
+    const compatIds = await this.deviceCompatRepository.getDeviceModelIdsByProductIds(
+      products.map((p) => p.id),
+    );
+    return products.map((p) =>
+      PublicProductEntity.fromPrisma({ ...p, compatibleDeviceModelIds: compatIds.get(p.id) ?? [] }),
+    );
   }
 
   /**

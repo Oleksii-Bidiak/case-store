@@ -448,14 +448,45 @@ describe('Reference-list pagination (e2e)', () => {
     // The public list feeds the homepage ModelPicker and the catalog filter —
     // up to 200 rows; the compat-landing SEO copy belongs to the landing route.
     it('serves the light projection without the landing SEO fields', async () => {
-      deviceRepositoryMock.findPublicModels.mockResolvedValue([modelRow]);
+      deviceRepositoryMock.findPublicModels.mockResolvedValue([
+        { ...modelRow, brandName: 'Apple', brandSlug: 'apple', productCount: 4 },
+      ]);
 
       const response = await request(app.getHttpServer()).get('/api/device-models').expect(200);
 
       expect(deviceRepositoryMock.findModels).not.toHaveBeenCalled();
       expect(response.body.data).toEqual([
-        { id: idA, deviceBrandId: idA, name: 'iPhone 15 Pro', slug: 'iphone-15-pro' },
+        {
+          id: idA,
+          deviceBrandId: idA,
+          name: 'iPhone 15 Pro',
+          slug: 'iphone-15-pro',
+          series: 'iPhone 15',
+          releaseYear: 2023,
+          brandName: 'Apple',
+          brandSlug: 'apple',
+          productCount: 4,
+        },
       ]);
+    });
+
+    // TASK-1952 / TASK-2070: the device picker's "popular models" tiles.
+    it('passes sort=popular to the repository', async () => {
+      deviceRepositoryMock.findPublicModels.mockResolvedValue([]);
+
+      await request(app.getHttpServer())
+        .get('/api/device-models?sort=popular&limit=12')
+        .expect(200);
+
+      expect(deviceRepositoryMock.findPublicModels).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 'popular', limit: 12 }),
+      );
+    });
+
+    it('rejects an unknown sort and a limit above 200', async () => {
+      await request(app.getHttpServer()).get('/api/device-models?sort=price').expect(400);
+      await request(app.getHttpServer()).get('/api/device-models?limit=201').expect(400);
+      expect(deviceRepositoryMock.findPublicModels).not.toHaveBeenCalled();
     });
 
     it('keeps the SEO overrides on the admin model list', async () => {

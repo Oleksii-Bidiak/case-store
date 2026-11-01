@@ -17,19 +17,27 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
         .getByTestId("filter-rail-skeleton")
         .querySelectorAll("[data-section]"),
     ].map((card) => card.getAttribute("data-section"));
+  // «Зі знижкою» is a row inside the price block (Д3-2 Catalog §12), not a
+  // block of its own.
+  const drawn = (sections: string[]) =>
+    sections.filter((section) => section !== "onSale");
 
   it("mirrors the default /products rail, «Знижки» included", () => {
     render(<ProductListSkeleton withSidebar />);
 
-    expect(railSections()).toEqual(filterRailSections());
-    expect(railSections()).toContain("onSale");
+    expect(railSections()).toEqual(
+      drawn(filterRailSections({ withMyDevices: true })),
+    );
+    expect(screen.getByTestId("filter-panel-skeleton")).toBeInTheDocument();
     expect(railSections()).not.toContain("specs");
   });
 
   it("reserves «Характеристики» once a category is set", () => {
     render(<ProductListSkeleton withSidebar hasCategory />);
 
-    expect(railSections()).toEqual(filterRailSections({ hasCategory: true }));
+    expect(railSections()).toEqual(
+      drawn(filterRailSections({ hasCategory: true, withMyDevices: true })),
+    );
     expect(railSections().at(-1)).toBe("specs");
   });
 
@@ -37,15 +45,29 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     render(<ProductListSkeleton withSidebar hasCategory lockedDevice />);
 
     expect(railSections()).toEqual(
-      filterRailSections({ hasCategory: true, lockedDevice: true }),
+      drawn(
+        filterRailSections({
+          hasCategory: true,
+          lockedDevice: true,
+          withMyDevices: true,
+        }),
+      ),
     );
   });
 
   it("drops «Знижки» on /promo, where the route fixes the discount", () => {
     render(<ProductListSkeleton withSidebar lockedOnSale />);
 
-    expect(railSections()).toEqual(filterRailSections({ lockedOnSale: true }));
+    expect(railSections()).toEqual(
+      drawn(filterRailSections({ lockedOnSale: true, withMyDevices: true })),
+    );
     expect(railSections()).not.toContain("onSale");
+  });
+
+  // TASK-2077 — «З урахуванням моїх пристроїв» is the first filter card.
+  it("reserves the my-devices card first", () => {
+    render(<ProductListSkeleton withSidebar />);
+    expect(railSections()[0]).toBe("myDevices");
   });
 
   it("gives every card a height, so no section collapses to zero", () => {
@@ -54,46 +76,53 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     for (const card of screen
       .getByTestId("filter-rail-skeleton")
       .querySelectorAll("[data-section]")) {
-      expect(card.className).toMatch(/\bh-\d+\b/);
+      expect(card.outerHTML).toMatch(/\bh-\d+\b/);
     }
   });
 
-  it("leaves out the category chips row where the route locks the category", () => {
-    const { container: withChips } = render(
-      <ProductListSkeleton withSidebar />,
-    );
-    const { container: locked } = render(
-      <ProductListSkeleton withSidebar withCategoryChips={false} hasCategory />,
-    );
+  // TASK-2011 — the category tree tops the rail, before the filter cards.
+  it("opens the rail with the category tree panel", () => {
+    render(<ProductListSkeleton withSidebar />);
 
-    const chips = (root: HTMLElement) =>
-      root.querySelectorAll(".rounded-full.h-9, .h-9.rounded-full");
-    expect(chips(withChips).length).toBeGreaterThan(0);
-    expect(chips(locked)).toHaveLength(0);
+    expect(
+      screen.getByTestId("filter-rail-skeleton").firstElementChild,
+    ).toHaveAttribute("data-testid", "category-tree-skeleton");
   });
 
-  it("reserves the subcategory chips row only when the page says there is one", () => {
-    const rows = () =>
-      screen.getByTestId("category-chips-skeleton").children.length;
+  it("leaves out the tree where the route fixes the device", () => {
+    render(
+      <ProductListSkeleton
+        withSidebar
+        withCategoryTree={false}
+        hasCategory
+        lockedDevice
+      />,
+    );
 
+    expect(
+      screen.queryByTestId("category-tree-skeleton"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reserves exactly the rows the page says its tree draws", () => {
+    const rows = () =>
+      screen.getByTestId("category-tree-skeleton").querySelectorAll(".h-9")
+        .length;
+
+    render(<ProductListSkeleton withSidebar categoryTreeRows={9} />);
+    expect(rows()).toBe(9);
+  });
+
+  // Д3-2 Catalog §3 — the count line moved from the results column up under
+  // the H1: the shell reserves it on top, the bare results no longer do.
+  it("reserves the count line under the H1 in the shell only", () => {
     const { unmount } = render(<ProductListSkeleton withSidebar />);
-    expect(rows()).toBe(1);
+    const placeholder = screen.getByTestId("result-count-skeleton");
+    expect(placeholder.parentElement).toHaveClass("mt-1.5", "min-h-5");
     unmount();
 
-    render(<ProductListSkeleton withSidebar withSubcategoryChips />);
-    expect(rows()).toBe(2);
-  });
-
-  // TASK-869 — the count line sits in the results column in every variant,
-  // the rail-less one (`ProductList`'s own pending state) and the list view.
-  it.each([
-    ["the sidebar shell", { withSidebar: true }],
-    ["the bare results", {}],
-    ["the list view", { view: "list" as const }],
-  ])("reserves the result-count line in %s", (_label, props) => {
-    render(<ProductListSkeleton {...props} />);
-
-    expect(screen.getByTestId("result-count-skeleton")).toHaveClass("h-5");
+    render(<ProductListSkeleton />);
+    expect(screen.queryByTestId("result-count-skeleton")).toBeNull();
   });
 
   // TASK-869 — a grid cell is shaped like the ProductCard + actions pair, not a
@@ -110,9 +139,11 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
       "flex",
       "flex-col",
       "overflow-hidden",
-      "rounded-xl",
+      // The ProductCard frame (TASK-2171): role radius + resting shadow.
+      "rounded-card",
       "border-border",
       "bg-card",
+      "shadow-card",
     );
     // Edge-to-edge square image, as in ProductCard.
     expect(card.firstElementChild).toHaveClass(

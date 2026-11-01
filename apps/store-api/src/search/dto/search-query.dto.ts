@@ -12,7 +12,12 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { SLUG_MAX_LENGTH, blankToUndefined } from '../../catalog-filter';
+import {
+  IsDeviceSlugList,
+  MAX_DEVICE_FILTER_SLUGS,
+  SLUG_MAX_LENGTH,
+  blankToUndefined,
+} from '../../catalog-filter';
 
 /**
  * Sort orders offered on the results page (TASK-417). `relevance` is the default
@@ -90,13 +95,16 @@ export class SearchQueryDto {
   brand?: string;
 
   @ApiPropertyOptional({
-    description: 'Narrow to products compatible with one device model, by SLUG (TASK-420).',
-    example: 'iphone-15',
+    description:
+      'Narrow to products compatible with a device model, by SLUG (TASK-420), or with ANY ' +
+      `of up to ${MAX_DEVICE_FILTER_SLUGS} comma-separated slugs (OR, TASK-2077). Unknown ` +
+      'slugs in a list are ignored; when nothing resolves the result is empty.',
+    example: 'iphone-15,galaxy-s24',
   })
   @IsOptional()
   @Transform(blankToUndefined)
   @IsString()
-  @MaxLength(SLUG_MAX_LENGTH, { message: 'device must be at most 120 characters' })
+  @IsDeviceSlugList()
   device?: string;
 
   @ApiPropertyOptional({

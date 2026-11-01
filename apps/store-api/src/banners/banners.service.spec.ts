@@ -6,6 +6,7 @@ import { ReorderStaleError } from '../common/reorder';
 import { BannerRepository } from './banners.repository';
 import { BannerService } from './banners.service';
 import { BannerEntity } from './entities';
+import { BannerErrorCode } from './banners.errors';
 import { RevalidationNotifier } from '../publishing';
 
 const mockBanner = {
@@ -46,6 +47,7 @@ const bannerRepositoryMock = {
   unpublish: jest.fn(),
   delete: jest.fn(),
   reorderPlacement: jest.fn(),
+  countByPlacementAndStatus: jest.fn(),
 };
 
 const revalidationMock = { revalidate: jest.fn() };
@@ -63,6 +65,7 @@ describe('BannerService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     revalidationMock.revalidate.mockResolvedValue(undefined);
+    bannerRepositoryMock.countByPlacementAndStatus.mockResolvedValue(0);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -493,6 +496,185 @@ describe('BannerService', () => {
 
       expect(result.status).toBe(PublishStatus.DRAFT);
       expect(revalidationMock.revalidate).toHaveBeenCalledWith({ tags: ['banners'], paths: ['/'] });
+    });
+  });
+
+  // ── promo-tile limit (TASK-2013) ─────────────────────────────────────────
+  describe('promo-tile limit', () => {
+    const promoDraft = {
+      ...draftBanner,
+      id: 'promo-draft',
+      placement: BannerPlacement.PROMO_TILE,
+    };
+    const promoLive = {
+      ...mockBanner,
+      id: 'promo-live',
+      placement: BannerPlacement.PROMO_TILE,
+    };
+    const promoScheduled = {
+      ...draftBanner,
+      id: 'promo-scheduled',
+      placement: BannerPlacement.PROMO_TILE,
+      status: PublishStatus.SCHEDULED,
+      scheduledAt: new Date(Date.now() + 86_400_000),
+    };
+
+    const expectLimitRefusal = async (write: Promise<unknown>): Promise<void> => {
+      const error = await write.catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toMatchObject({
+        error: BannerErrorCode.PROMO_TILE_LIMIT,
+        message: expect.any(String),
+      });
+    };
+
+    it('refuses to create a SIXTH published promo tile with the stable code and writes nothing', async () => {
+      bannerRepositoryMock.countByPlacementAndStatus.mockResolvedValue(5);
+
+      await expectLimitRefusal(
+        service.create({
+          placement: BannerPlacement.PROMO_TILE,
+          title: 'Sixth',
+          status: PublishStatus.PUBLISHED,
+        }),
+      );
+
+      expect(bannerRepositoryMock.countByPlacementAndStatus).toHaveBeenCalledWith(
+        BannerPlacement.PROMO_TILE,
+        [PublishStatus.PUBLISHED, PublishStatus.SCHEDULED],
+        undefined,
+      );
+      expect(bannerRepositoryMock.create).not.toHaveBeenCalled();
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('counts a SCHEDULED promo tile as active — creating one over the limit is refused', async () => {
+      bannerRepositoryMock.countByPlacementAndStatus.mockResolvedValue(5);
+
+      await expectLimitRefusal(
+        service.create({
+          placement: BannerPlacement.PROMO_TILE,
+          title: 'Queued',
+          status: PublishStatus.SCHEDULED,
+          scheduledAt: new Date(Date.now() + 86_400_000).toISOString(),
+        }),
+      );
+      expect(bannerRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('creates the FIFTH active promo tile', async () => {
+      bannerRepositoryMock.countByPlacementAndStatus.mockResolvedValue(4);
+      bannerRepositoryMock.create.mockResolvedValue(promoLive);
+
+      await service.create({
+        placement: BannerPlacement.PROMO_TILE,
+        title: 'Fifth',
+        status: PublishStatus.PUBLISHED,
+      });
+
+      expect(bannerRepositoryMock.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('always allows a promo-tile DRAFT and does not even count', async () => {
+      bannerRepositoryMock.countByPlacementAndStatus.mockResolvedValue(9);
+      bannerRepositoryMock.create.mockResolvedValue(promoDraft);
+
+      await service.create({ placement: BannerPlacement.PROMO_TILE, title: 'Parked' });
+
+      expect(bannerRepositoryMock.countByPlacementAndStatus).not.toHaveBeenCalled();
+      expect(bannerRepositoryMock.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not limit other placements', async () => {
+      bannerRepositoryMock.create.mockResolvedValue(mockBanner);
+
+      await service.create({
+        placement: BannerPlacement.HERO_SLIDE,
+        title: 'Slide',
+        status: PublishStatus.PUBLISHED,
+      });
+
+      expect(bannerRepositoryMock.countByPlacementAndStatus).not.toHaveBeenCalled();
+    });
+
+    it('refuses an update that publishes a promo-tile draft over the limit, excluding itself from the count', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue(promoDraft);
+      bannerRepositoryMock.countByPlacementAndStatus.mockResolvedValue(5);
+
+      await expectLimitRefusal(service.update('promo-draft', { status: PublishStatus.PUBLISHED }));
+
+      expect(bannerRepositoryMock.countByPlacementAndStatus).toHaveBeenCalledWith(
+        BannerPlacement.PROMO_TILE,
+        [PublishStatus.PUBLISHED, PublishStatus.SCHEDULED],
+        'promo-draft',
+      );
+      expect(bannerRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses an update that MOVES a live banner into a full PROMO_TILE placement', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue(mockBanner); // HERO_SLIDE, PUBLISHED
+      bannerRepositoryMock.countByPlacementAndStatus.mockResolvedValue(5);
+
+      await expectLimitRefusal(
+        service.update(mockBanner.id, { placement: BannerPlacement.PROMO_TILE }),
+      );
+      expect(bannerRepositoryMock.updateWithPlacementMove).not.toHaveBeenCalled();
+    });
+
+    it('lets a banner that ALREADY holds a slot be re-saved even when the placement is over the limit', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue(promoLive);
+      bannerRepositoryMock.countByPlacementAndStatus.mockResolvedValue(6);
+      bannerRepositoryMock.update.mockResolvedValue(promoLive);
+
+      await service.update('promo-live', {
+        title: 'Renamed',
+        placement: BannerPlacement.PROMO_TILE,
+        status: PublishStatus.PUBLISHED,
+      });
+
+      expect(bannerRepositoryMock.countByPlacementAndStatus).not.toHaveBeenCalled();
+      expect(bannerRepositoryMock.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets a SCHEDULED promo tile go live without a recount — it already holds its slot', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue(promoScheduled);
+      bannerRepositoryMock.countByPlacementAndStatus.mockResolvedValue(5);
+      bannerRepositoryMock.publish.mockResolvedValue(promoLive);
+
+      await service.publish('promo-scheduled');
+
+      expect(bannerRepositoryMock.countByPlacementAndStatus).not.toHaveBeenCalled();
+      expect(bannerRepositoryMock.publish).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets an update take a promo tile down even when the placement is over the limit', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue(promoLive);
+      bannerRepositoryMock.countByPlacementAndStatus.mockResolvedValue(6);
+      bannerRepositoryMock.update.mockResolvedValue(promoDraft);
+
+      await service.update('promo-live', { status: PublishStatus.DRAFT });
+
+      expect(bannerRepositoryMock.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses to publish a promo-tile draft over the limit and does not revalidate', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue(promoDraft);
+      bannerRepositoryMock.countByPlacementAndStatus.mockResolvedValue(5);
+
+      await expectLimitRefusal(service.publish('promo-draft'));
+
+      expect(bannerRepositoryMock.publish).not.toHaveBeenCalled();
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+    });
+
+    it('publishes a promo-tile draft while there is a free slot', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue(promoDraft);
+      bannerRepositoryMock.countByPlacementAndStatus.mockResolvedValue(4);
+      bannerRepositoryMock.publish.mockResolvedValue(promoLive);
+
+      await service.publish('promo-draft');
+
+      expect(bannerRepositoryMock.publish).toHaveBeenCalledTimes(1);
     });
   });
 

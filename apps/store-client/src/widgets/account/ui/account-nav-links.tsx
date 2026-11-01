@@ -8,6 +8,7 @@ import { cn } from "@/shared/lib/utils";
 import { AccountIcon } from "./account-icons";
 import {
   ACCOUNT_NAV,
+  accountNavLabel,
   activeAccountNavKey,
   type AccountNavKey,
 } from "./account-nav";
@@ -66,7 +67,7 @@ function SidebarList({ activeKey }: { activeKey: AccountNavKey | null }) {
               height={20}
               className={active ? "text-primary" : "text-muted-foreground"}
             />
-            <span className="flex-1">{d.nav[entry.key]}</span>
+            <span className="flex-1">{accountNavLabel(entry.key)}</span>
           </Link>
         );
       })}
@@ -147,7 +148,7 @@ function StripList({ activeKey }: { activeKey: AccountNavKey | null }) {
             aria-current={active ? "page" : undefined}
             className={cn(CHIP, active ? CHIP_ACTIVE : CHIP_IDLE)}
           >
-            {d.nav[entry.key]}
+            {accountNavLabel(entry.key)}
           </Link>
         );
       })}

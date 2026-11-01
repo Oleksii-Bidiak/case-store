@@ -78,7 +78,7 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
         className="flex w-full flex-col gap-0 p-0 sm:max-w-md"
         aria-describedby={undefined}
       >
-        <SheetHeader className="border-b border-border px-5 py-4">
+        <SheetHeader className="border-b border-border py-4 pr-16 pl-5">
           <SheetTitle className="font-display text-lg font-bold text-foreground">
             {dict.cart.title}
             {count > 0 && (
@@ -134,7 +134,7 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
               ref={shopNowRef}
               href="/products"
               onClick={close}
-              className="rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]"
+              className="rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100"
             >
               {dict.cart.shopNow}
             </Link>
@@ -211,7 +211,7 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
                   ref={checkoutRef}
                   href="/checkout"
                   onClick={close}
-                  className="mt-3.5 flex h-12 items-center justify-center rounded-xl bg-primary font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]"
+                  className="mt-3.5 flex h-12 items-center justify-center rounded-xl bg-primary font-semibold text-primary-foreground transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100"
                 >
                   {dict.cart.checkout}
                 </Link>

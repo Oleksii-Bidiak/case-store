@@ -1,139 +1,232 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
-import { Badge, BannerBackdrop } from "@/shared/ui";
+import { ArrowRight, Percent, Truck, type LucideIcon } from "lucide-react";
+import { BannerBackdrop } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { cn } from "@/shared/lib/utils";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
-type Accent = "sale" | "primary" | "success";
+/**
+ * How many promo tiles the first screen has room for (TASK-2013): two beside
+ * the slider, three in a row under it. store-api refuses a sixth active
+ * PROMO_TILE banner (409 `BANNER_PROMO_TILE_LIMIT`); rows from before that rule
+ * may still exceed it, so the storefront caps the list too.
+ */
+export const MAX_PROMO_TILES = 5;
+
+/** Tiles 1–2 stand beside the slider; the rest go to the row beneath it. */
+export const PROMO_TILES_BESIDE = 2;
+
+type TileIcon = (typeof dict.home.promoTiles)[number]["icon"];
+
+const ICONS: Record<TileIcon, LucideIcon> = {
+  percent: Percent,
+  truck: Truck,
+};
 
 /** Normalised promo-tile shape (banner- or dictionary-driven). */
 type PromoTile = {
-  badge?: string;
   title: string;
   text?: string;
   cta?: string;
   /** Where the tile leads; a banner without a link renders as a plain card. */
   href?: string;
-  accent: Accent;
-  /** Admin banner picture (TASK-740); the accent tint shows without one. */
+  /** Surface tone class — `bg-card` unless the banner names a tone. */
+  tone: string;
+  /** The fallback tiles carry an icon; banners have no icon field yet. */
+  icon?: TileIcon;
+  /** Admin banner picture (TASK-740), drawn behind the copy. */
   imageUrl?: string;
 };
 
-/** Accent rotation applied to admin banners in placement order. */
-const ACCENT_CYCLE: Accent[] = ["sale", "primary", "success"];
-
-/** The hardcoded fallback tiles — rendered when no PROMO_TILE banners exist. */
-const FALLBACK_TILES: readonly PromoTile[] = dict.home.promoTiles;
+const NEUTRAL_TONE = "bg-card";
 
 /**
- * Map admin-managed PROMO_TILE banners onto the tile shape. The `theme` field,
- * when it names an accent, wins; otherwise the accent rotates by position so a
- * row of banners keeps the varied sale/primary/success look.
+ * The banner `theme` → the tile surface (direction В colour rule: a hue only
+ * ever means a device family — or a sale). A family key gives the family tone;
+ * the three accents the admin palette still offers stay as faint tints, since
+ * the owner picked them on purpose. No theme, or an unknown one, is a white
+ * card: the old by-position sale / primary / success rotation is gone.
  */
-function bannersToTiles(banners: BannerEntity[]): PromoTile[] {
-  return banners.map((b, i) => {
-    const themed = ACCENT_CYCLE.find((a) => a === b.theme);
-    return {
-      title: b.title,
-      text: b.subtitle ?? undefined,
-      cta: b.ctaLabel ?? undefined,
-      // TASK-873 — no `#` stand-in: a banner the owner left without a link
-      // is a card, not a link to the top of the page.
-      href: b.ctaHref?.trim() || undefined,
-      accent: themed ?? ACCENT_CYCLE[i % ACCENT_CYCLE.length],
-      imageUrl: b.imageUrl ?? undefined,
-    };
-  });
-}
-
-// Maps each tile's accent to token-based styles + the shared Badge variant.
-// Badge's `default` variant is the primary colour, so it doubles as the
-// "primary" pill — no bespoke badge component needed.
-const ACCENTS: Record<
-  Accent,
-  { surface: string; badge: "sale" | "success" | "default"; cta: string }
-> = {
-  sale: {
-    surface: "bg-sale/10 border-sale/25",
-    badge: "sale",
-    cta: "text-sale",
-  },
-  primary: {
-    surface: "bg-primary/10 border-primary/25",
-    badge: "default",
-    cta: "text-primary",
-  },
-  success: {
-    surface: "bg-success/10 border-success/25",
-    badge: "success",
-    cta: "text-success",
-  },
+const TONES: Record<string, string> = {
+  iphone: "bg-family-iphone",
+  galaxy: "bg-family-galaxy",
+  redmi: "bg-family-redmi",
+  watch: "bg-family-watch",
+  ipad: "bg-family-ipad",
+  sale: "bg-sale/10",
+  primary: "bg-primary/10",
+  success: "bg-success/10",
 };
 
-interface PromoTilesProps {
+function toneFor(theme: string | null | undefined): string {
+  const key = theme?.trim().toLowerCase();
+  return (key && TONES[key]) || NEUTRAL_TONE;
+}
+
+/**
+ * The tiles to draw: the admin PROMO_TILE banners (in placement order) when any
+ * are published, otherwise the dictionary fallback — never more than
+ * {@link MAX_PROMO_TILES}.
+ */
+export function resolvePromoTiles(banners?: BannerEntity[]): PromoTile[] {
+  const tiles: PromoTile[] =
+    banners && banners.length > 0
+      ? banners.map((b) => ({
+          title: b.title,
+          text: b.subtitle ?? undefined,
+          cta: b.ctaLabel ?? undefined,
+          // TASK-873 — no `#` stand-in: a banner the owner left without a
+          // link is a card, not a link to the top of the page.
+          href: b.ctaHref?.trim() || undefined,
+          tone: toneFor(b.theme),
+          imageUrl: b.imageUrl ?? undefined,
+        }))
+      : dict.home.promoTiles.map((t) => ({ ...t, tone: NEUTRAL_TONE }));
+  return tiles.slice(0, MAX_PROMO_TILES);
+}
+
+const TILE_BASE =
+  "group relative isolate flex h-full min-h-37.5 flex-col gap-1.5 overflow-hidden rounded-card p-5 text-foreground shadow-card";
+
+/** Lift on hover, press on tap, focus ring; transforms off under reduced motion. */
+const TILE_LINK =
+  "transition-interactive hover:-translate-y-0.5 hover:shadow-lift active:translate-y-0 active:scale-99 active:shadow-card focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-solid focus-visible:outline-ring motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100";
+
+function PromoTileCard({ tile, sizes }: { tile: PromoTile; sizes: string }) {
+  const Icon = tile.icon ? ICONS[tile.icon] : undefined;
+  const neutral = tile.tone === NEUTRAL_TONE;
+  const body = (
+    <>
+      {/* Admin picture under the copy (TASK-740). The copy is foreground on the
+          tile, so the scrim is the card colour — the picture reads as a
+          texture and the text stays legible. */}
+      <BannerBackdrop
+        src={tile.imageUrl}
+        sizes={sizes}
+        scrimClassName="bg-card/80"
+      />
+      {Icon && (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "mb-1.5 flex size-10 items-center justify-center rounded-menu",
+            neutral ? "bg-muted" : "bg-card",
+          )}
+        >
+          <Icon className="size-5" />
+        </span>
+      )}
+      <h3 className="font-display text-lg leading-tight font-bold">
+        {tile.title}
+      </h3>
+      {tile.text && (
+        <p className="text-sm leading-snug text-muted-foreground">
+          {tile.text}
+        </p>
+      )}
+      {tile.href && tile.cta && (
+        <span className="mt-auto inline-flex items-center gap-1.5 pt-2 text-sm font-semibold">
+          {tile.cta}
+          <ArrowRight
+            aria-hidden="true"
+            className="size-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none motion-reduce:group-hover:translate-x-0"
+          />
+        </span>
+      )}
+    </>
+  );
+
+  return tile.href ? (
+    <Link
+      href={tile.href}
+      data-promo-tile=""
+      className={cn(TILE_BASE, tile.tone, TILE_LINK)}
+    >
+      {body}
+    </Link>
+  ) : (
+    <div data-promo-tile="" className={cn(TILE_BASE, tile.tone)}>
+      {body}
+    </div>
+  );
+}
+
+/** Below-the-block row: three equal columns from md, two for exactly two. */
+const BELOW_COLUMNS: Record<number, string> = {
+  1: "",
+  2: "md:grid-cols-2",
+  3: "md:grid-cols-3",
+};
+
+interface PromoShowcaseProps {
+  /** The hero slider (a client component, passed in by HeroBanner). */
+  slider: ReactNode;
+  /** PROMO_TILE banners (falls back to the dictionary tiles when empty). */
   banners?: BannerEntity[];
 }
 
 /**
- * PromoTiles — a row of promo cards under the hero. Data-driven from admin
- * PROMO_TILE banners when any are published; otherwise the hardcoded fallback
- * tiles (sale / instalments / trade-in) render unchanged. Presentational Server
- * Component; visuals stay token-based.
+ * PromoShowcase — the «slider + promo tiles» block (TASK-2013, Д3-0 / Homepage
+ * Д3-2). Up to five tiles:
+ *
+ * - tiles 1–2 stand to the RIGHT of the slider from `lg` (slider 2/3, tile
+ *   column 1/3, the tiles splitting the slider's height); below `lg` they stack
+ *   under it, full width;
+ * - tiles 3–5 form one row UNDER the whole block — 3 columns from `md`
+ *   (2 when there are exactly two), stacked on a phone.
+ *
+ * With one tile it fills the side column's height; with none the slider spans
+ * the full width. The mockup's 992px step is `lg` (1024) here — the repo has
+ * no custom breakpoints. Presentational Server Component.
  */
-export function PromoTiles({ banners }: PromoTilesProps = {}) {
-  const tiles: readonly PromoTile[] =
-    banners && banners.length > 0 ? bannersToTiles(banners) : FALLBACK_TILES;
+export function PromoShowcase({ slider, banners }: PromoShowcaseProps) {
+  const tiles = resolvePromoTiles(banners);
+  const beside = tiles.slice(0, PROMO_TILES_BESIDE);
+  const below = tiles.slice(PROMO_TILES_BESIDE);
 
   return (
-    <div className="grid gap-5 sm:grid-cols-3">
-      {tiles.map((tile, i) => {
-        const accent = ACCENTS[tile.accent];
-        const surface = `group relative isolate flex flex-col overflow-hidden rounded-2xl border p-6 ${accent.surface}`;
-        const body = (
-          <>
-            {/* Admin picture under the copy (TASK-740). The tile's text is
-                foreground-on-background, so the scrim is the background
-                colour — the picture reads as a texture, the copy stays legible. */}
-            <BannerBackdrop
-              src={tile.imageUrl}
-              sizes="(max-width: 639px) 100vw, 420px"
-              scrimClassName="bg-background/80"
-            />
-            {tile.badge && (
-              <Badge variant={accent.badge} className="w-fit">
-                {tile.badge}
-              </Badge>
+    <>
+      <div
+        data-promo-row="top"
+        className={cn(beside.length > 0 && "grid gap-3 lg:grid-cols-3")}
+      >
+        <div className={cn("min-w-0", beside.length > 0 && "lg:col-span-2")}>
+          {slider}
+        </div>
+        {beside.length > 0 && (
+          <div
+            data-promo-slot="beside"
+            className={cn(
+              "grid gap-3",
+              beside.length > 1 ? "lg:grid-rows-2" : "lg:grid-rows-1",
             )}
-            <h3 className="mt-3 font-display text-lg font-bold text-foreground">
-              {tile.title}
-            </h3>
-            {tile.text && (
-              <p className="mt-1 text-sm text-muted-foreground">{tile.text}</p>
-            )}
-            {tile.href && tile.cta && (
-              <span
-                className={`mt-4 inline-flex items-center gap-1.5 text-sm font-semibold ${accent.cta}`}
-              >
-                {tile.cta}
-                <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-              </span>
-            )}
-          </>
-        );
-        return tile.href ? (
-          <Link
-            key={`${tile.title}-${i}`}
-            href={tile.href}
-            className={`${surface} transition-shadow hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
           >
-            {body}
-          </Link>
-        ) : (
-          <div key={`${tile.title}-${i}`} className={surface}>
-            {body}
+            {beside.map((tile, i) => (
+              <PromoTileCard
+                key={`${tile.title}-${i}`}
+                tile={tile}
+                sizes="(max-width: 1023px) 100vw, 440px"
+              />
+            ))}
           </div>
-        );
-      })}
-    </div>
+        )}
+      </div>
+
+      {below.length > 0 && (
+        <div
+          data-promo-slot="below"
+          className={cn("mt-3 grid gap-3", BELOW_COLUMNS[below.length])}
+        >
+          {below.map((tile, i) => (
+            <PromoTileCard
+              key={`${tile.title}-${i}`}
+              tile={tile}
+              sizes="(max-width: 767px) 100vw, 440px"
+            />
+          ))}
+        </div>
+      )}
+    </>
   );
 }

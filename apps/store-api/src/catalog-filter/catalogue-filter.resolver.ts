@@ -4,6 +4,7 @@ import { BrandRepository } from '../brand/brand.repository';
 // eslint-disable-next-line local/no-deep-module-import -- cycle: category barrel > category.module > search.module > catalog-filter barrel > this file
 import { CategoryRepository } from '../category/category.repository';
 import { DeviceRepository } from '../device';
+import { DEVICE_SLUG_SEPARATOR, parseDeviceSlugs } from './device-slug-list';
 
 /**
  * The id a filter resolves to when the requested slug (or legacy uuid) names
@@ -39,7 +40,10 @@ export interface CatalogueFilterQuery {
   category?: string;
   /** Canonical form — a brand slug. */
   brand?: string;
-  /** Canonical form — a device-model slug. */
+  /**
+   * Canonical form — a device-model slug, or a comma-separated list of them
+   * (TASK-2077, OR semantics: «підходить хоча б до одного з моїх пристроїв»).
+   */
   device?: string;
   /** Legacy form, still accepted (the admin panel binds these). */
   categoryId?: string;
@@ -50,6 +54,12 @@ export interface CatalogueFilterQuery {
 /** One resolved axis: the id the repository filters by + its cache-key segment. */
 interface ResolvedAxis {
   id?: string;
+  key?: string;
+}
+
+/** The device axis resolves to a SET of ids (TASK-2077) — OR-ed downstream. */
+interface ResolvedDeviceAxis {
+  ids?: string[];
   key?: string;
 }
 
@@ -67,10 +77,21 @@ interface ResolvedAxis {
 export interface ResolvedCatalogueFilters {
   categoryId?: string;
   brandId?: string;
-  deviceModelId?: string;
+  /**
+   * Device models to narrow by, OR-ed: a product compatible with ANY of them
+   * matches (TASK-2077). One element for the classic `?device=iphone-15`;
+   * `[UNRESOLVED_FILTER_ID]` when every requested slug named nothing; absent
+   * when the axis was not filtered. Never an empty array.
+   */
+  deviceModelIds?: string[];
   /** Canonical cache-key segment for the category axis (slug, or `!unknown`). */
   categoryKey?: string;
   brandKey?: string;
+  /**
+   * Canonical device segment: the RESOLVED slugs, sorted and comma-joined, so
+   * `?device=b,a`, `?device=a,b` and `?device=a,b,typo` share one cache entry
+   * (and `?device=a,typo` shares the plain `?device=a` one).
+   */
   deviceKey?: string;
 }
 
@@ -115,7 +136,7 @@ export class CatalogueFilterResolver {
     return {
       categoryId: category.id,
       brandId: brand.id,
-      deviceModelId: device.id,
+      deviceModelIds: device.ids,
       categoryKey: category.key,
       brandKey: brand.key,
       deviceKey: device.key,
@@ -154,17 +175,42 @@ export class CatalogueFilterResolver {
     return {};
   }
 
-  private async resolveDevice(slug?: string, id?: string): Promise<ResolvedAxis> {
-    if (slug) {
-      const model = await this.deviceRepository.findModelBySlug(slug);
-      return model ? { id: model.id, key: model.slug } : unresolved();
+  /**
+   * The device axis takes one slug or a comma-separated list (TASK-2077).
+   *
+   * - One slug: the same single `findUnique` as before — the classic
+   *   `?device=iphone-15` is untouched, query for query.
+   * - Several: ONE `findMany` for the whole list. Unknown slugs are dropped
+   *   (a stale model in a shopper's saved list must not empty the page the
+   *   others would fill); only when NOTHING resolves does the axis fall back to
+   *   the "matches nothing" sentinel, exactly like an unknown single slug.
+   */
+  private async resolveDevice(raw?: string, id?: string): Promise<ResolvedDeviceAxis> {
+    const slugs = parseDeviceSlugs(raw);
+    if (slugs.length === 1) {
+      const model = await this.deviceRepository.findModelBySlug(slugs[0]);
+      return model ? { ids: [model.id], key: model.slug } : unresolvedDevice();
+    }
+    if (slugs.length > 1) {
+      const models = await this.deviceRepository.findModelsBySlugs(slugs);
+      if (models.length === 0) return unresolvedDevice();
+      const sorted = [...models].sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+      return {
+        ids: sorted.map((model) => model.id),
+        key: sorted.map((model) => model.slug).join(DEVICE_SLUG_SEPARATOR),
+      };
     }
     if (id) {
       const model = await this.deviceRepository.findModelById(id);
-      return model ? { id: model.id, key: model.slug } : unresolved();
+      return model ? { ids: [model.id], key: model.slug } : unresolvedDevice();
     }
     return {};
   }
+}
+
+/** The device-axis twin of {@link unresolved}. */
+function unresolvedDevice(): ResolvedDeviceAxis {
+  return { ids: [UNRESOLVED_FILTER_ID], key: UNRESOLVED_FILTER_KEY };
 }
 
 /** A filter that named nothing: applied, matching nothing, keyed as one entry. */

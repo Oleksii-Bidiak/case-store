@@ -20,9 +20,6 @@ const KNOWN: Record<string, string> = {
   "shared/ui/rating-stars.tsx": "TASK-1687",
   "shared/ui/review-rating-stars.tsx": "TASK-1687",
   "features/submit-review/ui/submit-review-form.tsx": "TASK-1687",
-  // Dark banners: an inverse / on-inverse token pair is planned.
-  "widgets/hero-banner/ui/hero-slider.tsx": "TASK-1678",
-  "widgets/promo-banner/ui/promo-banner.tsx": "TASK-1678",
 };
 
 const PALETTE =
@@ -36,8 +33,6 @@ const PALETTE =
  * backlog row and must keep at least one hit.
  */
 const KNOWN_COLOUR_MATHS: Record<string, string> = {
-  // Slide gradients built on white/black copy: waits for inverse tokens.
-  "widgets/hero-banner/ui/hero-slider.tsx": "TASK-1678",
   // /promo hero gradient and the coupon chip tint (lane A files).
   "widgets/promo/ui/promo-view.tsx": "TASK-1685",
   "widgets/promo/ui/promo-coupons.tsx": "TASK-1685",

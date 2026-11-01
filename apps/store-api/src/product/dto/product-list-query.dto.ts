@@ -12,7 +12,12 @@ import {
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { SLUG_MAX_LENGTH, blankToUndefined } from '../../catalog-filter';
+import {
+  IsDeviceSlugList,
+  MAX_DEVICE_FILTER_SLUGS,
+  SLUG_MAX_LENGTH,
+  blankToUndefined,
+} from '../../catalog-filter';
 
 /**
  * Every value `sortBy` accepts. Exported so the validator and the error message
@@ -92,16 +97,19 @@ export class ProductListQueryDto {
 
   @ApiProperty({
     description:
-      'Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420). ' +
-      'Same unknown-value behaviour as `category`. Wins over the legacy ' +
+      'Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420) — or a ' +
+      `comma-separated list of up to ${MAX_DEVICE_FILTER_SLUGS} slugs with OR semantics ` +
+      '(`?device=iphone-15,galaxy-s24` = compatible with ANY of them, TASK-2077). In a ' +
+      'list, unknown slugs are ignored; when nothing resolves the filter matches nothing ' +
+      '(an empty 200 page), same as an unknown single slug. Wins over the legacy ' +
       '`deviceModelId`.',
-    example: 'iphone-15',
+    example: 'iphone-15,galaxy-s24',
     required: false,
   })
   @IsOptional()
   @Transform(blankToUndefined)
   @IsString()
-  @MaxLength(SLUG_MAX_LENGTH, { message: 'device must be at most 120 characters' })
+  @IsDeviceSlugList()
   device?: string;
 
   @ApiProperty({

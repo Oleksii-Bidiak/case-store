@@ -8,6 +8,7 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import type { ProductGroupEntity } from "@/entities/product";
+import { addDevice, clearMyDevices, setLabel } from "@/entities/my-devices";
 import { ProductSiblingNavigator } from "./product-sibling-navigator";
 
 /**
@@ -177,5 +178,88 @@ describe("ProductSiblingNavigator", () => {
     expect(screen.getByRole("link", { name: "double" })).toHaveTextContent(
       "double",
     );
+  });
+
+  describe("the model axis (Product mockup §6.6)", () => {
+    const sibling = (
+      slug: string,
+      model: string,
+      color: string,
+      order: number,
+    ) => ({
+      id: slug,
+      slug,
+      name: slug,
+      price: "999",
+      attributes: { Колір: color, Модель: model },
+      stock: 1,
+      isActive: true,
+      positionOrder: order,
+    });
+    const group: ProductGroupEntity = {
+      id: "g-m",
+      name: "Clear Case",
+      axes: [
+        { name: "Колір", sortOrder: 0 },
+        { name: "Модель", sortOrder: 1 },
+      ],
+      positions: [
+        sibling("case-15pro-black", "iPhone 15 Pro", "Чорний", 0),
+        sibling("case-13-blue", "iPhone 13", "Синій", 1),
+      ],
+    };
+    const iphone13 = {
+      modelId: "m-13",
+      slug: "iphone-13",
+      name: "iPhone 13",
+      brandName: "Apple",
+      family: "iphone" as const,
+    };
+
+    beforeEach(() => {
+      window.localStorage.clear();
+      clearMyDevices();
+    });
+
+    function renderModelGroup() {
+      return renderWithProviders(
+        <ProductSiblingNavigator
+          group={group}
+          currentAttributes={{ Колір: "Чорний", Модель: "iPhone 15 Pro" }}
+          currentSlug="case-15pro-black"
+        />,
+      );
+    }
+
+    it("leads with the model chips, without the «iPhone » prefix", () => {
+      const { container } = renderModelGroup();
+      const legends = container.querySelectorAll("legend");
+      expect(legends[0]).toHaveTextContent("Модель: iPhone 15 Pro");
+      const current = screen.getByRole("button", { name: "iPhone 15 Pro" });
+      expect(current).toHaveTextContent(/^15 Pro$/);
+      expect(current).toHaveClass("rounded-full", "bg-primary");
+    });
+
+    it("opens another model in its own colour when the current one is missing", () => {
+      renderModelGroup();
+      expect(screen.getByRole("link", { name: "iPhone 13" })).toHaveAttribute(
+        "href",
+        "/products/case-13-blue",
+      );
+    });
+
+    it("tags a saved device's chip with «ваш», or with its label", () => {
+      addDevice(iphone13);
+      const { unmount } = renderModelGroup();
+      expect(
+        screen.getByRole("link", { name: "iPhone 13 · ваш" }),
+      ).toHaveTextContent("13ваш");
+      unmount();
+      setLabel("m-13", "Мама");
+      renderModelGroup();
+      expect(
+        screen.getByRole("link", { name: "iPhone 13 · Мама" }),
+      ).toBeInTheDocument();
+    });
   });
 });

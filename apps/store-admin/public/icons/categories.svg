@@ -1,0 +1,56 @@
+<!-- mirrors apps/store-client/public/icons/categories.svg — change both -->
+<svg xmlns="http://www.w3.org/2000/svg">
+  <!-- Category icons, style B «Дуотон» (TASK-1956). Generated from CategoryIcons.dc.html CI_ICONS + lucide "folder" fallback. -->
+  <symbol id="cat-cases" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><rect width='14' height='20' x='5' y='2' rx='3'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width='14' height='20' x='5' y='2' rx='3'/><rect width='5' height='5' x='7.5' y='4.5' rx='1.5'/></g>
+  </symbol>
+  <symbol id="cat-glass" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><path d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/><path d='m9 12 2 2 4-4'/></g>
+  </symbol>
+  <symbol id="cat-chargers" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><path d='M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d='M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z'/></g>
+  </symbol>
+  <symbol id="cat-cables" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><path d='M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d='M12 22v-5'/><path d='M9 8V2'/><path d='M15 8V2'/><path d='M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z'/></g>
+  </symbol>
+  <symbol id="cat-power-banks" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><rect width='16' height='12' x='2' y='6' rx='2'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width='16' height='12' x='2' y='6' rx='2'/><path d='M22 10v4'/><path d='m11 9-2 3h3l-2 3'/></g>
+  </symbol>
+  <symbol id="cat-headphones" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><path d='M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'/><path d='M21 14h-3a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2z'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d='M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3'/></g>
+  </symbol>
+  <symbol id="cat-watches" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><circle cx='12' cy='12' r='6'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx='12' cy='12' r='6'/><path d='M12 10v2l1 1'/><path d='m16.13 7.66-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05'/><path d='m7.88 16.36.8 4a2 2 0 0 0 2 1.61h2.72a2 2 0 0 0 2-1.61l.81-4.05'/></g>
+  </symbol>
+  <symbol id="cat-speakers" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><rect width='16' height='20' x='4' y='2' rx='2'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width='16' height='20' x='4' y='2' rx='2'/><circle cx='12' cy='14' r='4'/><path d='M12 6h.01'/></g>
+  </symbol>
+  <symbol id="cat-holders" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><path d='M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h14z'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d='M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2'/><circle cx='7' cy='17' r='2'/><path d='M9 17h6'/><circle cx='17' cy='17' r='2'/></g>
+  </symbol>
+  <symbol id="cat-smartphones" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><rect width='14' height='20' x='5' y='2' rx='2'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width='14' height='20' x='5' y='2' rx='2'/><path d='M12 18h.01'/></g>
+  </symbol>
+  <symbol id="cat-memory" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><path d='M6 22a2 2 0 0 1-2-2V6l4-4h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2Z'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d='M6 22a2 2 0 0 1-2-2V6l4-4h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2Z'/><path d='M8 10V7.5'/><path d='M12 6v4'/><path d='M16 6v4'/></g>
+  </symbol>
+  <symbol id="cat-all" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><rect width='7' height='7' x='3' y='3' rx='1.5'/><rect width='7' height='7' x='14' y='14' rx='1.5'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width='7' height='7' x='3' y='3' rx='1.5'/><rect width='7' height='7' x='14' y='3' rx='1.5'/><rect width='7' height='7' x='14' y='14' rx='1.5'/><rect width='7' height='7' x='3' y='14' rx='1.5'/></g>
+  </symbol>
+  <symbol id="cat-folder" viewBox="0 0 24 24">
+    <g class="cat-ic-back" fill="currentColor" fill-opacity=".28" stroke="none"><path d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/></g>
+    <g class="cat-ic-line" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/></g>
+  </symbol>
+</svg>

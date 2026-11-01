@@ -6,21 +6,32 @@ import { FILTER_SECTION_ORDER, filterRailSections } from "./filter-sections";
  * `ProductFilters` renders it.
  */
 describe("filterRailSections", () => {
-  it("lists the six always-on sections on the default /products view", () => {
+  it("lists the five always-on sections in the panel order of Д3-2 Catalog §12", () => {
     expect(filterRailSections()).toEqual([
-      "search",
       "availability",
+      "price",
       "onSale",
       "brand",
       "device",
-      "price",
     ]);
   });
 
   it("adds «Характеристики» last once a category is set", () => {
-    expect(filterRailSections({ hasCategory: true })).toEqual([
-      ...FILTER_SECTION_ORDER,
-    ]);
+    expect(filterRailSections({ hasCategory: true })).toEqual(
+      FILTER_SECTION_ORDER.filter((section) => section !== "myDevices"),
+    );
+  });
+
+  it("puts «З урахуванням моїх пристроїв» first when offered (TASK-2077)", () => {
+    expect(
+      filterRailSections({ withMyDevices: true, hasCategory: true }),
+    ).toEqual([...FILTER_SECTION_ORDER]);
+  });
+
+  it("never offers my devices where the route fixes the device", () => {
+    expect(
+      filterRailSections({ withMyDevices: true, lockedDevice: true }),
+    ).not.toContain("myDevices");
   });
 
   it("drops the device section where the route fixes the device", () => {
@@ -31,11 +42,10 @@ describe("filterRailSections", () => {
 
   it("drops «Знижки» on /promo, where the route fixes the discount", () => {
     expect(filterRailSections({ lockedOnSale: true })).toEqual([
-      "search",
       "availability",
+      "price",
       "brand",
       "device",
-      "price",
     ]);
   });
 
@@ -46,6 +56,6 @@ describe("filterRailSections", () => {
         hideSpecFacets: true,
         hasCategory: true,
       }),
-    ).toEqual(["search", "availability", "brand", "device", "price"]);
+    ).toEqual(["availability", "price", "brand", "device"]);
   });
 });

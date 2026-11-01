@@ -135,12 +135,13 @@ describe("WishlistView (TASK-076)", () => {
     expect(
       within(card).getByRole("link", { name: "iPhone 15 Pro Case" }),
     ).toHaveAttribute("href", "/products/iphone-15-pro-case");
-    // The heart toggle (filled, saved) offers removal.
+    // The heart (always filled here) removes — a plain button, not a toggle
+    // (Д3-2 Wishlist §18.5).
     expect(
       within(card).getByRole("button", {
         name: dict.productCard.wishlistRemoveAria("iPhone 15 Pro Case"),
       }),
-    ).toHaveAttribute("aria-pressed", "true");
+    ).toBeInTheDocument();
   });
 
   it("ignores optimistic placeholders that lack a product slug", () => {
@@ -254,11 +255,14 @@ describe("WishlistView (TASK-076)", () => {
     });
 
     expect(
-      screen.getByRole("button", { name: dict.wishlist.addAll }),
+      screen.getByRole("button", { name: dict.wishlist.addAllCount(1) }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: dict.filters.viewGrid }),
-    ).toHaveAttribute("aria-pressed", "true");
+    // Grid is the default, so the toggle offers the list (TASK-1958) — at
+    // every width: no responsive `hidden` on it any more.
+    const toggle = screen.getByRole("button", {
+      name: dict.filters.viewListAria,
+    });
+    expect(toggle).not.toHaveClass("hidden");
   });
 
   it("filters to sale items via the quick filter and surfaces a removable chip", async () => {
@@ -373,7 +377,7 @@ describe("WishlistView quick-view triggers (TASK-290)", () => {
     });
 
     await user.click(
-      screen.getByRole("button", { name: dict.filters.viewList }),
+      screen.getByRole("button", { name: dict.filters.viewListAria }),
     );
 
     // List row: the trigger is pinned to the thumbnail's top-right corner, the
@@ -449,7 +453,7 @@ describe("WishlistView grid ↔ skeleton parity (TASK-415)", () => {
     return screen.getByRole("article").closest(".grid");
   }
 
-  it("renders the grid one-up under 390px, two-up from 390px and four-up from lg", () => {
+  it("renders the grid one-up under 390px, two-up from 390px, three-up from md and four-up from xl (TASK-1957)", () => {
     renderWithProviders(<WishlistView />, {
       queryClient: seededClient([buildItem()]),
     });
@@ -459,7 +463,8 @@ describe("WishlistView grid ↔ skeleton parity (TASK-415)", () => {
     expect(grid).toHaveClass(
       "grid-cols-1",
       "min-[390px]:grid-cols-2",
-      "lg:grid-cols-4",
+      "md:grid-cols-3",
+      "xl:grid-cols-4",
     );
     // Cards in a row share one height whatever their title/badge count.
     expect(grid).toHaveClass("items-stretch");
@@ -486,7 +491,8 @@ describe("WishlistView grid ↔ skeleton parity (TASK-415)", () => {
     expect(skeletonGrid).toHaveClass(
       "grid-cols-1",
       "min-[390px]:grid-cols-2",
-      "lg:grid-cols-4",
+      "md:grid-cols-3",
+      "xl:grid-cols-4",
     );
     // Byte-identical, not merely "both responsive": any drift here is a visible
     // reflow when the skeleton is replaced by cards.
@@ -512,10 +518,10 @@ describe("WishlistView grid ↔ skeleton parity (TASK-415)", () => {
     expect(skeletonShell?.className).toBe(realShell?.className);
   });
 
-  // TASK-869 — the header above the split: breadcrumb, then the title + toolbar
-  // row. The skeleton used to draw one 32px bar instead, so the rail and the
+  // TASK-869 — the header above the split: breadcrumb, the head row (title +
+  // add-all), then the toolbar row (Д3-2). The skeleton used to draw one 32px bar instead, so the rail and the
   // grid started 68px (desktop) / 184px (phone) too high and jumped on load.
-  it("repeats the header of the real page — breadcrumb row, then the title + toolbar row", () => {
+  it("repeats the header of the real page — breadcrumb, head row, toolbar row", () => {
     renderWithProviders(<WishlistView />, {
       queryClient: seededClient([buildItem()]),
     });
@@ -523,19 +529,21 @@ describe("WishlistView grid ↔ skeleton parity (TASK-415)", () => {
       name: dict.product.breadcrumbAria,
     });
     const realRow = screen.getByRole("heading", { level: 1 }).parentElement
-      ?.parentElement;
+      ?.parentElement?.parentElement;
+    const realToolbar = realRow?.nextElementSibling;
 
     const { container } = renderWithProviders(<WishlistSkeleton />);
     const header = container.firstElementChild?.firstElementChild;
-    const [crumbSlot, row] = Array.from(header?.children ?? []);
+    const [crumbSlot, row, toolbar] = Array.from(header?.children ?? []);
 
     expect(header).toHaveAttribute("aria-hidden", "true");
     // Same bottom margin and line box as the breadcrumb (text-sm = 20px).
     expect(crumbSlot).toHaveClass("mb-4.5", "h-5");
     expect(crumbs).toHaveClass("mb-4.5", "text-sm");
-    // The title + toolbar row wraps by the same rules.
+    // The head row and the toolbar wrap by the same rules.
     expect(row?.className).toBe(realRow?.className);
-    // Title slot on the H1_CLASS line box (36px, 40px from md) + the count line.
+    expect(toolbar?.className).toBe(realToolbar?.className);
+    // Title slot on the H1_CLASS line box (36px, 40px from md) + the sub-line.
     expect(row?.firstElementChild?.children[0]).toHaveClass("h-9", "md:h-10");
     expect(row?.firstElementChild?.children[1]).toHaveClass("h-5");
   });
@@ -577,7 +585,7 @@ describe("WishlistView catalogue toolbar (TASK-1300)", () => {
     );
   }
 
-  it("filters by a brand from the rail, chips it and counts «Знайдено: X з Y»", async () => {
+  it("filters by a brand from the rail, chips it and counts «X з Y»", async () => {
     const user = userEvent.setup();
     renderWithProviders(<WishlistView />, {
       queryClient: seededClient(twoBrands()),
@@ -588,7 +596,7 @@ describe("WishlistView catalogue toolbar (TASK-1300)", () => {
 
     expect(screen.getByText("Apple Case")).toBeInTheDocument();
     expect(screen.queryByText("Spigen Cable")).not.toBeInTheDocument();
-    expect(screen.getByText(dict.wishlist.foundOf(1, 2))).toBeInTheDocument();
+    expect(screen.getByText(dict.wishlist.shownOf(1, 2))).toBeInTheDocument();
 
     await user.click(
       screen.getByRole("button", {
@@ -638,7 +646,10 @@ describe("WishlistView catalogue toolbar (TASK-1300)", () => {
     const trigger = screen.getByRole("combobox", {
       name: dict.wishlist.sortAria,
     });
-    expect(trigger).toHaveTextContent(dict.wishlist.sort.recent);
+    // «Спочатку: нещодавно додані» — prefix + lowercase value, said once.
+    expect(trigger).toHaveTextContent(
+      `${dict.filters.sortPrefix}${dict.wishlist.sortValue.recent}`,
+    );
 
     await user.click(trigger);
     await user.click(

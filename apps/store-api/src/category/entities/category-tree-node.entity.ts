@@ -1,4 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
+import {
+  CATEGORY_ICON_API_PROPERTY,
+  toCategoryIconKey,
+  type CategoryIconKey,
+} from '../category-icons';
 
 /**
  * Domain entity representing a category node in a tree structure.
@@ -89,6 +94,10 @@ export class CategoryTreeNodeEntity {
   })
   ogImage!: string | null;
 
+  /** Feeds the storefront category menu and mega-menu glyphs (TASK-1956). */
+  @ApiProperty(CATEGORY_ICON_API_PROPERTY)
+  icon!: CategoryIconKey | null;
+
   @ApiProperty({ description: 'Last update timestamp', example: '2024-01-01T00:00:00.000Z' })
   updatedAt!: Date;
 
@@ -114,6 +123,7 @@ export class CategoryTreeNodeEntity {
     metaDescription?: string | null;
     keywords?: string[];
     ogImage?: string | null;
+    icon?: string | null;
     updatedAt: Date;
     children: Array<{
       id: string;
@@ -127,6 +137,7 @@ export class CategoryTreeNodeEntity {
       metaDescription?: string | null;
       keywords?: string[];
       ogImage?: string | null;
+      icon?: string | null;
       updatedAt: Date;
       children: unknown[];
     }>;
@@ -143,6 +154,7 @@ export class CategoryTreeNodeEntity {
     entity.metaDescription = category.metaDescription ?? null;
     entity.keywords = category.keywords ?? [];
     entity.ogImage = category.ogImage ?? null;
+    entity.icon = toCategoryIconKey(category.icon);
     entity.updatedAt = category.updatedAt;
     entity.children = (category.children ?? []).map((child) =>
       CategoryTreeNodeEntity.fromPrisma(

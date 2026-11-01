@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Loader2, SearchX } from "lucide-react";
 import {
@@ -17,6 +17,7 @@ import { Button, ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict } from "@/shared/config";
+import { PRODUCT_GRID_CLASS } from "@/shared/config/product-grid";
 import {
   accumulationKey,
   canLoadMore,
@@ -43,6 +44,14 @@ interface ProductListProps {
     heading: string;
     body?: string;
     action: ListingEmptyStateAction;
+    /**
+     * A whole empty state of the view's own — the «nothing fits your device»
+     * card (TASK-2077). Mounted only when the list is empty, so whatever it
+     * fetches is not paid for on a normal page. Gets the generic state built
+     * from `heading` / `body` / `action`, to fall back to when it decides the
+     * emptiness is not its own.
+     */
+    custom?: (generic: ReactNode) => ReactNode;
   };
 }
 
@@ -134,7 +143,7 @@ export function ProductList({
   ]);
 
   if (products.length === 0) {
-    return (
+    const generic = (
       <ListingEmptyState
         icon={SearchX}
         heading={empty.heading}
@@ -142,6 +151,7 @@ export function ProductList({
         action={empty.action}
       />
     );
+    return empty.custom ? empty.custom(generic) : generic;
   }
 
   const nextCount = meta
@@ -164,11 +174,9 @@ export function ProductList({
   };
 
   return (
+    // The result count is not repeated here: it is the line under the page's
+    // H1 (Д3-2 Catalog §3, `ListingCountLine` in the view), live region and all.
     <div className="flex flex-col gap-6">
-      <p aria-live="polite" className="text-sm text-muted-foreground">
-        {dict.catalog.countFound(meta?.total ?? products.length)}
-      </p>
-
       <div className="relative">
         {isRefetchingForNewParams && (
           <div
@@ -187,15 +195,11 @@ export function ProductList({
             ))}
           </div>
         ) : (
-          // 1 / 2 / 4 columns (TASK-415, owner's call): a single card below
-          // 390px so the smallest phones get a readable photo and price, two
-          // from 390px, four from `lg`. Keep this class list byte-identical to
-          // `ProductListSkeleton` — the skeleton must lay out in exactly the
-          // same columns as the cards that replace it, or the page reflows on
-          // every load. `items-stretch` is explicit: sibling cards in a row
-          // share one height whatever their title/badge count. The gap is the
-          // design-system card rhythm, `gap-4 md:gap-6` (TASK-500).
-          <div className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
+          // 1 / 2 / 3 / 4 columns (TASK-415, TASK-1957) — the shared
+          // `PRODUCT_GRID_CLASS`, which `ProductListSkeleton` uses too, so the
+          // skeleton lays out in exactly the columns of the cards that replace
+          // it. See the constant for the breakpoints and the gap.
+          <div className={PRODUCT_GRID_CLASS}>
             {products.map((product, index) => (
               <ProductCard
                 key={product.id}

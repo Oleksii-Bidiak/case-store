@@ -44,10 +44,34 @@ import type { RevalidateTarget } from './publishing.tokens';
  * prefetch (root categories, the fallback «Популярне» tab) rides the existing
  * `/`. The dynamic catalogue routes need nothing: they render per request.
  *
+ * ## `device-hubs` (TASK-1954)
+ *
+ * The model hub `/devices/<модель>` («Все для iPhone 15 Pro») is ISR and bakes
+ * the model's products — grouped by category, with prices — into its HTML. Its
+ * contents change with every product write (price, stock, visibility), every
+ * compatibility write and every category write (visibility, name, order), i.e.
+ * at exactly the call sites that send this target. One TAG rather than paths:
+ * a compat write touches the hubs of every model in the old AND the new set,
+ * and a category write touches all of them, so naming paths would mean
+ * resolving model slugs on every admin write. The storefront must read the hub
+ * through a fetch tagged {@link DEVICE_HUBS_TAG} for this purge to reach it.
+ *
  * Exported as one shared constant rather than written out per call site so
  * product and category cannot drift apart (TASK-384).
  */
 export const CATALOGUE_REVALIDATE_TARGET: RevalidateTarget = {
-  tags: ['carousels'],
+  tags: ['carousels', 'device-hubs'],
   paths: ['/', '/categories', '/promo'],
+};
+
+/**
+ * Cache tag of the public model hub read `GET /catalog/device-hubs/:deviceSlug`
+ * (TASK-1954). Purged by every catalogue write (above) and by every device
+ * model/brand write, which changes the hub's own name, copy or existence.
+ */
+export const DEVICE_HUBS_TAG = 'device-hubs';
+
+/** What a device model or brand write purges on the storefront (TASK-1954). */
+export const DEVICE_HUBS_REVALIDATE_TARGET: RevalidateTarget = {
+  tags: [DEVICE_HUBS_TAG],
 };

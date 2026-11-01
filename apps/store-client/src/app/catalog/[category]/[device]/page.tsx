@@ -420,7 +420,7 @@ export default async function CompatLandingPage({
         fallback={
           <ProductListSkeleton
             withSidebar
-            withCategoryChips={false}
+            withCategoryTree={false}
             hasCategory
             lockedDevice
           />

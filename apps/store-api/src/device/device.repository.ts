@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma';
 import { DeviceBrand, DeviceModel, Prisma, SlugRedirectEntity } from '@prisma/client';
 import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
 import { SlugRedirectRepository } from '../slug-redirect';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > device barrel > this file
+import { publicProductSql } from '../product/product-visibility';
 
 /**
  * Advisory-lock namespace for device brands (TASK-295). The prefix is MANDATORY — locks are
@@ -88,6 +90,12 @@ export interface DeviceModelSlugRename {
 }
 
 /**
+ * Orders of the PUBLIC device-model list (TASK-1952 / TASK-2070). `undefined`
+ * keeps the historical order — the one the admin list uses too.
+ */
+export type PublicModelSort = 'name' | 'popular';
+
+/**
  * Parameters of the PUBLIC device-model list (TASK-702). No `isActive` on
  * purpose: the public read is active-only by construction, not by a flag a
  * caller could forget. No `page` either — the storefront reads one bounded slice.
@@ -96,24 +104,48 @@ export interface FindPublicModelsParams {
   limit?: number;
   deviceBrandId?: string;
   search?: string;
+  sort?: PublicModelSort;
 }
 
 /**
- * The light column set of the public device-model list (TASK-702) — mirrors
- * `DeviceModelListItemEntity`. Selected, not just mapped away, so the landing
- * SEO copy (`metaTitle`/`metaDescription`/`description`) is never even read.
+ * One row of the public device-model list — mirrors `DeviceModelListItemEntity`.
+ * The landing SEO copy (`metaTitle`/`metaDescription`/`description`) is never
+ * even read.
  */
-const PUBLIC_MODEL_SELECT = {
-  id: true,
-  deviceBrandId: true,
-  name: true,
-  slug: true,
-} as const satisfies Prisma.DeviceModelSelect;
+export interface PublicDeviceModelRow {
+  id: string;
+  deviceBrandId: string;
+  name: string;
+  slug: string;
+  series: string | null;
+  releaseYear: number | null;
+  brandName: string;
+  brandSlug: string;
+  /** Compatible publicly visible products (PUBLIC_PRODUCT_WHERE), 0 when none. */
+  productCount: number;
+}
 
-/** One row of the public device-model list. */
-export type PublicDeviceModelRow = Prisma.DeviceModelGetPayload<{
-  select: typeof PUBLIC_MODEL_SELECT;
-}>;
+/**
+ * ORDER BY per public sort. Constant fragments only — the caller's `sort` picks
+ * a key, it is never spliced. `dm.id` closes every order so equal rows cannot
+ * swap places between two reads of a cached page.
+ *
+ * The default mirrors {@link MODEL_LIST_ORDER} as Prisma compiles it: a bare
+ * `DESC`, which in Postgres puts a NULL release year first.
+ */
+const PUBLIC_MODEL_ORDER_SQL: Record<PublicModelSort | 'default', Prisma.Sql> = {
+  default: Prisma.sql`ORDER BY dm.release_year DESC, dm.name ASC, dm.id ASC`,
+  name: Prisma.sql`ORDER BY dm.name ASC, dm.id ASC`,
+  popular: Prisma.sql`ORDER BY "productCount" DESC, dm.name ASC, dm.id ASC`,
+};
+
+/**
+ * Escape LIKE wildcards (and the escape character itself) so a search for `50%`
+ * or `a_b` matches literally — Postgres' default LIKE escape is the backslash.
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, '\\$&');
+}
 
 /** Newest first, then by name — shared by the admin and the public model lists. */
 const MODEL_LIST_ORDER: Prisma.DeviceModelOrderByWithRelationInput[] = [
@@ -123,6 +155,12 @@ const MODEL_LIST_ORDER: Prisma.DeviceModelOrderByWithRelationInput[] = [
 
 /** A device model row with its brand relation loaded (for labelling). */
 export type DeviceModelWithBrand = DeviceModel & { brand: { name: string } };
+
+/**
+ * A device model with the two brand fields the public model hub (TASK-1954)
+ * shows and links by: the display name and the brand slug.
+ */
+export type DeviceModelWithBrandSlug = DeviceModel & { brand: { name: string; slug: string } };
 
 /** Result of a paginated device model query. */
 export interface PaginatedDeviceModelsResult {
@@ -311,18 +349,63 @@ export class DeviceRepository {
   }
 
   /**
-   * The PUBLIC device-model list (TASK-702): active models only, the light
-   * {@link PUBLIC_MODEL_SELECT} column set, no brand join and no COUNT — the
-   * public envelope carries no pagination meta, so a count would be thrown away.
+   * The PUBLIC device-model list (TASK-702, widened by TASK-1952 / TASK-2070):
+   * active models only, the light column set plus the owning brand's name/slug
+   * and the number of compatible publicly visible products.
+   *
+   * ONE statement, whatever the sort: the per-model product count is a single
+   * `GROUP BY` over the compat table joined in, never a query per model. It is
+   * raw SQL because Prisma can neither order by a FILTERED relation count
+   * (`orderBy: { compat: { _count } }` counts hidden products too) nor return
+   * one alongside a sort on it. The visibility half is not restated by hand —
+   * it is {@link publicProductSql}, the SQL twin of `PUBLIC_PRODUCT_WHERE`, the
+   * same one the compat landing pages count with, so «N товарів» on a picker
+   * tile and on the landing page cannot disagree.
+   *
+   * The model filters mirror {@link buildModelWhere} for the public case
+   * (`is_active`, brand, case-insensitive name `contains`); the unit spec pins
+   * them. The device BRAND's own `is_active` is deliberately not consulted —
+   * the list never filtered on it, and the landing pages do not either.
    */
-  findPublicModels(params: FindPublicModelsParams): Promise<PublicDeviceModelRow[]> {
-    const { limit = 50, deviceBrandId, search } = params;
-    return this.prisma.deviceModel.findMany({
-      where: this.buildModelWhere({ isActive: true, deviceBrandId, search }),
-      take: limit,
-      orderBy: MODEL_LIST_ORDER,
-      select: PUBLIC_MODEL_SELECT,
-    });
+  async findPublicModels(params: FindPublicModelsParams): Promise<PublicDeviceModelRow[]> {
+    const { limit = 50, deviceBrandId, search, sort } = params;
+
+    const conditions: Prisma.Sql[] = [Prisma.sql`dm.is_active = true`];
+    if (deviceBrandId) {
+      conditions.push(Prisma.sql`dm.device_brand_id = ${deviceBrandId}`);
+    }
+    if (search) {
+      conditions.push(Prisma.sql`dm.name ILIKE ${`%${escapeLikePattern(search)}%`}`);
+    }
+
+    const rows = await this.prisma.$queryRaw<
+      Array<Omit<PublicDeviceModelRow, 'productCount'> & { productCount: number | bigint }>
+    >(Prisma.sql`
+      SELECT dm.id,
+             dm.device_brand_id AS "deviceBrandId",
+             dm.name,
+             dm.slug,
+             dm.series,
+             dm.release_year AS "releaseYear",
+             db.name AS "brandName",
+             db.slug AS "brandSlug",
+             COALESCE(pc.product_count, 0)::int AS "productCount"
+      FROM device_models dm
+      JOIN device_brands db ON db.id = dm.device_brand_id
+      LEFT JOIN (
+        SELECT pdc.device_model_id, COUNT(*)::int AS product_count
+        FROM product_device_compat pdc
+        JOIN products p ON p.id = pdc.product_id
+        JOIN categories c ON c.id = p.category_id
+        WHERE ${publicProductSql({ product: 'p', category: 'c' })}
+        GROUP BY pdc.device_model_id
+      ) pc ON pc.device_model_id = dm.id
+      WHERE ${Prisma.join(conditions, ' AND ')}
+      ${PUBLIC_MODEL_ORDER_SQL[sort ?? 'default']}
+      LIMIT ${limit}
+    `);
+
+    return rows.map((row) => ({ ...row, productCount: Number(row.productCount) }));
   }
 
   /** One where-clause for both model lists, so their filters cannot drift apart. */
@@ -358,6 +441,30 @@ export class DeviceRepository {
   }
 
   /**
+   * {@link findModelBySlug} plus the owning brand's name and slug — the model
+   * hub (TASK-1954) labels and links the brand. Same visibility: no `isActive`
+   * gate here, the caller decides what an inactive model means.
+   */
+  findModelBySlugWithBrand(slug: string): Promise<DeviceModelWithBrandSlug | null> {
+    return this.prisma.deviceModel.findUnique({
+      where: { slug },
+      include: { brand: { select: { name: true, slug: true } } },
+    });
+  }
+
+  /**
+   * Resolve several slugs in ONE query (TASK-2077 multi-device filter). Same
+   * visibility as {@link findModelBySlug} (no `isActive` gate). Slugs that name
+   * nothing are simply absent from the result.
+   */
+  findModelsBySlugs(slugs: string[]): Promise<DeviceModel[]> {
+    if (slugs.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.prisma.deviceModel.findMany({ where: { slug: { in: slugs } } });
+  }
+
+  /**
    * Resolve a set of device model ids to their full rows (with brand). Used to
    * validate a compat assignment before writing. Returns only the ids that
    * exist — the caller diffs against the requested set to reject unknown ids.
@@ -369,6 +476,23 @@ export class DeviceRepository {
     return this.prisma.deviceModel.findMany({
       where: { id: { in: ids } },
       include: { brand: { select: { name: true } } },
+    });
+  }
+
+  /**
+   * Every model of the named series (TASK-1955), with brand — active AND inactive:
+   * the bulk compat write expands «весь iPhone 15» to the whole series, and a model
+   * hidden today is still the same physical phone tomorrow. Ordered by name so the
+   * result is deterministic. Exact series match, as the admin list filter does.
+   */
+  findModelsBySeries(series: string[]): Promise<DeviceModelWithBrand[]> {
+    if (series.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.prisma.deviceModel.findMany({
+      where: { series: { in: series } },
+      include: { brand: { select: { name: true } } },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
     });
   }
 

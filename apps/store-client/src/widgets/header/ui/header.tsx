@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import { useHeaderHeight } from "@/shared/lib/use-header-height";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,17 +19,25 @@ import {
 import { dict, PAGE_CONTAINER } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import type { BannerEntity } from "@/shared/api/generated/models";
+import { DevicePicker } from "@/features/device-picker";
+import { DeviceBar } from "@/widgets/device-bar";
 import { SearchAutocomplete } from "@/features/search";
-import { ThemeToggle } from "@/features/theme";
+import { ThemeSwitchRow, ThemeToggleButton } from "@/features/theme";
 import { AnnouncementBar } from "./announcement-bar";
-import { HeaderSearch } from "./header-search";
+import { HeaderSearch, type CatalogMenuSlotProps } from "./header-search";
 import { ACCOUNT_ACTION_CLASS, HeaderAuth } from "./header-auth";
 import { HeaderCartBadge } from "./header-cart-badge";
 import { HeaderWishlistBadge } from "./header-wishlist-badge";
-import {
-  HeaderMobileCategories,
-  MOBILE_LINK_CLASS,
-} from "./header-mobile-categories";
+
+/** Shared styling for the links in the slide-out menu. */
+const MOBILE_LINK_CLASS =
+  "rounded-md px-3 py-2 text-base font-medium text-foreground hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+/** What the header hands the sheet's catalog (TASK-2072). */
+export interface CatalogDrillSlotProps {
+  /** Close the slide-out menu (a link was picked, or the picker opens). */
+  onNavigate: () => void;
+}
 
 const NAV_LINKS = [
   { href: "/products", label: dict.nav.products },
@@ -50,6 +59,14 @@ interface HeaderProps {
    * announcement bar hides it when unset (TASK-873).
    */
   supportPhone?: string | null;
+  /**
+   * The «Каталог» mega menu's content (lg+) and the sheet's step-by-step
+   * catalog (TASK-2072). Slots, not imports: both live in
+   * `widgets/catalog-menu`, and widgets do not import each other — the app
+   * layer composes them (`app/site-header.tsx`).
+   */
+  renderCatalogMenu?: (props: CatalogMenuSlotProps) => ReactNode;
+  renderCatalogDrill?: (props: CatalogDrillSlotProps) => ReactNode;
 }
 
 /**
@@ -68,8 +85,13 @@ export function Header({
   logoUrl,
   siteName,
   supportPhone,
+  renderCatalogMenu,
+  renderCatalogDrill,
 }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // Publishes the measured height for every sticky panel below (layout.ts).
+  const headerRef = useRef<HTMLElement>(null);
+  useHeaderHeight(headerRef);
   const router = useRouter();
   const queryClient = useQueryClient();
   const { isInitializing, isAuthenticated, clearTokens } = useAuth();
@@ -91,9 +113,15 @@ export function Header({
   return (
     <>
       <AnnouncementBar banner={announcement} phone={supportPhone} />
-      <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
+      <header
+        ref={headerRef}
+        data-site-header=""
+        className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80"
+      >
+        {/* `relative`: the «Каталог» panel anchors to this row (TASK-2072),
+            so its left edge lines up with the logo at every width. */}
         <div
-          className={`${PAGE_CONTAINER} flex h-16 items-center gap-2 sm:gap-3`}
+          className={`${PAGE_CONTAINER} relative flex h-16 items-center gap-2 sm:gap-3`}
         >
           {/* Left: mobile menu trigger + logo. `min-w-0` (here and on the logo
               link) makes this the cluster that yields on a 320px screen — the
@@ -133,7 +161,7 @@ export function Header({
                 className="max-h-dvh w-72 max-w-full overflow-y-auto overscroll-contain"
                 aria-describedby={undefined}
               >
-                <SheetHeader>
+                <SheetHeader className="pr-16">
                   {/* The Sheet's accessible name — the wordmark (or the logo's
                       alt text) is the store name either way. */}
                   <SheetTitle>
@@ -184,10 +212,17 @@ export function Header({
                     {dict.wishlist.navLabel}
                   </Link>
 
-                  {/* Catalog categories — tree accordion (TASK-082-B). */}
-                  <HeaderMobileCategories
-                    onNavigate={() => setMenuOpen(false)}
-                  />
+                  {/* The step-by-step catalog (TASK-2072): device row, roots,
+                      and in place down to level 4. Inline, not a nested
+                      dialog — Escape keeps closing the sheet. */}
+                  {renderCatalogDrill && (
+                    <>
+                      <hr className="my-1 border-border" />
+                      {renderCatalogDrill({
+                        onNavigate: () => setMenuOpen(false),
+                      })}
+                    </>
+                  )}
 
                   {/* Auth area — hidden until the session bootstrap settles. */}
                   {!isInitializing &&
@@ -250,12 +285,13 @@ export function Header({
                     ))}
                 </nav>
 
-                {/* Theme switch — a preference, not navigation, so it sits
-                    below the menu and outside the <nav> landmark. Always
-                    visible here: below `xl` this is the only place it appears,
-                    since the header row has no room for it (TASK-511/512). */}
+                {/* «Темна тема» switch (TASK-2073) — a preference, not
+                    navigation, so it sits below the menu and outside the <nav>
+                    landmark. Always visible here: below `xl` this is the only
+                    place it appears, since the header row has no room for it
+                    (TASK-511/512). «Системна» lives in the account card. */}
                 <div className="mt-2 border-t border-border px-2 pt-3 pb-4">
-                  <ThemeToggle variant="full" />
+                  <ThemeSwitchRow />
                 </div>
               </SheetContent>
             </Sheet>
@@ -275,8 +311,12 @@ export function Header({
             </Link>
           </div>
 
-          {/* Search pill (Каталог + search + submit) — desktop. */}
-          <HeaderSearch />
+          {/* Search pill (Каталог + search + submit) — desktop. Below `lg`
+              its «Каталог» opens this menu sheet (TASK-2072). */}
+          <HeaderSearch
+            renderCatalogMenu={renderCatalogMenu}
+            onOpenMenu={() => setMenuOpen(true)}
+          />
 
           {/* Section links — the desktop half of NAV_LINKS (TASK-413). They
               appear at exactly the width the slide-out menu that carries them
@@ -311,8 +351,10 @@ export function Header({
               wordmark was cut to «CaseSt…» (100/103). Each icon already carries
               11px of padding either side, so the glyphs stay 24px apart. */}
           <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1.5">
-            {/* Theme switch — leftmost, so the commerce actions stay grouped
-                next to the cart.
+            {/* Theme button — leftmost, so the commerce actions stay grouped
+                next to the cart. One 44px button with the effective theme's
+                icon (TASK-2073): the old three-segment pill cost 130px and
+                left the search input under 240px at 1280 (TASK-2286).
 
                 It appears at exactly `xl`, the width where the slide-out menu —
                 the only other place it lives — disappears, so the two together
@@ -320,7 +362,7 @@ export function Header({
                 `min-[1100px]` gap). It waits for `xl`, not `lg`, because at
                 1024 it and the section links cost the search input everything
                 but ~79px (TASK-512); in the menu they cost the row nothing. */}
-            <ThemeToggle className="mr-1 hidden xl:flex" />
+            <ThemeToggleButton className="mr-1 hidden xl:inline-flex" />
             {/* Icon-only below `xl` (TASK-511): the caption is display:none
                 there and so drops out of the accessible name — the aria-label
                 carries it. 44×44 minimum either way. */}
@@ -367,7 +409,18 @@ export function Header({
             <HeaderCartBadge className="sm:ml-1" />
           </div>
         </div>
+        {/* «Мої пристрої» (TASK-2074) — the second row, sticky with the
+            header at every width: the active device chip and the others,
+            and from 1024 the active device's categories. Client-only data
+            (localStorage), so tier 1 renders a placeholder of its exact
+            height until hydration and does not shift the page below it. */}
+        <DeviceBar />
       </header>
+      {/* The ONE device picker (TASK-2070). The header is on every page, so
+          every entry point — chip, homepage picker, PDP compat row, /devices,
+          search — opens this instance via `openDevicePicker()`. Renders
+          nothing until opened; the model list is fetched on first open. */}
+      <DevicePicker />
     </>
   );
 }

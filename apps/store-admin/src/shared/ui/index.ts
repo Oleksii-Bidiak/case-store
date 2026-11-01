@@ -216,6 +216,13 @@ export {
   type SwatchOption,
   type SwatchPickerProps,
 } from "./swatch-picker";
+// TASK-1956: a category icon from the sprite in `public/icons/categories.svg`.
+export {
+  CategoryIcon,
+  CATEGORY_ICON_SPRITE,
+  categoryIconSymbol,
+  type CategoryIconProps,
+} from "./category-icon";
 export {
   StatusDot,
   type StatusDotProps,

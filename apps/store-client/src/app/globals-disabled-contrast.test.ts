@@ -107,6 +107,78 @@ describe("globals.css — disabled-state tokens (TASK-736)", () => {
   });
 });
 
+/**
+ * Text / surface pairs of direction В (TASK-1951) — WCAG 2.x AA: 4.5:1 for
+ * text, 3:1 for a field outline (1.4.11). A dark block inherits every token it
+ * does not redeclare from `:root` (the theme-invariant footer, code field,
+ * family strong tones, badge), so each dark theme is resolved over the light
+ * one before the pairs are measured.
+ */
+const FAMILIES = ["iphone", "galaxy", "redmi", "watch", "ipad"];
+const TEXT_PAIRS: [string, string][] = [
+  ...["background", "card", "popover", "muted"].map((s): [string, string] => [
+    "foreground",
+    s,
+  ]),
+  ...["background", "card", "muted"].map((s): [string, string] => [
+    "muted-foreground",
+    s,
+  ]),
+  ...[
+    "primary",
+    "secondary",
+    "accent",
+    "card",
+    "popover",
+    "sale",
+    "success",
+    "warning",
+    "destructive",
+    "badge",
+    "footer",
+  ].map((s): [string, string] => [`${s}-foreground`, s]),
+  ...["sale", "success", "warning", "destructive"].flatMap((role) =>
+    ["background", "card", "muted"].map((s): [string, string] => [role, s]),
+  ),
+  ["code-ink", "code-surface"],
+  ...FAMILIES.map((f): [string, string] => ["muted-foreground", `family-${f}`]),
+  ...FAMILIES.map((f): [string, string] => [
+    "badge-foreground",
+    `family-${f}-strong`,
+  ]),
+  ...[1, 2, 3, 4].map((n): [string, string] => [
+    "muted-foreground",
+    `pad-${n}`,
+  ]),
+];
+const OUTLINE_PAIRS: [string, string][] = [
+  ["input", "background"],
+  ["input", "card"],
+];
+const RESOLVED: [string, Record<string, string>][] = [
+  ["light", light],
+  ["dark (OS preference)", { ...light, ...darkMedia }],
+  ["dark (chosen)", { ...light, ...darkChosen }],
+];
+
+describe("globals.css — text/surface contrast, WCAG AA (TASK-1951)", () => {
+  describe.each(RESOLVED)("%s", (_name, t) => {
+    it.each(TEXT_PAIRS)("%s on %s is ≥ 4.5:1", (fg, bg) => {
+      expect(t[fg]).toBeDefined();
+      expect(t[bg]).toBeDefined();
+      expect(contrast(t[fg], t[bg])).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it.each(OUTLINE_PAIRS)("%s outline on %s is ≥ 3:1", (fg, bg) => {
+      expect(contrast(t[fg], t[bg])).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  it("both dark blocks carry the same colour values (TASK-412 sync rule)", () => {
+    expect(darkChosen).toEqual(darkMedia);
+  });
+});
+
 const CONTROLS = ["button", "input", "textarea", "select", "tabs", "label"];
 
 describe("shared/ui controls paint disabled with tokens, not opacity (TASK-736)", () => {

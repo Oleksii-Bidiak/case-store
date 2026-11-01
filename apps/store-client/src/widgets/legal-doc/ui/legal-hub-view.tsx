@@ -91,7 +91,7 @@ export function LegalHubView({
               <Link
                 key={doc.slug}
                 href={`/legal/${doc.slug}`}
-                className="flex flex-col rounded-2xl border border-border bg-card p-[22px] no-underline shadow-card transition-[border-color,transform,box-shadow] hover:-translate-y-[3px] hover:border-primary hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex flex-col rounded-2xl border border-border bg-card p-[22px] no-underline shadow-card transition-interactive hover:-translate-y-0.5 hover:border-foreground/25 hover:shadow-lift active:translate-y-0 active:scale-99 active:shadow-card motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-solid focus-visible:outline-ring"
               >
                 <div className="mb-3.5 flex items-center justify-between">
                   <span className="inline-flex size-11 items-center justify-center rounded-xl text-primary bg-primary/12">

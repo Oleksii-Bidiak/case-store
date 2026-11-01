@@ -146,6 +146,7 @@ describe('CategoryController (e2e)', () => {
     parentId: null,
     isActive: true,
     sortOrder: 0,
+    icon: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   };
@@ -159,6 +160,7 @@ describe('CategoryController (e2e)', () => {
     parentId: 'cat-e2e-1',
     isActive: true,
     sortOrder: 0,
+    icon: null,
     createdAt: new Date('2026-01-02T00:00:00.000Z'),
     updatedAt: new Date('2026-01-02T00:00:00.000Z'),
   };
@@ -263,6 +265,23 @@ describe('CategoryController (e2e)', () => {
       expect(response.body.data[0]).toHaveProperty('name', 'Phone Cases');
       expect(response.body.data[0]).toHaveProperty('children');
       expect(response.body.data[0].children).toHaveLength(1);
+    });
+
+    // TASK-1956: the storefront menus draw each node's glyph from `icon`; a node
+    // without one — or with a key retired from the sprite — reads as null («folder»).
+    it('carries each node’s icon key, null when unset or off the list', async () => {
+      categoryRepositoryMock.findCategoryTree.mockResolvedValue([
+        {
+          ...testCategory,
+          icon: 'cases',
+          children: [{ ...testChildCategory, icon: 'retired-icon', children: [] }],
+        },
+      ]);
+
+      const response = await request(app.getHttpServer()).get('/api/categories/tree').expect(200);
+
+      expect(response.body.data[0]).toHaveProperty('icon', 'cases');
+      expect(response.body.data[0].children[0]).toHaveProperty('icon', null);
     });
 
     it('should return empty array when no categories exist', async () => {
@@ -784,6 +803,44 @@ describe('CategoryController (e2e)', () => {
         .send({ name: 'Phone Cases', slug: 'phone-cases', image })
         .expect(400);
     });
+
+    // TASK-1956 — the icon is a key into the storefront sprite, never free text.
+    it('should create a category with an icon key and echo it back', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.create.mockResolvedValue({ ...testCategory, icon: 'cases' });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/admin/categories')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Phone Cases', slug: 'phone-cases', icon: 'cases' })
+        .expect(201);
+
+      expect(categoryRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ icon: 'cases' }),
+      );
+      expect(response.body.data).toHaveProperty('icon', 'cases');
+    });
+
+    it.each([
+      ['an unknown key', 'rocket'],
+      ['the sprite-only fallback «folder»', 'folder'],
+      ['a differently-cased key', 'Cases'],
+      ['a non-string', 42],
+    ])('should return 400 for %s as the icon', async (_label, icon) => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post('/api/admin/categories')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Phone Cases', slug: 'phone-cases', icon })
+        .expect(400);
+
+      expect(categoryRepositoryMock.create).not.toHaveBeenCalled();
+    });
   });
 
   // ─── PUT /api/admin/categories/:id (admin) ───────────────────────────────────
@@ -848,6 +905,68 @@ describe('CategoryController (e2e)', () => {
           image: 'http://localhost:3001/uploads/products/seed-0123456789abcdef.webp',
         })
         .expect(200);
+    });
+
+    // TASK-1956: explicit null clears the icon (back to «folder»), absent leaves it.
+    it('should clear the icon with an explicit null', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.findById.mockResolvedValue({ ...testCategory, icon: 'cases' });
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: { ...testCategory, icon: null },
+        reparented: false,
+      });
+
+      const response = await request(app.getHttpServer())
+        .put('/api/admin/categories/cat-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ icon: null })
+        .expect(200);
+
+      expect(categoryRepositoryMock.update).toHaveBeenCalledWith(
+        'cat-e2e-1',
+        expect.objectContaining({ icon: null }),
+        undefined,
+      );
+      expect(response.body.data).toHaveProperty('icon', null);
+    });
+
+    it('should set a new icon key and leave it out of the write when absent', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.findById.mockResolvedValue(testCategory);
+      categoryRepositoryMock.update.mockResolvedValue({
+        category: { ...testCategory, icon: 'glass' },
+        reparented: false,
+      });
+
+      const response = await request(app.getHttpServer())
+        .put('/api/admin/categories/cat-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ icon: 'glass' })
+        .expect(200);
+      expect(response.body.data).toHaveProperty('icon', 'glass');
+
+      await request(app.getHttpServer())
+        .put('/api/admin/categories/cat-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Phone Cases' })
+        .expect(200);
+      expect(categoryRepositoryMock.update.mock.calls[1][1]).not.toHaveProperty('icon');
+    });
+
+    it('should return 400 for an icon key off the list', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      categoryRepositoryMock.findById.mockResolvedValue(testCategory);
+
+      await request(app.getHttpServer())
+        .put('/api/admin/categories/cat-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ icon: 'rocket' })
+        .expect(400);
+
+      expect(categoryRepositoryMock.update).not.toHaveBeenCalled();
     });
 
     it('should return 404 when category is not found', async () => {

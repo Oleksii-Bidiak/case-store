@@ -144,7 +144,8 @@ async function fetchCategoryRoutes(): Promise<MetadataRoute.Sitemap> {
 
 /**
  * One entry per compatibility landing page — `/catalog/<категорія>/<модель>`,
- * «Чохли для iPhone 15 Pro» (TASK-490, owner decision B-10 §5).
+ * «Чохли для iPhone 15 Pro» (TASK-490, owner decision B-10 §5) — plus one per
+ * model hub `/devices/<модель>`, «Все для iPhone 15 Pro» (TASK-1954).
  *
  * The API returns exactly the pairs that have at least one visible product, so
  * this branch never lists a URL that 404s and never omits one that answers 200.
@@ -152,24 +153,45 @@ async function fetchCategoryRoutes(): Promise<MetadataRoute.Sitemap> {
  * every other facet stays a query param that is `noindex` and canonicalises back
  * onto the category, which is why there is nothing else to emit here.
  *
+ * The hubs come from the SAME list, not a second request: a model has a hub
+ * exactly when it has at least one compatible visible product, i.e. when it
+ * appears in at least one pair (the hub is the union of the model's landings at
+ * the top of the tree). One read, so the two sets cannot disagree — and one
+ * outage drops both together, reported once.
+ *
  * `lastModified: now` because a pair owns no timestamp (it is a cross, not a
  * row) — same honest stand-in the blog branch uses for a post without a
- * `publishedAt`. `priority` sits below the category's 0.7: a compat page is a
- * narrower slice of a category that is itself already in this sitemap.
+ * `publishedAt`. `priority`: a compat page is a narrower slice of a category
+ * (0.6, below the category's 0.7); a hub gathers every category for its model,
+ * so it sits level with the categories.
  */
 async function fetchCompatRoutes(now: Date): Promise<MetadataRoute.Sitemap> {
   try {
     const pages = await fetchAllCompatLandingPages();
-    return pages.map((page) => ({
+    const compatRoutes: MetadataRoute.Sitemap = pages.map((page) => ({
       url: `${SITE_URL}/catalog/${page.categorySlug}/${page.deviceSlug}`,
       lastModified: now,
       changeFrequency: "weekly",
       priority: 0.6,
     }));
+    const hubRoutes: MetadataRoute.Sitemap = deviceHubSlugs(pages).map(
+      (slug) => ({
+        url: `${SITE_URL}/devices/${slug}`,
+        lastModified: now,
+        changeFrequency: "weekly",
+        priority: 0.7,
+      }),
+    );
+    return [...hubRoutes, ...compatRoutes];
   } catch (err) {
     reportSourceFailure("compat landing pages", err);
     return [];
   }
+}
+
+/** Every model with ≥ 1 compat page, once each, in first-seen order. */
+function deviceHubSlugs(pages: { deviceSlug: string }[]): string[] {
+  return [...new Set(pages.map((page) => page.deviceSlug))];
 }
 
 async function fetchBlogRoutes(now: Date): Promise<MetadataRoute.Sitemap> {

@@ -43,6 +43,15 @@ describe("FiltersDrawer (TASK-804)", () => {
     expect(screen.getByText("panel")).toBeInTheDocument();
   });
 
+  it("names its round close button «Закрити фільтри» (TASK-2139)", async () => {
+    renderWithProviders(<Harness resultCount={3} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Закрити фільтри" }),
+    );
+    expect(screen.getByText("drawer closed")).toBeInTheDocument();
+  });
+
   it("closes onto the results with «Показати N товарів»", async () => {
     renderWithProviders(<Harness resultCount={3} />);
 

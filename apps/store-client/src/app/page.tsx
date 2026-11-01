@@ -14,7 +14,7 @@ import {
   buildOrganizationSchema,
   buildWebSiteSchema,
 } from "@/shared/lib/schema";
-import { SITE_URL, dict } from "@/shared/config";
+import { PAGE_CONTAINER, SITE_URL, dict } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import { fetchHomeBlocks } from "@/shared/api/carousels-server";
 import { readPreviewToken } from "@/shared/api/preview-server";
@@ -32,6 +32,7 @@ import {
   homeRailPrefetchParams,
   renderHomeBlock,
 } from "./home-blocks";
+import { HomeDeviceHero } from "./home-device-hero";
 
 /**
  * Time floor for the prerendered homepage (TASK-563). Catalogue, banner and
@@ -148,7 +149,7 @@ export default async function HomePage() {
   const siteName = resolveSiteName(seo);
 
   // First HTML with links in it (TASK-563): the root categories (the
-  // «Категорії» tiles and the hero's category rail share one key) and, for
+  // «Категорії» tiles) and, for
   // every TABS block with no usable carousel tab, its first query-driven tab —
   // the one part of the page whose products are otherwise fetched in the
   // browser. A failed prefetch leaves the widget to fetch on the client, as
@@ -167,7 +168,9 @@ export default async function HomePage() {
   ]);
 
   return (
-    <div className="flex flex-col gap-14 pb-16">
+    // Section rhythm of direction В (Д3-2 Homepage): 40px between sections,
+    // the first block 20px under the header.
+    <div className="flex flex-col gap-10 pb-16">
       {/* `logo` (TASK-299) is a recommended Organization property — Google reads it
           for the brand's knowledge panel; it is the admin-uploaded logo or absent. */}
       <JsonLd
@@ -182,9 +185,18 @@ export default async function HomePage() {
       />
       <JsonLd schema={buildWebSiteSchema(SITE_URL, siteName)} />
 
-      {/* One boundary around the whole page, not one per widget: the hero's
-          category rail and the «Категорії» tiles read the same key, and both
-          must find it on the server AND during hydration, whatever order their
+      {/* The first screen starts with the device picker (TASK-1952): «Для
+          якого пристрою шукаєте?», the page h1. It stands outside the
+          owner's block list on purpose — hiding or moving a block can never
+          take the page's h1 and its main way into the catalogue with it; the
+          HERO block that follows is the «Акції» slider + promo tiles. Device
+          state is localStorage only, so this cached HTML holds the neutral
+          picker and no cookie is read. */}
+      <HomeDeviceHero className={`${PAGE_CONTAINER} pt-5`} />
+
+      {/* One boundary around the whole page, not one per widget: the
+          «Категорії» tiles and any rail read their prefetched keys, and must
+          find them on the server AND during hydration, whatever order their
           Suspense boundaries hydrate in. */}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
         {blocks.map((block) => renderHomeBlock(block, { banners, contact }))}

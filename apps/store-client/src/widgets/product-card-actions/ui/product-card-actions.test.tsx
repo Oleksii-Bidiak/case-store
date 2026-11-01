@@ -9,6 +9,7 @@ import { server } from "@/shared/test/msw-server";
 import { makeCart, makeCartItem } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
+import { addDevice, clearMyDevices } from "@/entities/my-devices";
 import { ProductCardActions } from "./product-card-actions";
 
 /**
@@ -116,6 +117,18 @@ describe("ProductCardActions — quick-add targets the card's own position (TASK
   });
 });
 
+describe("ProductCardActions — availability line (TASK-2080)", () => {
+  it("reads just «В наявності» with no delivery-time promise", () => {
+    renderWithProviders(<ProductCardActions product={makeDoublePack()} />);
+
+    const line = screen.getByText(dict.productCard.inStockLine, {
+      selector: "p",
+    });
+    expect(line).toHaveTextContent(/^●?\s*В наявності$/);
+    expect(line).not.toHaveTextContent(/доставка/i);
+  });
+});
+
 describe("ProductCardActions — persistent in-cart state (TASK-213)", () => {
   /** GET /api/cart returns a cart already containing the card's own position. */
   function seedCartWithOwnPosition() {
@@ -212,5 +225,48 @@ describe("ProductCardActions — persistent in-cart state (TASK-213)", () => {
     expect(
       screen.getByText(dict.productCard.outOfStockLine, { selector: "p" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ProductCardActions — device-fit mark (TASK-1953)", () => {
+  const iphone15Pro = {
+    modelId: "m-15pro",
+    slug: "iphone-15-pro",
+    name: "iPhone 15 Pro",
+    brandName: "Apple",
+    family: "iphone" as const,
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    clearMyDevices();
+  });
+
+  it("shows «Підходить до …» above the availability line for the active device", () => {
+    addDevice(iphone15Pro);
+    renderWithProviders(
+      <ProductCardActions
+        product={makeDoublePack({ compatibleDeviceModelIds: ["m-15pro"] })}
+      />,
+    );
+    const mark = screen.getByText(dict.deviceFit.fits("iPhone 15 Pro"));
+    const stockLine = screen.getByText(dict.productCard.inStockLine);
+    expect(
+      mark.compareDocumentPosition(stockLine) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("leaves the mark to the caller when showFit is off (catalog list row)", () => {
+    addDevice(iphone15Pro);
+    renderWithProviders(
+      <ProductCardActions
+        product={makeDoublePack({ compatibleDeviceModelIds: ["m-15pro"] })}
+        showFit={false}
+      />,
+    );
+    expect(
+      screen.queryByText(dict.deviceFit.fits("iPhone 15 Pro")),
+    ).not.toBeInTheDocument();
   });
 });

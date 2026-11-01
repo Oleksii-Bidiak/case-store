@@ -7,6 +7,7 @@ export type AccountIconName =
   | "profile"
   | "orders"
   | "favorites"
+  | "devices"
   | "purchases"
   | "history"
   | "bonuses"
@@ -28,6 +29,13 @@ const PATHS: Record<AccountIconName, ReactNode> = {
   ),
   favorites: (
     <path d="M12 21s-7-4.5-9.5-9C1 9 2.5 5 6 5c2 0 3 1.2 4 2.5C11 6.2 12 5 14 5c3.5 0 5 4 3.5 7C19 16.5 12 21 12 21z" />
+  ),
+  // «Мої пристрої» (TASK-2076): a phone in the same 1.7 stroke as its neighbours.
+  devices: (
+    <>
+      <rect x="6" y="2.5" width="12" height="19" rx="2.5" />
+      <path d="M10.5 18.5h3" />
+    </>
   ),
   purchases: (
     <>

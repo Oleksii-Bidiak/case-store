@@ -32,6 +32,15 @@ import { PermissionGuard, RequireAnyPermission, RequirePermission } from '../aut
 // resulting require cycle leaves `CurrentUser` undefined at decorator-evaluation time.
 import { CurrentUser } from '../auth/decorators';
 import { BannerEntity } from './entities';
+import { BannerErrorCode, MAX_ACTIVE_PROMO_TILES } from './banners.errors';
+
+/** Swagger text for the promo-tile limit refusal (TASK-2013), shared by every activating write. */
+const PROMO_TILE_LIMIT_409 = {
+  status: 409,
+  description:
+    `${BannerErrorCode.PROMO_TILE_LIMIT} — the write would make more than ${MAX_ACTIVE_PROMO_TILES} ` +
+    'PROMO_TILE banners published or scheduled at once; nothing was written',
+} as const;
 
 /**
  * Pagination metadata for the admin banner list (TASK-357).
@@ -172,6 +181,7 @@ export class AdminBannerController {
   @ApiOperation({ summary: 'Create a banner (admin)' })
   @ApiResponse({ status: 201, description: 'Banner created', type: BannerResponseEnvelope })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
+  @ApiResponse(PROMO_TILE_LIMIT_409)
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async create(@Body() dto: CreateBannerDto): Promise<BannerResponseEnvelope> {
     const banner = await this.bannerService.create(dto);
@@ -186,6 +196,7 @@ export class AdminBannerController {
   @ApiResponse({ status: 200, description: 'Banner updated', type: BannerResponseEnvelope })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 404, description: 'Banner not found' })
+  @ApiResponse(PROMO_TILE_LIMIT_409)
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async update(
     @Param('id') id: string,
@@ -202,6 +213,7 @@ export class AdminBannerController {
   @ApiParam({ name: 'id', description: 'Banner UUID' })
   @ApiResponse({ status: 200, description: 'Banner published', type: BannerResponseEnvelope })
   @ApiResponse({ status: 404, description: 'Banner not found' })
+  @ApiResponse(PROMO_TILE_LIMIT_409)
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async publish(@Param('id') id: string): Promise<BannerResponseEnvelope> {
     const banner = await this.bannerService.publish(id);

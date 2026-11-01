@@ -79,6 +79,8 @@ interface Node {
   productCount?: number;
   /** ACTIVE products here AND below; defaults to `productCount`. */
   subtreeProductCount?: number;
+  /** `Category.icon` (TASK-1956); defaults to null. */
+  icon?: string | null;
 }
 
 function node(
@@ -86,7 +88,10 @@ function node(
   parentId: string | null,
   depth: number,
   children: Node[] = [],
-  counts: Pick<Node, "isActive" | "productCount" | "subtreeProductCount"> = {},
+  counts: Pick<
+    Node,
+    "isActive" | "productCount" | "subtreeProductCount" | "icon"
+  > = {},
 ): Node {
   return { id, parentId, depth, children, ...counts };
 }
@@ -115,6 +120,7 @@ function treeResponse(roots: Node[] = DEFAULT_ROOTS()) {
     productCount: n.productCount ?? 0,
     subtreeProductCount: n.subtreeProductCount ?? n.productCount ?? 0,
     depth: n.depth,
+    icon: n.icon ?? null,
     children: n.children.map((child, i) => toEntity(child, i)),
   });
 
@@ -1919,5 +1925,80 @@ describe("AdminCategoryTree — while the grants load", () => {
     const grid = await screen.findByRole("treegrid");
     expect(grid).toHaveAttribute("aria-multiselectable", "true");
     expect(within(grid).getAllByRole("checkbox").length).toBeGreaterThan(0);
+  });
+});
+
+describe("AdminCategoryTree — category icons (TASK-1956)", () => {
+  const ic = dict.categoryForm.icon;
+  const mockTree = (roots: Node[]): void => {
+    server.use(
+      http.get("*/api/categories/admin/tree", () =>
+        HttpResponse.json(treeResponse(roots)),
+      ),
+    );
+  };
+  const iconBox = (id: string) =>
+    rowEl(id).querySelector<HTMLElement>("[data-icon-box]");
+
+  // A has an icon; A1 (a subcategory) has one of its own; A2 has none; the
+  // roots B and C have none — C with a key the sprite no longer has.
+  const ROOTS = (): Node[] => [
+    node(A, null, 1, [node(A1, A, 2, [], { icon: "cases" }), node(A2, A, 2)], {
+      icon: "headphones",
+    }),
+    node(B, null, 1),
+    node(C, null, 1, [], { icon: "rocket" }),
+  ];
+
+  it("draws the icon box on roots and on subcategories that have an icon", async () => {
+    mockTree(ROOTS());
+    await renderTree();
+
+    expect(iconBox(A)).toHaveAttribute("data-icon-box", "set");
+    expect(iconBox(A)?.querySelector("use")).toHaveAttribute(
+      "href",
+      "/icons/categories.svg#cat-headphones",
+    );
+    expect(iconBox(A1)).toHaveAttribute("data-icon-box", "set");
+    // A subcategory without an icon: no box, no badge — it is optional there.
+    expect(iconBox(A2)).toBeNull();
+    expect(within(rowEl(A2)).queryByText(ic.none)).not.toBeInTheDocument();
+    expect(within(rowEl(A)).queryByText(ic.none)).not.toBeInTheDocument();
+  });
+
+  it("marks icon-less roots with a dashed folder box and the soft «Без іконки» badge", async () => {
+    mockTree(ROOTS());
+    await renderTree();
+
+    for (const id of [B, C]) {
+      expect(iconBox(id)).toHaveAttribute("data-icon-box", "missing");
+      expect(iconBox(id)).toHaveClass("border-dashed");
+      expect(iconBox(id)?.querySelector("use")).toHaveAttribute(
+        "href",
+        "/icons/categories.svg#cat-folder",
+      );
+      expect(within(rowEl(id)).getByText(ic.none)).toBeInTheDocument();
+    }
+  });
+
+  it("counts the icon-less roots in a banner for an editor only", async () => {
+    mockTree(ROOTS());
+    const { unmount } = await renderTree();
+    expect(screen.getByText(ic.missingRoots(2))).toBeInTheDocument();
+    expect(screen.getByText(ic.missingRootsBody)).toBeInTheDocument();
+    unmount();
+
+    mockTree(ROOTS());
+    await renderTree({ permissions: ["categories:delete"] });
+    expect(screen.queryByText(ic.missingRoots(2))).not.toBeInTheDocument();
+  });
+
+  it("shows no banner when every root has an icon", async () => {
+    mockTree([
+      node(A, null, 1, [], { icon: "cases" }),
+      node(B, null, 1, [], { icon: "cables" }),
+    ]);
+    await renderTree();
+    expect(screen.queryByText(ic.missingRootsBody)).not.toBeInTheDocument();
   });
 });

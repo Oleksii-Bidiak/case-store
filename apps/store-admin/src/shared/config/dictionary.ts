@@ -1764,6 +1764,53 @@ export const dict = {
           ? "своя картинка для соцмереж"
           : "картинка для соцмереж — автоматична",
       ].join(" · "),
+
+    // --- TASK-1956: the category icon (CategoryIconPicker mockup) -----------
+    // One block for the picker, its preview, the read-only view and the tree's
+    // «Без іконки» badge/banner, so the vocabulary stays in one place.
+    icon: {
+      label: "Іконка",
+      // Singular labels from the mockup's picker grid, by sprite key.
+      labels: {
+        cases: "Чохол",
+        glass: "Захисне скло",
+        chargers: "Зарядка",
+        cables: "Кабель",
+        "power-banks": "Павербанк",
+        headphones: "Навушники",
+        watches: "Годинник",
+        speakers: "Колонка",
+        holders: "Тримач",
+        smartphones: "Смартфон",
+        memory: "Карта пам’яті",
+      },
+      folder: "Загальна (папка)",
+      placeholder: "Оберіть іконку",
+      none: "Без іконки",
+      gridAria: "Іконки категорій",
+      searchPlaceholder: "Пошук: зарядка, charger, кабель…",
+      searchPlaceholderShort: "Пошук",
+      searchAria: "Пошук іконки",
+      noResults: "Нічого не знайдено",
+      used: "вже в іншій кореневій категорії",
+      keysHint: "← → ↑ ↓ — перехід, Enter — обрати",
+      sheetTitle: "Іконка категорії",
+      choose: (label: string) => `Обрати «${label}»`,
+      // Soft: the API does not require an icon; the folder stands in.
+      rootHint:
+        "Коренева категорія без іконки показується на сайті із загальною «папкою».",
+      unknownKey: "Оберіть іконку зі списку",
+      emptyConsequence: "На сайті показується загальна «папка»",
+      previewTitle: "Як це виглядатиме на сайті",
+      previewSub: "Оновлюється одразу, ще до збереження.",
+      previewMenu: "Меню «Каталог»",
+      previewTiles: "Плитки на головній",
+      previewNewName: "Нова категорія",
+      // The categories list (treegrid).
+      missingRoots: (count: number) =>
+        `${countLabel(count, ["коренева категорія", "кореневі категорії", "кореневих категорій"])} без іконки.`,
+      missingRootsBody: "На сайті вони показуються із загальною «папкою».",
+    },
   },
 
   // --- Devices: compatibility taxonomy (TASK-190) -----------------------------
@@ -1952,9 +1999,6 @@ export const dict = {
   // Product-form device-compatibility multiselect + bulk action (TASK-190).
   productCompat: {
     title: "Сумісні пристрої",
-    hint: "Оберіть моделі пристроїв, з якими сумісний цей товар.",
-    loading: "Завантаження пристроїв…",
-    empty: "Спершу створіть бренди та моделі пристроїв.",
     applyToGroup: "Застосувати до всіх позицій групи",
     applyToGroupHint:
       "Скопіювати цей набір сумісності на кожну позицію тієї ж групи.",
@@ -1969,14 +2013,129 @@ export const dict = {
     // TASK-726: the save button said the block's title («Сумісні пристрої»)
     // instead of the action — mirrors productSpecs.save.
     save: "Зберегти сумісність",
-    // Хвиля 198 (TASK-1050, Ф3): пошук, бренди-пігулки й «Лише вибрані».
-    searchPlaceholder: "Модель: iPhone 15, Galaxy S24…",
+    // TASK-1955: пошук, бренди й «Лише вибрані» з хвилі 198 переїхали у
+    // вибір за серіями (`seriesPicker`). Тут лишилось те, що стосується товару.
+  },
+
+  // --- Device series picker (TASK-1955, DeviceCompat artboards 1–2) ---------
+  // Shared by the product form's compat section and the products list's bulk
+  // «Сумісність…» dialog. Invented (not in the mockup): «Інші моделі», the series
+  // checkbox aria «Уся серія …».
+  seriesPicker: {
+    lead: "Позначте серію — відмітяться всі її моделі; зніміть зайві всередині.",
+    brandsAria: "Бренд пристрою",
+    searchPlaceholder: "Пошук моделі…",
     searchAria: "Пошук моделі пристрою",
-    onlySelected: "Лише вибрані",
-    selectedCount: (count: number) => `Вибрано ${count}`,
-    allBrands: (count: number) => `Усі ${count}`,
-    brandFilterAria: "Бренд пристрою",
+    loading: "Завантаження пристроїв…",
+    empty: "Спершу створіть бренди та моделі пристроїв.",
     nothingFound: "Нічого не знайдено",
+    otherModels: "Інші моделі",
+    seriesAria: (series: string) => `Уся серія ${series}`,
+    stateAll: "уся серія",
+    stateSome: (selected: number, total: number) => `${selected} з ${total}`,
+    stateNone: (total: number) =>
+      countLabel(total, ["модель", "моделі", "моделей"]),
+    summaryLead: (count: number) =>
+      `Обрано ${countLabel(count, ["модель", "моделі", "моделей"])}:`,
+    summaryWhole: (series: string, total: number) =>
+      `${series} — уся серія (${total})`,
+    clear: "Очистити",
+    reminderTitle: (model: string) => `${model} не позначено`,
+    // The mockup says «чохол»; products are not always cases.
+    reminderBody: (series: string, selected: number, total: number) =>
+      `У серії ${series} відмічено ${selected} з ${total}. Якщо товар справді не підходить (інший розмір) — все гаразд; це лише нагадування, не помилка.`,
+  },
+
+  // --- Bulk «Сумісність…» on the products list (TASK-1955, artboard 2) -------
+  // Invented, for the owner to veto: «та ще N з іншою сумісністю», the keep-many,
+  // remove, replace and no-change preview lines, and the replace confirmation.
+  bulkCompat: {
+    action: "Сумісність…",
+    title: (count: number) =>
+      `Сумісність для ${count.toLocaleString("uk-UA")} ${pluralUk(count, ["товару", "товарів", "товарів"])}`,
+    currentLead: "Зараз у вибраних:",
+    currentNone: (count: number) => `${count} без сумісності`,
+    currentGroup: (count: number, summary: string) => `${count} — ${summary}`,
+    currentMore: (count: number) => `та ще ${count} з іншою сумісністю`,
+    modeAria: "Що зробити з сумісністю",
+    modeAdd: "Додати",
+    modeAddHint: "до того, що вже є",
+    modeRemove: "Прибрати",
+    modeRemoveHint: "лише обрані моделі",
+    modeReplace: "Замінити",
+    // The mockup's «зтирається» is a typo.
+    modeReplaceHint: "старе стирається",
+    pickerAria: "Моделі пристроїв",
+    wholeSeries: (series: string) => `уся серія ${series}`,
+    previewChanged: (count: number) =>
+      `Зміниться ${countLabel(count, ["товар", "товари", "товарів"])}:`,
+    previewAdd: (models: number, summary: string) =>
+      `+${countLabel(models, ["модель", "моделі", "моделей"])} (${summary}).`,
+    previewRemove: (models: number, summary: string) =>
+      `−${countLabel(models, ["модель", "моделі", "моделей"])} (${summary}).`,
+    previewReplace: (summary: string) => `у всіх буде лише ${summary}.`,
+    previewKeepOne: (summary: string) =>
+      `У товару з ${summary} також залишиться ${summary}.`,
+    previewKeepMany: (count: number) =>
+      `У ${count.toLocaleString("uk-UA")} ${pluralUk(count, ["товару", "товарів", "товарів"])} також залишиться наявна сумісність.`,
+    previewUndoAdd:
+      "Дію запишемо в журнал дій; відмінити — тією ж дією «Прибрати».",
+    previewUndoRemove:
+      "Дію запишемо в журнал дій; відмінити — тією ж дією «Додати».",
+    previewReplaceNote:
+      "Стару сумісність буде стерто; дію запишемо в журнал дій.",
+    previewNothing: "Нічого не зміниться — вибрані товари вже мають саме це.",
+    apply: (count: number) =>
+      `Застосувати до ${count.toLocaleString("uk-UA")} ${pluralUk(count, ["товару", "товарів", "товарів"])}`,
+    replaceConfirm: (count: number) =>
+      `Сумісність ${count.toLocaleString("uk-UA")} ${pluralUk(count, ["товару", "товарів", "товарів"])} буде замінено. Попередній набір не зберігається.`,
+    replaceConfirmLabel: "Замінити",
+    announceSaving: (count: number) =>
+      `Змінюємо сумісність: ${countLabel(count, ["товар", "товари", "товарів"])}…`,
+    done: (count: number) =>
+      count === 0
+        ? "Сумісність не змінилася — у товарів уже було саме це"
+        : `Сумісність змінено: ${countLabel(count, ["товар", "товари", "товарів"])}`,
+    failed: "Не вдалося змінити сумісність",
+  },
+
+  // --- Device model coverage page (TASK-1955, artboard 3) --------------------
+  // Invented, for the owner to veto: «Покриття», «прихована», «Частка» (sr-only),
+  // «Інших моделей у серії немає…», «Ще немає жодного…», «Перевірте, чи…», the
+  // «Додати» aria-label and the counting note.
+  deviceCoverage: {
+    metaTitle: "Покриття моделі — Адмін",
+    link: "Покриття",
+    linkLong: "Покриття асортименту",
+    subtitleSeries: (series: string) => `серія ${series}`,
+    shown: "показана на сайті",
+    hidden: "прихована",
+    hubLink: (model: string) => `«Все для ${model}» на сайті`,
+    addProducts: "Додати товари",
+    statCompatible: "Сумісних товарів",
+    statInStock: "В наявності",
+    statHoles: "Категорій без товарів",
+    statsNote: "Рахуємо товари, які видно на сайті.",
+    matrixTitle: "Асортимент за категоріями",
+    matrixLead:
+      "Порівняно з іншими моделями серії — червоний нуль поруч із товарами в сусідів = дірка.",
+    matrixLeadAlone: "Інших моделей у серії немає — порівнювати нема з чим.",
+    matrixEmpty: "Ще немає жодного сумісного товару.",
+    columnCategory: "Категорія",
+    columnShare: "Частка",
+    holeTitle: (category: string) => `${category} — 0`,
+    holeFirst: (model: string, count: number) =>
+      `У ${model} цих товарів ${count}`,
+    holeNext: (model: string, count: number) => `у ${model} — ${count}`,
+    holeHint: (model: string) =>
+      `Перевірте, чи щось із них не підходить і ${model} — і додайте.`,
+    holeAction: "Переглянути товари",
+    suspectsTitle: "Можливо, забули позначити",
+    suspectsLead: (model: string) =>
+      `В назві є «${model}», але сумісності з ним немає.`,
+    suspectAdd: "Додати",
+    suspectAddAria: (model: string, product: string) =>
+      `Додати ${model} до «${product}»`,
   },
 
   // --- Product structured-spec values editor (TASK-191) -----------------------
@@ -2751,6 +2910,10 @@ export const dict = {
     toastStatusFailed: "Не вдалося змінити статус банера",
     toastDeleted: "Банер видалено",
     toastDeleteFailed: "Не вдалося видалити банер",
+    // TASK-2013: the API refuses a sixth active promo tile (409
+    // `BANNER_PROMO_TILE_LIMIT`); scheduled tiles hold a slot too.
+    errorPromoTileLimit:
+      "Промоплиток може бути не більше 5 одночасно — опублікованих і запланованих разом. Зніміть з публікації одну з наявних або збережіть цю як чернетку.",
 
     // Wave 198 (TASK-1073, BannersProposal БН1–БН4). The display state is
     // derived from `status` + the publication window, never stored:
@@ -2777,7 +2940,8 @@ export const dict = {
       ANNOUNCEMENT_BAR:
         "Тонка смуга над шапкою на всіх сторінках. Тільки заголовок і посилання.",
       HERO_SLIDE: "Перший екран головної, слайди по черзі у цьому порядку.",
-      PROMO_TILE: "Ряд із трьох плиток під слайдером.",
+      // TASK-2013: up to five — two beside the slider, three in a row under it.
+      PROMO_TILE: "До 5 плиток: 1–2 праворуч від слайдера, 3–5 рядом під ним.",
       PROMO_BANNER: "Широка смуга посередині головної.",
     },
     addHere: "Додати сюди",
@@ -2891,7 +3055,7 @@ export const dict = {
       HERO_SLIDE:
         "Для слайдера — широке, ≈ 2,2:1, від 1936×880 px. JPEG, PNG, WebP або GIF — до 20 МБ.",
       PROMO_TILE:
-        "Для плитки — ≈ 1/3 ширини ряду, висота за текстом; від 800×600 px. JPEG, PNG, WebP або GIF — до 20 МБ.",
+        "Для плитки — ≈ 1/3 ширини сторінки, висота за текстом; від 800×600 px. JPEG, PNG, WebP або GIF — до 20 МБ.",
       PROMO_BANNER:
         "Для промо-банера — на всю ширину, ≈ 1280 px; висота за текстом. JPEG, PNG, WebP або GIF — до 20 МБ.",
       ANNOUNCEMENT_BAR:
@@ -2905,7 +3069,9 @@ export const dict = {
     },
     themeCustom: "Своє…",
     themeCustomLabel: "Свій ключ оформлення",
-    themeHint: "«Автоматично» — кольори чергуються за порядком, як зараз.",
+    // TASK-2013 (direction В): no more rotation by position — a tile with no
+    // colour is a white card.
+    themeHint: "«Автоматично» — біла плитка без кольору.",
     themeTilesOnly: "Колір зараз враховують лише промо-плитки.",
     errorSummary: (fields: readonly string[]) => {
       const quoted = fields.map((field) => `«${field}»`);
@@ -2914,6 +3080,18 @@ export const dict = {
           ? `${quoted.slice(0, -1).join(", ")} і ${quoted[quoted.length - 1]}`
           : (quoted[0] ?? "");
       return `Перевірте ${countLabel(fields.length, ["поле", "поля", "полів"])}: ${list}. Банер не збережено.`;
+    },
+    // TASK-2013: the promo-tile slots, explained before the API refuses.
+    promoSlots: {
+      counter: (used: number, max: number) =>
+        `Зайнято місць для промоплиток: ${used} з ${max}`,
+      layout:
+        "Плитки 1–2 стоять праворуч від слайдера, 3–5 — рядом під ним. Опубліковані й заплановані плитки займають місце, чернетка — ні.",
+      position: (n: number) =>
+        n <= 2
+          ? `Ця плитка стане №${n} — праворуч від слайдера.`
+          : `Ця плитка стане №${n} — у ряду під слайдером.`,
+      full: "Усі 5 місць уже зайнято — опублікувати чи запланувати цю плитку не вийде. Збережіть її як чернетку або зніміть з публікації одну з наявних.",
     },
     barNew: "Новий банер ще не збережений",
     barErrors: (count: number) =>
@@ -2934,11 +3112,14 @@ export const dict = {
     // which shape it is modelling — and, for the two placements that genuinely
     // have no fixed proportions, admit that instead of inventing one.
     scaleNote: "Прев'ю зменшене: пропорції відповідають сайту, розмір — ні.",
+    // TASK-2013: the slider stand-in of the promo-tile layout.
+    sliderGhost: "Слайдер",
+    tileSlot: (n: number) => `Місце ${n}`,
     shape: {
       HERO_SLIDE:
         "Пропорції як на головній: ≈968×440 (2,2:1). На мобільному — на всю ширину, висота 420 px.",
       PROMO_TILE:
-        "На сайті три плитки в рядку — кожна ≈1/3 ширини (сірі рамки поруч). Висота не фіксована: залежить від обсягу тексту.",
+        "До 5 плиток: 1–2 праворуч від слайдера (ділять його висоту), 3–5 — рядом під ним, кожна ≈1/3 ширини. Сірі рамки — інші місця. Висота плиток під слайдером залежить від тексту.",
       PROMO_BANNER:
         "На всю ширину контенту (≈1280 px). Висота не фіксована: залежить від обсягу тексту.",
       ANNOUNCEMENT_BAR: "Смуга фіксованої висоти 40 px на всю ширину сторінки.",
@@ -5627,6 +5808,9 @@ export const dict = {
       addRepairStep: "додано етап ремонту",
       apply: "застосовано",
       approve: "схвалено",
+      // TASK-1955: PUT /admin/devices/compat/bulk — одна зміна сумісності для
+      // багатьох товарів (додати / прибрати / замінити). Режим і моделі — у «Змінах».
+      bulkUpdateCompat: "змінено сумісність (масово)",
       // TASK-441 — фото з медіатеки, прикріплене до галереї товару. Окреме
       // слово, а не «додано»: файл не завантажували, його взяли з медіатеки, і
       // саме це має бути видно у журналі.

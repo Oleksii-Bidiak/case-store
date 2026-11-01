@@ -1,7 +1,8 @@
 "use client";
 
-import { Loader2, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { dict } from "@/shared/config";
+import { Button } from "@/shared/ui";
 
 interface RemoveUnavailableButtonProps {
   /** How many withdrawn LINES the click removes (not units). */
@@ -30,20 +31,16 @@ export function RemoveUnavailableButton({
   pending = false,
   onClick,
 }: RemoveUnavailableButtonProps) {
-  const Icon = pending ? Loader2 : Trash2;
   return (
-    <button
+    <Button
       type="button"
-      aria-disabled={pending || undefined}
-      aria-busy={pending || undefined}
-      onClick={pending ? undefined : onClick}
-      className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-destructive bg-transparent px-4 py-2 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/8 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 aria-disabled:cursor-not-allowed aria-disabled:border-border aria-disabled:text-disabled-foreground aria-disabled:hover:bg-transparent"
+      variant="outline"
+      loading={pending}
+      onClick={onClick}
+      className="mt-3 h-auto min-h-11 w-full rounded-xl border border-destructive bg-transparent px-4 py-2 text-sm font-semibold text-destructive hover:border-destructive hover:bg-destructive/8 active:bg-destructive/8 data-loading:border-border data-loading:text-disabled-foreground data-loading:hover:bg-transparent"
     >
-      <Icon
-        className={`size-4 shrink-0 ${pending ? "animate-spin motion-reduce:animate-none" : ""}`}
-        aria-hidden="true"
-      />
+      {!pending && <Trash2 className="size-4 shrink-0" aria-hidden="true" />}
       {dict.cart.removeUnavailable(count)}
-    </button>
+    </Button>
   );
 }

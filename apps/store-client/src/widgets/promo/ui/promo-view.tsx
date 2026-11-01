@@ -91,7 +91,7 @@ export function PromoView({ deals }: PromoViewProps) {
       <section
         id={PROMO_DEALS_ANCHOR}
         aria-labelledby="promo-deals-heading"
-        className="mt-10 scroll-mt-24"
+        className="mt-10 scroll-mt-(--sticky-header-offset)"
       >
         <h2
           id="promo-deals-heading"

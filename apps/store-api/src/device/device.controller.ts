@@ -1,7 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiProperty, ApiExtraModels } from '@nestjs/swagger';
 import { DeviceService } from './device.service';
-import { DeviceModelListQueryDto } from './dto';
+import { PublicDeviceModelListQueryDto } from './dto';
 import { DeviceBrandEntity, DeviceModelListItemEntity } from './entities';
 
 /** Response envelope for the public device-brand list. */
@@ -18,7 +18,9 @@ class DeviceBrandListResponse {
 class DeviceModelListResponse {
   @ApiProperty({
     type: [DeviceModelListItemEntity],
-    description: 'Active device models (id, brand, name, slug)',
+    description:
+      'Active device models (id, brand id/name/slug, name, slug, series, release year, ' +
+      'number of compatible visible products)',
   })
   data!: DeviceModelListItemEntity[];
 }
@@ -28,7 +30,8 @@ class DeviceModelListResponse {
  * cascade and the catalog "Сумісний пристрій" filter. No auth; active-only.
  *
  *   GET /device-brands                          — list active device brands
- *   GET /device-models?deviceBrandId=&search=   — list active device models
+ *   GET /device-models?deviceBrandId=&search=&sort=   — list active device models
+ *     (sort: name | popular; omitted — newest release year first)
  */
 @ApiTags('Devices')
 @ApiExtraModels(
@@ -51,7 +54,9 @@ export class DeviceController {
   @Get('device-models')
   @ApiOperation({ summary: 'List active device models', operationId: 'deviceControllerFindModels' })
   @ApiResponse({ status: 200, description: 'Active device models', type: DeviceModelListResponse })
-  async findModels(@Query() query: DeviceModelListQueryDto): Promise<DeviceModelListResponse> {
+  async findModels(
+    @Query() query: PublicDeviceModelListQueryDto,
+  ): Promise<DeviceModelListResponse> {
     return { data: await this.deviceService.getModels(query) };
   }
 }

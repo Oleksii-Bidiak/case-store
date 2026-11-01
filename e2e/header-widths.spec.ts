@@ -13,7 +13,7 @@ import { waitForHydration } from "./fixtures/hydration";
  *
  *   768–1023  burger · logo · «Каталог | 🔍» · icon-only actions · cart
  *   1024–1279 burger · logo · full pill (input ≥ 240px) · icon-only actions · cart
- *   ≥ 1280    logo · full pill · Товари/Блог · theme switch · captioned actions · cart
+ *   ≥ 1280    logo · full pill · Товари/Блог · theme button · captioned actions · cart
  *
  * Dimensions read through the header's own landmark, so the catalogue's filter
  * field (also «Пошук товарів») never matches.
@@ -34,6 +34,18 @@ function header(page: Page) {
 
 function searchInput(page: Page) {
   return header(page).locator('form[role="search"] input');
+}
+
+/**
+ * The row's one-button theme toggle (TASK-2073). Its name says what a click
+ * will do, so it depends on the colour scheme; before hydration it is the
+ * neutral «Тема оформлення» — matched too, so a `toBeHidden` below `xl` is
+ * never vacuous just because the page had not hydrated yet.
+ */
+const THEME_BUTTON_NAME = /^(Увімкнути (темну|світлу) тему|Тема оформлення)$/;
+
+function themeButton(page: Page) {
+  return header(page).getByRole("button", { name: THEME_BUTTON_NAME });
 }
 
 test.describe("header row by width (TASK-511, TASK-512)", () => {
@@ -77,7 +89,7 @@ test.describe("header row by width (TASK-511, TASK-512)", () => {
     await expect(
       row.getByRole("navigation", { name: "Головне меню" }),
     ).toBeHidden();
-    await expect(row.getByRole("radiogroup")).toBeHidden();
+    await expect(themeButton(page)).toBeHidden();
 
     for (const action of [
       row.getByRole("link", { name: "Акції" }),
@@ -109,7 +121,7 @@ test.describe("header row by width (TASK-511, TASK-512)", () => {
     await expect(
       row.getByRole("navigation", { name: "Головне меню" }),
     ).toBeHidden();
-    await expect(row.getByRole("radiogroup")).toBeHidden();
+    await expect(themeButton(page)).toBeHidden();
 
     const input = searchInput(page);
     await expect(input).toBeVisible();
@@ -131,7 +143,9 @@ test.describe("header row by width (TASK-511, TASK-512)", () => {
     const menu = page.getByRole("dialog");
     await expect(menu.getByRole("link", { name: "Товари" })).toBeVisible();
     await expect(menu.getByRole("link", { name: "Блог" })).toBeVisible();
-    await expect(menu.getByRole("radiogroup")).toBeVisible();
+    await expect(
+      menu.getByRole("switch", { name: "Темна тема" }),
+    ).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(menu).toBeHidden();
   });
@@ -146,11 +160,20 @@ test.describe("header row by width (TASK-511, TASK-512)", () => {
     await expect(
       row.getByRole("navigation", { name: "Головне меню" }),
     ).toBeVisible();
-    await expect(row.getByRole("radiogroup")).toBeVisible();
+    // One 44×44 button, not the 126px three-segment pill (TASK-2073) — the
+    // width it frees is what lifts the input over 240px here (TASK-2286).
+    const theme = themeButton(page);
+    await expect(theme).toBeVisible();
+    const themeBox = await theme.boundingBox();
+    expect(Math.round(themeBox?.width ?? 0)).toBe(44);
+    expect(Math.round(themeBox?.height ?? 0)).toBe(44);
     await expect(row.getByRole("link", { name: "Акції" })).toHaveText("Акції");
 
     const box = await searchInput(page).boundingBox();
-    expect(box?.width ?? 0).toBeGreaterThanOrEqual(MIN_INPUT_WIDTH);
+    expect(
+      box?.width ?? 0,
+      "the header search input is too narrow at 1280 (TASK-2286)",
+    ).toBeGreaterThanOrEqual(MIN_INPUT_WIDTH);
   });
 
   test("signed in: the account menu trigger is a 44×44 target at every band", async ({
@@ -218,7 +241,7 @@ test.describe("header row by width (TASK-511, TASK-512)", () => {
  *   1. the document never scrolls sideways;
  *   2. the header row fits itself and the wordmark is shown whole — not cut by
  *      its own `truncate`, not past the edge;
- *   3. exactly one of the two theme entry points is on screen: the row switch
+ *   3. exactly one of the two theme entry points is on screen: the row button
  *      from `xl`, the menu trigger (whose drawer carries the switch) below it.
  *      Never neither — that was the 768–1099 hole.
  *
@@ -334,12 +357,8 @@ test.describe("the header fits every width from 320 to 1440 (TASK-504, TASK-505)
         expect(r.brand.width).toBeGreaterThan(36);
       }
 
-      // Exactly one theme entry point per width — never neither. `exact`:
-      // «Темна» is a substring of «Системна».
-      const rowSwitch = header(page).getByRole("radio", {
-        name: "Темна",
-        exact: true,
-      });
+      // Exactly one theme entry point per width — never neither.
+      const rowSwitch = themeButton(page);
       const menuTrigger = header(page).getByRole("button", {
         name: "Відкрити меню",
         exact: true,
@@ -365,10 +384,13 @@ test.describe("the header fits every width from 320 to 1440 (TASK-504, TASK-505)
       .click();
 
     const drawer = page.getByRole("dialog");
-    const dark = drawer.getByRole("radio", { name: "Темна", exact: true });
+    // Playwright's default scheme is light, so the switch starts OFF.
+    const dark = drawer.getByRole("switch", { name: "Темна тема" });
     await expect(dark).toBeVisible();
+    await expect(dark).toHaveAttribute("aria-checked", "false");
     await dark.click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(dark).toHaveAttribute("aria-checked", "true");
   });
 
   test("the account settings carry the theme switch, not a note about it", async ({

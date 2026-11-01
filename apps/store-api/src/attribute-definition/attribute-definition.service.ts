@@ -178,7 +178,7 @@ export class AttributeDefinitionService {
       {
         categoryIds: subtreeIds,
         brandId: filters.brandId,
-        deviceModelId: filters.deviceModelId,
+        deviceModelIds: filters.deviceModelIds,
         minPrice: query.minPrice,
         maxPrice: query.maxPrice,
         search: query.search,

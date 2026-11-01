@@ -10,6 +10,7 @@ const tree = {
       id: "c1",
       name: "Смартфони",
       slug: "phones",
+      icon: "smartphones",
       isActive: true,
       sortOrder: 0,
       children: [
@@ -27,6 +28,7 @@ const tree = {
       id: "c2",
       name: "Аудіо",
       slug: "audio",
+      icon: null,
       isActive: true,
       sortOrder: 1,
       children: [
@@ -34,6 +36,7 @@ const tree = {
           id: "c2a",
           name: "Навушники",
           slug: "headphones",
+          icon: "headphones",
           isActive: true,
           sortOrder: 0,
           children: [],
@@ -104,6 +107,29 @@ describe("CategoriesView", () => {
     expect(screen.getByRole("link", { name: "Навушники" })).toHaveAttribute(
       "href",
       "/categories/headphones",
+    );
+  });
+
+  // TASK-1956: rail and tile fallback draw `Category.icon` from the sprite.
+  it("draws the rail and tile-fallback icons from Category.icon, folder when unset", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<CategoriesView />);
+    const href = (el: Element | null) =>
+      el?.querySelector("use")?.getAttribute("href");
+
+    const phones = await screen.findByRole("button", { name: /Смартфони/ });
+    expect(href(phones)).toBe("/icons/categories.svg#cat-smartphones");
+    expect(href(screen.getByRole("button", { name: /Аудіо/ }))).toBe(
+      "/icons/categories.svg#cat-folder",
+    );
+    // «Чохли» has no image and no icon → the gradient fallback's folder.
+    expect(href(screen.getByRole("link", { name: "Чохли" }))).toBe(
+      "/icons/categories.svg#cat-folder",
+    );
+
+    await user.click(screen.getByRole("button", { name: /Аудіо/ }));
+    expect(href(screen.getByRole("link", { name: "Навушники" }))).toBe(
+      "/icons/categories.svg#cat-headphones",
     );
   });
 

@@ -5,3 +5,8 @@ export { UpdateDeviceModelDto } from './update-device-model.dto';
 export { DeviceModelListQueryDto } from './device-model-list-query.dto';
 export { DeviceBrandListQueryDto } from './device-brand-list-query.dto';
 export { ReorderDeviceBrandsDto } from './reorder-device-brands.dto';
+export {
+  PublicDeviceModelListQueryDto,
+  DEVICE_MODEL_SORTS,
+  type DeviceModelSort,
+} from './public-device-model-list-query.dto';

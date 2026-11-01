@@ -11,7 +11,7 @@ import {
   type GetWishlist200,
   type WishlistItemEntity,
 } from "@/entities/wishlist";
-import { dict } from "@/shared/config";
+import { dict, FOCUS_RING, PRESS_ICON } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 
 interface WishlistToggleButtonProps {
@@ -111,27 +111,43 @@ export function WishlistToggleButton({
     ? dict.productCard.wishlistRemoveAria(productName)
     : dict.productCard.wishlistAddAria(productName);
 
-  const base =
-    "inline-flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60";
+  // States (design-system §6, TASK-2079): hover `bg-muted`, press .94,
+  // selected = `bg-badge/14` tint + filled heart. No opacity while pending —
+  // the toggle is optimistic, so the flipped heart already shows the change;
+  // `aria-busy` announces it.
+  const base = cn(
+    "inline-flex items-center justify-center transition-interactive disabled:cursor-progress disabled:active:scale-100",
+    FOCUS_RING,
+    PRESS_ICON,
+  );
   const variantClass =
     variant === "overlay"
-      ? "size-11 rounded-full bg-background/80 text-foreground backdrop-blur-sm hover:bg-background shadow-sm"
-      : "size-11 rounded-lg border border-border bg-background text-foreground hover:bg-accent";
+      ? "size-11 rounded-full bg-background/80 text-foreground shadow-card backdrop-blur-sm hover:bg-background"
+      : "size-11 rounded-full border border-border bg-card text-foreground hover:bg-muted";
+  // Selected tint after the caller's className, so a caller's surface
+  // (`bg-card` on the PDP) does not hide the state. The heart glyph stays
+  // `sale` (5.46:1) — the mockup's `badge` is 2.85:1 on white, under WCAG
+  // 1.4.11's 3:1 for a state indicator.
+  const selectedClass =
+    variant === "inline" && saved
+      ? "border-transparent bg-badge/14 hover:bg-badge/20"
+      : undefined;
 
   return (
     <button
       type="button"
       onClick={handleClick}
       disabled={toggle.isPending}
+      aria-busy={toggle.isPending || undefined}
       aria-pressed={saved}
       aria-label={label}
-      className={cn(base, variantClass, className)}
+      className={cn(base, variantClass, className, selectedClass)}
     >
       <Heart
         aria-hidden="true"
         className={cn(
           "size-5 transition-colors",
-          saved ? "fill-sale text-sale" : "text-current",
+          saved ? "fill-current text-sale" : "text-current",
         )}
       />
     </button>

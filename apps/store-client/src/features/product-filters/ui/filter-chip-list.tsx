@@ -12,6 +12,18 @@ export interface FilterChip {
   onRemove: () => void;
   /** The keyword chip: brand-tinted, with a search glyph. */
   isSearch?: boolean;
+  /**
+   * Surface override — the device chip takes its family tone
+   * (`bg-family-*`, TASK-2077). Static class names only.
+   */
+  toneClassName?: string;
+  /** A leading dot (`bg-family-*-strong`) — the device chip. */
+  dotClassName?: string;
+  /**
+   * Full accessible name, replacing «<label> Прибрати фільтр» — e.g. «Зняти
+   * фільтр за пристроєм», where the label alone reads ambiguously.
+   */
+  ariaLabel?: string;
 }
 
 interface FilterChipListProps {
@@ -46,13 +58,22 @@ export function FilterChipList({ chips, onClearAll }: FilterChipListProps) {
           key={chip.key}
           type="button"
           onClick={chip.onRemove}
-          className={`inline-flex h-8.5 items-center gap-2 rounded-full border py-0 pr-2 pl-3.5 text-sm font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
+          aria-label={chip.ariaLabel}
+          className={`inline-flex h-8.5 items-center gap-2 rounded-full border py-0 pr-2 pl-3.5 text-sm font-semibold transition-interactive hover:ring-2 hover:ring-foreground/18 active:scale-98 motion-reduce:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring ${
             chip.isSearch
               ? "border-primary/30 bg-primary/10 text-primary"
-              : "border-border bg-card text-foreground hover:border-primary/40"
+              : chip.toneClassName
+                ? `border-transparent text-foreground hover:border-foreground/20 ${chip.toneClassName}`
+                : "border-border bg-card text-foreground hover:border-primary/40"
           }`}
         >
           {chip.isSearch && <Search className="size-3.5" aria-hidden="true" />}
+          {chip.dotClassName && (
+            <span
+              aria-hidden="true"
+              className={`size-2.5 shrink-0 rounded-full ${chip.dotClassName}`}
+            />
+          )}
           {chip.label}
           <span
             aria-hidden="true"
@@ -64,13 +85,15 @@ export function FilterChipList({ chips, onClearAll }: FilterChipListProps) {
           >
             <X className="size-2.75" strokeWidth={3} />
           </span>
-          <span className="sr-only">{dict.filters.removeFilter}</span>
+          {!chip.ariaLabel && (
+            <span className="sr-only">{dict.filters.removeFilter}</span>
+          )}
         </button>
       ))}
       <button
         type="button"
         onClick={onClearAll}
-        className="text-sm font-semibold text-muted-foreground underline decoration-1 underline-offset-3 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="text-sm font-semibold text-muted-foreground underline decoration-1 underline-offset-3 rounded-sm transition-interactive hover:text-foreground active:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring"
       >
         {dict.filters.clearAll}
       </button>

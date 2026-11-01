@@ -12,6 +12,7 @@ import {
   type BannerPlacementValue,
 } from "@/features/banner-form";
 import {
+  bannerWriteErrorMessage,
   getAdminBannerControllerFindAllQueryKey,
   useAdminBannerControllerCreate,
 } from "@/entities/banner";
@@ -47,8 +48,10 @@ export function CreateBannerView() {
           toast.success(dict.banners.toastCreated);
           router.push("/banners");
         },
-        onError: () => {
-          toast.error(dict.banners.toastCreateFailed);
+        onError: (error) => {
+          toast.error(
+            bannerWriteErrorMessage(error) ?? dict.banners.toastCreateFailed,
+          );
         },
       },
     );

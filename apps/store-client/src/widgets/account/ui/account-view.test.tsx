@@ -45,6 +45,19 @@ describe("AccountView", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders «Мої пристрої» for ?section=devices (TASK-2076)", async () => {
+    mockSearch = "section=devices";
+    renderWithProviders(<AccountView />, { auth: { isAuthenticated: true } });
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Мої пристрої" }),
+    ).toBeInTheDocument();
+    // The account frame is the navigation — no crumbs of the guest page.
+    expect(
+      screen.queryByRole("navigation", { name: "Навігаційний ланцюжок" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("points the purchases placeholder at the order history inside the account", async () => {
     mockSearch = "section=purchases";
     renderWithProviders(<AccountView />, { auth: { isAuthenticated: true } });

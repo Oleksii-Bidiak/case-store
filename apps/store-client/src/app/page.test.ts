@@ -20,6 +20,11 @@ jest.mock("@/widgets", () => {
     ).firstQueryTabParams,
   };
 });
+// The device picker (TASK-1952) is a client tree of its own; a named stub
+// tells where the page puts it.
+jest.mock("./home-device-hero", () => ({
+  HomeDeviceHero: Object.assign(() => null, { displayName: "HomeDeviceHero" }),
+}));
 jest.mock("@/shared/api/banners-server", () => ({
   fetchPublishedBanners: jest.fn().mockResolvedValue({
     HERO_SLIDE: [],
@@ -102,7 +107,14 @@ function sections(node: unknown): Section[] {
   return [...own, ...sections(props.children)];
 }
 
-const names = (tree: unknown) => sections(tree).map((s) => s.name);
+/** The device picker — not a block; it always leads (TASK-1952). */
+const DEVICE_HERO = "HomeDeviceHero";
+
+/** The sections drawn from the homepage blocks, in document order. */
+const names = (tree: unknown) =>
+  sections(tree)
+    .map((s) => s.name)
+    .filter((name) => name !== DEVICE_HERO);
 
 function carousel(id: string, title: string, products: unknown[] = []) {
   return {
@@ -151,6 +163,41 @@ describe("home page metadata (TASK-549)", () => {
 
     expect(meta.alternates?.canonical).toBe(SITE_URL);
     expect(meta.openGraph?.url).toBe(SITE_URL);
+  });
+});
+
+describe("home page — the device picker leads the first screen (TASK-1952)", () => {
+  const all = (tree: unknown) => sections(tree).map((s) => s.name);
+
+  it("puts the picker first, then «Акції» (HERO), then «Чому ми» (TRUST)", async () => {
+    mockBlocks([]);
+
+    expect(all(await HomePage()).slice(0, 3)).toEqual([
+      DEVICE_HERO,
+      "HeroBanner",
+      "TrustStrip",
+    ]);
+  });
+
+  it("keeps the picker first and single whatever the owner does to the blocks", async () => {
+    mockBlocks([block("NEWSLETTER"), block("TRUST")]);
+
+    // No HERO block at all: the page still opens with its h1.
+    expect(all(await HomePage())).toEqual([
+      DEVICE_HERO,
+      "Newsletter",
+      "TrustStrip",
+    ]);
+  });
+
+  it("renders the picker inside the page container, 20px under the header", async () => {
+    mockBlocks([]);
+
+    const hero = sections(await HomePage()).find((s) => s.name === DEVICE_HERO);
+    expect(hero?.props.className).toEqual(
+      expect.stringContaining("max-w-page"),
+    );
+    expect(hero?.props.className).toEqual(expect.stringContaining("pt-5"));
   });
 });
 

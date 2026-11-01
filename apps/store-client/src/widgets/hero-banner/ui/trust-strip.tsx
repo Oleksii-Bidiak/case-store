@@ -1,35 +1,33 @@
 import { Truck, ShieldCheck, RotateCcw, CreditCard } from "lucide-react";
 import { dict, PAGE_CONTAINER } from "@/shared/config";
 
-// Icons + accent colour pair with dict.home.trust by index (copy is data,
-// visuals stay in code). Accents are token tints only (TASK-879): instalments
-// take the brand tint, as the cart/checkout OrderTrustStrip does.
-const ICONS = [
-  { icon: Truck, color: "bg-primary/10 text-primary" },
-  { icon: ShieldCheck, color: "bg-success/10 text-success" },
-  { icon: RotateCcw, color: "bg-warning/10 text-warning" },
-  { icon: CreditCard, color: "bg-primary/10 text-primary" },
-] as const;
+// Icons pair with dict.home.trust by index (copy is data, visuals stay in
+// code). Direction В (TASK-1952): every icon box is the same neutral `muted`
+// tone — a hue only ever means a device family or the product's own colour,
+// so the old primary / success / warning accent rotation is gone.
+const ICONS = [Truck, ShieldCheck, RotateCcw, CreditCard] as const;
 
 /**
- * TrustStrip — a card of four reassurance items (delivery, warranty, returns,
- * instalments) shown below the hero. Static Server Component; copy from the
- * dictionary, icons/accents from `ICONS` by index.
+ * TrustStrip — «Чому ми», four reassurance items (sending, warranty, returns,
+ * instalments) in one white panel under the «Акції» block (Д3-2 Homepage §5):
+ * 2 × 2 on a phone, one row of four from md. Not interactive — a plain list,
+ * no hover, no focus. Static Server Component; copy from the dictionary.
  */
 export function TrustStrip() {
   return (
-    <section aria-label={dict.trust.secure} className={PAGE_CONTAINER}>
-      <ul className="grid gap-4 rounded-2xl border border-border bg-card p-6 shadow-card sm:grid-cols-2 lg:grid-cols-4">
+    <section aria-label={dict.home.trustAria} className={PAGE_CONTAINER}>
+      <ul className="grid grid-cols-2 gap-1 rounded-card border border-border bg-card p-2 shadow-card md:grid-cols-4">
         {dict.home.trust.map((item, i) => {
-          const { icon: Icon, color } = ICONS[i];
+          const Icon = ICONS[i];
           return (
-            <li key={item.title} className="flex items-center gap-3.5">
-              <span
-                className={`inline-flex size-11 shrink-0 items-center justify-center rounded-xl ${color}`}
-              >
-                <Icon className="size-6" aria-hidden="true" />
+            <li
+              key={item.title}
+              className="flex min-w-0 items-center gap-3 rounded-pad p-2.5"
+            >
+              <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-menu bg-muted text-foreground">
+                <Icon className="size-5" aria-hidden="true" />
               </span>
-              <span className="flex flex-col">
+              <span className="flex min-w-0 flex-col">
                 <b className="text-sm font-semibold text-foreground">
                   {item.title}
                 </b>

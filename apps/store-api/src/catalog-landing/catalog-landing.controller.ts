@@ -8,7 +8,15 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CatalogLandingService } from './catalog-landing.service';
-import { CompatLandingDetailEntity, CompatLandingPageEntity } from './entities';
+import { DeviceHubService } from './device-hub.service';
+import {
+  CompatLandingDetailEntity,
+  CompatLandingPageEntity,
+  DeviceHubCategoryEntity,
+  DeviceHubEntity,
+  DeviceHubGroupEntity,
+  DeviceHubModelEntity,
+} from './entities';
 
 /** Count of the pages in the list — what the sitemap and the acceptance check read. */
 class CompatLandingListMeta {
@@ -34,12 +42,20 @@ class CompatLandingDetailResponse {
   data!: CompatLandingDetailEntity;
 }
 
+/** Response envelope for one device-model hub. */
+class DeviceHubResponse {
+  @ApiProperty({ type: DeviceHubEntity })
+  data!: DeviceHubEntity;
+}
+
 /**
  * Public compatibility-landing endpoints (TASK-490, plan 182 F3) — the pages at
- * `/catalog/<категорія>/<модель>` on the storefront, «Чохли для iPhone 15 Pro».
+ * `/catalog/<категорія>/<модель>` on the storefront, «Чохли для iPhone 15 Pro» —
+ * and the model hub that groups them (TASK-1954), «Все для iPhone 15 Pro».
  *
  *   GET /catalog/compat-pages                     — every page that exists (sitemap)
  *   GET /catalog/compat-pages/:category/:device    — one page, or 404
+ *   GET /catalog/device-hubs/:device               — one model hub, or 404
  *
  * No auth and no visibility switch: there is no admin variant of this read. A
  * landing page is by definition a public URL, so "which ones exist" has exactly
@@ -52,10 +68,39 @@ class CompatLandingDetailResponse {
   CompatLandingListMeta,
   CompatLandingListResponse,
   CompatLandingDetailResponse,
+  DeviceHubEntity,
+  DeviceHubModelEntity,
+  DeviceHubGroupEntity,
+  DeviceHubCategoryEntity,
+  DeviceHubResponse,
 )
 @Controller('catalog')
 export class CatalogLandingController {
-  constructor(private readonly catalogLandingService: CatalogLandingService) {}
+  constructor(
+    private readonly catalogLandingService: CatalogLandingService,
+    private readonly deviceHubService: DeviceHubService,
+  ) {}
+
+  @Get('device-hubs/:deviceSlug')
+  @ApiOperation({
+    summary: "Get one device model's hub — its accessories grouped by top-level category",
+    operationId: 'catalogLandingControllerFindDeviceHub',
+  })
+  @ApiParam({ name: 'deviceSlug', description: 'Device model slug', example: 'iphone-15-pro' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'The hub: the model plus every non-empty top-level category group (≤ 8 cards each). ' +
+      'Its existence is the 200 itself.',
+    type: DeviceHubResponse,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Unknown or deactivated model, or no visible product is compatible with it',
+  })
+  async findDeviceHub(@Param('deviceSlug') deviceSlug: string): Promise<DeviceHubResponse> {
+    return { data: await this.deviceHubService.getDeviceHub(deviceSlug) };
+  }
 
   @Get('compat-pages')
   @ApiOperation({

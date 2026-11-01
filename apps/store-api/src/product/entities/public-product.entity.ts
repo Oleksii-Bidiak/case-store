@@ -217,6 +217,17 @@ export class PublicProductEntity {
 
   @ApiProperty({
     description:
+      'Ids of every device model this position is compatible with (TASK-1953). Present on ' +
+      'every public product response — list, cards, search and detail — so the storefront ' +
+      'can mark «підходить до вашого пристрою» against the shopper’s locally stored device ' +
+      'without a per-product request. Empty when the position declares no compatibility.',
+    type: [String],
+    example: ['550e8400-e29b-41d4-a716-446655440000'],
+  })
+  compatibleDeviceModelIds!: string[];
+
+  @ApiProperty({
+    description:
       'Structured specifications (TASK-191): hydrated key/label/unit/value rows for the ' +
       'PDP "Характеристики" table. Empty on list responses and for products with no specs.',
     type: [ProductSpecEntity],
@@ -244,9 +255,17 @@ export class PublicProductEntity {
        * standalone product — the summary derives from the product itself.
        */
       variantSiblings?: VariantSiblingInput[];
+      /**
+       * Compatible device-model ids, batch-loaded per page by the list paths
+       * (TASK-1953). When omitted they derive from `compatibleDeviceModels`
+       * (the detail path loads the full summaries anyway).
+       */
+      compatibleDeviceModelIds?: string[];
     },
   ): PublicProductEntity {
     const entity = Object.assign(new PublicProductEntity(), mapSharedProductFields(product));
+    entity.compatibleDeviceModelIds =
+      product.compatibleDeviceModelIds ?? entity.compatibleDeviceModels.map((model) => model.id);
     // Derive public availability signals from stock; the raw count is never
     // assigned to the entity, so it never reaches the JSON response.
     entity.inStock = product.stock > 0;

@@ -167,4 +167,32 @@ describe('PublicProductEntity.fromPrisma', () => {
     expect(entity.metaTitle).toBeNull();
     expect(entity.metaDescription).toBeNull();
   });
+
+  describe('compatibleDeviceModelIds (TASK-1953)', () => {
+    it('takes the batch-loaded ids when the list path supplies them', () => {
+      const entity = PublicProductEntity.fromPrisma({
+        ...buildPrismaProduct(),
+        compatibleDeviceModelIds: ['m-1', 'm-2'],
+      });
+
+      expect(entity.compatibleDeviceModelIds).toEqual(['m-1', 'm-2']);
+    });
+
+    it('derives them from the full summaries on the detail path', () => {
+      const entity = PublicProductEntity.fromPrisma({
+        ...buildPrismaProduct(),
+        compatibleDeviceModels: [
+          { id: 'm-9', name: 'iPhone 15', slug: 'iphone-15', brandName: 'Apple' },
+        ],
+      });
+
+      expect(entity.compatibleDeviceModelIds).toEqual(['m-9']);
+    });
+
+    it('is an empty list, never undefined, when nothing is known', () => {
+      expect(PublicProductEntity.fromPrisma(buildPrismaProduct()).compatibleDeviceModelIds).toEqual(
+        [],
+      );
+    });
+  });
 });

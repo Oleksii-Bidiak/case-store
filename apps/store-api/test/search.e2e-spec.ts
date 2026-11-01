@@ -79,6 +79,10 @@ describe('Search (e2e)', () => {
     review: {
       groupBy: jest.fn(async () => [] as unknown[]),
     },
+    // TASK-1953: compat ids for the Postgres / exact-SKU paths (one batched read).
+    productDeviceCompat: {
+      findMany: jest.fn(async () => [] as unknown[]),
+    },
     // TASK-420: `/search` narrows by SLUG now, resolved through the real
     // Category/Brand/Device repositories (none of them is overridden here), so
     // the slug → id step runs against these rows. Each echoes the requested key
@@ -110,6 +114,10 @@ describe('Search (e2e)', () => {
       ),
     },
     deviceModel: {
+      // TASK-2077: the multi-slug `?device=a,b` lookup — echoes each slug back.
+      findMany: jest.fn(({ where }: { where: { slug: { in: string[] } } }) =>
+        Promise.resolve(where.slug.in.map((slug) => ({ id: `id-of-${slug}`, slug }))),
+      ),
       findUnique: jest.fn(({ where }: { where: { slug?: string; id?: string } }) =>
         Promise.resolve(
           where.slug
@@ -337,6 +345,35 @@ describe('Search (e2e)', () => {
           ],
         }),
       );
+    });
+
+    // TASK-2077: the same comma grammar as the catalogue, OR-ed with IN.
+    it('ORs a comma-separated device list in the engine filter', async () => {
+      meiliClientMock.search.mockResolvedValue({ hits: [{ id: 'product-1' }], totalHits: 1 });
+      prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'case', device: 'iphone-15,galaxy-s24' })
+        .expect(200);
+
+      expect(meiliClientMock.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({
+          filter: ['isActive = true', 'deviceModelIds IN ["id-of-galaxy-s24", "id-of-iphone-15"]'],
+        }),
+      );
+      // TASK-1953: every hit carries its compat ids (from the document).
+      expect(res.body.data[0].compatibleDeviceModelIds).toEqual([]);
+    });
+
+    it('rejects a device list longer than 20 slugs with a 400', async () => {
+      const slugs = Array.from({ length: 21 }, (_, i) => `model-${i}`).join(',');
+
+      await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'case', device: slugs })
+        .expect(400);
     });
 
     // Never a 400, and never a WIDER result set: the filter stays applied and

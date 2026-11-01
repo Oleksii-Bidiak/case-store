@@ -268,7 +268,7 @@ export function InfoView({
               key={key}
               id={key}
               aria-hidden="true"
-              className="block scroll-mt-24"
+              className="block scroll-mt-(--sticky-header-offset)"
             />
           ))}
           {/* TASK-866 — all five panels render; only the active one is shown.

@@ -1,6 +1,6 @@
 "use client";
 
-import { dict, STICKY_ASIDE_TOP, STICKY_HEADER_OFFSET } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP, getStickyHeaderOffset } from "@/shared/config";
 import type { ArticleTocSection } from "../model/posts";
 
 /**
@@ -20,7 +20,7 @@ export function BlogArticleToc({
     const el = document.getElementById(id);
     if (!el) return;
     const y =
-      el.getBoundingClientRect().top + window.scrollY - STICKY_HEADER_OFFSET;
+      el.getBoundingClientRect().top + window.scrollY - getStickyHeaderOffset();
     window.scrollTo({ top: y, behavior: "smooth" });
   }
 

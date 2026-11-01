@@ -322,12 +322,17 @@ describe("DeviceModelTable — rows and «⋯» (ПР1, ПР2, ПР10)", () => {
     ).toEqual([
       dict.common.edit,
       d.rowCompatProducts,
+      dict.deviceCoverage.link,
       d.rowOpenCatalog,
       d.hideModelItem,
     ]);
     expect(
       within(menu).getByRole("menuitem", { name: dict.common.edit }),
     ).toHaveAttribute("href", "/devices/models/m1/edit");
+    // TASK-1955: the model's coverage page.
+    expect(
+      within(menu).getByRole("menuitem", { name: dict.deviceCoverage.link }),
+    ).toHaveAttribute("href", "/devices/models/m1/coverage");
     expect(
       within(menu).getByRole("menuitem", { name: d.rowCompatProducts }),
     ).toHaveAttribute("href", "/products?deviceModelId=m1");
@@ -420,6 +425,6 @@ describe("DeviceModelTable — rows and «⋯» (ПР1, ПР2, ПР10)", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual([dict.common.view, d.rowOpenCatalog]);
+    ).toEqual([dict.common.view, dict.deviceCoverage.link, d.rowOpenCatalog]);
   });
 });

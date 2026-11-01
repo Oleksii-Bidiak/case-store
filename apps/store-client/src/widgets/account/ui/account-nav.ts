@@ -1,4 +1,4 @@
-import { FEATURE_STUBS } from "@/shared/config";
+import { dict, FEATURE_STUBS } from "@/shared/config";
 import type { AccountIconName } from "./account-icons";
 
 /**
@@ -6,7 +6,13 @@ import type { AccountIconName } from "./account-icons";
  * Orders and favorites are not among them: they are routes of their own.
  */
 export type AccountSectionKey =
-  "profile" | "purchases" | "history" | "bonuses" | "compare" | "settings";
+  | "profile"
+  | "devices"
+  | "purchases"
+  | "history"
+  | "bonuses"
+  | "compare"
+  | "settings";
 
 /** Every menu entry: the inline sections plus the two route entries. */
 export type AccountNavKey = AccountSectionKey | "orders" | "favorites";
@@ -30,6 +36,8 @@ const ALL_NAV: AccountNavEntry[] = [
   { key: "profile", icon: "profile", href: sectionHref("profile") },
   { key: "orders", icon: "orders", href: ACCOUNT_ORDERS_PATH },
   { key: "favorites", icon: "favorites", href: "/wishlist" },
+  // «Мої пристрої» (TASK-2076) — the same block as the guest page /devices.
+  { key: "devices", icon: "devices", href: sectionHref("devices") },
   { key: "purchases", icon: "purchases", href: sectionHref("purchases") },
   { key: "history", icon: "history", href: sectionHref("history") },
   { key: "bonuses", icon: "bonuses", href: sectionHref("bonuses") },
@@ -53,12 +61,23 @@ export const ACCOUNT_NAV = ALL_NAV.filter(
 
 const SECTION_KEYS: readonly AccountSectionKey[] = [
   "profile",
+  "devices",
   "purchases",
   "history",
   "bonuses",
   "compare",
   "settings",
 ];
+
+/**
+ * A menu entry's label. «Мої пристрої» comes from the device pages' copy
+ * (`dict.devicePages`, TASK-2076) — the account dictionary has no entry for it.
+ */
+export function accountNavLabel(key: AccountNavKey): string {
+  return key === "devices"
+    ? dict.devicePages.manager.title
+    : dict.account.dashboard.nav[key];
+}
 
 /**
  * `?section=` → the section `/account` shows. Absent, unknown or hand-edited

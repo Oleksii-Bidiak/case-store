@@ -1,6 +1,7 @@
 import { FEATURE_STUBS } from "@/shared/config";
 import {
   ACCOUNT_NAV,
+  accountNavLabel,
   activeAccountNavKey,
   isAccountOrderDetailPath,
   parseAccountSection,
@@ -14,6 +15,7 @@ describe("account nav model", () => {
       profile: "/account",
       orders: "/account/orders",
       favorites: "/wishlist",
+      devices: "/account?section=devices",
       purchases: "/account?section=purchases",
       history: "/account?section=history",
       bonuses: "/account?section=bonuses",
@@ -24,10 +26,18 @@ describe("account nav model", () => {
   it("parses known sections and falls back to the profile", () => {
     expect(parseAccountSection("settings")).toBe("settings");
     expect(parseAccountSection("bonuses")).toBe("bonuses");
+    expect(parseAccountSection("devices")).toBe("devices");
     expect(parseAccountSection(null)).toBe("profile");
     expect(parseAccountSection("")).toBe("profile");
     expect(parseAccountSection("orders")).toBe("profile");
     expect(parseAccountSection("bogus")).toBe("profile");
+  });
+
+  it("lists «Мої пристрої» right after «Обране» (TASK-2076)", () => {
+    const keys = ACCOUNT_NAV.map((e) => e.key);
+    expect(keys.indexOf("devices")).toBe(keys.indexOf("favorites") + 1);
+    expect(accountNavLabel("devices")).toBe("Мої пристрої");
+    expect(accountNavLabel("orders")).toBe("Історія замовлень");
   });
 
   it("does not reach «Порівняння» by URL while its entry is hidden", () => {

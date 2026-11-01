@@ -160,6 +160,8 @@ describe('GET /api/products?inStock=true (e2e, TASK-830)', () => {
     },
     productImage: { findMany: jest.fn(async () => []) },
     review: { groupBy: jest.fn(async () => []) },
+    // TASK-1953: the per-page batch of compatible device-model ids — none here.
+    productDeviceCompat: { findMany: jest.fn(async () => []) },
   };
 
   beforeAll(async () => {

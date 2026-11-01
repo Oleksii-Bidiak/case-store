@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsKeywordsField, IsOgImageField } from '../../common/validators';
+import { IsCategoryIconField, type CategoryIconKey } from '../category-icons';
 
 /**
  * DTO for updating an existing category.
@@ -127,4 +128,8 @@ export class UpdateCategoryDto {
 
   @IsOgImageField()
   ogImage?: string | null;
+
+  // TASK-1956: absent → untouched, `null` → cleared («folder»), unknown key → 400.
+  @IsCategoryIconField()
+  icon?: CategoryIconKey | null;
 }

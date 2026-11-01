@@ -10,72 +10,99 @@
   color-scheme: light;
 
   /* Core colors */
-  --color-background: #ffffff;
-  --color-foreground: #0f172a;
+  --color-background: #f6f5f9;
+  --color-foreground: #191924;
 
-  /* Primary — main brand color (buttons, links). Warmer indigo for a retail
-     feel rather than the generic SaaS blue. */
-  --color-primary: #4f46e5;
+  /* Primary — the action colour (buttons, links, focus). Direction В
+     «Кольоровий» (Д3-0, TASK-1951): a graphite pill, the same ink as the text,
+     because hue is reserved for meaning — a device family or the product's own
+     colour. Inverts to a light pill in dark. */
+  --color-primary: #191924;
   --color-primary-foreground: #ffffff;
 
   /* Secondary — secondary CTAs (e.g. "View details") */
-  --color-secondary: #f4f4f5;
-  --color-secondary-foreground: #18181b;
+  --color-secondary: #eeebf4;
+  --color-secondary-foreground: #191924;
 
   /* Muted — subtle backgrounds, secondary text */
-  --color-muted: #f1f5f9;
-  --color-muted-foreground: #64748b;
+  --color-muted: #eeebf4;
+  --color-muted-foreground: #595966;
 
   /* Disabled — the inactive state of the `shared/ui` controls (TASK-736).
      Explicit colours instead of `opacity-50`: half opacity over already grey
      text gave ≈2.0:1 (muted-foreground) / ≈3.4:1 (foreground). The foreground
-     is a step darker than `muted-foreground`, which on this surface is only
-     4.34:1. ≥ 4.5:1 against `disabled`, `background`, `card`, `popover` and
+     is a step darker than `muted-foreground`. ≥ 4.5:1 against `disabled`, `background`, `card`, `popover` and
      `muted` in BOTH themes is pinned by app/globals-disabled-contrast.test.ts. */
-  --color-disabled: #f1f5f9;
-  --color-disabled-foreground: #475569;
+  --color-disabled: #eeebf4;
+  --color-disabled-foreground: #4c4c58;
 
   /* Accent — secondary actions, highlights */
-  --color-accent: #f1f5f9;
-  --color-accent-foreground: #0f172a;
+  --color-accent: #eeebf4;
+  --color-accent-foreground: #191924;
 
   /* Destructive — errors, delete actions */
-  --color-destructive: #ef4444;
+  --color-destructive: #c51e21;
   --color-destructive-foreground: #ffffff;
 
-  /* Sale — promotional / discount accent (vivid rose) */
-  --color-sale: #e11d48;
+  /* Sale — promotional / discount accent (raspberry; its own hue, never a
+     device-family colour) */
+  --color-sale: #cd1755;
   --color-sale-foreground: #ffffff;
 
   /* Success — in stock, order confirmed */
-  --color-success: #16a34a;
+  --color-success: #0b7643;
   --color-success-foreground: #ffffff;
 
   /* Warning — low stock */
-  --color-warning: #d97706;
+  --color-warning: #b04d00;
   --color-warning-foreground: #ffffff;
 
   /* Card — card and popover backgrounds */
   --color-card: #ffffff;
-  --color-card-foreground: #0f172a;
+  --color-card-foreground: #191924;
 
   /* Popover — dropdown and overlay backgrounds */
   --color-popover: #ffffff;
-  --color-popover-foreground: #0f172a;
+  --color-popover-foreground: #191924;
 
-  /* Border & Input */
-  --color-border: #e2e8f0;
-  --color-input: #e2e8f0;
-  --color-ring: #4f46e5;
+  /* Border & Input — `border` separates layers (visible on the tinted page);
+     `input` is a field outline, ≥ 3:1 against card and page (WCAG 1.4.11). */
+  --color-border: #dadae1;
+  --color-input: #85858f;
+  --color-ring: #191924;
 
   /* Overlay */
   --color-overlay: rgba(0, 0, 0, 0.8);
+
+  /* Counter badge — the coral cart / wishlist counters in the header (Д3-0). */
+  --color-badge: #ed756e;
+  --color-badge-foreground: #15151f;
+
+  /* Device families (Д3-0 colour rule): hue = family. `family-*` is the tile /
+     panel tone (muted text on it ≥ 4.5:1), `family-*-strong` the icon disc and
+     the dot (ink on it ≥ 4.5:1; same in both themes). */
+  --color-family-iphone: #ffcfca;
+  --color-family-galaxy: #c1e2ff;
+  --color-family-redmi: #fae2b0;
+  --color-family-watch: #c0eacd;
+  --color-family-ipad: #e4d6ff;
+  --color-family-iphone-strong: #ed756e;
+  --color-family-galaxy-strong: #4ba3f7;
+  --color-family-redmi-strong: #e3ae28;
+  --color-family-watch-strong: #3bb974;
+  --color-family-ipad-strong: #ad87ed;
+
+  /* Photo pads — the soft tint under a product photo (Д3-0). */
+  --color-pad-1: #f3e2cb;
+  --color-pad-2: #cfeef8;
+  --color-pad-3: #d0f1e1;
+  --color-pad-4: #f3edc7;
 
   /* Footer & announcement bar — owner decision (F-06): these stay a dark panel
      in BOTH themes, so they are theme-invariant. Defined once here (mirroring
      the light-mode foreground/background) and deliberately NOT redefined in the
      dark blocks below, so they hold these values under dark mode too. */
-  --color-footer: #0f172a;
+  --color-footer: #191924;
   --color-footer-foreground: #ffffff;
 
   /* Machine-read code (TASK-679) — the Telegram connect QR in the account and
@@ -84,30 +111,31 @@
      reliably and an inverted code often not at all, so the code keeps the
      light-theme pair under dark mode too (same pair as the admin, TASK-676). */
   --color-code-surface: #ffffff;
-  --color-code-ink: #0f172a;
+  --color-code-ink: #191924;
 
-  /* Brand gradient (TASK-879) — the primary hue deepening towards violet, for
-     the decorative panels that carry white copy (/contact hero, /info «Про
-     нас») and the 404 numeral. Declared once, not per theme: it is built from
-     `--color-primary`, so it follows whichever primary the theme resolves.
-     One definition instead of an inline `style` per widget → `bg-brand-gradient`. */
+  /* Brand gradient (TASK-879) — an ink panel with a faint violet cast, for the
+     decorative panels that carry white copy (/contact hero, /info «Про нас»)
+     and the 404 numeral. Built from the theme-invariant `--color-footer`, NOT
+     from primary (TASK-1951): primary turns light in dark, and white copy on
+     it would vanish. One definition → `bg-brand-gradient`. */
   --gradient-brand: linear-gradient(
     135deg,
-    var(--color-primary),
-    color-mix(in oklab, var(--color-primary) 55%, oklch(0.4 0.16 300))
+    var(--color-footer),
+    color-mix(in oklab, var(--color-footer) 80%, oklch(0.45 0.12 290))
   );
 
-  /* Radius — softened for a modern retail feel (was 0.375rem) */
-  --radius: 0.75rem;
+  /* Radius — direction В is round (Д3-0): 24px base, so the shadcn scale gives
+     sm 20 · md 22 · lg 24 · xl 28 · 2xl 32 and every h-9…h-11 control is a pill. */
+  --radius: 1.5rem;
 
-  /* Elevation — layered, soft shadows so cards "float" on white without
-     looking heavy. `lift` is used on hover for the rise effect. */
+  /* Elevation — white panels on the tinted page with a soft, long, slightly
+     violet shadow (Д3-0). `lift` is used on hover for the rise effect. */
   --shadow-card:
-    0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
+    0 1px 2px 0 rgb(25 25 36 / 0.05), 0 10px 28px -14px rgb(25 22 48 / 0.22);
   --shadow-elevated:
-    0 2px 4px -1px rgb(15 23 42 / 0.06), 0 4px 12px -2px rgb(15 23 42 / 0.10);
+    0 2px 4px -1px rgb(25 25 36 / 0.06), 0 16px 36px -12px rgb(25 22 48 / 0.26);
   --shadow-lift:
-    0 4px 8px -2px rgb(15 23 42 / 0.08), 0 12px 28px -6px rgb(15 23 42 / 0.16);
+    0 4px 8px -2px rgb(25 25 36 / 0.08), 0 22px 44px -16px rgb(25 22 48 / 0.32);
 }
 
 /* ─────────────────────────────────────────────
@@ -145,62 +173,75 @@
     color-scheme: dark;
 
     /* Core colors */
-    --color-background: #0a0a0a;
-    --color-foreground: #ededed;
+    --color-background: #111118;
+    --color-foreground: #efedf3;
 
     /* Primary */
-    --color-primary: #6366f1;
-    --color-primary-foreground: #ffffff;
+    --color-primary: #efedf3;
+    --color-primary-foreground: #111118;
 
     /* Secondary */
-    --color-secondary: #1e293b;
-    --color-secondary-foreground: #ededed;
+    --color-secondary: #24222d;
+    --color-secondary-foreground: #efedf3;
 
     /* Muted */
-    --color-muted: #1e293b;
-    --color-muted-foreground: #94a3b8;
+    --color-muted: #24222d;
+    --color-muted-foreground: #aaa9b4;
 
     /* Disabled (TASK-736) — see the light block */
-    --color-disabled: #1e293b;
-    --color-disabled-foreground: #94a3b8;
+    --color-disabled: #24222d;
+    --color-disabled-foreground: #aaa9b4;
 
     /* Accent */
-    --color-accent: #1e293b;
-    --color-accent-foreground: #ededed;
+    --color-accent: #24222d;
+    --color-accent-foreground: #efedf3;
 
     /* Destructive */
-    --color-destructive: #dc2626;
-    --color-destructive-foreground: #ffffff;
+    --color-destructive: #f66d67;
+    --color-destructive-foreground: #111118;
 
     /* Sale / Success / Warning */
-    --color-sale: #f43f5e;
-    --color-sale-foreground: #ffffff;
-    --color-success: #22c55e;
-    --color-success-foreground: #052e16;
-    --color-warning: #f59e0b;
-    --color-warning-foreground: #271100;
+    --color-sale: #f15f7f;
+    --color-sale-foreground: #111118;
+    --color-success: #65c98c;
+    --color-success-foreground: #111118;
+    --color-warning: #f3ad66;
+    --color-warning-foreground: #111118;
 
     /* Card */
-    --color-card: #0f0f0f;
-    --color-card-foreground: #ededed;
+    --color-card: #1b1a24;
+    --color-card-foreground: #efedf3;
 
     /* Popover */
-    --color-popover: #0f0f0f;
-    --color-popover-foreground: #ededed;
+    --color-popover: #1b1a24;
+    --color-popover-foreground: #efedf3;
 
     /* Border & Input */
-    --color-border: #334155;
-    --color-input: #334155;
-    --color-ring: #6366f1;
+    --color-border: #32313d;
+    --color-input: #747380;
+    --color-ring: #efedf3;
 
     /* Overlay */
     --color-overlay: rgba(0, 0, 0, 0.8);
 
+    /* Counter badge / device families / photo pads (Д3-0) — the strong
+       family tones hold in both themes */
+    --color-badge-foreground: #111118;
+    --color-family-iphone: #4d2623;
+    --color-family-galaxy: #193550;
+    --color-family-redmi: #46350d;
+    --color-family-watch: #153c25;
+    --color-family-ipad: #382b4d;
+    --color-pad-1: #372c1d;
+    --color-pad-2: #1c3138;
+    --color-pad-3: #1c3329;
+    --color-pad-4: #353118;
+
     /* Radius */
-    --radius: 0.75rem;
+    --radius: 1.5rem;
 
     /* Elevation — deeper, since soft shadows read weaker on dark surfaces */
-    --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+    --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.3);
     --shadow-elevated: 0 4px 12px -2px rgb(0 0 0 / 0.5);
     --shadow-lift: 0 12px 28px -6px rgb(0 0 0 / 0.6);
   }
@@ -213,62 +254,75 @@
   color-scheme: dark;
 
   /* Core colors */
-  --color-background: #0a0a0a;
-  --color-foreground: #ededed;
+  --color-background: #111118;
+  --color-foreground: #efedf3;
 
   /* Primary */
-  --color-primary: #6366f1;
-  --color-primary-foreground: #ffffff;
+  --color-primary: #efedf3;
+  --color-primary-foreground: #111118;
 
   /* Secondary */
-  --color-secondary: #1e293b;
-  --color-secondary-foreground: #ededed;
+  --color-secondary: #24222d;
+  --color-secondary-foreground: #efedf3;
 
   /* Muted */
-  --color-muted: #1e293b;
-  --color-muted-foreground: #94a3b8;
+  --color-muted: #24222d;
+  --color-muted-foreground: #aaa9b4;
 
   /* Disabled (TASK-736) — see the light block */
-  --color-disabled: #1e293b;
-  --color-disabled-foreground: #94a3b8;
+  --color-disabled: #24222d;
+  --color-disabled-foreground: #aaa9b4;
 
   /* Accent */
-  --color-accent: #1e293b;
-  --color-accent-foreground: #ededed;
+  --color-accent: #24222d;
+  --color-accent-foreground: #efedf3;
 
   /* Destructive */
-  --color-destructive: #dc2626;
-  --color-destructive-foreground: #ffffff;
+  --color-destructive: #f66d67;
+  --color-destructive-foreground: #111118;
 
   /* Sale / Success / Warning */
-  --color-sale: #f43f5e;
-  --color-sale-foreground: #ffffff;
-  --color-success: #22c55e;
-  --color-success-foreground: #052e16;
-  --color-warning: #f59e0b;
-  --color-warning-foreground: #271100;
+  --color-sale: #f15f7f;
+  --color-sale-foreground: #111118;
+  --color-success: #65c98c;
+  --color-success-foreground: #111118;
+  --color-warning: #f3ad66;
+  --color-warning-foreground: #111118;
 
   /* Card */
-  --color-card: #0f0f0f;
-  --color-card-foreground: #ededed;
+  --color-card: #1b1a24;
+  --color-card-foreground: #efedf3;
 
   /* Popover */
-  --color-popover: #0f0f0f;
-  --color-popover-foreground: #ededed;
+  --color-popover: #1b1a24;
+  --color-popover-foreground: #efedf3;
 
   /* Border & Input */
-  --color-border: #334155;
-  --color-input: #334155;
-  --color-ring: #6366f1;
+  --color-border: #32313d;
+  --color-input: #747380;
+  --color-ring: #efedf3;
 
   /* Overlay */
   --color-overlay: rgba(0, 0, 0, 0.8);
 
+  /* Counter badge / device families / photo pads (Д3-0) — the strong
+     family tones hold in both themes */
+  --color-badge-foreground: #111118;
+  --color-family-iphone: #4d2623;
+  --color-family-galaxy: #193550;
+  --color-family-redmi: #46350d;
+  --color-family-watch: #153c25;
+  --color-family-ipad: #382b4d;
+  --color-pad-1: #372c1d;
+  --color-pad-2: #1c3138;
+  --color-pad-3: #1c3329;
+  --color-pad-4: #353118;
+
   /* Radius */
-  --radius: 0.75rem;
+  --radius: 1.5rem;
 
   /* Elevation — deeper, since soft shadows read weaker on dark surfaces */
-  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.3);
   --shadow-elevated: 0 4px 12px -2px rgb(0 0 0 / 0.5);
   --shadow-lift: 0 12px 28px -6px rgb(0 0 0 / 0.6);
 }
@@ -340,11 +394,37 @@
   --color-footer-foreground: var(--color-footer-foreground);
   --color-code-surface: var(--color-code-surface);
   --color-code-ink: var(--color-code-ink);
+  --color-badge: var(--color-badge);
+  --color-badge-foreground: var(--color-badge-foreground);
+  --color-family-iphone: var(--color-family-iphone);
+  --color-family-galaxy: var(--color-family-galaxy);
+  --color-family-redmi: var(--color-family-redmi);
+  --color-family-watch: var(--color-family-watch);
+  --color-family-ipad: var(--color-family-ipad);
+  --color-family-iphone-strong: var(--color-family-iphone-strong);
+  --color-family-galaxy-strong: var(--color-family-galaxy-strong);
+  --color-family-redmi-strong: var(--color-family-redmi-strong);
+  --color-family-watch-strong: var(--color-family-watch-strong);
+  --color-family-ipad-strong: var(--color-family-ipad-strong);
+  --color-pad-1: var(--color-pad-1);
+  --color-pad-2: var(--color-pad-2);
+  --color-pad-3: var(--color-pad-3);
+  --color-pad-4: var(--color-pad-4);
 
   /* Elevation */
   --shadow-card: var(--shadow-card);
   --shadow-elevated: var(--shadow-elevated);
   --shadow-lift: var(--shadow-lift);
+
+  /* Interaction (TASK-2079): graphite hover mixes towards the page — `bg-primary/90`
+     was ΔL≈1 % on the light page, invisible. Inline, so it resolves per theme. */
+  --color-primary-hover: color-mix(
+    in oklab,
+    var(--color-primary) 86%,
+    var(--color-background)
+  );
+  /* Standard easing of every state change (ComponentStates.dc.html). */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
   /* Radius */
   --radius-sm: calc(var(--radius) - 4px);
@@ -352,22 +432,25 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
-  /* Role radii (owner decision 7.9, design-system.md §5, TASK-862) —
-     what the storefront renders, named by role instead of by px. */
-  --radius-card: 18px; /* card: product, info, cart/checkout/order panels */
-  --radius-cta: 13px; /* large primary call-to-action */
-  --radius-menu: 11px; /* menu / navigation item */
+  /* Role radii (owner decision 7.9, design-system.md §5, TASK-862), values
+     of direction В (Д3-0, TASK-1951) — named by role instead of by px. */
+  --radius-panel: 32px; /* hero / picker / wide banner panel */
+  --radius-card: 26px; /* card: product, info, cart/checkout/order panels */
+  --radius-pad: 18px; /* photo pad inside a card */
+  --radius-cta: 9999px; /* large primary call-to-action — a pill */
+  --radius-menu: 16px; /* menu / navigation item */
 
   /* Layout — the one page-container width (owner decision 7.1, TASK-860).
      `--container-*` is Tailwind's max-width namespace → `max-w-page`. Use it
      through `PAGE_CONTAINER` (shared/config/layout.ts), not on its own. */
   --container-page: 1320px;
   /* Height cap of a sticky filter aside (TASK-414, TASK-517): the viewport
-     minus the 6rem sticky offset (`top-24`, STICKY_ASIDE_TOP) and a 1rem
-     breathing gap, so a tall aside scrolls inside itself instead of running
-     off a short screen. `--max-height-*` is Tailwind's max-height namespace →
-     `max-h-sticky-aside`. Pair with `overflow-y-auto overscroll-contain`. */
-  --max-height-sticky-aside: calc(100dvh - 7rem);
+     minus the sticky offset (`--sticky-header-offset`, STICKY_ASIDE_TOP) and a
+     1rem breathing gap, so a tall aside scrolls inside itself instead of
+     running off a short screen. `--max-height-*` is Tailwind's max-height
+     namespace → `max-h-sticky-aside`. Pair with `overflow-y-auto
+     overscroll-contain`. */
+  --max-height-sticky-aside: calc(100dvh - var(--sticky-header-offset) - 1rem);
   /* Height cap of a popover-anchored listbox (Combobox, TASK-502): the 15rem
      list it always had (`max-h-60`), shrunk to the room Radix measured on the
      side it opened towards — but never below 7.5rem (about three rows). The
@@ -384,10 +467,11 @@
     max(var(--radix-popover-content-available-height, 15rem), 7.5rem)
   );
 
-  /* Fonts */
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-sora), var(--font-geist-sans);
+  /* Fonts (TASK-1951) — Onest for text, Unbounded for headings, both loaded
+     with the Cyrillic subset (ґ є і ї); Geist Mono only for SKUs and codes. */
+  --font-sans: var(--font-onest), sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
+  --font-display: var(--font-unbounded), var(--font-onest), sans-serif;
 }
 
 /* Tailwind v4 has no background-image theme namespace, so the brand gradient
@@ -412,6 +496,26 @@
    `border-[1.5px]` under suppressions and can move over one by one. */
 @utility border-chip {
   border-width: 1.5px;
+}
+
+/* One transition for every interactive state (TASK-2079, ComponentStates.dc.html):
+   colour / background / border / outline 120ms, shadow and motion 180ms, standard
+   ease. Tailwind v4 moves with the `translate` / `scale` properties, not
+   `transform`, so they are listed by name. Reduced motion keeps colour only — the
+   transforms themselves are reset per control with `motion-reduce:` variants (a
+   utility cannot outrank the later hover: utilities). */
+@utility transition-interactive {
+  transition-property:
+    color, background-color, border-color, outline-color, text-decoration-color,
+    fill, opacity, box-shadow, translate, scale;
+  transition-duration:
+    120ms, 120ms, 120ms, 120ms, 120ms, 120ms, 120ms, 180ms, 180ms, 180ms;
+  transition-timing-function: var(--ease-standard);
+  @media (prefers-reduced-motion: reduce) {
+    transition-property:
+      color, background-color, border-color, outline-color,
+      text-decoration-color, fill, opacity;
+  }
 }
 
 /* A horizontal chip strip that scrolls without a visible bar (the account
@@ -454,7 +558,7 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+    font-family: var(--font-onest), Arial, Helvetica, sans-serif;
   }
 
   /* Border global default — overrides preflight's `border-color: currentColor`,
@@ -512,6 +616,23 @@
         --spacing(4) + var(--mobile-bar-inset, 0px)
       );
     }
+  }
+}
+
+/* ─────────────────────────────────────────────
+   Sticky-header clearance (shared/config/layout.ts). The header publishes its
+   measured height as an inline `--header-height` on <html> (useHeaderHeight);
+   these are the pre-hydration fallbacks: the 64px row + 1px border + the
+   «Мої пристрої» tier 1 (1px + 56px) = 122px, plus tier 2 (1px + 52px) from
+   1024 when a saved device is known before paint (`data-has-device`).
+   ───────────────────────────────────────────── */
+:root {
+  --header-height: 122px;
+  --sticky-header-offset: calc(var(--header-height) + 2rem);
+}
+@media (width >= 64rem) {
+  html[data-has-device] {
+    --header-height: 175px;
   }
 }
 
@@ -612,7 +733,7 @@ html {
   align-items: baseline;
   gap: 11px;
   margin: 32px 0 12px;
-  font-family: var(--font-sora), var(--font-geist-sans), sans-serif;
+  font-family: var(--font-unbounded), var(--font-onest), sans-serif;
   font-weight: 700;
   font-size: 21px;
   line-height: 1.25;
@@ -629,7 +750,7 @@ html {
 }
 .legal-doc-body h3 {
   margin: 22px 0 10px;
-  font-family: var(--font-sora), var(--font-geist-sans), sans-serif;
+  font-family: var(--font-unbounded), var(--font-onest), sans-serif;
   font-weight: 700;
   font-size: 17px;
   color: var(--color-foreground);

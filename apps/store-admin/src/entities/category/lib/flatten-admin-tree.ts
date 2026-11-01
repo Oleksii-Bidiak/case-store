@@ -30,6 +30,8 @@ export interface CategoryTreeItem extends TreeItem {
   subtreeProductCount: number;
   /** 1-based level as computed by the server (a root category is level 1). */
   depth: number;
+  /** `Category.icon` — a sprite key (TASK-1956); null = the generic folder. */
+  icon: string | null;
 }
 
 /** Depth-first flatten of the nested admin tree. */
@@ -51,6 +53,7 @@ export function flattenAdminCategoryTree(
       productCount: node.productCount,
       subtreeProductCount: node.subtreeProductCount,
       depth: node.depth,
+      icon: node.icon ?? null,
     });
     for (const child of node.children ?? []) {
       visit(child, node.id);

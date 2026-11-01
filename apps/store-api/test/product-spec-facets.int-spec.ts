@@ -6,6 +6,7 @@ import { ProductRepository } from '../src/product/product.repository';
 import { parseSpecFilters } from '../src/product/dto/product-list-query.dto';
 import { PrismaService } from '../src/prisma';
 import { SlugRedirectRepository } from '../src/slug-redirect';
+import { ProductDeviceCompatRepository } from '../src/product/product-device-compat.repository';
 
 /**
  * Integration coverage for the TASK-414 catalogue filters against a REAL
@@ -68,7 +69,12 @@ describe('Catalogue filters: inStock + multi-value spec facets (integration)', (
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
-      providers: [PrismaService, ProductRepository, SlugRedirectRepository],
+      providers: [
+        PrismaService,
+        ProductRepository,
+        SlugRedirectRepository,
+        ProductDeviceCompatRepository,
+      ],
     }).compile();
 
     app = moduleRef.createNestApplication();
@@ -290,6 +296,102 @@ describe('Catalogue filters: inStock + multi-value spec facets (integration)', (
       expect(
         await listNames({ specFilters: parseSpecFilters('material:Силікон;nonexistent:x') }),
       ).toEqual([]);
+    });
+  });
+
+  /**
+   * TASK-2077 / TASK-1953 against the real join table: several device models are
+   * OR-ed (a product fitting ANY of them is listed), and the per-page compat-id
+   * batch reads back exactly what each product declares.
+   *
+   *   silicone-case → A        tpu-case → B
+   *   leather-book  → A, C     silicone-book → (none)
+   */
+  describe('device compatibility — OR across models (TASK-2077)', () => {
+    let deviceBrandId: string;
+    const modelIds: Record<'A' | 'B' | 'C', string> = { A: '', B: '', C: '' };
+
+    function productId(name: string): string {
+      const id = [...nameById.entries()].find(([, n]) => n === name)?.[0];
+      if (!id) throw new Error(`fixture product ${name} missing`);
+      return id;
+    }
+
+    beforeAll(async () => {
+      const s = randomUUID();
+      deviceBrandId = (
+        await prisma.deviceBrand.create({ data: { name: 'facet-dev', slug: `facet-dev-${s}` } })
+      ).id;
+      for (const key of ['A', 'B', 'C'] as const) {
+        modelIds[key] = (
+          await prisma.deviceModel.create({
+            data: { deviceBrandId, name: `facet-dev ${key}`, slug: `facet-dev-${key}-${s}` },
+          })
+        ).id;
+      }
+      await prisma.productDeviceCompat.createMany({
+        data: [
+          { productId: productId('silicone-case'), deviceModelId: modelIds.A },
+          { productId: productId('tpu-case'), deviceModelId: modelIds.B },
+          { productId: productId('leather-book'), deviceModelId: modelIds.A },
+          { productId: productId('leather-book'), deviceModelId: modelIds.C },
+        ],
+      });
+    });
+
+    afterAll(async () => {
+      if (!prisma || !deviceBrandId) return;
+      await prisma.productDeviceCompat.deleteMany({
+        where: { deviceModelId: { in: Object.values(modelIds) } },
+      });
+      await prisma.deviceModel.deleteMany({ where: { deviceBrandId } });
+      await prisma.deviceBrand.deleteMany({ where: { id: deviceBrandId } });
+    });
+
+    it('keeps the single-model filter as it was', async () => {
+      expect(await listNames({ deviceModelIds: [modelIds.A] })).toEqual([
+        'leather-book',
+        'silicone-case',
+      ]);
+    });
+
+    it('UNIONs several models instead of intersecting them', async () => {
+      expect(await listNames({ deviceModelIds: [modelIds.A, modelIds.B] })).toEqual([
+        'leather-book',
+        'silicone-case',
+        'tpu-case',
+      ]);
+    });
+
+    it('lists a product fitting two of the models once', async () => {
+      const { products, total } = await productRepo.findAll({
+        page: 1,
+        limit: 50,
+        categoryIds: [categoryId],
+        deviceModelIds: [modelIds.A, modelIds.C],
+      });
+      expect(products.map((p) => p.name).sort()).toEqual(['leather-book', 'silicone-case']);
+      expect(total).toBe(2);
+    });
+
+    it('composes with inStock and spec facets', async () => {
+      expect(
+        await listNames({
+          deviceModelIds: [modelIds.A, modelIds.B],
+          inStock: true,
+          specFilters: parseSpecFilters('form:Накладка'),
+        }),
+      ).toEqual(['silicone-case', 'tpu-case']);
+    });
+
+    it('reads back every product’s compat ids in one batch, [] for none (TASK-1953)', async () => {
+      const compatRepo = app.get(ProductDeviceCompatRepository);
+      const map = await compatRepo.getDeviceModelIdsByProductIds(productIds);
+
+      expect(map.get(productId('silicone-case'))).toEqual([modelIds.A]);
+      expect(map.get(productId('tpu-case'))).toEqual([modelIds.B]);
+      expect(map.get(productId('leather-book'))?.sort()).toEqual([modelIds.A, modelIds.C].sort());
+      expect(map.get(productId('silicone-book'))).toEqual([]);
     });
   });
 });

@@ -1,5 +1,5 @@
 import { dict } from "@/shared/config";
-import { categorySchema } from "./category-schema";
+import { categoryFormValuesToDto, categorySchema } from "./category-schema";
 
 /**
  * TASK-808. `parentId` is an id the form read off the database (a legacy seed
@@ -45,4 +45,43 @@ describe("category form — OG image is http(s) only (TASK-573)", () => {
       );
     },
   );
+});
+
+describe("category form — icon (TASK-1956)", () => {
+  const { icon } = categorySchema.shape;
+  const base = { name: "Зарядні пристрої", icon: "" };
+
+  it.each(["chargers", "power-banks", "", undefined])("accepts %j", (key) => {
+    expect(icon.safeParse(key).success).toBe(true);
+  });
+
+  it.each(["rocket", "folder", "all"])(
+    "rejects %j — not an assignable key",
+    (key) => {
+      const result = icon.safeParse(key);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.message).toBe(
+        dict.categoryForm.icon.unknownKey,
+      );
+    },
+  );
+
+  // Soft for roots (approved plan): an icon-less root still saves.
+  it("does not require an icon for a root", () => {
+    expect(categorySchema.safeParse({ ...base, parentId: "" }).success).toBe(
+      true,
+    );
+  });
+
+  it("sends the key, clears with null on update and omits it on create", () => {
+    const parsed = categorySchema.parse({ ...base, icon: "chargers" });
+    expect(categoryFormValuesToDto(parsed).icon).toBe("chargers");
+    expect(categoryFormValuesToDto(parsed, { isUpdate: true }).icon).toBe(
+      "chargers",
+    );
+
+    const empty = categorySchema.parse(base);
+    expect(categoryFormValuesToDto(empty).icon).toBeUndefined();
+    expect(categoryFormValuesToDto(empty, { isUpdate: true }).icon).toBeNull();
+  });
 });

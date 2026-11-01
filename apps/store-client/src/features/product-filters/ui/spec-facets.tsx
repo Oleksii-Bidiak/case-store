@@ -159,7 +159,7 @@ export function SpecFacets({
             // A real <fieldset>/<legend>: a screen reader then announces which
             // facet each checkbox belongs to, which a bare heading would not do.
             <fieldset key={key} className="min-w-0 border-0 p-0">
-              <legend className="mb-1.5 text-[13px] text-muted-foreground">
+              <legend className="mb-2 text-sm font-bold text-card-foreground">
                 {facet.definition.label}
               </legend>
               {key === COLOR_SPEC_KEY ? (

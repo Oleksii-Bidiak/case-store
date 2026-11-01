@@ -11,7 +11,35 @@ describe("SortSelect", () => {
     const trigger = screen.getByRole("combobox", {
       name: dict.filters.sortBy,
     });
-    expect(trigger).toHaveTextContent(dict.filters.sort.priceAsc);
+    // «Спочатку: дешевші» — the prefix, then the lowercase value (Д3-2 §5).
+    expect(trigger).toHaveTextContent(
+      `${dict.filters.sortPrefix}${dict.filters.sortValue.priceAsc}`,
+    );
+  });
+
+  it("never repeats «Спочатку» on the trigger", () => {
+    renderWithProviders(
+      <SortSelect currentSort="createdAt:desc" onChange={jest.fn()} />,
+    );
+    const trigger = screen.getByRole("combobox", {
+      name: dict.filters.sortBy,
+    });
+    expect(trigger.textContent?.match(/Спочатку/g)).toHaveLength(1);
+  });
+
+  it("shows an option without a short value alone, with no prefix", () => {
+    renderWithProviders(
+      <SortSelect
+        currentSort="relevance"
+        options={[{ value: "relevance", label: "За релевантністю" }]}
+        onChange={jest.fn()}
+      />,
+    );
+    const trigger = screen.getByRole("combobox", {
+      name: dict.filters.sortBy,
+    });
+    expect(trigger).toHaveTextContent("За релевантністю");
+    expect(trigger).not.toHaveTextContent(dict.filters.sortPrefix);
   });
 
   // TASK-1301 fix round: at 320px the longest labels pushed the catalogue and
@@ -26,7 +54,7 @@ describe("SortSelect", () => {
       name: dict.filters.sortBy,
     });
     expect(trigger).toHaveClass("min-w-0");
-    expect(screen.getByText(dict.filters.sort.priceDesc)).toHaveClass(
+    expect(screen.getByText(dict.filters.sortValue.priceDesc)).toHaveClass(
       "truncate",
     );
   });
@@ -42,10 +70,13 @@ describe("SortSelect", () => {
       screen.getByRole("combobox", { name: dict.filters.sortBy }),
     );
     await user.click(
-      screen.getByRole("option", { name: dict.filters.sort.nameAsc }),
+      screen.getByRole("option", { name: dict.filters.sort.popular }),
     );
 
-    expect(onChange).toHaveBeenCalledWith({ sortBy: "name", sortOrder: "asc" });
+    expect(onChange).toHaveBeenCalledWith({
+      sortBy: "bestselling",
+      sortOrder: "desc",
+    });
   });
 
   // TASK-876: /search reuses this pill with its own vocabulary — one `sort`

@@ -39,7 +39,7 @@ jest.mock("@/shared/api/generated/products/products", () => {
   };
 });
 
-// The chips row's category tree (TASK-515), prefetched beside the listing.
+// The rail's category tree (TASK-515, TASK-2011), prefetched beside the listing.
 jest.mock("@/shared/api/generated/categories/categories", () => {
   const getTree = jest.fn().mockResolvedValue({ data: [] });
   return {
@@ -191,7 +191,7 @@ describe("/promo — the deals are the catalogue with a discount lock (TASK-1301
    * TASK-515 — without the tree on the server the chips row mounted only after
    * hydration and pushed the deals grid 60px down out of the skeleton's place.
    */
-  describe("the category chips row (TASK-515)", () => {
+  describe("the category tree (TASK-515, TASK-2011)", () => {
     const categoryTree = {
       data: [
         {
@@ -203,23 +203,25 @@ describe("/promo — the deals are the catalogue with a discount lock (TASK-1301
       ],
     } as never;
 
-    it("tells the view the server had the tree, so the chips are in the first HTML", async () => {
+    it("tells the view the server had the tree, so its links are in the first HTML", async () => {
       getTree.mockResolvedValueOnce(categoryTree);
 
       const tree = await render();
 
       expect(findPropValues(tree, "categoryTreePrefetched")).toEqual([true]);
+      // «Усі категорії» + the one root (TASK-2011).
       const [fallback] = findPropValues(tree, "fallback");
-      expect(findPropValues(fallback, "withSubcategoryChips")).toEqual([false]);
+      expect(findPropValues(fallback, "categoryTreeRows")).toEqual([2]);
     });
 
-    it("reserves the subcategory row in the fallback when the category has one", async () => {
+    it("sizes the fallback's tree panel for the selected category", async () => {
       getTree.mockResolvedValueOnce(categoryTree);
 
       const tree = await render({ category: "tws" });
 
+      // «Усі категорії» + ancestor «Навушники» + the current level («TWS»).
       const [fallback] = findPropValues(tree, "fallback");
-      expect(findPropValues(fallback, "withSubcategoryChips")).toEqual([true]);
+      expect(findPropValues(fallback, "categoryTreeRows")).toEqual([3]);
     });
 
     it("does not claim a tree the server could not read", async () => {
