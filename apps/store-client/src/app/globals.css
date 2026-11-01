@@ -469,9 +469,9 @@
 
   /* Fonts (TASK-1951) — Onest for text, Unbounded for headings, both loaded
      with the Cyrillic subset (ґ є і ї); Geist Mono only for SKUs and codes. */
-  --font-sans: var(--font-onest);
-  --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-unbounded), var(--font-onest);
+  --font-sans: var(--font-onest), sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
+  --font-display: var(--font-unbounded), var(--font-onest), sans-serif;
 }
 
 /* Tailwind v4 has no background-image theme namespace, so the brand gradient
