@@ -248,6 +248,11 @@ describe('payment-state-machine (TASK-431)', () => {
     [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
     [PaymentStatus.PAID, PaymentStatus.REFUNDED],
     [PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED],
+    // TASK-2047 (R2): PARTIALLY_PAID is "not fully paid" — the rest may arrive,
+    // or what came in may go back.
+    [PaymentStatus.PARTIALLY_PAID, PaymentStatus.PAID],
+    [PaymentStatus.PARTIALLY_PAID, PaymentStatus.PARTIALLY_REFUNDED],
+    [PaymentStatus.PARTIALLY_PAID, PaymentStatus.REFUNDED],
   ];
 
   it.each(ALLOWED_PAIRS)('allows %s → %s', (from, to) => {
@@ -282,6 +287,17 @@ describe('payment-state-machine (TASK-431)', () => {
     [PaymentStatus.REFUNDED, PaymentStatus.PAID],
     [PaymentStatus.REFUNDED, PaymentStatus.FAILED],
     [PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_REFUNDED],
+    // TASK-2047 (R2): PARTIALLY_PAID is derived from the money ledger only — no
+    // writer of this table may move INTO it, and money in never reverts to
+    // "awaiting" or "declined".
+    [PaymentStatus.PARTIALLY_PAID, PaymentStatus.PARTIALLY_PAID],
+    [PaymentStatus.PARTIALLY_PAID, PaymentStatus.PENDING],
+    [PaymentStatus.PARTIALLY_PAID, PaymentStatus.FAILED],
+    [PaymentStatus.PENDING, PaymentStatus.PARTIALLY_PAID],
+    [PaymentStatus.FAILED, PaymentStatus.PARTIALLY_PAID],
+    [PaymentStatus.PAID, PaymentStatus.PARTIALLY_PAID],
+    [PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.PARTIALLY_PAID],
+    [PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_PAID],
   ];
 
   it.each(FORBIDDEN_PAIRS)('rejects %s → %s', (from, to) => {
@@ -322,7 +338,9 @@ describe('payment-state-machine (TASK-431)', () => {
 
   // ─── Reachability ───────────────────────────────────────────────────────────
 
-  it('makes every payment status reachable from PENDING', () => {
+  // PARTIALLY_PAID (TASK-2047) is the one exception: only the money ledger
+  // derives it (`order-money.ts`), never a transition of this table.
+  it('makes every payment status but the ledger-only PARTIALLY_PAID reachable from PENDING', () => {
     const seen = new Set<PaymentStatus>([PaymentStatus.PENDING]);
     const queue: PaymentStatus[] = [PaymentStatus.PENDING];
 
@@ -335,7 +353,9 @@ describe('payment-state-machine (TASK-431)', () => {
       }
     }
 
-    expect([...seen].sort()).toEqual([...ALL_PAYMENT_STATUSES].sort());
+    expect([...seen].sort()).toEqual(
+      ALL_PAYMENT_STATUSES.filter((status) => status !== PaymentStatus.PARTIALLY_PAID).sort(),
+    );
   });
 
   // TASK-620: the correction of a mistaken mark is a SEPARATE rule — rule 4

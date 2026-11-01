@@ -2696,7 +2696,11 @@ export class OrderService {
    * the client, and the answer must be an env change, not a rewrite of this.
    */
   private resolveReservationDeadline(method: PaymentMethod): Date | null {
-    if (method === PaymentMethod.ON_DELIVERY) return null;
+    // A bank transfer (TASK-2047) arrives by hand, like cash on delivery: no card
+    // page to abandon, so nothing to auto-cancel.
+    if (method === PaymentMethod.ON_DELIVERY || method === PaymentMethod.BANK_TRANSFER) {
+      return null;
+    }
 
     const enabled = this.configService.get<string>('ORDER_AUTOCANCEL_UNPAID') !== 'false';
     if (!enabled) return null;

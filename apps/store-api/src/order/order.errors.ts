@@ -54,6 +54,16 @@ export const OrderErrorCode = {
    * about where the money is, and correcting it would make the ledger lie.
    */
   PAYMENT_CORRECTION_PROVIDER_REFUND: 'ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND',
+  /**
+   * A payout (or the reversal of a receipt) would leave more refunded than paid
+   * (TASK-951, R2): the ceiling is `paid − refunded` across EVERY kind, read under
+   * the order-row lock.
+   */
+  MONEY_REFUND_EXCEEDS_PAID: 'ORDER_MONEY_REFUND_EXCEEDS_PAID',
+  /** The ledger entry cannot be reversed (сторно) — see `canReverse`. */
+  MONEY_REVERSAL_REFUSED: 'ORDER_MONEY_REVERSAL_REFUSED',
+  /** A malformed ledger write: non-integer/non-positive amount, missing reason. */
+  MONEY_ENTRY_INVALID: 'ORDER_MONEY_ENTRY_INVALID',
 } as const;
 
 export type OrderErrorCode = (typeof OrderErrorCode)[keyof typeof OrderErrorCode];
@@ -265,5 +275,49 @@ export function deliveryPickupPointUnavailableError(): BadRequestException {
   return new BadRequestException({
     error: DeliveryOrderErrorCode.PICKUP_POINT_UNAVAILABLE,
     message: 'Обраний пункт самовивозу більше недоступний — оберіть інший',
+  });
+}
+
+/**
+ * 409 for a payout above what is still held (TASK-951, R2). `availableKop` is
+ * `paid − refunded` read under the order-row lock, across every kind of entry.
+ */
+export function moneyRefundExceedsPaidError(
+  requestedKop: number,
+  availableKop: number,
+): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.MONEY_REFUND_EXCEEDS_PAID,
+    message: `Cannot pay out ${requestedKop} kop: only ${availableKop} kop paid and not yet refunded`,
+  });
+}
+
+/** 409 for a ledger entry that may not be reversed (R2, `canReverse`). */
+export function moneyReversalRefusedError(reason: string): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.MONEY_REVERSAL_REFUSED,
+    message: `This money entry cannot be reversed: ${reason}`,
+  });
+}
+
+/** 400 for a malformed ledger write (R2). */
+export function moneyEntryInvalidError(message: string): BadRequestException {
+  return new BadRequestException({ error: OrderErrorCode.MONEY_ENTRY_INVALID, message });
+}
+
+/**
+ * 409 for reversing a receipt the payouts already made depend on (R2): without
+ * it more would stand refunded than paid. Same code as a payout over the ceiling
+ * — the repair is the same (reverse the payout first).
+ */
+export function moneyReceiptReversalBelowRefundedError(
+  receiptKop: number,
+  refundedKop: number,
+): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.MONEY_REFUND_EXCEEDS_PAID,
+    message:
+      `Cannot reverse a ${receiptKop} kop receipt: ${refundedKop} kop already paid back ` +
+      'would exceed what is left paid. Reverse the payout first.',
   });
 }

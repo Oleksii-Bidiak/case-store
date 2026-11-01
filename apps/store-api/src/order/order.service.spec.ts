@@ -476,6 +476,13 @@ describe('OrderService', () => {
       expect(params.reservationExpiresAt).toBeNull();
     });
 
+    // TASK-2047 (R2): a bank transfer arrives by hand like cash on delivery, so
+    // there is no card page to abandon and nothing to auto-cancel.
+    it('never starts a countdown for a bank transfer', () => {
+      expect(service['resolveReservationDeadline'](PaymentMethod.BANK_TRANSFER)).toBeNull();
+      expect(service['resolveReservationDeadline'](PaymentMethod.ONLINE)).toBeInstanceOf(Date);
+    });
+
     it('books a free-text order (no npCityRef) as OTHER at an explicit 0, without asking NP', async () => {
       cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());

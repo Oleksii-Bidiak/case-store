@@ -74,6 +74,7 @@ describe('DashboardRepository (integration)', () => {
 
     // Deterministic revenue aggregates: start from zero orders.
     await prisma.orderItem.deleteMany({});
+    await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
     await prisma.payment.deleteMany({});
     await prisma.order.deleteMany({});
 
@@ -183,6 +184,7 @@ describe('DashboardRepository (integration)', () => {
       return;
     }
     await prisma.orderItem.deleteMany({});
+    await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
     await prisma.payment.deleteMany({});
     await prisma.order.deleteMany({});
     await prisma.product.deleteMany({
@@ -372,6 +374,7 @@ describe('DashboardRepository (integration)', () => {
   describe('getRevenueMetrics — average order value', () => {
     beforeAll(async () => {
       await prisma.orderItem.deleteMany({});
+      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
       await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
 
@@ -412,6 +415,7 @@ describe('DashboardRepository (integration)', () => {
     });
 
     it('returns 0 (no divide-by-zero) when there are no paid orders in the window', async () => {
+      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
       await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
       const revenue = await repo.getRevenueMetrics();
@@ -431,6 +435,7 @@ describe('DashboardRepository (integration)', () => {
     beforeAll(async () => {
       sales = app.get(SalesRepository);
       await prisma.orderItem.deleteMany({});
+      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
       await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
 
@@ -525,6 +530,7 @@ describe('DashboardRepository (integration)', () => {
 
     beforeAll(async () => {
       await prisma.orderItem.deleteMany({});
+      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
       await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
 
@@ -601,6 +607,7 @@ describe('DashboardRepository (integration)', () => {
     });
 
     afterAll(async () => {
+      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
       await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
       await prisma.user.deleteMany({
@@ -634,6 +641,7 @@ describe('DashboardRepository (integration)', () => {
     beforeAll(async () => {
       // Deterministic baseline — wipe every table the four counters read.
       await prisma.orderItem.deleteMany({});
+      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
       await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
       await prisma.review.deleteMany({});
@@ -779,6 +787,7 @@ describe('DashboardRepository (integration)', () => {
     beforeAll(async () => {
       await prisma.orderStatusHistory.deleteMany({});
       await prisma.orderItem.deleteMany({});
+      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
       await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
 
@@ -808,6 +817,7 @@ describe('DashboardRepository (integration)', () => {
     });
 
     afterAll(async () => {
+      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
       await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
     });
@@ -831,6 +841,7 @@ describe('DashboardRepository (integration)', () => {
     beforeAll(async () => {
       await prisma.orderStatusHistory.deleteMany({});
       await prisma.orderItem.deleteMany({});
+      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
       await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
 
@@ -872,6 +883,7 @@ describe('DashboardRepository (integration)', () => {
 
     afterAll(async () => {
       await prisma.orderStatusHistory.deleteMany({});
+      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
       await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
     });
@@ -884,6 +896,7 @@ describe('DashboardRepository (integration)', () => {
 
     it('returns 0 when no order has shipped yet', async () => {
       await prisma.orderStatusHistory.deleteMany({});
+      await prisma.orderMoneyEntry.deleteMany({}); // TASK-2047: RESTRICT on orders/payments
       await prisma.payment.deleteMany({});
       await prisma.order.deleteMany({});
       await prisma.order.create({

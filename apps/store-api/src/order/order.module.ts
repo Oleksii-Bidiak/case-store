@@ -10,6 +10,7 @@ import { OrderRepository } from './order.repository';
 // TASK-483: the public lookup's own narrow query — see its docblock for why it
 // is not a method on OrderRepository.
 import { OrderLookupRepository } from './order-lookup.repository';
+import { OrderMoneyRepository } from './order-money.repository';
 import { OrderService } from './order.service';
 // TASK-485: the seam the auth side claims guest orders through. Imported here
 // (never the other way round) because this module is the one that IMPLEMENTS it.
@@ -76,6 +77,9 @@ import {
   providers: [
     OrderRepository,
     OrderLookupRepository,
+    // TASK-2047 (R2): the order money ledger. Not yet injected anywhere — the
+    // webhook (A2) and the admin money endpoints (A3) are its first callers.
+    OrderMoneyRepository,
     OrderService,
     ReturnRepository,
     ReturnService,

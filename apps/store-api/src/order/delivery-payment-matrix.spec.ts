@@ -13,11 +13,13 @@ import {
  * silently inherits "everything allowed" is exactly the drift this guards.
  */
 const EXPECTED: Record<DeliveryMethod, Record<PaymentMethod, boolean>> = {
-  NOVA_POSHTA: { ON_DELIVERY: true, ONLINE: true, INSTALLMENTS: true },
-  PICKUP: { ON_DELIVERY: true, ONLINE: true, INSTALLMENTS: true },
-  COURIER: { ON_DELIVERY: true, ONLINE: true, INSTALLMENTS: true },
+  // BANK_TRANSFER (TASK-2047) is admin-only: the storefront matrix never offers
+  // it. The admin matrix that does is wave R2 step A3.
+  NOVA_POSHTA: { ON_DELIVERY: true, ONLINE: true, INSTALLMENTS: true, BANK_TRANSFER: false },
+  PICKUP: { ON_DELIVERY: true, ONLINE: true, INSTALLMENTS: true, BANK_TRANSFER: false },
+  COURIER: { ON_DELIVERY: true, ONLINE: true, INSTALLMENTS: true, BANK_TRANSFER: false },
   // No final amount to sign yet: the operator quotes shipping later.
-  OTHER: { ON_DELIVERY: true, ONLINE: false, INSTALLMENTS: false },
+  OTHER: { ON_DELIVERY: true, ONLINE: false, INSTALLMENTS: false, BANK_TRANSFER: false },
 };
 
 describe('delivery × payment matrix', () => {

@@ -182,6 +182,14 @@ export const PAYMENT_TRANSITIONS: Readonly<Record<PaymentStatus, readonly Paymen
     [PaymentStatus.PARTIALLY_REFUNDED]: Object.freeze([PaymentStatus.REFUNDED]),
     // Rule 4: terminal.
     [PaymentStatus.REFUNDED]: Object.freeze([]),
+    // TASK-2047 (R2): derived from the money ledger, never a target of this
+    // table. Until the admin path moves to the ledger (A3) it is "not fully
+    // paid": the rest may arrive, or what came in may go back.
+    [PaymentStatus.PARTIALLY_PAID]: Object.freeze([
+      PaymentStatus.PAID,
+      PaymentStatus.PARTIALLY_REFUNDED,
+      PaymentStatus.REFUNDED,
+    ]),
   });
 
 /**
