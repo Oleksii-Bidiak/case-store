@@ -1553,6 +1553,53 @@ describe('ReturnService (TASK-340)', () => {
         expect(returnRepositoryMock.decide).not.toHaveBeenCalled();
       });
 
+      it.each([ReturnDecision.REPLACEMENT, ReturnDecision.REPAIR])(
+        '409 RETURN_REFUND_RECORDED moving to %s while a refund amount is recorded',
+        async (decision) => {
+          returnRepositoryMock.findById.mockResolvedValue(
+            makeReturn({
+              status: ReturnStatus.RECEIVED,
+              decision: ReturnDecision.REFUND,
+              refundedAmount: { toString: () => '499.00' } as never,
+            }),
+          );
+
+          const result = await refusal(
+            service.decideReturn(RETURN_ID, OPERATOR_ID, {
+              decision,
+              reason: 'Покупець передумав',
+            }),
+          );
+
+          // The amount still counts against the order's refund balance; a goods
+          // outcome on top of it would leave money recorded with no refund behind it.
+          expect(result.status).toBe(409);
+          expect(result.body.error).toBe('RETURN_REFUND_RECORDED');
+          expect(returnRepositoryMock.decide).not.toHaveBeenCalled();
+        },
+      );
+
+      it('lets a recorded refund keep REFUND with a new reason', async () => {
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({
+            status: ReturnStatus.RECEIVED,
+            decision: ReturnDecision.REFUND,
+            decisionReason: 'Брак',
+            refundedAmount: { toString: () => '499.00' } as never,
+          }),
+        );
+        returnRepositoryMock.decide.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
+        );
+
+        await service.decideReturn(RETURN_ID, OPERATOR_ID, {
+          decision: ReturnDecision.REFUND,
+          reason: 'Брак екрана',
+        });
+
+        expect(returnRepositoryMock.decide).toHaveBeenCalled();
+      });
+
       it('409 RETURN_DECISION_UNCHANGED for the same decision with the same reason', async () => {
         returnRepositoryMock.findById.mockResolvedValue(
           makeReturn({
