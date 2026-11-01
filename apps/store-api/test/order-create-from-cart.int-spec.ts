@@ -351,4 +351,73 @@ describe('OrderRepository.createFromCart — persisted row (integration)', () =>
       expect((await persisted(created.id)).billingAddress).toEqual(billing);
     });
   });
+
+  // ─── Checkout sign-up (TASK-2010) ────────────────────────────────────────────
+  // The account a guest asks for is written INSIDE the order transaction. These
+  // prove it against a real Postgres: the order belongs to the new account, and
+  // a checkout that fails leaves no account row behind.
+
+  describe('checkout sign-up (TASK-2010)', () => {
+    const signupEmail = () => `cfc-signup-${randomUUID().slice(0, 8)}@test.local`;
+
+    /** The account closure as OrderService builds it — a plain row write via the tx. */
+    const accountFor = (email: string): CreateOrderParams['account'] => ({
+      create: async (tx) => (await tx.user.create({ data: { email, role: 'CUSTOMER' } })).id,
+    });
+
+    afterEach(async () => {
+      if (!prisma) return;
+      const signups = await prisma.user.findMany({
+        where: { email: { startsWith: 'cfc-signup-' } },
+        select: { id: true },
+      });
+      const ids = signups.map((u) => u.id);
+      await prisma.orderStatusHistory.deleteMany({ where: { order: { userId: { in: ids } } } });
+      await prisma.orderItem.deleteMany({ where: { order: { userId: { in: ids } } } });
+      await prisma.order.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.user.deleteMany({ where: { id: { in: ids } } });
+    });
+
+    it('writes the order for the account created in the same transaction', async () => {
+      const email = signupEmail();
+
+      const created = await repo.createFromCart(
+        await buildParams({ userId: null, account: accountFor(email) }),
+      );
+
+      const account = await prisma.user.findUniqueOrThrow({ where: { email } });
+      expect((await persisted(created.id)).userId).toBe(account.id);
+    });
+
+    it('leaves NO account behind when the stock is gone at commit (atomicity)', async () => {
+      const email = signupEmail();
+      // A racing order took the stock between the service's check and the commit.
+      await prisma.product.update({ where: { id: productId }, data: { stock: 0 } });
+
+      await expect(
+        repo.createFromCart(await buildParams({ userId: null, account: accountFor(email) })),
+      ).rejects.toMatchObject({ status: 409 });
+
+      expect(await prisma.user.count({ where: { email } })).toBe(0);
+      expect(await prisma.order.count({ where: { user: { email } } })).toBe(0);
+    });
+
+    it('leaves NO account behind when the in-transaction hook fails', async () => {
+      const email = signupEmail();
+
+      await expect(
+        repo.createFromCart(
+          await buildParams({ userId: null, account: accountFor(email) }),
+          async () => {
+            throw new Error('outbox write failed');
+          },
+        ),
+      ).rejects.toThrow('outbox write failed');
+
+      expect(await prisma.user.count({ where: { email } })).toBe(0);
+      // The stock decrement rolled back with it.
+      const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+      expect(product.stock).toBe(INITIAL_STOCK);
+    });
+  });
 });

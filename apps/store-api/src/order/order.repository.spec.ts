@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import {
   OrderStatus,
   PaymentStatus,
@@ -289,6 +289,111 @@ describe('OrderRepository', () => {
           changedBy: null,
         },
       });
+    });
+  });
+
+  // ─── createFromCart — checkout sign-up (TASK-2010) ─────────────────────────
+  // The account is written INSIDE the order transaction, before the order, and
+  // the order is written for it — so a failed checkout leaves no account behind.
+
+  describe('createFromCart — checkout sign-up (TASK-2010)', () => {
+    const arrange = () => {
+      const tx = makeTx();
+      tx.order.create.mockResolvedValue({ id: 'order-1', userId: 'user-new', items: [] });
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      return tx;
+    };
+
+    it('creates the account first, through the order tx, and writes the order for it', async () => {
+      const tx = arrange();
+      const create = jest.fn().mockResolvedValue('user-new');
+
+      await repository.createFromCart({ ...baseParams, userId: null, account: { create } });
+
+      expect(create).toHaveBeenCalledWith(tx);
+      expect(tx.order.create.mock.calls[0][0].data.userId).toBe('user-new');
+      expect(create.mock.invocationCallOrder[0]).toBeLessThan(
+        tx.order.create.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('hands the redeem closure the order owner — the new account', async () => {
+      const tx = arrange();
+      const redeem = jest.fn();
+
+      await repository.createFromCart({
+        ...baseParams,
+        userId: null,
+        account: { create: jest.fn().mockResolvedValue('user-new') },
+        discount: { amount: '5.00', code: 'SAVE5', redeem },
+      });
+
+      expect(redeem).toHaveBeenCalledWith('order-1', tx, 'user-new');
+    });
+
+    it('hands an account order its own user id as the owner', async () => {
+      const tx = arrange();
+      const redeem = jest.fn();
+
+      await repository.createFromCart({
+        ...baseParams,
+        discount: { amount: '5.00', code: 'SAVE5', redeem },
+      });
+
+      expect(redeem).toHaveBeenCalledWith('order-1', tx, baseParams.userId);
+    });
+
+    it('lets an oversell roll the account back with the order (it throws out of the tx)', async () => {
+      const tx = arrange();
+      tx.product.updateMany.mockResolvedValue({ count: 0 });
+      const create = jest.fn().mockResolvedValue('user-new');
+
+      await expect(
+        repository.createFromCart({ ...baseParams, userId: null, account: { create } }),
+      ).rejects.toThrow(ConflictException);
+      // Proven against a real Postgres in test/order-create-from-cart.int-spec.ts.
+      expect(create).toHaveBeenCalledWith(tx);
+    });
+  });
+
+  // ─── assignGuestOrderToNewAccount (TASK-2010, the one-click account) ────────
+
+  describe('assignGuestOrderToNewAccount', () => {
+    it('creates the account and attaches the still-unowned order in one transaction', async () => {
+      const tx = makeTx();
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      const create = jest.fn().mockResolvedValue('user-new');
+      const afterAssign = jest.fn();
+
+      await expect(
+        repository.assignGuestOrderToNewAccount('order-1', { create }, afterAssign),
+      ).resolves.toBe('user-new');
+
+      expect(create).toHaveBeenCalledWith(tx);
+      // `userId: null` in the WHERE: an order claimed in between is not re-pointed.
+      expect(tx.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-1', userId: null, deletedAt: null },
+        data: { userId: 'user-new' },
+      });
+      expect(afterAssign).toHaveBeenCalledWith(tx, 'user-new');
+    });
+
+    it('rolls everything back with a 404 when the order was claimed meanwhile', async () => {
+      const tx = makeTx();
+      tx.order.updateMany.mockResolvedValue({ count: 0 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      const afterAssign = jest.fn();
+
+      await expect(
+        repository.assignGuestOrderToNewAccount(
+          'order-1',
+          { create: jest.fn().mockResolvedValue('user-new') },
+          afterAssign,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(afterAssign).not.toHaveBeenCalled();
     });
   });
 

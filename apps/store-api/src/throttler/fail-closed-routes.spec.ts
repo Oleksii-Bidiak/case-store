@@ -14,6 +14,7 @@ import { ReviewController } from '../review/review.controller';
 import { ReviewUpdateController } from '../review/review-update.controller';
 import { FAIL_CLOSED_THROTTLE_KEY } from './fail-closed-throttle.decorator';
 import { REVIEW_SUBMISSION_THROTTLE_KEY } from './review-submission-throttle.decorator';
+import { CHECKOUT_SIGNUP_THROTTLE_KEY } from './checkout-signup-throttle.decorator';
 
 /**
  * TASK-401 — WHICH routes refuse to be served without a working rate limiter.
@@ -69,6 +70,10 @@ describe('Fail-closed route classification', () => {
       // TASK-1965: the guest's returns, read and filed by the same token.
       ['GET /api/orders/guest/:token/returns', GuestReturnController.prototype.list],
       ['POST /api/orders/guest/:token/returns', GuestReturnController.prototype.create],
+      // TASK-2010: both create an account with no session in front of them.
+      ['POST /api/orders/guest/:token/account', OrderController.prototype.createGuestOrderAccount],
+      ['POST /api/auth/account-setup/confirm', AuthController.prototype.confirmAccountSetup],
+      ['POST /api/auth/checkout/email-status', AuthController.prototype.checkoutEmailStatus],
       ['POST /api/newsletter/subscribe', NewsletterController.prototype.subscribe],
       ['POST /api/newsletter/unsubscribe', NewsletterController.prototype.unsubscribe],
     ])('%s', (_route, handler) => {
@@ -242,5 +247,28 @@ describe('Review-submission throttle classification (TASK-588)', () => {
   it('no ordinary route is quietly capped at five an hour', () => {
     expect(isReviewSubmission(ProductController.prototype.findAll)).toBeUndefined();
     expect(isReviewSubmission(OrderController.prototype.createOrder)).toBeUndefined();
+  });
+});
+
+/**
+ * TASK-2010 — WHICH routes the five-accounts-an-hour bucket counts. Same blind
+ * spot as above: the bucket is configured centrally, and a route that forgot to
+ * opt in would simply create accounts without it.
+ */
+const checkoutSignupMode = (handler: unknown): unknown =>
+  Reflect.getMetadata(CHECKOUT_SIGNUP_THROTTLE_KEY, handler as object);
+
+describe('Checkout sign-up throttle classification (TASK-2010)', () => {
+  it('POST /api/orders counts only a request that asks for an account', () => {
+    expect(checkoutSignupMode(OrderController.prototype.createOrder)).toBe('createAccount');
+  });
+
+  it('POST /api/orders/guest/:token/account counts every request', () => {
+    expect(checkoutSignupMode(OrderController.prototype.createGuestOrderAccount)).toBe('always');
+  });
+
+  it('no ordinary route is quietly capped at five an hour', () => {
+    expect(checkoutSignupMode(ProductController.prototype.findAll)).toBeUndefined();
+    expect(checkoutSignupMode(OrderController.prototype.lookupOrder)).toBeUndefined();
   });
 });

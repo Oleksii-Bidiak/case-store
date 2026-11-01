@@ -34,6 +34,8 @@ import {
 } from '../delivery';
 import { DiscountService } from '../discount';
 import { AddonApplicabilityResolver } from '../addon-service';
+import { CheckoutAccountService } from '../auth/checkout-account.service';
+import { accountExistsError } from '../auth/checkout-account.errors';
 import type { User } from '@prisma/client';
 import type {
   OrderActor,
@@ -220,6 +222,8 @@ const orderRepositoryMock = {
   // TASK-648: the CSV export and the delivery-method facet counts.
   findAllForExport: jest.fn(),
   countByDeliveryMethod: jest.fn(),
+  // TASK-2010: the one-click account from the guest success page.
+  assignGuestOrderToNewAccount: jest.fn(),
 };
 
 // TASK-827: checkout reads the cart through CartService, the one method it uses.
@@ -300,6 +304,14 @@ const discountServiceMock = {
   redeem: jest.fn(),
 };
 
+// TASK-2010: the account a guest creates at checkout — the auth module's side.
+const checkoutAccountsMock = {
+  assertNoAccount: jest.fn(),
+  createPasswordless: jest.fn(),
+  issueSetupLink: jest.fn(),
+  startSession: jest.fn(),
+};
+
 // TASK-483: the public lookup's own repository — one method, deliberately.
 const orderLookupRepositoryMock = {
   findByNumberAndPhone: jest.fn(),
@@ -359,6 +371,7 @@ describe('OrderService', () => {
         { provide: PinoLogger, useValue: pinoLoggerMock },
         { provide: ShopNotifier, useValue: shopNotifierMock },
         { provide: CustomerNotifier, useValue: customerNotifierMock },
+        { provide: CheckoutAccountService, useValue: checkoutAccountsMock },
       ],
     }).compile();
 
@@ -591,10 +604,12 @@ describe('OrderService', () => {
 
       // Subtotal is computed server-side (29.99 × 2 + 9.99 × 1 = 69.97) and
       // passed to the authoritative recompute — never a client-sent amount.
+      // TASK-2010: with the order phone, normalised — half of "per customer".
       expect(discountServiceMock.computeDiscount).toHaveBeenCalledWith(
         'SUMMER10',
         '69.97',
         USER_ID,
+        '380501234567',
       );
       expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -647,6 +662,7 @@ describe('OrderService', () => {
         'SUMMER10',
         previewSubtotal,
         USER_ID,
+        '380501234567',
       );
     });
 
@@ -663,8 +679,34 @@ describe('OrderService', () => {
 
       const params = orderRepositoryMock.createFromCart.mock.calls[0][0];
       const fakeTx = {} as never;
-      await params.discount.redeem('order-1', fakeTx);
-      expect(discountServiceMock.redeem).toHaveBeenCalledWith('d1', USER_ID, 'order-1', fakeTx);
+      // The repository hands the closure the order's owner (TASK-2010: for a
+      // checkout sign-up that account exists only inside the transaction).
+      await params.discount.redeem('order-1', fakeTx, USER_ID);
+      expect(discountServiceMock.redeem).toHaveBeenCalledWith(
+        'd1',
+        USER_ID,
+        'order-1',
+        fakeTx,
+        '380501234567',
+      );
+    });
+
+    it('refuses to redeem for an order without an owner (DISCOUNT_ACCOUNT_REQUIRED)', async () => {
+      const discountDto: CreateOrderDto = { shippingAddress: address, discountCode: 'SUMMER10' };
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      discountServiceMock.computeDiscount.mockResolvedValue({
+        discount: { id: 'd1', code: 'SUMMER10', type: 'PERCENT' },
+        amount: '3.00',
+      });
+
+      await service.createOrder(userActor, discountDto);
+
+      const params = orderRepositoryMock.createFromCart.mock.calls[0][0];
+      await expect(params.discount.redeem('order-1', {} as never, null)).rejects.toMatchObject({
+        response: expect.objectContaining({ error: 'DISCOUNT_ACCOUNT_REQUIRED' }),
+      });
+      expect(discountServiceMock.redeem).not.toHaveBeenCalled();
     });
 
     it('does not touch the discount service when no code is supplied', async () => {
@@ -3818,13 +3860,43 @@ describe('OrderService', () => {
       expect(params.orderStatusUrl).toBeUndefined();
     });
 
-    it('rejects a promo code, because a redemption needs an account it does not have', async () => {
-      await expect(
-        service.createOrder(guestActor, { ...createDto, discountCode: 'SUMMER10' }),
-      ).rejects.toThrow(BadRequestException);
+    it('rejects a promo code with 400 DISCOUNT_ACCOUNT_REQUIRED — a code needs an account', async () => {
+      const error = await service
+        .createOrder(guestActor, { ...createDto, discountCode: 'SUMMER10' })
+        .catch((e: unknown) => e);
 
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({
+        error: 'DISCOUNT_ACCOUNT_REQUIRED',
+      });
       expect(discountServiceMock.computeDiscount).not.toHaveBeenCalled();
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    // TASK-2010 (B-13 (ж)): a card payment can only be paid from an account, so
+    // the server stops taking one the storefront could never pay.
+    it.each([PaymentMethod.ONLINE, PaymentMethod.INSTALLMENTS])(
+      'rejects %s with 400 PAYMENT_ACCOUNT_REQUIRED',
+      async (paymentMethod) => {
+        const error = await service
+          .createOrder(guestActor, { ...createDto, paymentMethod })
+          .catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect((error as BadRequestException).getResponse()).toMatchObject({
+          error: 'PAYMENT_ACCOUNT_REQUIRED',
+        });
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      },
+    );
+
+    it('still takes a cash-on-delivery guest order on an address that HAS an account', async () => {
+      // Without the checkbox nothing is created, so a taken address is no
+      // obstacle — exactly as before TASK-2010.
+      await service.createOrder(guestActor, createDto);
+
+      expect(checkoutAccountsMock.assertNoAccount).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalled();
     });
 
     it('404s when the guest cart cookie points at nothing', async () => {
@@ -3883,6 +3955,236 @@ describe('OrderService', () => {
       await expect(service.placeOrder(userActor, createDto)).resolves.toEqual(
         expect.objectContaining({ guestAccessToken: null }),
       );
+    });
+  });
+
+  // ─── Checkout sign-up (TASK-2010, B-12 тема 2) ───────────────────────────────
+  // «Створити акаунт на цю пошту»: the account is created password-less inside
+  // the order's own transaction, owns the order outright, and is signed in.
+
+  describe('createOrder — checkout sign-up (TASK-2010)', () => {
+    const NEW_USER_ID = 'user-new-1';
+    const signupActor: OrderActor = { ...guestActor, createAccount: true };
+    const guestCart: CartWithItems = { ...cartWithItems, userId: null, token: GUEST_CART_TOKEN };
+    const session = { userId: NEW_USER_ID, accessToken: 'access', refreshToken: 'refresh' };
+    const createdOrder = makeOrder({ userId: NEW_USER_ID });
+
+    beforeEach(() => {
+      cartServiceMock.loadForCheckout.mockResolvedValue(guestCart);
+      resolveCreateWithHook(createdOrder);
+      checkoutAccountsMock.assertNoAccount.mockResolvedValue(undefined);
+      checkoutAccountsMock.createPasswordless.mockResolvedValue(NEW_USER_ID);
+      checkoutAccountsMock.startSession.mockResolvedValue(session);
+    });
+
+    it('refuses an address that already has an account with 409 ACCOUNT_EXISTS — nothing written', async () => {
+      checkoutAccountsMock.assertNoAccount.mockRejectedValue(accountExistsError());
+
+      const error = await service.placeOrder(signupActor, createDto).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toMatchObject({ error: 'ACCOUNT_EXISTS' });
+      expect(checkoutAccountsMock.assertNoAccount).toHaveBeenCalledWith(guestContact.email);
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it('writes the order with NO guest block and an account closure run inside the transaction', async () => {
+      await service.placeOrder(signupActor, createDto);
+
+      const [params] = orderRepositoryMock.createFromCart.mock.calls[0] as [
+        {
+          userId: string | null;
+          guest?: unknown;
+          account: { create: (tx: unknown) => Promise<string> };
+        },
+      ];
+      // The order belongs to the account outright: no guest token, no guest
+      // columns — the account and its letters are the buyer's way back.
+      expect(params.userId).toBeNull();
+      expect(params.guest).toBeUndefined();
+
+      await expect(params.account.create(txMock)).resolves.toBe(NEW_USER_ID);
+      expect(checkoutAccountsMock.createPasswordless).toHaveBeenCalledWith(
+        { email: guestContact.email, name: guestContact.name, phone: guestContact.phone },
+        txMock,
+      );
+    });
+
+    it('queues the «Задайте пароль» link in the same transaction as the order', async () => {
+      await service.placeOrder(signupActor, createDto);
+
+      expect(checkoutAccountsMock.issueSetupLink).toHaveBeenCalledWith(
+        { id: NEW_USER_ID, email: guestContact.email },
+        txMock,
+      );
+    });
+
+    it('signs the buyer in after the commit and hands back no guest token', async () => {
+      const result = await service.placeOrder(signupActor, createDto);
+
+      expect(checkoutAccountsMock.startSession).toHaveBeenCalledWith(NEW_USER_ID);
+      expect(result).toEqual(expect.objectContaining({ guestAccessToken: null, session }));
+      const created = orderRepositoryMock.createFromCart.mock.invocationCallOrder[0];
+      const signedIn = checkoutAccountsMock.startSession.mock.invocationCallOrder[0];
+      expect(created).toBeLessThan(signedIn);
+    });
+
+    it('sends the confirmation to the typed address, with no guest status link', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
+
+      await service.placeOrder(signupActor, createDto);
+
+      const mail = mailOutboxServiceMock.enqueueOrderConfirmation.mock.calls[0][0] as unknown as {
+        to: string;
+        orderStatusUrl?: string;
+      };
+      expect(mail.to).toBe(guestContact.email);
+      expect(mail.orderStatusUrl).toBeUndefined();
+    });
+
+    it('takes a card payment — the account will pay for it', async () => {
+      await service.placeOrder(signupActor, {
+        ...createDto,
+        shippingAddress: { ...address, npCityRef: 'city-ref-1' },
+        deliveryMethod: DeliveryMethod.NOVA_POSHTA,
+        paymentMethod: PaymentMethod.ONLINE,
+      });
+
+      expect(orderRepositoryMock.createFromCart).toHaveBeenCalledWith(
+        expect.objectContaining({ paymentMethod: PaymentMethod.ONLINE }),
+        expect.any(Function),
+      );
+    });
+
+    it('applies a promo code: validated by the order phone, redeemed for the NEW account', async () => {
+      discountServiceMock.computeDiscount.mockResolvedValue({
+        discount: { id: 'd1', code: 'SUMMER10', type: 'PERCENT' },
+        amount: '3.00',
+      });
+
+      await service.placeOrder(signupActor, { ...createDto, discountCode: 'SUMMER10' });
+
+      // No account row yet when the code is checked — only the phone can say
+      // "this person already used it".
+      expect(discountServiceMock.computeDiscount).toHaveBeenCalledWith(
+        'SUMMER10',
+        '69.97',
+        null,
+        '380501234567',
+      );
+      const [params] = orderRepositoryMock.createFromCart.mock.calls[0] as [
+        { discount: { redeem: (id: string, tx: unknown, owner: string | null) => Promise<void> } },
+      ];
+      await params.discount.redeem('order-1', txMock, NEW_USER_ID);
+      expect(discountServiceMock.redeem).toHaveBeenCalledWith(
+        'd1',
+        NEW_USER_ID,
+        'order-1',
+        txMock,
+        '380501234567',
+      );
+    });
+
+    it('ignores the box for a signed-in shopper — the actor decides, not the body', async () => {
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+      cartServiceMock.loadForCheckout.mockResolvedValue(cartWithItems);
+      resolveCreateWithHook();
+
+      const result = await service.placeOrder(userActor, createDto);
+
+      expect(checkoutAccountsMock.assertNoAccount).not.toHaveBeenCalled();
+      expect(result.session).toBeNull();
+    });
+  });
+
+  // ─── One-click account from the guest success page (TASK-2010 (д)) ──────────
+
+  describe('createAccountFromGuestOrder', () => {
+    const RAW = 'c'.repeat(64);
+    const NEW_USER_ID = 'user-new-2';
+    const session = { userId: NEW_USER_ID, accessToken: 'access', refreshToken: 'refresh' };
+    const guestOrder = makeOrder({
+      userId: null,
+      guestEmail: 'guest@example.com',
+      guestName: 'Гість Гостьович',
+      guestPhone: '380671112233',
+      createdAt: new Date(),
+    });
+
+    beforeEach(() => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(guestOrder);
+      checkoutAccountsMock.assertNoAccount.mockResolvedValue(undefined);
+      checkoutAccountsMock.createPasswordless.mockResolvedValue(NEW_USER_ID);
+      checkoutAccountsMock.startSession.mockResolvedValue(session);
+      orderRepositoryMock.assignGuestOrderToNewAccount.mockImplementation(
+        async (
+          _orderId: string,
+          account: { create: (tx: unknown) => Promise<string> },
+          afterAssign: (tx: unknown, userId: string) => Promise<void>,
+        ) => {
+          const userId = await account.create(txMock);
+          await afterAssign(txMock, userId);
+          return userId;
+        },
+      );
+    });
+
+    it('creates the account on the order e-mail, attaches THIS order and signs in', async () => {
+      await expect(service.createAccountFromGuestOrder(RAW)).resolves.toEqual({ session });
+
+      expect(orderRepositoryMock.findByAccessTokenHash).toHaveBeenCalledWith(
+        createHash('sha256').update(RAW).digest('hex'),
+      );
+      expect(orderRepositoryMock.assignGuestOrderToNewAccount).toHaveBeenCalledWith(
+        guestOrder.id,
+        expect.objectContaining({ create: expect.any(Function) }),
+        expect.any(Function),
+      );
+      expect(checkoutAccountsMock.createPasswordless).toHaveBeenCalledWith(
+        { email: 'guest@example.com', name: 'Гість Гостьович', phone: '380671112233' },
+        txMock,
+      );
+      expect(checkoutAccountsMock.issueSetupLink).toHaveBeenCalledWith(
+        { id: NEW_USER_ID, email: 'guest@example.com' },
+        txMock,
+      );
+      expect(checkoutAccountsMock.startSession).toHaveBeenCalledWith(NEW_USER_ID);
+    });
+
+    it('answers 409 ACCOUNT_EXISTS when the order e-mail already has an account', async () => {
+      checkoutAccountsMock.assertNoAccount.mockRejectedValue(accountExistsError());
+
+      await expect(service.createAccountFromGuestOrder(RAW)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(orderRepositoryMock.assignGuestOrderToNewAccount).not.toHaveBeenCalled();
+    });
+
+    it('answers the guest-link 404 for an unknown token', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(null);
+
+      await expect(service.createAccountFromGuestOrder(RAW)).rejects.toThrow(NotFoundException);
+      expect(checkoutAccountsMock.assertNoAccount).not.toHaveBeenCalled();
+    });
+
+    it('answers the same 404 for an order that already belongs to an account', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue({
+        ...guestOrder,
+        userId: 'someone',
+      });
+
+      await expect(service.createAccountFromGuestOrder(RAW)).rejects.toThrow(NotFoundException);
+      expect(orderRepositoryMock.assignGuestOrderToNewAccount).not.toHaveBeenCalled();
+    });
+
+    it('refuses (400) an operator phone order that has no e-mail to sign up on', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue({
+        ...guestOrder,
+        guestEmail: null,
+      });
+
+      await expect(service.createAccountFromGuestOrder(RAW)).rejects.toThrow(BadRequestException);
+      expect(orderRepositoryMock.assignGuestOrderToNewAccount).not.toHaveBeenCalled();
     });
   });
 
