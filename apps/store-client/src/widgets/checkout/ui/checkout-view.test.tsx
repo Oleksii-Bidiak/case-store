@@ -850,6 +850,8 @@ describe("CheckoutView", () => {
         email: "olena@example.com",
         phone: "+380 50 123 4567",
         name: "Олег Коваль",
+        // TASK-2010: always a JSON boolean for a guest — off unless ticked.
+        createAccount: false,
       });
 
       // And they are shown the outcome in place: /orders/[id]/confirmation reads
@@ -1654,8 +1656,9 @@ describe("CheckoutView — delivery method (TASK-646)", () => {
     const online = screen.getByRole("radio", {
       name: new RegExp(dict.checkout.payment.onlineTitle),
     });
+    // TASK-2010: a guest gets card on an account created at checkout.
     expect(online).toHaveAccessibleDescription(
-      dict.checkout.payment.accountRequired,
+      expect.stringContaining(dict.checkout.payment.createsAccountNote),
     );
 
     await user.click(methodRadio(dict.checkout.delivery.titles.OTHER));
@@ -1931,7 +1934,10 @@ describe("CheckoutView — the session expires mid-checkout (TASK-773, TASK-794)
     expect(orderCalls).toBe(1);
   });
 
-  it("falls back to cash on delivery when the chosen online method is no longer available", async () => {
+  // TASK-2010: card is no longer closed to a guest — it comes with an account
+  // created at checkout — so a lapsed session keeps the choice and ticks
+  // «Створити акаунт» for it instead of switching to cash on delivery.
+  it("keeps the chosen card when the session lapses, ticking «Створити акаунт» for it", async () => {
     process.env.NEXT_PUBLIC_PAYMENT_METHODS = "ONLINE";
     sessionThatExpires();
     server.use(
@@ -1955,14 +1961,14 @@ describe("CheckoutView — the session expires mid-checkout (TASK-773, TASK-794)
       await expect(api.get("/api/protected")).rejects.toBeTruthy();
     });
 
-    await waitFor(() => expect(online).toBeDisabled());
-    await waitFor(() =>
-      expect(
-        screen.getByRole("radio", {
-          name: new RegExp(dict.checkout.payment.onDeliveryTitle),
-        }),
-      ).toBeChecked(),
-    );
-    expect(online).not.toBeChecked();
+    const box = await screen.findByRole("checkbox", {
+      name: dict.checkout.guest.createAccountLabel,
+    });
+    await waitFor(() => expect(box).toBeChecked());
+    expect(online).toBeEnabled();
+    expect(online).toBeChecked();
+    expect(
+      screen.getByText(dict.checkout.guest.createAccountForCard),
+    ).toBeInTheDocument();
   });
 });

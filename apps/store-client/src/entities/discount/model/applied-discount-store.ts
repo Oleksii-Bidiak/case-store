@@ -14,6 +14,12 @@ export interface AppliedDiscount {
   amount: string;
   /** Cart subtotal after the discount, as a decimal string. */
   newTotal: string;
+  /**
+   * Previewed by a guest (TASK-2010): the code applies only to an order placed
+   * with an account, which checkout creates for it. Optional — a value stored
+   * in the tab before this field existed reads as `false`.
+   */
+  requiresAccount?: boolean;
 }
 
 const STORAGE_KEY = "appliedDiscount";

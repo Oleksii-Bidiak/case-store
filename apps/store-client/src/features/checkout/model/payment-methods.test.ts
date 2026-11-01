@@ -80,19 +80,52 @@ describe("resolvePaymentMethods", () => {
     expect(options.every((o) => o.enabled)).toBe(true);
   });
 
-  it("blocks the online methods for a guest, with the reason attached", () => {
-    // Not a product preference: POST /api/payments/orders/:id/checkout is behind
-    // JwtAuthGuard, so a guest choosing card would dead-end on a 401.
+  it("offers the online methods to a guest on an account created at checkout (TASK-2010)", () => {
+    // The order's own session opens the payment attempt, so card is real for a
+    // guest — on the condition the option itself states.
     const options = resolvePaymentMethods({
       configured: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
       isAuthenticated: false,
     });
 
     const byMethod = Object.fromEntries(options.map((o) => [o.method, o]));
+    expect(byMethod.ON_DELIVERY).toMatchObject({ enabled: true });
+    expect(byMethod.ON_DELIVERY.accountNote).toBeUndefined();
+    for (const method of ["ONLINE", "INSTALLMENTS"]) {
+      expect(byMethod[method]).toMatchObject({
+        enabled: true,
+        accountNote: dict.checkout.payment.createsAccountNote,
+      });
+      expect(byMethod[method].blockedBy).toBeUndefined();
+    }
+  });
+
+  it("asks a guest whose address already has an account to sign in instead", () => {
+    // Checkout never creates a second account (409 ACCOUNT_EXISTS).
+    const options = resolvePaymentMethods({
+      configured: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+      isAuthenticated: false,
+      guestHasAccount: true,
+    });
+
+    const byMethod = Object.fromEntries(options.map((o) => [o.method, o]));
     expect(byMethod.ON_DELIVERY.enabled).toBe(true);
-    expect(byMethod.ONLINE.enabled).toBe(false);
-    expect(byMethod.ONLINE.blockedBy).toBe("account-required");
-    expect(byMethod.INSTALLMENTS.blockedBy).toBe("account-required");
+    for (const method of ["ONLINE", "INSTALLMENTS"]) {
+      expect(byMethod[method]).toMatchObject({
+        enabled: false,
+        blockedBy: "account-required",
+        blockedReason: dict.checkout.payment.accountRequired,
+      });
+    }
+  });
+
+  it("ignores the address hint for a signed-in shopper", () => {
+    const options = resolvePaymentMethods({
+      configured: ["ON_DELIVERY", "ONLINE"],
+      isAuthenticated: true,
+      guestHasAccount: true,
+    });
+    expect(options.every((o) => o.enabled && !o.accountNote)).toBe(true);
   });
 
   it("leaves cash on delivery usable for a guest — checkout is not gated", () => {
@@ -147,12 +180,18 @@ describe("resolvePaymentMethods — delivery × payment matrix (TASK-646)", () =
     {
       npManual = false,
       isAuthenticated = true,
-    }: { npManual?: boolean; isAuthenticated?: boolean } = {},
+      guestHasAccount = false,
+    }: {
+      npManual?: boolean;
+      isAuthenticated?: boolean;
+      guestHasAccount?: boolean;
+    } = {},
   ) =>
     Object.fromEntries(
       resolvePaymentMethods({
         configured: [...all],
         isAuthenticated,
+        guestHasAccount,
         delivery: {
           method,
           npManual,
@@ -205,10 +244,20 @@ describe("resolvePaymentMethods — delivery × payment matrix (TASK-646)", () =
     expect(byMethod.ONLINE.blockedReason).toBe(
       dict.checkout.delivery.paymentBlockedOther,
     );
-    // Where the delivery allows it, a guest still meets the account reason.
-    expect(resolve("PICKUP", { isAuthenticated: false }).ONLINE).toMatchObject({
+    // Where the delivery allows it, a guest whose address has an account still
+    // meets the sign-in reason (TASK-2010)…
+    expect(
+      resolve("PICKUP", { isAuthenticated: false, guestHasAccount: true })
+        .ONLINE,
+    ).toMatchObject({
       blockedBy: "account-required",
       blockedReason: dict.checkout.payment.accountRequired,
+    });
+    // …and «інша доставка» refuses card even for a guest checkout would make
+    // an account for.
+    expect(resolve("OTHER", { isAuthenticated: false }).ONLINE).toMatchObject({
+      enabled: false,
+      blockedBy: "delivery-matrix",
     });
   });
 

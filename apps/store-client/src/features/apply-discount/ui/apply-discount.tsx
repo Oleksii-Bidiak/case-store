@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as Sentry from "@sentry/nextjs";
@@ -25,15 +24,6 @@ import {
   type DiscountFormValues,
 } from "../model/discount-schema";
 
-interface ApplyDiscountProps {
-  /**
-   * Where to send a signed-out shopper back to after they sign in. The promo
-   * control lives on two pages, and "увійдіть" must return them to the one they
-   * were actually on.
-   */
-  redirectTo?: string;
-}
-
 /**
  * ApplyDiscount — the cart promo-code control.
  *
@@ -44,22 +34,25 @@ interface ApplyDiscountProps {
  * server recomputes at order creation.
  *
  * ── Why the failure branches exist (TASK-402) ────────────────────────────────
- * `POST /api/cart/discount/preview` sits behind `JwtAuthGuard`, so a guest gets
- * a 401 — not a verdict on the code. The 2026-08-27 demo run reported "WELCOME10
- * не працює" for exactly this reason: the tester was signed out, and every
- * failure, whatever its cause, rendered the same "не вдалося застосувати
- * промокод". The control now distinguishes the four different things that go
- * wrong (no account / stale CSRF session / rate limit / the code itself), tells
- * a guest up front that promo codes need an account, and records the status in
- * a Sentry breadcrumb so the next report carries the number with it.
+ * The 2026-08-27 demo run reported "WELCOME10 не працює" because every failure,
+ * whatever its cause, rendered the same "не вдалося застосувати промокод". The
+ * control distinguishes the things that go wrong (stale CSRF session / rate
+ * limit / the code itself) and records the status in a Sentry breadcrumb so the
+ * next report carries the number with it.
+ *
+ * ── A guest's code (TASK-2010, B-12 тема 2 (в)) ──────────────────────────────
+ * The preview works without a session now — the server prices the cart cookie
+ * and answers `requiresAccount: true`. A code is still for accounts only, so a
+ * guest sees the discount with «Застосується з акаунтом — створимо його під час
+ * оформлення», and checkout ticks «Створити акаунт» for it. The old «Промокоди
+ * доступні після входу» hint and the 401 → «Увійти» branch went with the
+ * `JwtAuthGuard` that caused them.
  */
-export function ApplyDiscount({
-  redirectTo = "/cart",
-}: ApplyDiscountProps = {}) {
+export function ApplyDiscount() {
   const applied = useAppliedDiscount();
   const { isAuthenticated, isInitializing } = useAuth();
-  // Only once the session is resolved — a "sign in to use promo codes" hint that
-  // flashes at a signed-in shopper during token refresh is its own small lie.
+  // Only once the session is resolved — an «з акаунтом» note that flashes at a
+  // signed-in shopper during token refresh is its own small lie.
   const isGuest = !isInitializing && !isAuthenticated;
 
   const {
@@ -81,6 +74,7 @@ export function ApplyDiscount({
             code: data.code,
             amount: data.amount,
             newTotal: data.newTotal,
+            requiresAccount: data.requiresAccount === true,
           });
           reset({ code: "" });
         }
@@ -120,21 +114,15 @@ export function ApplyDiscount({
 
   const errorMessage = !preview.isError
     ? null
-    : status === 401
-      ? dict.discounts.errors.unauthorized
-      : status === 403
-        ? dict.discounts.errors.forbidden
-        : status === 429
-          ? dict.discounts.errors.tooManyRequests
-          : (errorCode && dict.discounts.errors[errorCode]) ||
-            // The API's own sentence, but only for a 4xx: a 5xx message is
-            // infrastructure English ("Internal server error"), not shopper copy.
-            (status !== undefined && status < 500 ? apiMessage : undefined) ||
-            dict.discounts.errors.generic;
-
-  // Only a 401 has an action attached to it — everything else is retried in place.
-  const showSignInLink = preview.isError && status === 401;
-  const signInHref = `/login?redirect=${encodeURIComponent(redirectTo)}`;
+    : status === 403
+      ? dict.discounts.errors.forbidden
+      : status === 429
+        ? dict.discounts.errors.tooManyRequests
+        : (errorCode && dict.discounts.errors[errorCode]) ||
+          // The API's own sentence, but only for a 4xx: a 5xx message is
+          // infrastructure English ("Internal server error"), not shopper copy.
+          (status !== undefined && status < 500 ? apiMessage : undefined) ||
+          dict.discounts.errors.generic;
 
   if (applied) {
     return (
@@ -161,6 +149,12 @@ export function ApplyDiscount({
           </span>
           <span className="text-primary">−{formatMoney(applied.amount)}</span>
         </div>
+        {/* The code holds only for an account's order (TASK-2010). */}
+        {isGuest && applied.requiresAccount && (
+          <p className="text-xs text-muted-foreground">
+            {dict.discounts.requiresAccountNote}
+          </p>
+        )}
       </div>
     );
   }
@@ -214,27 +208,7 @@ export function ApplyDiscount({
               role="alert"
               className="mt-1 text-sm text-destructive"
             >
-              {errorMessage}{" "}
-              {showSignInLink && (
-                <Link
-                  href={signInHref}
-                  className="font-semibold text-primary underline hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {dict.discounts.signInCta}
-                </Link>
-              )}
-            </p>
-          )}
-          {/* Told before the attempt, not after it: the endpoint requires a JWT. */}
-          {isGuest && !errorMessage && (
-            <p className="mt-1 text-sm text-muted-foreground">
-              {dict.discounts.guestHint}{" "}
-              <Link
-                href={signInHref}
-                className="font-semibold text-primary underline hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {dict.discounts.signInCta}
-              </Link>
+              {errorMessage}
             </p>
           )}
         </div>

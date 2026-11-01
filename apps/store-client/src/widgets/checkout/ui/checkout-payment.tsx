@@ -1,13 +1,13 @@
 "use client";
 
 import type { ComponentType } from "react";
-import Link from "next/link";
 import { Banknote, CreditCard, CalendarClock, Phone } from "lucide-react";
 import { Controller, type Control } from "react-hook-form";
-import type {
-  CheckoutFormValues,
-  CheckoutPaymentMethod,
-  PaymentMethodOption,
+import {
+  CHECKOUT_SIGN_IN_ID,
+  type CheckoutFormValues,
+  type CheckoutPaymentMethod,
+  type PaymentMethodOption,
 } from "@/features/checkout";
 import { dict } from "@/shared/config";
 
@@ -128,16 +128,25 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
                         `aria-describedby` its note uses. */}
                     <span id={noteId} className="text-xs text-muted-foreground">
                       {option.blockedReason ?? option.note}
+                      {/* TASK-2010: a guest's card comes with an account. */}
+                      {option.accountNote && (
+                        <span className="block font-medium text-foreground">
+                          {option.accountNote}
+                        </span>
+                      )}
                     </span>
                   </span>
 
+                  {/* Only a guest whose address has an account meets this
+                      (TASK-2010) — and the sign-in is right there, in the
+                      contact block above, where the filled form survives. */}
                   {option.blockedBy === "account-required" && (
-                    <Link
-                      href="/login?redirect=/checkout"
+                    <a
+                      href={`#${CHECKOUT_SIGN_IN_ID}`}
                       className="shrink-0 rounded text-xs font-medium text-primary underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {dict.checkout.payment.signIn}
-                    </Link>
+                    </a>
                   )}
                 </label>
               );

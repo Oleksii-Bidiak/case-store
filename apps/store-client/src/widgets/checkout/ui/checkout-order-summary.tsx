@@ -146,9 +146,10 @@ export function CheckoutOrderSummary({
       {/* Promo code (real coupons, TASK-079). Kept visible for guests rather
           than hidden (TASK-402): a shopper who was handed a code and finds no
           field for it concludes the site lost it, and hiding the control is
-          also the one option that cannot explain itself. ApplyDiscount shows
-          guests the "sign in first" hint instead, pointing back HERE. */}
-      <ApplyDiscount redirectTo="/checkout" />
+          also the one option that cannot explain itself. Since TASK-2010 a
+          guest's code previews too; applying it ticks «Створити акаунт» in the
+          contact block (CheckoutView watches the applied-discount store). */}
+      <ApplyDiscount />
 
       <div className="mt-3 border-t border-border pt-3">
         <div className="flex justify-between py-1.5 text-sm text-muted-foreground">
