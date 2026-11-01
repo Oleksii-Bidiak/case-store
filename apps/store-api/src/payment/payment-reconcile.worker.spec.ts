@@ -22,7 +22,8 @@ const loggerMock = {
 
 const repositoryMock = {
   findPendingOlderThan: jest.fn(),
-  findWithRequestedRefundsOlderThan: jest.fn(),
+  findWithRequestedRefunds: jest.fn(),
+  countRequestedRefundsOlderThan: jest.fn(),
   findExpiredReservations: jest.fn(),
   markExpiredByOrderId: jest.fn(),
 };
@@ -94,7 +95,8 @@ describe('PaymentReconcileWorker', () => {
     jest.clearAllMocks();
     providerMock.isConfigured.mockReturnValue(true);
     repositoryMock.findPendingOlderThan.mockResolvedValue([]);
-    repositoryMock.findWithRequestedRefundsOlderThan.mockResolvedValue([]);
+    repositoryMock.findWithRequestedRefunds.mockResolvedValue([]);
+    repositoryMock.countRequestedRefundsOlderThan.mockResolvedValue(0);
     repositoryMock.findExpiredReservations.mockResolvedValue([]);
     repositoryMock.markExpiredByOrderId.mockResolvedValue(1);
     paymentServiceMock.applyEvent.mockResolvedValue({ applied: true, orderId: 'order-1' });
@@ -210,16 +212,47 @@ describe('PaymentReconcileWorker', () => {
         dedupeKey: 'k',
       });
 
-    it('polls attempts with a REQUESTED refund older than the grace period', async () => {
+    it('polls REQUESTED refunds past the grace period but younger than 7 days by default', async () => {
       await buildWorker().tick();
 
-      const [cutoff, limit] = repositoryMock.findWithRequestedRefundsOlderThan.mock.calls[0];
-      expect(cutoff).toEqual(new Date('2026-07-28T11:58:00.000Z'));
-      expect(limit).toBeGreaterThan(0);
+      const [window] = repositoryMock.findWithRequestedRefunds.mock.calls[0];
+      expect(window.requestedBefore).toEqual(new Date('2026-07-28T11:58:00.000Z'));
+      expect(window.requestedAfter).toEqual(new Date('2026-07-21T12:00:00.000Z'));
+      expect(window.limit).toBeGreaterThan(0);
+    });
+
+    it('takes the poll window from PAYMENT_REFUND_POLL_MAX_AGE_DAYS', async () => {
+      await buildWorker({ PAYMENT_REFUND_POLL_MAX_AGE_DAYS: '2' }).tick();
+
+      const [window] = repositoryMock.findWithRequestedRefunds.mock.calls[0];
+      expect(window.requestedAfter).toEqual(new Date('2026-07-26T12:00:00.000Z'));
+    });
+
+    it('surfaces the REQUESTED refunds left outside the window for the operator', async () => {
+      repositoryMock.countRequestedRefundsOlderThan.mockResolvedValue(3);
+
+      await buildWorker().tick();
+
+      expect(repositoryMock.countRequestedRefundsOlderThan).toHaveBeenCalledWith(
+        new Date('2026-07-21T12:00:00.000Z'),
+      );
+      expect(loggerMock.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'payment.reconcile.refunds_stale', count: 3 }),
+        expect.any(String),
+      );
+    });
+
+    it('stays quiet when nothing is stale', async () => {
+      await buildWorker().tick();
+
+      expect(loggerMock.warn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'payment.reconcile.refunds_stale' }),
+        expect.any(String),
+      );
     });
 
     it('feeds a reported refund through the same applyEvent path as the webhook', async () => {
-      repositoryMock.findWithRequestedRefundsOlderThan.mockResolvedValue([
+      repositoryMock.findWithRequestedRefunds.mockResolvedValue([
         { ...pendingPayment('pay-r'), status: PaymentAttemptStatus.SUCCEEDED },
       ]);
       providerMock.fetchStatus.mockResolvedValue(refundedEvent('pay-r'));
@@ -231,7 +264,7 @@ describe('PaymentReconcileWorker', () => {
     });
 
     it('ignores a poll that still reports the payment, not the refund', async () => {
-      repositoryMock.findWithRequestedRefundsOlderThan.mockResolvedValue([
+      repositoryMock.findWithRequestedRefunds.mockResolvedValue([
         { ...pendingPayment('pay-r'), status: PaymentAttemptStatus.SUCCEEDED },
       ]);
       providerMock.fetchStatus.mockResolvedValue(event({ paymentId: 'pay-r' }));
@@ -242,7 +275,7 @@ describe('PaymentReconcileWorker', () => {
     });
 
     it('carries on with the batch when one poll fails', async () => {
-      repositoryMock.findWithRequestedRefundsOlderThan.mockResolvedValue([
+      repositoryMock.findWithRequestedRefunds.mockResolvedValue([
         { ...pendingPayment('pay-a'), status: PaymentAttemptStatus.SUCCEEDED },
         { ...pendingPayment('pay-b'), status: PaymentAttemptStatus.SUCCEEDED },
       ]);

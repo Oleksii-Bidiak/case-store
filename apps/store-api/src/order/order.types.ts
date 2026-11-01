@@ -466,25 +466,18 @@ export interface PaymentApplyPlan {
   /** Stamped on the attempt when it reached a final, money-moved state. */
   settledAt?: Date | null;
   /**
-   * Order payment-status move. Omitted when the event changes only the attempt
-   * (e.g. a late failure for a superseded attempt on an already-paid order).
+   * The attempt's new status feeds the derived payment status (R2 review): a
+   * FAILED attempt that is the order's LAST one reads as FAILED while nothing is
+   * paid. The repository writes the attempt, then runs
+   * `OrderMoneyRepository.recompute` in the same transaction — no plan carries a
+   * hand-built payment status any more, so a late failure of an OLDER attempt
+   * cannot mark the order FAILED while a newer one is still PENDING.
    */
-  paymentStatusChange?: {
-    from: PaymentStatus;
-    to: PaymentStatus;
-    /**
-     * Written onto the PAYMENT_STATUS history row when the move is one the shop
-     * recorded but did not otherwise act on (TASK-619: a success on a CANCELLED
-     * order → `PAID_AFTER_CANCEL`). Omitted for an ordinary move.
-     */
-    note?: OrderHistoryNote;
-  };
+  rederivePaymentStatus?: true;
   /**
    * An order payment-status move the state machine refused (TASK-431).
    *
-   * Mutually exclusive with {@link paymentStatusChange}: exactly one of the two
-   * can be set, because either the move happened or it did not. When this is set
-   * the order's columns are left untouched and the repository writes ONE
+   * When this is set the order's columns are left untouched and the repository writes ONE
    * `OrderStatusHistory` row recording that the payment status stayed where it
    * was (`current → current`) at the moment the event arrived.
    *
@@ -512,19 +505,22 @@ export interface PaymentApplyPlan {
    * The money a successful attempt brought in (TASK-2047 / TASK-1500, R2 A2):
    * written as ONE `LIQPAY_PAYMENT` ledger entry keyed `(paymentId, 'success')`,
    * after which `OrderMoneyRepository.recompute` derives the payment status and
-   * writes its history row. A receipt plan never carries a hand-built
-   * {@link paymentStatusChange}. `note` rides on that history row (TASK-619:
+   * writes its history row. `note` rides on that history row (TASK-619:
    * `PAID_AFTER_CANCEL`).
    */
   receipt?: { amountKop: number; occurredAt: Date; note?: OrderHistoryNote };
   /**
    * A `reversed` callback / status poll (TASK-1500, R2 A2): confirm the oldest
    * REQUESTED `LIQPAY_REFUND` of this attempt, or — when the shop never asked
-   * for one (a refund made in the LiqPay cabinet) — write no money and leave a
-   * `PROVIDER_REFUND_UNMATCHED` history row. It carries no order move: the
-   * order's REFUNDED is derived by that recompute (TASK-1969, R2 A4).
+   * for one (a refund made in the LiqPay cabinet), or the provider reported an
+   * amount other than that request's (TASK-2336 mitigation) — write no money
+   * and leave a `PROVIDER_REFUND_UNMATCHED` history row. It carries no order
+   * move: the order's REFUNDED is derived by that recompute (TASK-1969, R2 A4).
+   *
+   * `providerAmountKop` — the amount the event reported, integer kopecks; null
+   * when it reported none.
    */
-  providerRefund?: Record<string, never>;
+  providerRefund?: { providerAmountKop: number | null };
   /** Set when money settled; null leaves the column untouched. */
   paidAt?: Date | null;
   /**

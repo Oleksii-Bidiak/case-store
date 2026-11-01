@@ -513,6 +513,14 @@ export class EnvironmentVariables {
   @IsString()
   PAYMENT_RECONCILE_CRON?: string;
 
+  // How many days a LiqPay refund still REQUESTED keeps being polled (default 7).
+  // Older ones are left to the operator's «void» action and logged
+  // (`payment.reconcile.refunds_stale`) so they cannot starve newer refunds.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  PAYMENT_REFUND_POLL_MAX_AGE_DAYS?: number;
+
   // ─── Unpaid online orders (owner decision 2026-07-28) ───────────────────────
   // Stock is reserved at order creation, before payment — two shoppers must not
   // both be able to pay for the last unit. Card orders get a deadline on that

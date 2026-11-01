@@ -50,13 +50,22 @@
 --      `allocateReturnCredit` + `unitsCreditKop` in src/order/order-money.ts.
 --      Add-ons and shipping are not part of it (plan assumption 1);
 --   9. orders.paid_kop / refunded_kop (net of reversals, voided ignored) /
---      return_credit_kop / balance_kop (= due − paid + refunded; due = 0 for a
---      CANCELLED or REFUNDED order, total − return credit otherwise).
+--      return_credit_kop / balance_kop (= due − paid + refunded) — exactly
+--      `deriveBalance` in src/order/order-money.ts: due = 0 for a CANCELLED
+--      order; for a REFUNDED one GREATEST(0, LEAST(total − credit, paid −
+--      refunded)) — what the shop may keep, never more than it still holds;
+--      total − return credit otherwise.
 --   payment_status labels are NOT rewritten. Every statement is guarded, so a
 --   replay changes nothing (pinned by test/money-backfill.int-spec.ts, which runs
 --   the marked section as shipped). VERIFY then RAISEs — rolling the migration
---   back — unless the totals equal the ledger, refunded <= paid, and the legacy IN
---   and OUT of every order equal an independent recomputation from the sources.
+--   back — unless the totals equal the ledger and the balance equals
+--   `deriveBalance` recomputed per order from the entries, refunded <= paid, the
+--   legacy IN and OUT of every order equal an independent recomputation from the
+--   sources, and no REFUND return is credited above the goods it brings back
+--   (nor an order's returns above its goods net of the promo).
+--   R2 review (before any merge): step 9 and VERIFY (a) used due = 0 for a
+--   REFUNDED order, which showed a legacy REFUNDED order still holding money
+--   (label PARTIALLY_REFUNDED) as «Винні покупцю»; both now follow the TS rule.
 --
 -- COUNTS (throwaway copy of store_dev, `prisma migrate deploy`, 2026-11-01)
 --   before: 15 orders (Σ total 18 001 510 kop) by payment_status FAILED 1, PAID 7,
@@ -443,7 +452,10 @@ target AS (
          COALESCE(l.paid, 0)::int AS paid,
          COALESCE(l.refunded, 0)::int AS refunded,
          COALESCE(c.credit, 0)::int AS credit,
-         ((CASE WHEN o."status" IN ('CANCELLED', 'REFUNDED') THEN 0
+         ((CASE WHEN o."status" = 'CANCELLED' THEN 0
+                WHEN o."status" = 'REFUNDED'
+                  THEN GREATEST(0, LEAST(ROUND(o."total" * 100) - COALESCE(c.credit, 0),
+                                         COALESCE(l.paid, 0) - COALESCE(l.refunded, 0)))
                 ELSE ROUND(o."total" * 100) - COALESCE(c.credit, 0) END)
           - COALESCE(l.paid, 0) + COALESCE(l.refunded, 0))::int AS balance
   FROM "orders" AS o
@@ -471,31 +483,66 @@ DECLARE
   refunded_sum bigint;
   flagged int;
 BEGIN
-  -- a. The totals on every order are its ledger.
-  WITH ledger AS (
-    SELECT e."order_id",
-           sum(CASE WHEN e."direction" = 'IN' THEN CASE WHEN e."reversal_of_id" IS NULL THEN e."amount_kop" ELSE -e."amount_kop" END ELSE 0 END) AS paid,
-           sum(CASE WHEN e."direction" = 'OUT' THEN CASE WHEN e."reversal_of_id" IS NULL THEN e."amount_kop" ELSE -e."amount_kop" END ELSE 0 END) AS refunded
-    FROM "order_money_entries" AS e
-    WHERE e."voided_at" IS NULL
-    GROUP BY e."order_id"
-  ),
-  credits AS (
-    SELECT r."order_id", sum(r."credit_kop") AS credit
-    FROM "returns" AS r WHERE r."credit_kop" IS NOT NULL GROUP BY r."order_id"
-  )
-  SELECT count(*), string_agg(o."id", ', ' ORDER BY o."id") INTO bad, ids
-  FROM "orders" AS o
-  LEFT JOIN ledger AS l ON l."order_id" = o."id"
-  LEFT JOIN credits AS c ON c."order_id" = o."id"
-  WHERE o."paid_kop" <> COALESCE(l.paid, 0)
-     OR o."refunded_kop" <> COALESCE(l.refunded, 0)
-     OR o."return_credit_kop" <> COALESCE(c.credit, 0)
-     OR o."balance_kop" <> (CASE WHEN o."status" IN ('CANCELLED', 'REFUNDED') THEN 0
-                                 ELSE ROUND(o."total" * 100) - COALESCE(c.credit, 0) END)
-                           - COALESCE(l.paid, 0) + COALESCE(l.refunded, 0);
+  -- a. The totals on every order are its ledger, and the balance is what
+  -- `deriveBalance` (src/order/order-money.ts) gives for them — recomputed here
+  -- per order from the entries, the returns and the order's own total/status,
+  -- not read back from step 9.
+  SELECT count(*), string_agg(x."id", ', ' ORDER BY x."id") INTO bad, ids
+  FROM (
+    SELECT o."id", o."paid_kop", o."refunded_kop", o."return_credit_kop", o."balance_kop",
+           o."status", ROUND(o."total" * 100) AS total_kop,
+           COALESCE((SELECT sum(CASE WHEN e."reversal_of_id" IS NULL THEN e."amount_kop" ELSE -e."amount_kop" END)
+                       FROM "order_money_entries" AS e
+                      WHERE e."order_id" = o."id" AND e."direction" = 'IN' AND e."voided_at" IS NULL), 0) AS exp_paid,
+           COALESCE((SELECT sum(CASE WHEN e."reversal_of_id" IS NULL THEN e."amount_kop" ELSE -e."amount_kop" END)
+                       FROM "order_money_entries" AS e
+                      WHERE e."order_id" = o."id" AND e."direction" = 'OUT' AND e."voided_at" IS NULL), 0) AS exp_refunded,
+           COALESCE((SELECT sum(r."credit_kop") FROM "returns" AS r
+                      WHERE r."order_id" = o."id" AND r."credit_kop" IS NOT NULL), 0) AS exp_credit
+    FROM "orders" AS o
+  ) AS x
+  WHERE x."paid_kop" <> x.exp_paid
+     OR x."refunded_kop" <> x.exp_refunded
+     OR x."return_credit_kop" <> x.exp_credit
+     OR x."balance_kop" <>
+        (CASE x."status"
+           WHEN 'CANCELLED' THEN 0
+           WHEN 'REFUNDED' THEN GREATEST(0, LEAST(x.total_kop - x.exp_credit, x.exp_paid - x.exp_refunded))
+           ELSE x.total_kop - x.exp_credit
+         END) - x.exp_paid + x.exp_refunded;
   IF bad > 0 THEN
     RAISE EXCEPTION 'R2 money VERIFY: % orders whose totals differ from their ledger: %', bad, ids;
+  END IF;
+
+  -- e. Return credit, checked against the goods themselves (not against step 8's
+  -- arithmetic): a REFUND return is never credited below 0 or above the gross of
+  -- the units it brings back, and an order's REFUND returns together never above
+  -- its goods less the promo discount. One-sided on purpose — an operator may
+  -- lower a credit (TASK-2046), never raise it.
+  SELECT count(*), string_agg(r."id", ', ' ORDER BY r."id") INTO bad, ids
+  FROM "returns" AS r
+  WHERE r."decision" = 'REFUND' AND r."credit_kop" IS NOT NULL
+    AND (r."credit_kop" < 0
+         OR r."credit_kop" > COALESCE((
+              SELECT sum(ROUND(oi."price" * 100)::bigint * ri."quantity")
+                FROM "return_items" AS ri
+                JOIN "order_items" AS oi ON oi."id" = ri."order_item_id"
+               WHERE ri."return_id" = r."id"), 0));
+  IF bad > 0 THEN
+    RAISE EXCEPTION 'R2 money VERIFY: % returns credited more than the goods they bring back: %', bad, ids;
+  END IF;
+
+  SELECT count(*), string_agg(o."id", ', ' ORDER BY o."id") INTO bad, ids
+  FROM "orders" AS o
+  JOIN LATERAL (
+    SELECT COALESCE(sum(ROUND(oi."price" * 100)::bigint * oi."quantity"), 0) AS gross
+      FROM "order_items" AS oi WHERE oi."order_id" = o."id"
+  ) AS g ON true
+  WHERE (SELECT COALESCE(sum(r."credit_kop"), 0) FROM "returns" AS r
+          WHERE r."order_id" = o."id" AND r."decision" = 'REFUND' AND r."credit_kop" IS NOT NULL)
+        > g.gross - LEAST(g.gross, GREATEST(ROUND(o."discount" * 100)::bigint, 0));
+  IF bad > 0 THEN
+    RAISE EXCEPTION 'R2 money VERIFY: % orders whose returns are credited more than the goods net of the promo: %', bad, ids;
   END IF;
 
   -- b. Never more out than in.

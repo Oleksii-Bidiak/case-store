@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   MoneyDirection,
@@ -37,7 +37,7 @@ import type { ProductIndexer } from '../src/search/product-indexer';
  *
  * Requires an isolated `*_test` database (setup-int.ts forces DATABASE_URL).
  */
-describe('PaymentService.refund — cumulative ceiling (integration)', () => {
+describe('PaymentService.requestLedgerRefund — cumulative ceiling (integration)', () => {
   let prisma: PrismaService;
   let service: PaymentService;
   let money: OrderMoneyRepository;
@@ -152,27 +152,36 @@ describe('PaymentService.refund — cumulative ceiling (integration)', () => {
       })
     )._sum.amountKop ?? 0;
 
-  it('caps the second partial refund by what the first one left', async () => {
-    await service.refund(paymentId, '600.00');
+  /** The one LiqPay refund door (`PROVIDER_REFUND_PORT`); no payout guard here. */
+  const refund = (amountKop: number) =>
+    service.requestLedgerRefund({
+      orderId,
+      paymentId,
+      amountKop,
+      actorId: null,
+      returnId: null,
+      reason: null,
+      guard: async () => undefined,
+    });
 
-    await expect(service.refund(paymentId, '500.00')).rejects.toThrow(BadRequestException);
-    await service.refund(paymentId, '400.00');
+  it('caps the second partial refund by what the first one left', async () => {
+    await refund(60_000);
+
+    await expect(refund(50_000)).rejects.toThrow(ConflictException);
+    await refund(40_000);
 
     expect(await refundedOnLedger()).toBe(100_000);
     expect(provider.refund).toHaveBeenCalledTimes(2);
-    await expect(service.refund(paymentId)).rejects.toThrow(BadRequestException);
+    await expect(refund(1)).rejects.toThrow(ConflictException);
   });
 
   it('lets only one of two concurrent refunds spend the same remainder', async () => {
-    const results = await Promise.allSettled([
-      service.refund(paymentId, '600.00'),
-      service.refund(paymentId, '600.00'),
-    ]);
+    const results = await Promise.allSettled([refund(60_000), refund(60_000)]);
 
     const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(rejected).toHaveLength(1);
-    expect(rejected[0].reason).toBeInstanceOf(BadRequestException);
+    expect(rejected[0].reason).toBeInstanceOf(ConflictException);
     expect(provider.refund).toHaveBeenCalledTimes(1);
     expect(await refundedOnLedger()).toBe(60_000);
   });
@@ -180,10 +189,10 @@ describe('PaymentService.refund — cumulative ceiling (integration)', () => {
   it('gives the amount back when the provider refuses', async () => {
     provider.refund.mockRejectedValueOnce(new Error('LiqPay said no'));
 
-    await expect(service.refund(paymentId, '250.00')).rejects.toThrow('LiqPay said no');
+    await expect(refund(25_000)).rejects.toThrow('LiqPay said no');
 
     expect(await refundedOnLedger()).toBe(0);
-    await service.refund(paymentId);
+    await refund(100_000);
     expect(provider.refund).toHaveBeenLastCalledWith({ paymentId, amount: '1000.00' });
   });
 });

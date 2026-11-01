@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
@@ -22,11 +23,11 @@ import { CustomerNotifier } from '../src/notification/customer-notifier.service'
 import { ShopNotifier } from '../src/notification/shop-notifier.service';
 import { NotificationOutboxService } from '../src/notification-outbox/notification-outbox.service';
 import { OrderLookupRepository } from '../src/order/order-lookup.repository';
+import { OrderErrorCode } from '../src/order/order.errors';
 import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import { OrderRepository } from '../src/order/order.repository';
 import { OrderService } from '../src/order/order.service';
 import { PAYMENT_CLOCK } from '../src/payment/payment.clock';
-import { PaymentErrorCode } from '../src/payment/payment.errors';
 import { PAYMENT_PROVIDER } from '../src/payment/payment.port';
 import { PaymentRepository } from '../src/payment/payment.repository';
 import { PaymentService } from '../src/payment/payment.service';
@@ -199,6 +200,33 @@ describe('LiqPay money through the ledger (integration, TASK-1500 / TASK-2047)',
     return { orderId, paymentId };
   }
 
+  /**
+   * The one LiqPay refund door (`PROVIDER_REFUND_PORT`): a REQUESTED entry under
+   * the order lock, then the provider. No payout guard — these cases pin the
+   * provider path, not the operator's rules.
+   */
+  const refund = (orderId: string, paymentId: string, amountKop: number) =>
+    payments.requestLedgerRefund({
+      orderId,
+      paymentId,
+      amountKop,
+      actorId: operatorId,
+      returnId: null,
+      reason: null,
+      guard: async () => undefined,
+    });
+
+  const failure = (paymentId: string, dedupeKey: string): PaymentEventInput => ({
+    paymentId,
+    providerStatus: 'failure',
+    providerPaymentId: `lp-${paymentId.slice(0, 8)}`,
+    outcome: PaymentOutcome.FAILED,
+    amount: '1000.00',
+    currency: 'UAH',
+    payload: { status: 'failure' },
+    dedupeKey,
+  });
+
   const entriesOf = (orderId: string) =>
     prisma.orderMoneyEntry.findMany({ where: { orderId }, orderBy: { createdAt: 'asc' } });
 
@@ -326,7 +354,7 @@ describe('LiqPay money through the ledger (integration, TASK-1500 / TASK-2047)',
     it('REQUESTED → reversed confirms the oldest request; two partials both land', async () => {
       const { orderId, paymentId } = await paidOrder();
 
-      await payments.refund(paymentId, '400.00', operatorId);
+      await refund(orderId, paymentId, 40_000);
       expect(await totalsOf(orderId)).toMatchObject({
         refundedKop: 40_000,
         paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
@@ -334,7 +362,7 @@ describe('LiqPay money through the ledger (integration, TASK-1500 / TASK-2047)',
       expect(provider.refund).toHaveBeenLastCalledWith({ paymentId, amount: '400.00' });
 
       await payments.applyEvent(reversed(paymentId, '400.00', 'refund-a'));
-      await payments.refund(paymentId, undefined, operatorId);
+      await refund(orderId, paymentId, 60_000);
       expect(provider.refund).toHaveBeenLastCalledWith({ paymentId, amount: '600.00' });
       await payments.applyEvent(reversed(paymentId, '600.00', 'refund-b'));
       // An exact repeat of the second callback changes nothing.
@@ -373,34 +401,80 @@ describe('LiqPay money through the ledger (integration, TASK-1500 / TASK-2047)',
     });
 
     it('the reconcile poll list holds an attempt exactly while its refund is REQUESTED', async () => {
-      const { paymentId } = await paidOrder();
+      const { orderId, paymentId } = await paidOrder();
       const later = new Date(Date.now() + 60_000);
-      const polled = async () =>
-        (await paymentRepository.findWithRequestedRefundsOlderThan(later, 500)).map((p) => p.id);
+      const weekAgo = new Date(Date.now() - 7 * 24 * 3_600_000);
+      const polled = async (requestedBefore = later) =>
+        (
+          await paymentRepository.findWithRequestedRefunds({
+            requestedBefore,
+            requestedAfter: weekAgo,
+            limit: 500,
+          })
+        ).map((p) => p.id);
 
-      await payments.refund(paymentId, '100.00', operatorId);
+      await refund(orderId, paymentId, 10_000);
       expect(await polled()).toContain(paymentId);
-      expect(
-        (await paymentRepository.findWithRequestedRefundsOlderThan(new Date(0), 500)).map(
-          (p) => p.id,
-        ),
-      ).not.toContain(paymentId);
+      expect(await polled(weekAgo)).not.toContain(paymentId);
 
       await payments.applyEvent(reversed(paymentId, '100.00', 'poll-1'));
       expect(await polled()).not.toContain(paymentId);
+    });
+
+    it('a REQUESTED refund older than the poll window no longer starves newer ones', async () => {
+      // ≥ limit stuck requests used to fill every page, oldest first, forever.
+      const stuck: string[] = [];
+      for (let i = 0; i < 3; i += 1) {
+        const { orderId, paymentId } = await paidOrder();
+        await refund(orderId, paymentId, 10_000);
+        stuck.push(paymentId);
+      }
+      await prisma.orderMoneyEntry.updateMany({
+        where: { paymentId: { in: stuck }, kind: MoneyEntryKind.LIQPAY_REFUND },
+        data: { createdAt: new Date(Date.now() - 8 * 24 * 3_600_000) },
+      });
+      const older = await paidOrder();
+      await refund(older.orderId, older.paymentId, 10_000);
+      await prisma.orderMoneyEntry.updateMany({
+        where: { paymentId: older.paymentId, kind: MoneyEntryKind.LIQPAY_REFUND },
+        data: { createdAt: new Date(Date.now() - 3_600_000) },
+      });
+      const fresh = await paidOrder();
+      await refund(fresh.orderId, fresh.paymentId, 10_000);
+
+      const page = await paymentRepository.findWithRequestedRefunds({
+        requestedBefore: new Date(Date.now() + 60_000),
+        requestedAfter: new Date(Date.now() - 7 * 24 * 3_600_000),
+        limit: 1,
+      });
+      const window = await paymentRepository.findWithRequestedRefunds({
+        requestedBefore: new Date(Date.now() + 60_000),
+        requestedAfter: new Date(Date.now() - 7 * 24 * 3_600_000),
+        limit: 500,
+      });
+
+      // Newest request first; outside the window nothing is polled (the
+      // operator voids those by hand — the count is surfaced in the log).
+      expect(page.map((p) => p.id)).toEqual([fresh.paymentId]);
+      const ids = window.map((p) => p.id);
+      expect(ids.indexOf(fresh.paymentId)).toBeLessThan(ids.indexOf(older.paymentId));
+      for (const id of stuck) expect(ids).not.toContain(id);
+      expect(
+        await paymentRepository.countRequestedRefundsOlderThan(
+          new Date(Date.now() - 7 * 24 * 3_600_000),
+        ),
+      ).toBeGreaterThanOrEqual(stuck.length);
     });
 
     it('a refund the provider refuses is voided and counts for nothing', async () => {
       const { orderId, paymentId } = await paidOrder();
       provider.refund.mockRejectedValueOnce(new Error('LiqPay refused'));
 
-      await expect(payments.refund(paymentId, '250.00', operatorId)).rejects.toThrow(
-        'LiqPay refused',
-      );
+      await expect(refund(orderId, paymentId, 25_000)).rejects.toThrow('LiqPay refused');
 
-      const [refund] = (await entriesOf(orderId)).filter((e) => e.direction === MoneyDirection.OUT);
-      expect(refund.voidedAt).not.toBeNull();
-      expect(refund.voidReason).toContain('LiqPay refused');
+      const [voided] = (await entriesOf(orderId)).filter((e) => e.direction === MoneyDirection.OUT);
+      expect(voided.voidedAt).not.toBeNull();
+      expect(voided.voidReason).toContain('LiqPay refused');
       expect(await totalsOf(orderId)).toMatchObject({
         refundedKop: 0,
         paymentStatus: PaymentStatus.PAID,
@@ -411,19 +485,152 @@ describe('LiqPay money through the ledger (integration, TASK-1500 / TASK-2047)',
       const { orderId, paymentId } = await paidOrder();
 
       const results = await Promise.allSettled([
-        payments.refund(paymentId, '600.00', operatorId),
-        payments.refund(paymentId, '600.00', operatorId),
+        refund(orderId, paymentId, 60_000),
+        refund(orderId, paymentId, 60_000),
       ]);
 
       const rejected = results.filter((r) => r.status === 'rejected');
       expect(rejected).toHaveLength(1);
       expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
-        response: { error: PaymentErrorCode.REFUND_EXCEEDS_BALANCE },
+        response: { error: OrderErrorCode.MONEY_REFUND_EXCEEDS_PAID },
       });
       expect(provider.refund).toHaveBeenCalledTimes(1);
       const outs = (await entriesOf(orderId)).filter((e) => e.direction === MoneyDirection.OUT);
       expect(outs).toHaveLength(1);
       expect((await totalsOf(orderId)).refundedKop).toBe(60_000);
+    });
+  });
+
+  describe('the attempt status follows CONFIRMED refunds only (R2 review)', () => {
+    const attemptStatus = async (paymentId: string) =>
+      (await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } })).status;
+
+    it('a REQUESTED refund does not make the attempt REFUNDED; voiding it leaves it refundable', async () => {
+      const { orderId, paymentId } = await paidOrder();
+      await refund(orderId, paymentId, 60_000);
+      await refund(orderId, paymentId, 40_000);
+
+      await payments.applyEvent(reversed(paymentId, '600.00', 'part-1'));
+      // 60 confirmed + 40 still REQUESTED: the provider has not sent 100.
+      expect(await attemptStatus(paymentId)).toBe(PaymentAttemptStatus.SUCCEEDED);
+
+      const second = (await entriesOf(orderId)).find(
+        (e) => e.amountKop === 40_000 && e.providerState === MoneyProviderState.REQUESTED,
+      );
+      await orders.voidProviderRefund(orderId, second!.id, 'LiqPay refused');
+
+      expect(await attemptStatus(paymentId)).toBe(PaymentAttemptStatus.SUCCEEDED);
+      provider.refund.mockClear();
+      await refund(orderId, paymentId, 40_000);
+      expect(provider.refund).toHaveBeenLastCalledWith({ paymentId, amount: '400.00' });
+    });
+
+    it('a void moves an attempt marked REFUNDED too early back to SUCCEEDED', async () => {
+      const { orderId, paymentId } = await paidOrder();
+      await refund(orderId, paymentId, 60_000);
+      await refund(orderId, paymentId, 40_000);
+      await payments.applyEvent(reversed(paymentId, '600.00', 'early-1'));
+      // The state the pre-review rule left behind (REQUESTED counted as refunded).
+      await prisma.payment.update({
+        where: { id: paymentId },
+        data: { status: PaymentAttemptStatus.REFUNDED },
+      });
+      const second = (await entriesOf(orderId)).find(
+        (e) => e.amountKop === 40_000 && e.providerState === MoneyProviderState.REQUESTED,
+      );
+
+      await orders.voidProviderRefund(orderId, second!.id, 'LiqPay refused');
+
+      expect(await attemptStatus(paymentId)).toBe(PaymentAttemptStatus.SUCCEEDED);
+    });
+
+    it('both refunds confirmed: the attempt is REFUNDED', async () => {
+      const { orderId, paymentId } = await paidOrder();
+      await refund(orderId, paymentId, 60_000);
+      await refund(orderId, paymentId, 40_000);
+
+      await payments.applyEvent(reversed(paymentId, '600.00', 'both-1'));
+      await payments.applyEvent(reversed(paymentId, '400.00', 'both-2'));
+
+      expect(await attemptStatus(paymentId)).toBe(PaymentAttemptStatus.REFUNDED);
+    });
+  });
+
+  describe('a reversed amount that differs from the request (TASK-2336 mitigation)', () => {
+    let warn: jest.SpyInstance;
+    beforeEach(() => {
+      warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    });
+    afterEach(() => warn.mockRestore());
+
+    it('is not confirmed: the request stays REQUESTED and an UNMATCHED note is written', async () => {
+      const { orderId, paymentId } = await paidOrder();
+      await refund(orderId, paymentId, 40_000);
+
+      await payments.applyEvent(reversed(paymentId, '300.00', 'mismatch-1'));
+
+      const [out] = (await entriesOf(orderId)).filter((e) => e.direction === MoneyDirection.OUT);
+      expect(out.providerState).toBe(MoneyProviderState.REQUESTED);
+      const notes = (await paymentHistoryOf(orderId)).filter(
+        (row) => row.note === OrderHistoryNote.PROVIDER_REFUND_UNMATCHED,
+      );
+      expect(notes).toHaveLength(1);
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'payment.refund.unmatched',
+          orderId,
+          paymentId,
+          providerAmountKop: 30_000,
+          requestedAmountKop: 40_000,
+        }),
+        expect.any(String),
+      );
+      expect(await totalsOf(orderId)).toMatchObject({ refundedKop: 40_000 });
+    });
+
+    it('an equal amount still confirms', async () => {
+      const { orderId, paymentId } = await paidOrder();
+      await refund(orderId, paymentId, 40_000);
+
+      await payments.applyEvent(reversed(paymentId, '400.00', 'match-1'));
+
+      const [out] = (await entriesOf(orderId)).filter((e) => e.direction === MoneyDirection.OUT);
+      expect(out.providerState).toBe(MoneyProviderState.CONFIRMED);
+    });
+  });
+
+  describe('a late failure of an older attempt (R2 review)', () => {
+    it('does not mark the order FAILED while a newer attempt is PENDING', async () => {
+      const orderId = await createOrder();
+      const older = await createAttempt(orderId);
+      await prisma.payment.update({
+        where: { id: older },
+        data: { createdAt: new Date(Date.now() - 60_000) },
+      });
+      await createAttempt(orderId);
+
+      await payments.applyEvent(failure(older, 'late-fail-1'));
+
+      expect((await prisma.payment.findUniqueOrThrow({ where: { id: older } })).status).toBe(
+        PaymentAttemptStatus.FAILED,
+      );
+      expect((await totalsOf(orderId)).paymentStatus).toBe(PaymentStatus.PENDING);
+    });
+
+    it('the last attempt failing still marks an unpaid order FAILED, with one history row', async () => {
+      const orderId = await createOrder();
+      const only = await createAttempt(orderId);
+
+      await payments.applyEvent(failure(only, 'fail-1'));
+
+      expect((await totalsOf(orderId)).paymentStatus).toBe(PaymentStatus.FAILED);
+      expect(await paymentHistoryOf(orderId)).toEqual([
+        expect.objectContaining({
+          fromPaymentStatus: PaymentStatus.PENDING,
+          toPaymentStatus: PaymentStatus.FAILED,
+          changedBy: null,
+        }),
+      ]);
     });
   });
 

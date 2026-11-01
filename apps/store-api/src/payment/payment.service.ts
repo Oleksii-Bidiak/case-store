@@ -16,7 +16,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
-import { centsToString, toCents } from '../addon-service';
+import { centsToString } from '../addon-service';
 import type { LedgerRefundRequest, OrderEntity, ProviderRefundPort } from '../order';
 import {
   deliveryPaymentNotAllowedError,
@@ -25,11 +25,7 @@ import {
   OrderService,
 } from '../order';
 import { PAYMENT_CLOCK, type Clock } from './payment.clock';
-import {
-  checkoutBankTransferError,
-  checkoutPartlyPaidError,
-  refundExceedsBalanceError,
-} from './payment.errors';
+import { checkoutBankTransferError, checkoutPartlyPaidError } from './payment.errors';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment.port';
 import { isDuplicateEventError, PaymentRepository } from './payment.repository';
 import { PaymentOutcome, type PaymentApplyResult, type PaymentEventInput } from './payment.types';
@@ -270,63 +266,24 @@ export class PaymentService implements ProviderRefundPort {
   }
 
   /**
-   * Ask the provider to send money back (TASK-1500 / TASK-2047, R2 A2).
+   * Ask LiqPay to send money back (TASK-1500 / TASK-2047, R2 A2/A3) — the ONLY
+   * refund door: `PROVIDER_REFUND_PORT`, bound to this class in `PaymentModule`
+   * and reached through the operator's payout (`POST …/money/out`). The
+   * guard-less `refund(paymentId, amount)` that bypassed the A3 payout rules was
+   * removed in the R2 review.
    *
    * 1. The refund is written to the order ledger FIRST — OUT `LIQPAY_REFUND`,
    *    `REQUESTED`, under the order-row lock — by {@link OrderService.requestProviderRefund}.
-   *    It counts as refunded from that moment, so the ceiling (what is left on
-   *    the attempt, and never more than the order's `paid − refunded` across
-   *    every kind — TASK-951) holds for a second request racing this one: the
-   *    lock serialises them and the second sees the first.
+   *    The order module's payout rules (`request.guard`) run inside that
+   *    transaction, right after the lock. The entry counts as refunded from that
+   *    moment, so the ceiling (what is left on the attempt, and never more than
+   *    the order's `paid − refunded` across every kind — TASK-951) holds for a
+   *    second request racing this one.
    * 2. Then the provider is asked. If it refuses (or the call throws), the
    *    entry is VOIDED and stops counting; the error is rethrown.
    * 3. It is NOT marked confirmed here — the `reversed` callback (or the
    *    reconcile poll) does that through {@link applyEvent}, so the record can
    *    never claim a refund the provider did not make (edge case E-12).
-   *
-   * `Payment.refundedAmount` is no longer read or written. Omitting `amount`
-   * refunds the remainder.
-   *
-   * @throws NotFoundException when the payment does not exist.
-   * @throws ConflictException when the attempt never succeeded.
-   * @throws BadRequestException for a zero amount, or one above the ceiling
-   *   (`PAYMENT_REFUND_EXCEEDS_BALANCE`).
-   */
-  async refund(paymentId: string, amount?: string, actorId: string | null = null): Promise<void> {
-    const payment = await this.paymentRepository.findById(paymentId);
-
-    if (!payment) {
-      throw new NotFoundException('Payment not found');
-    }
-
-    this.assertRefundable(payment);
-
-    const amountKop = amount === undefined ? undefined : toCents(amount);
-    if (amountKop !== undefined && !(amountKop > 0)) {
-      throw new BadRequestException('Refund amount must be more than zero');
-    }
-
-    const request = await this.orderService.requestProviderRefund({
-      orderId: payment.orderId,
-      paymentId: payment.id,
-      amountKop,
-      actorId,
-    });
-
-    if (request.status === 'exceeds') {
-      const available = centsToString(request.availableKop);
-      throw refundExceedsBalanceError(amount ?? available, available);
-    }
-
-    await this.askProviderToRefund(payment, request.entryId, request.amountKop);
-  }
-
-  /**
-   * The operator's LIQPAY_REFUND payout (R2 A3) — `PROVIDER_REFUND_PORT`, bound to
-   * this class in `PaymentModule`. The same REQUESTED → provider → void flow as
-   * {@link refund}; the order module's payout rules (`request.guard`) run inside
-   * the transaction that writes the entry, right after the order-row lock, and
-   * the entry carries the return it settles and the operator's reason.
    *
    * @throws NotFoundException when the payment does not exist or is not this order's.
    * @throws ConflictException when the attempt never succeeded, whatever the

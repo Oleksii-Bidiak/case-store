@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { ConflictException } from '@nestjs/common';
 
 /**
  * Stable, machine-readable error codes for payment refunds (TASK-1302).
@@ -8,7 +8,12 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
  * reworded. It reaches the wire through the envelope's `error` field.
  */
 export const PaymentErrorCode = {
-  /** The refund is more than the attempt has left after earlier refunds. */
+  /**
+   * The refund is more than the attempt has left after earlier refunds. No
+   * longer raised since the R2 review removed `PaymentService.refund` — the one
+   * refund door answers `ORDER_MONEY_REFUND_EXCEEDS_PAID`. Kept so the admin
+   * dictionary's key still resolves until the admin step drops it.
+   */
   REFUND_EXCEEDS_BALANCE: 'PAYMENT_REFUND_EXCEEDS_BALANCE',
   /** TASK-2340: the order is paid by bank transfer — no online attempt for it. */
   CHECKOUT_BANK_TRANSFER: 'PAYMENT_CHECKOUT_BANK_TRANSFER',
@@ -17,21 +22,6 @@ export const PaymentErrorCode = {
 } as const;
 
 export type PaymentErrorCode = (typeof PaymentErrorCode)[keyof typeof PaymentErrorCode];
-
-/**
- * 400 for a refund larger than what the attempt still has to give back:
- * the amount charged less every refund already requested. The remainder is
- * named in the message so the operator sees the number they can still send.
- */
-export function refundExceedsBalanceError(
-  requested: string,
-  remaining: string,
-): BadRequestException {
-  return new BadRequestException({
-    error: PaymentErrorCode.REFUND_EXCEEDS_BALANCE,
-    message: `Refund of ${requested} exceeds what is left to refund on this payment (${remaining})`,
-  });
-}
 
 /**
  * 409 for an online attempt on an order paid by bank transfer (TASK-2340):

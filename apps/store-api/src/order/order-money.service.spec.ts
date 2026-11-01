@@ -66,6 +66,7 @@ describe('OrderMoneyService', () => {
     voidEntry: jest.fn(),
     recompute: jest.fn(),
     syncReturnStatus: jest.fn(),
+    syncAttemptStatus: jest.fn(),
     findSnapshot: jest.fn(),
   };
   const providerRefunds = { requestLedgerRefund: jest.fn() };
@@ -505,6 +506,18 @@ describe('OrderMoneyService', () => {
       expect(repo.voidEntry).toHaveBeenCalledWith(tx, 'entry-1', 'LiqPay відхилив');
       expect(repo.recompute).toHaveBeenCalledWith(tx, ORDER_ID, admin.id, { payoutUndone: true });
       expect(repo.syncReturnStatus).toHaveBeenCalledWith(tx, 'ret-1');
+    });
+
+    it('re-derives the LiqPay attempt status, so the voided amount is refundable again', async () => {
+      repo.findEntry.mockResolvedValue({ ...requested, paymentId: 'pay-1' });
+      repo.voidEntry.mockResolvedValue(true);
+
+      await service.voidEntry(ORDER_ID, 'entry-1', admin, {
+        reason: 'LiqPay відхилив',
+        expectedUpdatedAt: UPDATED_AT,
+      });
+
+      expect(repo.syncAttemptStatus).toHaveBeenCalledWith(tx, 'pay-1');
     });
 
     it.each([

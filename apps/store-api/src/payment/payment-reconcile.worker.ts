@@ -31,6 +31,16 @@ const POLL_GRACE_MINUTES = 2;
 const BATCH_SIZE = 50;
 
 /**
+ * How long a REQUESTED refund keeps being polled (R2 review). Past this the
+ * provider is not going to answer it by itself: it is left to the operator's
+ * «void» action and surfaced in the log, instead of occupying the poll list
+ * forever and starving newer refunds. `PAYMENT_REFUND_POLL_MAX_AGE_DAYS`.
+ */
+const DEFAULT_REFUND_POLL_MAX_AGE_DAYS = 7;
+
+const MS_PER_DAY = 24 * 60 * 60_000;
+
+/**
  * What the reservation deadline DOES (TASK-627, owner decision 2026-09-24).
  *
  * - `cancel` (default) — the order is cancelled and its stock returned; the
@@ -77,6 +87,7 @@ export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
   private readonly cronExpression: string;
   private readonly autoCancelEnabled: boolean;
   private readonly expiryMode: ReservationExpiryMode;
+  private readonly refundPollMaxAgeDays: number;
 
   constructor(
     private readonly paymentRepository: PaymentRepository,
@@ -98,6 +109,11 @@ export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
       this.config.get<string>('ORDER_RESERVATION_EXPIRY', 'cancel') === 'release'
         ? 'release'
         : 'cancel';
+    const maxAgeDays = Number(this.config.get<string>('PAYMENT_REFUND_POLL_MAX_AGE_DAYS'));
+    this.refundPollMaxAgeDays =
+      Number.isInteger(maxAgeDays) && maxAgeDays > 0
+        ? maxAgeDays
+        : DEFAULT_REFUND_POLL_MAX_AGE_DAYS;
   }
 
   onModuleInit(): void {
@@ -199,17 +215,39 @@ export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
    * same {@link PaymentService.applyEvent} as the webhook (same idempotency,
    * same confirm-the-oldest-request rule); a poll that still shows the payment
    * itself means the refund is not through yet — ask again next tick.
+   *
+   * Newest request first, and only requests younger than
+   * `PAYMENT_REFUND_POLL_MAX_AGE_DAYS` (default 7): one the provider never
+   * answers stays REQUESTED until an operator voids it, so an unbounded
+   * oldest-first list would let ≥ {@link BATCH_SIZE} stuck ones starve every
+   * newer refund. The ones left out are counted and logged for the operator.
    */
   private async pollRequestedRefunds(): Promise<number> {
     if (!this.provider.isConfigured()) {
       return 0;
     }
 
-    const cutoff = new Date(this.clock.now().getTime() - POLL_GRACE_MINUTES * 60_000);
-    const waiting = await this.paymentRepository.findWithRequestedRefundsOlderThan(
-      cutoff,
-      BATCH_SIZE,
-    );
+    const now = this.clock.now().getTime();
+    const cutoff = new Date(now - POLL_GRACE_MINUTES * 60_000);
+    const oldest = new Date(now - this.refundPollMaxAgeDays * MS_PER_DAY);
+
+    const stale = await this.paymentRepository.countRequestedRefundsOlderThan(oldest);
+    if (stale > 0) {
+      this.logger.warn(
+        {
+          event: 'payment.reconcile.refunds_stale',
+          count: stale,
+          maxAgeDays: this.refundPollMaxAgeDays,
+        },
+        'LiqPay refunds still REQUESTED past the poll window; an operator must void or confirm them',
+      );
+    }
+
+    const waiting = await this.paymentRepository.findWithRequestedRefunds({
+      requestedBefore: cutoff,
+      requestedAfter: oldest,
+      limit: BATCH_SIZE,
+    });
     let applied = 0;
 
     for (const payment of waiting) {

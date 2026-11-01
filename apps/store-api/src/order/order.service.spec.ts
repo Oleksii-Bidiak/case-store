@@ -4173,7 +4173,7 @@ describe('OrderService', () => {
         // R2 A2 (TASK-2047): the payment's own amount in kopecks goes to the
         // ledger; the payment STATUS is derived from it, never hand-built here.
         expect(plan.receipt).toEqual({ amountKop: 6_997, occurredAt: expect.any(Date) });
-        expect(plan.paymentStatusChange).toBeUndefined();
+        expect(plan).not.toHaveProperty('paymentStatusChange');
         expect(plan.paidAt).toBeInstanceOf(Date);
         // A paid order's reservation is no longer provisional — leaving the
         // deadline set would let the auto-cancel worker cancel a paid order.
@@ -4361,7 +4361,7 @@ describe('OrderService', () => {
         failureMessage: 'Card declined',
       });
 
-      it('marks an unpaid order FAILED and keeps the provider diagnostics', async () => {
+      it('fails the attempt, keeps the provider diagnostics and lets the ledger derive the order', async () => {
         seed(makePayment());
 
         const result = await service.applyPaymentEvent(failure);
@@ -4369,10 +4369,10 @@ describe('OrderService', () => {
         expect(result.applied).toBe(true);
         const plan = lastPlan();
         expect(plan.attemptStatus).toBe(PaymentAttemptStatus.FAILED);
-        expect(plan.paymentStatusChange).toEqual({
-          from: PaymentStatus.PENDING,
-          to: PaymentStatus.FAILED,
-        });
+        // R2 review: no hand-built payment status — recompute derives FAILED
+        // only when this is the order's last attempt and nothing is paid.
+        expect(plan.rederivePaymentStatus).toBe(true);
+        expect(plan).not.toHaveProperty('paymentStatusChange');
         expect(plan.failureCode).toBe('4159');
         expect(plan.failureMessage).toBe('Card declined');
       });
@@ -4396,7 +4396,7 @@ describe('OrderService', () => {
         // The attempt itself is still recorded as failed — the shopper's first
         // card really was declined — but the order stays paid.
         expect(plan.attemptStatus).toBe(PaymentAttemptStatus.FAILED);
-        expect(plan.paymentStatusChange).toBeUndefined();
+        expect(plan).not.toHaveProperty('paymentStatusChange');
       });
     });
 
@@ -4427,12 +4427,12 @@ describe('OrderService', () => {
           const plan = lastPlan();
           // TASK-1969 (R2 A4): no order move in the plan — the order's REFUNDED is
           // derived by the ledger recompute the repository runs.
-          expect(plan.providerRefund).toEqual({});
+          expect(plan.providerRefund).toEqual({ providerAmountKop: 2_000 });
           // The attempt keeps what it is; the repository marks it REFUNDED once
           // its confirmed refunds cover its receipt.
           expect(plan.attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
           expect(plan.settledAt).toBeUndefined();
-          expect(plan.paymentStatusChange).toBeUndefined();
+          expect(plan).not.toHaveProperty('paymentStatusChange');
           expect(plan.statusChange).toBeUndefined();
           expect(plan.refusedPaymentStatusChange).toBeUndefined();
           expect(plan.receipt).toBeUndefined();
@@ -4445,7 +4445,7 @@ describe('OrderService', () => {
 
             await service.applyPaymentEvent(refund);
 
-            expect(lastPlan().providerRefund).toEqual({});
+            expect(lastPlan().providerRefund).toEqual({ providerAmountKop: 2_000 });
           },
         );
 
@@ -4456,7 +4456,7 @@ describe('OrderService', () => {
 
           await service.applyPaymentEvent(refund);
 
-          expect(lastPlan().providerRefund).toEqual({});
+          expect(lastPlan().providerRefund).toEqual({ providerAmountKop: 2_000 });
         });
 
         it('is still planned for money never recorded as received — the repository decides', async () => {
@@ -4589,7 +4589,7 @@ describe('OrderService', () => {
 
         const plan = lastPlan();
         expect(plan.attemptStatus).toBe(PaymentAttemptStatus.FAILED);
-        expect(plan.paymentStatusChange).toBeUndefined();
+        expect(plan).not.toHaveProperty('paymentStatusChange');
         expect(plan.refusedPaymentStatusChange).toBeUndefined();
       });
     });

@@ -74,7 +74,12 @@ describe('LiqPay reversed callback → the order ledger (e2e, TASK-618 / TASK-15
     $disconnect: jest.fn(),
     $on: jest.fn(),
     ...ledger.prisma,
-    payment: { findUnique: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
+    payment: {
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+      findFirst: jest.fn(),
+    },
     paymentEvent: { create: jest.fn(), delete: jest.fn() },
     order: { update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
     orderStatusHistory: { create: jest.fn(), count: jest.fn() },
@@ -218,6 +223,7 @@ describe('LiqPay reversed callback → the order ledger (e2e, TASK-618 / TASK-15
     ledger.reset();
     prismaServiceMock.paymentEvent.create.mockResolvedValue({ id: 'evt-618' });
     prismaServiceMock.payment.update.mockResolvedValue({});
+    prismaServiceMock.payment.updateMany.mockResolvedValue({ count: 1 });
     prismaServiceMock.payment.findFirst.mockResolvedValue({
       status: PaymentAttemptStatus.SUCCEEDED,
     });
@@ -270,6 +276,9 @@ describe('LiqPay reversed callback → the order ledger (e2e, TASK-618 / TASK-15
     expect(prismaServiceMock.payment.update).not.toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: PaymentAttemptStatus.REFUNDED } }),
     );
+    expect(prismaServiceMock.payment.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: PaymentAttemptStatus.REFUNDED } }),
+    );
     expect(prismaServiceMock.paymentEvent.delete).not.toHaveBeenCalled();
   });
 
@@ -284,8 +293,10 @@ describe('LiqPay reversed callback → the order ledger (e2e, TASK-618 / TASK-15
       .expect(200, { data: { received: true } });
 
     expect(refundEntries()[0]).toMatchObject({ providerState: MoneyProviderState.CONFIRMED });
-    expect(prismaServiceMock.payment.update).toHaveBeenLastCalledWith({
-      where: { id: PAYMENT_ID },
+    // R2 review: REFUNDED once the CONFIRMED refunds cover the receipt —
+    // conditional on the status read, like every derived write.
+    expect(prismaServiceMock.payment.updateMany).toHaveBeenLastCalledWith({
+      where: { id: PAYMENT_ID, status: PaymentAttemptStatus.SUCCEEDED },
       data: { status: PaymentAttemptStatus.REFUNDED },
     });
     // R2 A4: a provider refund alone never ends an order — its REFUNDED is

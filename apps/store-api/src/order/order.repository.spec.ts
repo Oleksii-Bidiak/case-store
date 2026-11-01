@@ -47,6 +47,8 @@ const moneyMock = {
   insertEntry: jest.fn(),
   recompute: jest.fn(),
   confirmOldestRequestedRefund: jest.fn(),
+  findOldestRequestedRefund: jest.fn(),
+  syncAttemptStatus: jest.fn(),
   paymentProviderTotals: jest.fn(),
 };
 
@@ -1685,6 +1687,31 @@ describe('OrderRepository', () => {
       );
     });
 
+    // ── R2 review: a failed attempt re-derives the payment status ────────────
+    describe('rederivePaymentStatus (a FAILED attempt)', () => {
+      it('writes the attempt first, then recomputes — no hand-written payment status', async () => {
+        const tx = seedTx();
+
+        await repository.applyPaymentOutcome({
+          paymentId: 'payment-1',
+          orderId: 'order-1',
+          expected: { status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING },
+          attemptStatus: PaymentAttemptStatus.FAILED,
+          rederivePaymentStatus: true,
+        });
+
+        expect(tx.payment.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: { status: PaymentAttemptStatus.FAILED } }),
+        );
+        expect(moneyMock.recompute).toHaveBeenCalledWith(tx, 'order-1', null);
+        expect(tx.payment.update.mock.invocationCallOrder[0]).toBeLessThan(
+          moneyMock.recompute.mock.invocationCallOrder[0],
+        );
+        expect(tx.order.updateMany).not.toHaveBeenCalled();
+        expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+      });
+    });
+
     // ── TASK-1500 (R2 A2): a `reversed` callback confirms what WE requested ──
     describe('providerRefund', () => {
       const refundPlan = {
@@ -1695,7 +1722,7 @@ describe('OrderRepository', () => {
           paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
         },
         attemptStatus: PaymentAttemptStatus.SUCCEEDED,
-        providerRefund: {},
+        providerRefund: { providerAmountKop: 40_000 },
       };
 
       const seedRefundTx = () => {
@@ -1705,9 +1732,13 @@ describe('OrderRepository', () => {
           status: OrderStatus.DELIVERED,
           paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
         });
+        moneyMock.findOldestRequestedRefund.mockResolvedValue({
+          id: 'refund-1',
+          amountKop: 40_000,
+        });
         moneyMock.confirmOldestRequestedRefund.mockResolvedValue({ id: 'refund-1' });
         moneyMock.recompute.mockResolvedValue({ paymentStatus: PaymentStatus.PARTIALLY_REFUNDED });
-        moneyMock.paymentProviderTotals.mockResolvedValue({ inKop: 100_000, refundedKop: 40_000 });
+        moneyMock.syncAttemptStatus.mockResolvedValue(PaymentAttemptStatus.SUCCEEDED);
         return tx;
       };
 
@@ -1723,29 +1754,49 @@ describe('OrderRepository', () => {
         expect(moneyMock.insertEntry).not.toHaveBeenCalled();
       });
 
-      it('once everything is back: the attempt is REFUNDED; the order is left to the ledger', async () => {
+      it('re-derives the attempt status from its CONFIRMED refunds, after the recompute', async () => {
         const tx = seedRefundTx();
-        moneyMock.recompute.mockResolvedValue({ paymentStatus: PaymentStatus.REFUNDED });
-        moneyMock.paymentProviderTotals.mockResolvedValue({ inKop: 100_000, refundedKop: 100_000 });
 
         await repository.applyPaymentOutcome(refundPlan);
 
-        expect(tx.payment.update).toHaveBeenLastCalledWith({
-          where: { id: 'payment-1' },
-          data: { status: PaymentAttemptStatus.REFUNDED },
-        });
+        // The REFUNDED-or-SUCCEEDED rule lives in `attemptStatusAfterRefunds`;
+        // the attempt is never marked REFUNDED here by hand.
+        expect(moneyMock.syncAttemptStatus).toHaveBeenCalledWith(tx, 'payment-1');
+        expect(moneyMock.recompute.mock.invocationCallOrder[0]).toBeLessThan(
+          moneyMock.syncAttemptStatus.mock.invocationCallOrder[0],
+        );
+        expect(tx.payment.update).not.toHaveBeenCalledWith(
+          expect.objectContaining({ data: { status: PaymentAttemptStatus.REFUNDED } }),
+        );
         // TASK-1969 (R2 A4): the order's REFUNDED is derived inside recompute
         // (returns + payouts), never moved here by the callback.
         expect(tx.order.updateMany).not.toHaveBeenCalled();
-        expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+      });
+
+      it('a provider amount other than the request is not confirmed — one UNMATCHED row (TASK-2336)', async () => {
+        const tx = seedRefundTx();
+
+        await repository.applyPaymentOutcome({
+          ...refundPlan,
+          providerRefund: { providerAmountKop: 30_000 },
+        });
+
+        expect(moneyMock.confirmOldestRequestedRefund).not.toHaveBeenCalled();
+        expect(moneyMock.recompute).not.toHaveBeenCalled();
+        expect(moneyMock.syncAttemptStatus).not.toHaveBeenCalled();
+        expect(tx.orderStatusHistory.create).toHaveBeenCalledTimes(1);
+        expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ note: OrderHistoryNote.PROVIDER_REFUND_UNMATCHED }),
+        });
       });
 
       it('a refund nobody requested writes no money — one PROVIDER_REFUND_UNMATCHED row', async () => {
         const tx = seedRefundTx();
-        moneyMock.confirmOldestRequestedRefund.mockResolvedValue(null);
+        moneyMock.findOldestRequestedRefund.mockResolvedValue(null);
 
         await repository.applyPaymentOutcome(refundPlan);
 
+        expect(moneyMock.confirmOldestRequestedRefund).not.toHaveBeenCalled();
         expect(moneyMock.recompute).not.toHaveBeenCalled();
         expect(moneyMock.insertEntry).not.toHaveBeenCalled();
         expect(tx.order.updateMany).not.toHaveBeenCalled();
@@ -1811,7 +1862,7 @@ describe('OrderRepository', () => {
           {
             expected: { status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING },
             attemptStatus: PaymentAttemptStatus.FAILED,
-            paymentStatusChange: { from: PaymentStatus.PENDING, to: PaymentStatus.FAILED },
+            rederivePaymentStatus: true as const,
           },
         ],
         [
@@ -1819,7 +1870,7 @@ describe('OrderRepository', () => {
           {
             expected: { status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID },
             attemptStatus: PaymentAttemptStatus.SUCCEEDED,
-            providerRefund: {},
+            providerRefund: { providerAmountKop: null },
           },
         ],
         [

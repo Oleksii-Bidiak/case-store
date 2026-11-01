@@ -1,11 +1,11 @@
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Prisma } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { PrismaService } from '../src/prisma';
-import { allocateReturnCredit, unitsCreditKop } from '../src/order/order-money';
+import { allocateReturnCredit, deriveBalance, unitsCreditKop } from '../src/order/order-money';
 
 /**
  * The R2 money-ledger backfill (TASK-2047 / TASK-2046 / TASK-951; plan §2),
@@ -578,6 +578,114 @@ describe('Order money backfill (TASK-2047/2046/951) — integration', () => {
         await runBackfill(tx);
 
         expect(await orderOf(tx, orderId)).toMatchObject({ status: 'REFUNDED', balance_kop: 0 });
+      });
+    });
+  });
+
+  describe('balance follows deriveBalance (R2 review)', () => {
+    /** Status REFUNDED, label PARTIALLY_REFUNDED: paid 1 000, 400 returned. */
+    async function partlyRefundedRefundedOrder(tx: Tx): Promise<string> {
+      const orderId = await insertOrder(tx, {
+        total: '1000.00',
+        paymentStatus: 'PARTIALLY_REFUNDED',
+        status: 'REFUNDED',
+      });
+      await insertStatusHistory(tx, orderId, 'DELIVERED', 'REFUNDED', '2026-09-01T11:00:00Z');
+      await insertReturn(tx, { orderId, refundedAmount: '400.00' });
+      return orderId;
+    }
+
+    it('a legacy REFUNDED order keeps what it still holds: the stored balance is deriveBalance', async () => {
+      await inRolledBackTx(async (tx) => {
+        const orderId = await partlyRefundedRefundedOrder(tx);
+
+        await runBackfill(tx);
+
+        const row = await orderOf(tx, orderId);
+        expect(row).toMatchObject({ status: 'REFUNDED', paid_kop: 100_000, refunded_kop: 40_000 });
+        expect(row.balance_kop).toBe(
+          deriveBalance({
+            totalKop: 100_000,
+            returnCreditKop: row.return_credit_kop,
+            paidKop: row.paid_kop,
+            refundedKop: row.refunded_kop,
+            orderStatus: OrderStatus.REFUNDED,
+          }),
+        );
+        // Not «Винні покупцю 600»: the shop holds 600 of 1 000 and owes nothing back.
+        expect(row.balance_kop).toBe(0);
+        await expect(runVerify(tx)).resolves.toBeUndefined();
+      });
+    });
+
+    it('VERIFY raises when a REFUNDED order carries the old due = 0 balance', async () => {
+      await inRolledBackTx(async (tx) => {
+        const orderId = await partlyRefundedRefundedOrder(tx);
+        await runBackfill(tx);
+        // What step 9 wrote before the fix: due 0 → 0 − 100 000 + 40 000.
+        await tx.$executeRawUnsafe(
+          `UPDATE "orders" SET "balance_kop" = -60000 WHERE "id" = $1`,
+          orderId,
+        );
+
+        await expect(runVerify(tx)).rejects.toThrow(/totals differ from their ledger/);
+      });
+    });
+
+    it('VERIFY raises when a return is credited more than the goods it brings back', async () => {
+      await inRolledBackTx(async (tx) => {
+        const suffix = randomUUID().slice(0, 8);
+        const category = await tx.category.create({
+          data: { name: `verify-cat-${suffix}`, slug: `verify-cat-${suffix}` },
+        });
+        const product = await tx.product.create({
+          data: {
+            name: `verify-prod-${suffix}`,
+            slug: `verify-prod-${suffix}`,
+            price: 100,
+            stock: 10,
+            categoryId: category.id,
+          },
+        });
+        // 2 × 100.00 − 10.00 promo = 190.00; both units come back on a REFUND.
+        const orderId = await insertOrder(tx, {
+          total: '190.00',
+          discount: '10.00',
+          paymentStatus: 'PAID',
+        });
+        const itemId = randomUUID();
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "order_items" ("id", "order_id", "product_id", "quantity", "price")
+           VALUES ($1, $2, $3, 2, 100.00)`,
+          itemId,
+          orderId,
+          product.id,
+        );
+        const returnId = await insertReturn(tx, { orderId, decision: 'REFUND' });
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "return_items" ("id", "return_id", "order_item_id", "quantity")
+           VALUES ($1, $2, $3, 2)`,
+          randomUUID(),
+          returnId,
+          itemId,
+        );
+        await runBackfill(tx);
+        expect((await orderOf(tx, orderId)).return_credit_kop).toBe(19_000);
+        await expect(runVerify(tx)).resolves.toBeUndefined();
+
+        // One kopeck too many, every total kept consistent with it — only an
+        // independent look at the goods can tell.
+        await tx.$executeRawUnsafe(
+          `UPDATE "returns" SET "credit_kop" = "credit_kop" + 1 WHERE "id" = $1`,
+          returnId,
+        );
+        await tx.$executeRawUnsafe(
+          `UPDATE "orders" SET "return_credit_kop" = "return_credit_kop" + 1,
+                              "balance_kop" = "balance_kop" - 1 WHERE "id" = $1`,
+          orderId,
+        );
+
+        await expect(runVerify(tx)).rejects.toThrow(/credited more than the goods/);
       });
     });
   });

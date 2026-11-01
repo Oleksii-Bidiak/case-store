@@ -160,24 +160,57 @@ export class PaymentRepository {
   }
 
   /**
-   * Attempts with a LiqPay refund still REQUESTED (not voided) since before
-   * `requestedBefore` — the reconcile worker's refund poll list (TASK-1500).
-   * READ ONLY on the ledger, like {@link findExpiredReservations} on orders.
+   * Attempts with a LiqPay refund still REQUESTED (not voided), requested in the
+   * window `(requestedAfter, requestedBefore]` — the reconcile worker's refund
+   * poll list (TASK-1500). READ ONLY on the ledger, like
+   * {@link findExpiredReservations} on orders.
+   *
+   * Newest request first, and only inside the window (R2 review): a request the
+   * provider never answers stays REQUESTED until an operator voids it, so an
+   * unbounded oldest-first list let ≥ `limit` stuck ones fill every page and
+   * starve every newer refund. Requests older than the window are left to the
+   * operator's «void» action ({@link countRequestedRefundsOlderThan} surfaces
+   * how many there are).
    */
-  findWithRequestedRefundsOlderThan(requestedBefore: Date, limit: number): Promise<Payment[]> {
-    return this.prisma.payment.findMany({
+  async findWithRequestedRefunds(window: {
+    requestedBefore: Date;
+    requestedAfter: Date;
+    limit: number;
+  }): Promise<Payment[]> {
+    const entries = await this.prisma.orderMoneyEntry.findMany({
       where: {
-        moneyEntries: {
-          some: {
-            kind: MoneyEntryKind.LIQPAY_REFUND,
-            providerState: MoneyProviderState.REQUESTED,
-            voidedAt: null,
-            createdAt: { lte: requestedBefore },
-          },
-        },
+        kind: MoneyEntryKind.LIQPAY_REFUND,
+        providerState: MoneyProviderState.REQUESTED,
+        voidedAt: null,
+        paymentId: { not: null },
+        createdAt: { lte: window.requestedBefore, gt: window.requestedAfter },
       },
-      orderBy: { createdAt: 'asc' },
-      take: limit,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      distinct: ['paymentId'],
+      select: { paymentId: true },
+      take: window.limit,
+    });
+    const ids = entries.map((entry) => entry.paymentId as string);
+    if (ids.length === 0) {
+      return [];
+    }
+    const payments = await this.prisma.payment.findMany({ where: { id: { in: ids } } });
+    const byId = new Map(payments.map((payment) => [payment.id, payment]));
+    return ids.flatMap((id) => {
+      const payment = byId.get(id);
+      return payment ? [payment] : [];
+    });
+  }
+
+  /** LiqPay refunds still REQUESTED (not voided) since before `requestedBefore`. */
+  countRequestedRefundsOlderThan(requestedBefore: Date): Promise<number> {
+    return this.prisma.orderMoneyEntry.count({
+      where: {
+        kind: MoneyEntryKind.LIQPAY_REFUND,
+        providerState: MoneyProviderState.REQUESTED,
+        voidedAt: null,
+        createdAt: { lte: requestedBefore },
+      },
     });
   }
 

@@ -354,6 +354,10 @@ export class OrderMoneyService {
       if (entry.returnId) {
         await this.money.syncReturnStatus(tx, entry.returnId);
       }
+      // A voided request no longer stands between the attempt and a new refund.
+      if (entry.paymentId) {
+        await this.money.syncAttemptStatus(tx, entry.paymentId);
+      }
     });
 
     this.logger.warn(

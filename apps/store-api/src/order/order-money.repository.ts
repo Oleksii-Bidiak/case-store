@@ -17,6 +17,7 @@ import {
 import { toCents } from '../addon-service';
 import { PrismaService } from '../prisma';
 import {
+  attemptStatusAfterRefunds,
   canReverse,
   deriveBalance,
   deriveOrderStatus,
@@ -501,29 +502,68 @@ export class OrderMoneyRepository {
 
   /**
    * One attempt's own money: its receipt and its LiqPay refunds that are not
-   * voided (REQUESTED included — see the section note). Kopecks.
+   * voided (REQUESTED included — see the section note), plus the CONFIRMED part
+   * of those refunds alone (what the provider actually sent). Kopecks.
    */
   async paymentProviderTotals(
     tx: Tx,
     paymentId: string,
-  ): Promise<{ inKop: number; refundedKop: number }> {
+  ): Promise<{ inKop: number; refundedKop: number; confirmedRefundedKop: number }> {
     const rows = await tx.orderMoneyEntry.findMany({
       where: {
         paymentId,
         kind: { in: [MoneyEntryKind.LIQPAY_PAYMENT, MoneyEntryKind.LIQPAY_REFUND] },
       },
-      select: { direction: true, amountKop: true, reversalOfId: true, voidedAt: true },
+      select: {
+        direction: true,
+        amountKop: true,
+        reversalOfId: true,
+        voidedAt: true,
+        providerState: true,
+      },
     });
     const { paidKop, refundedKop } = ledgerTotals(rows);
-    return { inKop: paidKop, refundedKop };
+    const confirmed = ledgerTotals(
+      rows.filter(
+        (row) =>
+          row.direction === MoneyDirection.OUT &&
+          row.providerState === MoneyProviderState.CONFIRMED,
+      ),
+    );
+    return { inKop: paidKop, refundedKop, confirmedRefundedKop: confirmed.refundedKop };
   }
 
   /**
-   * Mark the attempt's oldest live REQUESTED refund CONFIRMED and return it, or
-   * null when there is none. Conditional on the state, so a repeat is a no-op.
-   * Call under {@link lockOrder}.
+   * Re-derive the attempt's own status from its CONFIRMED refunds
+   * (`attemptStatusAfterRefunds`): REFUNDED once they cover its receipt,
+   * SUCCEEDED again when they no longer do. Call under {@link lockOrder}, after
+   * a confirmation or a void.
    */
-  async confirmOldestRequestedRefund(tx: Tx, paymentId: string): Promise<MoneyEntry | null> {
+  async syncAttemptStatus(tx: Tx, paymentId: string): Promise<PaymentAttemptStatus | null> {
+    const payment = await tx.payment.findUnique({
+      where: { id: paymentId },
+      select: { status: true },
+    });
+    if (!payment) {
+      return null;
+    }
+    const totals = await this.paymentProviderTotals(tx, paymentId);
+    const next = attemptStatusAfterRefunds({
+      current: payment.status,
+      inKop: totals.inKop,
+      confirmedRefundedKop: totals.confirmedRefundedKop,
+    });
+    if (next !== payment.status) {
+      await tx.payment.updateMany({
+        where: { id: paymentId, status: payment.status },
+        data: { status: next },
+      });
+    }
+    return next;
+  }
+
+  /** The attempt's oldest live REQUESTED refund, or null. Call under {@link lockOrder}. */
+  async findOldestRequestedRefund(tx: Tx, paymentId: string): Promise<MoneyEntry | null> {
     const oldest = await tx.orderMoneyEntry.findFirst({
       where: {
         paymentId,
@@ -533,6 +573,16 @@ export class OrderMoneyRepository {
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
+    return oldest ? toMoneyEntry(oldest) : null;
+  }
+
+  /**
+   * Mark the attempt's oldest live REQUESTED refund CONFIRMED and return it, or
+   * null when there is none. Conditional on the state, so a repeat is a no-op.
+   * Call under {@link lockOrder}.
+   */
+  async confirmOldestRequestedRefund(tx: Tx, paymentId: string): Promise<MoneyEntry | null> {
+    const oldest = await this.findOldestRequestedRefund(tx, paymentId);
     if (!oldest) {
       return null;
     }
@@ -540,9 +590,7 @@ export class OrderMoneyRepository {
       where: { id: oldest.id, providerState: MoneyProviderState.REQUESTED, voidedAt: null },
       data: { providerState: MoneyProviderState.CONFIRMED },
     });
-    return count === 1
-      ? toMoneyEntry({ ...oldest, providerState: MoneyProviderState.CONFIRMED })
-      : null;
+    return count === 1 ? { ...oldest, providerState: MoneyProviderState.CONFIRMED } : null;
   }
 
   /**

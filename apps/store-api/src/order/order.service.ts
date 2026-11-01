@@ -209,6 +209,17 @@ function generateGuestToken(): string {
  * is a 256-bit random value, not a password, so there is nothing to brute-force
  * and a per-request Argon2 on a public GET would be a denial-of-service lever.
  */
+/**
+ * The amount a provider event reported, in integer kopecks, or null when it
+ * reported none (`''`) or something unreadable — the refund match then falls
+ * back to "no amount to compare" (TASK-2336 mitigation).
+ */
+function reportedAmountKop(amount: string): number | null {
+  if (amount.trim() === '') return null;
+  const kop = toCents(amount);
+  return Number.isSafeInteger(kop) && kop > 0 ? kop : null;
+}
+
 function hashGuestToken(rawToken: string): string {
   return createHash('sha256').update(rawToken).digest('hex');
 }
@@ -2107,7 +2118,6 @@ export class OrderService {
         paymentId: payment.id,
         outcome: event.outcome,
         providerStatus: event.providerStatus,
-        paymentStatus: plan.paymentStatusChange?.to,
         status: plan.statusChange?.to,
       },
       'Payment event applied to order',
@@ -2199,9 +2209,10 @@ export class OrderService {
    *   back (TASK-627) the plan carries `stockHold: 'released'` and the stock is
    *   re-taken in the same write; if it is gone, the money is still recorded and
    *   the order stays in «Позиція недоступна».
-   * - **FAILED** records the failed attempt and marks the order's payment FAILED,
-   *   but only while it is still unpaid: a late failure callback for a superseded
-   *   attempt must never un-pay a paid order. The order itself is NOT cancelled —
+   * - **FAILED** records the failed attempt and re-derives the payment status:
+   *   FAILED only while nothing is paid AND this was the last attempt — a late
+   *   failure callback for a superseded attempt must never un-pay a paid order
+   *   nor fail a newer PENDING one. The order itself is NOT cancelled —
    *   the customer may retry, and the reservation worker owns the deadline.
    * - **REFUNDED / PARTIALLY_REFUNDED** carry `providerRefund`: confirm the
    *   oldest refund the shop REQUESTED, or record PROVIDER_REFUND_UNMATCHED when
@@ -2297,6 +2308,11 @@ export class OrderService {
         // appending a second identical history row. A blocked move is NOT
         // recorded as a refusal here: for this outcome a non-move is the designed
         // behaviour (a superseded attempt), not a contradiction worth flagging.
+        //
+        // R2 review: the payment status itself is DERIVED (recompute: "nothing
+        // paid and the LAST attempt failed"), never set here — a late failure of
+        // an older attempt must not mark the order FAILED while a newer attempt
+        // is still PENDING.
         const canFail = canTransitionPayment(order.paymentStatus, PaymentStatus.FAILED);
         if (payment.status === PaymentAttemptStatus.FAILED && !canFail) return null;
         return {
@@ -2304,11 +2320,7 @@ export class OrderService {
           attemptStatus: PaymentAttemptStatus.FAILED,
           ...(event.failureCode !== undefined ? { failureCode: event.failureCode } : {}),
           ...(event.failureMessage !== undefined ? { failureMessage: event.failureMessage } : {}),
-          ...(canFail
-            ? {
-                paymentStatusChange: { from: order.paymentStatus, to: PaymentStatus.FAILED },
-              }
-            : {}),
+          rederivePaymentStatus: true,
         };
       }
 
@@ -2326,7 +2338,14 @@ export class OrderService {
         // No order move either (TASK-1969, R2 A4): the order's REFUNDED is
         // derived from returns and payouts by the recompute the confirmation
         // runs — a provider refund alone never ends an order.
-        return { ...base, attemptStatus: payment.status, providerRefund: {} };
+        //
+        // TASK-2336 mitigation: the reported amount travels with the plan so the
+        // repository confirms a request only when the two agree.
+        return {
+          ...base,
+          attemptStatus: payment.status,
+          providerRefund: { providerAmountKop: reportedAmountKop(event.amount) },
+        };
       }
 
       case PaymentOutcome.IGNORED:

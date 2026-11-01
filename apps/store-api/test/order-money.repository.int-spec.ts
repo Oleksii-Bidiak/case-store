@@ -425,7 +425,8 @@ describe('OrderMoneyRepository (integration)', () => {
         repository.paymentProviderTotals(tx, paymentId),
       );
 
-      expect(totals).toEqual({ inKop: 100_000, refundedKop: 30_000 });
+      // The REQUESTED 300 counts against the ceiling, but nothing is CONFIRMED yet.
+      expect(totals).toEqual({ inKop: 100_000, refundedKop: 30_000, confirmedRefundedKop: 0 });
     });
 
     it('a REQUESTED refund counts as refunded at once; voiding it gives it back', async () => {

@@ -5,7 +5,6 @@ import {
   MoneyEntryKind,
   MoneyProviderState,
   OrderStatus,
-  PaymentAttemptStatus,
   PaymentStatus,
   PaymentMethod,
   OrderHistoryChangeType,
@@ -14,7 +13,7 @@ import {
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma';
 import { OrderMoneyRepository } from './order-money.repository';
-import { providerRefundAvailableKop } from './order-money';
+import { deriveBalance, providerRefundAvailableKop, providerRefundMatches } from './order-money';
 import { normalizeUaPhone, phoneDigits } from '../common/validators';
 import {
   CacheService,
@@ -309,6 +308,24 @@ const TIMED_RESERVATION_METHODS: PaymentMethod[] = [
 /** The provider ref of an attempt's receipt — the same key the R2 backfill used. */
 const LIQPAY_RECEIPT_REF = 'success';
 
+/**
+ * What a brand-new order owes (R2 review): the ledger's own rule
+ * (`deriveBalance`) for a PENDING order with no money and no returns yet — i.e.
+ * its total. Written at creation because `balance_kop` defaults to 0, and a
+ * fresh unpaid order at 0 is invisible to «unpaid in transit», «Борг», the
+ * dashboard's unrealized revenue and the money card until a later recompute.
+ * The other three money columns are correctly 0 by default.
+ */
+function openingBalanceKop(total: Prisma.Decimal): number {
+  return deriveBalance({
+    totalKop: toCents(total),
+    returnCreditKop: 0,
+    paidKop: 0,
+    refundedKop: 0,
+    orderStatus: OrderStatus.PENDING,
+  });
+}
+
 @Injectable()
 export class OrderRepository {
   private readonly logger = new Logger(OrderRepository.name);
@@ -466,6 +483,7 @@ export class OrderRepository {
           tax: new Prisma.Decimal(0),
           addonsTotal,
           total,
+          balanceKop: openingBalanceKop(total),
           shippingAddress: shippingAddress as unknown as Prisma.InputJsonValue,
           billingAddress: billingAddressColumn(billingAddress),
           notes: notes ?? null,
@@ -636,6 +654,7 @@ export class OrderRepository {
           tax: new Prisma.Decimal(0),
           addonsTotal: new Prisma.Decimal(0),
           total,
+          balanceKop: openingBalanceKop(total),
           shippingAddress: params.shippingAddress as unknown as Prisma.InputJsonValue,
           billingAddress: billingAddressColumn(params.billingAddress),
           notes: params.notes ?? null,
@@ -1670,7 +1689,6 @@ export class OrderRepository {
       });
 
       const orderData: Prisma.OrderUpdateManyMutationInput = {};
-      if (plan.paymentStatusChange) orderData.paymentStatus = plan.paymentStatusChange.to;
       if (plan.statusChange) orderData.status = plan.statusChange.to;
       if (plan.paidAt !== undefined) orderData.paidAt = plan.paidAt;
       // Lifting the deadline is unconditional once payment settled: a paid order's
@@ -1691,10 +1709,10 @@ export class OrderRepository {
         // it a release committed after the read would be paid over as if the
         // stock were still held — a paid order holding nothing.
         //
-        // A receipt plan writes no payment status (recompute derives it), so the
-        // payment status is not part of its condition: a manual receipt that
-        // committed first under the same lock must not send the webhook into
-        // a retry loop.
+        // No plan writes a payment status (recompute derives it), so for a
+        // receipt the payment status is not part of the condition: a manual
+        // receipt that committed first under the same lock must not send the
+        // webhook into a retry loop.
         const { count } = await tx.order.updateMany({
           where: {
             id: plan.orderId,
@@ -1745,18 +1763,10 @@ export class OrderRepository {
         await this.applyProviderRefund(tx, plan, locked);
       }
 
-      if (plan.paymentStatusChange) {
-        await tx.orderStatusHistory.create({
-          data: {
-            orderId: plan.orderId,
-            changeType: OrderHistoryChangeType.PAYMENT_STATUS,
-            fromPaymentStatus: plan.paymentStatusChange.from,
-            toPaymentStatus: plan.paymentStatusChange.to,
-            // TASK-619: the flag an operator's list queries (e.g. PAID_AFTER_CANCEL).
-            ...(plan.paymentStatusChange.note ? { note: plan.paymentStatusChange.note } : {}),
-            changedBy: null,
-          },
-        });
+      // A failed attempt (R2 review): the payment status is derived — "the last
+      // attempt FAILED" — from the attempt row written above, never set by hand.
+      if (plan.rederivePaymentStatus) {
+        await this.money.recompute(tx, plan.orderId, null);
       }
 
       // TASK-431: the event asked for a move the payment state machine forbids.
@@ -1812,21 +1822,42 @@ export class OrderRepository {
 
   /**
    * The `reversed` half of {@link applyPaymentOutcome} (TASK-1500), under the
-   * order lock it already holds. The provider's amount is NOT used: the money
-   * is what WE requested, so its semantics (single refund or running total) do
-   * not matter here.
+   * order lock it already holds. The money is what WE requested, never the
+   * provider's amount — but that amount, when reported, must EQUAL the request
+   * it would confirm (TASK-2336 mitigation): a different one is not confirmed
+   * blindly, it is recorded as unmatched for the operator. Whether LiqPay
+   * reports the single refund or the running total is still unconfirmed.
    */
   private async applyProviderRefund(
     tx: Prisma.TransactionClient,
     plan: PaymentApplyPlan,
     locked: { paymentStatus: PaymentStatus },
   ): Promise<void> {
-    const confirmed = await this.money.confirmOldestRequestedRefund(tx, plan.paymentId);
+    const providerAmountKop = plan.providerRefund?.providerAmountKop ?? null;
+    const oldest = await this.money.findOldestRequestedRefund(tx, plan.paymentId);
+    const matches =
+      oldest !== null &&
+      providerRefundMatches({ requestedKop: oldest.amountKop, providerAmountKop });
+    const confirmed = matches
+      ? await this.money.confirmOldestRequestedRefund(tx, plan.paymentId)
+      : null;
 
     if (!confirmed) {
-      // Refunded in the LiqPay cabinet — the shop never asked. No money row is
-      // invented (the amount semantics are unconfirmed); the operator records
-      // it. `current → current`, like a refused event, so the chain holds.
+      // Refunded in the LiqPay cabinet — the shop never asked — or for an
+      // amount other than the one it asked for. No money row is invented and
+      // no request is confirmed; the operator records or voids it.
+      // `current → current`, like a refused event, so the chain holds.
+      this.logger.warn(
+        {
+          event: 'payment.refund.unmatched',
+          orderId: plan.orderId,
+          paymentId: plan.paymentId,
+          providerAmountKop,
+          requestedAmountKop: oldest?.amountKop ?? null,
+          requestedEntryId: oldest?.id ?? null,
+        },
+        'Provider refund matches no REQUESTED refund of this attempt; recorded as unmatched',
+      );
       await tx.orderStatusHistory.create({
         data: {
           orderId: plan.orderId,
@@ -1842,14 +1873,9 @@ export class OrderRepository {
 
     // Derives the payment status AND the order's own REFUNDED (TASK-1969).
     await this.money.recompute(tx, plan.orderId, null, {});
-
-    const attempt = await this.money.paymentProviderTotals(tx, plan.paymentId);
-    if (attempt.inKop > 0 && attempt.refundedKop >= attempt.inKop) {
-      await tx.payment.update({
-        where: { id: plan.paymentId },
-        data: { status: PaymentAttemptStatus.REFUNDED },
-      });
-    }
+    // REFUNDED only once the CONFIRMED refunds cover the receipt — a refund
+    // still REQUESTED may yet be voided, and the attempt must stay refundable.
+    await this.money.syncAttemptStatus(tx, plan.paymentId);
   }
 
   /**
@@ -1917,6 +1943,9 @@ export class OrderRepository {
         const entry = await this.money.findEntry(tx, orderId, entryId);
         if (entry?.returnId) {
           await this.money.syncReturnStatus(tx, entry.returnId);
+        }
+        if (entry?.paymentId) {
+          await this.money.syncAttemptStatus(tx, entry.paymentId);
         }
       }
     });

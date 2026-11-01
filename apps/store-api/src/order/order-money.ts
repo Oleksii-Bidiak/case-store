@@ -3,6 +3,7 @@ import {
   MoneyDirection,
   MoneyEntryKind,
   OrderStatus,
+  PaymentAttemptStatus,
   PaymentMethod,
   PaymentStatus,
   ReturnDecision,
@@ -375,6 +376,52 @@ export function providerRefundAvailableKop(input: ProviderRefundCeilingInput): n
   const { paymentInKop, paymentRefundedKop, orderPaidKop, orderRefundedKop } = input;
   assertKopecks(paymentInKop, paymentRefundedKop, orderPaidKop, orderRefundedKop);
   return Math.max(0, Math.min(paymentInKop - paymentRefundedKop, orderPaidKop - orderRefundedKop));
+}
+
+/** Attempt statuses whose money the refund rule may move between. */
+const SETTLED_ATTEMPT_STATUSES: readonly PaymentAttemptStatus[] = [
+  PaymentAttemptStatus.SUCCEEDED,
+  PaymentAttemptStatus.REFUNDED,
+];
+
+/**
+ * The LiqPay attempt's own status after its refunds changed (R2 review): REFUNDED
+ * only once the CONFIRMED refunds cover its receipt — a REQUESTED refund the
+ * provider has not answered yet does not count, so the attempt stays refundable
+ * (SUCCEEDED) if that request is later voided. Any other attempt is left alone.
+ */
+export function attemptStatusAfterRefunds(input: {
+  current: PaymentAttemptStatus;
+  inKop: number;
+  confirmedRefundedKop: number;
+}): PaymentAttemptStatus {
+  const { current, inKop, confirmedRefundedKop } = input;
+  assertKopecks(inKop, confirmedRefundedKop);
+  if (!SETTLED_ATTEMPT_STATUSES.includes(current)) {
+    return current;
+  }
+  return inKop > 0 && confirmedRefundedKop >= inKop
+    ? PaymentAttemptStatus.REFUNDED
+    : PaymentAttemptStatus.SUCCEEDED;
+}
+
+/**
+ * Whether a `reversed` event may confirm the REQUESTED refund it is matched to
+ * (TASK-2336 mitigation): when the provider reported an amount, it must equal
+ * the request. A different amount is never confirmed blindly — it is recorded as
+ * unmatched for the operator. Whether LiqPay reports the single refund or the
+ * running total is still unconfirmed (TASK-2336 stays open).
+ */
+export function providerRefundMatches(input: {
+  requestedKop: number;
+  providerAmountKop: number | null;
+}): boolean {
+  assertKopecks(input.requestedKop);
+  if (input.providerAmountKop === null) {
+    return true;
+  }
+  assertKopecks(input.providerAmountKop);
+  return input.providerAmountKop === input.requestedKop;
 }
 
 // ── Reversals ───────────────────────────────────────────────────────────────
