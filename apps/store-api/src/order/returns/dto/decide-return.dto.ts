@@ -37,7 +37,12 @@ export class DecideReturnDto {
   @Transform(({ value }: { value: unknown }) => {
     if (typeof value !== 'string') return value;
     const trimmed = value.trim();
-    return trimmed === '' ? null : trimmed;
+    // A reason of invisible format characters only (zero-width space, joiner,
+    // soft hyphen…) survives trim() but tells the customer nothing. They are
+    // dropped only for the emptiness check: inside visible text a joiner may be
+    // part of an emoji.
+    const visible = trimmed.replace(/\p{Cf}/gu, '').trim();
+    return visible === '' ? null : trimmed;
   })
   reason?: string | null;
 }

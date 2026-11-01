@@ -27,6 +27,16 @@ export interface DecideContext {
  *    `RETURN_DECISION_UNCHANGED`); the same decision with a NEW reason is a
  *    legitimate correction and goes through.
  */
+/**
+ * The reason as the API stores it: trimmed, and "" when nothing visible is left —
+ * a reason of invisible format characters only (zero-width space, joiner, soft
+ * hyphen…) tells the customer nothing. Mirrors `DecideReturnDto`'s transform.
+ */
+function normalizeReason(raw: string): string {
+  const trimmed = raw.trim();
+  return trimmed.replace(/\p{Cf}/gu, "").trim() === "" ? "" : trimmed;
+}
+
 export function createDecideSchema(context: DecideContext) {
   return z
     .object({
@@ -43,7 +53,7 @@ export function createDecideSchema(context: DecideContext) {
         return;
       }
 
-      const reason = values.reason.trim();
+      const reason = normalizeReason(values.reason);
       if (reason.length > DECISION_REASON_MAX_LENGTH) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -85,7 +95,7 @@ export interface DecideFormValues {
 
 /** Map the form to the POST body: the reason trimmed, a blank one as null. */
 export function decideValuesToDto(values: DecideFormValues): DecideReturnDto {
-  const reason = values.reason.trim();
+  const reason = normalizeReason(values.reason);
   return {
     decision: values.decision as DecideReturnDto["decision"],
     reason: reason === "" ? null : reason,
