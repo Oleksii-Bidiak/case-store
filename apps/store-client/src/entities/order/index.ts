@@ -102,4 +102,7 @@ export {
   // TASK-483: the public form. A mutation rather than a query because the phone
   // travels in the body — see the endpoint's docblock for why it is a POST.
   useLookupOrder,
+  // TASK-2010 (д): one click on a guest's order page — an account on the
+  // order's address, with this order already in it.
+  useCreateGuestOrderAccount,
 } from "@/shared/api/generated/orders/orders";

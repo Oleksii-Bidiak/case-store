@@ -13,6 +13,7 @@ import {
 import { GuestOrderReturnHistory } from "@/entities/return";
 import { useAuth } from "@/entities/session";
 import { GUEST_ORDER_PLACED_PARAM } from "@/features/checkout";
+import { CreateGuestAccount } from "@/features/guest-order-account";
 import { ReturnRequestButton } from "@/features/return-request";
 import { CheckoutTelegramCard } from "@/features/telegram-connect";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
@@ -118,7 +119,9 @@ const primaryCta =
  * «Замовлення прийнято!» and the Telegram offer for this order. The account
  * offer is a banner at the top on every visit — guest orders move into the
  * account once its email is confirmed (TASK-485) — and is withheld from a
- * visitor who is already signed in.
+ * visitor who is already signed in. Since TASK-2010 it is one click
+ * («Створити акаунт на <email>», `CreateGuestAccount`) rather than a link to
+ * `/register`, and it is not offered for an order an account already holds.
  *
  * ── Returns (TASK-1965, B-12 тема 1.8) ────────────────────────────────────────
  * The token is the authorisation for returns too: a guest — or a shopper who
@@ -174,22 +177,24 @@ export function GuestOrderView({ token, contact }: GuestOrderViewProps) {
 
       {/* The offer, at the top but after the order is confirmed — still an
           offer, never a condition (TASK-338). */}
-      {offerAccount && (
+      {/* TASK-2010 (д): one click on the order's own address instead of a
+          bare /register — and only for an order no account holds yet. */}
+      {offerAccount && !order.userId && order.guest?.email && (
         <section className="flex items-start gap-3 rounded-card border border-primary/30 bg-primary/5 p-4">
           <UserPlus
             className="mt-0.5 size-5 shrink-0 text-primary"
             aria-hidden
           />
-          <div className="flex flex-col gap-1">
-            <Link
-              href="/register"
-              className="font-semibold text-primary underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {dict.order.guest.registerBannerCta}
-            </Link>
+          <div className="flex min-w-0 flex-col gap-2">
             <p className="text-sm text-muted-foreground">
-              {dict.order.guest.registerBannerBody}
+              {dict.order.guest.oneClickBody}
             </p>
+            <CreateGuestAccount
+              token={token}
+              orderId={order.id}
+              email={order.guest.email}
+              signInRedirect={`/orders/guest/${encodeURIComponent(token)}`}
+            />
           </div>
         </section>
       )}
