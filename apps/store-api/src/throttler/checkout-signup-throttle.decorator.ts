@@ -33,9 +33,10 @@ export const CheckoutSignupThrottle = (mode: CheckoutSignupThrottleMode): Custom
  * marker is never put on a class.
  *
  * The body is read RAW: the throttler is a global guard and guards run before
- * pipes, so the DTO has not validated anything yet. That is why only a literal
- * `true` counts — `"true"` or `1` would be refused by the DTO's `@IsBoolean`
- * and create no account, so it must not spend the quota either.
+ * pipes, so the DTO has not validated anything yet. So the guard does not try
+ * to predict validation: anything but an absent, `null` or literal `false` box
+ * is counted. A value it skipped and the pipe then accepted would be an
+ * uncounted account (review of S5-API: the DTO now refuses non-booleans too).
  */
 export function isCheckoutSignupRequest(context: ExecutionContext): boolean {
   const mode = Reflect.getMetadata(CHECKOUT_SIGNUP_THROTTLE_KEY, context.getHandler()) as
@@ -46,5 +47,6 @@ export function isCheckoutSignupRequest(context: ExecutionContext): boolean {
 
   const body = context.switchToHttp().getRequest<{ body?: unknown }>().body as
     { contact?: { createAccount?: unknown } } | null | undefined;
-  return body?.contact?.createAccount === true;
+  const createAccount = body?.contact?.createAccount;
+  return createAccount !== undefined && createAccount !== null && createAccount !== false;
 }

@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IsBoolean, IsOptional } from 'class-validator';
 import { GuestContactDto } from './guest-contact.dto';
 
@@ -24,6 +25,11 @@ export class CheckoutContactDto extends GuestContactDto {
     default: false,
   })
   @IsOptional()
+  // The RAW value, past `enableImplicitConversion` (main.ts): without this the
+  // pipe turns "true", 1 — and even "false" (Boolean("false") === true) — into
+  // `true`, @IsBoolean waves them through, and the sign-up throttler, which
+  // reads the raw body, never counted them. A real JSON boolean or a 400.
+  @Transform(({ obj }: { obj: Record<string, unknown> }) => obj.createAccount)
   @IsBoolean()
   createAccount?: boolean;
 }
