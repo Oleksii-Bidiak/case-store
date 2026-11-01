@@ -33,6 +33,13 @@ export const ACCOUNT_LOCKED_MAIL_TYPE = 'account-locked';
 export const EMAIL_VERIFICATION_MAIL_TYPE = 'email-verification';
 
 /**
+ * `NotificationOutbox.type` for the «Задайте пароль» letter of an account created at
+ * checkout (TASK-2010). Recipient = the address the account was created on, carried
+ * in the payload for the same reason as {@link EMAIL_VERIFICATION_MAIL_TYPE}.
+ */
+export const ACCOUNT_SETUP_MAIL_TYPE = 'account-setup';
+
+/**
  * `NotificationOutbox.type` for the letter that proves a NEW address before it becomes
  * the login (TASK-396). Recipient = the new address, carried in the payload.
  */

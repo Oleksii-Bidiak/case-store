@@ -45,6 +45,9 @@ enum EmailTokenPurpose {
   VERIFY
   EMAIL_CHANGE
   EMAIL_CHANGE_REVERT
+  /// The «Задайте пароль» link of an account created at checkout (TASK-2010).
+  /// Proves the mailbox like VERIFY, and may also set the first password.
+  ACCOUNT_SETUP
 }
 
 /// How the customer chose to pay (TASK-330). Distinct from PaymentStatus, which

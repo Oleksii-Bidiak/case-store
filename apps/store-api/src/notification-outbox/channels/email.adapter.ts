@@ -3,6 +3,7 @@ import { NotificationChannel, NotificationOutbox } from '@prisma/client';
 import {
   MailService,
   type AccountLockedMailPayload,
+  type AccountSetupMailPayload,
   type EmailChangeConfirmMailPayload,
   type EmailChangeNoticeMailPayload,
   type EmailVerificationMailPayload,
@@ -13,6 +14,7 @@ import {
 } from '../../mail';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
+  ACCOUNT_SETUP_MAIL_TYPE,
   EMAIL_CHANGE_CONFIRM_MAIL_TYPE,
   EMAIL_CHANGE_NOTICE_MAIL_TYPE,
   EMAIL_VERIFICATION_MAIL_TYPE,
@@ -104,6 +106,11 @@ export class EmailAdapter implements NotificationChannelAdapter {
       case EMAIL_CHANGE_NOTICE_MAIL_TYPE:
         await this.mailService.sendEmailChangeNoticePayload(
           row.payload as unknown as EmailChangeNoticeMailPayload,
+        );
+        return;
+      case ACCOUNT_SETUP_MAIL_TYPE:
+        await this.mailService.sendAccountSetupPayload(
+          row.payload as unknown as AccountSetupMailPayload,
         );
         return;
       default:

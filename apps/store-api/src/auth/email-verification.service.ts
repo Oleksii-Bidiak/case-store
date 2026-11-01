@@ -3,7 +3,7 @@ import { ModuleRef } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { randomBytes } from 'crypto';
-import { EmailTokenPurpose } from '@prisma/client';
+import { EmailTokenPurpose, type Prisma } from '@prisma/client';
 import { AuthRepository } from './auth.repository';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
 import { NotificationOutboxService } from '../notification-outbox';
@@ -160,7 +160,6 @@ export class EmailVerificationService {
       throw new BadRequestException(INVALID_VERIFICATION_TOKEN_MESSAGE);
     }
 
-    await this.authRepository.markEmailVerified(stored.user.id, new Date());
     await this.authRepository.markEmailVerificationTokenUsed(stored.id);
 
     this.logger.info(
@@ -168,9 +167,84 @@ export class EmailVerificationService {
       'Email address verified',
     );
 
-    const claimedOrders = await this.claimGuestOrders(stored.user.id, stored.email);
+    const claimedOrders = await this.adoptProvenAddress(stored.user, stored.email);
 
     return { email: stored.email, claimedOrders };
+  }
+
+  /**
+   * The one sequence for "the owner of this mailbox has just proven it"
+   * (TASK-2010, B-12 тема 2 п.3) — reached from the verification link, the
+   * «Задайте пароль» link, a password-reset link and a Google sign-in.
+   *
+   * ── Why the revoke comes first ────────────────────────────────────────────
+   * Since checkout can create an account on any typed address, an UNPROVEN
+   * account may belong to somebody other than the mailbox owner. When the real
+   * owner proves the address, whoever created the account must be signed out
+   * BEFORE the owner's guest orders — phone, address, totals — move onto it.
+   * So for an unverified account: every refresh token is revoked, then the
+   * address is stamped, then the orders are claimed. (An access token already
+   * issued lives on until it expires — ≤15 minutes; recorded in BACKLOG.)
+   *
+   * An account already proven is left signed in and is not re-stamped; the
+   * claim still runs — it is idempotent and moves only `userId: null` orders.
+   *
+   * Callers that mint a session for the prover must do it AFTER this, or the
+   * revoke takes the new session with it.
+   *
+   * @returns how many guest orders moved onto the account.
+   */
+  async adoptProvenAddress(
+    user: { id: string; emailVerifiedAt: Date | null },
+    email: string,
+  ): Promise<number> {
+    if (!user.emailVerifiedAt) {
+      await this.authRepository.revokeAllUserTokens(user.id);
+      await this.authRepository.markEmailVerified(user.id, new Date());
+    }
+
+    return this.claimGuestOrders(user.id, email);
+  }
+
+  /**
+   * Issue the «Задайте пароль» link of an account created at checkout
+   * (TASK-2010), through the CALLER's transaction — the order's — so the link
+   * and the letter exist exactly when the account does.
+   *
+   * An ACCOUNT_SETUP token: the same at-rest shape and the same lifetime as a
+   * verification link (it proves the same mailbox), but its own purpose, so a
+   * plain verification link can never be used to set a password.
+   */
+  async issueAccountSetupLink(
+    user: { id: string; email: string },
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const rawToken = randomBytes(VERIFICATION_TOKEN_BYTES).toString('hex');
+    const expiresAt = new Date(Date.now() + parseDurationToMs(this.expiration));
+
+    await this.authRepository.saveEmailVerificationToken(
+      user.id,
+      user.email,
+      rawToken,
+      expiresAt,
+      { purpose: EmailTokenPurpose.ACCOUNT_SETUP },
+      tx,
+    );
+
+    await this.mailOutboxService.enqueueAccountSetup(
+      {
+        to: user.email,
+        setupUrl: `${this.storeClientUrl}/account-setup?token=${rawToken}`,
+        expiresInHuman: humanizeDuration(this.expiration),
+      },
+      tx,
+    );
+
+    // Never log the raw token or the link.
+    this.logger.info(
+      { event: 'user.accountSetupLinkIssued', userId: user.id },
+      'Account setup link issued',
+    );
   }
 
   /**

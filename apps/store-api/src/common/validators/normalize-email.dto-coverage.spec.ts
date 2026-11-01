@@ -3,6 +3,7 @@ import { validate } from 'class-validator';
 import { LoginDto } from '../../auth/dto/login.dto';
 import { RegisterDto } from '../../auth/dto/register.dto';
 import { RequestPasswordResetDto } from '../../auth/dto/request-password-reset.dto';
+import { CheckoutEmailStatusDto } from '../../auth/dto/checkout-account.dto';
 import { CreateContactMessageDto } from '../../contact/dto/create-contact-message.dto';
 import { SubscribeDto } from '../../newsletter/dto/subscribe.dto';
 import { UnsubscribeDto } from '../../newsletter/dto/unsubscribe.dto';
@@ -30,6 +31,8 @@ const cases: Array<[string, EmailDto]> = [
   ['RegisterDto', RegisterDto],
   ['LoginDto', LoginDto],
   ['RequestPasswordResetDto', RequestPasswordResetDto],
+  // TASK-2010: the checkout's "already has an account?" question.
+  ['CheckoutEmailStatusDto', CheckoutEmailStatusDto],
   ['UpdateProfileDto', UpdateProfileDto],
   ['CreateStaffDto', CreateStaffDto],
   ['GuestContactDto', GuestContactDto],

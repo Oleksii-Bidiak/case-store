@@ -8,6 +8,8 @@ import { EmailChangeService } from './email-change.service';
 import { AuthController } from './auth.controller';
 import { RefreshTokenCleanupService } from './refresh-token-cleanup.service';
 import { GuestStateMergeService } from './guest-state-merge.service';
+import { AuthSessionResponder } from './auth-session-responder';
+import { CheckoutAccountService } from './checkout-account.service';
 import { JwtAccessStrategy, JwtRefreshStrategy, GoogleStrategy } from './strategies';
 import { GoogleAuthGuard } from './guards';
 import { GoogleOAuthStateStore } from './oauth/google-oauth-state.store';
@@ -58,6 +60,10 @@ import { WishlistModule } from '../wishlist/wishlist.module';
     RefreshTokenCleanupService,
     // Merges a guest cart + wishlist on sign-in (TASK-824, moved out of the controller).
     GuestStateMergeService,
+    // TASK-2010: the refresh cookie + guest merge of every sign-in, and the
+    // account a guest creates at checkout. Both exported for the order module.
+    AuthSessionResponder,
+    CheckoutAccountService,
     JwtAccessStrategy,
     JwtRefreshStrategy,
     // Google OAuth (TASK-168). GoogleStrategy always constructs (inert
@@ -68,6 +74,16 @@ import { WishlistModule } from '../wishlist/wishlist.module';
     GoogleAuthGuard,
   ],
   // EmailChangeService is exported for the operator route on UserController.
-  exports: [AuthRepository, AuthService, EmailVerificationService, EmailChangeService],
+  // AuthSessionResponder + CheckoutAccountService: the checkout sign-up on the
+  // order routes (TASK-2010). OrderModule imports this module; this module never
+  // imports OrderModule (guest orders are claimed through GUEST_ORDER_CLAIM_PORT).
+  exports: [
+    AuthRepository,
+    AuthService,
+    EmailVerificationService,
+    EmailChangeService,
+    AuthSessionResponder,
+    CheckoutAccountService,
+  ],
 })
 export class AuthModule {}

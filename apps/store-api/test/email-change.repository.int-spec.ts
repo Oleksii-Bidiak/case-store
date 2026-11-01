@@ -190,4 +190,16 @@ describe('AuthRepository — address change (integration, TASK-396)', () => {
     expect(await liveSessions()).toBe(0);
     expect(await prisma.emailVerificationToken.count({ where: { userId, usedAt: null } })).toBe(0);
   });
+
+  // TASK-2010: a password-reset link now PROVES the mailbox it was sent to
+  // (confirming it stamps an unverified address and claims its guest orders).
+  // A link mailed to the OLD address must therefore die with it — otherwise
+  // using it would mark the operator-typed, unproven address as verified.
+  it('setUnverifiedEmail burns the password-reset links mailed to the old address', async () => {
+    await repo.savePasswordResetToken(userId, raw('reset'), later());
+
+    await repo.setUnverifiedEmail(userId, addr('operator'));
+
+    expect(await prisma.passwordResetToken.count({ where: { userId, usedAt: null } })).toBe(0);
+  });
 });

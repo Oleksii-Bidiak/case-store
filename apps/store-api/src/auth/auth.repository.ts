@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma';
 import {
+  Prisma,
   User,
   RefreshToken,
   PasswordResetToken,
@@ -25,6 +26,23 @@ export interface CreateOAuthUserInput {
   lastName?: string;
   provider: OAuthProvider;
   providerId: string;
+  /**
+   * Set when the provider has proven the address (TASK-2010: Google's
+   * `email_verified`). Absent → the account is born unverified, as before.
+   */
+  emailVerifiedAt?: Date;
+}
+
+/**
+ * An account created at checkout, without a password (TASK-2010). The name and
+ * phone come from the checkout contact block; the password and the proof of the
+ * address both arrive later, from the «Задайте пароль» letter.
+ */
+export interface CreatePasswordlessUserInput {
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
 }
 
 export interface OAuthAccountWithUser extends OAuthAccount {
@@ -78,6 +96,23 @@ export class AuthRepository {
    */
   createUser(data: CreateUserInput): Promise<User> {
     return this.prisma.user.create({ data });
+  }
+
+  /**
+   * Create a password-less, unverified CUSTOMER through the caller's transaction
+   * (TASK-2010) — the account a guest asks for at checkout, written in the SAME
+   * transaction as their order, so a checkout that fails (stock gone, promo cap
+   * reached) leaves no account behind.
+   *
+   * The role is pinned to CUSTOMER for the reason `createUserFromOAuth` pins it:
+   * an account created by whoever typed an address must never arrive privileged.
+   * A duplicate address surfaces as Prisma's P2002, which the service maps.
+   */
+  createPasswordlessUser(
+    data: CreatePasswordlessUserInput,
+    tx: Prisma.TransactionClient,
+  ): Promise<User> {
+    return tx.user.create({ data: { ...data, role: UserRole.CUSTOMER } });
   }
 
   /**
@@ -234,8 +269,11 @@ export class AuthRepository {
     // TASK-396: what the click does, and — for the two address-change purposes —
     // the account's address at the moment of issue. Omitted = a plain VERIFY link.
     options: { purpose?: EmailTokenPurpose; previousEmail?: string } = {},
+    // TASK-2010: the checkout sign-up writes its setup link inside the order
+    // transaction, so the link exists exactly when the account does.
+    tx?: Prisma.TransactionClient,
   ): Promise<EmailVerificationToken> {
-    return this.prisma.emailVerificationToken.create({
+    return (tx ?? this.prisma).emailVerificationToken.create({
       data: {
         token: this.hashToken(rawToken),
         userId,
@@ -395,6 +433,13 @@ export class AuthRepository {
         data: { email: newEmail, emailVerifiedAt: null },
       }),
       this.prisma.emailVerificationToken.updateMany({
+        where: { userId, usedAt: null },
+        data: { usedAt: now },
+      }),
+      // TASK-2010: a reset link now proves the mailbox it went to, and confirming
+      // it stamps an unverified address as proven. One mailed to the OLD address
+      // must not prove the operator-typed new one.
+      this.prisma.passwordResetToken.updateMany({
         where: { userId, usedAt: null },
         data: { usedAt: now },
       }),
@@ -573,6 +618,7 @@ export class AuthRepository {
           firstName: input.firstName,
           lastName: input.lastName,
           role: UserRole.CUSTOMER,
+          ...(input.emailVerifiedAt ? { emailVerifiedAt: input.emailVerifiedAt } : {}),
         },
       });
 
