@@ -1466,6 +1466,10 @@ export const dict = {
         "Забагато спроб. Зачекайте хвилину і спробуйте промокод ще раз.",
       generic: "Не вдалося застосувати промокод. Спробуйте ще раз.",
     } as Record<string, string>,
+    // TASK-2010: a guest previews a code too. It applies only to an order
+    // placed with an account — the one checkout creates on the same address.
+    requiresAccountNote:
+      "Застосується з акаунтом — створимо його під час оформлення.",
   },
 
   checkout: {
@@ -1588,6 +1592,9 @@ export const dict = {
       errorConflict: "Це замовлення вже не можна оплатити онлайн.",
       errorGeneric:
         "Не вдалося перейти до оплати. Замовлення прийнято — спробуйте оплатити на сторінці замовлення.",
+      // TASK-2010: a guest may pick card / instalments — checkout creates
+      // the account on their address in the same step.
+      createsAccountNote: "Створимо акаунт на вашу пошту.",
     },
     paymentManagerNote:
       "Менеджер зателефонує, щоб підтвердити замовлення, якщо буде потрібно.",
@@ -1616,6 +1623,34 @@ export const dict = {
       accountOfferBody:
         "Збережемо історію замовлень, адреси та обране. Ваші попередні замовлення привʼяжемо до цього email автоматично.",
       accountOfferCta: "Створити акаунт",
+      // TASK-2010 (B-12, тема 2) — «Створити акаунт» in the contact block,
+      // and the sign-in it turns into when the address already has one.
+      createAccountLabel: "Створити акаунт на цю пошту",
+      createAccountHint:
+        "Акаунт без пароля: замовлення збережуться в кабінеті. Надішлемо лист «Задайте пароль» — він же підтвердить пошту.",
+      createAccountForPromo:
+        "Промокод діє лише з акаунтом — тож створимо його на цю пошту.",
+      createAccountForCard:
+        "Оплата карткою чи частинами доступна з акаунтом — тож створимо його на цю пошту.",
+      promoRemoved: "Промокод знято: він діє лише з акаунтом.",
+      paymentSwitched:
+        "Оплату змінено на «Оплата при отриманні»: картка онлайн і оплата частинами доступні лише з акаунтом.",
+      accountExistsHeading: "На цю пошту вже є акаунт — увійдіть",
+      accountExistsBody:
+        "Після входу замовлення збережеться в кабінеті, а заповнене тут не загубиться.",
+      accountExistsPerks: "Промокод і оплата карткою — після входу.",
+      continueAsGuest:
+        "Або продовжуйте як гість — підтвердження прийде на цю пошту.",
+      noPasswordPrompt: "Немає пароля?",
+      noPasswordCta: "Надішлемо посилання для входу",
+      noPasswordSending: "Надсилаємо…",
+      noPasswordSent:
+        "Якщо на цю пошту є акаунт, ми надіслали посилання. Задайте за ним пароль і поверніться сюди.",
+      noPasswordError:
+        "Не вдалося надіслати посилання. Спробуйте ще раз за хвилину.",
+      // The account was created with the order but signing in failed.
+      accountPendingNote:
+        "Акаунт створено — перевірте пошту й задайте пароль за посиланням з листа, щоб увійти.",
     },
     // Loyalty bonuses — stub (no loyalty backend — TASK-175).
     bonusesStub: "Списати бонуси (програма лояльності — незабаром)",
@@ -1751,6 +1786,12 @@ export const dict = {
     // The title of the refusal alert at the top of step 1; the server's own
     // sentence follows it verbatim (CheckoutDelivery.dc.html #error).
     orderErrorTitle: "Не вдалося оформити замовлення",
+    // TASK-2010: the server's account rules, in Ukrainian. ACCOUNT_EXISTS is
+    // not an alert — checkout turns the contact block into a sign-in.
+    errorDiscountAccountRequired:
+      "Промокод діє лише з акаунтом. Ми позначили «Створити акаунт на цю пошту» — підтвердьте замовлення ще раз.",
+    errorPaymentAccountRequired:
+      "Оплата карткою доступна лише з акаунтом. Ми позначили «Створити акаунт на цю пошту» — підтвердьте замовлення ще раз.",
   },
 
   order: {
@@ -1911,6 +1952,16 @@ export const dict = {
       returnBody: (days: number) =>
         `Товар належної якості можна повернути протягом ${days} днів. Подайте заяву: оберіть позиції й кількість — рішення та його причина зʼявляться на цій сторінці.`,
       returnContacts: "Є питання — зателефонуйте або напишіть нам:",
+      // TASK-2010 (д): one click on the same address instead of /register.
+      oneClickCta: (email: string) => `Створити акаунт на ${email}`,
+      oneClickBody:
+        "Без форми й пароля: це замовлення одразу з'явиться в кабінеті, а пароль задасте за посиланням з листа.",
+      oneClickPending: "Створюємо акаунт…",
+      oneClickCreated: "Акаунт створено — перевірте пошту, щоб задати пароль.",
+      oneClickExists: "На цю пошту вже є акаунт — увійдіть.",
+      oneClickSignIn: "Увійти",
+      oneClickError: "Не вдалося створити акаунт. Спробуйте ще раз.",
+      oneClickTooMany: "Забагато спроб. Спробуйте пізніше.",
     },
 
     // ── «Доставка» after checkout (TASK-647, OrderConfirmation.dc.html) ─────
@@ -2515,6 +2566,34 @@ export const dict = {
       error:
         "Не вдалося увійти через Google. Спробуйте ще раз або скористайтеся email і паролем.",
     },
+    // TASK-2010 — /account-setup, the «Задайте пароль» letter from checkout.
+    // Both buttons prove the address; only one of them sets a password.
+    accountSetup: {
+      heading: "Задайте пароль",
+      intro:
+        "Посилання підтверджує вашу пошту. Задайте пароль, щоб входити з будь-якого пристрою, або пропустіть — увійдемо зараз, а пароль задасте пізніше через «Забули пароль?».",
+      password: "Пароль",
+      confirmPassword: "Підтвердіть пароль",
+      submit: "Зберегти пароль",
+      submitting: "Зберігаємо…",
+      skip: "Пропустити",
+      errorMissingToken:
+        "Посилання неповне або пошкоджене. Скористайтеся посиланням з листа ще раз.",
+      errorInvalid:
+        "Посилання недійсне: термін дії минув або ним уже скористалися.",
+      errorNextStep:
+        "Задайте пароль через відновлення — посилання прийде на вашу пошту.",
+      toForgotPassword: "Відновити пароль",
+      errorTooMany: "Забагато спроб. Спробуйте ще раз за хвилину.",
+    },
+    // TASK-2010: /verify-email for an account WITH a password — only its owner,
+    // signed in, may confirm it. The link is not spent by the refusal.
+    verifySignIn: {
+      heading: "Увійдіть, щоб підтвердити пошту",
+      body: "Ця адреса належить акаунту з паролем. Увійдіть у нього — і ми одразу підтвердимо пошту. Посилання досі дійсне.",
+      forgot: "Не пам'ятаєте пароль?",
+      forgotLink: "Відновити пароль",
+    },
   },
 
   meta: {
@@ -2609,6 +2688,9 @@ export const dict = {
     // of `buildOgImages`: the resolved store name, not a literal.
     brandCardAlt: (siteName: string) =>
       `${siteName} — магазин аксесуарів для телефонів`,
+    // TASK-2010 — /account-setup.
+    accountSetupTitle: "Задайте пароль",
+    accountSetupDescription: "Завершіть створення акаунта.",
   },
 
   // TASK-077 — variant dots + quick-add overlay on the product card.

@@ -371,6 +371,41 @@ export const handlers = [
     HttpResponse.json({ data: {} }, { status: 401 }),
   ),
 
+  // TASK-2010 — the account in checkout. Defaults: the address has no account,
+  // the «Задайте пароль» link works with nothing to claim, the one-click
+  // account signs in, and a guest's promo preview prices the cart cookie with
+  // `requiresAccount`. Override per-test for the 409 / 400 / 403 branches.
+  http.post("*/api/auth/checkout/email-status", () =>
+    HttpResponse.json({ data: { hasAccount: false } }),
+  ),
+  http.post("*/api/auth/account-setup/confirm", () =>
+    HttpResponse.json({
+      data: { accessToken: "test.access.token", claimedOrders: 0 },
+    }),
+  ),
+  http.post("*/api/orders/guest/:token/account", () =>
+    HttpResponse.json(
+      { data: { accessToken: "test.access.token" } },
+      { status: 201 },
+    ),
+  ),
+  http.post("*/api/auth/email/verify/confirm", () =>
+    HttpResponse.json({
+      data: { message: "Email address verified.", claimedOrders: 0 },
+    }),
+  ),
+  http.post("*/api/cart/discount/preview", () =>
+    HttpResponse.json({
+      data: {
+        code: "WELCOME10",
+        type: "PERCENT",
+        amount: "49.90",
+        newTotal: "449.10",
+        requiresAccount: true,
+      },
+    }),
+  ),
+
   // Password reset — request always succeeds with a generic message
   // (existence-hiding); confirm succeeds by default. Override per-test.
   http.post("*/api/auth/password-reset/request", () =>

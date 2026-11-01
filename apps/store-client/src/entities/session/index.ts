@@ -20,6 +20,10 @@ export {
   useRequestEmailChange,
   useConfirmEmailChange,
   useRevertEmailChange,
+  // TASK-2010 — the account created at checkout: «Задайте пароль» from the
+  // letter, and the «is there an account on this address?» hint.
+  useConfirmAccountSetup,
+  useGetCheckoutEmailStatus,
 } from "@/shared/api/generated/auth/auth";
 
 export type {

@@ -3,10 +3,21 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { useAuthControllerConfirmEmailVerification } from "@/entities/session";
+import { getGetCartQueryKey } from "@/entities/cart";
+import {
+  useAuth,
+  useAuthControllerConfirmEmailVerification,
+} from "@/entities/session";
+import { getGetWishlistQueryKey } from "@/entities/wishlist";
 import { dict } from "@/shared/config";
+import { apiErrorCode, apiErrorStatus } from "@/shared/lib";
 import { AUTH_LINK_CLASS } from "./auth-field";
+import { LoginForm } from "./login-form";
+
+/** 403 from confirm: an account WITH a password, and not signed in as it. */
+const VERIFY_SIGN_IN_REQUIRED = "VERIFY_SIGN_IN_REQUIRED";
 
 /**
  * VerifyEmailConfirm — the landing page for the link in the verification email
@@ -24,14 +35,40 @@ import { AUTH_LINK_CLASS } from "./auth-field";
  * it must not claim to. It names the plausible causes (including "you changed
  * your address after the mail was sent") and points at the one action that
  * fixes all of them — request a fresh link, which will go to the CURRENT
- * address. That is a real explanation rather than "щось пішло не так", without
- * inventing a diagnosis we do not have.
+ * address.
+ *
+ * ── Who may confirm (TASK-2010, TASK-2341) ───────────────────────────────────
+ * Confirming an address now takes it over from anyone who created an account
+ * on it uninvited, so the server is strict about WHO clicked:
+ *
+ *   - **A password-less account** (made at checkout) — the link alone proves the
+ *     address; the answer carries `data.session`, a fresh session for this
+ *     device, which is stored right away.
+ *   - **An account with a password** — only its owner, signed in. Anyone else
+ *     gets 403 VERIFY_SIGN_IN_REQUIRED and the link is NOT spent: the page asks
+ *     them to sign in, right here, and confirms again with the session. The
+ *     request therefore waits for the silent session restore to settle — sent
+ *     before it, the owner's own click would come back 403.
  */
 export function VerifyEmailConfirm() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
+  const queryClient = useQueryClient();
+  const { isInitializing, setTokens } = useAuth();
 
-  const confirm = useAuthControllerConfirmEmailVerification();
+  const confirm = useAuthControllerConfirmEmailVerification({
+    mutation: {
+      onSuccess: (response) => {
+        const accessToken = response?.data?.session?.accessToken;
+        if (!accessToken) return;
+        setTokens(accessToken);
+        void queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
+        void queryClient.invalidateQueries({
+          queryKey: getGetWishlistQueryKey(),
+        });
+      },
+    },
+  });
   const { mutate } = confirm;
 
   // Fire exactly once per token. A mutation in an effect would otherwise run
@@ -40,12 +77,12 @@ export function VerifyEmailConfirm() {
   const requestedTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!token || requestedTokenRef.current === token) {
+    if (!token || isInitializing || requestedTokenRef.current === token) {
       return;
     }
     requestedTokenRef.current = token;
     mutate({ data: { token } });
-  }, [token, mutate]);
+  }, [token, isInitializing, mutate]);
 
   const d = dict.auth.verifyEmail;
 
@@ -79,6 +116,35 @@ export function VerifyEmailConfirm() {
         <p>
           <Link href={accountHref} className={`font-medium ${AUTH_LINK_CLASS}`}>
             {d.toAccount}
+          </Link>
+        </p>
+      </div>
+    );
+  }
+
+  if (
+    confirm.isError &&
+    apiErrorStatus(confirm.error) === 403 &&
+    apiErrorCode(confirm.error) === VERIFY_SIGN_IN_REQUIRED
+  ) {
+    const s = dict.auth.verifySignIn;
+    return (
+      <div className="flex flex-col gap-4">
+        <h2 className="text-lg font-semibold text-foreground">{s.heading}</h2>
+        <p role="alert" className="text-sm text-muted-foreground">
+          {s.body}
+        </p>
+        {/* In place: the session lands, and the same token is confirmed
+            again — now with the owner's bearer. Google comes back here. */}
+        <LoginForm
+          onAuthenticated={() => mutate({ data: { token } })}
+          redirectTo={`/verify-email?token=${encodeURIComponent(token)}`}
+          showRegisterLink={false}
+        />
+        <p className="text-sm text-muted-foreground">
+          {s.forgot}{" "}
+          <Link href="/forgot-password" className={AUTH_LINK_CLASS}>
+            {s.forgotLink}
           </Link>
         </p>
       </div>

@@ -71,6 +71,21 @@ interface LoginFormProps {
    * renders as a link.
    */
   onForgotPassword?: () => void;
+  /**
+   * Where Google sign-in returns to (and page mode navigates to), overriding
+   * the `?redirect=` param. TASK-2010: the inline sign-in on /checkout and on
+   * /verify-email must come back to the page it sits on.
+   */
+  redirectTo?: string;
+  /**
+   * The e-mail to start with — the address the shopper already typed at
+   * checkout (TASK-2010). Read once at mount: the inline form mounts when that
+   * address is found to have an account and unmounts when it is edited, so it
+   * never needs to follow the prop afterwards.
+   */
+  defaultEmail?: string;
+  /** Hide «Немає акаунту? Реєстрація» — pointless where the account exists. */
+  showRegisterLink?: boolean;
 }
 
 /** LoginForm — email/password sign-in with zod validation. */
@@ -78,6 +93,9 @@ export function LoginForm({
   onAuthenticated,
   onSwitchToRegister,
   onForgotPassword,
+  redirectTo,
+  defaultEmail,
+  showRegisterLink = true,
 }: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -90,7 +108,9 @@ export function LoginForm({
   // where they came from (e.g. /checkout, or the product whose review they came
   // to write). Only same-origin paths survive the sanitizer — see its file for
   // why a leading-slash check alone was an open redirect.
-  const redirectTarget = sanitizeRedirectTarget(searchParams.get("redirect"));
+  const redirectTarget = sanitizeRedirectTarget(
+    redirectTo ?? searchParams.get("redirect"),
+  );
 
   // Failure-redirect path of the Google OAuth flow (TASK-168): the backend
   // callback funnels every failure (denied consent, unverified email, locked
@@ -111,7 +131,10 @@ export function LoginForm({
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<LoginValues>({ resolver: zodResolver(loginSchema) });
+  } = useForm<LoginValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: defaultEmail ? { email: defaultEmail } : undefined,
+  });
 
   const login = useAuthControllerLogin();
 
@@ -292,22 +315,24 @@ export function LoginForm({
         </Link>
       </p>
 
-      <p className="text-center text-sm text-muted-foreground">
-        {dict.auth.login.noAccount}{" "}
-        {onSwitchToRegister ? (
-          <button
-            type="button"
-            onClick={onSwitchToRegister}
-            className={AUTH_LINK_CLASS}
-          >
-            {dict.auth.login.registerLink}
-          </button>
-        ) : (
-          <Link href="/register" className={AUTH_LINK_CLASS}>
-            {dict.auth.login.registerLink}
-          </Link>
-        )}
-      </p>
+      {showRegisterLink && (
+        <p className="text-center text-sm text-muted-foreground">
+          {dict.auth.login.noAccount}{" "}
+          {onSwitchToRegister ? (
+            <button
+              type="button"
+              onClick={onSwitchToRegister}
+              className={AUTH_LINK_CLASS}
+            >
+              {dict.auth.login.registerLink}
+            </button>
+          ) : (
+            <Link href="/register" className={AUTH_LINK_CLASS}>
+              {dict.auth.login.registerLink}
+            </Link>
+          )}
+        </p>
+      )}
     </form>
   );
 }
