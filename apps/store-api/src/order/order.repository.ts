@@ -1680,7 +1680,11 @@ export class OrderRepository {
       await tx.payment.update({
         where: { id: plan.paymentId },
         data: {
-          status: plan.attemptStatus,
+          // A refund plan carries the attempt status read BEFORE the lock: a
+          // `reversed` committed meanwhile may have set REFUNDED, and writing the
+          // stale SUCCEEDED back would undo it. Its status is derived under the
+          // lock by `syncAttemptStatus` instead (R2 pre-merge review).
+          ...(plan.providerRefund ? {} : { status: plan.attemptStatus }),
           ...(plan.providerPaymentId ? { providerPaymentId: plan.providerPaymentId } : {}),
           ...(plan.failureCode !== undefined ? { failureCode: plan.failureCode } : {}),
           ...(plan.failureMessage !== undefined ? { failureMessage: plan.failureMessage } : {}),

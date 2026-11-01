@@ -1777,6 +1777,24 @@ describe('OrderRepository', () => {
         expect(tx.order.updateMany).not.toHaveBeenCalled();
       });
 
+      // R2 pre-merge review: the plan's attemptStatus was read before the lock; a
+      // `reversed` committed meanwhile may have made the attempt REFUNDED.
+      it('never writes the pre-lock attempt status back', async () => {
+        const tx = seedRefundTx();
+
+        await repository.applyPaymentOutcome(refundPlan);
+        await repository.applyPaymentOutcome({
+          ...refundPlan,
+          providerRefund: { providerAmountKop: 30_000 },
+        });
+
+        for (const [call] of (tx.payment.update as jest.Mock).mock.calls as Array<
+          [{ data: Record<string, unknown> }]
+        >) {
+          expect(call.data).not.toHaveProperty('status');
+        }
+      });
+
       it('a provider amount other than the request is not confirmed — one UNMATCHED row (TASK-2336)', async () => {
         const tx = seedRefundTx();
 
