@@ -1935,10 +1935,15 @@ export class OrderRepository {
    * stops counting — and recompute, under the order-row lock. A no-op for an
    * entry already voided or confirmed.
    */
-  async voidProviderRefund(orderId: string, entryId: string, reason: string): Promise<void> {
+  async voidProviderRefund(
+    orderId: string,
+    entryId: string,
+    reason: string,
+    actorId: string | null,
+  ): Promise<void> {
     await this.money.transaction(orderId, async (tx) => {
       if (await this.money.voidEntry(tx, entryId, reason)) {
-        await this.money.recompute(tx, orderId, null, { payoutUndone: true });
+        await this.money.recompute(tx, orderId, actorId, { payoutUndone: true });
         // R2 A3: the payout stops counting — its return may no longer be covered.
         const entry = await this.money.findEntry(tx, orderId, entryId);
         if (entry?.returnId) {

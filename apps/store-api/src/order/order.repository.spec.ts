@@ -1433,7 +1433,11 @@ describe('OrderRepository', () => {
       money.voidEntry.mockResolvedValue(true);
       money.findEntry = jest.fn().mockResolvedValue({ id: 'entry-1', returnId: 'ret-1' });
 
-      await repository.voidProviderRefund('order-1', 'entry-1', 'LiqPay said no');
+      await repository.voidProviderRefund('order-1', 'entry-1', 'LiqPay said no', 'admin-1');
+
+      expect(moneyMock.recompute).toHaveBeenCalledWith(tx, 'order-1', 'admin-1', {
+        payoutUndone: true,
+      });
 
       expect(money.syncReturnStatus).toHaveBeenCalledWith(tx, 'ret-1');
     });

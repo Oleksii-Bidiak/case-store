@@ -2137,9 +2137,18 @@ export class OrderService {
     return this.orderRepository.requestProviderRefund(input);
   }
 
-  /** Void a REQUESTED refund the provider refused; it stops counting (TASK-1500). */
-  voidProviderRefund(orderId: string, entryId: string, reason: string): Promise<void> {
-    return this.orderRepository.voidProviderRefund(orderId, entryId, reason);
+  /**
+   * Void a REQUESTED refund the provider refused; it stops counting (TASK-1500).
+   * `actorId` is the operator whose request was refused — the author of the
+   * recompute's history rows (R2 pre-merge review).
+   */
+  voidProviderRefund(
+    orderId: string,
+    entryId: string,
+    reason: string,
+    actorId: string | null,
+  ): Promise<void> {
+    return this.orderRepository.voidProviderRefund(orderId, entryId, reason, actorId);
   }
 
   /**

@@ -18,7 +18,7 @@ import type { PinoLogger } from 'nestjs-pino';
 import type { OrderEntity } from '../order';
 import { DeliveryOrderErrorCode, OrderService } from '../order';
 import type { Clock } from './payment.clock';
-import { PaymentErrorCode } from './payment.errors';
+import { PaymentErrorCode, RefundOutcomeUnknownException } from './payment.errors';
 import type { PaymentProvider } from './payment.port';
 import { PaymentRepository } from './payment.repository';
 import { PaymentService } from './payment.service';
@@ -665,7 +665,17 @@ describe('PaymentService', () => {
         'order-1',
         'entry-1',
         expect.stringContaining('LiqPay said no'),
+        'admin-1',
       );
+    });
+
+    // R2 pre-merge review: LiqPay may have sent the money even though its answer
+    // was lost — voiding would make the ledger show it still in the shop.
+    it('keeps the entry REQUESTED when the outcome is unknown, and rethrows', async () => {
+      const unknown = new RefundOutcomeUnknownException();
+      providerMock.refund.mockRejectedValue(unknown);
+      await expect(buildService().requestLedgerRefund(request)).rejects.toBe(unknown);
+      expect(orderServiceMock.voidProviderRefund).not.toHaveBeenCalled();
     });
   });
 });

@@ -517,7 +517,7 @@ describe('LiqPay money through the ledger (integration, TASK-1500 / TASK-2047)',
       const second = (await entriesOf(orderId)).find(
         (e) => e.amountKop === 40_000 && e.providerState === MoneyProviderState.REQUESTED,
       );
-      await orders.voidProviderRefund(orderId, second!.id, 'LiqPay refused');
+      await orders.voidProviderRefund(orderId, second!.id, 'LiqPay refused', null);
 
       expect(await attemptStatus(paymentId)).toBe(PaymentAttemptStatus.SUCCEEDED);
       provider.refund.mockClear();
@@ -539,7 +539,7 @@ describe('LiqPay money through the ledger (integration, TASK-1500 / TASK-2047)',
         (e) => e.amountKop === 40_000 && e.providerState === MoneyProviderState.REQUESTED,
       );
 
-      await orders.voidProviderRefund(orderId, second!.id, 'LiqPay refused');
+      await orders.voidProviderRefund(orderId, second!.id, 'LiqPay refused', null);
 
       expect(await attemptStatus(paymentId)).toBe(PaymentAttemptStatus.SUCCEEDED);
     });

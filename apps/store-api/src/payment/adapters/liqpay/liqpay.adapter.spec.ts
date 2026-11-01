@@ -1,6 +1,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { PinoLogger } from 'nestjs-pino';
+import { RefundOutcomeUnknownException } from '../../payment.errors';
 import { PaymentOutcome } from '../../payment.types';
 import { LiqPayAdapter } from './liqpay.adapter';
 import { signLiqPayData } from './liqpay.signature';
@@ -479,6 +480,45 @@ describe('LiqPayAdapter', () => {
       await expect(buildAdapter().refund({ paymentId: 'pay-1', amount: '1' })).rejects.toThrow(
         ServiceUnavailableException,
       );
+    });
+
+    // R2 pre-merge review: no readable answer is not a refusal — the refund may
+    // have gone through — so it is a distinct error the caller must not void on.
+    it.each([
+      ['unreachable', () => Promise.reject(new Error('ETIMEDOUT'))],
+      [
+        'a non-2xx answer',
+        () => Promise.resolve({ ok: false, status: 502 } as unknown as Response),
+      ],
+      [
+        'an unparsable body',
+        () =>
+          Promise.resolve({
+            ok: true,
+            json: async () => {
+              throw new SyntaxError('Unexpected token <');
+            },
+          } as unknown as Response),
+      ],
+    ])('reports an unknown outcome when LiqPay is %s', async (_label, fetchImpl) => {
+      jest.spyOn(global, 'fetch').mockImplementation(fetchImpl);
+
+      await expect(
+        buildAdapter().refund({ paymentId: 'pay-1', amount: '1' }),
+      ).rejects.toBeInstanceOf(RefundOutcomeUnknownException);
+    });
+
+    it('does not report an unknown outcome for a refusal LiqPay actually sent', async () => {
+      jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => ({ status: 'error', err_description: 'refund not permitted' }),
+      } as unknown as Response);
+
+      const error = await buildAdapter()
+        .refund({ paymentId: 'pay-1', amount: '1' })
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ServiceUnavailableException);
+      expect(error).not.toBeInstanceOf(RefundOutcomeUnknownException);
     });
   });
 });

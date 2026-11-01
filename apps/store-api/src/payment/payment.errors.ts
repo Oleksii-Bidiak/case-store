@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 
 /**
  * Stable, machine-readable error codes for payment refunds (TASK-1302).
@@ -19,6 +19,13 @@ export const PaymentErrorCode = {
   CHECKOUT_BANK_TRANSFER: 'PAYMENT_CHECKOUT_BANK_TRANSFER',
   /** TASK-2340: money already came in; an online attempt would charge the whole total again. */
   CHECKOUT_PARTLY_PAID: 'PAYMENT_CHECKOUT_PARTLY_PAID',
+  /**
+   * R2 pre-merge review: the refund request got no readable answer (timeout,
+   * non-2xx, unparsable body). LiqPay may or may not have sent the money, so the
+   * REQUESTED ledger row stays live — the reconcile poll or the `reversed`
+   * callback settles it; an operator voids it only once LiqPay shows nothing went.
+   */
+  REFUND_OUTCOME_UNKNOWN: 'PAYMENT_REFUND_OUTCOME_UNKNOWN',
 } as const;
 
 export type PaymentErrorCode = (typeof PaymentErrorCode)[keyof typeof PaymentErrorCode];
@@ -45,4 +52,19 @@ export function checkoutPartlyPaidError(): ConflictException {
     message:
       'За це замовлення вже внесено оплату — решту приймає магазин, онлайн-оплата недоступна',
   });
+}
+
+/**
+ * 503 for a refund whose outcome is unknown (R2 pre-merge review). A separate
+ * type on purpose: a refusal voids the REQUESTED entry, this must not — voiding
+ * it would drop money LiqPay may already have sent back.
+ */
+export class RefundOutcomeUnknownException extends ServiceUnavailableException {
+  constructor() {
+    super({
+      error: PaymentErrorCode.REFUND_OUTCOME_UNKNOWN,
+      message:
+        'LiqPay не відповів на запит повернення. Запис лишається «запитано» — система перевірить його статус сама',
+    });
+  }
 }

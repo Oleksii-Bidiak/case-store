@@ -7,6 +7,7 @@ import type {
   HostedCheckoutHandoff,
   PaymentProvider,
 } from '../../payment.port';
+import { RefundOutcomeUnknownException } from '../../payment.errors';
 import { PaymentOutcome, type PaymentEventInput } from '../../payment.types';
 import { signLiqPayData, verifyLiqPaySignature } from './liqpay.signature';
 import {
@@ -201,7 +202,9 @@ export class LiqPayAdapter implements PaymentProvider {
    * callback that follows, not by this response — same rule as everywhere else
    * here: the provider's asynchronous notification is what moves our state
    * (docs/payments-liqpay.md §3.11). Throws so the admin sees a real failure
-   * (no rights on the key, payment too old) instead of a button that lies.
+   * (no rights on the key, payment too old) instead of a button that lies:
+   * a plain ServiceUnavailableException for a refusal LiqPay actually sent,
+   * {@link RefundOutcomeUnknownException} when no readable answer came back.
    */
   async refund(params: { paymentId: string; amount: string }): Promise<void> {
     const body = await this.request({
@@ -210,8 +213,10 @@ export class LiqPayAdapter implements PaymentProvider {
       amount: params.amount,
     });
 
+    // No readable answer is NOT a refusal: LiqPay may have executed the refund
+    // and only its response was lost. The caller must keep the REQUESTED entry.
     if (!body) {
-      throw new ServiceUnavailableException('LiqPay refund request failed');
+      throw new RefundOutcomeUnknownException();
     }
 
     // `reversed` (done) and `wait_reserve`/`processing` (accepted, settling) are

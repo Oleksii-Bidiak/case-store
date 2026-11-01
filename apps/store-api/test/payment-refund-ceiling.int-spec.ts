@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   MoneyDirection,
   MoneyEntryKind,
+  MoneyProviderState,
   OrderStatus,
   PaymentAttemptStatus,
   PaymentStatus,
@@ -13,6 +14,7 @@ import type { CacheService } from '../src/cache';
 import type { OrderService } from '../src/order';
 import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import { OrderRepository } from '../src/order/order.repository';
+import { RefundOutcomeUnknownException } from '../src/payment/payment.errors';
 import type { PaymentProvider } from '../src/payment/payment.port';
 import { PaymentRepository } from '../src/payment/payment.repository';
 import { PaymentService } from '../src/payment/payment.service';
@@ -194,5 +196,23 @@ describe('PaymentService.requestLedgerRefund — cumulative ceiling (integration
     expect(await refundedOnLedger()).toBe(0);
     await refund(100_000);
     expect(provider.refund).toHaveBeenLastCalledWith({ paymentId, amount: '1000.00' });
+  });
+
+  // R2 pre-merge review: a lost answer is not a refusal. LiqPay may already have
+  // sent the 250 back, so the entry stays REQUESTED and keeps counting — the
+  // remainder cannot be refunded (or paid out in cash) a second time; the
+  // `reversed` callback or the reconcile poll settles it.
+  it('keeps the amount counted when the provider outcome is unknown', async () => {
+    const unknown = new RefundOutcomeUnknownException();
+    provider.refund.mockRejectedValueOnce(unknown);
+
+    await expect(refund(25_000)).rejects.toBe(unknown);
+
+    expect(await refundedOnLedger()).toBe(25_000);
+    const entry = await prisma.orderMoneyEntry.findFirstOrThrow({
+      where: { paymentId, kind: MoneyEntryKind.LIQPAY_REFUND },
+    });
+    expect(entry).toMatchObject({ providerState: MoneyProviderState.REQUESTED, voidedAt: null });
+    await expect(refund(100_000)).rejects.toThrow(ConflictException);
   });
 });

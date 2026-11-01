@@ -25,6 +25,11 @@ export const ORDER_MONEY_ERROR = {
   REFUND_EXCEEDS_PAID: "ORDER_MONEY_REFUND_EXCEEDS_PAID",
   REVERSAL_REFUSED: "ORDER_MONEY_REVERSAL_REFUSED",
   ENTRY_INVALID: "ORDER_MONEY_ENTRY_INVALID",
+  /**
+   * 503 from the LiqPay refund door when LiqPay gave no readable answer: the
+   * REQUESTED entry is kept (the money may have gone), so the block refetches.
+   */
+  REFUND_OUTCOME_UNKNOWN: "PAYMENT_REFUND_OUTCOME_UNKNOWN",
 } as const;
 
 /**
@@ -84,6 +89,8 @@ export function moneyWriteErrorMessage(error: unknown): string {
       return e.ORDER_MONEY_REVERSAL_REFUSED;
     case ORDER_MONEY_ERROR.ENTRY_INVALID:
       return e.ORDER_MONEY_ENTRY_INVALID;
+    case ORDER_MONEY_ERROR.REFUND_OUTCOME_UNKNOWN:
+      return e.PAYMENT_REFUND_OUTCOME_UNKNOWN;
     case ORDER_MONEY_ERROR.REFUND_EXCEEDS_PAID: {
       // Same code for a receipt reversal that would leave more refunded than
       // paid — that message carries no "only N kop".
@@ -100,8 +107,12 @@ export function moneyWriteErrorMessage(error: unknown): string {
 /**
  * Whether the screen is out of date after this refusal: every 409 is a fact
  * about the order the block did not know (a payment landed, a return moved),
- * so its numbers are refetched.
+ * so its numbers are refetched. So is an unknown LiqPay outcome: the REQUESTED
+ * entry was kept and the order's numbers moved with it.
  */
 export function moneyRefusalNeedsRefetch(error: unknown): boolean {
-  return apiErrorStatus(error) === 409;
+  return (
+    apiErrorStatus(error) === 409 ||
+    apiErrorCode(error) === ORDER_MONEY_ERROR.REFUND_OUTCOME_UNKNOWN
+  );
 }

@@ -25,7 +25,11 @@ import {
   OrderService,
 } from '../order';
 import { PAYMENT_CLOCK, type Clock } from './payment.clock';
-import { checkoutBankTransferError, checkoutPartlyPaidError } from './payment.errors';
+import {
+  checkoutBankTransferError,
+  checkoutPartlyPaidError,
+  RefundOutcomeUnknownException,
+} from './payment.errors';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment.port';
 import { isDuplicateEventError, PaymentRepository } from './payment.repository';
 import { PaymentOutcome, type PaymentApplyResult, type PaymentEventInput } from './payment.types';
@@ -314,20 +318,33 @@ export class PaymentService implements ProviderRefundPort {
       throw moneyRefundExceedsPaidError(request.amountKop, written.availableKop);
     }
 
-    await this.askProviderToRefund(payment, written.entryId, written.amountKop);
+    await this.askProviderToRefund(payment, written.entryId, written.amountKop, request.actorId);
   }
 
-  /** Ask LiqPay for a refund already REQUESTED on the ledger; void it if LiqPay refuses. */
+  /**
+   * Ask LiqPay for a refund already REQUESTED on the ledger; void it only if
+   * LiqPay refuses. An unknown outcome (no readable answer) leaves the entry
+   * REQUESTED — counted, so nothing can be paid out twice — for the `reversed`
+   * callback or the reconcile poll to settle (R2 pre-merge review).
+   */
   private async askProviderToRefund(
     payment: Payment,
     entryId: string,
     amountKop: number,
+    actorId: string | null,
   ): Promise<void> {
     const refundAmount = centsToString(amountKop);
     try {
       await this.provider.refund({ paymentId: payment.id, amount: refundAmount });
     } catch (err) {
-      await this.voidRefund(payment, entryId, err);
+      if (err instanceof RefundOutcomeUnknownException) {
+        this.logger.warn(
+          { event: 'payment.refund.outcome_unknown', paymentId: payment.id, entryId },
+          'LiqPay gave no readable answer to a refund; the entry stays REQUESTED for the poll',
+        );
+      } else {
+        await this.voidRefund(payment, entryId, err, actorId);
+      }
       throw err;
     }
 
@@ -459,12 +476,17 @@ export class PaymentService implements ProviderRefundPort {
    * on the side of refunding LESS) and the failure is logged loudly; the
    * provider's own error is what the caller sees.
    */
-  private async voidRefund(payment: Payment, entryId: string, cause: unknown): Promise<void> {
+  private async voidRefund(
+    payment: Payment,
+    entryId: string,
+    cause: unknown,
+    actorId: string | null,
+  ): Promise<void> {
     const reason = `Provider refused the refund: ${
       cause instanceof Error ? cause.message : String(cause)
     }`;
     try {
-      await this.orderService.voidProviderRefund(payment.orderId, entryId, reason);
+      await this.orderService.voidProviderRefund(payment.orderId, entryId, reason, actorId);
     } catch (err) {
       this.logger.error(
         { event: 'payment.refund.void_failed', paymentId: payment.id, entryId, err },
