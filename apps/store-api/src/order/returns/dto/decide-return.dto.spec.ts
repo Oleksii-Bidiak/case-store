@@ -29,6 +29,19 @@ describe('DecideReturnDto (TASK-1961, TASK-2044)', () => {
     expect(parse({ decision: 'REJECT', reason: '   ' }).dto.reason).toBeNull();
   });
 
+  it.each([
+    ['a zero-width space', '​'],
+    ['a zero-width joiner among spaces', ' ‍  '],
+    ['a byte-order mark', '﻿'],
+    ['a soft hyphen and a word joiner', '­⁠'],
+  ])('turns a reason of only invisible characters (%s) into null', (_label, reason) => {
+    expect(parse({ decision: 'REJECT', reason }).dto.reason).toBeNull();
+  });
+
+  it('keeps a visible reason intact, invisible joiners inside it included', () => {
+    expect(parse({ decision: 'REJECT', reason: ' Скол 👩‍🔧 ' }).dto.reason).toBe('Скол 👩‍🔧');
+  });
+
   it('caps the reason at 1000 characters', () => {
     expect(parse({ decision: 'REJECT', reason: 'а'.repeat(1000) }).errors).toEqual([]);
     expect(parse({ decision: 'REJECT', reason: 'а'.repeat(1001) }).errors).not.toEqual([]);

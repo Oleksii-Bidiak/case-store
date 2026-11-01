@@ -50,6 +50,17 @@ describe("createDecideSchema — the first decision (TASK-1961, TASK-2044)", () 
     ).toBeUndefined();
   });
 
+  it("treats a reason of invisible characters only as no reason, as the API does", () => {
+    for (const reason of ["​", " ‍ ", "­⁠"]) {
+      expect(issueOn("reason", { decision: "REJECT", reason })).toBe(
+        d.decideReasonRequired,
+      );
+      expect(
+        decideValuesToDto({ decision: "REJECT", reason }).reason,
+      ).toBeNull();
+    }
+  });
+
   it("caps the reason at the DTO's limit", () => {
     expect(
       issueOn("reason", {
