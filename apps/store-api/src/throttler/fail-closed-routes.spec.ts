@@ -4,6 +4,7 @@ import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/
 import { AuthController } from '../auth/auth.controller';
 import { JwtAuthGuard } from '../auth/guards';
 import { ContactController } from '../contact/contact.controller';
+import { DiscountController } from '../discount/discount.controller';
 import { NewsletterController } from '../newsletter/newsletter.controller';
 import { OrderController } from '../order/order.controller';
 import { GuestOrderNotificationController } from '../order/guest-order-notification.controller';
@@ -74,6 +75,8 @@ describe('Fail-closed route classification', () => {
       ['POST /api/orders/guest/:token/account', OrderController.prototype.createGuestOrderAccount],
       ['POST /api/auth/account-setup/confirm', AuthController.prototype.confirmAccountSetup],
       ['POST /api/auth/checkout/email-status', AuthController.prototype.checkoutEmailStatus],
+      // TASK-2010 review: open to guests now, so an anonymous code-guessing oracle.
+      ['POST /api/cart/discount/preview', DiscountController.prototype.preview],
       ['POST /api/newsletter/subscribe', NewsletterController.prototype.subscribe],
       ['POST /api/newsletter/unsubscribe', NewsletterController.prototype.unsubscribe],
     ])('%s', (_route, handler) => {
