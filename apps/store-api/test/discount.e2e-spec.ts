@@ -164,11 +164,39 @@ describe('Discount (e2e)', () => {
   // ─── POST /api/cart/discount/preview ────────────────────────────────────────
 
   describe('POST /api/cart/discount/preview', () => {
-    it('401 without a token', async () => {
-      await request(app.getHttpServer())
+    // TASK-2010 (B-12 тема 2 (в)): a guest sees the discount too, priced against
+    // the cookie cart, with the honest note that it applies only with an account.
+    it('200 for a GUEST, priced against the cookie cart, with requiresAccount', async () => {
+      discountRepositoryMock.findByCode.mockResolvedValue(makeDiscount({ perUserLimit: 1 }));
+
+      const res = await request(app.getHttpServer())
         .post('/api/cart/discount/preview')
+        .send({ code: 'summer10' })
+        .expect(200);
+
+      expect(res.body.data).toMatchObject({
+        code: 'SUMMER10',
+        amount: '20.00',
+        newTotal: '180.00',
+        requiresAccount: true,
+      });
+      expect(cartServiceMock.getCart).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'token' }),
+      );
+      // No account, no phone: the per-customer cap waits for the checkout.
+      expect(discountRepositoryMock.countUserRedemptions).not.toHaveBeenCalled();
+    });
+
+    it('answers requiresAccount: false to a signed-in shopper', async () => {
+      discountRepositoryMock.findByCode.mockResolvedValue(makeDiscount());
+
+      const res = await request(app.getHttpServer())
+        .post('/api/cart/discount/preview')
+        .set('Authorization', `Bearer ${token(testCustomer.id, 'CUSTOMER')}`)
         .send({ code: 'SUMMER10' })
-        .expect(401);
+        .expect(200);
+
+      expect(res.body.data.requiresAccount).toBe(false);
     });
 
     it('200 with the computed discount for a valid percent code', async () => {

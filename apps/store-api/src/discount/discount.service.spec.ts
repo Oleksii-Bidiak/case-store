@@ -225,7 +225,41 @@ describe('DiscountService.computeDiscount', () => {
     const result = await service.computeDiscount('SUMMER10', '200.00', 'u1');
 
     expect(result.amount).toBe('20.00');
-    expect(repositoryMock.countUserRedemptions).toHaveBeenCalledWith('d1', 'u1');
+    expect(repositoryMock.countUserRedemptions).toHaveBeenCalledWith('d1', 'u1', null);
+  });
+
+  // ─── TASK-2010: per customer = account OR normalised order phone ─────────
+
+  it('counts the per-customer cap by the account OR the order phone', async () => {
+    repositoryMock.findByCode.mockResolvedValue(makeDiscount({ perUserLimit: 1 }));
+    repositoryMock.countUserRedemptions.mockResolvedValue(0);
+
+    await service.computeDiscount('SUMMER10', '200.00', 'u1', '380501234567');
+
+    expect(repositoryMock.countUserRedemptions).toHaveBeenCalledWith('d1', 'u1', '380501234567');
+  });
+
+  it('refuses a buyer with no account yet whose PHONE already used the code', async () => {
+    // Checkout sign-up: the account is created inside the order transaction, so
+    // at validation time only the phone can say "this person already used it".
+    repositoryMock.findByCode.mockResolvedValue(makeDiscount({ perUserLimit: 1 }));
+    repositoryMock.countUserRedemptions.mockResolvedValue(1);
+
+    await expectDiscountError(
+      () => service.computeDiscount('SUMMER10', '200.00', null, '380501234567'),
+      DiscountErrorCode.USER_LIMIT_REACHED,
+      409,
+    );
+    expect(repositoryMock.countUserRedemptions).toHaveBeenCalledWith('d1', null, '380501234567');
+  });
+
+  it('skips the per-customer cap with neither an account nor a phone (guest preview)', async () => {
+    repositoryMock.findByCode.mockResolvedValue(makeDiscount({ perUserLimit: 1 }));
+
+    const result = await service.computeDiscount('SUMMER10', '200.00', null);
+
+    expect(result.amount).toBe('20.00');
+    expect(repositoryMock.countUserRedemptions).not.toHaveBeenCalled();
   });
 
   it('does not query per-user redemptions when there is no per-user limit', async () => {
@@ -355,9 +389,40 @@ describe('DiscountService.redeem', () => {
     expect(repositoryMock.findById).toHaveBeenCalledWith('d1', tx);
     expect(repositoryMock.tryIncrementRedeemed).toHaveBeenCalledWith('d1', tx);
     expect(repositoryMock.createRedemption).toHaveBeenCalledWith(
-      { discountId: 'd1', userId: 'u1', orderId: 'o1' },
+      { discountId: 'd1', userId: 'u1', orderId: 'o1', phone: null },
       tx,
     );
+  });
+
+  // TASK-2010: the order phone is half of the "per customer" key — counted in
+  // the transaction and written on the row the next count reads.
+  it('counts and records the order phone next to the account', async () => {
+    repositoryMock.findById.mockResolvedValue(makeDiscount({ perUserLimit: 1 }));
+
+    await service.redeem('d1', 'u1', 'o1', tx, '380501234567');
+
+    expect(repositoryMock.countUserRedemptions).toHaveBeenCalledWith(
+      'd1',
+      'u1',
+      '380501234567',
+      tx,
+    );
+    expect(repositoryMock.createRedemption).toHaveBeenCalledWith(
+      { discountId: 'd1', userId: 'u1', orderId: 'o1', phone: '380501234567' },
+      tx,
+    );
+  });
+
+  it('refuses a fresh account whose phone already redeemed the code', async () => {
+    repositoryMock.findById.mockResolvedValue(makeDiscount({ perUserLimit: 1 }));
+    repositoryMock.countUserRedemptions.mockResolvedValue(1);
+
+    await expectDiscountError(
+      () => service.redeem('d1', 'u-new', 'o1', tx, '380501234567'),
+      DiscountErrorCode.USER_LIMIT_REACHED,
+      409,
+    );
+    expect(repositoryMock.createRedemption).not.toHaveBeenCalled();
   });
 
   it('throws MAX_REDEMPTIONS_REACHED when the conditional claim updates no row', async () => {
@@ -399,7 +464,7 @@ describe('DiscountService.redeem', () => {
       DiscountErrorCode.USER_LIMIT_REACHED,
       409,
     );
-    expect(repositoryMock.countUserRedemptions).toHaveBeenCalledWith('d1', 'u1', tx);
+    expect(repositoryMock.countUserRedemptions).toHaveBeenCalledWith('d1', 'u1', null, tx);
     expect(repositoryMock.createRedemption).not.toHaveBeenCalled();
   });
 
@@ -859,5 +924,44 @@ describe('DiscountService — showOnPromoPage (TASK-731)', () => {
 
     await service.update('d1', { isActive: false });
     expect(repositoryMock.update.mock.calls[1][1]).not.toHaveProperty('showOnPromoPage');
+  });
+});
+
+// ─── TASK-2010: the preview answers guests too ─────────────────────────────────
+
+describe('DiscountService.preview', () => {
+  let service: DiscountService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DiscountService(repositoryMock as never, cartServiceMock as never);
+    cartServiceMock.getCart.mockResolvedValue({ totals: { subtotal: '200.00' } });
+  });
+
+  it('prices a GUEST code against the cookie cart and says it needs an account', async () => {
+    repositoryMock.findByCode.mockResolvedValue(makeDiscount({ perUserLimit: 1 }));
+
+    const result = await service.preview({ type: 'token', token: 'cart-token-1' }, 'summer10');
+
+    expect(cartServiceMock.getCart).toHaveBeenCalledWith({ type: 'token', token: 'cart-token-1' });
+    expect(result).toMatchObject({
+      code: 'SUMMER10',
+      amount: '20.00',
+      newTotal: '180.00',
+      requiresAccount: true,
+    });
+    // No account and no phone yet — the per-customer cap is checked at checkout.
+    expect(repositoryMock.countUserRedemptions).not.toHaveBeenCalled();
+  });
+
+  it('prices a signed-in code against the account cart, per-user cap included', async () => {
+    repositoryMock.findByCode.mockResolvedValue(makeDiscount({ perUserLimit: 1 }));
+    repositoryMock.countUserRedemptions.mockResolvedValue(0);
+
+    const result = await service.preview({ type: 'user', userId: 'u1' }, 'SUMMER10');
+
+    expect(cartServiceMock.getCart).toHaveBeenCalledWith({ type: 'user', userId: 'u1' });
+    expect(result.requiresAccount).toBe(false);
+    expect(repositoryMock.countUserRedemptions).toHaveBeenCalledWith('d1', 'u1', null);
   });
 });

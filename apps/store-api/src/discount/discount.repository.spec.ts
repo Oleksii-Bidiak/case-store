@@ -178,15 +178,43 @@ describe('DiscountRepository', () => {
   });
 
   describe('countUserRedemptions', () => {
-    it('counts redemptions scoped to discount and user', async () => {
+    // TASK-2010 (B-12 тема 2 (г)): "per customer" is the account OR the
+    // normalised order phone — a fresh address must not buy a second discount
+    // for the same phone.
+    it('counts redemptions by the account OR the phone', async () => {
       prismaMock.discountRedemption.count.mockResolvedValue(2);
 
-      const result = await repository.countUserRedemptions('d1', 'u1');
+      const result = await repository.countUserRedemptions('d1', 'u1', '380501234567');
 
       expect(prismaMock.discountRedemption.count).toHaveBeenCalledWith({
-        where: { discountId: 'd1', userId: 'u1' },
+        where: { discountId: 'd1', OR: [{ userId: 'u1' }, { phone: '380501234567' }] },
       });
       expect(result).toBe(2);
+    });
+
+    it('counts by the account alone when there is no phone', async () => {
+      prismaMock.discountRedemption.count.mockResolvedValue(1);
+
+      await repository.countUserRedemptions('d1', 'u1', null);
+
+      expect(prismaMock.discountRedemption.count).toHaveBeenCalledWith({
+        where: { discountId: 'd1', OR: [{ userId: 'u1' }] },
+      });
+    });
+
+    it('counts by the phone alone for a buyer whose account is not written yet', async () => {
+      prismaMock.discountRedemption.count.mockResolvedValue(1);
+
+      await repository.countUserRedemptions('d1', null, '380501234567');
+
+      expect(prismaMock.discountRedemption.count).toHaveBeenCalledWith({
+        where: { discountId: 'd1', OR: [{ phone: '380501234567' }] },
+      });
+    });
+
+    it('answers 0 without a query when there is neither an account nor a phone', async () => {
+      expect(await repository.countUserRedemptions('d1', null, null)).toBe(0);
+      expect(prismaMock.discountRedemption.count).not.toHaveBeenCalled();
     });
 
     it('counts through the provided transaction client when given', async () => {
@@ -195,11 +223,12 @@ describe('DiscountRepository', () => {
       const result = await repository.countUserRedemptions(
         'd1',
         'u1',
+        null,
         tx as unknown as Prisma.TransactionClient,
       );
 
       expect(tx.discountRedemption.count).toHaveBeenCalledWith({
-        where: { discountId: 'd1', userId: 'u1' },
+        where: { discountId: 'd1', OR: [{ userId: 'u1' }] },
       });
       expect(prismaMock.discountRedemption.count).not.toHaveBeenCalled();
       expect(result).toBe(1);
@@ -247,12 +276,14 @@ describe('DiscountRepository', () => {
       const tx = { discountRedemption: { create: jest.fn().mockResolvedValue({ id: 'r1' }) } };
 
       await repository.createRedemption(
-        { discountId: 'd1', userId: 'u1', orderId: 'o1' },
+        { discountId: 'd1', userId: 'u1', orderId: 'o1', phone: '380501234567' },
         tx as unknown as Prisma.TransactionClient,
       );
 
+      // TASK-2010: the phone travels with the row — it is half of the
+      // "per customer" key the next count reads.
       expect(tx.discountRedemption.create).toHaveBeenCalledWith({
-        data: { discountId: 'd1', userId: 'u1', orderId: 'o1' },
+        data: { discountId: 'd1', userId: 'u1', orderId: 'o1', phone: '380501234567' },
       });
     });
   });

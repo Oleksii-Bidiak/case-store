@@ -108,8 +108,13 @@ describe('DiscountService.redeem (integration — real Postgres concurrency)', (
   }
 
   /** Redeem inside its own transaction, exactly as `createOrder` does. */
-  function redeemInTx(discountId: string, userId: string, orderId: string): Promise<void> {
-    return prisma.$transaction((tx) => service.redeem(discountId, userId, orderId, tx));
+  function redeemInTx(
+    discountId: string,
+    userId: string,
+    orderId: string,
+    phone: string | null = null,
+  ): Promise<void> {
+    return prisma.$transaction((tx) => service.redeem(discountId, userId, orderId, tx, phone));
   }
 
   function rejectionCodes(results: PromiseSettledResult<unknown>[]): unknown[] {
@@ -180,6 +185,42 @@ describe('DiscountService.redeem (integration — real Postgres concurrency)', (
 
     const row = await prisma.discount.findUniqueOrThrow({ where: { id: discountId } });
     expect(row.redeemedCount).toBe(2);
+  });
+
+  // ── TASK-2010 (B-12 тема 2 (г)): per customer = account OR phone ──────────
+  // A checkout sign-up mints a brand-new account, so the account alone can no
+  // longer say "this person already used the code" — the phone has to.
+
+  it('refuses a SECOND account redeeming the code with the same phone', async () => {
+    const discountId = await makeDiscount({ perUserLimit: 1 });
+    await redeemInTx(discountId, userAId, randomUUID(), '380501234567');
+
+    await expect(
+      redeemInTx(discountId, userBId, randomUUID(), '380501234567'),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ error: DiscountErrorCode.USER_LIMIT_REACHED }),
+    });
+
+    const rows = await prisma.discountRedemption.findMany({ where: { discountId } });
+    expect(rows).toEqual([expect.objectContaining({ userId: userAId, phone: '380501234567' })]);
+  });
+
+  it('lets a different account with a different phone redeem the same code', async () => {
+    const discountId = await makeDiscount({ perUserLimit: 1 });
+    await redeemInTx(discountId, userAId, randomUUID(), '380501234567');
+
+    await expect(
+      redeemInTx(discountId, userBId, randomUUID(), '380671112233'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('still counts the account when the same buyer comes back with another phone', async () => {
+    const discountId = await makeDiscount({ perUserLimit: 1 });
+    await redeemInTx(discountId, userAId, randomUUID(), '380501234567');
+
+    await expect(
+      redeemInTx(discountId, userAId, randomUUID(), '380671112233'),
+    ).rejects.toMatchObject({ status: 409 });
   });
 });
 
