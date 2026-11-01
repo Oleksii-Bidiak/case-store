@@ -5,6 +5,7 @@ import {
   MoneyEntryKind,
   MoneyProviderState,
   OrderHistoryChangeType,
+  OrderHistoryNote,
   OrderStatus,
   PaymentAttemptStatus,
   PaymentMethod,
@@ -242,12 +243,24 @@ export class OrderMoneyRepository {
    * (same shape as `OrderRepository.applyPaymentOutcome`). Call under
    * {@link lockOrder}, after the entries of this transaction are written.
    */
-  async recompute(tx: Tx, orderId: string, actorId: string | null): Promise<MoneyTotals> {
+  async recompute(
+    tx: Tx,
+    orderId: string,
+    actorId: string | null,
+    options: { note?: OrderHistoryNote } = {},
+  ): Promise<MoneyTotals> {
     const order = await tx.order.findUniqueOrThrow({
       where: { id: orderId },
       select: { total: true, status: true, paymentStatus: true },
     });
     const { paidKop, refundedKop } = await this.totalsFromLedger(tx, orderId);
+    // A refund label the backfill could not put an amount behind is kept until
+    // real money out is recorded (see `PaymentStatusInput.legacyRefundLabel`).
+    const legacyUnknown =
+      refundedKop <= 0 &&
+      (await tx.orderStatusHistory.count({
+        where: { orderId, note: OrderHistoryNote.LEGACY_MONEY_UNKNOWN },
+      })) > 0;
     const credit = await tx.return.aggregate({
       where: { orderId, creditKop: { not: null } },
       _sum: { creditKop: true },
@@ -265,6 +278,7 @@ export class OrderMoneyRepository {
       paidKop,
       refundedKop,
       lastAttemptFailed: lastAttempt?.status === PaymentAttemptStatus.FAILED,
+      legacyRefundLabel: legacyUnknown ? order.paymentStatus : null,
     });
     const balanceKop = deriveBalance({
       totalKop,
@@ -286,6 +300,7 @@ export class OrderMoneyRepository {
           changeType: OrderHistoryChangeType.PAYMENT_STATUS,
           fromPaymentStatus: order.paymentStatus,
           toPaymentStatus: paymentStatus,
+          ...(options.note ? { note: options.note } : {}),
           changedBy: actorId,
         },
       });
@@ -294,7 +309,88 @@ export class OrderMoneyRepository {
     return { paidKop, refundedKop, returnCreditKop, balanceKop, paymentStatus };
   }
 
-  private async totalsFromLedger(
+  // ── The LiqPay path (TASK-1500 / TASK-2047, R2 step A2) ────────────────────
+  //
+  // A LiqPay refund is written the moment WE request it — OUT `LIQPAY_REFUND`,
+  // `providerState = REQUESTED` — and it COUNTS in `refundedKop` from then on:
+  // the money is committed to leave, and counting it is what makes the ceiling
+  // hold for a second request made before the provider answers the first. The
+  // `reversed` callback (or the reconcile poll) only flips it to CONFIRMED; a
+  // provider refusal VOIDS it, and a voided row never counts.
+
+  /** The attempt's row with this provider discriminator ('success' = its receipt). */
+  async findProviderEntry(
+    tx: Tx,
+    paymentId: string,
+    providerRef: string,
+  ): Promise<MoneyEntry | null> {
+    const row = await tx.orderMoneyEntry.findUnique({
+      where: { paymentId_providerRef: { paymentId, providerRef } },
+    });
+    return row ? toMoneyEntry(row) : null;
+  }
+
+  /**
+   * One attempt's own money: its receipt and its LiqPay refunds that are not
+   * voided (REQUESTED included — see the section note). Kopecks.
+   */
+  async paymentProviderTotals(
+    tx: Tx,
+    paymentId: string,
+  ): Promise<{ inKop: number; refundedKop: number }> {
+    const rows = await tx.orderMoneyEntry.findMany({
+      where: {
+        paymentId,
+        kind: { in: [MoneyEntryKind.LIQPAY_PAYMENT, MoneyEntryKind.LIQPAY_REFUND] },
+      },
+      select: { direction: true, amountKop: true, reversalOfId: true, voidedAt: true },
+    });
+    const { paidKop, refundedKop } = ledgerTotals(rows);
+    return { inKop: paidKop, refundedKop };
+  }
+
+  /**
+   * Mark the attempt's oldest live REQUESTED refund CONFIRMED and return it, or
+   * null when there is none. Conditional on the state, so a repeat is a no-op.
+   * Call under {@link lockOrder}.
+   */
+  async confirmOldestRequestedRefund(tx: Tx, paymentId: string): Promise<MoneyEntry | null> {
+    const oldest = await tx.orderMoneyEntry.findFirst({
+      where: {
+        paymentId,
+        kind: MoneyEntryKind.LIQPAY_REFUND,
+        providerState: MoneyProviderState.REQUESTED,
+        voidedAt: null,
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    if (!oldest) {
+      return null;
+    }
+    const { count } = await tx.orderMoneyEntry.updateMany({
+      where: { id: oldest.id, providerState: MoneyProviderState.REQUESTED, voidedAt: null },
+      data: { providerState: MoneyProviderState.CONFIRMED },
+    });
+    return count === 1
+      ? toMoneyEntry({ ...oldest, providerState: MoneyProviderState.CONFIRMED })
+      : null;
+  }
+
+  /**
+   * Void a REQUESTED refund the provider refused — it never moved money. False
+   * when it is already voided or confirmed. Call under {@link lockOrder}, then
+   * {@link recompute}.
+   */
+  async voidEntry(tx: Tx, entryId: string, reason: string): Promise<boolean> {
+    const { count } = await tx.orderMoneyEntry.updateMany({
+      where: { id: entryId, voidedAt: null, providerState: MoneyProviderState.REQUESTED },
+      data: { voidedAt: new Date(), voidReason: reason },
+    });
+    return count === 1;
+  }
+
+  /** Σ IN and Σ OUT of the order straight from its ledger. Call under {@link lockOrder}. */
+  async totalsFromLedger(
     tx: Tx,
     orderId: string,
   ): Promise<{ paidKop: number; refundedKop: number }> {

@@ -4409,10 +4409,7 @@ describe('OrderService', () => {
 
         expect(lastPlan().stockHold).toBe('released');
         // The money and the confirmation land exactly as for a held order.
-        expect(lastPlan().paymentStatusChange).toEqual({
-          from: PaymentStatus.PENDING,
-          to: PaymentStatus.PAID,
-        });
+        expect(lastPlan().receipt).toEqual({ amountKop: 6_997, occurredAt: expect.any(Date) });
         expect(lastPlan().statusChange).toEqual({
           from: OrderStatus.PENDING,
           to: OrderStatus.CONFIRMED,
@@ -4496,7 +4493,7 @@ describe('OrderService', () => {
     // ── SUCCEEDED ─────────────────────────────────────────────────────────────
 
     describe('SUCCEEDED', () => {
-      it('marks the order paid, stamps paidAt and lifts the reservation deadline', async () => {
+      it('records the money as a receipt, stamps paidAt and lifts the reservation deadline', async () => {
         seed(makePayment());
 
         const result = await service.applyPaymentEvent(makeEvent());
@@ -4504,10 +4501,10 @@ describe('OrderService', () => {
         expect(result).toEqual({ applied: true, orderId: 'order-uuid-1' });
         const plan = lastPlan();
         expect(plan.attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
-        expect(plan.paymentStatusChange).toEqual({
-          from: PaymentStatus.PENDING,
-          to: PaymentStatus.PAID,
-        });
+        // R2 A2 (TASK-2047): the payment's own amount in kopecks goes to the
+        // ledger; the payment STATUS is derived from it, never hand-built here.
+        expect(plan.receipt).toEqual({ amountKop: 6_997, occurredAt: expect.any(Date) });
+        expect(plan.paymentStatusChange).toBeUndefined();
         expect(plan.paidAt).toBeInstanceOf(Date);
         // A paid order's reservation is no longer provisional — leaving the
         // deadline set would let the auto-cancel worker cancel a paid order.
@@ -4542,7 +4539,7 @@ describe('OrderService', () => {
           await service.applyPaymentEvent(makeEvent());
 
           const plan = lastPlan();
-          expect(plan.paymentStatusChange?.to).toBe(PaymentStatus.PAID);
+          expect(plan.receipt?.amountKop).toBe(6_997);
           // → CONFIRMED is not a legal move from here, so the callback must not
           // drag the order backwards the way it would have before TASK-332.
           expect(plan.statusChange).toBeUndefined();
@@ -4561,7 +4558,7 @@ describe('OrderService', () => {
             ),
           );
 
-        it('records the money as PAID', async () => {
+        it('records the money (a receipt — it is real money)', async () => {
           seedCancelled();
 
           const result = await service.applyPaymentEvent(makeEvent());
@@ -4569,9 +4566,7 @@ describe('OrderService', () => {
           expect(result).toEqual({ applied: true, orderId: 'order-uuid-1' });
           const plan = lastPlan();
           expect(plan.attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
-          expect(plan.paymentStatusChange).toEqual(
-            expect.objectContaining({ from: PaymentStatus.PENDING, to: PaymentStatus.PAID }),
-          );
+          expect(plan.receipt).toEqual(expect.objectContaining({ amountKop: 6_997 }));
           expect(plan.paidAt).toBeInstanceOf(Date);
         });
 
@@ -4597,7 +4592,7 @@ describe('OrderService', () => {
 
           await service.applyPaymentEvent(makeEvent());
 
-          expect(lastPlan().paymentStatusChange?.note).toBe(OrderHistoryNote.PAID_AFTER_CANCEL);
+          expect(lastPlan().receipt?.note).toBe(OrderHistoryNote.PAID_AFTER_CANCEL);
         });
 
         it('warns in the log so the late payment is visible before the dashboard reads it', async () => {
@@ -4620,11 +4615,7 @@ describe('OrderService', () => {
 
           await service.applyPaymentEvent(makeEvent());
 
-          expect(lastPlan().paymentStatusChange).toEqual({
-            from: PaymentStatus.FAILED,
-            to: PaymentStatus.PAID,
-            note: OrderHistoryNote.PAID_AFTER_CANCEL,
-          });
+          expect(lastPlan().receipt?.note).toBe(OrderHistoryNote.PAID_AFTER_CANCEL);
           expect(lastPlan().statusChange).toBeUndefined();
         });
 
@@ -4633,7 +4624,7 @@ describe('OrderService', () => {
 
           await service.applyPaymentEvent(makeEvent());
 
-          expect(lastPlan().paymentStatusChange?.note).toBeUndefined();
+          expect(lastPlan().receipt?.note).toBeUndefined();
           expect(lastPlan().statusChange).toEqual({
             from: OrderStatus.PENDING,
             to: OrderStatus.CONFIRMED,
@@ -4641,14 +4632,54 @@ describe('OrderService', () => {
         });
       });
 
-      it('changes nothing when the order is already PAID (a re-delivered callback)', async () => {
-        seed(makePayment({ paymentStatus: PaymentStatus.PAID, paidAt: new Date() }));
+      // R2 A2: idempotency of MEANING is now per attempt — its receipt is written
+      // once — not per order: a second attempt that also succeeded is real money.
+      it.each([PaymentAttemptStatus.SUCCEEDED, PaymentAttemptStatus.REFUNDED])(
+        'changes nothing when THIS attempt is already %s (a re-delivered callback)',
+        async (attemptStatus) => {
+          seed(
+            makePayment(
+              { paymentStatus: PaymentStatus.PAID, paidAt: new Date() },
+              { status: attemptStatus },
+            ),
+          );
+
+          const result = await service.applyPaymentEvent(makeEvent());
+
+          expect(result).toEqual({ applied: false, orderId: 'order-uuid-1' });
+          expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+        },
+      );
+
+      it('records a second attempt on an already PAID order as money too (overpayment)', async () => {
+        const paidAt = new Date('2026-07-28T10:00:00.000Z');
+        seed(
+          makePayment({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID, paidAt }),
+        );
 
         const result = await service.applyPaymentEvent(makeEvent());
 
-        expect(result).toEqual({ applied: false, orderId: 'order-uuid-1' });
-        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+        expect(result.applied).toBe(true);
+        const plan = lastPlan();
+        expect(plan.receipt?.amountKop).toBe(6_997);
+        expect(plan.paidAt).toBe(paidAt);
+        // The stock was settled by the first payment; nothing to hold again.
+        expect(plan.stockHold).toBeUndefined();
+        expect(plan.statusChange).toBeUndefined();
+        expect(plan.refusedPaymentStatusChange).toBeUndefined();
       });
+
+      it.each([PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED])(
+        'records a success on a %s order as money, not as a refusal',
+        async (paymentStatus) => {
+          seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus }));
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(lastPlan().receipt?.amountKop).toBe(6_997);
+          expect(lastPlan().refusedPaymentStatusChange).toBeUndefined();
+        },
+      );
     });
 
     // ── FAILED ────────────────────────────────────────────────────────────────
@@ -4700,246 +4731,115 @@ describe('OrderService', () => {
       });
     });
 
-    // ── REFUNDED ──────────────────────────────────────────────────────────────
+    // ── REFUNDED / PARTIALLY_REFUNDED — the `reversed` callback (R2 A2) ───────
+    // TASK-1500: the money of a refund is what WE requested (a REQUESTED ledger
+    // entry). The callback only confirms the oldest request, or — when the shop
+    // never asked — is recorded as PROVIDER_REFUND_UNMATCHED. Either way the plan
+    // is the same; which one happens is decided under the order lock. The
+    // provider's `amount` no longer decides partial vs full (its semantics are
+    // unconfirmed), so both outcomes plan identically.
 
-    describe('REFUNDED', () => {
-      const refund = makeEvent({ outcome: PaymentOutcome.REFUNDED, providerStatus: 'reversed' });
+    describe.each([PaymentOutcome.REFUNDED, PaymentOutcome.PARTIALLY_REFUNDED])(
+      'a %s event',
+      (outcome) => {
+        const refund = makeEvent({ outcome, providerStatus: 'reversed', amount: '20.00' });
 
-      it('refunds the payment and moves a DELIVERED order to REFUNDED', async () => {
-        seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
+        it('plans a provider-refund confirmation and moves no payment status by itself', async () => {
+          seed(
+            makePayment(
+              { status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID },
+              { status: PaymentAttemptStatus.SUCCEEDED },
+            ),
+          );
 
-        await service.applyPaymentEvent(refund);
+          const result = await service.applyPaymentEvent(refund);
 
-        const plan = lastPlan();
-        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.REFUNDED);
-        expect(plan.paymentStatusChange).toEqual({
-          from: PaymentStatus.PAID,
-          to: PaymentStatus.REFUNDED,
+          expect(result).toEqual({ applied: true, orderId: 'order-uuid-1' });
+          const plan = lastPlan();
+          expect(plan.providerRefund).toEqual({
+            refundOrder: { from: OrderStatus.DELIVERED, to: OrderStatus.REFUNDED },
+          });
+          // The attempt keeps what it is; the repository marks it REFUNDED once
+          // its confirmed refunds cover its receipt.
+          expect(plan.attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
+          expect(plan.settledAt).toBeUndefined();
+          expect(plan.paymentStatusChange).toBeUndefined();
+          expect(plan.statusChange).toBeUndefined();
+          expect(plan.refusedPaymentStatusChange).toBeUndefined();
+          expect(plan.receipt).toBeUndefined();
         });
-        expect(plan.statusChange).toEqual({
-          from: OrderStatus.DELIVERED,
-          to: OrderStatus.REFUNDED,
-        });
-      });
 
-      it('refuses a full refund on an order the plan would leave live (TASK-431)', async () => {
-        // Nothing shipped, so the order cannot become REFUNDED either — and a
-        // paymentStatus of REFUNDED on a still-PENDING order is exactly what the
-        // cross-rule forbids (the customer would hold the goods AND the cash).
-        // Before TASK-431 this wrote the refund anyway; now the webhook door
-        // refuses it the same way the admin door 409s, leaving the contradiction
-        // where an operator can see it.
-        seed(makePayment({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PAID }));
+        it.each([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
+          'offers no order move on a live %s order — it cannot become REFUNDED',
+          async (status) => {
+            seed(makePayment({ status, paymentStatus: PaymentStatus.PAID }));
 
-        await service.applyPaymentEvent(refund);
+            await service.applyPaymentEvent(refund);
 
-        const plan = lastPlan();
-        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.REFUNDED);
-        expect(plan.paymentStatusChange).toBeUndefined();
-        expect(plan.statusChange).toBeUndefined();
-        expect(plan.refusedPaymentStatusChange).toEqual({
-          current: PaymentStatus.PAID,
-          rejected: PaymentStatus.REFUNDED,
-          // `crossRule`, not `table` — PAID → REFUNDED is a move the table
-          // allows; what refused it is the order still being live. Without the
-          // discriminator the log line contradicts the table it cites (review of
-          // plan 180).
-          reason: 'crossRule',
-        });
-      });
+            expect(lastPlan().providerRefund).toEqual({});
+          },
+        );
 
-      it.each([OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
-        'refuses the same full refund on a %s order',
-        async (status) => {
-          seed(makePayment({ status, paymentStatus: PaymentStatus.PAID }));
+        it('offers no order move on an order already REFUNDED', async () => {
+          seed(
+            makePayment({ status: OrderStatus.REFUNDED, paymentStatus: PaymentStatus.REFUNDED }),
+          );
 
           await service.applyPaymentEvent(refund);
 
-          expect(lastPlan().paymentStatusChange).toBeUndefined();
-          expect(lastPlan().refusedPaymentStatusChange).toEqual({
-            current: PaymentStatus.PAID,
-            rejected: PaymentStatus.REFUNDED,
-            reason: 'crossRule',
-          });
-        },
-      );
+          expect(lastPlan().providerRefund).toEqual({});
+        });
 
-      it.each([OrderStatus.SHIPPED, OrderStatus.CANCELLED])(
-        'accepts it on a %s order, which the same plan closes or has closed',
-        async (status) => {
-          seed(makePayment({ status, paymentStatus: PaymentStatus.PAID }));
+        it('is still planned for money never recorded as received — the repository decides', async () => {
+          seed(makePayment({ paymentStatus: PaymentStatus.PENDING }));
+
+          const result = await service.applyPaymentEvent(refund);
+
+          expect(result.applied).toBe(true);
+          expect(lastPlan().providerRefund).toBeDefined();
+        });
+
+        it('never auto-restocks — the goods have to come back first (TASK-124)', async () => {
+          seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
 
           await service.applyPaymentEvent(refund);
 
-          expect(lastPlan().paymentStatusChange).toEqual({
-            from: PaymentStatus.PAID,
-            to: PaymentStatus.REFUNDED,
-          });
-          expect(lastPlan().statusChange).toEqual({ from: status, to: OrderStatus.REFUNDED });
-        },
-      );
-
-      it('accepts it on an order already REFUNDED, without a second status row', async () => {
-        seed(makePayment({ status: OrderStatus.REFUNDED, paymentStatus: PaymentStatus.PAID }));
-
-        await service.applyPaymentEvent(refund);
-
-        expect(lastPlan().paymentStatusChange).toEqual({
-          from: PaymentStatus.PAID,
-          to: PaymentStatus.REFUNDED,
+          expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
         });
-        expect(lastPlan().statusChange).toBeUndefined();
-        expect(lastPlan().refusedPaymentStatusChange).toBeUndefined();
-      });
 
-      it('never auto-restocks — the goods have to come back first (TASK-124)', async () => {
-        seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
+        it.each([
+          ['the full charge', '69.97'],
+          ['less than the charge', '0.01'],
+        ])('accepts a reported amount of %s (logged, not used)', async (_label, amount) => {
+          seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
 
-        await service.applyPaymentEvent(refund);
+          const result = await service.applyPaymentEvent({ ...refund, amount });
 
-        expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
-      });
-
-      it('changes nothing on a second refund callback', async () => {
-        seed(makePayment({ paymentStatus: PaymentStatus.REFUNDED }));
-
-        const result = await service.applyPaymentEvent(refund);
-
-        expect(result.applied).toBe(false);
-        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
-      });
-
-      it('still rejects a FULL refund that reports less than was charged', async () => {
-        // REFUNDED means "all of it". Less than all of it is PARTIALLY_REFUNDED,
-        // which PaymentService decides before handing the event over (TASK-618);
-        // a REFUNDED that reports less is a contradiction, not a partial refund.
-        seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
-
-        await expect(service.applyPaymentEvent({ ...refund, amount: '20.00' })).rejects.toThrow(
-          BadRequestException,
-        );
-        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
-      });
-    });
-
-    // ── PARTIALLY_REFUNDED (TASK-618) ─────────────────────────────────────────
-    // A provider refund of less than the captured amount. Before TASK-618 there
-    // was no such outcome: the event arrived as REFUNDED, this door demanded the
-    // full amount, threw 400, and the money that had already gone back was never
-    // recorded while the provider retried forever.
-
-    describe('PARTIALLY_REFUNDED', () => {
-      const partial = makeEvent({
-        outcome: PaymentOutcome.PARTIALLY_REFUNDED,
-        providerStatus: 'reversed',
-        amount: '20.00',
-      });
-
-      it('accepts an amount below the charge and marks the payment PARTIALLY_REFUNDED', async () => {
-        seed(
-          makePayment(
-            { status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID },
-            { status: PaymentAttemptStatus.SUCCEEDED },
-          ),
-        );
-
-        const result = await service.applyPaymentEvent(partial);
-
-        expect(result).toEqual({ applied: true, orderId: 'order-uuid-1' });
-        expect(lastPlan().paymentStatusChange).toEqual({
-          from: PaymentStatus.PAID,
-          to: PaymentStatus.PARTIALLY_REFUNDED,
+          expect(result.applied).toBe(true);
         });
-      });
 
-      it('does NOT drag a DELIVERED order into REFUNDED', async () => {
-        seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
+        it.each([
+          ['more than the charge', '70.00'],
+          ['zero', '0.00'],
+          ['an unparsable amount', ''],
+        ])('rejects a refund reporting %s', async (_label, amount) => {
+          seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
 
-        await service.applyPaymentEvent(partial);
-
-        expect(lastPlan().statusChange).toBeUndefined();
-      });
-
-      it('keeps the attempt SUCCEEDED, so the rest of the money can still be refunded', async () => {
-        seed(
-          makePayment(
-            { status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID },
-            { status: PaymentAttemptStatus.SUCCEEDED },
-          ),
-        );
-
-        await service.applyPaymentEvent(partial);
-
-        expect(lastPlan().attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
-        // The attempt settled when the money arrived; a partial refund does not
-        // move that moment.
-        expect(lastPlan().settledAt).toBeUndefined();
-      });
-
-      it.each([OrderStatus.CONFIRMED, OrderStatus.PROCESSING, OrderStatus.SHIPPED])(
-        'is accepted on a live %s order — the cross-rule constrains FULL refunds only',
-        async (status) => {
-          seed(makePayment({ status, paymentStatus: PaymentStatus.PAID }));
-
-          await service.applyPaymentEvent(partial);
-
-          expect(lastPlan().paymentStatusChange).toEqual({
-            from: PaymentStatus.PAID,
-            to: PaymentStatus.PARTIALLY_REFUNDED,
-          });
-          expect(lastPlan().statusChange).toBeUndefined();
-          expect(lastPlan().refusedPaymentStatusChange).toBeUndefined();
-        },
-      );
-
-      it.each([PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED])(
-        'changes nothing when the payment is already %s',
-        async (paymentStatus) => {
-          seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus }));
-
-          const result = await service.applyPaymentEvent(partial);
-
-          expect(result.applied).toBe(false);
+          await expect(service.applyPaymentEvent({ ...refund, amount })).rejects.toThrow(
+            BadRequestException,
+          );
           expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
-        },
-      );
-
-      it('refuses (without throwing) a partial refund of money never recorded as received', async () => {
-        seed(makePayment({ paymentStatus: PaymentStatus.PENDING }));
-
-        const result = await service.applyPaymentEvent(partial);
-
-        expect(result.applied).toBe(true);
-        expect(lastPlan().paymentStatusChange).toBeUndefined();
-        expect(lastPlan().refusedPaymentStatusChange).toEqual({
-          current: PaymentStatus.PENDING,
-          rejected: PaymentStatus.PARTIALLY_REFUNDED,
-          reason: 'table',
         });
-      });
 
-      it.each([
-        ['the full charge', '69.97'],
-        ['more than the charge', '70.00'],
-        ['zero', '0.00'],
-        ['an unparsable amount', ''],
-      ])('rejects a partial refund reporting %s', async (_label, amount) => {
-        seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
+        it('rejects a refund in a different currency', async () => {
+          seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
 
-        await expect(service.applyPaymentEvent({ ...partial, amount })).rejects.toThrow(
-          BadRequestException,
-        );
-        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
-      });
-
-      it('rejects a partial refund in a different currency', async () => {
-        seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
-
-        await expect(service.applyPaymentEvent({ ...partial, currency: 'USD' })).rejects.toThrow(
-          BadRequestException,
-        );
-      });
-    });
+          await expect(service.applyPaymentEvent({ ...refund, currency: 'USD' })).rejects.toThrow(
+            BadRequestException,
+          );
+        });
+      },
+    );
 
     // ── IGNORED ───────────────────────────────────────────────────────────────
 
@@ -4965,83 +4865,27 @@ describe('OrderService', () => {
     });
 
     // ── The payment state machine on the WEBHOOK door (TASK-431) ──────────────
-    // The whole point of the second door: this one may not raise. LiqPay and the
-    // reconcile worker retry anything that is not a 2xx, so a 409 here is not a
-    // refusal — it is the same event every few minutes until a human notices.
+    // R2 A2: money events no longer ask the state machine — a success is a
+    // receipt and a refund confirms what the shop requested, and the status is
+    // derived from the ledger. What this door must still never do is THROW on a
+    // provider statement that disagrees with the label: LiqPay would retry it.
+    it('never throws on a success for an order whose label says it was refunded', async () => {
+      seed(makePayment({ paymentStatus: PaymentStatus.REFUNDED }));
 
-    describe('an illegal payment move from a provider event', () => {
-      it('never throws; it records the attempt and leaves the order alone', async () => {
-        seed(makePayment({ paymentStatus: PaymentStatus.REFUNDED }));
-
-        const result = await service.applyPaymentEvent(makeEvent());
-
-        expect(result).toEqual({ applied: true, orderId: 'order-uuid-1' });
-        const plan = lastPlan();
-        // The attempt did succeed at the provider — that fact is still written.
-        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
-        // Nothing about the ORDER moves: not the payment status, not `paidAt`,
-        // not the reservation, not the order status.
-        expect(plan.paymentStatusChange).toBeUndefined();
-        expect(plan.paidAt).toBeUndefined();
-        expect(plan.clearReservation).toBeUndefined();
-        expect(plan.statusChange).toBeUndefined();
-      });
-
-      it('records the refusal as an OrderStatusHistory row that claims no movement', async () => {
-        seed(makePayment({ paymentStatus: PaymentStatus.PARTIALLY_REFUNDED }));
-
-        await service.applyPaymentEvent(makeEvent());
-
-        expect(lastPlan().refusedPaymentStatusChange).toEqual({
-          current: PaymentStatus.PARTIALLY_REFUNDED,
-          rejected: PaymentStatus.PAID,
-          reason: 'table',
-        });
-      });
-
-      it('refuses a refund callback for money we never recorded as received', async () => {
-        seed(makePayment({ paymentStatus: PaymentStatus.PENDING }));
-
-        await service.applyPaymentEvent(
-          makeEvent({ outcome: PaymentOutcome.REFUNDED, providerStatus: 'reversed' }),
-        );
-
-        const plan = lastPlan();
-        expect(plan.paymentStatusChange).toBeUndefined();
-        expect(plan.statusChange).toBeUndefined();
-        expect(plan.refusedPaymentStatusChange).toEqual({
-          current: PaymentStatus.PENDING,
-          rejected: PaymentStatus.REFUNDED,
-          // This one IS the table: PENDING → REFUNDED is money coming back that
-          // never arrived.
-          reason: 'table',
-        });
-      });
-
-      it('accepts PARTIALLY_REFUNDED → REFUNDED as the second half of one refund', async () => {
-        seed(
-          makePayment({
-            status: OrderStatus.DELIVERED,
-            paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
-          }),
-        );
-
-        await service.applyPaymentEvent(
-          makeEvent({ outcome: PaymentOutcome.REFUNDED, providerStatus: 'reversed' }),
-        );
-
-        const plan = lastPlan();
-        expect(plan.paymentStatusChange).toEqual({
-          from: PaymentStatus.PARTIALLY_REFUNDED,
-          to: PaymentStatus.REFUNDED,
-        });
-        expect(plan.refusedPaymentStatusChange).toBeUndefined();
+      await expect(service.applyPaymentEvent(makeEvent())).resolves.toEqual({
+        applied: true,
+        orderId: 'order-uuid-1',
       });
     });
 
     describe('idempotency of a repeated callback (TASK-431 acceptance)', () => {
-      it('treats a second PAID callback as a no-op — not an error, not a second row', async () => {
-        seed(makePayment({ paymentStatus: PaymentStatus.PAID }));
+      it('treats a second success callback for the same attempt as a no-op', async () => {
+        seed(
+          makePayment(
+            { paymentStatus: PaymentStatus.PAID },
+            { status: PaymentAttemptStatus.SUCCEEDED },
+          ),
+        );
 
         const result = await service.applyPaymentEvent(makeEvent());
 
@@ -5184,21 +5028,22 @@ describe('OrderService', () => {
 
         await service.applyPaymentEvent(makeEvent());
 
-        expect(lastPlan().paymentStatusChange?.note).toBe(OrderHistoryNote.PAID_AFTER_CANCEL);
+        expect(lastPlan().receipt?.note).toBe(OrderHistoryNote.PAID_AFTER_CANCEL);
         expect(lastHook()).toBeUndefined();
         expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
       });
 
-      it('does not ping again for a second SUCCEEDED on an order that is already PAID', async () => {
+      it('does not ping again for a second attempt on an order that is already PAID', async () => {
         orderRepositoryMock.findPaymentWithOrder.mockResolvedValue(
-          makePayment({ paymentStatus: PaymentStatus.PAID }),
+          makePayment({ status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID }),
         );
         runHookLikeTheRepository();
 
         const result = await service.applyPaymentEvent(makeEvent());
 
-        expect(result.applied).toBe(false);
-        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+        // The money is recorded (an overpayment), the shop is not told twice.
+        expect(result.applied).toBe(true);
+        expect(lastHook()).toBeUndefined();
         expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
       });
 

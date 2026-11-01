@@ -67,15 +67,30 @@ export interface PaymentStatusInput {
   refundedKop: number;
   /** The latest LiqPay attempt failed — only consulted while nothing is paid. */
   lastAttemptFailed: boolean;
+  /**
+   * The order's current label when the R2 backfill could not find the amount
+   * behind it (`LEGACY_MONEY_UNKNOWN` history note). A refund label is kept
+   * while the ledger shows no money out — relabelling it PAID would erase the
+   * only trace that something was refunded (A1 review risk, TASK-2047 A2).
+   */
+  legacyRefundLabel?: PaymentStatus | null;
 }
+
+const REFUND_LABELS: readonly PaymentStatus[] = [
+  PaymentStatus.PARTIALLY_REFUNDED,
+  PaymentStatus.REFUNDED,
+];
 
 /**
  * The payment status, derived from the ledger (plan §1). PARTIALLY_PAID is its
  * own value so no reader of PENDING ever charges the full amount a second time.
  */
 export function derivePaymentStatus(input: PaymentStatusInput): PaymentStatus {
-  const { totalKop, paidKop, refundedKop, lastAttemptFailed } = input;
+  const { totalKop, paidKop, refundedKop, lastAttemptFailed, legacyRefundLabel } = input;
   assertKopecks(totalKop, paidKop, refundedKop);
+  if (refundedKop <= 0 && legacyRefundLabel && REFUND_LABELS.includes(legacyRefundLabel)) {
+    return legacyRefundLabel;
+  }
   if (paidKop <= 0) {
     return lastAttemptFailed ? PaymentStatus.FAILED : PaymentStatus.PENDING;
   }
@@ -239,6 +254,28 @@ export function ledgerTotals(entries: ReadonlyArray<LedgerRow>): {
     }
   }
   return { paidKop, refundedKop };
+}
+
+// ── LiqPay refunds ──────────────────────────────────────────────────────────
+
+export interface ProviderRefundCeilingInput {
+  /** The attempt's own receipt (its LIQPAY_PAYMENT), net of reversals. */
+  paymentInKop: number;
+  /** The attempt's LIQPAY_REFUND rows that are not voided — REQUESTED included. */
+  paymentRefundedKop: number;
+  /** The order's totals across every kind (the TASK-951 ceiling). */
+  orderPaidKop: number;
+  orderRefundedKop: number;
+}
+
+/**
+ * How much may still be sent back through the provider for one attempt: what is
+ * left on the attempt, and never more than the order's `paid − refunded`.
+ */
+export function providerRefundAvailableKop(input: ProviderRefundCeilingInput): number {
+  const { paymentInKop, paymentRefundedKop, orderPaidKop, orderRefundedKop } = input;
+  assertKopecks(paymentInKop, paymentRefundedKop, orderPaidKop, orderRefundedKop);
+  return Math.max(0, Math.min(paymentInKop - paymentRefundedKop, orderPaidKop - orderRefundedKop));
 }
 
 // ── Reversals ───────────────────────────────────────────────────────────────

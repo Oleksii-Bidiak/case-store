@@ -1,30 +1,46 @@
 import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OrderStatus, PaymentAttemptStatus, PaymentStatus } from '@prisma/client';
+import {
+  MoneyDirection,
+  MoneyEntryKind,
+  OrderStatus,
+  PaymentAttemptStatus,
+  PaymentStatus,
+} from '@prisma/client';
 import type { PinoLogger } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
+import type { CacheService } from '../src/cache';
 import type { OrderService } from '../src/order';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
+import { OrderRepository } from '../src/order/order.repository';
 import type { PaymentProvider } from '../src/payment/payment.port';
 import { PaymentRepository } from '../src/payment/payment.repository';
 import { PaymentService } from '../src/payment/payment.service';
 import { PrismaService } from '../src/prisma';
+import type { ProductIndexer } from '../src/search/product-indexer';
 
 /**
  * Integration test for the cumulative refund ceiling on a payment attempt
- * (TASK-1302) — the REAL service and repository against a REAL Postgres,
- * because the ceiling is a running total and only the row lock taken by the
- * conditional UPDATE makes it hold between two simultaneous refunds. It also
- * proves the raw `UPDATE "payments"` against the real table, which every
- * mocked spec takes on faith.
+ * (TASK-1302) — the REAL service and repositories against a REAL Postgres.
  *
- * Fixture: one SUCCEEDED attempt of 1000.00. The provider is a double that
- * accepts every refund, so what reaches it is what the ceiling let through.
+ * R2 A2 (TASK-1500 / TASK-2047) changed WHERE the ceiling lives, intentionally:
+ * no longer `payments.refunded_amount` reserved by a conditional UPDATE, but the
+ * order ledger — each request is a REQUESTED `LIQPAY_REFUND` entry written under
+ * the order-row lock, counted at once, voided if the provider refuses. The
+ * behaviour this file has always pinned is unchanged: 600 + 500 out of 1000 is
+ * refused, two simultaneous requests cannot both spend the same remainder, and
+ * a refused request gives its amount back.
+ *
+ * Fixture: one SUCCEEDED attempt of 1000.00 with its LiqPay receipt on the
+ * ledger. The provider is a double that accepts every refund, so what reaches
+ * it is what the ceiling let through.
  *
  * Requires an isolated `*_test` database (setup-int.ts forces DATABASE_URL).
  */
 describe('PaymentService.refund — cumulative ceiling (integration)', () => {
   let prisma: PrismaService;
   let service: PaymentService;
+  let money: OrderMoneyRepository;
   const provider = { key: 'liqpay', refund: jest.fn() };
 
   let userId = '';
@@ -39,11 +55,18 @@ describe('PaymentService.refund — cumulative ceiling (integration)', () => {
 
     prisma = new PrismaService(new ConfigService({ DATABASE_URL: url }));
     await prisma.$connect();
+    money = new OrderMoneyRepository(prisma);
+    const orders = new OrderRepository(prisma, {} as CacheService, {} as ProductIndexer, money);
+    // Only the two ledger doors the refund path uses — the real repository behind them.
+    const orderService = {
+      requestProviderRefund: orders.requestProviderRefund.bind(orders),
+      voidProviderRefund: orders.voidProviderRefund.bind(orders),
+    } as unknown as OrderService;
     const logger = { setContext: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
     service = new PaymentService(
       new PaymentRepository(prisma),
       provider as unknown as PaymentProvider,
-      {} as OrderService,
+      orderService,
       { get: jest.fn() } as unknown as ConfigService,
       { now: () => new Date() },
       logger as unknown as PinoLogger,
@@ -87,6 +110,18 @@ describe('PaymentService.refund — cumulative ceiling (integration)', () => {
       },
     });
     paymentId = payment.id;
+
+    // The attempt's receipt, as the webhook (or the R2 backfill) writes it.
+    await money.transaction(orderId, async (tx) => {
+      await money.insertEntry(tx, {
+        orderId,
+        kind: MoneyEntryKind.LIQPAY_PAYMENT,
+        amountKop: 100_000,
+        paymentId,
+        providerRef: 'success',
+      });
+      await money.recompute(tx, orderId, null);
+    });
   });
 
   afterEach(async () => {
@@ -94,6 +129,7 @@ describe('PaymentService.refund — cumulative ceiling (integration)', () => {
     // `{ id: undefined }` and would delete every row on the shared store_test.
     if (!prisma) return;
     if (orderId) {
+      await prisma.orderMoneyEntry.deleteMany({ where: { orderId } });
       await prisma.payment.deleteMany({ where: { orderId } });
       await prisma.orderStatusHistory.deleteMany({ where: { orderId } });
       await prisma.order.deleteMany({ where: { id: orderId } });
@@ -102,10 +138,19 @@ describe('PaymentService.refund — cumulative ceiling (integration)', () => {
     userId = orderId = paymentId = '';
   });
 
-  const refundedOnAttempt = async () =>
+  /** Σ of the attempt's refunds the ledger counts (REQUESTED or CONFIRMED, not voided). */
+  const refundedOnLedger = async () =>
     (
-      await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } })
-    ).refundedAmount.toString();
+      await prisma.orderMoneyEntry.aggregate({
+        where: {
+          paymentId,
+          direction: MoneyDirection.OUT,
+          kind: MoneyEntryKind.LIQPAY_REFUND,
+          voidedAt: null,
+        },
+        _sum: { amountKop: true },
+      })
+    )._sum.amountKop ?? 0;
 
   it('caps the second partial refund by what the first one left', async () => {
     await service.refund(paymentId, '600.00');
@@ -113,7 +158,7 @@ describe('PaymentService.refund — cumulative ceiling (integration)', () => {
     await expect(service.refund(paymentId, '500.00')).rejects.toThrow(BadRequestException);
     await service.refund(paymentId, '400.00');
 
-    expect(await refundedOnAttempt()).toBe('1000');
+    expect(await refundedOnLedger()).toBe(100_000);
     expect(provider.refund).toHaveBeenCalledTimes(2);
     await expect(service.refund(paymentId)).rejects.toThrow(BadRequestException);
   });
@@ -129,16 +174,16 @@ describe('PaymentService.refund — cumulative ceiling (integration)', () => {
     expect(rejected).toHaveLength(1);
     expect(rejected[0].reason).toBeInstanceOf(BadRequestException);
     expect(provider.refund).toHaveBeenCalledTimes(1);
-    expect(await refundedOnAttempt()).toBe('600');
+    expect(await refundedOnLedger()).toBe(60_000);
   });
 
-  it('gives the reservation back when the provider refuses', async () => {
+  it('gives the amount back when the provider refuses', async () => {
     provider.refund.mockRejectedValueOnce(new Error('LiqPay said no'));
 
     await expect(service.refund(paymentId, '250.00')).rejects.toThrow('LiqPay said no');
 
-    expect(await refundedOnAttempt()).toBe('0');
+    expect(await refundedOnLedger()).toBe(0);
     await service.refund(paymentId);
-    expect(provider.refund).toHaveBeenLastCalledWith({ paymentId, amount: '1000' });
+    expect(provider.refund).toHaveBeenLastCalledWith({ paymentId, amount: '1000.00' });
   });
 });

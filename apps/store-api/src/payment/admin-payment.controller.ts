@@ -17,6 +17,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { IsOptional, IsString, Matches } from 'class-validator';
+import { CurrentUser } from '../auth/decorators';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import { PaymentService } from './payment.service';
 import { PaymentEntity } from './entities';
@@ -129,8 +130,10 @@ export class AdminPaymentController {
   async refund(
     @Param('paymentId') paymentId: string,
     @Body() dto: RefundRequestDto,
+    // R2 A2: the operator is the actor on the REQUESTED ledger entry.
+    @CurrentUser('id') adminUserId: string,
   ): Promise<{ data: { accepted: true } }> {
-    await this.paymentService.refund(paymentId, dto.amount);
+    await this.paymentService.refund(paymentId, dto.amount, adminUserId);
     return { data: { accepted: true } };
   }
 }

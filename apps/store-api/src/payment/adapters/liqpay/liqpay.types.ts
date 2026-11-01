@@ -47,9 +47,10 @@ const OUTCOME_BY_STATUS: Readonly<Record<string, PaymentOutcome>> = {
   failure: PaymentOutcome.FAILED,
   error: PaymentOutcome.FAILED,
   expired: PaymentOutcome.FAILED,
-  // Money went back. LiqPay says `reversed` for a partial refund too; this
-  // adapter cannot tell them apart (it never sees what was charged), so
-  // PaymentService relabels a smaller amount PARTIALLY_REFUNDED (TASK-618).
+  // Money went back. LiqPay says `reversed` for a partial refund too, and does
+  // not document whether `amount` is the single refund or the running total.
+  // Since R2 A2 it does not matter: the event confirms the refund the shop
+  // requested on the ledger (TASK-1500); the dedupe key tells two partials apart.
   reversed: PaymentOutcome.REFUNDED,
 };
 
@@ -73,6 +74,21 @@ export function mapLiqPayStatus(status: string, sandboxEnabled: boolean): Paymen
   }
   return OUTCOME_BY_STATUS[status] ?? PaymentOutcome.IGNORED;
 }
+
+/**
+ * The fields of a `reversed` body that distinguish one refund of a payment from
+ * another (TASK-1500): the amount and LiqPay's own refund/transaction stamps.
+ * Whether `amount` is the single refund or the running total is not confirmed —
+ * the key does not care, any change in these makes a new key. Delivery noise
+ * (`ip`, signatures, …) stays out, so a retry keeps its key.
+ */
+export const LIQPAY_REFUND_DEDUPE_FIELDS = Object.freeze([
+  'amount',
+  'refund_date_last',
+  'end_date',
+  'completion_date',
+  'transaction_id',
+] as const);
 
 /**
  * The fields we read out of a decoded callback / status response. LiqPay sends

@@ -44,4 +44,6 @@ export type {
   CreateOrderParams,
   DeliveryCarrier,
   ShippingAddressData,
+  ProviderRefundRequest,
+  ProviderRefundRequestInput,
 } from './order.types';

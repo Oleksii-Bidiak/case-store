@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import {
+  DeliveryMethod,
   OrderStatus,
   PaymentAttemptStatus,
   PaymentMethod,
@@ -12,6 +13,7 @@ import {
   type NotificationOutbox,
 } from '@prisma/client';
 import request from 'supertest';
+import { createLedgerPrismaMock } from './ledger-prisma.mock';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -79,12 +81,24 @@ describe('Shop ping on a confirmed online payment (e2e, TASK-678)', () => {
   let stagedOrder: Partial<OrderState> | null;
   let stagedRows: Array<Record<string, unknown>>;
 
+  // R2 A2: the success is written to the order ledger inside the same
+  // transaction — an in-memory ledger, snapshotted and restored with it below.
+  const ledger = createLedgerPrismaMock(() => ({
+    id: ORDER_ID,
+    total: CHARGED,
+    status: order.status,
+    paymentStatus: order.paymentStatus,
+    paymentMethod: order.paymentMethod,
+    deliveryMethod: DeliveryMethod.NOVA_POSHTA,
+  }));
+
   const tx = {
-    payment: { update: jest.fn() },
+    ...ledger.prisma,
+    payment: { update: jest.fn(), findFirst: jest.fn() },
     order: { updateMany: jest.fn(), update: jest.fn(), findUniqueOrThrow: jest.fn() },
     orderItem: { findMany: jest.fn() },
     product: { updateMany: jest.fn(), update: jest.fn() },
-    orderStatusHistory: { create: jest.fn() },
+    orderStatusHistory: { create: jest.fn(), count: jest.fn() },
     notificationBinding: { findMany: jest.fn() },
     notificationOutbox: { create: jest.fn() },
   };
@@ -260,8 +274,15 @@ describe('Shop ping on a confirmed online payment (e2e, TASK-678)', () => {
       async (fn: (client: typeof tx) => Promise<unknown>) => {
         stagedOrder = null;
         stagedRows = [];
+        const ledgerBefore = ledger.entries.map((row) => ({ ...row }));
         try {
-          const result = await fn(tx);
+          let result: unknown;
+          try {
+            result = await fn(tx);
+          } catch (err) {
+            ledger.entries.splice(0, ledger.entries.length, ...ledgerBefore);
+            throw err;
+          }
           // `fn` stages through the tx mock, which control-flow analysis cannot see —
           // it still narrows `stagedOrder` to the `null` assigned above.
           const staged = stagedOrder as Partial<OrderState> | null;
@@ -275,21 +296,35 @@ describe('Shop ping on a confirmed online payment (e2e, TASK-678)', () => {
       },
     );
 
+    ledger.reset();
     tx.payment.update.mockResolvedValue({});
+    tx.payment.findFirst.mockResolvedValue({ status: PaymentAttemptStatus.SUCCEEDED });
     tx.order.updateMany.mockImplementation(
       async ({
         where,
         data,
       }: {
-        where: { status: OrderStatus; paymentStatus: PaymentStatus };
+        where: { status: OrderStatus; paymentStatus?: PaymentStatus };
         data: Partial<OrderState>;
       }) => {
+        // A receipt plan (R2 A2) conditions on the status alone.
         const matches =
-          where.status === order.status && where.paymentStatus === order.paymentStatus;
+          where.status === order.status &&
+          (where.paymentStatus === undefined || where.paymentStatus === order.paymentStatus);
         if (matches) stagedOrder = { ...(stagedOrder ?? {}), ...data };
         return { count: matches ? 1 : 0 };
       },
     );
+    // `recompute` writes the derived payment status (and the four totals).
+    tx.order.update.mockImplementation(
+      async ({ data }: { data: { paymentStatus?: PaymentStatus } }) => {
+        if (data.paymentStatus) {
+          stagedOrder = { ...(stagedOrder ?? {}), paymentStatus: data.paymentStatus };
+        }
+        return {};
+      },
+    );
+    tx.orderStatusHistory.count.mockResolvedValue(0);
     tx.order.findUniqueOrThrow.mockImplementation(async () => fullOrder());
     tx.orderStatusHistory.create.mockResolvedValue({});
     tx.notificationBinding.findMany.mockResolvedValue([
@@ -363,7 +398,8 @@ describe('Shop ping on a confirmed online payment (e2e, TASK-678)', () => {
   it('a second, distinct success on a paid order (e.g. the reconcile worker) adds no row', async () => {
     await request(app.getHttpServer()).post(url).send(successCallback(678)).expect(200);
     // A different LiqPay payment_id → a different PaymentEvent key, so the claim
-    // passes; the order is already PAID, so there is nothing to apply.
+    // passes; the attempt already has its ledger receipt (R2 A2), so there is
+    // nothing to apply.
     await request(app.getHttpServer()).post(url).send(successCallback(679)).expect(200);
 
     expect(eventKeys.size).toBe(2);

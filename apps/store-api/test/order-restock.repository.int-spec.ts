@@ -105,6 +105,7 @@ describe('OrderRepository.cancelAndRestock — concurrency (integration)', () =>
     // id — Prisma drops `{ id: undefined }` and would delete every row.
     if (!prisma) return;
     if (userId) {
+      await prisma.orderMoneyEntry.deleteMany({ where: { order: { userId } } });
       await prisma.payment.deleteMany({ where: { order: { userId } } });
       await prisma.orderStatusHistory.deleteMany({ where: { order: { userId } } });
       await prisma.orderItem.deleteMany({ where: { order: { userId } } });
@@ -220,7 +221,8 @@ describe('OrderRepository.cancelAndRestock — concurrency (integration)', () =>
     expected: { status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING },
     attemptStatus: PaymentAttemptStatus.SUCCEEDED,
     settledAt: new Date(),
-    paymentStatusChange: { from: PaymentStatus.PENDING, to: PaymentStatus.PAID },
+    // R2 A2: a success is a ledger receipt; recompute derives PAID from it.
+    receipt: { amountKop: 30_000, occurredAt: new Date() },
     paidAt: new Date(),
     clearReservation: true,
     statusChange: { from: OrderStatus.PENDING, to: OrderStatus.CONFIRMED },

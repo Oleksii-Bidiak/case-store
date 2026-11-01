@@ -4,7 +4,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   MoneyDirection,
   MoneyEntryKind,
+  MoneyProviderState,
   OrderHistoryChangeType,
+  OrderHistoryNote,
   OrderStatus,
   PaymentStatus,
   UserRole,
@@ -59,6 +61,7 @@ describe('OrderMoneyRepository (integration)', () => {
         data: { reversalOfId: null },
       });
       await prisma.orderMoneyEntry.deleteMany({ where: { orderId: { in: orderIds } } });
+      await prisma.payment.deleteMany({ where: { orderId: { in: orderIds } } });
       await prisma.orderStatusHistory.deleteMany({ where: { orderId: { in: orderIds } } });
       await prisma.order.deleteMany({ where: { id: { in: orderIds } } });
       await prisma.user.deleteMany({ where: { id: operatorId } });
@@ -352,6 +355,207 @@ describe('OrderMoneyRepository (integration)', () => {
       const receipt = await receive(otherOrderId, 10_000);
 
       await expect(reverse(orderId, receipt.id)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  // ── TASK-1500 / TASK-2047, R2 step A2: the LiqPay path writes through here ──
+  describe('LiqPay entries', () => {
+    async function createPayment(orderId: string, amount = 1000): Promise<string> {
+      const payment = await prisma.payment.create({
+        data: { orderId, provider: 'liqpay', amount, status: 'SUCCEEDED' },
+      });
+      return payment.id;
+    }
+
+    const liqpayIn = (orderId: string, paymentId: string, amountKop = 100_000) =>
+      repository.transaction(orderId, async (tx) => {
+        const entry = await repository.insertEntry(tx, {
+          orderId,
+          kind: MoneyEntryKind.LIQPAY_PAYMENT,
+          amountKop,
+          paymentId,
+          providerRef: 'success',
+        });
+        await repository.recompute(tx, orderId, null);
+        return entry;
+      });
+
+    const requestRefund = (orderId: string, paymentId: string, amountKop: number) =>
+      repository.transaction(orderId, async (tx) => {
+        const entry = await repository.insertEntry(tx, {
+          orderId,
+          kind: MoneyEntryKind.LIQPAY_REFUND,
+          amountKop,
+          paymentId,
+          providerRef: randomUUID(),
+          providerState: MoneyProviderState.REQUESTED,
+          actorId: operatorId,
+        });
+        await repository.recompute(tx, orderId, operatorId);
+        return entry;
+      });
+
+    it('findProviderEntry finds the attempt receipt by its provider ref', async () => {
+      const orderId = await createOrder(1000);
+      const paymentId = await createPayment(orderId);
+      const receipt = await liqpayIn(orderId, paymentId);
+
+      const found = await prisma.$transaction((tx) =>
+        repository.findProviderEntry(tx, paymentId, 'success'),
+      );
+      const missing = await prisma.$transaction((tx) =>
+        repository.findProviderEntry(tx, paymentId, 'other'),
+      );
+
+      expect(found?.id).toBe(receipt.id);
+      expect(missing).toBeNull();
+    });
+
+    it('paymentProviderTotals counts REQUESTED refunds and skips voided ones', async () => {
+      const orderId = await createOrder(1000);
+      const paymentId = await createPayment(orderId);
+      await liqpayIn(orderId, paymentId);
+      await requestRefund(orderId, paymentId, 30_000);
+      const voided = await requestRefund(orderId, paymentId, 20_000);
+      await repository.transaction(orderId, (tx) =>
+        repository.voidEntry(tx, voided.id, 'LiqPay refused'),
+      );
+
+      const totals = await prisma.$transaction((tx) =>
+        repository.paymentProviderTotals(tx, paymentId),
+      );
+
+      expect(totals).toEqual({ inKop: 100_000, refundedKop: 30_000 });
+    });
+
+    it('a REQUESTED refund counts as refunded at once; voiding it gives it back', async () => {
+      const orderId = await createOrder(1000);
+      const paymentId = await createPayment(orderId);
+      await liqpayIn(orderId, paymentId);
+      const refund = await requestRefund(orderId, paymentId, 40_000);
+
+      expect(await totalsOf(orderId)).toMatchObject({
+        refundedKop: 40_000,
+        paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+      });
+
+      const voidedNow = await repository.transaction(orderId, async (tx) => {
+        const done = await repository.voidEntry(tx, refund.id, 'LiqPay refused');
+        await repository.recompute(tx, orderId, null);
+        return done;
+      });
+      const voidedAgain = await repository.transaction(orderId, (tx) =>
+        repository.voidEntry(tx, refund.id, 'again'),
+      );
+
+      expect(voidedNow).toBe(true);
+      expect(voidedAgain).toBe(false);
+      const row = await prisma.orderMoneyEntry.findUniqueOrThrow({ where: { id: refund.id } });
+      expect(row.voidedAt).not.toBeNull();
+      expect(row.voidReason).toBe('LiqPay refused');
+      expect(await totalsOf(orderId)).toMatchObject({
+        refundedKop: 0,
+        paymentStatus: PaymentStatus.PAID,
+      });
+    });
+
+    it('confirmOldestRequestedRefund confirms the oldest live request, once', async () => {
+      const orderId = await createOrder(1000);
+      const paymentId = await createPayment(orderId);
+      await liqpayIn(orderId, paymentId);
+      const first = await requestRefund(orderId, paymentId, 10_000);
+      const second = await requestRefund(orderId, paymentId, 20_000);
+
+      const confirm = () =>
+        repository.transaction(orderId, (tx) =>
+          repository.confirmOldestRequestedRefund(tx, paymentId),
+        );
+
+      expect((await confirm())?.id).toBe(first.id);
+      expect((await confirm())?.id).toBe(second.id);
+      expect(await confirm()).toBeNull();
+      const states = await prisma.orderMoneyEntry.findMany({
+        where: { id: { in: [first.id, second.id] } },
+        select: { providerState: true },
+      });
+      expect(states.map((s) => s.providerState)).toEqual([
+        MoneyProviderState.CONFIRMED,
+        MoneyProviderState.CONFIRMED,
+      ]);
+    });
+
+    it('recompute writes the given note on the history row it adds', async () => {
+      const orderId = await createOrder(1000, OrderStatus.CANCELLED);
+      const paymentId = await createPayment(orderId);
+      await repository.transaction(orderId, async (tx) => {
+        await repository.insertEntry(tx, {
+          orderId,
+          kind: MoneyEntryKind.LIQPAY_PAYMENT,
+          amountKop: 100_000,
+          paymentId,
+          providerRef: 'success',
+        });
+        await repository.recompute(tx, orderId, null, {
+          note: OrderHistoryNote.PAID_AFTER_CANCEL,
+        });
+      });
+
+      const rows = await prisma.orderStatusHistory.findMany({
+        where: { orderId, changeType: OrderHistoryChangeType.PAYMENT_STATUS },
+      });
+      expect(rows).toEqual([
+        expect.objectContaining({
+          fromPaymentStatus: PaymentStatus.PENDING,
+          toPaymentStatus: PaymentStatus.PAID,
+          note: OrderHistoryNote.PAID_AFTER_CANCEL,
+        }),
+      ]);
+    });
+  });
+
+  describe('recompute — legacy refund label (LEGACY_MONEY_UNKNOWN)', () => {
+    it('keeps PARTIALLY_REFUNDED on a legacy order with no money out', async () => {
+      const orderId = await createOrder(1000);
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { paymentStatus: PaymentStatus.PARTIALLY_REFUNDED },
+      });
+      await prisma.orderStatusHistory.create({
+        data: {
+          orderId,
+          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+          fromPaymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+          toPaymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+          note: OrderHistoryNote.LEGACY_MONEY_UNKNOWN,
+        },
+      });
+
+      await receive(orderId, 100_000);
+
+      expect((await totalsOf(orderId)).paymentStatus).toBe(PaymentStatus.PARTIALLY_REFUNDED);
+      expect(await paymentHistoryOf(orderId)).toHaveLength(1);
+    });
+
+    it('relabels it from the ledger once a refund is recorded', async () => {
+      const orderId = await createOrder(1000);
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { paymentStatus: PaymentStatus.PARTIALLY_REFUNDED },
+      });
+      await prisma.orderStatusHistory.create({
+        data: {
+          orderId,
+          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+          fromPaymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+          toPaymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+          note: OrderHistoryNote.LEGACY_MONEY_UNKNOWN,
+        },
+      });
+      await receive(orderId, 100_000);
+
+      await payOut(orderId, 100_000);
+
+      expect((await totalsOf(orderId)).paymentStatus).toBe(PaymentStatus.REFUNDED);
     });
   });
 });

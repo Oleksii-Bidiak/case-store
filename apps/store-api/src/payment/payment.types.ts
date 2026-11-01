@@ -31,11 +31,12 @@ export enum PaymentOutcome {
   /**
    * PART of the money went back; the rest is still ours (TASK-618).
    *
-   * Never produced by an adapter: a provider says "reversed" either way, and only
-   * the payment module knows what was charged. `PaymentService` turns a REFUNDED
-   * that reports less than the charge into this outcome before the order module
-   * sees it, so each outcome carries an exact amount contract — REFUNDED the
-   * whole charge, PARTIALLY_REFUNDED strictly more than zero and less than it.
+   * Since R2 A2 (TASK-1500) nothing produces it: the money of a refund is what
+   * the shop REQUESTED on the order ledger, and a `reversed` event only confirms
+   * that request, so partial vs full no longer depends on the event's amount
+   * (whose semantics LiqPay does not document). The order module treats it
+   * exactly like {@link REFUNDED}; kept so a future adapter that does know can
+   * say so without a type change.
    */
   PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED',
   /** Recognised, recorded, but not actionable — typically "still processing". */
@@ -73,6 +74,13 @@ export interface PaymentEventInput {
   readonly failureMessage?: string;
   /** Decoded callback body for the audit trail. Never the signature or raw blob. */
   readonly payload: Record<string, unknown>;
+  /**
+   * Extra idempotency discriminator stored as `PaymentEvent.dedupeKey`
+   * (TASK-1500): set by the adapter on refund events so that two partial
+   * refunds of one payment — same status, same provider id — are two events,
+   * while an exact repeat still collides. '' (or omitted) for everything else.
+   */
+  readonly dedupeKey?: string;
 }
 
 /** What the order module answers after applying an event. */

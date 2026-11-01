@@ -16,6 +16,7 @@ import {
   derivePaymentStatus,
   directionOf,
   ledgerTotals,
+  providerRefundAvailableKop,
   reversalDraft,
   unitsCreditKop,
 } from './order-money';
@@ -56,6 +57,70 @@ describe('order-money', () => {
       expect(
         derivePaymentStatus({ totalKop: 0, paidKop: 0, refundedKop: 0, lastAttemptFailed: false }),
       ).toBe(PaymentStatus.PENDING);
+    });
+  });
+
+  describe('derivePaymentStatus — a legacy refund label with no amount (TASK-2047 A2)', () => {
+    const base = { totalKop: 100_000, paidKop: 100_000, lastAttemptFailed: false };
+
+    it.each([PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED])(
+      'keeps %s while no money has gone out on the ledger',
+      (label) => {
+        expect(derivePaymentStatus({ ...base, refundedKop: 0, legacyRefundLabel: label })).toBe(
+          label,
+        );
+      },
+    );
+
+    it('derives as usual once a refund is on the ledger', () => {
+      expect(
+        derivePaymentStatus({
+          ...base,
+          refundedKop: 100_000,
+          legacyRefundLabel: PaymentStatus.PARTIALLY_REFUNDED,
+        }),
+      ).toBe(PaymentStatus.REFUNDED);
+    });
+
+    it('ignores a label that is not a refund label', () => {
+      expect(
+        derivePaymentStatus({ ...base, refundedKop: 0, legacyRefundLabel: PaymentStatus.PAID }),
+      ).toBe(PaymentStatus.PAID);
+    });
+  });
+
+  describe('providerRefundAvailableKop', () => {
+    it('is what is left on the attempt when the order has more headroom', () => {
+      expect(
+        providerRefundAvailableKop({
+          paymentInKop: 100_000,
+          paymentRefundedKop: 60_000,
+          orderPaidKop: 150_000,
+          orderRefundedKop: 60_000,
+        }),
+      ).toBe(40_000);
+    });
+
+    it('is capped by the order ceiling (paid − refunded across every kind)', () => {
+      expect(
+        providerRefundAvailableKop({
+          paymentInKop: 100_000,
+          paymentRefundedKop: 0,
+          orderPaidKop: 100_000,
+          orderRefundedKop: 70_000,
+        }),
+      ).toBe(30_000);
+    });
+
+    it('never goes below zero', () => {
+      expect(
+        providerRefundAvailableKop({
+          paymentInKop: 0,
+          paymentRefundedKop: 0,
+          orderPaidKop: 0,
+          orderRefundedKop: 0,
+        }),
+      ).toBe(0);
     });
   });
 

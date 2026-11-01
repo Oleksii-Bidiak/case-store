@@ -39,6 +39,7 @@ import {
 // TASK-643: the delivery × payment matrix and the non-NP pricing rules.
 import { isPaymentAllowedForDelivery } from './delivery-payment-matrix';
 import {
+  ALREADY_PAID_STATUSES,
   confirmsPaymentOfLiveOrder,
   shopPingAtCreation,
   shopPingOnPaymentConfirmed,
@@ -92,6 +93,8 @@ import type {
   OrderWithItems,
   PaymentApplyPlan,
   PaymentWithOrderRow,
+  ProviderRefundRequest,
+  ProviderRefundRequestInput,
   PlacedOrder,
   ShippingAddressData,
 } from './order.types';
@@ -2316,7 +2319,7 @@ export class OrderService {
       );
     }
 
-    if (plan.paymentStatusChange?.note === OrderHistoryNote.PAID_AFTER_CANCEL) {
+    if (plan.receipt?.note === OrderHistoryNote.PAID_AFTER_CANCEL) {
       // WARN: money arrived for an order the shop no longer holds stock for.
       // Nothing is broken, but a person has to revive or refund it (TASK-619).
       // TASK-678: and it is NOT announced as a new order — see shopPingOnPaid.
@@ -2350,6 +2353,22 @@ export class OrderService {
   }
 
   /**
+   * Write a LiqPay refund the shop is about to request into the order ledger —
+   * REQUESTED, counted at once, under the order lock (TASK-1500 / TASK-2047).
+   * The payment module calls this BEFORE it asks the provider, and
+   * {@link voidProviderRefund} if the provider refuses. Over the ceiling,
+   * nothing is written and `exceeds` comes back with what is available.
+   */
+  requestProviderRefund(input: ProviderRefundRequestInput): Promise<ProviderRefundRequest> {
+    return this.orderRepository.requestProviderRefund(input);
+  }
+
+  /** Void a REQUESTED refund the provider refused; it stops counting (TASK-1500). */
+  voidProviderRefund(orderId: string, entryId: string, reason: string): Promise<void> {
+    return this.orderRepository.voidProviderRefund(orderId, entryId, reason);
+  }
+
+  /**
    * Refuse an event whose money does not match what was charged.
    *
    * Compared in integer cents because the provider's "100.0" and our "100.00" are
@@ -2364,14 +2383,17 @@ export class OrderService {
     const reportedCents = toCents(event.amount);
     const currencyMatches = payment.currency.toUpperCase() === event.currency.toUpperCase();
 
-    // TASK-618: a partial refund is, by definition, less than the charge — and
-    // more than nothing. Every other outcome must report the charge exactly
-    // (PaymentService relabels a smaller REFUNDED before it gets here, so a
-    // REFUNDED that still reports less is a contradiction, not a partial).
-    const amountAgrees =
-      event.outcome === PaymentOutcome.PARTIALLY_REFUNDED
-        ? reportedCents > 0 && reportedCents < expectedCents
-        : expectedCents === reportedCents;
+    // A refund reports more than nothing and no more than the charge. Whether
+    // LiqPay's `reversed` amount is the single refund or the running total is
+    // not confirmed (TASK-1500), so it decides nothing — the money of a refund
+    // is what the shop requested — and is only sanity-checked here. Every other
+    // outcome must report the charge exactly.
+    const isRefund =
+      event.outcome === PaymentOutcome.REFUNDED ||
+      event.outcome === PaymentOutcome.PARTIALLY_REFUNDED;
+    const amountAgrees = isRefund
+      ? Number.isFinite(reportedCents) && reportedCents > 0 && reportedCents <= expectedCents
+      : expectedCents === reportedCents;
 
     if (amountAgrees && currencyMatches) {
       return;
@@ -2398,51 +2420,41 @@ export class OrderService {
    *
    * All the business judgement of the payment path lives in this one pure-ish
    * function, so the rules can be read in one screen rather than reconstructed
-   * from a transaction body:
+   * from a transaction body. Since R2 A2 (TASK-1500 / TASK-2047) money is written
+   * to the order ledger and the payment status is DERIVED from it
+   * (`OrderMoneyRepository.recompute`) — no money outcome hand-builds a status:
    *
-   * - **SUCCEEDED** marks the money ours, stamps `paidAt`, lifts the reservation
-   *   deadline, and moves a still-PENDING order to CONFIRMED. Already PAID → null.
-   *   On a CANCELLED order (TASK-619) the money is recorded but the order stays
-   *   CANCELLED with no stock moved, and the history row is flagged
-   *   `PAID_AFTER_CANCEL` for the operator to revive or refund. On a LIVE order
-   *   whose hold ORDER_RESERVATION_EXPIRY=release gave back (TASK-627) the plan
-   *   carries `stockHold: 'released'` and the stock is re-taken in the same
-   *   write; if it is gone, the money is still recorded and the order stays in
-   *   «Позиція недоступна».
+   * - **SUCCEEDED** carries a `receipt` (the attempt's amount in kopecks → one
+   *   `LIQPAY_PAYMENT` entry), stamps `paidAt`, lifts the reservation deadline,
+   *   and moves a still-PENDING order to CONFIRMED. An attempt that already
+   *   succeeded → null; a DIFFERENT attempt on a paid order is a second receipt
+   *   (an overpayment, never lost). On a CANCELLED order (TASK-619) the money is
+   *   recorded but the order stays CANCELLED with no stock moved, and the
+   *   history row is flagged `PAID_AFTER_CANCEL` for the operator to revive or
+   *   refund. On a LIVE order whose hold ORDER_RESERVATION_EXPIRY=release gave
+   *   back (TASK-627) the plan carries `stockHold: 'released'` and the stock is
+   *   re-taken in the same write; if it is gone, the money is still recorded and
+   *   the order stays in «Позиція недоступна».
    * - **FAILED** records the failed attempt and marks the order's payment FAILED,
    *   but only while it is still unpaid: a late failure callback for a superseded
    *   attempt must never un-pay a paid order. The order itself is NOT cancelled —
    *   the customer may retry, and the reservation worker owns the deadline.
-   * - **REFUNDED** moves the order's payment to REFUNDED and, where the state
-   *   machine permits, the order to REFUNDED — and only where it does: on an
-   *   order that can reach neither (PENDING/CONFIRMED/PROCESSING) the event is
-   *   refused rather than written, because a full refund on a live order is the
-   *   one payment combination the cross-rule forbids outright (see the branch).
-   *   Stock is deliberately NOT credited back: the goods have to physically
-   *   return first (TASK-124's rule, unchanged).
-   * - **PARTIALLY_REFUNDED** (TASK-618) moves PAID to PARTIALLY_REFUNDED and
-   *   nothing else: the order status stays where it is (a partial refund never
-   *   drags DELIVERED into REFUNDED) and the attempt stays SUCCEEDED.
+   * - **REFUNDED / PARTIALLY_REFUNDED** carry `providerRefund`: confirm the
+   *   oldest refund the shop REQUESTED, or record PROVIDER_REFUND_UNMATCHED when
+   *   it requested none (TASK-1500). The provider's amount decides nothing. Stock
+   *   is deliberately NOT credited back: the goods have to physically return
+   *   first (TASK-124's rule, unchanged).
    * - **IGNORED** — "still processing" — changes nothing. There is no PENDING
    *   outcome for exactly this reason: treating "not finished yet" as an event to
    *   act on is how an order flips to paid before the money exists.
    *
-   * ── The SECOND door onto `paymentStatus`, and why it never throws (TASK-431) ─
-   * Since TASK-431 the payment status has a state machine of its own, and this
-   * method asks it exactly like {@link adminUpdatePaymentStatus} does. What it
-   * must NOT do is react the same way. The callers here are a LiqPay webhook and
-   * the reconcile worker; both retry on anything that is not a 2xx, so a 409
-   * would not refuse the event, it would schedule it again every few minutes
-   * until someone noticed. So an illegal move is IGNORED: the order's columns are
-   * left exactly as they are, the attempt row is still written (the provider's
-   * statement about the ATTEMPT is a fact regardless), a warning goes to the log
-   * and `refusedPaymentStatusChange` puts a row in `OrderStatusHistory` so the
-   * operator can see that something was said and not acted on.
-   *
-   * Idempotency is untouched by any of this: a repeat SUCCEEDED on an order that
-   * is already PAID still returns `null` at the top of its branch, before the
-   * machine is ever consulted — so it is neither an error nor a duplicate history
-   * row, exactly as before.
+   * ── Why this door never throws (TASK-431) ───────────────────────────────────
+   * The callers here are a LiqPay webhook and the reconcile worker; both retry
+   * on anything that is not a 2xx, so a 409 would not refuse the event, it would
+   * schedule it again every few minutes until someone noticed. A provider
+   * statement that disagrees with the label (a success on a refunded order, a
+   * refund nobody asked for) is therefore recorded — as money, or as a history
+   * note — and never raised.
    */
   private planPaymentApplication(
     payment: PaymentWithOrderRow,
@@ -2459,26 +2471,27 @@ export class OrderService {
 
     switch (event.outcome) {
       case PaymentOutcome.SUCCEEDED: {
-        if (order.paymentStatus === PaymentStatus.PAID) return null;
-        // Refused sources here are PARTIALLY_REFUNDED and REFUNDED: the provider
-        // is reporting a success on money we have already sent back. Record the
-        // attempt and the contradiction; touch nothing on the order — not the
-        // payment status, not `paidAt`, and certainly not the reservation, whose
-        // deadline is meaningless on an order that reached a refund.
-        if (!canTransitionPayment(order.paymentStatus, PaymentStatus.PAID)) {
-          return {
-            ...base,
-            attemptStatus: PaymentAttemptStatus.SUCCEEDED,
-            settledAt: now,
-            failureCode: null,
-            failureMessage: null,
-            refusedPaymentStatusChange: {
-              current: order.paymentStatus,
-              rejected: PaymentStatus.PAID,
-              reason: 'table',
-            },
-          };
+        // Idempotency of meaning is per ATTEMPT (R2 A2): its receipt is written
+        // once, in the transaction that settles it, so an attempt already
+        // SUCCEEDED (or later REFUNDED) has nothing new to say. A DIFFERENT
+        // attempt that also succeeded is real money and is recorded — an
+        // overpayment the balance shows as «Винні покупцю», never lost.
+        if (
+          payment.status === PaymentAttemptStatus.SUCCEEDED ||
+          payment.status === PaymentAttemptStatus.REFUNDED
+        ) {
+          return null;
         }
+        const settled = {
+          ...base,
+          attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+          settledAt: now,
+          failureCode: null,
+          failureMessage: null,
+          paidAt: order.paidAt ?? now,
+          clearReservation: true,
+        };
+        const receipt = { amountKop: toCents(payment.amount.toString()), occurredAt: now };
         // TASK-619 (owner decision B-11 №3, plan 178): a success on an order that
         // is already CANCELLED — the reservation TTL lapsed while the LiqPay page
         // was still open. CANCELLED → CONFIRMED is a legal move, but only through
@@ -2489,37 +2502,24 @@ export class OrderService {
         // operator's call, never an automatic one.
         if (order.status === OrderStatus.CANCELLED) {
           return {
-            ...base,
-            attemptStatus: PaymentAttemptStatus.SUCCEEDED,
-            settledAt: now,
-            failureCode: null,
-            failureMessage: null,
-            paymentStatusChange: {
-              from: order.paymentStatus,
-              to: PaymentStatus.PAID,
-              note: OrderHistoryNote.PAID_AFTER_CANCEL,
-            },
-            paidAt: order.paidAt ?? now,
-            clearReservation: true,
+            ...settled,
+            receipt: { ...receipt, note: OrderHistoryNote.PAID_AFTER_CANCEL },
           };
         }
+        // Money already arrived once (a second attempt): the stock was settled
+        // by the first payment, so there is no hold to pin or re-take.
+        const firstMoney = !ALREADY_PAID_STATUSES.includes(order.paymentStatus);
         return {
-          ...base,
-          attemptStatus: PaymentAttemptStatus.SUCCEEDED,
-          settledAt: now,
-          failureCode: null,
-          failureMessage: null,
-          paymentStatusChange: { from: order.paymentStatus, to: PaymentStatus.PAID },
-          paidAt: order.paidAt ?? now,
-          clearReservation: true,
+          ...settled,
+          receipt,
           // TASK-627: a live order whose hold ORDER_RESERVATION_EXPIRY=release gave
           // back is re-reserved by this payment; one still held must still be held
           // at write time. See PaymentApplyPlan.stockHold.
-          stockHold: order.restockedAt != null ? 'released' : 'held',
+          ...(firstMoney ? { stockHold: order.restockedAt != null ? 'released' : 'held' } : {}),
           ...(canTransition(order.status, OrderStatus.CONFIRMED)
             ? { statusChange: { from: order.status, to: OrderStatus.CONFIRMED } }
             : {}),
-        };
+        } satisfies PaymentApplyPlan;
       }
 
       case PaymentOutcome.FAILED: {
@@ -2548,99 +2548,28 @@ export class OrderService {
         };
       }
 
-      case PaymentOutcome.REFUNDED: {
-        if (order.paymentStatus === PaymentStatus.REFUNDED) return null;
-        // Refused sources here are PENDING and FAILED: money we never recorded as
-        // received is coming back. That is a genuine contradiction — most likely
-        // a success callback we lost — so it is logged and left in the order's
-        // history for a human, rather than written as a refund of nothing.
-        if (!canTransitionPayment(order.paymentStatus, PaymentStatus.REFUNDED)) {
-          return {
-            ...base,
-            attemptStatus: PaymentAttemptStatus.REFUNDED,
-            settledAt: now,
-            refusedPaymentStatusChange: {
-              current: order.paymentStatus,
-              rejected: PaymentStatus.REFUNDED,
-              reason: 'table',
-            },
-          };
-        }
-        // The cross-rule, on this door too (TASK-431). `isPaymentTargetReachable`
-        // is asked of the status the order will HAVE once this plan lands, not
-        // the one it has now: a DELIVERED order whose refund moves it to REFUNDED
-        // in the same transaction ends up consistent, so it passes. What does not
-        // pass is PENDING/CONFIRMED/PROCESSING — none of them may become REFUNDED
-        // (rule 3 of ORDER_TRANSITIONS: there is nothing to refund yet), so the
-        // money would land on an order the shop still considers live. That is the
-        // exact combination the admin door answers with 409; here it becomes the
-        // same refusal this door uses everywhere else — attempt written, columns
-        // untouched, a history row and a warning for the operator, who cancels
-        // the order and then records the money by hand.
-        const movesOrderToRefunded = canTransition(order.status, OrderStatus.REFUNDED);
-        const statusAfterPlan = movesOrderToRefunded ? OrderStatus.REFUNDED : order.status;
-
-        if (!this.isPaymentTargetReachable(statusAfterPlan, PaymentStatus.REFUNDED)) {
-          return {
-            ...base,
-            attemptStatus: PaymentAttemptStatus.REFUNDED,
-            settledAt: now,
-            refusedPaymentStatusChange: {
-              current: order.paymentStatus,
-              rejected: PaymentStatus.REFUNDED,
-              // NOT `table`: PAID → REFUNDED is a move the table allows. What
-              // refused it is the order's own status, and a log line that does
-              // not say so sends its reader to the wrong file.
-              reason: 'crossRule',
-            },
-          };
-        }
-
-        return {
-          ...base,
-          attemptStatus: PaymentAttemptStatus.REFUNDED,
-          settledAt: now,
-          paymentStatusChange: { from: order.paymentStatus, to: PaymentStatus.REFUNDED },
-          ...(movesOrderToRefunded
-            ? { statusChange: { from: order.status, to: OrderStatus.REFUNDED } }
-            : {}),
-        };
-      }
-
+      case PaymentOutcome.REFUNDED:
       case PaymentOutcome.PARTIALLY_REFUNDED: {
-        // Already labelled as at least this much back — nothing new to record.
-        if (
-          order.paymentStatus === PaymentStatus.PARTIALLY_REFUNDED ||
-          order.paymentStatus === PaymentStatus.REFUNDED
-        ) {
-          return null;
-        }
-        // The attempt stays SUCCEEDED: part of the money is still ours, and
-        // leaving it refundable is what lets the operator send the rest back.
-        // `settledAt` is left alone — the attempt settled when the money came in.
-        if (!canTransitionPayment(order.paymentStatus, PaymentStatus.PARTIALLY_REFUNDED)) {
-          // PENDING / FAILED: part of money we never recorded as received is
-          // coming back — the same lost-success contradiction as a full refund.
-          return {
-            ...base,
-            attemptStatus: PaymentAttemptStatus.SUCCEEDED,
-            refusedPaymentStatusChange: {
-              current: order.paymentStatus,
-              rejected: PaymentStatus.PARTIALLY_REFUNDED,
-              reason: 'table',
-            },
-          };
-        }
-        // No order-status change, on any order: a partial refund does not end the
-        // order (B-1 §1 — one line back out of three on a DELIVERED order is an
-        // ordinary day), and the cross-rule constrains FULL refunds only.
+        // TASK-1500 (R2 A2): the money of a LiqPay refund is what the SHOP
+        // requested — a REQUESTED `LIQPAY_REFUND` entry, already counted. This
+        // event only confirms the oldest such request (or, if there is none,
+        // leaves a PROVIDER_REFUND_UNMATCHED note); which of the two happens is
+        // decided under the order lock, by the repository. So the plan is the
+        // same for a full and a partial `reversed`, and moves no payment status
+        // by itself. Stock is deliberately NOT credited back: the goods have to
+        // physically return first (TASK-124's rule, unchanged).
+        //
+        // The one order-status side effect kept from before: once everything
+        // paid is back (derived REFUNDED), an order the state machine lets
+        // become REFUNDED does so. A4 derives that status from the ledger.
+        const refundOrder =
+          order.status !== OrderStatus.REFUNDED && canTransition(order.status, OrderStatus.REFUNDED)
+            ? { from: order.status, to: OrderStatus.REFUNDED }
+            : undefined;
         return {
           ...base,
-          attemptStatus: PaymentAttemptStatus.SUCCEEDED,
-          paymentStatusChange: {
-            from: order.paymentStatus,
-            to: PaymentStatus.PARTIALLY_REFUNDED,
-          },
+          attemptStatus: payment.status,
+          providerRefund: refundOrder ? { refundOrder } : {},
         };
       }
 

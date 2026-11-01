@@ -22,6 +22,7 @@ const loggerMock = {
 
 const repositoryMock = {
   findPendingOlderThan: jest.fn(),
+  findWithRequestedRefundsOlderThan: jest.fn(),
   findExpiredReservations: jest.fn(),
   markExpiredByOrderId: jest.fn(),
 };
@@ -93,6 +94,7 @@ describe('PaymentReconcileWorker', () => {
     jest.clearAllMocks();
     providerMock.isConfigured.mockReturnValue(true);
     repositoryMock.findPendingOlderThan.mockResolvedValue([]);
+    repositoryMock.findWithRequestedRefundsOlderThan.mockResolvedValue([]);
     repositoryMock.findExpiredReservations.mockResolvedValue([]);
     repositoryMock.markExpiredByOrderId.mockResolvedValue(1);
     paymentServiceMock.applyEvent.mockResolvedValue({ applied: true, orderId: 'order-1' });
@@ -194,6 +196,64 @@ describe('PaymentReconcileWorker', () => {
       await buildWorker().tick();
 
       expect(repositoryMock.findPendingOlderThan).not.toHaveBeenCalled();
+    });
+  });
+
+  // TASK-1500 (R2 A2): a refund the shop requested is confirmed by the
+  // `reversed` callback — and, if that never arrives, by this poll.
+  describe('polling requested refunds', () => {
+    const refundedEvent = (paymentId: string) =>
+      event({
+        paymentId,
+        providerStatus: 'reversed',
+        outcome: PaymentOutcome.REFUNDED,
+        dedupeKey: 'k',
+      });
+
+    it('polls attempts with a REQUESTED refund older than the grace period', async () => {
+      await buildWorker().tick();
+
+      const [cutoff, limit] = repositoryMock.findWithRequestedRefundsOlderThan.mock.calls[0];
+      expect(cutoff).toEqual(new Date('2026-07-28T11:58:00.000Z'));
+      expect(limit).toBeGreaterThan(0);
+    });
+
+    it('feeds a reported refund through the same applyEvent path as the webhook', async () => {
+      repositoryMock.findWithRequestedRefundsOlderThan.mockResolvedValue([
+        { ...pendingPayment('pay-r'), status: PaymentAttemptStatus.SUCCEEDED },
+      ]);
+      providerMock.fetchStatus.mockResolvedValue(refundedEvent('pay-r'));
+
+      await buildWorker().tick();
+
+      expect(providerMock.fetchStatus).toHaveBeenCalledWith('pay-r');
+      expect(paymentServiceMock.applyEvent).toHaveBeenCalledWith(refundedEvent('pay-r'));
+    });
+
+    it('ignores a poll that still reports the payment, not the refund', async () => {
+      repositoryMock.findWithRequestedRefundsOlderThan.mockResolvedValue([
+        { ...pendingPayment('pay-r'), status: PaymentAttemptStatus.SUCCEEDED },
+      ]);
+      providerMock.fetchStatus.mockResolvedValue(event({ paymentId: 'pay-r' }));
+
+      await buildWorker().tick();
+
+      expect(paymentServiceMock.applyEvent).not.toHaveBeenCalled();
+    });
+
+    it('carries on with the batch when one poll fails', async () => {
+      repositoryMock.findWithRequestedRefundsOlderThan.mockResolvedValue([
+        { ...pendingPayment('pay-a'), status: PaymentAttemptStatus.SUCCEEDED },
+        { ...pendingPayment('pay-b'), status: PaymentAttemptStatus.SUCCEEDED },
+      ]);
+      providerMock.fetchStatus
+        .mockRejectedValueOnce(new Error('LiqPay down'))
+        .mockResolvedValueOnce(refundedEvent('pay-b'));
+
+      await buildWorker().tick();
+
+      expect(paymentServiceMock.applyEvent).toHaveBeenCalledWith(refundedEvent('pay-b'));
+      expect(loggerMock.error).toHaveBeenCalled();
     });
   });
 

@@ -49,6 +49,17 @@ export function shopPingOnPaymentConfirmed(method: PaymentMethod | null | undefi
 }
 
 /**
+ * Payment statuses of an order whose money already arrived once (R2 A2): a
+ * further LiqPay success is a second receipt (an overpayment), not the moment
+ * the order is paid — no stock hold to pin, no shop ping.
+ */
+export const ALREADY_PAID_STATUSES: readonly PaymentStatus[] = Object.freeze([
+  PaymentStatus.PAID,
+  PaymentStatus.PARTIALLY_REFUNDED,
+  PaymentStatus.REFUNDED,
+]);
+
+/**
  * Whether a provider payment plan makes a LIVE order paid — the moment an online
  * order becomes real for the shop.
  *
@@ -56,8 +67,10 @@ export function shopPingOnPaymentConfirmed(method: PaymentMethod | null | undefi
  * with a conditional write on `plan.expected`, so if the write lands, these are
  * the facts it landed on.
  *
- * - the payment moves to PAID (a repeat SUCCEEDED on a paid order has no plan at
- *   all, a refused move carries no `paymentStatusChange`);
+ * - the plan brings money in (`receipt`, R2 A2 — the status is derived from the
+ *   ledger afterwards, so the receipt is the signal) on an order that was not
+ *   already paid: a second attempt's receipt on a PAID order is an overpayment,
+ *   not a new order, and the shop was told the first time;
  * - the order is not CANCELLED. A success on a cancelled order (TASK-619,
  *   `PAID_AFTER_CANCEL`) records the money but leaves the order cancelled —
  *   announcing it as a new order would send the owner to pack something the
@@ -65,12 +78,13 @@ export function shopPingOnPaymentConfirmed(method: PaymentMethod | null | undefi
  *   the planner sets them together, and either alone is enough to say no.
  */
 export function confirmsPaymentOfLiveOrder(
-  plan: Pick<PaymentApplyPlan, 'expected' | 'paymentStatusChange'>,
+  plan: Pick<PaymentApplyPlan, 'expected' | 'receipt'>,
 ): boolean {
-  const change = plan.paymentStatusChange;
+  const { receipt } = plan;
   return (
-    change?.to === PaymentStatus.PAID &&
-    change.note !== OrderHistoryNote.PAID_AFTER_CANCEL &&
+    receipt !== undefined &&
+    receipt.note !== OrderHistoryNote.PAID_AFTER_CANCEL &&
+    !ALREADY_PAID_STATUSES.includes(plan.expected.paymentStatus) &&
     plan.expected.status !== OrderStatus.CANCELLED
   );
 }

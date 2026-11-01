@@ -406,6 +406,24 @@ export interface PaymentWithOrderRow {
   };
 }
 
+/** A LiqPay refund the shop is about to request (TASK-1500 / TASK-2047, R2 A2). */
+export interface ProviderRefundRequestInput {
+  orderId: string;
+  paymentId: string;
+  /** Integer kopecks; omitted = everything still refundable on the attempt. */
+  amountKop?: number;
+  /** The operator; null for a system request. */
+  actorId: string | null;
+}
+
+/**
+ * What the ledger answered: the REQUESTED entry it wrote (counted from now on),
+ * or — writing nothing — that the amount is over the ceiling.
+ */
+export type ProviderRefundRequest =
+  | { status: 'requested'; entryId: string; amountKop: number }
+  | { status: 'exceeds'; availableKop: number };
+
 /**
  * A fully-decided payment application, ready to be written (TASK-330).
  *
@@ -477,6 +495,24 @@ export interface PaymentApplyPlan {
     /** `table` — PAYMENT_TRANSITIONS; `crossRule` — B-1 §1, the order is live. */
     reason: 'table' | 'crossRule';
   };
+  /**
+   * The money a successful attempt brought in (TASK-2047 / TASK-1500, R2 A2):
+   * written as ONE `LIQPAY_PAYMENT` ledger entry keyed `(paymentId, 'success')`,
+   * after which `OrderMoneyRepository.recompute` derives the payment status and
+   * writes its history row. A receipt plan never carries a hand-built
+   * {@link paymentStatusChange}. `note` rides on that history row (TASK-619:
+   * `PAID_AFTER_CANCEL`).
+   */
+  receipt?: { amountKop: number; occurredAt: Date; note?: OrderHistoryNote };
+  /**
+   * A `reversed` callback / status poll (TASK-1500, R2 A2): confirm the oldest
+   * REQUESTED `LIQPAY_REFUND` of this attempt, or — when the shop never asked
+   * for one (a refund made in the LiqPay cabinet) — write no money and leave a
+   * `PROVIDER_REFUND_UNMATCHED` history row. `refundOrder` is the order-status
+   * move the state machine allows once everything paid is back (the old
+   * full-refund side effect), taken only if the derived status is REFUNDED.
+   */
+  providerRefund?: { refundOrder?: { from: OrderStatus; to: OrderStatus } };
   /** Set when money settled; null leaves the column untouched. */
   paidAt?: Date | null;
   /**

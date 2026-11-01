@@ -4,15 +4,20 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import {
+  DeliveryMethod,
+  MoneyDirection,
+  MoneyEntryKind,
   OrderHistoryChangeType,
   OrderHistoryNote,
   OrderStatus,
   PaymentAttemptStatus,
+  PaymentMethod,
   PaymentStatus,
   Prisma,
   type Payment,
 } from '@prisma/client';
 import request from 'supertest';
+import { createLedgerPrismaMock, type LedgerOrderState } from './ledger-prisma.mock';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -56,15 +61,27 @@ describe('LiqPay success callback after TTL auto-cancel (e2e, TASK-619)', () => 
   let app: INestApplication;
   let privateKey: string;
 
+  /** The order row as the ledger reads it — and as `recompute` updates it. */
+  const orderRow: LedgerOrderState = {
+    id: ORDER_ID,
+    total: CHARGED,
+    status: OrderStatus.PENDING,
+    paymentStatus: PaymentStatus.PENDING,
+    paymentMethod: PaymentMethod.ONLINE,
+    deliveryMethod: DeliveryMethod.NOVA_POSHTA,
+  };
+  const ledger = createLedgerPrismaMock(() => orderRow);
+
   const prismaServiceMock = {
     $connect: jest.fn(),
     $disconnect: jest.fn(),
     $on: jest.fn(),
-    payment: { findUnique: jest.fn(), update: jest.fn() },
+    ...ledger.prisma,
+    payment: { findUnique: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
     paymentEvent: { create: jest.fn(), delete: jest.fn() },
     order: { update: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
     product: { update: jest.fn(), updateMany: jest.fn() },
-    orderStatusHistory: { create: jest.fn() },
+    orderStatusHistory: { create: jest.fn(), count: jest.fn() },
     $transaction: jest.fn(),
   };
 
@@ -73,6 +90,8 @@ describe('LiqPay success callback after TTL auto-cancel (e2e, TASK-619)', () => 
    * and OrderRepository.findPaymentWithOrder (a select that nests the order).
    */
   const seedPayment = (orderStatus: OrderStatus, attemptStatus: PaymentAttemptStatus) => {
+    orderRow.status = orderStatus;
+    orderRow.paymentStatus = PaymentStatus.PENDING;
     const row: Payment & { order: Record<string, unknown> } = {
       id: PAYMENT_ID,
       orderId: ORDER_ID,
@@ -172,11 +191,26 @@ describe('LiqPay success callback after TTL auto-cancel (e2e, TASK-619)', () => 
 
   beforeEach(() => {
     jest.clearAllMocks();
+    ledger.reset();
     prismaServiceMock.paymentEvent.create.mockResolvedValue({ id: 'evt-619' });
     prismaServiceMock.payment.update.mockResolvedValue({});
+    prismaServiceMock.payment.findFirst.mockResolvedValue({
+      status: PaymentAttemptStatus.SUCCEEDED,
+    });
     prismaServiceMock.order.updateMany.mockResolvedValue({ count: 1 });
-    prismaServiceMock.order.findUniqueOrThrow.mockResolvedValue({ id: ORDER_ID });
+    // Both the recompute read and the final re-read see the live row.
+    prismaServiceMock.order.findUniqueOrThrow.mockImplementation(async () => ({
+      ...orderRow,
+      items: [],
+    }));
+    prismaServiceMock.order.update.mockImplementation(
+      async ({ data }: { data: { paymentStatus?: PaymentStatus } }) => {
+        if (data.paymentStatus) orderRow.paymentStatus = data.paymentStatus;
+        return {};
+      },
+    );
     prismaServiceMock.orderStatusHistory.create.mockResolvedValue({});
+    prismaServiceMock.orderStatusHistory.count.mockResolvedValue(0);
     prismaServiceMock.$transaction.mockImplementation(
       (fn: (tx: typeof prismaServiceMock) => unknown) => fn(prismaServiceMock),
     );
@@ -194,14 +228,32 @@ describe('LiqPay success callback after TTL auto-cancel (e2e, TASK-619)', () => 
       .expect(200, { data: { received: true } });
 
     // Conditional on what the plan read — a cancel committed since cannot be overwritten.
-    expect(orderWriteCall().where).toEqual({
-      id: ORDER_ID,
-      status: OrderStatus.CANCELLED,
-      paymentStatus: PaymentStatus.PENDING,
-    });
+    // R2 A2: the payment status is no longer in the condition (nor in the write):
+    // it is derived from the ledger by recompute.
+    expect(orderWriteCall().where).toEqual({ id: ORDER_ID, status: OrderStatus.CANCELLED });
     const written = orderWrite();
-    expect(written.paymentStatus).toBe(PaymentStatus.PAID);
+    expect(written).not.toHaveProperty('paymentStatus');
     expect(written.paidAt).toBeInstanceOf(Date);
+    // The money itself: ONE LiqPay receipt for the whole charge — real money,
+    // so the balance shows it owed back on the cancelled order.
+    expect(ledger.entries).toEqual([
+      expect.objectContaining({
+        direction: MoneyDirection.IN,
+        kind: MoneyEntryKind.LIQPAY_PAYMENT,
+        amountKop: 124_900,
+        paymentId: PAYMENT_ID,
+        providerRef: 'success',
+        actorId: null,
+      }),
+    ]);
+    expect(prismaServiceMock.order.update).toHaveBeenCalledWith({
+      where: { id: ORDER_ID },
+      data: expect.objectContaining({
+        paidKop: 124_900,
+        balanceKop: -124_900,
+        paymentStatus: PaymentStatus.PAID,
+      }),
+    });
     // The order is not revived and the cancellation's restock is not undone.
     expect(written).not.toHaveProperty('status');
     expect(written).not.toHaveProperty('restockedAt');
@@ -240,11 +292,11 @@ describe('LiqPay success callback after TTL auto-cancel (e2e, TASK-619)', () => 
 
     expect(orderWrite()).toEqual(
       expect.objectContaining({
-        paymentStatus: PaymentStatus.PAID,
         status: OrderStatus.CONFIRMED,
         reservationExpiresAt: null,
       }),
     );
+    expect(ledger.entries).toHaveLength(1);
     const rows = historyRows();
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.note === undefined)).toBe(true);

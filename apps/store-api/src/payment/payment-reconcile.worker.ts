@@ -133,6 +133,7 @@ export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
   async tick(): Promise<void> {
     try {
       await this.pollPendingAttempts();
+      await this.pollRequestedRefunds();
       await this.expireStaleReservations();
     } catch (err) {
       this.logger.error({ event: 'payment.reconcile.error', err }, 'Payment reconcile tick failed');
@@ -184,6 +185,60 @@ export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
         this.logger.error(
           { event: 'payment.reconcile.attempt_failed', paymentId: payment.id, err },
           'Could not reconcile a payment attempt',
+        );
+      }
+    }
+
+    return applied;
+  }
+
+  /**
+   * Ask the provider about attempts carrying a REQUESTED refund older than the
+   * same grace period (TASK-1500, R2 A2) — the backstop for a `reversed`
+   * callback that never arrived. Only a reported refund is fed on, through the
+   * same {@link PaymentService.applyEvent} as the webhook (same idempotency,
+   * same confirm-the-oldest-request rule); a poll that still shows the payment
+   * itself means the refund is not through yet — ask again next tick.
+   */
+  private async pollRequestedRefunds(): Promise<number> {
+    if (!this.provider.isConfigured()) {
+      return 0;
+    }
+
+    const cutoff = new Date(this.clock.now().getTime() - POLL_GRACE_MINUTES * 60_000);
+    const waiting = await this.paymentRepository.findWithRequestedRefundsOlderThan(
+      cutoff,
+      BATCH_SIZE,
+    );
+    let applied = 0;
+
+    for (const payment of waiting) {
+      try {
+        const event = await this.provider.fetchStatus(payment.id);
+        if (
+          !event ||
+          (event.outcome !== PaymentOutcome.REFUNDED &&
+            event.outcome !== PaymentOutcome.PARTIALLY_REFUNDED)
+        ) {
+          continue;
+        }
+
+        const result = await this.paymentService.applyEvent(event);
+        if (result.applied) {
+          applied += 1;
+          this.logger.warn(
+            {
+              event: 'payment.reconcile.refund_recovered',
+              paymentId: payment.id,
+              orderId: payment.orderId,
+            },
+            'Reconcile confirmed a refund the callback never delivered',
+          );
+        }
+      } catch (err) {
+        this.logger.error(
+          { event: 'payment.reconcile.refund_poll_failed', paymentId: payment.id, err },
+          'Could not reconcile a requested refund',
         );
       }
     }

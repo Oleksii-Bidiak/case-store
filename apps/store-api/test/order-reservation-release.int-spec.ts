@@ -97,6 +97,7 @@ describe('ORDER_RESERVATION_EXPIRY=release — stock under concurrent writes (in
     // Scoped to THIS test's rows — never an unset id (Prisma drops `undefined`).
     if (!prisma) return;
     if (userId) {
+      await prisma.orderMoneyEntry.deleteMany({ where: { order: { userId } } });
       await prisma.payment.deleteMany({ where: { order: { userId } } });
       await prisma.orderStatusHistory.deleteMany({ where: { order: { userId } } });
       await prisma.orderItem.deleteMany({ where: { order: { userId } } });
@@ -152,7 +153,8 @@ describe('ORDER_RESERVATION_EXPIRY=release — stock under concurrent writes (in
     settledAt: NOW(),
     failureCode: null,
     failureMessage: null,
-    paymentStatusChange: { from: PaymentStatus.PENDING, to: PaymentStatus.PAID },
+    // R2 A2: a success is a ledger receipt; recompute derives PAID from it.
+    receipt: { amountKop: 30_000, occurredAt: NOW() },
     paidAt: NOW(),
     clearReservation: true,
     stockHold,
@@ -286,6 +288,7 @@ describe('ORDER_RESERVATION_EXPIRY=release — stock under concurrent writes (in
       expect(final.restockedAt).toBeNull();
       expect(await stockNow()).toBe(INITIAL_STOCK - ORDERED_QTY);
 
+      await prisma.orderMoneyEntry.deleteMany({ where: { orderId } });
       await prisma.payment.deleteMany({ where: { orderId } });
       await prisma.orderStatusHistory.deleteMany({ where: { orderId } });
       await prisma.orderItem.deleteMany({ where: { orderId } });

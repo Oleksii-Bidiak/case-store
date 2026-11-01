@@ -232,6 +232,51 @@ describe('LiqPayAdapter', () => {
       expect(event?.providerPaymentId).toBe('');
     });
 
+    // TASK-1500 (R2 A2): two partial refunds of one payment are two `reversed`
+    // callbacks with the same (payment, status, provider id) — the dedupe key is
+    // what keeps the second from being swallowed as a retry of the first.
+    describe('dedupeKey', () => {
+      const reversed = (extra: Record<string, unknown>) => ({
+        order_id: 'pay-1',
+        status: 'reversed',
+        payment_id: 987654,
+        currency: 'UAH',
+        ...extra,
+      });
+
+      it('is "" for every status but reversed', async () => {
+        const event = await buildAdapter().parseCallback(
+          signedCallback({ order_id: 'pay-1', status: 'success', payment_id: 1, amount: 10 }),
+        );
+
+        expect(event?.dedupeKey).toBe('');
+      });
+
+      it('differs for two partial refunds of one payment', async () => {
+        const adapter = buildAdapter();
+        const first = await adapter.parseCallback(
+          signedCallback(reversed({ amount: 200, refund_date_last: 1761990000000 })),
+        );
+        const second = await adapter.parseCallback(
+          signedCallback(reversed({ amount: 300, refund_date_last: 1761993600000 })),
+        );
+
+        expect(first?.dedupeKey).toMatch(/^[0-9a-f]{64}$/);
+        expect(second?.dedupeKey).toMatch(/^[0-9a-f]{64}$/);
+        expect(first?.dedupeKey).not.toBe(second?.dedupeKey);
+      });
+
+      it('is the same for an exact repeat of one refund callback', async () => {
+        const adapter = buildAdapter();
+        const body = reversed({ amount: 200, end_date: 1761990000000, ip: '1.2.3.4' });
+
+        const first = await adapter.parseCallback(signedCallback(body));
+        const repeat = await adapter.parseCallback(signedCallback({ ...body, ip: '5.6.7.8' }));
+
+        expect(repeat?.dedupeKey).toBe(first?.dedupeKey);
+      });
+    });
+
     it('keeps LiqPay error details verbatim for support', async () => {
       const event = await buildAdapter().parseCallback(
         signedCallback({

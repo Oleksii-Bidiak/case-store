@@ -47,36 +47,33 @@ describe('shop-order-ping (TASK-678)', () => {
     });
   });
 
+  // R2 A2 (TASK-2047): a success is a RECEIPT on the plan, not a hand-built
+  // payment-status move — the status is derived from the ledger afterwards.
   describe('confirmsPaymentOfLiveOrder', () => {
     const live = { status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING };
+    const receipt = { amountKop: 100_000, occurredAt: new Date('2026-11-01T10:00:00Z') };
 
-    it('is true for a PENDING → PAID move on a live order', () => {
-      expect(
-        confirmsPaymentOfLiveOrder({
-          expected: live,
-          paymentStatusChange: { from: PaymentStatus.PENDING, to: PaymentStatus.PAID },
-        }),
-      ).toBe(true);
+    it('is true for the first receipt on a live order', () => {
+      expect(confirmsPaymentOfLiveOrder({ expected: live, receipt })).toBe(true);
     });
 
-    it('is true for FAILED → PAID (a second card worked)', () => {
-      expect(
-        confirmsPaymentOfLiveOrder({
-          expected: { status: OrderStatus.PENDING, paymentStatus: PaymentStatus.FAILED },
-          paymentStatusChange: { from: PaymentStatus.FAILED, to: PaymentStatus.PAID },
-        }),
-      ).toBe(true);
-    });
+    it.each([PaymentStatus.FAILED, PaymentStatus.PARTIALLY_PAID])(
+      'is true for a receipt on a %s order (it was never announced)',
+      (paymentStatus) => {
+        expect(
+          confirmsPaymentOfLiveOrder({
+            expected: { status: OrderStatus.PENDING, paymentStatus },
+            receipt,
+          }),
+        ).toBe(true);
+      },
+    );
 
     it('is false for a success on a cancelled order (PAID_AFTER_CANCEL)', () => {
       expect(
         confirmsPaymentOfLiveOrder({
           expected: { status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PENDING },
-          paymentStatusChange: {
-            from: PaymentStatus.PENDING,
-            to: PaymentStatus.PAID,
-            note: OrderHistoryNote.PAID_AFTER_CANCEL,
-          },
+          receipt: { ...receipt, note: OrderHistoryNote.PAID_AFTER_CANCEL },
         }),
       ).toBe(false);
     });
@@ -85,34 +82,30 @@ describe('shop-order-ping (TASK-678)', () => {
       expect(
         confirmsPaymentOfLiveOrder({
           expected: { status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PENDING },
-          paymentStatusChange: { from: PaymentStatus.PENDING, to: PaymentStatus.PAID },
+          receipt,
         }),
       ).toBe(false);
       expect(
         confirmsPaymentOfLiveOrder({
           expected: live,
-          paymentStatusChange: {
-            from: PaymentStatus.PENDING,
-            to: PaymentStatus.PAID,
-            note: OrderHistoryNote.PAID_AFTER_CANCEL,
-          },
+          receipt: { ...receipt, note: OrderHistoryNote.PAID_AFTER_CANCEL },
         }),
       ).toBe(false);
     });
 
-    it.each([PaymentStatus.FAILED, PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_REFUNDED])(
-      'is false for a move to %s',
-      (to) => {
+    it.each([PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED])(
+      'is false for a second receipt on an order already %s — it was announced once',
+      (paymentStatus) => {
         expect(
           confirmsPaymentOfLiveOrder({
-            expected: { status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID },
-            paymentStatusChange: { from: PaymentStatus.PAID, to },
+            expected: { status: OrderStatus.CONFIRMED, paymentStatus },
+            receipt,
           }),
         ).toBe(false);
       },
     );
 
-    it('is false when the plan moves no payment status (a refusal, a superseded attempt)', () => {
+    it('is false when the plan brings no money (a failure, a refund, a refusal)', () => {
       expect(confirmsPaymentOfLiveOrder({ expected: live })).toBe(false);
     });
   });

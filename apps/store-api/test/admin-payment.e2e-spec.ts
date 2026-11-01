@@ -1,10 +1,23 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, ServiceUnavailableException, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerStorage } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
-import { PaymentAttemptStatus, Prisma, UserRole, type Payment } from '@prisma/client';
+import {
+  DeliveryMethod,
+  MoneyDirection,
+  MoneyEntryKind,
+  MoneyProviderState,
+  OrderStatus,
+  PaymentAttemptStatus,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+  UserRole,
+  type Payment,
+} from '@prisma/client';
 import request from 'supertest';
+import { createLedgerPrismaMock, type LedgerOrderState } from './ledger-prisma.mock';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
@@ -22,8 +35,9 @@ import { createPermissionRepositoryMock } from './permission-repository.mock';
  * `PrismaService` and the LiqPay adapter are doubles, so no request ever leaves
  * for LiqPay and the assertions are on what the adapter was ASKED to refund.
  *
- * The contract the admin dialog is written against: 202 means *requested* (the
- * payment changes only on the provider's callback), 403 without
+ * The contract the admin dialog is written against: 202 means *requested* — since
+ * R2 A2 a REQUESTED entry on the order ledger, counted at once and voided if
+ * LiqPay refuses, confirmed only by the provider's callback — 403 without
  * `payments:refund`, 409 when the attempt is not SUCCEEDED, 400 for an amount
  * over what is left after earlier refunds (TASK-1302), for zero, or for one that
  * is not a two-decimal string, 404 for an unknown attempt.
@@ -35,6 +49,7 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
   const ORDER_ID = 'order-e2e-371';
   const PAYMENT_ID = 'payment-e2e-371';
   const CHARGED = '1299.00';
+  const CHARGED_KOP = 129_900;
   // How a Prisma Decimal serialises it — no trailing zeros.
   const CHARGED_WIRE = new Prisma.Decimal(CHARGED).toString();
 
@@ -47,17 +62,38 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
     isSandbox: jest.fn().mockReturnValue(true),
   };
 
+  // R2 A2 (TASK-1500 / TASK-2047): a refund is a REQUESTED entry on the order
+  // ledger, written under the order lock before LiqPay is asked — an in-memory
+  // ledger stands in for the table, holding the attempt's receipt.
+  const orderRow: LedgerOrderState = {
+    id: ORDER_ID,
+    total: CHARGED,
+    status: OrderStatus.DELIVERED,
+    paymentStatus: PaymentStatus.PAID,
+    paymentMethod: PaymentMethod.ONLINE,
+    deliveryMethod: DeliveryMethod.NOVA_POSHTA,
+  };
+  const ledger = createLedgerPrismaMock(() => orderRow);
+
   const prismaServiceMock = {
     $connect: jest.fn(),
     $disconnect: jest.fn(),
-    $queryRaw: jest.fn().mockResolvedValue([]),
-    // PaymentRepository.reserveRefund / releaseRefund — 1 row = the reservation fit.
-    $executeRaw: jest.fn().mockResolvedValue(1),
+    ...ledger.prisma,
     user: { findUnique: jest.fn() },
     refreshToken: { findUnique: jest.fn() },
     auditLog: { create: jest.fn() },
-    payment: { findUnique: jest.fn(), findMany: jest.fn() },
+    payment: { findUnique: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
+    order: { findUniqueOrThrow: jest.fn(), update: jest.fn() },
+    orderStatusHistory: { create: jest.fn(), count: jest.fn() },
+    $transaction: jest.fn(),
   };
+
+  /** Put a ledger row in place, as an earlier write would have. */
+  const seedEntry = (data: Record<string, unknown>) =>
+    prismaServiceMock.orderMoneyEntry.create({ data: { orderId: ORDER_ID, ...data } });
+
+  const refundEntries = () =>
+    ledger.entries.filter((row) => row.kind === MoneyEntryKind.LIQPAY_REFUND);
 
   const makePayment = (overrides: Partial<Payment> = {}): Payment => ({
     id: PAYMENT_ID,
@@ -137,9 +173,26 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    ledger.reset();
     liqPayMock.refund.mockResolvedValue(undefined);
     prismaServiceMock.payment.findUnique.mockResolvedValue(makePayment());
-    prismaServiceMock.$executeRaw.mockResolvedValue(1);
+    prismaServiceMock.payment.findFirst.mockResolvedValue({
+      status: PaymentAttemptStatus.SUCCEEDED,
+    });
+    prismaServiceMock.order.findUniqueOrThrow.mockImplementation(async () => ({ ...orderRow }));
+    prismaServiceMock.order.update.mockResolvedValue({});
+    prismaServiceMock.orderStatusHistory.create.mockResolvedValue({});
+    prismaServiceMock.orderStatusHistory.count.mockResolvedValue(0);
+    prismaServiceMock.$transaction.mockImplementation(
+      (fn: (tx: typeof prismaServiceMock) => unknown) => fn(prismaServiceMock),
+    );
+    void seedEntry({
+      direction: MoneyDirection.IN,
+      kind: MoneyEntryKind.LIQPAY_PAYMENT,
+      amountKop: CHARGED_KOP,
+      paymentId: PAYMENT_ID,
+      providerRef: 'success',
+    });
   });
 
   describe('GET /api/admin/payments/orders/:orderId', () => {
@@ -177,13 +230,23 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
   });
 
   describe('POST /api/admin/payments/:paymentId/refund', () => {
-    it('202 for a partial amount — requested of LiqPay, nothing written', async () => {
+    it('202 for a partial amount — a REQUESTED ledger entry, then LiqPay is asked', async () => {
       await request(app.getHttpServer())
         .post(refundUrl)
         .set('Authorization', token(admin))
         .send({ amount: '499.50' })
         .expect(202, { data: { accepted: true } });
 
+      expect(refundEntries()).toEqual([
+        expect.objectContaining({
+          direction: MoneyDirection.OUT,
+          amountKop: 49_950,
+          paymentId: PAYMENT_ID,
+          providerState: MoneyProviderState.REQUESTED,
+          actorId: admin.id,
+          voidedAt: null,
+        }),
+      ]);
       expect(liqPayMock.refund).toHaveBeenCalledTimes(1);
       expect(liqPayMock.refund).toHaveBeenCalledWith({ paymentId: PAYMENT_ID, amount: '499.50' });
     });
@@ -195,10 +258,21 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
         .send({})
         .expect(202);
 
-      expect(liqPayMock.refund).toHaveBeenCalledWith({
-        paymentId: PAYMENT_ID,
-        amount: CHARGED_WIRE,
-      });
+      expect(liqPayMock.refund).toHaveBeenCalledWith({ paymentId: PAYMENT_ID, amount: CHARGED });
+    });
+
+    it('voids the entry when LiqPay refuses — it never moved money', async () => {
+      liqPayMock.refund.mockRejectedValue(new ServiceUnavailableException('LiqPay said no'));
+
+      await request(app.getHttpServer())
+        .post(refundUrl)
+        .set('Authorization', token(admin))
+        .send({ amount: '100.00' })
+        .expect(503);
+
+      expect(refundEntries()).toEqual([
+        expect.objectContaining({ amountKop: 10_000, voidedAt: expect.any(Date) }),
+      ]);
     });
 
     it('403 for a session that may read the card but not refund', async () => {
@@ -209,6 +283,7 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
         .expect(403);
 
       expect(liqPayMock.refund).not.toHaveBeenCalled();
+      expect(refundEntries()).toEqual([]);
     });
 
     it('409 when the attempt is not SUCCEEDED', async () => {
@@ -233,6 +308,7 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
         .expect(400);
 
       expect(liqPayMock.refund).not.toHaveBeenCalled();
+      expect(refundEntries()).toEqual([]);
     });
 
     it('400 for an amount that is not a two-decimal string', async () => {
@@ -246,9 +322,14 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
     });
 
     it('400 with a stable code for more than is left after an earlier partial refund', async () => {
-      prismaServiceMock.payment.findUnique.mockResolvedValue(
-        makePayment({ refundedAmount: new Prisma.Decimal('800.00') }),
-      );
+      await seedEntry({
+        direction: MoneyDirection.OUT,
+        kind: MoneyEntryKind.LIQPAY_REFUND,
+        amountKop: 80_000,
+        paymentId: PAYMENT_ID,
+        providerRef: 'earlier',
+        providerState: MoneyProviderState.CONFIRMED,
+      });
 
       const res = await request(app.getHttpServer())
         .post(refundUrl)
@@ -257,14 +338,19 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
         .expect(400);
 
       expect(res.body.error).toBe('PAYMENT_REFUND_EXCEEDS_BALANCE');
-      expect(prismaServiceMock.$executeRaw).not.toHaveBeenCalled();
+      expect(refundEntries()).toHaveLength(1);
       expect(liqPayMock.refund).not.toHaveBeenCalled();
     });
 
     it('refunds only the remainder when the amount is omitted after a partial refund', async () => {
-      prismaServiceMock.payment.findUnique.mockResolvedValue(
-        makePayment({ refundedAmount: new Prisma.Decimal('800.00') }),
-      );
+      await seedEntry({
+        direction: MoneyDirection.OUT,
+        kind: MoneyEntryKind.LIQPAY_REFUND,
+        amountKop: 80_000,
+        paymentId: PAYMENT_ID,
+        providerRef: 'earlier',
+        providerState: MoneyProviderState.REQUESTED,
+      });
 
       await request(app.getHttpServer())
         .post(refundUrl)
@@ -272,14 +358,17 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
         .send({})
         .expect(202);
 
-      expect(liqPayMock.refund).toHaveBeenCalledWith({ paymentId: PAYMENT_ID, amount: '499' });
+      expect(liqPayMock.refund).toHaveBeenCalledWith({ paymentId: PAYMENT_ID, amount: '499.00' });
     });
 
-    it('400 when a simultaneous refund reserved the balance first', async () => {
-      prismaServiceMock.payment.findUnique
-        .mockResolvedValueOnce(makePayment())
-        .mockResolvedValueOnce(makePayment({ refundedAmount: new Prisma.Decimal('1000.00') }));
-      prismaServiceMock.$executeRaw.mockResolvedValue(0);
+    // TASK-951: the ceiling is the ORDER's money across every kind, not the
+    // attempt's alone — cash already handed back on this order counts too.
+    it('400 when payouts of another kind already used the order ceiling', async () => {
+      await seedEntry({
+        direction: MoneyDirection.OUT,
+        kind: MoneyEntryKind.CASH_REFUND,
+        amountKop: 100_000,
+      });
 
       const res = await request(app.getHttpServer())
         .post(refundUrl)
