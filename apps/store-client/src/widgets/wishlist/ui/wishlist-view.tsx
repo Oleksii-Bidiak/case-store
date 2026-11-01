@@ -256,7 +256,7 @@ export function WishlistView() {
         <div className="flex flex-col items-center gap-3 rounded-card bg-card px-5 py-10 text-center shadow-card">
           <span
             aria-hidden="true"
-            className="inline-flex size-16 items-center justify-center rounded-pad bg-muted text-badge"
+            className="inline-flex size-16 items-center justify-center rounded-pad bg-muted text-sale"
           >
             <Heart className="size-7" strokeWidth={1.8} />
           </span>
