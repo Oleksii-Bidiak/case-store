@@ -822,7 +822,7 @@ describe("OrderDetailView — returns on the card (TASK-724)", () => {
 
     expect(
       await screen.findByRole("link", {
-        name: dict.returns.title("RET00001"),
+        name: `${dict.returns.heading} #RET00001`,
       }),
     ).toHaveAttribute("href", "/returns/ret00001-aaaa");
   });
@@ -837,6 +837,102 @@ describe("OrderDetailView — returns on the card (TASK-724)", () => {
     expect(
       screen.queryByRole("heading", { name: dict.orders.returnsForOrder }),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-1963 — «Оформити повернення» is an action on the card, and the status
+ * control's REFUNDED warning opens the same dialog (composed here: the two are
+ * separate features).
+ */
+describe("OrderDetailView — «Оформити повернення» (TASK-1963)", () => {
+  const WRITER = [
+    "orders:read",
+    "orders:write",
+    "returns:read",
+    "returns:write",
+  ];
+
+  function serve(status = "DELIVERED") {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: makeOrder(null, { status }) }),
+      ),
+      http.get("*/api/admin/orders/:orderId/returns", () =>
+        HttpResponse.json({ data: [] }),
+      ),
+      http.get("*/api/admin/orders/:orderId/allowed-transitions", () =>
+        HttpResponse.json({
+          data: {
+            current: status,
+            allowed: ["REFUNDED"],
+            updatedAt: "2026-06-01T10:00:00.000Z",
+          },
+        }),
+      ),
+    );
+  }
+
+  it("offers the action on a delivered order, even to a reader of orders", async () => {
+    serve();
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: ["orders:read", "returns:read", "returns:write"] },
+    });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.returns.createAction }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: dict.returns.createTitle("#ORDER-UU"),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("is not offered on an order that has not shipped", async () => {
+    serve("PROCESSING");
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: WRITER },
+    });
+
+    await screen.findByText(dict.orders.itemsHeading);
+    expect(
+      screen.queryByRole("button", { name: dict.returns.createAction }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the dialog from the REFUNDED warning without changing the status", async () => {
+    serve();
+    let statusWrites = 0;
+    server.use(
+      http.patch("*/api/admin/orders/:orderId/status", () => {
+        statusWrites += 1;
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: WRITER },
+    });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.orders.updateStatus }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Повернення коштів" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.orderStatus.refundNoReturnCreate,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: dict.returns.createTitle("#ORDER-UU"),
+      }),
+    ).toBeInTheDocument();
+    expect(statusWrites).toBe(0);
   });
 });
 

@@ -1,18 +1,56 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderStatus, ReturnStatus } from '@prisma/client';
+import {
+  OrderStatus,
+  ReturnChannel,
+  ReturnDecision,
+  ReturnRepairStep,
+  ReturnStatus,
+} from '@prisma/client';
 import { ReturnRepository } from './return.repository';
 import { OrderRepository } from '../order.repository';
 import { ShopNotifier } from '../../notification';
 import { ReturnEntity } from './entities';
-import { RESTOCK_ON_STATUS, canTransitionReturn } from './return-state-machine';
-import type { CreateReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
-import { refundExceedsOrderBalanceError, refundExceedsReturnedValueError } from './return.errors';
+import {
+  RESTOCK_ON_STATUS,
+  canTransitionReturn,
+  decisionPermitsTransition,
+  nextRepairStep,
+  repairAcceptsSteps,
+  repairStepRequiresResult,
+  returnStatusAfterDecision,
+} from './return-state-machine';
+import type {
+  AddRepairStepDto,
+  CreateReturnDto,
+  DecideReturnDto,
+  ResolveReturnDto,
+  ReturnListQueryDto,
+} from './dto';
+import {
+  repairNotInProgressError,
+  repairResultNotAllowedError,
+  repairResultRequiredError,
+  repairStepOutOfOrderError,
+  decisionLockedError,
+  refundRecordedError,
+  decisionReasonRequiredError,
+  decisionUnchangedError,
+  invalidReturnTransitionError,
+  returnQuantityExceededOnReopenError,
+  useDecisionEndpointError,
+  orderNotReturnableError,
+  refundExceedsOrderBalanceError,
+  refundExceedsReturnedValueError,
+  restockRequiresReceivedError,
+  returnAlreadyRestockedError,
+  returnItemNotInOrderError,
+  returnNotFoundError,
+  returnOrderNotFoundError,
+  returnQuantityExceededError,
+  returnStatusRequiredError,
+  returnUpdateEmptyError,
+} from './return.errors';
 import { centsToString, toCents } from '../../addon-service';
 import type { Paginated } from '../../common/pagination';
 import type {
@@ -48,6 +86,15 @@ const RETURNABLE_ORDER_STATUSES: ReadonlySet<OrderStatus> = new Set([
 const DEAD_RETURN_STATUSES: ReadonlySet<ReturnStatus> = new Set([ReturnStatus.REJECTED]);
 
 /**
+ * Statuses only a decision sets (TASK-1961, TASK-2044); PATCH refuses them with
+ * RETURN_USE_DECISION_ENDPOINT.
+ */
+const DECISION_STATUSES: ReadonlySet<ReturnStatus> = new Set([
+  ReturnStatus.APPROVED,
+  ReturnStatus.REJECTED,
+]);
+
+/**
  * ReturnService — the RMA minimum (TASK-340).
  *
  * Ukrainian law gives 14 days to return, and until now the system had no record
@@ -77,7 +124,7 @@ export class ReturnService {
     const order = await this.orderRepository.findById(orderId);
 
     if (!order || order.userId !== userId) {
-      throw new NotFoundException('Order not found');
+      throw returnOrderNotFoundError();
     }
 
     const assertClaimable = this.assertLinesAreReturnable(order, dto);
@@ -87,6 +134,8 @@ export class ReturnService {
         orderId,
         ...(dto.reason ? { reason: dto.reason } : {}),
         createdByUserId: userId,
+        ...(dto.requestedOutcome ? { requestedOutcome: dto.requestedOutcome } : {}),
+        channel: ReturnChannel.ACCOUNT,
         items: dto.items.map((item) => ({
           orderItemId: item.orderItemId,
           quantity: item.quantity,
@@ -118,6 +167,67 @@ export class ReturnService {
   }
 
   /**
+   * Open a return from the guest link (TASK-1965).
+   *
+   * `orderId` must already be proven by the order's access token —
+   * `OrderService.resolveGuestOrderId` is the only caller-side source of it. No
+   * ownership check follows: the token IS the ownership, and an account-owned
+   * order reached by its token (a phone order) is accepted on purpose.
+   *
+   * Otherwise the customer door: shipped-only, lines of this order, the locked
+   * cap over earlier returns, the shop's Telegram ping. Nobody is recorded as the
+   * author; the GUEST_LINK channel says where it came from.
+   */
+  async createGuestReturn(orderId: string, dto: CreateReturnDto): Promise<ReturnEntity> {
+    const order = await this.orderRepository.findById(orderId);
+
+    if (!order) {
+      throw returnOrderNotFoundError();
+    }
+
+    const assertClaimable = this.assertLinesAreReturnable(order, dto);
+
+    const created = await this.returnRepository.create(
+      {
+        orderId,
+        ...(dto.reason ? { reason: dto.reason } : {}),
+        createdByUserId: null,
+        ...(dto.requestedOutcome ? { requestedOutcome: dto.requestedOutcome } : {}),
+        channel: ReturnChannel.GUEST_LINK,
+        items: dto.items.map((item) => ({
+          orderItemId: item.orderItemId,
+          quantity: item.quantity,
+        })),
+      },
+      assertClaimable,
+      async (tx, inserted) => {
+        await this.shopNotifier.enqueueReturnRequested(
+          {
+            returnId: inserted.id,
+            orderId: inserted.orderId,
+            itemsCount: inserted.items.reduce((sum, item) => sum + item.quantity, 0),
+            reason: inserted.reason,
+          },
+          tx,
+        );
+      },
+    );
+
+    this.logger.info(
+      { event: 'return.requested', returnId: created.id, orderId, source: 'guest_link' },
+      'Return requested from the guest link',
+    );
+
+    return ReturnEntity.fromPrisma(created);
+  }
+
+  /** The returns on an order, for the holder of its access token (TASK-1965). */
+  async getGuestOrderReturns(orderId: string): Promise<ReturnEntity[]> {
+    const returns = await this.returnRepository.findByOrderId(orderId);
+    return returns.map((row) => ReturnEntity.fromPrisma(row));
+  }
+
+  /**
    * Admin — open a return on a customer's behalf (TASK-469).
    *
    * WHY A SECOND DOOR AND NOT A FLAG ON THE FIRST. The customer door is scoped by
@@ -146,7 +256,7 @@ export class ReturnService {
     const order = await this.orderRepository.findById(orderId);
 
     if (!order) {
-      throw new NotFoundException('Order not found');
+      throw returnOrderNotFoundError();
     }
 
     const assertClaimable = this.assertLinesAreReturnable(order, dto);
@@ -156,6 +266,9 @@ export class ReturnService {
         orderId,
         ...(dto.reason ? { reason: dto.reason } : {}),
         createdByUserId: actorUserId,
+        // TASK-1963: what the customer told the operator, written down by staff.
+        ...(dto.requestedOutcome ? { requestedOutcome: dto.requestedOutcome } : {}),
+        channel: ReturnChannel.OPERATOR,
         items: dto.items.map((item) => ({
           orderItemId: item.orderItemId,
           quantity: item.quantity,
@@ -188,7 +301,7 @@ export class ReturnService {
    * caller at all.
    */
   async adminGetOrderReturns(orderId: string): Promise<ReturnEntity[]> {
-    const returns = await this.returnRepository.findByOrderId(orderId);
+    const returns = await this.returnRepository.findByOrderId(orderId, { admin: true });
     return returns.map((row) => ReturnEntity.fromPrisma(row, { includeInternal: true }));
   }
 
@@ -197,7 +310,7 @@ export class ReturnService {
     const order = await this.orderRepository.findById(orderId);
 
     if (!order || order.userId !== userId) {
-      throw new NotFoundException('Order not found');
+      throw returnOrderNotFoundError();
     }
 
     const returns = await this.returnRepository.findByOrderId(orderId);
@@ -233,7 +346,7 @@ export class ReturnService {
     const row = await this.returnRepository.findById(returnId);
 
     if (!row) {
-      throw new NotFoundException('Return not found');
+      throw returnNotFoundError();
     }
 
     return ReturnEntity.fromPrisma(row, { includeInternal: true });
@@ -256,32 +369,47 @@ export class ReturnService {
    *   {@link assertRefundWithinCeilings}.
    */
   async resolveReturn(returnId: string, dto: ResolveReturnDto): Promise<ReturnEntity> {
+    if (dto.status === undefined) {
+      return this.updateReturnNotes(returnId, dto);
+    }
+
+    // TASK-1961/2044: approving and refusing are decisions, with an author and a
+    // reason the customer sees. Setting them here would bypass both.
+    if (DECISION_STATUSES.has(dto.status)) {
+      throw useDecisionEndpointError(dto.status);
+    }
+
     const existing = await this.returnRepository.findById(returnId);
 
     if (!existing) {
-      throw new NotFoundException('Return not found');
+      throw returnNotFoundError();
     }
 
-    if (!canTransitionReturn(existing.status, dto.status)) {
-      throw new ConflictException(`A return cannot move from ${existing.status} to ${dto.status}`);
+    if (
+      !canTransitionReturn(existing.status, dto.status) ||
+      !decisionPermitsTransition(dto.status, existing.decision)
+    ) {
+      throw invalidReturnTransitionError(existing.status, dto.status);
     }
 
     if (dto.restock && dto.status !== RESTOCK_ON_STATUS) {
-      throw new BadRequestException(
-        `Stock is credited back when a return is marked ${RESTOCK_ON_STATUS}, not ${dto.status}`,
-      );
+      throw restockRequiresReceivedError(RESTOCK_ON_STATUS, dto.status);
     }
 
     // Belt-and-braces in front of the repository's authoritative guard: it gives
     // the operator a clean 409 instead of one raised from inside a transaction.
     if (dto.restock && existing.restockedAt !== null) {
-      throw new ConflictException(
-        'These returned goods have already been credited back to inventory',
-      );
+      throw returnAlreadyRestockedError();
     }
 
     const resolved = await this.returnRepository.resolve(
-      returnId,
+      // TASK-1961/2044: the write is conditional on exactly what was validated.
+      {
+        id: existing.id,
+        orderId: existing.orderId,
+        status: existing.status,
+        decision: existing.decision,
+      },
       {
         status: dto.status,
         ...(dto.operatorNotes !== undefined ? { operatorNotes: dto.operatorNotes } : {}),
@@ -315,6 +443,211 @@ export class ReturnService {
   }
 
   /**
+   * Admin — the operator's notes alone, on a return of ANY status (a PATCH
+   * without a status). Approving and refusing moved to POST /decision
+   * (TASK-1961/2044), so a REQUESTED or REJECTED return has no status step for
+   * the notes to ride on. No transition: `resolvedAt` and the decision stay.
+   *
+   * @throws BadRequestException RETURN_UPDATE_EMPTY (no notes either),
+   *   RETURN_STATUS_REQUIRED (refundedAmount or restock without a status)
+   * @throws NotFoundException RETURN_NOT_FOUND
+   */
+  private async updateReturnNotes(returnId: string, dto: ResolveReturnDto): Promise<ReturnEntity> {
+    // Money and stock are steps of a transition — never a side effect of a note.
+    if (dto.refundedAmount !== undefined || dto.restock !== undefined) {
+      throw returnStatusRequiredError();
+    }
+    if (dto.operatorNotes === undefined) {
+      throw returnUpdateEmptyError();
+    }
+
+    const existing = await this.returnRepository.findById(returnId);
+
+    if (!existing) {
+      throw returnNotFoundError();
+    }
+
+    const updated = await this.returnRepository.updateNotes(existing.id, dto.operatorNotes);
+
+    this.logger.info(
+      {
+        event: 'return.notesUpdated',
+        returnId,
+        orderId: existing.orderId,
+        status: existing.status,
+      },
+      'Return notes updated',
+    );
+
+    return ReturnEntity.fromPrisma(updated, { includeInternal: true });
+  }
+
+  /**
+   * Admin — the operator's decision on a return (TASK-1961, TASK-2044; B-12
+   * theme 1.1): refund, replacement, repair or refusal, each with an author, a
+   * date and a reason the customer sees.
+   *
+   * - The reason is required on a refusal and on any CHANGE of a decision
+   *   already made (backfilled legacy decisions included): a silent change is
+   *   exactly what B-12 ruled out.
+   * - A refunded return is final; an identical decision (same reason) is refused
+   *   so the history holds only real changes.
+   * - The status follows from the decision ({@link returnStatusAfterDecision}).
+   *   Re-opening a refusal claims its units back, so the "no more than was
+   *   bought" cap is re-run under the order lock against the OTHER returns.
+   *
+   * @throws NotFoundException RETURN_NOT_FOUND
+   * @throws BadRequestException RETURN_DECISION_REASON_REQUIRED
+   * @throws ConflictException RETURN_DECISION_LOCKED, RETURN_REFUND_RECORDED,
+   *   RETURN_DECISION_UNCHANGED, RETURN_TRANSITION_INVALID, RETURN_QUANTITY_EXCEEDED
+   */
+  async decideReturn(
+    returnId: string,
+    actorId: string,
+    dto: DecideReturnDto,
+  ): Promise<ReturnEntity> {
+    const existing = await this.returnRepository.findById(returnId);
+
+    if (!existing) {
+      throw returnNotFoundError();
+    }
+
+    if (existing.status === ReturnStatus.REFUNDED) {
+      throw decisionLockedError();
+    }
+
+    // A recorded amount counts against the order's refund balance until R2's
+    // payout ledger replaces it; only a refund (or a refusal, which the state
+    // machine refuses on RECEIVED anyway) may stand on top of it.
+    if (
+      existing.refundedAmount !== null &&
+      (dto.decision === ReturnDecision.REPLACEMENT || dto.decision === ReturnDecision.REPAIR)
+    ) {
+      throw refundRecordedError(dto.decision);
+    }
+
+    const reason = dto.reason ?? null;
+    const needsReason = dto.decision === ReturnDecision.REJECT || existing.decision !== null;
+    if (needsReason && reason === null) {
+      throw decisionReasonRequiredError();
+    }
+
+    if (dto.decision === existing.decision && reason === existing.decisionReason) {
+      throw decisionUnchangedError(dto.decision);
+    }
+
+    const status = returnStatusAfterDecision(existing.status, dto.decision);
+    if (status === null) {
+      throw invalidReturnTransitionError(existing.status, ReturnStatus.REJECTED);
+    }
+
+    const reclaimsUnits =
+      existing.status === ReturnStatus.REJECTED && status !== ReturnStatus.REJECTED;
+
+    const decided = await this.returnRepository.decide(
+      {
+        id: existing.id,
+        orderId: existing.orderId,
+        status: existing.status,
+        decision: existing.decision,
+      },
+      {
+        status,
+        decision: dto.decision,
+        decisionReason: reason,
+        decidedById: actorId,
+        decidedAt: new Date(),
+      },
+      reclaimsUnits ? { assertClaimable: assertReturnReclaimable(existing) } : {},
+    );
+
+    this.logger.info(
+      {
+        event: 'return.decided',
+        returnId,
+        orderId: existing.orderId,
+        actorId,
+        from: existing.decision,
+        to: dto.decision,
+        status,
+      },
+      'Return decided',
+    );
+
+    return ReturnEntity.fromPrisma(decided, { includeInternal: true });
+  }
+
+  /**
+   * Admin — record one step of a repair (TASK-2045; B-12 theme 1.7), with its
+   * author, a time and, depending on the step, the service centre, the waybill
+   * and the outcome.
+   *
+   * - The outcome belongs to RETURNED_FROM_SERVICE alone: required there,
+   *   refused anywhere else.
+   * - Steps are recorded only under a REPAIR decision on an open return, in
+   *   {@link REPAIR_STEP_ORDER}, each once.
+   * - UNREPAIRABLE does not change the decision. The operator changes it through
+   *   {@link decideReturn}, with a reason; from then on steps are refused.
+   *
+   * @throws BadRequestException RETURN_REPAIR_RESULT_REQUIRED,
+   *   RETURN_REPAIR_RESULT_NOT_ALLOWED
+   * @throws NotFoundException RETURN_NOT_FOUND
+   * @throws ConflictException RETURN_REPAIR_STEP_INVALID
+   */
+  async addRepairStep(
+    returnId: string,
+    actorId: string,
+    dto: AddRepairStepDto,
+  ): Promise<ReturnEntity> {
+    const result = dto.result ?? null;
+    if (repairStepRequiresResult(dto.step) && result === null) {
+      throw repairResultRequiredError(dto.step);
+    }
+    if (!repairStepRequiresResult(dto.step) && result !== null) {
+      throw repairResultNotAllowedError(ReturnRepairStep.RETURNED_FROM_SERVICE, dto.step);
+    }
+
+    const existing = await this.returnRepository.findById(returnId);
+
+    if (!existing) {
+      throw returnNotFoundError();
+    }
+
+    if (!repairAcceptsSteps(existing.status, existing.decision)) {
+      throw repairNotInProgressError();
+    }
+
+    const expected = nextRepairStep((existing.repairEvents ?? []).map((event) => event.step));
+    if (dto.step !== expected) {
+      throw repairStepOutOfOrderError(expected, dto.step);
+    }
+
+    const recorded = await this.returnRepository.addRepairStep(returnId, {
+      step: dto.step,
+      result,
+      destination: dto.destination ?? null,
+      ttn: dto.ttn ?? null,
+      note: dto.note ?? null,
+      actorId,
+      createdAt: new Date(),
+    });
+
+    this.logger.info(
+      {
+        event: 'return.repairStep',
+        returnId,
+        orderId: existing.orderId,
+        actorId,
+        step: dto.step,
+        result,
+      },
+      'Repair step recorded',
+    );
+
+    return ReturnEntity.fromPrisma(recorded, { includeInternal: true });
+  }
+
+  /**
    * The three rules a return has to satisfy whichever door it came through
    * (TASK-469): the goods must have travelled, every line must belong to this
    * order, and the units asked for plus those already claimed must not exceed
@@ -338,15 +671,13 @@ export class ReturnService {
     dto: CreateReturnDto,
   ): AssertReturnClaimable {
     if (!RETURNABLE_ORDER_STATUSES.has(order.status)) {
-      throw new BadRequestException(
-        'Only shipped or delivered orders can be returned — cancel the order instead',
-      );
+      throw orderNotReturnableError();
     }
 
     const orderedByLineId = new Map(order.items.map((item) => [item.id, item.quantity]));
     for (const line of dto.items) {
       if (!orderedByLineId.has(line.orderItemId)) {
-        throw new BadRequestException('That item is not part of this order');
+        throw returnItemNotInOrderError();
       }
     }
 
@@ -363,27 +694,40 @@ export class ReturnService {
     // items and credits stock for each, so the shop invents a unit it never got
     // back and then oversells it. Reachable from the customer door and from the
     // operator one, since both call this helper.
-    const requestedByLineId = new Map<string, number>();
-    for (const line of dto.items) {
-      requestedByLineId.set(
-        line.orderItemId,
-        (requestedByLineId.get(line.orderItemId) ?? 0) + line.quantity,
-      );
-    }
-
-    return (ledger) => {
-      const alreadyClaimed = countClaimedUnits(ledger);
-      for (const [orderItemId, requested] of requestedByLineId) {
-        const ordered = orderedByLineId.get(orderItemId) as number;
-        const claimed = alreadyClaimed.get(orderItemId) ?? 0;
-        if (claimed + requested > ordered) {
-          throw new BadRequestException(
-            `Cannot return ${requested} of that item — ${ordered - claimed} remain returnable`,
-          );
-        }
-      }
-    };
+    return claimCap(orderedByLineId, sumByLine(dto.items), returnQuantityExceededError);
   }
+}
+
+/** Units per order line, summed over lines that may repeat an `orderItemId`. */
+function sumByLine(lines: Array<{ orderItemId: string; quantity: number }>): Map<string, number> {
+  const sums = new Map<string, number>();
+  for (const line of lines) {
+    sums.set(line.orderItemId, (sums.get(line.orderItemId) ?? 0) + line.quantity);
+  }
+  return sums;
+}
+
+/**
+ * The "no more than was bought" cap as a closure over a ledger (TASK-784):
+ * units already claimed by the ledger's live returns plus `requested` must not
+ * exceed `ordered`, per line. Shared by a new request (400) and a re-opened
+ * refusal (409, TASK-1961/2044) so the two can never drift apart.
+ */
+function claimCap(
+  ordered: ReadonlyMap<string, number>,
+  requested: ReadonlyMap<string, number>,
+  exceeded: (requested: number, remaining: number) => Error,
+): AssertReturnClaimable {
+  return (ledger) => {
+    const alreadyClaimed = countClaimedUnits(ledger);
+    for (const [orderItemId, units] of requested) {
+      const bought = ordered.get(orderItemId) as number;
+      const claimed = alreadyClaimed.get(orderItemId) ?? 0;
+      if (claimed + units > bought) {
+        throw exceeded(units, bought - claimed);
+      }
+    }
+  };
 }
 
 /**
@@ -404,6 +748,19 @@ function countClaimedUnits(ledger: ReturnClaimRow[]): Map<string, number> {
   }
 
   return claimed;
+}
+
+/**
+ * The cap for re-opening a refused return (TASK-1961, TASK-2044): its own units
+ * plus those the order's OTHER live returns hold must not exceed what was bought.
+ * Run by the repository against the ledger it reads under the order lock.
+ */
+function assertReturnReclaimable(existing: ReturnWithItems): AssertReturnClaimable {
+  // The admin read joins each line's order line, so what was bought is on hand.
+  const ordered = new Map(
+    existing.items.map((item) => [item.orderItemId, item.orderItem?.quantity ?? 0]),
+  );
+  return claimCap(ordered, sumByLine(existing.items), returnQuantityExceededOnReopenError);
 }
 
 /**

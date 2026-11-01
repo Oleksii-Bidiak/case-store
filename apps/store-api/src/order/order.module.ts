@@ -23,6 +23,9 @@ import { AdminOrderController } from './admin-order.controller';
 import { ReturnRepository } from './returns/return.repository';
 import { ReturnService } from './returns/return.service';
 import { ReturnController } from './returns/return.controller';
+// TASK-1965: the guest's returns, by the order's access token — resolved here,
+// in OrderService, like every other guest-link route.
+import { GuestReturnController } from './returns/guest-return.controller';
 import {
   AdminOrderReturnController,
   AdminReturnController,
@@ -56,6 +59,7 @@ import {
     GuestOrderNotificationController,
     AdminOrderController,
     ReturnController,
+    GuestReturnController,
     AdminReturnController,
     // TASK-469: the admin door onto a return, hung off the ORDER path rather than
     // the returns queue — a return the shop opens is opened against an order.

@@ -49,6 +49,13 @@ function makeReturn(overrides: Partial<ReturnEntity> = {}): ReturnEntity {
     resolvedAt: null,
     restockedAt: null,
     refundedAmount: null,
+    requestedOutcome: "REFUND",
+    channel: "ACCOUNT",
+    // An approved return under a REFUND decision unless a test says otherwise.
+    decision: "REFUND",
+    decisionReason: null,
+    decidedAt: "2026-07-02T10:00:00.000Z",
+    decisionLegacy: false,
     // Two units at 499.00: the refund ceiling (TASK-785) is 998.00, so a 499.00
     // refund is the partial one the money tests below send.
     items: [
@@ -79,89 +86,105 @@ function stubResolve(respond: () => Response | Promise<Response>) {
 const nextStep = () => screen.getByRole("region", { name: d.resolveHeading });
 
 describe("ReturnResolveForm — one «Наступний крок» per status (TASK-1056)", () => {
-  it("offers approve or reject on a fresh request — no amount, no restock", () => {
+  /**
+   * TASK-2044 — APPROVED and REJECTED come from a decision
+   * (`features/return-decide`), never from this card: the PATCH answers them
+   * with RETURN_USE_DECISION_ENDPOINT.
+   */
+  it("offers no step on a fresh request — the decision comes first", () => {
     renderAsWriter(
-      <ReturnResolveForm rma={makeReturn({ status: "REQUESTED" })} />,
+      <ReturnResolveForm
+        rma={makeReturn({ status: "REQUESTED", decision: null })}
+      />,
     );
 
     const card = within(nextStep());
-    expect(card.getByRole("button", { name: d.approve })).toBeInTheDocument();
-    expect(card.getByRole("button", { name: d.reject })).toBeInTheDocument();
+    expect(card.getByText(d.nextRequested)).toBeInTheDocument();
+    expect(card.queryByRole("button")).not.toBeInTheDocument();
     expect(
       screen.queryByLabelText(d.resolveRefundedAmount),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
-  it("approves with one click", async () => {
-    const bodies = stubResolve(() =>
-      HttpResponse.json({ data: makeReturn({ status: "APPROVED" }) }),
-    );
-    renderAsWriter(
-      <ReturnResolveForm rma={makeReturn({ status: "REQUESTED" })} />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: d.approve }));
-
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0].status).toBe("APPROVED");
-    expect(bodies[0]).not.toHaveProperty("restock");
-    await waitFor(() =>
-      expect(toastSuccess).toHaveBeenCalledWith(d.resolveSuccess),
-    );
-  });
-
-  it("asks before rejecting, and sends nothing on «Скасувати»", async () => {
-    const bodies = stubResolve(() =>
-      HttpResponse.json({ data: makeReturn({ status: "REJECTED" }) }),
-    );
-    renderAsWriter(
-      <ReturnResolveForm rma={makeReturn({ status: "REQUESTED" })} />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: d.reject }));
-    const dialog = await screen.findByRole("alertdialog");
-    expect(within(dialog).getByText(d.rejectConfirmTitle)).toBeInTheDocument();
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: dict.common.cancel }),
-    );
-    expect(bodies).toHaveLength(0);
-
-    await userEvent.click(screen.getByRole("button", { name: d.reject }));
-    await userEvent.click(
-      within(await screen.findByRole("alertdialog")).getByRole("button", {
-        name: d.rejectConfirm,
-      }),
-    );
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0].status).toBe("REJECTED");
-  });
-
-  it("still allows a refusal after approval — goods can come back damaged", () => {
-    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
-    expect(
-      within(nextStep()).getByRole("button", { name: d.reject }),
-    ).toBeInTheDocument();
-  });
-
-  it("offers no refusal once the goods are back (the state machine)", () => {
-    renderAsWriter(
-      <ReturnResolveForm rma={makeReturn({ status: "RECEIVED" })} />,
-    );
-    expect(
-      screen.queryByRole("button", { name: d.reject }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("offers no control at all on a closed return", () => {
-    for (const status of ["REFUNDED", "REJECTED"] as const) {
+  it("never sends APPROVED or REJECTED from any status", async () => {
+    const bodies = stubResolve(() => HttpResponse.json({ data: makeReturn() }));
+    for (const status of [
+      "REQUESTED",
+      "APPROVED",
+      "RECEIVED",
+      "REJECTED",
+    ] as const) {
       const { unmount } = renderAsWriter(
         <ReturnResolveForm rma={makeReturn({ status })} />,
       );
-      expect(screen.getByText(d.resolveNoTransitions)).toBeInTheDocument();
-      expect(within(nextStep()).queryByRole("button")).not.toBeInTheDocument();
+      for (const button of within(nextStep()).queryAllByRole("button")) {
+        expect(button).not.toHaveTextContent(/Схвалити|Відхилити/);
+      }
       unmount();
     }
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("offers «Товар отримано» after a decision of any kind", () => {
+    for (const decision of ["REFUND", "REPLACEMENT", "REPAIR"] as const) {
+      const { unmount } = renderAsWriter(
+        <ReturnResolveForm rma={makeReturn({ decision })} />,
+      );
+      expect(
+        within(nextStep()).getByRole("button", { name: d.markReceived }),
+      ).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("offers «Гроші повернуто» only under a REFUND decision", () => {
+    renderAsWriter(
+      <ReturnResolveForm
+        rma={makeReturn({ status: "RECEIVED", decision: "REPAIR" })}
+      />,
+    );
+
+    expect(
+      within(nextStep()).getByText(d.nextReceivedNoRefund(d.decisionREPAIR)),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: d.markRefunded }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(d.resolveRefundedAmount, { exact: false }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("points a refused request at the decision instead of offering a step", () => {
+    renderAsWriter(
+      <ReturnResolveForm
+        rma={makeReturn({ status: "REJECTED", decision: "REJECT" })}
+      />,
+    );
+    expect(screen.getByText(d.nextRejected)).toBeInTheDocument();
+    expect(within(nextStep()).queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("offers no control at all once the money went back", () => {
+    renderAsWriter(
+      <ReturnResolveForm rma={makeReturn({ status: "REFUNDED" })} />,
+    );
+    expect(screen.getByText(d.resolveNoTransitions)).toBeInTheDocument();
+    expect(within(nextStep()).queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("says «Рішення збережено» after a step", async () => {
+    stubResolve(() =>
+      HttpResponse.json({ data: makeReturn({ status: "RECEIVED" }) }),
+    );
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: d.markReceived }));
+
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(d.resolveSuccess),
+    );
   });
 });
 
@@ -458,6 +481,27 @@ describe("ReturnResolveForm — 400 texts (TASK-956)", () => {
       expect(toastError).toHaveBeenCalledWith(d.resolveConflict),
     );
   });
+
+  it("names a coded 409 instead of the generic «повернення змінилося» (TASK-1966)", async () => {
+    stubResolve(() =>
+      HttpResponse.json(
+        {
+          error: "RETURN_ALREADY_RESTOCKED",
+          message:
+            "These returned goods have already been credited back to inventory",
+          statusCode: 409,
+        },
+        { status: 409 },
+      ),
+    );
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: d.markReceived }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(d.resolveRestockAlreadyDone),
+    );
+  });
 });
 
 describe("ReturnResolveForm — operator notes, shown once (TASK-794, TASK-1056)", () => {
@@ -514,17 +558,155 @@ describe("ReturnResolveForm — operator notes, shown once (TASK-794, TASK-1056)
     );
     expect(bodies).toHaveLength(0);
   });
+});
 
-  it("offers no «Змінити» on a closed return — the note can no longer be saved", () => {
+/**
+ * Since approve/reject moved to POST /decision (TASK-1961/2044), a REQUESTED or
+ * REJECTED return has no step for the notes to ride on — they are saved on
+ * their own, by a notes-only PATCH (no status), on every status.
+ */
+describe("ReturnResolveForm — «Зберегти примітки» on every status", () => {
+  const editNotes = async (text: string) => {
+    await userEvent.click(screen.getByRole("button", { name: d.notesEdit }));
+    const field = screen.getByLabelText(d.operatorNotes);
+    await userEvent.clear(field);
+    if (text) await userEvent.type(field, text);
+  };
+
+  it.each([
+    ["REQUESTED", null],
+    ["APPROVED", "REFUND"],
+    ["RECEIVED", "REPAIR"],
+    ["REJECTED", "REJECT"],
+    ["REFUNDED", "REFUND"],
+  ] as const)(
+    "saves the notes alone on a %s return — no status in the body",
+    async (status, decision) => {
+      const bodies = stubResolve(() =>
+        HttpResponse.json({
+          data: makeReturn({ status, decision, operatorNotes: "Дзвонив" }),
+        }),
+      );
+      renderAsWriter(
+        <ReturnResolveForm rma={makeReturn({ status, decision })} />,
+      );
+
+      await editNotes("  Дзвонив ");
+      await userEvent.click(screen.getByRole("button", { name: d.notesSave }));
+
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toEqual({ operatorNotes: "Дзвонив" });
+      await waitFor(() =>
+        expect(toastSuccess).toHaveBeenCalledWith(d.notesSaved),
+      );
+      // The editor closes once the notes are saved.
+      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    },
+  );
+
+  it("clears the notes with null when the field is emptied", async () => {
+    const bodies = stubResolve(() =>
+      HttpResponse.json({ data: makeReturn({ status: "REJECTED" }) }),
+    );
     renderAsWriter(
       <ReturnResolveForm
-        rma={makeReturn({ status: "REFUNDED", operatorNotes: "Готово" })}
+        rma={makeReturn({
+          status: "REJECTED",
+          decision: "REJECT",
+          operatorNotes: "Стара нотатка",
+        })}
       />,
     );
-    expect(screen.getByText("Готово")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: d.notesEdit }),
-    ).not.toBeInTheDocument();
+
+    await editNotes("");
+    await userEvent.click(screen.getByRole("button", { name: d.notesSave }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ operatorNotes: null });
+  });
+
+  it("keeps an over-long note out of the request and says why", async () => {
+    const bodies = stubResolve(() => HttpResponse.json({ data: makeReturn() }));
+    renderAsWriter(
+      <ReturnResolveForm
+        rma={makeReturn({ status: "REQUESTED", decision: null })}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: d.notesEdit }));
+    fireEvent.change(screen.getByLabelText(d.operatorNotes), {
+      target: { value: "н".repeat(2001) },
+    });
+    await userEvent.click(screen.getByRole("button", { name: d.notesSave }));
+
+    expect(await screen.findByText(d.operatorNotesTooLong)).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("puts the server's refusal of the notes under the field", async () => {
+    stubResolve(() =>
+      HttpResponse.json(
+        {
+          error: "Bad Request",
+          message: [
+            "operatorNotes must be shorter than or equal to 2000 characters",
+          ],
+          statusCode: 400,
+        },
+        { status: 400 },
+      ),
+    );
+    renderAsWriter(
+      <ReturnResolveForm
+        rma={makeReturn({ status: "REQUESTED", decision: null })}
+      />,
+    );
+
+    await editNotes("x");
+    await userEvent.click(screen.getByRole("button", { name: d.notesSave }));
+
+    expect(await screen.findByText(d.operatorNotesTooLong)).toBeInTheDocument();
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("says the notes were not saved when the server fails", async () => {
+    stubResolve(() => HttpResponse.json({}, { status: 500 }));
+    renderAsWriter(
+      <ReturnResolveForm
+        rma={makeReturn({ status: "REQUESTED", decision: null })}
+      />,
+    );
+
+    await editNotes("x");
+    await userEvent.click(screen.getByRole("button", { name: d.notesSave }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(d.notesSaveFailed),
+    );
+    // The text survives the failure, so a retry needs no retyping.
+    expect(screen.getByLabelText(d.operatorNotes)).toHaveValue("x");
+  });
+
+  it("spins and blocks a second click while the notes are saving", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const bodies = stubResolve(async () => {
+      await gate;
+      return HttpResponse.json({ data: makeReturn() });
+    });
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
+
+    await editNotes("x");
+    await userEvent.click(screen.getByRole("button", { name: d.notesSave }));
+
+    const saving = await screen.findByRole("button", { name: d.saving });
+    expect(saving).toBeDisabled();
+    // The step's action waits too — one PATCH at a time.
+    expect(screen.getByRole("button", { name: d.markReceived })).toBeDisabled();
+    release();
+    await waitFor(() => expect(bodies).toHaveLength(1));
   });
 });
 

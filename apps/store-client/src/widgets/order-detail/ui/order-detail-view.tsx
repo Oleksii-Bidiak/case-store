@@ -12,6 +12,7 @@ import {
   useNow,
   type OrderEntity,
 } from "@/entities/order";
+import { OrderReturnHistory } from "@/entities/return";
 import { CancelOrderButton } from "@/features/cancel-order";
 import {
   OrderPaymentPanel,
@@ -222,6 +223,12 @@ function OrderDetailContent({
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
         <div className="flex min-w-0 flex-col gap-5 xl:flex-1">
           <OrderDetailItems items={order.items} />
+          {/* TASK-1962: what happened to each return request — renders
+              nothing for an order that never had one. */}
+          <OrderReturnHistory
+            orderId={order.id}
+            className={DETAIL_CARD_CLASS}
+          />
           <OrderDetailDelivery order={order} />
           {notes && <OrderDetailNotes notes={notes} />}
         </div>
@@ -259,7 +266,7 @@ function OrderDetailContent({
               )}
               {canReturn && (
                 <ReturnRequestButton
-                  orderId={order.id}
+                  source={{ kind: "account", orderId: order.id }}
                   orderNumber={`#${ref}`}
                   items={order.items}
                   className={ACTION_CLASS}

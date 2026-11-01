@@ -1,9 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { ReturnOutcome } from '@prisma/client';
 import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -48,6 +50,24 @@ export class CreateReturnDto {
   @IsString()
   @MaxLength(1000)
   reason?: string;
+
+  /*
+   * TASK-2044, TASK-1963: what the customer asks for. Optional — "I just want to
+   * send it back" is a valid request, and the shop decides either way. The same
+   * DTO serves the customer door and the operator door, where the operator
+   * writes down what the customer said on the phone.
+   */
+  @ApiProperty({
+    description:
+      'What the customer asks for: a refund, a replacement or a repair. Omit when they did ' +
+      'not say — the shop decides either way.',
+    enum: ReturnOutcome,
+    enumName: 'ReturnOutcome',
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(ReturnOutcome)
+  requestedOutcome?: ReturnOutcome;
 
   @ApiProperty({
     description: 'The lines coming back, with quantities',

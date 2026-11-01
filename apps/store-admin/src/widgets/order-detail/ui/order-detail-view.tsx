@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CopyIcon } from "lucide-react";
@@ -22,6 +22,9 @@ import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { OrderStatusSelect } from "@/features/order-status-update";
 import { PaymentStatusSelect } from "@/features/order-payment-update";
+// TASK-1963: «Оформити повернення» — composed here because the status control
+// (another feature) opens the same dialog from its REFUNDED warning.
+import { ReturnCreateAction } from "@/features/return-create";
 // TASK-484: "give the buyer a link to their own order" — a mutation with its own
 // one-shot state, so it lives in features, not here.
 import { OrderAccessLinkCard } from "@/features/order-access-link";
@@ -140,6 +143,9 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
   // fetch instant, never `Date.now()` in render (see `useNow`).
   const tick = useNow(MARK_TICK_MS);
   const marksNow = Math.max(dataUpdatedAt, tick ?? 0);
+  // TASK-1963: one «Оформити повернення» dialog, opened from its own button or
+  // from the status control's REFUNDED-without-a-return warning.
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
 
   const isNotFound = error?.response?.status === 404;
 
@@ -193,6 +199,14 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
   const more = moreActions.length ? (
     <RowActionsMenu label={d.moreActionsAria} items={moreActions} />
   ) : null;
+  // Renders nothing without `returns:write` or off SHIPPED / DELIVERED.
+  const returnAction = (
+    <ReturnCreateAction
+      order={order}
+      open={returnDialogOpen}
+      onOpenChange={setReturnDialogOpen}
+    />
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -263,13 +277,24 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
           {canWriteOrders ? (
             // TASK-332: the control takes only the id — the legal moves AND the
             // lock token come from the server.
-            <OrderStatusSelect orderId={order.id} trailing={more} />
+            <OrderStatusSelect
+              orderId={order.id}
+              trailing={
+                <>
+                  {returnAction}
+                  {more}
+                </>
+              }
+              onCreateReturn={() => setReturnDialogOpen(true)}
+            />
           ) : isReadOnly ? (
             <div className="flex flex-wrap items-center gap-2">
               {/* TASK-715: the absence is deliberate, and says so. */}
               <p className="text-sm text-muted-foreground">
                 {dict.common.viewOnly}
               </p>
+              {/* `returns:write` without `orders:write` still files a return. */}
+              {returnAction}
               {more}
             </div>
           ) : null}
@@ -493,7 +518,7 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
 
           {/* TASK-724: the order's return requests (absent without
               `returns:read`). */}
-          <OrderReturnsSection orderId={order.id} orderUserId={order.userId} />
+          <OrderReturnsSection orderId={order.id} />
 
           {/* TASK-484 / 623: the buyer's link — guest orders only. */}
           <div id="order-access-link" className="scroll-mt-20">

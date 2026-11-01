@@ -17,36 +17,13 @@ import {
   usePaymentAttemptWatch,
   type PaymentStartFailure,
 } from "@/features/checkout";
+import { ReturnSummaryBadge, type ReturnsSummary } from "@/entities/return";
 import { ReturnRequestButton } from "@/features/return-request";
 import { dict } from "@/shared/config";
 import { formatDate, formatMoney } from "@/shared/lib";
-import { Badge, Button } from "@/shared/ui";
+import { Button } from "@/shared/ui";
 import { thumbStrip } from "../model/order-history-params";
 import { ORDER_CARD_CLASS } from "./order-card-class";
-
-/** Existing Badge variants only; «Кошти повернено» is the solid success one. */
-const RETURN_BADGE_VARIANT: Record<
-  string,
-  "secondary" | "success" | "outline"
-> = {
-  REFUNDED: "success",
-  REJECTED: "outline",
-};
-
-/** The newest return request's status (TASK-608), named by an sr-only prefix. */
-function ReturnStatusBadge({ status }: { status: string | undefined }) {
-  if (!status) return null;
-  const label = dict.returnRequest.statusLabels[status] ?? status;
-  return (
-    <Badge
-      variant={RETURN_BADGE_VARIANT[status] ?? "secondary"}
-      data-return-status={status}
-    >
-      <span className="sr-only">{`${dict.returnRequest.statusSr}: `}</span>
-      {label}
-    </Badge>
-  );
-}
 
 /**
  * One size for every card action (AccountOrders.dc.html `.ao-btn`): 44px tall,
@@ -58,8 +35,8 @@ const THUMB_CLASS = "size-13 rounded-menu";
 
 interface OrderCardProps {
   order: OrderEntity;
-  /** Status of the order's newest return request, if any (TASK-608). */
-  returnStatus?: string;
+  /** All of the order's return requests summed up, if any (TASK-1962). */
+  returnSummary?: ReturnsSummary;
   /**
    * Minutes left to pay before the reservation lapses; `0` = the order is not
    * awaiting an online payment (see `awaitingPaymentMinutes`). Computed by
@@ -81,7 +58,7 @@ interface OrderCardProps {
  */
 export function OrderCard({
   order,
-  returnStatus,
+  returnSummary,
   awaitingMinutes,
 }: OrderCardProps) {
   const ref = order.id.slice(0, 8).toUpperCase();
@@ -142,7 +119,7 @@ export function OrderCard({
           <OrderStatusBadge status={order.paymentStatus}>
             {dict.order.paymentLabel(order.paymentStatus)}
           </OrderStatusBadge>
-          <ReturnStatusBadge status={returnStatus} />
+          <ReturnSummaryBadge summary={returnSummary} />
         </div>
       </div>
 
@@ -254,7 +231,7 @@ export function OrderCard({
             parcel, which is an operator's job, not a form's. */}
         {order.status === "DELIVERED" && (
           <ReturnRequestButton
-            orderId={order.id}
+            source={{ kind: "account", orderId: order.id }}
             orderNumber={`#${ref}`}
             items={order.items}
             className={ACTION_CLASS}

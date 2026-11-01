@@ -1,7 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConflictException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { ReturnStatus } from '@prisma/client';
+import {
+  Prisma,
+  ReturnChannel,
+  ReturnDecision,
+  ReturnOutcome,
+  ReturnRepairStep,
+  ReturnStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma';
 import { CacheService } from '../../cache';
 import { ProductIndexer } from '../../search/product-indexer';
@@ -286,6 +294,7 @@ describe('ReturnRepository.create — the quantity cap is checked under a lock (
   const params = {
     orderId: ORDER_ID,
     createdByUserId: 'user-uuid-1',
+    channel: ReturnChannel.ACCOUNT,
     items: [{ orderItemId: 'order-item-1', quantity: 1 }],
   };
   const ledger = [{ status: ReturnStatus.REQUESTED, items: [{ orderItemId: 'x', quantity: 1 }] }];
@@ -426,6 +435,13 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
     ],
   };
   const siblings = [{ refundedAmount: { toString: () => '100.00' } }, { refundedAmount: null }];
+  /** What the service validated the move against (TASK-1961/2044). */
+  const current = {
+    id: RETURN_ID,
+    orderId: ORDER_ID,
+    status: ReturnStatus.RECEIVED,
+    decision: ReturnDecision.REFUND,
+  };
 
   /** Every statement, in the order the transaction issued it. */
   let issued: string[];
@@ -435,6 +451,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
     $queryRaw: jest.fn(),
     return: {
       findUniqueOrThrow: jest.fn(),
+      findUnique: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
@@ -460,9 +477,9 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
       issued.push('ledger');
       return siblings;
     });
-    txMock.return.update.mockImplementation(async () => {
+    txMock.return.updateMany.mockImplementation(async () => {
       issued.push('write');
-      return existing;
+      return { count: 1 };
     });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -484,7 +501,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
       issued.push('check');
     });
 
-    await repository.resolve(RETURN_ID, fields, { assertRefundable });
+    await repository.resolve(current, fields, { assertRefundable });
 
     expect(txPrismaMock.$transaction).toHaveBeenCalledTimes(1);
     expect(issued.slice(0, 5)).toEqual(['read', 'lock', 'ledger', 'check', 'write']);
@@ -493,7 +510,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
   it("hands the check the order total, the OTHER returns and this return's priced lines", async () => {
     const assertRefundable = jest.fn();
 
-    await repository.resolve(RETURN_ID, fields, { assertRefundable });
+    await repository.resolve(current, fields, { assertRefundable });
 
     const [ledger] = assertRefundable.mock.calls[0] as unknown as [
       {
@@ -510,7 +527,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
   });
 
   it('takes a row lock (FOR UPDATE) on the order the return belongs to', async () => {
-    await repository.resolve(RETURN_ID, fields, { assertRefundable: jest.fn() });
+    await repository.resolve(current, fields, { assertRefundable: jest.fn() });
 
     const [strings, ...values] = txMock.$queryRaw.mock.calls[0] as [
       TemplateStringsArray,
@@ -521,7 +538,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
   });
 
   it("reads every OTHER return of the order — this one's old amount is being replaced", async () => {
-    await repository.resolve(RETURN_ID, fields, { assertRefundable: jest.fn() });
+    await repository.resolve(current, fields, { assertRefundable: jest.fn() });
 
     expect(txMock.return.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { orderId: ORDER_ID, id: { not: RETURN_ID } } }),
@@ -532,7 +549,7 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
     const refusal = new Error('over the ceiling');
 
     await expect(
-      repository.resolve(RETURN_ID, fields, {
+      repository.resolve(current, fields, {
         assertRefundable: () => {
           throw refusal;
         },
@@ -543,9 +560,646 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
   });
 
   it('takes no lock when there is no refund to check', async () => {
-    await repository.resolve(RETURN_ID, { status: ReturnStatus.APPROVED });
+    await repository.resolve(current, { status: ReturnStatus.APPROVED });
 
     expect(txMock.$queryRaw).not.toHaveBeenCalled();
     expect(txMock.return.findMany).not.toHaveBeenCalled();
+  });
+
+  // TASK-1966: the loser of a concurrent restock is refused from INSIDE the
+  // transaction, and must carry the same code the service's early check does —
+  // otherwise the admin panel shows two different messages for one fact.
+  it('409 RETURN_ALREADY_RESTOCKED when the stamp was taken meanwhile, touching no product', async () => {
+    txMock.return.updateMany.mockResolvedValue({ count: 0 });
+    txMock.return.findUnique.mockResolvedValue({ restockedAt: new Date() });
+
+    const caught = await repository
+      .resolve(
+        { ...current, status: ReturnStatus.APPROVED },
+        { status: ReturnStatus.RECEIVED },
+        { restock: true },
+      )
+      .then(
+        () => {
+          throw new Error('expected a refusal');
+        },
+        (error: unknown) => error,
+      );
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toEqual({
+      error: 'RETURN_ALREADY_RESTOCKED',
+      message: 'These returned goods have already been credited back to inventory',
+    });
+    expect(txMock.product.update).not.toHaveBeenCalled();
+  });
+
+  // ── The state guard (TASK-1961, TASK-2044) ─────────────────────────────────
+  // The service validated the move against a read taken OUTSIDE this
+  // transaction. A decision committed in between (a refusal, a switch to
+  // replacement) must not be overwritten by a write keyed on the id alone.
+
+  it('writes only while the return still holds the status and decision the service validated', async () => {
+    await repository.resolve(current, { status: ReturnStatus.REFUNDED });
+
+    expect(txMock.return.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: RETURN_ID, status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND },
+      }),
+    );
+    expect(txMock.return.update).not.toHaveBeenCalled();
+  });
+
+  it('409 RETURN_TRANSITION_INVALID when the return moved meanwhile', async () => {
+    txMock.return.updateMany.mockResolvedValue({ count: 0 });
+
+    const caught = await repository
+      .resolve(current, { status: ReturnStatus.REFUNDED })
+      .catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toMatchObject({
+      error: 'RETURN_TRANSITION_INVALID',
+    });
+  });
+
+  it('guards the restock stamp with the validated status and decision too', async () => {
+    const approved = { ...current, status: ReturnStatus.APPROVED };
+
+    await repository.resolve(approved, { status: ReturnStatus.RECEIVED }, { restock: true });
+
+    expect(txMock.return.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: RETURN_ID,
+          status: ReturnStatus.APPROVED,
+          decision: ReturnDecision.REFUND,
+          restockedAt: null,
+        },
+      }),
+    );
+  });
+
+  it('409 RETURN_TRANSITION_INVALID when a restock lost to another transition, touching no product', async () => {
+    txMock.return.updateMany.mockResolvedValue({ count: 0 });
+    txMock.return.findUnique.mockResolvedValue({ restockedAt: null });
+
+    const caught = await repository
+      .resolve(
+        { ...current, status: ReturnStatus.APPROVED },
+        { status: ReturnStatus.RECEIVED },
+        { restock: true },
+      )
+      .catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toMatchObject({
+      error: 'RETURN_TRANSITION_INVALID',
+    });
+    expect(txMock.product.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReturnRepository.decide — one transaction per decision (TASK-1961, TASK-2044)', () => {
+  const ORDER_ID = 'order-uuid-1';
+  const RETURN_ID = 'return-uuid-1';
+  const OPERATOR_ID = 'operator-uuid-1';
+  const decidedAt = new Date('2026-10-31T12:00:00.000Z');
+
+  const current = {
+    id: RETURN_ID,
+    orderId: ORDER_ID,
+    status: ReturnStatus.REJECTED,
+    decision: ReturnDecision.REJECT,
+  };
+  const change = {
+    status: ReturnStatus.APPROVED,
+    decision: ReturnDecision.REFUND,
+    decisionReason: 'Чек знайшовся',
+    decidedById: OPERATOR_ID,
+    decidedAt,
+  };
+  const ledger = [{ status: ReturnStatus.REQUESTED, items: [{ orderItemId: 'x', quantity: 1 }] }];
+  const decidedRow = { id: RETURN_ID, ...change, items: [] };
+
+  /** Every statement, in the order the transaction issued it. */
+  let issued: string[];
+  let repository: ReturnRepository;
+
+  const txMock = {
+    $queryRaw: jest.fn(),
+    return: { findMany: jest.fn(), updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+    returnDecisionEvent: { create: jest.fn() },
+  };
+  const txPrismaMock = {
+    $transaction: jest.fn((fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock)),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    issued = [];
+    txMock.$queryRaw.mockImplementation(async () => {
+      issued.push('lock');
+      return [{ id: ORDER_ID }];
+    });
+    txMock.return.findMany.mockImplementation(async () => {
+      issued.push('ledger');
+      return ledger;
+    });
+    txMock.return.updateMany.mockImplementation(async () => {
+      issued.push('write');
+      return { count: 1 };
+    });
+    txMock.returnDecisionEvent.create.mockImplementation(async () => {
+      issued.push('event');
+      return {};
+    });
+    txMock.return.findUniqueOrThrow.mockImplementation(async () => {
+      issued.push('read');
+      return decidedRow;
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReturnRepository,
+        { provide: PrismaService, useValue: txPrismaMock },
+        { provide: CacheService, useValue: cacheMock },
+        { provide: ProductIndexer, useValue: productIndexerMock },
+      ],
+    }).compile();
+
+    repository = module.get(ReturnRepository);
+  });
+
+  it('locks the order, reads the ledger, checks, writes the decision and its event — in one transaction', async () => {
+    const assertClaimable = jest.fn(() => {
+      issued.push('check');
+    });
+
+    const result = await repository.decide(current, change, { assertClaimable });
+
+    expect(txPrismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(issued).toEqual(['lock', 'ledger', 'check', 'write', 'event', 'read']);
+    expect(assertClaimable).toHaveBeenCalledWith(ledger);
+    expect(result).toBe(decidedRow);
+  });
+
+  it('takes the same FOR UPDATE lock on the order row that create takes', async () => {
+    await repository.decide(current, change, { assertClaimable: jest.fn() });
+
+    const [strings, orderId] = txMock.$queryRaw.mock.calls[0] as [TemplateStringsArray, string];
+    expect(strings.join('?')).toMatch(/SELECT id FROM orders WHERE id = \? FOR UPDATE/);
+    expect(orderId).toBe(ORDER_ID);
+  });
+
+  it("reads the OTHER returns of the order — this one's own claim is the one being re-made", async () => {
+    await repository.decide(current, change, { assertClaimable: jest.fn() });
+
+    expect(txMock.return.findMany).toHaveBeenCalledWith({
+      where: { orderId: ORDER_ID, id: { not: RETURN_ID } },
+      select: { status: true, items: { select: { orderItemId: true, quantity: true } } },
+    });
+  });
+
+  it('reads no ledger when there is no claim to check', async () => {
+    await repository.decide(current, change);
+
+    expect(issued).toEqual(['lock', 'write', 'event', 'read']);
+  });
+
+  it('writes nothing when the check refuses — the error rolls the transaction back', async () => {
+    const refusal = new ConflictException('no units left');
+
+    await expect(
+      repository.decide(current, change, {
+        assertClaimable: () => {
+          throw refusal;
+        },
+      }),
+    ).rejects.toBe(refusal);
+    expect(txMock.return.updateMany).not.toHaveBeenCalled();
+    expect(txMock.returnDecisionEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('guards the write on the status and decision the service decided against', async () => {
+    await repository.decide(current, change);
+
+    expect(txMock.return.updateMany).toHaveBeenCalledWith({
+      where: { id: RETURN_ID, status: ReturnStatus.REJECTED, decision: ReturnDecision.REJECT },
+      data: {
+        status: ReturnStatus.APPROVED,
+        decision: ReturnDecision.REFUND,
+        decisionReason: 'Чек знайшовся',
+        decidedAt,
+        decidedById: OPERATOR_ID,
+        // A decision taken by a person is no longer the backfill's inference.
+        decisionLegacy: false,
+        // `resolvedAt` stays "the last change" (plan, Модель даних).
+        resolvedAt: decidedAt,
+      },
+    });
+  });
+
+  it('records the decision event with its author, reason and time', async () => {
+    await repository.decide(current, change);
+
+    expect(txMock.returnDecisionEvent.create).toHaveBeenCalledWith({
+      data: {
+        returnId: RETURN_ID,
+        decision: ReturnDecision.REFUND,
+        reason: 'Чек знайшовся',
+        actorId: OPERATOR_ID,
+        createdAt: decidedAt,
+      },
+    });
+  });
+
+  it('409 RETURN_TRANSITION_INVALID when the return changed meanwhile, recording no event', async () => {
+    // Another operator moved it (e.g. marked it RECEIVED) between the service's
+    // read and this transaction: the decision was taken against a state that no
+    // longer exists.
+    txMock.return.updateMany.mockResolvedValue({ count: 0 });
+
+    const caught = await repository.decide(current, change).then(
+      () => {
+        throw new Error('expected a refusal');
+      },
+      (error: unknown) => error,
+    );
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toMatchObject({
+      error: 'RETURN_TRANSITION_INVALID',
+    });
+    expect(txMock.returnDecisionEvent.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReturnRepository.addRepairStep — one transaction per step (TASK-2045)', () => {
+  const RETURN_ID = 'return-uuid-1';
+  const OPERATOR_ID = 'operator-uuid-1';
+  const createdAt = new Date('2026-10-31T12:00:00.000Z');
+
+  const event = {
+    step: ReturnRepairStep.SENT_TO_SERVICE,
+    result: null,
+    destination: 'СЦ Apple, Київ',
+    ttn: '20450000000001',
+    note: 'Подряпина на кутку',
+    actorId: OPERATOR_ID,
+    createdAt,
+  };
+  const cardRow = { id: RETURN_ID, decision: ReturnDecision.REPAIR, items: [] };
+
+  /** Every statement, in the order the transaction issued it. */
+  let issued: string[];
+  let repository: ReturnRepository;
+
+  const txMock = {
+    return: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
+    returnRepairEvent: { create: jest.fn() },
+  };
+  const txPrismaMock = {
+    $transaction: jest.fn((fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock)),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    issued = [];
+    txMock.return.updateMany.mockImplementation(async () => {
+      issued.push('touch');
+      return { count: 1 };
+    });
+    txMock.returnRepairEvent.create.mockImplementation(async () => {
+      issued.push('event');
+      return {};
+    });
+    txMock.return.findUniqueOrThrow.mockImplementation(async () => {
+      issued.push('read');
+      return cardRow;
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReturnRepository,
+        { provide: PrismaService, useValue: txPrismaMock },
+        { provide: CacheService, useValue: cacheMock },
+        { provide: ProductIndexer, useValue: productIndexerMock },
+      ],
+    }).compile();
+
+    repository = module.get(ReturnRepository);
+  });
+
+  const caughtFrom = (promise: Promise<unknown>) =>
+    promise.then(
+      () => {
+        throw new Error('expected a refusal');
+      },
+      (error: unknown) => error,
+    );
+
+  it('stamps the return, writes the step and reads the card back — in one transaction', async () => {
+    const result = await repository.addRepairStep(RETURN_ID, event);
+
+    expect(txPrismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(issued).toEqual(['touch', 'event', 'read']);
+    expect(result).toBe(cardRow);
+  });
+
+  it('stamps resolvedAt only while the return is still an open REPAIR — the guard and the row lock', async () => {
+    await repository.addRepairStep(RETURN_ID, event);
+
+    expect(txMock.return.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: RETURN_ID,
+        decision: ReturnDecision.REPAIR,
+        status: { notIn: [ReturnStatus.REJECTED, ReturnStatus.REFUNDED] },
+      },
+      // `resolvedAt` stays "the last change" (plan, Модель даних).
+      data: { resolvedAt: createdAt },
+    });
+  });
+
+  it('writes the step with its author, its time and every detail', async () => {
+    await repository.addRepairStep(RETURN_ID, event);
+
+    expect(txMock.returnRepairEvent.create).toHaveBeenCalledWith({
+      data: { returnId: RETURN_ID, ...event },
+    });
+  });
+
+  it('409 RETURN_REPAIR_STEP_INVALID when the decision changed meanwhile, writing no step', async () => {
+    txMock.return.updateMany.mockResolvedValue({ count: 0 });
+
+    const caught = await caughtFrom(repository.addRepairStep(RETURN_ID, event));
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toEqual({
+      error: 'RETURN_REPAIR_STEP_INVALID',
+      message: 'Repair steps are recorded only on an open return decided as REPAIR',
+    });
+    expect(txMock.returnRepairEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('409 RETURN_REPAIR_STEP_INVALID when a concurrent request recorded the same step first', async () => {
+    // The unique index on (return_id, step) is what stops a double click: both
+    // requests passed the service's order check against the same read.
+    txMock.returnRepairEvent.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: '7' }),
+    );
+
+    const caught = await caughtFrom(repository.addRepairStep(RETURN_ID, event));
+
+    expect(caught).toBeInstanceOf(ConflictException);
+    expect((caught as ConflictException).getResponse()).toEqual({
+      error: 'RETURN_REPAIR_STEP_INVALID',
+      message: 'The repair step SENT_TO_SERVICE has already been recorded',
+    });
+  });
+
+  it('lets any other database error through untouched', async () => {
+    const boom = new Error('connection lost');
+    txMock.returnRepairEvent.create.mockRejectedValue(boom);
+
+    await expect(repository.addRepairStep(RETURN_ID, event)).rejects.toBe(boom);
+  });
+});
+
+describe('ReturnRepository — what each read loads (TASK-1963, TASK-2044, TASK-2045)', () => {
+  // `originalEmail`: a soft-deleted account's readable email (TASK-104).
+  const ACTOR_SELECT = {
+    id: true,
+    email: true,
+    originalEmail: true,
+    firstName: true,
+    lastName: true,
+  };
+  const HISTORY_ORDER = [{ createdAt: 'asc' }, { id: 'asc' }];
+
+  const readMock = {
+    return: {
+      count: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+    $queryRaw: jest.fn(),
+    $transaction: jest.fn((arg: unknown): Promise<unknown> =>
+      typeof arg === 'function'
+        ? (arg as (tx: unknown) => Promise<unknown>)(readMock)
+        : Promise.all(arg as Promise<unknown>[]),
+    ),
+  };
+
+  let repository: ReturnRepository;
+
+  type Include = Record<string, unknown>;
+  const includeOf = (mock: jest.Mock): Include =>
+    (mock.mock.calls.at(-1)?.[0] as { include: Include }).include;
+
+  function expectCustomerInclude(include: Include): void {
+    expect(include.repairEvents).toEqual({
+      orderBy: HISTORY_ORDER,
+      select: { id: true, step: true, result: true, destination: true, ttn: true, createdAt: true },
+    });
+    expect(include).not.toHaveProperty('createdBy');
+    expect(include).not.toHaveProperty('decidedBy');
+    expect(include).not.toHaveProperty('decisionEvents');
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    readMock.return.count.mockResolvedValue(0);
+    readMock.return.findMany.mockResolvedValue([]);
+    readMock.return.findUnique.mockResolvedValue(null);
+    readMock.return.create.mockResolvedValue({ id: 'return-1', items: [] });
+    readMock.$queryRaw.mockResolvedValue([]);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReturnRepository,
+        { provide: PrismaService, useValue: readMock },
+        { provide: CacheService, useValue: cacheMock },
+        { provide: ProductIndexer, useValue: productIndexerMock },
+      ],
+    }).compile();
+
+    repository = module.get(ReturnRepository);
+  });
+
+  describe('one return for the operator (findById)', () => {
+    it('joins both authors with the fields a name is built from — nothing else of the account', async () => {
+      await repository.findById('return-1');
+
+      const include = includeOf(readMock.return.findUnique);
+      expect(include.createdBy).toEqual({ select: ACTOR_SELECT });
+      expect(include.decidedBy).toEqual({ select: ACTOR_SELECT });
+    });
+
+    it('loads the decision history and the repair steps oldest first, each with its actor', async () => {
+      await repository.findById('return-1');
+
+      const include = includeOf(readMock.return.findUnique);
+      expect(include.decisionEvents).toEqual({
+        orderBy: HISTORY_ORDER,
+        include: { actor: { select: ACTOR_SELECT } },
+      });
+      expect(include.repairEvents).toEqual({
+        orderBy: HISTORY_ORDER,
+        include: { actor: { select: ACTOR_SELECT } },
+      });
+    });
+
+    it('reads the purchase date off the order', async () => {
+      await repository.findById('return-1');
+
+      const include = includeOf(readMock.return.findUnique) as {
+        order: { select: Record<string, boolean> };
+      };
+      expect(include.order.select.createdAt).toBe(true);
+    });
+  });
+
+  // A page of the queue costs one batched query per to-one join; the history
+  // arrays belong to the card, not to a page of twenty rows.
+  describe('the admin queue (findAll)', () => {
+    it('joins the authors and the purchase date but no history arrays', async () => {
+      await repository.findAll({});
+
+      const include = includeOf(readMock.return.findMany) as Include & {
+        order: { select: Record<string, boolean> };
+      };
+      expect(include.createdBy).toEqual({ select: ACTOR_SELECT });
+      expect(include.decidedBy).toEqual({ select: ACTOR_SELECT });
+      expect(include.order.select.createdAt).toBe(true);
+      expect(include).not.toHaveProperty('decisionEvents');
+      expect(include).not.toHaveProperty('repairEvents');
+    });
+  });
+
+  describe('the per-order list (findByOrderId)', () => {
+    it('for the operator: the queue joins', async () => {
+      await repository.findByOrderId('order-1', { admin: true });
+
+      const include = includeOf(readMock.return.findMany);
+      expect(include.createdBy).toEqual({ select: ACTOR_SELECT });
+      expect(include).not.toHaveProperty('decisionEvents');
+    });
+
+    it('for the customer: repair progress without the note or the actor, and no staff account', async () => {
+      await repository.findByOrderId('order-1');
+
+      expectCustomerInclude(includeOf(readMock.return.findMany));
+    });
+  });
+
+  describe("the customer's own list (findByUserId)", () => {
+    it('repair progress without the note or the actor, and no staff account', async () => {
+      await repository.findByUserId('user-1', 100);
+
+      expectCustomerInclude(includeOf(readMock.return.findMany));
+    });
+  });
+
+  describe('create', () => {
+    const createArgs = () =>
+      readMock.return.create.mock.calls.at(-1)?.[0] as {
+        data: Record<string, unknown>;
+        include: Include;
+      };
+
+    it('writes what the customer asked for and the door it came through', async () => {
+      await repository.create(
+        {
+          orderId: 'order-1',
+          createdByUserId: 'operator-1',
+          requestedOutcome: ReturnOutcome.REPAIR,
+          channel: ReturnChannel.OPERATOR,
+          items: [{ orderItemId: 'line-1', quantity: 1 }],
+        },
+        () => undefined,
+      );
+
+      expect(createArgs().data).toMatchObject({
+        requestedOutcome: ReturnOutcome.REPAIR,
+        channel: ReturnChannel.OPERATOR,
+      });
+    });
+
+    it('writes no outcome when none was asked for — null, not a guess', async () => {
+      await repository.create(
+        {
+          orderId: 'order-1',
+          createdByUserId: 'user-1',
+          channel: ReturnChannel.ACCOUNT,
+          items: [{ orderItemId: 'line-1', quantity: 1 }],
+        },
+        () => undefined,
+      );
+
+      expect(createArgs().data).toMatchObject({
+        requestedOutcome: null,
+        channel: ReturnChannel.ACCOUNT,
+      });
+    });
+
+    it('answers with the full card — the operator sees the return they just opened', async () => {
+      await repository.create(
+        { orderId: 'order-1', channel: ReturnChannel.OPERATOR, items: [] },
+        () => undefined,
+      );
+
+      const include = createArgs().include;
+      expect(include.createdBy).toEqual({ select: ACTOR_SELECT });
+      expect(include).toHaveProperty('decisionEvents');
+    });
+  });
+});
+
+// Approving and refusing moved to POST /decision (TASK-1961/2044); a notes-only
+// PATCH keeps the operator's notes writable on every status.
+describe('ReturnRepository.updateNotes — the operator notes on any status', () => {
+  const RETURN_ID = 'return-uuid-1';
+  const notesPrismaMock = { return: { update: jest.fn() } };
+  let repository: ReturnRepository;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    notesPrismaMock.return.update.mockResolvedValue({ id: RETURN_ID, items: [] });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReturnRepository,
+        { provide: PrismaService, useValue: notesPrismaMock },
+        { provide: CacheService, useValue: cacheMock },
+        { provide: ProductIndexer, useValue: productIndexerMock },
+      ],
+    }).compile();
+
+    repository = module.get(ReturnRepository);
+  });
+
+  it('writes the notes and nothing else — no status, no resolution stamp, no decision', async () => {
+    await repository.updateNotes(RETURN_ID, 'Дзвонив клієнт');
+
+    const call = notesPrismaMock.return.update.mock.calls[0]?.[0] as {
+      where: unknown;
+      data: unknown;
+      include: Record<string, unknown>;
+    };
+    expect(call.where).toEqual({ id: RETURN_ID });
+    expect(call.data).toEqual({ operatorNotes: 'Дзвонив клієнт' });
+    // The answer is the full admin card, like every other admin write.
+    expect(call.include).toHaveProperty('decisionEvents');
+    expect(call.include).toHaveProperty('decidedBy');
+  });
+
+  it('clears the notes with null', async () => {
+    await repository.updateNotes(RETURN_ID, null);
+
+    expect(notesPrismaMock.return.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { operatorNotes: null } }),
+    );
   });
 });

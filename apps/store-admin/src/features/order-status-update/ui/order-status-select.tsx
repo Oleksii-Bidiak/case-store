@@ -16,14 +16,10 @@ import {
   OrderEntityPaymentMethod,
   OrderEntityPaymentStatus,
   OrderEntityStatus,
+  formatOrderNumber,
   type UpdateOrderStatusDto,
 } from "@/entities/order";
-import {
-  getAdminOrderReturnControllerFindForOrderQueryKey,
-  getAdminReturnControllerFindAllQueryKey,
-  useAdminOrderReturnControllerCreate,
-  useAdminOrderReturnControllerFindForOrder,
-} from "@/entities/return";
+import { useAdminOrderReturnControllerFindForOrder } from "@/entities/return";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
@@ -46,13 +42,19 @@ import {
   requiresReload,
   type ApiErrorLike,
 } from "../model/order-conflict";
-import { CreateReturnDialog } from "./create-return-dialog";
+import { RefundNoReturnDialog } from "./refund-no-return-dialog";
 import { UnpaidShipDialog } from "./unpaid-ship-dialog";
 
 interface OrderStatusSelectProps {
   orderId: string;
   /** Drawn at the end of the button row — the card's «⋯» menu. */
   trailing?: ReactNode;
+  /**
+   * Open «Оформити повернення» (TASK-1963). The dialog is another feature, so
+   * the order card composes the two: this control only asks for it from the
+   * REFUNDED-without-a-return warning. Without it the warning is not shown.
+   */
+  onCreateReturn?: () => void;
 }
 
 /** Every order status, lifecycle first — the menu's order. */
@@ -163,18 +165,16 @@ const RETURNABLE_STATUSES: readonly string[] = [
  * with a misleading "somebody changed this order" toast teaches the operator to
  * distrust the panel. The server stays the barrier; this just stops lying.
  */
-export function OrderStatusSelect({
-  orderId,
-  trailing,
-}: OrderStatusSelectProps) {
+export function OrderStatusSelect(props: OrderStatusSelectProps) {
   const { can } = useAuth();
   if (!can(PERM.ordersWrite)) return null;
-  return <OrderStatusSelectControl orderId={orderId} trailing={trailing} />;
+  return <OrderStatusSelectControl {...props} />;
 }
 
 function OrderStatusSelectControl({
   orderId,
   trailing,
+  onCreateReturn,
 }: OrderStatusSelectProps) {
   const queryClient = useQueryClient();
   const { can } = useAuth();
@@ -196,14 +196,14 @@ function OrderStatusSelectControl({
   // (TASK-724), so React Query issues it once for both.
   //
   // Offering to OPEN a return still needs both: the list, to know there is none
-  // yet (read), and the create call (write).
+  // yet (read), and the create call (write) — plus the card wiring the dialog.
   const canReadReturns = can(PERM.returnsRead);
-  const canOpenReturns = canReadReturns && can(PERM.returnsWrite);
+  const canOpenReturns =
+    canReadReturns && can(PERM.returnsWrite) && onCreateReturn !== undefined;
   const { data: returnsData } = useAdminOrderReturnControllerFindForOrder(
     orderId,
     { query: { enabled: canReadReturns } },
   );
-  const createReturn = useAdminOrderReturnControllerCreate();
 
   // Which move is waiting behind a dialog. `null` means nothing is pending —
   // the state holds the STATUS rather than a boolean so the confirm handler
@@ -377,50 +377,15 @@ function OrderStatusSelectControl({
   };
 
   /**
-   * «Створити заявку» — open the return on the whole order, then move the order
-   * (TASK-469).
-   *
-   * The status change is chained to the return's SUCCESS, not fired alongside it:
-   * REFUNDED with a record behind it is the outcome being asked for, and doing
-   * both in parallel could leave the label set with the record refused — which is
-   * the exact state this dialog exists to stop appearing.
+   * «Оформити повернення» — hand over to the return dialog and leave the status
+   * alone (TASK-1963). Filing a request records what the buyer asked for; it is
+   * not the refund, so the order does not move with it. The whole-order return
+   * this used to file on REFUNDED is gone: the operator picks lines and
+   * quantities in the dialog instead.
    */
-  const handleCreateReturn = (reason: string) => {
-    const target = refundTarget;
-    if (!target || !order) return;
-
-    createReturn.mutate(
-      {
-        orderId,
-        data: {
-          ...(reason.trim() ? { reason: reason.trim() } : {}),
-          items: order.items.map((item) => ({
-            orderItemId: item.id,
-            quantity: item.quantity,
-          })),
-        },
-      },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({
-            queryKey:
-              getAdminOrderReturnControllerFindForOrderQueryKey(orderId),
-          });
-          void queryClient.invalidateQueries({
-            queryKey: getAdminReturnControllerFindAllQueryKey(),
-          });
-          toast.success(dict.returns.createSuccess);
-          setRefundTarget(null);
-          applyStatus(target);
-        },
-        onError: () => {
-          // The order is deliberately NOT moved: the operator asked for a refund
-          // WITH a record, and half of that is the empty label we are here to
-          // prevent. The dialog stays open so they can retry or decline.
-          toast.error(dict.returns.createFailed);
-        },
-      },
-    );
+  const handleOpenReturn = () => {
+    setRefundTarget(null);
+    onCreateReturn?.();
   };
 
   /** «Лише змінити статус» — a real answer, not a cancel (TASK-469). */
@@ -593,23 +558,17 @@ function OrderStatusSelectControl({
         />
       ) : null}
 
-      {/* TASK-469 — REFUNDED with no Return anywhere on the order. */}
+      {/* TASK-469 → TASK-1963 — REFUNDED with no Return on the order. */}
       {order ? (
-        <CreateReturnDialog
+        <RefundNoReturnDialog
           open={refundTarget !== null}
           onOpenChange={(next) => {
             if (!next) setRefundTarget(null);
           }}
-          orderNumber={order.id.slice(0, 8).toUpperCase()}
-          items={order.items.map((item) => ({
-            id: item.id,
-            productName: item.productName,
-            quantity: item.quantity,
-            lineTotal: item.lineTotal,
-          }))}
-          onCreate={handleCreateReturn}
+          orderNumber={formatOrderNumber(order.id)}
+          onCreateReturn={handleOpenReturn}
           onSkip={handleSkipReturn}
-          disabled={createReturn.isPending || updateStatus.isPending}
+          disabled={updateStatus.isPending}
         />
       ) : null}
     </>

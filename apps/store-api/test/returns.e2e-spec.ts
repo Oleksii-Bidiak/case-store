@@ -4,7 +4,15 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { ReturnStatus, UserRole } from '@prisma/client';
+import {
+  Prisma,
+  RepairResult,
+  ReturnDecision,
+  ReturnRepairStep,
+  ReturnStatus,
+  UserRole,
+} from '@prisma/client';
+import { createHash } from 'crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
@@ -83,9 +91,20 @@ describe('Admin returns queue (e2e)', () => {
     // The row lock on the order the resolve transaction takes (TASK-785).
     $queryRaw: jest.fn(),
     // The order-scoped return routes read the order first (review of plan 180).
-    order: { findFirst: jest.fn() },
+    order: {
+      findFirst: jest.fn(),
+      // Never called by a return path — asserted (TASK-1963).
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
     // TASK-628: the audit row written behind an admin create.
     auditLog: { create: jest.fn() },
+    // TASK-1965: the shop's Telegram recipients, read inside a guest return's transaction.
+    notificationBinding: { findMany: jest.fn() },
+    // TASK-1961/2044: the history row every decision writes in its transaction.
+    returnDecisionEvent: { create: jest.fn() },
+    // TASK-2045: the step row every repair step writes in its transaction.
+    returnRepairEvent: { create: jest.fn() },
     // The list path uses the ARRAY form of $transaction; awaiting the operations
     // it was handed is what the real client does with that form.
     $transaction: jest.fn(),
@@ -112,6 +131,14 @@ describe('Admin returns queue (e2e)', () => {
     resolvedAt: null,
     restockedAt: null,
     refundedAmount: null,
+    // TASK-2044: a real row always carries these columns, null until decided.
+    decision: null,
+    decisionReason: null,
+    decidedAt: null,
+    decidedById: null,
+    decisionLegacy: false,
+    requestedOutcome: null,
+    channel: 'ACCOUNT',
     createdAt: now,
     updatedAt: now,
     items: [],
@@ -433,6 +460,8 @@ describe('Admin returns queue (e2e)', () => {
     /** One unit of a 499.00 line, back at the shop and waiting for its money. */
     const received = makeReturnRow({
       status: ReturnStatus.RECEIVED,
+      // Money goes out only on a REFUND decision (TASK-2044).
+      decision: ReturnDecision.REFUND,
       items: [
         {
           id: '550e8400-e29b-41d4-a716-446655440010',
@@ -464,7 +493,8 @@ describe('Admin returns queue (e2e)', () => {
     beforeEach(() => {
       prismaServiceMock.return.findUnique.mockResolvedValue(received);
       prismaServiceMock.return.findUniqueOrThrow.mockResolvedValue(received);
-      prismaServiceMock.return.update.mockResolvedValue(received);
+      // The write is conditional on the validated status/decision (TASK-1961/2044).
+      prismaServiceMock.return.updateMany.mockResolvedValue({ count: 1 });
       // The order of three at 499.00, nothing refunded through its other returns.
       prismaServiceMock.$queryRaw.mockResolvedValue([{ total: '1497.00' }]);
       prismaServiceMock.return.findMany.mockResolvedValue([]);
@@ -475,7 +505,7 @@ describe('Admin returns queue (e2e)', () => {
 
       expect(response.body.error).toBe('RETURN_REFUND_EXCEEDS_RETURNED_VALUE');
       expect(response.body.message).toContain('499.00');
-      expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+      expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
     });
 
     it('rejects a refund larger than the order has left after earlier returns', async () => {
@@ -485,13 +515,96 @@ describe('Admin returns queue (e2e)', () => {
 
       expect(response.body.error).toBe('RETURN_REFUND_EXCEEDS_ORDER_BALANCE');
       expect(response.body.message).toContain('297.00');
-      expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+      expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
     });
 
     it('accepts "499.00" — the value of the unit coming back', async () => {
       await patch('499.00').expect(200);
 
-      expect(prismaServiceMock.return.update).toHaveBeenCalledTimes(1);
+      expect(prismaServiceMock.return.updateMany).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── Stable error codes on the wire (TASK-1966) ─────────────────────────────
+  //
+  // The real service and repository run, so this pins that the `error` code the
+  // service puts on the exception survives the global filter into the envelope.
+
+  describe('error codes reach the envelope (TASK-1966)', () => {
+    const returnId = '550e8400-e29b-41d4-a716-446655440000';
+    const orderId = '550e8400-e29b-41d4-a716-4466554400ff';
+    const adminToken = () => `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`;
+
+    it('GET /admin/returns/:id → 404 RETURN_NOT_FOUND', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(null);
+
+      const response = await request(app.getHttpServer())
+        .get(`${url}/${returnId}`)
+        .set('Authorization', adminToken())
+        .expect(404);
+
+      expect(response.body).toMatchObject({
+        error: 'RETURN_NOT_FOUND',
+        message: 'Return not found',
+      });
+    });
+
+    it('PATCH /admin/returns/:id → 409 RETURN_TRANSITION_INVALID, writing nothing', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(makeReturnRow());
+
+      const response = await request(app.getHttpServer())
+        .patch(`${url}/${returnId}`)
+        .set('Authorization', adminToken())
+        .send({ status: ReturnStatus.REFUNDED })
+        .expect(409);
+
+      expect(response.body).toMatchObject({
+        error: 'RETURN_TRANSITION_INVALID',
+        message: 'A return cannot move from REQUESTED to REFUNDED',
+      });
+      expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+    });
+
+    it('PATCH /admin/returns/:id → 400 RETURN_RESTOCK_REQUIRES_RECEIVED', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(
+        makeReturnRow({ status: ReturnStatus.RECEIVED, decision: ReturnDecision.REFUND }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch(`${url}/${returnId}`)
+        .set('Authorization', adminToken())
+        .send({ status: ReturnStatus.REFUNDED, restock: true })
+        .expect(400);
+
+      expect(response.body.error).toBe('RETURN_RESTOCK_REQUIRES_RECEIVED');
+    });
+
+    it('PATCH /admin/returns/:id → 409 RETURN_ALREADY_RESTOCKED', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(
+        makeReturnRow({ status: ReturnStatus.APPROVED, restockedAt: now }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch(`${url}/${returnId}`)
+        .set('Authorization', adminToken())
+        .send({ status: ReturnStatus.RECEIVED, restock: true })
+        .expect(409);
+
+      expect(response.body.error).toBe('RETURN_ALREADY_RESTOCKED');
+    });
+
+    it('GET /orders/:id/returns → 404 RETURN_ORDER_NOT_FOUND for an order the caller does not own', async () => {
+      prismaServiceMock.order.findFirst.mockResolvedValue(null);
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/orders/${orderId}/returns`)
+        .set('Authorization', `Bearer ${generateAccessToken(testCustomer.id, 'CUSTOMER')}`)
+        .expect(404);
+
+      expect(response.body).toMatchObject({
+        error: 'RETURN_ORDER_NOT_FOUND',
+        message: 'Order not found',
+      });
     });
   });
 
@@ -572,6 +685,692 @@ describe('Admin returns queue (e2e)', () => {
         }),
       });
       created.mockRestore();
+    });
+  });
+
+  // ─── Decisions (TASK-1961, TASK-2044) ───────────────────────────────────────
+  //
+  // The real service and repository run against the Prisma double, so these pin
+  // the whole chain: DTO → service rules → the repository's transaction → the
+  // envelope, plus the audit row the interceptor writes behind it.
+
+  describe('POST /api/admin/returns/:returnId/decision', () => {
+    const returnId = '550e8400-e29b-41d4-a716-446655440000';
+    const adminToken = () => `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`;
+    const decide = (body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .post(`${url}/${returnId}/decision`)
+        .set('Authorization', adminToken())
+        .send(body);
+
+    beforeEach(() => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(makeReturnRow());
+      prismaServiceMock.$queryRaw.mockResolvedValue([{ id: makeReturnRow().orderId }]);
+      prismaServiceMock.return.updateMany.mockResolvedValue({ count: 1 });
+      prismaServiceMock.returnDecisionEvent.create.mockResolvedValue({});
+    });
+
+    it('400 RETURN_DECISION_REASON_REQUIRED for a refusal without a reason, writing nothing', async () => {
+      const response = await decide({ decision: ReturnDecision.REJECT }).expect(400);
+
+      expect(response.body.error).toBe('RETURN_DECISION_REASON_REQUIRED');
+      expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+      expect(prismaServiceMock.returnDecisionEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('treats a blank reason as none — "   " is not a reason the customer can read', async () => {
+      const response = await decide({ decision: ReturnDecision.REJECT, reason: '   ' }).expect(400);
+
+      expect(response.body.error).toBe('RETURN_DECISION_REASON_REQUIRED');
+    });
+
+    it('400 on a decision outside the enum', async () => {
+      await decide({ decision: 'APPROVE' }).expect(400);
+      expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('records the decision with its author, reason and an event row', async () => {
+      prismaServiceMock.return.findUniqueOrThrow.mockResolvedValue(
+        makeReturnRow({
+          status: ReturnStatus.REJECTED,
+          decision: ReturnDecision.REJECT,
+          decisionReason: 'Сліди використання',
+          decidedAt: now,
+          decidedById: testAdmin.id,
+          resolvedAt: now,
+        }),
+      );
+
+      const response = await decide({
+        decision: ReturnDecision.REJECT,
+        reason: '  Сліди використання ',
+      }).expect(200);
+
+      expect(response.body.data).toMatchObject({
+        id: returnId,
+        status: 'REJECTED',
+        decision: 'REJECT',
+        decisionReason: 'Сліди використання',
+        decidedById: testAdmin.id,
+      });
+      expect(prismaServiceMock.return.updateMany).toHaveBeenCalledWith({
+        where: { id: returnId, status: ReturnStatus.REQUESTED, decision: null },
+        data: expect.objectContaining({
+          status: ReturnStatus.REJECTED,
+          decision: ReturnDecision.REJECT,
+          decisionReason: 'Сліди використання',
+          decidedById: testAdmin.id,
+        }),
+      });
+      expect(prismaServiceMock.returnDecisionEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          returnId,
+          decision: ReturnDecision.REJECT,
+          reason: 'Сліди використання',
+          actorId: testAdmin.id,
+        }),
+      });
+    });
+
+    it('writes an audit row return.decide keyed by the return', async () => {
+      prismaServiceMock.return.findUniqueOrThrow.mockResolvedValue(
+        makeReturnRow({ status: ReturnStatus.APPROVED, decision: ReturnDecision.REFUND }),
+      );
+
+      await decide({ decision: ReturnDecision.REFUND }).expect(200);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(prismaServiceMock.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'return.decide',
+          entityType: 'return',
+          entityId: returnId,
+        }),
+      });
+    });
+
+    it('refuses a manager who may only read returns', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['returns:read']);
+      try {
+        await request(app.getHttpServer())
+          .post(`${url}/${returnId}/decision`)
+          .set('Authorization', `Bearer ${generateAccessToken(testManager.id, 'MANAGER')}`)
+          .send({ decision: ReturnDecision.REFUND })
+          .expect(403);
+        expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+      } finally {
+        permissionRepositoryMock.setGrants(UserRole.MANAGER, []);
+      }
+    });
+  });
+
+  describe('POST /api/admin/returns/:returnId/repair-steps (TASK-2045)', () => {
+    const returnId = '550e8400-e29b-41d4-a716-446655440000';
+    const adminToken = () => `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`;
+    const addStep = (body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .post(`${url}/${returnId}/repair-steps`)
+        .set('Authorization', adminToken())
+        .send(body);
+
+    /** A return decided as REPAIR, carrying the given steps. */
+    const repairRow = (steps: Array<Record<string, unknown>> = [], overrides = {}) =>
+      makeReturnRow({
+        status: ReturnStatus.APPROVED,
+        decision: ReturnDecision.REPAIR,
+        repairEvents: steps,
+        ...overrides,
+      });
+
+    const stepRow = (step: ReturnRepairStep, extra: Record<string, unknown> = {}) => ({
+      id: `repair-${step}`,
+      step,
+      result: null,
+      destination: null,
+      ttn: null,
+      note: null,
+      actorId: testAdmin.id,
+      actor: null,
+      createdAt: now,
+      ...extra,
+    });
+
+    beforeEach(() => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(repairRow());
+      prismaServiceMock.return.updateMany.mockResolvedValue({ count: 1 });
+      prismaServiceMock.returnRepairEvent.create.mockResolvedValue({});
+      prismaServiceMock.return.findUniqueOrThrow.mockResolvedValue(
+        repairRow([stepRow(ReturnRepairStep.ACCEPTED, { note: 'Без пломби' })]),
+      );
+    });
+
+    it('records the step with its author and answers with the card', async () => {
+      const response = await addStep({
+        step: ReturnRepairStep.ACCEPTED,
+        note: '  Без пломби ',
+      }).expect(201);
+
+      expect(response.body.data).toMatchObject({
+        id: returnId,
+        decision: 'REPAIR',
+        repairSteps: [expect.objectContaining({ step: 'ACCEPTED', note: 'Без пломби' })],
+      });
+      expect(prismaServiceMock.return.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: returnId,
+          decision: ReturnDecision.REPAIR,
+          status: { notIn: [ReturnStatus.REJECTED, ReturnStatus.REFUNDED] },
+        },
+        data: { resolvedAt: expect.any(Date) },
+      });
+      expect(prismaServiceMock.returnRepairEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          returnId,
+          step: ReturnRepairStep.ACCEPTED,
+          note: 'Без пломби',
+          actorId: testAdmin.id,
+        }),
+      });
+    });
+
+    it('writes an audit row return.addRepairStep keyed by the return', async () => {
+      await addStep({ step: ReturnRepairStep.ACCEPTED }).expect(201);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(prismaServiceMock.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'return.addRepairStep',
+          entityType: 'return',
+          entityId: returnId,
+        }),
+      });
+    });
+
+    it('409 RETURN_REPAIR_STEP_INVALID on a return not decided as REPAIR, writing nothing', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(
+        repairRow([], { decision: ReturnDecision.REFUND }),
+      );
+
+      const response = await addStep({ step: ReturnRepairStep.ACCEPTED }).expect(409);
+
+      expect(response.body.error).toBe('RETURN_REPAIR_STEP_INVALID');
+      expect(prismaServiceMock.returnRepairEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('409 RETURN_REPAIR_STEP_INVALID for a step out of order', async () => {
+      const response = await addStep({ step: ReturnRepairStep.SENT_TO_SERVICE }).expect(409);
+
+      expect(response.body.error).toBe('RETURN_REPAIR_STEP_INVALID');
+      expect(prismaServiceMock.returnRepairEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('409 RETURN_REPAIR_STEP_INVALID when a double click lands the same step twice', async () => {
+      prismaServiceMock.returnRepairEvent.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: '7' }),
+      );
+
+      const response = await addStep({ step: ReturnRepairStep.ACCEPTED }).expect(409);
+
+      expect(response.body.error).toBe('RETURN_REPAIR_STEP_INVALID');
+    });
+
+    it('400 RETURN_REPAIR_RESULT_REQUIRED when the item comes back without an outcome', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(
+        repairRow([stepRow(ReturnRepairStep.ACCEPTED), stepRow(ReturnRepairStep.SENT_TO_SERVICE)]),
+      );
+
+      const response = await addStep({ step: ReturnRepairStep.RETURNED_FROM_SERVICE }).expect(400);
+
+      expect(response.body.error).toBe('RETURN_REPAIR_RESULT_REQUIRED');
+      expect(prismaServiceMock.returnRepairEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('400 RETURN_REPAIR_RESULT_NOT_ALLOWED for a result on any other step', async () => {
+      const response = await addStep({
+        step: ReturnRepairStep.ACCEPTED,
+        result: RepairResult.REPAIRED,
+      }).expect(400);
+
+      expect(response.body.error).toBe('RETURN_REPAIR_RESULT_NOT_ALLOWED');
+    });
+
+    it('400 on a step outside the enum and on an over-long waybill', async () => {
+      await addStep({ step: 'IN_REPAIR' }).expect(400);
+      await addStep({ step: ReturnRepairStep.ACCEPTED, ttn: '1'.repeat(65) }).expect(400);
+      expect(prismaServiceMock.returnRepairEvent.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a manager who may only read returns', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['returns:read']);
+      try {
+        await request(app.getHttpServer())
+          .post(`${url}/${returnId}/repair-steps`)
+          .set('Authorization', `Bearer ${generateAccessToken(testManager.id, 'MANAGER')}`)
+          .send({ step: ReturnRepairStep.ACCEPTED })
+          .expect(403);
+        expect(prismaServiceMock.returnRepairEvent.create).not.toHaveBeenCalled();
+      } finally {
+        permissionRepositoryMock.setGrants(UserRole.MANAGER, []);
+      }
+    });
+  });
+
+  describe('PATCH /api/admin/returns/:returnId — decisions have their own door', () => {
+    const returnId = '550e8400-e29b-41d4-a716-446655440000';
+
+    it.each([ReturnStatus.APPROVED, ReturnStatus.REJECTED])(
+      '400 RETURN_USE_DECISION_ENDPOINT for status %s, writing nothing',
+      async (status) => {
+        prismaServiceMock.return.findUnique.mockResolvedValue(makeReturnRow());
+
+        const response = await request(app.getHttpServer())
+          .patch(`${url}/${returnId}`)
+          .set('Authorization', `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`)
+          .send({ status })
+          .expect(400);
+
+        expect(response.body.error).toBe('RETURN_USE_DECISION_ENDPOINT');
+        expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  // The notes-only PATCH: since approving and refusing moved to POST /decision,
+  // a REQUESTED or REJECTED return has no status step for its notes to ride on.
+  describe('PATCH /api/admin/returns/:returnId — notes only', () => {
+    const returnId = '550e8400-e29b-41d4-a716-446655440000';
+    const patch = (body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .patch(`${url}/${returnId}`)
+        .set('Authorization', `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`)
+        .send(body);
+
+    it.each([ReturnStatus.REQUESTED, ReturnStatus.REJECTED, ReturnStatus.REFUNDED])(
+      'saves the notes on a %s return without a transition',
+      async (status) => {
+        prismaServiceMock.return.findUnique.mockResolvedValue(makeReturnRow({ status }));
+        prismaServiceMock.return.update.mockResolvedValue(
+          makeReturnRow({ status, operatorNotes: 'Дзвонив клієнт' }),
+        );
+
+        const response = await patch({ operatorNotes: '  Дзвонив клієнт ' }).expect(200);
+
+        expect(response.body.data).toMatchObject({ status, operatorNotes: 'Дзвонив клієнт' });
+        expect(prismaServiceMock.return.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: returnId },
+            data: { operatorNotes: 'Дзвонив клієнт' },
+          }),
+        );
+        expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+      },
+    );
+
+    it('writes an audit row return.resolve keyed by the return', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(makeReturnRow());
+      prismaServiceMock.return.update.mockResolvedValue(makeReturnRow({ operatorNotes: 'x' }));
+
+      await patch({ operatorNotes: 'x' }).expect(200);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(prismaServiceMock.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'return.resolve',
+          entityType: 'return',
+          entityId: returnId,
+        }),
+      });
+    });
+
+    it('400 RETURN_UPDATE_EMPTY for a body with neither a status nor notes', async () => {
+      const response = await patch({}).expect(400);
+
+      expect(response.body.error).toBe('RETURN_UPDATE_EMPTY');
+      expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+    });
+
+    it.each([{ refundedAmount: '499.00' }, { restock: true }])(
+      '400 RETURN_STATUS_REQUIRED for %o without a status',
+      async (body) => {
+        const response = await patch({ operatorNotes: 'x', ...body }).expect(400);
+
+        expect(response.body.error).toBe('RETURN_STATUS_REQUIRED');
+        expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+        expect(prismaServiceMock.return.updateMany).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  // ─── Projections (TASK-1963, TASK-2044, TASK-2045) ──────────────────────────
+  //
+  // The Prisma double hands back a row carrying EVERYTHING — staff accounts,
+  // operator notes, repair notes — as if a read had over-fetched. What reaches
+  // the wire is then decided by the projection alone, which is the guarantee.
+
+  describe('what the customer and the operator each see', () => {
+    const operator = {
+      id: 'operator-e2e-9',
+      email: 'olena@shop.test',
+      firstName: 'Олена',
+      lastName: 'Коваль',
+    };
+    const orderCreatedAt = new Date('2026-06-30T08:00:00.000Z');
+
+    const fullRow = () =>
+      makeReturnRow({
+        status: ReturnStatus.APPROVED,
+        operatorNotes: 'Клієнт сварився',
+        createdByUserId: operator.id,
+        requestedOutcome: 'REPAIR',
+        channel: 'OPERATOR',
+        decision: ReturnDecision.REPAIR,
+        decisionReason: 'Гарантійний випадок',
+        decidedAt: now,
+        decidedById: operator.id,
+        order: {
+          id: '550e8400-e29b-41d4-a716-4466554400ff',
+          userId: testCustomer.id,
+          guestEmail: null,
+          status: 'DELIVERED',
+          createdAt: orderCreatedAt,
+        },
+        createdBy: operator,
+        decidedBy: operator,
+        decisionEvents: [
+          {
+            id: 'event-1',
+            decision: ReturnDecision.REPAIR,
+            reason: 'Гарантійний випадок',
+            legacy: false,
+            createdAt: now,
+            actor: operator,
+          },
+        ],
+        repairEvents: [
+          {
+            id: 'repair-1',
+            step: 'SENT_TO_SERVICE',
+            result: null,
+            destination: 'СЦ «Ябко»',
+            ttn: '20450000000000',
+            note: 'Подряпина на корпусі',
+            createdAt: now,
+            actor: operator,
+          },
+        ],
+      });
+
+    it('GET /api/returns: the decision and repair progress, and not one staff fact', async () => {
+      prismaServiceMock.return.findMany.mockResolvedValue([fullRow()]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/returns')
+        .set('Authorization', `Bearer ${generateAccessToken(testCustomer.id, 'CUSTOMER')}`)
+        .expect(200);
+
+      const [body] = res.body.data;
+      expect(body).toMatchObject({
+        requestedOutcome: 'REPAIR',
+        channel: 'OPERATOR',
+        decision: 'REPAIR',
+        decisionReason: 'Гарантійний випадок',
+        decidedAt: now.toISOString(),
+        decisionLegacy: false,
+        restockedAt: null,
+        repairSteps: [
+          {
+            step: 'SENT_TO_SERVICE',
+            result: null,
+            destination: 'СЦ «Ябко»',
+            ttn: '20450000000000',
+            createdAt: now.toISOString(),
+          },
+        ],
+      });
+      for (const key of [
+        'operatorNotes',
+        'createdByUserId',
+        'createdBy',
+        'decidedById',
+        'decidedBy',
+        'decisionHistory',
+        'orderCreatedAt',
+      ]) {
+        expect(body).not.toHaveProperty(key);
+      }
+      expect(body.repairSteps[0]).not.toHaveProperty('note');
+      expect(body.repairSteps[0]).not.toHaveProperty('actor');
+      const wire = JSON.stringify(res.body);
+      expect(wire).not.toContain(operator.id);
+      expect(wire).not.toContain(operator.email);
+      expect(wire).not.toContain('Подряпина');
+      expect(wire).not.toContain('Клієнт сварився');
+    });
+
+    it('GET /api/orders/:id/returns: the same customer projection', async () => {
+      prismaServiceMock.order.findFirst.mockResolvedValue({
+        id: '550e8400-e29b-41d4-a716-4466554400ff',
+        userId: testCustomer.id,
+        status: 'DELIVERED',
+        items: [],
+      });
+      prismaServiceMock.return.findMany.mockResolvedValue([fullRow()]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/orders/550e8400-e29b-41d4-a716-4466554400ff/returns')
+        .set('Authorization', `Bearer ${generateAccessToken(testCustomer.id, 'CUSTOMER')}`)
+        .expect(200);
+
+      const wire = JSON.stringify(res.body);
+      expect(wire).not.toContain(operator.id);
+      expect(wire).not.toContain(operator.email);
+      expect(wire).not.toContain('Подряпина');
+      expect(res.body.data[0]).not.toHaveProperty('operatorNotes');
+    });
+
+    it('GET /api/admin/returns/:id: authors by name, history, repair notes and the purchase date', async () => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(fullRow());
+
+      const res = await request(app.getHttpServer())
+        .get(`${url}/550e8400-e29b-41d4-a716-446655440000`)
+        .set('Authorization', `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`)
+        .expect(200);
+
+      const actor = { id: operator.id, name: 'Олена Коваль', email: operator.email };
+      expect(res.body.data).toMatchObject({
+        operatorNotes: 'Клієнт сварився',
+        createdBy: actor,
+        decidedBy: actor,
+        orderCreatedAt: orderCreatedAt.toISOString(),
+        decisionHistory: [
+          {
+            decision: 'REPAIR',
+            reason: 'Гарантійний випадок',
+            legacy: false,
+            createdAt: now.toISOString(),
+            actor,
+          },
+        ],
+        repairSteps: [
+          {
+            step: 'SENT_TO_SERVICE',
+            note: 'Подряпина на корпусі',
+            actor,
+          },
+        ],
+      });
+    });
+  });
+
+  describe('POST — the requested outcome and the door (TASK-1963)', () => {
+    const orderId = '550e8400-e29b-41d4-a716-4466554400ff';
+    const lineId = '550e8400-e29b-41d4-a716-446655440001';
+
+    it('400 on a requested outcome outside the enum, before anything is read', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/orders/${orderId}/returns`)
+        .set('Authorization', `Bearer ${generateAccessToken(testCustomer.id, 'CUSTOMER')}`)
+        .send({ requestedOutcome: 'MONEY_BACK', items: [{ orderItemId: lineId, quantity: 1 }] })
+        .expect(400);
+
+      expect(prismaServiceMock.order.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('an operator opens it: OPERATOR channel, the outcome stored, the order left alone', async () => {
+      prismaServiceMock.order.findFirst.mockResolvedValue({
+        id: orderId,
+        userId: null,
+        status: 'DELIVERED',
+        paymentStatus: 'PAID',
+        items: [{ id: lineId, quantity: 3 }],
+      });
+      prismaServiceMock.$queryRaw.mockResolvedValue([{ id: orderId }]);
+      prismaServiceMock.return.findMany.mockResolvedValue([]);
+      prismaServiceMock.return.create.mockResolvedValue(
+        makeReturnRow({ requestedOutcome: 'REPLACEMENT', channel: 'OPERATOR' }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/admin/orders/${orderId}/returns`)
+        .set('Authorization', `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`)
+        .send({ requestedOutcome: 'REPLACEMENT', items: [{ orderItemId: lineId, quantity: 1 }] })
+        .expect(201);
+
+      expect(prismaServiceMock.return.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            orderId,
+            requestedOutcome: 'REPLACEMENT',
+            channel: 'OPERATOR',
+            createdByUserId: testAdmin.id,
+          }),
+        }),
+      );
+      expect(res.body.data).toMatchObject({ requestedOutcome: 'REPLACEMENT', channel: 'OPERATOR' });
+      expect(prismaServiceMock.order.update).not.toHaveBeenCalled();
+      expect(prismaServiceMock.order.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── /api/orders/guest/:token/returns (TASK-1965) ───────────────────────────
+  //
+  // The guest's door: no session, the token in the path is the credential. The
+  // real OrderService resolves it (hash, soft-delete filter, TTL), the real
+  // ReturnService + repository run against the Prisma double.
+
+  describe('/api/orders/guest/:token/returns (TASK-1965)', () => {
+    const orderId = '550e8400-e29b-41d4-a716-4466554400ff';
+    const lineId = '550e8400-e29b-41d4-a716-446655440001';
+    const VALID = 'v'.repeat(64);
+    const EXPIRED = 'x'.repeat(64);
+    const WRONG = 'w'.repeat(64);
+    const hashOf = (raw: string) => createHash('sha256').update(raw).digest('hex');
+    const guestUrl = (token: string) => `/api/orders/guest/${token}/returns`;
+    const body = { requestedOutcome: 'REFUND', items: [{ orderItemId: lineId, quantity: 1 }] };
+
+    const order = (createdAt: Date) => ({
+      id: orderId,
+      userId: null,
+      status: 'DELIVERED',
+      paymentStatus: 'PAID',
+      createdAt,
+      accessTokenIssuedAt: null,
+      items: [{ id: lineId, quantity: 3 }],
+    });
+    const fresh = order(new Date());
+    // Older than the 60-day default window, with no re-issue to restart it.
+    const stale = order(new Date(Date.now() - 200 * 24 * 60 * 60 * 1000));
+
+    beforeEach(() => {
+      prismaServiceMock.order.findFirst.mockImplementation(
+        async ({ where }: { where: { id?: string; accessTokenHash?: string } }) => {
+          if (where.accessTokenHash === hashOf(VALID)) return fresh;
+          if (where.accessTokenHash === hashOf(EXPIRED)) return stale;
+          if (where.id === orderId) return fresh;
+          return null;
+        },
+      );
+      prismaServiceMock.$queryRaw.mockResolvedValue([{ id: orderId }]);
+      prismaServiceMock.return.findMany.mockResolvedValue([]);
+      // No shop chat connected: the ping is attempted and skipped.
+      prismaServiceMock.notificationBinding.findMany.mockResolvedValue([]);
+    });
+
+    it('POST with a valid token: 201, GUEST_LINK, no author, the shop ping attempted', async () => {
+      prismaServiceMock.return.create.mockResolvedValue(
+        makeReturnRow({
+          requestedOutcome: 'REFUND',
+          channel: 'GUEST_LINK',
+          createdByUserId: null,
+          operatorNotes: 'внутрішнє',
+        }),
+      );
+
+      const res = await request(app.getHttpServer()).post(guestUrl(VALID)).send(body).expect(201);
+
+      expect(prismaServiceMock.order.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { accessTokenHash: hashOf(VALID), deletedAt: null } }),
+      );
+      expect(prismaServiceMock.return.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            orderId,
+            requestedOutcome: 'REFUND',
+            channel: 'GUEST_LINK',
+            createdByUserId: null,
+          }),
+        }),
+      );
+      // The same in-transaction Telegram ping as the customer's own door.
+      expect(prismaServiceMock.notificationBinding.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ channel: 'TELEGRAM', audience: 'SHOP' }),
+        }),
+      );
+      expect(res.body.data).toMatchObject({ orderId, channel: 'GUEST_LINK' });
+      expect(res.body.data).not.toHaveProperty('operatorNotes');
+      expect(res.body.data).not.toHaveProperty('createdByUserId');
+    });
+
+    it('GET with a valid token: the customer projection of the order’s returns', async () => {
+      prismaServiceMock.return.findMany.mockResolvedValue([
+        makeReturnRow({ operatorNotes: 'внутрішнє', createdByUserId: 'operator-e2e-9' }),
+      ]);
+
+      const res = await request(app.getHttpServer()).get(guestUrl(VALID)).expect(200);
+
+      const args = prismaServiceMock.return.findMany.mock.calls.at(-1)?.[0] as {
+        where: unknown;
+      };
+      expect(args.where).toEqual({ orderId });
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0]).not.toHaveProperty('operatorNotes');
+      expect(JSON.stringify(res.body)).not.toContain('operator-e2e-9');
+    });
+
+    it('wrong and expired tokens answer the very same 404 as the guest order read', async () => {
+      const wrongPost = await request(app.getHttpServer()).post(guestUrl(WRONG)).send(body);
+      const expiredPost = await request(app.getHttpServer()).post(guestUrl(EXPIRED)).send(body);
+      const wrongGet = await request(app.getHttpServer()).get(guestUrl(WRONG));
+      const expiredGet = await request(app.getHttpServer()).get(guestUrl(EXPIRED));
+      const orderRead = await request(app.getHttpServer()).get(`/api/orders/guest/${WRONG}`);
+
+      for (const res of [wrongPost, expiredPost, wrongGet, expiredGet]) {
+        expect(res.status).toBe(404);
+        expect(res.body).toEqual(orderRead.body);
+      }
+      expect(orderRead.body).toMatchObject({ statusCode: 404, message: 'Order not found' });
+      expect(prismaServiceMock.return.create).not.toHaveBeenCalled();
+      expect(prismaServiceMock.return.findMany).not.toHaveBeenCalled();
+    });
+
+    it('validates the body before the token is even looked up', async () => {
+      await request(app.getHttpServer())
+        .post(guestUrl(VALID))
+        .send({ items: [{ orderItemId: lineId, quantity: 0 }] })
+        .expect(400);
+
+      expect(prismaServiceMock.return.create).not.toHaveBeenCalled();
     });
   });
 });

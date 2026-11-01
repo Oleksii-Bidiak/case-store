@@ -3,6 +3,7 @@ import { formatCurrency } from "@/shared/lib";
 import {
   OPERATOR_NOTES_MAX_LENGTH,
   createResolveReturnSchema,
+  notesOnlyDto,
   orderBalanceOf,
   refundCapOf,
   returnedValueOf,
@@ -135,6 +136,24 @@ describe("createResolveReturnSchema — the refund ceilings (TASK-785)", () => {
   });
 });
 
+describe("createResolveReturnSchema — the PATCH's own statuses (TASK-2044)", () => {
+  const passes = (status: string) =>
+    createResolveReturnSchema().safeParse(values({ status })).success;
+
+  it("takes the two steps the PATCH still owns", () => {
+    expect(passes("RECEIVED")).toBe(true);
+    expect(passes("REFUNDED")).toBe(true);
+  });
+
+  it("never carries APPROVED or REJECTED — those are decisions now", () => {
+    // The API answers them with RETURN_USE_DECISION_ENDPOINT.
+    expect(passes("APPROVED")).toBe(false);
+    expect(passes("REJECTED")).toBe(false);
+    expect(passes("REQUESTED")).toBe(false);
+    expect(passes("")).toBe(false);
+  });
+});
+
 describe("createResolveReturnSchema — operator notes (TASK-794)", () => {
   const notesIssue = (operatorNotes: string) => {
     const result = createResolveReturnSchema().safeParse(
@@ -170,5 +189,15 @@ describe("refundCapOf — «Можна повернути максимум» (TA
   it("is the one it knows, or nothing", () => {
     expect(refundCapOf({ returnedValue: "499.00" })).toBe("499.00");
     expect(refundCapOf({ returnedValue: null, orderBalance: null })).toBeNull();
+  });
+});
+
+describe("notesOnlyDto — the notes-only PATCH body", () => {
+  it("carries the trimmed notes and nothing else — no status, amount or restock", () => {
+    expect(notesOnlyDto("  Дзвонив  ")).toEqual({ operatorNotes: "Дзвонив" });
+  });
+
+  it("clears the notes with null when the field is blank", () => {
+    expect(notesOnlyDto("   ")).toEqual({ operatorNotes: null });
   });
 });

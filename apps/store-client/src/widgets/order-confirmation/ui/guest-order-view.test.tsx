@@ -1,8 +1,20 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, within } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+  within,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
-import { makeOrder } from "@/shared/test/msw-handlers";
+import {
+  makeOrder,
+  makeOrderItem,
+  makeReturn,
+} from "@/shared/test/msw-handlers";
+import type { ReturnEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
+import { Toaster } from "@/shared/ui";
 import { GuestOrderView } from "./guest-order-view";
 
 // The query string the page is opened with — `?placed=1` right after checkout
@@ -286,5 +298,213 @@ describe("GuestOrderView — arriving from checkout (TASK-1999)", () => {
         name: dict.telegramNotifications.guest.heading,
       }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-1965 (B-12, тема 1.8) — a guest or a phone shopper files a return by the
+ * e-mailed link with the same dialog as the account, sees what became of every
+ * request, and has the shop's contacts at hand. A bad or expired link still
+ * looks exactly like any other (D43).
+ */
+describe("GuestOrderView — returns (TASK-1965)", () => {
+  const delivered = makeOrder({
+    userId: null,
+    status: "DELIVERED",
+    items: [makeOrderItem({ id: "line-1", productName: "Чохол", quantity: 2 })],
+  });
+
+  function serveOrder(order = delivered) {
+    server.use(
+      http.get("*/api/orders/guest/:token", () => HttpResponse.json(order)),
+    );
+  }
+
+  const contact = {
+    phone: "+380 67 111 2233",
+    email: "help@shop.example",
+    workingHours: "Пн–Пт: 10:00 – 18:00",
+  };
+
+  const returnBlock = () =>
+    screen.findByRole("region", { name: dict.order.guest.returnHeading });
+
+  it("on a delivered order — says how to return, with the shop's own contacts", async () => {
+    serveOrder();
+
+    renderWithProviders(<GuestOrderView token="token-1" contact={contact} />);
+
+    const block = within(await returnBlock());
+    expect(block.getByRole("link", { name: contact.phone })).toHaveAttribute(
+      "href",
+      "tel:+380671112233",
+    );
+    expect(block.getByRole("link", { name: contact.email })).toHaveAttribute(
+      "href",
+      `mailto:${contact.email}`,
+    );
+    expect(block.getByText(contact.workingHours)).toBeInTheDocument();
+    expect(
+      block.getByRole("button", {
+        name: dict.returnRequest.triggerAria("#ORDER-1"),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to the storefront's default contacts when none are configured", async () => {
+    serveOrder();
+
+    renderWithProviders(<GuestOrderView token="token-1" contact={null} />);
+
+    const block = within(await returnBlock());
+    expect(
+      block.getByRole("link", { name: dict.footer.contactPhone }),
+    ).toBeInTheDocument();
+    expect(
+      block.getByRole("link", { name: dict.footer.contactEmail }),
+    ).toBeInTheDocument();
+  });
+
+  it("files the return through the guest-token endpoint and shows it in the history", async () => {
+    const user = userEvent.setup();
+    serveOrder();
+    const filed: ReturnEntity[] = [];
+    const tokens: unknown[] = [];
+    const bodies: unknown[] = [];
+    server.use(
+      http.get("*/api/orders/guest/:token/returns", () =>
+        HttpResponse.json({ data: filed }),
+      ),
+      http.post(
+        "*/api/orders/guest/:token/returns",
+        async ({ request, params }) => {
+          tokens.push(params.token);
+          bodies.push(await request.json());
+          const created = makeReturn({
+            id: "abcd1234-new",
+            channel: "GUEST_LINK",
+            items: [
+              {
+                id: "ri-1",
+                orderItemId: "line-1",
+                quantity: 1,
+                productName: "Чохол",
+                price: "499.00",
+              },
+            ],
+          });
+          filed.push(created);
+          return HttpResponse.json({ data: created }, { status: 201 });
+        },
+      ),
+    );
+
+    renderWithProviders(
+      <>
+        <GuestOrderView token="token-1" contact={contact} />
+        <Toaster />
+      </>,
+    );
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: dict.returnRequest.triggerAria("#ORDER-1"),
+      }),
+    );
+    const quantity = await screen.findByLabelText(
+      dict.returnRequest.quantityAria("Чохол"),
+    );
+    await user.clear(quantity);
+    await user.type(quantity, "1");
+    await user.click(
+      screen.getByRole("button", { name: dict.returnRequest.submit }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(tokens).toEqual(["token-1"]);
+    expect(bodies[0]).toEqual({
+      items: [{ orderItemId: "line-1", quantity: 1 }],
+    });
+    // The history picks the new request up by itself.
+    const history = within(
+      await screen.findByRole("region", {
+        name: dict.returnRequest.historyTitle,
+      }),
+    );
+    expect(
+      await history.findByRole("heading", { name: /#ABCD1234/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the decision and its reason on an earlier request", async () => {
+    serveOrder();
+    server.use(
+      http.get("*/api/orders/guest/:token/returns", () =>
+        HttpResponse.json({
+          data: [
+            makeReturn({
+              status: "REJECTED",
+              channel: "GUEST_LINK",
+              decision: "REJECT",
+              decisionReason: "Сліди використання",
+              decidedAt: "2026-06-12T10:00:00.000Z",
+            }),
+          ],
+        }),
+      ),
+    );
+
+    renderWithProviders(<GuestOrderView token="token-1" contact={contact} />);
+
+    const history = within(
+      await screen.findByRole("region", {
+        name: dict.returnRequest.historyTitle,
+      }),
+    );
+    expect(history.getByText("Сліди використання")).toBeInTheDocument();
+  });
+
+  it("offers no return on an order that is not delivered — the account's rule", async () => {
+    serveOrder(makeOrder({ userId: null, status: "SHIPPED" }));
+
+    renderWithProviders(<GuestOrderView token="token-1" contact={contact} />);
+
+    await screen.findByRole("heading", { level: 1, name: dict.order.thankYou });
+    expect(
+      screen.queryByRole("region", { name: dict.order.guest.returnHeading }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: dict.returnRequest.triggerAria("#ORDER-1"),
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps the one not-found view for a bad link — no returns UI, no returns request", async () => {
+    let returnCalls = 0;
+    server.use(
+      http.get("*/api/orders/guest/:token", () =>
+        HttpResponse.json({ message: "Order not found" }, { status: 404 }),
+      ),
+      http.get("*/api/orders/guest/:token/returns", () => {
+        returnCalls += 1;
+        return HttpResponse.json(
+          { message: "Order not found" },
+          { status: 404 },
+        );
+      }),
+    );
+
+    renderWithProviders(<GuestOrderView token="bad-token" contact={contact} />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: dict.order.guest.linkInvalidHeading,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: dict.order.guest.returnHeading }),
+    ).toBeNull();
+    expect(returnCalls).toBe(0);
   });
 });

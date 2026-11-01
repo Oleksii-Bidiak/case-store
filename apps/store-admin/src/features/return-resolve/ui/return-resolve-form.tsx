@@ -7,10 +7,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
+  RETURN_ERROR_CODE,
   ReturnEntityStatus,
-  allowedReturnTransitions,
   getAdminReturnControllerFindAllQueryKey,
   getAdminReturnControllerFindByIdQueryKey,
+  nextResolveStep,
+  returnDecisionLabel,
+  returnRefusalOf,
   useAdminReturnControllerResolve,
   type ReturnEntity,
 } from "@/entities/return";
@@ -23,20 +26,15 @@ import {
   Input,
   Label,
   Textarea,
-  useConfirmDialog,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import {
-  apiErrorCode,
-  apiErrorMessage,
-  apiErrorStatus,
-  formatCurrency,
-} from "@/shared/lib";
+import { apiErrorMessage, apiErrorStatus, formatCurrency } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import {
   OPERATOR_NOTES_MAX_LENGTH,
   canRestock,
   createResolveReturnSchema,
+  notesOnlyDto,
   refundCapOf,
   resolveValuesToDto,
   returnedValueOf,
@@ -45,13 +43,14 @@ import {
 
 const d = dict.returns;
 
-/** The API's TASK-785 refusal codes, carried in the 400 body's `error`. */
-const REFUND_CEILING_MESSAGES: Record<string, () => string> = {
-  RETURN_REFUND_EXCEEDS_RETURNED_VALUE: () =>
-    d.resolveRefundExceedsReturnedValue(),
-  RETURN_REFUND_EXCEEDS_ORDER_BALANCE: () =>
-    d.resolveRefundExceedsOrderBalance(),
-};
+/**
+ * The API's TASK-785 refusal codes — both go under the amount, since that
+ * number is what is wrong. Worded by the shared `returnRefusalOf` (TASK-1966).
+ */
+const REFUND_CEILING_CODES: ReadonlyArray<string | null> = [
+  RETURN_ERROR_CODE.REFUND_EXCEEDS_RETURNED_VALUE,
+  RETURN_ERROR_CODE.REFUND_EXCEEDS_ORDER_BALANCE,
+];
 
 interface ReturnResolveFormProps {
   rma: ReturnEntity;
@@ -70,11 +69,16 @@ interface ReturnResolveFormProps {
  * One card that offers ONLY what the state machine allows from here, as named
  * actions instead of a status select and one «Зберегти рішення»:
  *
- *   REQUESTED → «Схвалити заявку» · «Відхилити заявку…»
- *   APPROVED  → «Повернути товар на склад (N шт.)» ☑ + «Товар отримано» ·
- *               «Відхилити заявку…»
- *   RECEIVED  → «Сума повернення, ₴ *» + «Гроші повернуто»
- *   REJECTED / REFUNDED → nothing: a communicated decision is not rewritten.
+ *   REQUESTED → nothing yet: the decision comes first
+ *   APPROVED  → «Повернути товар на склад (N шт.)» ☑ + «Товар отримано»
+ *   RECEIVED  → «Сума повернення, ₴ *» + «Гроші повернуто» — under a REFUND
+ *               decision only; a repair or a replacement returns no money
+ *   REJECTED  → nothing: re-opening a refusal is a change of the decision
+ *   REFUNDED  → nothing: the return is closed.
+ *
+ * Since B-12 (TASK-2044) «Схвалити / Відхилити…» are gone from here: APPROVED
+ * and REJECTED follow from a decision (`features/return-decide`), and this
+ * PATCH refuses them (`RETURN_USE_DECISION_ENDPOINT`).
  *
  * Every action is the same `PATCH /admin/returns/:id` the old form sent, behind
  * the same `returns:write` (TASK-716) — a reader sees the step and the notes,
@@ -93,8 +97,10 @@ interface ReturnResolveFormProps {
  *    default since wave 198 (most parcels come back sellable — «Зніміть, якщо…»).
  *
  * The notes are shown ONCE (they were on the card twice); «Змінити» turns them
- * into a field that is saved with the next step — the API has no notes-only
- * write, so on a closed return there is no «Змінити».
+ * into a field with its own «Зберегти примітки» — a PATCH without a status,
+ * which the API applies on ANY status with no transition. Since approving and
+ * refusing became decisions, a REQUESTED or REJECTED return has no step for
+ * the notes to ride on. Where a step exists, the notes still go with it too.
  */
 export function ReturnResolveForm({
   rma,
@@ -149,7 +155,7 @@ function NotesCard({
   editor,
 }: {
   notes: string | null;
-  /** Present when the notes can be changed (a writer, a return still open). */
+  /** Present when the notes can be changed — for a writer, on any status. */
   onEdit?: () => void;
   /** The field, while editing. */
   editor?: ReactNode;
@@ -196,10 +202,9 @@ function NotesCard({
 function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
   const queryClient = useQueryClient();
   const resolve = useAdminReturnControllerResolve();
-  const { confirm, confirmDialog } = useConfirmDialog();
   const [editingNotes, setEditingNotes] = useState(false);
 
-  const allowed = allowedReturnTransitions(rma.status);
+  const next = nextResolveStep(rma.status, rma.decision);
   const returnedValue = returnedValueOf(rma.items);
   // The hint names a maximum only when the card knows BOTH ceilings — the
   // same rule as «Можна повернути максимум» beside it; the returned value
@@ -230,6 +235,77 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
   const { errors } = form.formState;
 
   const pendingStatus = resolve.isPending ? resolve.variables?.data.status : "";
+  // A notes-only PATCH carries no status at all.
+  const savingNotes =
+    resolve.isPending && resolve.variables?.data.status === undefined;
+
+  const invalidateReturn = () => {
+    void queryClient.invalidateQueries({
+      queryKey: getAdminReturnControllerFindByIdQueryKey(rma.id),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: getAdminReturnControllerFindAllQueryKey(),
+    });
+  };
+
+  /** One reading of a refused PATCH, for a step and for the notes alike. */
+  const onResolveError = (error: unknown, fallback: string) => {
+    const status = apiErrorStatus(error);
+    const refusal = returnRefusalOf(error);
+    if (refusal && REFUND_CEILING_CODES.includes(refusal.code)) {
+      // Under the amount, not in a toast: that number is what is wrong.
+      form.setError(
+        "refundedAmount",
+        { type: "server", message: refusal.message },
+        { shouldFocus: true },
+      );
+      return;
+    }
+    if (status === 409 || refusal?.refetch) {
+      // The server's state machine is authoritative — the client-side
+      // mirror losing to it is exactly the drift its docblock warns
+      // about, so refetch and say so plainly. A coded refusal names what
+      // moved (TASK-1966); a bare transition refusal keeps the old line.
+      void queryClient.invalidateQueries({
+        queryKey: getAdminReturnControllerFindByIdQueryKey(rma.id),
+      });
+      toast.error(
+        refusal && refusal.code !== RETURN_ERROR_CODE.TRANSITION_INVALID
+          ? refusal.message
+          : d.resolveConflict,
+      );
+      return;
+    }
+    if (refusal) {
+      // A 403, or a coded 400 the form cannot place under a field.
+      toast.error(refusal.message);
+      return;
+    }
+    if (status === 400) {
+      // TASK-956: a DTO refusal names its field — put it under that
+      // field. Anything else gets a sentence that is true.
+      const message = apiErrorMessage(error) ?? "";
+      if (/operatorNotes/.test(message)) {
+        setEditingNotes(true);
+        form.setError("operatorNotes", {
+          type: "server",
+          message: d.operatorNotesTooLong,
+        });
+        return;
+      }
+      if (/refundedAmount/.test(message)) {
+        form.setError(
+          "refundedAmount",
+          { type: "server", message: d.resolveRefundedAmountInvalid },
+          { shouldFocus: true },
+        );
+        return;
+      }
+      toast.error(d.resolveBadRequest);
+      return;
+    }
+    toast.error(fallback);
+  };
 
   const onSubmit = (values: ResolveReturnFormValues) => {
     resolve.mutate(
@@ -239,67 +315,34 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
       },
       {
         onSuccess: () => {
-          void queryClient.invalidateQueries({
-            queryKey: getAdminReturnControllerFindByIdQueryKey(rma.id),
-          });
-          void queryClient.invalidateQueries({
-            queryKey: getAdminReturnControllerFindAllQueryKey(),
-          });
+          invalidateReturn();
           form.setValue("status", "", { shouldDirty: false });
           setEditingNotes(false);
           toast.success(d.resolveSuccess);
         },
-        onError: (error) => {
-          const status = apiErrorStatus(error);
-          if (status === 409) {
-            // The server's state machine is authoritative — the client-side
-            // mirror losing to it is exactly the drift its docblock warns
-            // about, so refetch and say so plainly.
-            void queryClient.invalidateQueries({
-              queryKey: getAdminReturnControllerFindByIdQueryKey(rma.id),
-            });
-            toast.error(d.resolveConflict);
-            return;
-          }
-          if (status === 400) {
-            const code = apiErrorCode(error);
-            const ceiling =
-              typeof code === "string"
-                ? REFUND_CEILING_MESSAGES[code]
-                : undefined;
-            if (ceiling) {
-              // Under the amount, not in a toast: that number is what is wrong.
-              form.setError(
-                "refundedAmount",
-                { type: "server", message: ceiling() },
-                { shouldFocus: true },
-              );
-              return;
-            }
-            // TASK-956: a DTO refusal names its field — put it under that
-            // field. Anything else gets a sentence that is true.
-            const message = apiErrorMessage(error) ?? "";
-            if (/operatorNotes/.test(message)) {
-              setEditingNotes(true);
-              form.setError("operatorNotes", {
-                type: "server",
-                message: d.operatorNotesTooLong,
-              });
-              return;
-            }
-            if (/refundedAmount/.test(message)) {
-              form.setError(
-                "refundedAmount",
-                { type: "server", message: d.resolveRefundedAmountInvalid },
-                { shouldFocus: true },
-              );
-              return;
-            }
-            toast.error(d.resolveBadRequest);
-            return;
-          }
-          toast.error(d.resolveFailed);
+        onError: (error) => onResolveError(error, d.resolveFailed),
+      },
+    );
+  };
+
+  const saveNotes = async () => {
+    if (resolve.isPending) return;
+    form.clearErrors();
+    // The schema's other fields (the step not chosen, the amount) are not
+    // part of this write — only the notes have to be valid.
+    if (!(await form.trigger("operatorNotes"))) return;
+    const notes = form.getValues("operatorNotes");
+    resolve.mutate(
+      { returnId: rma.id, data: notesOnlyDto(notes) },
+      {
+        onSuccess: () => {
+          invalidateReturn();
+          // Saved, so no longer dirty: the refetch may now refill the field.
+          form.resetField("operatorNotes", { defaultValue: notes.trim() });
+          setEditingNotes(false);
+          toast.success(d.notesSaved);
         },
+        onError: (error) => onResolveError(error, d.notesSaveFailed),
       },
     );
   };
@@ -324,16 +367,6 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
       // A note refused by the schema is only visible in its editor.
       if (fieldErrors.operatorNotes) setEditingNotes(true);
     })();
-  };
-
-  const askReject = async () => {
-    const confirmed = await confirm({
-      title: d.rejectConfirmTitle,
-      description: d.rejectConfirmDescription,
-      confirmLabel: d.rejectConfirm,
-      destructive: true,
-    });
-    if (confirmed) submitStep(ReturnEntityStatus.REJECTED);
   };
 
   const actionButton = (status: string, label: string) => {
@@ -361,45 +394,28 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
     );
   };
 
-  const rejectButton = allowed.includes(ReturnEntityStatus.REJECTED) ? (
-    <Button
-      type="button"
-      variant="ghost"
-      className="w-full text-destructive hover:text-destructive"
-      disabled={resolve.isPending}
-      onClick={() => void askReject()}
-    >
-      {pendingStatus === ReturnEntityStatus.REJECTED ? (
-        <>
-          <Loader2
-            aria-hidden="true"
-            className="animate-spin motion-reduce:animate-none"
-          />
-          {d.saving}
-        </>
-      ) : (
-        d.reject
-      )}
-    </Button>
-  ) : null;
-
   const amountError = errors.refundedAmount?.message;
   const notesError = errors.operatorNotes?.message;
 
   let step: ReactNode;
-  if (allowed.length === 0) {
+  if (rma.status === ReturnEntityStatus.REQUESTED) {
+    step = <p className="text-sm text-muted-foreground">{d.nextRequested}</p>;
+  } else if (rma.status === ReturnEntityStatus.REJECTED) {
+    step = <p className="text-sm text-muted-foreground">{d.nextRejected}</p>;
+  } else if (rma.status === ReturnEntityStatus.RECEIVED && next === null) {
+    // A repair or a replacement: the goods are here, no money goes back.
+    step = (
+      <p className="text-sm text-muted-foreground">
+        {d.nextReceivedNoRefund(
+          rma.decision === null ? null : returnDecisionLabel(rma.decision),
+        )}
+      </p>
+    );
+  } else if (next === null) {
     step = (
       <p className="text-sm text-muted-foreground">{d.resolveNoTransitions}</p>
     );
-  } else if (rma.status === ReturnEntityStatus.REQUESTED) {
-    step = (
-      <>
-        <p className="text-sm text-muted-foreground">{d.nextRequested}</p>
-        {actionButton(ReturnEntityStatus.APPROVED, d.approve)}
-        {rejectButton}
-      </>
-    );
-  } else if (rma.status === ReturnEntityStatus.APPROVED) {
+  } else if (next === ReturnEntityStatus.RECEIVED) {
     const restockAvailable = canRestock(
       ReturnEntityStatus.RECEIVED,
       rma.restockedAt,
@@ -435,11 +451,10 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
           </p>
         )}
         {actionButton(ReturnEntityStatus.RECEIVED, d.markReceived)}
-        {rejectButton}
       </>
     );
   } else {
-    // RECEIVED — the only move left is the money.
+    // RECEIVED under a REFUND decision — the only move left is the money.
     step = (
       <>
         <p className="text-sm text-muted-foreground">
@@ -490,20 +505,18 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
     );
   }
 
-  const canEditNotes = allowed.length > 0;
-
   return (
     <form
       onSubmit={(event) => event.preventDefault()}
       className="flex flex-col gap-6"
       noValidate
     >
-      <StepCard active={allowed.length > 0}>{step}</StepCard>
+      <StepCard active={next !== null}>{step}</StepCard>
       <NotesCard
         notes={rma.operatorNotes ?? null}
-        onEdit={canEditNotes ? () => setEditingNotes(true) : undefined}
+        onEdit={() => setEditingNotes(true)}
         editor={
-          canEditNotes && editingNotes ? (
+          editingNotes ? (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="return-operator-notes" className="sr-only">
                 {d.operatorNotes}
@@ -518,7 +531,9 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
                 aria-describedby={
                   notesError
                     ? "return-operator-notes-error"
-                    : "return-operator-notes-hint"
+                    : next !== null
+                      ? "return-operator-notes-hint"
+                      : undefined
                 }
                 aria-invalid={notesError ? true : undefined}
                 {...form.register("operatorNotes")}
@@ -530,19 +545,40 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
                 >
                   {notesError}
                 </FieldError>
-              ) : (
+              ) : next !== null ? (
+                // Only where a step exists can the notes also travel with it.
                 <p
                   id="return-operator-notes-hint"
                   className="text-xs text-muted-foreground"
                 >
                   {d.notesEditHint}
                 </p>
-              )}
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="self-start"
+                disabled={resolve.isPending}
+                aria-busy={savingNotes || undefined}
+                onClick={() => void saveNotes()}
+              >
+                {savingNotes ? (
+                  <>
+                    <Loader2
+                      aria-hidden="true"
+                      className="animate-spin motion-reduce:animate-none"
+                    />
+                    {d.saving}
+                  </>
+                ) : (
+                  d.notesSave
+                )}
+              </Button>
             </div>
           ) : undefined
         }
       />
-      {confirmDialog}
     </form>
   );
 }

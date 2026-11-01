@@ -90,15 +90,24 @@ function stubOrderReturns(count: number) {
  * one, so there has to be a session to ask.
  */
 function renderSelect(
-  options: { permissions?: string[]; isOwner?: boolean } = {},
+  options: {
+    permissions?: string[];
+    isOwner?: boolean;
+    /** The card's «Оформити повернення» opener (TASK-1963); null = not wired. */
+    onCreateReturn?: (() => void) | null;
+  } = {},
 ) {
   const {
     permissions = ["orders:write", "returns:read", "returns:write"],
     isOwner = false,
+    onCreateReturn = jest.fn(),
   } = options;
   return renderWithProviders(
     <WithAuth isOwner={isOwner} permissions={permissions}>
-      <OrderStatusSelect orderId={ORDER_ID} />
+      <OrderStatusSelect
+        orderId={ORDER_ID}
+        onCreateReturn={onCreateReturn ?? undefined}
+      />
     </WithAuth>,
   );
 }
@@ -286,6 +295,41 @@ describe("OrderStatusSelect — 409 conflicts (TASK-332, edge case E-11)", () =>
     // And the backend's English prose never reaches the operator.
     expect(alert).not.toHaveTextContent("cannot move from");
   });
+
+  it("names the exhausted promo code when a revive is refused (AD-ORD-51)", async () => {
+    stubOrder({ status: "CANCELLED" });
+    stubTransitions(["PENDING"]);
+    stubStatusPatch(() =>
+      HttpResponse.json(
+        {
+          statusCode: 409,
+          error: "DISCOUNT_MAX_REDEMPTIONS_REACHED",
+          message:
+            'Promo code "SALE1" has reached its redemption limit — cannot revive the order',
+        },
+        { status: 409 },
+      ),
+    );
+
+    renderSelect();
+    await openPicker();
+    await userEvent.click(
+      await screen.findByRole("menuitem", {
+        name: orderStatusLabel("PENDING"),
+      }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      dict.orderStatus.conflict.DISCOUNT_MAX_REDEMPTIONS_REACHED,
+    );
+    expect(alert).not.toHaveTextContent(dict.orderStatus.conflictUnknown);
+    expect(alert).not.toHaveTextContent("redemption limit");
+    // Reloading would show the same order and the same refusal.
+    expect(
+      screen.queryByRole("button", { name: dict.orderStatus.reloadCta }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 /**
@@ -411,16 +455,16 @@ describe("OrderStatusSelect — shipping an unpaid online order (TASK-468)", () 
 });
 
 /**
- * TASK-469 — «створити заявку на все замовлення?»
+ * TASK-469 → TASK-1963 — «Повернення коштів без заявки?»
  *
  * `Return` is the source of truth about a return; `OrderStatus.REFUNDED` is a
- * derived label. Setting the label with no record behind it is edge case E-12: a
- * refund with no lines, no quantities and no stock movement. The dialog closes
- * that hole — and deliberately does not block, because plenty of refunds have no
- * returning goods at all (a duplicate charge, a goodwill gesture), and forcing a
- * record for those would credit stock the shop never got back.
+ * derived label. Setting the label with no record behind it is edge case E-12.
+ * The warning used to file a return on the WHOLE order and then move the status;
+ * since TASK-1963 it only points at «Оформити повернення» (lines and quantities,
+ * status untouched) — and still does not block, because plenty of refunds have
+ * no returning goods at all.
  */
-describe("OrderStatusSelect — refunding with no return on file (TASK-469)", () => {
+describe("OrderStatusSelect — refunding with no return on file (TASK-469, TASK-1963)", () => {
   const pickRefunded = async () => {
     await openPicker();
     await userEvent.click(
@@ -430,20 +474,19 @@ describe("OrderStatusSelect — refunding with no return on file (TASK-469)", ()
     );
   };
 
-  function stubCreateReturn(respond: () => Response): {
-    bodies: Array<Record<string, unknown>>;
-  } {
-    const bodies: Array<Record<string, unknown>> = [];
+  /** Count any return creation — the control must never file one itself. */
+  function countCreates(): { count: number } {
+    const counter = { count: 0 };
     server.use(
-      http.post("*/api/admin/orders/:orderId/returns", async ({ request }) => {
-        bodies.push((await request.json()) as Record<string, unknown>);
-        return respond();
+      http.post("*/api/admin/orders/:orderId/returns", () => {
+        counter.count += 1;
+        return HttpResponse.json({ data: {} }, { status: 201 });
       }),
     );
-    return { bodies };
+    return counter;
   }
 
-  it("offers to open one, prefilled with the whole order", async () => {
+  it("warns before refunding an order with no return, without moving it", async () => {
     stubTransitions(["REFUNDED"]);
     stubOrderReturns(0);
     const patch = stubStatusPatch(() =>
@@ -454,90 +497,80 @@ describe("OrderStatusSelect — refunding with no return on file (TASK-469)", ()
     await pickRefunded();
 
     expect(
-      await screen.findByText(dict.returns.createDialogTitle),
+      await screen.findByText(dict.orderStatus.refundNoReturnTitle),
     ).toBeInTheDocument();
-    // The lines are shown with their quantities, because "the whole order" is a
-    // claim the operator has to be able to check before agreeing to it.
-    expect(screen.getByText(/Чохол/)).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.orderStatus.refundNoReturnDescription("#ORDER-UU")),
+    ).toBeInTheDocument();
     expect(patch.bodies).toHaveLength(0);
   });
 
-  it("opens the return on every line, then moves the order", async () => {
+  it("«Оформити повернення» opens the return dialog and leaves the status alone", async () => {
     stubTransitions(["REFUNDED"]);
     stubOrderReturns(0);
-    const post = stubCreateReturn(() =>
-      HttpResponse.json({ data: { id: "return-new" } }, { status: 201 }),
-    );
+    const creates = countCreates();
     const patch = stubStatusPatch(() =>
       HttpResponse.json({ data: { id: ORDER_ID } }),
     );
+    const onCreateReturn = jest.fn();
 
-    renderSelect();
+    renderSelect({ onCreateReturn });
     await pickRefunded();
     await userEvent.click(
       await screen.findByRole("button", {
-        name: dict.returns.createDialogSubmit,
+        name: dict.orderStatus.refundNoReturnCreate,
       }),
     );
 
-    await waitFor(() => expect(post.bodies).toHaveLength(1));
-    expect(post.bodies[0]).toMatchObject({
-      items: [{ orderItemId: "line-1", quantity: 2 }],
-    });
-    // The label follows the record, never the other way round.
-    await waitFor(() => expect(patch.bodies).toHaveLength(1));
-    expect(patch.bodies[0]).toMatchObject({ status: "REFUNDED" });
-  });
-
-  it("leaves the order where it is when the return itself is refused", async () => {
-    stubTransitions(["REFUNDED"]);
-    stubOrderReturns(0);
-    stubCreateReturn(() =>
-      HttpResponse.json({ message: "nope" }, { status: 400 }),
-    );
-    const patch = stubStatusPatch(() =>
-      HttpResponse.json({ data: { id: ORDER_ID } }),
-    );
-
-    renderSelect();
-    await pickRefunded();
-    await userEvent.click(
-      await screen.findByRole("button", {
-        name: dict.returns.createDialogSubmit,
-      }),
-    );
-
-    // "Refund with a record" is what was asked for; half of it is the empty
-    // label this dialog exists to prevent.
+    expect(onCreateReturn).toHaveBeenCalledTimes(1);
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: dict.returns.createDialogSubmit }),
-      ).toBeInTheDocument(),
+        screen.queryByText(dict.orderStatus.refundNoReturnTitle),
+      ).not.toBeInTheDocument(),
     );
+    // No whole-order return is filed behind the operator's back, and the
+    // status does not move with the request.
+    expect(creates.count).toBe(0);
     expect(patch.bodies).toHaveLength(0);
   });
 
   it("does not block — «лише змінити статус» is a real answer", async () => {
     stubTransitions(["REFUNDED"]);
     stubOrderReturns(0);
-    const post = stubCreateReturn(() =>
-      HttpResponse.json({ data: {} }, { status: 201 }),
-    );
+    const creates = countCreates();
     const patch = stubStatusPatch(() =>
       HttpResponse.json({ data: { id: ORDER_ID } }),
     );
+    const onCreateReturn = jest.fn();
 
-    renderSelect();
+    renderSelect({ onCreateReturn });
     await pickRefunded();
     await userEvent.click(
       await screen.findByRole("button", {
-        name: dict.returns.createDialogSkip,
+        name: dict.orderStatus.refundNoReturnSkip,
       }),
     );
 
     await waitFor(() => expect(patch.bodies).toHaveLength(1));
     expect(patch.bodies[0]).toMatchObject({ status: "REFUNDED" });
-    expect(post.bodies).toHaveLength(0);
+    expect(creates.count).toBe(0);
+    expect(onCreateReturn).not.toHaveBeenCalled();
+  });
+
+  it("asks nothing when the card has not wired the return dialog", async () => {
+    stubTransitions(["REFUNDED"]);
+    stubOrderReturns(0);
+    const patch = stubStatusPatch(() =>
+      HttpResponse.json({ data: { id: ORDER_ID } }),
+    );
+
+    renderSelect({ onCreateReturn: null });
+    await pickRefunded();
+
+    await waitFor(() => expect(patch.bodies).toHaveLength(1));
+    expect(
+      screen.queryByText(dict.orderStatus.refundNoReturnTitle),
+    ).not.toBeInTheDocument();
   });
 
   it("asks nothing on a CANCELLED order, where the server would refuse the return", async () => {
@@ -560,7 +593,7 @@ describe("OrderStatusSelect — refunding with no return on file (TASK-469)", ()
     await waitFor(() => expect(patch.bodies).toHaveLength(1));
     expect(patch.bodies[0]).toMatchObject({ status: "REFUNDED" });
     expect(
-      screen.queryByText(dict.returns.createDialogTitle),
+      screen.queryByText(dict.orderStatus.refundNoReturnTitle),
     ).not.toBeInTheDocument();
   });
 
@@ -574,7 +607,7 @@ describe("OrderStatusSelect — refunding with no return on file (TASK-469)", ()
     await pickRefunded();
 
     expect(
-      await screen.findByText(dict.returns.createDialogTitle),
+      await screen.findByText(dict.orderStatus.refundNoReturnTitle),
     ).toBeInTheDocument();
   });
 
@@ -590,7 +623,7 @@ describe("OrderStatusSelect — refunding with no return on file (TASK-469)", ()
 
     await waitFor(() => expect(patch.bodies).toHaveLength(1));
     expect(
-      screen.queryByText(dict.returns.createDialogTitle),
+      screen.queryByText(dict.orderStatus.refundNoReturnTitle),
     ).not.toBeInTheDocument();
   });
 
@@ -607,7 +640,7 @@ describe("OrderStatusSelect — refunding with no return on file (TASK-469)", ()
 
     await waitFor(() => expect(patch.bodies).toHaveLength(1));
     expect(
-      screen.queryByText(dict.returns.createDialogTitle),
+      screen.queryByText(dict.orderStatus.refundNoReturnTitle),
     ).not.toBeInTheDocument();
   });
 });
@@ -655,7 +688,7 @@ describe("OrderStatusSelect — returns lookup follows returns:read (TASK-630)",
     await waitFor(() => expect(patch.bodies).toHaveLength(1));
     expect(lookups.count).toBe(0);
     expect(
-      screen.queryByText(dict.returns.createDialogTitle),
+      screen.queryByText(dict.orderStatus.refundNoReturnTitle),
     ).not.toBeInTheDocument();
   });
 
@@ -672,7 +705,7 @@ describe("OrderStatusSelect — returns lookup follows returns:read (TASK-630)",
 
     await waitFor(() => expect(patch.bodies).toHaveLength(1));
     expect(
-      screen.queryByText(dict.returns.createDialogTitle),
+      screen.queryByText(dict.orderStatus.refundNoReturnTitle),
     ).not.toBeInTheDocument();
   });
 
@@ -690,7 +723,7 @@ describe("OrderStatusSelect — returns lookup follows returns:read (TASK-630)",
     await pickRefunded();
 
     expect(
-      await screen.findByText(dict.returns.createDialogTitle),
+      await screen.findByText(dict.orderStatus.refundNoReturnTitle),
     ).toBeInTheDocument();
     expect(patch.bodies).toHaveLength(0);
   });

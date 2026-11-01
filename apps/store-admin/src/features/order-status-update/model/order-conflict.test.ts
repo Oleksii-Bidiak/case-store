@@ -53,6 +53,41 @@ describe("orderConflictMessage (TASK-332)", () => {
     expect(orderConflictMessage(error)).toContain("нове замовлення");
   });
 
+  // AD-ORD-51 (TASK-1966): reviving a cancelled order re-claims its promo slot
+  // (TASK-771); `OrderRepository.reclaimRedemption` refuses with a DISCOUNT_*
+  // 409 and the order stays CANCELLED. These used to fall into conflictUnknown —
+  // «Замовлення змінилося… оновіть сторінку» — which was false, and reloading
+  // showed the same order and the same refusal.
+  it.each([
+    [
+      ORDER_CONFLICT_CODE.PROMO_EXHAUSTED,
+      dict.orderStatus.conflict.DISCOUNT_MAX_REDEMPTIONS_REACHED,
+    ],
+    [
+      ORDER_CONFLICT_CODE.PROMO_USER_LIMIT,
+      dict.orderStatus.conflict.DISCOUNT_USER_LIMIT_REACHED,
+    ],
+    [
+      ORDER_CONFLICT_CODE.PROMO_GONE,
+      dict.orderStatus.conflict.DISCOUNT_NOT_FOUND,
+    ],
+  ])(
+    "names the promo code refusing a revive (%s), without demanding a reload",
+    (code, message) => {
+      const error = rejection(409, code);
+
+      expect(orderConflictMessage(error)).toBe(message);
+      expect(orderConflictMessage(error)).not.toBe(
+        dict.orderStatus.conflictUnknown,
+      );
+      // The order stays cancelled — the sentence says so.
+      expect(message).toMatch(/лишається скасованим/);
+      expect(message).toMatch(/[Пп]ромокод/);
+      // Nothing is out of date: reloading shows the same refusal.
+      expect(requiresReload(error)).toBe(false);
+    },
+  );
+
   it("still produces a conflict sentence for a 409 whose body carries no code", () => {
     const error = rejection(409);
 

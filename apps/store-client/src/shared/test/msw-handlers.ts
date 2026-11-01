@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import type { CartEntity, CartItemEntity } from "@/entities/cart";
 import type { OrderEntity, OrderItemEntity } from "@/entities/order";
+import type { ReturnEntity } from "@/entities/return";
 import type { UserEntity } from "@/entities/user";
 import type {
   DeliveryMethodsDto,
@@ -253,6 +254,42 @@ export function makeDeliveryMethods(
   };
 }
 
+/**
+ * Build a customer-facing return request (TASK-1962) — the public projection,
+ * so no operator notes, actors or repair notes. Override any field per-test.
+ */
+export function makeReturn(
+  overrides: Partial<ReturnEntity> = {},
+): ReturnEntity {
+  return {
+    id: "return-1",
+    orderId: "order-1",
+    status: "REQUESTED",
+    reason: null,
+    requestedAt: "2026-06-10T10:00:00.000Z",
+    resolvedAt: null,
+    restockedAt: null,
+    refundedAmount: null,
+    requestedOutcome: null,
+    channel: "ACCOUNT",
+    decision: null,
+    decisionReason: null,
+    decidedAt: null,
+    decisionLegacy: false,
+    repairSteps: [],
+    items: [
+      {
+        id: "return-item-1",
+        orderItemId: "item-1",
+        quantity: 1,
+        productName: "iPhone 15 Pro Case — Clear",
+        price: "499.00",
+      },
+    ],
+    ...overrides,
+  };
+}
+
 export const handlers = [
   // Cart read — a populated guest cart by default.
   http.get("*/api/cart", () => HttpResponse.json(makeCart())),
@@ -367,6 +404,20 @@ export const handlers = [
   // for it on every mount; "no returns" is the shape every suite that merely
   // renders the history wants. Status tests override it with `server.use(...)`.
   http.get("*/api/returns", () => HttpResponse.json({ data: [] })),
+
+  // One order's returns (TASK-1962). The account order detail and the
+  // confirmation page show the order's return history on every mount; "no
+  // returns" is what every suite that merely renders those pages wants.
+  http.get("*/api/orders/:orderId/returns", () =>
+    HttpResponse.json({ data: [] }),
+  ),
+
+  // A guest order's returns, by its access token (TASK-1965). The guest order
+  // page shows the return history on every visit; "no returns" is what every
+  // suite that merely renders that page wants.
+  http.get("*/api/orders/guest/:token/returns", () =>
+    HttpResponse.json({ data: [] }),
+  ),
 
   // The visitor's wishlist (TASK-531). Every `ProductCard` mounts a
   // `WishlistToggleButton`, which asks for it — without a default each suite

@@ -1,6 +1,12 @@
-import { ConflictException, Injectable } from '@nestjs/common';
-import { Prisma, ReturnStatus } from '@prisma/client';
+import { Injectable } from '@nestjs/common';
+import { Prisma, ReturnDecision, ReturnStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma';
+import {
+  invalidReturnTransitionError,
+  repairNotInProgressError,
+  repairStepAlreadyRecordedError,
+  returnAlreadyRestockedError,
+} from './return.errors';
 import {
   CacheService,
   productDetailIdKey,
@@ -15,14 +21,17 @@ import type {
   AssertRefundWithinBalance,
   AssertReturnClaimable,
   CreateReturnParams,
+  ReturnTransitionBasis,
+  ReturnDecisionChange,
+  ReturnRepairStepRecord,
   ReturnWithItems,
 } from './return.types';
 
 /**
- * Shared include for return reads: the lines, each with the order line it points
- * at (product name + unit price), so an admin card can be rendered from one query.
+ * The lines, each with the order line it points at (product name + unit price),
+ * so a card can be rendered from one query. The base of every read.
  */
-const RETURNS_INCLUDE = {
+const RETURN_LINES_INCLUDE = {
   items: {
     orderBy: { createdAt: 'asc' as const },
     include: {
@@ -39,9 +48,59 @@ const RETURNS_INCLUDE = {
   },
 } satisfies Prisma.ReturnInclude;
 
+/** History rows oldest first; `id` breaks ties between rows of one instant. */
+const HISTORY_ORDER = [{ createdAt: 'asc' as const }, { id: 'asc' as const }];
+
+/**
+ * An account as a return names it (TASK-1963): what a display name is built
+ * from, and nothing else of the user row.
+ */
+const ACTOR_SELECT = {
+  id: true,
+  email: true,
+  // A soft-deleted account's `email` is mangled; this is the readable one (TASK-104).
+  originalEmail: true,
+  firstName: true,
+  lastName: true,
+} satisfies Prisma.UserSelect;
+
+/**
+ * The CUSTOMER read (TASK-1963, TASK-2045): the lines and the repair progress.
+ * The repair step's `note` and `actorId` are not even selected, and no staff
+ * account is joined — `ReturnEntity` strips them too, but what was never read
+ * cannot leak.
+ */
+const RETURNS_INCLUDE = {
+  ...RETURN_LINES_INCLUDE,
+  repairEvents: {
+    orderBy: HISTORY_ORDER,
+    select: { id: true, step: true, result: true, destination: true, ttn: true, createdAt: true },
+  },
+} satisfies Prisma.ReturnInclude;
+
+/**
+ * The admin LIST read — the queue and the per-order list (TASK-1963): the
+ * owning order with its purchase date, and both authors. Each is a to-one join,
+ * which Prisma batches into one query per relation for the whole page, so a page
+ * costs a fixed number of queries. The history arrays are left to the card.
+ */
 const ADMIN_RETURNS_INCLUDE = {
-  ...RETURNS_INCLUDE,
-  order: { select: { id: true, userId: true, guestEmail: true, status: true } },
+  ...RETURN_LINES_INCLUDE,
+  order: { select: { id: true, userId: true, guestEmail: true, status: true, createdAt: true } },
+  createdBy: { select: ACTOR_SELECT },
+  decidedBy: { select: ACTOR_SELECT },
+} satisfies Prisma.ReturnInclude;
+
+/**
+ * The admin CARD read — one return in full (TASK-1963, TASK-2044, TASK-2045):
+ * the list joins plus the decision history and the repair steps, each with its
+ * author and, for repairs, the operator's note. Used by `findById` and by every
+ * write that answers with the card (create, resolve, decide).
+ */
+const ADMIN_RETURN_DETAIL_INCLUDE = {
+  ...ADMIN_RETURNS_INCLUDE,
+  decisionEvents: { orderBy: HISTORY_ORDER, include: { actor: { select: ACTOR_SELECT } } },
+  repairEvents: { orderBy: HISTORY_ORDER, include: { actor: { select: ACTOR_SELECT } } },
 } satisfies Prisma.ReturnInclude;
 
 const DEFAULT_PAGE = 1;
@@ -157,6 +216,9 @@ export class ReturnRepository {
         // who it was serving and simply threw the fact away; the admin door has
         // no other way to record it, since a guest order carries no user at all.
         createdByUserId: params.createdByUserId ?? null,
+        // TASK-2044/1963: what was asked for, and through which door.
+        requestedOutcome: params.requestedOutcome ?? null,
+        channel: params.channel,
         items: {
           create: params.items.map((item) => ({
             orderItemId: item.orderItemId,
@@ -164,22 +226,31 @@ export class ReturnRepository {
           })),
         },
       },
-      include: RETURNS_INCLUDE,
+      // The full card: a fresh return has no decision and no repair yet, so the
+      // only account it can name is whoever just opened it — and the customer
+      // projection drops even that.
+      include: ADMIN_RETURN_DETAIL_INCLUDE,
     }) as Promise<ReturnWithItems>;
   }
 
+  /** One return in full — the admin card (TASK-1963): authors, history, repair notes. */
   findById(returnId: string): Promise<ReturnWithItems | null> {
     return this.prisma.return.findUnique({
       where: { id: returnId },
-      include: ADMIN_RETURNS_INCLUDE,
+      include: ADMIN_RETURN_DETAIL_INCLUDE,
     }) as Promise<ReturnWithItems | null>;
   }
 
-  /** Every return opened against one order — the "already returned" ledger. */
-  findByOrderId(orderId: string): Promise<ReturnWithItems[]> {
+  /**
+   * Every return opened against one order — the "already returned" ledger.
+   *
+   * @param options.admin the operator's read (TASK-1963): authors and purchase
+   *   date joined. Without it, the customer read: no staff account is loaded.
+   */
+  findByOrderId(orderId: string, options: { admin?: boolean } = {}): Promise<ReturnWithItems[]> {
     return this.prisma.return.findMany({
       where: { orderId },
-      include: RETURNS_INCLUDE,
+      include: options.admin ? ADMIN_RETURNS_INCLUDE : RETURNS_INCLUDE,
       orderBy: { requestedAt: 'desc' },
     }) as Promise<ReturnWithItems[]>;
   }
@@ -290,10 +361,21 @@ export class ReturnRepository {
    * committed amount — a read taken outside the transaction would let both spend
    * the same balance.
    *
-   * @throws ConflictException when the stock was already credited back.
+   * ── The state guard (TASK-1961, TASK-2044) ─────────────────────────────────
+   * The service validated the move against `current`, read outside this
+   * transaction. Both branches write conditionally on the row still holding
+   * that status and decision — the same guard `decide` uses — so a decision or
+   * another PATCH committed in between is refused with 409 rather than silently
+   * overwritten (a refusal turned into RECEIVED, money recorded on what had
+   * just become a replacement). The conditional write also row-locks the
+   * return, so transitions on one return serialise.
+   *
+   * @throws ConflictException RETURN_ALREADY_RESTOCKED when the stock was
+   *   already credited back; RETURN_TRANSITION_INVALID when the return moved
+   *   since the service read it.
    */
   async resolve(
-    returnId: string,
+    current: ReturnTransitionBasis,
     fields: {
       status: ReturnStatus;
       operatorNotes?: string | null;
@@ -302,10 +384,12 @@ export class ReturnRepository {
     },
     options: { restock?: boolean; assertRefundable?: AssertRefundWithinBalance } = {},
   ): Promise<ReturnWithItems> {
+    const returnId = current.id;
+    const unchanged = { id: returnId, status: current.status, decision: current.decision };
     const updated = (await this.prisma.$transaction(async (tx) => {
       const existing = await tx.return.findUniqueOrThrow({
         where: { id: returnId },
-        include: RETURNS_INCLUDE,
+        include: RETURN_LINES_INCLUDE,
       });
 
       if (options.assertRefundable) {
@@ -325,7 +409,7 @@ export class ReturnRepository {
         });
       }
 
-      const data: Prisma.ReturnUpdateInput = { status: fields.status };
+      const data: Prisma.ReturnUpdateManyMutationInput = { status: fields.status };
       if (fields.operatorNotes !== undefined) data.operatorNotes = fields.operatorNotes;
       if (fields.refundedAmount !== undefined) {
         data.refundedAmount =
@@ -334,23 +418,31 @@ export class ReturnRepository {
       if (fields.resolvedAt !== undefined) data.resolvedAt = fields.resolvedAt;
 
       if (!options.restock) {
-        await tx.return.update({ where: { id: returnId }, data });
+        const { count } = await tx.return.updateMany({ where: unchanged, data });
+        if (count === 0) {
+          throw invalidReturnTransitionError(current.status, fields.status);
+        }
         return tx.return.findUniqueOrThrow({
           where: { id: returnId },
-          include: ADMIN_RETURNS_INCLUDE,
+          include: ADMIN_RETURN_DETAIL_INCLUDE,
         });
       }
 
       // The arbiter. Runs BEFORE any stock write.
       const { count } = await tx.return.updateMany({
-        where: { id: returnId, restockedAt: null },
+        where: { ...unchanged, restockedAt: null },
         data: { ...data, restockedAt: new Date() },
       });
 
       if (count === 0) {
-        throw new ConflictException(
-          'These returned goods have already been credited back to inventory',
-        );
+        // Two reasons a guarded write matches nothing; the operator is told which.
+        const now = await tx.return.findUnique({
+          where: { id: returnId },
+          select: { restockedAt: true },
+        });
+        throw now?.restockedAt
+          ? returnAlreadyRestockedError()
+          : invalidReturnTransitionError(current.status, fields.status);
       }
 
       // The product is reached through the order line rather than stored on the
@@ -367,7 +459,7 @@ export class ReturnRepository {
 
       return tx.return.findUniqueOrThrow({
         where: { id: returnId },
-        include: ADMIN_RETURNS_INCLUDE,
+        include: ADMIN_RETURN_DETAIL_INCLUDE,
       });
     })) as ReturnWithItems;
 
@@ -376,6 +468,139 @@ export class ReturnRepository {
     }
 
     return updated;
+  }
+
+  /**
+   * The operator's notes alone, on a return of any status — no transition, so
+   * no state guard: the notes do not depend on the status or the decision, and
+   * `resolvedAt` ("the last step") is left alone. Answers with the admin card.
+   */
+  updateNotes(returnId: string, operatorNotes: string | null): Promise<ReturnWithItems> {
+    return this.prisma.return.update({
+      where: { id: returnId },
+      data: { operatorNotes },
+      include: ADMIN_RETURN_DETAIL_INCLUDE,
+    }) as Promise<ReturnWithItems>;
+  }
+
+  /**
+   * Record an operator's decision (TASK-1961, TASK-2044): the denormalised
+   * current decision on the return AND its history row, in ONE transaction.
+   *
+   * ── The order lock ──────────────────────────────────────────────────────────
+   * The same `SELECT … FOR UPDATE` on the order row that `create` takes, so a
+   * decision and a new request on the same order serialise. It matters for one
+   * case: re-opening a REJECTED return claims its units back, and a customer may
+   * have filed a new request for those units since the refusal released them.
+   * When the service passes `assertClaimable`, the OTHER returns of the order
+   * are read under the lock and checked before anything is written.
+   *
+   * ── The state guard ─────────────────────────────────────────────────────────
+   * The service decided against a read taken outside this transaction. The
+   * write is conditional on the row still holding that status and decision; a
+   * return another operator moved meanwhile (say, to RECEIVED, with its goods
+   * restocked) is refused with 409 rather than silently overwritten.
+   *
+   * @throws ConflictException (RETURN_TRANSITION_INVALID) when the return changed
+   *   since the service read it; whatever `assertClaimable` throws.
+   */
+  async decide(
+    current: ReturnTransitionBasis,
+    change: ReturnDecisionChange,
+    options: { assertClaimable?: AssertReturnClaimable } = {},
+  ): Promise<ReturnWithItems> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM orders WHERE id = ${current.orderId} FOR UPDATE`;
+
+      if (options.assertClaimable) {
+        const ledger = await tx.return.findMany({
+          where: { orderId: current.orderId, id: { not: current.id } },
+          select: { status: true, items: { select: { orderItemId: true, quantity: true } } },
+        });
+        options.assertClaimable(ledger);
+      }
+
+      const { count } = await tx.return.updateMany({
+        where: { id: current.id, status: current.status, decision: current.decision },
+        data: {
+          status: change.status,
+          decision: change.decision,
+          decisionReason: change.decisionReason,
+          decidedAt: change.decidedAt,
+          decidedById: change.decidedById,
+          // A decision a person took is no longer the R1 backfill's inference.
+          decisionLegacy: false,
+          // `resolvedAt` stays "the last change" (plan 2026-10, Модель даних).
+          resolvedAt: change.decidedAt,
+        },
+      });
+      if (count === 0) {
+        throw invalidReturnTransitionError(current.status, change.status);
+      }
+
+      await tx.returnDecisionEvent.create({
+        data: {
+          returnId: current.id,
+          decision: change.decision,
+          reason: change.decisionReason,
+          actorId: change.decidedById,
+          createdAt: change.decidedAt,
+        },
+      });
+
+      return tx.return.findUniqueOrThrow({
+        where: { id: current.id },
+        include: ADMIN_RETURN_DETAIL_INCLUDE,
+      });
+    }) as Promise<ReturnWithItems>;
+  }
+
+  /**
+   * Record one repair step (TASK-2045): stamp the return and write the step row
+   * in ONE transaction, then answer with the admin card.
+   *
+   * ── The two guards ──────────────────────────────────────────────────────────
+   * The service checked the decision and the order of steps against a read
+   * taken outside this transaction.
+   * - The stamp is conditional on the return still being an open REPAIR, so a
+   *   step never lands after another operator changed the decision (an
+   *   UNREPAIRABLE item moved to a refund). It also row-locks the return, so
+   *   steps on one return serialise.
+   * - Two clicks on the same step both pass the service's check. The unique
+   *   index on (return_id, step) fails the second insert; it is answered as a
+   *   409 rather than a 500.
+   *
+   * @throws ConflictException (RETURN_REPAIR_STEP_INVALID) on either guard.
+   */
+  async addRepairStep(returnId: string, event: ReturnRepairStepRecord): Promise<ReturnWithItems> {
+    try {
+      return (await this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.return.updateMany({
+          where: {
+            id: returnId,
+            decision: ReturnDecision.REPAIR,
+            status: { notIn: [ReturnStatus.REJECTED, ReturnStatus.REFUNDED] },
+          },
+          // `resolvedAt` stays "the last change" (plan 2026-10, Модель даних).
+          data: { resolvedAt: event.createdAt },
+        });
+        if (count === 0) {
+          throw repairNotInProgressError();
+        }
+
+        await tx.returnRepairEvent.create({ data: { returnId, ...event } });
+
+        return tx.return.findUniqueOrThrow({
+          where: { id: returnId },
+          include: ADMIN_RETURN_DETAIL_INCLUDE,
+        });
+      })) as ReturnWithItems;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw repairStepAlreadyRecordedError(event.step);
+      }
+      throw error;
+    }
   }
 
   /**

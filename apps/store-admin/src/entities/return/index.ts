@@ -18,11 +18,26 @@ export {
   getAdminOrderReturnControllerFindForOrderQueryKey,
   // Status enum value object (filters, badge mapping, the resolve picker).
   ReturnEntityStatus,
+  // TASK-2044 (B-12 §1.1) — the decision is its own write, with a reason the
+  // customer sees, an author and a history.
+  useAdminReturnControllerDecide,
+  ReturnDecision,
+  ReturnOutcome,
+  ReturnChannel,
+  // TASK-2045 (B-12 §1.7) — a repair, step by step, under a REPAIR decision.
+  useAdminReturnControllerAddRepairStep,
+  ReturnRepairStep,
+  RepairResult,
 } from "@/shared/api";
 
 export type {
   ReturnEntity,
   ReturnItemEntity,
+  ReturnDecisionEventEntity,
+  ReturnActorEntity,
+  DecideReturnDto,
+  ReturnRepairStepEntity,
+  AddRepairStepDto,
   ResolveReturnDto,
   CreateReturnDto,
   ReturnItemDto,
@@ -33,4 +48,30 @@ export type {
 
 export { returnStatusLabel } from "./status-label";
 export { returnStatusBadgeVariant } from "./status-badge";
-export { allowedReturnTransitions, RESTOCK_ON_STATUS } from "./transitions";
+export {
+  allowedReturnTransitions,
+  availableDecisions,
+  nextResolveStep,
+  RESTOCK_ON_STATUS,
+} from "./transitions";
+export {
+  returnDecisionLabel,
+  returnOutcomeLabel,
+  returnReasonHeading,
+} from "./decision-label";
+// TASK-1966 — every RETURN_* refusal as a sentence the operator can act on.
+export {
+  RETURN_ERROR_CODE,
+  returnRefusalOf,
+  returnRemainingOf,
+  type ReturnErrorCode,
+  type ReturnRefusal,
+} from "./model/return-error";
+// TASK-1963 — what is still returnable on an order (REJECTED frees units).
+export {
+  clampQuantity,
+  returnableLines,
+  type ExistingReturn,
+  type OrderLine,
+  type ReturnableLine,
+} from "./model/returnable-units";

@@ -3920,6 +3920,67 @@ describe('OrderService', () => {
     });
   });
 
+  // ─── resolveGuestOrderId (TASK-1965) ────────────────────────────────────────
+  // The guest-returns door. Unlike the Telegram routes it does NOT refuse an
+  // order that belongs to an account: an operator's phone order for a signed-up
+  // customer also carries a token, and that buyer files a return from the link
+  // they were sent.
+  describe('resolveGuestOrderId', () => {
+    const RAW_TOKEN = 'd'.repeat(64);
+    const hashOf = (raw: string) => createHash('sha256').update(raw).digest('hex');
+
+    it('the id of the order behind a valid token, looked up by its hash', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ id: 'guest-order-1', userId: null, createdAt: new Date() }),
+      );
+
+      await expect(service.resolveGuestOrderId(RAW_TOKEN)).resolves.toBe('guest-order-1');
+      expect(orderRepositoryMock.findByAccessTokenHash).toHaveBeenCalledWith(hashOf(RAW_TOKEN));
+    });
+
+    it('also resolves an order that belongs to an account (a phone order with a link)', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ id: 'phone-order-1', userId: USER_ID, createdAt: new Date() }),
+      );
+
+      await expect(service.resolveGuestOrderId(RAW_TOKEN)).resolves.toBe('phone-order-1');
+    });
+
+    it('counts the window from the re-issue, falling back to the order date', async () => {
+      configValues.set('GUEST_ORDER_TOKEN_TTL_DAYS', 30);
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({
+          id: 'reissued-1',
+          userId: null,
+          createdAt: new Date(Date.now() - 200 * 24 * 60 * 60 * 1000),
+          accessTokenIssuedAt: new Date(),
+        }),
+      );
+
+      await expect(service.resolveGuestOrderId(RAW_TOKEN)).resolves.toBe('reissued-1');
+    });
+
+    it('answers unknown and expired with the very same 404 as the guest read', async () => {
+      configValues.set('GUEST_ORDER_TOKEN_TTL_DAYS', 1);
+      const responseOf = (err: unknown) => (err as NotFoundException).getResponse();
+
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(null);
+      const unknown = await service.resolveGuestOrderId(RAW_TOKEN).catch(responseOf);
+
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({ userId: null, createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) }),
+      );
+      const expired = await service.resolveGuestOrderId(RAW_TOKEN).catch(responseOf);
+      const guestRead = await service.getGuestOrder(RAW_TOKEN).catch(responseOf);
+
+      expect(unknown).toEqual(
+        expect.objectContaining({ statusCode: 404, message: 'Order not found' }),
+      );
+      expect(expired).toEqual(unknown);
+      expect(guestRead).toEqual(unknown);
+    });
+  });
+
   // ─── getGuestOrder (TASK-338) ────────────────────────────────────────────────
   // Edge case E-17: without this a guest goes blind the moment the cart cookie is
   // gone or they open the confirmation email on another device.

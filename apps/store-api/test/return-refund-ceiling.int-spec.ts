@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { OrderStatus, PaymentStatus, ReturnStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus, ReturnDecision, ReturnStatus } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
@@ -118,6 +118,9 @@ describe('ReturnService.resolveReturn — refund ceilings (integration)', () => 
           data: {
             orderId,
             status: ReturnStatus.RECEIVED,
+            // Money goes out only on a REFUND decision (TASK-2044); every
+            // RECEIVED row carries one since the R1 backfill.
+            decision: ReturnDecision.REFUND,
             createdByUserId: userId,
             items: { create: [{ orderItemId, quantity: 1 }] },
           },

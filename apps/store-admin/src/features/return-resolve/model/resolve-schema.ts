@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   RESTOCK_ON_STATUS,
+  ReturnEntityStatus,
   type ResolveReturnDto,
   type ReturnItemEntity,
 } from "@/entities/return";
@@ -13,6 +14,11 @@ const t = dict.returns;
 export const OPERATOR_NOTES_MAX_LENGTH = 2000;
 
 const REFUND_AMOUNT_RE = /^\d{1,8}(\.\d{1,2})?$/;
+
+const PATCH_STATUSES: readonly string[] = [
+  ReturnEntityStatus.RECEIVED,
+  ReturnEntityStatus.REFUNDED,
+];
 
 /** Decimal string → integer kopiykas, the way the API compares money. */
 function toCents(value: string): number {
@@ -110,7 +116,11 @@ export function createResolveReturnSchema(ceilings: RefundCeilings = {}) {
   const { returnedValue, orderBalance } = ceilings;
 
   return z.object({
-    status: z.string().min(1),
+    // TASK-2044: only the steps the PATCH still owns. APPROVED and REJECTED
+    // are decisions (`features/return-decide`) and the API refuses them here
+    // with RETURN_USE_DECISION_ENDPOINT. A string, not an enum, so the form can
+    // hold "" until a step button sets it.
+    status: z.string().refine((status) => PATCH_STATUSES.includes(status)),
     operatorNotes: z
       .string()
       .trim()
@@ -197,5 +207,17 @@ export function resolveValuesToDto(
       values.refundedAmount,
     ),
     ...(restock ? { restock: true } : {}),
+  };
+}
+
+/**
+ * The notes-only PATCH body: no status, so no transition — the API saves the
+ * notes on a return of any status. Nothing else may ride along: the API refuses
+ * an amount or a restock without a status (RETURN_STATUS_REQUIRED).
+ */
+export function notesOnlyDto(operatorNotes: string): ResolveReturnDto {
+  return {
+    operatorNotes:
+      nullableTextField<ResolveReturnDto["operatorNotes"]>(operatorNotes),
   };
 }

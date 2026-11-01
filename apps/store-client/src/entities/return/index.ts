@@ -17,7 +17,14 @@ export {
   // request's status without one request per order.
   useGetMyReturns,
   getGetMyReturnsQueryKey,
+  // TASK-1964: the same request dialog on a guest order, keyed by the order's
+  // access token instead of an owner.
+  useGetGuestOrderReturns,
+  getGetGuestOrderReturnsQueryKey,
+  useCreateGuestReturn,
 } from "@/shared/api/generated/returns/returns";
+
+export { ReturnOutcome } from "@/shared/api/generated/models";
 
 export type {
   ReturnEntity,
@@ -27,3 +34,22 @@ export type {
   ReturnResponseEnvelope,
   ReturnListResponseEnvelope,
 } from "@/shared/api/generated/models";
+
+// TASK-1962: the return history of one order and the one-badge summary of all
+// of an order's requests (the order history used to show only the newest).
+export {
+  summarizeReturns,
+  summarizeReturnsByOrder,
+  type ReturnsSummary,
+  type ReturnsSummaryTone,
+} from "./model/summarize-returns";
+export { ReturnHistory } from "./ui/return-history";
+export {
+  OrderReturnHistory,
+  // TASK-1965: the same history on a guest order, by its access token.
+  GuestOrderReturnHistory,
+} from "./ui/order-return-history";
+export { ReturnSummaryBadge } from "./ui/return-summary-badge";
+// The guest returns query must not refetch on focus — the endpoint is
+// throttled (20/min per IP).
+export { guestReturnsQueryOptions } from "./model/guest-returns-query";

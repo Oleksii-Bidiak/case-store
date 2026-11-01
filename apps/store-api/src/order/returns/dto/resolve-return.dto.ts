@@ -4,15 +4,24 @@ import { IsBoolean, IsEnum, IsOptional, IsString, Matches, MaxLength } from 'cla
 import { ReturnStatus } from '@prisma/client';
 
 /**
- * The operator's decision on a return (TASK-340).
+ * The operator's step on a return (TASK-340) — or, without a status, just the
+ * operator's notes on a return of any status.
  */
 export class ResolveReturnDto {
   @ApiProperty({
-    description: 'New return status. Validated against the return state machine.',
+    description:
+      'New return status: RECEIVED or REFUNDED. Validated against the return state machine; ' +
+      'REFUNDED needs a REFUND decision. APPROVED and REJECTED are set only by a decision ' +
+      '(POST /admin/returns/:returnId/decision) and are refused here with ' +
+      'RETURN_USE_DECISION_ENDPOINT. Omit it to save operatorNotes alone on a return of any ' +
+      'status — no transition, resolvedAt and the decision untouched; refundedAmount and ' +
+      'restock are then refused with RETURN_STATUS_REQUIRED.',
     enum: ReturnStatus,
+    required: false,
   })
+  @IsOptional()
   @IsEnum(ReturnStatus)
-  status!: ReturnStatus;
+  status?: ReturnStatus;
 
   @ApiProperty({
     description: 'Operator-only notes — never shown to the customer',

@@ -1,4 +1,4 @@
-import { ReturnStatus } from '@prisma/client';
+import { ReturnDecision, ReturnRepairStep, ReturnStatus } from '@prisma/client';
 
 /**
  * The return (RMA) state machine (TASK-340).
@@ -17,10 +17,11 @@ import { ReturnStatus } from '@prisma/client';
  *   REQUESTED ─→ APPROVED ─→ RECEIVED ─→ REFUNDED
  *       └────→ REJECTED
  *
- * Nothing leaves REJECTED or REFUNDED. A customer whose return was refused and
- * who then argues successfully is a NEW request, not an edited old one — the
- * refusal is a decision that was communicated, and rewriting it in place erases
- * the fact that it happened.
+ * Nothing leaves REJECTED or REFUNDED through this table. Since B-12 (TASK-1961,
+ * TASK-2044) APPROVED and REJECTED are the EFFECT of an operator's decision, not
+ * a status anyone sets: see {@link returnStatusAfterDecision}. That is the one
+ * door out of REJECTED — a changed decision, with a reason and a history row, so
+ * the refusal that was communicated is never erased, only superseded.
  */
 export const RETURN_TRANSITIONS: Readonly<Record<ReturnStatus, readonly ReturnStatus[]>> =
   Object.freeze({
@@ -51,4 +52,95 @@ export function canTransitionReturn(from: ReturnStatus, to: ReturnStatus): boole
 /** Every status reachable from `from`, as a fresh (caller-owned) array. */
 export function allowedReturnTransitions(from: ReturnStatus): ReturnStatus[] {
   return [...RETURN_TRANSITIONS[from]];
+}
+
+/**
+ * What a decision does to the status (TASK-1961, TASK-2044), or `null` when the
+ * decision cannot be taken from `from`.
+ *
+ * - REJECT refuses from REQUESTED or APPROVED (the table's own refusal edges),
+ *   and keeps a REJECTED return refused when the refusal is only re-worded.
+ *   Goods already RECEIVED cannot be refused: they may already be back in stock.
+ * - REFUND / REPLACEMENT / REPAIR approve a fresh request or re-open a refused
+ *   one, and leave APPROVED and RECEIVED where they are — where the goods are is
+ *   not what the operator decided.
+ * - Nothing is decided on REFUNDED: the money is gone.
+ */
+export function returnStatusAfterDecision(
+  from: ReturnStatus,
+  decision: ReturnDecision,
+): ReturnStatus | null {
+  if (from === ReturnStatus.REFUNDED) {
+    return null;
+  }
+
+  if (decision === ReturnDecision.REJECT) {
+    if (from === ReturnStatus.REJECTED) {
+      return ReturnStatus.REJECTED;
+    }
+    return canTransitionReturn(from, ReturnStatus.REJECTED) ? ReturnStatus.REJECTED : null;
+  }
+
+  if (from === ReturnStatus.REQUESTED || from === ReturnStatus.REJECTED) {
+    return ReturnStatus.APPROVED;
+  }
+  return from;
+}
+
+/**
+ * Whether the current decision allows a PATCH move to `to` (TASK-2044).
+ *
+ * Money goes out only on a REFUND decision: a replacement or a repair is paid
+ * for in goods, and a refusal in nothing. Rows from before B-12 carry REFUND from
+ * the R1 backfill, so their RECEIVED → REFUNDED path is unchanged.
+ */
+export function decisionPermitsTransition(
+  to: ReturnStatus,
+  decision: ReturnDecision | null,
+): boolean {
+  if (to === ReturnStatus.REFUNDED) {
+    return decision === ReturnDecision.REFUND;
+  }
+  return true;
+}
+
+/**
+ * The steps of a repair, in the only order they can happen (TASK-2045, B-12
+ * theme 1.7): taken from the customer → sent to the service centre → back from
+ * it → handed to the customer. None is skipped and none repeats.
+ */
+export const REPAIR_STEP_ORDER: readonly ReturnRepairStep[] = Object.freeze([
+  ReturnRepairStep.ACCEPTED,
+  ReturnRepairStep.SENT_TO_SERVICE,
+  ReturnRepairStep.RETURNED_FROM_SERVICE,
+  ReturnRepairStep.HANDED_TO_CUSTOMER,
+]);
+
+/**
+ * The step that may be recorded next, given the steps already recorded (oldest
+ * first), or `null` once the goods are back with the customer.
+ */
+export function nextRepairStep(done: readonly ReturnRepairStep[]): ReturnRepairStep | null {
+  return REPAIR_STEP_ORDER[done.length] ?? null;
+}
+
+/**
+ * Whether repair steps may be recorded on a return (TASK-2045): only under a
+ * REPAIR decision, and not on a closed return.
+ *
+ * An UNREPAIRABLE result does not change the decision by itself — the operator
+ * changes it (to a replacement or a refund, with a reason), and from then on
+ * this refuses further steps.
+ */
+export function repairAcceptsSteps(status: ReturnStatus, decision: ReturnDecision | null): boolean {
+  return (
+    decision === ReturnDecision.REPAIR &&
+    status !== ReturnStatus.REJECTED &&
+    status !== ReturnStatus.REFUNDED
+  );
+}
+
+/** Whether a step carries the repair's outcome — the one coming back from the service. */
+export function repairStepRequiresResult(step: ReturnRepairStep): boolean {
+  return step === ReturnRepairStep.RETURNED_FROM_SERVICE;
 }

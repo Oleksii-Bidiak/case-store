@@ -1,4 +1,4 @@
-import { ReturnEntityStatus } from "@/shared/api";
+import { ReturnDecision, ReturnEntityStatus } from "@/shared/api";
 
 /**
  * Client-side mirror of the backend return state machine
@@ -22,9 +22,11 @@ import { ReturnEntityStatus } from "@/shared/api";
  *       └────→ REJECTED         ↑
  *                    APPROVED ──┘ (and APPROVED may still be REJECTED)
  *
- * Nothing leaves REJECTED or REFUNDED. A refused return that is later argued
- * successfully is a NEW request: the refusal was communicated to a customer, and
- * rewriting it in place erases the fact that it happened.
+ * No STATUS step leaves REJECTED or REFUNDED. Since B-12 (TASK-2044) APPROVED
+ * and REJECTED are not status writes at all: they follow from a decision, taken
+ * through its own endpoint with a reason and an author, and a refusal may be
+ * re-opened that way — see {@link availableDecisions} and
+ * {@link nextResolveStep} below.
  */
 const RETURN_TRANSITIONS: Readonly<Record<string, readonly string[]>> =
   Object.freeze({
@@ -57,3 +59,57 @@ export function allowedReturnTransitions(from: string): string[] {
  * inventory sitting invisible in a box.
  */
 export const RESTOCK_ON_STATUS: string = ReturnEntityStatus.RECEIVED;
+
+const POSITIVE_DECISIONS: readonly string[] = Object.freeze([
+  ReturnDecision.REFUND,
+  ReturnDecision.REPLACEMENT,
+  ReturnDecision.REPAIR,
+]);
+
+/**
+ * The decisions the operator may take from `status` (TASK-2044), mirroring
+ * `returnStatusAfterDecision` on the server:
+ *
+ *  - REQUESTED / APPROVED / REJECTED — all four; a positive decision on a
+ *    refused request re-opens it (the server re-checks the units are free).
+ *  - RECEIVED — no refusal: the goods are already back on the shelf or in the
+ *    workshop, and RECEIVED → REJECTED is not a move the state machine has.
+ *  - REFUNDED — none: the money went back, the decision is locked.
+ *
+ * Whether a reason is required, and whether the pick changes anything, is the
+ * decide form's business, not this table's.
+ */
+export function availableDecisions(status: string): string[] {
+  switch (status) {
+    case ReturnEntityStatus.REQUESTED:
+    case ReturnEntityStatus.APPROVED:
+    case ReturnEntityStatus.REJECTED:
+      return [...POSITIVE_DECISIONS, ReturnDecision.REJECT];
+    case ReturnEntityStatus.RECEIVED:
+      return [...POSITIVE_DECISIONS];
+    default:
+      return [];
+  }
+}
+
+/**
+ * The one status step `PATCH /admin/returns/:id` still takes from here, or
+ * `null` (TASK-2044). The PATCH refuses APPROVED and REJECTED
+ * (`RETURN_USE_DECISION_ENDPOINT`), and RECEIVED → REFUNDED needs a REFUND
+ * decision: a repair or a replacement never ends in «Гроші повернуто».
+ */
+export function nextResolveStep(
+  status: string,
+  decision: string | null,
+): string | null {
+  if (status === ReturnEntityStatus.APPROVED) {
+    return ReturnEntityStatus.RECEIVED;
+  }
+  if (
+    status === ReturnEntityStatus.RECEIVED &&
+    decision === ReturnDecision.REFUND
+  ) {
+    return ReturnEntityStatus.REFUNDED;
+  }
+  return null;
+}

@@ -4077,6 +4077,12 @@ export const dict = {
       "Вартість доставки треба уточнити: зателефонуйте покупцю й погодьте перевізника та суму. Покупець оплачує при отриманні.",
     // НП із нульовою вартістю в замовленні: покупець платить перевізнику.
     deliveryCostNpTariff: "За тарифом НП",
+
+    // --- Заявки на повернення в картці замовлення (TASK-1962, B-12 §1) --------
+    // Позиції заявки з кількістю — щоб не відкривати кожну заявку окремо.
+    returnsForOrderItemsAria: (number: string) => `Позиції заявки ${number}`,
+    returnsForOrderLine: (name: string, quantity: number) =>
+      `${name} × ${quantity}`,
   },
 
   reviews: {
@@ -4500,6 +4506,16 @@ export const dict = {
       // reversed), а не оператор — це факт про гроші, його не виправляють.
       ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND:
         "Цю мітку поставила платіжна система: гроші справді повернуто покупцеві. Виправити її не можна.",
+      // AD-ORD-51 (TASK-1966): відновлення скасованого замовлення знову займає
+      // слот промокоду (TASK-771). Сервер відмовляє 409, замовлення лишається
+      // скасованим. Відновити без промокоду API поки не вміє (TASK-1982), тож
+      // називаємо єдину дію, що працює, — нове замовлення.
+      DISCOUNT_MAX_REDEMPTIONS_REACHED:
+        "Промокод цього замовлення вичерпано — його ліміт використань зайняли інші замовлення. Повернути замовлення в роботу з ним не можна, тож воно лишається скасованим. Якщо покупець згоден без знижки — створіть нове замовлення.",
+      DISCOUNT_USER_LIMIT_REACHED:
+        "Покупець уже використав промокод цього замовлення в іншому замовленні. Повернути це замовлення в роботу з ним не можна, тож воно лишається скасованим. Якщо покупець згоден без знижки — створіть нове замовлення.",
+      DISCOUNT_NOT_FOUND:
+        "Промокод цього замовлення видалено. Повернути замовлення в роботу з ним не можна, тож воно лишається скасованим. Якщо покупець згоден без знижки — створіть нове замовлення.",
     },
     conflictUnknown:
       "Замовлення змінилося, і зміну не збережено. Оновіть сторінку й спробуйте ще раз.",
@@ -4564,6 +4580,14 @@ export const dict = {
       "Гроші надійдуть від Нової Пошти після того, як покупець забере посилку. Коли переказ прийде — позначте оплату.",
     codReceived: "Гроші від НП отримано",
     otherPaymentStatus: "Інший статус оплати:",
+    // «Повернення коштів» без жодної заявки (TASK-469 → TASK-1963): заявку
+    // тепер оформлюють окремою дією з позиціями, а не на все замовлення.
+    refundNoReturnTitle: "Повернення коштів без заявки?",
+    refundNoReturnDescription: (number: string) =>
+      `По замовленню ${number} немає жодної заявки на повернення. Оформіть її з позиціями й кількостями — статус при цьому не зміниться — або просто змініть статус.`,
+    refundNoReturnCreate: "Оформити повернення",
+    // «Не блокує»: оператор має право відмовитись і просто поставити статус.
+    refundNoReturnSkip: "Лише змінити статус",
   },
 
   // --- Посилання для покупця (TASK-484) ---------------------------------------
@@ -4613,7 +4637,6 @@ export const dict = {
     metaTitleDetail: (id: string) => `Повернення ${id} — Адмін`,
     heading: "Повернення",
     back: "← Повернення",
-    title: (id: string) => `Повернення #${id}`,
 
     filterStatusAria: "Фільтр за статусом повернення",
     allStatuses: "Усі статуси",
@@ -4718,16 +4741,6 @@ export const dict = {
     // --- Заявка від оператора (TASK-469) --------------------------------------
     // Гість і телефонний покупець акаунта не мають, тож покупецька форма для них
     // фізично не відкривається — заявку заводить оператор.
-    createDialogTitle: "Створити заявку на повернення?",
-    createDialogDescription: (id: string) =>
-      `По замовленню #${id} немає жодної заявки. Створити її на все замовлення — ` +
-      "чи просто змінити статус?",
-    createDialogItemsHeading: "Позиції заявки",
-    createDialogReason: "Причина (зі слів клієнта)",
-    createDialogReasonPlaceholder: "Наприклад: не підійшов розмір",
-    createDialogSubmit: "Створити заявку",
-    // «Не блокує»: оператор має право відмовитись і просто поставити статус.
-    createDialogSkip: "Лише змінити статус",
     createSuccess: "Заявку на повернення створено.",
     createFailed: "Не вдалося створити заявку. Спробуйте ще раз.",
     createdByOperator: "Заявку створив оператор",
@@ -4782,15 +4795,9 @@ export const dict = {
     maxRefund: "Можна повернути максимум",
     // «Наступний крок» — лише дії, доречні для статусу (Р3–Р5).
     nextRequested: "Перевірте причину й вирішіть, чи приймаєте повернення.",
-    approve: "Схвалити заявку",
     nextApproved: "Коли посилка від клієнта прийде й ви її перевірите:",
     restockUnits: (count: number) => `Повернути товар на склад (${count} шт.)`,
     markReceived: "Товар отримано",
-    reject: "Відхилити заявку…",
-    rejectConfirmTitle: "Відхилити заявку?",
-    rejectConfirmDescription:
-      "Клієнт побачить, що в поверненні відмовлено. Змінити це рішення потім не можна — нове звернення буде новою заявкою.",
-    rejectConfirm: "Відхилити",
     nextReceived: (restocked: boolean) =>
       restocked
         ? "Товар отримано й повернуто на склад. Лишилось повернути гроші клієнту."
@@ -4803,6 +4810,178 @@ export const dict = {
     notesEdit: "Змінити",
     notesEditHint: "Збережеться разом із наступним кроком.",
     notesEmpty: "Приміток немає.",
+
+    // --- Рішення за заявкою (TASK-1961, TASK-2044; B-12 §1.1) -----------------
+    // Одна заявка — різні рішення. Ті самі слова для «чого хоче покупець», щоб
+    // оператор одразу бачив розбіжність «хоче ремонт» / «рішення: гроші».
+    decisionREFUND: "Гроші",
+    decisionREPLACEMENT: "Заміна",
+    decisionREPAIR: "Ремонт",
+    decisionREJECT: "Відмова",
+    requestedOutcome: "Чого хоче покупець",
+    outcomeNotGiven: "не вказано",
+    // Заявку, яку оператор заводить за покупця, підписує оператор.
+    reasonOperator: "Коментар оператора",
+    // Три позначки часу (AD-RET-05): у житті вони розходяться на дні.
+    datesAria: "Дати заявки",
+    dateRequested: "Подано",
+    dateDecided: "Вирішено",
+    dateNotDecided: "Ще не вирішено",
+    decisionHeading: "Рішення",
+    decisionNone: "Рішення ще не ухвалено.",
+    decisionReason: "Причина",
+    decisionReasonHint: "бачить покупець",
+    decisionNoReason: "Без причини",
+    decisionAuthor: "Автор",
+    decisionAuthorUnknown: "невідомо",
+    decisionDate: "Дата",
+    // Рішення, перенесені з даних до B-12: ні причини, ні автора тоді не писали.
+    decisionLegacyMarker: "до B-12",
+    decisionLegacyHint:
+      "Ухвалено до B-12 — причину й автора тоді не записували.",
+    decisionHistoryToggle: (count: number) => `Історія рішень (${count})`,
+    // Форма рішення (features/return-decide).
+    decideHeading: (hasDecision: boolean) =>
+      hasDecision ? "Змінити рішення" : "Ухвалити рішення",
+    decideOpen: "Змінити рішення…",
+    decideReason: "Причина для покупця",
+    decideReasonPlaceholder:
+      "Наприклад: на корпусі сліди удару — це не гарантійний випадок",
+    decideReasonHint:
+      "Бачить покупець. Обов'язкова при відмові та при зміні рішення.",
+    decideSubmit: "Зберегти рішення",
+    decideSuccess: "Рішення збережено.",
+    decideDecisionRequired: "Оберіть рішення.",
+    decideReasonRequired: "Вкажіть причину — її побачить покупець.",
+    decideReasonTooLong: "Причина має містити не більше 1000 символів.",
+    decideUnchanged: "Рішення й причина ті самі — змініть хоча б одне.",
+    decideLocked:
+      "Гроші за цією заявкою вже повернуто — рішення більше не змінюється.",
+    decideRefundRecorded:
+      "У заявці вже записано суму повернення — заміну чи ремонт обрати не можна.",
+    decideConflict:
+      "Заявка вже змінилася — сторінку оновлено, перевірте рішення ще раз.",
+    // TASK-1966: the remainder comes from the server's RETURN_QUANTITY_EXCEEDED.
+    decideQuantityExceeded: (remaining: number | null) =>
+      remaining === null
+        ? "Прийняти заявку знову не можна: частину цих позицій уже заявлено в іншій заявці."
+        : `Прийняти заявку знову не можна: позицію вже заявлено в іншій заявці — для повернення лишилось ${remaining} шт.`,
+    decideFailed: "Не вдалося зберегти рішення. Спробуйте ще раз.",
+    // «Наступний крок» після рішення: статуси «Схвалено» / «Відхилено» ставить
+    // рішення, а не кнопка.
+    nextRejected: "Заявку відхилено. Щоб прийняти її, змініть рішення.",
+    nextReceivedNoRefund: (decision: string | null) =>
+      decision
+        ? `Товар отримано. Рішення — «${decision}», тож гроші за цією заявкою не повертають.`
+        : "Товар отримано. Гроші повертають лише за рішенням «Гроші».",
+
+    // --- «Оформити повернення» з картки замовлення (TASK-1963) ----------------
+    // Явна дія замість побічного ефекту статусу «Повернення коштів»: оператор
+    // обирає позиції й кількості, статус замовлення не змінюється.
+    createAction: "Оформити повернення",
+    createTitle: (number: string) => `Оформити повернення · ${number}`,
+    createDescription:
+      "Оберіть позиції й кількість, яку покупець повертає. Статус замовлення не зміниться.",
+    createItemsLegend: "Позиції",
+    createRemaining: (remaining: number, ordered: number) =>
+      `можна повернути ${remaining} з ${ordered}`,
+    createAlreadyClaimed: "Уже заявлено",
+    createQuantityAria: (name: string) => `Кількість до повернення: ${name}`,
+    createDecrease: (name: string) => `Менше: ${name}`,
+    createIncrease: (name: string) => `Більше: ${name}`,
+    createOutcomeNone: "Не сказав",
+    createCommentHint: "Покупець побачить цей текст у своїй заявці.",
+    createCommentPlaceholder:
+      "Наприклад: покупець подзвонив — не підійшов розмір",
+    createSubmit: "Створити заявку",
+    createNothingSelected: "Оберіть хоча б одну позицію",
+    createClaimsLoadError:
+      "Не вдалося завантажити наявні заявки — залишок перевірить сервер.",
+    createDone: "Заявку створено. Статус замовлення не змінено.",
+    createOpenReturn: (number: string) => `Відкрити заявку ${number}`,
+    createClose: "Закрити",
+    createdByOperatorName: (name: string) => `Заявку створив оператор ${name}`,
+
+    // --- Ремонт у п'ять кроків (TASK-2045; B-12 §1.7) --------------------------
+    // Перший крок — саме рішення «Ремонт»; далі чотири кроки, які записує
+    // оператор, строго по черзі. Сервіс, ТТН і результат бачить покупець,
+    // примітку — лише персонал.
+    repairHeading: "Ремонт",
+    repairStepsAria: "Кроки ремонту",
+    repairStepDecision: "Рішення «Ремонт»",
+    repairStepACCEPTED: "Прийнято від покупця",
+    repairStepSENT_TO_SERVICE: "Передано в сервіс",
+    repairStepRETURNED_FROM_SERVICE: "Повернуто з сервісу",
+    repairStepHANDED_TO_CUSTOMER: "Видано покупцю",
+    repairResultREPAIRED: "Відремонтовано",
+    repairResultUNREPAIRABLE: "Не підлягає ремонту",
+    repairStepDone: "виконано",
+    repairStepNext: "наступний крок",
+    repairStepPending: "ще не виконано",
+    repairRecordedBy: (date: string, name: string | null) =>
+      name ? `${date} · ${name}` : `${date} · автор невідомий`,
+    repairService: "Сервіс",
+    repairTtn: "ТТН",
+    repairPoint: "Точка видачі",
+    repairNote: "Примітка",
+    repairPurchaseDate: (date: string) => `Дата покупки: ${date}`,
+    repairWarrantyNotChecked: "Гарантійний строк система не перевіряє.",
+    repairUnrepairableHint:
+      "Товар не підлягає ремонту — змініть рішення на «Заміна» або «Гроші» з причиною.",
+    repairToDecision: "До картки «Рішення»",
+    repairComplete: "Ремонт завершено — товар видано покупцю.",
+    repairFormHeading: (step: string) => `Наступний крок: ${step}`,
+    repairServiceLabel: "Куди передали",
+    repairServicePlaceholder: "Наприклад: сервісний центр «iCenter», Київ",
+    repairTtnLabel: "ТТН",
+    repairTtnPlaceholder: "20450000000000",
+    repairHandoverTtnLabel: "ТТН відправлення покупцю",
+    repairHandoverPointLabel: "або точка видачі",
+    repairHandoverPointPlaceholder: "Наприклад: магазин на Хрещатику, 22",
+    repairCustomerSeesHint: "Бачить покупець.",
+    repairResultLegend: "Результат ремонту",
+    repairNoteLabel: "Примітка",
+    repairNoteHint: "Бачить лише персонал.",
+    repairSubmit: (step: string) => `Записати: ${step}`,
+    repairSuccess: (step: string) => `Крок «${step}» записано.`,
+    repairResultRequired: "Оберіть результат ремонту.",
+    repairServiceTooLong: "Не більше 300 символів.",
+    repairTtnTooLong: "ТТН має містити не більше 64 символів.",
+    repairNoteTooLong: "Примітка має містити не більше 2000 символів.",
+    repairStepInvalid:
+      "Цей крок уже не актуальний — заявку оновлено, перевірте кроки ремонту.",
+    repairFailed: "Не вдалося записати крок. Спробуйте ще раз.",
+
+    // --- Відмови API за кодами (TASK-1966, клас TASK-402) ----------------------
+    // Один мапер `entities/return/model/return-error.ts` на всі ендпоінти
+    // повернень. Жодна з цих відмов не минає від повторного натискання, тож
+    // «Спробуйте ще раз» тут немає ніде: називаємо причину й що робити.
+    refusalNotFound: "Заявку не знайдено — можливо, її вже видалили.",
+    refusalOrderNotFound:
+      "Замовлення не знайдено — можливо, його вже видалили.",
+    refusalOrderNotReturnable:
+      "Повернення оформлюють лише на відправлене або доставлене замовлення. Якщо товар ще не відправили — скасуйте замовлення.",
+    refusalItemNotInOrder:
+      "Цієї позиції вже немає в замовленні — склад замовлення змінився. Перевірте позиції.",
+    // AD-RET-18: друга заявка на ту саму одиницю. Залишок — з відповіді сервера.
+    refusalQuantityExceeded: (remaining: number | null) =>
+      remaining === null
+        ? "Цю позицію вже заявлено в іншій заявці — залишок оновлено, перевірте кількості."
+        : `Цю позицію вже заявлено в іншій заявці — для повернення лишилось ${remaining} шт.`,
+    refusalTransitionInvalid:
+      "Заявка вже змінилася — сторінку оновлено, перевірте її стан.",
+    refusalRestockRequiresReceived:
+      "Повернути товар на склад можна лише на кроці «Товар отримано» — заявку оновлено.",
+    refusalUseDecision:
+      "Схвалити чи відхилити заявку можна лише рішенням — оберіть його в картці «Рішення».",
+    refusalForbidden:
+      "У вас немає права змінювати повернення — зміну не збережено. Попросіть власника магазину надати доступ.",
+
+    // Внутрішні примітки зберігаються окремо, на будь-якому статусі — відтоді як
+    // «Схвалити / Відхилити» стали рішенням, кроку для них може й не бути.
+    notesSave: "Зберегти примітки",
+    notesSaved: "Примітки збережено.",
+    notesSaveFailed: "Не вдалося зберегти примітки. Спробуйте ще раз.",
   },
 
   // --- Operator-created (phone) orders (TASK-341) ------------------------------
@@ -5624,6 +5803,9 @@ export const dict = {
       activateBrand: "активовано бренд",
       activateModel: "активовано модель",
       activateUser: "активовано акаунт",
+      // TASK-2045: POST /admin/returns/:returnId/repair-steps — one step of a
+      // repair (received, sent to the service centre, back, handed over), each once.
+      addRepairStep: "додано етап ремонту",
       apply: "застосовано",
       approve: "схвалено",
       // TASK-1955: PUT /admin/devices/compat/bulk — одна зміна сумісності для
@@ -5648,6 +5830,9 @@ export const dict = {
       // TASK-675: POST /admin/notifications/telegram/link — одноразове посилання,
       // за яким чат підключається до сповіщень магазину.
       createTelegramLink: "створено посилання для підключення Telegram",
+      // TASK-2044: POST /admin/returns/:returnId/decision — the operator's decision
+      // on a return (refund / replacement / repair / reject), separate from status.
+      decide: "ухвалено рішення",
       deactivate: "деактивовано",
       deactivateBrand: "деактивовано бренд",
       deactivateModel: "деактивовано модель",

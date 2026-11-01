@@ -798,15 +798,19 @@ describe("OrderHistoryView — return request (TASK-373)", () => {
       expect(returnBadges()[0]).toHaveAttribute("data-variant", "success");
     });
 
-    it("shows the NEWEST request when an order has several", async () => {
-      serveOrders(byStatus(["DELIVERED"]));
+    it("sums up ALL requests of an order, not just the newest (TASK-1962)", async () => {
+      // SF-ACC-37: a refusal for one unit filed after an approved, received
+      // request read «У поверненні відмовлено» — as if nothing was approved.
+      serveOrders(byStatus(["DELIVERED", "DELIVERED"]));
       server.use(
         http.get("*/api/returns", () =>
           HttpResponse.json({
             // The API answers newest first.
             data: [
-              returnRow("order-1", "REQUESTED", "2026-09-21T10:00:00Z"),
-              returnRow("order-1", "REFUNDED", "2026-09-01T10:00:00Z"),
+              returnRow("order-1", "REJECTED", "2026-09-21T10:00:00Z"),
+              returnRow("order-2", "REQUESTED", "2026-09-20T10:00:00Z"),
+              returnRow("order-1", "RECEIVED", "2026-09-01T10:00:00Z"),
+              returnRow("order-1", "APPROVED", "2026-08-30T10:00:00Z"),
             ],
           }),
         ),
@@ -814,12 +818,37 @@ describe("OrderHistoryView — return request (TASK-373)", () => {
 
       renderHistory();
 
+      await waitFor(() => expect(returnBadges()).toHaveLength(2));
+      const summary = within(card("ORDER-1")).getByText(
+        "Повернення: 2 погоджено · 1 відхилено",
+      );
+      expect(summary).toHaveAttribute("data-return-status", "MIXED");
+      // The several-line label names itself — no sr-only status prefix.
+      expect(summary).toHaveTextContent(/^Повернення: /);
       expect(
-        await screen.findByText(dict.returnRequest.statusLabels.REQUESTED),
-      ).toBeInTheDocument();
-      expect(
-        screen.queryByText(dict.returnRequest.statusLabels.REFUNDED),
+        screen.queryByText(dict.returnRequest.statusLabels.REJECTED),
       ).not.toBeInTheDocument();
+      // The other order keeps its own single status.
+      expect(card("ORDER-2")).toHaveTextContent(
+        `${dict.returnRequest.statusSr}: ${dict.returnRequest.statusLabels.REQUESTED}`,
+      );
+    });
+
+    it("leaves orders without requests unbadged", async () => {
+      serveOrders(byStatus(["DELIVERED", "DELIVERED"]));
+      server.use(
+        http.get("*/api/returns", () =>
+          HttpResponse.json({
+            data: [returnRow("order-2", "REJECTED", "2026-09-20T10:00:00Z")],
+          }),
+        ),
+      );
+
+      renderHistory();
+
+      await waitFor(() => expect(returnBadges()).toHaveLength(1));
+      expect(card("ORDER-1").querySelector("[data-return-status]")).toBeNull();
+      expect(returnBadges()[0]).toHaveAttribute("data-variant", "outline");
     });
 
     it("still lists the orders when the returns request fails", async () => {

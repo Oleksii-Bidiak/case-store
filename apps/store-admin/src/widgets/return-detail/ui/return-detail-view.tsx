@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowUpRightIcon } from "lucide-react";
 import {
-  ReturnEntityStatus,
+  ReturnChannel,
+  returnOutcomeLabel,
+  returnReasonHeading,
   returnStatusBadgeVariant,
   returnStatusLabel,
   useAdminOrderReturnControllerFindForOrder,
@@ -25,6 +27,7 @@ import {
   orderBalanceOf,
   returnedValueOf,
 } from "@/features/return-resolve";
+import { ReturnRepairPanel } from "@/features/return-repair";
 import { toast } from "@/shared/ui/toast";
 import { Badge, RowActionsMenu, Stepper } from "@/shared/ui";
 import { dict } from "@/shared/config";
@@ -37,6 +40,8 @@ import {
 } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import { returnSteps } from "../model/return-steps";
+import { ReturnDatesCard } from "./return-dates-card";
+import { ReturnDecisionCard } from "./return-decision-card";
 import { ReturnDetailSkeleton } from "./return-detail-skeleton";
 
 const d = dict.returns;
@@ -44,6 +49,9 @@ const d = dict.returns;
 interface ReturnDetailViewProps {
   returnId: string;
 }
+
+/** The «Рішення» card's anchor — the repair panel's hint links to it. */
+const DECISION_ANCHOR_ID = "return-decision";
 
 /** Kopiykas, so a sum of «29.99» lines does not drift. */
 const toCents = (value: string) => Math.round(Number(value) * 100);
@@ -99,10 +107,14 @@ function copy(value: string, success: string) {
  * the lines and what was already refunded, and no maximum it cannot know; the
  * server still enforces it, and its 400 lands under the amount field.
  *
+ * Since B-12 (TASK-1961, TASK-2044) the page also carries the three dates
+ * «Подано / Вирішено / Повернуто на склад», what the customer asked for, and
+ * the «Рішення» card — the decision with the reason the customer sees, its
+ * author, date and history, and the decide form for a writer.
+ *
  * Not drawn, because the API does not provide them (TASK-1056's API tails):
- * the request's history (who decided what, when — only the last decision's
- * date is stored), the add-on services that come back with a line (TASK-949),
- * and the refund method.
+ * the add-on services that come back with a line (TASK-949) and the refund
+ * method.
  */
 export function ReturnDetailView({ returnId }: ReturnDetailViewProps) {
   const router = useRouter();
@@ -213,23 +225,17 @@ export function ReturnDetailView({ returnId }: ReturnDetailViewProps) {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* First in the DOM: on a phone the decision follows the steps (Р5). */}
         <div className="flex flex-col gap-6 lg:col-start-3 lg:row-start-1">
+          <ReturnDecisionCard rma={rma} id={DECISION_ANCHOR_ID} />
           <ReturnResolveForm rma={rma} orderBalance={orderBalance} />
         </div>
 
         <div className="flex flex-col gap-6 lg:col-span-2 lg:col-start-1 lg:row-start-1">
-          <section className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-card">
-            <h3 className="text-sm font-semibold text-foreground">
-              {d.reason}
-            </h3>
-            <p
-              className={cn(
-                "text-sm break-words whitespace-pre-line",
-                rma.reason ? "text-foreground" : "text-muted-foreground",
-              )}
-            >
-              {rma.reason ?? d.noReason}
-            </p>
-          </section>
+          <ReturnDatesCard rma={rma} />
+
+          {/* TASK-2045 — renders only under a REPAIR decision. */}
+          <ReturnRepairPanel rma={rma} decisionAnchorId={DECISION_ANCHOR_ID} />
+
+          <RequestCard rma={rma} />
 
           <ItemsCard
             rma={rma}
@@ -239,6 +245,57 @@ export function ReturnDetailView({ returnId }: ReturnDetailViewProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ── What the customer asked for, and why ──────────────────────────────── */
+
+/**
+ * «Чого хоче покупець» and the reason (TASK-2044, TASK-1961). The reason's
+ * heading names its author: the customer's own words through the account or
+ * the guest link, an operator's comment when the shop filed it for them.
+ */
+function RequestCard({ rma }: { rma: ReturnEntity }) {
+  const headingId = useId();
+  return (
+    <section
+      aria-labelledby={headingId}
+      className="flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-card"
+    >
+      <dl className="flex flex-wrap items-baseline gap-x-2 text-sm">
+        <dt className="text-muted-foreground">{d.requestedOutcome}</dt>
+        <dd
+          className={cn(
+            "font-medium",
+            rma.requestedOutcome ? "text-foreground" : "text-muted-foreground",
+          )}
+        >
+          {returnOutcomeLabel(rma.requestedOutcome)}
+        </dd>
+      </dl>
+      {/* TASK-1963 (AD-RET-15): who filed it for the buyer — the name, not just
+          the fact; a deleted account leaves only the fact. */}
+      {rma.channel === ReturnChannel.OPERATOR ? (
+        <p className="text-sm text-muted-foreground">
+          {rma.createdBy
+            ? d.createdByOperatorName(rma.createdBy.name)
+            : d.createdByOperator}
+        </p>
+      ) : null}
+      <div className="flex flex-col gap-1">
+        <h3 id={headingId} className="text-sm font-semibold text-foreground">
+          {returnReasonHeading(rma.channel)}
+        </h3>
+        <p
+          className={cn(
+            "text-sm break-words whitespace-pre-line",
+            rma.reason ? "text-foreground" : "text-muted-foreground",
+          )}
+        >
+          {rma.reason ?? d.noReason}
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -295,10 +352,6 @@ function ItemsCard({
       : null;
   const lineSum = (price: string | null, quantity: number) =>
     price === null ? "—" : formatCurrency(fromCents(toCents(price) * quantity));
-
-  const goodsAreBack =
-    rma.status === ReturnEntityStatus.RECEIVED ||
-    rma.status === ReturnEntityStatus.REFUNDED;
 
   return (
     <section
@@ -395,13 +448,6 @@ function ItemsCard({
             value={formatCurrency(rma.refundedAmount)}
             strong={maxRefund === null}
           />
-        ) : null}
-        {rma.restockedAt ? (
-          <p className="pt-1 text-xs text-muted-foreground">
-            {d.restockedAt} · {formatDateTime(rma.restockedAt)}
-          </p>
-        ) : goodsAreBack ? (
-          <p className="pt-1 text-xs text-muted-foreground">{d.notRestocked}</p>
         ) : null}
       </div>
     </section>

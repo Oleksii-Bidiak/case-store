@@ -24,8 +24,15 @@ describe("returnableLines (TASK-373)", () => {
         productName: "Чохол",
         ordered: 3,
         remaining: 3,
+        underReview: false,
       },
-      { orderItemId: "line-2", productName: "Скло", ordered: 1, remaining: 1 },
+      {
+        orderItemId: "line-2",
+        productName: "Скло",
+        ordered: 1,
+        remaining: 1,
+        underReview: false,
+      },
     ]);
   });
 
@@ -77,6 +84,24 @@ describe("returnableLines (TASK-373)", () => {
       remaining: 0,
     });
   });
+
+  // TASK-1964: an exhausted line reads «Уже заявлено» while a request on it is
+  // still being looked at, and «Уже повернено» once the goods are back —
+  // «повернено» on a request nobody has answered yet promises too much.
+  it.each([
+    ["REQUESTED", true],
+    ["APPROVED", true],
+    ["RECEIVED", false],
+    ["REFUNDED", false],
+    ["REJECTED", false],
+  ])(
+    "marks a line claimed by a %s return as under review: %s",
+    (status, expected) => {
+      const lines = returnableLines(items, [claim(status, "line-2", 1)]);
+
+      expect(lines[1].underReview).toBe(expected);
+    },
+  );
 
   it("never goes negative, whatever the server says is claimed", () => {
     const lines = returnableLines(items, [claim("APPROVED", "line-2", 5)]);

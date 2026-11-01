@@ -10,6 +10,7 @@ import {
   orderDeliveryDetails,
   useGetOrder,
 } from "@/entities/order";
+import { OrderReturnHistory } from "@/entities/return";
 import { CancelOrderButton } from "@/features/cancel-order";
 import { ReturnRequestButton } from "@/features/return-request";
 import {
@@ -167,6 +168,13 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
       <div className="flex flex-col gap-8 lg:grid lg:grid-cols-3">
         <div className="flex flex-col gap-8 lg:col-span-2">
           <OrderItemList items={order.items} />
+          {/* TASK-1962: the order's return requests, for a customer who
+              comes back here from the email link — nothing when there are
+              none. */}
+          <OrderReturnHistory
+            orderId={order.id}
+            className="rounded-card border border-border bg-card p-6"
+          />
           <OrderDeliveryBlock order={order} />
           <OrderBillingAddress
             shippingAddress={order.shippingAddress}
@@ -198,11 +206,11 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
             {/* TASK-609: the same door as the order history, under the same
                 rule — DELIVERED only (see the note there on why not SHIPPED).
                 A customer arriving from the email link lands HERE, not on the
-                list. Not on the guest view: a guest order has no owner for the
-                customer return route to check against. */}
+                list. A guest order has its own door on the guest view, by the
+                order's access token (TASK-1965). */}
             {order.status === "DELIVERED" && (
               <ReturnRequestButton
-                orderId={order.id}
+                source={{ kind: "account", orderId: order.id }}
                 orderNumber={`#${order.id.slice(0, 8).toUpperCase()}`}
                 items={order.items}
               />

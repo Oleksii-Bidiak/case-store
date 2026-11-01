@@ -2,6 +2,7 @@
 export { ReturnService } from './return.service';
 export { ReturnRepository } from './return.repository';
 export { ReturnController } from './return.controller';
+export { GuestReturnController } from './guest-return.controller';
 export { AdminReturnController, AdminOrderReturnController } from './admin-return.controller';
 export { ReturnEntity, ReturnItemEntity } from './entities';
 export { CreateReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';

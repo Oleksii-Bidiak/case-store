@@ -35,6 +35,26 @@ export function apiErrorStatus(error: unknown): number | undefined {
 }
 
 /**
+ * True when the request got no answer at all — the connection dropped or was
+ * never there (axios `ERR_NETWORK`, TASK-1964).
+ *
+ * Deliberately narrow: a timeout (`ECONNABORTED`) or a cancel is NOT counted,
+ * because the server may already hold that request, and a caller that resends
+ * on reconnect must not file the same thing twice. Any response — even a 5xx —
+ * means the server answered, so it is not a network error either.
+ */
+export function isNetworkError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const { response, code, message } = error as {
+    response?: unknown;
+    code?: unknown;
+    message?: unknown;
+  };
+  if (response !== undefined) return false;
+  return code === "ERR_NETWORK" || message === "Network Error";
+}
+
+/**
  * The stable machine code the API puts in `error` (e.g. `DISCOUNT_EXPIRED`).
  * Callers map it through their own dictionary — never render it raw.
  */

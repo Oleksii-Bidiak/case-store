@@ -20,15 +20,15 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard, CurrentUser } from '../../auth';
 import { ReturnService } from './return.service';
-import { ReturnEntity, ReturnItemEntity } from './entities';
+import { ReturnEntity, ReturnItemEntity, ReturnRepairStepEntity } from './entities';
 import { CreateReturnDto } from './dto';
 
-class ReturnResponseEnvelope {
+export class ReturnResponseEnvelope {
   @ApiProperty({ type: ReturnEntity })
   data!: ReturnEntity;
 }
 
-class ReturnListResponseEnvelope {
+export class ReturnListResponseEnvelope {
   @ApiProperty({ type: [ReturnEntity] })
   data!: ReturnEntity[];
 }
@@ -53,7 +53,13 @@ class ReturnListResponseEnvelope {
  */
 @ApiTags('Returns')
 @ApiBearerAuth('access-token')
-@ApiExtraModels(ReturnEntity, ReturnItemEntity, ReturnResponseEnvelope, ReturnListResponseEnvelope)
+@ApiExtraModels(
+  ReturnEntity,
+  ReturnItemEntity,
+  ReturnRepairStepEntity,
+  ReturnResponseEnvelope,
+  ReturnListResponseEnvelope,
+)
 @Controller()
 @UseGuards(JwtAuthGuard)
 export class ReturnController {
@@ -93,9 +99,15 @@ export class ReturnController {
   @ApiResponse({ status: 201, description: 'Return requested', type: ReturnResponseEnvelope })
   @ApiResponse({
     status: 400,
-    description: 'Order has not shipped, unknown line, or more units than were bought',
+    description:
+      'error: RETURN_ORDER_NOT_RETURNABLE (order has not shipped), RETURN_ITEM_NOT_IN_ORDER ' +
+      '(unknown line) or RETURN_QUANTITY_EXCEEDED (more units than remain returnable; the ' +
+      'message names the remainder)',
   })
-  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({
+    status: 404,
+    description: 'Order not found, or not yours — error: RETURN_ORDER_NOT_FOUND',
+  })
   async createReturn(
     @CurrentUser('id') userId: string,
     @Param('orderId') orderId: string,
@@ -118,7 +130,10 @@ export class ReturnController {
     description: 'Returns for the order',
     type: ReturnListResponseEnvelope,
   })
-  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({
+    status: 404,
+    description: 'Order not found, or not yours — error: RETURN_ORDER_NOT_FOUND',
+  })
   async getOrderReturns(
     @CurrentUser('id') userId: string,
     @Param('orderId') orderId: string,
