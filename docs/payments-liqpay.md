@@ -175,21 +175,25 @@ LiqPay — сервіс інтернет-еквайрингу ПриватБан
 
 ## 5. Де що лежить
 
-| Файл                                                             | За що відповідає                                                                                                          |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `apps/store-api/src/payment/payment.port.ts`                     | Інтерфейс провайдера. **Нічого не знає про LiqPay.** Змінюєш тут — міняється контракт для всіх провайдерів                |
-| `apps/store-api/src/payment/adapters/liqpay/liqpay.adapter.ts`   | Усе, що знає про LiqPay: побудова `data`, назви полів, **мапа статусів**. 90% фіксів «щось не так із LiqPay» — тут        |
-| `apps/store-api/src/payment/adapters/liqpay/liqpay.signature.ts` | Тільки підпис. Окремий файл, бо це найтендітніше місце (розділ 9)                                                         |
-| `apps/store-api/src/payment/liqpay-webhook.controller.ts`        | Точка входу callback. Публічний роут без гардів                                                                           |
-| `apps/store-api/src/payment/payment.service.ts`                  | Ідемпотентність + застосування подій. **Фікси «статус задвоївся» — тут**                                                  |
-| `apps/store-api/src/payment/payment-reconcile.worker.ts`         | Крон-страховка (опитування статусів) + авто-скасування прострочених                                                       |
-| `apps/store-api/src/order/order.service.ts`                      | Машина станів: статуси, які ставить оператор/вебхук (REFUNDED сюди не входить — див. наступні рядки)                      |
-| `apps/store-api/src/order/order-money.ts`                        | Чисті правила грошей (R2): статус оплати, баланс, «до повернення», **похідний REFUNDED замовлення** (`deriveOrderStatus`) |
-| `apps/store-api/src/order/order-money.repository.ts`             | Журнал грошей: лок рядка замовлення, записи, сторно, `recompute` (суми, статус оплати, REFUNDED замовлення)               |
-| `apps/store-api/src/order/admin-order-money.controller.ts`       | Адмін-двері грошей: `GET …/money`, надходження, виплати, сторно, анулювання запиту LiqPay                                 |
-| `apps/store-api/src/order/provider-refund.port.ts`               | Порт «повернути через провайдера»: модуль замовлень просить рефанд LiqPay, не знаючи про платіжний модуль                 |
-| `apps/store-client/src/features/checkout/`                       | Вибір способу оплати + POST-форма на LiqPay                                                                               |
-| `apps/store-admin/src/features/order-payment-update/`            | Картка платежу, історія спроб, кнопка повернення                                                                          |
+| Файл                                                                   | За що відповідає                                                                                                          |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `apps/store-api/src/payment/payment.port.ts`                           | Інтерфейс провайдера. **Нічого не знає про LiqPay.** Змінюєш тут — міняється контракт для всіх провайдерів                |
+| `apps/store-api/src/payment/adapters/liqpay/liqpay.adapter.ts`         | Усе, що знає про LiqPay: побудова `data`, назви полів, **мапа статусів**. 90% фіксів «щось не так із LiqPay» — тут        |
+| `apps/store-api/src/payment/adapters/liqpay/liqpay.signature.ts`       | Тільки підпис. Окремий файл, бо це найтендітніше місце (розділ 9)                                                         |
+| `apps/store-api/src/payment/liqpay-webhook.controller.ts`              | Точка входу callback. Публічний роут без гардів                                                                           |
+| `apps/store-api/src/payment/payment.service.ts`                        | Ідемпотентність + застосування подій. **Фікси «статус задвоївся» — тут**                                                  |
+| `apps/store-api/src/payment/payment-reconcile.worker.ts`               | Крон-страховка (опитування статусів) + авто-скасування прострочених                                                       |
+| `apps/store-api/src/order/order.service.ts`                            | Машина станів: статуси, які ставить оператор/вебхук (REFUNDED сюди не входить — див. наступні рядки)                      |
+| `apps/store-api/src/order/order-money.ts`                              | Чисті правила грошей (R2): статус оплати, баланс, «до повернення», **похідний REFUNDED замовлення** (`deriveOrderStatus`) |
+| `apps/store-api/src/order/order-money.repository.ts`                   | Журнал грошей: лок рядка замовлення, записи, сторно, `recompute` (суми, статус оплати, REFUNDED замовлення)               |
+| `apps/store-api/src/order/admin-order-money.controller.ts`             | Адмін-двері грошей: `GET …/money`, надходження, виплати, сторно, анулювання запиту LiqPay                                 |
+| `apps/store-api/src/order/provider-refund.port.ts`                     | Порт «повернути через провайдера»: модуль замовлень просить рефанд LiqPay, не знаючи про платіжний модуль                 |
+| `apps/store-client/src/features/checkout/`                             | Вибір способу оплати + POST-форма на LiqPay                                                                               |
+| `apps/store-admin/src/widgets/order-detail/ui/order-payment-block.tsx` | Єдиний блок «Оплата» на картці замовлення: підсумок, «Журнал оплат», кнопки, спроби LiqPay (лише показ)                   |
+| `apps/store-admin/src/features/order-money-receipt/`                   | «Записати надходження»                                                                                                    |
+| `apps/store-admin/src/features/order-money-payout/`                    | «Повернути гроші» без заявки (і «Виплатити» за заявкою)                                                                   |
+| `apps/store-admin/src/features/order-money-reversal/`                  | «Сторнувати» запис, «Анулювати запит» LiqPay                                                                              |
+| `apps/store-admin/src/widgets/return-detail/ui/return-money-card.tsx`  | «Гроші за заявкою»: «До повернення», «Виплатити», виплати                                                                 |
 
 ### Змінні оточення
 
