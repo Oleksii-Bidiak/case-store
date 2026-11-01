@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { CartModule } from '../cart';
+import { CartIdentityInterceptor, CartModule } from '../cart';
 import { DiscountRepository } from './discount.repository';
 import { DiscountService } from './discount.service';
 import { DiscountController } from './discount.controller';
@@ -15,7 +15,10 @@ import { PublicDiscountController } from './public-discount.controller';
 @Module({
   imports: [CartModule],
   controllers: [DiscountController, AdminDiscountController, PublicDiscountController],
-  providers: [DiscountRepository, DiscountService],
+  // CartIdentityInterceptor: the preview resolves a guest's cookie cart since
+  // TASK-2010. Listed here because a route-scoped enhancer is instantiated from
+  // the injector of the module that USES it (same note as OrderModule).
+  providers: [DiscountRepository, DiscountService, CartIdentityInterceptor],
   exports: [DiscountService],
 })
 export class DiscountModule {}

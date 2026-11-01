@@ -1346,10 +1346,17 @@ model DiscountRedemption {
   userId     String   @map("user_id")
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   orderId    String   @unique @map("order_id")
+  /// The order's phone, normalised by `normalizeUaPhone` (TASK-2010, B-12 тема 2
+  /// (г)). "Per customer" is the account OR this phone: a sign-up at checkout
+  /// mints a fresh account, so the account alone would hand the same phone a
+  /// second discount. Nullable — rows from before the column were backfilled
+  /// from the order where the order had a phone, and nothing else is guessed.
+  phone      String?
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([discountId])
   @@index([userId])
+  @@index([discountId, phone])
   @@map("discount_redemptions")
 }
 
