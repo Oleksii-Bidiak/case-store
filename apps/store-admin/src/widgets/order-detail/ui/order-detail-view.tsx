@@ -8,7 +8,6 @@ import {
   formatOrderNumber,
   isPreShipmentStatus,
   isShippingCostPending,
-  OrderEntityPaymentStatus,
   orderDerivedMarks,
   orderStatusBadgeVariant,
   orderStatusLabel,
@@ -21,7 +20,6 @@ import {
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { OrderStatusSelect } from "@/features/order-status-update";
-import { PaymentStatusSelect } from "@/features/order-payment-update";
 // TASK-1963: «Оформити повернення» — composed here because the status control
 // (another feature) opens the same dialog from its REFUNDED warning.
 import { ReturnCreateAction } from "@/features/return-create";
@@ -56,7 +54,7 @@ import { useNow } from "@/shared/lib/use-now";
 import { orderPath } from "../model/order-path";
 import { OrderDeliverySection } from "./order-delivery-section";
 import { OrderDetailSkeleton } from "./order-detail-skeleton";
-import { OrderPaymentAttempts } from "./order-payment-attempts";
+import { OrderPaymentBlock } from "./order-payment-block";
 import { OrderReturnsSection } from "./order-returns-section";
 import { OrderTimeline } from "./order-timeline";
 
@@ -113,9 +111,10 @@ function copyNumber(order: OrderEntity) {
  * delivery and operator data, customer note, returns, buyer link); one column
  * on a phone.
  *
- * Nothing that was on the card is gone, and every control keeps its gate:
- * without `orders:write` the status menu, the payment picker, the address edit
- * and the details form are ABSENT (TASK-715), and one line says so.
+ * Every control keeps its gate: without `orders:write` the status menu,
+ * «Записати надходження», the address edit and the details form are ABSENT
+ * (TASK-715), and one line says so. Money is read and moved only in the
+ * «Оплата» block (R2, TASK-1967); the header payment badge is display only.
  *
  * Address and ТТН/notes still save separately — two forms in one card, each with
  * its own lock token and 409 handling. One «Зберегти» for both is TASK-994: the
@@ -439,49 +438,13 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
             </div>
           </section>
 
-          {/* TASK-330-C: everything about money for this order in one card. */}
-          <section className={card}>
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-foreground">
-                {d.paymentHeading}
-              </h3>
-              <Badge variant={paymentStatusBadgeVariant(order.paymentStatus)}>
-                {paymentStatusLabel(order.paymentStatus)}
-              </Badge>
-            </div>
-            <SummaryRow
-              label={d.paymentAmountLabel}
-              value={formatCurrency(order.total)}
-            />
-            {/* TASK-472: "Повернуто X з Y" — only at PARTIALLY_REFUNDED, and
-                only when the response carried the sum. */}
-            {order.paymentStatus ===
-              OrderEntityPaymentStatus.PARTIALLY_REFUNDED &&
-            order.refundedTotal != null ? (
-              <SummaryRow
-                label={d.refundedLabel}
-                value={d.refundedOfTotal(
-                  formatCurrency(order.refundedTotal),
-                  formatCurrency(order.total),
-                )}
-              />
-            ) : null}
-            {/* TASK-715: the payment control needs `orders:write` (it renders
-                nothing otherwise); on unpaid cash on delivery it leads with
-                «Гроші від НП отримано» — the same move to PAID (К1). */}
-            {canWriteOrders ? (
-              <>
-                <Separator />
-                <PaymentStatusSelect
-                  orderId={order.id}
-                  paymentMethod={order.paymentMethod}
-                  total={order.total}
-                />
-              </>
-            ) : null}
-            {/* TASK-371: the LiqPay attempts and «Повернути кошти». */}
-            <OrderPaymentAttempts order={order} />
-          </section>
+          {/* R2 (TASK-1967): the ONE place money is read and moved — the
+              summary and journal for any reader, each action under its own
+              grant. The header badge above is display only. */}
+          <OrderPaymentBlock
+            order={order}
+            onCreateReturn={() => setReturnDialogOpen(true)}
+          />
 
           {/* TASK-251: the status / payment / waybill history. */}
           <section className={card}>

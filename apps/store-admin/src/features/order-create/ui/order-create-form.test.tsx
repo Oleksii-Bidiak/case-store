@@ -548,6 +548,39 @@ describe("OrderCreateForm — by mockup (TASK-1047)", () => {
       "true",
     );
   });
+
+  it("offers «Переказ на рахунок ФОП» with any delivery and sends BANK_TRANSFER (R2)", async () => {
+    const user = userEvent.setup();
+    const bodies: Array<Record<string, unknown>> = [];
+    server.use(
+      http.post("*/api/admin/orders", async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({
+          data: { id: "11111111-2222-3333-4444-555555555555" },
+          meta: { accessUrl: null },
+        });
+      }),
+    );
+    renderWithProviders(<OrderCreateForm />);
+    await fillGuestAndAddress(user);
+    await addFirstProduct(user);
+
+    // No Nova Poshta city from the directory: card and instalments are off,
+    // the bank transfer is not — the admin matrix allows it everywhere.
+    const group = within(
+      screen.getByRole("group", { name: t.paymentMethodAria }),
+    );
+    const transfer = group.getByRole("button", { name: t.methodBankTransfer });
+    expect(transfer).toBeEnabled();
+    expect(transfer).not.toHaveAccessibleDescription(t.paymentNeedsNpCity);
+    await user.click(transfer);
+    expect(transfer).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0].paymentMethod).toBe("BANK_TRANSFER");
+  });
 });
 
 const KYIV_REF = "db5c88e0-391c-11dd-90d9-001a92567626";

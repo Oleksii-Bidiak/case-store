@@ -51,8 +51,3 @@ export function paymentAttemptStatusBadgeVariant(status: string): BadgeVariant {
       return "warning";
   }
 }
-
-/** Whether this attempt can be refunded — the server refuses anything else (409). */
-export function isRefundableAttempt(status: string): boolean {
-  return status === PaymentEntityStatus.SUCCEEDED;
-}

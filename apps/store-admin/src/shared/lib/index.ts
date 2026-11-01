@@ -47,6 +47,9 @@ export {
   readColorAxis,
   colorsInUse,
 } from "./color-axis";
+// R2 (TASK-2047): the order money journal is integer kopecks — format and parse
+// them without a float ever touching the amount. Pure, safe in this barrel.
+export { formatKop, kopToInput, parseKop } from "./money-kop";
 
 // NOTE: `use-debounced-callback` is intentionally NOT re-exported here. It is a
 // "use client" hook; adding a client module to this barrel (which server

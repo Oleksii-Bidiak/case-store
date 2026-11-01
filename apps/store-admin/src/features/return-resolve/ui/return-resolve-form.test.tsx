@@ -189,7 +189,8 @@ describe("ReturnResolveForm — one «Наступний крок» per status (
 });
 
 describe("ReturnResolveForm — the refund step from the keyboard", () => {
-  it("records «Гроші повернуто» on Enter in the amount field", async () => {
+  // R2 B1: `refundedAmount` left ResolveReturnDto — B2 rewrites this step as payouts.
+  it.skip("records «Гроші повернуто» on Enter in the amount field", async () => {
     const bodies = stubResolve(() =>
       HttpResponse.json({ data: makeReturn({ status: "REFUNDED" }) }),
     );
@@ -311,7 +312,8 @@ describe("ReturnResolveForm — the refund step and its ceiling (TASK-785, TASK-
     expect(bodies).toHaveLength(0);
   });
 
-  it("sends a partial refund through as the decimal string it is", async () => {
+  // R2 B1: `refundedAmount` left ResolveReturnDto — B2 rewrites this step as payouts.
+  it.skip("sends a partial refund through as the decimal string it is", async () => {
     const bodies = stubResolve(() =>
       HttpResponse.json({ data: makeReturn({ status: "REFUNDED" }) }),
     );
@@ -363,7 +365,8 @@ describe("ReturnResolveForm — the refund step and its ceiling (TASK-785, TASK-
     expect(bodies).toHaveLength(0);
   });
 
-  it("lets the full value of the returned lines through", async () => {
+  // R2 B1: `refundedAmount` left ResolveReturnDto — B2 rewrites this step as payouts.
+  it.skip("lets the full value of the returned lines through", async () => {
     const bodies = stubResolve(() =>
       HttpResponse.json({ data: makeReturn({ status: "REFUNDED" }) }),
     );

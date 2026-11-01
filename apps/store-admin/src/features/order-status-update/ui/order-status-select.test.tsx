@@ -11,7 +11,7 @@ import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { dict } from "@/shared/config";
 import {
   orderStatusLabel,
-  useAdminOrderControllerGetAllowedPaymentTransitions,
+  useAdminOrderMoneyControllerGet,
 } from "@/entities/order";
 import { OrderStatusSelect } from "./order-status-select";
 
@@ -867,36 +867,31 @@ describe("OrderStatusSelect — menu-button and next step (TASK-1046)", () => {
 });
 
 /**
- * TASK-842: the payment picker's option list depends on the ORDER status —
- * cancelling a partly refunded order is exactly what makes «Кошти повернено»
- * legal. The Orval keys are flat strings, so invalidating the order itself does
- * not reach the payment-transitions query by prefix; this pins the explicit
- * invalidation. The probe reads the same entity hook the payment picker reads,
- * so no feature imports another.
+ * TASK-842 → R2: what the «Оплата» block offers depends on the ORDER status —
+ * cancelling a paid order is exactly what unlocks «Повернути гроші» without a
+ * return (`outWithoutReturnMaxKop`), and the status write moves the lock token
+ * the block sends back. The Orval keys are flat strings, so invalidating the
+ * order itself does not reach the money query by prefix; this pins the explicit
+ * invalidation. The probe reads the same entity hook the block reads, so no
+ * feature imports another.
  */
-function PaymentOptionsProbe({ orderId }: { orderId: string }) {
-  const { data } = useAdminOrderControllerGetAllowedPaymentTransitions(orderId);
-  return <p data-testid="payment-options">{data?.data.allowed.join(",")}</p>;
+function MoneyProbe({ orderId }: { orderId: string }) {
+  const { data } = useAdminOrderMoneyControllerGet(orderId);
+  return <p data-testid="money-out-max">{data?.data.outWithoutReturnMaxKop}</p>;
 }
 
-describe("OrderStatusSelect — payment options follow the order (TASK-842)", () => {
-  it("refetches the payment options after cancelling, so the full refund appears", async () => {
+describe("OrderStatusSelect — the money block follows the order (TASK-842, R2)", () => {
+  it("refetches the order's money after cancelling, so the payout appears", async () => {
     stubTransitions(["CANCELLED"]);
     let cancelled = false;
-    let paymentReads = 0;
+    let moneyReads = 0;
     server.use(
-      http.get(
-        "*/api/admin/orders/:orderId/allowed-payment-transitions",
-        () => {
-          paymentReads += 1;
-          return HttpResponse.json({
-            data: {
-              current: "PARTIALLY_REFUNDED",
-              allowed: cancelled ? ["REFUNDED"] : [],
-            },
-          });
-        },
-      ),
+      http.get("*/api/admin/orders/:orderId/money", () => {
+        moneyReads += 1;
+        return HttpResponse.json({
+          data: { outWithoutReturnMaxKop: cancelled ? 129900 : 0 },
+        });
+      }),
     );
     stubStatusPatch(() => {
       cancelled = true;
@@ -906,11 +901,11 @@ describe("OrderStatusSelect — payment options follow the order (TASK-842)", ()
     renderWithProviders(
       <WithAuth permissions={["orders:write", "returns:read", "returns:write"]}>
         <OrderStatusSelect orderId={ORDER_ID} />
-        <PaymentOptionsProbe orderId={ORDER_ID} />
+        <MoneyProbe orderId={ORDER_ID} />
       </WithAuth>,
     );
-    await waitFor(() => expect(paymentReads).toBe(1));
-    expect(screen.getByTestId("payment-options")).toHaveTextContent("");
+    await waitFor(() => expect(moneyReads).toBe(1));
+    expect(screen.getByTestId("money-out-max")).toHaveTextContent("0");
 
     await openPicker();
     await userEvent.click(
@@ -920,10 +915,8 @@ describe("OrderStatusSelect — payment options follow the order (TASK-842)", ()
     );
 
     await waitFor(() =>
-      expect(screen.getByTestId("payment-options")).toHaveTextContent(
-        "REFUNDED",
-      ),
+      expect(screen.getByTestId("money-out-max")).toHaveTextContent("129900"),
     );
-    expect(paymentReads).toBe(2);
+    expect(moneyReads).toBe(2);
   });
 });

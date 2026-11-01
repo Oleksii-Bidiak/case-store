@@ -21,6 +21,8 @@ describe("orderStatusLabel (TASK-129)", () => {
 describe("paymentStatusLabel (TASK-129)", () => {
   it.each([
     ["PENDING", "Очікує оплати"],
+    // R2 (TASK-2047): derived from the money journal.
+    ["PARTIALLY_PAID", "Частково оплачено"],
     ["PAID", "Оплачено"],
     ["FAILED", "Помилка оплати"],
     // TASK-431 — and worded so the two refund states cannot be confused at a

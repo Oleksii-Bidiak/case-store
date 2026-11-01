@@ -34,6 +34,8 @@ const ORDER_STATUS_LABELS: Record<OrderEntityStatus, string> = {
  */
 const PAYMENT_STATUS_LABELS: Record<OrderEntityPaymentStatus, string> = {
   [OrderEntityPaymentStatus.PENDING]: dict.orderStatus.paymentLabels.PENDING,
+  [OrderEntityPaymentStatus.PARTIALLY_PAID]:
+    dict.orderStatus.paymentLabels.PARTIALLY_PAID,
   [OrderEntityPaymentStatus.PAID]: dict.orderStatus.paymentLabels.PAID,
   [OrderEntityPaymentStatus.FAILED]: dict.orderStatus.paymentLabels.FAILED,
   [OrderEntityPaymentStatus.PARTIALLY_REFUNDED]:

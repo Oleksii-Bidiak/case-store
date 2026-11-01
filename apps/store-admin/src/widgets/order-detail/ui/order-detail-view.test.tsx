@@ -113,31 +113,31 @@ describe("OrderDetailView — customer section (TASK-125)", () => {
     expect(screen.queryByText(dict.orders.customer)).not.toBeInTheDocument();
   });
 
-  it("renders independent status and payment-status controls (TASK-151)", async () => {
+  it("renders the status control and the «Оплата» block apart (TASK-151 → R2)", async () => {
     server.use(
       http.get("*/api/admin/orders/:orderId", () =>
         HttpResponse.json({ data: makeOrder(null) }),
       ),
     );
 
-    // TASK-715: both controls need `orders:write`.
+    // TASK-715: both write controls need `orders:write`.
     renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
       auth: { permissions: ["orders:read", "orders:write"] },
     });
 
-    // Two separate comboboxes: order status + payment status. The order-status
-    // one waits on its own `allowed-transitions` read (TASK-332), so it is
-    // awaited rather than asserted synchronously after the order lands.
+    // The order-status menu waits on its own `allowed-transitions` read
+    // (TASK-332); money is recorded in the «Оплата» block, never by picking a
+    // payment status (R2: the status is derived from the money journal).
     expect(
       await screen.findByRole("button", { name: dict.orders.updateStatus }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByRole("combobox", {
-        name: dict.orderStatus.paymentUpdateAria,
+      await screen.findByRole("button", {
+        name: dict.orderMoney.receiptAction,
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(dict.orderStatus.updatePaymentStatus),
+      screen.getByRole("region", { name: dict.orderMoney.heading }),
     ).toBeInTheDocument();
   });
 
@@ -522,91 +522,59 @@ describe("OrderDetailView — customer link only on guest orders (TASK-623)", ()
   });
 });
 
-// ── "Повернуто X з Y" (TASK-472) ──────────────────────────────────────────────
-// The fifth derived mark of B-1. It is a fraction, so it is only meaningful in
-// the one payment status that means "some of it": the tests below pin both
-// halves — that it appears at PARTIALLY_REFUNDED and that it appears nowhere
-// else — because a mark that shows up on a fully refunded order is worse than
-// no mark at all.
-describe("OrderDetailView — partial-refund sum (TASK-472)", () => {
-  function servePartialRefund(
-    overrides: { paymentStatus?: string; refundedTotal?: string } = {},
-  ) {
-    server.use(
-      http.get("*/api/admin/orders/:orderId", () =>
-        HttpResponse.json({
-          data: {
-            ...makeOrder(null),
-            paymentStatus: overrides.paymentStatus ?? "PARTIALLY_REFUNDED",
-            ...(overrides.refundedTotal === undefined
-              ? { refundedTotal: "10.00" }
-              : { refundedTotal: overrides.refundedTotal }),
-          },
-        }),
-      ),
-    );
-  }
-
-  it("shows the refunded sum against the order total", async () => {
-    servePartialRefund();
-
-    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
-
-    expect(
-      await screen.findByText(dict.orders.refundedLabel),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        dict.orders.refundedOfTotal(
-          formatCurrency("10.00"),
-          formatCurrency("29.99"),
-        ),
-        // `formatCurrency` puts a non-breaking space before the ₴, and the
-        // default normalizer turns that into a plain space in the DOM text while
-        // leaving it intact in the expected string — so the two never match.
-        // Trim only.
-        { normalizer: (text) => text.trim() },
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("stays hidden on a fully refunded order", async () => {
-    servePartialRefund({ paymentStatus: "REFUNDED", refundedTotal: "29.99" });
-
-    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
-
-    // Anchored on the payment card's heading, not on its "Сума" row: that word
-    // is also a column header in the items table below.
-    expect(
-      await screen.findByText(dict.orders.paymentHeading),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(dict.orders.refundedLabel),
-    ).not.toBeInTheDocument();
-  });
-
-  it("stays hidden when the response carried no sum at all", async () => {
-    // `refundedTotal` is absent — not "0.00" — whenever the returns were not
-    // joined. Rendering "Повернуто 0,00 ₴ з 29,99 ₴" there would be an invented
-    // fact, so the row is simply not drawn.
+// ── «Оплата» from the money journal (R2: TASK-1967 / 2047) ────────────────────
+// The card no longer reads paid / refunded off the order: the block asks
+// `GET …/money` and renders its figures as they come. «Повернуто X з Y» of
+// TASK-472 became «Сплачено X з Y · Повернуто Z» there, with the balance —
+// the block's own suite pins the wording; this pins that the card uses it.
+describe("OrderDetailView — the «Оплата» block (R2)", () => {
+  it("shows the money summary from the journal, not from the order", async () => {
     server.use(
       http.get("*/api/admin/orders/:orderId", () =>
         HttpResponse.json({
           data: { ...makeOrder(null), paymentStatus: "PARTIALLY_REFUNDED" },
         }),
       ),
+      http.get("*/api/admin/orders/:orderId/money", () =>
+        HttpResponse.json({
+          data: {
+            orderId: "order-uuid-12345678",
+            orderStatus: "CANCELLED",
+            paymentStatus: "PARTIALLY_REFUNDED",
+            paymentMethod: "ONLINE",
+            deliveryMethod: "NOVA_POSHTA",
+            updatedAt: "2026-06-01T10:00:00.000Z",
+            totals: {
+              totalKop: 2999,
+              paidKop: 2999,
+              refundedKop: 1000,
+              returnCreditKop: 0,
+              balanceKop: -1999,
+            },
+            entries: [],
+            allowedInKinds: ["COD_NOVA_POSHTA", "BANK_TRANSFER"],
+            refundablePayments: null,
+            outWithoutReturnMaxKop: 1999,
+            returns: [],
+          },
+        }),
+      ),
     );
 
-    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: ["orders:read"] },
+    });
 
-    // Anchored on the payment card's heading, not on its "Сума" row: that word
-    // is also a column header in the items table below.
-    expect(
-      await screen.findByText(dict.orders.paymentHeading),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(dict.orders.refundedLabel),
-    ).not.toBeInTheDocument();
+    const summary = await screen.findByRole("group", {
+      name: dict.orderMoney.summaryAria,
+    });
+    const plain = (value: string) => value.replace(/[  ]/g, " ");
+    expect(plain(summary.textContent ?? "")).toContain(
+      plain(dict.orderMoney.refunded(formatCurrency("10.00"))),
+    );
+    expect(plain(summary.textContent ?? "")).toContain(
+      plain(dict.orderMoney.owedToCustomer(formatCurrency("19.99"))),
+    );
   });
 });
 
@@ -733,8 +701,12 @@ describe("OrderDetailView — read-only without orders:write (TASK-715)", () => 
     expect(
       screen.queryByText(dict.orders.updateStatus),
     ).not.toBeInTheDocument();
+    // The «Оплата» block keeps its summary for a reader, without the receipt.
     expect(
-      screen.queryByText(dict.orderStatus.updatePaymentStatus),
+      await screen.findByRole("group", { name: dict.orderMoney.summaryAria }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.orderMoney.receiptAction }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: dict.orders.addressEdit }),
@@ -778,7 +750,7 @@ describe("OrderDetailView — read-only without orders:write (TASK-715)", () => 
       screen.queryByText(dict.orders.updateStatus),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByText(dict.orderStatus.updatePaymentStatus),
+      screen.queryByRole("button", { name: dict.orderMoney.receiptAction }),
     ).not.toBeInTheDocument();
     // The waybill block waits too — neither its text view nor its inputs.
     expect(screen.queryByText("59000000000000")).not.toBeInTheDocument();
@@ -1103,33 +1075,24 @@ describe("OrderDetailView — the card by mockup (TASK-1046)", () => {
     );
   });
 
-  it("leads unpaid cash on delivery with «Гроші від НП отримано» — the move to PAID", async () => {
+  it("leads unpaid cash on delivery with what is due and «Записати надходження» (К1 → R2)", async () => {
     serve({ paymentMethod: "ON_DELIVERY", paymentStatus: "PENDING" });
-    server.use(
-      http.get("*/api/admin/orders/:orderId/allowed-payment-transitions", () =>
-        HttpResponse.json({
-          data: { current: "PENDING", allowed: ["PAID", "FAILED"] },
-        }),
-      ),
-    );
+    // The default money stub: an unpaid 29,99 ₴ Nova Poshta COD order.
     renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
       auth: { permissions: ["orders:read", "orders:write"] },
     });
 
+    const due = await screen.findByTestId("money-due");
+    expect(due.textContent?.replace(/[  ]/g, " ")).toContain(
+      dict.orderMoney
+        .dueNovaPoshta(formatCurrency("29.99"))
+        .replace(/[  ]/g, " "),
+    );
     expect(
-      await screen.findByRole("button", {
-        name: dict.orderStatus.codReceived,
-      }),
+      within(due).getByRole("button", { name: dict.orderMoney.receiptAction }),
     ).toBeInTheDocument();
-    // The full list stays, as «Інший статус оплати».
-    expect(
-      screen.getByText(dict.orderStatus.otherPaymentStatus),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("combobox", {
-        name: dict.orderStatus.paymentUpdateAria,
-      }),
-    ).toBeInTheDocument();
+    // No payment-status picker any more: the status follows the money.
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
 
   it("offers the buyer-link shortcut in «⋯» on a guest order", async () => {

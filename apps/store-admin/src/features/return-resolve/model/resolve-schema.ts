@@ -203,9 +203,9 @@ export function resolveValuesToDto(
     operatorNotes: nullableTextField<ResolveReturnDto["operatorNotes"]>(
       values.operatorNotes,
     ),
-    refundedAmount: nullableTextField<ResolveReturnDto["refundedAmount"]>(
-      values.refundedAmount,
-    ),
+    // R2 B1 stopgap (compile only): `refundedAmount` left `ResolveReturnDto`
+    // with the money ledger — a payout is a journal entry now. B2 replaces the
+    // form's amount with «До повернення» + payouts.
     ...(restock ? { restock: true } : {}),
   };
 }
