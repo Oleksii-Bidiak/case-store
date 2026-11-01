@@ -333,6 +333,79 @@
         ]
       }
     },
+    "/api/auth/account-setup/confirm": {
+      "post": {
+        "operationId": "confirmAccountSetup",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmAccountSetupDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Address proven, guest orders claimed, password set when sent; a new session — the refresh token is set as the HttpOnly cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSetupConfirmEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`ACCOUNT_SETUP_INVALID` — unknown, used, expired or superseded link (one answer for all); or a password the policy refuses"
+          }
+        },
+        "summary": "Finish a checkout-created account: prove the address, optionally set a password",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/checkout/email-status": {
+      "post": {
+        "operationId": "getCheckoutEmailStatus",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutEmailStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account presence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutEmailStatusEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not an e-mail address"
+          },
+          "429": {
+            "description": "Too many requests — rate limit exceeded"
+          }
+        },
+        "summary": "Whether an e-mail already has an account (checkout sign-in hint)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/api/auth/email-change/request": {
       "post": {
         "operationId": "requestEmailChange",
@@ -7591,7 +7664,7 @@
         },
         "responses": {
           "200": {
-            "description": "Computed discount",
+            "description": "Computed discount. `requiresAccount: true` for a guest — the code applies only to an order placed with an account (checkout `contact.createAccount: true`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -7609,10 +7682,13 @@
         },
         "security": [
           {
+            "cart-token": []
+          },
+          {
             "access-token": []
           }
         ],
-        "summary": "Preview a promo code against the current cart",
+        "summary": "Preview a promo code against the current cart (account or guest)",
         "tags": [
           "Discounts"
         ]
@@ -12904,7 +12980,7 @@
         },
         "responses": {
           "201": {
-            "description": "Order created. For a guest order `data.guestAccessToken` carries the order access token (TASK-679); it is absent for an account order.",
+            "description": "Order created. For a guest order `data.guestAccessToken` carries the order access token (TASK-679); it is absent for an account order. With `contact.createAccount: true` (TASK-2010) the order belongs to a new account: `data.session.accessToken`, the refresh cookie set, no `guestAccessToken`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12925,10 +13001,16 @@
             }
           },
           "400": {
-            "description": "Empty cart, insufficient stock, or missing guest contact details"
+            "description": "Empty cart, insufficient stock, or missing guest contact details. For a guest without `contact.createAccount` (TASK-2010): `DISCOUNT_ACCOUNT_REQUIRED` for a `discountCode`, `PAYMENT_ACCOUNT_REQUIRED` for ONLINE / INSTALLMENTS."
           },
           "404": {
             "description": "Cart not found"
+          },
+          "409": {
+            "description": "`ACCOUNT_EXISTS` — `contact.createAccount: true` on an address that already has an account (sign in instead; nothing was written). Also stock or promo-cap conflicts."
+          },
+          "429": {
+            "description": "Too many requests — rate limit exceeded"
           }
         },
         "security": [
@@ -13010,6 +13092,55 @@
           }
         ],
         "summary": "List current user orders",
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
+    "/api/orders/guest/{token}/account": {
+      "post": {
+        "operationId": "createGuestOrderAccount",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "description": "Opaque access token from the confirmation email",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Account created and signed in; the refresh token is set as the HttpOnly cookie. The order now belongs to the account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestOrderAccountResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The order has no e-mail (an operator phone order)"
+          },
+          "404": {
+            "description": "No order for this token, the link has expired, or the order already belongs to an account (deliberately indistinguishable — the guest order page answers the same)"
+          },
+          "409": {
+            "description": "`ACCOUNT_EXISTS` — the order e-mail already has an account; sign in instead"
+          },
+          "429": {
+            "description": "Too many requests — rate limit exceeded"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create an account from a guest order (one click on the success page)",
         "tags": [
           "Orders"
         ]
@@ -16968,6 +17099,59 @@
           "data"
         ]
       },
+      "AccountSetupConfirmed": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "Short-lived access token of the new session"
+          },
+          "claimedOrders": {
+            "type": "number",
+            "example": 2,
+            "description": "How many orders placed as a guest with this address were attached to the account (0 when there were none)."
+          }
+        },
+        "required": [
+          "accessToken",
+          "claimedOrders"
+        ]
+      },
+      "AccountSetupConfirmEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AccountSetupConfirmed"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CheckoutEmailStatus": {
+        "type": "object",
+        "properties": {
+          "hasAccount": {
+            "type": "boolean",
+            "example": false,
+            "description": "True when an account row holds this address (a deactivated one included — exactly what /auth/register refuses with 409). The checkout then offers to sign in instead of «Створити акаунт»."
+          }
+        },
+        "required": [
+          "hasAccount"
+        ]
+      },
+      "CheckoutEmailStatusEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CheckoutEmailStatus"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "RegisterDto": {
         "type": "object",
         "properties": {
@@ -17087,6 +17271,38 @@
         },
         "required": [
           "token"
+        ]
+      },
+      "ConfirmAccountSetupDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The single-use setup token from the «Задайте пароль» link",
+            "example": "a1b2c3d4e5f6..."
+          },
+          "password": {
+            "type": "string",
+            "description": "The account's first password (minimum 8 characters, at least one lowercase letter and one digit). Omitted on «Пропустити»: the address is proven and the session opened all the same; a password can be set later through «Забули пароль?».",
+            "example": "strongp@ss123",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "CheckoutEmailStatusDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "The e-mail typed at checkout",
+            "example": "olena@example.com"
+          }
+        },
+        "required": [
+          "email"
         ]
       },
       "RequestEmailChangeDto": {
@@ -24090,13 +24306,19 @@
             "type": "string",
             "description": "New subtotal after the discount as string",
             "example": "135.00"
+          },
+          "requiresAccount": {
+            "type": "boolean",
+            "description": "True for a GUEST preview (TASK-2010): the code is applied only to an order placed with an account, so checkout must create one (`contact.createAccount: true`), or POST /orders answers 400 DISCOUNT_ACCOUNT_REQUIRED. The per-customer limit is not checked for a guest here — it is enforced at checkout against the new account and the order phone. False for a signed-in shopper.",
+            "example": false
           }
         },
         "required": [
           "code",
           "type",
           "amount",
-          "newTotal"
+          "newTotal",
+          "requiresAccount"
         ]
       },
       "DiscountPreviewResponseEnvelope": {
@@ -29891,6 +30113,14 @@
             "type": "string",
             "description": "GUEST orders only, and only in this create response: the raw order access token — the same one the confirmation e-mail carries. It opens `GET /orders/guest/{token}` and the guest's Telegram routes (`/orders/guest/{token}/notifications/telegram`). Absent for an account order. Never returned again by any read; keep it client-side for this session.",
             "example": "9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70"
+          },
+          "session": {
+            "description": "Only when the guest ticked «Створити акаунт» (`contact.createAccount: true`, TASK-2010): the account created with this order is signed in. Carries the access token; the refresh token is set as the usual HttpOnly cookie. The order then belongs to the account — `userId` is set and there is no `guestAccessToken`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthTokens"
+              }
+            ]
           }
         },
         "required": [
@@ -30202,6 +30432,17 @@
           "data"
         ]
       },
+      "GuestOrderAccountResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AuthTokens"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "GuestContactDto": {
         "type": "object",
         "properties": {
@@ -30222,6 +30463,39 @@
             "description": "Buyer name",
             "example": "Олена Шевченко",
             "maxLength": 120
+          }
+        },
+        "required": [
+          "email",
+          "phone",
+          "name"
+        ]
+      },
+      "CheckoutContactDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email for the confirmation letter and the order-status link",
+            "example": "olena@example.com",
+            "maxLength": 254
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number the courier can call — any country, 9 to 15 digits (E.164), typed with whatever separators the buyer uses. Stored normalised, as digits only.",
+            "example": "+380501234567",
+            "maxLength": 32
+          },
+          "name": {
+            "type": "string",
+            "description": "Buyer name",
+            "example": "Олена Шевченко",
+            "maxLength": 120
+          },
+          "createAccount": {
+            "type": "boolean",
+            "description": "«Створити акаунт на цю пошту» (TASK-2010). True → the order is placed for a password-less account created in the same transaction: the response carries `data.session` (and the refresh cookie), no `guestAccessToken`, and a «Задайте пароль» letter goes to `email`. Required for a guest `discountCode` (else 400 DISCOUNT_ACCOUNT_REQUIRED) and for ONLINE / INSTALLMENTS (else 400 PAYMENT_ACCOUNT_REQUIRED). 409 ACCOUNT_EXISTS when the address already has an account. Limited to 5 per hour per address. Ignored for a signed-in shopper.",
+            "default": false
           }
         },
         "required": [
@@ -30311,10 +30585,10 @@
         "type": "object",
         "properties": {
           "contact": {
-            "description": "Contact details for a GUEST order (TASK-338). Required when the request carries no access token; ignored for authenticated shoppers, whose account is the source of truth.",
+            "description": "Contact details for a GUEST order (TASK-338). Required when the request carries no access token; ignored for authenticated shoppers, whose account is the source of truth. `createAccount: true` creates an account in the same transaction (TASK-2010).",
             "allOf": [
               {
-                "$ref": "#/components/schemas/GuestContactDto"
+                "$ref": "#/components/schemas/CheckoutContactDto"
               }
             ]
           },
