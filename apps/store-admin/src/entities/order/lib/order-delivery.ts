@@ -43,6 +43,12 @@ export function deliveryMethodLabel(method: string): string {
  *
  * Unlike the API, a Nova Poshta order at 0 with no flag is NOT pending here:
  * the card reads it as «За тарифом НП» — the buyer pays the carrier.
+ *
+ * TASK-1019: a snapshot that names its method was built by the server's
+ * snapshot builder, which sets the flag exactly while the cost is still to be
+ * agreed — so there the flag alone decides, and an OTHER the operator agreed
+ * to deliver for free (0, no flag) is a quote, not a gap. Only a legacy phone
+ * order, whose snapshot has no method, is still read off the method.
  */
 export function isShippingCostPending(
   order: Pick<
@@ -51,6 +57,9 @@ export function isShippingCostPending(
   >,
 ): boolean {
   if (Number(order.shippingCost) !== 0) return false;
+  if (order.shippingAddress?.deliveryMethod) {
+    return order.shippingAddress.shippingCostPending === true;
+  }
   return (
     orderDeliveryMethod(order) === "OTHER" ||
     order.shippingAddress?.shippingCostPending === true
@@ -75,5 +84,7 @@ export function deliverySnapshot(address: OrderShippingAddressEntity | null) {
     pickupPointAddress: text(a.pickupPointAddress),
     pickupPointHours: text(a.pickupPointHours),
     pickupPointPhone: text(a.pickupPointPhone),
+    // TASK-1979: the card links the point on a map.
+    pickupPointMapUrl: text(a.pickupPointMapUrl),
   };
 }

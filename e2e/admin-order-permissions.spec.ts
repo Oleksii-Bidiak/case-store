@@ -10,7 +10,7 @@ import { loginAsAdmin, loginAsStaff } from "./fixtures/admin-session";
  * TASK-715 — a manager who may READ orders but not change them (AD-ORD-34).
  *
  * The live run found every order control on screen for such a manager: the
- * status and payment pickers, «Змінити адресу», the waybill form, «Створити
+ * status and payment pickers, «Змінити доставку й контакти», the waybill form, «Створити
  * замовлення». Each click reached an `orders:write` endpoint, got a 403, and was
  * reported by a toast blaming "somebody else changed the order". The rule of the
  * wave is that such controls are ABSENT, not disabled.
@@ -39,7 +39,7 @@ const PAYMENT_BLOCK = "Оплата";
 const PAYMENT_SUMMARY = "Підсумок оплати";
 const PAYMENT_JOURNAL = "Журнал оплат";
 const RECORD_RECEIPT = "Записати надходження";
-const ADDRESS_EDIT = "Змінити адресу";
+const ADDRESS_EDIT = "Змінити доставку й контакти";
 const DETAILS_SAVE = "Зберегти";
 const ISSUE_LINK = "Видати нове посилання";
 const CREATE_CTA = "Створити замовлення";

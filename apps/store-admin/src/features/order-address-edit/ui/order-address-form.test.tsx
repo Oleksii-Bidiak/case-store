@@ -566,3 +566,227 @@ describe("OrderAddressForm — phone validation (TASK-577)", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+/**
+ * TASK-1973 / 1806 / 1020 / AD-ORD-86 / AD-ORD-63 — the control edits the
+ * delivery and the contacts, and says so.
+ */
+describe("OrderAddressForm — the delivery (TASK-1973)", () => {
+  const WRITER = { auth: { permissions: ["orders:read", "orders:write"] } };
+  const POINT_ID = "6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11";
+  let bodies: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    bodies = [];
+    server.use(
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        return HttpResponse.json({
+          data: {
+            ...makeOrder("PENDING"),
+            updatedAt: "2026-06-01T10:05:00.000Z",
+          },
+        });
+      }),
+    );
+  });
+
+  const pickupOrder = () =>
+    ({
+      ...makeOrder("CONFIRMED"),
+      deliveryMethod: "PICKUP",
+      pickupPointId: POINT_ID,
+      shippingCost: "0.00",
+      shippingAddress: {
+        firstName: "Olena",
+        lastName: "Shevchenko",
+        phone: "+380501234567",
+        city: "Київ",
+        address1: "вул. Хрещатик, 1",
+        deliveryMethod: "PICKUP",
+        carrier: null,
+        pickupPointName: "Магазин на Хрещатику",
+        pickupPointAddress: "вул. Хрещатик, 1",
+      },
+    }) as unknown as OrderEntity;
+
+  const otherOrder = () =>
+    ({
+      ...makeOrder("PENDING"),
+      deliveryMethod: "OTHER",
+      pickupPointId: null,
+      shippingCost: "0.00",
+      shippingAddress: {
+        ...makeOrder("PENDING").shippingAddress,
+        deliveryMethod: "OTHER",
+        carrier: null,
+        shippingCostPending: true,
+      },
+    }) as unknown as OrderEntity;
+
+  const open = async () =>
+    userEvent.click(
+      await screen.findByRole("button", { name: dict.orders.addressEdit }),
+    );
+  const save = () =>
+    userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+  it("is called what it does: delivery and contacts (AD-ORD-63)", () => {
+    expect(dict.orders.addressEdit).toBe("Змінити доставку й контакти");
+  });
+
+  it("offers the point of a pickup order instead of address fields (TASK-1806)", async () => {
+    renderWithProviders(<OrderAddressForm order={pickupOrder()} />, WRITER);
+    await open();
+
+    expect(
+      await screen.findByRole("radio", { name: "Магазин на Хрещатику" }),
+    ).toBeChecked();
+    expect(document.getElementById("order-address-city")).toBeNull();
+    expect(document.getElementById("order-address-address1")).toBeNull();
+  });
+
+  it("saves a contact edit of a pickup order without moving the point (TASK-1020)", async () => {
+    renderWithProviders(<OrderAddressForm order={pickupOrder()} />, WRITER);
+    await open();
+    const name = screen.getByLabelText(dict.orderCreate.addressFirstName);
+    await userEvent.clear(name);
+    await userEvent.type(name, "Ірина");
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).not.toHaveProperty("deliveryMethod");
+    expect(bodies[0]).not.toHaveProperty("pickupPointId");
+    expect(bodies[0].shippingAddress).toMatchObject({
+      firstName: "Ірина",
+      city: "Київ",
+      address1: "вул. Хрещатик, 1",
+    });
+  });
+
+  it("moves a Nova Poshta order to pickup", async () => {
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+    await open();
+
+    const methods = within(
+      await screen.findByRole("group", {
+        name: dict.orderCreate.deliveryMethodAria,
+      }),
+    );
+    await userEvent.click(
+      await methods.findByRole("button", { name: "Самовивіз" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("radio", { name: "Магазин на Хрещатику" }),
+    );
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      deliveryMethod: "PICKUP",
+      pickupPointId: POINT_ID,
+      shippingAddress: { city: "Київ", address1: "вул. Хрещатик, 1" },
+    });
+  });
+
+  it("quotes an OTHER order: the agreed cost goes with the PATCH (AD-ORD-86)", async () => {
+    renderWithProviders(<OrderAddressForm order={otherOrder()} />, WRITER);
+    await open();
+
+    await userEvent.type(
+      screen.getByLabelText(dict.orderCreate.shippingCostLabel),
+      "180",
+    );
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ shippingCost: 180 });
+    expect(bodies[0]).not.toHaveProperty("deliveryMethod");
+  });
+
+  it("shows the server's delivery refusal under the form", async () => {
+    const message =
+      "Обраний пункт самовивозу більше недоступний — оберіть інший";
+    server.use(
+      http.patch("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "DELIVERY_PICKUP_POINT_UNAVAILABLE",
+            message,
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+    await open();
+    const methods = within(
+      await screen.findByRole("group", {
+        name: dict.orderCreate.deliveryMethodAria,
+      }),
+    );
+    await userEvent.click(
+      await methods.findByRole("button", { name: "Самовивіз" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("radio", { name: "Магазин на Хрещатику" }),
+    );
+    await save();
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+  });
+
+  // TASK-1972 for the new fields: a colleague's method change is reviewed by
+  // its NAME, not by its code.
+  it("reviews a colleague's method change by name", async () => {
+    let serverOrder = makeOrder("PENDING");
+    const patches: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: serverOrder }),
+      ),
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        patches.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json(
+          { statusCode: 409, error: "ORDER_STALE", message: "stale" },
+          { status: 409 },
+        );
+      }),
+    );
+    function Card() {
+      const { data } = useAdminOrderControllerFindById("order-uuid-1");
+      return data?.data ? <OrderAddressForm order={data.data} /> : null;
+    }
+    renderWithProviders(<Card />, WRITER);
+    await open();
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Lviv");
+    serverOrder = {
+      ...serverOrder,
+      deliveryMethod: "OTHER",
+      shippingAddress: {
+        ...serverOrder.shippingAddress,
+        deliveryMethod: "OTHER",
+      },
+      updatedAt: "2026-06-01T10:00:30.000Z",
+    } as unknown as OrderEntity;
+    await save();
+
+    const row = await screen.findByRole("group", {
+      name: dict.orders.deliveryMethodLabel,
+    });
+    expect(within(row).getByText("Інша доставка")).toBeInTheDocument();
+    expect(within(row).queryByText("OTHER")).not.toBeInTheDocument();
+  });
+});

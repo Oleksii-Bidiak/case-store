@@ -90,6 +90,10 @@ export function OrderDeliverySection({ order }: { order: OrderEntity }) {
     },
   });
   const courierFreeFrom = settings.data?.data?.courierFreeFrom;
+  // Only a web page is a link: the snapshot is free text from the settings.
+  const mapUrl = /^https?:\/\//i.test(snap.pickupPointMapUrl ?? "")
+    ? snap.pickupPointMapUrl
+    : undefined;
 
   const recipientName = [snap.firstName, snap.lastName]
     .filter(Boolean)
@@ -112,7 +116,14 @@ export function OrderDeliverySection({ order }: { order: OrderEntity }) {
         label: d.deliveryBuyerWrote,
         value: joined(snap.address1, snap.city) || "—",
       },
-      { label: d.deliveryCost, value: formatCurrency(order.shippingCost) },
+      {
+        label: d.deliveryCost,
+        // TASK-1019: an agreed 0 is free delivery, not «0 ₴».
+        value:
+          Number(order.shippingCost) > 0
+            ? formatCurrency(order.shippingCost)
+            : d.deliveryFree,
+      },
     );
   } else if (method === "PICKUP") {
     rows.push(
@@ -199,6 +210,18 @@ export function OrderDeliverySection({ order }: { order: OrderEntity }) {
         ))}
       </dl>
 
+      {method === "PICKUP" && mapUrl ? (
+        // TASK-1979: `noopener` keeps the map site away from this window.
+        <a
+          href={mapUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={d.deliveryPickupMapAria(snap.pickupPointName ?? "")}
+          className="self-start rounded-xs text-sm text-primary underline outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          {d.deliveryPickupMap}
+        </a>
+      ) : null}
       {method === "PICKUP" && !pending ? (
         <p className="text-xs text-muted-foreground">{d.deliveryPickupHint}</p>
       ) : null}

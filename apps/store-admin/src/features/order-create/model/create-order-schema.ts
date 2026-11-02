@@ -6,6 +6,7 @@ import { dict } from "@/shared/config";
 // re-exports the UA rule beside this one, and the whole point of the fix is that
 // the two are not interchangeable here.
 import { isValidInternationalPhone } from "@/shared/lib/phone";
+import { parseMoneyInput } from "@/shared/lib/money-input";
 
 const t = dict.orderCreate;
 
@@ -199,20 +200,11 @@ export const createOrderSchema = z
 
 export type CreateOrderFormValues = z.infer<typeof createOrderSchema>;
 
-/** `CreateManualOrderDto.shippingCost` — `@Max(100000)`, two decimals. */
-const SHIPPING_COST_MAX = 100_000;
-const MONEY_RE = /^\d+(?:[.,]\d{1,2})?$/;
-
 /**
  * The agreed OTHER cost as a number, or `null` when it is empty or not a sum
- * the API would take (TASK-1019). A comma is a decimal point: «150,50».
+ * the API would take (TASK-1019) — the shared operator money rule.
  */
-export function parseShippingCost(raw: string): number | null {
-  const value = raw.trim();
-  if (!MONEY_RE.test(value)) return null;
-  const amount = Number(value.replace(",", "."));
-  return amount <= SHIPPING_COST_MAX ? amount : null;
-}
+export const parseShippingCost = parseMoneyInput;
 
 /**
  * What each delivery method needs before the order can go (TASK-1973):

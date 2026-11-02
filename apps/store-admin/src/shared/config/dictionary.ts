@@ -3758,10 +3758,12 @@ export const dict = {
     detailsFailed: "Не вдалося зберегти. Спробуйте ще раз.",
 
     // --- Address edit before shipment (TASK-341) ------------------------------
-    addressEdit: "Змінити адресу",
+    // AD-ORD-63 / TASK-1974: the control edits the method, the point, the
+    // agreed cost and the recipient — not «the address».
+    addressEdit: "Змінити доставку й контакти",
     addressEditCancel: "Скасувати",
-    addressSave: "Зберегти адресу",
-    addressSaved: "Адресу доставки оновлено.",
+    addressSave: "Зберегти доставку",
+    addressSaved: "Доставку й контакти оновлено.",
     // Explains the ABSENCE of the button rather than leaving a dead control:
     // once the parcel is with the courier, the address on the waybill is the one
     // that counts and editing the order would only make the record disagree.
@@ -4032,7 +4034,7 @@ export const dict = {
     deliveryPickupHint:
       "Назва й адреса — знімок на момент замовлення: якщо точку потім перейменують чи видалять, тут лишиться те, що бачив покупець. ТТН не потрібна.",
     deliveryOtherWarning:
-      "Вартість доставки треба уточнити: зателефонуйте покупцю й погодьте перевізника та суму. Покупець оплачує при отриманні.",
+      "Вартість доставки треба уточнити: зателефонуйте покупцю, погодьте перевізника та суму й внесіть її через «Змінити доставку й контакти» — вона додасться до «Разом». Покупець оплачує при отриманні.",
     // НП із нульовою вартістю в замовленні: покупець платить перевізнику.
     deliveryCostNpTariff: "За тарифом НП",
 
@@ -4041,6 +4043,18 @@ export const dict = {
     returnsForOrderItemsAria: (number: string) => `Позиції заявки ${number}`,
     returnsForOrderLine: (name: string, quantity: number) =>
       `${name} × ${quantity}`,
+
+    // --- Доставка наявного замовлення (TASK-1973 / 1806 / AD-ORD-86) ---------
+    // Рядок рев'ю чужої версії (TASK-1972) для способу доставки.
+    deliveryMethodLabel: "Спосіб доставки",
+    deliveryEditNoNp:
+      "Перевести замовлення на Нову Пошту тут не можна — потрібне місто з довідника НП.",
+    deliveryOtherCostHint:
+      "Сума, узгоджена з покупцем, додається до «Разом»; борг перерахується.",
+    // TASK-1979: посилання на карту пункту самовивозу.
+    deliveryPickupMap: "Відкрити на карті ↗",
+    deliveryPickupMapAria: (name: string) =>
+      `Відкрити «${name}» на карті (нова вкладка)`,
   },
 
   reviews: {
