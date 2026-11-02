@@ -4,8 +4,10 @@ import {
   CUSTOMER_MODE,
   INTERNAL_NOTES_MAX_LENGTH,
   NOTES_MAX_LENGTH,
+  allowedPaymentMethods,
   createOrderSchema,
   createOrderValuesToDto,
+  operatorShippingCost,
   type CreateOrderFormValues,
   type DraftLine,
 } from "./create-order-schema";
@@ -23,6 +25,9 @@ function values(
     phone: "+380501234567",
     city: "Київ",
     address1: "Відділення №12",
+    // TASK-1973: a hand-typed address is «Інша доставка» now, chosen
+    // explicitly; the Nova Poshta cases below say NOVA_POSHTA themselves.
+    deliveryMethod: "OTHER",
     ...overrides,
   };
 }
@@ -107,6 +112,7 @@ describe("createOrderValuesToDto — Nova Poshta refs", () => {
   it("sends the refs when the address came from the directory", () => {
     const dto = createOrderValuesToDto(
       values({
+        deliveryMethod: "NOVA_POSHTA",
         npCityRef: "db5c88e0-391c-11dd-90d9-001a92567626",
         npWarehouseRef: "7b422fc6-e1b8-11e3-8c4a-0050568002cf",
       }),
@@ -136,7 +142,10 @@ describe("createOrderValuesToDto — Nova Poshta refs", () => {
 
   it("does not claim a warehouse ref just because a city was picked", () => {
     const dto = createOrderValuesToDto(
-      values({ npCityRef: "db5c88e0-391c-11dd-90d9-001a92567626" }),
+      values({
+        deliveryMethod: "NOVA_POSHTA",
+        npCityRef: "db5c88e0-391c-11dd-90d9-001a92567626",
+      }),
       LINES,
     );
 
@@ -313,5 +322,204 @@ describe("createOrderSchema — note lengths name themselves (TASK-794)", () => 
         "internalNotes",
       )?.message,
     ).toBe(dict.orderCreate.internalNotesTooLong);
+  });
+});
+
+// ─── TASK-1973 / 1019 / 1808: the operator chooses the delivery method ─────────
+
+describe("createOrderSchema — delivery method (TASK-1973)", () => {
+  const t = dict.orderCreate;
+  const POINT_ID = "6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11";
+  const issue = (v: CreateOrderFormValues, path: string) =>
+    createOrderSchema.safeParse(v).error?.issues.find((i) => i.path[0] === path)
+      ?.message;
+
+  it("starts on Nova Poshta", () => {
+    expect(CREATE_ORDER_DEFAULTS.deliveryMethod).toBe("NOVA_POSHTA");
+  });
+
+  it("asks for a city from the directory on Nova Poshta", () => {
+    const v = values({ deliveryMethod: "NOVA_POSHTA", npCityRef: "" });
+    expect(issue(v, "city")).toBe(t.deliveryNpCityRequired);
+    expect(
+      createOrderSchema.safeParse({ ...v, npCityRef: "city-ref" }).success,
+    ).toBe(true);
+  });
+
+  it("asks for a point — not an address — on pickup", () => {
+    const v = values({ deliveryMethod: "PICKUP", city: "", address1: "" });
+    expect(issue(v, "pickupPointId")).toBe(t.deliveryPickupRequired);
+    expect(issue(v, "city")).toBeUndefined();
+    expect(issue(v, "address1")).toBeUndefined();
+    expect(
+      createOrderSchema.safeParse({ ...v, pickupPointId: POINT_ID }).success,
+    ).toBe(true);
+  });
+
+  it("still asks for the address on OTHER", () => {
+    expect(issue(values({ city: "" }), "city")).toBe(t.addressRequired);
+  });
+
+  it.each(["", "0", "150", "150,5", "99.99"])(
+    "accepts an agreed OTHER cost of %p",
+    (shippingCost) => {
+      expect(
+        createOrderSchema.safeParse(values({ shippingCost })).success,
+      ).toBe(true);
+    },
+  );
+
+  it.each(["-1", "abc", "1.234", "100001"])(
+    "refuses an agreed OTHER cost of %p",
+    (shippingCost) => {
+      expect(issue(values({ shippingCost }), "shippingCost")).toBe(
+        t.shippingCostInvalid,
+      );
+    },
+  );
+
+  it("does not judge a cost left behind on another method", () => {
+    expect(
+      createOrderSchema.safeParse(
+        values({
+          deliveryMethod: "NOVA_POSHTA",
+          npCityRef: "city-ref",
+          shippingCost: "abc",
+        }),
+      ).success,
+    ).toBe(true);
+  });
+});
+
+describe("createOrderValuesToDto — delivery method (TASK-1973)", () => {
+  const POINT_ID = "6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11";
+
+  it("always says which method it is", () => {
+    expect(createOrderValuesToDto(values(), LINES).deliveryMethod).toBe(
+      "OTHER",
+    );
+  });
+
+  it("sends the pickup point, and no NP refs or cost", () => {
+    const dto = createOrderValuesToDto(
+      values({
+        deliveryMethod: "PICKUP",
+        pickupPointId: POINT_ID,
+        npCityRef: "stale-ref",
+        shippingCost: "50",
+      }),
+      LINES,
+    );
+    expect(dto).toMatchObject({
+      deliveryMethod: "PICKUP",
+      pickupPointId: POINT_ID,
+    });
+    expect(dto).not.toHaveProperty("shippingCost");
+    expect(dto.shippingAddress).not.toHaveProperty("npCityRef");
+  });
+
+  it("sends an agreed OTHER cost as a number, comma or dot", () => {
+    expect(
+      createOrderValuesToDto(values({ shippingCost: "150,5" }), LINES)
+        .shippingCost,
+    ).toBe(150.5);
+    expect(createOrderValuesToDto(values(), LINES)).not.toHaveProperty(
+      "shippingCost",
+    );
+  });
+
+  it("never sends NP refs or a pickup point on OTHER", () => {
+    const dto = createOrderValuesToDto(
+      values({
+        npCityRef: "stale-ref",
+        npWarehouseRef: "stale-wh",
+        pickupPointId: POINT_ID,
+      }),
+      LINES,
+    );
+    expect(dto.shippingAddress).not.toHaveProperty("npCityRef");
+    expect(dto.shippingAddress).not.toHaveProperty("npWarehouseRef");
+    expect(dto).not.toHaveProperty("pickupPointId");
+  });
+
+  it("never sends a cost on Nova Poshta", () => {
+    const dto = createOrderValuesToDto(
+      values({
+        deliveryMethod: "NOVA_POSHTA",
+        npCityRef: "city-ref",
+        shippingCost: "80",
+      }),
+      LINES,
+    );
+    expect(dto).not.toHaveProperty("shippingCost");
+  });
+});
+
+describe("operatorShippingCost — what the summary adds to the total (TASK-1808)", () => {
+  const courier = { price: "120.00", freeFrom: "1000.00", cityName: "Київ" };
+
+  it("adds nothing for Nova Poshta — paid at the branch (B-13)", () => {
+    expect(
+      operatorShippingCost(
+        values({ deliveryMethod: "NOVA_POSHTA" }),
+        courier,
+        500,
+      ),
+    ).toEqual({ kind: "carrier" });
+  });
+
+  it("is free for pickup", () => {
+    expect(
+      operatorShippingCost(values({ deliveryMethod: "PICKUP" }), courier, 500),
+    ).toEqual({ kind: "amount", amount: 0 });
+  });
+
+  it("charges the courier until its threshold", () => {
+    expect(
+      operatorShippingCost(values({ deliveryMethod: "COURIER" }), courier, 500),
+    ).toEqual({ kind: "amount", amount: 120 });
+    expect(
+      operatorShippingCost(
+        values({ deliveryMethod: "COURIER" }),
+        courier,
+        1000,
+      ),
+    ).toEqual({ kind: "amount", amount: 0 });
+  });
+
+  it("is the agreed cost for OTHER, or still to be agreed", () => {
+    expect(
+      operatorShippingCost(values({ shippingCost: "150,5" }), courier, 500),
+    ).toEqual({ kind: "amount", amount: 150.5 });
+    expect(operatorShippingCost(values(), courier, 500)).toEqual({
+      kind: "pending",
+    });
+  });
+});
+
+describe("allowedPaymentMethods — the admin matrix (TASK-1973)", () => {
+  const matrix = {
+    NOVA_POSHTA: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+    PICKUP: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+    COURIER: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+    OTHER: ["ON_DELIVERY"],
+  };
+
+  it("adds the bank transfer to every method", () => {
+    expect(allowedPaymentMethods("OTHER", matrix)).toEqual([
+      "ON_DELIVERY",
+      "BANK_TRANSFER",
+    ]);
+    expect(allowedPaymentMethods("PICKUP", matrix)).toContain("ONLINE");
+  });
+
+  it("falls back to the shop's table while the served one is loading", () => {
+    expect(allowedPaymentMethods("OTHER", undefined)).toEqual([
+      "ON_DELIVERY",
+      "BANK_TRANSFER",
+    ]);
+    expect(allowedPaymentMethods("NOVA_POSHTA", undefined)).toContain(
+      "INSTALLMENTS",
+    );
   });
 });

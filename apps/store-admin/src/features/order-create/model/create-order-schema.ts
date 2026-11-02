@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CreateManualOrderDto } from "@/entities/order";
+import type { CourierTermsDto, DeliveryMethod } from "@/entities/delivery";
 import { dict } from "@/shared/config";
 // Imported from the module rather than the `@/shared/lib` barrel: the barrel
 // re-exports the UA rule beside this one, and the whole point of the fix is that
@@ -114,14 +115,24 @@ export const createOrderSchema = z
     firstName: z.string().trim().min(1, t.addressRequired),
     lastName: z.string().trim().min(1, t.addressRequired),
     phone: z.string().trim().min(1, t.addressRequired),
-    city: z.string().trim().min(1, t.addressRequired),
-    address1: z.string().trim().min(1, t.addressRequired),
+    // Required per method (TASK-1973) — see the refinement: a pickup order is
+    // collected at the point, so it asks for the point, not for an address.
+    city: z.string().trim(),
+    address1: z.string().trim(),
     postalCode: z.string().trim(),
     // Nova Poshta refs, filled only when the operator picked from the directory
     // (TASK-426). Free text stays fully supported — NP refuses keyless calls, so
     // an unavailable directory must not be able to block a phone order.
     npCityRef: z.string().trim(),
     npWarehouseRef: z.string().trim(),
+
+    // TASK-1973: how the order travels. Every method the server knows; the form
+    // offers only those the shop has switched on (GET /api/delivery/methods).
+    deliveryMethod: z.enum(["NOVA_POSHTA", "PICKUP", "COURIER", "OTHER"]),
+    pickupPointId: z.string().trim(),
+    // TASK-1019: the cost agreed for «Інша доставка», as typed (comma or dot).
+    // Empty = still to be agreed. Judged only while OTHER is the method.
+    shippingCost: z.string().trim(),
 
     paymentMethod: z.string().min(1),
     // TASK-794: the messages are what the form renders under each field — a
@@ -135,6 +146,8 @@ export const createOrderSchema = z
   // The contact block is validated only in the mode that uses it, so switching
   // to «за телефоном» does not leave a stale account error on screen.
   .superRefine((values, ctx) => {
+    refineDelivery(values, ctx);
+
     // The recipient's phone is needed in BOTH modes — it is the number on the
     // parcel, not the customer's contact detail.
     if (values.phone !== "" && !isValidInternationalPhone(values.phone)) {
@@ -186,6 +199,127 @@ export const createOrderSchema = z
 
 export type CreateOrderFormValues = z.infer<typeof createOrderSchema>;
 
+/** `CreateManualOrderDto.shippingCost` — `@Max(100000)`, two decimals. */
+const SHIPPING_COST_MAX = 100_000;
+const MONEY_RE = /^\d+(?:[.,]\d{1,2})?$/;
+
+/**
+ * The agreed OTHER cost as a number, or `null` when it is empty or not a sum
+ * the API would take (TASK-1019). A comma is a decimal point: «150,50».
+ */
+export function parseShippingCost(raw: string): number | null {
+  const value = raw.trim();
+  if (!MONEY_RE.test(value)) return null;
+  const amount = Number(value.replace(",", "."));
+  return amount <= SHIPPING_COST_MAX ? amount : null;
+}
+
+/**
+ * What each delivery method needs before the order can go (TASK-1973):
+ *
+ * - NOVA_POSHTA — a city FROM THE DIRECTORY. The ref is what makes a waybill
+ *   printable, and the API refuses NP without it (TASK-1020, «ref ⇔ not
+ *   OTHER»). With the directory down, the operator picks «Інша доставка».
+ * - PICKUP — a point; the address is the point's.
+ * - COURIER / OTHER — a typed city and address; OTHER may carry a cost.
+ */
+function refineDelivery(
+  values: {
+    deliveryMethod: DeliveryMethod;
+    city: string;
+    address1: string;
+    npCityRef: string;
+    pickupPointId: string;
+    shippingCost: string;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const issue = (path: string, message: string) =>
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+
+  if (values.deliveryMethod === "PICKUP") {
+    if (values.pickupPointId === "")
+      issue("pickupPointId", t.deliveryPickupRequired);
+    return;
+  }
+
+  if (values.city === "") issue("city", t.addressRequired);
+  else if (values.deliveryMethod === "NOVA_POSHTA" && values.npCityRef === "") {
+    issue("city", t.deliveryNpCityRequired);
+  }
+  if (values.address1 === "") issue("address1", t.addressRequired);
+
+  if (
+    values.deliveryMethod === "OTHER" &&
+    values.shippingCost !== "" &&
+    parseShippingCost(values.shippingCost) === null
+  ) {
+    issue("shippingCost", t.shippingCostInvalid);
+  }
+}
+
+/**
+ * The storefront's delivery × payment table, used only until
+ * `GET /api/delivery/methods` has answered — the served `paymentMatrix` is the
+ * truth (`delivery-payment-matrix.ts` on the API).
+ */
+const FALLBACK_MATRIX: Record<DeliveryMethod, readonly string[]> = {
+  NOVA_POSHTA: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+  PICKUP: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+  COURIER: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+  OTHER: ["ON_DELIVERY"],
+};
+
+/**
+ * The payment methods the OPERATOR may pick for `method` (TASK-1973): the
+ * served storefront row plus «Переказ на рахунок ФОП», which the API's
+ * `ADMIN_DELIVERY_PAYMENT_MATRIX` adds to every row (R2 A3).
+ */
+export function allowedPaymentMethods(
+  method: DeliveryMethod,
+  matrix: Partial<Record<DeliveryMethod, readonly string[]>> | undefined,
+): string[] {
+  const row = matrix?.[method] ?? FALLBACK_MATRIX[method];
+  return [...row.filter((m) => m !== "BANK_TRANSFER"), "BANK_TRANSFER"];
+}
+
+/**
+ * What the delivery adds to the phone order, as the summary shows it
+ * (TASK-1808) — the API's rule (`OrderService.resolveManualDelivery`):
+ *
+ * - `carrier` — Nova Poshta: paid at the branch, not part of the total (B-13);
+ * - `amount` — pickup (0), the courier's flat price (0 from its threshold), or
+ *   the agreed OTHER cost;
+ * - `pending` — OTHER with no cost yet: «узгодить оператор», nothing added.
+ */
+export type ShippingQuote =
+  | { kind: "carrier" }
+  | { kind: "pending" }
+  | { kind: "amount"; amount: number };
+
+export function operatorShippingCost(
+  values: Pick<CreateOrderFormValues, "deliveryMethod" | "shippingCost">,
+  courier: Pick<CourierTermsDto, "price" | "freeFrom"> | undefined,
+  goods: number,
+): ShippingQuote {
+  switch (values.deliveryMethod) {
+    case "NOVA_POSHTA":
+      return { kind: "carrier" };
+    case "PICKUP":
+      return { kind: "amount", amount: 0 };
+    case "COURIER": {
+      const freeFrom =
+        courier?.freeFrom == null ? null : Number(courier.freeFrom);
+      const free = freeFrom !== null && goods >= freeFrom;
+      return { kind: "amount", amount: free ? 0 : Number(courier?.price ?? 0) };
+    }
+    case "OTHER": {
+      const amount = parseShippingCost(values.shippingCost);
+      return amount === null ? { kind: "pending" } : { kind: "amount", amount };
+    }
+  }
+}
+
 export const CREATE_ORDER_DEFAULTS: CreateOrderFormValues = {
   customerMode: CUSTOMER_MODE.GUEST,
   userId: "",
@@ -200,6 +334,9 @@ export const CREATE_ORDER_DEFAULTS: CreateOrderFormValues = {
   postalCode: "",
   npCityRef: "",
   npWarehouseRef: "",
+  deliveryMethod: "NOVA_POSHTA",
+  pickupPointId: "",
+  shippingCost: "",
   paymentMethod: "ON_DELIVERY",
   notes: "",
   internalNotes: "",
@@ -223,8 +360,17 @@ export const CREATE_ORDER_DEFAULTS: CreateOrderFormValues = {
 export function createOrderValuesToDto(
   values: CreateOrderFormValues,
   lines: readonly DraftLine[],
+  /**
+   * The picked pickup point (TASK-1973): a pickup order is collected there, so
+   * its city and address are the point's — the server overwrites them anyway,
+   * but `AddressDto` refuses an empty city or address line.
+   */
+  pickupPoint?: { city: string; address: string },
 ): CreateManualOrderDto {
   const optional = (value: string) => (value === "" ? undefined : value);
+  const isNp = values.deliveryMethod === "NOVA_POSHTA";
+  const atPoint = values.deliveryMethod === "PICKUP" ? pickupPoint : undefined;
+  const agreedCost = parseShippingCost(values.shippingCost);
 
   return {
     ...(values.customerMode === CUSTOMER_MODE.ACCOUNT
@@ -244,19 +390,32 @@ export function createOrderValuesToDto(
       firstName: values.firstName,
       lastName: values.lastName,
       phone: values.phone,
-      city: values.city,
-      address1: values.address1,
+      city: atPoint?.city ?? values.city,
+      address1: atPoint?.address ?? values.address1,
       ...(optional(values.postalCode) ? { postalCode: values.postalCode } : {}),
       // The NP refs are what makes a waybill printable later; they exist only for
-      // an address chosen from the directory, and are omitted for free text.
-      ...(optional(values.npCityRef) ? { npCityRef: values.npCityRef } : {}),
-      ...(optional(values.npWarehouseRef)
+      // an address chosen from the directory, and only on a Nova Poshta order —
+      // a stale ref on another method would make it read as a parcel.
+      ...(isNp && optional(values.npCityRef)
+        ? { npCityRef: values.npCityRef }
+        : {}),
+      ...(isNp && optional(values.npWarehouseRef)
         ? {
             npWarehouseRef: values.npWarehouseRef,
             npWarehouseName: values.address1,
           }
         : {}),
     },
+    // TASK-1973: the method is always explicit — the server no longer has to
+    // guess it from the address.
+    deliveryMethod: values.deliveryMethod,
+    ...(values.deliveryMethod === "PICKUP" && optional(values.pickupPointId)
+      ? { pickupPointId: values.pickupPointId }
+      : {}),
+    // TASK-1019: only OTHER carries an agreed cost; empty = still to agree.
+    ...(values.deliveryMethod === "OTHER" && agreedCost !== null
+      ? { shippingCost: agreedCost }
+      : {}),
     // Price is absent on purpose — the catalogue decides it (see the schema).
     items: lines.map((line) => ({
       productId: line.productId,

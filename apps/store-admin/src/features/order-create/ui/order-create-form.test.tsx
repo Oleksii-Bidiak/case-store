@@ -353,6 +353,8 @@ describe("OrderCreateForm — by mockup (TASK-1047)", () => {
   ) {
     await user.type(field("contactPhone"), "+380 50 318 22 47");
     await user.type(field("contactName"), name);
+    // A hand-typed address is «Інша доставка» (TASK-1973).
+    await chooseMethod(user, "Інша доставка");
     server.use(
       http.get("*/api/delivery/cities", () => HttpResponse.json({ data: [] })),
       http.get("*/api/delivery/warehouses", () =>
@@ -532,8 +534,6 @@ describe("OrderCreateForm — by mockup (TASK-1047)", () => {
   it("chooses the payment method with pills", async () => {
     const user = userEvent.setup();
     renderWithProviders(<OrderCreateForm />);
-    // Card and instalments need a Nova Poshta city from the directory
-    // (TASK-1021) — see the matrix block below.
     await pickKyivFromDirectory(user);
 
     const group = within(
@@ -565,14 +565,14 @@ describe("OrderCreateForm — by mockup (TASK-1047)", () => {
     await fillGuestAndAddress(user);
     await addFirstProduct(user);
 
-    // No Nova Poshta city from the directory: card and instalments are off,
-    // the bank transfer is not — the admin matrix allows it everywhere.
+    // «Інша доставка»: card and instalments are off, the bank transfer is
+    // not — the admin matrix allows it everywhere.
     const group = within(
       screen.getByRole("group", { name: t.paymentMethodAria }),
     );
     const transfer = group.getByRole("button", { name: t.methodBankTransfer });
     expect(transfer).toBeEnabled();
-    expect(transfer).not.toHaveAccessibleDescription(t.paymentNeedsNpCity);
+    expect(transfer).not.toHaveAccessibleDescription(t.paymentNotForMethod);
     await user.click(transfer);
     expect(transfer).toHaveAttribute("aria-pressed", "true");
 
@@ -605,20 +605,90 @@ async function pickKyivFromDirectory(user: ReturnType<typeof userEvent.setup>) {
   );
 }
 
-describe("OrderCreateForm — delivery × payment (TASK-1021)", () => {
+/** Pick a delivery method pill (TASK-1973). */
+async function chooseMethod(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+) {
+  const group = within(
+    await screen.findByRole("group", {
+      name: dict.orderCreate.deliveryMethodAria,
+    }),
+  );
+  await user.click(await group.findByRole("button", { name: label }));
+}
+
+const PRODUCT_LIST = http.get("*/api/products/admin/list", () =>
+  HttpResponse.json({
+    data: [
+      {
+        id: "p-1",
+        name: "Силіконовий чохол",
+        price: "1299",
+        sku: "SC-IP15",
+        stock: 8,
+        reservedQty: 0,
+      },
+    ],
+    meta: { total: 1, page: 1, limit: 8, totalPages: 1 },
+  }),
+);
+
+async function addCase(user: ReturnType<typeof userEvent.setup>) {
+  server.use(PRODUCT_LIST);
+  await user.type(
+    screen.getByRole("searchbox", { name: dict.orderCreate.itemsSearchAria }),
+    "чохол",
+  );
+  await user.click(
+    await screen.findByRole("button", {
+      name: dict.orderCreate.itemsAddAria("Силіконовий чохол"),
+    }),
+  );
+}
+
+async function fillGuest(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(field("contactPhone"), "+380 50 318 22 47");
+  await user.type(field("contactName"), "Оксана Шевченко");
+}
+
+function captureCreate(): Array<Record<string, unknown>> {
+  const bodies: Array<Record<string, unknown>> = [];
+  server.use(
+    http.post("*/api/admin/orders", async ({ request }) => {
+      bodies.push((await request.json()) as Record<string, unknown>);
+      return HttpResponse.json({
+        data: { id: "11111111-2222-3333-4444-555555555555" },
+        meta: { accessUrl: null },
+      });
+    }),
+  );
+  return bodies;
+}
+
+const summaryOf = () =>
+  within(
+    screen.getByRole("complementary", {
+      name: dict.orderCreate.summaryHeading,
+    }),
+  );
+
+describe("OrderCreateForm — delivery × payment (TASK-1021 → TASK-1973)", () => {
   const t = dict.orderCreate;
 
-  it("disables card and instalments while no NP city is picked, and says why", () => {
+  it("disables card and instalments for «Інша доставка», and says why", async () => {
+    const user = userEvent.setup();
     renderWithProviders(<OrderCreateForm />);
+    await chooseMethod(user, "Інша доставка");
 
     const group = within(
       screen.getByRole("group", { name: t.paymentMethodAria }),
     );
-    const reason = screen.getByText(t.paymentNeedsNpCity);
+    const reason = screen.getByText(t.paymentNotForMethod);
     for (const label of [t.methodOnline, t.methodInstallments]) {
       const pill = group.getByRole("button", { name: label });
       expect(pill).toBeDisabled();
-      expect(pill).toHaveAccessibleDescription(t.paymentNeedsNpCity);
+      expect(pill).toHaveAccessibleDescription(t.paymentNotForMethod);
     }
     expect(reason).toHaveAttribute("id", "order-create-payment-reason");
     expect(
@@ -626,11 +696,8 @@ describe("OrderCreateForm — delivery × payment (TASK-1021)", () => {
     ).toBeEnabled();
   });
 
-  it("enables them once a city is picked from the directory", async () => {
-    const user = userEvent.setup();
+  it("offers card and instalments for Nova Poshta, with or without a city yet", () => {
     renderWithProviders(<OrderCreateForm />);
-
-    await pickKyivFromDirectory(user);
 
     const group = within(
       screen.getByRole("group", { name: t.paymentMethodAria }),
@@ -639,20 +706,18 @@ describe("OrderCreateForm — delivery × payment (TASK-1021)", () => {
     expect(
       group.getByRole("button", { name: t.methodInstallments }),
     ).toBeEnabled();
-    expect(screen.queryByText(t.paymentNeedsNpCity)).not.toBeInTheDocument();
+    expect(screen.queryByText(t.paymentNotForMethod)).not.toBeInTheDocument();
   });
 
-  it("falls back to «Оплата при отриманні» when the city is retyped by hand", async () => {
+  it("falls back to «Оплата при отриманні» when the method changes to OTHER", async () => {
     const user = userEvent.setup();
     renderWithProviders(<OrderCreateForm />);
-    await pickKyivFromDirectory(user);
     const group = within(
       screen.getByRole("group", { name: t.paymentMethodAria }),
     );
     await user.click(group.getByRole("button", { name: t.methodOnline }));
 
-    // Editing the city drops its directory ref — the order becomes OTHER.
-    await user.type(field("city"), "щина");
+    await chooseMethod(user, "Інша доставка");
 
     await waitFor(() =>
       expect(
@@ -665,55 +730,139 @@ describe("OrderCreateForm — delivery × payment (TASK-1021)", () => {
   it("shows the server's delivery refusal as it came", async () => {
     const user = userEvent.setup();
     const message =
-      "Для адреси без міста зі списку Нової Пошти вартість доставки ще не відома — оберіть оплату при отриманні або вкажіть місто Нової Пошти";
+      "Обраний спосіб оплати недоступний для цього способу доставки — оберіть інший";
     server.use(
       http.post("*/api/admin/orders", () =>
         HttpResponse.json(
-          {
-            statusCode: 400,
-            error: "DELIVERY_PAYMENT_NOT_ALLOWED",
-            message,
-          },
+          { statusCode: 400, error: "DELIVERY_PAYMENT_NOT_ALLOWED", message },
           { status: 400 },
         ),
       ),
-      http.get("*/api/products/admin/list", () =>
-        HttpResponse.json({
-          data: [
-            {
-              id: "p-1",
-              name: "Силіконовий чохол",
-              price: "1299",
-              sku: "SC-IP15",
-              stock: 8,
-              reservedQty: 0,
-            },
-          ],
-          meta: { total: 1, page: 1, limit: 8, totalPages: 1 },
-        }),
-      ),
     );
     renderWithProviders(<OrderCreateForm />);
-    await user.type(field("contactPhone"), "+380 50 318 22 47");
-    await user.type(field("contactName"), "Оксана Шевченко");
+    await fillGuest(user);
     await pickKyivFromDirectory(user);
     await user.type(field("address1"), "Відділення №12");
-    await user.type(
-      screen.getByRole("searchbox", { name: t.itemsSearchAria }),
-      "чохол",
-    );
-    await user.click(
-      await screen.findByRole("button", {
-        name: t.itemsAddAria("Силіконовий чохол"),
-      }),
-    );
+    await addCase(user);
 
     await user.click(screen.getByRole("button", { name: t.submit }));
 
-    const summary = within(
-      screen.getByRole("complementary", { name: t.summaryHeading }),
+    expect(await summaryOf().findByText(message)).toBeInTheDocument();
+    expect(summaryOf().getByText(t.serverErrorTitle)).toBeInTheDocument();
+  });
+});
+
+describe("OrderCreateForm — the delivery method (TASK-1973 / 1019 / 1808)", () => {
+  const t = dict.orderCreate;
+
+  it("offers only the methods the shop has switched on", async () => {
+    renderWithProviders(<OrderCreateForm />);
+
+    const group = within(
+      await screen.findByRole("group", { name: t.deliveryMethodAria }),
     );
-    expect(await summary.findByText(message)).toBeInTheDocument();
-    expect(summary.getByText(t.serverErrorTitle)).toBeInTheDocument();
+    await group.findByRole("button", { name: "Самовивіз" });
+    expect(
+      group.getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["Нова Пошта", "Самовивіз", "Інша доставка"]);
+    expect(group.getByRole("button", { name: "Нова Пошта" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("refuses Nova Poshta with a hand-typed city, and points at «Інша доставка»", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("*/api/delivery/cities", () => HttpResponse.json({ data: [] })),
+      http.get("*/api/delivery/warehouses", () =>
+        HttpResponse.json({ data: [] }),
+      ),
+    );
+    renderWithProviders(<OrderCreateForm />);
+    await fillGuest(user);
+    await user.type(field("city"), "Київ");
+    await user.type(field("address1"), "Відділення №12");
+    await addCase(user);
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    expect(
+      await screen.findByText(t.deliveryNpCityRequired),
+    ).toBeInTheDocument();
+  });
+
+  it("says Nova Poshta is paid at the branch and keeps it out of the total (B-13)", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+    await addCase(user);
+
+    expect(summaryOf().getByText(t.summaryDeliveryValue)).toBeInTheDocument();
+    expect(summaryOf().getAllByText(/1\s?299 ₴/)).toHaveLength(2);
+  });
+
+  it("takes a pickup order at a point — no address to type — and sends it", async () => {
+    const user = userEvent.setup();
+    const bodies = captureCreate();
+    renderWithProviders(<OrderCreateForm />);
+    await fillGuest(user);
+    await chooseMethod(user, "Самовивіз");
+
+    expect(document.getElementById("order-create-address1")).toBeNull();
+    await user.click(
+      screen.getByRole("radio", { name: "Магазин на Хрещатику" }),
+    );
+    await addCase(user);
+    expect(summaryOf().getByText(t.summaryDeliveryFree)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      deliveryMethod: "PICKUP",
+      pickupPointId: "6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11",
+      shippingAddress: { city: "Київ", address1: "вул. Хрещатик, 1" },
+    });
+    expect(bodies[0]).not.toHaveProperty("shippingCost");
+  });
+
+  it("asks for a point when none was picked", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+    await fillGuest(user);
+    await chooseMethod(user, "Самовивіз");
+    await addCase(user);
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    expect(
+      await screen.findByText(t.deliveryPickupRequired),
+    ).toBeInTheDocument();
+  });
+
+  it("adds the agreed OTHER cost to the total and sends it (TASK-1019)", async () => {
+    const user = userEvent.setup();
+    const bodies = captureCreate();
+    renderWithProviders(<OrderCreateForm />);
+    await fillGuest(user);
+    await chooseMethod(user, "Інша доставка");
+    await user.type(field("city"), "Житомир");
+    await user.type(field("address1"), "вул. Київська, 3");
+    await addCase(user);
+    expect(summaryOf().getByText(t.summaryDeliveryPending)).toBeInTheDocument();
+
+    await user.type(field("shippingCost"), "150,5");
+
+    expect(summaryOf().getByText(/^150,5\s?₴$/)).toBeInTheDocument();
+    expect(summaryOf().getByText(/1\s?449,5\s?₴/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      deliveryMethod: "OTHER",
+      shippingCost: 150.5,
+      shippingAddress: { city: "Житомир", address1: "вул. Київська, 3" },
+    });
   });
 });

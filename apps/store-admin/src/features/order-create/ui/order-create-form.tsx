@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  type ComponentProps,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   useForm,
@@ -18,6 +24,11 @@ import {
   useAdminOrderControllerCreate,
 } from "@/entities/order";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
+import {
+  PickupPointPicker,
+  useGetDeliveryMethods,
+  type DeliveryMethod,
+} from "@/entities/delivery";
 import {
   Button,
   Checkbox,
@@ -39,8 +50,10 @@ import {
   CUSTOMER_MODE,
   INTERNAL_NOTES_MAX_LENGTH,
   NOTES_MAX_LENGTH,
+  allowedPaymentMethods,
   createOrderSchema,
   createOrderValuesToDto,
+  operatorShippingCost,
   type CreateOrderFormValues,
   type DraftLine,
   type PickedCustomer,
@@ -65,19 +78,21 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 };
 
 /**
- * Methods the server takes whatever the delivery (R2): cash on delivery and the
- * admin-only bank transfer — `ADMIN_DELIVERY_PAYMENT_MATRIX` adds BANK_TRANSFER
- * to every row. Card and instalments need a quoted Nova Poshta city.
+ * The methods offered until `GET /api/delivery/methods` answers — the schema
+ * defaults of the delivery settings (NP and «Інша доставка» on).
  */
-const ANY_DELIVERY_METHODS: readonly string[] = [
-  CreateManualOrderDtoPaymentMethod.ON_DELIVERY,
-  CreateManualOrderDtoPaymentMethod.BANK_TRANSFER,
-];
+const FALLBACK_METHODS: readonly DeliveryMethod[] = ["NOVA_POSHTA", "OTHER"];
+
+/** «Нова Пошта», «Самовивіз», «Курʼєр», «Інша доставка». */
+const METHOD_LABELS = dict.orders.deliveryMethodLabels as Record<
+  string,
+  string
+>;
 
 /** Recipient fields the «той самий клієнт» checkbox hides and fills. */
 const RECIPIENT_FIELDS = ["firstName", "lastName", "phone"] as const;
 
-/** Why card / instalments are off: no Nova Poshta city ref (TASK-1021). */
+/** Why card / instalments are off for this delivery method (TASK-1021). */
 const PAYMENT_REASON_ID = "order-create-payment-reason";
 
 const ITEMS_ANCHOR = "order-create-section-items";
@@ -103,6 +118,8 @@ const REST_FIELDS: ReadonlyArray<[keyof CreateOrderFormValues, string]> = [
   ["city", t.addressCity],
   ["address1", t.addressAddress1],
   ["postalCode", t.addressPostalCode],
+  ["pickupPointId", t.deliveryPickupLabel],
+  ["shippingCost", t.shippingCostLabel],
   ["notes", t.notes],
   ["internalNotes", t.internalNotes],
 ];
@@ -187,25 +204,54 @@ export function OrderCreateForm() {
   const values = useWatch({ control: form.control }) as CreateOrderFormValues;
   const customerMode = values.customerMode;
 
-  // TASK-1021: the server reads a phone order's delivery off its address — no
-  // Nova Poshta city ref means «Інша доставка», whose cost nobody has quoted,
-  // and the delivery × payment matrix then refuses card and instalments. Say so
-  // before the submit: those two pills are disabled, with the reason under them.
-  const onlinePaymentBlocked = !values.npCityRef?.trim();
+  // TASK-1973: what the shop offers right now — the same public read the
+  // checkout uses: enabled methods (PICKUP only with an active point), the
+  // points, the courier terms and the delivery × payment matrix.
+  const offer = useGetDeliveryMethods().data?.data;
+  const offeredMethods = offer?.methods ?? FALLBACK_METHODS;
+  const pickupPoints = offer?.pickupPoints ?? [];
+  const deliveryMethod = values.deliveryMethod;
+  const pickedPoint = pickupPoints.find(
+    (point) => point.id === values.pickupPointId,
+  );
+
+  // A method the shop does not offer (switched off since the default was
+  // chosen) is replaced by the first one it does.
+  const firstOffered = offeredMethods[0];
+  const methodOffered = offeredMethods.includes(deliveryMethod);
   useEffect(() => {
-    if (
-      onlinePaymentBlocked &&
-      !ANY_DELIVERY_METHODS.includes(values.paymentMethod)
-    ) {
-      // The city lost its directory ref (retyped by hand): fall back to the one
-      // method the server will take, rather than keep a choice it will refuse.
+    if (offer && !methodOffered && firstOffered) {
+      form.setValue("deliveryMethod", firstOffered, { shouldDirty: true });
+    }
+  }, [offer, methodOffered, firstOffered, form]);
+
+  // TASK-1021: the delivery × payment matrix is a money invariant — «Інша
+  // доставка» has no final amount, so card and instalments are refused. Say so
+  // before the submit: those pills are disabled, with the reason under them.
+  const allowedPayments = allowedPaymentMethods(
+    deliveryMethod,
+    offer?.paymentMatrix,
+  );
+  const paymentAllowed = allowedPayments.includes(values.paymentMethod);
+  useEffect(() => {
+    if (!paymentAllowed) {
+      // The method changed under a choice it refuses: fall back to the one
+      // payment every method takes, rather than keep one the server refuses.
       form.setValue(
         "paymentMethod",
         CreateManualOrderDtoPaymentMethod.ON_DELIVERY,
         { shouldValidate: true, shouldDirty: true },
       );
     }
-  }, [onlinePaymentBlocked, values.paymentMethod, form]);
+  }, [paymentAllowed, form]);
+
+  const chooseDeliveryMethod = (method: string) => {
+    form.setValue("deliveryMethod", method as DeliveryMethod, {
+      shouldDirty: true,
+    });
+    // Errors of the previous method's fields are no longer the operator's.
+    form.clearErrors(["city", "address1", "pickupPointId", "shippingCost"]);
+  };
 
   /**
    * Record the picked account, and fill the recipient block from it — only
@@ -260,7 +306,7 @@ export function OrderCreateForm() {
 
     setRefusal(null);
     createOrder.mutate(
-      { data: createOrderValuesToDto(formValues, lines) },
+      { data: createOrderValuesToDto(formValues, lines, pickedPoint) },
       {
         onSuccess: (response) => {
           void queryClient.invalidateQueries({
@@ -350,8 +396,26 @@ export function OrderCreateForm() {
     customerMode === CUSTOMER_MODE.ACCOUNT
       ? Boolean(values.userId)
       : Boolean(values.contactName?.trim() && values.contactPhone?.trim());
+  // TASK-1808: what the delivery adds, per method — Nova Poshta is paid at the
+  // branch (B-13), an OTHER cost only once one has been agreed.
+  const quote = operatorShippingCost(values, offer?.courier, goods);
+  const shipping = quote.kind === "amount" ? quote.amount : 0;
+  const deliveryValue =
+    quote.kind === "carrier"
+      ? t.summaryDeliveryValue
+      : quote.kind === "pending"
+        ? t.summaryDeliveryPending
+        : quote.amount === 0
+          ? t.summaryDeliveryFree
+          : formatCurrency(quote.amount);
+
+  const destinationDone =
+    deliveryMethod === "PICKUP"
+      ? Boolean(pickedPoint)
+      : Boolean(values.city?.trim() && values.address1?.trim()) &&
+        (deliveryMethod !== "NOVA_POSHTA" || Boolean(values.npCityRef));
   const deliveryDone =
-    Boolean(values.city?.trim() && values.address1?.trim()) &&
+    destinationDone &&
     (sameRecipient ||
       RECIPIENT_FIELDS.every((field) => Boolean(values[field]?.trim())));
   const checklist: Array<[string, boolean]> = [
@@ -439,6 +503,15 @@ export function OrderCreateForm() {
         </Section>
 
         <Section number={3} title={t.addressHeading}>
+          <PillGroup
+            label={t.deliveryMethodAria}
+            value={deliveryMethod}
+            onChange={chooseDeliveryMethod}
+            options={offeredMethods.map((method) => ({
+              value: method,
+              label: METHOD_LABELS[method] ?? method,
+            }))}
+          />
           <div className="flex items-center gap-2">
             <Checkbox
               id="order-create-same-recipient"
@@ -456,11 +529,38 @@ export function OrderCreateForm() {
               <PhoneField name="phone" label={t.addressPhone} form={form} />
             </div>
           )}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <NpCityField form={form} />
-            <NpWarehouseField form={form} />
-            <Field name="postalCode" label={t.addressPostalCode} form={form} />
-          </div>
+          {deliveryMethod === "NOVA_POSHTA" ? (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <NpCityField form={form} />
+              <NpWarehouseField form={form} />
+              <Field
+                name="postalCode"
+                label={t.addressPostalCode}
+                form={form}
+              />
+            </div>
+          ) : deliveryMethod === "PICKUP" ? (
+            <PickupField form={form} points={pickupPoints} />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Field name="city" label={t.addressCity} form={form} />
+              <Field name="address1" label={t.addressAddress1} form={form} />
+              <Field
+                name="postalCode"
+                label={t.addressPostalCode}
+                form={form}
+              />
+              {deliveryMethod === "OTHER" ? (
+                <Field
+                  name="shippingCost"
+                  label={t.shippingCostLabel}
+                  hint={t.shippingCostHint}
+                  inputMode="decimal"
+                  form={form}
+                />
+              ) : null}
+            </div>
+          )}
           {sameRecipient ? (
             <p className="text-xs text-muted-foreground">
               {t.sameRecipientHint}
@@ -484,9 +584,7 @@ export function OrderCreateForm() {
               }
               options={Object.values(CreateManualOrderDtoPaymentMethod).map(
                 (method) => {
-                  const blocked =
-                    onlinePaymentBlocked &&
-                    !ANY_DELIVERY_METHODS.includes(method);
+                  const blocked = !allowedPayments.includes(method);
                   return {
                     value: method,
                     label: PAYMENT_METHOD_LABELS[method] ?? method,
@@ -496,12 +594,14 @@ export function OrderCreateForm() {
                 },
               )}
             />
-            {onlinePaymentBlocked ? (
+            {Object.values(CreateManualOrderDtoPaymentMethod).some(
+              (method) => !allowedPayments.includes(method),
+            ) ? (
               <p
                 id={PAYMENT_REASON_ID}
                 className="text-xs text-muted-foreground"
               >
-                {t.paymentNeedsNpCity}
+                {t.paymentNotForMethod}
               </p>
             ) : null}
           </div>
@@ -578,14 +678,15 @@ export function OrderCreateForm() {
             value={t.summaryPositionsValue(quantity)}
           />
           <SummaryRow label={t.summaryGoods} value={formatCurrency(goods)} />
-          <SummaryRow
-            label={t.summaryDelivery}
-            value={t.summaryDeliveryValue}
-          />
+          <SummaryRow label={t.summaryDelivery} value={deliveryValue} />
           <Separator className="my-1" />
           <div className="flex items-center justify-between font-semibold text-foreground">
             <dt>{t.summaryTotal}</dt>
-            <dd className="tabular-nums">{formatCurrency(goods)}</dd>
+            <dd className="tabular-nums">
+              {formatCurrency(
+                (Math.round(goods * 100) + Math.round(shipping * 100)) / 100,
+              )}
+            </dd>
           </div>
         </dl>
 
@@ -827,6 +928,57 @@ function PhoneField({
   );
 }
 
+/**
+ * The pickup point of a pickup order (TASK-1973): cards of the shop's active
+ * points instead of address fields — the parcel is collected there.
+ */
+function PickupField({
+  form,
+  points,
+}: {
+  form: CreateForm;
+  points: ComponentProps<typeof PickupPointPicker>["points"];
+}) {
+  const id = "order-create-pickupPointId";
+  const labelId = `${id}-label`;
+  const errorId = `${id}-error`;
+  const error = form.formState.errors.pickupPointId;
+  const value = useWatch({ control: form.control, name: "pickupPointId" });
+
+  if (points.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">{t.deliveryPickupNone}</p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span id={labelId} className="text-sm font-medium text-foreground">
+        {t.deliveryPickupLabel}
+      </span>
+      <PickupPointPicker
+        id={id}
+        points={points}
+        value={value}
+        onChange={(pointId) =>
+          form.setValue("pickupPointId", pointId, {
+            shouldValidate: true,
+            shouldDirty: true,
+          })
+        }
+        labelledBy={labelId}
+        errorId={errorId}
+        invalid={Boolean(error)}
+      />
+      {error ? (
+        <p id={errorId} role="alert" className="text-xs text-destructive">
+          {error.message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /** One labelled text input wired to RHF, with its error and optional hint. */
 function Field({
   name,
@@ -835,6 +987,7 @@ function Field({
   type = "text",
   placeholder,
   hint,
+  inputMode,
 }: {
   name: keyof CreateOrderFormValues;
   label: string;
@@ -842,6 +995,7 @@ function Field({
   type?: string;
   placeholder?: string;
   hint?: string;
+  inputMode?: "decimal";
 }) {
   const error = form.formState.errors[name];
   const id = `order-create-${name}`;
@@ -854,6 +1008,7 @@ function Field({
       <Input
         id={id}
         type={type}
+        inputMode={inputMode}
         autoComplete="off"
         placeholder={placeholder}
         aria-describedby={
