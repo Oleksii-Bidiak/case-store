@@ -36,6 +36,13 @@ export {
 
 // TASK-1973: the pickup point cards of the phone order and the delivery edit.
 export { PickupPointPicker } from "./ui/pickup-point-picker";
+// TASK-1973: the NP directory pickers, shared by the phone order and the
+// delivery edit of an existing order.
+export {
+  NpCityField,
+  NpWarehouseField,
+  type NpAddressValues,
+} from "./ui/np-address-fields";
 
 export type {
   AdminPickupPointDto,

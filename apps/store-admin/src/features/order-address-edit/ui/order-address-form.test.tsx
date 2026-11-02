@@ -19,18 +19,24 @@ jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
 
-/** Only what the control reads: the id, the lock token, status and address. */
+/**
+ * Only what the control reads: the id, the lock token, status and address.
+ * «Інша доставка», so the city and the address are plain text boxes — a Nova
+ * Poshta order takes them from the directory (TASK-1973), covered below.
+ */
 function makeOrder(status: string): OrderEntity {
   return {
     id: "order-uuid-1",
     status,
     updatedAt: "2026-06-01T10:00:00.000Z",
+    deliveryMethod: "OTHER",
     shippingAddress: {
       firstName: "Olena",
       lastName: "Shevchenko",
       city: "Kyiv",
       address1: "Khreshchatyk 1",
       phone: "+380501234567",
+      deliveryMethod: "OTHER",
     },
   } as unknown as OrderEntity;
 }
@@ -667,7 +673,7 @@ describe("OrderAddressForm — the delivery (TASK-1973)", () => {
     });
   });
 
-  it("moves a Nova Poshta order to pickup", async () => {
+  it("moves an order to pickup", async () => {
     renderWithProviders(
       <OrderAddressForm order={makeOrder("PENDING")} />,
       WRITER,
@@ -769,24 +775,247 @@ describe("OrderAddressForm — the delivery (TASK-1973)", () => {
     }
     renderWithProviders(<Card />, WRITER);
     await open();
-    const city = screen.getByLabelText(dict.orderCreate.addressCity);
-    await userEvent.clear(city);
-    await userEvent.type(city, "Lviv");
+    const methods = within(
+      await screen.findByRole("group", {
+        name: dict.orderCreate.deliveryMethodAria,
+      }),
+    );
+    await userEvent.click(
+      await methods.findByRole("button", { name: "Самовивіз" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("radio", { name: "Магазин на Хрещатику" }),
+    );
     serverOrder = {
       ...serverOrder,
-      deliveryMethod: "OTHER",
+      deliveryMethod: "COURIER",
       shippingAddress: {
         ...serverOrder.shippingAddress,
-        deliveryMethod: "OTHER",
+        deliveryMethod: "COURIER",
       },
       updatedAt: "2026-06-01T10:00:30.000Z",
     } as unknown as OrderEntity;
     await save();
 
-    const row = await screen.findByRole("group", {
-      name: dict.orders.deliveryMethodLabel,
+    // The pills are a group of the same name; the review row is the one
+    // without toggle buttons.
+    await screen.findByText(dict.orderStatus.staleReviewTakeTheirs, {
+      exact: false,
     });
-    expect(within(row).getByText("Інша доставка")).toBeInTheDocument();
-    expect(within(row).queryByText("OTHER")).not.toBeInTheDocument();
+    const row = screen
+      .getAllByRole("group", { name: dict.orders.deliveryMethodLabel })
+      .find((group) => group.querySelector("[aria-pressed]") === null)!;
+    expect(within(row).getByText("Курʼєр")).toBeInTheDocument();
+    expect(within(row).getByText("Самовивіз")).toBeInTheDocument();
+    expect(within(row).queryByText("COURIER")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Verifier items 1–2 (TASK-2371, closed in TASK-1973): a Nova Poshta order
+ * takes its city and branch from the directory — the refs change with the
+ * names, and a city retyped by hand never ships by the old city's ref.
+ */
+describe("OrderAddressForm — Nova Poshta from the directory (TASK-1973)", () => {
+  const WRITER = { auth: { permissions: ["orders:read", "orders:write"] } };
+  const LVIV = {
+    ref: "np-city-lviv",
+    name: "Львів",
+    area: "Львівська",
+    warehouses: 1,
+  };
+  const LVIV_BRANCH = {
+    ref: "np-wh-lviv-1",
+    description: "Відділення №1: вул. Городоцька, 1",
+    number: "1",
+    typeOfWarehouse: "branch",
+  };
+  let bodies: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    bodies = [];
+    server.use(
+      http.get("*/api/delivery/cities", () =>
+        HttpResponse.json({ data: [LVIV] }),
+      ),
+      http.get("*/api/delivery/warehouses", () =>
+        HttpResponse.json({ data: [LVIV_BRANCH] }),
+      ),
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ data: makeOrder("PENDING") });
+      }),
+    );
+  });
+
+  const npOrder = () =>
+    ({
+      ...makeOrder("PENDING"),
+      deliveryMethod: "NOVA_POSHTA",
+      shippingCost: "0.00",
+      shippingAddress: {
+        firstName: "Olena",
+        lastName: "Shevchenko",
+        phone: "+380501234567",
+        city: "Київ",
+        address1: "Відділення №5",
+        npCityRef: "np-city-kyiv",
+        npWarehouseRef: "np-wh-kyiv-5",
+        npWarehouseName: "Відділення №5",
+        deliveryMethod: "NOVA_POSHTA",
+        carrier: "NOVA_POSHTA",
+      },
+    }) as unknown as OrderEntity;
+
+  const open = async () =>
+    userEvent.click(
+      await screen.findByRole("button", { name: dict.orders.addressEdit }),
+    );
+  const save = () =>
+    userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+  async function pickLviv() {
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Льв");
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Вибрати «Львів»/i }),
+    );
+    await userEvent.click(
+      screen.getByLabelText(dict.orderCreate.addressAddress1),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: new RegExp(`Вибрати «${LVIV_BRANCH.description}»`, "i"),
+      }),
+    );
+  }
+
+  it("refuses a city typed by hand — the Kyiv ref must not ship to Lviv", async () => {
+    server.use(
+      http.get("*/api/delivery/cities", () => HttpResponse.json({ data: [] })),
+    );
+    renderWithProviders(<OrderAddressForm order={npOrder()} />, WRITER);
+    await open();
+
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Львів");
+    await save();
+
+    expect(
+      await screen.findByText(dict.orderCreate.deliveryNpCityRequired),
+    ).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("changes the NP city and branch from the directory, refs and names together", async () => {
+    renderWithProviders(<OrderAddressForm order={npOrder()} />, WRITER);
+    await open();
+
+    await pickLviv();
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).not.toHaveProperty("deliveryMethod");
+    expect(bodies[0].shippingAddress).toMatchObject({
+      city: "Львів",
+      npCityRef: "np-city-lviv",
+      address1: LVIV_BRANCH.description,
+      npWarehouseRef: "np-wh-lviv-1",
+      npWarehouseName: LVIV_BRANCH.description,
+    });
+  });
+
+  it("moves an OTHER order TO Nova Poshta", async () => {
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+    await open();
+
+    const methods = within(
+      await screen.findByRole("group", {
+        name: dict.orderCreate.deliveryMethodAria,
+      }),
+    );
+    await userEvent.click(
+      await methods.findByRole("button", { name: "Нова Пошта" }),
+    );
+    await pickLviv();
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      deliveryMethod: "NOVA_POSHTA",
+      shippingAddress: {
+        npCityRef: "np-city-lviv",
+        npWarehouseRef: "np-wh-lviv-1",
+      },
+    });
+  });
+
+  it("takes a colleague's NP city together with its ref", async () => {
+    let serverOrder = npOrder();
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: serverOrder }),
+      ),
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        if (body.expectedUpdatedAt !== serverOrder.updatedAt) {
+          return HttpResponse.json(
+            { statusCode: 409, error: "ORDER_STALE", message: "stale" },
+            { status: 409 },
+          );
+        }
+        return HttpResponse.json({ data: serverOrder });
+      }),
+    );
+    function Card() {
+      const { data } = useAdminOrderControllerFindById("order-uuid-1");
+      return data?.data ? <OrderAddressForm order={data.data} /> : null;
+    }
+    renderWithProviders(<Card />, WRITER);
+    await open();
+    await pickLviv();
+    serverOrder = {
+      ...serverOrder,
+      shippingAddress: {
+        ...serverOrder.shippingAddress,
+        city: "Одеса",
+        npCityRef: "np-city-odesa",
+      },
+      updatedAt: "2026-06-01T10:00:30.000Z",
+    } as unknown as OrderEntity;
+    await save();
+
+    // One «Місто» row — the ref is folded into it, never a row of its own.
+    const row = await screen.findByRole("group", {
+      name: dict.orderCreate.addressCity,
+    });
+    expect(within(row).getByText("Одеса")).toBeInTheDocument();
+    expect(screen.queryByText("np-city-odesa")).not.toBeInTheDocument();
+    await userEvent.click(
+      within(row).getByRole("button", {
+        name: dict.orderStatus.staleReviewTakeTheirs,
+      }),
+    );
+    // Nothing diverges any more — the panel asks for «Зрозуміло».
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.orderStatus.staleReviewAcknowledge,
+      }),
+    );
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1].shippingAddress).toMatchObject({
+      city: "Одеса",
+      npCityRef: "np-city-odesa",
+    });
   });
 });

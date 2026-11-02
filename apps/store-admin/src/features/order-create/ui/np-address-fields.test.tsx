@@ -14,7 +14,7 @@ jest.mock("next/navigation", () => ({
 
 /**
  * What happens to the branch field when the settlement changes under it
- * (`np-address-fields.tsx`).
+ * (`entities/delivery/ui/np-address-fields.tsx`).
  *
  * The bug this pins: the city pickers cleared `npCityRef`/`npWarehouseRef` but
  * never `address1`, so a branch chosen from the Kyiv directory stayed in the

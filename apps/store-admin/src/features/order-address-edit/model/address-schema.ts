@@ -49,6 +49,10 @@ export const orderAddressSchema = z
     deliveryMethod: z.string(),
     pickupPointId: z.string().trim(),
     shippingCost: z.string().trim(),
+    // TASK-1973 (verifier): the NP refs are form values, set and cleared by
+    // the directory pickers together with the names they belong to.
+    npCityRef: z.string().trim(),
+    npWarehouseRef: z.string().trim(),
   })
   .superRefine((values, ctx) => {
     const issue = (path: string, message: string) =>
@@ -61,6 +65,14 @@ export const orderAddressSchema = z
       return;
     }
     if (values.city === "") issue("city", required);
+    else if (
+      values.deliveryMethod === "NOVA_POSHTA" &&
+      values.npCityRef === ""
+    ) {
+      // A city typed by hand on an NP order: the old ref belonged to the old
+      // name, and shipping by it would send the parcel to the old city.
+      issue("city", dict.orderCreate.deliveryNpCityRequired);
+    }
     if (values.address1 === "") issue("address1", required);
     if (
       values.deliveryMethod === "OTHER" &&
@@ -119,14 +131,17 @@ export function mapOrderToAddressValues(
     deliveryMethod: method,
     pickupPointId: order.pickupPointId ?? "",
     shippingCost: agreed ? (order.shippingCost ?? "") : "",
+    npCityRef: field(address, "npCityRef"),
+    npWarehouseRef: field(address, "npWarehouseRef"),
   };
 }
 
 /**
  * Build the replacement address, preserving everything the form does not edit.
  *
- * Fields absent from this form — `company`, `address2`, `state`, `country` and
- * the three Nova Poshta refs — are copied across from the existing snapshot.
+ * Fields absent from this form — `company`, `address2`, `state`, `country` —
+ * are copied across from the existing snapshot; the Nova Poshta refs are form
+ * values (see below).
  * Without that, fixing a typo in the recipient's name would quietly delete the
  * warehouse reference the courier integration depends on. The server rebuilds
  * the delivery part of the snapshot itself (TASK-1020), so the method, the
@@ -136,16 +151,23 @@ export function mapOrderToAddressValues(
 export function addressValuesToDto(
   values: Pick<
     OrderAddressFormValues,
-    "firstName" | "lastName" | "phone" | "city" | "address1" | "postalCode"
+    | "firstName"
+    | "lastName"
+    | "phone"
+    | "city"
+    | "address1"
+    | "postalCode"
+    | "npCityRef"
+    | "npWarehouseRef"
   >,
   current: Record<string, unknown> | null | undefined,
-  options: { keepNpRefs?: boolean } = {},
+  options: { withNpRefs?: boolean } = {},
 ): AddressDto {
   const carryOver = (key: string) => {
     const value = current?.[key];
     return typeof value === "string" && value !== "" ? { [key]: value } : {};
   };
-  const keepNpRefs = options.keepNpRefs ?? true;
+  const withNpRefs = options.withNpRefs ?? true;
 
   return {
     firstName: values.firstName,
@@ -158,11 +180,18 @@ export function addressValuesToDto(
     ...carryOver("address2"),
     ...carryOver("state"),
     ...carryOver("country"),
-    ...(keepNpRefs
+    // The NP refs come from the FORM, never from the old snapshot (verifier,
+    // TASK-1973): the directory pickers set and clear them together with the
+    // city and branch names, so a ref can never outlive the name it belongs to.
+    // The chosen branch's description IS the address line — it doubles as the
+    // NP warehouse name, as on the phone order.
+    ...(withNpRefs && values.npCityRef !== ""
+      ? { npCityRef: values.npCityRef }
+      : {}),
+    ...(withNpRefs && values.npWarehouseRef !== ""
       ? {
-          ...carryOver("npCityRef"),
-          ...carryOver("npWarehouseName"),
-          ...carryOver("npWarehouseRef"),
+          npWarehouseRef: values.npWarehouseRef,
+          npWarehouseName: values.address1,
         }
       : {}),
   };
@@ -201,7 +230,7 @@ export function deliveryEditToDto(
         ? { ...values, city: seeded.city, address1: seeded.address1 }
         : values,
     order.shippingAddress as Record<string, unknown> | null,
-    { keepNpRefs: method === "NOVA_POSHTA" },
+    { withNpRefs: method === "NOVA_POSHTA" },
   );
 
   return {

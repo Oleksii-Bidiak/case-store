@@ -32,6 +32,9 @@ describe("mapOrderToAddressValues (TASK-341)", () => {
       deliveryMethod: "NOVA_POSHTA",
       pickupPointId: "",
       shippingCost: "",
+      // The NP refs are form values now — they change with the city.
+      npCityRef: "np-city-ref-uuid",
+      npWarehouseRef: "np-warehouse-ref-uuid",
     });
   });
 
@@ -46,6 +49,8 @@ describe("mapOrderToAddressValues (TASK-341)", () => {
       deliveryMethod: "NOVA_POSHTA",
       pickupPointId: "",
       shippingCost: "",
+      npCityRef: "",
+      npWarehouseRef: "",
     });
   });
 
@@ -81,7 +86,11 @@ describe("addressValuesToDto — the write replaces the whole address (TASK-341)
 
   it("omits carry-over keys that were absent or blank", () => {
     const dto = addressValuesToDto(
-      mapOrderToAddressValues({ shippingAddress: CURRENT }),
+      {
+        ...mapOrderToAddressValues({ shippingAddress: CURRENT }),
+        npCityRef: "",
+        npWarehouseRef: "",
+      },
       { city: "Київ" },
     );
 
@@ -306,5 +315,86 @@ describe("deliveryEditToDto — what the PATCH carries (TASK-1973 / 1020)", () =
 
     expect(dto.shippingAddress.npCityRef).toBe("np-city-ref-uuid");
     expect(dto).not.toHaveProperty("deliveryMethod");
+  });
+});
+
+// ─── TASK-2371 (closed in TASK-1973): Nova Poshta from the directory ──────────
+
+describe("Nova Poshta in the delivery edit (verifier items 1–2)", () => {
+  const KYIV_REF = "np-city-ref-uuid";
+  const LVIV_REF = "np-city-ref-lviv";
+  const LVIV_BRANCH = "np-warehouse-ref-lviv";
+
+  it("refuses a hand-typed city on Nova Poshta — the Kyiv ref must not ship to Lviv", () => {
+    const values = {
+      ...mapOrderToAddressValues(NP_ORDER),
+      city: "Львів",
+      // What the city picker does on a keystroke: the refs go with the old name.
+      npCityRef: "",
+      npWarehouseRef: "",
+    };
+
+    expect(
+      orderAddressSchema
+        .safeParse(values)
+        .error?.issues.find((i) => i.path[0] === "city")?.message,
+    ).toBe(dict.orderCreate.deliveryNpCityRequired);
+  });
+
+  it("sends the refs the form holds, never the snapshot's old ones", () => {
+    const dto = deliveryEditToDto(
+      {
+        ...mapOrderToAddressValues(NP_ORDER),
+        city: "Львів",
+        npCityRef: LVIV_REF,
+        address1: "Відділення №1",
+        npWarehouseRef: LVIV_BRANCH,
+      },
+      NP_ORDER,
+    );
+
+    expect(dto.shippingAddress).toMatchObject({
+      city: "Львів",
+      npCityRef: LVIV_REF,
+      npWarehouseRef: LVIV_BRANCH,
+      npWarehouseName: "Відділення №1",
+    });
+    expect(dto.shippingAddress.npCityRef).not.toBe(KYIV_REF);
+  });
+
+  it("sends no branch ref for a branch typed by hand", () => {
+    const dto = deliveryEditToDto(
+      {
+        ...mapOrderToAddressValues(NP_ORDER),
+        address1: "Поштомат біля дому",
+        npWarehouseRef: "",
+      },
+      NP_ORDER,
+    );
+
+    expect(dto.shippingAddress.npCityRef).toBe(KYIV_REF);
+    expect(dto.shippingAddress).not.toHaveProperty("npWarehouseRef");
+    expect(dto.shippingAddress).not.toHaveProperty("npWarehouseName");
+  });
+
+  it("moves an OTHER order TO Nova Poshta with a city from the directory", () => {
+    const order = otherOrder("0.00", true);
+    const dto = deliveryEditToDto(
+      {
+        ...mapOrderToAddressValues(order),
+        deliveryMethod: "NOVA_POSHTA",
+        city: "Львів",
+        npCityRef: LVIV_REF,
+        address1: "Відділення №1",
+        npWarehouseRef: LVIV_BRANCH,
+      },
+      order,
+    );
+
+    expect(dto).toMatchObject({
+      deliveryMethod: "NOVA_POSHTA",
+      shippingAddress: { npCityRef: LVIV_REF, npWarehouseRef: LVIV_BRANCH },
+    });
+    expect(dto).not.toHaveProperty("shippingCost");
   });
 });

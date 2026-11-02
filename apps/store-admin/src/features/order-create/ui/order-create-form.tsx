@@ -25,6 +25,8 @@ import {
 } from "@/entities/order";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import {
+  NpCityField,
+  NpWarehouseField,
   PickupPointPicker,
   useGetDeliveryMethods,
   type DeliveryMethod,
@@ -64,7 +66,6 @@ import {
 } from "../model/create-order-error";
 import { OrderLinePicker } from "./order-line-picker";
 import { OrderCustomerPicker } from "./order-customer-picker";
-import { NpCityField, NpWarehouseField } from "./np-address-fields";
 
 const t = dict.orderCreate;
 
@@ -531,8 +532,8 @@ export function OrderCreateForm() {
           )}
           {deliveryMethod === "NOVA_POSHTA" ? (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <NpCityField form={form} />
-              <NpWarehouseField form={form} />
+              <NpCityField form={form} idPrefix="order-create" />
+              <NpWarehouseField form={form} idPrefix="order-create" />
               <Field
                 name="postalCode"
                 label={t.addressPostalCode}

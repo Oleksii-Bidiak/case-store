@@ -2,18 +2,21 @@
 
 import { useState, type ChangeEvent } from "react";
 import { Check } from "lucide-react";
-import { useWatch, type UseFormReturn } from "react-hook-form";
-// Through `@/entities/delivery` since TASK-644: the slice that names the admin's
-// delivery hooks (the `delivery` tag is the one Orval group the `@/shared/api`
-// barrel does not re-export).
+import {
+  useWatch,
+  type FieldValues,
+  type UseFormReturn,
+} from "react-hook-form";
+// Straight from the generated module, like the slice's index does: the
+// `delivery` tag is the one Orval group the `@/shared/api` barrel does not
+// re-export, and a slice must not import its own public index.
 import {
   useSearchDeliveryCities,
   useSearchDeliveryWarehouses,
-} from "@/entities/delivery";
+} from "@/shared/api/generated/delivery/delivery";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { Button, Input, Label } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import type { CreateOrderFormValues } from "../model/create-order-schema";
 
 const SEARCH_DEBOUNCE_MS = 300;
 /** The backend refuses a shorter settlement query, so don't ask it one. */
@@ -21,13 +24,40 @@ const CITY_MIN_QUERY = 2;
 
 const t = dict.orderCreate;
 
-interface NpFieldProps {
-  form: UseFormReturn<CreateOrderFormValues>;
+/**
+ * The four values the pickers read and write. Any form that holds them can host
+ * the pickers — the phone order (`features/order-create`) and the delivery edit
+ * of an existing order (`features/order-address-edit`, TASK-1973): moved here
+ * from `features/order-create` so the two features share them without importing
+ * each other.
+ */
+export interface NpAddressValues extends FieldValues {
+  city: string;
+  address1: string;
+  npCityRef: string;
+  npWarehouseRef: string;
+}
+
+interface NpFieldProps<T extends NpAddressValues> {
+  form: UseFormReturn<T>;
+  /** Element ids are `${idPrefix}-city` / `${idPrefix}-address1`. */
+  idPrefix: string;
+}
+
+/**
+ * RHF's `UseFormReturn` is invariant in its values, so a form with MORE fields
+ * is not assignable to one with these four. Narrowed once here; every key the
+ * pickers touch is one of {@link NpAddressValues}.
+ */
+function narrow<T extends NpAddressValues>(
+  form: UseFormReturn<T>,
+): UseFormReturn<NpAddressValues> {
+  return form as unknown as UseFormReturn<NpAddressValues>;
 }
 
 /**
  * Nova Poshta city + warehouse pickers for the operator's create-order form
- * (TASK-426), mirroring `features/checkout/ui/np-city-field.tsx` and
+ * (TASK-426) and, since TASK-1973, the delivery edit of an existing order, mirroring `features/checkout/ui/np-city-field.tsx` and
  * `np-warehouse-field.tsx` on the storefront.
  *
  * ── The state that matters most here is "directory unavailable" ───────────────
@@ -70,7 +100,11 @@ interface NpFieldProps {
  * now-empty `npWarehouseRef` and ships a parcel addressed to a branch that does
  * not exist in that settlement.
  */
-export function NpCityField({ form }: NpFieldProps) {
+export function NpCityField<T extends NpAddressValues>({
+  form: hostForm,
+  idPrefix,
+}: NpFieldProps<T>) {
+  const form = narrow(hostForm);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const debouncedSetQuery = useDebouncedCallback(
@@ -87,7 +121,7 @@ export function NpCityField({ form }: NpFieldProps) {
   );
   const options = enabled ? (data?.data ?? []) : [];
 
-  const id = "order-create-city";
+  const id = `${idPrefix}-city`;
   const fieldError = form.formState.errors.city;
 
   return (
@@ -204,7 +238,11 @@ export function NpCityField({ form }: NpFieldProps) {
 }
 
 /** Nova Poshta branch picker, scoped to the settlement chosen above. */
-export function NpWarehouseField({ form }: NpFieldProps) {
+export function NpWarehouseField<T extends NpAddressValues>({
+  form: hostForm,
+  idPrefix,
+}: NpFieldProps<T>) {
+  const form = narrow(hostForm);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const debouncedSetQuery = useDebouncedCallback(
@@ -225,7 +263,7 @@ export function NpWarehouseField({ form }: NpFieldProps) {
   );
   const options = enabled ? (data?.data ?? []) : [];
 
-  const id = "order-create-address1";
+  const id = `${idPrefix}-address1`;
   const fieldError = form.formState.errors.address1;
 
   return (

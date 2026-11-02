@@ -23,6 +23,8 @@ import {
   type ApiErrorLike,
 } from "@/features/order-status-update";
 import {
+  NpCityField,
+  NpWarehouseField,
   PickupPointPicker,
   useGetDeliveryMethods,
   type DeliveryMethod,
@@ -60,6 +62,29 @@ const ADDRESS_FIELDS = [
   { name: "postalCode", label: dict.orderCreate.addressPostalCode },
 ] as const;
 
+/** The postal code — beside the NP pickers on a Nova Poshta order. */
+const POSTAL_FIELD = ADDRESS_FIELDS[2];
+
+/**
+ * The NP refs and the visible field each belongs to (TASK-1973). In the
+ * stale-draft review a ref is shown — and taken — as its name's row: two rows
+ * («Місто» and a ref nobody can read) for one change would be noise, and taking
+ * one without the other would split a city from its ref.
+ */
+const REF_OF: Partial<
+  Record<keyof OrderAddressFormValues, keyof OrderAddressFormValues>
+> = { city: "npCityRef", address1: "npWarehouseRef" };
+const NAME_OF: Partial<
+  Record<keyof OrderAddressFormValues, keyof OrderAddressFormValues>
+> = { npCityRef: "city", npWarehouseRef: "address1" };
+
+/** The review rows: every diverging field, refs folded into their names. */
+function reviewRows(
+  diverging: ReadonlyArray<keyof OrderAddressFormValues>,
+): Array<keyof OrderAddressFormValues> {
+  return [...new Set(diverging.map((name) => NAME_OF[name] ?? name))];
+}
+
 /** «Інша доставка» only (AD-ORD-86). */
 const COST_FIELD = {
   name: "shippingCost",
@@ -87,6 +112,9 @@ const FIELD_LABELS: Record<keyof OrderAddressFormValues, string> = {
   deliveryMethod: dict.orders.deliveryMethodLabel,
   pickupPointId: dict.orderCreate.deliveryPickupLabel,
   shippingCost: dict.orderCreate.shippingCostLabel,
+  // Never a row of their own — folded into «Місто» / «Адреса» (see REF_OF).
+  npCityRef: dict.orderCreate.addressCity,
+  npWarehouseRef: dict.orderCreate.addressAddress1,
 } as Record<keyof OrderAddressFormValues, string>;
 
 /** A DELIVERY_* refusal is worded for the operator — shown as it came. */
@@ -181,18 +209,13 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
       orderWriteErrorMessage(updateDetails.error as ApiErrorLike));
 
   // TASK-1973: what the shop offers — read once the form opens. The order's
-  // own method stays on offer even if the owner has switched it off since;
-  // Nova Poshta is offered only to an NP order: moving to it needs a city from
-  // the NP directory, which this form does not have.
+  // own method stays on offer even if the owner has switched it off since.
+  // Nova Poshta takes its city and branch from the directory pickers.
   const offerMethods = offer?.methods ?? [];
   const methodOptions = DELIVERY_METHODS.filter(
     (method) =>
-      method === seeded.deliveryMethod ||
-      (method !== "NOVA_POSHTA" && offerMethods.includes(method)),
+      method === seeded.deliveryMethod || offerMethods.includes(method),
   );
-  const npUnreachable =
-    seeded.deliveryMethod !== "NOVA_POSHTA" &&
-    offerMethods.includes("NOVA_POSHTA");
   const pickupPoints = offer?.pickupPoints ?? [];
   const pickedPoint = pickupPoints.find(
     (point) => point.id === draft.pickupPointId,
@@ -352,11 +375,6 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
                 option !== seeded.deliveryMethod && !paymentFits(option),
             }))}
           />
-          {npUnreachable ? (
-            <p className="text-xs text-muted-foreground">
-              {dict.orders.deliveryEditNoNp}
-            </p>
-          ) : null}
         </div>
       ) : null}
 
@@ -366,6 +384,15 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
 
       {method === "PICKUP" ? (
         <PickupField form={form} points={pickupPoints} />
+      ) : method === "NOVA_POSHTA" ? (
+        // Verifier (TASK-2371): the city and the branch come from the NP
+        // directory, and their refs change WITH the names — a city retyped by
+        // hand drops its ref, and the schema then asks for one from the list.
+        <>
+          <NpCityField form={form} idPrefix="order-address" />
+          <NpWarehouseField form={form} idPrefix="order-address" />
+          <TextField field={POSTAL_FIELD} form={form} />
+        </>
       ) : (
         ADDRESS_FIELDS.map((field) => (
           <TextField key={field.name} field={field} form={form} />
@@ -378,16 +405,21 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
 
       {review.review ? (
         <StaleDraftPanel
-          rows={review.diverging.map((name) => ({
+          rows={reviewRows(review.diverging).map((name) => ({
             name,
             label: FIELD_LABELS[name],
             theirs: display(name, review.review?.fresh[name] ?? ""),
             mine: display(name, draft[name]),
           }))}
           labels={ORDER_STALE_REVIEW_LABELS}
-          onTakeTheirs={(name) =>
-            review.takeTheirs(name as keyof OrderAddressFormValues)
-          }
+          onTakeTheirs={(name) => {
+            const field = name as keyof OrderAddressFormValues;
+            review.takeTheirs(field);
+            // A name and its NP ref travel together: taking the colleague's
+            // city without their ref would ship to a city by another's ref.
+            const ref = REF_OF[field];
+            if (ref) review.takeTheirs(ref);
+          }}
           onAcknowledge={review.acknowledge}
         />
       ) : conflict ? (
