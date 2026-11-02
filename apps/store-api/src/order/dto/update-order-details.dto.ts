@@ -1,6 +1,19 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsDateString, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
+import { DeliveryMethod } from '@prisma/client';
 import { IsNovaPoshtaWaybill, normalizeWaybill } from '../../common/validators';
 import { AddressDto } from './address.dto';
 
@@ -72,6 +85,55 @@ export class UpdateOrderDetailsDto {
   @ValidateNested()
   @Type(() => AddressDto)
   shippingAddress?: AddressDto;
+
+  /**
+   * TASK-1973: the operator changes how an existing order is delivered —
+   * pre-shipment only, under the same version check as the address. The server
+   * rebuilds the delivery snapshot either way (TASK-1020), so a contact edit
+   * never drops the method, the carrier, the pickup point or the «to be quoted»
+   * flag.
+   */
+  @ApiPropertyOptional({
+    description:
+      'New delivery method (TASK-1973). Pre-shipment only (409 otherwise). A CHANGED method is ' +
+      'checked like a new phone order: enabled in the settings, admitted by the admin ' +
+      "delivery × payment matrix for the order's payment method, NOVA_POSHTA with " +
+      'shippingAddress.npCityRef, PICKUP with an active pickupPointId. Re-prices the delivery: ' +
+      'NOVA_POSHTA/PICKUP → 0 (NP is paid at the branch, B-13), COURIER → the flat price, ' +
+      'OTHER → shippingCost or 0 «to be quoted». Total and balance are recomputed.',
+    enum: DeliveryMethod,
+    enumName: 'DeliveryMethod',
+  })
+  @IsOptional()
+  @IsEnum(DeliveryMethod)
+  deliveryMethod?: DeliveryMethod;
+
+  @ApiPropertyOptional({
+    description:
+      'Pickup point for a PICKUP order (TASK-1806): required when switching to PICKUP; on a ' +
+      'PICKUP order, a different id moves the order to that (active) point. Ignored otherwise.',
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsUUID('loose', { message: 'pickupPointId must be a valid UUID' })
+  pickupPointId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Agreed shipping cost, UAH (0–100000, at most 2 decimals) — OTHER orders only ' +
+      '(400 DELIVERY_SHIPPING_COST_NOT_ALLOWED otherwise), pre-shipment only (AD-ORD-86). ' +
+      "Replaces the order's shipping cost, recomputes total and balance in one transaction, and " +
+      'clears shippingAddress.shippingCostPending. Allowed on an order already paid: the balance ' +
+      'then shows what is still owed.',
+    example: 150,
+    minimum: 0,
+    maximum: 100000,
+  })
+  @ValidateIf((o: UpdateOrderDetailsDto) => o.shippingCost !== undefined)
+  @IsNumber({ maxDecimalPlaces: 2, allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Max(100000)
+  shippingCost?: number;
 
   /**
    * Optimistic-lock token — the same contract as

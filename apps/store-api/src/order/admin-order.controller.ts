@@ -317,7 +317,10 @@ export class AdminOrderController {
   })
   @ApiResponse({
     status: 400,
-    description: 'No customer identified, a product is unavailable, or stock is short',
+    description:
+      'No customer identified, a product is unavailable, stock is short, or a DELIVERY_* refusal ' +
+      '(method switched off, payment not admitted, NP without city ref, pickup point missing or ' +
+      'inactive, shipping cost on a method other than OTHER)',
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async create(
@@ -592,7 +595,8 @@ export class AdminOrderController {
   @ApiBearerAuth('access-token')
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({
-    summary: 'Update order tracking number / internal notes (admin)',
+    summary:
+      'Update order tracking number / internal notes / delivery (method, pickup point, agreed cost, address) (admin)',
     operationId: 'adminOrderControllerUpdateDetails',
   })
   @ApiParam({ name: 'orderId', description: 'Order UUID' })
@@ -601,25 +605,40 @@ export class AdminOrderController {
     description: 'Order updated',
     type: AdminOrderResponseEnvelope,
   })
+  @ApiResponse({
+    status: 400,
+    description:
+      'DELIVERY_* — method switched off, payment not admitted, NP without city ref, pickup point ' +
+      'missing or inactive, or a shipping cost on a method other than OTHER',
+  })
   @ApiResponse({ status: 404, description: 'Order not found' })
   @ApiResponse({ status: 409, description: 'ORDER_STALE — another admin changed this order first' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async updateDetails(
     @Param('orderId') orderId: string,
     @Body() dto: UpdateOrderDetailsDto,
+    // TASK-1973: a shipping-cost change recomputes the balance, and a payment
+    // status it moves is recorded against the operator who quoted it.
+    @CurrentUser('id') adminUserId: string,
   ): Promise<AdminOrderResponseEnvelope> {
-    // TASK-786: one service call — address, waybill and notes are one edit with
-    // one version check and one write, so it lands whole or not at all.
+    // TASK-786: one service call — address, delivery, waybill and notes are one
+    // edit with one version check and one write, so it lands whole or not at all.
     const order = await this.orderService.adminUpdateDetails(
       orderId,
       {
         // Only forward keys the caller actually sent: an absent key leaves the
         // field alone, an explicit null clears it.
         ...(dto.shippingAddress ? { shippingAddress: dto.shippingAddress } : {}),
+        ...(dto.deliveryMethod ? { deliveryMethod: dto.deliveryMethod } : {}),
+        ...(dto.pickupPointId ? { pickupPointId: dto.pickupPointId } : {}),
+        ...(dto.shippingCost !== undefined ? { shippingCost: dto.shippingCost } : {}),
         ...(dto.trackingNumber !== undefined ? { trackingNumber: dto.trackingNumber } : {}),
         ...(dto.internalNotes !== undefined ? { internalNotes: dto.internalNotes } : {}),
       },
-      dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {},
+      {
+        ...(dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {}),
+        changedBy: adminUserId,
+      },
     );
 
     return { data: order };

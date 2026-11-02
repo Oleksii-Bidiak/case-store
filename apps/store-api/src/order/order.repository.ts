@@ -35,6 +35,7 @@ import type {
   ManualOrderParams,
   ProviderRefundRequest,
   ProviderRefundRequestInput,
+  ShippingAddressData,
 } from './order.types';
 import type { OrderListQueryDto, AdminOrderListQueryDto, AddressDto } from './dto';
 // The export query is declared beside the list query it narrows, and is not part
@@ -653,6 +654,8 @@ export class OrderRepository {
           // TASK-643: the service classifies a phone order (NP ref → NOVA_POSHTA,
           // else OTHER); absent → the column default.
           ...(params.deliveryMethod ? { deliveryMethod: params.deliveryMethod } : {}),
+          // TASK-1973: the point a PICKUP phone order is collected from.
+          ...(params.pickupPointId ? { pickupPointId: params.pickupPointId } : {}),
           subtotal,
           discount: new Prisma.Decimal(0),
           shippingCost: shipping,
@@ -1449,24 +1452,42 @@ export class OrderRepository {
     fields: {
       trackingNumber?: string | null;
       internalNotes?: string | null;
-      shippingAddress?: AddressDto;
+      shippingAddress?: AddressDto | ShippingAddressData;
+      deliveryMethod?: DeliveryMethod;
+      pickupPointId?: string | null;
+      shippingCost?: number;
     },
-    options: { expectedUpdatedAt?: Date } = {},
+    options: { expectedUpdatedAt?: Date; changedBy?: string } = {},
   ): Promise<OrderWithItems> {
-    const data: Prisma.OrderUpdateManyMutationInput = {};
+    const data: Prisma.OrderUncheckedUpdateManyInput = {};
     if (fields.shippingAddress !== undefined) {
       data.shippingAddress = fields.shippingAddress as unknown as Prisma.InputJsonValue;
     }
+    if (fields.deliveryMethod !== undefined) data.deliveryMethod = fields.deliveryMethod;
+    if (fields.pickupPointId !== undefined) data.pickupPointId = fields.pickupPointId;
     if (fields.trackingNumber !== undefined) data.trackingNumber = fields.trackingNumber;
     if (fields.internalNotes !== undefined) data.internalNotes = fields.internalNotes;
 
     const expectedUpdatedAt = options.expectedUpdatedAt;
+    const deliveryEdit =
+      fields.shippingAddress !== undefined ||
+      fields.deliveryMethod !== undefined ||
+      fields.pickupPointId !== undefined ||
+      fields.shippingCost !== undefined;
     const guard: Prisma.OrderWhereInput = {
       ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
-      ...(fields.shippingAddress !== undefined
-        ? { status: { in: [...PRE_SHIPMENT_STATUSES] } }
-        : {}),
+      ...(deliveryEdit ? { status: { in: [...PRE_SHIPMENT_STATUSES] } } : {}),
     };
+
+    if (fields.shippingCost !== undefined) {
+      return this.updateDetailsWithShipping(
+        orderId,
+        data,
+        guard,
+        fields.shippingCost,
+        options.changedBy ?? null,
+      );
+    }
 
     // A request that changes none of these fields is a read, not a write — and a
     // guarded `updateMany` with an empty `data` would neither express the version
@@ -1493,6 +1514,53 @@ export class OrderRepository {
     return this.prisma.order.findUniqueOrThrow({
       where: { id: orderId },
       include: ADMIN_ORDERS_INCLUDE,
+    }) as Promise<OrderWithItems>;
+  }
+
+  /**
+   * {@link updateDetails} when the shipping cost changes (TASK-1973, AD-ORD-86):
+   * the cost, the total and the balance move together or not at all.
+   *
+   * The order row is locked FIRST — the money lock order every ledger writer
+   * follows — and the total is re-derived from the row read under that lock:
+   * `total − old shippingCost + new`. Goods, discount and add-ons are left as
+   * they are, so nothing but the delivery line can move. Then
+   * {@link OrderMoneyRepository.recompute} re-derives `balanceKop` and the
+   * payment status from the ledger: an order already paid for its goods now
+   * owes the delivery, and the card shows it as a debt.
+   */
+  private async updateDetailsWithShipping(
+    orderId: string,
+    data: Prisma.OrderUncheckedUpdateManyInput,
+    guard: Prisma.OrderWhereInput,
+    shippingCost: number,
+    changedBy: string | null,
+  ): Promise<OrderWithItems> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.money.lockOrder(tx, orderId);
+      const current = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        select: { total: true, shippingCost: true },
+      });
+      const shipping = new Prisma.Decimal(shippingCost.toString());
+      const total = new Prisma.Decimal(current.total.toString())
+        .minus(new Prisma.Decimal(current.shippingCost.toString()))
+        .plus(shipping);
+
+      const { count } = await tx.order.updateMany({
+        where: { id: orderId, ...guard },
+        data: { ...data, shippingCost: shipping, total },
+      });
+      if (count === 0) {
+        throw staleOrderError();
+      }
+
+      await this.money.recompute(tx, orderId, changedBy);
+
+      return tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: ADMIN_ORDERS_INCLUDE,
+      });
     }) as Promise<OrderWithItems>;
   }
 

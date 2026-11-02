@@ -179,6 +179,11 @@ export const DeliveryOrderErrorCode = {
   PICKUP_POINT_REQUIRED: 'DELIVERY_PICKUP_POINT_REQUIRED',
   /** The named pickup point does not exist or has been deactivated. */
   PICKUP_POINT_UNAVAILABLE: 'DELIVERY_PICKUP_POINT_UNAVAILABLE',
+  /**
+   * An operator-agreed shipping cost on a method that has its own price
+   * (TASK-1019): only «Інша доставка» is quoted by hand.
+   */
+  SHIPPING_COST_NOT_ALLOWED: 'DELIVERY_SHIPPING_COST_NOT_ALLOWED',
 } as const;
 
 export type DeliveryOrderErrorCode =
@@ -234,9 +239,8 @@ export function manualOrderDeliveryPaymentNotAllowedError(
     error: DeliveryOrderErrorCode.PAYMENT_NOT_ALLOWED,
     message:
       method === DeliveryMethod.OTHER
-        ? 'Для адреси без міста зі списку Нової Пошти вартість доставки ще не відома, тому ' +
-          'онлайн-оплата й оплата частинами недоступні — оберіть оплату при отриманні або ' +
-          'вкажіть місто Нової Пошти'
+        ? 'Для «Іншої доставки» онлайн-оплата й оплата частинами недоступні — оберіть оплату ' +
+          'при отриманні чи переказ на рахунок ФОП, або інший спосіб доставки'
         : 'Обраний спосіб оплати недоступний для цього способу доставки — оберіть інший',
   });
 }
@@ -254,6 +258,16 @@ export function deliveryPickupPointRequiredError(): BadRequestException {
   return new BadRequestException({
     error: DeliveryOrderErrorCode.PICKUP_POINT_REQUIRED,
     message: 'Оберіть пункт самовивозу',
+  });
+}
+
+/** 400 for an agreed shipping cost on anything but OTHER (TASK-1019). */
+export function deliveryShippingCostNotAllowedError(): BadRequestException {
+  return new BadRequestException({
+    error: DeliveryOrderErrorCode.SHIPPING_COST_NOT_ALLOWED,
+    message:
+      'Вартість доставки вводиться вручну лише для «Іншої доставки» — для інших способів її ' +
+      'визначає магазин',
   });
 }
 
