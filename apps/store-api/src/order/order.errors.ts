@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { DeliveryMethod } from '@prisma/client';
-import type { OrderStatus, PaymentStatus } from '@prisma/client';
+import type { OrderStatus } from '@prisma/client';
+import type { PayoutRefusal, ReceiptRefusal } from './order-money';
 
 /**
  * Stable, machine-readable error codes for order-lifecycle conflicts (TASK-332).
@@ -21,24 +22,8 @@ export const OrderErrorCode = {
   /** The order changed after the client read it — a lost update (edge case E-11). */
   STALE: 'ORDER_STALE',
   /**
-   * The requested PAYMENT status is not reachable from the order's current one
-   * (TASK-431). A separate code from {@link TRANSITION_INVALID} because the two
-   * are repaired by different actions and by different pickers: this one means
-   * "the money cannot have moved that way", and the payment select — not the
-   * status select — is the control that must refetch its options.
-   */
-  PAYMENT_TRANSITION_INVALID: 'ORDER_PAYMENT_TRANSITION_INVALID',
-  /**
-   * A FULL refund was requested while the order is still live (TASK-431, B-1 §1).
-   * Distinct from {@link PAYMENT_TRANSITION_INVALID} because nothing is wrong
-   * with the payment move itself — the operator simply has one more thing to do
-   * first (cancel the order), and a message that says so is the difference
-   * between "try something else" and "do this, then this".
-   */
-  REFUND_REQUIRES_CLOSED_ORDER: 'ORDER_REFUND_REQUIRES_CLOSED_ORDER',
-  /**
-   * The same cross-rule as {@link REFUND_REQUIRES_CLOSED_ORDER}, refused from the
-   * other side: the ORDER was asked to return to a live status while its payment
+   * «Live order + fully refunded money» (B-1 §1), refused from the ORDER
+   * side: the order was asked to return to a live status while its payment
    * is recorded as fully REFUNDED (review of plan 180).
    *
    * A separate code because the repair is a different one. There the operator
@@ -48,12 +33,39 @@ export const OrderErrorCode = {
    */
   REVIVE_REFUNDED_PAYMENT: 'ORDER_REVIVE_REFUNDED_PAYMENT',
   /**
-   * A REFUNDED mark the PROVIDER reported (or no REFUNDED mark on record at
-   * all) was asked to be corrected (TASK-620, decision B-11 №7). Only an
-   * operator's own mistaken mark may be lifted: a provider `reversed` is a fact
-   * about where the money is, and correcting it would make the ledger lie.
+   * A payout (or the reversal of a receipt) would leave more refunded than paid
+   * (TASK-951, R2): the ceiling is `paid − refunded` across EVERY kind, read under
+   * the order-row lock.
    */
-  PAYMENT_CORRECTION_PROVIDER_REFUND: 'ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND',
+  MONEY_REFUND_EXCEEDS_PAID: 'ORDER_MONEY_REFUND_EXCEEDS_PAID',
+  /** The ledger entry cannot be reversed (сторно) — see `canReverse`. */
+  MONEY_REVERSAL_REFUSED: 'ORDER_MONEY_REVERSAL_REFUSED',
+  /** A malformed ledger write: non-integer/non-positive amount, missing reason. */
+  MONEY_ENTRY_INVALID: 'ORDER_MONEY_ENTRY_INVALID',
+  /**
+   * A receipt of a kind this order's delivery does not admit (R2 A3, TASK-1807:
+   * no «Гроші від НП» on a pickup) — or LIQPAY_PAYMENT, which only LiqPay writes.
+   */
+  MONEY_IN_KIND_NOT_ALLOWED: 'ORDER_MONEY_IN_KIND_NOT_ALLOWED',
+  /** A receipt beyond what is owed, without a reason (R2 A3). */
+  MONEY_OVERPAYMENT_REASON_REQUIRED: 'ORDER_MONEY_OVERPAYMENT_REASON_REQUIRED',
+  /**
+   * Money out WITHOUT a return (a cancelled order, an overpayment), with no
+   * reason: nothing else in the journal says why it went (R2 pre-merge review).
+   */
+  MONEY_PAYOUT_REASON_REQUIRED: 'ORDER_MONEY_PAYOUT_REASON_REQUIRED',
+  /** A payout on an order that holds no money (`paid − refunded = 0`) (R2 A3, TASK-2046). */
+  MONEY_NOTHING_PAID: 'ORDER_MONEY_NOTHING_PAID',
+  /** A payout without a return on a live order — cancel it first (R2 A3). */
+  MONEY_ORDER_LIVE: 'ORDER_MONEY_ORDER_LIVE',
+  /** A payout without a return on a shipped/delivered order — open a return (R2 A3). */
+  MONEY_RETURN_REQUIRED: 'ORDER_MONEY_RETURN_REQUIRED',
+  /** A payout for a return whose decision is not REFUND (R2 A3). */
+  MONEY_RETURN_NOT_REFUND: 'ORDER_MONEY_RETURN_NOT_REFUND',
+  /** A payout for a return whose goods are not back (not RECEIVED) (R2 A3). */
+  MONEY_RETURN_NOT_RECEIVED: 'ORDER_MONEY_RETURN_NOT_RECEIVED',
+  /** Only a live REQUESTED LiqPay refund can be voided (R2 A3, TASK-2337). */
+  MONEY_VOID_REFUSED: 'ORDER_MONEY_VOID_REFUSED',
 } as const;
 
 export type OrderErrorCode = (typeof OrderErrorCode)[keyof typeof OrderErrorCode];
@@ -72,48 +84,12 @@ export function invalidTransitionError(from: OrderStatus, to: OrderStatus): Conf
 }
 
 /**
- * 409 for a payment move the payment state machine forbids (TASK-431).
- *
- * Raised on the ADMIN door only. The webhook and the reconcile worker ask the
- * same table and get the same answer, but they must never see this exception: a
- * 409 handed to a payment provider is not a refusal, it is a retry every few
- * minutes forever. They ignore the move and record that they did — see
- * `planPaymentApplication`.
- */
-export function invalidPaymentTransitionError(
-  from: PaymentStatus,
-  to: PaymentStatus,
-): ConflictException {
-  return new ConflictException({
-    error: OrderErrorCode.PAYMENT_TRANSITION_INVALID,
-    message: `Order payment status cannot move from ${from} to ${to}`,
-  });
-}
-
-/**
- * 409 for a full refund on an order that is still live (TASK-431).
- *
- * The cross-rule the payment table cannot express: marking every hryvnia
- * returned while the order still says DELIVERED describes a shop that gave back
- * the money AND the goods. A PARTIAL refund is deliberately NOT caught here —
- * refunding one line of a delivered order is an ordinary Tuesday.
- */
-export function refundRequiresClosedOrderError(status: OrderStatus): ConflictException {
-  return new ConflictException({
-    error: OrderErrorCode.REFUND_REQUIRES_CLOSED_ORDER,
-    message:
-      `A full refund needs the order cancelled or refunded first; it is ${status}. ` +
-      'Use PARTIALLY_REFUNDED to record a partial return of money.',
-  });
-}
-
-/**
  * 409 for reviving an order whose money is already back with the customer
  * (review of plan 180).
  *
- * {@link refundRequiresClosedOrderError} guards the pair «live order + fully
- * refunded money» from the payment side. It was reachable from the other side
- * anyway: CANCELLED + REFUNDED is an everyday, legal state, and
+ * The money ledger guards the pair «live order + fully refunded money» from the
+ * payment side (a live order is cancelled before a payout, R2 A3). It was
+ * reachable from the other side anyway: CANCELLED + REFUNDED is an everyday, legal state, and
  * `ORDER_TRANSITIONS[CANCELLED]` contains the pre-shipment statuses, so one
  * ordinary revive produced a PROCESSING order that will be picked and shipped
  * with every hryvnia recorded as returned.
@@ -128,21 +104,6 @@ export function reviveRefundedPaymentError(to: OrderStatus): ConflictException {
     message:
       `This order cannot become ${to}: its payment is recorded as fully REFUNDED. ` +
       'The money is back with the customer — create a new order instead.',
-  });
-}
-
-/**
- * 409 for correcting a REFUNDED mark that no operator set (TASK-620).
- *
- * The LiqPay `reversed` callback writes REFUNDED with `changedBy = null`; that
- * mark is the provider telling us the money went back, and nobody lifts it.
- */
-export function paymentCorrectionProviderRefundError(): ConflictException {
-  return new ConflictException({
-    error: OrderErrorCode.PAYMENT_CORRECTION_PROVIDER_REFUND,
-    message:
-      'This REFUNDED mark was not set by an operator (the payment provider reported it), ' +
-      'so it cannot be corrected',
   });
 }
 
@@ -301,5 +262,119 @@ export function deliveryPickupPointUnavailableError(): BadRequestException {
   return new BadRequestException({
     error: DeliveryOrderErrorCode.PICKUP_POINT_UNAVAILABLE,
     message: 'Обраний пункт самовивозу більше недоступний — оберіть інший',
+  });
+}
+
+/**
+ * 409 for a payout above what is still held (TASK-951, R2). `availableKop` is
+ * `paid − refunded` read under the order-row lock, across every kind of entry.
+ */
+export function moneyRefundExceedsPaidError(
+  requestedKop: number,
+  availableKop: number,
+): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.MONEY_REFUND_EXCEEDS_PAID,
+    message: `Cannot pay out ${requestedKop} kop: only ${availableKop} kop paid and not yet refunded`,
+  });
+}
+
+/** 409 for a ledger entry that may not be reversed (R2, `canReverse`). */
+export function moneyReversalRefusedError(reason: string): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.MONEY_REVERSAL_REFUSED,
+    message: `This money entry cannot be reversed: ${reason}`,
+  });
+}
+
+/** 400 for a malformed ledger write (R2). */
+export function moneyEntryInvalidError(message: string): BadRequestException {
+  return new BadRequestException({ error: OrderErrorCode.MONEY_ENTRY_INVALID, message });
+}
+
+/** 400 for money out without a return and without a reason (R2 pre-merge review). */
+export function moneyPayoutReasonRequiredError(): BadRequestException {
+  return new BadRequestException({
+    error: OrderErrorCode.MONEY_PAYOUT_REASON_REQUIRED,
+    message: 'Money going back without a return needs a reason',
+  });
+}
+
+/** 400 for a receipt the operator may not record as asked (R2 A3, `assessReceipt`). */
+export function moneyReceiptRefusedError(refusal: ReceiptRefusal): BadRequestException {
+  return refusal === 'IN_KIND_NOT_ALLOWED'
+    ? new BadRequestException({
+        error: OrderErrorCode.MONEY_IN_KIND_NOT_ALLOWED,
+        message: "This kind of receipt does not fit the order's delivery method",
+      })
+    : new BadRequestException({
+        error: OrderErrorCode.MONEY_OVERPAYMENT_REASON_REQUIRED,
+        message: 'This receipt is more than the order still owes — say why',
+      });
+}
+
+const PAYOUT_REFUSAL: Readonly<
+  Record<Exclude<PayoutRefusal, 'EXCEEDS'>, [OrderErrorCode, string]>
+> = {
+  NOTHING_PAID: [
+    OrderErrorCode.MONEY_NOTHING_PAID,
+    'Nothing was paid on this order (or it was all paid back) — there is no money to return',
+  ],
+  ORDER_LIVE: [
+    OrderErrorCode.MONEY_ORDER_LIVE,
+    'The order is still live — cancel it first, then pay the money back',
+  ],
+  RETURN_REQUIRED: [
+    OrderErrorCode.MONEY_RETURN_REQUIRED,
+    'Money for shipped goods goes back through a return — open one for the returned lines',
+  ],
+  RETURN_NOT_REFUND: [
+    OrderErrorCode.MONEY_RETURN_NOT_REFUND,
+    'Money goes back only on a return decided as a refund',
+  ],
+  RETURN_NOT_RECEIVED: [
+    OrderErrorCode.MONEY_RETURN_NOT_RECEIVED,
+    'The returned goods are not received yet — mark them received first',
+  ],
+};
+
+/**
+ * 409 for a payout the money rules refuse (R2 A3, `assessPayout`). Over the
+ * ceiling it is the TASK-951 code, with the ceiling in the message.
+ */
+export function moneyPayoutRefusedError(
+  refusal: PayoutRefusal,
+  requestedKop: number,
+  availableKop: number,
+): ConflictException {
+  if (refusal === 'EXCEEDS') {
+    return moneyRefundExceedsPaidError(requestedKop, availableKop);
+  }
+  const [error, message] = PAYOUT_REFUSAL[refusal];
+  return new ConflictException({ error, message });
+}
+
+/** 409 for voiding anything but a live REQUESTED LiqPay refund (R2 A3, TASK-2337). */
+export function moneyVoidRefusedError(): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.MONEY_VOID_REFUSED,
+    message: 'Only a LiqPay refund still awaiting confirmation can be voided',
+  });
+}
+
+/**
+ * 409 for reversing a receipt the payouts already made depend on (R2): without
+ * it more would stand refunded than paid. Same code as a payout over the ceiling
+ * — the repair is the same (reverse the payout first).
+ */
+export function moneyReceiptReversalBelowRefundedError(
+  receiptKop: number,
+  refundedKop: number,
+): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.MONEY_REFUND_EXCEEDS_PAID,
+    message:
+      `Cannot reverse a ${receiptKop} kop receipt: ${refundedKop} kop already paid back ` +
+      'would exceed what is left paid. Reverse the payout first.',
   });
 }

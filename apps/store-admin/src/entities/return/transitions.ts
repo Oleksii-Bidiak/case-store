@@ -95,21 +95,13 @@ export function availableDecisions(status: string): string[] {
 /**
  * The one status step `PATCH /admin/returns/:id` still takes from here, or
  * `null` (TASK-2044). The PATCH refuses APPROVED and REJECTED
- * (`RETURN_USE_DECISION_ENDPOINT`), and RECEIVED → REFUNDED needs a REFUND
- * decision: a repair or a replacement never ends in «Гроші повернуто».
+ * (`RETURN_USE_DECISION_ENDPOINT`) and, since R2 (TASK-2046), REFUNDED too
+ * (`RETURN_REFUND_DERIVED`): a REFUND return becomes REFUNDED when its payouts
+ * on the order ledger cover what is owed, and goes back to RECEIVED when one
+ * is reversed. «Товар отримано» is the only manual step left.
  */
-export function nextResolveStep(
-  status: string,
-  decision: string | null,
-): string | null {
-  if (status === ReturnEntityStatus.APPROVED) {
-    return ReturnEntityStatus.RECEIVED;
-  }
-  if (
-    status === ReturnEntityStatus.RECEIVED &&
-    decision === ReturnDecision.REFUND
-  ) {
-    return ReturnEntityStatus.REFUNDED;
-  }
-  return null;
+export function nextResolveStep(status: string): string | null {
+  return status === ReturnEntityStatus.APPROVED
+    ? ReturnEntityStatus.RECEIVED
+    : null;
 }

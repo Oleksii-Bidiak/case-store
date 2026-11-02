@@ -17,8 +17,12 @@ export const RETURN_ERROR_CODE = {
   TRANSITION_INVALID: "RETURN_TRANSITION_INVALID",
   ALREADY_RESTOCKED: "RETURN_ALREADY_RESTOCKED",
   RESTOCK_REQUIRES_RECEIVED: "RETURN_RESTOCK_REQUIRES_RECEIVED",
-  REFUND_EXCEEDS_RETURNED_VALUE: "RETURN_REFUND_EXCEEDS_RETURNED_VALUE",
-  REFUND_EXCEEDS_ORDER_BALANCE: "RETURN_REFUND_EXCEEDS_ORDER_BALANCE",
+  // R2 A3 (TASK-2046): the money left the PATCH. REFUNDED follows from the
+  // payouts on the order ledger, and «До повернення» is lowered on its own.
+  REFUND_DERIVED: "RETURN_REFUND_DERIVED",
+  CREDIT_NOT_REFUND: "RETURN_CREDIT_NOT_REFUND",
+  CREDIT_ABOVE_COMPUTED: "RETURN_CREDIT_ABOVE_COMPUTED",
+  CREDIT_BELOW_PAID_OUT: "RETURN_CREDIT_BELOW_PAID_OUT",
   DECISION_REASON_REQUIRED: "RETURN_DECISION_REASON_REQUIRED",
   DECISION_LOCKED: "RETURN_DECISION_LOCKED",
   DECISION_UNCHANGED: "RETURN_DECISION_UNCHANGED",
@@ -88,14 +92,26 @@ const REFUSALS: Record<
     message: () => d.refusalRestockRequiresReceived,
     refetch: true,
   },
-  // The amount is wrong, not the screen — the operator fixes the number.
-  RETURN_REFUND_EXCEEDS_RETURNED_VALUE: {
-    message: () => d.resolveRefundExceedsReturnedValue(),
-    refetch: false,
+  // The page offered «Гроші повернуто» from a stale state — the return is
+  // REFUNDED by its payouts now, never by a status write.
+  RETURN_REFUND_DERIVED: {
+    message: () => d.refusalRefundDerived,
+    refetch: true,
   },
-  RETURN_REFUND_EXCEEDS_ORDER_BALANCE: {
-    message: () => d.resolveRefundExceedsOrderBalance(),
-    refetch: false,
+  // «Зменшити» on a return whose decision changed meanwhile.
+  RETURN_CREDIT_NOT_REFUND: {
+    message: () => d.refusalCreditNotRefund,
+    refetch: true,
+  },
+  // The computed value moved under the dialog (lines changed) — re-read it.
+  RETURN_CREDIT_ABOVE_COMPUTED: {
+    message: () => d.refusalCreditAboveComputed,
+    refetch: true,
+  },
+  // A payout landed meanwhile: the floor is higher than the dialog knew.
+  RETURN_CREDIT_BELOW_PAID_OUT: {
+    message: () => d.refusalCreditBelowPaidOut,
+    refetch: true,
   },
   RETURN_DECISION_REASON_REQUIRED: {
     message: () => d.decideReasonRequired,

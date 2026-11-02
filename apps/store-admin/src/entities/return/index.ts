@@ -7,6 +7,8 @@ export {
   useAdminReturnControllerFindAll,
   useAdminReturnControllerFindById,
   useAdminReturnControllerResolve,
+  // R2 A3 (TASK-2046): «Зменшити» the amount owed back — reduce-only, a reason.
+  useAdminReturnControllerReduceCredit,
   getAdminReturnControllerFindAllQueryKey,
   getAdminReturnControllerFindByIdQueryKey,
   // TASK-469 — the admin door onto a return, hung off the ORDER path. The read
@@ -39,6 +41,7 @@ export type {
   ReturnRepairStepEntity,
   AddRepairStepDto,
   ResolveReturnDto,
+  ReduceReturnCreditDto,
   CreateReturnDto,
   ReturnItemDto,
   AdminReturnControllerFindAllParams,
@@ -67,6 +70,8 @@ export {
   type ReturnErrorCode,
   type ReturnRefusal,
 } from "./model/return-error";
+// R2 (TASK-2046): what the lines coming back are worth, in integer kopecks.
+export { returnLinesValueKop } from "./model/return-value";
 // TASK-1963 — what is still returnable on an order (REJECTED frees units).
 export {
   clampQuantity,

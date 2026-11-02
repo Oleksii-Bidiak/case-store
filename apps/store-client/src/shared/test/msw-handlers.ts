@@ -115,6 +115,12 @@ export function makeOrder(overrides: Partial<OrderEntity> = {}): {
       userId: "user-1",
       status: "PENDING",
       paymentStatus: "PENDING",
+      // R2 ledger totals (integer kopecks) — nothing paid yet.
+      paidKop: 0,
+      refundedKop: 0,
+      returnCreditKop: 0,
+      balanceKop: 99_800,
+      refundedAfterCancel: false,
       subtotal: "998.00",
       addonsTotal: "0.00",
       discount: "0.00",

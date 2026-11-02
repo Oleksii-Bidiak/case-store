@@ -44,6 +44,7 @@ export function paymentStatusBadgeVariant(status: string): BadgeVariant {
     case OrderEntityPaymentStatus.FAILED:
     case OrderEntityPaymentStatus.REFUNDED:
       return "destructive";
+    case OrderEntityPaymentStatus.PARTIALLY_PAID:
     case OrderEntityPaymentStatus.PARTIALLY_REFUNDED:
     case OrderEntityPaymentStatus.PENDING:
     default:

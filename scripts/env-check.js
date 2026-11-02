@@ -1054,6 +1054,26 @@ const VARS = [
     },
   },
   {
+    name: "PAYMENT_REFUND_POLL_MAX_AGE_DAYS",
+    group: "payments",
+    need: "optional",
+    compose: "none",
+    services: [],
+    buildArgs: [],
+    example: false,
+    validated: "optional",
+    // Reader: payment/payment-reconcile.worker.ts (wave R2, TASK-1500).
+    code: "used",
+    effect:
+      "Порожній → `7`. Скільки днів крон звірки опитує LiqPay про повернення, що чекає підтвердження. Старші не опитуються: лог `payment.reconcile.refunds_stale`, оператор анулює запит в адмінці.",
+    howTo: "Залишити порожнім; змінювати лише якщо LiqPay підтверджує повернення довше за тиждень.",
+    gap: {
+      reason:
+        "not threaded through docker-compose.prod/staging or .env.production.example: the default (7 days) is the intended behaviour, so nothing is lost until someone needs a different window (agents cannot edit .env* files)",
+      task: "TASK-1500",
+    },
+  },
+  {
     name: "GUEST_ORDER_TOKEN_TTL_DAYS",
     group: "payments",
     need: "optional",

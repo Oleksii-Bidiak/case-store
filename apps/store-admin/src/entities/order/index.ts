@@ -7,13 +7,9 @@ export {
   useAdminOrderControllerFindAll,
   useAdminOrderControllerFindById,
   useAdminOrderControllerUpdateStatus,
-  useAdminOrderControllerUpdatePaymentStatus,
   useAdminOrderControllerGetHistory,
   // TASK-332: the server's own list of legal next statuses + the lock token.
   useAdminOrderControllerGetAllowedTransitions,
-  // TASK-431: the same, for the PAYMENT status — already filtered by the
-  // cross-rule that a full refund needs a cancelled order.
-  useAdminOrderControllerGetAllowedPaymentTransitions,
   // TASK-335 / 336 / 341: waybill, internal notes, pre-shipment address edit.
   useAdminOrderControllerUpdateDetails,
   // TASK-341: operator-created (phone) orders.
@@ -22,13 +18,10 @@ export {
   // with no query twin on purpose — the server keeps only the token's hash, so
   // "read the current link" is a question nothing can answer.
   useAdminOrderControllerIssueAccessLink,
-  // TASK-620: lift an operator's mistaken «Кошти повернено» (payments:correct).
-  useAdminOrderControllerCorrectPaymentStatus,
   getAdminOrderControllerFindAllQueryKey,
   getAdminOrderControllerFindByIdQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
-  getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey,
   // Status / payment enum value objects (used for filters and badge mapping).
   OrderEntityStatus,
   OrderEntityPaymentStatus,
@@ -40,12 +33,25 @@ export {
   OrderStatusHistoryEntityChangeType,
   // TASK-341: how the customer will pay on an operator-created order.
   CreateManualOrderDtoPaymentMethod,
-  // TASK-620: the two states a mistaken REFUNDED mark may be corrected to.
-  PaymentCorrectionTarget,
   // TASK-648: how the order travels, and the per-method counts the registry's
   // «Спосіб доставки» filter shows (same query as the list, minus the method).
   OrderEntityDeliveryMethod,
   useAdminOrderControllerFacets,
+  // History-row flags — the money block reads two of them as chips (R2).
+  OrderStatusHistoryEntityNote,
+  // R2 (TASK-2047): the order money journal — the one place money is read and
+  // moved. Every write answers with the fresh GET payload.
+  useAdminOrderMoneyControllerGet,
+  getAdminOrderMoneyControllerGetQueryKey,
+  useAdminOrderMoneyControllerRecordReceipt,
+  useAdminOrderMoneyControllerRecordPayout,
+  useAdminOrderMoneyControllerReverseEntry,
+  useAdminOrderMoneyControllerVoidEntry,
+  MoneyDirection,
+  MoneyEntryKind,
+  MoneyInKind,
+  MoneyOutKind,
+  MoneyProviderState,
 } from "@/shared/api";
 
 export type {
@@ -53,8 +59,6 @@ export type {
   OrderItemEntity,
   OrderStatusHistoryEntity,
   UpdateOrderStatusDto,
-  UpdateOrderPaymentStatusDto,
-  CorrectPaymentStatusDto,
   UpdateOrderDetailsDto,
   CreateManualOrderDto,
   ManualOrderItemDto,
@@ -66,8 +70,6 @@ export type {
   AdminOrderHistoryResponse,
   AdminOrderAllowedTransitions,
   AdminOrderAllowedTransitionsResponse,
-  AdminOrderAllowedPaymentTransitions,
-  AdminOrderAllowedPaymentTransitionsResponse,
   // TASK-484: the one-time buyer link — on the create response's `meta`, and as
   // the body of the issue-a-new-one endpoint.
   AdminOrderAccessLink,
@@ -76,6 +78,15 @@ export type {
   // TASK-648: the typed delivery snapshot and the facets query.
   OrderShippingAddressEntity,
   AdminOrderControllerFacetsParams,
+  // R2: the money payload and its write bodies.
+  OrderMoneyEntity,
+  OrderMoneyEntryEntity,
+  OrderMoneyRefundablePaymentEntity,
+  OrderMoneyReturnEntity,
+  AdminOrderMoneyResponse,
+  RecordMoneyInDto,
+  RecordMoneyOutDto,
+  MoneyCorrectionDto,
 } from "@/shared/api";
 
 export {
@@ -83,7 +94,11 @@ export {
   paymentStatusBadgeVariant,
 } from "./status-badge";
 
-export { orderStatusLabel, paymentStatusLabel } from "./status-label";
+export {
+  orderHeadlineStatusLabel,
+  orderStatusLabel,
+  paymentStatusLabel,
+} from "./status-label";
 
 export { isPreShipmentStatus } from "./is-pre-shipment-status";
 
@@ -111,3 +126,23 @@ export {
   isShippingCostPending,
   orderDeliveryMethod,
 } from "./lib/order-delivery";
+
+// R2 (TASK-1967 / 1807 / 2047): how the money journal reads, and what a refused
+// money write means to an operator.
+export {
+  checkMoneyAmount,
+  isPendingProviderRefund,
+  isReversibleEntry,
+  manualInKinds,
+  moneyDueText,
+  moneyKindLabel,
+  payoutKindLabel,
+  receiptKindLabel,
+  returnPayoutDueKop,
+} from "./lib/order-money";
+export {
+  ORDER_MONEY_ERROR,
+  isOrderStaleError,
+  moneyRefusalNeedsRefetch,
+  moneyWriteErrorMessage,
+} from "./lib/order-money-error";

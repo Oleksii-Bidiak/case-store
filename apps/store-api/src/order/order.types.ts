@@ -12,6 +12,7 @@ import type { CartWithItems } from '../cart';
 import type { IssuedSession } from '../auth';
 import type { AddressDto } from './dto';
 import type { OrderEntity } from './entities/order.entity';
+import type { LockedOrder } from './order-money.repository';
 
 /**
  * A single order-status-history audit row as returned by the repository
@@ -259,19 +260,22 @@ export interface OrderWithItems {
     lastName: string | null;
   };
   /**
-   * Refunded amounts of this order's return requests (TASK-472), selected only by
-   * the admin read paths via `ADMIN_ORDERS_INCLUDE`.
-   *
-   * Optional and deliberately thin: the entity needs a SUM, not the returns. An
-   * absent array means "this read did not ask", which is why
-   * {@link OrderEntity.fromPrisma} omits `refundedTotal` rather than reporting a
-   * zero it did not measure — a zero would read as "nothing was refunded" on
-   * every customer-facing response.
-   *
-   * `refundedAmount` is null until a return is actually paid out, so nulls are
-   * skipped rather than counted.
+   * The order's returns, joined only by the admin read paths
+   * (`ADMIN_ORDERS_INCLUDE`) — a marker that this is an admin read, so
+   * {@link OrderEntity.fromPrisma} reports `refundedTotal` (TASK-472). The
+   * amount itself comes from the ledger total `refundedKop` since R2 A4; the
+   * legacy `Return.refundedAmount` is no longer read.
    */
-  returns?: Array<{ refundedAmount: { toString(): string } | null }>;
+  returns?: ReadonlyArray<object>;
+  /**
+   * The order money ledger's totals (R2, TASK-2047), integer kopecks, written
+   * only by `OrderMoneyRepository.recompute`. Optional only for fixtures that
+   * predate the columns — absent reads as 0.
+   */
+  paidKop?: number;
+  refundedKop?: number;
+  returnCreditKop?: number;
+  balanceKop?: number;
 }
 
 /**
@@ -427,6 +431,33 @@ export interface PaymentWithOrderRow {
   };
 }
 
+/** A LiqPay refund the shop is about to request (TASK-1500 / TASK-2047, R2 A2). */
+export interface ProviderRefundRequestInput {
+  orderId: string;
+  paymentId: string;
+  /** Integer kopecks; omitted = everything still refundable on the attempt. */
+  amountKop?: number;
+  /** The operator; null for a system request. */
+  actorId: string | null;
+  /** R2 A3: the return this payout settles — its status is re-derived. */
+  returnId?: string | null;
+  /** R2 A3: the operator's note on the entry. */
+  reason?: string | null;
+  /**
+   * R2 A3: the operator's payout rules, run right after the order-row lock and
+   * before the ceiling read; throwing rolls back and nothing is written.
+   */
+  guard?: (tx: Prisma.TransactionClient, order: LockedOrder) => Promise<void>;
+}
+
+/**
+ * What the ledger answered: the REQUESTED entry it wrote (counted from now on),
+ * or — writing nothing — that the amount is over the ceiling.
+ */
+export type ProviderRefundRequest =
+  | { status: 'requested'; entryId: string; amountKop: number }
+  | { status: 'exceeds'; availableKop: number };
+
 /**
  * A fully-decided payment application, ready to be written (TASK-330).
  *
@@ -456,25 +487,18 @@ export interface PaymentApplyPlan {
   /** Stamped on the attempt when it reached a final, money-moved state. */
   settledAt?: Date | null;
   /**
-   * Order payment-status move. Omitted when the event changes only the attempt
-   * (e.g. a late failure for a superseded attempt on an already-paid order).
+   * The attempt's new status feeds the derived payment status (R2 review): a
+   * FAILED attempt that is the order's LAST one reads as FAILED while nothing is
+   * paid. The repository writes the attempt, then runs
+   * `OrderMoneyRepository.recompute` in the same transaction — no plan carries a
+   * hand-built payment status any more, so a late failure of an OLDER attempt
+   * cannot mark the order FAILED while a newer one is still PENDING.
    */
-  paymentStatusChange?: {
-    from: PaymentStatus;
-    to: PaymentStatus;
-    /**
-     * Written onto the PAYMENT_STATUS history row when the move is one the shop
-     * recorded but did not otherwise act on (TASK-619: a success on a CANCELLED
-     * order → `PAID_AFTER_CANCEL`). Omitted for an ordinary move.
-     */
-    note?: OrderHistoryNote;
-  };
+  rederivePaymentStatus?: true;
   /**
    * An order payment-status move the state machine refused (TASK-431).
    *
-   * Mutually exclusive with {@link paymentStatusChange}: exactly one of the two
-   * can be set, because either the move happened or it did not. When this is set
-   * the order's columns are left untouched and the repository writes ONE
+   * When this is set the order's columns are left untouched and the repository writes ONE
    * `OrderStatusHistory` row recording that the payment status stayed where it
    * was (`current → current`) at the moment the event arrived.
    *
@@ -498,6 +522,26 @@ export interface PaymentApplyPlan {
     /** `table` — PAYMENT_TRANSITIONS; `crossRule` — B-1 §1, the order is live. */
     reason: 'table' | 'crossRule';
   };
+  /**
+   * The money a successful attempt brought in (TASK-2047 / TASK-1500, R2 A2):
+   * written as ONE `LIQPAY_PAYMENT` ledger entry keyed `(paymentId, 'success')`,
+   * after which `OrderMoneyRepository.recompute` derives the payment status and
+   * writes its history row. `note` rides on that history row (TASK-619:
+   * `PAID_AFTER_CANCEL`).
+   */
+  receipt?: { amountKop: number; occurredAt: Date; note?: OrderHistoryNote };
+  /**
+   * A `reversed` callback / status poll (TASK-1500, R2 A2): confirm the oldest
+   * REQUESTED `LIQPAY_REFUND` of this attempt, or — when the shop never asked
+   * for one (a refund made in the LiqPay cabinet), or the provider reported an
+   * amount other than that request's (TASK-2336 mitigation) — write no money
+   * and leave a `PROVIDER_REFUND_UNMATCHED` history row. It carries no order
+   * move: the order's REFUNDED is derived by that recompute (TASK-1969, R2 A4).
+   *
+   * `providerAmountKop` — the amount the event reported, integer kopecks; null
+   * when it reported none.
+   */
+  providerRefund?: { providerAmountKop: number | null };
   /** Set when money settled; null leaves the column untouched. */
   paidAt?: Date | null;
   /**

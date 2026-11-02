@@ -11,7 +11,7 @@ const COLUMNS: ReadonlyArray<{ label: string; mobile: boolean }> = [
   { label: d.colReason, mobile: true },
   { label: d.colItems, mobile: false },
   { label: d.colAmount, mobile: true },
-  { label: d.colRefunded, mobile: false },
+  { label: d.colCredit, mobile: false },
   { label: d.colStatus, mobile: true },
   { label: d.colRequested, mobile: false },
 ];

@@ -10,6 +10,10 @@ import { ReportRange } from './report-period';
  * a refund of its own day. Dropping the refunded statuses would let a refund in
  * September silently rewrite August; keeping only PAID (the dashboard before
  * TASK-694) made an order with one line returned vanish from revenue whole.
+ *
+ * PARTIALLY_PAID (R2, derived from the money ledger) is deliberately NOT here:
+ * a prepaid order is not a sale until the rest arrives (R2 assumption 3) —
+ * pinned by `analytics-sales.repository.int-spec.ts` and the products report's.
  */
 export const SALES_BASE_STATUSES = Prisma.sql`('PAID', 'PARTIALLY_REFUNDED', 'REFUNDED')`;
 

@@ -92,14 +92,16 @@ export const PERMISSIONS = [
   { key: 'orders:write', zone: PERMISSION_ZONES.ORDERS, label: 'Змінювати статуси та ТТН' },
   { key: 'payments:read', zone: PERMISSION_ZONES.ORDERS, label: 'Бачити платежі' },
   { key: 'payments:refund', zone: PERMISSION_ZONES.ORDERS, label: 'Повертати гроші' },
-  // TASK-620 (рішення B-11 №7): lifting an operator's mistaken «Кошти повернено»
-  // back to PAID / PARTIALLY_REFUNDED. NO BACKFILL on purpose: on deploy only the
-  // owner and admins (who hold every key by level) can do it, until the owner
-  // grants it to someone on the permissions screen.
+  // TASK-620 introduced the key for lifting a mistaken «Кошти повернено» label.
+  // Since R2 there is no label to lift: the key guards the ledger corrections —
+  // a reversal (сторно) of a receipt or payout and the void of a stuck LiqPay
+  // refund request (`admin-order-money.controller.ts`). NO BACKFILL on purpose:
+  // on deploy only the owner and admins (who hold every key by level) can do it,
+  // until the owner grants it to someone on the permissions screen.
   {
     key: 'payments:correct',
     zone: PERMISSION_ZONES.ORDERS,
-    label: 'Виправляти помилкову мітку «Кошти повернено»',
+    label: 'Сторнувати й анулювати записи оплати',
   },
   { key: 'returns:read', zone: PERMISSION_ZONES.ORDERS, label: 'Переглядати повернення' },
   { key: 'returns:write', zone: PERMISSION_ZONES.ORDERS, label: 'Опрацьовувати повернення' },

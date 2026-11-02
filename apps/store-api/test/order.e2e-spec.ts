@@ -59,7 +59,6 @@ describe('OrderController (e2e)', () => {
     updateStatus: jest.fn(),
     cancelAndRestock: jest.fn(),
     reviveAndReserve: jest.fn(),
-    updatePaymentStatus: jest.fn(),
     findHistoryByOrderId: jest.fn(),
     // TASK-338: guest order access by emailed token, and claiming on registration.
     findByAccessTokenHash: jest.fn(),
@@ -1151,6 +1150,37 @@ describe('OrderController (e2e)', () => {
       expect(response.body.data.id).toBe('order-e2e-1');
     });
 
+    // R2 A4 (TASK-2047 / TASK-2340): the storefront renders «Сплачено X з Y» for a
+    // partly paid order from these totals — integer kopecks, never the journal.
+    it('carries the ledger totals in kopecks for the storefront (R2 A4)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({
+          paymentStatus: PaymentStatus.PARTIALLY_PAID,
+          paidKop: 2_000,
+          refundedKop: 0,
+          returnCreditKop: 0,
+          balanceKop: 3_998,
+        }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/api/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data).toMatchObject({
+        paymentStatus: PaymentStatus.PARTIALLY_PAID,
+        total: '59.98',
+        paidKop: 2_000,
+        refundedKop: 0,
+        balanceKop: 3_998,
+        refundedAfterCancel: false,
+      });
+      expect(response.body.data).not.toHaveProperty('moneyEntries');
+      expect(response.body.data).not.toHaveProperty('refundedTotal');
+    });
+
     it('should return 404 when the order belongs to another user (IDOR)', async () => {
       const token = generateAccessToken(userB.id, userB.role);
       orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: userA.id }));
@@ -1562,6 +1592,37 @@ describe('OrderController (e2e)', () => {
 
       expectOrderShape(response.body);
       expect(response.body.data.userId).toBe(userB.id);
+    });
+
+    // R2 A4 (TASK-1969 / TASK-1970): the admin card reads money from the ledger.
+    it('carries the ledger money and «Скасовано · кошти повернено» (R2 A4)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.CANCELLED,
+          paymentStatus: PaymentStatus.REFUNDED,
+          paidKop: 5_998,
+          refundedKop: 5_998,
+          returnCreditKop: 0,
+          balanceKop: 0,
+          returns: [],
+        }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data).toMatchObject({
+        status: OrderStatus.CANCELLED,
+        paidKop: 5_998,
+        refundedKop: 5_998,
+        returnCreditKop: 0,
+        balanceKop: 0,
+        refundedAfterCancel: true,
+        refundedTotal: '59.98',
+      });
     });
 
     it('should still identify a guest order that has no email (TASK-426)', async () => {
@@ -2249,6 +2310,28 @@ describe('OrderController (e2e)', () => {
   // ─── PATCH /api/admin/orders/:orderId/status (admin) ────────────────────────────
 
   describe('PATCH /api/admin/orders/:orderId/status', () => {
+    // TASK-1969 (R2 A4): REFUNDED is derived from the money ledger; no operator
+    // sets it — not from DELIVERED, not from CANCELLED.
+    it.each([OrderStatus.DELIVERED, OrderStatus.SHIPPED, OrderStatus.CANCELLED])(
+      'refuses REFUNDED as a target from %s (409 ORDER_TRANSITION_INVALID) and writes nothing',
+      async (from) => {
+        const token = generateAccessToken(admin.id, admin.role);
+        orderRepositoryMock.findById.mockResolvedValue(
+          makeOrder({ status: from, paymentStatus: PaymentStatus.PAID }),
+        );
+
+        const response = await request(app.getHttpServer())
+          .patch('/api/admin/orders/order-e2e-1/status')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ status: OrderStatus.REFUNDED })
+          .expect(409);
+
+        expect(response.body.error).toBe('ORDER_TRANSITION_INVALID');
+        expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+        expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+      },
+    );
+
     it('should update the order status for an admin (200)', async () => {
       const token = generateAccessToken(admin.id, admin.role);
       orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.CONFIRMED }));
@@ -2498,198 +2581,6 @@ describe('OrderController (e2e)', () => {
     });
   });
 
-  // ─── PATCH /api/admin/orders/:orderId/payment-status (admin) (TASK-151) ──────────
-
-  describe('PATCH /api/admin/orders/:orderId/payment-status', () => {
-    it('should update the payment status for an admin without changing order status (200)', async () => {
-      const token = generateAccessToken(admin.id, admin.role);
-      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status: OrderStatus.PENDING }));
-      orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
-        makeOrder({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PAID }),
-      );
-
-      const response = await request(app.getHttpServer())
-        .patch('/api/admin/orders/order-e2e-1/payment-status')
-        .set('Authorization', `Bearer ${token}`)
-        .send({ paymentStatus: PaymentStatus.PAID })
-        .expect(200);
-
-      expect(response.body.data.paymentStatus).toBe(PaymentStatus.PAID);
-      expect(response.body.data.status).toBe(OrderStatus.PENDING);
-      expect(orderRepositoryMock.updatePaymentStatus).toHaveBeenCalledWith(
-        'order-e2e-1',
-        PaymentStatus.PAID,
-        admin.id,
-        // Pinned to the status the transition was validated against, so two
-        // operators in the same second cannot compose two legal moves into one
-        // the table forbids (review of plan 180).
-        { expectedFrom: PaymentStatus.PENDING },
-      );
-    });
-
-    it('should return 400 for an invalid payment status value', async () => {
-      const token = generateAccessToken(admin.id, admin.role);
-
-      await request(app.getHttpServer())
-        .patch('/api/admin/orders/order-e2e-1/payment-status')
-        .set('Authorization', `Bearer ${token}`)
-        .send({ paymentStatus: 'NOT_A_PAYMENT_STATUS' })
-        .expect(400);
-
-      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
-    });
-
-    it('should return 404 when the order does not exist', async () => {
-      const token = generateAccessToken(admin.id, admin.role);
-      orderRepositoryMock.findById.mockResolvedValue(null);
-
-      await request(app.getHttpServer())
-        .patch('/api/admin/orders/nonexistent-uuid/payment-status')
-        .set('Authorization', `Bearer ${token}`)
-        .send({ paymentStatus: PaymentStatus.PAID })
-        .expect(404);
-
-      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
-    });
-
-    it('should return 403 for a non-admin user', async () => {
-      const token = generateAccessToken(userA.id, userA.role);
-
-      await request(app.getHttpServer())
-        .patch('/api/admin/orders/order-e2e-1/payment-status')
-        .set('Authorization', `Bearer ${token}`)
-        .send({ paymentStatus: PaymentStatus.PAID })
-        .expect(403);
-
-      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
-    });
-
-    it('should return 401 without a JWT', async () => {
-      await request(app.getHttpServer())
-        .patch('/api/admin/orders/order-e2e-1/payment-status')
-        .send({ paymentStatus: PaymentStatus.PAID })
-        .expect(401);
-    });
-
-    // ─── The payment state machine over HTTP (TASK-431) ──────────────────────
-
-    it('should return 409 with a code for a full REFUNDED on a DELIVERED order', async () => {
-      const token = generateAccessToken(admin.id, admin.role);
-      orderRepositoryMock.findById.mockResolvedValue(
-        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
-      );
-
-      const response = await request(app.getHttpServer())
-        .patch('/api/admin/orders/order-e2e-1/payment-status')
-        .set('Authorization', `Bearer ${token}`)
-        .send({ paymentStatus: PaymentStatus.REFUNDED })
-        .expect(409);
-
-      // The CODE is the contract the admin panel keys its Ukrainian message off;
-      // the English message is for the log.
-      expect(response.body.error).toBe('ORDER_REFUND_REQUIRES_CLOSED_ORDER');
-      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
-    });
-
-    it('should return 409 with the transition code for a move the machine forbids', async () => {
-      const token = generateAccessToken(admin.id, admin.role);
-      orderRepositoryMock.findById.mockResolvedValue(
-        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.REFUNDED }),
-      );
-
-      const response = await request(app.getHttpServer())
-        .patch('/api/admin/orders/order-e2e-1/payment-status')
-        .set('Authorization', `Bearer ${token}`)
-        .send({ paymentStatus: PaymentStatus.PAID })
-        .expect(409);
-
-      expect(response.body.error).toBe('ORDER_PAYMENT_TRANSITION_INVALID');
-      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
-    });
-
-    it('should accept PARTIALLY_REFUNDED on a DELIVERED order (200)', async () => {
-      const token = generateAccessToken(admin.id, admin.role);
-      orderRepositoryMock.findById.mockResolvedValue(
-        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
-      );
-      orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
-        makeOrder({
-          status: OrderStatus.DELIVERED,
-          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
-        }),
-      );
-
-      const response = await request(app.getHttpServer())
-        .patch('/api/admin/orders/order-e2e-1/payment-status')
-        .set('Authorization', `Bearer ${token}`)
-        .send({ paymentStatus: PaymentStatus.PARTIALLY_REFUNDED })
-        .expect(200);
-
-      expect(response.body.data.paymentStatus).toBe(PaymentStatus.PARTIALLY_REFUNDED);
-    });
-  });
-
-  // ─── GET /api/admin/orders/:orderId/allowed-payment-transitions (TASK-431) ────
-
-  describe('GET /api/admin/orders/:orderId/allowed-payment-transitions', () => {
-    it('should return the legal targets and the lock token for an admin (200)', async () => {
-      const token = generateAccessToken(admin.id, admin.role);
-      orderRepositoryMock.findById.mockResolvedValue(
-        makeOrder({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING }),
-      );
-
-      const response = await request(app.getHttpServer())
-        .get('/api/admin/orders/order-e2e-1/allowed-payment-transitions')
-        .set('Authorization', `Bearer ${token}`)
-        .expect(200);
-
-      expect(response.body.data.current).toBe(PaymentStatus.PENDING);
-      expect(response.body.data.allowed).toEqual([PaymentStatus.PAID, PaymentStatus.FAILED]);
-      expect(response.body.data.updatedAt).toBeDefined();
-    });
-
-    it('should not offer a full refund while the order is still live', async () => {
-      const token = generateAccessToken(admin.id, admin.role);
-      orderRepositoryMock.findById.mockResolvedValue(
-        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
-      );
-
-      const response = await request(app.getHttpServer())
-        .get('/api/admin/orders/order-e2e-1/allowed-payment-transitions')
-        .set('Authorization', `Bearer ${token}`)
-        .expect(200);
-
-      // Offering it and then refusing the PATCH is exactly what this endpoint
-      // exists to stop.
-      expect(response.body.data.allowed).toEqual([PaymentStatus.PARTIALLY_REFUNDED]);
-    });
-
-    it('should return 404 when the order does not exist', async () => {
-      const token = generateAccessToken(admin.id, admin.role);
-      orderRepositoryMock.findById.mockResolvedValue(null);
-
-      await request(app.getHttpServer())
-        .get('/api/admin/orders/nonexistent-uuid/allowed-payment-transitions')
-        .set('Authorization', `Bearer ${token}`)
-        .expect(404);
-    });
-
-    it('should return 403 for a non-admin user', async () => {
-      const token = generateAccessToken(userA.id, userA.role);
-
-      await request(app.getHttpServer())
-        .get('/api/admin/orders/order-e2e-1/allowed-payment-transitions')
-        .set('Authorization', `Bearer ${token}`)
-        .expect(403);
-    });
-
-    it('should return 401 without a JWT', async () => {
-      await request(app.getHttpServer())
-        .get('/api/admin/orders/order-e2e-1/allowed-payment-transitions')
-        .expect(401);
-    });
-  });
-
   // ─── The refund cross-rule, from the ORDER side (review of plan 180) ──────────
   //
   // TASK-431 guards «live order + fully refunded money» on both payment doors.
@@ -2726,9 +2617,9 @@ describe('OrderController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      // ORDER_TRANSITIONS[CANCELLED] is [PENDING, CONFIRMED, PROCESSING, REFUNDED];
-      // only the terminal correction survives the cross-rule.
-      expect(response.body.data.allowed).toEqual([OrderStatus.REFUNDED]);
+      // ORDER_TRANSITIONS[CANCELLED] is [PENDING, CONFIRMED, PROCESSING] — every one
+      // refused by the cross-rule; REFUNDED is derived, never offered (TASK-1969).
+      expect(response.body.data.allowed).toEqual([]);
     });
   });
 

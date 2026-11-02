@@ -1,4 +1,7 @@
-import { CreateOrderDtoPaymentMethod } from "@/entities/order";
+import {
+  CreateOrderDtoPaymentMethod,
+  type OrderEntityPaymentMethod,
+} from "@/entities/order";
 import type { DeliveryPaymentMatrixDto } from "@/entities/delivery";
 import { dict } from "@/shared/config";
 import {
@@ -325,6 +328,12 @@ export function coercePaymentMethod(
  * copy table, so the review can never name the method differently from the
  * option the shopper actually picked.
  */
-export function paymentMethodTitle(method: CheckoutPaymentMethod): string {
+export function paymentMethodTitle(
+  method: CheckoutPaymentMethod | OrderEntityPaymentMethod,
+): string {
+  // R2 (TASK-2047): BANK_TRANSFER is set by the operator only — never offered
+  // at checkout, but read back on the shopper's order.
+  if (method === "BANK_TRANSFER")
+    return dict.checkout.payment.bankTransferTitle;
   return COPY[method].title;
 }

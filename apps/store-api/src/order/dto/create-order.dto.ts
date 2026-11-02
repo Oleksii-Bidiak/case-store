@@ -4,6 +4,7 @@ import { Type, Transform } from 'class-transformer';
 import {
   IsDefined,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -12,6 +13,17 @@ import {
 } from 'class-validator';
 import { AddressDto } from './address.dto';
 import { CheckoutContactDto } from './checkout-contact.dto';
+
+/**
+ * Payment methods a shopper may choose at checkout — an allow-list, not the
+ * enum, so a method added for the admin panel (BANK_TRANSFER, TASK-2047) never
+ * reaches the storefront by default.
+ */
+export const CHECKOUT_PAYMENT_METHODS: readonly PaymentMethod[] = Object.freeze([
+  PaymentMethod.ON_DELIVERY,
+  PaymentMethod.ONLINE,
+  PaymentMethod.INSTALLMENTS,
+]);
 
 /**
  * DTO for creating an order from the caller's current cart.
@@ -58,12 +70,12 @@ export class CreateOrderDto {
       'Intended payment method. Omitted defaults to ON_DELIVERY. ONLINE and INSTALLMENTS ' +
       'additionally start the reservation countdown after which an unpaid order is ' +
       'auto-cancelled and its stock returned.',
-    enum: PaymentMethod,
+    enum: CHECKOUT_PAYMENT_METHODS,
     required: false,
     default: PaymentMethod.ON_DELIVERY,
   })
   @IsOptional()
-  @IsEnum(PaymentMethod)
+  @IsIn(CHECKOUT_PAYMENT_METHODS)
   paymentMethod?: PaymentMethod;
 
   /**

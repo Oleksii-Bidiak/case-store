@@ -14,7 +14,6 @@ export {
   // module writes `paymentStatus` too, and a second copy of these rules would be
   // a second set of rules.
   PAYMENT_TRANSITIONS,
-  allowedPaymentTransitions,
   canTransitionPayment,
 } from './order-state-machine';
 // TASK-643: the delivery × payment matrix is public for the same reason as the
@@ -26,11 +25,18 @@ export {
   isPaymentAllowedForDelivery,
 } from './delivery-payment-matrix';
 export { flatShippingCost, isCourierFree, resolveDeliveryMethod } from './shipping-cost';
+// R2 A3: the seam a LIQPAY_REFUND payout reaches the payment module through.
+export {
+  PROVIDER_REFUND_PORT,
+  type LedgerRefundRequest,
+  type ProviderRefundPort,
+} from './provider-refund.port';
 export type { FlatPricedDeliveryMethod, FlatShippingInput } from './shipping-cost';
 export {
   OrderErrorCode,
   DeliveryOrderErrorCode,
   deliveryPaymentNotAllowedError,
+  moneyRefundExceedsPaidError,
 } from './order.errors';
 // Statuses whose stock is still in the warehouse — the product module derives
 // reserved quantities from the same set the auto-restock guard uses (TASK-254).
@@ -44,4 +50,6 @@ export type {
   CreateOrderParams,
   DeliveryCarrier,
   ShippingAddressData,
+  ProviderRefundRequest,
+  ProviderRefundRequestInput,
 } from './order.types';

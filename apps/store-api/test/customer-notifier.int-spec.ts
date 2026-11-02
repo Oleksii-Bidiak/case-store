@@ -10,6 +10,7 @@ import {
 import { PinoLogger } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import { OrderLookupRepository } from '../src/order/order-lookup.repository';
 import { OrderService } from '../src/order/order.service';
 import type { CreateOrderParams } from '../src/order/order.types';
@@ -84,6 +85,7 @@ describe('CustomerNotifier (integration, TASK-680)', () => {
       providers: [
         PrismaService,
         OrderRepository,
+        OrderMoneyRepository,
         NotificationBindingRepository,
         NotificationBindingService,
         NotificationOutboxRepository,

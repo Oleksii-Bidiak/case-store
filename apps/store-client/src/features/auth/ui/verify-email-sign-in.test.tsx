@@ -31,7 +31,7 @@ function signInRequired() {
 }
 
 /**
- * TASK-2010 / TASK-2341 — confirming an address takes it over from anyone who
+ * TASK-2010 / TASK-2362 — confirming an address takes it over from anyone who
  * opened an account on it uninvited, so the server checks who clicked: a
  * password-less account gets a fresh session, a password account only its
  * signed-in owner (403 VERIFY_SIGN_IN_REQUIRED, the link not spent).

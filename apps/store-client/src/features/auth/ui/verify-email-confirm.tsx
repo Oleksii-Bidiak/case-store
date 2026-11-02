@@ -37,7 +37,7 @@ const VERIFY_SIGN_IN_REQUIRED = "VERIFY_SIGN_IN_REQUIRED";
  * fixes all of them — request a fresh link, which will go to the CURRENT
  * address.
  *
- * ── Who may confirm (TASK-2010, TASK-2341) ───────────────────────────────────
+ * ── Who may confirm (TASK-2010, TASK-2362) ───────────────────────────────────
  * Confirming an address now takes it over from anyone who created an account
  * on it uninvited, so the server is strict about WHO clicked:
  *

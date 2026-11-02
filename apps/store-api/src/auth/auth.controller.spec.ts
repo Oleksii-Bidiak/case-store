@@ -300,7 +300,7 @@ describe('AuthController — checkout sign-up routes (TASK-2010)', () => {
     );
   });
 
-  it('email/verify/confirm signs a password-less clicker in on this device (TASK-2341)', async () => {
+  it('email/verify/confirm signs a password-less clicker in on this device (TASK-2362)', async () => {
     confirmEmailVerification.mockResolvedValue({ claimedOrders: 1, session });
     const response = { cookie: jest.fn() };
 

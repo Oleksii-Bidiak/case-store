@@ -3,6 +3,7 @@ import {
   OrderEntityPaymentStatus,
   OrderEntityStatus,
 } from "@/shared/api";
+import { formatKop } from "@/shared/lib";
 import {
   minutesUntil,
   orderDerivedMarks,
@@ -11,16 +12,12 @@ import {
 
 /**
  * The derived marks of owner decision B-1, as the ADMIN PANEL computes them
- * (TASK-470 / 471 / 472).
+ * (TASK-470 / 471 / 472; money marks from the ledger since R2, TASK-1968).
  *
  * These conditions exist twice by design — here, and in `buildAdminWhere` on the
- * server, which powers the matching list filters. That is not duplication to be
- * removed: one side has to decide which rows to fetch and the other which chip
- * to draw, and neither can do the other's job. What it does mean is that the
- * conditions have to be pinned on both sides, because the way they fail is
- * quiet: a filter returns a row that carries no chip, or a chip appears on a row
- * the filter would not have returned, and either way the operator learns that
- * the marks cannot be trusted.
+ * server, which powers the matching list filters. They have to be pinned on both
+ * sides, because the way they fail is quiet: a filter returns a row that carries
+ * no chip, or a chip appears on a row the filter would not have returned.
  *
  * The clock is passed in rather than read, so «Очікує оплати · N хв» can be
  * stated as a fact instead of raced against.
@@ -28,84 +25,163 @@ import {
 
 const NOW = Date.parse("2026-09-14T12:00:00.000Z");
 
+/** Intl groups with NBSP / narrow NBSP depending on the ICU build. */
+const plain = (value: string) => value.replace(/[  ]/g, " ");
+
 function buildOrder(overrides: Partial<OrderMarkSource> = {}): OrderMarkSource {
   return {
     status: OrderEntityStatus.CONFIRMED,
     paymentStatus: OrderEntityPaymentStatus.PENDING,
     paymentMethod: OrderEntityPaymentMethod.ON_DELIVERY,
-    total: "1200.00",
     reservationExpiresAt: null,
+    refundedKop: 0,
+    returnCreditKop: 0,
+    balanceKop: 120000,
     ...overrides,
   };
 }
 
 const kinds = (order: OrderMarkSource) =>
   orderDerivedMarks(order, NOW).map((mark) => mark.kind);
+const labels = (order: OrderMarkSource) =>
+  orderDerivedMarks(order, NOW).map((mark) => plain(mark.label));
 
-describe("orderDerivedMarks — «Борг N ₴» (TASK-470)", () => {
-  it("marks a delivered order that was never paid for", () => {
-    const marks = orderDerivedMarks(
-      buildOrder({
-        status: OrderEntityStatus.DELIVERED,
-        paymentStatus: OrderEntityPaymentStatus.PENDING,
-      }),
-      NOW,
-    );
-
-    expect(marks).toHaveLength(1);
-    expect(marks[0].kind).toBe("debt");
-    // The amount is in the label: an operator ringing a customer needs the
-    // figure, not a flag that something is wrong.
-    expect(marks[0].label).toContain("1");
-    expect(marks[0].label).toContain("200");
+describe("orderDerivedMarks — «Борг» / «Винні покупцю» from the balance (TASK-1968)", () => {
+  it.each([
+    // [what, status, balanceKop, expected kinds]
+    ["delivered, still owes", OrderEntityStatus.DELIVERED, 120000, ["debt"]],
+    ["delivered, settled", OrderEntityStatus.DELIVERED, 0, []],
+    [
+      "delivered, overpaid",
+      OrderEntityStatus.DELIVERED,
+      -5000,
+      ["owedToCustomer"],
+    ],
+    // Cash on delivery still in the shop's hands is the NORMAL state: the debt
+    // only becomes one once the goods are gone (the server's `hasDebt`).
+    ["processing, unpaid", OrderEntityStatus.PROCESSING, 120000, []],
+    ["shipped, unpaid", OrderEntityStatus.SHIPPED, 120000, []],
+    ["shipped, overpaid", OrderEntityStatus.SHIPPED, -100, ["owedToCustomer"]],
+    [
+      "refunded order, owed back",
+      OrderEntityStatus.REFUNDED,
+      -2500,
+      ["owedToCustomer"],
+    ],
+    ["cancelled (nothing is due)", OrderEntityStatus.CANCELLED, 0, []],
+  ])("%s", (_what, status, balanceKop, expected) => {
+    expect(kinds(buildOrder({ status, balanceKop }))).toEqual(expected);
   });
 
-  it("marks a delivered order whose payment FAILED", () => {
+  it("prints the balance itself in integer kopecks — «Борг 1 200 ₴»", () => {
+    expect(
+      labels(
+        buildOrder({ status: OrderEntityStatus.DELIVERED, balanceKop: 120010 }),
+      ),
+    ).toEqual(["Борг 1 200,1 ₴"]);
+  });
+
+  it("names what the shop owes unsigned — «Винні покупцю 699 ₴»", () => {
+    expect(labels(buildOrder({ balanceKop: -69900 }))).toEqual([
+      "Винні покупцю 699 ₴",
+    ]);
+  });
+
+  it("no longer reads the payment label: a PARTIALLY_REFUNDED delivered order with a zero balance owes nothing", () => {
     expect(
       kinds(
         buildOrder({
           status: OrderEntityStatus.DELIVERED,
-          paymentStatus: OrderEntityPaymentStatus.FAILED,
+          paymentStatus: OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
+          balanceKop: 0,
+          refundedKop: 79900,
+          returnCreditKop: 79900,
         }),
       ),
-    ).toContain("debt");
+    ).not.toContain("debt");
+  });
+});
+
+describe("orderDerivedMarks — what went back (TASK-472 → TASK-1968)", () => {
+  it("AD-RET-17: paid 2 397, a 799 return, 100 paid out → «Частково повернуто 100 з 799», «Винні покупцю 699», no «Борг»", () => {
+    // balance = total − returnCredit − paid + refunded = 2397 − 799 − 2397 + 100
+    const order = buildOrder({
+      status: OrderEntityStatus.DELIVERED,
+      paymentStatus: OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
+      refundedKop: 10000,
+      returnCreditKop: 79900,
+      balanceKop: 239700 - 79900 - 239700 + 10000,
+    });
+
+    expect(kinds(order)).toEqual(["owedToCustomer", "partiallyRefunded"]);
+    expect(labels(order)).toEqual([
+      "Винні покупцю 699 ₴",
+      "Частково повернуто 100 ₴ з 799 ₴",
+    ]);
   });
 
-  it("does not mark a delivered order that was paid", () => {
+  it("measures against the returned goods, never the order total", () => {
+    const [mark] = orderDerivedMarks(
+      buildOrder({ refundedKop: 49900, returnCreditKop: 99800, balanceKop: 0 }),
+      NOW,
+    );
+    expect(mark.label).toBe(
+      `Частково повернуто ${formatKop(49900)} з ${formatKop(99800)}`,
+    );
+  });
+
+  it("says «Повернуто X» without «з» for money back with no return (cancelled order)", () => {
+    expect(
+      labels(
+        buildOrder({
+          status: OrderEntityStatus.CANCELLED,
+          paymentStatus: OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
+          refundedKop: 50000,
+          returnCreditKop: 0,
+          balanceKop: 0,
+        }),
+      ),
+    ).toEqual(["Повернуто 500 ₴"]);
+  });
+
+  it("says «Повернуто X» once the returns are fully paid out but the order still holds money", () => {
+    expect(
+      kinds(
+        buildOrder({
+          status: OrderEntityStatus.DELIVERED,
+          paymentStatus: OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
+          refundedKop: 79900,
+          returnCreditKop: 79900,
+          balanceKop: 0,
+        }),
+      ),
+    ).toEqual(["refunded"]);
+  });
+
+  it("adds no chip on a full refund — the payment badge already says it", () => {
+    expect(
+      kinds(
+        buildOrder({
+          status: OrderEntityStatus.REFUNDED,
+          paymentStatus: OrderEntityPaymentStatus.REFUNDED,
+          refundedKop: 120000,
+          returnCreditKop: 120000,
+          balanceKop: 0,
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("draws nothing while nothing went back", () => {
     expect(
       kinds(
         buildOrder({
           status: OrderEntityStatus.DELIVERED,
           paymentStatus: OrderEntityPaymentStatus.PAID,
+          balanceKop: 0,
         }),
       ),
-    ).not.toContain("debt");
-  });
-
-  it("does not mark a delivered order that was fully refunded", () => {
-    // Money went out, not in — there is no debt to chase, and a chip saying
-    // there is would send an operator after a customer who owes nothing.
-    expect(
-      kinds(
-        buildOrder({
-          status: OrderEntityStatus.DELIVERED,
-          paymentStatus: OrderEntityPaymentStatus.REFUNDED,
-        }),
-      ),
-    ).not.toContain("debt");
-  });
-
-  it("does not mark an unpaid order that has not been delivered yet", () => {
-    // An unpaid order that is still in the shop's hands is the NORMAL state of
-    // cash-on-delivery. The debt only becomes one once the goods are gone.
-    expect(
-      kinds(
-        buildOrder({
-          status: OrderEntityStatus.PROCESSING,
-          paymentStatus: OrderEntityPaymentStatus.PENDING,
-        }),
-      ),
-    ).not.toContain("debt");
+    ).toEqual([]);
   });
 });
 
@@ -214,127 +290,6 @@ describe("orderDerivedMarks — the reservation window (TASK-471)", () => {
           paymentMethod: OrderEntityPaymentMethod.ONLINE,
           paymentStatus: OrderEntityPaymentStatus.PAID,
           reservationExpiresAt: "2026-09-14T12:23:00.000Z",
-        }),
-      ),
-    ).toEqual([]);
-  });
-});
-
-describe("orderDerivedMarks — «Частково повернуто X з Y» (TASK-472)", () => {
-  it("names both halves of the fraction", () => {
-    const marks = orderDerivedMarks(
-      buildOrder({
-        paymentStatus: OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
-        refundedTotal: "499.00",
-        total: "1200.00",
-      }),
-      NOW,
-    );
-
-    expect(marks).toHaveLength(1);
-    expect(marks[0].kind).toBe("partiallyRefunded");
-    expect(marks[0].label).toContain("499");
-    expect(marks[0].label).toContain("200");
-  });
-
-  it("is silent when the response did not carry the refunded sum", () => {
-    // `refundedTotal` is ABSENT, not zero, on a read that did not join the
-    // returns. «Частково повернуто 0,00 ₴» would be a figure nobody measured.
-    expect(
-      kinds(
-        buildOrder({
-          paymentStatus: OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
-        }),
-      ),
-    ).toEqual([]);
-  });
-
-  it("is silent on a fully refunded order", () => {
-    expect(
-      kinds(
-        buildOrder({
-          paymentStatus: OrderEntityPaymentStatus.REFUNDED,
-          refundedTotal: "1200.00",
-        }),
-      ),
-    ).not.toContain("partiallyRefunded");
-  });
-});
-
-describe("orderDerivedMarks — the marks coexist", () => {
-  it("reports a debt and a partial refund on the same order", () => {
-    // PARTIALLY_REFUNDED is NOT one of the settled statuses, exactly as the
-    // catalogue words it (∉ {PAID, REFUNDED}): a delivered order with part of the
-    // money returned still has an open question, and the point of the marks is
-    // that awkward states are visible rather than tidied away.
-    expect(
-      kinds(
-        buildOrder({
-          status: OrderEntityStatus.DELIVERED,
-          paymentStatus: OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
-          refundedTotal: "499.00",
-        }),
-      ),
-    ).toEqual(["debt", "partiallyRefunded"]);
-  });
-
-  it("states the debt as what is left, not as the whole order", () => {
-    // The chip FIRING on a partially refunded order is the catalogue's wording.
-    // The AMOUNT was not: it was always `total`, so this card showed «Борг
-    // 1 200 ₴» beside «Повернуто 499 ₴ з 1 200 ₴» — two figures, neither of them
-    // a debt anyone had (review of plan 180). 1200 − 499 = 701.
-    const marks = orderDerivedMarks(
-      buildOrder({
-        status: OrderEntityStatus.DELIVERED,
-        paymentStatus: OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
-        refundedTotal: "499.00",
-        total: "1200.00",
-      }),
-      NOW,
-    );
-
-    const debt = marks.find((mark) => mark.kind === "debt");
-    expect(debt?.label).toContain("701");
-    expect(debt?.label).not.toContain("1 200");
-  });
-
-  it("falls back to the total when the read did not measure the refunds", () => {
-    // `refundedTotal` absent means "not measured". Inventing a smaller debt from
-    // a measurement we do not have is the same lie in the other direction.
-    const marks = orderDerivedMarks(
-      buildOrder({
-        status: OrderEntityStatus.DELIVERED,
-        paymentStatus: OrderEntityPaymentStatus.PENDING,
-        total: "1200.00",
-      }),
-      NOW,
-    );
-
-    expect(marks.find((mark) => mark.kind === "debt")?.label).toContain("200");
-  });
-
-  it("never prints a negative debt when more went back than came in", () => {
-    const marks = orderDerivedMarks(
-      buildOrder({
-        status: OrderEntityStatus.DELIVERED,
-        paymentStatus: OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
-        refundedTotal: "1500.00",
-        total: "1200.00",
-      }),
-      NOW,
-    );
-
-    expect(marks.find((mark) => mark.kind === "debt")?.label).not.toContain(
-      "-",
-    );
-  });
-
-  it("reports nothing at all for an ordinary, healthy order", () => {
-    expect(
-      kinds(
-        buildOrder({
-          status: OrderEntityStatus.PROCESSING,
-          paymentStatus: OrderEntityPaymentStatus.PAID,
         }),
       ),
     ).toEqual([]);

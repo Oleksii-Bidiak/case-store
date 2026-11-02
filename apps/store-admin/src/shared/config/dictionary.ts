@@ -3768,17 +3768,6 @@ export const dict = {
     addressLockedHint:
       "Адресу можна змінити лише до відправлення — замовлення вже передано перевізнику.",
 
-    // --- Payment card (TASK-330-C, partial — see the widget's note) -----------
-    paymentHeading: "Оплата",
-    paymentAmountLabel: "Сума",
-    // --- "Повернуто X з Y" (TASK-472) -----------------------------------------
-    // Shown only while the payment status is PARTIALLY_REFUNDED: on a full refund
-    // the badge already says everything, and on a PAID order there is nothing to
-    // say. X is Σ Return.refundedAmount, Y is the order total — both computed at
-    // read time, neither stored.
-    refundedLabel: "Повернуто",
-    refundedOfTotal: (refunded: string, total: string) =>
-      `${refunded} з ${total}`,
     // --- Operator-created (phone) orders (TASK-341) ---------------------------
     createHeading: "Нове замовлення",
     createMetaTitle: "Нове замовлення — Адмін",
@@ -3827,6 +3816,8 @@ export const dict = {
     paymentMethodOnDelivery: "Післяплата",
     paymentMethodOnline: "Картка онлайн",
     paymentMethodInstallments: "Частинами",
+    // R2: admin-only method (phone orders) — the storefront never offers it.
+    paymentMethodBankTransfer: "Переказ на рахунок ФОП",
     // No number in this label, on purpose: the threshold lives in ONE place
     // (the API's PENDING_STALE_HOURS, shared with the dashboard tile). A «понад
     // 48 год» written here would be a second copy of it, and the day it moves
@@ -3842,12 +3833,19 @@ export const dict = {
     //
     // Жодна з них нічого не блокує: це сигнал оператору, а не заборона.
     markDebt: (amount: string) => `Борг ${amount}`,
+    // R2 (TASK-1968): той самий баланс із журналу, але з іншого боку — магазин
+    // винен покупцю (повернений товар ще не виплачено або переплата).
+    markOwedToCustomer: (amount: string) => `Винні покупцю ${amount}`,
     // Хвилини, а не час: оператор питає «скільки ще чекати», а не «коли спливе».
     // Число живе рівно стільки, скільки живе відрендерений рядок.
     markAwaitingPayment: (minutes: number) => `Очікує оплати · ${minutes} хв`,
     markReservationExpired: "Резерв сплив",
-    markPartiallyRefunded: (refunded: string, total: string) =>
-      `Частково повернуто ${refunded} з ${total}`,
+    // «з N» — вартість поверненого товару («до повернення» заявок), не сума
+    // замовлення (R2, TASK-1968; AD-RET-17).
+    markPartiallyRefunded: (refunded: string, credit: string) =>
+      `Частково повернуто ${refunded} з ${credit}`,
+    // Повернення без заявки (скасоване замовлення, переплата) — без «з N».
+    markRefunded: (amount: string) => `Повернуто ${amount}`,
     // На РЯДКУ позиції, не на замовленні: недоступна конкретна позиція, і саме
     // про неї оператор телефонує покупцеві. Автоматичного листа немає навмисно
     // (B-1 п.3) — вибір «замінити / повернути гроші / зачекати» робить людина.
@@ -3918,8 +3916,6 @@ export const dict = {
     paymentAttemptsLoadError: "Не вдалося завантажити спроби оплати.",
     paymentAttemptsEmpty:
       "Спроб онлайн-оплати ще не було — покупець не відкривав сторінку LiqPay.",
-    paymentAttemptsOnDelivery:
-      "Оплата при отриманні: онлайн-спроб немає, гроші повертаються поза LiqPay — через заявку на повернення.",
     paymentAttemptProviderId: "Ідентифікатор LiqPay",
     paymentAttemptFailure: "Причина відмови",
     paymentAttemptSettledAt: "Завершено",
@@ -3931,44 +3927,6 @@ export const dict = {
       EXPIRED: "Прострочена",
       REFUNDED: "Повернено",
     },
-    refundAction: "Повернути кошти",
-    refundTitle: "Повернення коштів через LiqPay",
-    refundDescription: (amount: string) =>
-      `Гроші повернуться на картку покупця. Оплачено цією спробою: ${amount}.`,
-    refundModeLegend: "Скільки повернути",
-    refundModeFull: (amount: string) => `Усю суму — ${amount}`,
-    refundModePartial: "Частину",
-    refundAmountLabel: "Сума повернення, ₴",
-    refundAmountHint:
-      "Наприклад, 499 або 499.50 — не більше за залишок до повернення.",
-    refundAmountInvalid: "Вкажіть суму числом, до двох знаків після крапки.",
-    refundAmountZero: "Сума має бути більшою за нуль.",
-    refundAmountTooLarge: (amount: string) =>
-      `Не більше за залишок до повернення з цієї спроби: ${amount}.`,
-    refundNext: "Далі",
-    refundBack: "Назад",
-    refundCancel: "Скасувати",
-    refundConfirmTitle: "Підтвердіть повернення",
-    refundConfirmText: (amount: string) =>
-      `Повернути покупцеві ${amount}? Запит піде в LiqPay одразу, скасувати його звідси не можна.`,
-    refundConfirm: (amount: string) => `Повернути ${amount}`,
-    refundRequested:
-      "Запит на повернення надіслано. Статус оплати оновиться після підтвердження LiqPay.",
-    // Кнопка на спробі, по якій запит уже пішов: сервер уже зарезервував суму
-    // (TASK-1302), а свіжий залишок картка покаже після оновлення списку.
-    refundPending: "Запит надіслано — чекаємо підтвердження LiqPay",
-    refundErrorForbidden:
-      "У вас немає права повертати кошти. Попросіть власника додати право «Повертати гроші».",
-    refundErrorConflict:
-      "Цю спробу вже не можна повернути: її статус змінився. Список спроб оновлено.",
-    refundErrorTooLarge:
-      "Сума перевищує залишок, який ще можна повернути з цієї спроби.",
-    refundErrorNotFound: "Спробу оплати не знайдено — оновіть сторінку.",
-    refundErrorGeneric:
-      "Не вдалося надіслати запит на повернення. Спробуйте ще раз.",
-    // Після часткового повернення всю суму вже не повернути — лише залишок
-    // (TASK-1302).
-    refundModeRemainder: (amount: string) => `Увесь залишок — ${amount}`,
 
     // --- Список як реєстр (хвиля 198, TASK-1045, OrdersProposal П1–П8) -------
     itemForms: ["замовлення", "замовлення", "замовлень"],
@@ -4406,17 +4364,15 @@ export const dict = {
     noTransitions: "Немає доступних переходів",
     toastUpdated: (s: string) => `Статус замовлення змінено на ${s}`,
     toastFailed: "Не вдалося оновити статус замовлення",
-    updatePaymentStatus: "Статус оплати",
-    changePaymentStatus: "Змінити статус оплати…",
-    paymentToastUpdated: (label: string) => `Статус оплати оновлено: ${label}`,
-    paymentToastFailed: "Не вдалося оновити статус оплати",
-    paymentUpdateAria: "Оновити статус оплати",
 
     // --- Payment status names (TASK-431) --------------------------------------
     // The single place each payment status is worded. `status-label.ts` reads
     // them; nothing spells them twice.
     paymentLabels: {
       PENDING: "Очікує оплати",
+      // R2 (TASK-2047): part of the total has come in — derived from the money
+      // journal, never set by hand.
+      PARTIALLY_PAID: "Частково оплачено",
       PAID: "Оплачено",
       FAILED: "Помилка оплати",
       // "Частково" first, because that is the word that distinguishes it from
@@ -4424,31 +4380,6 @@ export const dict = {
       PARTIALLY_REFUNDED: "Частково повернуто",
       REFUNDED: "Кошти повернено",
     },
-
-    // --- Server-driven payment transitions (TASK-431) -------------------------
-    paymentTransitionsLoading: "Завантаження доступних статусів оплати…",
-    paymentTransitionsLoadError:
-      "Не вдалося отримати список статусів оплати. Оновіть сторінку.",
-    noPaymentTransitions: "Статус оплати змінити неможливо",
-    // --- Виправлення помилкової мітки «Кошти повернено» (TASK-620, B-11 №7) ---
-    // Окрема дія, а не пункт списку: REFUNDED лишається кінцевим для фактів;
-    // виправити можна лише мітку, яку поставив оператор, з обов'язковою причиною.
-    paymentCorrectAction: "Виправити помилкову мітку «Кошти повернено»",
-    paymentCorrectTitle: "Виправити помилкову мітку «Кошти повернено»",
-    paymentCorrectDescription:
-      "Лише якщо мітку поставили помилково вручну. Якщо гроші повернула платіжна система, мітку виправити не можна. Причина потрапить у журнал дій.",
-    paymentCorrectTargetLegend: "Яким має бути статус оплати",
-    paymentCorrectReason: "Причина виправлення",
-    paymentCorrectConfirm: "Виправити",
-    paymentCorrectCancel: "Скасувати",
-    paymentCorrectToast: "Мітку оплати виправлено",
-    // Always under the picker. The "why is the full refund missing" half lives in
-    // `paymentTransitionsHintFullRefund` (TASK-842) and shows only when it IS
-    // missing — on a cancelled order it is in the list, and telling the operator
-    // to cancel first would be advice about something already done.
-    paymentTransitionsHint:
-      "Доступні лише переходи, дозволені для поточного статусу оплати.",
-
     // --- Server-driven transitions (TASK-332) ---------------------------------
     transitionsLoading: "Завантаження доступних статусів…",
     transitionsLoadError:
@@ -4489,23 +4420,12 @@ export const dict = {
         "Хтось інший щойно змінив це замовлення, оновіть сторінку. Ваша зміна не збережена.",
       ORDER_TRANSITION_INVALID:
         "Такий перехід статусу неможливий — замовлення вже змінилося. Список статусів оновлено.",
-      // TASK-431 — the two payment codes. Separate wording from the status one
-      // above because the operator's next action differs: here the fix is either
-      // "pick another payment status" or "cancel the order first".
-      ORDER_PAYMENT_TRANSITION_INVALID:
-        "Такий перехід статусу оплати неможливий — статус уже змінився. Список оновлено.",
-      ORDER_REFUND_REQUIRES_CLOSED_ORDER:
-        "Повне повернення коштів можливе лише для скасованого замовлення. Спочатку скасуйте замовлення — або позначте часткове повернення.",
       // Те саме правило з іншого боку (ревʼю плану 180): оживити замовлення, за
       // яким гроші вже повернуті, не можна. Формулювання називає єдину дію, що
       // працює, бо статус оплати REFUNDED не має жодного дозволеного переходу —
       // «виправте статус оплати» було б порадою в нікуди.
       ORDER_REVIVE_REFUNDED_PAYMENT:
         "Гроші за цим замовленням уже повернуті покупцеві, тож повернути його в роботу не можна. Створіть нове замовлення.",
-      // TASK-620: мітку «Кошти повернено» поставила платіжна система (LiqPay
-      // reversed), а не оператор — це факт про гроші, його не виправляють.
-      ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND:
-        "Цю мітку поставила платіжна система: гроші справді повернуто покупцеві. Виправити її не можна.",
       // AD-ORD-51 (TASK-1966): відновлення скасованого замовлення знову займає
       // слот промокоду (TASK-771). Сервер відмовляє 409, замовлення лишається
       // скасованим. Відновити без промокоду API поки не вміє (TASK-1982), тож
@@ -4521,26 +4441,6 @@ export const dict = {
       "Замовлення змінилося, і зміну не збережено. Оновіть сторінку й спробуйте ще раз.",
     reloadCta: "Оновити",
 
-    // --- Чому статус оплати не змінити і що робити далі (TASK-842) ------------
-    // Під `noPaymentTransitions` — причина й наступний крок, а не порожнеча.
-    // Причину визначає сам статус оплати з відповіді сервера: REFUNDED не має
-    // переходів узагалі, а з PARTIALLY_REFUNDED сервер прибирає «Кошти повернено»,
-    // поки замовлення не скасоване й не повернене.
-    noPaymentTransitionsRefunded:
-      "Усі кошти вже повернено покупцеві — це кінцевий стан оплати, змінювати тут більше нічого. Що саме повернули і за яким рішенням — у заявці на повернення.",
-    noPaymentTransitionsPartial:
-      "Частину коштів уже позначено поверненою. «Кошти повернено» можна поставити лише скасованому замовленню або замовленню зі статусом «Повернення коштів» — спершу змініть статус замовлення вище.",
-    noPaymentTransitionsPartialAmount:
-      "Сума «Повернуто» рахується з рішень у заявках на повернення. Якщо там 0 грн, заявки немає або в ній ще не збережено рішення із сумою — відкрийте заявку по цьому замовленню.",
-    noPaymentTransitionsOther:
-      "Для поточного статусу оплати немає дозволених переходів.",
-    noPaymentTransitionsReturnsLink: "Заявки на повернення цього замовлення",
-    // Без `returns:read` лінк вів би на відмову — тому лише текст.
-    noPaymentTransitionsReturnsNoAccess:
-      "Заявки на повернення — у розділі «Повернення»; щоб їх бачити, потрібне право на перегляд повернень.",
-    // Лише коли «Кошти повернено» немає в списку, а гроші надходили (TASK-842).
-    paymentTransitionsHintFullRefund:
-      "Повне повернення коштів можливе після скасування замовлення.",
     // TASK-622: 403 на зміні замовлення чи оплати. Раніше мапер конфліктів
     // бачив у тілі поле `error` («Forbidden») і казав «замовлення змінилося,
     // оновіть сторінку» — оператор оновлював вічно, бо перезавантаження права
@@ -4566,7 +4466,8 @@ export const dict = {
     menuUnavailable: "Недоступно зараз",
     menuAskPayment: "спитаємо про оплату",
     reasonNoWayBack: "назад не можна",
-    reasonRefundAfterShipment: "лише після відправлення",
+    // «Повернення коштів» у меню більше немає (R2, TASK-1969): статус ставиться
+    // сам, коли виплати за заявками покривають повернений товар.
     reasonRefundedFinal: "кошти вже повернено",
     reasonReviveFirst: "спершу відновіть замовлення",
     reasonOther: "не з поточного статусу",
@@ -4574,20 +4475,253 @@ export const dict = {
     nextConfirm: "Підтвердити",
     nextShip: "Відправити",
     nextDeliver: "Позначити доставленим",
-    // Післяплата (К1): той самий перехід оплати в «Оплачено», що й у списку.
-    codTitle: (amount: string) => `Післяплата · ${amount}`,
-    codHint:
-      "Гроші надійдуть від Нової Пошти після того, як покупець забере посилку. Коли переказ прийде — позначте оплату.",
-    codReceived: "Гроші від НП отримано",
-    otherPaymentStatus: "Інший статус оплати:",
-    // «Повернення коштів» без жодної заявки (TASK-469 → TASK-1963): заявку
-    // тепер оформлюють окремою дією з позиціями, а не на все замовлення.
-    refundNoReturnTitle: "Повернення коштів без заявки?",
-    refundNoReturnDescription: (number: string) =>
-      `По замовленню ${number} немає жодної заявки на повернення. Оформіть її з позиціями й кількостями — статус при цьому не зміниться — або просто змініть статус.`,
-    refundNoReturnCreate: "Оформити повернення",
-    // «Не блокує»: оператор має право відмовитись і просто поставити статус.
-    refundNoReturnSkip: "Лише змінити статус",
+    // Скасоване замовлення ніколи не стає «Повернення коштів» (R2, TASK-1970):
+    // гроші, що повернулися після скасування, видно на самому бейджі статусу.
+    cancelledRefunded: "Скасовано · кошти повернено",
+    cancelledPartlyRefunded: "Скасовано · повернуто частково",
+  },
+
+  // --- Оплата з одного місця (R2: TASK-1967 / 1807 / 2047) --------------------
+  // Гроші замовлення — це журнал записів (надходження, виплати, сторно), а статус
+  // оплати й «Борг» / «Винні покупцю» — похідні від нього на сервері. Блок лише
+  // показує ці числа й записує нові факти; жодна сума тут не перераховується.
+  orderMoney: {
+    heading: "Оплата",
+    loading: "Завантажуємо оплату…",
+    loadError: "Не вдалося завантажити оплату замовлення. Оновіть сторінку.",
+    summaryAria: "Підсумок оплати",
+    paidOf: (paid: string, total: string) => `Сплачено ${paid} з ${total}`,
+    refunded: (amount: string) => `Повернуто ${amount}`,
+    // «Борг» — лише на доставленому замовленні (як мітка в шапці й фільтр
+    // `hasDebt`, TASK-1968); до того та сама сума — просто «До сплати».
+    debt: (amount: string) => `Борг ${amount}`,
+    toPay: (amount: string) => `До сплати ${amount}`,
+    owedToCustomer: (amount: string) => `Винні покупцю ${amount}`,
+
+    // TASK-1807: на що чекаємо — за способом оплати й доставки, а не один текст
+    // «Гроші від НП» на будь-якому замовленні.
+    dueNovaPoshta: (amount: string) => `Післяплата · ${amount}`,
+    dueNovaPoshtaHint:
+      "Гроші надійдуть від Нової Пошти після того, як покупець забере посилку. Коли переказ прийде — запишіть надходження.",
+    duePickup: (amount: string) => `Оплата на точці самовивозу · ${amount}`,
+    duePickupHint:
+      "Покупець платить, коли забирає замовлення. Прийняли гроші — запишіть надходження.",
+    dueCourier: (amount: string) => `Оплата кур'єру · ${amount}`,
+    dueCourierHint:
+      "Покупець платить кур'єру під час доставки. Кур'єр передав гроші — запишіть надходження.",
+    dueOther: (amount: string) => `Очікуємо оплату · ${amount}`,
+    dueOtherHint:
+      "Доставку домовлено окремо. Коли гроші надійдуть — запишіть надходження.",
+    dueBankTransfer: (amount: string) => `Переказ на рахунок ФОП · ${amount}`,
+    dueBankTransferHint:
+      "Покупець оплачує переказом на рахунок ФОП. Коли гроші прийдуть на рахунок — запишіть надходження.",
+
+    // Чипи над журналом.
+    unmatchedRefundChip:
+      "LiqPay повідомив про повернення, якого немає в журналі — запишіть його",
+    legacyUnknownChip: "Вкажіть суму повернення",
+    legacyUnknownHint:
+      "Попередня версія позначила повернення без суми. Запишіть виплату з фактичною сумою.",
+
+    // --- Журнал --------------------------------------------------------------
+    journalHeading: "Журнал оплат",
+    journalEmpty: "Грошей за цим замовленням ще не надходило й не поверталося.",
+    directionIn: "Надходження",
+    directionOut: "Виплата",
+    reversalLabel: "Сторно",
+    actorLiqPay: "LiqPay",
+    actorSystem: "Система",
+    reversedBy: "Сторновано",
+    reversedByLink: "до запису сторно",
+    reversalOf: (date: string) => `Сторно запису від ${date}`,
+    forReturn: "За заявкою на повернення",
+    requestedChip: "Очікує підтвердження LiqPay",
+    voidedChip: "Анульовано",
+    voidReason: (reason: string) => `Причина анулювання: ${reason}`,
+    legacyChip: "Перенесено з попередньої версії",
+    // Вид запису в журналі — іменник.
+    kindLabels: {
+      LIQPAY_PAYMENT: "Оплата через LiqPay",
+      COD_NOVA_POSHTA: "Післяплата Нової Пошти",
+      PAID_AT_POINT: "Оплата на точці",
+      PAID_TO_COURIER: "Оплата кур'єру",
+      BANK_TRANSFER: "Переказ на рахунок ФОП",
+      LIQPAY_REFUND: "Повернення через LiqPay",
+      CASH_REFUND: "Повернення готівкою на точці",
+      TRANSFER_REFUND: "Повернення переказом",
+    },
+
+    // --- «Записати надходження» (orders:write) ------------------------------
+    receiptAction: "Записати надходження",
+    receiptTitle: "Записати надходження",
+    receiptDescriptionDue: (due: string) =>
+      `Покупець ще винен ${due}. Можна записати й частину — передоплату чи часткову оплату.`,
+    receiptDescriptionNothingDue:
+      "Покупець нічого не винен — будь-яка сума буде переплатою, тож вкажіть причину.",
+    receiptKindLegend: "Як надійшли гроші",
+    // TASK-1807: назва варіанта — за способом доставки замовлення.
+    receiptKinds: {
+      COD_NOVA_POSHTA: "Гроші від НП отримано",
+      PAID_AT_POINT: "Оплачено на точці",
+      PAID_TO_COURIER: "Оплачено кур'єру",
+      BANK_TRANSFER: "Переказ на рахунок ФОП",
+    },
+    noteLabel: "Примітка",
+    overpaymentReasonLabel: "Причина переплати",
+    overpaymentHint: (due: string) =>
+      `Сума більша, ніж покупець ще винен (${due}) — напишіть причину переплати.`,
+    receiptSubmit: (amount: string) => `Записати ${amount}`,
+    receiptSubmitBare: "Записати",
+    receiptToast: "Надходження записано",
+
+    // --- Сума й причина (спільне для діалогів) ------------------------------
+    amountLabel: "Сума, ₴",
+    amountHint: "Наприклад, 1299 або 1 299,50.",
+    amountInvalid: "Вкажіть суму числом, до двох знаків після коми.",
+    amountZero: "Сума має бути більшою за нуль.",
+    amountTooLarge: (max: string) => `Не більше ніж ${max}.`,
+    reasonLabel: "Причина",
+    reasonRequired: "Напишіть причину.",
+    cancel: "Скасувати",
+
+    // --- «Повернути гроші» без заявки (payments:refund) ----------------------
+    payoutAction: "Повернути гроші",
+    payoutTitle: "Повернути гроші покупцеві",
+    payoutDescription: (max: string) =>
+      `Без заявки можна повернути до ${max}: замовлення скасоване або покупець переплатив.`,
+    payoutMethodLegend: "Як повертаємо",
+    payoutMethods: {
+      CASH_REFUND: "Готівкою на точці",
+      TRANSFER_REFUND: "Переказом",
+      LIQPAY_REFUND: "Через LiqPay",
+    },
+    payoutLiqpayHint:
+      "Гроші повернуться на картку покупця. Запис чекатиме підтвердження LiqPay.",
+    payoutAttemptLabel: "Оплата LiqPay, з якої повертаємо",
+    payoutAttemptOption: (id: string, amount: string) =>
+      `${id} · можна повернути ${amount}`,
+    payoutCommentLabel: "Коментар",
+    // Без заявки ніщо інше в журналі не каже, чому гроші пішли.
+    payoutReasonHint: "Наприклад: замовлення скасовано, покупець переплатив.",
+    payoutSubmit: (amount: string) => `Повернути ${amount}`,
+    payoutSubmitBare: "Повернути",
+    payoutToast: "Виплату записано",
+    payoutLiqpayToast:
+      "Запит на повернення надіслано в LiqPay — запис чекає підтвердження.",
+    // Відправлене замовлення без переплати: гроші — лише через заявку.
+    payoutViaReturn:
+      "Гроші за відправлений товар повертаються через заявку на повернення.",
+    // Not «Оформити повернення» verbatim: the header carries a button with that
+    // name already, and two identical names on one card are one too many.
+    payoutViaReturnAction: "Оформити повернення на позиції",
+    payoutViaReturnNoAccess:
+      "Заявку оформлює працівник із правом на повернення.",
+    // --- «Виплатити» за заявкою (R2, TASK-2046) — той самий діалог ----------
+    payoutForReturnAction: "Виплатити",
+    payoutForReturnTitle: "Виплатити за заявкою",
+    payoutForReturnDescription: (due: string) =>
+      `За заявкою до виплати ${due}. Можна виплатити частинами — решта лишиться до виплати.`,
+    payoutForReturnSubmit: (amount: string) => `Виплатити ${amount}`,
+
+    // --- Сторно й анулювання (payments:correct) -----------------------------
+    reverseAction: "Сторнувати",
+    reverseActionAria: (what: string) => `Сторнувати «${what}»`,
+    reverseTitle: "Сторнувати запис",
+    reverseDescription: (what: string) =>
+      `Запис «${what}» лишиться в журналі закресленим, а поруч з'явиться сторно на ту саму суму. Статус оплати перерахується.`,
+    reverseSubmit: "Сторнувати",
+    reverseToast: "Запис сторновано",
+    voidAction: "Анулювати запит",
+    voidActionAria: (what: string) => `Анулювати запит «${what}»`,
+    voidTitle: "Анулювати запит на повернення",
+    voidDescription:
+      "Лише якщо LiqPay не провів повернення (наприклад, відмовив). Сума знову стане доступною для повернення.",
+    voidSubmit: "Анулювати",
+    voidToast: "Запит анульовано",
+
+    // --- Спроби LiqPay (лише показ) -----------------------------------------
+    attemptsShow: "Показати спроби оплати LiqPay",
+    attemptsHide: "Сховати спроби оплати LiqPay",
+
+    // --- Відмови сервера: що сталося і що робити -----------------------------
+    // «Спробуйте ще раз» — лише там, де повтор справді може пройти.
+    errors: {
+      ORDER_STALE:
+        "Поки ви заповнювали форму, оплата цього замовлення змінилася (можливо, прийшло повідомлення від LiqPay). Дані оновлено — перевірте суми й запишіть заново.",
+      ORDER_MONEY_IN_KIND_NOT_ALLOWED:
+        "Такий вид надходження не підходить до способу доставки цього замовлення. Оберіть варіант зі списку.",
+      ORDER_MONEY_OVERPAYMENT_REASON_REQUIRED:
+        "Сума більша, ніж покупець ще винен. Напишіть причину переплати або зменшіть суму.",
+      ORDER_MONEY_PAYOUT_REASON_REQUIRED:
+        "Повернення без заявки потребує причини. Напишіть, чому гроші повертаються.",
+      ORDER_MONEY_NOTHING_PAID:
+        "За цим замовленням немає сплачених грошей, які можна повернути.",
+      ORDER_MONEY_ORDER_LIVE:
+        "Замовлення ще в роботі. Спершу скасуйте його — тоді гроші можна буде повернути тут.",
+      ORDER_MONEY_RETURN_REQUIRED:
+        "Гроші за відправлений товар повертаються через заявку. Оформіть повернення на позиції, які повертають.",
+      ORDER_MONEY_RETURN_NOT_REFUND:
+        "Виплата можлива лише за заявкою з рішенням «Повернути гроші».",
+      ORDER_MONEY_RETURN_NOT_RECEIVED:
+        "Товар за заявкою ще не отримано. Спершу позначте його отриманим.",
+      ORDER_MONEY_VOID_REFUSED:
+        "Анулювати можна лише запит на повернення через LiqPay, який ще чекає підтвердження. Цей уже підтверджено або анульовано.",
+      ORDER_MONEY_REVERSAL_REFUSED:
+        "Цей запис сторнувати не можна: його вже сторновано, це саме сторно або запис від LiqPay.",
+      ORDER_MONEY_ENTRY_INVALID:
+        "Сервер не прийняв запис: перевірте суму (більша за нуль) і причину.",
+      PAYMENT_REFUND_OUTCOME_UNKNOWN:
+        "LiqPay не відповів, тож невідомо, чи пішли гроші. Запит лишається «Запитано» й рахується в повернутому — система сама перевірить його статус. Не повторюйте повернення: якщо за кілька годин запит не підтвердиться, перевірте платіж у кабінеті LiqPay і лише тоді анулюйте його.",
+      exceedsPaid: (available: string) =>
+        `Не можна повернути більше, ніж сплачено й ще не повернуто: доступно ${available}.`,
+      receiptReversalBelowRefunded:
+        "Після сторно цього надходження повернутим лишилося б більше, ніж сплачено. Спершу сторнуйте виплату.",
+      notFound: "Замовлення або запис не знайдено — оновіть сторінку.",
+      generic:
+        "Не вдалося зберегти: сервер не відповів. Перевірте з'єднання й спробуйте ще раз.",
+    },
+  },
+
+  // --- Гроші за заявкою на повернення (R2, TASK-2046) -------------------------
+  // «До повернення» — вартість повернених позицій мінус частка промокоду; її
+  // можна лише зменшити з причиною. Виплати — записи журналу грошей замовлення
+  // з цією заявкою; «Гроші повернуто» ставиться сам, коли вони покривають суму.
+  returnMoney: {
+    heading: "Гроші за заявкою",
+    loading: "Завантажуємо виплати…",
+    loadError: "Не вдалося завантажити виплати за заявкою. Оновіть сторінку.",
+    creditLabel: "До повернення",
+    creditReason: (reason: string) => `Зменшено: ${reason}`,
+    paidOutLabel: "Виплачено",
+    owedToCustomer: (amount: string) => `Винні покупцю ${amount}`,
+    unpaidOrder: "Оплати не було — гроші не повертаються, лише товар.",
+    nothingHeld:
+      "Усі сплачені за замовленням гроші вже повернуто — виплачувати нічого.",
+    awaitingGoods: "Виплатити можна, коли товар отримано.",
+    payoutsHeading: "Виплати",
+    payoutsEmpty: "Виплат за заявкою ще не було.",
+    reversedChip: "Сторновано",
+    // Без `orders:read` журнал замовлення недоступний — суми з самої заявки.
+    payoutsNoAccess: "Журнал виплат бачить працівник із правом на замовлення.",
+
+    // «Зменшити» (returns:write).
+    reduceAction: "Зменшити",
+    reduceActionAria: "Зменшити суму до повернення",
+    reduceTitle: "Зменшити суму до повернення",
+    reduceDescription: (current: string, paidOut: string) =>
+      `Зараз до повернення ${current}. Суму можна лише зменшити, і не нижче за вже виплачене (${paidOut}).`,
+    reduceAmountLabel: "Нова сума, ₴",
+    reduceAboveCurrent: (current: string) =>
+      `Не більше за поточну суму ${current} — її можна лише зменшити.`,
+    reduceBelowPaidOut: (paidOut: string) =>
+      `Не менше за вже виплачене ${paidOut}. Щоб зменшити ще — спершу сторнуйте виплату.`,
+    reduceReasonLabel: "Причина",
+    reduceReasonHint: "Збережеться в заявці й у журналі дій.",
+    reduceSubmit: (amount: string) => `Зменшити до ${amount}`,
+    reduceSubmitBare: "Зменшити",
+    reduceToast: "Суму до повернення зменшено.",
+    reduceFailed:
+      "Не вдалося зберегти: сервер не відповів. Перевірте з'єднання й спробуйте ще раз.",
   },
 
   // --- Посилання для покупця (TASK-484) ---------------------------------------
@@ -4651,7 +4785,12 @@ export const dict = {
     // Одиниці, а не рядки (TASK-1056): «2» — це два чохли, не дві позиції.
     colItems: "Шт.",
     colRequested: "Подано",
-    colRefunded: "Повернуто",
+    // R2 (TASK-2046): гроші заявки — з журналу. Колонка сортується за «до
+    // повернення» (`creditKop`), тож так і названа; під сумою — що ще винні
+    // (товар отримано) або що вже виплачено.
+    colCredit: "До повернення",
+    creditOwed: (amount: string) => `винні ${amount}`,
+    creditPaidOut: (amount: string) => `виплачено ${amount}`,
     rowAria: (id: string) => `Повернення ${id}`,
     viewOrder: "Замовлення",
 
@@ -4671,7 +4810,6 @@ export const dict = {
     operatorNotesHint: "Бачить лише команда.",
     restockedAt: "Повернуто на склад",
     notRestocked: "На склад не повертали",
-    refundedAmount: "Повернуто коштів",
     itemsHeading: "Що повертають",
     itemProduct: "Товар",
     itemQty: "Шт.",
@@ -4683,25 +4821,6 @@ export const dict = {
     resolveHeading: "Наступний крок",
     resolveNoTransitions:
       "Це повернення завершене — змінити його статус більше не можна.",
-    resolveRefundedAmount: "Сума повернення, ₴",
-    resolveRefundedAmountPlaceholder: "499.00",
-    // Partial refunds are normal: shipping is not always refundable and a
-    // customer may be returning one line out of three.
-    resolveRefundedAmountHint:
-      "Скільки фактично повернули клієнту. Може бути меншим за суму позицій — доставка повертається не завжди.",
-    resolveRefundedAmountInvalid:
-      "Сума має бути у форматі 499 або 499.00 (до двох знаків).",
-    // TASK-785 — the two ceilings the API enforces, in its order. The amount is
-    // named when the form knows it; the server's own 400 carries no localized
-    // number, so the same sentence is shown without one.
-    resolveRefundExceedsReturnedValue: (max?: string) =>
-      max
-        ? `Сума більша за вартість позицій, що повертаються (${max}). Перевірте, чи не пропущено крапку.`
-        : "Сума більша за вартість позицій, що повертаються. Перевірте, чи не пропущено крапку.",
-    resolveRefundExceedsOrderBalance: (max?: string) =>
-      max
-        ? `Не більше ${max} — це все, що ще можна повернути за цим замовленням.`
-        : "Сума більша за те, що ще можна повернути за цим замовленням з урахуванням знижки та інших повернень.",
     // TASK-794 — the limit is `ResolveReturnDto.operatorNotes` (@MaxLength).
     operatorNotesTooLong: "Примітка має містити не більше 2000 символів.",
     // `restock` is explicit rather than inferred from the status because "the
@@ -4772,8 +4891,8 @@ export const dict = {
     sortRequestedAsc: "подано, старі зверху",
     sortStatusAsc: "статус, від нових до завершених",
     sortStatusDesc: "статус, від завершених до нових",
-    sortRefundedDesc: "повернуто, більші зверху",
-    sortRefundedAsc: "повернуто, менші зверху",
+    sortRefundedDesc: "до повернення, більші зверху",
+    sortRefundedAsc: "до повернення, менші зверху",
     rowOpen: "Відкрити",
     rowOpenNewTab: "Відкрити в новій вкладці",
     rowCopyNumber: "Скопіювати номер",
@@ -4791,21 +4910,17 @@ export const dict = {
       `${linesLabel} · ${units} шт.`,
     itemSum: "Сума",
     itemsTotal: "Сума позицій",
-    alreadyRefunded: "Уже повернуто за замовленням",
-    maxRefund: "Можна повернути максимум",
     // «Наступний крок» — лише дії, доречні для статусу (Р3–Р5).
     nextRequested: "Перевірте причину й вирішіть, чи приймаєте повернення.",
     nextApproved: "Коли посилка від клієнта прийде й ви її перевірите:",
     restockUnits: (count: number) => `Повернути товар на склад (${count} шт.)`,
     markReceived: "Товар отримано",
+    // R2 (TASK-2046): гроші виплачують у картці «Гроші за заявкою» нижче —
+    // статус «Гроші повернуто» ставиться сам, коли виплати покриють суму.
     nextReceived: (restocked: boolean) =>
       restocked
-        ? "Товар отримано й повернуто на склад. Лишилось повернути гроші клієнту."
-        : "Товар отримано. Лишилось повернути гроші клієнту.",
-    refundCapHint: (max: string) =>
-      `Максимум ${max}. Доставку повертають не завжди.`,
-    resolveRefundedAmountRequired: "Вкажіть суму, яку повернули клієнту.",
-    markRefunded: "Гроші повернуто",
+        ? "Товар отримано й повернуто на склад. Лишилось виплатити гроші — нижче, у «Гроші за заявкою»."
+        : "Товар отримано. Лишилось виплатити гроші — нижче, у «Гроші за заявкою».",
     saving: "Зберігаємо…",
     notesEdit: "Змінити",
     notesEditHint: "Збережеться разом із наступним кроком.",
@@ -4974,6 +5089,15 @@ export const dict = {
       "Повернути товар на склад можна лише на кроці «Товар отримано» — заявку оновлено.",
     refusalUseDecision:
       "Схвалити чи відхилити заявку можна лише рішенням — оберіть його в картці «Рішення».",
+    // R2 (TASK-2046): гроші за заявкою — журнал виплат і «до повернення».
+    refusalRefundDerived:
+      "«Гроші повернуто» ставиться само, коли виплати покриють суму до повернення — запишіть виплату в картці «Гроші за заявкою». Заявку оновлено.",
+    refusalCreditNotRefund:
+      "Суму до повернення можна змінити лише за рішенням «Гроші» — рішення вже інше, заявку оновлено.",
+    refusalCreditAboveComputed:
+      "Суму можна лише зменшити — вона більша за вартість повернених позицій. Заявку оновлено, перевірте суму.",
+    refusalCreditBelowPaidOut:
+      "За заявкою вже виплатили більше, ніж нова сума. Щоб зменшити ще — спершу сторнуйте виплату. Заявку оновлено.",
     refusalForbidden:
       "У вас немає права змінювати повернення — зміну не збережено. Попросіть власника магазину надати доступ.",
 
@@ -5133,6 +5257,8 @@ export const dict = {
     methodOnDelivery: "Оплата при отриманні",
     methodOnline: "Картка онлайн",
     methodInstallments: "Оплата частинами",
+    // R2: лише для замовлень з адмінки — вітрина цей спосіб не пропонує.
+    methodBankTransfer: "Переказ на рахунок ФОП",
     // Після правила під полем приміток: скільки символів зараз.
     tooLongNow: (count: number) => `Зараз ${count}.`,
     itemSku: (sku: string) => `SKU ${sku}`,
@@ -5164,7 +5290,7 @@ export const dict = {
     // TASK-1021: матриця доставка × оплата. Без міста з довідника НП замовлення
     // стає «Інша доставка», а її вартість ще не відома.
     paymentNeedsNpCity:
-      "Картка онлайн і оплата частинами — лише для міста зі списку Нової Пошти: для іншої адреси вартість доставки ще не відома. Оберіть місто зі списку або оплату при отриманні.",
+      "Картка онлайн і оплата частинами — лише для міста зі списку Нової Пошти: для іншої адреси вартість доставки ще не відома. Оберіть місто зі списку, оплату при отриманні або переказ на рахунок ФОП.",
   },
 
   // --- Users (TASK-115) -------------------------------------------------------
@@ -5821,8 +5947,6 @@ export const dict = {
       // підтверджена, лист із підтвердженням пішов на неї.
       changeEmail: "змінено email для входу",
       clearProductDelta: "скинуто винятки для товару",
-      // TASK-620: lifting an operator's mistaken «Кошти повернено».
-      correctPaymentStatus: "виправлено помилкову мітку «Кошти повернено»",
       create: "створено",
       createBrand: "створено бренд",
       createCategory: "створено категорію",
@@ -5853,7 +5977,15 @@ export const dict = {
       issueAccessLink: "видано нове посилання для покупця",
       moderateMany: "промодеровано (масово)",
       publish: "опубліковано",
-      refund: "повернено кошти",
+      // R2 (TASK-2047 / TASK-2338): the order money journal — a receipt, a
+      // payout, the reversal (сторно) of an entry, the void of a LiqPay refund
+      // request that never went through; `reduceCredit` lowers a return's
+      // «До повернення».
+      recordPayout: "записано виплату покупцеві",
+      recordReceipt: "записано надходження грошей",
+      reduceCredit: "зменшено суму до повернення",
+      reverseEntry: "сторновано запис оплати",
+      voidEntry: "анульовано запит на повернення через LiqPay",
       reindex: "перебудовано",
       reject: "відхилено",
       remove: "видалено",
@@ -5892,7 +6024,6 @@ export const dict = {
       updateDeviceCompat: "змінено сумісність",
       updateGroupDeviceCompat: "змінено сумісність групи",
       updateModel: "змінено модель",
-      updatePaymentStatus: "змінено статус оплати",
       // TASK-477. Рядок пише не `AuditInterceptor`, а сам маршрут (див.
       // `records-own-audit.decorator.ts`) — бо цікава половина відповіді на «хто
       // тихо видав менеджеру доступ до замовлень?» це стан ДО запису, якого в

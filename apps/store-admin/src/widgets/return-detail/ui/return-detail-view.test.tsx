@@ -7,7 +7,7 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
-import { formatCurrency, formatDateTime } from "@/shared/lib";
+import { formatDateTime, formatKop } from "@/shared/lib";
 import { ReturnDetailView } from "./return-detail-view";
 
 const d = dict.returns;
@@ -177,58 +177,42 @@ describe("ReturnDetailView — the path of the request (Р3)", () => {
   });
 });
 
-describe("ReturnDetailView — what comes back and the ceiling (TASK-959)", () => {
-  it("counts lines and units and prints the ceiling from the order", async () => {
-    serve({
-      rma: makeReturn({ status: "RECEIVED" }),
-      siblings: [makeReturn({ id: "other-1", refundedAmount: "300.00" })],
-      orderTotal: "1399.00",
-    });
+describe("ReturnDetailView — what comes back and its money (TASK-959 → R2 TASK-2046)", () => {
+  it("counts lines and units and prints the value of the lines — no client ceiling any more", async () => {
+    serve({ rma: makeReturn({ status: "RECEIVED" }) });
     renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
       auth: READER_OF_ORDERS,
     });
 
     const card = await screen.findByRole("region", { name: d.itemsHeading });
     expect(within(card).getByText("1 позиція · 1 шт.")).toBeInTheDocument();
-    // Order 1399 − 300 already refunded by another return = 1099 < 1299.
-    const max = await within(card).findByText(d.maxRefund);
-    expect(max.closest("[data-row]")?.textContent).toContain(
-      formatCurrency("1099.00"),
-    );
     expect(
-      within(card).getByText(d.alreadyRefunded).closest("[data-row]")
-        ?.textContent,
-    ).toContain(formatCurrency("300.00"));
+      within(card).getByText(d.itemsTotal).closest("[data-row]")?.textContent,
+    ).toContain(formatKop(129900));
+    // «Уже повернуто» / «Можна повернути максимум» went with the amount field:
+    // the server computes what is owed («До повернення»).
+    expect(within(card).queryByText(/максимум/)).not.toBeInTheDocument();
   });
 
-  it("prints no ceiling it cannot compute — without orders:read", async () => {
-    serve({ rma: makeReturn({ status: "RECEIVED" }) });
-    renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
-      auth: { permissions: ["returns:read", "returns:write"] },
-    });
-
-    const card = await screen.findByRole("region", { name: d.itemsHeading });
-    expect(within(card).getByText(d.itemsTotal)).toBeInTheDocument();
-    expect(within(card).queryByText(d.maxRefund)).not.toBeInTheDocument();
-  });
-
-  it("keeps the refunded amount on the card", async () => {
+  it("puts «Гроші за заявкою» between the step and the notes on a REFUND return", async () => {
     serve({
-      rma: makeReturn({
-        status: "REFUNDED",
-        refundedAmount: "1299.00",
-        restockedAt: "2026-09-25T09:00:00.000Z",
-      }),
+      rma: makeReturn({ status: "RECEIVED", creditKop: 129900, paidOutKop: 0 }),
     });
     renderWithProviders(<ReturnDetailView returnId={RETURN_ID} />, {
       auth: READER_OF_ORDERS,
     });
 
-    const card = await screen.findByRole("region", { name: d.itemsHeading });
-    expect(
-      within(card).getByText(d.refundedAmount).closest("[data-row]")
-        ?.textContent,
-    ).toContain(formatCurrency("1299.00"));
+    const money = await screen.findByRole("region", {
+      name: dict.returnMoney.heading,
+    });
+    const step = screen.getByRole("region", { name: d.resolveHeading });
+    const notes = screen.getByText(d.operatorNotes, { selector: "h3" });
+    // DOCUMENT_POSITION_FOLLOWING = 4
+    expect(step.compareDocumentPosition(money) & 4).toBeTruthy();
+    expect(money.compareDocumentPosition(notes) & 4).toBeTruthy();
+    expect(within(money).getByTestId("return-credit")).toHaveTextContent(
+      /1\s?299/,
+    );
   });
 
   it("shows the next step and the notes beside the goods", async () => {

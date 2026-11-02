@@ -101,39 +101,24 @@ describe("availableDecisions — what the decide form may offer (TASK-2044)", ()
   });
 });
 
-describe("nextResolveStep — the one PATCH step the card offers (TASK-2044)", () => {
-  it("is «Товар отримано» after any positive decision", () => {
-    for (const decision of [
-      ReturnDecision.REFUND,
-      ReturnDecision.REPLACEMENT,
-      ReturnDecision.REPAIR,
+describe("nextResolveStep — the one PATCH step the card offers (TASK-2044, R2)", () => {
+  it("is «Товар отримано» on an approved return", () => {
+    expect(nextResolveStep(ReturnEntityStatus.APPROVED)).toBe(
+      ReturnEntityStatus.RECEIVED,
+    );
+  });
+
+  it("offers no «Гроші повернуто» on received goods — REFUNDED follows from the payouts (TASK-2046)", () => {
+    expect(nextResolveStep(ReturnEntityStatus.RECEIVED)).toBeNull();
+  });
+
+  it("is never APPROVED, REJECTED or REFUNDED", () => {
+    for (const status of [
+      ReturnEntityStatus.REQUESTED,
+      ReturnEntityStatus.REJECTED,
+      ReturnEntityStatus.REFUNDED,
     ]) {
-      expect(nextResolveStep(ReturnEntityStatus.APPROVED, decision)).toBe(
-        ReturnEntityStatus.RECEIVED,
-      );
+      expect(nextResolveStep(status)).toBeNull();
     }
-  });
-
-  it("is «Гроші повернуто» on received goods only under a REFUND decision", () => {
-    expect(
-      nextResolveStep(ReturnEntityStatus.RECEIVED, ReturnDecision.REFUND),
-    ).toBe(ReturnEntityStatus.REFUNDED);
-    expect(
-      nextResolveStep(ReturnEntityStatus.RECEIVED, ReturnDecision.REPAIR),
-    ).toBeNull();
-    expect(
-      nextResolveStep(ReturnEntityStatus.RECEIVED, ReturnDecision.REPLACEMENT),
-    ).toBeNull();
-    expect(nextResolveStep(ReturnEntityStatus.RECEIVED, null)).toBeNull();
-  });
-
-  it("is never APPROVED or REJECTED — those belong to the decision", () => {
-    expect(nextResolveStep(ReturnEntityStatus.REQUESTED, null)).toBeNull();
-    expect(
-      nextResolveStep(ReturnEntityStatus.REJECTED, ReturnDecision.REJECT),
-    ).toBeNull();
-    expect(
-      nextResolveStep(ReturnEntityStatus.REFUNDED, ReturnDecision.REFUND),
-    ).toBeNull();
   });
 });

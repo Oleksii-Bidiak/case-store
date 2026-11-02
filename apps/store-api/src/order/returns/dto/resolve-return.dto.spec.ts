@@ -26,4 +26,12 @@ describe('ResolveReturnDto', () => {
   it('still rejects a status outside the enum', () => {
     expect(parse({ status: 'CLOSED' }).errors).not.toEqual([]);
   });
+
+  // R2 A3 (TASK-2046): money on a return is a ledger payout now
+  // (POST /admin/orders/:orderId/money/out) — the old amount field is gone and
+  // the global pipe's forbidNonWhitelisted refuses it.
+  it('no longer accepts refundedAmount', () => {
+    const dto = plainToInstance(ResolveReturnDto, { status: 'RECEIVED', refundedAmount: '499.00' });
+    expect(validateSync(dto, { whitelist: true, forbidNonWhitelisted: true })).not.toEqual([]);
+  });
 });

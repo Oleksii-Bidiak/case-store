@@ -5,33 +5,34 @@ import {
   type OrderEntity,
 } from "@/shared/api";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
+import { formatKop } from "@/shared/lib";
 
 /**
- * The derived marks of owner decision B-1 (TASK-470 / 471 / 472).
+ * The derived marks of owner decision B-1 (TASK-470 / 471 / 472), money marks
+ * re-derived from the order money ledger in R2 (TASK-1968).
  *
  * ## Why this file exists at all
  *
- * The same four marks have to render in two places that look nothing alike —
- * a row of the order list and the header of the order card — and the operator
- * has to be able to trust that a row without a chip really is an order without
- * that problem. Two implementations of «Борг» would eventually disagree, and the
+ * The same marks have to render in two places that look nothing alike — a row
+ * of the order list and the header of the order card — and the operator has to
+ * be able to trust that a row without a chip really is an order without that
+ * problem. Two implementations of «Борг» would eventually disagree, and the
  * disagreement would show up as an order that is flagged on one screen and clean
  * on the other, which is worse than neither screen flagging it.
  *
- * The fifth mark, «Позиція недоступна», is deliberately NOT here: it belongs to
- * a LINE, not to an order, and the server already says which lines
- * (`unavailableItemIds`). Its aggregate is the dashboard tile.
+ * «Позиція недоступна» is deliberately NOT here: it belongs to a LINE, not to an
+ * order, and the server already says which lines (`unavailableItemIds`). Its
+ * aggregate is the dashboard tile.
  *
  * ## Why they are computed and not read
  *
  * Because none of them is stored — that is the owner's decision, not an
- * omission (B-1, closing paragraph). Every one is a sentence about columns that
- * already exist, and a mark kept as its own record drifts away from the fact the
- * first time some path forgets to rewrite it. The list's server-side filters
- * (`hasDebt`, `awaitingPayment`, `reservationExpired`) restate the identical
- * conditions in `buildAdminWhere`, so a row returned by a filter always carries
- * the matching chip.
+ * omission (B-1, closing paragraph). Every one is a sentence about fields that
+ * already exist. The money ones read the server's ledger figures (`balanceKop`,
+ * `refundedKop`, `returnCreditKop` — integer kopecks); nothing here parses a
+ * hryvnia string into a float. The list's server-side filters (`hasDebt`,
+ * `awaitingPayment`, `reservationExpired`) restate the identical conditions, so
+ * a row returned by a filter always carries the matching chip.
  *
  * ## The clock
  *
@@ -43,7 +44,12 @@ import { formatCurrency } from "@/shared/lib";
  */
 
 export type OrderMarkKind =
-  "debt" | "awaitingPayment" | "reservationExpired" | "partiallyRefunded";
+  | "debt"
+  | "owedToCustomer"
+  | "awaitingPayment"
+  | "reservationExpired"
+  | "partiallyRefunded"
+  | "refunded";
 
 export interface OrderMark {
   kind: OrderMarkKind;
@@ -61,25 +67,20 @@ export type OrderMarkSource = Pick<
   | "status"
   | "paymentStatus"
   | "paymentMethod"
-  | "total"
   | "reservationExpiresAt"
-  | "refundedTotal"
+  | "refundedKop"
+  | "returnCreditKop"
+  | "balanceKop"
 >;
-
-/** Payment states in which a delivered order owes nothing. */
-const SETTLED_PAYMENT_STATUSES: ReadonlyArray<OrderEntityPaymentStatus> = [
-  OrderEntityPaymentStatus.PAID,
-  OrderEntityPaymentStatus.REFUNDED,
-];
 
 /**
  * Payment methods whose reservation runs on a clock.
  *
  * Mirrors the server twin exactly — `resolveReservationDeadline` gives a
- * deadline to everything except ON_DELIVERY, and `findExpiredReservations`
- * cancels on `IN (ONLINE, INSTALLMENTS)`. Listed rather than written as
- * `!== ON_DELIVERY` so a sixth method has to be considered here deliberately
- * instead of silently inheriting a countdown.
+ * deadline to everything except ON_DELIVERY (and BANK_TRANSFER), and
+ * `findExpiredReservations` cancels on `IN (ONLINE, INSTALLMENTS)`. Listed
+ * rather than written as `!== ON_DELIVERY` so a new method has to be considered
+ * here deliberately instead of silently inheriting a countdown.
  */
 const TIMED_RESERVATION_METHODS: ReadonlyArray<OrderEntityPaymentMethod> = [
   OrderEntityPaymentMethod.ONLINE,
@@ -91,61 +92,35 @@ export function minutesUntil(deadline: string, now: number): number {
   return Math.max(0, Math.ceil((Date.parse(deadline) - now) / 60_000));
 }
 
-/**
- * What «Борг» should actually say — the total minus whatever went back.
- *
- * The mark fires for every unsettled payment status, PARTIALLY_REFUNDED
- * included, and that is the catalogue's wording, not an oversight (B-1 §1: an
- * open money question is worth showing). The AMOUNT was the oversight: it was
- * always `total`, so a fully paid order with one line refunded rendered «Борг
- * 12 000 ₴» beside «Повернуто 1 200 ₴ з 12 000 ₴» — two numbers on one card,
- * neither of which anyone owed (review of plan 180).
- *
- * Subtracted in integer kopiykas so 1 200,10 does not become 1 200,099999.
- * `refundedTotal` absent means the read did not join the returns, and then the
- * honest answer is the total: inventing a smaller debt from a measurement we do
- * not have would be the same class of lie in the other direction. Clamped at
- * zero — an over-refund is a different problem and must not print a negative
- * debt.
- */
-function outstandingAmount(
-  total: string,
-  refundedTotal?: string | null,
-): number {
-  const totalKop = Math.round(Number(total) * 100);
-  if (refundedTotal == null) return totalKop / 100;
-
-  const refundedKop = Math.round(Number(refundedTotal) * 100);
-  if (!Number.isFinite(refundedKop)) return totalKop / 100;
-
-  return Math.max(0, totalKop - refundedKop) / 100;
-}
-
 export function orderDerivedMarks(
   order: OrderMarkSource,
   now: number = Date.now(),
 ): OrderMark[] {
   const marks: OrderMark[] = [];
 
-  // «Борг N ₴» — delivered goods nobody has paid for. PARTIALLY_REFUNDED counts
-  // as unsettled here, exactly as the catalogue states it (∉ {PAID, REFUNDED}):
-  // the operator still has an open money question on that order, and the whole
-  // point of the mark is that it is visible rather than correct-by-omission.
-  //
-  // The amount, though, is the total MINUS what went back — see
-  // `outstandingAmount`. Showing the full total on a partially refunded order
-  // printed a debt nobody had, right next to the chip that said how much had
-  // been returned (review of plan 180).
-  if (
-    order.status === OrderEntityStatus.DELIVERED &&
-    !SETTLED_PAYMENT_STATUSES.includes(order.paymentStatus)
-  ) {
+  // «Борг N ₴» / «Винні покупцю N ₴» — ONE balance, the server's
+  // (`total − returnCredit − paid + refunded`, R2 TASK-1968). Before R2 «Борг»
+  // fired on any unsettled payment label and printed `total − refunded`, so a
+  // paid order with one line returned read «Борг 2 297 ₴» beside «Частково
+  // повернуто 100 з 2 397» (AD-RET-17). Now:
+  //  - «Борг» only on a DELIVERED order that still owes — the server's
+  //    `hasDebt` filter is the same sentence. An order still on its way owes
+  //    nothing YET (the «Оплата» block says «До сплати»).
+  //  - «Винні покупцю» whenever the balance is negative, whatever the status:
+  //    returned goods not yet paid out, or an overpayment.
+  if (order.balanceKop > 0 && order.status === OrderEntityStatus.DELIVERED) {
     marks.push({
       kind: "debt",
-      label: dict.orders.markDebt(
-        formatCurrency(outstandingAmount(order.total, order.refundedTotal)),
-      ),
+      label: dict.orders.markDebt(formatKop(order.balanceKop)),
       variant: "destructive",
+    });
+  } else if (order.balanceKop < 0) {
+    marks.push({
+      kind: "owedToCustomer",
+      // The sign is the server's way of saying "we owe"; the chip reads the
+      // amount owed, unsigned — as the «Оплата» block does.
+      label: dict.orders.markOwedToCustomer(formatKop(-order.balanceKop)),
+      variant: "warning",
     });
   }
 
@@ -154,10 +129,8 @@ export function orderDerivedMarks(
   // is not waiting for one to run out.
   //
   // The method test is a SET, not `=== ONLINE` (review of plan 180). BNPL orders
-  // get a deadline too — `resolveReservationDeadline` excludes only ON_DELIVERY,
-  // and `findExpiredReservations` cancels on `paymentMethod IN (ONLINE,
-  // INSTALLMENTS)` — so an `=== ONLINE` chip meant the one class of order the
-  // worker will silently cancel was the one class with no warning on screen.
+  // get a deadline too, and an `=== ONLINE` chip meant the one class of order
+  // the worker will silently cancel was the one class with no warning on screen.
   if (
     TIMED_RESERVATION_METHODS.includes(order.paymentMethod) &&
     order.paymentStatus === OrderEntityPaymentStatus.PENDING &&
@@ -179,21 +152,30 @@ export function orderDerivedMarks(
     );
   }
 
-  // «Частково повернуто X з Y» (TASK-472). Guarded on the sum being PRESENT, not
-  // on it being non-zero: `refundedTotal` is absent whenever the read did not
-  // join the returns, and «Повернуто 0,00 ₴» would be a number we never measured.
-  if (
-    order.paymentStatus === OrderEntityPaymentStatus.PARTIALLY_REFUNDED &&
-    order.refundedTotal != null
-  ) {
-    marks.push({
-      kind: "partiallyRefunded",
-      label: dict.orders.markPartiallyRefunded(
-        formatCurrency(order.refundedTotal),
-        formatCurrency(order.total),
-      ),
-      variant: "secondary",
-    });
+  // What went back (TASK-472 → R2 TASK-1968). «з N» is the value of the goods
+  // that came back (`returnCreditKop`), not the order total: 100 paid out on a
+  // 799 return is «Частково повернуто 100 з 799», which is what is still to
+  // settle. Money that went back without a return (a cancelled order, an
+  // overpayment) — or once the returns are fully paid out — has no «з» to
+  // measure against: «Повернуто X». A full refund needs no chip: the payment
+  // badge already says «Кошти повернено».
+  if (order.refundedKop > 0) {
+    if (order.returnCreditKop > order.refundedKop) {
+      marks.push({
+        kind: "partiallyRefunded",
+        label: dict.orders.markPartiallyRefunded(
+          formatKop(order.refundedKop),
+          formatKop(order.returnCreditKop),
+        ),
+        variant: "secondary",
+      });
+    } else if (order.paymentStatus !== OrderEntityPaymentStatus.REFUNDED) {
+      marks.push({
+        kind: "refunded",
+        label: dict.orders.markRefunded(formatKop(order.refundedKop)),
+        variant: "secondary",
+      });
+    }
   }
 
   return marks;

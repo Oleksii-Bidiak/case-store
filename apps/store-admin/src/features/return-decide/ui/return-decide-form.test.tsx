@@ -1,5 +1,10 @@
 import type { ReactElement } from "react";
 import { http, HttpResponse } from "msw";
+import { QueryClient } from "@tanstack/react-query";
+import {
+  getAdminOrderControllerFindByIdQueryKey,
+  getAdminOrderMoneyControllerGetQueryKey,
+} from "@/entities/order";
 import {
   renderWithProviders,
   screen,
@@ -270,6 +275,41 @@ describe("ReturnDecideForm — the server's refusals (TASK-2044)", () => {
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(d.decideLocked),
     );
+  });
+});
+
+describe("ReturnDecideForm — the order's money moves with the decision (TASK-2350)", () => {
+  it("refetches the order money journal, whose updatedAt the decision bumped", async () => {
+    stubDecide(() =>
+      HttpResponse.json({
+        data: makeReturn({ status: "APPROVED", decision: "REFUND" }),
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const invalidate = jest.spyOn(queryClient, "invalidateQueries");
+    renderWithProviders(<ReturnDecideForm rma={makeReturn()} />, {
+      queryClient,
+      auth: WRITER,
+    });
+
+    await userEvent.click(radio(d.decisionREFUND));
+    await submit();
+
+    // A REFUND decision sets the return's credit and recomputes the order, so
+    // a payout built from the stale journal would carry an old updatedAt (409).
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: getAdminOrderMoneyControllerGetQueryKey("order-uuid-1234"),
+      }),
+    );
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: getAdminOrderControllerFindByIdQueryKey("order-uuid-1234"),
+    });
   });
 });
 

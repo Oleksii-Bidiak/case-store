@@ -206,30 +206,24 @@ export class DashboardRepository {
   }
 
   /**
-   * The "active but unpaid" order predicate — money we still expect to receive —
-   * AND `status NOT IN (CANCELLED, REFUNDED)`. Single source of truth for the
-   * receivable-pipeline filter, shared by `getUnrealizedRevenue`,
-   * `getUnrealizedRevenueSince`, and the `unpaidInTransit` needs-action count
-   * (TASK-248) so the three never drift apart. Private to this repository —
-   * `OrderRepository.findAll()`'s own `unpaidInTransit` filter is written
-   * independently (no cross-module `dashboard`→`order` dependency).
+   * The "active but unpaid" order predicate — money we still expect to receive.
+   * Single source of truth for the receivable-pipeline filter, shared by
+   * `getUnrealizedRevenue`, `getUnrealizedRevenueSince`, and the
+   * `unpaidInTransit` needs-action count (TASK-248) so the three never drift
+   * apart. Private to this repository — `OrderRepository.findAll()`'s own
+   * `unpaidInTransit` filter restates it (no cross-module `dashboard`→`order`
+   * dependency).
    *
-   * `PARTIALLY_REFUNDED` is excluded alongside `PAID` and NOT written as
-   * `!= PAID` (review of plan 180). That status is only reachable FROM `PAID`, so on such
-   * an order the money did arrive in full and some of it went back — the shop is
-   * owed nothing. Counting it as `!= PAID` added the order's ENTIRE total to
-   * unrealized revenue and put it in the "unpaid in transit" queue, sending an
-   * operator to chase a customer who paid.
-   *
-   * Note this is a different question from the «Борг» mark, which deliberately
-   * casts a wider net (`∉ {PAID, REFUNDED}`, B-1 §1): the mark asks "is there an
-   * open money question on this order", this predicate asks "how much have we
-   * not been paid". A partially refunded order answers yes to the first and
-   * zero to the second.
+   * R2 A4 (TASK-2047): read from the money ledger — `balanceKop > 0` on an order
+   * that has not ended (`status NOT IN (CANCELLED, REFUNDED)`). The old
+   * payment-status list could not say "half paid", counted a partly refunded
+   * order as unpaid until review of plan 180 patched it, and disagreed with the
+   * «Борг» filter. The tile is "unpaid in transit" — any live order still owed
+   * money; «Борг» is the DELIVERED subset of the same balance.
    */
   private unrealizedOrderWhere(): Prisma.OrderWhereInput {
     return {
-      paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+      balanceKop: { gt: 0 },
       status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
     };
   }
@@ -296,26 +290,26 @@ export class DashboardRepository {
   }
 
   /**
-   * Unrealized (pending-payment) revenue: sum of `Order.total` for orders that
-   * are still active but not yet paid — `paymentStatus != PAID` AND `status NOT
-   * IN (CANCELLED, REFUNDED)`. This is the receivable pipeline, the complement to
-   * earned revenue (TASK-137).
+   * Unrealized (pending-payment) revenue: what live orders still owe — Σ
+   * `balanceKop` over {@link unrealizedOrderWhere}, in hryvnias. This is the
+   * receivable pipeline, the complement to earned revenue (TASK-137). Since R2
+   * A4 the balance, not the total: a half-paid order is owed its other half.
    */
   private async getUnrealizedRevenue(): Promise<number> {
     const result = await this.prisma.order.aggregate({
-      _sum: { total: true },
+      _sum: { balanceKop: true },
       where: this.unrealizedOrderWhere(),
     });
-    return Number(result._sum.total ?? 0);
+    return (result._sum.balanceKop ?? 0) / 100;
   }
 
   /** Unrealized revenue since a given date (same active-but-unpaid filter). */
   private async getUnrealizedRevenueSince(since: Date): Promise<number> {
     const result = await this.prisma.order.aggregate({
-      _sum: { total: true },
+      _sum: { balanceKop: true },
       where: { ...this.unrealizedOrderWhere(), createdAt: { gte: since } },
     });
-    return Number(result._sum.total ?? 0);
+    return (result._sum.balanceKop ?? 0) / 100;
   }
 
   /**

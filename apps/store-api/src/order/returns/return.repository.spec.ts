@@ -14,6 +14,15 @@ import { PrismaService } from '../../prisma';
 import { CacheService } from '../../cache';
 import { ProductIndexer } from '../../search/product-indexer';
 import { ReturnRepository } from './return.repository';
+import { OrderMoneyRepository } from '../order-money.repository';
+
+/** The ledger repository: only decide/setCredit reach it, and only with a credit change. */
+const moneyRepositoryMock = {
+  recompute: jest.fn(),
+  returnPaidOutKop: jest.fn().mockResolvedValue(0),
+  isFullyRefunded: jest.fn().mockResolvedValue(false),
+  syncReturnStatus: jest.fn(),
+};
 import { RETURN_SORT_FIELDS, ReturnListQueryDto } from './dto';
 
 const prismaMock = {
@@ -53,6 +62,7 @@ describe('ReturnRepository — admin queue sorting (TASK-354)', () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: CacheService, useValue: cacheMock },
         { provide: ProductIndexer, useValue: productIndexerMock },
+        { provide: OrderMoneyRepository, useValue: moneyRepositoryMock },
       ],
     }).compile();
 
@@ -80,18 +90,19 @@ describe('ReturnRepository — admin queue sorting (TASK-354)', () => {
     }
   });
 
-  it('pushes unrefunded returns to the bottom in BOTH directions', async () => {
-    // Postgres puts NULLs first on DESC, so "biggest refund first" would open on
-    // a wall of returns that have no amount at all.
+  it('sorts the money column by «До повернення» (creditKop), no-credit returns last both ways', async () => {
+    // TASK-2339 (R2 A4): the legacy refunded_amount column is no longer written,
+    // so the sort key reads the credit column; the sum of payouts is not a column.
+    // Postgres puts NULLs first on DESC — they would open the list otherwise.
     await repository.findAll({ sortBy: 'refundedAmount', sortOrder: 'desc' });
     expect(orderByOfLastFindMany()).toEqual([
-      { refundedAmount: { sort: 'desc', nulls: 'last' } },
+      { creditKop: { sort: 'desc', nulls: 'last' } },
       { id: 'asc' },
     ]);
 
     await repository.findAll({ sortBy: 'refundedAmount', sortOrder: 'asc' });
     expect(orderByOfLastFindMany()).toEqual([
-      { refundedAmount: { sort: 'asc', nulls: 'last' } },
+      { creditKop: { sort: 'asc', nulls: 'last' } },
       { id: 'asc' },
     ]);
   });
@@ -134,6 +145,7 @@ describe('ReturnRepository.findByUserId — the customer list (TASK-608)', () =>
         { provide: PrismaService, useValue: prismaMock },
         { provide: CacheService, useValue: cacheMock },
         { provide: ProductIndexer, useValue: productIndexerMock },
+        { provide: OrderMoneyRepository, useValue: moneyRepositoryMock },
       ],
     }).compile();
 
@@ -175,6 +187,7 @@ describe('ReturnRepository — admin queue search (TASK-423)', () => {
         // path re-indexes the product. This suite never reaches it, but Nest
         // resolves the whole constructor before any test runs.
         { provide: ProductIndexer, useValue: productIndexerMock },
+        { provide: OrderMoneyRepository, useValue: moneyRepositoryMock },
       ],
     }).compile();
 
@@ -333,6 +346,7 @@ describe('ReturnRepository.create — the quantity cap is checked under a lock (
         { provide: PrismaService, useValue: txPrismaMock },
         { provide: CacheService, useValue: cacheMock },
         { provide: ProductIndexer, useValue: productIndexerMock },
+        { provide: OrderMoneyRepository, useValue: moneyRepositoryMock },
       ],
     }).compile();
 
@@ -416,7 +430,7 @@ describe('ReturnRepository.create — the quantity cap is checked under a lock (
   });
 });
 
-describe('ReturnRepository.resolve — the refund ceilings are checked under a lock (TASK-785)', () => {
+describe('ReturnRepository.resolve — the guarded transition (TASK-340, TASK-1961)', () => {
   const ORDER_ID = 'order-uuid-1';
   const RETURN_ID = 'return-uuid-1';
   const existing = {
@@ -488,75 +502,11 @@ describe('ReturnRepository.resolve — the refund ceilings are checked under a l
         { provide: PrismaService, useValue: txPrismaMock },
         { provide: CacheService, useValue: cacheMock },
         { provide: ProductIndexer, useValue: productIndexerMock },
+        { provide: OrderMoneyRepository, useValue: moneyRepositoryMock },
       ],
     }).compile();
 
     repository = module.get(ReturnRepository);
-  });
-
-  const fields = { status: ReturnStatus.REFUNDED, refundedAmount: '499.00' };
-
-  it('locks the order row, reads the sibling refunds, checks, then writes — in one transaction', async () => {
-    const assertRefundable = jest.fn(() => {
-      issued.push('check');
-    });
-
-    await repository.resolve(current, fields, { assertRefundable });
-
-    expect(txPrismaMock.$transaction).toHaveBeenCalledTimes(1);
-    expect(issued.slice(0, 5)).toEqual(['read', 'lock', 'ledger', 'check', 'write']);
-  });
-
-  it("hands the check the order total, the OTHER returns and this return's priced lines", async () => {
-    const assertRefundable = jest.fn();
-
-    await repository.resolve(current, fields, { assertRefundable });
-
-    const [ledger] = assertRefundable.mock.calls[0] as unknown as [
-      {
-        orderTotal: { toString(): string };
-        otherRefunds: unknown[];
-        items: Array<{ quantity: number; unitPrice: { toString(): string } }>;
-      },
-    ];
-    expect(ledger.orderTotal.toString()).toBe('998.00');
-    expect(ledger.otherRefunds).toBe(siblings);
-    expect(ledger.items).toHaveLength(1);
-    expect(ledger.items[0].quantity).toBe(2);
-    expect(ledger.items[0].unitPrice.toString()).toBe('499.00');
-  });
-
-  it('takes a row lock (FOR UPDATE) on the order the return belongs to', async () => {
-    await repository.resolve(current, fields, { assertRefundable: jest.fn() });
-
-    const [strings, ...values] = txMock.$queryRaw.mock.calls[0] as [
-      TemplateStringsArray,
-      ...unknown[],
-    ];
-    expect(strings.join('?')).toMatch(/FROM\s+"?orders"?[\s\S]*FOR UPDATE/i);
-    expect(values).toContain(ORDER_ID);
-  });
-
-  it("reads every OTHER return of the order — this one's old amount is being replaced", async () => {
-    await repository.resolve(current, fields, { assertRefundable: jest.fn() });
-
-    expect(txMock.return.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { orderId: ORDER_ID, id: { not: RETURN_ID } } }),
-    );
-  });
-
-  it('writes nothing when the check refuses — the error rolls the transaction back', async () => {
-    const refusal = new Error('over the ceiling');
-
-    await expect(
-      repository.resolve(current, fields, {
-        assertRefundable: () => {
-          throw refusal;
-        },
-      }),
-    ).rejects.toBe(refusal);
-    expect(txMock.return.update).not.toHaveBeenCalled();
-    expect(txMock.return.updateMany).not.toHaveBeenCalled();
   });
 
   it('takes no lock when there is no refund to check', async () => {
@@ -725,6 +675,7 @@ describe('ReturnRepository.decide — one transaction per decision (TASK-1961, T
         { provide: PrismaService, useValue: txPrismaMock },
         { provide: CacheService, useValue: cacheMock },
         { provide: ProductIndexer, useValue: productIndexerMock },
+        { provide: OrderMoneyRepository, useValue: moneyRepositoryMock },
       ],
     }).compile();
 
@@ -885,6 +836,7 @@ describe('ReturnRepository.addRepairStep — one transaction per step (TASK-2045
         { provide: PrismaService, useValue: txPrismaMock },
         { provide: CacheService, useValue: cacheMock },
         { provide: ProductIndexer, useValue: productIndexerMock },
+        { provide: OrderMoneyRepository, useValue: moneyRepositoryMock },
       ],
     }).compile();
 
@@ -1022,6 +974,7 @@ describe('ReturnRepository — what each read loads (TASK-1963, TASK-2044, TASK-
         { provide: PrismaService, useValue: readMock },
         { provide: CacheService, useValue: cacheMock },
         { provide: ProductIndexer, useValue: productIndexerMock },
+        { provide: OrderMoneyRepository, useValue: moneyRepositoryMock },
       ],
     }).compile();
 
@@ -1174,6 +1127,7 @@ describe('ReturnRepository.updateNotes — the operator notes on any status', ()
         { provide: PrismaService, useValue: notesPrismaMock },
         { provide: CacheService, useValue: cacheMock },
         { provide: ProductIndexer, useValue: productIndexerMock },
+        { provide: OrderMoneyRepository, useValue: moneyRepositoryMock },
       ],
     }).compile();
 

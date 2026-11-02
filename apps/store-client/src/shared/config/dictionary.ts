@@ -38,6 +38,8 @@ const PAYMENT_STATUS_LABELS: Record<string, string> = {
   // PARTIALLY_REFUNDED shown to a customer on their own order page.
   PARTIALLY_REFUNDED: "Частково повернуто",
   REFUNDED: "Кошти повернено",
+  // R2 (TASK-2047): a prepayment — part of the total came in, the rest has not.
+  PARTIALLY_PAID: "Частково оплачено",
 };
 
 export const dict = {
@@ -1576,6 +1578,9 @@ export const dict = {
       onlineTitle: "Картка онлайн",
       onlineNote: "Захищена оплата карткою на сторінці банку.",
       installmentsTitle: "Оплата частинами",
+      // R2 (TASK-2047): never offered at checkout — the operator sets it on a
+      // phone order; the shopper only reads it back on their order.
+      bankTransferTitle: "Переказ на рахунок",
       installmentsNote:
         "Розстрочка від банку — товар одразу, оплата частинами.",
       // Shown on a disabled option instead of letting a guest dead-end on a 401:
@@ -1863,6 +1868,12 @@ export const dict = {
         "Банк відхилив платіж або його було скасовано. Замовлення збережено — можна спробувати оплатити ще раз.",
       refundedTitle: "Гроші повернуто",
       refundedBody: "Кошти за це замовлення повернуто на вашу картку.",
+      // R2 (TASK-2047 / TASK-2340): a prepaid order — no online payment for the rest.
+      partiallyPaidTitle: "Частково оплачено",
+      partiallyPaidBody: (paid: string, total: string) =>
+        `Сплачено ${paid} з ${total}. Решту ви сплачуєте при отриманні або переказом — менеджер підкаже.`,
+      partiallyPaidNoAmount:
+        "Частину суми вже сплачено. Решту ви сплачуєте при отриманні або переказом — менеджер підкаже.",
       retry: "Спробувати ще раз",
       retrying: "Переходимо до оплати…",
       // Failures of the retry call itself. Never a claim about the money.

@@ -119,6 +119,12 @@ export function historyNoteLabel(
       return dict.orderStatus.unpaidShipHistoryNote;
     case OrderStatusHistoryEntityNote.PAID_AFTER_CANCEL:
       return dict.orderStatus.paidAfterCancelHistoryNote;
+    // R2 (TASK-1500 / 2047): the two money flags the «Оплата» block also
+    // raises as chips.
+    case OrderStatusHistoryEntityNote.PROVIDER_REFUND_UNMATCHED:
+      return dict.orderMoney.unmatchedRefundChip;
+    case OrderStatusHistoryEntityNote.LEGACY_MONEY_UNKNOWN:
+      return dict.orderMoney.legacyUnknownHint;
     default:
       return null;
   }

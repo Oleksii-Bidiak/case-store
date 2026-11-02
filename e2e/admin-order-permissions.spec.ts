@@ -33,7 +33,12 @@ const ORDER_HEADING = `Замовлення #${E2E_ORDER_PENDING_ID.slice(0, 8)}
 const VIEW_ONLY = "Ви можете переглядати, але не змінювати.";
 // Wave 198 (TASK-1046): the status picker is a menu-button «Змінити статус ▾».
 const STATUS_PICKER = "Змінити статус";
-const PAYMENT_PICKER = "Оновити статус оплати";
+// R2 (TASK-1967): no payment picker any more — money is moved from the
+// «Оплата» block; recording a receipt needs `orders:write`, reading does not.
+const PAYMENT_BLOCK = "Оплата";
+const PAYMENT_SUMMARY = "Підсумок оплати";
+const PAYMENT_JOURNAL = "Журнал оплат";
+const RECORD_RECEIPT = "Записати надходження";
 const ADDRESS_EDIT = "Змінити адресу";
 const DETAILS_SAVE = "Зберегти";
 const ISSUE_LINK = "Видати нове посилання";
@@ -59,8 +64,19 @@ test.describe("order card without orders:write (TASK-715)", () => {
     await expect(
       page.getByRole("button", { name: STATUS_PICKER, exact: true }),
     ).toHaveCount(0);
+    // The money is readable — the summary and the journal — but not movable.
+    const payment = page.getByRole("region", {
+      name: PAYMENT_BLOCK,
+      exact: true,
+    });
     await expect(
-      page.getByRole("combobox", { name: PAYMENT_PICKER }),
+      payment.getByRole("group", { name: PAYMENT_SUMMARY }),
+    ).toBeVisible();
+    await expect(
+      payment.getByRole("heading", { name: PAYMENT_JOURNAL }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: RECORD_RECEIPT }),
     ).toHaveCount(0);
     await expect(page.getByRole("button", { name: ADDRESS_EDIT })).toHaveCount(
       0,
@@ -105,6 +121,11 @@ test.describe("order card without orders:write (TASK-715)", () => {
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: ADDRESS_EDIT }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: PAYMENT_BLOCK, exact: true })
+        .getByRole("button", { name: RECORD_RECEIPT }),
     ).toBeVisible();
     await expect(page.getByText(VIEW_ONLY)).toHaveCount(0);
   });

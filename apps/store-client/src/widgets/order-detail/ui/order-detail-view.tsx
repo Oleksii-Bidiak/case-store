@@ -210,6 +210,7 @@ function OrderDetailContent({
           orderStatus={order.status}
           hasRecentAttempt={watch.hasRecentAttempt}
           isAwaitingCallback={watch.isAwaitingCallback}
+          partial={{ paidKop: order.paidKop, total: order.total }}
           awaiting={{
             minutes: awaitingPaymentMinutes(order, now),
             until: order.reservationExpiresAt

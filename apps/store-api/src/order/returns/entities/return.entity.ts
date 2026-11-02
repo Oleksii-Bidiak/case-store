@@ -7,6 +7,8 @@ import {
   ReturnRepairStep,
   ReturnStatus,
 } from '@prisma/client';
+import { centsToString } from '../../../addon-service';
+import { ledgerTotals } from '../../order-money';
 import type {
   ReturnActorRow,
   ReturnDecisionEventRow,
@@ -256,12 +258,43 @@ export class ReturnEntity {
   restockedAt!: Date | null;
 
   @ApiProperty({
-    description: 'What was actually refunded, as a string; null until money moves',
+    description:
+      'What was paid out on this return, in hryvnias as a string — Σ of its payouts on the ' +
+      'order money ledger, net of reversals, voided ignored (R2, TASK-2339); null while ' +
+      'nothing was paid out. The legacy returns.refunded_amount column is no longer read.',
     type: String,
     nullable: true,
     example: '499.00',
   })
   refundedAmount!: string | null;
+
+  @ApiProperty({
+    description: 'Admin only. The same payouts as refundedAmount, integer kopecks (R2, TASK-2339).',
+    required: false,
+    example: 49900,
+  })
+  paidOutKop?: number;
+
+  @ApiProperty({
+    description:
+      'Admin only. «До повернення» in integer kopecks (R2, TASK-2046): the returned lines ' +
+      'value less their promo share, set when the decision becomes REFUND, null otherwise. ' +
+      'Lowered with PATCH /admin/returns/:returnId/credit. What was paid out against it is ' +
+      'on the order ledger (GET /admin/orders/:orderId/money → returns[]).',
+    required: false,
+    type: Number,
+    nullable: true,
+    example: 33333,
+  })
+  creditKop?: number | null;
+
+  @ApiProperty({
+    description: 'Admin only. Why the credit was lowered; null while it is the computed value.',
+    required: false,
+    type: String,
+    nullable: true,
+  })
+  creditReason?: string | null;
 
   /**
    * Who opened the request (TASK-469).
@@ -417,6 +450,8 @@ export class ReturnEntity {
     options: { includeInternal?: boolean } = {},
   ): ReturnEntity {
     const admin = options.includeInternal === true;
+    // TASK-2339: payouts from the ledger; a fixture without them paid nothing.
+    const paidOutKop = ledgerTotals(row.moneyEntries ?? []).refundedKop;
     const entity = new ReturnEntity();
     entity.id = row.id;
     entity.orderId = row.orderId;
@@ -440,6 +475,9 @@ export class ReturnEntity {
         );
       }
       if (row.order?.createdAt) entity.orderCreatedAt = row.order.createdAt;
+      entity.creditKop = row.creditKop ?? null;
+      entity.paidOutKop = paidOutKop;
+      entity.creditReason = row.creditReason ?? null;
     }
     if (row.repairEvents) {
       entity.repairSteps = row.repairEvents.map((event) =>
@@ -449,7 +487,7 @@ export class ReturnEntity {
     entity.requestedAt = row.requestedAt;
     entity.resolvedAt = row.resolvedAt;
     entity.restockedAt = row.restockedAt;
-    entity.refundedAmount = row.refundedAmount ? row.refundedAmount.toString() : null;
+    entity.refundedAmount = paidOutKop > 0 ? centsToString(paidOutKop) : null;
     entity.items = row.items.map((item) => ReturnItemEntity.fromPrisma(item));
     return entity;
   }

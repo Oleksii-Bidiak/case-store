@@ -1,21 +1,26 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEnum, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ReturnStatus } from '@prisma/client';
 
 /**
  * The operator's step on a return (TASK-340) — or, without a status, just the
  * operator's notes on a return of any status.
+ *
+ * No money here since R2 A3 (TASK-2046): what goes back is a payout on the order
+ * ledger (`POST /admin/orders/:orderId/money/out` with `returnId`), and REFUNDED
+ * follows from those payouts — the old `refundedAmount` is refused by the
+ * global pipe (forbidNonWhitelisted).
  */
 export class ResolveReturnDto {
   @ApiProperty({
     description:
-      'New return status: RECEIVED or REFUNDED. Validated against the return state machine; ' +
-      'REFUNDED needs a REFUND decision. APPROVED and REJECTED are set only by a decision ' +
-      '(POST /admin/returns/:returnId/decision) and are refused here with ' +
-      'RETURN_USE_DECISION_ENDPOINT. Omit it to save operatorNotes alone on a return of any ' +
-      'status — no transition, resolvedAt and the decision untouched; refundedAmount and ' +
-      'restock are then refused with RETURN_STATUS_REQUIRED.',
+      'New return status: RECEIVED. Validated against the return state machine. APPROVED and ' +
+      'REJECTED are set only by a decision (POST /admin/returns/:returnId/decision) and are ' +
+      'refused here with RETURN_USE_DECISION_ENDPOINT; REFUNDED is derived from the payouts ' +
+      '(POST /admin/orders/:orderId/money/out) and is refused with RETURN_REFUND_DERIVED. Omit ' +
+      'it to save operatorNotes alone on a return of any status — no transition, resolvedAt ' +
+      'and the decision untouched; restock is then refused with RETURN_STATUS_REQUIRED.',
     enum: ReturnStatus,
     required: false,
   })
@@ -38,24 +43,6 @@ export class ResolveReturnDto {
     return trimmed === '' ? null : trimmed;
   })
   operatorNotes?: string | null;
-
-  @ApiProperty({
-    description:
-      'What was actually refunded, as a decimal string. May be less than the line total — ' +
-      'shipping is not always refundable and partial returns are normal.',
-    required: false,
-    nullable: true,
-    example: '499.00',
-  })
-  @IsOptional()
-  @IsString()
-  // A decimal string rather than a number, for the same reason every money field
-  // in this API is a string: a float cannot hold 0.10 and nobody notices until
-  // the totals disagree by a kopiyka.
-  @Matches(/^\d{1,8}(\.\d{1,2})?$/, {
-    message: 'refundedAmount must be a decimal amount like "499.00"',
-  })
-  refundedAmount?: string | null;
 
   @ApiProperty({
     description:

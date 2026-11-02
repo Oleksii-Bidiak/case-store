@@ -1,5 +1,10 @@
 import type { ReactElement } from "react";
 import { http, HttpResponse } from "msw";
+import { QueryClient } from "@tanstack/react-query";
+import {
+  getAdminOrderControllerFindByIdQueryKey,
+  getAdminOrderMoneyControllerGetQueryKey,
+} from "@/entities/order";
 import {
   fireEvent,
   renderWithProviders,
@@ -10,7 +15,6 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
 import type { ReturnEntity } from "@/entities/return";
 import { ReturnResolveForm } from "./return-resolve-form";
 
@@ -101,9 +105,7 @@ describe("ReturnResolveForm — one «Наступний крок» per status (
     const card = within(nextStep());
     expect(card.getByText(d.nextRequested)).toBeInTheDocument();
     expect(card.queryByRole("button")).not.toBeInTheDocument();
-    expect(
-      screen.queryByLabelText(d.resolveRefundedAmount),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
@@ -138,7 +140,7 @@ describe("ReturnResolveForm — one «Наступний крок» per status (
     }
   });
 
-  it("offers «Гроші повернуто» only under a REFUND decision", () => {
+  it("says a repair returns no money — and offers no step", () => {
     renderAsWriter(
       <ReturnResolveForm
         rma={makeReturn({ status: "RECEIVED", decision: "REPAIR" })}
@@ -148,12 +150,7 @@ describe("ReturnResolveForm — one «Наступний крок» per status (
     expect(
       within(nextStep()).getByText(d.nextReceivedNoRefund(d.decisionREPAIR)),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: d.markRefunded }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByLabelText(d.resolveRefundedAmount, { exact: false }),
-    ).not.toBeInTheDocument();
+    expect(within(nextStep()).queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("points a refused request at the decision instead of offering a step", () => {
@@ -185,28 +182,6 @@ describe("ReturnResolveForm — one «Наступний крок» per status (
     await waitFor(() =>
       expect(toastSuccess).toHaveBeenCalledWith(d.resolveSuccess),
     );
-  });
-});
-
-describe("ReturnResolveForm — the refund step from the keyboard", () => {
-  it("records «Гроші повернуто» on Enter in the amount field", async () => {
-    const bodies = stubResolve(() =>
-      HttpResponse.json({ data: makeReturn({ status: "REFUNDED" }) }),
-    );
-    renderAsWriter(
-      <ReturnResolveForm rma={makeReturn({ status: "RECEIVED" })} />,
-    );
-
-    await userEvent.type(
-      screen.getByLabelText(d.resolveRefundedAmount, { exact: false }),
-      "250{Enter}",
-    );
-
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toMatchObject({
-      status: "REFUNDED",
-      refundedAmount: "250",
-    });
   });
 });
 
@@ -262,157 +237,127 @@ describe("ReturnResolveForm — the restock question (TASK-340)", () => {
   });
 });
 
-describe("ReturnResolveForm — the refund step and its ceiling (TASK-785, TASK-959)", () => {
+/**
+ * R2 (TASK-2046) — the money left this card. «Сума повернення» + «Гроші
+ * повернуто» recorded a figure on the return that the order never saw; now
+ * «До повернення» and its payouts live on the money card the page puts under
+ * the step, and REFUNDED follows from the payouts (the PATCH refuses it with
+ * RETURN_REFUND_DERIVED). These replace the three B1-skipped refund tests.
+ */
+describe("ReturnResolveForm — a received REFUND return (R2, TASK-2046)", () => {
   const received = () => makeReturn({ status: "RECEIVED" });
 
-  const typeAndRefund = async (amount: string) => {
-    const field = screen.getByLabelText(d.resolveRefundedAmount, {
-      exact: false,
-    });
-    await userEvent.clear(field);
-    await userEvent.type(field, amount);
-    await userEvent.click(screen.getByRole("button", { name: d.markRefunded }));
-  };
+  it("points at the money card — no amount field and no «Гроші повернуто»", () => {
+    renderAsWriter(<ReturnResolveForm rma={received()} />);
 
-  it("shows the amount only on the refund step, with the ceiling in its hint", () => {
+    const card = within(nextStep());
+    expect(card.getByText(d.nextReceived(false))).toBeInTheDocument();
+    expect(card.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: d.statusREFUNDED }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("draws the money card the page hands it between the step and the notes", () => {
     renderAsWriter(
-      <ReturnResolveForm rma={received()} orderBalance="1299.00" />,
+      <ReturnResolveForm
+        rma={received()}
+        money={<section data-testid="money-slot" />}
+      />,
     );
 
-    expect(
-      screen.getByLabelText(d.resolveRefundedAmount, { exact: false }),
-    ).toBeRequired();
-    expect(
-      screen.getByText(d.refundCapHint(formatCurrency("998.00"))),
-    ).toBeInTheDocument();
+    const slot = screen.getByTestId("money-slot");
+    const notes = screen.getByText(d.operatorNotes, { selector: "h3" });
+    // DOCUMENT_POSITION_FOLLOWING = 4
+    expect(nextStep().compareDocumentPosition(slot) & 4).toBeTruthy();
+    expect(slot.compareDocumentPosition(notes) & 4).toBeTruthy();
   });
 
-  it("refuses an empty amount — «Гроші повернуто» without a sum says nothing", async () => {
-    const bodies = stubResolve(() => HttpResponse.json({ data: received() }));
-    renderAsWriter(<ReturnResolveForm rma={received()} />);
-
-    await userEvent.click(screen.getByRole("button", { name: d.markRefunded }));
-
-    expect(
-      await screen.findByText(d.resolveRefundedAmountRequired),
-    ).toBeInTheDocument();
-    expect(bodies).toHaveLength(0);
-  });
-
-  it("rejects a malformed refund amount before it reaches the server", async () => {
-    const bodies = stubResolve(() => HttpResponse.json({ data: received() }));
-    renderAsWriter(<ReturnResolveForm rma={received()} />);
-
-    await typeAndRefund("499,00");
-
-    expect(
-      await screen.findByText(d.resolveRefundedAmountInvalid),
-    ).toBeInTheDocument();
-    expect(bodies).toHaveLength(0);
-  });
-
-  it("sends a partial refund through as the decimal string it is", async () => {
-    const bodies = stubResolve(() =>
-      HttpResponse.json({ data: makeReturn({ status: "REFUNDED" }) }),
+  it("draws it for a reader too, under the view-only step", () => {
+    renderWithProviders(
+      <ReturnResolveForm
+        rma={received()}
+        money={<section data-testid="money-slot" />}
+      />,
+      { auth: { permissions: ["returns:read"] } },
     );
-    renderAsWriter(<ReturnResolveForm rma={received()} />);
 
-    await typeAndRefund("499.00");
+    expect(screen.getByTestId("money-slot")).toBeInTheDocument();
+    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
+  });
+
+  it("sends «Товар отримано» with no amount in the body", async () => {
+    const bodies = stubResolve(() => HttpResponse.json({ data: received() }));
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: d.markReceived }));
 
     await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toMatchObject({
-      status: "REFUNDED",
-      refundedAmount: "499.00",
+    expect(bodies[0]).not.toHaveProperty("refundedAmount");
+    expect(bodies[0].status).toBe("RECEIVED");
+  });
+
+  it("refetches the order money journal after «Товар отримано» (TASK-2350)", async () => {
+    stubResolve(() => HttpResponse.json({ data: received() }));
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
     });
-    expect(bodies[0]).not.toHaveProperty("restock");
+    const invalidate = jest.spyOn(queryClient, "invalidateQueries");
+    renderWithProviders(<ReturnResolveForm rma={makeReturn()} />, {
+      queryClient,
+      auth: WRITER,
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: d.markReceived }));
+
+    // The step recomputes the order (new updatedAt) — a payout built from the
+    // stale journal would be refused as ORDER_STALE.
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: getAdminOrderMoneyControllerGetQueryKey("order-uuid-1234"),
+      }),
+    );
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: getAdminOrderControllerFindByIdQueryKey("order-uuid-1234"),
+    });
   });
 
-  it("refuses 49900 typed for 499.00 under the field", async () => {
-    const bodies = stubResolve(() => HttpResponse.json({ data: received() }));
-    renderAsWriter(<ReturnResolveForm rma={received()} />);
-
-    await typeAndRefund("49900");
-
-    // Compared on raw textContent: the currency's non-breaking space does not
-    // survive the query's whitespace normalisation.
-    const error = await screen.findByText(/вартість позицій/);
-    expect(error.textContent).toBe(
-      d.resolveRefundExceedsReturnedValue(formatCurrency("998.00")),
-    );
-    expect(
-      screen.getByLabelText(d.resolveRefundedAmount, { exact: false }),
-    ).toHaveAttribute("aria-invalid", "true");
-    expect(bodies).toHaveLength(0);
-  });
-
-  it("enforces what the order has left when the card knows it (TASK-959)", async () => {
-    const bodies = stubResolve(() => HttpResponse.json({ data: received() }));
-    renderAsWriter(
-      <ReturnResolveForm rma={received()} orderBalance="400.00" />,
-    );
-
-    expect(
-      screen.getByText(d.refundCapHint(formatCurrency("400.00"))),
-    ).toBeInTheDocument();
-    await typeAndRefund("450.00");
-
-    const error = await screen.findByText(/можна повернути за цим замовленням/);
-    expect(error.textContent).toBe(
-      d.resolveRefundExceedsOrderBalance(formatCurrency("400.00")),
-    );
-    expect(bodies).toHaveLength(0);
-  });
-
-  it("lets the full value of the returned lines through", async () => {
-    const bodies = stubResolve(() =>
-      HttpResponse.json({ data: makeReturn({ status: "REFUNDED" }) }),
-    );
-    renderAsWriter(<ReturnResolveForm rma={received()} />);
-
-    await typeAndRefund("998.00");
-
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0].refundedAmount).toBe("998.00");
-  });
-
-  // The order-balance ceiling may be unknown to the card (no orders:read), so
-  // the server is then its only judge; its refusal belongs under the amount.
-  it("puts the server's order-balance refusal under the amount field", async () => {
+  it("names the derived status when a stale page is refused (RETURN_REFUND_DERIVED)", async () => {
     stubResolve(() =>
       HttpResponse.json(
         {
-          error: "RETURN_REFUND_EXCEEDS_ORDER_BALANCE",
-          message:
-            "Refund of 499.00 exceeds what is left to refund on this order (400.00)",
+          error: "RETURN_REFUND_DERIVED",
+          message: "A return becomes REFUNDED when its payouts cover it",
           statusCode: 400,
         },
         { status: 400 },
       ),
     );
-    renderAsWriter(<ReturnResolveForm rma={received()} />);
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
 
-    await typeAndRefund("499.00");
+    await userEvent.click(screen.getByRole("button", { name: d.markReceived }));
 
-    expect(
-      await screen.findByText(d.resolveRefundExceedsOrderBalance()),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByLabelText(d.resolveRefundedAmount, { exact: false }),
-    ).toHaveAttribute("aria-invalid", "true");
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(d.refusalRefundDerived),
+    );
   });
 
-  it("spins and blocks a second click while the refund is saving (Р5)", async () => {
+  it("spins and blocks a second click while the step is saving (Р5)", async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
     const bodies = stubResolve(async () => {
       await gate;
-      return HttpResponse.json({ data: makeReturn({ status: "REFUNDED" }) });
+      return HttpResponse.json({ data: received() });
     });
-    renderAsWriter(<ReturnResolveForm rma={received()} />);
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
 
-    await typeAndRefund("499.00");
+    await userEvent.click(screen.getByRole("button", { name: d.markReceived }));
 
     const saving = await screen.findByRole("button", { name: d.saving });
     expect(saving).toBeDisabled();
@@ -422,8 +367,8 @@ describe("ReturnResolveForm — the refund step and its ceiling (TASK-785, TASK-
 });
 
 /**
- * TASK-956 — every 400 but the two ceiling codes used to say «Повернення товару
- * на склад доступне лише для статусу…», whatever was actually wrong.
+ * TASK-956 — every 400 used to say «Повернення товару на склад доступне лише
+ * для статусу…», whatever was actually wrong.
  */
 describe("ReturnResolveForm — 400 texts (TASK-956)", () => {
   it("puts a DTO refusal of the notes under the notes field", async () => {

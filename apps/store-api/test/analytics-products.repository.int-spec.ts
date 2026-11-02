@@ -140,6 +140,8 @@ describe('ProductsReportRepository (integration)', () => {
       await sale(p, 3, '10', PaymentStatus.REFUNDED);
       await sale(p, 100, '10', PaymentStatus.PENDING);
       await sale(p, 100, '10', PaymentStatus.FAILED);
+      // R2 assumption 3: a prepaid (PARTIALLY_PAID) order is not a sale until paid.
+      await sale(p, 100, '10', PaymentStatus.PARTIALLY_PAID);
 
       const [leader] = await repo.getLeaders(MAY, 1, 'units');
       expect(leader).toMatchObject({ productId: p, units: 5, orders: 2, revenue: 50 });

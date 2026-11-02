@@ -4,6 +4,8 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
+  ReturnEntityStatus,
+  returnLinesValueKop,
   returnStatusBadgeVariant,
   returnStatusLabel,
   useAdminReturnControllerFindAll,
@@ -11,7 +13,6 @@ import {
   type ReturnEntity,
 } from "@/entities/return";
 import { OrderNumber, formatOrderNumber } from "@/entities/order";
-import { returnedValueOf } from "@/features/return-resolve";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
@@ -28,7 +29,7 @@ import {
   type RowActionItem,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { countLabel, formatCurrency, formatDate } from "@/shared/lib";
+import { countLabel, formatDate, formatKop } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import {
   ALL_VIEW,
@@ -48,9 +49,38 @@ const orderHref = (rma: ReturnEntity) => `/orders/${rma.orderId}`;
 const rowLabel = (rma: ReturnEntity) => d.rowAria(formatOrderNumber(rma.id));
 const getRowId = (rma: ReturnEntity) => rma.id;
 
-/** What the goods coming back are worth — `null` when a line has no price. */
-function goodsValue(rma: ReturnEntity): string | null {
-  return returnedValueOf(rma.items);
+/** What the goods coming back are worth — «—» when a line has no price. */
+function goodsValue(rma: ReturnEntity): string {
+  const kop = returnLinesValueKop(rma.items);
+  return kop === null ? "—" : formatKop(kop);
+}
+
+/**
+ * The money of a REFUND return from the ledger (R2, TASK-2046): «До
+ * повернення» (`creditKop`, what the list sorts by) and, under it, what is
+ * still owed on received goods or what was paid out. `null` credit — not a
+ * refund, or a list read without the admin fields — is no figure at all.
+ */
+function CreditCell({ rma }: { rma: ReturnEntity }) {
+  if (rma.creditKop == null) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  const paidOutKop = rma.paidOutKop ?? 0;
+  const owedKop = Math.max(0, rma.creditKop - paidOutKop);
+  return (
+    <span className="flex flex-col items-end gap-0.5">
+      <span className="text-foreground">{formatKop(rma.creditKop)}</span>
+      {rma.status === ReturnEntityStatus.RECEIVED && owedKop > 0 ? (
+        <span className="text-xs font-medium text-warning">
+          {d.creditOwed(formatKop(owedKop))}
+        </span>
+      ) : paidOutKop > 0 ? (
+        <span className="text-xs text-muted-foreground">
+          {d.creditPaidOut(formatKop(paidOutKop))}
+        </span>
+      ) : null}
+    </span>
+  );
 }
 
 function copy(value: string, success: string) {
@@ -112,7 +142,7 @@ export const RETURN_COLUMNS_WIDTH_BUDGET = 1136 - 44 - 2;
  * sorts (`requestedAt`, `status`, `refundedAmount`).
  *
  * «Клієнт» from the artboard is not drawn: a return row carries no customer —
- * only `orderId` (TASK-1056's API tail). «Повернуто» stays its own column
+ * only `orderId` (TASK-1056's API tail). «До повернення» stays its own column
  * rather than a second line under «Сума», because it is the one the list sorts
  * money by.
  */
@@ -170,27 +200,19 @@ export function buildReturnColumns(
       align: "end",
       defaultWidth: 112,
       className: "font-medium tabular-nums",
-      cell: (rma) => {
-        const value = goodsValue(rma);
-        return value === null ? "—" : formatCurrency(value);
-      },
+      cell: (rma) => goodsValue(rma),
     },
     {
+      // R2 (TASK-2046): the money column reads the ledger. `sortBy` keeps its
+      // API name (`refundedAmount`, rename — TASK-2341) but the server orders
+      // it by «До повернення» (`creditKop`, NULLs last), so that is the label.
       id: "refunded",
-      label: d.colRefunded,
+      label: d.colCredit,
       sortField: "refundedAmount",
       align: "end",
       defaultWidth: 112,
       className: "tabular-nums",
-      // Null is not zero: "nothing has been refunded yet" and "we refunded
-      // 0 ₴" are different facts. Sorting keeps them apart too — the
-      // repository pushes NULLs last in both directions.
-      cell: (rma) =>
-        rma.refundedAmount === null ? (
-          <span className="text-muted-foreground">—</span>
-        ) : (
-          formatCurrency(rma.refundedAmount)
-        ),
+      cell: (rma) => <CreditCell rma={rma} />,
     },
     {
       id: "status",
@@ -241,7 +263,7 @@ function renderCard(rma: ReturnEntity, parts: RegistryCardParts, now: number) {
           {rma.reason ?? d.noReason}
         </span>
         <b className="shrink-0 font-semibold text-foreground tabular-nums">
-          {value === null ? "—" : formatCurrency(value)}
+          {value}
         </b>
       </div>
       <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">

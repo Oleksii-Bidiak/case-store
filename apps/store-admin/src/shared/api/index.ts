@@ -64,13 +64,13 @@ export * from "./generated/analytics/analytics";
 export * from "./generated/admin-analytics-reports/admin-analytics-reports";
 // TASK-441 — the internal media library.
 export * from "./generated/media/media";
-// TASK-371 — the admin payment card: attempt history + refund. Named, not `*`:
-// the same generated file also carries the storefront's checkout mutation,
-// which has no business being reachable from the admin panel.
+// TASK-371 — the admin payment card's attempt history (read-only since R2: a
+// refund is a money-journal write on `admin-orders`). Named, not `*`: the same
+// generated file also carries the storefront's checkout mutation, which has no
+// business being reachable from the admin panel.
 export {
   useAdminListOrderPayments,
   getAdminListOrderPaymentsQueryKey,
-  useAdminRefundPayment,
 } from "./generated/payments/payments";
 // Wave 198 (TASK-1082) — which compatibility landing pages are live right now:
 // the «Сторінок на сайті» column and the model form's page list. Named, not

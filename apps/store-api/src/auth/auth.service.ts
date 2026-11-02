@@ -653,7 +653,7 @@ export class AuthService {
    * `POST /auth/email/verify/confirm` (TASK-342, TASK-2010 review): confirm the
    * link — see {@link EmailVerificationService.confirm} for who may — and, for a
    * password-less account, open a session for the clicker AFTER the adoption,
-   * whose revoke would otherwise take it (closes TASK-2341: the clicker is no
+   * whose revoke would otherwise take it (closes TASK-2362: the clicker is no
    * longer signed out by proving their own address).
    */
   async confirmEmailVerification(

@@ -1,12 +1,21 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Ban, Check, Clock, Loader2, Undo2, X } from "lucide-react";
+import {
+  Ban,
+  Check,
+  CircleDollarSign,
+  Clock,
+  Loader2,
+  Undo2,
+  X,
+} from "lucide-react";
 import type {
   OrderEntityPaymentStatus,
   OrderEntityStatus,
 } from "@/entities/order";
 import { dict } from "@/shared/config";
+import { formatMoney } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui";
 import {
@@ -82,6 +91,13 @@ interface OrderPaymentPanelProps {
    * it out — there a silent PENDING stays silent.
    */
   awaiting?: AwaitingPayment;
+  /**
+   * What came in so far on a PARTIALLY_PAID order (R2, TASK-2047): the ledger's
+   * `paidKop` and the order total as the API sends it ("1200.00"). Read only
+   * for that status — «Сплачено X з Y», never a pay button (TASK-2340: an
+   * attempt would charge the whole total again).
+   */
+  partial?: { paidKop: number; total: string };
 }
 
 type Tone = "positive" | "neutral" | "warning" | "negative";
@@ -149,6 +165,7 @@ export function OrderPaymentPanel({
   hasRecentAttempt,
   isAwaitingCallback,
   awaiting,
+  partial,
 }: OrderPaymentPanelProps) {
   const { startPayment, isStarting } = useOrderPayment();
   const [failure, setFailure] = useState<PaymentStartFailure | null>(null);
@@ -219,6 +236,22 @@ export function OrderPaymentPanel({
       <Check className="size-5" strokeWidth={2.5} aria-hidden />,
       copy.paidTitle,
       copy.paidBody,
+    );
+  }
+
+  // R2: part of the money is in, the rest is paid outside LiqPay (on delivery
+  // or by transfer). No retry, no «Оплатити» — the API refuses an attempt here.
+  if (paymentStatus === "PARTIALLY_PAID") {
+    return shell(
+      "neutral",
+      <CircleDollarSign className="size-5" aria-hidden />,
+      copy.partiallyPaidTitle,
+      partial
+        ? copy.partiallyPaidBody(
+            formatMoney((partial.paidKop / 100).toFixed(2)),
+            formatMoney(partial.total),
+          )
+        : copy.partiallyPaidNoAmount,
     );
   }
 

@@ -112,6 +112,8 @@ export class OrderLookupRepository {
         shippingCost: true,
         addonsTotal: true,
         total: true,
+        // R2 (TASK-2047): «Сплачено X з Y» — the total only, never the ledger rows.
+        paidKop: true,
         trackingNumber: true,
         // The whole JSON column: the projection reads `city`, `npWarehouseName`,
         // the pickup point's name/address (PICKUP only) and `shippingCostPending`

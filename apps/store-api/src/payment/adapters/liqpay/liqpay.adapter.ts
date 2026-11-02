@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
@@ -6,16 +7,29 @@ import type {
   HostedCheckoutHandoff,
   PaymentProvider,
 } from '../../payment.port';
-import type { PaymentEventInput } from '../../payment.types';
+import { RefundOutcomeUnknownException } from '../../payment.errors';
+import { PaymentOutcome, type PaymentEventInput } from '../../payment.types';
 import { signLiqPayData, verifyLiqPaySignature } from './liqpay.signature';
 import {
   LIQPAY_API_URL,
   LIQPAY_API_VERSION,
   LIQPAY_CHECKOUT_URL,
   LIQPAY_PROVIDER_KEY,
+  LIQPAY_REFUND_DEDUPE_FIELDS,
   mapLiqPayStatus,
   type LiqPayCallbackBody,
 } from './liqpay.types';
+
+/**
+ * The `PaymentEvent.dedupeKey` of a `reversed` body (TASK-1500): a SHA-256 of
+ * the fields that tell one refund of a payment from another. Stable across
+ * retries of the same callback — and the status poll, which returns the same
+ * body — because only these fields go in, never the delivery noise.
+ */
+function refundDedupeKey(body: LiqPayCallbackBody): string {
+  const fields = LIQPAY_REFUND_DEDUPE_FIELDS.map((field) => [field, body[field] ?? null]);
+  return createHash('sha256').update(JSON.stringify(fields)).digest('hex');
+}
 
 /** Payment methods LiqPay offers when `LIQPAY_PAYTYPES` is unset. */
 const DEFAULT_PAYTYPES = 'card,apay,gpay,privat24';
@@ -188,7 +202,9 @@ export class LiqPayAdapter implements PaymentProvider {
    * callback that follows, not by this response — same rule as everywhere else
    * here: the provider's asynchronous notification is what moves our state
    * (docs/payments-liqpay.md §3.11). Throws so the admin sees a real failure
-   * (no rights on the key, payment too old) instead of a button that lies.
+   * (no rights on the key, payment too old) instead of a button that lies:
+   * a plain ServiceUnavailableException for a refusal LiqPay actually sent,
+   * {@link RefundOutcomeUnknownException} when no readable answer came back.
    */
   async refund(params: { paymentId: string; amount: string }): Promise<void> {
     const body = await this.request({
@@ -197,8 +213,10 @@ export class LiqPayAdapter implements PaymentProvider {
       amount: params.amount,
     });
 
+    // No readable answer is NOT a refusal: LiqPay may have executed the refund
+    // and only its response was lost. The caller must keep the REQUESTED entry.
     if (!body) {
-      throw new ServiceUnavailableException('LiqPay refund request failed');
+      throw new RefundOutcomeUnknownException();
     }
 
     // `reversed` (done) and `wait_reserve`/`processing` (accepted, settling) are
@@ -243,6 +261,7 @@ export class LiqPayAdapter implements PaymentProvider {
 
     const failureCode = body.err_code ?? body.code;
     const failureMessage = body.err_description ?? body.description;
+    const outcome = mapLiqPayStatus(providerStatus, this.sandbox);
 
     return {
       paymentId,
@@ -250,7 +269,8 @@ export class LiqPayAdapter implements PaymentProvider {
       // LiqPay's own id. Empty string rather than undefined: it is part of the
       // idempotency unique key, and in Postgres two NULLs never collide.
       providerPaymentId: String(body.payment_id ?? body.liqpay_order_id ?? ''),
-      outcome: mapLiqPayStatus(providerStatus, this.sandbox),
+      outcome,
+      dedupeKey: outcome === PaymentOutcome.REFUNDED ? refundDedupeKey(body) : '',
       amount: body.amount === undefined || body.amount === null ? '' : String(body.amount),
       currency: typeof body.currency === 'string' ? body.currency : '',
       ...(failureCode !== undefined ? { failureCode: String(failureCode) } : {}),

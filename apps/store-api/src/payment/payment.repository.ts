@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
+  MoneyEntryKind,
+  MoneyProviderState,
   OrderStatus,
   Payment,
   PaymentAttemptStatus,
@@ -94,6 +96,9 @@ export class PaymentRepository {
         paymentId: event.paymentId,
         providerStatus: event.providerStatus,
         providerPaymentId: event.providerPaymentId,
+        // TASK-1500: '' unless the adapter set one (a refund) — never NULL, or
+        // two NULLs would never collide in the unique index.
+        dedupeKey: event.dedupeKey ?? '',
         payload: event.payload as Prisma.InputJsonValue,
       },
     });
@@ -134,35 +139,10 @@ export class PaymentRepository {
     });
   }
 
-  /**
-   * Reserve `amount` against what is left to refund on a SUCCEEDED attempt
-   * (TASK-1302). Returns `false`, changing nothing, when the attempt is not
-   * SUCCEEDED or the amount does not fit in `amount - refunded_amount`.
-   *
-   * One conditional UPDATE rather than read-check-write: the row lock the
-   * UPDATE takes serialises two simultaneous refunds, and the second one
-   * re-evaluates the WHERE against the first one's total — so both can never
-   * spend the same remainder.
-   */
-  async reserveRefund(id: string, amount: string): Promise<boolean> {
-    const updated = await this.prisma.$executeRaw`
-      UPDATE "payments"
-         SET "refunded_amount" = "refunded_amount" + ${amount}::numeric,
-             "updated_at" = NOW()
-       WHERE "id" = ${id}
-         AND "status" = 'SUCCEEDED'
-         AND "refunded_amount" + ${amount}::numeric <= "amount"`;
-    return updated === 1;
-  }
-
-  /** Give back a reservation whose provider call failed — never below zero. */
-  async releaseRefund(id: string, amount: string): Promise<void> {
-    await this.prisma.$executeRaw`
-      UPDATE "payments"
-         SET "refunded_amount" = GREATEST("refunded_amount" - ${amount}::numeric, 0),
-             "updated_at" = NOW()
-       WHERE "id" = ${id}`;
-  }
+  // `reserveRefund` / `releaseRefund` (TASK-1302) were removed in R2 A2: the
+  // refund ceiling is the order ledger now (a REQUESTED `LIQPAY_REFUND` entry
+  // written under the order-row lock), and `payments.refunded_amount` is no
+  // longer read or written — the column stays for one release.
 
   /**
    * Attempts still PENDING and older than `createdBefore` — the reconcile
@@ -176,6 +156,61 @@ export class PaymentRepository {
       where: { status: PaymentAttemptStatus.PENDING, createdAt: { lte: createdBefore } },
       orderBy: { createdAt: 'asc' },
       take: limit,
+    });
+  }
+
+  /**
+   * Attempts with a LiqPay refund still REQUESTED (not voided), requested in the
+   * window `(requestedAfter, requestedBefore]` — the reconcile worker's refund
+   * poll list (TASK-1500). READ ONLY on the ledger, like
+   * {@link findExpiredReservations} on orders.
+   *
+   * Newest request first, and only inside the window (R2 review): a request the
+   * provider never answers stays REQUESTED until an operator voids it, so an
+   * unbounded oldest-first list let ≥ `limit` stuck ones fill every page and
+   * starve every newer refund. Requests older than the window are left to the
+   * operator's «void» action ({@link countRequestedRefundsOlderThan} surfaces
+   * how many there are).
+   */
+  async findWithRequestedRefunds(window: {
+    requestedBefore: Date;
+    requestedAfter: Date;
+    limit: number;
+  }): Promise<Payment[]> {
+    const entries = await this.prisma.orderMoneyEntry.findMany({
+      where: {
+        kind: MoneyEntryKind.LIQPAY_REFUND,
+        providerState: MoneyProviderState.REQUESTED,
+        voidedAt: null,
+        paymentId: { not: null },
+        createdAt: { lte: window.requestedBefore, gt: window.requestedAfter },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      distinct: ['paymentId'],
+      select: { paymentId: true },
+      take: window.limit,
+    });
+    const ids = entries.map((entry) => entry.paymentId as string);
+    if (ids.length === 0) {
+      return [];
+    }
+    const payments = await this.prisma.payment.findMany({ where: { id: { in: ids } } });
+    const byId = new Map(payments.map((payment) => [payment.id, payment]));
+    return ids.flatMap((id) => {
+      const payment = byId.get(id);
+      return payment ? [payment] : [];
+    });
+  }
+
+  /** LiqPay refunds still REQUESTED (not voided) since before `requestedBefore`. */
+  countRequestedRefundsOlderThan(requestedBefore: Date): Promise<number> {
+    return this.prisma.orderMoneyEntry.count({
+      where: {
+        kind: MoneyEntryKind.LIQPAY_REFUND,
+        providerState: MoneyProviderState.REQUESTED,
+        voidedAt: null,
+        createdAt: { lte: requestedBefore },
+      },
     });
   }
 

@@ -97,7 +97,6 @@ describe('RBAC guards (e2e)', () => {
     findById: jest.fn(),
     updateStatus: jest.fn(),
     cancelAndRestock: jest.fn(),
-    updatePaymentStatus: jest.fn(),
   };
 
   // Boot-time mocks so AppModule wires up without a real database.

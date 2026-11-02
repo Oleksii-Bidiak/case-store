@@ -127,7 +127,10 @@ export class CreateManualOrderDto {
   items!: ManualOrderItemDto[];
 
   @ApiProperty({
-    description: 'How the customer will pay',
+    description:
+      'How the customer will pay. BANK_TRANSFER («Переказ на рахунок ФОП») is admin-only — ' +
+      'any delivery method admits it here, the storefront checkout never does; it carries no ' +
+      'reservation deadline. The money is recorded on the order (POST …/money/in).',
     enum: PaymentMethod,
     required: false,
     default: PaymentMethod.ON_DELIVERY,

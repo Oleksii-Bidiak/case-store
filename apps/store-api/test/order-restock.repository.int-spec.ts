@@ -4,6 +4,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OrderStatus, PaymentAttemptStatus, PaymentStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import { CacheService } from '../src/cache';
 import { PrismaService } from '../src/prisma';
 import { ProductIndexer } from '../src/search/product-indexer';
@@ -46,6 +47,7 @@ describe('OrderRepository.cancelAndRestock — concurrency (integration)', () =>
       providers: [
         PrismaService,
         OrderRepository,
+        OrderMoneyRepository,
         // The repository only evicts caches after the transaction commits; the
         // concurrency guarantee under test does not involve Redis.
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },
@@ -105,6 +107,7 @@ describe('OrderRepository.cancelAndRestock — concurrency (integration)', () =>
     // id — Prisma drops `{ id: undefined }` and would delete every row.
     if (!prisma) return;
     if (userId) {
+      await prisma.orderMoneyEntry.deleteMany({ where: { order: { userId } } });
       await prisma.payment.deleteMany({ where: { order: { userId } } });
       await prisma.orderStatusHistory.deleteMany({ where: { order: { userId } } });
       await prisma.orderItem.deleteMany({ where: { order: { userId } } });
@@ -220,7 +223,8 @@ describe('OrderRepository.cancelAndRestock — concurrency (integration)', () =>
     expected: { status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING },
     attemptStatus: PaymentAttemptStatus.SUCCEEDED,
     settledAt: new Date(),
-    paymentStatusChange: { from: PaymentStatus.PENDING, to: PaymentStatus.PAID },
+    // R2 A2: a success is a ledger receipt; recompute derives PAID from it.
+    receipt: { amountKop: 30_000, occurredAt: new Date() },
     paidAt: new Date(),
     clearReservation: true,
     statusChange: { from: OrderStatus.PENDING, to: OrderStatus.CONFIRMED },

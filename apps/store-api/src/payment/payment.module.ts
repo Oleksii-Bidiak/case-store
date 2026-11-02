@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { OrderModule } from '../order';
+import { OrderModule, PROVIDER_REFUND_PORT } from '../order';
 import { LiqPayAdapter } from './adapters/liqpay/liqpay.adapter';
 import { LiqPayWebhookController } from './liqpay-webhook.controller';
 import { PAYMENT_CLOCK, systemClock } from './payment.clock';
@@ -35,6 +35,9 @@ import { PaymentService } from './payment.service';
     { provide: PAYMENT_PROVIDER, useExisting: LiqPayAdapter },
     { provide: PAYMENT_CLOCK, useValue: systemClock },
     PaymentReconcileWorker,
+    // R2 A3: the operator's LIQPAY_REFUND payout reaches the provider through
+    // this port — the order module cannot import this one (it imports that).
+    { provide: PROVIDER_REFUND_PORT, useExisting: PaymentService },
   ],
   exports: [PaymentService],
 })

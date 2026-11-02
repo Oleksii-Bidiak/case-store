@@ -163,6 +163,7 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
         orderStatus={order.status}
         hasRecentAttempt={watch.hasRecentAttempt}
         isAwaitingCallback={watch.isAwaitingCallback}
+        partial={{ paidKop: order.paidKop, total: order.total }}
       />
 
       <div className="flex flex-col gap-8 lg:grid lg:grid-cols-3">
