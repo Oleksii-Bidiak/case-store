@@ -164,6 +164,34 @@ describe("PickupPointsPanel (TASK-645)", () => {
     expect(c.getByText(t.statusInactive)).toBeInTheDocument();
   });
 
+  it("links a point's map in a new tab — only an http(s) URL (TASK-1979)", async () => {
+    const MAP = "https://maps.app.goo.gl/abc123";
+    server.use(
+      http.get("*/api/admin/pickup-points", () =>
+        HttpResponse.json({
+          data: [
+            { ...BASE[A], mapUrl: MAP },
+            // A stored non-http value must never become a clickable link.
+            { ...BASE[B], mapUrl: "javascript:alert(1)" },
+            { ...BASE[C], mapUrl: null },
+          ],
+        }),
+      ),
+    );
+    await renderPanel();
+
+    const link = within(rowEl(A)).getByRole("link", {
+      name: t.mapLinkAria(BASE[A].name),
+    });
+    expect(link).toHaveAttribute("href", MAP);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(link).toHaveTextContent(t.mapLink);
+
+    expect(within(rowEl(B)).queryByText(t.mapLink)).not.toBeInTheDocument();
+    expect(within(rowEl(C)).queryByText(t.mapLink)).not.toBeInTheDocument();
+  });
+
   it("offers edit, deactivate, the point's orders and delete — in that order", async () => {
     await renderPanel();
 

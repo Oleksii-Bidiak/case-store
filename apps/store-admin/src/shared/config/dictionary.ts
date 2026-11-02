@@ -8090,6 +8090,9 @@ export const dict = {
     toastStatusFailed: "Не вдалося змінити стан точки",
     toastDeleted: "Точку видалено",
     toastDeleteFailed: "Не вдалося видалити точку",
+    // TASK-1979: the point's map link in the list.
+    mapLink: "Відкрити на карті ↗",
+    mapLinkAria: (name: string) => `Відкрити «${name}» на карті (нова вкладка)`,
   },
 
   // Діалог точки самовивозу (TASK-645; макет ДН-1.4 / ДН-1.5).
