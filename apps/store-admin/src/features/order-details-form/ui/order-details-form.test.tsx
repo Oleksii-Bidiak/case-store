@@ -12,6 +12,7 @@ import { dict } from "@/shared/config";
 import {
   getAdminOrderControllerFindByIdQueryKey,
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
+  useAdminOrderControllerFindById,
   type OrderEntity,
 } from "@/entities/order";
 import { OrderDetailsForm } from "./order-details-form";
@@ -241,14 +242,44 @@ describe("OrderDetailsForm — the lock token under polling (TASK-629)", () => {
       expectedUpdatedAt: COLLEAGUE_SAVED.updatedAt,
     });
   });
+});
 
-  it("after a 409 the retry is made over the refetched version, not the refused one", async () => {
-    const REFETCHED = "2026-06-01T10:01:00.000Z";
-    const bodies: Array<Record<string, unknown>> = [];
+// ─── Two operators, one card (TASK-1972, AD-ORD-67) ───────────────────────────
+
+/**
+ * The regression. After the 409 the form used to rebase its lock token onto the
+ * refetched version straight away — before the operator had seen anything — and
+ * `keepDirtyValues` kept their draft over the colleague's text. The second
+ * «Зберегти» then went through with the colleague's token and silently
+ * overwrote the colleague's note: the lock only postponed the loss by a click.
+ *
+ * Now the 409 opens a review: the colleague's version is shown next to the
+ * draft, and the token moves only when the operator says what to keep.
+ *
+ * The form is mounted the way the order card mounts it — fed by the detail
+ * query — so the refetch after the 409 reaches it as a new `order` prop.
+ */
+describe("OrderDetailsForm — a colleague saved first (TASK-1972)", () => {
+  const V1 = "2026-06-01T10:00:00.000Z";
+  const V2 = "2026-06-01T10:00:30.000Z";
+  const V3 = "2026-06-01T10:02:00.000Z";
+  const COLLEAGUE_NOTE = "Нотатка колеги";
+  const MY_NOTE = "Моя нотатка";
+
+  /** The order as the server holds it — the colleague's save mutates it. */
+  let serverOrder: OrderEntity;
+  let bodies: Array<Record<string, unknown>>;
+
+  /** GET answers the server's order; PATCH applies the optimistic lock. */
+  function stubServer() {
     server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: serverOrder }),
+      ),
       http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
-        bodies.push((await request.json()) as Record<string, unknown>);
-        if (bodies.length === 1) {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        if (body.expectedUpdatedAt !== serverOrder.updatedAt) {
           return HttpResponse.json(
             {
               statusCode: 409,
@@ -258,42 +289,131 @@ describe("OrderDetailsForm — the lock token under polling (TASK-629)", () => {
             { status: 409 },
           );
         }
-        return HttpResponse.json({
-          data: { ...ORDER, updatedAt: "2026-06-01T10:02:00.000Z" },
-        });
+        serverOrder = {
+          ...serverOrder,
+          ...("internalNotes" in body
+            ? { internalNotes: body.internalNotes }
+            : {}),
+          ...("trackingNumber" in body
+            ? { trackingNumber: body.trackingNumber }
+            : {}),
+          updatedAt: V3,
+        } as OrderEntity;
+        return HttpResponse.json({ data: serverOrder });
       }),
     );
-    const queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
-    });
-    // What the conflict's refetch finds in the cache.
-    queryClient.setQueryData(
-      getAdminOrderControllerFindByIdQueryKey(ORDER_ID),
-      {
-        data: { ...ORDER, updatedAt: REFETCHED },
-      },
-    );
+  }
 
-    renderWithProviders(<OrderDetailsForm order={ORDER} />, {
-      queryClient,
-      auth: WRITER,
-    });
-    await typeNotes("Моя нотатка");
-    await save();
-    await waitFor(() =>
-      expect(sonnerToast.error).toHaveBeenCalledWith(
-        dict.orderStatus.conflict.ORDER_STALE,
-        expect.anything(),
-      ),
-    );
+  /** The order card's wiring: the form is fed by the polled detail query. */
+  function Card() {
+    const { data } = useAdminOrderControllerFindById(ORDER_ID);
+    return data?.data ? <OrderDetailsForm order={data.data} /> : null;
+  }
 
-    await save();
+  beforeEach(() => {
+    serverOrder = { ...ORDER, updatedAt: V1 } as OrderEntity;
+    bodies = [];
+    stubServer();
+  });
+
+  // By role: once the review is open, its row is a group named after the field.
+  const notes = () =>
+    screen.getByRole("textbox", { name: dict.orders.internalNotes });
+  const saveButton = () =>
+    screen.getByRole("button", { name: dict.orders.detailsSave });
+
+  /** Tab A types; tab B saves meanwhile; tab A's save is refused. */
+  async function conflictOn(colleague: Partial<OrderEntity>) {
+    renderWithProviders(<Card />, { auth: WRITER });
+    await userEvent.type(
+      await screen.findByLabelText(dict.orders.internalNotes),
+      MY_NOTE,
+    );
+    serverOrder = {
+      ...serverOrder,
+      ...colleague,
+      updatedAt: V2,
+    } as OrderEntity;
+    await userEvent.click(saveButton());
+    await waitFor(() => expect(bodies).toHaveLength(1));
+  }
+
+  it("shows the colleague's note next to the draft, and the second «Зберегти» sends nothing", async () => {
+    await conflictOn({ internalNotes: COLLEAGUE_NOTE });
+
+    // The colleague's text is on screen, and the draft is still in the box.
+    expect(await screen.findByText(COLLEAGUE_NOTE)).toBeInTheDocument();
+    expect(notes()).toHaveValue(MY_NOTE);
+    // The panel replaces the sticky toast rather than piling onto it.
+    expect(sonnerToast.error).not.toHaveBeenCalled();
+
+    // Not reviewed yet: a repeat save must not reach the server.
+    expect(saveButton()).toBeDisabled();
+    expect(
+      screen.getByText(dict.orderStatus.staleReviewSaveHint),
+    ).toBeInTheDocument();
+    await userEvent.click(saveButton());
+    expect(bodies).toHaveLength(1);
+  });
+
+  it("«Переглянув — зберегти мою» lets the draft go out over the colleague's version", async () => {
+    await conflictOn({ internalNotes: COLLEAGUE_NOTE });
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.orderStatus.staleReviewKeepMine,
+      }),
+    );
+    await userEvent.click(saveButton());
+
     await waitFor(() => expect(bodies).toHaveLength(2));
-    expect(bodies[0]).toMatchObject({ expectedUpdatedAt: ORDER.updatedAt });
-    expect(bodies[1]).toMatchObject({ expectedUpdatedAt: REFETCHED });
+    expect(bodies[0]).toMatchObject({ expectedUpdatedAt: V1 });
+    expect(bodies[1]).toMatchObject({
+      expectedUpdatedAt: V2,
+      internalNotes: MY_NOTE,
+    });
+  });
+
+  it("«Взяти версію колеги» puts the colleague's text in the box and leaves nothing to save", async () => {
+    await conflictOn({ internalNotes: COLLEAGUE_NOTE });
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.orderStatus.staleReviewTakeTheirs,
+      }),
+    );
+
+    expect(notes()).toHaveValue(COLLEAGUE_NOTE);
+    expect(saveButton()).toBeDisabled();
+    expect(bodies).toHaveLength(1);
+  });
+
+  it("a colleague's change to an untouched field refreshes it, and the token moves only on «Зрозуміло»", async () => {
+    await conflictOn({ trackingNumber: WAYBILL });
+
+    expect(
+      await screen.findByText(dict.orderStatus.staleReviewRefreshed),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(dict.orders.trackingNumber)).toHaveValue(
+      WAYBILL,
+    );
+    expect(notes()).toHaveValue(MY_NOTE);
+    expect(saveButton()).toBeDisabled();
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.orderStatus.staleReviewAcknowledge,
+      }),
+    );
+    await userEvent.click(saveButton());
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toMatchObject({
+      expectedUpdatedAt: V2,
+      internalNotes: MY_NOTE,
+    });
+    // The colleague's waybill is not sent back as if it were the operator's.
+    expect(bodies[1]).not.toHaveProperty("trackingNumber");
   });
 });
 
@@ -525,12 +645,19 @@ describe("OrderDetailsForm — the waybill by mockup", () => {
     expect(link).toHaveAttribute("target", "_blank");
   });
 
-  it("offers «Оновити» on a stale-write conflict", async () => {
+  it("answers a stale-write conflict with the review panel, not a dead «Оновити»", async () => {
     const bodies: Array<Record<string, unknown>> = [];
     capturePatch(bodies, {
       status: 409,
       body: { error: "ORDER_STALE", message: "stale", statusCode: 409 },
     });
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: { ...ORDER, updatedAt: "2026-06-01T10:00:30.000Z" },
+        }),
+      ),
+    );
     renderWithProviders(<OrderDetailsForm order={ORDER} />, { auth: WRITER });
 
     await userEvent.type(
@@ -542,10 +669,10 @@ describe("OrderDetailsForm — the waybill by mockup", () => {
     );
 
     expect(
-      await screen.findByText(dict.orderStatus.conflict.ORDER_STALE),
+      await screen.findByText(dict.orderStatus.staleReviewTitle),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: dict.orderStatus.reloadCta }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: dict.orderStatus.reloadCta }),
+    ).not.toBeInTheDocument();
   });
 });

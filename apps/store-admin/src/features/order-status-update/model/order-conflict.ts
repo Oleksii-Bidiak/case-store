@@ -75,6 +75,40 @@ export function isOrderConflict(
 }
 
 /**
+ * True when an edit was refused as a lost update — the order moved since the
+ * operator started typing (TASK-1972). The edit forms answer it with the
+ * stale-draft review (the colleague's version next to the draft), not a toast.
+ *
+ * Only the CODED stale refusal: a 409 without a code is not provably a lost
+ * update, and the other codes are refusals of what the order is, which no
+ * side-by-side comparison would resolve.
+ */
+export function isStaleWriteConflict(
+  error: ApiErrorLike | null | undefined,
+): boolean {
+  return (
+    isOrderConflict(error) && apiErrorCode(error) === ORDER_CONFLICT_CODE.STALE
+  );
+}
+
+/**
+ * The words of the stale-draft review panel, for both order edit forms. Built
+ * here, next to the rest of the conflict vocabulary, so the two forms cannot
+ * drift into saying the same thing two ways.
+ */
+export const ORDER_STALE_REVIEW_LABELS = {
+  title: dict.orderStatus.staleReviewTitle,
+  diverging: dict.orderStatus.staleReviewDiverging,
+  refreshed: dict.orderStatus.staleReviewRefreshed,
+  theirs: dict.orderStatus.staleReviewTheirs,
+  mine: dict.orderStatus.staleReviewMine,
+  empty: dict.orderStatus.staleReviewEmpty,
+  takeTheirs: dict.orderStatus.staleReviewTakeTheirs,
+  keepMine: dict.orderStatus.staleReviewKeepMine,
+  acknowledge: dict.orderStatus.staleReviewAcknowledge,
+} as const;
+
+/**
  * The Ukrainian sentence for a rejected status write, or `null` when the failure
  * was not a conflict at all (network, 500, 403) and the caller should fall back
  * to its generic message.

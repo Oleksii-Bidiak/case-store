@@ -8,7 +8,9 @@ export {
 // sentence (TASK-332 / 335 / 336 / 341).
 export {
   ORDER_CONFLICT_CODE,
+  ORDER_STALE_REVIEW_LABELS,
   isOrderConflict,
+  isStaleWriteConflict,
   orderConflictMessage,
   orderWriteErrorMessage,
   requiresReload,

@@ -2,6 +2,7 @@ import { dict } from "@/shared/config";
 import {
   ORDER_CONFLICT_CODE,
   isOrderConflict,
+  isStaleWriteConflict,
   orderConflictMessage,
   orderWriteErrorMessage,
   requiresReload,
@@ -158,5 +159,26 @@ describe("orderWriteErrorMessage (TASK-622)", () => {
     ).toBeNull();
     expect(orderWriteErrorMessage(rejection(400, "Bad Request"))).toBeNull();
     expect(orderWriteErrorMessage({})).toBeNull();
+  });
+});
+
+/**
+ * TASK-1972: a lost update on an edit form opens the stale-draft review; every
+ * other refusal keeps its message. A 409 with no code at all (a proxy ate the
+ * body) is not provably a lost update, so it is not reviewed either.
+ */
+describe("isStaleWriteConflict (TASK-1972)", () => {
+  it("is true only for a 409 ORDER_STALE", () => {
+    expect(
+      isStaleWriteConflict(rejection(409, ORDER_CONFLICT_CODE.STALE)),
+    ).toBe(true);
+    expect(
+      isStaleWriteConflict(
+        rejection(409, ORDER_CONFLICT_CODE.TRANSITION_INVALID),
+      ),
+    ).toBe(false);
+    expect(isStaleWriteConflict(rejection(409))).toBe(false);
+    expect(isStaleWriteConflict(rejection(403, "Forbidden"))).toBe(false);
+    expect(isStaleWriteConflict(null)).toBe(false);
   });
 });

@@ -4,10 +4,14 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
-import type { OrderEntity } from "@/entities/order";
+import {
+  useAdminOrderControllerFindById,
+  type OrderEntity,
+} from "@/entities/order";
 import { OrderAddressForm } from "./order-address-form";
 
 jest.mock("sonner", () => ({
@@ -144,8 +148,29 @@ describe("OrderAddressForm — refusals (TASK-622)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("still words a 409 as the conflict it is", async () => {
+  it("still words a 409 that is not a lost update as the conflict it is", async () => {
+    stubPatch(409, "ORDER_TRANSITION_INVALID");
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+
+    await submitAddress();
+
+    expect(
+      await screen.findByText(
+        dict.orderStatus.conflict.ORDER_TRANSITION_INVALID,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the conflict sentence when the colleague's version cannot be fetched", async () => {
     stubPatch(409, "ORDER_STALE");
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ statusCode: 500 }, { status: 500 }),
+      ),
+    );
     renderWithProviders(
       <OrderAddressForm order={makeOrder("PENDING")} />,
       WRITER,
@@ -156,6 +181,14 @@ describe("OrderAddressForm — refusals (TASK-622)", () => {
     expect(
       await screen.findByText(dict.orderStatus.conflict.ORDER_STALE),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: dict.orders.addressSave }),
+      ).toBeEnabled(),
+    );
+    expect(
+      screen.queryByText(dict.orderStatus.staleReviewTitle),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -280,6 +313,153 @@ describe("OrderAddressForm — the lock token under polling (TASK-629)", () => {
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1]).toMatchObject({
       expectedUpdatedAt: "2026-06-01T10:05:00.000Z",
+    });
+  });
+});
+
+/**
+ * TASK-1972 (AD-ORD-105): the same lost update as the notes (AD-ORD-67). After
+ * the 409 the form rebased its token onto the refetched version at once and kept
+ * the operator's draft, so the second «Зберегти адресу» overwrote the
+ * colleague's correction without anyone having seen it. Now the colleague's
+ * address is shown field by field next to the draft, and the token moves only
+ * when the operator decides.
+ */
+describe("OrderAddressForm — a colleague saved first (TASK-1972)", () => {
+  const WRITER = { auth: { permissions: ["orders:read", "orders:write"] } };
+  const V1 = "2026-06-01T10:00:00.000Z";
+  const V2 = "2026-06-01T10:00:30.000Z";
+  const V3 = "2026-06-01T10:02:00.000Z";
+
+  let serverOrder: OrderEntity;
+  let bodies: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    serverOrder = makeOrder("PENDING");
+    bodies = [];
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: serverOrder }),
+      ),
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        if (body.expectedUpdatedAt !== serverOrder.updatedAt) {
+          return HttpResponse.json(
+            { statusCode: 409, error: "ORDER_STALE", message: "stale" },
+            { status: 409 },
+          );
+        }
+        serverOrder = {
+          ...serverOrder,
+          shippingAddress: body.shippingAddress,
+          updatedAt: V3,
+        } as OrderEntity;
+        return HttpResponse.json({ data: serverOrder });
+      }),
+    );
+  });
+
+  /** The order card's wiring: the form is fed by the polled detail query. */
+  function Card() {
+    const { data } = useAdminOrderControllerFindById("order-uuid-1");
+    return data?.data ? <OrderAddressForm order={data.data} /> : null;
+  }
+
+  const saveButton = () =>
+    screen.getByRole("button", { name: dict.orders.addressSave });
+  // By role: once the review is open, its row is a group named after the field.
+  const input = (name: string) => screen.getByRole("textbox", { name });
+
+  /** Tab A corrects the city; tab B saves `colleague` meanwhile; A is refused. */
+  async function conflictOn(colleague: Record<string, string>) {
+    renderWithProviders(<Card />, WRITER);
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.orders.addressEdit }),
+    );
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Lviv");
+    serverOrder = {
+      ...serverOrder,
+      shippingAddress: { ...serverOrder.shippingAddress, ...colleague },
+      updatedAt: V2,
+    } as unknown as OrderEntity;
+    await userEvent.click(saveButton());
+    await waitFor(() => expect(bodies).toHaveLength(1));
+  }
+
+  it("shows the colleague's city next to the draft and sends nothing until reviewed", async () => {
+    await conflictOn({ city: "Odesa" });
+
+    const row = await screen.findByRole("group", {
+      name: dict.orderCreate.addressCity,
+    });
+    expect(within(row).getByText("Odesa")).toBeInTheDocument();
+    expect(input(dict.orderCreate.addressCity)).toHaveValue("Lviv");
+    expect(saveButton()).toBeDisabled();
+    await userEvent.click(saveButton());
+    expect(bodies).toHaveLength(1);
+  });
+
+  it("«Переглянув — зберегти мою» sends the draft over the colleague's version", async () => {
+    await conflictOn({ city: "Odesa" });
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.orderStatus.staleReviewKeepMine,
+      }),
+    );
+    await userEvent.click(saveButton());
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[0]).toMatchObject({ expectedUpdatedAt: V1 });
+    expect(bodies[1]).toMatchObject({
+      expectedUpdatedAt: V2,
+      shippingAddress: expect.objectContaining({ city: "Lviv" }),
+    });
+  });
+
+  it("«Взяти версію колеги» puts the colleague's city in the box", async () => {
+    await conflictOn({ city: "Odesa" });
+
+    const row = await screen.findByRole("group", {
+      name: dict.orderCreate.addressCity,
+    });
+    await userEvent.click(
+      within(row).getByRole("button", {
+        name: dict.orderStatus.staleReviewTakeTheirs,
+      }),
+    );
+
+    expect(input(dict.orderCreate.addressCity)).toHaveValue("Odesa");
+    expect(bodies).toHaveLength(1);
+  });
+
+  it("refreshes a field the operator did not touch and waits for «Зрозуміло»", async () => {
+    await conflictOn({ phone: "+380671112233" });
+
+    expect(
+      await screen.findByText(dict.orderStatus.staleReviewRefreshed),
+    ).toBeInTheDocument();
+    expect(input(dict.orderCreate.addressPhone)).toHaveValue("+380671112233");
+    expect(input(dict.orderCreate.addressCity)).toHaveValue("Lviv");
+    expect(saveButton()).toBeDisabled();
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.orderStatus.staleReviewAcknowledge,
+      }),
+    );
+    await userEvent.click(saveButton());
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toMatchObject({
+      expectedUpdatedAt: V2,
+      shippingAddress: expect.objectContaining({
+        city: "Lviv",
+        phone: "+380671112233",
+      }),
     });
   });
 });

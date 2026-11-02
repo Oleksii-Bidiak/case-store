@@ -2,16 +2,24 @@
 
 import { useCallback, useState } from "react";
 
-export interface EditLockToken {
+export interface EditLockToken<T = undefined> {
   /** The optimistic-lock token to send with the save. */
   token: string;
   /**
-   * Hold `next` as the token from now on — after a save (the server's new
-   * `updatedAt`) or after a conflict the operator has been told about (the
-   * refetched `updatedAt`). `undefined` lets go: the next dirty render captures
-   * whatever the entity carries then.
+   * The form values of the version `token` names — what the operator started
+   * editing (TASK-1972). Held and released together with the token; while the
+   * form is clean it is simply the `snapshot` passed in.
    */
-  rebase: (next: string | undefined) => void;
+  base: T;
+  /**
+   * Hold `next` as the token from now on — after a save (the server's new
+   * `updatedAt`) or once the operator has REVIEWED a colleague's version
+   * (`useStaleDraftReview`), never straight from a 409 handler. `nextBase` is
+   * that version's values; omitted, the base follows the live snapshot.
+   * `undefined` lets go: the next dirty render captures whatever the entity
+   * carries then.
+   */
+  rebase: (next: string | undefined, nextBase?: T) => void;
 }
 
 /**
@@ -40,21 +48,27 @@ export interface EditLockToken {
  * Client-only; import directly (`@/shared/lib/use-edit-lock-token`), like
  * `use-now`.
  */
-export function useEditLockToken(
+export function useEditLockToken<T = undefined>(
   isDirty: boolean,
   current: string,
-): EditLockToken {
-  const [held, setHeld] = useState<string | null>(null);
+  snapshot?: T,
+): EditLockToken<T> {
+  const [held, setHeld] = useState<{ token: string; base?: T } | null>(null);
 
   if (isDirty && held === null) {
-    setHeld(current);
+    setHeld({ token: current, base: snapshot });
   } else if (!isDirty && held !== null) {
     setHeld(null);
   }
 
-  const rebase = useCallback((next: string | undefined) => {
-    setHeld(next ?? null);
+  const rebase = useCallback((next: string | undefined, nextBase?: T) => {
+    setHeld(next === undefined ? null : { token: next, base: nextBase });
   }, []);
 
-  return { token: isDirty ? (held ?? current) : current, rebase };
+  const live = isDirty && held !== null;
+  return {
+    token: live ? held.token : current,
+    base: (live && held.base !== undefined ? held.base : snapshot) as T,
+    rebase,
+  };
 }

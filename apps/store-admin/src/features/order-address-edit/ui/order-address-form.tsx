@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
   getAdminOrderControllerFindAllQueryKey,
+  fetchFreshOrder,
   getAdminOrderControllerFindByIdQueryKey,
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
   isPreShipmentStatus,
@@ -14,15 +15,18 @@ import {
   type OrderEntity,
 } from "@/entities/order";
 import {
+  ORDER_STALE_REVIEW_LABELS,
+  isStaleWriteConflict,
   orderConflictMessage,
   orderWriteErrorMessage,
   type ApiErrorLike,
 } from "@/features/order-status-update";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
-import { Button, Input, Label } from "@/shared/ui";
+import { Button, Input, Label, StaleDraftPanel } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { useEditLockToken } from "@/shared/lib/use-edit-lock-token";
+import { useStaleDraftReview } from "@/shared/lib/use-stale-draft-review";
 import {
   addressValuesToDto,
   mapOrderToAddressValues,
@@ -42,6 +46,11 @@ const FIELDS = [
   { name: "address1", label: dict.orderCreate.addressAddress1 },
   { name: "postalCode", label: dict.orderCreate.addressPostalCode },
 ] as const;
+
+/** Field → its label, for the stale-draft review rows (TASK-1972). */
+const FIELD_LABELS = Object.fromEntries(
+  FIELDS.map((field) => [field.name, field.label]),
+) as Record<keyof OrderAddressFormValues, string>;
 
 /**
  * Correct the delivery address before the parcel ships (TASK-341).
@@ -71,12 +80,13 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
   const updateDetails = useAdminOrderControllerUpdateDetails();
 
   const editable = isPreShipmentStatus(order.status);
+  const seeded = mapOrderToAddressValues(order);
 
   const form = useForm<OrderAddressFormValues>({
     resolver: zodResolver(orderAddressSchema),
     // forms.md Rule 2a — stable entity, and `keepDirtyValues` stops a background
     // refetch from wiping a half-typed correction.
-    values: mapOrderToAddressValues(order),
+    values: seeded,
     resetOptions: { keepDirtyValues: true },
   });
 
@@ -85,10 +95,25 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
   // landed meanwhile is overwritten without a 409 — see `useEditLockToken`.
   // `dirtyFields`, not `isDirty`: a values-driven reset drops `isDirty` for a
   // render even though the typed text is kept, which would let go of the token.
+  // `seeded` rides along as the base the stale-draft review compares against.
   const lock = useEditLockToken(
     Object.keys(form.formState.dirtyFields).length > 0,
     order.updatedAt,
+    seeded,
   );
+
+  const draft: OrderAddressFormValues = {
+    ...seeded,
+    ...useWatch({ control: form.control }),
+  };
+
+  // TASK-1972 (AD-ORD-105): after a 409 the colleague's address is shown field
+  // by field next to the draft; the token moves only on the operator's word.
+  const review = useStaleDraftReview<OrderAddressFormValues>({
+    draft,
+    apply: (field, value) => form.resetField(field, { defaultValue: value }),
+    rebase: (version, fresh) => lock.rebase(version, fresh),
+  });
 
   // 409 → conflict sentence, 403 → «немає права» (TASK-622). A 400 is neither:
   // it used to read as «замовлення змінилося», because any coded body counted.
@@ -156,19 +181,25 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
         },
         onError: (error) => {
           const message = orderConflictMessage(error as ApiErrorLike);
+          if (isStaleWriteConflict(error as ApiErrorLike)) {
+            // TASK-1972: fetch the colleague's version and review it next to
+            // the draft — never rebase the token here, before the operator has
+            // seen it (that is how the second save overwrote the colleague).
+            const base = lock.base;
+            void fetchFreshOrder(queryClient, order.id)
+              .then((fresh) => {
+                updateDetails.reset();
+                review.open({
+                  base,
+                  draft: form.getValues(),
+                  fresh: mapOrderToAddressValues(fresh),
+                  version: fresh.updatedAt,
+                });
+              })
+              .catch(() => toast.error(message ?? dict.orders.detailsFailed));
+            return;
+          }
           if (message) {
-            // Told the order changed; the next save is made over the refetched
-            // version, so it becomes the held token (TASK-629) — otherwise every
-            // retry would send the refused one again.
-            const key = getAdminOrderControllerFindByIdQueryKey(order.id);
-            void queryClient
-              .invalidateQueries({ queryKey: key })
-              .then(() =>
-                lock.rebase(
-                  queryClient.getQueryData<{ data?: OrderEntity }>(key)?.data
-                    ?.updatedAt,
-                ),
-              );
             toast.error(message);
             return;
           }
@@ -212,7 +243,21 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
         );
       })}
 
-      {conflict ? (
+      {review.review ? (
+        <StaleDraftPanel
+          rows={review.diverging.map((name) => ({
+            name,
+            label: FIELD_LABELS[name],
+            theirs: review.review?.fresh[name] ?? "",
+            mine: draft[name],
+          }))}
+          labels={ORDER_STALE_REVIEW_LABELS}
+          onTakeTheirs={(name) =>
+            review.takeTheirs(name as keyof OrderAddressFormValues)
+          }
+          onAcknowledge={review.acknowledge}
+        />
+      ) : conflict ? (
         <p
           role="alert"
           className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive"
@@ -222,7 +267,14 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
       ) : null}
 
       <div className="flex items-center gap-2">
-        <Button type="submit" size="sm" disabled={updateDetails.isPending}>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={updateDetails.isPending || review.pending}
+          aria-describedby={
+            review.pending ? "order-address-save-hint" : undefined
+          }
+        >
           {dict.orders.addressSave}
         </Button>
         <Button
@@ -233,12 +285,21 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
             form.reset(mapOrderToAddressValues(order), {
               keepDirtyValues: false,
             });
+            review.close();
             setEditing(false);
           }}
         >
           {dict.orders.addressEditCancel}
         </Button>
       </div>
+      {review.pending ? (
+        <p
+          id="order-address-save-hint"
+          className="text-xs text-muted-foreground"
+        >
+          {dict.orderStatus.staleReviewSaveHint}
+        </p>
+      ) : null}
     </form>
   );
 }
