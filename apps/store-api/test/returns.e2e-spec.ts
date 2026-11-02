@@ -123,6 +123,7 @@ describe('Admin returns queue (e2e)', () => {
   const moneyRepositoryMock = {
     recompute: jest.fn(),
     returnPaidOutKop: jest.fn(),
+    isFullyRefunded: jest.fn(),
     syncReturnStatus: jest.fn(),
   };
 
@@ -218,6 +219,7 @@ describe('Admin returns queue (e2e)', () => {
     prismaServiceMock.order.findUniqueOrThrow.mockResolvedValue({ discount: '0', items: [] });
     moneyRepositoryMock.recompute.mockResolvedValue({});
     moneyRepositoryMock.returnPaidOutKop.mockResolvedValue(0);
+    moneyRepositoryMock.isFullyRefunded.mockResolvedValue(false);
     // Both forms of $transaction: the list path hands it an ARRAY, the resolve
     // path an interactive callback, which runs against the same double.
     prismaServiceMock.$transaction.mockImplementation((operations: unknown) =>
@@ -548,10 +550,13 @@ describe('Admin returns queue (e2e)', () => {
         where: { id: returnId, decision: ReturnDecision.REFUND, creditKop: { not: null } },
         data: { creditKop: 40_000, creditReason: 'Без зарядного блока' },
       });
+      // The cover is read before the write: a change that breaks it moves a
+      // REFUNDED order back (R2 pre-merge review).
       expect(moneyRepositoryMock.recompute).toHaveBeenCalledWith(
         prismaServiceMock,
         refundReturn.orderId,
         testAdmin.id,
+        { coverageLost: false },
       );
       expect(moneyRepositoryMock.syncReturnStatus).toHaveBeenCalledWith(
         prismaServiceMock,
