@@ -113,6 +113,10 @@ const prismaMock = {
     // TASK-620: who set the REFUNDED mark a correction would lift.
     findFirst: jest.fn(),
   },
+  // TASK-1975: the history timeline names the accounts behind `changedBy`.
+  user: {
+    findMany: jest.fn(),
+  },
   // TASK-771: the revive's cap check compares against a field reference.
   discount: {
     fields: { maxRedemptions: { name: 'maxRedemptions', modelName: 'Discount' } },
@@ -2292,6 +2296,57 @@ describe('OrderRepository', () => {
         where: { orderId: 'order-1' },
         orderBy: { changedAt: 'asc' },
       });
+    });
+
+    // TASK-1975: who changed it, without an N+1.
+    const historyRow = (id: string, changedBy: string | null) => ({
+      id,
+      orderId: 'order-1',
+      changeType: OrderHistoryChangeType.STATUS,
+      fromStatus: null,
+      toStatus: OrderStatus.PENDING,
+      fromPaymentStatus: null,
+      toPaymentStatus: null,
+      changedBy,
+      note: null,
+      rejectedPaymentStatus: null,
+      changedAt: new Date('2026-11-02T10:00:00.000Z'),
+    });
+
+    it('names the authors with ONE account query for the distinct ids, soft-deleted included', async () => {
+      prismaMock.orderStatusHistory.findMany.mockResolvedValue([
+        historyRow('h1', null),
+        historyRow('h2', 'admin-1'),
+        historyRow('h3', 'admin-1'),
+        historyRow('h4', 'gone-1'),
+      ]);
+      const admin = {
+        id: 'admin-1',
+        email: 'olena@example.com',
+        originalEmail: null,
+        firstName: 'Олена',
+        lastName: 'Коваль',
+      };
+      prismaMock.user.findMany.mockResolvedValue([admin]);
+
+      const rows = await repository.findHistoryByOrderId('order-1');
+
+      expect(prismaMock.user.findMany).toHaveBeenCalledTimes(1);
+      expect(prismaMock.user.findMany).toHaveBeenCalledWith({
+        // No deletedAt filter: a soft-deleted operator still confirmed the order.
+        where: { id: { in: ['admin-1', 'gone-1'] } },
+        select: { id: true, email: true, originalEmail: true, firstName: true, lastName: true },
+      });
+      expect(rows.map((row) => row.actor)).toEqual([null, admin, admin, null]);
+    });
+
+    it('skips the account query when every row is a system row', async () => {
+      prismaMock.orderStatusHistory.findMany.mockResolvedValue([historyRow('h1', null)]);
+
+      const rows = await repository.findHistoryByOrderId('order-1');
+
+      expect(prismaMock.user.findMany).not.toHaveBeenCalled();
+      expect(rows[0].actor).toBeNull();
     });
   });
 

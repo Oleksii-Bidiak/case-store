@@ -30,6 +30,7 @@ function makeEntry(
     note: null,
     rejectedPaymentStatus: null,
     changedAt: "2026-07-08T10:00:00.000Z",
+    actor: null,
     ...overrides,
   };
 }
@@ -45,6 +46,30 @@ describe("historyActorLabel (TASK-251)", () => {
 
   it("labels a null actor as the system", () => {
     expect(historyActorLabel(null, ORDER_USER_ID)).toBe("Система");
+  });
+});
+
+describe("historyActorLabel — who changed it (TASK-1975)", () => {
+  it("names the operator when the server resolved the account", () => {
+    expect(historyActorLabel("admin-9", ORDER_USER_ID, "Олена Коваль")).toBe(
+      "Олена Коваль",
+    );
+  });
+
+  it("falls back to «Адміністратор» for an id with no account", () => {
+    expect(historyActorLabel("admin-9", ORDER_USER_ID, null)).toBe(
+      "Адміністратор",
+    );
+    expect(historyActorLabel("admin-9", ORDER_USER_ID, "  ")).toBe(
+      "Адміністратор",
+    );
+  });
+
+  it("keeps the customer and system labels whatever the name", () => {
+    expect(historyActorLabel(ORDER_USER_ID, ORDER_USER_ID, "Іван")).toBe(
+      "Клієнт",
+    );
+    expect(historyActorLabel(null, ORDER_USER_ID, "Іван")).toBe("Система");
   });
 });
 

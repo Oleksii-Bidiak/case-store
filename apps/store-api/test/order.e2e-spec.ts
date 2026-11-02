@@ -1763,6 +1763,33 @@ describe('OrderController (e2e)', () => {
       ]);
     });
 
+    it('names who changed it — actor {id, name}, null for a system row (TASK-1975)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      orderRepositoryMock.findHistoryByOrderId.mockResolvedValue([
+        { ...historyRows[0], actor: null },
+        {
+          ...historyRows[1],
+          actor: {
+            id: admin.id,
+            email: 'olena@example.com',
+            originalEmail: null,
+            firstName: 'Олена',
+            lastName: 'Коваль',
+          },
+        },
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/history')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data[0].actor).toBeNull();
+      // {id, name} only — the history does not hand out the operator's email.
+      expect(response.body.data[1].actor).toEqual({ id: admin.id, name: 'Олена Коваль' });
+    });
+
     it('should return 404 when the order does not exist', async () => {
       const token = generateAccessToken(admin.id, admin.role);
       orderRepositoryMock.findById.mockResolvedValue(null);

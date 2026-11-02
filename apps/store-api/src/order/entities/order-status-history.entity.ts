@@ -5,7 +5,38 @@ import {
   OrderHistoryChangeType,
   OrderHistoryNote,
 } from '@prisma/client';
-import type { OrderStatusHistoryRow } from '../order.types';
+import type { OrderHistoryActorRow, OrderStatusHistoryRow } from '../order.types';
+
+/**
+ * Who authored a history row (TASK-1975) — admin responses only.
+ *
+ * `name` is the first and last name as stored, falling back to the readable
+ * email (a soft-deleted account's `originalEmail`, TASK-104): staff accounts are
+ * often created with an email alone, and an empty name reads as "nobody". Same
+ * rule as the returns card's actor.
+ */
+export class OrderHistoryActorEntity {
+  @ApiProperty({ description: 'Account id', format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({
+    description: 'First and last name as stored; the email when the account has no name',
+    example: 'Олена Коваль',
+  })
+  name!: string;
+
+  static from(row: OrderHistoryActorRow | null | undefined): OrderHistoryActorEntity | null {
+    if (!row) return null;
+    const entity = new OrderHistoryActorEntity();
+    entity.id = row.id;
+    const name = [row.firstName, row.lastName]
+      .map((part) => part?.trim())
+      .filter(Boolean)
+      .join(' ');
+    entity.name = name || (row.originalEmail ?? row.email);
+    return entity;
+  }
+}
 
 /**
  * Domain entity for a single order status/payment-status history row (TASK-251).
@@ -113,6 +144,16 @@ export class OrderStatusHistoryEntity {
   @ApiProperty({ description: 'When the change happened', example: '2024-01-01T00:00:00.000Z' })
   changedAt!: Date;
 
+  @ApiProperty({
+    description:
+      'TASK-1975: the account behind changedBy, so the timeline can say who changed it. ' +
+      'Null for a system row and for an id that matches no account; a soft-deleted account is ' +
+      'still named.',
+    type: OrderHistoryActorEntity,
+    nullable: true,
+  })
+  actor!: OrderHistoryActorEntity | null;
+
   /**
    * Map a repository history row to the entity (straight field mapping).
    */
@@ -129,6 +170,7 @@ export class OrderStatusHistoryEntity {
     entity.note = row.note ?? null;
     entity.rejectedPaymentStatus = row.rejectedPaymentStatus ?? null;
     entity.changedAt = row.changedAt;
+    entity.actor = OrderHistoryActorEntity.from(row.actor);
     return entity;
   }
 }

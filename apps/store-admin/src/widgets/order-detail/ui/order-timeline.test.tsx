@@ -85,6 +85,33 @@ describe("OrderTimeline (TASK-251)", () => {
     expect(items[2]).toHaveTextContent("Статус: Підтверджено → Скасовано");
   });
 
+  it("names the operator who changed it (TASK-1975)", async () => {
+    mockHistory([
+      historyRows[0],
+      { ...historyRows[1], actor: { id: "admin-9", name: "Олена Коваль" } },
+      // The owner keeps «Клієнт» even when the server names the account.
+      {
+        ...historyRows[2],
+        actor: { id: CUSTOMER_USER_ID, name: "Іван Петренко" },
+      },
+    ]);
+
+    renderWithProviders(
+      <OrderTimeline orderId="order-1" customerUserId={CUSTOMER_USER_ID} />,
+    );
+
+    await screen.findByText(/Олена Коваль ·/);
+    const items = screen.getAllByRole("listitem");
+    expect(items[1]).toHaveTextContent(
+      "Статус: Очікує підтвердження → Підтверджено",
+    );
+    expect(items[1]).toHaveTextContent(/Олена Коваль ·/);
+    expect(items[1]).not.toHaveTextContent("Адміністратор");
+    expect(items[2]).toHaveTextContent(/Клієнт ·/);
+    expect(items[2]).not.toHaveTextContent("Іван Петренко");
+    expect(items[0]).toHaveTextContent(/Система ·/);
+  });
+
   it("shows an error message when the request fails", async () => {
     server.use(
       http.get("*/api/admin/orders/:orderId/history", () =>

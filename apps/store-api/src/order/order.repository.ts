@@ -251,6 +251,15 @@ export interface AdminOrderExportRow {
   _count: { items: number };
 }
 
+/** The account fields a history row names its author by (TASK-1975). */
+const HISTORY_ACTOR_SELECT = {
+  id: true,
+  email: true,
+  originalEmail: true,
+  firstName: true,
+  lastName: true,
+} satisfies Prisma.UserSelect;
+
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
 
@@ -2071,12 +2080,30 @@ export class OrderRepository {
   /**
    * Read an order's full status/payment-status history, oldest-first — the
    * chronological timeline for the admin order-detail view (TASK-251).
+   *
+   * TASK-1975: each row carries the account behind `changedBy`. The column has
+   * no relation, so the accounts are read in ONE extra query for all distinct
+   * ids (never per row). Soft-deleted accounts are deliberately not filtered
+   * out; an id with no account at all leaves `actor` null.
    */
-  findHistoryByOrderId(orderId: string): Promise<OrderStatusHistoryRow[]> {
-    return this.prisma.orderStatusHistory.findMany({
+  async findHistoryByOrderId(orderId: string): Promise<OrderStatusHistoryRow[]> {
+    const rows = await this.prisma.orderStatusHistory.findMany({
       where: { orderId },
       orderBy: { changedAt: 'asc' },
     });
+    const ids = [...new Set(rows.map((row) => row.changedBy).filter((id) => id !== null))];
+    if (ids.length === 0) {
+      return rows.map((row) => ({ ...row, actor: null }));
+    }
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: HISTORY_ACTOR_SELECT,
+    });
+    const byId = new Map(users.map((user) => [user.id, user]));
+    return rows.map((row) => ({
+      ...row,
+      actor: row.changedBy === null ? null : (byId.get(row.changedBy) ?? null),
+    }));
   }
 
   /**

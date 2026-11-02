@@ -38,6 +38,28 @@ export interface OrderStatusHistoryRow {
    */
   rejectedPaymentStatus: PaymentStatus | null;
   changedAt: Date;
+  /**
+   * TASK-1975: the account behind `changedBy`, as the timeline names it. Set by
+   * `OrderRepository.findHistoryByOrderId`; null for a system row and for an id
+   * that matches no account. Optional because nothing else that reads this
+   * shape resolves it.
+   */
+  actor?: OrderHistoryActorRow | null;
+}
+
+/**
+ * The account a history row names (TASK-1975). `changedBy` is a bare id with no
+ * relation, so the repository looks the accounts up in one query per timeline.
+ * Soft-deleted accounts are included on purpose: who confirmed an order stays
+ * true after the account is gone (`email` is then mangled and `originalEmail`
+ * holds the readable one — TASK-104).
+ */
+export interface OrderHistoryActorRow {
+  id: string;
+  email: string;
+  originalEmail: string | null;
+  firstName: string | null;
+  lastName: string | null;
 }
 
 /**

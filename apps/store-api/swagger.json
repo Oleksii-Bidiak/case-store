@@ -31013,6 +31013,25 @@
           "data"
         ]
       },
+      "OrderHistoryActorEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Account id",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "First and last name as stored; the email when the account has no name",
+            "example": "Олена Коваль"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
       "OrderStatusHistoryEntity": {
         "type": "object",
         "properties": {
@@ -31131,6 +31150,16 @@
             "type": "string",
             "description": "When the change happened",
             "example": "2024-01-01T00:00:00.000Z"
+          },
+          "actor": {
+            "description": "TASK-1975: the account behind changedBy, so the timeline can say who changed it. Null for a system row and for an id that matches no account; a soft-deleted account is still named.",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderHistoryActorEntity"
+              }
+            ]
           }
         },
         "required": [
@@ -31144,7 +31173,8 @@
           "changedBy",
           "note",
           "rejectedPaymentStatus",
-          "changedAt"
+          "changedAt",
+          "actor"
         ]
       },
       "AdminOrderPaginationMeta": {

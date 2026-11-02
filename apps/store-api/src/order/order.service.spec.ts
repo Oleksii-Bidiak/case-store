@@ -10,6 +10,7 @@ import {
 import { PinoLogger } from 'nestjs-pino';
 import {
   DeliveryMethod,
+  OrderHistoryChangeType,
   OrderHistoryNote,
   OrderStatus,
   PaymentMethod,
@@ -194,6 +195,8 @@ const orderRepositoryMock = {
   findByUserId: jest.fn(),
   findAll: jest.fn(),
   findById: jest.fn(),
+  // TASK-1975: the admin history timeline.
+  findHistoryByOrderId: jest.fn(),
   findByIdForAdmin: jest.fn(),
   // TASK-338: guest order access + claiming on registration.
   findByAccessTokenHash: jest.fn(),
@@ -5694,6 +5697,83 @@ describe('OrderService', () => {
       orderRepositoryMock.findByIdForAdmin.mockResolvedValue(null);
 
       await expect(service.adminGetOrder('missing')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ─── getOrderHistory — who changed it (TASK-1975) ─────────────────────────────
+
+  describe('getOrderHistory — who changed it (TASK-1975)', () => {
+    const row = (
+      changedBy: string | null,
+      actor: {
+        id: string;
+        email: string;
+        originalEmail: string | null;
+        firstName: string | null;
+        lastName: string | null;
+      } | null,
+    ) => ({
+      id: `h-${changedBy ?? 'system'}`,
+      orderId: 'order-uuid-1',
+      changeType: OrderHistoryChangeType.STATUS,
+      fromStatus: OrderStatus.PENDING,
+      toStatus: OrderStatus.CONFIRMED,
+      fromPaymentStatus: null,
+      toPaymentStatus: null,
+      changedBy,
+      note: null,
+      rejectedPaymentStatus: null,
+      changedAt: new Date('2026-11-02T10:00:00.000Z'),
+      actor,
+    });
+
+    it('names the actor by first + last name, else the readable email; null stays null', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      orderRepositoryMock.findHistoryByOrderId.mockResolvedValue([
+        row(null, null),
+        row('admin-1', {
+          id: 'admin-1',
+          email: 'olena@example.com',
+          originalEmail: null,
+          firstName: ' Олена ',
+          lastName: 'Коваль',
+        }),
+        row('admin-2', {
+          id: 'admin-2',
+          email: 'staff@example.com',
+          originalEmail: null,
+          firstName: null,
+          lastName: '',
+        }),
+        // Soft-deleted (TASK-104): `email` is mangled, `originalEmail` is readable.
+        row('admin-3', {
+          id: 'admin-3',
+          email: 'deleted:admin-3:gone@example.com',
+          originalEmail: 'gone@example.com',
+          firstName: null,
+          lastName: null,
+        }),
+        // An id with no account at all.
+        row('unknown-1', null),
+      ]);
+
+      const result = await service.getOrderHistory('order-uuid-1');
+
+      expect(result.map((entry) => entry.actor)).toEqual([
+        null,
+        { id: 'admin-1', name: 'Олена Коваль' },
+        { id: 'admin-2', name: 'staff@example.com' },
+        { id: 'admin-3', name: 'gone@example.com' },
+        null,
+      ]);
+      expect(result[4].changedBy).toBe('unknown-1');
+    });
+
+    it('404s before reading history when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.getOrderHistory('missing')).rejects.toThrow(NotFoundException);
+      expect(orderRepositoryMock.findHistoryByOrderId).not.toHaveBeenCalled();
     });
   });
 
