@@ -12,7 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { AddressDto } from './address.dto';
-import { GuestContactDto } from './guest-contact.dto';
+import { CheckoutContactDto } from './checkout-contact.dto';
 
 /**
  * Payment methods a shopper may choose at checkout — an allow-list, not the
@@ -39,14 +39,15 @@ export class CreateOrderDto {
   @ApiProperty({
     description:
       'Contact details for a GUEST order (TASK-338). Required when the request carries no ' +
-      'access token; ignored for authenticated shoppers, whose account is the source of truth.',
-    type: GuestContactDto,
+      'access token; ignored for authenticated shoppers, whose account is the source of truth. ' +
+      '`createAccount: true` creates an account in the same transaction (TASK-2010).',
+    type: CheckoutContactDto,
     required: false,
   })
   @IsOptional()
   @ValidateNested()
-  @Type(() => GuestContactDto)
-  contact?: GuestContactDto;
+  @Type(() => CheckoutContactDto)
+  contact?: CheckoutContactDto;
 
   /**
    * How the shopper intends to pay (TASK-330).

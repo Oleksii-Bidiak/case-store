@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
-import type { UseFormReset } from "react-hook-form";
+import type { UseFormGetValues, UseFormReset } from "react-hook-form";
 import { useUserControllerGetProfile } from "@/entities/user";
 import {
   CHECKOUT_DEFAULT_VALUES,
   type CheckoutFormValues,
 } from "./checkout-schema";
+
+const isBlank = (value: string | undefined) => !(value ?? "").trim();
 
 /**
  * useCheckoutPrefill — seed the checkout form with the logged-in user's saved
@@ -24,14 +26,22 @@ import {
  *     edited, so in-progress input typed before the profile loads is not
  *     clobbered.
  *
- * `city`, `deliveryAddress`, and `notes` have no profile source and are reset to
- * empty strings (delivery prefill is deferred to the Nova Poshta work, TASK-080).
+ * ── Signing in mid-checkout (TASK-2010) ──────────────────────────────────────
+ * A guest may now sign in from the contact block with half the form filled.
+ * `keepDirtyValues` alone does not protect that: a value set from code — the
+ * Nova Poshta city ref, the warehouse, the delivery method, a preselected
+ * pickup point — is never dirty, and blank defaults would wipe it. So the
+ * reset starts from the form's CURRENT values, and the profile only fills a
+ * name or phone the shopper has left empty. On a fresh page load the current
+ * values are the static defaults, which is exactly what this used to reset to.
  *
  * @param reset - the `reset` function from the checkout `useForm` instance.
+ * @param getValues - its `getValues`, read when the profile lands.
  * @param isAuthenticated - whether the current visitor is signed in.
  */
 export function useCheckoutPrefill(
   reset: UseFormReset<CheckoutFormValues>,
+  getValues: UseFormGetValues<CheckoutFormValues>,
   isAuthenticated: boolean,
 ): void {
   const { data } = useUserControllerGetProfile({
@@ -41,27 +51,24 @@ export function useCheckoutPrefill(
 
   useEffect(() => {
     if (!user?.id) return;
+    // `reset` replaces the entire form value, so any field it omits becomes
+    // undefined. The static defaults go first, the live values over them (a
+    // field RHF has never seen still gets its default — forms.md Rule 4c).
+    const current = { ...CHECKOUT_DEFAULT_VALUES, ...getValues() };
     reset(
       {
-        // `reset` replaces the entire form value, so any field it omits becomes
-        // undefined. Restating the static defaults keeps the payment radio from
-        // silently losing its selection the moment the profile lands;
-        // `keepDirtyValues` still protects a choice the shopper already made.
-        //
-        // Spread FIRST, so what we know about this user wins over the blank
-        // default. It used to come last, which was harmless only for as long as
-        // the defaults and the profile fields did not overlap — the moment
-        // `phone: ""` joined the defaults (TASK-407) that ordering would have
-        // wiped the saved number out of every prefilled checkout.
-        ...CHECKOUT_DEFAULT_VALUES,
-        firstName: user.firstName ?? "",
-        lastName: user.lastName ?? "",
-        phone: user.phone ?? "",
-        city: "",
-        npCityRef: "",
-        deliveryAddress: "",
-        npWarehouseRef: "",
-        notes: "",
+        ...current,
+        firstName: isBlank(current.firstName)
+          ? (user.firstName ?? "")
+          : current.firstName,
+        lastName: isBlank(current.lastName)
+          ? (user.lastName ?? "")
+          : current.lastName,
+        // A phone field holding only the «+380» prefix is still empty.
+        phone:
+          (current.phone ?? "").replace(/\D/g, "").length <= 3
+            ? (user.phone ?? "")
+            : current.phone,
       },
       { keepDirtyValues: true },
     );

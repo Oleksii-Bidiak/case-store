@@ -22,6 +22,7 @@ import {
   ApiExcludeEndpoint,
   ApiExtraModels,
   ApiProperty,
+  ApiPropertyOptional,
 } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { AuthService } from './auth.service';
@@ -40,15 +41,11 @@ import { GoogleAuthGuard } from './guards';
 import { CurrentUser } from './decorators';
 import { AuthTokens } from './entities';
 import type { GoogleOAuthProfile } from './oauth/google-oauth-profile';
-import { CART_TOKEN_COOKIE, buildCartTokenCookieOptions } from '../cart';
-import { WISHLIST_TOKEN_COOKIE, buildWishlistTokenCookieOptions } from '../wishlist';
-import {
-  REFRESH_TOKEN_COOKIE,
-  buildRefreshCookieOptions,
-  expiredCookieOptions,
-} from './auth-cookies';
-import { GuestStateMergeService } from './guest-state-merge.service';
+import { AuthSessionResponder } from './auth-session-responder';
+import { CheckoutAccountService } from './checkout-account.service';
+import { ConfirmAccountSetupDto, CheckoutEmailStatusDto } from './dto/checkout-account.dto';
 import { PermissionService, type EffectivePermissions } from './permissions';
+import { OptionalJwtAuthGuard } from '../cart';
 
 /**
  * Response envelope for register / login / refresh.
@@ -96,11 +93,60 @@ class EmailVerificationConfirmed {
       '0 for anyone who never ordered as a guest, and on a second confirm — claiming is idempotent.',
   })
   claimedOrders!: number;
+
+  @ApiPropertyOptional({
+    type: AuthTokens,
+    description:
+      'Password-less accounts only (TASK-2010): a fresh session for the device that opened the ' +
+      'link. Every older session of an unverified account was revoked first.',
+  })
+  session?: AuthTokens;
 }
 
 class EmailVerificationConfirmEnvelope {
   @ApiProperty({ type: EmailVerificationConfirmed })
   data!: EmailVerificationConfirmed;
+}
+
+/**
+ * What `POST /auth/account-setup/confirm` answers (TASK-2010): a fresh session
+ * for the device that opened the «Задайте пароль» link (the refresh token rides
+ * in the HttpOnly cookie, as on every sign-in) and the guest orders the proven
+ * address brought onto the account.
+ */
+class AccountSetupConfirmed {
+  @ApiProperty({ description: 'Short-lived access token of the new session' })
+  accessToken!: string;
+
+  @ApiProperty({
+    example: 2,
+    description:
+      'How many orders placed as a guest with this address were attached to the account ' +
+      '(0 when there were none).',
+  })
+  claimedOrders!: number;
+}
+
+class AccountSetupConfirmEnvelope {
+  @ApiProperty({ type: AccountSetupConfirmed })
+  data!: AccountSetupConfirmed;
+}
+
+/** What `POST /auth/checkout/email-status` answers (TASK-2010). */
+class CheckoutEmailStatus {
+  @ApiProperty({
+    example: false,
+    description:
+      'True when an account row holds this address (a deactivated one included — exactly what ' +
+      '/auth/register refuses with 409). The checkout then ' +
+      'offers to sign in instead of «Створити акаунт».',
+  })
+  hasAccount!: boolean;
+}
+
+class CheckoutEmailStatusEnvelope {
+  @ApiProperty({ type: CheckoutEmailStatus })
+  data!: CheckoutEmailStatus;
 }
 
 /** One held permission with its display label (TASK-725). */
@@ -165,16 +211,24 @@ class PermissionsResponseEnvelope {
   // attached, which no other message route has to say anything about.
   EmailVerificationConfirmed,
   EmailVerificationConfirmEnvelope,
+  // TASK-2010: the checkout sign-up's two public routes.
+  AccountSetupConfirmed,
+  AccountSetupConfirmEnvelope,
+  CheckoutEmailStatus,
+  CheckoutEmailStatusEnvelope,
 )
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
-    private readonly guestStateMerge: GuestStateMergeService,
+    // TASK-2010: the refresh cookie and the guest merge, shared with the order
+    // module's checkout sign-up (moved out of this controller).
+    private readonly sessionResponder: AuthSessionResponder,
     private readonly permissionService: PermissionService,
     private readonly emailVerificationService: EmailVerificationService,
     private readonly emailChangeService: EmailChangeService,
+    private readonly checkoutAccounts: CheckoutAccountService,
   ) {}
 
   /**
@@ -204,8 +258,7 @@ export class AuthController {
   ): Promise<{ data: AuthTokens }> {
     const tokens = await this.authService.register(dto);
 
-    this.setRefreshCookie(response, tokens.refreshToken);
-    await this.mergeGuestState(request, response, tokens.userId);
+    await this.sessionResponder.attach(request, response, tokens);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -242,8 +295,7 @@ export class AuthController {
   ): Promise<{ data: AuthTokens }> {
     const tokens = await this.authService.login(dto.email, dto.password);
 
-    this.setRefreshCookie(response, tokens.refreshToken);
-    await this.mergeGuestState(request, response, tokens.userId);
+    await this.sessionResponder.attach(request, response, tokens);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -357,7 +409,7 @@ export class AuthController {
   ): Promise<{ data: MessageResponse }> {
     await this.authService.changePassword(userId, dto.currentPassword, dto.newPassword);
 
-    this.clearRefreshCookie(response);
+    this.sessionResponder.clearRefreshCookie(response);
 
     return {
       data: { message: 'Password has been changed successfully.' },
@@ -399,7 +451,7 @@ export class AuthController {
   ): Promise<{ data: AuthTokens }> {
     const tokens = await this.authService.refreshToken(refreshToken);
 
-    this.setRefreshCookie(response, tokens.refreshToken);
+    this.sessionResponder.setRefreshCookie(response, tokens.refreshToken);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -428,7 +480,7 @@ export class AuthController {
   ): Promise<{ data: MessageResponse }> {
     await this.authService.logout(userId);
 
-    this.clearRefreshCookie(response);
+    this.sessionResponder.clearRefreshCookie(response);
 
     return {
       data: { message: 'Logged out' },
@@ -486,24 +538,126 @@ export class AuthController {
   // decorator's stated criterion: an unauthenticated write whose only defence IS
   // the limiter. Every sibling public write on this controller already has it.
   @FailClosedThrottle()
-  @ApiOperation({ summary: 'Confirm an email address with a single-use token' })
+  // TASK-2010 review: the JWT is OPTIONAL — a password account's link completes
+  // only for a request signed in as that account (the /register pre-hijack).
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Confirm an email address with a single-use token',
+    // No operationId on purpose: the storefront already imports the generated
+    // `useAuthControllerConfirmEmailVerification`, and renaming it is not this task.
+  })
   @ApiResponse({
     status: 200,
-    description: 'Address verified; `claimedOrders` counts guest orders moved onto the account',
+    description:
+      'Address verified; `claimedOrders` counts guest orders moved onto the account. For a ' +
+      'password-less account (checkout / Google) `session` signs the clicker in — the refresh ' +
+      'token is set as the HttpOnly cookie, every older session was revoked. Absent for a ' +
+      'password account (the caller is already signed in, and stays so).',
     type: EmailVerificationConfirmEnvelope,
   })
   @ApiResponse({ status: 400, description: 'Invalid, used, expired or superseded token' })
+  @ApiResponse({
+    status: 403,
+    description:
+      '`VERIFY_SIGN_IN_REQUIRED` — the account has a password and the request is not signed in ' +
+      'as it. The link is NOT spent: sign in and send it again (or reset the password).',
+  })
   async confirmEmailVerification(
     @Body() dto: ConfirmEmailVerificationDto,
+    @CurrentUser('id') requesterId: string | undefined,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<{ data: EmailVerificationConfirmed }> {
     // TASK-485: proving the address is what makes earlier guest orders provably
     // this person's, so they are attached here. The count is reported so the
     // storefront can say what happened instead of silently growing the list.
-    const { claimedOrders } = await this.emailVerificationService.confirm(dto.token);
+    const { claimedOrders, session } = await this.authService.confirmEmailVerification(
+      dto.token,
+      requesterId ?? null,
+    );
 
-    return {
-      data: { message: 'Email address verified.', claimedOrders },
-    };
+    const data: EmailVerificationConfirmed = { message: 'Email address verified.', claimedOrders };
+    if (session) {
+      data.session = await this.sessionResponder.attach(request, response, session);
+    }
+    return { data };
+  }
+
+  /**
+   * POST /api/auth/account-setup/confirm (TASK-2010)
+   *
+   * Finish an account created at checkout from its «Задайте пароль» link: prove
+   * the address (an unproven account has every session revoked first), claim
+   * the address's guest orders, set the password if one is sent, and open a
+   * session on this device. Public — the click arrives from a mail client.
+   * «Пропустити» on the page sends no password; the address is proven either way.
+   */
+  @Post('account-setup/confirm')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  // An unauthenticated write that signs in, sets a password and moves orders:
+  // fail closed (TASK-493 rule), like the verification confirm beside it.
+  @FailClosedThrottle()
+  @ApiOperation({
+    summary: 'Finish a checkout-created account: prove the address, optionally set a password',
+    operationId: 'confirmAccountSetup',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Address proven, guest orders claimed, password set when sent; a new session — the ' +
+      'refresh token is set as the HttpOnly cookie',
+    type: AccountSetupConfirmEnvelope,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      '`ACCOUNT_SETUP_INVALID` — unknown, used, expired or superseded link (one answer for ' +
+      'all); or a password the policy refuses',
+  })
+  async confirmAccountSetup(
+    @Body() dto: ConfirmAccountSetupDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ data: AccountSetupConfirmed }> {
+    const { session, claimedOrders } = await this.checkoutAccounts.confirmSetup(
+      dto.token,
+      dto.password,
+    );
+
+    const { accessToken } = await this.sessionResponder.attach(request, response, session);
+
+    return { data: { accessToken, claimedOrders } };
+  }
+
+  /**
+   * POST /api/auth/checkout/email-status (TASK-2010)
+   *
+   * Does this address already have an account? The checkout asks on blur of
+   * the e-mail field, to offer «Увійти» instead of «Створити акаунт» before the
+   * buyer fills in the rest. An enumeration oracle by design — accepted by the
+   * owner on 2026-11-01 because `/auth/register` already answers the same
+   * question with its 409 — and limited exactly like `/auth/register`'s sibling
+   * public writes: 10 a minute per address, fail-closed.
+   *
+   * POST, not GET, so the address stays out of URLs and access logs.
+   */
+  @Post('checkout/email-status')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @FailClosedThrottle()
+  @ApiOperation({
+    summary: 'Whether an e-mail already has an account (checkout sign-in hint)',
+    operationId: 'getCheckoutEmailStatus',
+  })
+  @ApiResponse({ status: 200, description: 'Account presence', type: CheckoutEmailStatusEnvelope })
+  @ApiResponse({ status: 400, description: 'Not an e-mail address' })
+  @ApiResponse({ status: 429, description: 'Too many requests — rate limit exceeded' })
+  async checkoutEmailStatus(
+    @Body() dto: CheckoutEmailStatusDto,
+  ): Promise<{ data: CheckoutEmailStatus }> {
+    return { data: { hasAccount: await this.checkoutAccounts.hasAccount(dto.email) } };
   }
 
   /**
@@ -572,7 +726,7 @@ export class AuthController {
   ): Promise<{ data: MessageResponse }> {
     await this.emailChangeService.confirmChange(dto.token);
 
-    this.clearRefreshCookie(response);
+    this.sessionResponder.clearRefreshCookie(response);
 
     return { data: { message: 'Email address changed. Please sign in again.' } };
   }
@@ -604,7 +758,7 @@ export class AuthController {
   ): Promise<{ data: MessageResponse }> {
     await this.emailChangeService.revertChange(dto.token);
 
-    this.clearRefreshCookie(response);
+    this.sessionResponder.clearRefreshCookie(response);
 
     return {
       data: { message: 'The change was undone and every session signed out.' },
@@ -705,8 +859,7 @@ export class AuthController {
     try {
       const tokens = await this.authService.loginWithGoogleProfile(profile);
 
-      this.setRefreshCookie(response, tokens.refreshToken);
-      await this.mergeGuestState(request, response, tokens.userId);
+      await this.sessionResponder.attach(request, response, tokens);
 
       response.redirect(302, `${storeClientUrl}${profile.redirect}`);
     } catch {
@@ -714,83 +867,5 @@ export class AuthController {
       // funnels here — same generic failure target as the !profile branch.
       response.redirect(302, `${storeClientUrl}/login?oauthError=1`);
     }
-  }
-
-  /**
-   * Set the refresh token as an HttpOnly cookie on the response, scoped to the
-   * one route that reads it.
-   */
-  private setRefreshCookie(response: Response, refreshToken: string): void {
-    response.cookie(
-      REFRESH_TOKEN_COOKIE,
-      refreshToken,
-      // Max-Age = the token's own lifetime (TASK-789), never a constant.
-      buildRefreshCookieOptions(this.isProduction(), this.authService.refreshTokenTtlMs),
-    );
-  }
-
-  /** Expire the refresh cookie with the same attributes it was set with. */
-  private clearRefreshCookie(response: Response): void {
-    response.cookie(
-      REFRESH_TOKEN_COOKIE,
-      '',
-      expiredCookieOptions(buildRefreshCookieOptions(this.isProduction(), 0)),
-    );
-  }
-
-  /**
-   * Hand the request's guest cart and wishlist to {@link GuestStateMergeService}
-   * and drop the cookie of each collection that actually merged (TASK-824).
-   *
-   * Only the HTTP half lives here — reading the cookies and clearing them. The
-   * merge itself, and the rule that a failure never blocks sign-in, belong to
-   * the service. A cookie is cleared ONLY for a merge that succeeded, so a
-   * failed merge leaves the guest token in the browser for the next sign-in.
-   *
-   * Each guest cookie is expired with the options its own interceptor SET it
-   * with, so the clear cannot drift from the set.
-   *
-   * `userId` comes from AuthService with the tokens (TASK-792) — not from
-   * decoding the access token just minted, which is how an empty decode used to
-   * clear the guest cookies without merging anything.
-   */
-  private async mergeGuestState(
-    request: Request,
-    response: Response,
-    userId: string,
-  ): Promise<void> {
-    const cartToken: string | undefined = request.cookies?.[CART_TOKEN_COOKIE];
-    const wishlistToken: string | undefined = request.cookies?.[WISHLIST_TOKEN_COOKIE];
-
-    if (!cartToken && !wishlistToken) {
-      return;
-    }
-
-    const { cartMerged, wishlistMerged } = await this.guestStateMerge.mergeInto(userId, {
-      cartToken,
-      wishlistToken,
-    });
-
-    if (cartMerged) {
-      response.cookie(
-        CART_TOKEN_COOKIE,
-        '',
-        expiredCookieOptions(buildCartTokenCookieOptions(this.isProduction())),
-      );
-    }
-
-    if (wishlistMerged) {
-      response.cookie(
-        WISHLIST_TOKEN_COOKIE,
-        '',
-        expiredCookieOptions(buildWishlistTokenCookieOptions(this.isProduction())),
-      );
-    }
-  }
-
-  // A method, not a getter: route-discovery specs walk the prototype and would
-  // invoke a getter on an instance-less prototype.
-  private isProduction(): boolean {
-    return this.configService.get<string>('NODE_ENV') === 'production';
   }
 }

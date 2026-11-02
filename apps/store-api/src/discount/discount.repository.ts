@@ -179,19 +179,31 @@ export class DiscountRepository {
   }
 
   /**
-   * Count how many times a user has already redeemed a given discount. Drives
-   * the `perUserLimit` gate in both the preview and the order-redeem re-check.
-   * Accepts an optional transaction client (the redeem path passes the order
-   * `tx`, so the count sees that transaction's own writes and is serialized by
-   * the discount row lock {@link tryIncrementRedeemed} takes).
+   * Count how many times a CUSTOMER has already redeemed a given discount —
+   * the account OR the normalised order phone (TASK-2010, B-12 тема 2 (г)).
+   * Drives the `perUserLimit` gate in both the preview and the order-redeem
+   * re-check. Accepts an optional transaction client (the redeem path passes the
+   * order `tx`, so the count sees that transaction's own writes and is
+   * serialized by the discount row lock {@link tryIncrementRedeemed} takes).
+   *
+   * Either key may be absent: a checkout sign-up has no account row yet when the
+   * code is validated, and a guest preview has neither — then there is nobody to
+   * count and the answer is 0 without a query.
    */
-  countUserRedemptions(
+  async countUserRedemptions(
     discountId: string,
-    userId: string,
+    userId: string | null,
+    phone: string | null,
     tx?: Prisma.TransactionClient,
   ): Promise<number> {
+    const customer: Prisma.DiscountRedemptionWhereInput[] = [
+      ...(userId ? [{ userId }] : []),
+      ...(phone ? [{ phone }] : []),
+    ];
+    if (customer.length === 0) return 0;
+
     const client = tx ?? this.prisma;
-    return client.discountRedemption.count({ where: { discountId, userId } });
+    return client.discountRedemption.count({ where: { discountId, OR: customer } });
   }
 
   /**
@@ -232,7 +244,8 @@ export class DiscountRepository {
    * the idempotency guard. Always runs inside the order transaction.
    */
   createRedemption(
-    data: { discountId: string; userId: string; orderId: string },
+    // `phone` — the order's, normalised (TASK-2010); half of the per-customer key.
+    data: { discountId: string; userId: string; orderId: string; phone: string | null },
     tx: Prisma.TransactionClient,
   ): Promise<DiscountRedemption> {
     return tx.discountRedemption.create({ data });

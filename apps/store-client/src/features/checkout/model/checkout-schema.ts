@@ -88,6 +88,14 @@ const checkoutFields = z.object({
    * the shopper's choice and the stored value agree.
    */
   paymentMethod: z.enum(CHECKOUT_PAYMENT_METHODS),
+  /**
+   * «Створити акаунт на цю пошту» (TASK-2010). Guests only — sent as
+   * `contact.createAccount`. Off by default (it is a consent); a promo code or
+   * a card payment ticks it, because the server accepts neither from a guest
+   * without an account. Optional so a value object built before it existed
+   * still type-checks; the form default makes it a real `false`.
+   */
+  createAccount: z.boolean().optional(),
 });
 
 export type CheckoutFormValues = z.infer<typeof checkoutFields>;
@@ -233,4 +241,5 @@ export const CHECKOUT_DEFAULT_VALUES = {
   courierCity: "",
   notes: "",
   paymentMethod: DEFAULT_PAYMENT_METHOD,
+  createAccount: false,
 } satisfies CheckoutFormValues;

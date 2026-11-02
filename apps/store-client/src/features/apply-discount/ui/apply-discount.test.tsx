@@ -13,7 +13,7 @@ import { clearAppliedDiscount } from "@/entities/discount";
 
 const addBreadcrumb = Sentry.addBreadcrumb as jest.Mock;
 
-/** A signed-in shopper — the promo endpoint is behind JwtAuthGuard. */
+/** A signed-in shopper. */
 const authed = {
   auth: { isAuthenticated: true, accessToken: "token" },
 } as const;
@@ -162,40 +162,10 @@ describe("ApplyDiscount", () => {
   // ─── Failure branches (TASK-402) ───────────────────────────────────────────
   // The 2026-08-27 demo run reported "WELCOME10 не працює" while signed out.
   // The code was fine; the shopper had no account, and every one of these very
-  // different failures rendered the same sentence.
+  // different failures rendered the same sentence. (TASK-2010 took the 401
+  // branch away: a guest's preview now succeeds.)
 
   describe("failure branches (TASK-402)", () => {
-    it("tells a signed-out shopper to sign in on a 401, with a link back to the cart", async () => {
-      previewFails(401, { error: "Unauthorized", message: "Unauthorized" });
-      const user = userEvent.setup();
-      renderWithProviders(<ApplyDiscount />);
-
-      await applyCode(user, "WELCOME10");
-
-      expect(
-        await screen.findByText(dict.discounts.errors.unauthorized, {
-          exact: false,
-        }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("link", { name: dict.discounts.signInCta }),
-      ).toHaveAttribute("href", "/login?redirect=%2Fcart");
-    });
-
-    it("sends the sign-in link back to the page the control is on", async () => {
-      previewFails(401, { error: "Unauthorized" });
-      const user = userEvent.setup();
-      renderWithProviders(<ApplyDiscount redirectTo="/checkout" />);
-
-      await applyCode(user, "WELCOME10");
-
-      await waitFor(() =>
-        expect(
-          screen.getByRole("link", { name: dict.discounts.signInCta }),
-        ).toHaveAttribute("href", "/login?redirect=%2Fcheckout"),
-      );
-    });
-
     it("names the stale-session cause on a 403 (CSRF)", async () => {
       previewFails(403, { error: "Forbidden", message: "invalid csrf token" });
       const user = userEvent.setup();
@@ -252,19 +222,20 @@ describe("ApplyDiscount", () => {
     });
 
     it("records the status in a Sentry breadcrumb", async () => {
-      previewFails(401, { error: "Unauthorized" });
+      previewFails(400, { error: "DISCOUNT_EXPIRED" });
       const user = userEvent.setup();
-      renderWithProviders(<ApplyDiscount />);
+      renderWithProviders(<ApplyDiscount />, authed);
 
       await applyCode(user, "WELCOME10");
-      await screen.findByText(dict.discounts.errors.unauthorized, {
-        exact: false,
-      });
+      await screen.findByText(dict.discounts.errors.DISCOUNT_EXPIRED);
 
       expect(addBreadcrumb).toHaveBeenCalledWith(
         expect.objectContaining({
           message: "discount.preview.failed",
-          data: expect.objectContaining({ statusCode: 401 }),
+          data: expect.objectContaining({
+            statusCode: 400,
+            errorCode: "DISCOUNT_EXPIRED",
+          }),
         }),
       );
     });
@@ -287,28 +258,71 @@ describe("ApplyDiscount", () => {
     });
   });
 
-  describe("guest hint (TASK-402)", () => {
-    it("warns a guest that promo codes need an account, before they spend one", () => {
+  // ─── A guest's code (TASK-2010) ────────────────────────────────────────────
+  // The preview no longer needs a session: the server prices the cart cookie and
+  // says the code holds only with an account — which checkout then creates.
+  describe("a guest (TASK-2010)", () => {
+    function previewForGuest() {
+      server.use(
+        http.post("*/api/cart/discount/preview", () =>
+          HttpResponse.json({
+            data: {
+              code: "WELCOME10",
+              type: "PERCENT",
+              amount: "49.90",
+              newTotal: "449.10",
+              requiresAccount: true,
+            },
+          }),
+        ),
+      );
+    }
+
+    it("applies a code and says it holds with the account checkout creates", async () => {
+      previewForGuest();
+      const user = userEvent.setup();
       renderWithProviders(<ApplyDiscount />);
 
-      expect(screen.getByText(dict.discounts.guestHint)).toBeInTheDocument();
+      await applyCode(user, "welcome10");
+
       expect(
-        screen.getByRole("link", { name: dict.discounts.signInCta }),
-      ).toHaveAttribute("href", "/login?redirect=%2Fcart");
+        await screen.findByText(dict.discounts.appliedLabel("WELCOME10")),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(dict.discounts.requiresAccountNote),
+      ).toBeInTheDocument();
     });
 
-    it("says nothing of the sort to a signed-in shopper", () => {
+    it("no longer tells a guest to sign in before trying a code", () => {
+      renderWithProviders(<ApplyDiscount />);
+
+      expect(screen.queryByText(dict.discounts.guestHint)).toBeNull();
+      expect(
+        screen.queryByRole("link", { name: dict.discounts.signInCta }),
+      ).toBeNull();
+    });
+
+    it("keeps the note away from a signed-in shopper", async () => {
+      previewForGuest();
+      const user = userEvent.setup();
       renderWithProviders(<ApplyDiscount />, authed);
 
-      expect(screen.queryByText(dict.discounts.guestHint)).toBeNull();
+      await applyCode(user, "welcome10");
+
+      await screen.findByText(dict.discounts.appliedLabel("WELCOME10"));
+      expect(screen.queryByText(dict.discounts.requiresAccountNote)).toBeNull();
     });
 
-    it("stays quiet while the session is still resolving", () => {
-      renderWithProviders(<ApplyDiscount />, {
-        auth: { isInitializing: true },
-      });
+    it("still asks a guest to wait on a 429 (6 a minute)", async () => {
+      previewFails(429, { message: "ThrottlerException: Too Many Requests" });
+      const user = userEvent.setup();
+      renderWithProviders(<ApplyDiscount />);
 
-      expect(screen.queryByText(dict.discounts.guestHint)).toBeNull();
+      await applyCode(user, "WELCOME10");
+
+      expect(
+        await screen.findByText(dict.discounts.errors.tooManyRequests),
+      ).toBeInTheDocument();
     });
   });
 });

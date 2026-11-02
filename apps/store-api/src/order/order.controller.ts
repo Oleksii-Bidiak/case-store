@@ -9,6 +9,8 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  Req,
+  Res,
   UseGuards,
   UseInterceptors,
   type ExecutionContext,
@@ -28,7 +30,8 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { OrderStatus } from '@prisma/client';
-import { FailClosedThrottle, OrderLookupThrottle } from '../throttler';
+import type { Request, Response } from 'express';
+import { CheckoutSignupThrottle, FailClosedThrottle, OrderLookupThrottle } from '../throttler';
 import { OrderService } from './order.service';
 import type { PaginationMeta } from '../common/pagination';
 import {
@@ -39,13 +42,13 @@ import {
   PublicOrderItemEntity,
   PublicOrderDeliveryEntity,
 } from './entities';
-import { CreateOrderDto, OrderListQueryDto, OrderLookupDto } from './dto';
+import { CreateOrderDto, GuestContactDto, OrderListQueryDto, OrderLookupDto } from './dto';
 // `RolesGuard` is gone (TASK-475): it carried no `@Roles` metadata at any of its
 // call sites, so it returned true for every authenticated caller. The real
 // requirement on these routes is authentication plus the ownership check the
 // service performs, which `JwtAuthGuard` alone already states. The set of callers
 // admitted is unchanged.
-import { JwtAuthGuard, CurrentUser } from '../auth';
+import { AuthSessionResponder, AuthTokens, JwtAuthGuard, CurrentUser } from '../auth';
 import {
   CartIdentity,
   CartIdentityInterceptor,
@@ -79,7 +82,13 @@ function toOrderActor(identity: ResolvedCartIdentity, dto: CreateOrderDto): Orde
     );
   }
 
-  return { type: 'guest', cartToken: identity.token, contact: dto.contact };
+  return {
+    type: 'guest',
+    cartToken: identity.token,
+    contact: dto.contact,
+    // TASK-2010: a literal `true` only — the DTO already refused anything else.
+    createAccount: dto.contact.createAccount === true,
+  };
 }
 
 /**
@@ -126,6 +135,37 @@ class CreatedOrderEntity extends OrderEntity {
     example: '9f2c4e1a7b3d5f60819a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70',
   })
   guestAccessToken?: string;
+
+  @ApiPropertyOptional({
+    type: AuthTokens,
+    description:
+      'Only when the guest ticked «Створити акаунт» (`contact.createAccount: true`, TASK-2010): ' +
+      'the account created with this order is signed in. Carries the access token; the refresh ' +
+      'token is set as the usual HttpOnly cookie. The order then belongs to the account — ' +
+      '`userId` is set and there is no `guestAccessToken`.',
+  })
+  session?: AuthTokens;
+}
+
+/**
+ * What `POST /orders/guest/{token}/account` answers (TASK-2010): the new
+ * session — the access token in the body, the refresh token in the HttpOnly
+ * cookie. `accessToken` is absent only when the account was created but the
+ * session could not be opened (review of S5-API): the account exists, the
+ * «Задайте пароль» letter is on its way, and the storefront says so.
+ */
+class GuestOrderAccountCreated {
+  @ApiPropertyOptional({
+    description:
+      'Access token of the new session. Absent when the account was created but signing in ' +
+      'failed — the «Задайте пароль» letter is the way in.',
+  })
+  accessToken?: string;
+}
+
+class GuestOrderAccountResponseEnvelope {
+  @ApiProperty({ type: GuestOrderAccountCreated })
+  data!: GuestOrderAccountCreated;
 }
 
 /**
@@ -188,10 +228,21 @@ function orderCreationLimit(context: ExecutionContext): number {
   PublicOrderItemEntity,
   PublicOrderDeliveryEntity,
   PublicOrderLookupResponseEnvelope,
+  // TASK-2010: the checkout sign-up.
+  AuthTokens,
+  GuestOrderAccountCreated,
+  GuestOrderAccountResponseEnvelope,
+  // Kept in the contract by name: `CheckoutContactDto` extends it, and the
+  // clients import the base type (the operator form, the storefront entity).
+  GuestContactDto,
 )
 @Controller('orders')
 export class OrderController {
-  constructor(private readonly orderService: OrderService) {}
+  constructor(
+    private readonly orderService: OrderService,
+    // TASK-2010: the refresh cookie + guest merge of a checkout sign-up.
+    private readonly sessionResponder: AuthSessionResponder,
+  ) {}
 
   /**
    * POST /api/orders
@@ -219,12 +270,17 @@ export class OrderController {
   // call reserves stock and sends mail. Without a counter we would rather not
   // take the order than take ten thousand of them (TASK-401).
   @FailClosedThrottle()
+  // TASK-2010: a request that creates an account also spends the five-an-hour
+  // `checkoutSignup` bucket; an ordinary guest order does not.
+  @CheckoutSignupThrottle('createAccount')
   @ApiOperation({ summary: 'Create order from cart', operationId: 'createOrder' })
   @ApiResponse({
     status: 201,
     description:
       'Order created. For a guest order `data.guestAccessToken` carries the order access token ' +
-      '(TASK-679); it is absent for an account order.',
+      '(TASK-679); it is absent for an account order. With `contact.createAccount: true` ' +
+      '(TASK-2010) the order belongs to a new account: `data.session.accessToken`, the refresh ' +
+      'cookie set, no `guestAccessToken`.',
     schema: {
       allOf: [
         { $ref: getSchemaPath(OrderResponseEnvelope) },
@@ -234,19 +290,95 @@ export class OrderController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Empty cart, insufficient stock, or missing guest contact details',
+    description:
+      'Empty cart, insufficient stock, or missing guest contact details. For a guest without ' +
+      '`contact.createAccount` (TASK-2010): `DISCOUNT_ACCOUNT_REQUIRED` for a `discountCode`, ' +
+      '`PAYMENT_ACCOUNT_REQUIRED` for ONLINE / INSTALLMENTS.',
   })
   @ApiResponse({ status: 404, description: 'Cart not found' })
+  @ApiResponse({
+    status: 409,
+    description:
+      '`ACCOUNT_EXISTS` — `contact.createAccount: true` on an address that already has an ' +
+      'account (sign in instead; nothing was written). Also stock or promo-cap conflicts.',
+  })
+  @ApiResponse({ status: 429, description: 'Too many requests — rate limit exceeded' })
   async createOrder(
     @CartIdentity() identity: ResolvedCartIdentity,
     @Body() dto: CreateOrderDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<{ data: CreatedOrderEntity }> {
-    const { order, guestAccessToken } = await this.orderService.placeOrder(
+    const { order, guestAccessToken, session } = await this.orderService.placeOrder(
       toOrderActor(identity, dto),
       dto,
     );
+
+    // TASK-2010: a checkout sign-up is a sign-in — the refresh token goes into
+    // the same HttpOnly cookie every sign-in sets, and the guest wishlist joins
+    // the new account. Only the access token reaches the body.
+    if (session) {
+      const tokens = await this.sessionResponder.attach(request, response, session);
+      return { data: Object.assign(order, { session: tokens }) };
+    }
+
     // The token rides on THIS response only — reads return a plain OrderEntity.
     return { data: guestAccessToken ? Object.assign(order, { guestAccessToken }) : order };
+  }
+
+  /**
+   * POST /api/orders/guest/:token/account
+   *
+   * «Створити акаунт на <email>» on a guest's success page and order page — one
+   * click, no `/register` (TASK-2010 (д)). The token in the path proves THIS
+   * order is the caller's, exactly as `GET /orders/guest/:token` does; the
+   * account is created password-less on the order's e-mail, the order is
+   * attached, «Задайте пароль» goes out, and the caller is signed in. The
+   * address's other guest orders follow once the letter's link proves the mailbox.
+   *
+   * Public, so fail-closed, and it counts against the five-an-hour
+   * `checkoutSignup` bucket on every request, on top of the guest-link 20/min.
+   */
+  @Post('guest/:token/account')
+  @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @CheckoutSignupThrottle('always')
+  @FailClosedThrottle()
+  @ApiOperation({
+    summary: 'Create an account from a guest order (one click on the success page)',
+    operationId: 'createGuestOrderAccount',
+  })
+  @ApiParam({ name: 'token', description: 'Opaque access token from the confirmation email' })
+  @ApiResponse({
+    status: 201,
+    description:
+      'Account created and signed in; the refresh token is set as the HttpOnly cookie (`data` is ' +
+      'empty if signing in failed after the commit). The order ' +
+      'now belongs to the account.',
+    type: GuestOrderAccountResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'The order has no e-mail (an operator phone order)' })
+  @ApiResponse({
+    status: 404,
+    description:
+      'No order for this token, the link has expired, or the order already belongs to an ' +
+      'account (deliberately indistinguishable — the guest order page answers the same)',
+  })
+  @ApiResponse({
+    status: 409,
+    description: '`ACCOUNT_EXISTS` — the order e-mail already has an account; sign in instead',
+  })
+  @ApiResponse({ status: 429, description: 'Too many requests — rate limit exceeded' })
+  async createGuestOrderAccount(
+    @Param('token') token: string,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ data: GuestOrderAccountCreated }> {
+    const { session } = await this.orderService.createAccountFromGuestOrder(token);
+    if (!session) {
+      return { data: {} };
+    }
+    return { data: await this.sessionResponder.attach(request, response, session) };
   }
 
   /**

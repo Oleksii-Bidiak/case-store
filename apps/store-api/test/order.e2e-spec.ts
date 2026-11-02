@@ -63,6 +63,8 @@ describe('OrderController (e2e)', () => {
     // TASK-338: guest order access by emailed token, and claiming on registration.
     findByAccessTokenHash: jest.fn(),
     claimGuestOrders: jest.fn(),
+    // TASK-2010: the one-click account from the guest success page.
+    assignGuestOrderToNewAccount: jest.fn(),
     // TASK-341 / TASK-426: the operator-created ("phone") order, and the
     // tracking-number / internal-notes write beside it.
     findOrderableProducts: jest.fn(),
@@ -109,6 +111,11 @@ describe('OrderController (e2e)', () => {
     saveRefreshToken: jest.fn(),
     revokeToken: jest.fn(),
     revokeAllUserTokens: jest.fn(),
+    // TASK-2010: the checkout sign-up writes the account and its setup link.
+    createPasswordlessUser: jest.fn(),
+    saveEmailVerificationToken: jest.fn(),
+    // TASK-2010 review: one setup letter per address per hour.
+    hasRecentUnusedEmailToken: jest.fn(),
   };
 
   const userRepositoryMock = {
@@ -136,6 +143,8 @@ describe('OrderController (e2e)', () => {
     // TASK-335: the «відправлено» letter.
     enqueueOrderShipped: jest.fn(),
     dispatchDue: jest.fn().mockResolvedValue({ sent: 0, retried: 0, failed: 0 }),
+    // TASK-2010: «Задайте пароль».
+    enqueueAccountSetup: jest.fn(),
   };
 
   const prismaServiceMock = {
@@ -1785,6 +1794,354 @@ describe('OrderController (e2e)', () => {
   // ─── GET /api/orders/guest/:token (TASK-338) ────────────────────────────────────
   // Public by necessity — there is no account to authenticate against. The token
   // IS the credential.
+
+  // ─── TASK-2010: account creation at checkout ────────────────────────────────
+
+  describe('POST /api/orders — checkout sign-up (TASK-2010)', () => {
+    const contact = {
+      email: 'olena@example.com',
+      phone: '+380671112233',
+      name: 'Олена Шевченко',
+    };
+    const NEW_USER_ID = 'user-new-e2e-1';
+
+    const getSetCookies = (headers: Record<string, unknown>): string[] => {
+      const raw = headers['set-cookie'];
+      if (!raw) return [];
+      return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+    };
+
+    /** The transaction the mocked repository hands every closure. */
+    const txStub = {
+      notificationOutbox: { create: jest.fn() },
+      notificationBinding: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+
+    /** createFromCart as the real one runs its closures: account → order → hook. */
+    const runCreateFromCart = (order: OrderWithItems) =>
+      orderRepositoryMock.createFromCart.mockImplementation(
+        async (
+          params: {
+            account?: { create: (tx: unknown) => Promise<string> };
+            discount?: { redeem: (id: string, tx: unknown, owner: string | null) => Promise<void> };
+          },
+          afterCreate?: (tx: unknown, created: OrderWithItems) => Promise<void>,
+        ) => {
+          const owner = params.account ? await params.account.create(txStub) : order.userId;
+          const created = { ...order, userId: owner };
+          if (params.discount) await params.discount.redeem(created.id, txStub, owner);
+          if (afterCreate) await afterCreate(txStub, created);
+          return created;
+        },
+      );
+
+    beforeEach(() => {
+      cartRepositoryMock.findByToken.mockResolvedValue(makeCart(userA.id));
+      authRepositoryMock.findByEmail.mockResolvedValue(null);
+      authRepositoryMock.createPasswordlessUser.mockResolvedValue({
+        id: NEW_USER_ID,
+        email: contact.email,
+        role: 'CUSTOMER',
+      });
+      authRepositoryMock.saveRefreshToken.mockResolvedValue({ id: 'rt-new-1' });
+      txStub.notificationBinding.findMany.mockResolvedValue([]);
+      runCreateFromCart(makeOrder({ userId: null }));
+    });
+
+    it('creates the account in the order transaction, signs the buyer in, and sends «Задайте пароль»', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({ shippingAddress: validAddress, contact: { ...contact, createAccount: true } })
+        .expect(201);
+
+      // The order belongs to the account: a session, and no guest token.
+      expect(response.body.data.userId).toBe(NEW_USER_ID);
+      expect(response.body.data.session).toEqual({ accessToken: expect.any(String) });
+      expect(response.body.data.guestAccessToken).toBeUndefined();
+      expect(JSON.stringify(response.body)).not.toContain('refreshToken');
+
+      const refreshCookie = getSetCookies(response.headers).find((c) =>
+        c.startsWith('refreshToken='),
+      );
+      expect(refreshCookie).toContain('HttpOnly');
+      expect(refreshCookie).toContain('SameSite=Strict');
+      expect(refreshCookie).toContain('Path=/api/auth/refresh');
+
+      expect(authRepositoryMock.createPasswordlessUser).toHaveBeenCalledWith(
+        {
+          email: contact.email,
+          firstName: 'Олена',
+          lastName: 'Шевченко',
+          phone: '380671112233',
+        },
+        txStub,
+      );
+      expect(authRepositoryMock.saveEmailVerificationToken).toHaveBeenCalledWith(
+        NEW_USER_ID,
+        contact.email,
+        expect.any(String),
+        expect.any(Date),
+        { purpose: 'ACCOUNT_SETUP' },
+        txStub,
+      );
+      expect(mailOutboxServiceMock.enqueueAccountSetup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: contact.email,
+          setupUrl: expect.stringContaining('/account-setup?token='),
+        }),
+        txStub,
+      );
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({ to: contact.email }),
+        txStub,
+      );
+    });
+
+    // Review of S5-API: the app's ValidationPipe runs with
+    // `enableImplicitConversion`, which turned "true" and 1 into `true` and let
+    // them through @IsBoolean — while the sign-up throttler, reading the raw
+    // body, did not count them. The box must be a real JSON boolean.
+    it.each([
+      ['"true"', 'true'],
+      ['1', 1],
+      ['"false"', 'false'],
+    ])(
+      'refuses a non-boolean createAccount (%s) with 400 — nothing written',
+      async (_label, createAccount) => {
+        await request(app.getHttpServer())
+          .post('/api/orders')
+          .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+          .send({ shippingAddress: validAddress, contact: { ...contact, createAccount } })
+          .expect(400);
+
+        expect(authRepositoryMock.createPasswordlessUser).not.toHaveBeenCalled();
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      },
+    );
+
+    it('409 ACCOUNT_EXISTS when the address already has an account — nothing written', async () => {
+      authRepositoryMock.findByEmail.mockResolvedValue({ id: 'existing', email: contact.email });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({ shippingAddress: validAddress, contact: { ...contact, createAccount: true } })
+        .expect(409);
+
+      expect(response.body.error).toBe('ACCOUNT_EXISTS');
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      expect(getSetCookies(response.headers).some((c) => c.startsWith('refreshToken='))).toBe(
+        false,
+      );
+    });
+
+    it('201 with the order and no session when signing in fails after the commit', async () => {
+      authRepositoryMock.saveRefreshToken.mockRejectedValue(new Error('refresh insert failed'));
+
+      const response = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({ shippingAddress: validAddress, contact: { ...contact, createAccount: true } })
+        .expect(201);
+
+      expect(response.body.data.userId).toBe(NEW_USER_ID);
+      expect(response.body.data.session).toBeUndefined();
+    });
+
+    it('a guest order WITHOUT the box on a taken address goes through as before', async () => {
+      authRepositoryMock.findByEmail.mockResolvedValue({ id: 'existing', email: contact.email });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({ shippingAddress: validAddress, contact })
+        .expect(201);
+
+      expect(response.body.data.guestAccessToken).toMatch(/^[0-9a-f]{64}$/);
+      expect(response.body.data.session).toBeUndefined();
+      expect(authRepositoryMock.createPasswordlessUser).not.toHaveBeenCalled();
+    });
+
+    it('400 DISCOUNT_ACCOUNT_REQUIRED for a guest promo code without the box', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({ shippingAddress: validAddress, contact, discountCode: 'SUMMER10' })
+        .expect(400);
+
+      expect(response.body.error).toBe('DISCOUNT_ACCOUNT_REQUIRED');
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it.each(['ONLINE', 'INSTALLMENTS'])(
+      '400 PAYMENT_ACCOUNT_REQUIRED for a guest paying %s without the box',
+      async (paymentMethod) => {
+        const response = await request(app.getHttpServer())
+          .post('/api/orders')
+          .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+          .send({ shippingAddress: validAddress, contact, paymentMethod })
+          .expect(400);
+
+        expect(response.body.error).toBe('PAYMENT_ACCOUNT_REQUIRED');
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      },
+    );
+
+    it('applies a promo code to the new account and records the order phone on the redemption', async () => {
+      discountRepositoryMock.findByCode.mockResolvedValue({
+        id: 'disc-1',
+        code: 'SUMMER10',
+        type: 'PERCENT',
+        value: new Prisma.Decimal('10'),
+        minSpend: null,
+        maxRedemptions: null,
+        redeemedCount: 0,
+        perUserLimit: 1,
+        startsAt: null,
+        expiresAt: null,
+        isActive: true,
+      });
+      discountRepositoryMock.findById.mockResolvedValue({
+        id: 'disc-1',
+        isActive: true,
+        perUserLimit: 1,
+      });
+      discountRepositoryMock.countUserRedemptions.mockResolvedValue(0);
+      discountRepositoryMock.tryIncrementRedeemed.mockResolvedValue(1);
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Cookie', ['cartToken=guest-cart-token-e2e'])
+        .send({
+          shippingAddress: validAddress,
+          contact: { ...contact, createAccount: true },
+          discountCode: 'SUMMER10',
+        })
+        .expect(201);
+
+      // Validation: no account row yet — the phone alone.
+      expect(discountRepositoryMock.countUserRedemptions).toHaveBeenCalledWith(
+        'disc-1',
+        null,
+        '380501234567',
+      );
+      // Redemption, inside the tx: the new account AND the phone.
+      expect(discountRepositoryMock.createRedemption).toHaveBeenCalledWith(
+        {
+          discountId: 'disc-1',
+          userId: NEW_USER_ID,
+          orderId: 'order-e2e-1',
+          phone: '380501234567',
+        },
+        txStub,
+      );
+    });
+
+    it('ignores the box for a SIGNED-IN shopper — no second account, no new session', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      userRepositoryMock.findById.mockResolvedValue({
+        id: userA.id,
+        email: 'usera@example.com',
+        firstName: 'User',
+        isActive: true,
+      });
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      runCreateFromCart(makeOrder());
+
+      const response = await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ shippingAddress: validAddress, contact: { ...contact, createAccount: true } })
+        .expect(201);
+
+      expect(response.body.data.session).toBeUndefined();
+      expect(authRepositoryMock.createPasswordlessUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/orders/guest/:token/account (TASK-2010 (д))', () => {
+    const RAW_TOKEN = 'd'.repeat(64);
+    const guestOrder = () =>
+      makeOrder({
+        userId: null,
+        guestEmail: 'guest@example.com',
+        guestName: 'Гість Гостьович',
+        guestPhone: '380671112233',
+        createdAt: new Date(),
+      });
+
+    beforeEach(() => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(guestOrder());
+      authRepositoryMock.findByEmail.mockResolvedValue(null);
+      authRepositoryMock.createPasswordlessUser.mockResolvedValue({ id: 'user-oneclick-1' });
+      authRepositoryMock.saveRefreshToken.mockResolvedValue({ id: 'rt-oneclick-1' });
+      orderRepositoryMock.assignGuestOrderToNewAccount.mockImplementation(
+        async (
+          _orderId: string,
+          account: { create: (tx: unknown) => Promise<string> },
+          afterAssign: (tx: unknown, userId: string) => Promise<void>,
+        ) => {
+          const userId = await account.create({});
+          await afterAssign({}, userId);
+          return userId;
+        },
+      );
+    });
+
+    it('creates the account on the order e-mail, attaches this order, and signs in', async () => {
+      const response = await request(app.getHttpServer())
+        .post(`/api/orders/guest/${RAW_TOKEN}/account`)
+        .expect(201);
+
+      expect(response.body.data).toEqual({ accessToken: expect.any(String) });
+      expect(orderRepositoryMock.assignGuestOrderToNewAccount).toHaveBeenCalledWith(
+        'order-e2e-1',
+        expect.any(Object),
+        expect.any(Function),
+      );
+      expect(authRepositoryMock.createPasswordlessUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'guest@example.com', firstName: 'Гість' }),
+        {},
+      );
+      expect(mailOutboxServiceMock.enqueueAccountSetup).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'guest@example.com' }),
+        {},
+      );
+      const cookies = ([] as string[]).concat(response.headers['set-cookie'] ?? []);
+      expect(cookies.find((c) => c.startsWith('refreshToken='))).toContain('HttpOnly');
+    });
+
+    it('201 without a session (and no cookie) when signing in fails after the commit', async () => {
+      authRepositoryMock.saveRefreshToken.mockRejectedValue(new Error('refresh insert failed'));
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/orders/guest/${RAW_TOKEN}/account`)
+        .expect(201);
+
+      expect(response.body.data).toEqual({});
+      const cookies = ([] as string[]).concat(response.headers['set-cookie'] ?? []);
+      expect(cookies.some((c) => c.startsWith('refreshToken='))).toBe(false);
+    });
+
+    it('409 ACCOUNT_EXISTS when the order e-mail already has an account', async () => {
+      authRepositoryMock.findByEmail.mockResolvedValue({ id: 'existing' });
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/orders/guest/${RAW_TOKEN}/account`)
+        .expect(409);
+
+      expect(response.body.error).toBe('ACCOUNT_EXISTS');
+      expect(orderRepositoryMock.assignGuestOrderToNewAccount).not.toHaveBeenCalled();
+    });
+
+    it('404 for an unknown token — the same answer as the guest order page', async () => {
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(null);
+
+      await request(app.getHttpServer()).post(`/api/orders/guest/${RAW_TOKEN}/account`).expect(404);
+      expect(authRepositoryMock.findByEmail).not.toHaveBeenCalled();
+    });
+  });
 
   describe('GET /api/orders/guest/:token', () => {
     const RAW_TOKEN = 'b'.repeat(64);

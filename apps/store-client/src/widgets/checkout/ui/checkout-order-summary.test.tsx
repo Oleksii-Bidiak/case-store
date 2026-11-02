@@ -157,18 +157,19 @@ describe("CheckoutOrderSummary", () => {
     },
   );
 
-  it("keeps the promo control for a guest, with the sign-in hint pointing back to checkout", async () => {
+  it("keeps the promo control for a guest, with no sign-in detour (TASK-2010)", async () => {
     renderWithProviders(<CheckoutOrderSummary npCityRef={CITY_REF} />);
 
     // The field itself stays — a shopper holding a code must see somewhere to
-    // put it, even before they have an account.
+    // put it. Since TASK-2010 a guest may apply it here and now; checkout
+    // creates the account it needs.
     expect(
       await screen.findByLabelText(dict.discounts.inputAria),
     ).toBeInTheDocument();
-    expect(screen.getByText(dict.discounts.guestHint)).toBeInTheDocument();
+    expect(screen.queryByText(dict.discounts.guestHint)).toBeNull();
     expect(
-      screen.getByRole("link", { name: dict.discounts.signInCta }),
-    ).toHaveAttribute("href", "/login?redirect=%2Fcheckout");
+      screen.queryByRole("link", { name: dict.discounts.signInCta }),
+    ).toBeNull();
   });
 
   it("reports a failed cart load instead of rendering an empty summary", async () => {

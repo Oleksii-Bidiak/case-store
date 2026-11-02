@@ -21,6 +21,10 @@ import {
   type EmailVerificationMailPayload,
 } from './templates/email-verification.template';
 import {
+  buildAccountSetupEmail,
+  type AccountSetupMailPayload,
+} from './templates/account-setup.template';
+import {
   buildOrderShippedEmail,
   type OrderShippedMailPayload,
 } from './templates/order-shipped.template';
@@ -196,6 +200,29 @@ export class MailService {
     }
 
     const template = buildEmailVerificationEmail(payload);
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
+   * Send the «Задайте пароль» letter of an account created at checkout
+   * (TASK-2010). Same contract as the other payload senders: a logged no-op
+   * when mail is disabled, throwing on transport failure so the outbox worker
+   * applies its retry/backoff policy.
+   */
+  async sendAccountSetupPayload(payload: AccountSetupMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping account setup to ${payload.to}`);
+      return;
+    }
+
+    const template = buildAccountSetupEmail(payload);
 
     await this.getTransporter().sendMail({
       from: this.from,

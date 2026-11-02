@@ -16,6 +16,7 @@ import { REGISTER_HONEYPOT_FIELD } from './dto/register.dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
 import { NotificationOutboxService } from '../notification-outbox';
+import { EmailVerificationService } from './email-verification.service';
 import { hashPassword, verifyPassword } from '../common/security';
 import {
   normalizeEmailAddress,
@@ -112,6 +113,9 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly mailOutboxService: NotificationOutboxService,
     private readonly logger: PinoLogger,
+    // TASK-2010: the signup verification letter, and adopting an address that a
+    // reset link or Google has just proven (revoke → stamp → claim).
+    private readonly emailVerification: EmailVerificationService,
   ) {
     this.logger.setContext(AuthService.name);
 
@@ -177,8 +181,31 @@ export class AuthService {
       'User registered',
     );
 
+    // TASK-2010 (B-12 тема 2 (е)): the verification letter goes out on its own.
+    // Until now it went only from a button in the cabinet, so most addresses
+    // were never proven and their guest orders never claimed.
+    await this.requestSignupVerification(user.id);
+
     // Generate and return token pair
     return this.generateTokenPair(user.id, user.role);
+  }
+
+  /**
+   * Queue the verification letter for a fresh signup — best-effort (TASK-2010).
+   *
+   * The account already exists when this runs; a failed enqueue must not turn a
+   * successful registration into a 500 the user would retry into a 409. It is
+   * logged, and the cabinet's «Надіслати лист ще раз» remains the way back.
+   */
+  private async requestSignupVerification(userId: string): Promise<void> {
+    try {
+      await this.emailVerification.requestVerification(userId);
+    } catch (err) {
+      this.logger.error(
+        { event: 'user.signupVerificationFailed', userId, err },
+        'Registered, but the verification letter could not be queued',
+      );
+    }
   }
 
   /**
@@ -365,6 +392,10 @@ export class AuthService {
           lastName: profile.lastName,
           provider: OAuthProvider.GOOGLE,
           providerId: profile.providerId,
+          // TASK-2010: the branch is reached only with `emailVerified` (checked
+          // first, above) — Google has proven the mailbox, so the account is
+          // born proven instead of waiting for a letter that proves it again.
+          emailVerifiedAt: new Date(),
         });
 
         // Defence in depth (TASK-314): createUserFromOAuth pins CUSTOMER, but
@@ -377,6 +408,9 @@ export class AuthService {
           { event: 'user.registeredViaGoogle', userId: created.user.id },
           'User registered via Google',
         );
+
+        // TASK-2010: a proven address claims its guest orders now.
+        await this.emailVerification.adoptProvenAddress(created.user, email);
 
         return this.generateTokenPair(created.user.id, created.user.role);
       }
@@ -417,6 +451,26 @@ export class AuthService {
         { event: 'user.googleAccountLinked', userId: user.id },
         'Google account linked to existing user',
       );
+    }
+
+    // TASK-2010 (B-12 тема 2 п.3): Google has just proven THIS mailbox. If the
+    // account on it was never proven — a checkout sign-up somebody may have made
+    // on the owner's address — adopt it: revoke every session, stamp, claim.
+    // Only when the account's address IS the proven one (a link made before an
+    // address change proves the old mailbox, not the current), and strictly
+    // BEFORE the session below is minted, or the revoke would take it too.
+    if (!user.emailVerifiedAt && user.email === email) {
+      // Review of S5-API, the pre-hijack: an UNPROVEN account with a password
+      // may have been registered on the owner's address by somebody else. That
+      // password dies first, so nothing the registrant knows survives.
+      if (user.passwordHash) {
+        await this.authRepository.clearPasswordHash(user.id);
+        this.logger.warn(
+          { event: 'user.unprovenPasswordCleared', userId: user.id },
+          'Google proved the address of an unverified password account — password removed',
+        );
+      }
+      await this.emailVerification.adoptProvenAddress(user, email);
     }
 
     return this.generateTokenPair(user.id, user.role);
@@ -585,6 +639,30 @@ export class AuthService {
       { event: 'user.passwordResetCompleted', userId: stored.user.id },
       'Password reset completed',
     );
+
+    // TASK-2010: the reset link was mailed to this address, so using it proves
+    // the mailbox exactly as a verification link does — and, unlike one, it has
+    // just REPLACED the password and ended every session (setPassword above).
+    // So whoever proved the mailbox now holds the only key, and the address is
+    // adopted whatever its state: an unproven one is stamped, and its guest
+    // orders are claimed even when it was already verified (review of S5-API).
+    await this.emailVerification.adoptProvenAddress(stored.user, stored.user.email);
+  }
+
+  /**
+   * `POST /auth/email/verify/confirm` (TASK-342, TASK-2010 review): confirm the
+   * link — see {@link EmailVerificationService.confirm} for who may — and, for a
+   * password-less account, open a session for the clicker AFTER the adoption,
+   * whose revoke would otherwise take it (closes TASK-2362: the clicker is no
+   * longer signed out by proving their own address).
+   */
+  async confirmEmailVerification(
+    rawToken: string,
+    requesterId: string | null,
+  ): Promise<{ claimedOrders: number; session: IssuedSession | null }> {
+    const { claimedOrders, signIn } = await this.emailVerification.confirm(rawToken, requesterId);
+    const session = signIn ? await this.generateTokenPair(signIn.userId, signIn.role) : null;
+    return { claimedOrders, session };
   }
 
   /**
@@ -700,8 +778,11 @@ export class AuthService {
    *
    * Without this check the strict staff rule would be exactly one «Забули
    * пароль?» away from not existing.
+   *
+   * Public since TASK-2010: the «Задайте пароль» link (CheckoutAccountService)
+   * is a third door with the same problem.
    */
-  private assertPasswordMeetsRolePolicy(role: UserRole, newPassword: string): void {
+  assertPasswordMeetsRolePolicy(role: UserRole, newPassword: string): void {
     if (role === UserRole.CUSTOMER) return;
     if (STAFF_PASSWORD_REGEX.test(newPassword)) return;
 

@@ -3,6 +3,7 @@ import { EmailAdapter } from './email.adapter';
 import { MailService } from '../../mail/mail.service';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
+  ACCOUNT_SETUP_MAIL_TYPE,
   EMAIL_CHANGE_CONFIRM_MAIL_TYPE,
   EMAIL_CHANGE_NOTICE_MAIL_TYPE,
   EMAIL_VERIFICATION_MAIL_TYPE,
@@ -21,6 +22,7 @@ const SENDERS = [
   'sendEmailVerificationPayload',
   'sendEmailChangeConfirmPayload',
   'sendEmailChangeNoticePayload',
+  'sendAccountSetupPayload',
 ] as const;
 
 type Sender = (typeof SENDERS)[number];
@@ -67,6 +69,8 @@ describe('EmailAdapter', () => {
     [EMAIL_VERIFICATION_MAIL_TYPE, 'sendEmailVerificationPayload'],
     [EMAIL_CHANGE_CONFIRM_MAIL_TYPE, 'sendEmailChangeConfirmPayload'],
     [EMAIL_CHANGE_NOTICE_MAIL_TYPE, 'sendEmailChangeNoticePayload'],
+    // TASK-2010: the «Задайте пароль» letter of a checkout sign-up.
+    [ACCOUNT_SETUP_MAIL_TYPE, 'sendAccountSetupPayload'],
   ])('routes a %s row to %s with the stored payload, and nothing else', async (type, sender) => {
     const payload = { to: 'buyer@example.com', marker: type };
 

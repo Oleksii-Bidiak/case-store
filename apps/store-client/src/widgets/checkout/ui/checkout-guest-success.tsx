@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { CheckCircle2, Mail, UserPlus } from "lucide-react";
 import type { OrderEntity } from "@/entities/order";
+import { CreateGuestAccount } from "@/features/guest-order-account";
 import { CheckoutTelegramCard } from "@/features/telegram-connect";
 import { Button } from "@/shared/ui";
 import { dict, H1_CLASS } from "@/shared/config";
@@ -22,6 +23,11 @@ interface CheckoutGuestSuccessProps {
   guestAccessToken?: string | null;
   /** Override the Telegram status poll cadence (tests). */
   telegramPollIntervalMs?: number;
+  /**
+   * TASK-2010: the shopper ticked «Створити акаунт», the account exists, but no
+   * session came back. The letter finishes it — say so, and offer nothing else.
+   */
+  accountPending?: boolean;
 }
 
 /**
@@ -53,6 +59,7 @@ export function CheckoutGuestSuccess({
   handoffMessage,
   guestAccessToken,
   telegramPollIntervalMs,
+  accountPending = false,
 }: CheckoutGuestSuccessProps) {
   const orderNumber = order.id.slice(0, 8).toUpperCase();
 
@@ -130,17 +137,42 @@ export function CheckoutGuestSuccess({
             {dict.checkout.guest.accountOfferHeading}
           </h2>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {dict.checkout.guest.accountOfferBody}
-        </p>
-        <div className="flex flex-wrap gap-3">
-          <Button asChild>
-            <Link href="/register">{dict.checkout.guest.accountOfferCta}</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/">{dict.common.continueShopping}</Link>
-          </Button>
-        </div>
+        {accountPending ? (
+          // TASK-2010: the account exists already — only the letter is left.
+          <p role="status" className="text-sm text-foreground">
+            {dict.checkout.guest.accountPendingNote}
+          </p>
+        ) : guestAccessToken ? (
+          // TASK-2010 (д): one click on this order's address; the token is
+          // what proves the order is theirs.
+          <>
+            <p className="text-sm text-muted-foreground">
+              {dict.order.guest.oneClickBody}
+            </p>
+            <CreateGuestAccount
+              token={guestAccessToken}
+              orderId={order.id}
+              email={email}
+              signInRedirect={`/orders/guest/${encodeURIComponent(guestAccessToken)}`}
+            />
+          </>
+        ) : (
+          // No token came back, so nothing can prove the order is theirs —
+          // the plain registration is the only offer left.
+          <>
+            <p className="text-sm text-muted-foreground">
+              {dict.checkout.guest.accountOfferBody}
+            </p>
+            <Button asChild className="self-start">
+              <Link href="/register">
+                {dict.checkout.guest.accountOfferCta}
+              </Link>
+            </Button>
+          </>
+        )}
+        <Button asChild variant="outline" className="self-start">
+          <Link href="/">{dict.common.continueShopping}</Link>
+        </Button>
       </section>
     </div>
   );

@@ -128,6 +128,17 @@ export class DiscountPreviewEntity {
 
   @ApiProperty({ description: 'New subtotal after the discount as string', example: '135.00' })
   newTotal!: string;
+
+  @ApiProperty({
+    description:
+      'True for a GUEST preview (TASK-2010): the code is applied only to an order placed with an ' +
+      'account, so checkout must create one (`contact.createAccount: true`), or POST /orders ' +
+      'answers 400 DISCOUNT_ACCOUNT_REQUIRED. The per-customer limit is not checked for a guest ' +
+      'here — it is enforced at checkout against the new account and the order phone. False ' +
+      'for a signed-in shopper.',
+    example: false,
+  })
+  requiresAccount!: boolean;
 }
 
 /**

@@ -426,6 +426,47 @@ describe('AuthRepository', () => {
     });
   });
 
+  describe('hasRecentUnusedEmailToken (TASK-2010 review)', () => {
+    // Review of R5: scoped to the ACCOUNT, not the address. A new account can
+    // reach an address only after an operator deleted or re-addressed the old
+    // one, and that new account must still get its letter.
+    it('looks for an unused link of that purpose for the ACCOUNT, since the cut-off', async () => {
+      const txMock = { emailVerificationToken: { count: jest.fn().mockResolvedValue(1) } };
+      const since = new Date('2026-11-01T10:00:00.000Z');
+
+      await expect(
+        repository.hasRecentUnusedEmailToken(
+          'user-uuid-1',
+          'ACCOUNT_SETUP',
+          since,
+          txMock as never,
+        ),
+      ).resolves.toBe(true);
+
+      expect(txMock.emailVerificationToken.count).toHaveBeenCalledWith({
+        where: {
+          userId: 'user-uuid-1',
+          purpose: 'ACCOUNT_SETUP',
+          usedAt: null,
+          createdAt: { gte: since },
+        },
+      });
+    });
+  });
+
+  describe('clearPasswordHash (TASK-2010 review)', () => {
+    it('removes the password, so the account signs in only through a proven channel', async () => {
+      prismaMock.user.update.mockResolvedValue({ ...mockUser, passwordHash: null });
+
+      await repository.clearPasswordHash('user-uuid-1');
+
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-uuid-1' },
+        data: { passwordHash: null },
+      });
+    });
+  });
+
   // ─── deleteExpiredAndRevoked ────────────────────────────────────────────────
 
   describe('deleteExpiredAndRevoked', () => {
@@ -603,6 +644,86 @@ describe('AuthRepository', () => {
           providerId: 'google-sub-123',
           email: 'test@example.com',
         },
+      });
+    });
+
+    it('stamps the address verified when the caller says the provider proved it (TASK-2010)', async () => {
+      const txMock = {
+        user: { create: jest.fn().mockResolvedValue(oauthUser) },
+        oAuthAccount: { create: jest.fn().mockResolvedValue(oauthAccount) },
+      };
+      prismaMock.$transaction.mockImplementation(
+        async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
+      );
+      const verifiedAt = new Date('2026-11-01T10:00:00.000Z');
+
+      await repository.createUserFromOAuth({
+        email: 'test@example.com',
+        provider: 'GOOGLE',
+        providerId: 'google-sub-123',
+        emailVerifiedAt: verifiedAt,
+      });
+
+      expect(txMock.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ emailVerifiedAt: verifiedAt, role: 'CUSTOMER' }),
+      });
+    });
+  });
+
+  // ─── createPasswordlessUser (TASK-2010) ─────────────────────────────────────
+
+  describe('createPasswordlessUser', () => {
+    it('writes an unverified, password-less CUSTOMER through the caller transaction', async () => {
+      const txMock = { user: { create: jest.fn().mockResolvedValue(mockUser) } };
+
+      const result = await repository.createPasswordlessUser(
+        {
+          email: 'olena@example.com',
+          firstName: 'Олена',
+          lastName: 'Шевченко',
+          phone: '380501234567',
+        },
+        txMock as never,
+      );
+
+      expect(result).toBe(mockUser);
+      // The role is pinned, like createUserFromOAuth: an account created by
+      // whoever typed an address at checkout must never arrive privileged.
+      // No passwordHash, no emailVerifiedAt — the «Задайте пароль» letter
+      // supplies both.
+      expect(txMock.user.create).toHaveBeenCalledWith({
+        data: {
+          email: 'olena@example.com',
+          firstName: 'Олена',
+          lastName: 'Шевченко',
+          phone: '380501234567',
+          role: 'CUSTOMER',
+        },
+      });
+      expect(prismaMock.user.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('saveEmailVerificationToken through a transaction (TASK-2010)', () => {
+    it('writes through the caller tx when one is given', async () => {
+      const txMock = { emailVerificationToken: { create: jest.fn().mockResolvedValue({}) } };
+
+      await repository.saveEmailVerificationToken(
+        'user-1',
+        'a@example.com',
+        'raw-token',
+        new Date('2026-11-02T00:00:00.000Z'),
+        { purpose: 'ACCOUNT_SETUP' },
+        txMock as never,
+      );
+
+      expect(txMock.emailVerificationToken.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          userId: 'user-1',
+          email: 'a@example.com',
+          purpose: 'ACCOUNT_SETUP',
+          token: createHash('sha256').update('raw-token').digest('hex'),
+        }),
       });
     });
   });

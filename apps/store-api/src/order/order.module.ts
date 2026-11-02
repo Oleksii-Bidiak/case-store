@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { CartIdentityInterceptor, CartModule } from '../cart';
 import { UserModule } from '../user';
+import { AuthModule } from '../auth';
 import { DeliveryModule } from '../delivery';
 import { DiscountModule } from '../discount';
 import { AddonServiceModule } from '../addon-service';
@@ -48,9 +49,14 @@ import {
   // (sale, cancel-restock, revive, return) has to refresh the search document's
   // `inStock`, which became a Meilisearch facet in TASK-417. No cycle —
   // SearchModule knows nothing about orders.
+  // AuthModule (TASK-2010): CheckoutAccountService creates the account a guest
+  // asks for at checkout, and AuthSessionResponder signs it in. Order → Auth is
+  // the allowed direction — AuthModule never imports this module (it claims
+  // guest orders through GUEST_ORDER_CLAIM_PORT), so no cycle forms.
   imports: [
     ConfigModule,
     CartModule,
+    AuthModule,
     UserModule,
     DeliveryModule,
     DiscountModule,

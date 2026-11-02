@@ -12,6 +12,7 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { GoogleAuthGuard } from '../src/auth/guards/google-auth.guard';
 import { GoogleOAuthProfile } from '../src/auth/oauth/google-oauth-profile';
 import { PrismaService } from '../src/prisma';
+import { OrderService } from '../src/order/order.service';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 import * as argon2 from 'argon2';
@@ -105,6 +106,15 @@ describe('AuthController (e2e)', () => {
     recordFailedLogin: jest.fn().mockResolvedValue(1),
     lockLoginUntil: jest.fn(),
     clearFailedLogins: jest.fn(),
+    // TASK-2010: register now queues a verification link; a proven address is
+    // stamped; the «Задайте пароль» link is read and spent.
+    invalidateActiveEmailVerificationTokens: jest.fn(),
+    saveEmailVerificationToken: jest.fn(),
+    findEmailVerificationToken: jest.fn(),
+    markEmailVerificationTokenUsed: jest.fn(),
+    markEmailVerified: jest.fn(),
+    // TASK-2010 review: Google wipes the password of a pre-hijacked account.
+    clearPasswordHash: jest.fn(),
   };
 
   // Mock PrismaService — prevents database connection errors
@@ -991,6 +1001,344 @@ describe('AuthController (e2e)', () => {
         'google-sub-case-2',
         'a@gmail.com',
       );
+    });
+  });
+
+  // ─── TASK-2010: checkout sign-up, the auth side ────────────────────────────
+
+  describe('Checkout sign-up (TASK-2010)', () => {
+    const getSetCookies = (headers: Record<string, unknown>): string[] => {
+      const raw = headers['set-cookie'];
+      if (!raw) return [];
+      return Array.isArray(raw) ? (raw as string[]) : [String(raw)];
+    };
+
+    const owner = {
+      id: 'user-checkout-1',
+      email: 'olena@example.com',
+      passwordHash: null,
+      firstName: 'Олена',
+      lastName: null,
+      phone: '380501234567',
+      role: 'CUSTOMER',
+      isActive: true,
+      deletedAt: null,
+      emailVerifiedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const setupToken = (overrides: Record<string, unknown> = {}) => ({
+      id: 'setup-tok-1',
+      token: 'hashed',
+      userId: owner.id,
+      email: owner.email,
+      expiresAt: new Date(Date.now() + 60_000),
+      usedAt: null,
+      createdAt: new Date(),
+      purpose: 'ACCOUNT_SETUP',
+      previousEmail: null,
+      user: owner,
+      ...overrides,
+    });
+
+    let claimSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      claimSpy = jest.spyOn(app.get(OrderService), 'claimGuestOrders').mockResolvedValue(0);
+      authRepositoryMock.saveRefreshToken.mockResolvedValue({ id: 'rt-checkout-1' });
+    });
+
+    afterEach(() => {
+      claimSpy.mockRestore();
+      GoogleAuthGuardTestDouble.reset();
+    });
+
+    it('register queues the verification letter by itself (B-12 тема 2 (е))', async () => {
+      const created = { ...owner, id: 'user-reg-1', email: testUser.email, passwordHash: 'x' };
+      authRepositoryMock.findByEmail.mockResolvedValue(null);
+      authRepositoryMock.createUser.mockResolvedValue(created);
+      authRepositoryMock.findById.mockResolvedValue(created);
+
+      await request(app.getHttpServer()).post('/api/auth/register').send(testUser).expect(201);
+
+      expect(authRepositoryMock.saveEmailVerificationToken).toHaveBeenCalledWith(
+        created.id,
+        testUser.email,
+        expect.any(String),
+        expect.any(Date),
+      );
+      expect(prismaServiceMock.notificationOutbox.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: 'email-verification',
+            recipientAddress: testUser.email,
+          }),
+        }),
+      );
+    });
+
+    it('a new Google account is born verified and claims the guest orders of its address', async () => {
+      GoogleAuthGuardTestDouble.inject({
+        providerId: 'google-sub-checkout-1',
+        email: owner.email,
+        emailVerified: true,
+        firstName: 'Олена',
+        lastName: 'Ш',
+        redirect: '/',
+      });
+      authRepositoryMock.findOAuthAccount.mockResolvedValue(null);
+      authRepositoryMock.findByEmail.mockResolvedValue(null);
+      authRepositoryMock.createUserFromOAuth.mockResolvedValue({
+        user: { ...owner, emailVerifiedAt: new Date() },
+        oauthAccount: { id: 'oauth-1' },
+      });
+      claimSpy.mockResolvedValue(2);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/auth/google/callback')
+        .expect(302);
+
+      expect(response.headers.location).not.toContain('oauthError');
+      expect(authRepositoryMock.createUserFromOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({ email: owner.email, emailVerifiedAt: expect.any(Date) }),
+      );
+      expect(claimSpy).toHaveBeenCalledWith(owner.id, owner.email);
+    });
+
+    it('Google on an UNPROVEN account: every session revoked, then verified, then claimed, then signed in', async () => {
+      GoogleAuthGuardTestDouble.inject({
+        providerId: 'google-sub-checkout-2',
+        email: owner.email,
+        emailVerified: true,
+        firstName: 'Олена',
+        lastName: 'Ш',
+        redirect: '/',
+      });
+      authRepositoryMock.findOAuthAccount.mockResolvedValue(null);
+      authRepositoryMock.findByEmail.mockResolvedValue(owner);
+
+      await request(app.getHttpServer()).get('/api/auth/google/callback').expect(302);
+
+      const revoked = authRepositoryMock.revokeAllUserTokens.mock.invocationCallOrder[0];
+      const verified = authRepositoryMock.markEmailVerified.mock.invocationCallOrder[0];
+      const claimed = claimSpy.mock.invocationCallOrder[0];
+      const signedIn = authRepositoryMock.saveRefreshToken.mock.invocationCallOrder[0];
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith(owner.id);
+      expect(revoked).toBeLessThan(verified);
+      expect(verified).toBeLessThan(claimed);
+      expect(claimed).toBeLessThan(signedIn);
+    });
+
+    // ─── Review of S5-API: the pre-hijack through /register ──────────────────
+    describe('POST /api/auth/email/verify/confirm — who may finish it', () => {
+      const verifyToken = (user: Record<string, unknown>) =>
+        setupToken({ id: 'verify-tok-1', purpose: 'VERIFY', user });
+      const bearerFor = (userId: string) =>
+        `Bearer ${jwtService.sign(
+          { sub: userId, role: 'CUSTOMER' },
+          { secret: process.env.JWT_SECRET, expiresIn: '15m' },
+        )}`;
+      const passwordOwner = { ...owner, passwordHash: '$argon2id$attacker-or-owner' };
+
+      it('a PASSWORD account clicked without signing in: 403 VERIFY_SIGN_IN_REQUIRED, link not spent', async () => {
+        authRepositoryMock.findEmailVerificationToken.mockResolvedValue(verifyToken(passwordOwner));
+
+        const response = await request(app.getHttpServer())
+          .post('/api/auth/email/verify/confirm')
+          .send({ token: 'raw-verify-token' })
+          .expect(403);
+
+        expect(response.body.error).toBe('VERIFY_SIGN_IN_REQUIRED');
+        expect(authRepositoryMock.markEmailVerificationTokenUsed).not.toHaveBeenCalled();
+        expect(authRepositoryMock.markEmailVerified).not.toHaveBeenCalled();
+        expect(claimSpy).not.toHaveBeenCalled();
+      });
+
+      it('the same link, signed in as its owner: verified and claimed, sessions kept, none minted', async () => {
+        authRepositoryMock.findEmailVerificationToken.mockResolvedValue(verifyToken(passwordOwner));
+        claimSpy.mockResolvedValue(1);
+
+        const response = await request(app.getHttpServer())
+          .post('/api/auth/email/verify/confirm')
+          .set('Authorization', bearerFor(owner.id))
+          .send({ token: 'raw-verify-token' })
+          .expect(200);
+
+        expect(response.body.data).toEqual({
+          message: 'Email address verified.',
+          claimedOrders: 1,
+        });
+        expect(authRepositoryMock.markEmailVerified).toHaveBeenCalledWith(
+          owner.id,
+          expect.any(Date),
+        );
+        expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
+        expect(authRepositoryMock.saveRefreshToken).not.toHaveBeenCalled();
+      });
+
+      it('signed in as SOMEBODY ELSE: the same 403', async () => {
+        authRepositoryMock.findEmailVerificationToken.mockResolvedValue(verifyToken(passwordOwner));
+
+        await request(app.getHttpServer())
+          .post('/api/auth/email/verify/confirm')
+          .set('Authorization', bearerFor('someone-else'))
+          .send({ token: 'raw-verify-token' })
+          .expect(403);
+
+        expect(authRepositoryMock.markEmailVerificationTokenUsed).not.toHaveBeenCalled();
+      });
+
+      it('a PASSWORD-LESS account: revoke → verify → claim, and the clicker gets a fresh session', async () => {
+        authRepositoryMock.findEmailVerificationToken.mockResolvedValue(verifyToken(owner));
+
+        const response = await request(app.getHttpServer())
+          .post('/api/auth/email/verify/confirm')
+          .send({ token: 'raw-verify-token' })
+          .expect(200);
+
+        expect(response.body.data.session).toEqual({ accessToken: expect.any(String) });
+        const revoked = authRepositoryMock.revokeAllUserTokens.mock.invocationCallOrder[0];
+        const claimed = claimSpy.mock.invocationCallOrder[0];
+        const signedIn = authRepositoryMock.saveRefreshToken.mock.invocationCallOrder[0];
+        expect(revoked).toBeLessThan(claimed);
+        expect(claimed).toBeLessThan(signedIn);
+        const refreshCookie = getSetCookies(response.headers).find((c) =>
+          c.startsWith('refreshToken='),
+        );
+        expect(refreshCookie).toContain('HttpOnly');
+      });
+
+      it('Google on an unverified PASSWORD account wipes that password before claiming', async () => {
+        GoogleAuthGuardTestDouble.inject({
+          providerId: 'google-sub-checkout-3',
+          email: owner.email,
+          emailVerified: true,
+          firstName: 'Олена',
+          lastName: 'Ш',
+          redirect: '/',
+        });
+        authRepositoryMock.findOAuthAccount.mockResolvedValue(null);
+        authRepositoryMock.findByEmail.mockResolvedValue(passwordOwner);
+
+        await request(app.getHttpServer()).get('/api/auth/google/callback').expect(302);
+
+        expect(authRepositoryMock.clearPasswordHash).toHaveBeenCalledWith(owner.id);
+        const cleared = authRepositoryMock.clearPasswordHash.mock.invocationCallOrder[0];
+        const revoked = authRepositoryMock.revokeAllUserTokens.mock.invocationCallOrder[0];
+        const claimed = claimSpy.mock.invocationCallOrder[0];
+        expect(cleared).toBeLessThan(revoked);
+        expect(revoked).toBeLessThan(claimed);
+      });
+    });
+
+    describe('POST /api/auth/account-setup/confirm', () => {
+      it('proves the address, sets the password and opens a session with the HttpOnly cookie', async () => {
+        authRepositoryMock.findEmailVerificationToken.mockResolvedValue(setupToken());
+        claimSpy.mockResolvedValue(1);
+
+        const response = await request(app.getHttpServer())
+          .post('/api/auth/account-setup/confirm')
+          .send({ token: 'raw-setup-token', password: 'newpassword1' })
+          .expect(200);
+
+        expect(response.body.data).toEqual({
+          accessToken: expect.any(String),
+          claimedOrders: 1,
+        });
+        // Revoke BEFORE the claim (the unproven-account defence), and the new
+        // session after both — so it survives.
+        const revoked = authRepositoryMock.revokeAllUserTokens.mock.invocationCallOrder[0];
+        const claimed = claimSpy.mock.invocationCallOrder[0];
+        expect(revoked).toBeLessThan(claimed);
+        expect(authRepositoryMock.markEmailVerified).toHaveBeenCalledWith(
+          owner.id,
+          expect.any(Date),
+        );
+        expect(authRepositoryMock.updatePasswordHash).toHaveBeenCalledWith(
+          owner.id,
+          expect.stringMatching(/^\$argon2id\$/),
+        );
+        expect(authRepositoryMock.markEmailVerificationTokenUsed).toHaveBeenCalledWith(
+          'setup-tok-1',
+        );
+
+        const refreshCookie = getSetCookies(response.headers).find((c) =>
+          c.startsWith('refreshToken='),
+        );
+        expect(refreshCookie).toContain('HttpOnly');
+        expect(refreshCookie).toContain('SameSite=Strict');
+        expect(refreshCookie).toContain('Path=/api/auth/refresh');
+      });
+
+      it('«Пропустити»: no password, the address is still proven and the session opened', async () => {
+        authRepositoryMock.findEmailVerificationToken.mockResolvedValue(setupToken());
+
+        const response = await request(app.getHttpServer())
+          .post('/api/auth/account-setup/confirm')
+          .send({ token: 'raw-setup-token' })
+          .expect(200);
+
+        expect(response.body.data.accessToken).toEqual(expect.any(String));
+        expect(authRepositoryMock.updatePasswordHash).not.toHaveBeenCalled();
+        expect(authRepositoryMock.markEmailVerified).toHaveBeenCalled();
+      });
+
+      it('refuses a plain verification link with 400 ACCOUNT_SETUP_INVALID', async () => {
+        authRepositoryMock.findEmailVerificationToken.mockResolvedValue(
+          setupToken({ purpose: 'VERIFY' }),
+        );
+
+        const response = await request(app.getHttpServer())
+          .post('/api/auth/account-setup/confirm')
+          .send({ token: 'raw-verify-token', password: 'newpassword1' })
+          .expect(400);
+
+        expect(response.body.error).toBe('ACCOUNT_SETUP_INVALID');
+        expect(authRepositoryMock.updatePasswordHash).not.toHaveBeenCalled();
+        expect(claimSpy).not.toHaveBeenCalled();
+      });
+
+      it('refuses a password the shopper policy rejects (400) before anything is written', async () => {
+        await request(app.getHttpServer())
+          .post('/api/auth/account-setup/confirm')
+          .send({ token: 'raw-setup-token', password: 'short' })
+          .expect(400);
+
+        expect(authRepositoryMock.findEmailVerificationToken).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('POST /api/auth/checkout/email-status', () => {
+      it('answers hasAccount: true for a taken address, looked up normalised', async () => {
+        authRepositoryMock.findByEmail.mockResolvedValue(owner);
+
+        const response = await request(app.getHttpServer())
+          .post('/api/auth/checkout/email-status')
+          .send({ email: '  Olena@Example.COM ' })
+          .expect(200);
+
+        expect(response.body).toEqual({ data: { hasAccount: true } });
+        expect(authRepositoryMock.findByEmail).toHaveBeenCalledWith('olena@example.com');
+      });
+
+      it('answers hasAccount: false for a free address', async () => {
+        authRepositoryMock.findByEmail.mockResolvedValue(null);
+
+        const response = await request(app.getHttpServer())
+          .post('/api/auth/checkout/email-status')
+          .send({ email: 'free@example.com' })
+          .expect(200);
+
+        expect(response.body).toEqual({ data: { hasAccount: false } });
+      });
+
+      it('refuses something that is not an e-mail (400)', async () => {
+        await request(app.getHttpServer())
+          .post('/api/auth/checkout/email-status')
+          .send({ email: 'nope' })
+          .expect(400);
+      });
     });
   });
 });

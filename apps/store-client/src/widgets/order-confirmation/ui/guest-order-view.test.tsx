@@ -20,8 +20,9 @@ import { GuestOrderView } from "./guest-order-view";
 // The query string the page is opened with — `?placed=1` right after checkout
 // (TASK-1999), nothing when the guest follows the e-mailed link.
 let mockSearch = "";
+const mockPush = jest.fn();
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
+  useRouter: () => ({ replace: jest.fn(), push: mockPush }),
   useSearchParams: () => new URLSearchParams(mockSearch),
   usePathname: () => "/orders/guest/token-1",
 }));
@@ -221,31 +222,115 @@ describe("GuestOrderView — arriving from checkout (TASK-1999)", () => {
     ).toBeInTheDocument();
   });
 
-  it("puts the register banner at the top, before the order itself", async () => {
+  it("puts the one-click account at the top, before the order itself (TASK-2010)", async () => {
     mockSearch = "placed=1";
     serveOrder();
 
     renderWithProviders(<GuestOrderView token="token-1" />);
 
-    const register = await screen.findByRole("link", {
-      name: dict.order.guest.registerBannerCta,
+    const create = await screen.findByRole("button", {
+      name: dict.order.guest.oneClickCta("olena@example.com"),
     });
-    expect(register).toHaveAttribute("href", "/register");
     // Above the order: the first thing read after the heading, not a card at
     // the bottom of the sidebar.
     const items = screen.getByRole("heading", {
       name: dict.order.itemsOrdered,
     });
     expect(
-      register.compareDocumentPosition(items) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      create.compareDocumentPosition(items) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    // One offer, not two.
+    // The bare /register is gone.
     expect(
       screen
         .getAllByRole("link")
         .filter((link) => link.getAttribute("href") === "/register"),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
+  });
+
+  it("one click creates the account from the token and opens the order in the cabinet", async () => {
+    serveOrder();
+    const tokens: string[] = [];
+    server.use(
+      http.post("*/api/orders/guest/:token/account", ({ params }) => {
+        tokens.push(String(params.token));
+        return HttpResponse.json(
+          { data: { accessToken: "new.session.token" } },
+          { status: 201 },
+        );
+      }),
+    );
+    const setTokens = jest.fn();
+    const user = userEvent.setup();
+    renderWithProviders(<GuestOrderView token="token-1" />, {
+      auth: { setTokens },
+    });
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: dict.order.guest.oneClickCta("olena@example.com"),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith(
+        `/account/orders/${guestOrder.data.id}`,
+      ),
+    );
+    expect(tokens).toEqual(["token-1"]);
+    expect(setTokens).toHaveBeenCalledWith("new.session.token");
+  });
+
+  it("on 409 says the address has an account and signs in back to this page", async () => {
+    serveOrder();
+    server.use(
+      http.post("*/api/orders/guest/:token/account", () =>
+        HttpResponse.json(
+          { statusCode: 409, error: "ACCOUNT_EXISTS", message: "exists" },
+          { status: 409 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<GuestOrderView token="token-1" />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: dict.order.guest.oneClickCta("olena@example.com"),
+      }),
+    );
+
+    expect(
+      await screen.findByText(dict.order.guest.oneClickExists),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: dict.order.guest.oneClickSignIn }),
+    ).toHaveAttribute(
+      "href",
+      `/login?redirect=${encodeURIComponent("/orders/guest/token-1")}`,
+    );
+  });
+
+  it("offers no account for an order an account already holds", async () => {
+    server.use(
+      http.get("*/api/orders/guest/:token", () =>
+        HttpResponse.json({
+          ...guestOrder,
+          data: { ...guestOrder.data, userId: "user-1" },
+        }),
+      ),
+    );
+
+    renderWithProviders(<GuestOrderView token="token-1" />);
+
+    await screen.findByRole("heading", {
+      level: 1,
+      name: dict.order.thankYou,
+    });
+    expect(
+      screen.queryByRole("button", {
+        name: dict.order.guest.oneClickCta("olena@example.com"),
+      }),
+    ).toBeNull();
   });
 
   it("offers no registration to a visitor who is already signed in", async () => {
@@ -260,8 +345,8 @@ describe("GuestOrderView — arriving from checkout (TASK-1999)", () => {
       name: dict.order.thankYou,
     });
     expect(
-      screen.queryByRole("link", {
-        name: dict.order.guest.registerBannerCta,
+      screen.queryByRole("button", {
+        name: dict.order.guest.oneClickCta("olena@example.com"),
       }),
     ).toBeNull();
   });

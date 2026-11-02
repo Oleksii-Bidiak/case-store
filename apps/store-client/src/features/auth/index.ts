@@ -4,5 +4,6 @@ export { ForgotPasswordForm } from "./ui/forgot-password-form";
 export { ResetPasswordForm } from "./ui/reset-password-form";
 export { ChangePasswordForm } from "./ui/change-password-form";
 export { VerifyEmailConfirm } from "./ui/verify-email-confirm";
+export { AccountSetupForm } from "./ui/account-setup-form";
 export { AuthSheet } from "./ui/auth-sheet";
 export { LogoutButton } from "./ui/logout-button";

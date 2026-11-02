@@ -13,6 +13,7 @@ import {
 } from './throttler.config';
 import { REVIEW_SUBMISSION_THROTTLE_KEY } from './review-submission-throttle.decorator';
 import { ORDER_LOOKUP_THROTTLE_KEY } from './order-lookup-throttle.decorator';
+import { CHECKOUT_SIGNUP_THROTTLE_KEY } from './checkout-signup-throttle.decorator';
 import type { ThrottlerRedisHealth } from './throttler-redis-health';
 
 function makeHealth() {
@@ -155,6 +156,8 @@ describe('review submission is capped per ACCOUNT and per ADDRESS (TASK-588)', (
     const throttlers = namedThrottlers(options);
 
     expect(Object.keys(throttlers).sort()).toEqual([
+      // TASK-2010: account creation at checkout.
+      'checkoutSignup',
       'default',
       'orderLookupNumber',
       'reviewsAccount',
@@ -193,6 +196,69 @@ describe('review submission is capped per ACCOUNT and per ADDRESS (TASK-588)', (
 
     // The global default keeps covering everything, opted in or not.
     expect(throttlers.default.skipIf).toBeUndefined();
+  });
+});
+
+// ─── TASK-2010: account creation at checkout ──────────────────────────────────
+
+describe('checkout sign-up is capped at five accounts an hour per client IP (TASK-2010)', () => {
+  let checkoutSignup: ThrottlerOptions;
+
+  /** A context whose request carries `body` — `skipIf` reads it raw (guards run before pipes). */
+  const contextWith = (handler: object, body: unknown): ExecutionContext =>
+    ({
+      getHandler: () => handler,
+      getClass: () => class {},
+      switchToHttp: () => ({ getRequest: () => ({ body }) }),
+    }) as unknown as ExecutionContext;
+
+  beforeEach(async () => {
+    checkoutSignup = namedThrottlers(
+      await buildThrottlerOptions(configWithout(), makeHealth()),
+    ).checkoutSignup;
+  });
+
+  it('allows five an hour, counted per client IP (no tracker of its own)', () => {
+    expect(checkoutSignup).toMatchObject({ limit: 5, ttl: 60 * 60 * 1000 });
+    expect(checkoutSignup.getTracker).toBeUndefined();
+  });
+
+  it('skips every route that did not opt in', () => {
+    expect(checkoutSignup.skipIf?.(contextWith(() => undefined, {}))).toBe(true);
+  });
+
+  it('counts an "always" route on every request (the one-click account)', () => {
+    const route = () => undefined;
+    Reflect.defineMetadata(CHECKOUT_SIGNUP_THROTTLE_KEY, 'always', route);
+
+    expect(checkoutSignup.skipIf?.(contextWith(route, {}))).toBe(false);
+  });
+
+  it('counts POST /orders only when the body asks for an account', () => {
+    const route = () => undefined;
+    Reflect.defineMetadata(CHECKOUT_SIGNUP_THROTTLE_KEY, 'createAccount', route);
+
+    // Counted for ANY value that is not plainly absent or `false`. The guard
+    // sees the raw body (guards run before pipes), so it must not try to
+    // predict what validation will make of `"true"` or `1` — a value it
+    // skipped and the pipe then accepted would be an uncounted account
+    // (review of S5-API: `enableImplicitConversion` turns "true" into true).
+    for (const createAccount of [true, 'true', 1, 'yes', 'false', 0, {}]) {
+      expect(checkoutSignup.skipIf?.(contextWith(route, { contact: { createAccount } }))).toBe(
+        false,
+      );
+    }
+    // Only an absent or explicitly-false box creates no account; the order
+    // route keeps its own 3/min guest limit for those.
+    for (const body of [
+      {},
+      { contact: {} },
+      { contact: { createAccount: false } },
+      { contact: { createAccount: null } },
+      null,
+    ]) {
+      expect(checkoutSignup.skipIf?.(contextWith(route, body))).toBe(true);
+    }
   });
 });
 

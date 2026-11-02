@@ -10,6 +10,7 @@ import type { IssuedSession } from './entities';
 import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { NotificationOutboxService } from '../notification-outbox/notification-outbox.service';
+import { EmailVerificationService } from './email-verification.service';
 import { buildUser } from '../../test/user.fixture';
 
 // ─── Mock argon2 ──────────────────────────────────────────────────────────────
@@ -81,6 +82,11 @@ describe('AuthService', () => {
   let jwtService: jest.Mocked<JwtService>;
   let mailOutboxService: jest.Mocked<NotificationOutboxService>;
   let loggerMock: { info: jest.Mock; error: jest.Mock; warn: jest.Mock; debug: jest.Mock };
+  let emailVerification: {
+    requestVerification: jest.Mock;
+    adoptProvenAddress: jest.Mock;
+    confirm: jest.Mock;
+  };
 
   beforeEach(async () => {
     // Reset argon2 mocks before each test (clear call history AND re-arm resolves
@@ -113,6 +119,8 @@ describe('AuthService', () => {
       findOAuthAccount: jest.fn(),
       linkOAuthAccount: jest.fn(),
       createUserFromOAuth: jest.fn(),
+      // TASK-2010 review: Google wipes the password of a pre-hijacked account.
+      clearPasswordHash: jest.fn(),
     };
 
     // Create a mock JwtService
@@ -139,6 +147,14 @@ describe('AuthService', () => {
     };
     loggerMock = pinoLoggerMock;
 
+    // TASK-2010: register asks for a verification letter, and a proven Google
+    // address is adopted (revoke → stamp → claim) through this service.
+    emailVerification = {
+      requestVerification: jest.fn().mockResolvedValue(undefined),
+      adoptProvenAddress: jest.fn().mockResolvedValue(0),
+      confirm: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -147,6 +163,7 @@ describe('AuthService', () => {
         { provide: ConfigService, useValue: configMock },
         { provide: NotificationOutboxService, useValue: mailOutboxServiceMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
+        { provide: EmailVerificationService, useValue: emailVerification },
       ],
     }).compile();
 
@@ -247,6 +264,79 @@ describe('AuthService', () => {
       // Verify token pair was generated
       expect(jwtService.sign).toHaveBeenCalledTimes(2);
       expect(authRepository.saveRefreshToken).toHaveBeenCalled();
+    });
+
+    // ─── TASK-2010 (B-12 тема 2 (е)): signup sends the verification letter ────
+    // Before this a new account was verified only if its owner found the button
+    // in the cabinet — so guest orders on that address were never claimed.
+
+    describe('verification letter', () => {
+      beforeEach(() => {
+        authRepository.findByEmail.mockResolvedValue(null);
+        authRepository.createUser.mockResolvedValue(mockUser);
+        jwtService.sign.mockReturnValueOnce('access-token-value');
+        jwtService.sign.mockReturnValueOnce('refresh-token-value');
+        authRepository.saveRefreshToken.mockResolvedValue(mockRefreshTokenRecord);
+      });
+
+      it('asks for a verification letter for the new account', async () => {
+        await service.register(registerDto);
+
+        expect(emailVerification.requestVerification).toHaveBeenCalledWith(mockUser.id);
+      });
+
+      it('still signs the user up when the letter cannot be queued', async () => {
+        emailVerification.requestVerification.mockRejectedValue(new Error('outbox down'));
+
+        await expect(service.register(registerDto)).resolves.toEqual(
+          expect.objectContaining({ userId: mockUser.id, accessToken: 'access-token-value' }),
+        );
+        expect(loggerMock.error).toHaveBeenCalled();
+      });
+
+      it('confirmEmailVerification: a password-less clicker gets a session minted AFTER the adoption', async () => {
+        emailVerification.confirm.mockResolvedValue({
+          email: 'a@example.com',
+          claimedOrders: 1,
+          signIn: { userId: 'user-1', role: 'CUSTOMER' },
+        });
+        const generate = jest.spyOn(service, 'generateTokenPair').mockResolvedValue({
+          userId: 'user-1',
+          accessToken: 'a',
+          refreshToken: 'r',
+        });
+
+        await expect(service.confirmEmailVerification('raw', null)).resolves.toEqual({
+          claimedOrders: 1,
+          session: { userId: 'user-1', accessToken: 'a', refreshToken: 'r' },
+        });
+        expect(emailVerification.confirm).toHaveBeenCalledWith('raw', null);
+        expect(generate).toHaveBeenCalledWith('user-1', 'CUSTOMER');
+        expect(emailVerification.confirm.mock.invocationCallOrder[0]).toBeLessThan(
+          generate.mock.invocationCallOrder[0],
+        );
+      });
+
+      it('confirmEmailVerification: a signed-in owner keeps the session they have', async () => {
+        emailVerification.confirm.mockResolvedValue({
+          email: 'a@example.com',
+          claimedOrders: 0,
+          signIn: null,
+        });
+        const generate = jest.spyOn(service, 'generateTokenPair');
+
+        await expect(service.confirmEmailVerification('raw', 'user-1')).resolves.toEqual({
+          claimedOrders: 0,
+          session: null,
+        });
+        expect(generate).not.toHaveBeenCalled();
+      });
+
+      it('sends nothing for a filled honeypot — a bot gets no letter to anybody', async () => {
+        await service.register({ ...registerDto, hpCheck: 'filled' });
+
+        expect(emailVerification.requestVerification).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -821,11 +911,138 @@ describe('AuthService', () => {
         lastName: googleProfile.lastName,
         provider: OAuthProvider.GOOGLE,
         providerId: googleProfile.providerId,
+        // TASK-2010: Google has verified this address — the account is born proven.
+        emailVerifiedAt: expect.any(Date),
       });
       expect(generateTokenPairSpy).toHaveBeenCalledWith(newUser.id, newUser.role);
       // The transaction inside createUserFromOAuth already created the link.
       expect(authRepository.linkOAuthAccount).not.toHaveBeenCalled();
       expect(mailOutboxService.enqueueAccountLockedNotice).not.toHaveBeenCalled();
+    });
+
+    // ─── TASK-2010 (B-12 тема 2 (е)): a Google-proven address is adopted ──────
+    //
+    // Google has proven the mailbox, which is everything the verification
+    // letter would prove. So the address is stamped verified and its guest
+    // orders are claimed — and, for an account that existed UNPROVEN (a checkout
+    // sign-up on somebody else's address), every refresh token is revoked first,
+    // so whoever typed the address loses the account before it gains the orders.
+
+    describe('adopting the Google-proven address (TASK-2010)', () => {
+      it('adopts the address of a brand-new Google account (claims its guest orders)', async () => {
+        const newUser = {
+          ...mockUser,
+          id: 'user-uuid-new',
+          passwordHash: null,
+          emailVerifiedAt: new Date(),
+        };
+        authRepository.findOAuthAccount.mockResolvedValue(null);
+        authRepository.findByEmail.mockResolvedValue(null);
+        authRepository.createUserFromOAuth.mockResolvedValue({
+          user: newUser,
+          oauthAccount: { ...mockOAuthLink, userId: newUser.id },
+        });
+
+        await service.loginWithGoogleProfile(googleProfile);
+
+        expect(emailVerification.adoptProvenAddress).toHaveBeenCalledWith(
+          newUser,
+          googleProfile.email,
+        );
+      });
+
+      it('adopts an UNVERIFIED account matched by email BEFORE issuing the new session', async () => {
+        const unverified = { ...mockUser, emailVerifiedAt: null };
+        authRepository.findOAuthAccount.mockResolvedValue(null);
+        authRepository.findByEmail.mockResolvedValue(unverified);
+
+        await service.loginWithGoogleProfile(googleProfile);
+
+        expect(emailVerification.adoptProvenAddress).toHaveBeenCalledWith(
+          unverified,
+          googleProfile.email,
+        );
+        // The revoke inside the adoption must not take the session minted here.
+        const adopted = emailVerification.adoptProvenAddress.mock.invocationCallOrder[0];
+        const issued = generateTokenPairSpy.mock.invocationCallOrder[0];
+        expect(adopted).toBeLessThan(issued);
+      });
+
+      it('adopts an unverified account reached through an existing link too', async () => {
+        const unverified = { ...mockUser, emailVerifiedAt: null };
+        authRepository.findOAuthAccount.mockResolvedValue({ ...mockOAuthLink, user: unverified });
+
+        await service.loginWithGoogleProfile(googleProfile);
+
+        expect(emailVerification.adoptProvenAddress).toHaveBeenCalledWith(
+          unverified,
+          googleProfile.email,
+        );
+      });
+
+      // Review of S5-API: the pre-hijack. Somebody registered the owner's
+      // address WITH A PASSWORD before the owner ever came; Google now proves
+      // the owner's mailbox. That password must die before the account — and
+      // the owner's guest orders — become the owner's.
+      it('wipes the password of an UNVERIFIED password account, then adopts, then signs in', async () => {
+        const preHijacked = { ...mockUser, emailVerifiedAt: null, passwordHash: '$argon2id$x' };
+        authRepository.findOAuthAccount.mockResolvedValue(null);
+        authRepository.findByEmail.mockResolvedValue(preHijacked);
+
+        await service.loginWithGoogleProfile(googleProfile);
+
+        expect(authRepository.clearPasswordHash).toHaveBeenCalledWith(preHijacked.id);
+        const cleared = authRepository.clearPasswordHash.mock.invocationCallOrder[0];
+        const adopted = emailVerification.adoptProvenAddress.mock.invocationCallOrder[0];
+        const issued = generateTokenPairSpy.mock.invocationCallOrder[0];
+        expect(cleared).toBeLessThan(adopted);
+        expect(adopted).toBeLessThan(issued);
+      });
+
+      it('keeps the password of a VERIFIED account (its owner set it)', async () => {
+        authRepository.findOAuthAccount.mockResolvedValue(null);
+        authRepository.findByEmail.mockResolvedValue({ ...mockUser, emailVerifiedAt: new Date() });
+
+        await service.loginWithGoogleProfile(googleProfile);
+
+        expect(authRepository.clearPasswordHash).not.toHaveBeenCalled();
+      });
+
+      it('leaves an already verified account alone', async () => {
+        authRepository.findOAuthAccount.mockResolvedValue(null);
+        authRepository.findByEmail.mockResolvedValue({ ...mockUser, emailVerifiedAt: new Date() });
+
+        await service.loginWithGoogleProfile(googleProfile);
+
+        expect(emailVerification.adoptProvenAddress).not.toHaveBeenCalled();
+      });
+
+      it('proves nothing about an account whose address is not the Google one', async () => {
+        // A link made before the account changed its address: Google proves the
+        // OLD mailbox, which says nothing about the account's current one.
+        authRepository.findOAuthAccount.mockResolvedValue({
+          ...mockOAuthLink,
+          user: { ...mockUser, email: 'moved@example.com', emailVerifiedAt: null },
+        });
+
+        await service.loginWithGoogleProfile(googleProfile);
+
+        expect(emailVerification.adoptProvenAddress).not.toHaveBeenCalled();
+      });
+
+      it('adopts nothing for a refused (locked) account', async () => {
+        authRepository.findOAuthAccount.mockResolvedValue(null);
+        authRepository.findByEmail.mockResolvedValue({
+          ...mockUser,
+          emailVerifiedAt: null,
+          isActive: false,
+        });
+
+        await expect(service.loginWithGoogleProfile(googleProfile)).rejects.toThrow(
+          UnauthorizedException,
+        );
+        expect(emailVerification.adoptProvenAddress).not.toHaveBeenCalled();
+      });
     });
 
     // ─── TASK-772: the Google email is not a DTO, so nothing normalised it ────
@@ -1350,6 +1567,41 @@ describe('AuthService', () => {
       expect(authRepository.revokeAllUserTokens).toHaveBeenCalledTimes(1);
     });
 
+    // ─── TASK-2010: a reset link proves the mailbox, like a verification link ──
+
+    it('adopts the address of an UNVERIFIED owner after every session is revoked', async () => {
+      const unverified = { ...mockUser, emailVerifiedAt: null };
+      authRepository.findPasswordResetToken.mockResolvedValue({
+        ...validRow,
+        user: unverified,
+      } as never);
+
+      await service.confirmPasswordReset('valid-token', 'NewP@ss123');
+
+      expect(emailVerification.adoptProvenAddress).toHaveBeenCalledWith(
+        unverified,
+        unverified.email,
+      );
+      const revoked = authRepository.revokeAllUserTokens.mock.invocationCallOrder[0];
+      const adopted = emailVerification.adoptProvenAddress.mock.invocationCallOrder[0];
+      expect(revoked).toBeLessThan(adopted);
+    });
+
+    // Review of S5-API: the password was just replaced and every session ended,
+    // so whoever proved this mailbox now holds the only key — claiming the
+    // address's guest orders is safe even for an already-verified account.
+    it('adopts the address of an already-verified owner too (claims its guest orders)', async () => {
+      const verified = { ...mockUser, emailVerifiedAt: new Date() };
+      authRepository.findPasswordResetToken.mockResolvedValue({
+        ...validRow,
+        user: verified,
+      } as never);
+
+      await service.confirmPasswordReset('valid-token', 'NewP@ss123');
+
+      expect(emailVerification.adoptProvenAddress).toHaveBeenCalledWith(verified, verified.email);
+    });
+
     // TASK-407: the DTO can only apply the shopper policy here — a reset token
     // says nothing about whose account it opens — so the strict staff rule has
     // to be re-checked once the token resolves to a user. Without this, «Забули
@@ -1599,6 +1851,7 @@ describe('AuthService — durations have no silent fallback', () => {
         configService,
         {} as NotificationOutboxService,
         logger,
+        {} as EmailVerificationService,
       );
   };
 

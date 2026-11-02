@@ -13,7 +13,7 @@ import {
 } from '../src/throttler';
 import { OrderController } from '../src/order/order.controller';
 import { OrderService } from '../src/order/order.service';
-import { JwtAuthGuard } from '../src/auth';
+import { AuthSessionResponder, CheckoutAccountService, JwtAuthGuard } from '../src/auth';
 import { AuthController } from '../src/auth/auth.controller';
 import { AuthService } from '../src/auth/auth.service';
 import { EmailVerificationService } from '../src/auth/email-verification.service';
@@ -158,6 +158,8 @@ describe('Guest order routes fail closed when the limiter is down (e2e, TASK-606
     providers: [
       { provide: APP_GUARD, useClass: ClientIpThrottlerGuard },
       { provide: OrderService, useValue: orderService },
+      // TASK-2010: the checkout sign-up's cookie half; no route under test signs in.
+      { provide: AuthSessionResponder, useValue: {} },
     ],
   })
   class RealOrderRoutesModule {}
@@ -260,6 +262,10 @@ describe('Auth token-confirm routes fail closed when the limiter is down (e2e, T
       // TASK-396: the address-change routes live on the same controller.
       { provide: EmailChangeService, useValue: {} },
       { provide: PermissionService, useValue: {} },
+      // TASK-2010: the cookie half of every sign-in moved here (real — refresh
+      // below sets the cookie through it); the checkout account routes are not hit.
+      AuthSessionResponder,
+      { provide: CheckoutAccountService, useValue: {} },
     ],
   })
   class RealAuthRoutesModule {}

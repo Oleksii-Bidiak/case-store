@@ -27,6 +27,7 @@ import { NotificationOutboxService } from '../notification-outbox';
 import { CustomerNotifier, ShopNotifier } from '../notification';
 import { DeliveryService, isDeliveryNotConfigured } from '../delivery';
 import { DiscountService } from '../discount';
+import { CheckoutAccountService, type IssuedSession } from '../auth';
 import { OrderEntity, OrderStatusHistoryEntity, PublicOrderEntity } from './entities';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
 import { allowedTransitions, canTransition, canTransitionPayment } from './order-state-machine';
@@ -48,6 +49,8 @@ import {
   deliveryPaymentNotAllowedError,
   deliveryPickupPointRequiredError,
   deliveryPickupPointUnavailableError,
+  discountAccountRequiredError,
+  paymentAccountRequiredError,
   manualOrderDeliveryPaymentNotAllowedError,
   invalidTransitionError,
   reviveRefundedPaymentError,
@@ -309,6 +312,8 @@ export class OrderService {
     private readonly shopNotifier: ShopNotifier,
     // TASK-680: the buyer's own Telegram messages, next to their letters.
     private readonly customerNotifier: CustomerNotifier,
+    // TASK-2010: the account a guest creates at checkout (auth module's side).
+    private readonly checkoutAccounts: CheckoutAccountService,
   ) {
     this.logger.setContext(OrderService.name);
   }
@@ -347,6 +352,34 @@ export class OrderService {
     // block (stock re-validation, add-ons, discounts, the transaction) is shared,
     // because a guest order is a real order in every other respect.
     const userId = actor.type === 'user' ? actor.userId : null;
+
+    // ─── TASK-2010: what a guest needs an account for ─────────────────────────
+    // «Створити акаунт на цю пошту» turns a guest checkout into an account one:
+    // the account is created inside the order transaction (below) and signed in.
+    // Without the box, the two things only an account can carry are refused up
+    // front, before any cart work, each with its own code the storefront keys
+    // its auto-ticked box off: a promo code (B-12 тема 2 (в)) and a card payment
+    // (B-13 (ж) — a guest's card order could never be paid).
+    const signupEmail =
+      actor.type === 'guest' && actor.createAccount === true ? actor.contact.email : null;
+    const paymentMethod = dto.paymentMethod ?? PaymentMethod.ON_DELIVERY;
+
+    if (actor.type === 'guest' && !signupEmail) {
+      if (dto.discountCode) {
+        throw discountAccountRequiredError();
+      }
+      if (paymentMethod === PaymentMethod.ONLINE || paymentMethod === PaymentMethod.INSTALLMENTS) {
+        throw paymentAccountRequiredError();
+      }
+    }
+
+    // Never a second account on one address (B-12 тема 2 (б)): any account row
+    // on it — a deactivated one included, the lookup `register` uses — is a 409 the storefront
+    // answers with «Увійти». Checked before anything is written; a sign-up racing
+    // this one is caught again by the unique index inside the transaction.
+    if (signupEmail) {
+      await this.checkoutAccounts.assertNoAccount(signupEmail);
+    }
 
     // Ban enforcement (TASK-150): a deactivated account must not place an order
     // even while it still holds a non-expired access token. Refresh tokens are
@@ -400,9 +433,9 @@ export class OrderService {
       }
     }
 
-    // Absent means cash on delivery — the honest reading of a request that never
-    // mentions payment, and what every pre-TASK-330 order actually was.
-    const paymentMethod = dto.paymentMethod ?? PaymentMethod.ON_DELIVERY;
+    // `paymentMethod` (resolved at the top, TASK-2010): absent means cash on
+    // delivery — the honest reading of a request that never mentions payment,
+    // and what every pre-TASK-330 order actually was.
 
     // The PRODUCT subtotal, before any discount and without add-ons: the base of
     // the discount (TASK-079) AND of the courier's free-delivery threshold
@@ -437,26 +470,27 @@ export class OrderService {
     // cap race rolls the whole order back. Kept as one localized block.
     let discount: CreateOrderParams['discount'];
     if (dto.discountCode) {
-      // TASK-338 limitation, stated out loud rather than discovered as a 500:
-      // `DiscountRedemption.userId` is a NOT NULL foreign key to User, and both
-      // the per-user cap and the redemption insert are built on it. Letting a
-      // guest through here would either crash inside the order transaction or
-      // require dropping the per-user cap — so guests are told plainly that the
-      // code needs an account. Lifting this is a schema change, not a patch.
-      if (actor.type === 'guest') {
-        throw new BadRequestException(
-          'Promo codes require an account — sign in or register to use this code',
-        );
-      }
+      // A plain guest never gets here (refused at the top, TASK-2010):
+      // `DiscountRedemption.userId` is NOT NULL, and "per customer" is an
+      // account. A checkout sign-up does get here — with no account row YET, so
+      // the code is validated against the order PHONE (per customer = account
+      // OR normalised phone, B-12 тема 2 (г)) and redeemed for the account the
+      // transaction creates, which the repository hands the closure as `ownerId`.
+      const orderPhone = normalizeUaPhone(dto.shippingAddress.phone);
       const { discount: applied, amount } = await this.discountService.computeDiscount(
         dto.discountCode,
         subtotal,
-        actor.userId,
+        userId,
+        orderPhone,
       );
       discount = {
         amount,
         code: applied.code,
-        redeem: (orderId, tx) => this.discountService.redeem(applied.id, actor.userId, orderId, tx),
+        redeem: async (orderId, tx, ownerId) => {
+          // Defence in depth: an ownerless order cannot hold a redemption.
+          if (!ownerId) throw discountAccountRequiredError();
+          await this.discountService.redeem(applied.id, ownerId, orderId, tx, orderPhone);
+        },
       };
     }
     // ───────────────────────────────────────────────────────────────────────────
@@ -466,7 +500,9 @@ export class OrderService {
     // outgoing email; only its SHA-256 is ever persisted (same at-rest pattern as
     // RefreshToken / PasswordResetToken). Without it a guest is blind the moment
     // the cart cookie is gone or they switch device — edge case E-17.
-    const guestToken = actor.type === 'guest' ? generateGuestToken() : null;
+    // TASK-2010: a checkout sign-up gets none — its order belongs to the
+    // account, whose session and letters are the buyer's way back.
+    const guestToken = actor.type === 'guest' && !signupEmail ? generateGuestToken() : null;
     const guestStatusUrl = guestToken ? this.buildGuestStatusUrl(guestToken) : null;
     // TASK-483: order-independent and token-free, so it is built for account
     // orders too.
@@ -522,6 +558,20 @@ export class OrderService {
         ...(delivery.pickupPointId ? { pickupPointId: delivery.pickupPointId } : {}),
         shippingCost: delivery.shippingCost,
         ...(discount ? { discount } : {}),
+        // ─── TASK-2010: the account a guest asked for ──────────────────────────
+        // Written by the repository inside the order transaction, before the
+        // order, which then belongs to it — no guest block, no guest token.
+        ...(actor.type === 'guest' && signupEmail
+          ? {
+              account: {
+                create: (tx: Prisma.TransactionClient) =>
+                  this.checkoutAccounts.createPasswordless(
+                    { email: signupEmail, name: actor.contact.name, phone: actor.contact.phone },
+                    tx,
+                  ),
+              },
+            }
+          : {}),
       },
       // ── TASK-103-F: transactional outbox ──────────────────────────────────
       // Enqueue the order-confirmation email INSIDE the order's transaction so
@@ -571,22 +621,106 @@ export class OrderService {
         if (shopPingAtCreation(paymentMethod)) {
           await this.enqueueShopNewOrder(created, tx, customerName);
         }
+        // TASK-2010: the «Задайте пароль» link of the account just created —
+        // in the same transaction, so link, letter, account and order commit
+        // or roll back together.
+        if (signupEmail && created.userId) {
+          await this.checkoutAccounts.issueSetupLink(
+            { id: created.userId, email: signupEmail },
+            tx,
+          );
+        }
       },
     );
+
+    // TASK-2010: sign the new account in — after the commit, so a failed
+    // checkout never mints a session for an account that does not exist.
+    const session =
+      signupEmail && order.userId ? await this.startSignupSession(order.userId) : null;
 
     this.logger.info(
       {
         event: 'order.created',
         orderId: order.id,
-        userId,
+        userId: order.userId,
         // Never the raw token, and never the guest's email — both are redacted
         // from logs elsewhere and would defeat the point of hashing at rest.
-        guest: actor.type === 'guest',
+        guest: guestToken !== null,
+        accountCreated: session !== null,
       },
       'Order created',
     );
 
-    return { order: OrderEntity.fromPrisma(order), guestAccessToken: guestToken };
+    return { order: OrderEntity.fromPrisma(order), guestAccessToken: guestToken, session };
+  }
+
+  /**
+   * The one-click account on a guest's success page (TASK-2010 (д), B-12 тема 2).
+   *
+   * The access token proves the order is the caller's — the same check, and the
+   * same 404 for every failure, as `GET /orders/guest/{token}`. An order that
+   * already belongs to an account answers that 404 too (like the guest's
+   * Telegram routes). The account is created password-less on the order's
+   * e-mail, THIS order is attached in the same transaction, the «Задайте
+   * пароль» letter is queued, and the caller is signed in. The address's OTHER
+   * guest orders move only once the mailbox is proven (the letter's link).
+   *
+   * @throws NotFoundException for an unknown/expired token or an owned order
+   * @throws BadRequestException for an operator phone order with no e-mail
+   * @throws ConflictException 409 `ACCOUNT_EXISTS` when the e-mail has an account
+   */
+  async createAccountFromGuestOrder(rawToken: string): Promise<{ session: IssuedSession | null }> {
+    const order = await this.findOrderByGuestToken(rawToken);
+
+    if (order.userId !== null) {
+      throw new NotFoundException('Order not found');
+    }
+    // TASK-426: an operator may take a phone order without an e-mail.
+    const email = order.guestEmail;
+    if (!email) {
+      throw new BadRequestException('This order has no e-mail to create an account on');
+    }
+
+    await this.checkoutAccounts.assertNoAccount(email);
+
+    const userId = await this.orderRepository.assignGuestOrderToNewAccount(
+      order.id,
+      {
+        create: (tx) =>
+          this.checkoutAccounts.createPasswordless(
+            { email, name: order.guestName ?? null, phone: order.guestPhone ?? null },
+            tx,
+          ),
+      },
+      (tx, id) => this.checkoutAccounts.issueSetupLink({ id, email }, tx),
+    );
+
+    this.logger.info(
+      { event: 'order.guest_account_created', orderId: order.id, userId },
+      'Account created from a guest order',
+    );
+
+    return { session: await this.startSignupSession(userId) };
+  }
+
+  /**
+   * Sign in an account a checkout has just COMMITTED (review of S5-API).
+   *
+   * By now the order and the account exist; a failure to mint the session (the
+   * refresh-token insert) must not become a 500 that the buyer retries into a
+   * second order or a 409. It is logged loudly and answered without a session —
+   * the «Задайте пароль» letter, already queued in the transaction, is the way in.
+   */
+  private async startSignupSession(userId: string): Promise<IssuedSession | null> {
+    try {
+      return await this.checkoutAccounts.startSession(userId);
+    } catch (err) {
+      this.logger.error(
+        { event: 'order.signup_session_failed', userId, err },
+        'Checkout account committed, but its session could not be opened',
+      );
+      return null;
+    }
   }
 
   /**

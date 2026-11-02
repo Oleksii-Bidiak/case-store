@@ -3,7 +3,8 @@ import { ModuleRef } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { randomBytes } from 'crypto';
-import { EmailTokenPurpose } from '@prisma/client';
+import { EmailTokenPurpose, type Prisma, type UserRole } from '@prisma/client';
+import { verifySignInRequiredError } from './checkout-account.errors';
 import { AuthRepository } from './auth.repository';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
 import { NotificationOutboxService } from '../notification-outbox';
@@ -11,6 +12,9 @@ import { GUEST_ORDER_CLAIM_PORT, type GuestOrderClaimPort } from '../common/port
 
 /** Bytes of entropy for an opaque verification token (→ 64 hex chars). */
 const VERIFICATION_TOKEN_BYTES = 32;
+
+/** At most one «Задайте пароль» letter per address within this window (TASK-2010 review). */
+const ACCOUNT_SETUP_LETTER_WINDOW_MS = 60 * 60 * 1000;
 
 /** Default lifetime of a verification link. */
 const DEFAULT_EXPIRATION = '24h';
@@ -117,11 +121,34 @@ export class EmailVerificationService {
    * typed that stranger's email into the signup form, because signing in with an
    * unverified address is not blocked today (B-5 §5).
    *
-   * @returns the proven address and how many guest orders moved onto the account
-   *   (0 for the overwhelming majority — most people never ordered as a guest).
-   * @throws BadRequestException with a single generic message for every failure.
+   * ── Review of S5-API: WHO may finish the link ─────────────────────────────
+   * Proving the mailbox is not enough for an account WITH a password: an
+   * attacker can register the victim's address with a password of their own,
+   * and the automatic signup letter lands in the victim's inbox. If the victim's
+   * click verified the account, the victim's guest orders would move into an
+   * account whose password the attacker knows. So:
+   *  - password account → completes only when `requesterId` IS that account
+   *    (the click proves the mailbox, the session the password). Nobody is
+   *    signed out. Anyone else gets 403 `VERIFY_SIGN_IN_REQUIRED` and the link
+   *    stays usable — the owner signs in and retries, or resets the password.
+   *  - password-less account (checkout, Google) → nobody holds a password to
+   *    abuse: `adoptProvenAddress` (revoke → stamp → claim) and `signIn` asks
+   *    the caller to open a session for the clicker, who is the proven owner.
+   *
+   * @param requesterId the signed-in caller, or null for an anonymous click
+   * @returns the proven address, how many guest orders moved onto the account
+   *   (0 for the overwhelming majority), and whom to sign in (or null).
+   * @throws BadRequestException with a single generic message for every bad link
+   * @throws ForbiddenException `VERIFY_SIGN_IN_REQUIRED` (see above)
    */
-  async confirm(rawToken: string): Promise<{ email: string; claimedOrders: number }> {
+  async confirm(
+    rawToken: string,
+    requesterId: string | null = null,
+  ): Promise<{
+    email: string;
+    claimedOrders: number;
+    signIn: { userId: string; role: UserRole } | null;
+  }> {
     const stored = await this.authRepository.findEmailVerificationToken(rawToken);
 
     const isInvalid =
@@ -160,17 +187,129 @@ export class EmailVerificationService {
       throw new BadRequestException(INVALID_VERIFICATION_TOKEN_MESSAGE);
     }
 
-    await this.authRepository.markEmailVerified(stored.user.id, new Date());
-    await this.authRepository.markEmailVerificationTokenUsed(stored.id);
+    const user = stored.user;
 
-    this.logger.info(
-      { event: 'user.emailVerified', userId: stored.user.id },
-      'Email address verified',
+    if (user.passwordHash) {
+      // Checked BEFORE the link is spent: refusing must leave it usable.
+      if (requesterId !== user.id) {
+        this.logger.warn(
+          { event: 'user.emailVerificationSignInRequired', userId: user.id },
+          'Verification of a password account refused: the request is not signed in as it',
+        );
+        throw verifySignInRequiredError();
+      }
+
+      await this.authRepository.markEmailVerificationTokenUsed(stored.id);
+      if (!user.emailVerifiedAt) {
+        await this.authRepository.markEmailVerified(user.id, new Date());
+      }
+      this.logger.info({ event: 'user.emailVerified', userId: user.id }, 'Email address verified');
+
+      const claimedOrders = await this.claimGuestOrders(user.id, stored.email);
+      return { email: stored.email, claimedOrders, signIn: null };
+    }
+
+    await this.authRepository.markEmailVerificationTokenUsed(stored.id);
+    this.logger.info({ event: 'user.emailVerified', userId: user.id }, 'Email address verified');
+
+    const claimedOrders = await this.adoptProvenAddress(user, stored.email);
+
+    return { email: stored.email, claimedOrders, signIn: { userId: user.id, role: user.role } };
+  }
+
+  /**
+   * The one sequence for "the owner of this mailbox has just proven it"
+   * (TASK-2010, B-12 тема 2 п.3) — reached from the verification link, the
+   * «Задайте пароль» link, a password-reset link and a Google sign-in.
+   *
+   * ── Why the revoke comes first ────────────────────────────────────────────
+   * Since checkout can create an account on any typed address, an UNPROVEN
+   * account may belong to somebody other than the mailbox owner. When the real
+   * owner proves the address, whoever created the account must be signed out
+   * BEFORE the owner's guest orders — phone, address, totals — move onto it.
+   * So for an unverified account: every refresh token is revoked, then the
+   * address is stamped, then the orders are claimed. (An access token already
+   * issued lives on until it expires — ≤15 minutes; recorded in BACKLOG.)
+   *
+   * An account already proven is left signed in and is not re-stamped; the
+   * claim still runs — it is idempotent and moves only `userId: null` orders.
+   *
+   * Callers that mint a session for the prover must do it AFTER this, or the
+   * revoke takes the new session with it.
+   *
+   * @returns how many guest orders moved onto the account.
+   */
+  async adoptProvenAddress(
+    user: { id: string; emailVerifiedAt: Date | null },
+    email: string,
+  ): Promise<number> {
+    if (!user.emailVerifiedAt) {
+      await this.authRepository.revokeAllUserTokens(user.id);
+      await this.authRepository.markEmailVerified(user.id, new Date());
+    }
+
+    return this.claimGuestOrders(user.id, email);
+  }
+
+  /**
+   * Issue the «Задайте пароль» link of an account created at checkout
+   * (TASK-2010), through the CALLER's transaction — the order's — so the link
+   * and the letter exist exactly when the account does.
+   *
+   * An ACCOUNT_SETUP token: the same at-rest shape and the same lifetime as a
+   * verification link (it proves the same mailbox), but its own purpose, so a
+   * plain verification link can never be used to set a password.
+   */
+  async issueAccountSetupLink(
+    user: { id: string; email: string },
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    // Review of S5-API: one letter per account per hour (per account, not per
+    // address — review of R5). The account is created all the same; a second
+    // request inside the hour only sends nothing more to an inbox that may not
+    // be the requester's.
+    const since = new Date(Date.now() - ACCOUNT_SETUP_LETTER_WINDOW_MS);
+    if (
+      await this.authRepository.hasRecentUnusedEmailToken(
+        user.id,
+        EmailTokenPurpose.ACCOUNT_SETUP,
+        since,
+        tx,
+      )
+    ) {
+      this.logger.info(
+        { event: 'user.accountSetupLinkSuppressed', userId: user.id },
+        'Account setup letter skipped — one went to this address within the hour',
+      );
+      return;
+    }
+
+    const rawToken = randomBytes(VERIFICATION_TOKEN_BYTES).toString('hex');
+    const expiresAt = new Date(Date.now() + parseDurationToMs(this.expiration));
+
+    await this.authRepository.saveEmailVerificationToken(
+      user.id,
+      user.email,
+      rawToken,
+      expiresAt,
+      { purpose: EmailTokenPurpose.ACCOUNT_SETUP },
+      tx,
     );
 
-    const claimedOrders = await this.claimGuestOrders(stored.user.id, stored.email);
+    await this.mailOutboxService.enqueueAccountSetup(
+      {
+        to: user.email,
+        setupUrl: `${this.storeClientUrl}/account-setup?token=${rawToken}`,
+        expiresInHuman: humanizeDuration(this.expiration),
+      },
+      tx,
+    );
 
-    return { email: stored.email, claimedOrders };
+    // Never log the raw token or the link.
+    this.logger.info(
+      { event: 'user.accountSetupLinkIssued', userId: user.id },
+      'Account setup link issued',
+    );
   }
 
   /**

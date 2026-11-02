@@ -15,10 +15,13 @@ const authRepositoryMock = {
   findEmailVerificationToken: jest.fn(),
   markEmailVerificationTokenUsed: jest.fn(),
   markEmailVerified: jest.fn(),
+  revokeAllUserTokens: jest.fn(),
+  hasRecentUnusedEmailToken: jest.fn(),
 };
 
 const mailOutboxMock = {
   enqueueEmailVerification: jest.fn(),
+  enqueueAccountSetup: jest.fn(),
 };
 
 const loggerMock = {
@@ -55,6 +58,10 @@ const activeUser = {
   isActive: true,
   deletedAt: null,
   emailVerifiedAt: null,
+  // TASK-2010 review: a password-less account (checkout / Google) — the default
+  // path; the password account's own rules are pinned in their own block.
+  passwordHash: null,
+  role: 'CUSTOMER',
 };
 
 function tokenRow(overrides: Record<string, unknown> = {}) {
@@ -79,6 +86,7 @@ describe('EmailVerificationService (TASK-342)', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     claimPortMock.claimGuestOrders.mockResolvedValue(0);
+    authRepositoryMock.hasRecentUnusedEmailToken.mockResolvedValue(false);
     moduleRefMock.get.mockImplementation((token: unknown) => {
       if (token === GUEST_ORDER_CLAIM_PORT) {
         return claimPortMock;
@@ -152,7 +160,7 @@ describe('EmailVerificationService (TASK-342)', () => {
     it('verifies when the token names the account’s current address', async () => {
       authRepositoryMock.findEmailVerificationToken.mockResolvedValue(tokenRow());
 
-      await expect(service.confirm('raw')).resolves.toEqual({
+      await expect(service.confirm('raw')).resolves.toMatchObject({
         email: 'current@example.com',
         claimedOrders: 0,
       });
@@ -217,7 +225,7 @@ describe('EmailVerificationService (TASK-342)', () => {
       authRepositoryMock.findEmailVerificationToken.mockResolvedValue(tokenRow());
       claimPortMock.claimGuestOrders.mockResolvedValue(3);
 
-      await expect(service.confirm('raw')).resolves.toEqual({
+      await expect(service.confirm('raw')).resolves.toMatchObject({
         email: 'current@example.com',
         claimedOrders: 3,
       });
@@ -274,7 +282,7 @@ describe('EmailVerificationService (TASK-342)', () => {
       // The verification is committed and its token burned by this point.
       // Throwing would tell somebody whose address IS verified that their link
       // was invalid, and leave them nothing to retry.
-      await expect(service.confirm('raw')).resolves.toEqual({
+      await expect(service.confirm('raw')).resolves.toMatchObject({
         email: 'current@example.com',
         claimedOrders: 0,
       });
@@ -287,10 +295,222 @@ describe('EmailVerificationService (TASK-342)', () => {
         throw new Error('Nest could not find the requested provider');
       });
 
-      await expect(service.confirm('raw')).resolves.toEqual({
+      await expect(service.confirm('raw')).resolves.toMatchObject({
         email: 'current@example.com',
         claimedOrders: 0,
       });
+    });
+  });
+
+  // ─── TASK-2010 (B-12 тема 2, п.3): the "taken address" defence ──────────────
+  //
+  // A checkout sign-up creates an account on whatever address was typed, with no
+  // proof. If the real owner of that mailbox later proves it, whoever created the
+  // account must lose it BEFORE the owner's guest orders move onto it — so every
+  // refresh token is revoked first, then the address is stamped, then claimed.
+
+  describe('confirm — revoking the sessions of an unproven account', () => {
+    it('revokes every refresh token BEFORE verifying and claiming', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(tokenRow());
+
+      await service.confirm('raw');
+
+      const revoked = authRepositoryMock.revokeAllUserTokens.mock.invocationCallOrder[0];
+      const verified = authRepositoryMock.markEmailVerified.mock.invocationCallOrder[0];
+      const claimed = claimPortMock.claimGuestOrders.mock.invocationCallOrder[0];
+      expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith('user-1');
+      expect(revoked).toBeLessThan(verified);
+      expect(verified).toBeLessThan(claimed);
+    });
+
+    it('signs nobody out when the address was already proven', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(
+        tokenRow({ user: { ...activeUser, emailVerifiedAt: new Date('2026-10-01') } }),
+      );
+
+      await service.confirm('raw');
+
+      expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
+      expect(claimPortMock.claimGuestOrders).toHaveBeenCalledWith('user-1', 'current@example.com');
+    });
+  });
+
+  // ─── Review of S5-API: the pre-hijack through /register ──────────────────────
+  //
+  // An attacker registers the victim's address WITH A PASSWORD; the automatic
+  // letter lands in the victim's inbox; the victim clicks it. Proving the
+  // mailbox alone would then claim the victim's guest orders into an account
+  // whose password the attacker knows. So for a password account the link
+  // completes only for a request signed in as that very account — which proves
+  // the password AND the mailbox. Anyone else is asked to sign in, and the link
+  // is NOT spent (the real owner can still use it, or reset the password).
+
+  describe('confirm — an account WITH a password', () => {
+    const passwordUser = { ...activeUser, passwordHash: '$argon2id$hash' };
+
+    it('refuses an unauthenticated click with 403 VERIFY_SIGN_IN_REQUIRED and leaves the link usable', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(
+        tokenRow({ user: passwordUser }),
+      );
+
+      const error = await service.confirm('raw', null).catch((e: unknown) => e);
+
+      expect((error as { getStatus(): number }).getStatus()).toBe(403);
+      expect((error as { getResponse(): unknown }).getResponse()).toMatchObject({
+        error: 'VERIFY_SIGN_IN_REQUIRED',
+      });
+      expect(authRepositoryMock.markEmailVerificationTokenUsed).not.toHaveBeenCalled();
+      expect(authRepositoryMock.markEmailVerified).not.toHaveBeenCalled();
+      expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
+      expect(claimPortMock.claimGuestOrders).not.toHaveBeenCalled();
+
+      // …and the same link then works for the account holder, signed in.
+      await expect(service.confirm('raw', 'user-1')).resolves.toMatchObject({
+        email: 'current@example.com',
+      });
+      expect(authRepositoryMock.markEmailVerificationTokenUsed).toHaveBeenCalledWith('tok-1');
+    });
+
+    it('refuses a click signed in as SOMEBODY ELSE the same way', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(
+        tokenRow({ user: passwordUser }),
+      );
+
+      await expect(service.confirm('raw', 'user-2')).rejects.toMatchObject({
+        response: expect.objectContaining({ error: 'VERIFY_SIGN_IN_REQUIRED' }),
+      });
+      expect(authRepositoryMock.markEmailVerificationTokenUsed).not.toHaveBeenCalled();
+    });
+
+    it('signed in as the owner: verifies and claims, keeps every session, mints none', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(
+        tokenRow({ user: passwordUser }),
+      );
+      claimPortMock.claimGuestOrders.mockResolvedValue(2);
+
+      await expect(service.confirm('raw', 'user-1')).resolves.toEqual({
+        email: 'current@example.com',
+        claimedOrders: 2,
+        signIn: null,
+      });
+      expect(authRepositoryMock.markEmailVerified).toHaveBeenCalledWith('user-1', expect.any(Date));
+      // The registrant proved password AND mailbox — nobody to sign out.
+      expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
+      expect(claimPortMock.claimGuestOrders).toHaveBeenCalledWith('user-1', 'current@example.com');
+    });
+  });
+
+  describe('confirm — a password-less account (checkout / Google)', () => {
+    it('revokes, stamps and claims in that order, and asks for a session for the clicker', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(tokenRow());
+
+      await expect(service.confirm('raw', null)).resolves.toEqual({
+        email: 'current@example.com',
+        claimedOrders: 0,
+        signIn: { userId: 'user-1', role: 'CUSTOMER' },
+      });
+
+      const revoked = authRepositoryMock.revokeAllUserTokens.mock.invocationCallOrder[0];
+      const verified = authRepositoryMock.markEmailVerified.mock.invocationCallOrder[0];
+      const claimed = claimPortMock.claimGuestOrders.mock.invocationCallOrder[0];
+      expect(revoked).toBeLessThan(verified);
+      expect(verified).toBeLessThan(claimed);
+    });
+  });
+
+  describe('adoptProvenAddress', () => {
+    it('revokes, stamps and claims, in that order, for an unproven account', async () => {
+      claimPortMock.claimGuestOrders.mockResolvedValue(2);
+
+      await expect(
+        service.adoptProvenAddress({ id: 'user-1', emailVerifiedAt: null }, 'a@example.com'),
+      ).resolves.toBe(2);
+
+      const revoked = authRepositoryMock.revokeAllUserTokens.mock.invocationCallOrder[0];
+      const verified = authRepositoryMock.markEmailVerified.mock.invocationCallOrder[0];
+      const claimed = claimPortMock.claimGuestOrders.mock.invocationCallOrder[0];
+      expect(revoked).toBeLessThan(verified);
+      expect(verified).toBeLessThan(claimed);
+      expect(claimPortMock.claimGuestOrders).toHaveBeenCalledWith('user-1', 'a@example.com');
+    });
+
+    it('neither revokes nor re-stamps an already proven account, and still claims', async () => {
+      await service.adoptProvenAddress(
+        { id: 'user-1', emailVerifiedAt: new Date('2026-10-01') },
+        'a@example.com',
+      );
+
+      expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
+      expect(authRepositoryMock.markEmailVerified).not.toHaveBeenCalled();
+      expect(claimPortMock.claimGuestOrders).toHaveBeenCalledWith('user-1', 'a@example.com');
+    });
+  });
+
+  // ─── TASK-2010: the «Задайте пароль» link of a checkout sign-up ─────────────
+
+  describe('issueAccountSetupLink', () => {
+    const tx = { marker: 'tx' } as never;
+
+    it('stores an ACCOUNT_SETUP token for the address and queues the letter, in the caller tx', async () => {
+      await service.issueAccountSetupLink({ id: 'user-1', email: 'new@example.com' }, tx);
+
+      expect(authRepositoryMock.saveEmailVerificationToken).toHaveBeenCalledWith(
+        'user-1',
+        'new@example.com',
+        expect.stringMatching(/^[0-9a-f]{64}$/),
+        expect.any(Date),
+        { purpose: 'ACCOUNT_SETUP' },
+        tx,
+      );
+      const rawToken = authRepositoryMock.saveEmailVerificationToken.mock.calls[0][2] as string;
+      expect(mailOutboxMock.enqueueAccountSetup).toHaveBeenCalledWith(
+        {
+          to: 'new@example.com',
+          setupUrl: `http://localhost:3000/account-setup?token=${rawToken}`,
+          expiresInHuman: expect.any(String),
+        },
+        tx,
+      );
+    });
+
+    // Review of S5-API: at most ONE «Задайте пароль» letter per hour, whatever
+    // the IP. Review of R5: per ACCOUNT, not per address — a new account on an
+    // address an operator freed within the hour still gets its letter.
+    it('sends no second letter to an account that got one in the last hour', async () => {
+      authRepositoryMock.hasRecentUnusedEmailToken.mockResolvedValue(true);
+      const before = Date.now();
+
+      await service.issueAccountSetupLink({ id: 'user-1', email: 'new@example.com' }, tx);
+
+      expect(authRepositoryMock.hasRecentUnusedEmailToken).toHaveBeenCalledWith(
+        'user-1',
+        'ACCOUNT_SETUP',
+        expect.any(Date),
+        tx,
+      );
+      const since = authRepositoryMock.hasRecentUnusedEmailToken.mock.calls[0][2] as Date;
+      expect(before - since.getTime()).toBeGreaterThanOrEqual(60 * 60 * 1000 - 50);
+      expect(before - since.getTime()).toBeLessThanOrEqual(60 * 60 * 1000 + 50);
+      expect(authRepositoryMock.saveEmailVerificationToken).not.toHaveBeenCalled();
+      expect(mailOutboxMock.enqueueAccountSetup).not.toHaveBeenCalled();
+    });
+
+    it('gives the link the same 24-hour life as a verification link', async () => {
+      const before = Date.now();
+
+      await service.issueAccountSetupLink({ id: 'user-1', email: 'new@example.com' }, tx);
+
+      const expiresAt = authRepositoryMock.saveEmailVerificationToken.mock.calls[0][3] as Date;
+      const day = 24 * 60 * 60 * 1000;
+      expect(expiresAt.getTime()).toBeGreaterThanOrEqual(before + day);
+      expect(expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + day);
+    });
+
+    it('never logs the raw token or the link', async () => {
+      await service.issueAccountSetupLink({ id: 'user-1', email: 'new@example.com' }, tx);
+
+      const rawToken = authRepositoryMock.saveEmailVerificationToken.mock.calls[0][2] as string;
+      expect(JSON.stringify(loggerMock.info.mock.calls)).not.toContain(rawToken);
     });
   });
 });

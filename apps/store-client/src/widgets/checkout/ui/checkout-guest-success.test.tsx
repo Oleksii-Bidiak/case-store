@@ -11,6 +11,13 @@ import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
 import { CheckoutGuestSuccess } from "./checkout-guest-success";
 
+// The one-click account (TASK-2010) navigates — mock the router. Names are
+// `mock`-prefixed so jest allows them inside the hoisted factory.
+const mockPush = jest.fn();
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockPush, replace: jest.fn() }),
+}));
+
 const d = dict.checkout.guest;
 const order = makeOrder({ id: "94f5f971-aaaa-bbbb-cccc-000000000001" }).data;
 const email = "guest@example.com";
@@ -81,7 +88,7 @@ describe("CheckoutGuestSuccess (TASK-610)", () => {
     expect(screen.getByText(d.successEmail(email))).toBeInTheDocument();
   });
 
-  it("offers an account as an option, linking to /register", () => {
+  it("without an order token, offers an account by linking to /register", () => {
     renderWithProviders(<CheckoutGuestSuccess order={order} email={email} />);
 
     expect(
@@ -222,5 +229,125 @@ describe("CheckoutGuestSuccess — Telegram card (TASK-679)", () => {
     state.connected = true;
     const line = await screen.findByText(tg.guest.connected(email));
     await waitFor(() => expect(line).toHaveFocus());
+  });
+});
+
+/**
+ * TASK-2010 (д) — «Створити акаунт на <email>»: one click on the order's own
+ * address instead of a bare /register, whenever the order token proves it.
+ */
+describe("CheckoutGuestSuccess — one-click account (TASK-2010)", () => {
+  const og = dict.order.guest;
+  const TOKEN = "a".repeat(64);
+
+  beforeEach(() => mockPush.mockClear());
+
+  it("creates the account with the order token, signs in and opens the order in the cabinet", async () => {
+    const tokens: string[] = [];
+    server.use(
+      http.post("*/api/orders/guest/:token/account", ({ params }) => {
+        tokens.push(String(params.token));
+        return HttpResponse.json(
+          { data: { accessToken: "new.session.token" } },
+          { status: 201 },
+        );
+      }),
+    );
+    const setTokens = jest.fn();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <CheckoutGuestSuccess
+        order={order}
+        email={email}
+        guestAccessToken={TOKEN}
+      />,
+      { auth: { setTokens } },
+    );
+
+    expect(
+      screen.queryByRole("link", { name: d.accountOfferCta }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: og.oneClickCta(email) }),
+    );
+
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith(`/account/orders/${order.id}`),
+    );
+    expect(tokens).toEqual([TOKEN]);
+    expect(setTokens).toHaveBeenCalledWith("new.session.token");
+  });
+
+  it("says to check the e-mail when the account exists but no session came back", async () => {
+    server.use(
+      http.post("*/api/orders/guest/:token/account", () =>
+        HttpResponse.json({ data: {} }, { status: 201 }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(
+      <CheckoutGuestSuccess
+        order={order}
+        email={email}
+        guestAccessToken={TOKEN}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: og.oneClickCta(email) }),
+    );
+
+    expect(await screen.findByText(og.oneClickCreated)).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("on 409 offers a sign-in that comes back to the order", async () => {
+    server.use(
+      http.post("*/api/orders/guest/:token/account", () =>
+        HttpResponse.json(
+          { statusCode: 409, error: "ACCOUNT_EXISTS", message: "exists" },
+          { status: 409 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(
+      <CheckoutGuestSuccess
+        order={order}
+        email={email}
+        guestAccessToken={TOKEN}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: og.oneClickCta(email) }),
+    );
+
+    expect(await screen.findByText(og.oneClickExists)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: og.oneClickSignIn }),
+    ).toHaveAttribute(
+      "href",
+      `/login?redirect=${encodeURIComponent(`/orders/guest/${TOKEN}`)}`,
+    );
+  });
+
+  it("an account created with the order but not signed in: only the letter is left", () => {
+    renderWithProviders(
+      <CheckoutGuestSuccess
+        order={order}
+        email={email}
+        guestAccessToken={TOKEN}
+        accountPending
+      />,
+    );
+
+    expect(screen.getByText(d.accountPendingNote)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: og.oneClickCta(email) }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: d.accountOfferCta }),
+    ).not.toBeInTheDocument();
   });
 });

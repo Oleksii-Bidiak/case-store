@@ -6,6 +6,7 @@ import { NotificationOutboxRepository } from './notification-outbox.repository';
 import {
   MailService,
   type AccountLockedMailPayload,
+  type AccountSetupMailPayload,
   type EmailChangeConfirmMailPayload,
   type EmailChangeNoticeMailPayload,
   type EmailVerificationMailPayload,
@@ -17,6 +18,7 @@ import {
 import { type Clock, NOTIFICATION_OUTBOX_CLOCK } from './notification-outbox.clock';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
+  ACCOUNT_SETUP_MAIL_TYPE,
   EMAIL_CHANGE_CONFIRM_MAIL_TYPE,
   EMAIL_CHANGE_NOTICE_MAIL_TYPE,
   EMAIL_VERIFICATION_MAIL_TYPE,
@@ -164,6 +166,26 @@ export class NotificationOutboxService {
     await this.repository.enqueue(
       {
         type: EMAIL_VERIFICATION_MAIL_TYPE,
+        recipientAddress: payload.to,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Enqueue the «Задайте пароль» letter of an account created at checkout
+   * (TASK-2010). Pass the order's `tx` so the letter commits — or rolls back —
+   * with the account and the order it was created alongside. Recipient = the
+   * address the account was created on, carried in the payload.
+   */
+  async enqueueAccountSetup(
+    payload: AccountSetupMailPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.repository.enqueue(
+      {
+        type: ACCOUNT_SETUP_MAIL_TYPE,
         recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },

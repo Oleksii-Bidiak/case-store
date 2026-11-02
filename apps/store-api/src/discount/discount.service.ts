@@ -43,7 +43,12 @@ export class DiscountService {
    *
    * @param code Raw promo code (normalized to trimmed uppercase internally).
    * @param subtotal Cart subtotal as a decimal string ("XX.YY").
-   * @param userId The redeeming user (drives the per-user cap check).
+   * @param userId The redeeming account, or null when there is none YET — a
+   *   checkout sign-up (the account is written inside the order transaction) or
+   *   a guest preview.
+   * @param phone The order's normalised phone (TASK-2010). The per-customer cap
+   *   counts the account OR this phone; with neither (a guest preview) the cap
+   *   is left to the checkout, which always has a phone.
    * @returns The applied discount (`id`/`code`/`type` only — the Prisma row
    *   stays inside the module, TASK-827) and the computed amount as a decimal
    *   string, clamped so `amount <= subtotal`.
@@ -54,7 +59,8 @@ export class DiscountService {
   async computeDiscount(
     code: string,
     subtotal: string,
-    userId: string,
+    userId: string | null,
+    phone: string | null = null,
   ): Promise<{ discount: AppliedDiscount; amount: string }> {
     const normalizedCode = code.trim().toUpperCase();
     const discount = await this.discountRepository.findByCode(normalizedCode);
@@ -95,10 +101,14 @@ export class DiscountService {
       );
     }
 
-    // Per-user cap: only queried when a limit is configured (avoids a needless
-    // count for unlimited codes).
-    if (discount.perUserLimit !== null) {
-      const userCount = await this.discountRepository.countUserRedemptions(discount.id, userId);
+    // Per-customer cap: only queried when a limit is configured (avoids a
+    // needless count for unlimited codes) and there is somebody to count.
+    if (discount.perUserLimit !== null && (userId || phone)) {
+      const userCount = await this.discountRepository.countUserRedemptions(
+        discount.id,
+        userId,
+        phone,
+      );
       if (userCount >= discount.perUserLimit) {
         throw conflictDiscount(
           DiscountErrorCode.USER_LIMIT_REACHED,
@@ -117,15 +127,21 @@ export class DiscountService {
   }
 
   /**
-   * Preview a promo code against the authenticated user's current cart. Reads
-   * the subtotal server-side (never trusts a client value), runs
-   * {@link computeDiscount}, and returns the applied code, amount, and resulting
-   * total.
+   * Preview a promo code against the caller's current cart — an account's or,
+   * since TASK-2010, a guest's cookie cart. Reads the subtotal server-side
+   * (never trusts a client value), runs {@link computeDiscount}, and returns the
+   * applied code, amount, and resulting total.
+   *
+   * A guest gets the same numbers plus `requiresAccount: true`: the code is
+   * applied only to an order with an account behind it (B-12 тема 2 (в)), and
+   * the storefront creates one at checkout. The per-customer cap is not checked
+   * for a guest here — there is neither an account nor a phone to count yet —
+   * and is enforced at checkout, where both exist.
    */
-  async preview(userId: string, code: string): Promise<DiscountPreviewEntity> {
-    const identity: ResolvedCartIdentity = { type: 'user', userId };
+  async preview(identity: ResolvedCartIdentity, code: string): Promise<DiscountPreviewEntity> {
     const cart = await this.cartService.getCart(identity);
     const subtotal = cart.totals.subtotal;
+    const userId = identity.type === 'user' ? identity.userId : null;
 
     const { discount, amount } = await this.computeDiscount(code, subtotal, userId);
 
@@ -135,6 +151,7 @@ export class DiscountService {
     entity.type = discount.type;
     entity.amount = amount;
     entity.newTotal = centsToString(Math.max(0, newTotalCents));
+    entity.requiresAccount = userId === null;
     return entity;
   }
 
@@ -158,6 +175,10 @@ export class DiscountService {
    * own read cannot see uncommitted rows, race-free as well. Throwing after the
    * claim is safe: the whole order transaction rolls back, undoing the bump.
    *
+   * The per-customer count covers the account OR the order's normalised
+   * `phone` (TASK-2010), and the phone is written on the redemption so the next
+   * count can see it.
+   *
    * @throws ConflictException when a cap was exhausted between preview and order
    *   placement (the whole order transaction then rolls back).
    */
@@ -166,6 +187,7 @@ export class DiscountService {
     userId: string,
     orderId: string,
     tx: Prisma.TransactionClient,
+    phone: string | null = null,
   ): Promise<void> {
     const discount = await this.discountRepository.findById(discountId, tx);
     if (!discount || !discount.isActive) {
@@ -181,7 +203,12 @@ export class DiscountService {
     }
 
     if (discount.perUserLimit !== null) {
-      const userCount = await this.discountRepository.countUserRedemptions(discountId, userId, tx);
+      const userCount = await this.discountRepository.countUserRedemptions(
+        discountId,
+        userId,
+        phone,
+        tx,
+      );
       if (userCount >= discount.perUserLimit) {
         throw conflictDiscount(
           DiscountErrorCode.USER_LIMIT_REACHED,
@@ -190,7 +217,7 @@ export class DiscountService {
       }
     }
 
-    await this.discountRepository.createRedemption({ discountId, userId, orderId }, tx);
+    await this.discountRepository.createRedemption({ discountId, userId, orderId, phone }, tx);
   }
 
   /**

@@ -542,11 +542,24 @@ describe('Email change (e2e, TASK-396)', () => {
       });
       expect(String(auditRows[0].summary)).toContain('Клієнт телефонував');
 
-      // The verification link then proves the new inbox.
-      await request(app.getHttpServer())
-        .post('/api/auth/email/verify/confirm')
-        .send({ token: linkToken('email-verification') })
-        .expect(200);
+      // The verification link then proves the new inbox — for a PASSWORD
+      // account only together with the password (TASK-2010 review, the
+      // /register pre-hijack): opened anonymously it asks to sign in and stays
+      // usable; signed in as the customer, it completes.
+      const confirm = () =>
+        request(app.getHttpServer())
+          .post('/api/auth/email/verify/confirm')
+          .send({ token: linkToken('email-verification') });
+
+      const refused = await confirm().expect(403);
+      expect(refused.body.error).toBe('VERIFY_SIGN_IN_REQUIRED');
+      expect(users.get('customer-e2e-1')!.emailVerifiedAt).toBeNull();
+
+      const customer = jwtService.sign(
+        { sub: 'customer-e2e-1', role: 'CUSTOMER' },
+        { secret: process.env.JWT_SECRET, expiresIn: '15m' },
+      );
+      await confirm().set('Authorization', `Bearer ${customer}`).expect(200);
       expect(users.get('customer-e2e-1')!.emailVerifiedAt).not.toBeNull();
     });
 

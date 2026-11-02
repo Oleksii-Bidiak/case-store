@@ -4,7 +4,12 @@ export { AuthService } from './auth.service';
 export { AuthRepository } from './auth.repository';
 export { EmailVerificationService } from './email-verification.service';
 export { EmailChangeService } from './email-change.service';
+// TASK-2010: the checkout sign-up, used from the order module.
+export { AuthSessionResponder } from './auth-session-responder';
+export { CheckoutAccountService } from './checkout-account.service';
+export { CheckoutAccountErrorCode } from './checkout-account.errors';
 export { AuthTokens } from './entities';
+export type { IssuedSession } from './entities';
 // The token-lifetime syntax (`15m`, `7d`) the env schema validates against.
 export { DURATION_PATTERN } from './duration.util';
 

@@ -45,6 +45,9 @@ enum EmailTokenPurpose {
   VERIFY
   EMAIL_CHANGE
   EMAIL_CHANGE_REVERT
+  /// The «Задайте пароль» link of an account created at checkout (TASK-2010).
+  /// Proves the mailbox like VERIFY, and may also set the first password.
+  ACCOUNT_SETUP
 }
 
 /// How the customer chose to pay (TASK-330). Distinct from PaymentStatus, which
@@ -1461,10 +1464,17 @@ model DiscountRedemption {
   userId     String   @map("user_id")
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   orderId    String   @unique @map("order_id")
+  /// The order's phone, normalised by `normalizeUaPhone` (TASK-2010, B-12 тема 2
+  /// (г)). "Per customer" is the account OR this phone: a sign-up at checkout
+  /// mints a fresh account, so the account alone would hand the same phone a
+  /// second discount. Nullable — rows from before the column were backfilled
+  /// from the order where the order had a phone, and nothing else is guessed.
+  phone      String?
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([discountId])
   @@index([userId])
+  @@index([discountId, phone])
   @@map("discount_redemptions")
 }
 

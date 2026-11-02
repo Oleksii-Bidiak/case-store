@@ -13,6 +13,10 @@ import {
 } from './order-lookup-throttle.decorator';
 import { RedisThrottlerStorage } from './redis-throttler-storage';
 import { isReviewSubmissionRoute } from './review-submission-throttle.decorator';
+import {
+  CHECKOUT_SIGNUP_THROTTLER,
+  isCheckoutSignupRequest,
+} from './checkout-signup-throttle.decorator';
 import type { ThrottlerRedisHealth } from './throttler-redis-health';
 
 /** Default global window: 100 requests per 60 seconds. */
@@ -291,6 +295,34 @@ export function createOrderNumberTracker(
   };
 }
 
+// ─── TASK-2010: accounts created at checkout ──────────────────────────────────
+
+/**
+ * Accounts one CLIENT IP may create at checkout per hour (B-12 тема 2 (е)).
+ * Counted per IP, not per e-mail: the e-mail side is capped elsewhere — one
+ * account per address (409 ACCOUNT_EXISTS) and one «Задайте пароль» letter per
+ * account per hour (`EmailVerificationService.issueAccountSetupLink`).
+ *
+ * Five matches the per-account review bucket and is far above what one
+ * household checking out needs, while a script creating accounts on scraped
+ * addresses — each one a real «Задайте пароль» letter to a stranger — stops at
+ * five an hour per IP. `/auth/register` has its own 5/min; this bucket is
+ * deliberately tighter, because here no password is typed, so nothing slows a
+ * script down. No `getTracker`: it inherits `ClientIpThrottlerGuard`'s per-IP one.
+ */
+const CHECKOUT_SIGNUPS_PER_IP_PER_HOUR = 5;
+
+function buildCheckoutSignupThrottler(): ThrottlerOptions {
+  return {
+    name: CHECKOUT_SIGNUP_THROTTLER,
+    limit: CHECKOUT_SIGNUPS_PER_IP_PER_HOUR,
+    ttl: ONE_HOUR_MS,
+    // Opt-in per route AND, on POST /orders, per request — see
+    // `isCheckoutSignupRequest`. Without it the bucket would cap every route.
+    skipIf: (context) => !isCheckoutSignupRequest(context),
+  };
+}
+
 const onlyOnOrderLookup: ThrottlerOptions['skipIf'] = (context) => !isOrderLookupRoute(context);
 
 function buildOrderLookupThrottler(configService: ConfigService): ThrottlerOptions {
@@ -353,6 +385,7 @@ export async function buildThrottlerOptions(
     { ttl: DEFAULT_TTL_MS, limit: DEFAULT_LIMIT },
     ...buildReviewSubmissionThrottlers(configService),
     buildOrderLookupThrottler(configService),
+    buildCheckoutSignupThrottler(),
   ];
   const redisHost = configService.get<string>('REDIS_HOST');
 

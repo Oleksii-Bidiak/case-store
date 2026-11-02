@@ -12,6 +12,8 @@ import {
 import { getGetCartQueryKey } from "@/entities/cart";
 import { getGetDeliveryMethodsQueryKey } from "@/entities/delivery";
 import { useAppliedDiscount, clearAppliedDiscount } from "@/entities/discount";
+import { useAuth } from "@/entities/session";
+import { getGetWishlistQueryKey } from "@/entities/wishlist";
 import { dict } from "@/shared/config";
 import { apiErrorCode, apiErrorMessage, apiErrorStatus } from "@/shared/lib";
 import type { CheckoutFormValues } from "./checkout-schema";
@@ -129,7 +131,15 @@ export function toDeliveryPayload(
 export const GUEST_ORDER_PLACED_PARAM = "placed";
 
 /** How an order attempt ended — see `submitOrder`. */
-export type SubmitOrderOutcome = "placed" | "refused" | "failed";
+export type SubmitOrderOutcome =
+  "placed" | "refused" | "failed" | "account-exists" | "account-required";
+
+/** The server's account rules (TASK-2010) — `error` codes on `POST /orders`. */
+const ACCOUNT_EXISTS = "ACCOUNT_EXISTS";
+const ACCOUNT_REQUIRED_MESSAGES: Record<string, string> = {
+  DISCOUNT_ACCOUNT_REQUIRED: dict.checkout.errorDiscountAccountRequired,
+  PAYMENT_ACCOUNT_REQUIRED: dict.checkout.errorPaymentAccountRequired,
+};
 
 export interface UseCheckoutOptions {
   /**
@@ -165,10 +175,21 @@ export interface UseCheckoutOptions {
  * If the handoff itself fails, the order still exists and is still unpaid, so we
  * land on the confirmation page carrying the reason. Nothing anywhere in this
  * flow reports a payment that the server has not confirmed.
+ *
+ * ── A guest who ticked «Створити акаунт» (TASK-2010) ──────────────────────────
+ * `contact.createAccount: true` makes the server create a password-less account
+ * in the order's own transaction. Its answer carries `session.accessToken` (and
+ * sets the refresh cookie): the shopper is signed in from here on, so the token
+ * is stored, the cart and wishlist refetch as the account's, and the order takes
+ * the SIGNED-IN endings 1–2 — confirmation page or provider handoff, the latter
+ * now authorised by the new session. No `session` despite the tick means the
+ * account exists but signing in failed after the commit: the guest panel is
+ * shown with «перевірте пошту» — the «Задайте пароль» letter is the way in.
  */
 export function useCheckout({ isGuest }: UseCheckoutOptions) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { setTokens } = useAuth();
 
   // Marks that an order was placed and the page is either navigating away or
   // showing its own success panel. Set synchronously the moment the mutation
@@ -191,6 +212,10 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
   // the handoff, never the money.
   const [handoffMessage, setHandoffMessage] = useState<string | null>(null);
 
+  // TASK-2010: the account was created with the order, but no session came
+  // back — the guest panel tells them to finish it from the letter.
+  const [accountPending, setAccountPending] = useState(false);
+
   // Applied promo code (TASK-079) — sent as `discountCode`; the server recomputes
   // and persists it authoritatively. Cleared once the order is placed.
   const appliedDiscount = useAppliedDiscount();
@@ -212,6 +237,12 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
    *                 #error).
    *   - `failed`  — anything else (network, 5xx, an expired session): nothing
    *                 the shopper entered is wrong, so they stay put and retry.
+   *   - `account-exists`   — 409 ACCOUNT_EXISTS (TASK-2010): the guest asked
+   *                 for an account on an address that has one. The caller
+   *                 turns the contact block into a sign-in and focuses it.
+   *   - `account-required` — 400 DISCOUNT_/PAYMENT_ACCOUNT_REQUIRED: a code or
+   *                 a card without the box ticked. The caller ticks it and
+   *                 shows the Ukrainian reason on step 1.
    */
   const submitOrder = async (
     values: CheckoutFormValues,
@@ -228,16 +259,20 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
       // an authenticated caller, whose account is the source of truth. Name and
       // phone are reused from the delivery fields rather than asked for twice —
       // they are the same two facts, and the recipient is the person we call.
+      // TASK-2010: `createAccount` must be a JSON boolean — the DTO refuses
+      // anything else — so it is always sent for a guest, `false` included.
       ...(isGuest
         ? {
             contact: {
               email: (values.email ?? "").trim(),
               phone: values.phone,
               name: `${values.firstName} ${values.lastName}`.trim(),
+              createAccount: values.createAccount === true,
             },
           }
         : {}),
     };
+    const askedForAccount = isGuest && values.createAccount === true;
 
     // `mutation.isError` drives the message; this only decides where it shows.
     let order: CreatedOrderEntity | undefined;
@@ -253,6 +288,11 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
           queryKey: getGetDeliveryMethodsQueryKey(),
         });
       }
+      const code = apiErrorCode(error);
+      if (apiErrorStatus(error) === 409 && code === ACCOUNT_EXISTS) {
+        return "account-exists";
+      }
+      if (code && code in ACCOUNT_REQUIRED_MESSAGES) return "account-required";
       return apiErrorStatus(error) === 400 ? "refused" : "failed";
     }
     if (!order) return "failed";
@@ -261,14 +301,35 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
     clearAppliedDiscount();
     void queryClient.invalidateQueries({ queryKey: getGetCartQueryKey() });
 
+    // TASK-2010: the account created with this order is signed in. Store the
+    // token BEFORE anything else calls the API — the payment handoff below is
+    // behind JwtAuthGuard and must go out with it.
+    const sessionToken = askedForAccount
+      ? order.session?.accessToken
+      : undefined;
+    if (sessionToken) {
+      setTokens(sessionToken);
+      void queryClient.invalidateQueries({
+        queryKey: getGetWishlistQueryKey(),
+      });
+    }
+    // From here on the shopper is a guest only if no session came back.
+    const asGuest = isGuest && !sessionToken;
+    if (askedForAccount && !sessionToken) setAccountPending(true);
+
     if (requiresPaymentHandoff(values.paymentMethod)) {
-      const failure = await startPayment(order.id);
+      // An account without a session cannot open a payment attempt (401) —
+      // say so instead of asking the server to refuse.
+      const failure =
+        askedForAccount && !sessionToken
+          ? "account"
+          : await startPayment(order.id);
       // On success the browser is already leaving for the provider's page, so
       // anything after this line only runs when the handoff did NOT happen.
       if (!failure) return "placed";
 
       setHandoffMessage(checkoutHandoffMessage(failure));
-      if (!isGuest) {
+      if (!asGuest) {
         router.push(`/orders/${order.id}/confirmation`);
         return "placed";
       }
@@ -277,7 +338,15 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
       return "placed";
     }
 
-    if (isGuest) {
+    if (askedForAccount && !sessionToken) {
+      // The order is the account's, so there is no guest page to go to: the
+      // in-place panel says the order is in and the letter finishes the rest.
+      setGuestAccessToken(order.guestAccessToken ?? null);
+      setPlacedOrder(order);
+      return "placed";
+    }
+
+    if (asGuest) {
       // TASK-1999: with its token the guest has a full order page of their own
       // — the one the e-mail links to — so send them there. `replace`: «Назад»
       // must not reopen a checkout whose cart the order has just emptied.
@@ -302,13 +371,22 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
   // Collapsing that into "деякі товари можуть бути недоступні" leaves the
   // shopper to guess which of eight items to remove (TASK-402), so the server's
   // own sentence wins whenever it wrote one; the constant remains the fallback.
+  //
+  // TASK-2010: the account rules have their own Ukrainian sentences, and
+  // ACCOUNT_EXISTS has none at all — checkout answers it with the sign-in
+  // block at the e-mail, not with an alert above the form.
   const status = apiErrorStatus(mutation.error);
-  const errorMessage =
-    status === 400
-      ? (apiErrorMessage(mutation.error) ?? dict.checkout.error400)
-      : mutation.isError
-        ? dict.common.genericError
-        : null;
+  const errorCode = apiErrorCode(mutation.error);
+  const accountExists = status === 409 && errorCode === ACCOUNT_EXISTS;
+  const errorMessage = accountExists
+    ? null
+    : errorCode && errorCode in ACCOUNT_REQUIRED_MESSAGES
+      ? ACCOUNT_REQUIRED_MESSAGES[errorCode]
+      : status === 400
+        ? (apiErrorMessage(mutation.error) ?? dict.checkout.error400)
+        : mutation.isError
+          ? dict.common.genericError
+          : null;
 
   return {
     submitOrder,
@@ -324,5 +402,10 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
     /** The guest's order access token from the create call; `null` otherwise. */
     guestAccessToken,
     handoffMessage,
+    /**
+     * TASK-2010: the account was created with the order but not signed in —
+     * the panel tells the shopper to finish it from the «Задайте пароль» letter.
+     */
+    accountPending,
   };
 }

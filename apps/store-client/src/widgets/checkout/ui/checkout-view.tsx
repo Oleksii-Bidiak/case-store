@@ -15,6 +15,7 @@ import { useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "@/entities/session";
 import { useGetCart } from "@/entities/cart";
+import { clearAppliedDiscount, useAppliedDiscount } from "@/entities/discount";
 import {
   CheckoutAddressForm,
   CheckoutConsent,
@@ -24,12 +25,14 @@ import {
   lostDeliveryMethod,
   resolveDeliveryMethod,
   useCheckout,
+  useCheckoutEmailStatus,
   useDeliveryOptions,
   useCheckoutPrefill,
   useCheckoutSteps,
   checkoutSchemaFor,
   coercePaymentMethod,
   readConfiguredMethods,
+  requiresPaymentHandoff,
   resolvePaymentMethods,
   CHECKOUT_DEFAULT_VALUES,
   type CheckoutDeliveryMethod,
@@ -49,6 +52,15 @@ import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { CheckoutStepIndicator } from "./checkout-step-indicator";
 import { CheckoutPayment } from "./checkout-payment";
 import { CheckoutGuestSuccess } from "./checkout-guest-success";
+import { CheckoutSignIn } from "./checkout-sign-in";
+
+/**
+ * The step's `<form>` id. Step 1's contact block sits OUTSIDE the form
+ * (TASK-2010): its inline sign-in is a form of its own, and a form inside a
+ * form is invalid HTML whose submit would bubble into the checkout's. The
+ * e-mail joins the form through this id, so Enter there still submits the step.
+ */
+const CHECKOUT_FORM_ID = "checkout-form";
 
 /**
  * The step's primary button: a full-width 44px thumb target with the CTA radius
@@ -104,10 +116,13 @@ function OrderErrorAlert({
  * реєстрації" promise (plan 102 §5) untrue for as long as it stood.
  * `POST /api/orders` no longer requires a JWT — a guest is identified by the same
  * cart cookie that owns the basket being converted — so the barrier is gone. A
- * guest fills one extra field (email) and is offered an account *after* the
- * order, never in front of it.
+ * guest fills one extra field (email). Since TASK-2010 the same block offers
+ * «Створити акаунт на цю пошту» — off unless a promo code or a card needs it —
+ * and, for an address that already has an account, an inline sign-in. Either
+ * way the order is never gated on it.
  *
- * The two shoppers diverge only at the end: a signed-in one is pushed to
+ * The two shoppers diverge only at the end (a guest whose account was created
+ * with the order counts as signed in — `useCheckout`): a signed-in one is pushed to
  * `/orders/[id]/confirmation`; a guest goes to their token page
  * `/orders/guest/[token]` (TASK-1999), or gets {@link CheckoutGuestSuccess} in
  * place when there is no token — never the confirmation route, which reads an
@@ -134,6 +149,7 @@ export function CheckoutView() {
     placedOrder,
     guestAccessToken,
     handoffMessage,
+    accountPending,
   } = useCheckout({ isGuest });
 
   // The shop's delivery offer (TASK-646): which methods, the courier's terms,
@@ -146,6 +162,7 @@ export function CheckoutView() {
     handleSubmit,
     control,
     reset,
+    getValues,
     setValue,
     setFocus,
     formState: { errors, isSubmitting },
@@ -162,7 +179,9 @@ export function CheckoutView() {
   });
 
   // Seed the form with the logged-in user's saved contact details (name + phone).
-  useCheckoutPrefill(reset, isAuthenticated);
+  // Also when a guest signs in from the contact block (TASK-2010): the profile
+  // then only fills what is still empty, nothing typed is lost.
+  useCheckoutPrefill(reset, getValues, isAuthenticated);
 
   // Two-screen flow: Delivery (step 1) → Review (step 2). The order is created
   // only on the step-2 submit (TASK-146).
@@ -180,6 +199,12 @@ export function CheckoutView() {
   // lands on the notice that names it.
   const pendingNoticeFocus = useRef(false);
   const lostNoticeRef = useRef<HTMLParagraphElement>(null);
+  // TASK-2010: a 409 ACCOUNT_EXISTS returns to the sign-in at the e-mail.
+  const pendingSignInFocus = useRef(false);
+  const signInRef = useRef<HTMLDivElement>(null);
+  // A guest signed in from the contact block: the block (and the focus in it)
+  // is gone, so focus moves on to the recipient once the session lands.
+  const pendingAuthFocus = useRef(false);
 
   // Offer + privacy consent on the confirm step (TASK-882). Plain state, not a
   // form field: the zod schema also runs on the step-1 «Далі», where an
@@ -199,6 +224,11 @@ export function CheckoutView() {
     }
     if (step === 2) {
       reviewHeadingRef.current?.focus();
+      return;
+    }
+    if (pendingSignInFocus.current) {
+      pendingSignInFocus.current = false;
+      signInRef.current?.focus();
       return;
     }
     if (pendingAlertFocus.current) {
@@ -224,6 +254,18 @@ export function CheckoutView() {
   const selectedDelivery = useWatch({ control, name: "deliveryMethod" });
   const npManual = useWatch({ control, name: "npManual" }) ?? false;
   const pickupPointId = useWatch({ control, name: "pickupPointId" }) ?? "";
+  const createAccount = useWatch({ control, name: "createAccount" }) ?? false;
+
+  // ── The account in checkout (TASK-2010, B-12 тема 2) ─────────────────────
+  // Whether the typed address already has an account — asked on blur, or
+  // learnt from a 409. Such an address gets a sign-in, never a second account.
+  const emailStatus = useCheckoutEmailStatus();
+  const emailHasAccount = isGuest && emailStatus.hasAccountFor(guestEmail);
+  const offersAccount = isGuest && !emailHasAccount;
+  // A promo code (TASK-079) applies only to an account's order.
+  const appliedDiscount = useAppliedDiscount();
+  // What unticking «Створити акаунт» just changed — see onCreateAccountChange.
+  const [untickNotice, setUntickNotice] = useState<string | null>(null);
 
   // The method to draw: the selection while the shop offers it, otherwise the
   // first offered method. Resolved during render so a pickup-only shop never
@@ -312,14 +354,87 @@ export function CheckoutView() {
       resolvePaymentMethods({
         configured: readConfiguredMethods(),
         isAuthenticated,
+        guestHasAccount: emailHasAccount,
         delivery: {
           method: deliveryMethod,
           npManual,
           matrix: deliveryOptions.paymentMatrix,
         },
       }),
-    [isAuthenticated, deliveryMethod, npManual, deliveryOptions.paymentMatrix],
+    [
+      isAuthenticated,
+      emailHasAccount,
+      deliveryMethod,
+      npManual,
+      deliveryOptions.paymentMatrix,
+    ],
   );
+
+  // A promo code or a card needs the account: tick the box the moment either
+  // is chosen (a code may also arrive already applied from the cart). The
+  // reason is said next to the box — `accountNotice` below.
+  const needsAccount =
+    Boolean(appliedDiscount) || requiresPaymentHandoff(paymentMethod);
+  useEffect(() => {
+    if (offersAccount && needsAccount && !createAccount) {
+      setValue("createAccount", true);
+    }
+  }, [offersAccount, needsAccount, createAccount, setValue]);
+
+  // An address with an account never gets a second one (409 ACCOUNT_EXISTS):
+  // the box goes, and so does its tick.
+  useEffect(() => {
+    if (emailHasAccount && createAccount) setValue("createAccount", false);
+  }, [emailHasAccount, createAccount, setValue]);
+
+  /**
+   * The shopper changes the box themselves. Unticking takes away what needs
+   * the account — the code is removed, card / instalments fall back to paying
+   * on delivery — and says so in the live region; nothing changes silently.
+   */
+  const onCreateAccountChange = (checked: boolean) => {
+    setValue("createAccount", checked);
+    if (checked) {
+      setUntickNotice(null);
+      return;
+    }
+    const notes: string[] = [];
+    if (appliedDiscount) {
+      clearAppliedDiscount();
+      notes.push(dict.checkout.guest.promoRemoved);
+    }
+    if (requiresPaymentHandoff(paymentMethod)) {
+      setValue(
+        "paymentMethod",
+        coercePaymentMethod("ON_DELIVERY", paymentOptions),
+      );
+      notes.push(dict.checkout.guest.paymentSwitched);
+    }
+    setUntickNotice(notes.length > 0 ? notes.join(" ") : null);
+  };
+
+  // Why the box is ticked, while it is for a reason; otherwise what unticking
+  // it changed.
+  const accountNotice =
+    offersAccount && createAccount
+      ? appliedDiscount
+        ? dict.checkout.guest.createAccountForPromo
+        : requiresPaymentHandoff(paymentMethod)
+          ? dict.checkout.guest.createAccountForCard
+          : null
+      : untickNotice;
+
+  // Signed in from the contact block: back to the step with nothing lost
+  // (the prefill only fills empty fields), focus on the recipient.
+  const onInlineSignIn = () => {
+    clearError();
+    pendingAuthFocus.current = true;
+  };
+  useEffect(() => {
+    if (!isAuthenticated || !pendingAuthFocus.current) return;
+    pendingAuthFocus.current = false;
+    setFocus("firstName");
+  }, [isAuthenticated, setFocus]);
 
   // A session that expires mid-checkout (TASK-773) disables the online methods
   // under a choice already made. Nothing would then be checked, and the order
@@ -385,8 +500,26 @@ export function CheckoutView() {
   // just switched off — and step 1 is the only place it can be changed. Any
   // other failure (network, 5xx, a lapsed session) leaves the shopper on step 2
   // to retry, with the same alert at the top of the card.
+  //
+  // TASK-2010: the two account answers go back to step 1 as well. 409
+  // ACCOUNT_EXISTS turns the contact block into the sign-in and lands on it;
+  // a code or a card refused for want of an account ticks the box, and the
+  // alert says why — the next «Підтвердити» then creates the account.
   const placeOrder = async (values: CheckoutFormValues) => {
-    if ((await submitOrder(values)) !== "refused") return;
+    const outcome = await submitOrder(values);
+    if (outcome === "account-exists") {
+      emailStatus.markHasAccount(values.email);
+      pendingSignInFocus.current = true;
+      goToDelivery();
+      return;
+    }
+    if (outcome === "account-required") {
+      if (offersAccount) setValue("createAccount", true);
+      pendingAlertFocus.current = true;
+      goToDelivery();
+      return;
+    }
+    if (outcome !== "refused") return;
     pendingAlertFocus.current = true;
     goToDelivery();
   };
@@ -456,6 +589,7 @@ export function CheckoutView() {
         email={guestEmail.trim()}
         guestAccessToken={guestAccessToken}
         handoffMessage={handoffMessage}
+        accountPending={accountPending}
       />
     );
   }
@@ -502,11 +636,7 @@ export function CheckoutView() {
       <CheckoutStepIndicator current={step} />
 
       <div className="grid gap-6 lg:grid-cols-checkout lg:items-start">
-        <form
-          onSubmit={onStepSubmit}
-          className="flex min-w-0 flex-col gap-4"
-          noValidate
-        >
+        <div className="flex min-w-0 flex-col gap-4">
           {step === 1 && (
             <>
               {/* The server's refusal of the last attempt, word for word,
@@ -548,123 +678,94 @@ export function CheckoutView() {
                 npCityRef={npCityRef}
               />
 
+              {/* The e-mail right after the method, before the address
+                  (B-13 §0): a sign-in happens before much is typed. Outside
+                  the <form> — see CHECKOUT_FORM_ID. */}
               {isGuest && (
                 <section className="rounded-card border border-border bg-card p-6 shadow-card">
-                  <CheckoutContactFields register={register} errors={errors} />
+                  <CheckoutContactFields
+                    register={register}
+                    errors={errors}
+                    formId={CHECKOUT_FORM_ID}
+                    onEmailBlur={emailStatus.check}
+                    createAccount={createAccount}
+                    onCreateAccountChange={onCreateAccountChange}
+                    accountNotice={accountNotice}
+                    hasAccount={emailHasAccount}
+                    signInRef={signInRef}
+                    signIn={
+                      emailHasAccount ? (
+                        <CheckoutSignIn
+                          email={guestEmail.trim()}
+                          onAuthenticated={onInlineSignIn}
+                        />
+                      ) : null
+                    }
+                  />
                 </section>
               )}
-
-              <section className="rounded-card border border-border bg-card p-6 shadow-card">
-                <CheckoutAddressForm
-                  legend={dict.checkout.delivery.recipientHeading}
-                  register={register}
-                  control={control}
-                  setValue={setValue}
-                  errors={errors}
-                  method={deliveryMethod}
-                  options={deliveryOptions}
-                />
-
-                <div className="mt-4 flex flex-col gap-1">
-                  <label
-                    htmlFor="checkout-notes"
-                    className="text-sm font-medium text-foreground"
-                  >
-                    {dict.checkout.orderNotes}{" "}
-                    <span className="text-muted-foreground">
-                      {dict.common.optional}
-                    </span>
-                  </label>
-                  <Textarea
-                    id="checkout-notes"
-                    rows={3}
-                    maxLength={500}
-                    aria-invalid={errors.notes ? true : undefined}
-                    aria-describedby={
-                      errors.notes ? "checkout-notes-error" : undefined
-                    }
-                    {...register("notes")}
-                  />
-                  <span className="self-end text-xs text-muted-foreground">
-                    {notes.length}/500
-                  </span>
-                  {errors.notes && (
-                    <p
-                      id="checkout-notes-error"
-                      role="alert"
-                      className="text-sm text-destructive"
-                    >
-                      {errors.notes.message}
-                    </p>
-                  )}
-                </div>
-              </section>
-
-              <CheckoutPayment control={control} options={paymentOptions} />
-
-              {/* Below md the step's primary rides in the fixed «До сплати»
-                  bar (TASK-864); from md up the bar dissolves and the button
-                  sits here, under the form, as before. */}
-              <MobilePayBar
-                label={dict.checkout.totalLine}
-                amount={totalText}
-                amountNote={payBarNote}
-              >
-                <Button
-                  type="submit"
-                  size="lg"
-                  disabled={isSubmitting}
-                  className={MOBILE_BAR_CTA}
-                >
-                  {dict.checkout.nextStep}
-                </Button>
-              </MobilePayBar>
             </>
           )}
 
-          {step === 2 && (
-            // One card holds the read-back, the consent and the step's actions
-            // (Checkout.dc.html «ЦІЛЬ · TASK-882»), so the box sits right above
-            // the button it unlocks.
-            <section className="flex flex-col gap-4 rounded-card border border-border bg-card p-6 shadow-card">
-              {/* A failure that is not a refusal keeps the shopper here — at
-                  the top of the card, never under the fixed mobile bar. */}
-              {isError && errorMessage && (
-                <OrderErrorAlert message={errorMessage} />
-              )}
+          <form
+            id={CHECKOUT_FORM_ID}
+            onSubmit={onStepSubmit}
+            className="flex min-w-0 flex-col gap-4"
+            noValidate
+          >
+            {step === 1 && (
+              <>
+                <section className="rounded-card border border-border bg-card p-6 shadow-card">
+                  <CheckoutAddressForm
+                    legend={dict.checkout.delivery.recipientHeading}
+                    register={register}
+                    control={control}
+                    setValue={setValue}
+                    errors={errors}
+                    method={deliveryMethod}
+                    options={deliveryOptions}
+                  />
 
-              <CheckoutReviewStep
-                ref={reviewHeadingRef}
-                control={control}
-                showEmail={isGuest}
-              />
+                  <div className="mt-4 flex flex-col gap-1">
+                    <label
+                      htmlFor="checkout-notes"
+                      className="text-sm font-medium text-foreground"
+                    >
+                      {dict.checkout.orderNotes}{" "}
+                      <span className="text-muted-foreground">
+                        {dict.common.optional}
+                      </span>
+                    </label>
+                    <Textarea
+                      id="checkout-notes"
+                      rows={3}
+                      maxLength={500}
+                      aria-invalid={errors.notes ? true : undefined}
+                      aria-describedby={
+                        errors.notes ? "checkout-notes-error" : undefined
+                      }
+                      {...register("notes")}
+                    />
+                    <span className="self-end text-xs text-muted-foreground">
+                      {notes.length}/500
+                    </span>
+                    {errors.notes && (
+                      <p
+                        id="checkout-notes-error"
+                        role="alert"
+                        className="text-sm text-destructive"
+                      >
+                        {errors.notes.message}
+                      </p>
+                    )}
+                  </div>
+                </section>
 
-              <CheckoutConsent
-                ref={consentRef}
-                checked={consentAccepted}
-                onCheckedChange={onConsentChange}
-                showError={consentError}
-              />
+                <CheckoutPayment control={control} options={paymentOptions} />
 
-              {/* The order exists but the provider handoff never started. Speaks
-                  about the handoff — never about the money. */}
-              {handoffMessage && (
-                <p role="alert" className="text-sm text-destructive">
-                  {handoffMessage}
-                </p>
-              )}
-
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  onClick={goToDelivery}
-                >
-                  {dict.checkout.prevStep}
-                </Button>
-                {/* «Назад» stays in the flow; the confirm rides in the bar
-                    below md (TASK-864) and rejoins this row from md up. */}
+                {/* Below md the step's primary rides in the fixed «До сплати»
+                  bar (TASK-864); from md up the bar dissolves and the button
+                  sits here, under the form, as before. */}
                 <MobilePayBar
                   label={dict.checkout.totalLine}
                   amount={totalText}
@@ -673,18 +774,79 @@ export function CheckoutView() {
                   <Button
                     type="submit"
                     size="lg"
-                    disabled={isPending}
+                    disabled={isSubmitting}
                     className={MOBILE_BAR_CTA}
                   >
-                    {isPending
-                      ? dict.checkout.placingOrder
-                      : dict.checkout.placeOrder}
+                    {dict.checkout.nextStep}
                   </Button>
                 </MobilePayBar>
-              </div>
-            </section>
-          )}
-        </form>
+              </>
+            )}
+
+            {step === 2 && (
+              // One card holds the read-back, the consent and the step's actions
+              // (Checkout.dc.html «ЦІЛЬ · TASK-882»), so the box sits right above
+              // the button it unlocks.
+              <section className="flex flex-col gap-4 rounded-card border border-border bg-card p-6 shadow-card">
+                {/* A failure that is not a refusal keeps the shopper here — at
+                  the top of the card, never under the fixed mobile bar. */}
+                {isError && errorMessage && (
+                  <OrderErrorAlert message={errorMessage} />
+                )}
+
+                <CheckoutReviewStep
+                  ref={reviewHeadingRef}
+                  control={control}
+                  showEmail={isGuest}
+                />
+
+                <CheckoutConsent
+                  ref={consentRef}
+                  checked={consentAccepted}
+                  onCheckedChange={onConsentChange}
+                  showError={consentError}
+                />
+
+                {/* The order exists but the provider handoff never started. Speaks
+                  about the handoff — never about the money. */}
+                {handoffMessage && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {handoffMessage}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    type="button"
+                    size="lg"
+                    variant="outline"
+                    onClick={goToDelivery}
+                  >
+                    {dict.checkout.prevStep}
+                  </Button>
+                  {/* «Назад» stays in the flow; the confirm rides in the bar
+                    below md (TASK-864) and rejoins this row from md up. */}
+                  <MobilePayBar
+                    label={dict.checkout.totalLine}
+                    amount={totalText}
+                    amountNote={payBarNote}
+                  >
+                    <Button
+                      type="submit"
+                      size="lg"
+                      disabled={isPending}
+                      className={MOBILE_BAR_CTA}
+                    >
+                      {isPending
+                        ? dict.checkout.placingOrder
+                        : dict.checkout.placeOrder}
+                    </Button>
+                  </MobilePayBar>
+                </div>
+              </section>
+            )}
+          </form>
+        </div>
 
         {/* STICKY_ASIDE_TOP clears the z-50 site header so the stuck summary
             never sits under it (TASK-206 / TASK-234). */}

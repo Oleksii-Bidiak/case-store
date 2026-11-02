@@ -91,11 +91,14 @@ describe("CheckoutPayment (TASK-330-B)", () => {
    * must be visibly unavailable, never clickable-but-inert.
    */
   it("disables an option the shopper cannot complete, and says why", () => {
+    // TASK-2010: a guest whose address already has an account — the one guest
+    // card is still closed to. The sign-in is in the contact block above.
     renderWithProviders(
       <Harness
         options={resolvePaymentMethods({
           configured: ["ON_DELIVERY", "ONLINE"],
           isAuthenticated: false,
+          guestHasAccount: true,
         })}
       />,
     );
@@ -106,12 +109,32 @@ describe("CheckoutPayment (TASK-330-B)", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: dict.checkout.payment.signIn }),
-    ).toHaveAttribute("href", "/login?redirect=/checkout");
+    ).toHaveAttribute("href", "#checkout-sign-in");
 
     // Cash on delivery stays usable — guest checkout itself is not gated.
     expect(
       screen.getByRole("radio", { name: /Оплата при отриманні/ }),
     ).toBeEnabled();
+  });
+
+  it("offers a guest card with the account it comes with (TASK-2010)", () => {
+    renderWithProviders(
+      <Harness
+        options={resolvePaymentMethods({
+          configured: ["ON_DELIVERY", "ONLINE"],
+          isAuthenticated: false,
+        })}
+      />,
+    );
+
+    const card = screen.getByRole("radio", { name: /Картка онлайн/ });
+    expect(card).toBeEnabled();
+    expect(card).toHaveAccessibleDescription(
+      expect.stringContaining(dict.checkout.payment.createsAccountNote),
+    );
+    expect(
+      screen.queryByRole("link", { name: dict.checkout.payment.signIn }),
+    ).toBeNull();
   });
 
   // TASK-646: the delivery × payment matrix.

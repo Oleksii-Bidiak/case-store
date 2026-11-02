@@ -1,10 +1,22 @@
 // Checkout feature — address + contact fields, order creation, the provider
 // payment handoff, and the validation schema.
 export { CheckoutAddressForm } from "./ui/checkout-address-form";
-export { CheckoutContactFields } from "./ui/checkout-contact-fields";
+export {
+  CheckoutContactFields,
+  CHECKOUT_SIGN_IN_ID,
+} from "./ui/checkout-contact-fields";
+// TASK-2010: «is there an account on this address?» for the contact block.
+export {
+  useCheckoutEmailStatus,
+  normalizeCheckoutEmail,
+} from "./model/use-checkout-email-status";
 export { CheckoutReviewStep } from "./ui/checkout-review-step";
 export { CheckoutConsent } from "./ui/checkout-consent";
-export { useCheckout, GUEST_ORDER_PLACED_PARAM } from "./model/use-checkout";
+export {
+  useCheckout,
+  GUEST_ORDER_PLACED_PARAM,
+  type SubmitOrderOutcome,
+} from "./model/use-checkout";
 export { useCheckoutPrefill } from "./model/use-checkout-prefill";
 export { useCheckoutSteps } from "./model/use-checkout-steps";
 export {

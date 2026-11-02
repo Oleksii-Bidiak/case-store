@@ -15,6 +15,7 @@ import {
 import { PinoLogger } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import { AddonApplicabilityResolver } from '../src/addon-service';
+import { CheckoutAccountService } from '../src/auth/checkout-account.service';
 import { CacheService } from '../src/cache';
 import { CartService } from '../src/cart';
 import { DeliveryService } from '../src/delivery';
@@ -94,6 +95,7 @@ describe('LiqPay money through the ledger (integration, TASK-1500 / TASK-2047)',
         { provide: OrderLookupRepository, useValue: {} },
         { provide: ShopNotifier, useValue: { enqueueNewOrder: jest.fn().mockResolvedValue(0) } },
         { provide: CustomerNotifier, useValue: {} },
+        { provide: CheckoutAccountService, useValue: {} },
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },
         {
           provide: ProductIndexer,

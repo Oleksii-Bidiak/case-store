@@ -121,6 +121,9 @@ export function toOrderPaymentMethod(
  * so a guest literally cannot open a payment attempt. Rather than let a guest pick
  * card and dead-end on a 401, the option is shown disabled with the reason. Guest
  * checkout itself is unaffected: cash on delivery needs no account (TASK-338).
+ * Since TASK-2010 a guest is blocked only when their address already has an
+ * account (`guestHasAccount`); any other guest gets the method with an account
+ * created at checkout, whose session then opens the payment attempt.
  *
  * `delivery-matrix` (TASK-646): the chosen delivery does not admit this method —
  * the server's `paymentMatrix` says so, and it would refuse the order with a
@@ -138,6 +141,12 @@ export interface PaymentMethodOption {
   blockedBy?: PaymentMethodBlocker;
   /** The sentence a disabled option shows instead of its note, verbatim. */
   blockedReason?: string;
+  /**
+   * A guest may choose this method only because checkout creates an account on
+   * their address with the order (TASK-2010). Choosing it ticks «Створити
+   * акаунт»; the line is shown under the option's note.
+   */
+  accountNote?: string;
 }
 
 const COPY: Record<CheckoutPaymentMethod, { title: string; note: string }> = {
@@ -195,8 +204,15 @@ export function readConfiguredMethods(): CheckoutPaymentMethod[] {
 export interface ResolvePaymentMethodsInput {
   /** Methods this deployment has switched on. */
   configured: CheckoutPaymentMethod[];
-  /** Whether the shopper is signed in (guests cannot open a payment attempt). */
+  /** Whether the shopper is signed in. */
   isAuthenticated: boolean;
+  /**
+   * A guest whose e-mail already has an account (TASK-2010, the checkout
+   * e-mail-status hint or a 409 ACCOUNT_EXISTS). Checkout never creates a
+   * second account, so card / instalments wait for them to sign in. Ignored
+   * when signed in.
+   */
+  guestHasAccount?: boolean;
   /**
    * The chosen delivery and the server's delivery × payment matrix (TASK-646).
    * Omitted ⇒ no delivery restriction, and the Nova Poshta on-delivery note.
@@ -234,6 +250,7 @@ function deliveryBlockReason({
 export function resolvePaymentMethods({
   configured,
   isAuthenticated,
+  guestHasAccount = false,
   delivery,
 }: ResolvePaymentMethodsInput): PaymentMethodOption[] {
   const booked = delivery
@@ -262,6 +279,17 @@ export function resolvePaymentMethods({
       };
     }
     if (requiresPaymentHandoff(method) && !isAuthenticated) {
+      // TASK-2010: a guest pays by card on the account checkout creates with
+      // the order — the session it returns opens the payment attempt. Only an
+      // address that already has an account waits for a sign-in: checkout
+      // never creates a second one.
+      if (!guestHasAccount) {
+        return {
+          ...option,
+          enabled: true,
+          accountNote: dict.checkout.payment.createsAccountNote,
+        };
+      }
       return {
         ...option,
         enabled: false,

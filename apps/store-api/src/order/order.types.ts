@@ -9,6 +9,7 @@ import {
   OrderHistoryNote,
 } from '@prisma/client';
 import type { CartWithItems } from '../cart';
+import type { IssuedSession } from '../auth';
 import type { AddressDto } from './dto';
 import type { OrderEntity } from './entities/order.entity';
 import type { LockedOrder } from './order-money.repository';
@@ -365,8 +366,28 @@ export interface CreateOrderParams {
     amount: string;
     /** The applied promo code (uppercase), snapshotted on the order. */
     code: string;
-    /** Redeem callback bound to the discount + user; called with the new order id and the tx. */
-    redeem: (orderId: string, tx: Prisma.TransactionClient) => Promise<void>;
+    /**
+     * Redeem callback bound to the discount; called with the new order's id, the
+     * tx, and the order's OWNER — which, for a checkout sign-up, is an account
+     * that exists only inside this transaction (TASK-2010).
+     */
+    redeem: (
+      orderId: string,
+      tx: Prisma.TransactionClient,
+      ownerId: string | null,
+    ) => Promise<void>;
+  };
+  /**
+   * The account a guest asked for at checkout (TASK-2010, B-12 тема 2).
+   *
+   * Run by the repository INSIDE the order transaction, BEFORE the order row,
+   * and its id becomes the order's `userId` — so the order belongs to the
+   * account outright (no guest block), and a checkout that fails (stock gone, a
+   * promo cap, the outbox) leaves no account behind. Present only when `userId`
+   * is null and `guest` is absent.
+   */
+  account?: {
+    create: (tx: Prisma.TransactionClient) => Promise<string>;
   };
 }
 
@@ -579,17 +600,33 @@ export interface GuestContact {
  * module has been resolving all along (`ResolvedCartIdentity`).
  */
 export type OrderActor =
-  { type: 'user'; userId: string } | { type: 'guest'; cartToken: string; contact: GuestContact };
+  | { type: 'user'; userId: string }
+  | {
+      type: 'guest';
+      cartToken: string;
+      contact: GuestContact;
+      /**
+       * «Створити акаунт на цю пошту» was ticked (TASK-2010): the order is placed
+       * for a password-less account created in the same transaction. Absent =
+       * an ordinary guest order.
+       */
+      createAccount?: boolean;
+    };
 
 /**
  * What placing an order hands back (TASK-679): the order, and for a GUEST the
  * raw access token the confirmation letter carries — `null` for an account
  * order. The raw value exists only here and in the letter; the database keeps
  * its SHA-256.
+ *
+ * `session` (TASK-2010) is the sign-in of an account created at checkout — the
+ * controller turns it into the refresh cookie plus `data.session.accessToken`.
+ * `null` for every other order.
  */
 export interface PlacedOrder {
   order: OrderEntity;
   guestAccessToken: string | null;
+  session: IssuedSession | null;
 }
 
 /**
