@@ -11,6 +11,7 @@ import {
   orderDerivedMarks,
   orderStatusBadgeVariant,
   orderHeadlineStatusLabel,
+  orderListHref,
   paymentStatusBadgeVariant,
   paymentStatusLabel,
   useAdminOrderControllerFindById,
@@ -69,6 +70,12 @@ const card = "flex flex-col gap-3 rounded-lg border border-border p-4";
 
 interface OrderDetailViewProps {
   orderId: string;
+  /**
+   * TASK-1977: the `from` query of the card's URL — the list query it was
+   * opened with. «← Замовлення» and the not-found redirect go back to that
+   * list (`orderListHref`); absent → the plain `/orders`.
+   */
+  from?: string | string[];
 }
 
 interface AddressFields {
@@ -121,8 +128,9 @@ function copyNumber(order: OrderEntity) {
  * API can take them in one PATCH (TASK-786), but merging two RHF forms with
  * their own dirty/lock state is a change of its own, not a relayout.
  */
-export function OrderDetailView({ orderId }: OrderDetailViewProps) {
+export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
   const router = useRouter();
+  const listHref = orderListHref(from);
   const { can, arePermissionsLoading } = useAuth();
   // Two answers, not one boolean negated: until the grant set arrives neither is
   // true, so the card renders neither the controls nor the «view only» line.
@@ -150,9 +158,9 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
 
   useEffect(() => {
     if (isNotFound) {
-      router.replace("/orders");
+      router.replace(listHref);
     }
-  }, [isNotFound, router]);
+  }, [isNotFound, router, listHref]);
 
   if (isLoading) {
     return <OrderDetailSkeleton />;
@@ -210,7 +218,7 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
   return (
     <div className="flex flex-col gap-4">
       <Link
-        href="/orders"
+        href={listHref}
         className="self-start rounded-xs text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         {d.back}

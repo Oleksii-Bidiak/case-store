@@ -116,6 +116,8 @@ export {
 
 // TASK-1038 (wave 198): «#7C1E9A42» — the one way an order is named on screen.
 export { formatOrderNumber } from "./lib/format-order-number";
+// TASK-1977: card ↔ list links that keep the list's filters.
+export { orderCardHref, orderListHref } from "./lib/order-list-href";
 // TASK-1972: the colleague's version, fetched after an edit was refused as stale.
 export { fetchFreshOrder } from "./lib/fetch-fresh-order";
 export { OrderNumber, type OrderNumberProps } from "./ui/order-number";
