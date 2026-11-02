@@ -3157,7 +3157,11 @@ describe('OrderService', () => {
       async (status) => {
         orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status }));
 
-        await service.adminUpdateDetails('order-uuid-1', { shippingAddress: newAddress });
+        await service.adminUpdateDetails(
+          'order-uuid-1',
+          { shippingAddress: newAddress },
+          { expectedUpdatedAt: now },
+        );
 
         // TASK-1020: written as a delivery snapshot, never as a bare address —
         // a legacy order without an NP ref reads as OTHER.
@@ -3279,6 +3283,13 @@ describe('OrderService', () => {
       shippingCostPending: true,
     };
 
+    // Verifier: a delivery edit is always guarded by the version it was
+    // decided on (ORDER_VERSION_REQUIRED otherwise).
+    const edit = (
+      fields: Parameters<OrderService['adminUpdateDetails']>[1],
+      options: { changedBy?: string } = {},
+    ) => service.adminUpdateDetails('order-uuid-1', fields, { expectedUpdatedAt: now, ...options });
+
     const seed = (current: Partial<OrderWithItems>) => {
       orderRepositoryMock.findById.mockResolvedValue(
         makeOrder({ status: OrderStatus.CONFIRMED, ...current }),
@@ -3319,7 +3330,7 @@ describe('OrderService', () => {
         shippingAddress: pickupSnapshot as never,
       } as Partial<OrderWithItems>);
 
-      await service.adminUpdateDetails('order-uuid-1', {
+      await edit({
         shippingAddress: { ...address, firstName: 'Ірина', city: 'typed', address1: 'typed' },
       });
 
@@ -3335,7 +3346,7 @@ describe('OrderService', () => {
     it('keeps the «to be quoted» flag of an OTHER order across a contact edit', async () => {
       seed({ deliveryMethod: 'OTHER', shippingAddress: otherSnapshot as never });
 
-      await service.adminUpdateDetails('order-uuid-1', {
+      await edit({
         shippingAddress: { ...address, phone: '+380671112233' },
       });
 
@@ -3345,12 +3356,9 @@ describe('OrderService', () => {
     it('keeps an NP order’s carrier and refuses to drop its city ref (ref ⇔ not OTHER)', async () => {
       seed({ deliveryMethod: 'NOVA_POSHTA', shippingAddress: npSnapshot as never });
 
-      await refusedWith(
-        service.adminUpdateDetails('order-uuid-1', { shippingAddress: address }),
-        'DELIVERY_NP_CITY_REQUIRED',
-      );
+      await refusedWith(edit({ shippingAddress: address }), 'DELIVERY_NP_CITY_REQUIRED');
 
-      await service.adminUpdateDetails('order-uuid-1', {
+      await edit({
         shippingAddress: { ...npAddress, npCityRef: 'city-ref-2' },
       });
       expect(written().shippingAddress).toEqual({ ...npSnapshot, npCityRef: 'city-ref-2' });
@@ -3359,7 +3367,7 @@ describe('OrderService', () => {
     it('moves an NP order to pickup: point resolved and frozen, NP refs dropped, cost 0', async () => {
       seed({ deliveryMethod: 'NOVA_POSHTA', shippingAddress: npSnapshot as never });
 
-      await service.adminUpdateDetails('order-uuid-1', {
+      await edit({
         deliveryMethod: 'PICKUP',
         pickupPointId: OTHER_POINT_ID,
         shippingAddress: npAddress,
@@ -3389,7 +3397,7 @@ describe('OrderService', () => {
         shippingAddress: pickupSnapshot as never,
       } as Partial<OrderWithItems>);
 
-      await service.adminUpdateDetails('order-uuid-1', { pickupPointId: OTHER_POINT_ID });
+      await edit({ pickupPointId: OTHER_POINT_ID });
 
       expect(written()).toMatchObject({ pickupPointId: OTHER_POINT_ID });
       expect(written().shippingAddress).toMatchObject({
@@ -3405,7 +3413,7 @@ describe('OrderService', () => {
         shippingAddress: pickupSnapshot as never,
       } as Partial<OrderWithItems>);
 
-      await service.adminUpdateDetails('order-uuid-1', {
+      await edit({
         deliveryMethod: 'NOVA_POSHTA',
         shippingAddress: npAddress,
       });
@@ -3422,19 +3430,13 @@ describe('OrderService', () => {
     it('refuses PICKUP without a point', async () => {
       seed({ deliveryMethod: 'NOVA_POSHTA', shippingAddress: npSnapshot as never });
 
-      await refusedWith(
-        service.adminUpdateDetails('order-uuid-1', { deliveryMethod: 'PICKUP' }),
-        'DELIVERY_PICKUP_POINT_REQUIRED',
-      );
+      await refusedWith(edit({ deliveryMethod: 'PICKUP' }), 'DELIVERY_PICKUP_POINT_REQUIRED');
     });
 
     it('refuses a method the shop switched off', async () => {
       seed({ deliveryMethod: 'NOVA_POSHTA', shippingAddress: npSnapshot as never });
 
-      await refusedWith(
-        service.adminUpdateDetails('order-uuid-1', { deliveryMethod: 'COURIER' }),
-        'DELIVERY_METHOD_UNAVAILABLE',
-      );
+      await refusedWith(edit({ deliveryMethod: 'COURIER' }), 'DELIVERY_METHOD_UNAVAILABLE');
     });
 
     it('refuses a move the payment matrix forbids (a card order to OTHER)', async () => {
@@ -3444,16 +3446,13 @@ describe('OrderService', () => {
         shippingAddress: npSnapshot as never,
       } as Partial<OrderWithItems>);
 
-      await refusedWith(
-        service.adminUpdateDetails('order-uuid-1', { deliveryMethod: 'OTHER' }),
-        'DELIVERY_PAYMENT_NOT_ALLOWED',
-      );
+      await refusedWith(edit({ deliveryMethod: 'OTHER' }), 'DELIVERY_PAYMENT_NOT_ALLOWED');
     });
 
     it('books a move to OTHER without a cost as «to be quoted»', async () => {
       seed({ deliveryMethod: 'NOVA_POSHTA', shippingAddress: npSnapshot as never });
 
-      await service.adminUpdateDetails('order-uuid-1', {
+      await edit({
         deliveryMethod: 'OTHER',
         shippingAddress: address,
       });
@@ -3466,18 +3465,14 @@ describe('OrderService', () => {
     it('sets the agreed OTHER cost and clears the «to be quoted» flag', async () => {
       seed({ deliveryMethod: 'OTHER', shippingAddress: otherSnapshot as never });
 
-      await service.adminUpdateDetails(
-        'order-uuid-1',
-        { shippingCost: 180 },
-        { changedBy: ADMIN_ID },
-      );
+      await edit({ shippingCost: 180 }, { changedBy: ADMIN_ID });
 
       const [, w, options] = orderRepositoryMock.updateDetails.mock.calls[0];
       expect(w.shippingCost).toBe(180);
       expect(w).not.toHaveProperty('deliveryMethod');
       expect(w.shippingAddress).toEqual({ ...address, deliveryMethod: 'OTHER', carrier: null });
       // The money write records who quoted it (the ledger's history row).
-      expect(options).toEqual({ changedBy: ADMIN_ID });
+      expect(options).toEqual({ expectedUpdatedAt: now, changedBy: ADMIN_ID });
     });
 
     it.each(['NOVA_POSHTA', 'PICKUP'] as const)(
@@ -3489,24 +3484,40 @@ describe('OrderService', () => {
           shippingAddress: (deliveryMethod === 'PICKUP' ? pickupSnapshot : npSnapshot) as never,
         } as Partial<OrderWithItems>);
 
-        await refusedWith(
-          service.adminUpdateDetails('order-uuid-1', { shippingCost: 50 }),
-          'DELIVERY_SHIPPING_COST_NOT_ALLOWED',
-        );
+        await refusedWith(edit({ shippingCost: 50 }), 'DELIVERY_SHIPPING_COST_NOT_ALLOWED');
       },
     );
+
+    it('refuses a delivery edit without the version it was decided on (400 ORDER_VERSION_REQUIRED)', async () => {
+      seed({ deliveryMethod: 'OTHER', shippingAddress: otherSnapshot as never });
+
+      for (const fields of [
+        { shippingCost: 180 },
+        { deliveryMethod: 'PICKUP' as const, pickupPointId: POINT_ID },
+        { shippingAddress: address },
+      ]) {
+        await expect(service.adminUpdateDetails('order-uuid-1', fields)).rejects.toMatchObject({
+          response: { error: 'ORDER_VERSION_REQUIRED' },
+        });
+      }
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+    });
+
+    it('still takes a waybill or a note without a version', async () => {
+      seed({ deliveryMethod: 'OTHER', shippingAddress: otherSnapshot as never });
+
+      await service.adminUpdateDetails('order-uuid-1', { internalNotes: 'x' });
+
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalled();
+    });
 
     it.each([OrderStatus.SHIPPED, OrderStatus.DELIVERED])(
       'refuses a delivery change once the order is %s',
       async (status) => {
         seed({ status, deliveryMethod: 'OTHER', shippingAddress: otherSnapshot as never });
 
-        await expect(
-          service.adminUpdateDetails('order-uuid-1', { shippingCost: 50 }),
-        ).rejects.toThrow(ConflictException);
-        await expect(
-          service.adminUpdateDetails('order-uuid-1', { deliveryMethod: 'NOVA_POSHTA' }),
-        ).rejects.toThrow(ConflictException);
+        await expect(edit({ shippingCost: 50 })).rejects.toThrow(ConflictException);
+        await expect(edit({ deliveryMethod: 'NOVA_POSHTA' })).rejects.toThrow(ConflictException);
         expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
       },
     );

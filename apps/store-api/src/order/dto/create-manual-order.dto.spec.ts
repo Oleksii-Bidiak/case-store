@@ -48,4 +48,15 @@ describe('CreateManualOrderDto — delivery', () => {
   it.each([-1, 1.005, 100001, '150', Number.NaN])('refuses shipping cost %p', (cost) => {
     expect(errorsFor('shippingCost', cost)).not.toEqual([]);
   });
+
+  // Verifier: `@IsOptional` let null through — an OTHER order was then booked
+  // at 0 ₴ WITHOUT the «to be quoted» flag. Absent means «to be quoted»; null
+  // is not a cost.
+  it('refuses a null shipping cost (omit the field instead)', () => {
+    expect(errorsFor('shippingCost', null)).not.toEqual([]);
+  });
+
+  it('leaves the shipping cost optional when absent', () => {
+    expect(errorsFor('shippingCost', undefined)).toEqual([]);
+  });
 });

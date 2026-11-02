@@ -22,6 +22,13 @@ export const OrderErrorCode = {
   /** The order changed after the client read it — a lost update (edge case E-11). */
   STALE: 'ORDER_STALE',
   /**
+   * A delivery edit (address, method, point, shipping cost) came without the
+   * version the client read (TASK-1973, verifier): the method change, the
+   * matrix verdict and the price are decided from that version, so it must be
+   * the one the write is guarded by.
+   */
+  VERSION_REQUIRED: 'ORDER_VERSION_REQUIRED',
+  /**
    * «Live order + fully refunded money» (B-1 §1), refused from the ORDER
    * side: the order was asked to return to a live status while its payment
    * is recorded as fully REFUNDED (review of plan 180).
@@ -118,6 +125,19 @@ export function staleOrderError(): ConflictException {
   return new ConflictException({
     error: OrderErrorCode.STALE,
     message: 'This order changed since it was loaded — reload and retry',
+  });
+}
+
+/**
+ * 400 for a delivery edit without `expectedUpdatedAt` (TASK-1973). The admin
+ * always sends it; an unguarded delivery edit could re-price an order from a
+ * state that is no longer the stored one.
+ */
+export function orderVersionRequiredError(): BadRequestException {
+  return new BadRequestException({
+    error: OrderErrorCode.VERSION_REQUIRED,
+    message:
+      'A delivery change must carry expectedUpdatedAt — the version of the order it was decided on',
   });
 }
 

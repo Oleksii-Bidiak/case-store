@@ -14308,7 +14308,7 @@
             }
           },
           "400": {
-            "description": "DELIVERY_* — method switched off, payment not admitted, NP without city ref, pickup point missing or inactive, or a shipping cost on a method other than OTHER"
+            "description": "DELIVERY_* — method switched off, payment not admitted, NP without city ref, pickup point missing or inactive, or a shipping cost on a method other than OTHER; ORDER_VERSION_REQUIRED — a delivery edit without expectedUpdatedAt"
           },
           "403": {
             "description": "Forbidden — admin access required"
@@ -31596,7 +31596,7 @@
           },
           "expectedUpdatedAt": {
             "type": "string",
-            "description": "The order's `updatedAt` as the client last read it. When supplied and no longer current, the request is rejected with 409 ORDER_STALE.",
+            "description": "The order's `updatedAt` as the client last read it. When supplied and no longer current, the request is rejected with 409 ORDER_STALE. REQUIRED with any delivery field (shippingAddress, deliveryMethod, pickupPointId, shippingCost) — 400 ORDER_VERSION_REQUIRED otherwise (TASK-1973); optional for a waybill or notes edit.",
             "format": "date-time",
             "example": "2026-07-28T10:15:30.000Z"
           }

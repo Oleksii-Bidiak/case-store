@@ -609,7 +609,8 @@ export class AdminOrderController {
     status: 400,
     description:
       'DELIVERY_* — method switched off, payment not admitted, NP without city ref, pickup point ' +
-      'missing or inactive, or a shipping cost on a method other than OTHER',
+      'missing or inactive, or a shipping cost on a method other than OTHER; ' +
+      'ORDER_VERSION_REQUIRED — a delivery edit without expectedUpdatedAt',
   })
   @ApiResponse({ status: 404, description: 'Order not found' })
   @ApiResponse({ status: 409, description: 'ORDER_STALE — another admin changed this order first' })

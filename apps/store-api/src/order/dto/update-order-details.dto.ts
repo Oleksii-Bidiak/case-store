@@ -143,7 +143,9 @@ export class UpdateOrderDetailsDto {
   @ApiProperty({
     description:
       "The order's `updatedAt` as the client last read it. When supplied and no longer " +
-      'current, the request is rejected with 409 ORDER_STALE.',
+      'current, the request is rejected with 409 ORDER_STALE. REQUIRED with any delivery field ' +
+      '(shippingAddress, deliveryMethod, pickupPointId, shippingCost) — 400 ORDER_VERSION_REQUIRED ' +
+      'otherwise (TASK-1973); optional for a waybill or notes edit.',
     required: false,
     format: 'date-time',
     example: '2026-07-28T10:15:30.000Z',

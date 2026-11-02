@@ -13,6 +13,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { DeliveryMethod, PaymentMethod } from '@prisma/client';
@@ -186,7 +187,9 @@ export class CreateManualOrderDto {
     minimum: 0,
     maximum: 100000,
   })
-  @IsOptional()
+  // Not @IsOptional: it skips null too, and a null cost would book an OTHER
+  // order at 0 ₴ WITHOUT the «to be quoted» flag. Only an ABSENT key is skipped.
+  @ValidateIf((o: CreateManualOrderDto) => o.shippingCost !== undefined)
   @IsNumber({ maxDecimalPlaces: 2, allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(100000)

@@ -3596,6 +3596,25 @@ describe('OrderController (e2e)', () => {
         expect(res.body.error).toBe('DELIVERY_SHIPPING_COST_NOT_ALLOWED');
       });
 
+      it('refuses a null cost at the DTO — omit it for «to be quoted» (400)', async () => {
+        await post({ deliveryMethod: 'OTHER', shippingCost: null }).expect(400);
+
+        expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+      });
+
+      // B-6 §4, locked in (verifier): a legacy phone order with a hand-typed
+      // address and no method is OTHER «to be quoted», like a storefront one.
+      it('books a legacy free-text phone order (no method) as OTHER «to be quoted»', async () => {
+        await post({}).expect(201);
+
+        expect(created()).toMatchObject({ deliveryMethod: 'OTHER', shippingCost: 0 });
+        expect(created().shippingAddress).toMatchObject({
+          deliveryMethod: 'OTHER',
+          carrier: null,
+          shippingCostPending: true,
+        });
+      });
+
       it('refuses a negative cost at the DTO (400)', async () => {
         await post({ deliveryMethod: 'OTHER', shippingCost: -1 }).expect(400);
 
@@ -3610,11 +3629,13 @@ describe('OrderController (e2e)', () => {
         deliveryMethod: 'NOVA_POSHTA',
         carrier: 'NOVA_POSHTA',
       };
+      const VERSION = '2026-01-01T00:00:00.000Z';
+      // A delivery edit carries the version it was decided on (ORDER_VERSION_REQUIRED).
       const patch = (payload: Record<string, unknown>) =>
         request(app.getHttpServer())
           .patch('/api/admin/orders/order-e2e-1')
           .set('Authorization', auth())
-          .send(payload);
+          .send({ expectedUpdatedAt: VERSION, ...payload });
       const written = () =>
         orderRepositoryMock.updateDetails.mock.calls[0]?.[1] as Record<string, unknown> & {
           shippingAddress: Record<string, unknown>;
@@ -3668,8 +3689,21 @@ describe('OrderController (e2e)', () => {
             shippingAddress: { ...validAddress, deliveryMethod: 'OTHER', carrier: null },
             shippingCost: 180,
           },
-          { changedBy: admin.id },
+          { expectedUpdatedAt: new Date(VERSION), changedBy: admin.id },
         );
+      });
+
+      it('refuses a delivery edit without the version it was decided on (400)', async () => {
+        orderRepositoryMock.findById.mockResolvedValue(makeOrder({ deliveryMethod: 'OTHER' }));
+
+        const res = await request(app.getHttpServer())
+          .patch('/api/admin/orders/order-e2e-1')
+          .set('Authorization', auth())
+          .send({ shippingCost: 180 })
+          .expect(400);
+
+        expect(res.body.error).toBe('ORDER_VERSION_REQUIRED');
+        expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
       });
 
       it('refuses a delivery change once the order has shipped (409)', async () => {

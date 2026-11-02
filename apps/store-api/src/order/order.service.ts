@@ -59,6 +59,7 @@ import {
   discountAccountRequiredError,
   paymentAccountRequiredError,
   manualOrderDeliveryPaymentNotAllowedError,
+  orderVersionRequiredError,
   invalidTransitionError,
   reviveRefundedPaymentError,
   staleOrderError,
@@ -1594,6 +1595,8 @@ export class OrderService {
    * @throws NotFoundException when the order does not exist.
    * @throws ConflictException `ORDER_STALE` on a concurrent edit, or when the
    *   address is edited on an order that has already shipped.
+   * @throws BadRequestException `ORDER_VERSION_REQUIRED` for a delivery edit
+   *   (address, method, point, cost) without `expectedUpdatedAt` (TASK-1973).
    */
   async adminUpdateDetails(
     orderId: string,
@@ -1626,6 +1629,12 @@ export class OrderService {
       throw new ConflictException(
         'The delivery address can only be changed before the order ships',
       );
+    }
+    // The method change, the payment-matrix verdict and the price below are all
+    // decided from `existing`; the write must be guarded by that same version,
+    // or a concurrent edit could be re-priced from a state that is gone.
+    if (deliveryEdit && !options.expectedUpdatedAt) {
+      throw orderVersionRequiredError();
     }
 
     const write = deliveryEdit
