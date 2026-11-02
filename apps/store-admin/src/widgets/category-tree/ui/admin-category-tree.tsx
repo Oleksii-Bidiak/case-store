@@ -72,6 +72,8 @@ import {
   CategoryIcon,
   Checkbox,
   DropHintPill,
+  InfoHint,
+  LabelTooltip,
   LiveAnnouncer,
   SortableTree,
   Table,
@@ -1219,20 +1221,21 @@ function CategoryTreeView() {
                 iconOnly
               />
             ) : null}
-            <Button
-              type="button"
-              variant="outline"
-              size="icon-sm"
-              onClick={refresh}
-              disabled={query.isFetching || reorder.isPending}
-              aria-label={dict.common.table.refreshAria}
-              title={dict.common.table.refresh}
-            >
-              <RefreshCwIcon
-                aria-hidden="true"
-                className={cn("size-4", query.isFetching && "animate-spin")}
-              />
-            </Button>
+            <LabelTooltip label={dict.common.table.refresh}>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                onClick={refresh}
+                disabled={query.isFetching || reorder.isPending}
+                aria-label={dict.common.table.refreshAria}
+              >
+                <RefreshCwIcon
+                  aria-hidden="true"
+                  className={cn("size-4", query.isFetching && "animate-spin")}
+                />
+              </Button>
+            </LabelTooltip>
           </div>
         </div>
       </div>
@@ -1318,15 +1321,12 @@ function CategoryTreeView() {
                   {dict.categories.colName}
                 </TableHead>
                 <TableHead hideOnMobile>{dict.categories.colSlug}</TableHead>
-                <TableHead
-                  hideOnMobile
-                  className="text-right"
-                  title={dict.categories.colProductsHint}
-                >
-                  {dict.categories.colProducts}
-                  <span className="sr-only">
-                    {" "}
-                    {dict.categories.colProductsHint}
+                <TableHead hideOnMobile className="text-right">
+                  {/* TASK-1978: «Товарів ⓘ» — the hint opens on hover, focus
+                      and tap, and is the «ⓘ» button's description. */}
+                  <span className="inline-flex items-center gap-1">
+                    {dict.categories.colProducts}
+                    <InfoHint hint={dict.categories.colProductsHint} />
                   </span>
                 </TableHead>
                 <TableHead hideOnMobile>{dict.categories.colStatus}</TableHead>
@@ -1706,12 +1706,13 @@ function CategoryTreeRow({
             ANCESTOR, not something this row's control can change.
           */}
           {hiddenByParent ? (
-            <span
+            // TASK-1978: the WHY is a tappable «ⓘ», not a `title`.
+            <InfoHint
+              hint={t.hiddenByParentHint(hiddenByParent)}
               className="text-xs font-medium whitespace-nowrap text-warning"
-              title={t.hiddenByParentHint(hiddenByParent)}
             >
               {t.hiddenByParent}
-            </span>
+            </InfoHint>
           ) : null}
         </div>
       </TableCell>

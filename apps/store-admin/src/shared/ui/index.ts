@@ -131,7 +131,10 @@ export {
   TooltipTrigger,
   TooltipContent,
   TooltipProvider,
+  LabelTooltip,
 } from "./tooltip";
+// TASK-1978: a chip/status explanation reachable by hover, focus AND tap.
+export { InfoHint, type InfoHintProps } from "./info-hint";
 export { FormActionsBar } from "./form-actions-bar";
 export {
   ReorderUndoButton,

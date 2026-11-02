@@ -30,6 +30,8 @@ import { OrderAccessLinkCard } from "@/features/order-access-link";
 import {
   Badge,
   Button,
+  InfoHint,
+  LabelTooltip,
   RowActionsMenu,
   Separator,
   Stepper,
@@ -233,17 +235,18 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
                 {heading.slice(hashAt)}
               </span>
             </h2>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={d.rowCopyNumber}
-              title={d.rowCopyNumber}
-              className="text-muted-foreground"
-              onClick={() => copyNumber(order)}
-            >
-              <CopyIcon aria-hidden="true" />
-            </Button>
+            <LabelTooltip label={d.rowCopyNumber}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={d.rowCopyNumber}
+                className="text-muted-foreground"
+                onClick={() => copyNumber(order)}
+              >
+                <CopyIcon aria-hidden="true" />
+              </Button>
+            </LabelTooltip>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {/* TASK-1970: «Скасовано · кошти повернено» — a cancelled order
@@ -354,12 +357,13 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
                               lines (`unavailableItemIds`); absent means "not
                               measured", so `?.` renders nothing. */}
                         {order.unavailableItemIds?.includes(item.id) ? (
-                          <Badge
-                            variant="destructive"
-                            title={d.markItemUnavailableHint}
+                          // TASK-1978: tappable «ⓘ» chip, not a `title`.
+                          <InfoHint
+                            badgeVariant="destructive"
+                            hint={d.markItemUnavailableHint}
                           >
                             {d.markItemUnavailable}
-                          </Badge>
+                          </InfoHint>
                         ) : null}
                       </div>
                       {/* TASK-425: the add-ons bought with this line, under

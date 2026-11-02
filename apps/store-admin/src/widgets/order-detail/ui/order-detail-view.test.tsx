@@ -686,6 +686,26 @@ describe("OrderDetailView — the derived marks of B-1 (TASK-470/471/472)", () =
     ).toBeInTheDocument();
   });
 
+  it("explains «Позиція недоступна» on a tap, not in a hover-only title (TASK-1978)", async () => {
+    stub({ unavailableItemIds: ["item-1"] });
+    const user = userEvent.setup();
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    const chip = await screen.findByRole("button", {
+      name: dict.orders.markItemUnavailable,
+    });
+    expect(chip).not.toHaveAttribute("title");
+    expect(chip).toHaveAccessibleDescription(
+      dict.orders.markItemUnavailableHint,
+    );
+
+    await user.click(chip);
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      dict.orders.markItemUnavailableHint,
+    );
+  });
+
   it("leaves a line unmarked when the server measured it and found it fine", async () => {
     stub({ unavailableItemIds: [] });
 

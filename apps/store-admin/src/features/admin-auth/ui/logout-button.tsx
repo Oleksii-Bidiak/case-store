@@ -1,7 +1,7 @@
 "use client";
 
 import { LogOut } from "lucide-react";
-import { Button } from "@/shared/ui";
+import { Button, LabelTooltip } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { useLogout } from "../model/use-logout";
 
@@ -13,16 +13,17 @@ export function LogoutButton() {
   const { logout, isPending } = useLogout();
 
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      aria-label={dict.common.signOut}
-      title={dict.common.signOut}
-      disabled={isPending}
-      onClick={logout}
-    >
-      <LogOut className="size-4" />
-    </Button>
+    <LabelTooltip label={dict.common.signOut}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label={dict.common.signOut}
+        disabled={isPending}
+        onClick={logout}
+      >
+        <LogOut className="size-4" aria-hidden="true" />
+      </Button>
+    </LabelTooltip>
   );
 }

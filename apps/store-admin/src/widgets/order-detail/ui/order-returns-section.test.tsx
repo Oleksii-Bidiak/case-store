@@ -296,9 +296,12 @@ describe("OrderReturnsSection — what each return holds (TASK-1962)", () => {
 
     const row = await findRow("ret00001-aaaa");
     expect(row).toHaveTextContent(returnDecisionLabel("REFUND"));
+    // TASK-1978: a tappable «ⓘ» chip described by the hint, not a `title`.
     expect(
-      within(row).getByText(dict.returns.decisionLegacyMarker),
-    ).toHaveAttribute("title", dict.returns.decisionLegacyHint);
+      within(row).getByRole("button", {
+        name: dict.returns.decisionLegacyMarker,
+      }),
+    ).toHaveAccessibleDescription(dict.returns.decisionLegacyHint);
     expect(row).not.toHaveTextContent(dict.returns.decisionNoReason);
   });
 

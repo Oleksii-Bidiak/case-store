@@ -2,7 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
-import { Button, useConfirmDialog } from "@/shared/ui";
+import { Button, InfoHint, useConfirmDialog } from "@/shared/ui";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
 import {
@@ -106,18 +106,23 @@ export function UserBanToggle({
   };
 
   if (isSelf) {
+    // TASK-1978: a disabled button shows no tooltip on touch (and a native
+    // `title` never did), so the reason sits next to it as a tappable «ⓘ».
+    // The button keeps the reason as its name for a screen reader.
     return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled
-        title={dict.userBan.cannotSelf}
-        aria-label={dict.userBan.cannotSelf}
-        className={className}
-      >
-        {dict.common.deactivate}
-      </Button>
+      <div className={cn("flex items-center gap-2", className)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled
+          aria-label={dict.userBan.cannotSelf}
+          className="flex-1"
+        >
+          {dict.common.deactivate}
+        </Button>
+        <InfoHint hint={dict.userBan.cannotSelf} />
+      </div>
     );
   }
 

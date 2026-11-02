@@ -18,7 +18,7 @@ import {
 } from "@/entities/order";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
-import { Badge } from "@/shared/ui";
+import { Badge, InfoHint } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatDateTime, formatKop } from "@/shared/lib";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
@@ -34,13 +34,13 @@ function decisionReasonOf(rma: ReturnEntity): ReactNode {
   if (rma.decisionReason) return rma.decisionReason;
   if (rma.decisionLegacy) {
     return (
-      <Badge
-        variant="outline"
-        title={d.decisionLegacyHint}
+      <InfoHint
+        badgeVariant="outline"
+        hint={d.decisionLegacyHint}
         className="font-normal text-muted-foreground"
       >
         {d.decisionLegacyMarker}
-      </Badge>
+      </InfoHint>
     );
   }
   return d.decisionNoReason;

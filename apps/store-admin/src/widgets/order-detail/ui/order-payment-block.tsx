@@ -42,7 +42,7 @@ import { useAuth } from "@/entities/session";
 import { RecordReceiptAction } from "@/features/order-money-receipt";
 import { RecordPayoutAction } from "@/features/order-money-payout";
 import { EntryCorrectionAction } from "@/features/order-money-reversal";
-import { Badge, Button } from "@/shared/ui";
+import { Badge, Button, InfoHint } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { cn, formatDateTime, formatKop } from "@/shared/lib";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
@@ -366,10 +366,10 @@ function MoneyChips({
         </Badge>
       ) : null}
       {legacyUnknown ? (
-        <Badge variant="warning" title={m.legacyUnknownHint}>
+        <InfoHint badgeVariant="warning" hint={m.legacyUnknownHint}>
           <TriangleAlertIcon aria-hidden="true" />
           {m.legacyUnknownChip}
-        </Badge>
+        </InfoHint>
       ) : null}
     </div>
   );

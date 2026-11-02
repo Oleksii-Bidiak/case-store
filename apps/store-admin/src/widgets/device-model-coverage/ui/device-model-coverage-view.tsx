@@ -18,6 +18,7 @@ import {
   Button,
   Callout,
   ErrorState,
+  InfoHint,
   Table,
   TableBody,
   TableCell,
@@ -254,9 +255,16 @@ export function DeviceModelCoverageView({
                     </TableHead>
                     {columns.map((column) => (
                       <TableHead key={column.id} className="h-9 text-right">
-                        <abbr title={column.name} className="no-underline">
+                        {/* TASK-1978: the full model name on hover, focus AND
+                            tap — an `<abbr title>` showed it on hover only.
+                            The dotted underline is the abbreviation's cue. */}
+                        <InfoHint
+                          hint={column.name}
+                          hideIcon
+                          className="underline decoration-dotted underline-offset-2"
+                        >
                           {column.short}
-                        </abbr>
+                        </InfoHint>
                       </TableHead>
                     ))}
                   </TableRow>

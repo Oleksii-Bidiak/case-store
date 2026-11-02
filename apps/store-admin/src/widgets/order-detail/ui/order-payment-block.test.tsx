@@ -332,6 +332,10 @@ describe("OrderPaymentBlock — what the money is (R2, TASK-2047)", () => {
 
     expect(await screen.findByText(m.unmatchedRefundChip)).toBeInTheDocument();
     expect(screen.getByText(m.legacyUnknownChip)).toBeInTheDocument();
+    // TASK-1978: the chip's explanation is a tappable «ⓘ», not a `title`.
+    expect(
+      screen.getByRole("button", { name: m.legacyUnknownChip }),
+    ).toHaveAccessibleDescription(m.legacyUnknownHint);
   });
 });
 

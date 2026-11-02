@@ -98,11 +98,22 @@ describe("DeviceModelCoverageView (TASK-1955)", () => {
 
     const table = screen.getByRole("table");
     // Columns: category · this model (short) · bar · siblings (short).
+    const expected = [
+      t.columnCategory,
+      "15 Pro",
+      t.columnShare,
+      "15",
+      "15 Pro Max",
+    ];
+    const headers = within(table).getAllByRole("columnheader");
+    expect(headers).toHaveLength(expected.length);
+    headers.forEach((th, index) =>
+      expect(th).toHaveAccessibleName(expected[index]),
+    );
+    // TASK-1978: a sibling's short name opens its full name on tap too.
     expect(
-      within(table)
-        .getAllByRole("columnheader")
-        .map((th) => th.textContent),
-    ).toEqual([t.columnCategory, "15 Pro", t.columnShare, "15", "15 Pro Max"]);
+      within(headers[4]).getByRole("button", { name: "15 Pro Max" }),
+    ).toHaveAccessibleDescription("iPhone 15 Pro Max");
     const holeRow = within(table).getByRole("row", { name: /Захист камери/ });
     expect(within(holeRow).getAllByRole("cell")[1]).toHaveClass(
       "text-destructive",

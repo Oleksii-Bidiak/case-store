@@ -456,6 +456,9 @@ export const dict = {
       // Rows with a detail panel (wave 198, AuditLogProposal Ж2).
       expandRowAria: (label: string) => `Деталі: ${label}`,
     },
+    // TASK-1978: the accessible name of a bare «ⓘ» (shared/ui/info-hint) —
+    // the explanation itself is its description.
+    infoHintAria: "Пояснення",
   },
 
   // --- Products (TASK-115) ----------------------------------------------------
