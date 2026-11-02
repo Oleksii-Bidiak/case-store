@@ -208,7 +208,11 @@ function OrderDetailsEditor({
   // A 409 conflict or a 403 «немає права» (TASK-622). A 400 — the waybill rule
   // included — is neither and yields null: the conflict check is gated on the
   // status now, so the old `isWaybillRejection` carve-out here is gone.
-  const conflict = orderWriteErrorMessage(updateDetails.error as ApiErrorLike);
+  // A stale refusal whose fresh version could not be fetched has its own line:
+  // the remedy is «Зберегти» again, there is no «Оновити» to point at.
+  const conflict = review.fetchFailed
+    ? dict.orderStatus.staleReviewFetchFailed
+    : orderWriteErrorMessage(updateDetails.error as ApiErrorLike);
 
   // К1/К3: the tracking link appears for a real waybill; the error says how
   // many digits there are now.
@@ -224,6 +228,8 @@ function OrderDetailsEditor({
   };
 
   const onSubmit = (values: OrderDetailsFormValues) => {
+    // A new attempt: drop a «could not fetch» line left by the previous one.
+    review.close();
     updateDetails.mutate(
       {
         orderId: order.id,
@@ -276,20 +282,22 @@ function OrderDetailsEditor({
             // TASK-1972: fetch the colleague's version and put it next to the
             // draft. The token is NOT rebased here — that used to happen before
             // the operator saw anything, and the next save overwrote the
-            // colleague's change. The panel replaces the conflict banner; if
-            // the version cannot be fetched, the banner stays and says so.
+            // colleague's change. The panel answers the refusal; if the version
+            // cannot be fetched, one inline line says to save again — no toast
+            // on top. `begin` ignores an answer that lands after unmount.
             const base = lock.base;
+            updateDetails.reset();
+            const pending = review.begin();
             void fetchFreshOrder(queryClient, order.id)
-              .then((fresh) => {
-                updateDetails.reset();
-                review.open({
+              .then((fresh) =>
+                pending.open({
                   base,
                   draft: form.getValues(),
                   fresh: mapOrderToDetailsValues(fresh),
                   version: fresh.updatedAt,
-                });
-              })
-              .catch(() => toast.error(message ?? dict.orders.detailsFailed));
+                }),
+              )
+              .catch(() => pending.fail());
             return;
           }
           if (message) {

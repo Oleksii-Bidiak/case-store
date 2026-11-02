@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
@@ -115,9 +115,22 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
     rebase: (version, fresh) => lock.rebase(version, fresh),
   });
 
+  // The edit is over — cancelled, saved, or the parcel left pre-shipment: a
+  // colleague's version still on its way must not open a panel over the next,
+  // pristine edit (`close` also disowns the pending fetch).
+  const active = editing && editable;
+  const closeReview = review.close;
+  useEffect(() => {
+    if (!active) closeReview();
+  }, [active, closeReview]);
+
   // 409 → conflict sentence, 403 → «немає права» (TASK-622). A 400 is neither:
   // it used to read as «замовлення змінилося», because any coded body counted.
-  const conflict = orderWriteErrorMessage(updateDetails.error as ApiErrorLike);
+  // A stale refusal whose fresh version could not be fetched has its own line:
+  // the remedy is «Зберегти» again, there is no «Оновити» to point at.
+  const conflict = review.fetchFailed
+    ? dict.orderStatus.staleReviewFetchFailed
+    : orderWriteErrorMessage(updateDetails.error as ApiErrorLike);
 
   if (!editable) {
     return (
@@ -141,6 +154,8 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
   }
 
   const onSubmit = (values: OrderAddressFormValues) => {
+    // A new attempt: drop a «could not fetch» line left by the previous one.
+    review.close();
     updateDetails.mutate(
       {
         orderId: order.id,
@@ -185,18 +200,21 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
             // TASK-1972: fetch the colleague's version and review it next to
             // the draft — never rebase the token here, before the operator has
             // seen it (that is how the second save overwrote the colleague).
+            // The refusal is answered by the panel, or by the inline «save
+            // again» line if the fetch fails — never by a toast on top.
             const base = lock.base;
+            updateDetails.reset();
+            const pending = review.begin();
             void fetchFreshOrder(queryClient, order.id)
-              .then((fresh) => {
-                updateDetails.reset();
-                review.open({
+              .then((fresh) =>
+                pending.open({
                   base,
                   draft: form.getValues(),
                   fresh: mapOrderToAddressValues(fresh),
                   version: fresh.updatedAt,
-                });
-              })
-              .catch(() => toast.error(message ?? dict.orders.detailsFailed));
+                }),
+              )
+              .catch(() => pending.fail());
             return;
           }
           if (message) {
@@ -285,7 +303,6 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
             form.reset(mapOrderToAddressValues(order), {
               keepDirtyValues: false,
             });
-            review.close();
             setEditing(false);
           }}
         >

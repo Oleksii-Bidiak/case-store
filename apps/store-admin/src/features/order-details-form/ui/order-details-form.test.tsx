@@ -388,6 +388,30 @@ describe("OrderDetailsForm — a colleague saved first (TASK-1972)", () => {
     expect(bodies).toHaveLength(1);
   });
 
+  it("says to save again — once, inline — when the colleague's version cannot be fetched", async () => {
+    server.use(
+      http.get(
+        "*/api/admin/orders/:orderId",
+        // The card's own load succeeds; the fetch after the 409 fails.
+        () =>
+          bodies.length === 0
+            ? HttpResponse.json({ data: serverOrder })
+            : HttpResponse.json({ statusCode: 500 }, { status: 500 }),
+      ),
+    );
+    await conflictOn({ internalNotes: COLLEAGUE_NOTE });
+
+    expect(
+      await screen.findByText(dict.orderStatus.staleReviewFetchFailed),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orderStatus.conflict.ORDER_STALE),
+    ).not.toBeInTheDocument();
+    expect(sonnerToast.error).not.toHaveBeenCalled();
+    // Saving again is the way forward: it is not blocked by a review.
+    expect(saveButton()).toBeEnabled();
+  });
+
   it("a colleague's change to an untouched field refreshes it, and the token moves only on «Зрозуміло»", async () => {
     await conflictOn({ trackingNumber: WAYBILL });
 

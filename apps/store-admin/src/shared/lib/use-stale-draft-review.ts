@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /** A flat form of text fields — what both order forms on the card are. */
 export type DraftValues = Record<string, string>;
@@ -39,8 +39,25 @@ export interface StaleDraftReview<T extends DraftValues> {
    * the next save is judged against what they reviewed, and close.
    */
   acknowledge: () => void;
-  /** Drop the review without moving the token (the edit was abandoned). */
+  /**
+   * Drop the review without moving the token (the edit was abandoned), and
+   * disown any version still on its way. Stable across renders.
+   */
   close: () => void;
+  /**
+   * The 409 has landed and the colleague's version is being fetched. The
+   * handle's `open` / `fail` are ignored if, by the time the fetch settles, the
+   * review was closed, a newer attempt began or the form unmounted — a late
+   * answer must not open a panel over an edit that is no longer this one.
+   */
+  begin: () => PendingStaleDraft<T>;
+  /** The colleague's version could not be fetched after the 409. */
+  fetchFailed: boolean;
+}
+
+export interface PendingStaleDraft<T extends DraftValues> {
+  open: StaleDraftReview<T>["open"];
+  fail: () => void;
 }
 
 interface Options<T extends DraftValues> {
@@ -89,6 +106,16 @@ export function useStaleDraftReview<T extends DraftValues>({
   rebase,
 }: Options<T>): StaleDraftReview<T> {
   const [review, setReview] = useState<StaleDraftConflict<T> | null>(null);
+  const [fetchFailed, setFetchFailed] = useState(false);
+  // Which fetch may still answer: bumped by every `begin`, `close` and unmount.
+  const attempt = useRef(0);
+
+  useEffect(
+    () => () => {
+      attempt.current += 1;
+    },
+    [],
+  );
 
   const diverging = review
     ? (Object.keys(review.fresh) as Array<keyof T & string>).filter(
@@ -123,7 +150,25 @@ export function useStaleDraftReview<T extends DraftValues>({
     setReview(null);
   };
 
-  const close = () => setReview(null);
+  const close = useCallback(() => {
+    attempt.current += 1;
+    setReview(null);
+    setFetchFailed(false);
+  }, []);
+
+  const begin = (): PendingStaleDraft<T> => {
+    attempt.current += 1;
+    const mine = attempt.current;
+    setFetchFailed(false);
+    return {
+      open: (conflict) => {
+        if (attempt.current === mine) open(conflict);
+      },
+      fail: () => {
+        if (attempt.current === mine) setFetchFailed(true);
+      },
+    };
+  };
 
   return {
     review,
@@ -133,5 +178,7 @@ export function useStaleDraftReview<T extends DraftValues>({
     takeTheirs,
     acknowledge,
     close,
+    begin,
+    fetchFailed,
   };
 }

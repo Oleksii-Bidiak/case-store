@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw";
+import { toast as sonnerToast } from "sonner";
 import {
   renderWithProviders,
   screen,
@@ -164,7 +165,8 @@ describe("OrderAddressForm — refusals (TASK-622)", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps the conflict sentence when the colleague's version cannot be fetched", async () => {
+  it("says to save again — once, inline — when the colleague's version cannot be fetched", async () => {
+    (sonnerToast.error as jest.Mock).mockClear();
     stubPatch(409, "ORDER_STALE");
     server.use(
       http.get("*/api/admin/orders/:orderId", () =>
@@ -178,17 +180,79 @@ describe("OrderAddressForm — refusals (TASK-622)", () => {
 
     await submitAddress();
 
+    // «Оновити» is gone, so the line names the step that does work: save again
+    // → another 409 → another try at fetching the colleague's version.
     expect(
-      await screen.findByText(dict.orderStatus.conflict.ORDER_STALE),
+      await screen.findByText(dict.orderStatus.staleReviewFetchFailed),
     ).toBeInTheDocument();
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: dict.orders.addressSave }),
-      ).toBeEnabled(),
-    );
+    expect(
+      screen.queryByText(dict.orderStatus.conflict.ORDER_STALE),
+    ).not.toBeInTheDocument();
+    // One message, not a sticky toast on top of the banner.
+    expect(sonnerToast.error).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    ).toBeEnabled();
     expect(
       screen.queryByText(dict.orderStatus.staleReviewTitle),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not open the review on the next edit when the first was cancelled mid-fetch", async () => {
+    stubPatch(409, "ORDER_STALE");
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let fetched = false;
+    server.use(
+      http.get("*/api/admin/orders/:orderId", async () => {
+        fetched = true;
+        await gate;
+        return HttpResponse.json({
+          data: {
+            ...makeOrder("PENDING"),
+            updatedAt: "2026-06-01T10:00:30.000Z",
+            shippingAddress: {
+              ...(makeOrder("PENDING").shippingAddress as object),
+              city: "Odesa",
+            },
+          },
+        });
+      }),
+    );
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Lviv");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+    await waitFor(() => expect(fetched).toBe(true));
+
+    // The operator gives up while the colleague's version is still on its way…
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEditCancel }),
+    );
+    release();
+    // …and it lands after the form closed. The next edit starts clean.
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.orders.addressEdit }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(
+      screen.queryByText(dict.orderStatus.staleReviewTitle),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    ).toBeEnabled();
   });
 });
 
