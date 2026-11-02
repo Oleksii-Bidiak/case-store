@@ -61,7 +61,9 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
     description:
       'Free-text search across order number (id prefix), email and phone — for account AND ' +
       'guest orders (TASK-336). This is what an operator actually has when a customer rings ' +
-      'up: "my order ABC12345", or a phone number. Never a UUID.',
+      'up: "my order ABC12345", or a phone number. Never a UUID. The number may be ' +
+      'pasted as the admin prints it — "#0871A795": surrounding spaces and a leading "#" ' +
+      'are dropped, and the id is matched case-insensitively (TASK-1976).',
     required: false,
     maxLength: 120,
     example: 'ABC12345',
@@ -72,11 +74,18 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
   // Read the ORIGINAL value from `obj` — the same enableImplicitConversion guard
   // the rest of this DTO uses — then trim, and collapse an all-whitespace search
   // to undefined so "no filter" cannot arrive disguised as an empty string.
+  //
+  // TASK-1976: the admin prints an order number as "#0871A795", so that is what
+  // an operator copies back into the search. The leading "#" is presentation,
+  // not part of any id, email or phone — strip it (and any space after it) so
+  // the id arm's `startsWith` sees "0871A795". The repository lowercases that
+  // arm itself and the email/phone arms are case-insensitive or digit-only, so
+  // the case is deliberately left alone here.
   @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
     const raw = obj[key];
     if (typeof raw !== 'string') return undefined;
-    const trimmed = raw.trim();
-    return trimmed === '' ? undefined : trimmed;
+    const normalised = raw.trim().replace(/^#+\s*/, '');
+    return normalised === '' ? undefined : normalised;
   })
   search?: string;
 

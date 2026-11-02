@@ -210,6 +210,43 @@ describe('AdminOrderListQueryDto — the marks compose (TASK-470/471)', () => {
   });
 });
 
+describe('AdminOrderListQueryDto — search normalisation (TASK-1976)', () => {
+  it('strips the leading "#" and surrounding spaces of a pasted order number', async () => {
+    // The admin prints the number as "#0871A795"; the operator copies exactly that.
+    const dto = toDto({ search: '  #0871A795  ' });
+
+    expect(await validate(dto)).toHaveLength(0);
+    // Case is left to the repository — its id arm lowercases, the others ignore case.
+    expect(dto.search).toBe('0871A795');
+  });
+
+  it('strips a space typed between "#" and the number', () => {
+    expect(toDto({ search: '# 0871a795' }).search).toBe('0871a795');
+  });
+
+  it('collapses a lone "#" to no filter at all', () => {
+    expect(toDto({ search: ' # ' }).search).toBeUndefined();
+  });
+
+  it('collapses an all-whitespace search to no filter', () => {
+    expect(toDto({ search: '   ' }).search).toBeUndefined();
+  });
+
+  it('leaves an email untouched apart from the trim', () => {
+    expect(toDto({ search: ' Olena@Example.com ' }).search).toBe('Olena@Example.com');
+  });
+
+  it('leaves a dictated phone number untouched apart from the trim', () => {
+    // Phone normalisation is the repository's job (TASK-466) — the DTO must not
+    // eat the "+" or the spaces the normaliser expects to see.
+    expect(toDto({ search: ' +380 50 111 2233 ' }).search).toBe('+380 50 111 2233');
+  });
+
+  it('keeps a "#" that is not leading', () => {
+    expect(toDto({ search: 'a#b@example.com' }).search).toBe('a#b@example.com');
+  });
+});
+
 describe('AdminOrderExportQueryDto (TASK-425)', () => {
   const toExportDto = (query: Record<string, unknown>): AdminOrderExportQueryDto =>
     plainToInstance(AdminOrderExportQueryDto, query, { enableImplicitConversion: true });

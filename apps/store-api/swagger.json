@@ -13481,7 +13481,7 @@
             "name": "search",
             "required": false,
             "in": "query",
-            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID.",
+            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID. The number may be pasted as the admin prints it — \"#0871A795\": surrounding spaces and a leading \"#\" are dropped, and the id is matched case-insensitively (TASK-1976).",
             "schema": {
               "maxLength": 120,
               "example": "ABC12345",
@@ -13799,7 +13799,7 @@
             "name": "search",
             "required": false,
             "in": "query",
-            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID.",
+            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID. The number may be pasted as the admin prints it — \"#0871A795\": surrounding spaces and a leading \"#\" are dropped, and the id is matched case-insensitively (TASK-1976).",
             "schema": {
               "maxLength": 120,
               "example": "ABC12345",
@@ -14028,7 +14028,7 @@
             "name": "search",
             "required": false,
             "in": "query",
-            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID.",
+            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID. The number may be pasted as the admin prints it — \"#0871A795\": surrounding spaces and a leading \"#\" are dropped, and the id is matched case-insensitively (TASK-1976).",
             "schema": {
               "maxLength": 120,
               "example": "ABC12345",

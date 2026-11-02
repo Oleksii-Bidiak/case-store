@@ -1311,6 +1311,23 @@ describe('OrderController (e2e)', () => {
       );
     });
 
+    it('should search by an order number pasted as "#0871A795" (TASK-1976)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAll.mockResolvedValue({ orders: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders')
+        .query({ search: '  #0871A795 ' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      // The "#" and the spaces never reach the repository, whose id arm then
+      // lowercases "0871A795" for its `startsWith` on the uuid column.
+      expect(orderRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ search: '0871A795' }),
+      );
+    });
+
     it('should return 400 for an unknown payment status (TASK-425)', async () => {
       const token = generateAccessToken(admin.id, admin.role);
 
