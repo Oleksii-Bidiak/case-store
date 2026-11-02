@@ -352,20 +352,11 @@ describe('DashboardRepository — what counts as money still owed (review of pla
     notificationOutbox: { count: jest.fn().mockResolvedValue(0) },
   };
 
-  /**
-   * The `where` of the receivable count — the one carrying both a compound
-   * `paymentStatus` and the terminal-status exclusion, and no `OR` (that one is
-   * the unavailable-items tile).
-   */
+  /** The `where` of the receivable count — the one reading the ledger balance. */
   const receivableWhere = () =>
     orderCount.mock.calls
       .map((call) => call[0].where)
-      .find(
-        (where: Record<string, unknown>) =>
-          !Array.isArray(where.OR) &&
-          typeof where.paymentStatus === 'object' &&
-          where.paymentStatus !== null,
-      );
+      .find((where: Record<string, unknown>) => 'balanceKop' in where);
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -383,12 +374,25 @@ describe('DashboardRepository — what counts as money still owed (review of pla
     repo = module.get(DashboardRepository);
   });
 
-  it('does not treat a partially refunded order as money still owed', async () => {
+  it('counts money still owed from the ledger balance, not from a payment-status list (R2 A4)', async () => {
     await repo.getNeedsAction();
 
-    expect(receivableWhere().paymentStatus).toEqual({
-      notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
-    });
+    expect(receivableWhere().balanceKop).toEqual({ gt: 0 });
+    expect(receivableWhere().paymentStatus).toBeUndefined();
+  });
+
+  it('sums the outstanding balance (kopecks → hryvnias), not the order totals', async () => {
+    orderAggregate.mockResolvedValue({ _sum: { balanceKop: 123_456, total: null } });
+
+    // Private on purpose (one formula behind two tiles); read through the seam.
+    const unrealized = await (
+      repo as unknown as { getUnrealizedRevenue(): Promise<number> }
+    ).getUnrealizedRevenue();
+
+    expect(orderAggregate).toHaveBeenCalledWith(
+      expect.objectContaining({ _sum: { balanceKop: true } }),
+    );
+    expect(unrealized).toBe(1234.56);
   });
 
   it('still excludes orders that have already ended', async () => {

@@ -29,6 +29,8 @@ const order: PublicOrderEntity = {
   shippingCost: "70.00",
   addonsTotal: "0.00",
   total: "668.00",
+  totalKop: 66_800,
+  paidKop: 0,
   delivery: {
     city: "Київ",
     warehouse: "Відділення №12",

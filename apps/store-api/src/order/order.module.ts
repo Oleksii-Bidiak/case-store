@@ -10,6 +10,9 @@ import { OrderRepository } from './order.repository';
 // TASK-483: the public lookup's own narrow query — see its docblock for why it
 // is not a method on OrderRepository.
 import { OrderLookupRepository } from './order-lookup.repository';
+import { OrderMoneyRepository } from './order-money.repository';
+import { OrderMoneyService } from './order-money.service';
+import { AdminOrderMoneyController } from './admin-order-money.controller';
 import { OrderService } from './order.service';
 // TASK-485: the seam the auth side claims guest orders through. Imported here
 // (never the other way round) because this module is the one that IMPLEMENTS it.
@@ -58,6 +61,8 @@ import {
     OrderController,
     GuestOrderNotificationController,
     AdminOrderController,
+    // R2 A3: the order's money from one place — receipts, payouts, reversals.
+    AdminOrderMoneyController,
     ReturnController,
     GuestReturnController,
     AdminReturnController,
@@ -76,6 +81,10 @@ import {
   providers: [
     OrderRepository,
     OrderLookupRepository,
+    // TASK-2047 (R2): the order money ledger — written by the LiqPay path
+    // (A2) and by the operator's money door, OrderMoneyService (A3).
+    OrderMoneyRepository,
+    OrderMoneyService,
     OrderService,
     ReturnRepository,
     ReturnService,

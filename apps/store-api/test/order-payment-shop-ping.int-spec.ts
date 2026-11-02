@@ -11,6 +11,7 @@ import {
 import { randomUUID } from 'crypto';
 import { CacheService } from '../src/cache';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import type { PaymentApplyPlan } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
 import { ProductIndexer } from '../src/search/product-indexer';
@@ -48,6 +49,7 @@ describe('applyPaymentOutcome × the shop ping (integration, TASK-678)', () => {
       providers: [
         PrismaService,
         OrderRepository,
+        OrderMoneyRepository,
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },
         {
           provide: ProductIndexer,
@@ -72,6 +74,7 @@ describe('applyPaymentOutcome × the shop ping (integration, TASK-678)', () => {
   afterAll(async () => {
     if (prisma) {
       await prisma.notificationOutbox.deleteMany({ where: { recipientAddress: chat } });
+      await prisma.orderMoneyEntry.deleteMany({ where: { orderId: { in: createdOrders } } });
       await prisma.payment.deleteMany({ where: { orderId: { in: createdOrders } } });
       await prisma.orderStatusHistory.deleteMany({ where: { orderId: { in: createdOrders } } });
       await prisma.order.deleteMany({ where: { id: { in: createdOrders } } });
@@ -110,7 +113,8 @@ describe('applyPaymentOutcome × the shop ping (integration, TASK-678)', () => {
       settledAt: now,
       failureCode: null,
       failureMessage: null,
-      paymentStatusChange: { from: PaymentStatus.PENDING, to: PaymentStatus.PAID },
+      // R2 A2: a success is a ledger receipt; recompute derives PAID from it.
+      receipt: { amountKop: 129_900, occurredAt: now },
       paidAt: now,
       clearReservation: true,
       stockHold: 'held',
@@ -164,5 +168,6 @@ describe('applyPaymentOutcome × the shop ping (integration, TASK-678)', () => {
     expect(attempt.status).toBe(PaymentAttemptStatus.PENDING);
     expect(await pings(orderId)).toHaveLength(0);
     expect(await prisma.orderStatusHistory.count({ where: { orderId } })).toBe(0);
+    expect(await prisma.orderMoneyEntry.count({ where: { orderId } })).toBe(0);
   });
 });

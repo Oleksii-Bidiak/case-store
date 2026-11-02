@@ -2,27 +2,8 @@ import { ApiProperty } from '@nestjs/swagger';
 import { DeliveryMethod, OrderStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 import { OrderItemEntity } from './order-item.entity';
 import { OrderShippingAddressEntity } from './order-shipping-address.entity';
-import { centsToString, toCents, toTwoDecimals } from '../../addon-service';
+import { centsToString, toTwoDecimals } from '../../addon-service';
 import type { OrderWithItems, ShippingAddressData } from '../order.types';
-
-/**
- * Σ of a set of return `refundedAmount`s, as a two-decimal string (TASK-472).
- *
- * Summed in integer cents, like every other money total in this codebase: three
- * partial refunds of 33.33 must add up to 99.99 and not to 99.99000000000001.
- * A null amount is a return that has not paid anything out yet, and contributes
- * nothing rather than counting as an unknown.
- */
-function sumRefundedAmounts(
-  returns: ReadonlyArray<{ refundedAmount: { toString(): string } | null }>,
-): string {
-  const cents = returns.reduce(
-    (sum, row) => sum + (row.refundedAmount === null ? 0 : toCents(row.refundedAmount)),
-    0,
-  );
-
-  return centsToString(cents);
-}
 
 /**
  * Order-line ids whose product can no longer be supplied (TASK-470) — the
@@ -282,28 +263,62 @@ export class OrderEntity {
 
   /**
    * How much of this order's money has gone back (TASK-472) — the X of the
-   * "Повернуто X з Y" label, where Y is {@link total}.
-   *
-   * DERIVED, never stored: Σ of the `refundedAmount` of this order's return
-   * requests, summed in integer cents at read time. There is no column behind it
-   * on purpose (owner decision B-1, closing paragraph) — a stored copy would have
-   * to be kept in step by every path that touches a return, and the first one
-   * that forgets leaves the order asserting a refund no return supports.
+   * "Повернуто X з Y" label. Since R2 A4 it is the ledger's {@link refundedKop}
+   * as hryvnias (Σ OUT, net of reversals, voided ignored), kept for the admin
+   * panel until it reads the kopeck fields (R2 B2).
    *
    * Absent — not `'0.00'` — on reads that did not join the returns (every
-   * customer-facing path). Absent means "not measured here"; a zero would mean
-   * "measured, nothing came back", and those must not look the same.
+   * customer-facing path), as before.
    */
   @ApiProperty({
     description:
-      'Total refunded across this order\'s return requests, as a string ("X" of "X of Y", ' +
-      'with Y = `total`). Derived at read time from Σ `Return.refundedAmount`; present on ' +
-      'admin responses only.',
+      'Total refunded on this order, as a string ("X" of "Повернуто X з Y"). Since R2 the ' +
+      'ledger total `refundedKop` in hryvnias; present on admin responses only.',
     type: String,
     required: false,
     example: '499.00',
   })
   refundedTotal?: string;
+
+  @ApiProperty({
+    description:
+      'Money received for this order, integer kopecks — Σ IN of the order money ledger, ' +
+      'net of reversals (R2, TASK-2047).',
+    example: 177000,
+  })
+  paidKop!: number;
+
+  @ApiProperty({
+    description:
+      'Money sent back, integer kopecks — Σ OUT of the ledger, net of reversals, voided ' +
+      'ignored; a LiqPay refund counts from the moment it is requested.',
+    example: 0,
+  })
+  refundedKop!: number;
+
+  @ApiProperty({
+    description:
+      "Σ «До повернення» of the order's REFUND-decided returns, integer kopecks: the part " +
+      'of the total the customer no longer owes for goods that came back.',
+    example: 0,
+  })
+  returnCreditKop!: number;
+
+  @ApiProperty({
+    description:
+      'What is still owed, integer kopecks: > 0 the customer owes the shop («Борг»), < 0 ' +
+      'the shop owes the customer («Винні покупцю»). Nothing is due on a CANCELLED order.',
+    example: 0,
+  })
+  balanceKop!: number;
+
+  @ApiProperty({
+    description:
+      'A CANCELLED order whose money (some or all) went back — «Скасовано · кошти ' +
+      'повернено» (TASK-1970). A cancelled order never becomes REFUNDED.',
+    example: false,
+  })
+  refundedAfterCancel!: boolean;
 
   /**
    * Which of this order's lines can no longer be supplied (TASK-470) — see
@@ -515,10 +530,18 @@ export class OrderEntity {
         name: order.guestName ?? '',
       };
     }
-    // TASK-472: only when this read actually joined the returns — see the
-    // field's docblock for why an unmeasured order must not report a zero.
+    // R2 A4 (TASK-2047): the ledger totals, integer kopecks. `?? 0` only for
+    // fixtures that predate the columns (NOT NULL DEFAULT 0 in the schema).
+    entity.paidKop = order.paidKop ?? 0;
+    entity.refundedKop = order.refundedKop ?? 0;
+    entity.returnCreditKop = order.returnCreditKop ?? 0;
+    entity.balanceKop = order.balanceKop ?? 0;
+    // TASK-1970: a cancelled order whose money went back stays CANCELLED.
+    entity.refundedAfterCancel = order.status === OrderStatus.CANCELLED && entity.refundedKop > 0;
+    // TASK-472: only when this read actually joined the returns (admin) — an
+    // unmeasured customer read must not report a zero.
     if (order.returns) {
-      entity.refundedTotal = sumRefundedAmounts(order.returns);
+      entity.refundedTotal = centsToString(entity.refundedKop);
     }
     // TASK-470: undefined when this read did not join the availability columns —
     // see the helper for why an empty array would be a different claim.

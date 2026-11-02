@@ -1,12 +1,11 @@
 import { OrderStatus, PaymentStatus } from '@prisma/client';
 import {
+  DERIVED_REFUNDED_FROM,
   ORDER_TRANSITIONS,
   PAYMENT_TRANSITIONS,
-  allowedPaymentTransitions,
   allowedTransitions,
   canTransition,
   canTransitionPayment,
-  canCorrectPayment,
 } from './order-state-machine';
 
 const ALL_STATUSES = Object.values(OrderStatus);
@@ -93,29 +92,23 @@ describe('order-state-machine (TASK-332)', () => {
       expect(canTransition(from, OrderStatus.CANCELLED)).toBe(true);
     });
 
-    it('allows the terminal pair REFUNDED → CANCELLED', () => {
-      expect(canTransition(OrderStatus.REFUNDED, OrderStatus.CANCELLED)).toBe(true);
+    it('rejects REFUNDED → CANCELLED (REFUNDED is derived and terminal, TASK-1969)', () => {
+      expect(canTransition(OrderStatus.REFUNDED, OrderStatus.CANCELLED)).toBe(false);
     });
   });
 
   // ─── Refund ─────────────────────────────────────────────────────────────────
-  // Money can only come back after it plausibly moved: the goods left the
-  // warehouse, or the order was cancelled after being paid for.
+  // TASK-1969 (R2 A4): REFUNDED is derived from the money ledger
+  // (`OrderMoneyRepository.recompute`), never set by a writer of this table.
 
   describe('refund', () => {
-    it.each([OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED])(
-      'allows %s → REFUNDED',
-      (from) => {
-        expect(canTransition(from, OrderStatus.REFUNDED)).toBe(true);
-      },
-    );
+    it.each(ALL_STATUSES)('rejects %s → REFUNDED (derived, never set by hand)', (from) => {
+      expect(canTransition(from, OrderStatus.REFUNDED)).toBe(false);
+    });
 
-    it.each([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
-      'rejects %s → REFUNDED (nothing shipped, cancel it instead)',
-      (from) => {
-        expect(canTransition(from, OrderStatus.REFUNDED)).toBe(false);
-      },
-    );
+    it('derives REFUNDED only from SHIPPED and DELIVERED', () => {
+      expect([...DERIVED_REFUNDED_FROM]).toEqual([OrderStatus.SHIPPED, OrderStatus.DELIVERED]);
+    });
   });
 
   // ─── Revive ─────────────────────────────────────────────────────────────────
@@ -141,13 +134,7 @@ describe('order-state-machine (TASK-332)', () => {
   // ─── REFUNDED is (almost) terminal ──────────────────────────────────────────
 
   describe('REFUNDED', () => {
-    it.each([
-      OrderStatus.PENDING,
-      OrderStatus.CONFIRMED,
-      OrderStatus.PROCESSING,
-      OrderStatus.SHIPPED,
-      OrderStatus.DELIVERED,
-    ])('rejects REFUNDED → %s (the money is already back with the customer)', (to) => {
+    it.each(ALL_STATUSES)('rejects REFUNDED → %s (only a reversal of a payout undoes it)', (to) => {
       expect(canTransition(OrderStatus.REFUNDED, to)).toBe(false);
     });
   });
@@ -186,7 +173,7 @@ describe('order-state-machine (TASK-332)', () => {
   // A guard against a future edit that strands a status: every status must be
   // reachable from PENDING (where every order starts).
 
-  it('makes every status reachable from PENDING', () => {
+  it('makes every status but the derived REFUNDED reachable from PENDING', () => {
     const seen = new Set<OrderStatus>([OrderStatus.PENDING]);
     const queue: OrderStatus[] = [OrderStatus.PENDING];
 
@@ -199,7 +186,9 @@ describe('order-state-machine (TASK-332)', () => {
       }
     }
 
-    expect([...seen].sort()).toEqual([...ALL_STATUSES].sort());
+    expect([...seen].sort()).toEqual(
+      ALL_STATUSES.filter((status) => status !== OrderStatus.REFUNDED).sort(),
+    );
   });
 });
 
@@ -248,6 +237,11 @@ describe('payment-state-machine (TASK-431)', () => {
     [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
     [PaymentStatus.PAID, PaymentStatus.REFUNDED],
     [PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED],
+    // TASK-2047 (R2): PARTIALLY_PAID is "not fully paid" — the rest may arrive,
+    // or what came in may go back.
+    [PaymentStatus.PARTIALLY_PAID, PaymentStatus.PAID],
+    [PaymentStatus.PARTIALLY_PAID, PaymentStatus.PARTIALLY_REFUNDED],
+    [PaymentStatus.PARTIALLY_PAID, PaymentStatus.REFUNDED],
   ];
 
   it.each(ALLOWED_PAIRS)('allows %s → %s', (from, to) => {
@@ -282,6 +276,17 @@ describe('payment-state-machine (TASK-431)', () => {
     [PaymentStatus.REFUNDED, PaymentStatus.PAID],
     [PaymentStatus.REFUNDED, PaymentStatus.FAILED],
     [PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_REFUNDED],
+    // TASK-2047 (R2): PARTIALLY_PAID is derived from the money ledger only — no
+    // writer of this table may move INTO it, and money in never reverts to
+    // "awaiting" or "declined".
+    [PaymentStatus.PARTIALLY_PAID, PaymentStatus.PARTIALLY_PAID],
+    [PaymentStatus.PARTIALLY_PAID, PaymentStatus.PENDING],
+    [PaymentStatus.PARTIALLY_PAID, PaymentStatus.FAILED],
+    [PaymentStatus.PENDING, PaymentStatus.PARTIALLY_PAID],
+    [PaymentStatus.FAILED, PaymentStatus.PARTIALLY_PAID],
+    [PaymentStatus.PAID, PaymentStatus.PARTIALLY_PAID],
+    [PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.PARTIALLY_PAID],
+    [PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_PAID],
   ];
 
   it.each(FORBIDDEN_PAIRS)('rejects %s → %s', (from, to) => {
@@ -295,72 +300,25 @@ describe('payment-state-machine (TASK-431)', () => {
     expect(named.length).toBe(ALL_PAYMENT_STATUSES.length ** 2);
   });
 
-  // ─── Helpers ────────────────────────────────────────────────────────────────
-
-  describe('allowedPaymentTransitions', () => {
-    it('returns exactly the table row, as a fresh array', () => {
-      const first = allowedPaymentTransitions(PaymentStatus.PAID);
-      const second = allowedPaymentTransitions(PaymentStatus.PAID);
-
-      expect(first).toEqual([...PAYMENT_TRANSITIONS[PaymentStatus.PAID]]);
-      expect(first).not.toBe(second);
-    });
-
-    it('offers nothing at all from REFUNDED (the picker renders an empty list)', () => {
-      expect(allowedPaymentTransitions(PaymentStatus.REFUNDED)).toEqual([]);
-    });
-
-    it('agrees with canTransitionPayment on every ordered pair', () => {
-      for (const from of ALL_PAYMENT_STATUSES) {
-        const allowed = new Set(allowedPaymentTransitions(from));
-        for (const to of ALL_PAYMENT_STATUSES) {
-          expect(canTransitionPayment(from, to)).toBe(allowed.has(to));
-        }
-      }
-    });
-  });
-
   // ─── Reachability ───────────────────────────────────────────────────────────
 
-  it('makes every payment status reachable from PENDING', () => {
+  // PARTIALLY_PAID (TASK-2047) is the one exception: only the money ledger
+  // derives it (`order-money.ts`), never a transition of this table.
+  it('makes every payment status but the ledger-only PARTIALLY_PAID reachable from PENDING', () => {
     const seen = new Set<PaymentStatus>([PaymentStatus.PENDING]);
     const queue: PaymentStatus[] = [PaymentStatus.PENDING];
 
     while (queue.length > 0) {
       const current = queue.shift() as PaymentStatus;
-      for (const next of allowedPaymentTransitions(current)) {
+      for (const next of PAYMENT_TRANSITIONS[current]) {
         if (seen.has(next)) continue;
         seen.add(next);
         queue.push(next);
       }
     }
 
-    expect([...seen].sort()).toEqual([...ALL_PAYMENT_STATUSES].sort());
-  });
-
-  // TASK-620: the correction of a mistaken mark is a SEPARATE rule — rule 4
-  // (REFUNDED is terminal) stays true for every fact-driven writer.
-  describe('canCorrectPayment (TASK-620)', () => {
-    it.each([PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED])(
-      'lets a REFUNDED mark be corrected to %s',
-      (to) => {
-        expect(canCorrectPayment(PaymentStatus.REFUNDED, to)).toBe(true);
-      },
+    expect([...seen].sort()).toEqual(
+      ALL_PAYMENT_STATUSES.filter((status) => status !== PaymentStatus.PARTIALLY_PAID).sort(),
     );
-
-    it('corrects nothing else', () => {
-      for (const from of ALL_PAYMENT_STATUSES) {
-        for (const to of ALL_PAYMENT_STATUSES) {
-          const expected =
-            from === PaymentStatus.REFUNDED &&
-            (to === PaymentStatus.PAID || to === PaymentStatus.PARTIALLY_REFUNDED);
-          expect(canCorrectPayment(from, to)).toBe(expected);
-        }
-      }
-    });
-
-    it('leaves REFUNDED terminal in the fact table', () => {
-      expect(PAYMENT_TRANSITIONS[PaymentStatus.REFUNDED]).toEqual([]);
-    });
   });
 });

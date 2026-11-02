@@ -61,7 +61,18 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   [CreateManualOrderDtoPaymentMethod.ON_DELIVERY]: t.methodOnDelivery,
   [CreateManualOrderDtoPaymentMethod.ONLINE]: t.methodOnline,
   [CreateManualOrderDtoPaymentMethod.INSTALLMENTS]: t.methodInstallments,
+  [CreateManualOrderDtoPaymentMethod.BANK_TRANSFER]: t.methodBankTransfer,
 };
+
+/**
+ * Methods the server takes whatever the delivery (R2): cash on delivery and the
+ * admin-only bank transfer — `ADMIN_DELIVERY_PAYMENT_MATRIX` adds BANK_TRANSFER
+ * to every row. Card and instalments need a quoted Nova Poshta city.
+ */
+const ANY_DELIVERY_METHODS: readonly string[] = [
+  CreateManualOrderDtoPaymentMethod.ON_DELIVERY,
+  CreateManualOrderDtoPaymentMethod.BANK_TRANSFER,
+];
 
 /** Recipient fields the «той самий клієнт» checkbox hides and fills. */
 const RECIPIENT_FIELDS = ["firstName", "lastName", "phone"] as const;
@@ -184,7 +195,7 @@ export function OrderCreateForm() {
   useEffect(() => {
     if (
       onlinePaymentBlocked &&
-      values.paymentMethod !== CreateManualOrderDtoPaymentMethod.ON_DELIVERY
+      !ANY_DELIVERY_METHODS.includes(values.paymentMethod)
     ) {
       // The city lost its directory ref (retyped by hand): fall back to the one
       // method the server will take, rather than keep a choice it will refuse.
@@ -475,7 +486,7 @@ export function OrderCreateForm() {
                 (method) => {
                   const blocked =
                     onlinePaymentBlocked &&
-                    method !== CreateManualOrderDtoPaymentMethod.ON_DELIVERY;
+                    !ANY_DELIVERY_METHODS.includes(method);
                   return {
                     value: method,
                     label: PAYMENT_METHOD_LABELS[method] ?? method,

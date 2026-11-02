@@ -1,6 +1,10 @@
 import * as path from "node:path";
 import { config as loadEnv } from "dotenv";
-import { PrismaClient } from "@prisma/client";
+import {
+  PrismaClient,
+  type OrderStatus,
+  type PaymentStatus,
+} from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import * as argon2 from "argon2";
@@ -25,7 +29,14 @@ loadEnv({ path: path.resolve(__dirname, "../../apps/store-api/.env") });
  *                     — MANAGER holding ONLY `analytics:read` (TASK-692)
  *   - orders:        one PROCESSING + one PENDING (ids below)
  *   - paid order:    one ONLINE + CONFIRMED + PAID order with a SUCCEEDED LiqPay
- *                    attempt of 1299.00 (TASK-371, the payment card)
+ *                    attempt of 1299.00 (TASK-371, the payment card) and the
+ *                    matching LIQPAY_PAYMENT entry in the money journal (R2)
+ *
+ * R2 (TASK-2047): an order's payment status and «Борг» / «Винні покупцю» are
+ * derived from the money journal (`order_money_entries`) into denormalised
+ * columns. A row written straight to `orders` with `paymentStatus: "PAID"` and
+ * no journal entry reads as unpaid — so every seeded order gets its journal
+ * reset and its columns derived by {@link moneyColumns}.
  */
 export const E2E_PRODUCT_SLUG = "test-product";
 /** Category both catalogue fixtures are filed in (TASK-830). */
@@ -92,6 +103,77 @@ const E2E_ORDER_ONLINE_PAID_ITEM_ID = "e2e37111-0000-4000-8000-000000000371";
 export const E2E_PAYMENT_SUCCEEDED_ID = "e2e37121-0000-4000-8000-000000000371";
 /** What the seeded attempt charged — the refund dialog's ceiling. */
 export const E2E_PAYMENT_SUCCEEDED_AMOUNT = "1299.00";
+
+/** "1299.00" → 129900, split as a string: never `1299 * 100` on a float. */
+export function toKop(amount: string): number {
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(amount);
+  if (!match) throw new RangeError(`Not a money amount: "${amount}"`);
+  const [, whole, fraction = ""] = match;
+  return Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+}
+
+/**
+ * The money columns `OrderMoneyRepository.recompute` keeps on an order, for a
+ * fixture written straight to the DB — integer kopecks, mirroring
+ * `derivePaymentStatus` / `deriveBalance` in
+ * `apps/store-api/src/order/order-money.ts` for the subset fixtures use: no
+ * return credit, no failed attempt, no legacy label, never a REFUNDED order.
+ *
+ * Mirrored, not imported: Playwright transpiles an imported store-api file with
+ * the API's own tsconfig, whose `extends` does not resolve from the repo root.
+ * Specs that make their own orders use it too.
+ */
+export function moneyColumns(input: {
+  total: string;
+  status: Exclude<OrderStatus, "REFUNDED">;
+  paidKop?: number;
+  refundedKop?: number;
+}): {
+  paidKop: number;
+  refundedKop: number;
+  returnCreditKop: number;
+  balanceKop: number;
+  paymentStatus: PaymentStatus;
+} {
+  const totalKop = toKop(input.total);
+  const paidKop = input.paidKop ?? 0;
+  const refundedKop = input.refundedKop ?? 0;
+  // A cancelled order is not a debt: what is due on it is 0, money kept is owed back.
+  const dueKop = input.status === "CANCELLED" ? 0 : totalKop;
+  const paymentStatus: PaymentStatus =
+    paidKop <= 0
+      ? "PENDING"
+      : refundedKop <= 0
+        ? paidKop < totalKop
+          ? "PARTIALLY_PAID"
+          : "PAID"
+        : refundedKop >= paidKop
+          ? "REFUNDED"
+          : "PARTIALLY_REFUNDED";
+  return {
+    paidKop,
+    refundedKop,
+    returnCreditKop: 0,
+    balanceKop: dueKop - paidKop + refundedKop,
+    paymentStatus,
+  };
+}
+
+/**
+ * Remove orders' journals. Reversals first: `reversal_of_id` is Restrict, so the
+ * row a reversal points at cannot go before it.
+ */
+export async function clearMoneyEntries(
+  prisma: PrismaClient,
+  orderIds: string[],
+): Promise<void> {
+  await prisma.orderMoneyEntry.deleteMany({
+    where: { orderId: { in: orderIds }, reversalOfId: { not: null } },
+  });
+  await prisma.orderMoneyEntry.deleteMany({
+    where: { orderId: { in: orderIds } },
+  });
+}
 
 export default async function globalSetup(): Promise<void> {
   // The generated client uses the pg driver adapter (see prisma/seed.ts) — a
@@ -256,12 +338,19 @@ export default async function globalSetup(): Promise<void> {
       },
     ];
 
+    await clearMoneyEntries(
+      prisma,
+      orderFixtures.map((fixture) => fixture.id),
+    );
     for (const fixture of orderFixtures) {
       const now = new Date();
+      // Nothing paid yet: «До сплати» is the whole total.
+      const money = moneyColumns({ total: "499.00", status: fixture.status });
       await prisma.order.upsert({
         where: { id: fixture.id },
         update: {
           status: fixture.status,
+          ...money,
           deletedAt: null,
           createdAt: now,
         },
@@ -269,7 +358,7 @@ export default async function globalSetup(): Promise<void> {
           id: fixture.id,
           userId: user.id,
           status: fixture.status,
-          paymentStatus: "PENDING",
+          ...money,
           paymentMethod: "ON_DELIVERY",
           subtotal: "499.00",
           total: "499.00",
@@ -292,11 +381,20 @@ export default async function globalSetup(): Promise<void> {
     // put the rows back to exactly this state, so a hand-made change on the test
     // DB (or a refund callback that somehow landed) cannot leak into the next run.
     const paidAt = new Date(Date.now() - 60 * 60 * 1000);
+    // R2: the payment is a LIQPAY_PAYMENT entry of the attempt's amount; the
+    // columns follow from it (PAID, nothing owed either way).
+    const paidKop = toKop(E2E_PAYMENT_SUCCEEDED_AMOUNT);
+    const paidMoney = moneyColumns({
+      total: E2E_PAYMENT_SUCCEEDED_AMOUNT,
+      status: "CONFIRMED",
+      paidKop,
+    });
+    await clearMoneyEntries(prisma, [E2E_ORDER_ONLINE_PAID_ID]);
     await prisma.order.upsert({
       where: { id: E2E_ORDER_ONLINE_PAID_ID },
       update: {
         status: "CONFIRMED",
-        paymentStatus: "PAID",
+        ...paidMoney,
         paymentMethod: "ONLINE",
         paidAt,
         deletedAt: null,
@@ -305,7 +403,7 @@ export default async function globalSetup(): Promise<void> {
         id: E2E_ORDER_ONLINE_PAID_ID,
         userId: user.id,
         status: "CONFIRMED",
-        paymentStatus: "PAID",
+        ...paidMoney,
         paymentMethod: "ONLINE",
         paidAt,
         subtotal: E2E_PAYMENT_SUCCEEDED_AMOUNT,
@@ -339,6 +437,19 @@ export default async function globalSetup(): Promise<void> {
         currency: "UAH",
         status: "SUCCEEDED",
         settledAt: paidAt,
+      },
+    });
+    // The provider's own row, keyed as the LiqPay callback writes it
+    // (`providerRef: "success"`, unique per attempt).
+    await prisma.orderMoneyEntry.create({
+      data: {
+        orderId: E2E_ORDER_ONLINE_PAID_ID,
+        direction: "IN",
+        kind: "LIQPAY_PAYMENT",
+        amountKop: paidKop,
+        paymentId: E2E_PAYMENT_SUCCEEDED_ID,
+        providerRef: "success",
+        occurredAt: paidAt,
       },
     });
   } finally {

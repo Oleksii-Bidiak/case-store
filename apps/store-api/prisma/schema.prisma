@@ -56,6 +56,10 @@ enum PaymentMethod {
   ONLINE
   ON_DELIVERY
   INSTALLMENTS
+  /// «Переказ на рахунок ФОП» (TASK-2047, R2). Admin-only: the storefront checkout
+  /// refuses it through an allow-list in CreateOrderDto, and it carries no
+  /// reservation deadline (like cash on delivery, the money arrives by hand).
+  BANK_TRANSFER
 }
 
 /// How the order travels to the customer (TASK-642, B-6 decision of 2026-09-15).
@@ -162,6 +166,41 @@ enum PaymentStatus {
   /// `Return.refundedAmount`), never a second column that drifts from the returns.
   PARTIALLY_REFUNDED
   REFUNDED
+  /// Some money came in, but less than the total (TASK-2047, R2). A value of its
+  /// own rather than "PENDING with a note": every reader of PENDING (reservation
+  /// expiry, createCheckout, the storefront timer, awaitingPayment, hasDebt) would
+  /// otherwise charge the full amount a second time. Derived from the money
+  /// ledger (`src/order/order-money.ts`), never set by hand.
+  PARTIALLY_PAID
+}
+
+/// Which way money moved on an order (TASK-2047, R2 ledger).
+enum MoneyDirection {
+  IN
+  OUT
+}
+
+/// What one money-ledger row records (TASK-2047). IN: LIQPAY_PAYMENT (written only
+/// by the provider path, never by hand), COD_NOVA_POSHTA, PAID_AT_POINT,
+/// PAID_TO_COURIER, BANK_TRANSFER. OUT: LIQPAY_REFUND, CASH_REFUND,
+/// TRANSFER_REFUND.
+enum MoneyEntryKind {
+  LIQPAY_PAYMENT
+  COD_NOVA_POSHTA
+  PAID_AT_POINT
+  PAID_TO_COURIER
+  BANK_TRANSFER
+  LIQPAY_REFUND
+  CASH_REFUND
+  TRANSFER_REFUND
+}
+
+/// Provider-side state of a LiqPay refund row (TASK-2047): written REQUESTED before
+/// the provider is asked, CONFIRMED by its callback. A refusal voids the row
+/// (`voidedAt`) instead of deleting it.
+enum MoneyProviderState {
+  REQUESTED
+  CONFIRMED
 }
 
 enum AddressType {
@@ -232,6 +271,13 @@ enum OrderHistoryNote {
   PAID_AFTER_CANCEL
   SHIPPED_UNPAID
   PAYMENT_EVENT_REFUSED
+  /// The R2 money backfill found a PARTIALLY_REFUNDED label with no amount behind
+  /// it anywhere (TASK-2047): no ledger row was invented, the operator is asked to
+  /// record the refund.
+  LEGACY_MONEY_UNKNOWN
+  /// LiqPay reported a refund the shop never requested (made in the provider's
+  /// cabinet, TASK-1500). No money row is written; the operator records it.
+  PROVIDER_REFUND_UNMATCHED
 }
 
 /// Data type of a structured product characteristic (TASK-191, plan 112).
@@ -417,6 +463,8 @@ model User {
   returnDecisionEvents    ReturnDecisionEvent[]      @relation("ReturnDecisionActor")
   /// Repair steps this account recorded (TASK-2045).
   returnRepairEvents      ReturnRepairEvent[]        @relation("ReturnRepairActor")
+  /// Money-ledger rows this account recorded by hand (TASK-2047).
+  moneyEntries            OrderMoneyEntry[]          @relation("OrderMoneyEntryActor")
   /// Messenger chats this account connected (TASK-675) — a SHOP chat records who
   /// connected it (audit only), a CUSTOMER chat whose notifications it receives.
   notificationBindings    NotificationBinding[]
@@ -887,8 +935,23 @@ model Order {
   /// the CUSTOMER typed at checkout and is shown back to them — mixing the two
   /// would leak internal remarks to the buyer.
   internalNotes        String?        @map("internal_notes")
+  /// Money-ledger totals (TASK-2047, R2) in integer kopecks, denormalised from
+  /// OrderMoneyEntry by `OrderMoneyRepository.recompute` inside the transaction
+  /// that wrote the entry, under `SELECT … FOR UPDATE` of this row — never written
+  /// anywhere else. Each direction is net of its reversals; voided rows do not
+  /// count. CHECKs (hand-written in the migration): refunded_kop <= paid_kop,
+  /// paid_kop >= 0, refunded_kop >= 0.
+  paidKop              Int            @default(0) @map("paid_kop")
+  refundedKop          Int            @default(0) @map("refunded_kop")
+  /// Σ Return.creditKop — what is owed back for goods that came back.
+  returnCreditKop      Int            @default(0) @map("return_credit_kop")
+  /// total − returnCredit − paid + refunded: > 0 the customer owes, < 0 the shop
+  /// owes the customer.
+  balanceKop           Int            @default(0) @map("balance_kop")
 
   items         OrderItem[]
+  /// Every money movement on this order (TASK-2047).
+  moneyEntries  OrderMoneyEntry[]
   statusHistory OrderStatusHistory[]
   payments      Payment[]
   returns       Return[]
@@ -951,6 +1014,58 @@ model OrderStatusHistory {
 
   @@index([orderId, changedAt])
   @@map("order_status_history")
+}
+
+/// The order's money ledger (TASK-2047 / TASK-2046 / TASK-951, R2 "payment from one
+/// place", B-12 theme 1): every receipt and every payout, in both directions, in
+/// integer kopecks. Payment status, balance and the "refunded" label are DERIVED
+/// from these rows (`src/order/order-money.ts`); the four totals on Order are a
+/// same-transaction cache of them.
+///
+/// Append-only. A mistake is undone by a REVERSAL row (`reversalOfId`): same
+/// direction and amount as the original, subtracted from its direction, reason
+/// required. A LiqPay refund the provider refused is VOIDED (`voidedAt`) — it
+/// never moved money. Rows are never updated otherwise and never deleted.
+model OrderMoneyEntry {
+  id            String              @id @default(uuid())
+  orderId       String              @map("order_id")
+  /// Restrict: a money row must never vanish with a tidy-up of its order.
+  order         Order               @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  direction     MoneyDirection
+  kind          MoneyEntryKind
+  /// Integer kopecks, CHECK (amount_kop > 0) — the direction carries the sign.
+  amountKop     Int                 @map("amount_kop")
+  /// The return this payout settles, if any.
+  returnId      String?             @map("return_id")
+  returnRequest Return?             @relation(fields: [returnId], references: [id], onDelete: Restrict)
+  /// The LiqPay attempt this row belongs to (LIQPAY_PAYMENT / LIQPAY_REFUND).
+  paymentId     String?             @map("payment_id")
+  payment       Payment?            @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  /// Provider-side discriminator, unique per attempt with `paymentId`, so a
+  /// repeated callback cannot write the same money twice ('success' for the
+  /// payment; the refund request id for a refund).
+  providerRef   String?             @map("provider_ref")
+  providerState MoneyProviderState? @map("provider_state")
+  /// Null for LiqPay/system rows; the operator otherwise.
+  actorId       String?             @map("actor_id")
+  actor         User?               @relation("OrderMoneyEntryActor", fields: [actorId], references: [id], onDelete: SetNull)
+  reason        String?
+  /// Set on a reversal: the row it cancels. Unique — a row is reversed at most once.
+  reversalOfId  String?             @unique @map("reversal_of_id")
+  reversalOf    OrderMoneyEntry?    @relation("OrderMoneyEntryReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversedBy    OrderMoneyEntry?    @relation("OrderMoneyEntryReversal")
+  voidedAt      DateTime?           @map("voided_at")
+  voidReason    String?             @map("void_reason")
+  /// Inferred by the R2 backfill from pre-ledger labels and amounts.
+  legacy        Boolean             @default(false)
+  /// When the money actually moved (may predate `createdAt` for a late record).
+  occurredAt    DateTime            @map("occurred_at")
+  createdAt     DateTime            @default(now()) @map("created_at")
+
+  @@unique([paymentId, providerRef])
+  @@index([orderId, createdAt])
+  @@index([returnId])
+  @@map("order_money_entries")
 }
 
 model OrderItem {
@@ -2279,7 +2394,9 @@ model Payment {
   updatedAt         DateTime             @updatedAt @map("updated_at")
   settledAt         DateTime?            @map("settled_at")
 
-  events PaymentEvent[]
+  events       PaymentEvent[]
+  /// Ledger rows this attempt produced (TASK-2047): its payment and its refunds.
+  moneyEntries OrderMoneyEntry[]
 
   @@index([orderId])
   /// The reconcile worker polls attempts still PENDING past a grace period.
@@ -2310,9 +2427,14 @@ model PaymentEvent {
   /// The decoded callback body. Never the signature and never the raw `data` blob —
   /// those are secrets-adjacent and are redacted from logs too.
   payload           Json
+  /// Extra discriminator for events that legitimately repeat the same provider
+  /// status (TASK-1500, R2): two partial `reversed` callbacks for one payment are
+  /// two refunds, not a retry. Empty string — never NULL — for the same reason as
+  /// `providerPaymentId`.
+  dedupeKey         String   @default("") @map("dedupe_key")
   receivedAt        DateTime @default(now()) @map("received_at")
 
-  @@unique([paymentId, providerStatus, providerPaymentId])
+  @@unique([paymentId, providerStatus, providerPaymentId, dedupeKey])
   @@index([paymentId, receivedAt])
   @@map("payment_events")
 }
@@ -2551,10 +2673,17 @@ model Return {
   /// True when the decision was inferred from the pre-B-12 status by the R1
   /// backfill — no reason and no author were ever recorded for it.
   decisionLegacy   Boolean         @default(false) @map("decision_legacy")
+  /// «До повернення» (TASK-2046, R2): what is owed back for these goods, in
+  /// kopecks — the lines' value minus their share of the promo discount
+  /// (largest-remainder split, `allocateReturnCredit`). Null unless the decision
+  /// is REFUND. The operator may only lower it, with `creditReason`.
+  creditKop        Int?            @map("credit_kop")
+  creditReason     String?         @map("credit_reason")
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
 
   items          ReturnItem[]
+  moneyEntries   OrderMoneyEntry[]
   decisionEvents ReturnDecisionEvent[]
   repairEvents   ReturnRepairEvent[]
 

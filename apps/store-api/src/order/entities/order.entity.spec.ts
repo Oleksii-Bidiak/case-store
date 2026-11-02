@@ -253,3 +253,69 @@ describe('OrderEntity.fromPrisma — pickupPointId (TASK-1023)', () => {
     expect(entity).toHaveProperty('pickupPointId', null);
   });
 });
+
+/**
+ * R2 A4 (TASK-1969 / TASK-1970 / TASK-2047): the order's money comes from the
+ * ledger totals on the row — integer kopecks — and «Скасовано · кошти
+ * повернено» is a fact the entity derives, not a status.
+ */
+describe('OrderEntity.fromPrisma — ledger money (R2 A4)', () => {
+  const ledger = (over: Partial<OrderWithItems> = {}) =>
+    buildOrder({
+      paidKop: 50_000,
+      refundedKop: 0,
+      returnCreditKop: 0,
+      balanceKop: 50_000,
+      ...over,
+    });
+
+  it('carries paid / refunded / return credit / balance in kopecks', () => {
+    const entity = OrderEntity.fromPrisma(
+      ledger({ paidKop: 177_000, refundedKop: 47_222, returnCreditKop: 47_222, balanceKop: -70 }),
+    );
+    expect(entity).toMatchObject({
+      paidKop: 177_000,
+      refundedKop: 47_222,
+      returnCreditKop: 47_222,
+      balanceKop: -70,
+    });
+  });
+
+  it('reads 0 for fixtures without the ledger columns', () => {
+    expect(OrderEntity.fromPrisma(buildOrder())).toMatchObject({
+      paidKop: 0,
+      refundedKop: 0,
+      returnCreditKop: 0,
+      balanceKop: 0,
+      refundedAfterCancel: false,
+    });
+  });
+
+  it('refundedAfterCancel: a CANCELLED order with money sent back (TASK-1970)', () => {
+    const cancelled = { status: OrderStatus.CANCELLED, paidKop: 100_000 };
+    expect(
+      OrderEntity.fromPrisma(ledger({ ...cancelled, refundedKop: 100_000 })).refundedAfterCancel,
+    ).toBe(true);
+    expect(
+      OrderEntity.fromPrisma(ledger({ ...cancelled, refundedKop: 1 })).refundedAfterCancel,
+    ).toBe(true);
+    expect(
+      OrderEntity.fromPrisma(ledger({ ...cancelled, refundedKop: 0 })).refundedAfterCancel,
+    ).toBe(false);
+    expect(
+      OrderEntity.fromPrisma(ledger({ status: OrderStatus.DELIVERED, refundedKop: 100 }))
+        .refundedAfterCancel,
+    ).toBe(false);
+  });
+
+  it('refundedTotal (admin reads that join returns) is the ledger Σ OUT, not Σ Return.refundedAmount', () => {
+    const entity = OrderEntity.fromPrisma(
+      ledger({ refundedKop: 47_222, returns: [{ refundedAmount: { toString: () => '999.00' } }] }),
+    );
+    expect(entity.refundedTotal).toBe('472.22');
+  });
+
+  it('leaves refundedTotal absent on reads that did not join the returns', () => {
+    expect(OrderEntity.fromPrisma(ledger({ refundedKop: 47_222 })).refundedTotal).toBeUndefined();
+  });
+});

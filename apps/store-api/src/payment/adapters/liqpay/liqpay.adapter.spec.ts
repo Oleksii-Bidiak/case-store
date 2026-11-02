@@ -1,6 +1,7 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { PinoLogger } from 'nestjs-pino';
+import { RefundOutcomeUnknownException } from '../../payment.errors';
 import { PaymentOutcome } from '../../payment.types';
 import { LiqPayAdapter } from './liqpay.adapter';
 import { signLiqPayData } from './liqpay.signature';
@@ -232,6 +233,51 @@ describe('LiqPayAdapter', () => {
       expect(event?.providerPaymentId).toBe('');
     });
 
+    // TASK-1500 (R2 A2): two partial refunds of one payment are two `reversed`
+    // callbacks with the same (payment, status, provider id) — the dedupe key is
+    // what keeps the second from being swallowed as a retry of the first.
+    describe('dedupeKey', () => {
+      const reversed = (extra: Record<string, unknown>) => ({
+        order_id: 'pay-1',
+        status: 'reversed',
+        payment_id: 987654,
+        currency: 'UAH',
+        ...extra,
+      });
+
+      it('is "" for every status but reversed', async () => {
+        const event = await buildAdapter().parseCallback(
+          signedCallback({ order_id: 'pay-1', status: 'success', payment_id: 1, amount: 10 }),
+        );
+
+        expect(event?.dedupeKey).toBe('');
+      });
+
+      it('differs for two partial refunds of one payment', async () => {
+        const adapter = buildAdapter();
+        const first = await adapter.parseCallback(
+          signedCallback(reversed({ amount: 200, refund_date_last: 1761990000000 })),
+        );
+        const second = await adapter.parseCallback(
+          signedCallback(reversed({ amount: 300, refund_date_last: 1761993600000 })),
+        );
+
+        expect(first?.dedupeKey).toMatch(/^[0-9a-f]{64}$/);
+        expect(second?.dedupeKey).toMatch(/^[0-9a-f]{64}$/);
+        expect(first?.dedupeKey).not.toBe(second?.dedupeKey);
+      });
+
+      it('is the same for an exact repeat of one refund callback', async () => {
+        const adapter = buildAdapter();
+        const body = reversed({ amount: 200, end_date: 1761990000000, ip: '1.2.3.4' });
+
+        const first = await adapter.parseCallback(signedCallback(body));
+        const repeat = await adapter.parseCallback(signedCallback({ ...body, ip: '5.6.7.8' }));
+
+        expect(repeat?.dedupeKey).toBe(first?.dedupeKey);
+      });
+    });
+
     it('keeps LiqPay error details verbatim for support', async () => {
       const event = await buildAdapter().parseCallback(
         signedCallback({
@@ -434,6 +480,45 @@ describe('LiqPayAdapter', () => {
       await expect(buildAdapter().refund({ paymentId: 'pay-1', amount: '1' })).rejects.toThrow(
         ServiceUnavailableException,
       );
+    });
+
+    // R2 pre-merge review: no readable answer is not a refusal — the refund may
+    // have gone through — so it is a distinct error the caller must not void on.
+    it.each([
+      ['unreachable', () => Promise.reject(new Error('ETIMEDOUT'))],
+      [
+        'a non-2xx answer',
+        () => Promise.resolve({ ok: false, status: 502 } as unknown as Response),
+      ],
+      [
+        'an unparsable body',
+        () =>
+          Promise.resolve({
+            ok: true,
+            json: async () => {
+              throw new SyntaxError('Unexpected token <');
+            },
+          } as unknown as Response),
+      ],
+    ])('reports an unknown outcome when LiqPay is %s', async (_label, fetchImpl) => {
+      jest.spyOn(global, 'fetch').mockImplementation(fetchImpl);
+
+      await expect(
+        buildAdapter().refund({ paymentId: 'pay-1', amount: '1' }),
+      ).rejects.toBeInstanceOf(RefundOutcomeUnknownException);
+    });
+
+    it('does not report an unknown outcome for a refusal LiqPay actually sent', async () => {
+      jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => ({ status: 'error', err_description: 'refund not permitted' }),
+      } as unknown as Response);
+
+      const error = await buildAdapter()
+        .refund({ paymentId: 'pay-1', amount: '1' })
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ServiceUnavailableException);
+      expect(error).not.toBeInstanceOf(RefundOutcomeUnknownException);
     });
   });
 });

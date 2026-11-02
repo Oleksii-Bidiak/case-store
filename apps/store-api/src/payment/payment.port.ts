@@ -87,6 +87,10 @@ export interface PaymentProvider {
    * The refunded state is confirmed by the resulting callback, not by this call's
    * return value — same rule as everywhere else here: the provider's asynchronous
    * notification is what moves our state.
+   *
+   * Throws `RefundOutcomeUnknownException` (payment.errors.ts) when the
+   * provider gave no readable answer — the refund may have happened — and any
+   * other error only for a refusal the provider actually sent.
    */
   refund(params: { paymentId: string; amount: string }): Promise<void>;
 }

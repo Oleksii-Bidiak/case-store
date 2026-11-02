@@ -2,13 +2,18 @@ import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import {
   Prisma,
   DeliveryMethod,
+  MoneyEntryKind,
+  MoneyProviderState,
   OrderStatus,
   PaymentStatus,
   PaymentMethod,
   OrderHistoryChangeType,
   OrderHistoryNote,
 } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma';
+import { OrderMoneyRepository } from './order-money.repository';
+import { deriveBalance, providerRefundAvailableKop, providerRefundMatches } from './order-money';
 import { normalizeUaPhone, phoneDigits } from '../common/validators';
 import {
   CacheService,
@@ -28,6 +33,8 @@ import type {
   PaymentWithOrderRow,
   PaymentApplyPlan,
   ManualOrderParams,
+  ProviderRefundRequest,
+  ProviderRefundRequestInput,
 } from './order.types';
 import type { OrderListQueryDto, AdminOrderListQueryDto, AddressDto } from './dto';
 // The export query is declared beside the list query it narrows, and is not part
@@ -128,20 +135,14 @@ const ADMIN_ORDERS_INCLUDE = {
     select: { id: true, email: true, firstName: true, lastName: true },
   },
   /**
-   * Just the refunded amounts (TASK-472) — never the return rows themselves.
+   * Just the ids (TASK-472, R2 A4) — the marker that this read is an admin one,
+   * so the entity reports `refundedTotal`. The amount is the ledger total
+   * `orders.refunded_kop` since R2 A4 (TASK-2047): the legacy
+   * `Return.refundedAmount` it used to sum is no longer written.
    *
-   * The "Повернуто X з Y" label needs one number per order, Σ `refundedAmount`,
-   * and it is computed ON READ rather than stored: a column holding the same sum
-   * would have to be maintained by every path that touches a return, and the
-   * first one that forgets leaves the order claiming an amount that no return
-   * supports (owner decision B-1, closing paragraph: all five labels are
-   * derived).
-   *
-   * Admin include only. The label belongs to the admin list and order card; the
-   * storefront reads returns through the returns endpoints, so a customer-facing
-   * order read should not pay for this join.
+   * Admin include only. The label belongs to the admin list and order card.
    */
-  returns: { select: { refundedAmount: true } },
+  returns: { select: { id: true } },
 } satisfies Prisma.OrderInclude;
 
 /**
@@ -304,6 +305,27 @@ const TIMED_RESERVATION_METHODS: PaymentMethod[] = [
   PaymentMethod.INSTALLMENTS,
 ];
 
+/** The provider ref of an attempt's receipt — the same key the R2 backfill used. */
+const LIQPAY_RECEIPT_REF = 'success';
+
+/**
+ * What a brand-new order owes (R2 review): the ledger's own rule
+ * (`deriveBalance`) for a PENDING order with no money and no returns yet — i.e.
+ * its total. Written at creation because `balance_kop` defaults to 0, and a
+ * fresh unpaid order at 0 is invisible to «unpaid in transit», «Борг», the
+ * dashboard's unrealized revenue and the money card until a later recompute.
+ * The other three money columns are correctly 0 by default.
+ */
+function openingBalanceKop(total: Prisma.Decimal): number {
+  return deriveBalance({
+    totalKop: toCents(total),
+    returnCreditKop: 0,
+    paidKop: 0,
+    refundedKop: 0,
+    orderStatus: OrderStatus.PENDING,
+  });
+}
+
 @Injectable()
 export class OrderRepository {
   private readonly logger = new Logger(OrderRepository.name);
@@ -312,6 +334,10 @@ export class OrderRepository {
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly productIndexer: ProductIndexer,
+    // TASK-1500 / TASK-2047 (R2 A2): the payment path writes money through the
+    // ledger. Required since A3 — every module that provides this repository
+    // provides the ledger's too.
+    private readonly money: OrderMoneyRepository,
   ) {}
 
   /**
@@ -457,6 +483,7 @@ export class OrderRepository {
           tax: new Prisma.Decimal(0),
           addonsTotal,
           total,
+          balanceKop: openingBalanceKop(total),
           shippingAddress: shippingAddress as unknown as Prisma.InputJsonValue,
           billingAddress: billingAddressColumn(billingAddress),
           notes: notes ?? null,
@@ -627,6 +654,7 @@ export class OrderRepository {
           tax: new Prisma.Decimal(0),
           addonsTotal: new Prisma.Decimal(0),
           total,
+          balanceKop: openingBalanceKop(total),
           shippingAddress: params.shippingAddress as unknown as Prisma.InputJsonValue,
           billingAddress: billingAddressColumn(params.billingAddress),
           notes: params.notes ?? null,
@@ -813,17 +841,16 @@ export class OrderRepository {
     const and: Prisma.OrderWhereInput[] = [];
 
     // TASK-248: active-but-unpaid ("in-transit") deep-link filter — the same
-    // compound condition as DashboardRepository's unrealized-revenue figure, so
-    // the tile's count and the rows behind the click are the same set.
+    // condition as DashboardRepository's unrealized-revenue figure, so the
+    // tile's count and the rows behind the click are the same set.
     //
-    // `PARTIALLY_REFUNDED` sits with `PAID` rather than on the unpaid side
-    // (review of plan 180) — it is only reachable FROM `PAID`, so the money did
-    // arrive and the shop is owed nothing. See the twin's docblock in
-    // `DashboardRepository.unrealizedOrderWhere` for why this differs from the
-    // «Борг» mark below, which deliberately casts a wider net.
+    // R2 A4 (TASK-2047): read from the money ledger — the order still owes
+    // something (`balanceKop > 0`) and has not ended. That covers a partly paid
+    // (PARTIALLY_PAID) order's remainder, which the old payment-status list
+    // could not express, and stops a partly refunded order from looking unpaid.
     if (query.unpaidInTransit) {
       and.push({
-        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+        balanceKop: { gt: 0 },
         status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
       });
     }
@@ -855,10 +882,13 @@ export class OrderRepository {
     // renders. The two are kept identical by the marks being derived on both
     // sides from the same columns, never stored: there is no third copy that can
     // go stale between them.
+    // «Борг» (R2 A4): the goods are with the customer and the ledger says they
+    // still owe — one definition, the same one `balanceKop` gives the order card.
+    // A partly refunded order owes nothing unless its balance says so.
     if (query.hasDebt) {
       and.push({
+        balanceKop: { gt: 0 },
         status: OrderStatus.DELIVERED,
-        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
       });
     }
     // `gt` / `lte` against a single `now` taken here, so the two flags partition
@@ -1026,6 +1056,9 @@ export class OrderRepository {
     // plain transition), not re-read here — see plan 134 Design Decision 4.
     const expectedUpdatedAt = options.expectedUpdatedAt;
     const updated = (await this.prisma.$transaction(async (tx) => {
+      // R2 A4: the order row first — the one lock order every money writer
+      // follows — because the status change re-derives the balance below.
+      await this.money.lockOrder(tx, orderId);
       if (expectedUpdatedAt) {
         const { count } = await tx.order.updateMany({
           where: { id: orderId, updatedAt: expectedUpdatedAt },
@@ -1050,6 +1083,8 @@ export class OrderRepository {
           ...(options.note ? { note: options.note } : {}),
         },
       });
+      // The balance depends on the status (nothing is due on a CANCELLED order).
+      await this.money.recompute(tx, orderId, changedBy);
       return tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: ORDERS_INCLUDE,
@@ -1106,6 +1141,8 @@ export class OrderRepository {
   ): Promise<OrderWithItems> {
     const expectedUpdatedAt = options.expectedUpdatedAt;
     const updated = (await this.prisma.$transaction(async (tx) => {
+      // R2 A4: lock the order row first (orders → products, the money lock order).
+      await this.money.lockOrder(tx, orderId);
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: ORDERS_INCLUDE,
@@ -1181,6 +1218,9 @@ export class OrderRepository {
         },
       });
 
+      // Nothing is due on a cancelled order: money kept on it is owed back.
+      await this.money.recompute(tx, orderId, changedBy);
+
       return tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: ORDERS_INCLUDE,
@@ -1212,6 +1252,8 @@ export class OrderRepository {
   ): Promise<OrderWithItems> {
     const expectedUpdatedAt = options.expectedUpdatedAt;
     const updated = (await this.prisma.$transaction(async (tx) => {
+      // R2 A4: lock the order row first (orders → products, the money lock order).
+      await this.money.lockOrder(tx, orderId);
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: ORDERS_INCLUDE,
@@ -1266,11 +1308,13 @@ export class OrderRepository {
         },
       });
 
-      return tx.order.update({
+      await tx.order.update({
         where: { id: orderId },
         data: { status, paymentStatus, restockedAt: null },
-        include: ORDERS_INCLUDE,
       });
+      // A live order is due again: the balance moves with the status.
+      await this.money.recompute(tx, orderId, changedBy);
+      return tx.order.findUniqueOrThrow({ where: { id: orderId }, include: ORDERS_INCLUDE });
     })) as OrderWithItems;
 
     // Reservation changed position stock — evict the same caches as createFromCart.
@@ -1368,96 +1412,6 @@ export class OrderRepository {
     }
 
     return true;
-  }
-
-  /**
-   * Update an order's payment status. Called by the admin payment action and,
-   * in future, the payment webhook handler (TASK-034).
-   *
-   * TASK-251: converted from a bare update to a $transaction so the change and
-   * its audit-log row commit atomically. A lightweight `select: { paymentStatus }`
-   * read inside the tx captures the fromPaymentStatus for the history row.
-   *
-   * ── `expectedFrom`: the compare-and-set the table needs (review of plan 180) ─
-   * The service validates the move against a status it read in an EARLIER query,
-   * so between the read and this write another operator can land a different
-   * legal move. Both pass validation, the second overwrites the first, and the
-   * pair that actually occurred is one `PAYMENT_TRANSITIONS` forbids — two legal
-   * moves composing into an illegal one. It also leaves a timeline describing a
-   * sequence that never happened, since both history rows record the same `from`.
-   *
-   * So the write is conditional on the status the caller validated against, in
-   * the same spirit as `updateDetails`'s `expectedUpdatedAt` guard — but keyed on
-   * `paymentStatus` rather than `updatedAt`, because that is the column the rule
-   * is about: an unrelated edit to the order must not make a legal payment move
-   * fail. `count === 0` means the premise is gone, and the caller turns that into
-   * the same 409 it would have raised had it read the newer value.
-   *
-   * Optional so a caller that has not validated against a specific `from` (none
-   * today; the webhook has its own planning path) is not forced to invent one.
-   *
-   * @returns null when the row no longer matches `expectedFrom` — nothing written.
-   */
-  async updatePaymentStatus(
-    orderId: string,
-    paymentStatus: PaymentStatus,
-    changedBy: string | null,
-    options: { expectedFrom?: PaymentStatus } = {},
-  ): Promise<OrderWithItems | null> {
-    return (await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.order.findUniqueOrThrow({
-        where: { id: orderId },
-        select: { paymentStatus: true },
-      });
-
-      if (options.expectedFrom !== undefined) {
-        const { count } = await tx.order.updateMany({
-          where: { id: orderId, paymentStatus: options.expectedFrom },
-          data: { paymentStatus },
-        });
-        // Someone else moved the payment between the service's read and this
-        // write. Nothing is written — not even the history row, because a change
-        // that did not take effect is not an event.
-        if (count === 0) return null;
-      } else {
-        await tx.order.update({ where: { id: orderId }, data: { paymentStatus } });
-      }
-
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId,
-          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
-          fromPaymentStatus: existing.paymentStatus,
-          toPaymentStatus: paymentStatus,
-          changedBy,
-        },
-      });
-
-      return tx.order.findUniqueOrThrow({
-        where: { id: orderId },
-        include: ORDERS_INCLUDE,
-      });
-    })) as OrderWithItems | null;
-  }
-
-  /**
-   * Who set the order's newest `toPaymentStatus = status` mark (TASK-620):
-   * `changedBy` is the operator's id, or null for the provider callback and the
-   * reconcile worker. Null when no such row exists.
-   */
-  findLastPaymentMark(
-    orderId: string,
-    status: PaymentStatus,
-  ): Promise<{ changedBy: string | null } | null> {
-    return this.prisma.orderStatusHistory.findFirst({
-      where: {
-        orderId,
-        changeType: OrderHistoryChangeType.PAYMENT_STATUS,
-        toPaymentStatus: status,
-      },
-      orderBy: { changedAt: 'desc' },
-      select: { changedBy: true },
-    });
   }
 
   /**
@@ -1708,10 +1662,29 @@ export class OrderRepository {
   ): Promise<OrderWithItems> {
     let stockMoved = false;
     const applied = (await this.prisma.$transaction(async (tx) => {
+      // R2 (TASK-2047): the ORDER row first, then the attempt — the one lock
+      // order every money writer follows, so a webhook and a manual receipt on
+      // the same order queue up instead of deadlocking.
+      const locked = await this.money.lockOrder(tx, plan.orderId);
+
+      // A receipt this attempt already has: a repeat that slipped past the
+      // PaymentEvent index (two deliveries planned before either committed).
+      // Under the lock the answer is final — change nothing, ping nothing.
+      if (
+        plan.receipt &&
+        (await this.money.findProviderEntry(tx, plan.paymentId, LIQPAY_RECEIPT_REF))
+      ) {
+        return tx.order.findUniqueOrThrow({ where: { id: plan.orderId }, include: ORDERS_INCLUDE });
+      }
+
       await tx.payment.update({
         where: { id: plan.paymentId },
         data: {
-          status: plan.attemptStatus,
+          // A refund plan carries the attempt status read BEFORE the lock: a
+          // `reversed` committed meanwhile may have set REFUNDED, and writing the
+          // stale SUCCEEDED back would undo it. Its status is derived under the
+          // lock by `syncAttemptStatus` instead (R2 pre-merge review).
+          ...(plan.providerRefund ? {} : { status: plan.attemptStatus }),
           ...(plan.providerPaymentId ? { providerPaymentId: plan.providerPaymentId } : {}),
           ...(plan.failureCode !== undefined ? { failureCode: plan.failureCode } : {}),
           ...(plan.failureMessage !== undefined ? { failureMessage: plan.failureMessage } : {}),
@@ -1720,7 +1693,6 @@ export class OrderRepository {
       });
 
       const orderData: Prisma.OrderUpdateManyMutationInput = {};
-      if (plan.paymentStatusChange) orderData.paymentStatus = plan.paymentStatusChange.to;
       if (plan.statusChange) orderData.status = plan.statusChange.to;
       if (plan.paidAt !== undefined) orderData.paidAt = plan.paidAt;
       // Lifting the deadline is unconditional once payment settled: a paid order's
@@ -1740,11 +1712,16 @@ export class OrderRepository {
         // (ORDER_RESERVATION_EXPIRY=release) changes neither status, so without
         // it a release committed after the read would be paid over as if the
         // stock were still held — a paid order holding nothing.
+        //
+        // No plan writes a payment status (recompute derives it), so for a
+        // receipt the payment status is not part of the condition: a manual
+        // receipt that committed first under the same lock must not send the
+        // webhook into a retry loop.
         const { count } = await tx.order.updateMany({
           where: {
             id: plan.orderId,
             status: plan.expected.status,
-            paymentStatus: plan.expected.paymentStatus,
+            ...(plan.receipt ? {} : { paymentStatus: plan.expected.paymentStatus }),
             ...(plan.stockHold === 'held' ? { restockedAt: null } : {}),
             ...(plan.stockHold === 'released' ? { restockedAt: { not: null } } : {}),
           },
@@ -1766,18 +1743,34 @@ export class OrderRepository {
         }
       }
 
-      if (plan.paymentStatusChange) {
-        await tx.orderStatusHistory.create({
-          data: {
-            orderId: plan.orderId,
-            changeType: OrderHistoryChangeType.PAYMENT_STATUS,
-            fromPaymentStatus: plan.paymentStatusChange.from,
-            toPaymentStatus: plan.paymentStatusChange.to,
-            // TASK-619: the flag an operator's list queries (e.g. PAID_AFTER_CANCEL).
-            ...(plan.paymentStatusChange.note ? { note: plan.paymentStatusChange.note } : {}),
-            changedBy: null,
-          },
+      // The money itself (R2 A2). The receipt is the attempt's one IN entry;
+      // recompute derives the payment status and writes its history row.
+      if (plan.receipt) {
+        await this.money.insertEntry(tx, {
+          orderId: plan.orderId,
+          kind: MoneyEntryKind.LIQPAY_PAYMENT,
+          amountKop: plan.receipt.amountKop,
+          paymentId: plan.paymentId,
+          providerRef: LIQPAY_RECEIPT_REF,
+          actorId: null,
+          occurredAt: plan.receipt.occurredAt,
         });
+        await this.money.recompute(
+          tx,
+          plan.orderId,
+          null,
+          plan.receipt.note ? { note: plan.receipt.note } : {},
+        );
+      }
+
+      if (plan.providerRefund) {
+        await this.applyProviderRefund(tx, plan, locked);
+      }
+
+      // A failed attempt (R2 review): the payment status is derived — "the last
+      // attempt FAILED" — from the attempt row written above, never set by hand.
+      if (plan.rederivePaymentStatus) {
+        await this.money.recompute(tx, plan.orderId, null);
       }
 
       // TASK-431: the event asked for a move the payment state machine forbids.
@@ -1829,6 +1822,142 @@ export class OrderRepository {
     if (stockMoved) await this.evictProductCaches(applied.items);
 
     return applied;
+  }
+
+  /**
+   * The `reversed` half of {@link applyPaymentOutcome} (TASK-1500), under the
+   * order lock it already holds. The money is what WE requested, never the
+   * provider's amount — but that amount, when reported, must EQUAL the request
+   * it would confirm (TASK-2336 mitigation): a different one is not confirmed
+   * blindly, it is recorded as unmatched for the operator. Whether LiqPay
+   * reports the single refund or the running total is still unconfirmed.
+   */
+  private async applyProviderRefund(
+    tx: Prisma.TransactionClient,
+    plan: PaymentApplyPlan,
+    locked: { paymentStatus: PaymentStatus },
+  ): Promise<void> {
+    const providerAmountKop = plan.providerRefund?.providerAmountKop ?? null;
+    const oldest = await this.money.findOldestRequestedRefund(tx, plan.paymentId);
+    const matches =
+      oldest !== null &&
+      providerRefundMatches({ requestedKop: oldest.amountKop, providerAmountKop });
+    const confirmed = matches
+      ? await this.money.confirmOldestRequestedRefund(tx, plan.paymentId)
+      : null;
+
+    if (!confirmed) {
+      // Refunded in the LiqPay cabinet — the shop never asked — or for an
+      // amount other than the one it asked for. No money row is invented and
+      // no request is confirmed; the operator records or voids it.
+      // `current → current`, like a refused event, so the chain holds.
+      this.logger.warn(
+        {
+          event: 'payment.refund.unmatched',
+          orderId: plan.orderId,
+          paymentId: plan.paymentId,
+          providerAmountKop,
+          requestedAmountKop: oldest?.amountKop ?? null,
+          requestedEntryId: oldest?.id ?? null,
+        },
+        'Provider refund matches no REQUESTED refund of this attempt; recorded as unmatched',
+      );
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: plan.orderId,
+          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+          fromPaymentStatus: locked.paymentStatus,
+          toPaymentStatus: locked.paymentStatus,
+          note: OrderHistoryNote.PROVIDER_REFUND_UNMATCHED,
+          changedBy: null,
+        },
+      });
+      return;
+    }
+
+    // Derives the payment status AND the order's own REFUNDED (TASK-1969).
+    await this.money.recompute(tx, plan.orderId, null, {});
+    // REFUNDED only once the CONFIRMED refunds cover the receipt — a refund
+    // still REQUESTED may yet be voided, and the attempt must stay refundable.
+    await this.money.syncAttemptStatus(tx, plan.paymentId);
+  }
+
+  /**
+   * Write a LiqPay refund the shop is about to request (TASK-1500 / TASK-2047):
+   * OUT `LIQPAY_REFUND`, `REQUESTED`, with a fresh provider ref, then recompute —
+   * all under the order-row lock, BEFORE the provider is called.
+   *
+   * The entry counts as refunded from this moment (the money is committed to
+   * leave), which is what makes the ceiling hold for a second request racing
+   * this one: it waits on the lock and then sees this entry. The ceiling is
+   * what is left on the attempt, never more than the order's `paid − refunded`
+   * ({@link providerRefundAvailableKop}). Over it, nothing is written and the
+   * caller gets `exceeds`.
+   */
+  requestProviderRefund(input: ProviderRefundRequestInput): Promise<ProviderRefundRequest> {
+    return this.money.transaction(input.orderId, async (tx, locked) => {
+      // R2 A3: the operator's payout rules (freshness, return, order status),
+      // against the same locked numbers this write commits on.
+      if (input.guard) {
+        await input.guard(tx, locked);
+      }
+      const attempt = await this.money.paymentProviderTotals(tx, input.paymentId);
+      const order = await this.money.totalsFromLedger(tx, input.orderId);
+      const availableKop = providerRefundAvailableKop({
+        paymentInKop: attempt.inKop,
+        paymentRefundedKop: attempt.refundedKop,
+        orderPaidKop: order.paidKop,
+        orderRefundedKop: order.refundedKop,
+      });
+      const amountKop = input.amountKop ?? availableKop;
+      if (availableKop <= 0 || amountKop > availableKop) {
+        return { status: 'exceeds', availableKop } as const;
+      }
+
+      const entry = await this.money.insertEntry(tx, {
+        orderId: input.orderId,
+        kind: MoneyEntryKind.LIQPAY_REFUND,
+        amountKop,
+        paymentId: input.paymentId,
+        providerRef: randomUUID(),
+        providerState: MoneyProviderState.REQUESTED,
+        actorId: input.actorId,
+        returnId: input.returnId ?? null,
+        reason: input.reason ?? null,
+      });
+      await this.money.recompute(tx, input.orderId, input.actorId);
+      // A REQUESTED refund counts as paid out, so it may already cover the return.
+      if (input.returnId) {
+        await this.money.syncReturnStatus(tx, input.returnId);
+      }
+      return { status: 'requested', entryId: entry.id, amountKop } as const;
+    });
+  }
+
+  /**
+   * Void a REQUESTED refund the provider refused — it never moved money and
+   * stops counting — and recompute, under the order-row lock. A no-op for an
+   * entry already voided or confirmed.
+   */
+  async voidProviderRefund(
+    orderId: string,
+    entryId: string,
+    reason: string,
+    actorId: string | null,
+  ): Promise<void> {
+    await this.money.transaction(orderId, async (tx) => {
+      if (await this.money.voidEntry(tx, entryId, reason)) {
+        await this.money.recompute(tx, orderId, actorId, { payoutUndone: true });
+        // R2 A3: the payout stops counting — its return may no longer be covered.
+        const entry = await this.money.findEntry(tx, orderId, entryId);
+        if (entry?.returnId) {
+          await this.money.syncReturnStatus(tx, entry.returnId);
+        }
+        if (entry?.paymentId) {
+          await this.money.syncAttemptStatus(tx, entry.paymentId);
+        }
+      }
+    });
   }
 
   /**

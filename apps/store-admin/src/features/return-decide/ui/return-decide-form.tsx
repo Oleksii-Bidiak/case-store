@@ -15,6 +15,10 @@ import {
   useAdminReturnControllerDecide,
   type ReturnEntity,
 } from "@/entities/return";
+import {
+  getAdminOrderControllerFindByIdQueryKey,
+  getAdminOrderMoneyControllerGetQueryKey,
+} from "@/entities/order";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import {
@@ -133,6 +137,14 @@ function ReturnDecideEditor({ rma }: ReturnDecideFormProps) {
             queryKey: getAdminOrderReturnControllerFindForOrderQueryKey(
               rma.orderId,
             ),
+          });
+          // A REFUND decision sets the return's credit and recomputes the
+          // order (new updatedAt): a payout from the stale journal would 409.
+          void queryClient.invalidateQueries({
+            queryKey: getAdminOrderMoneyControllerGetQueryKey(rma.orderId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: getAdminOrderControllerFindByIdQueryKey(rma.orderId),
           });
           form.reset({
             decision: response.data.decision ?? values.decision,

@@ -126,16 +126,31 @@ export const handlers = [
     }),
   ),
 
-  // Legal next PAYMENT statuses (TASK-431). Same reasoning as the handler above:
-  // the payment picker is server-driven now, so every test that mounts
-  // OrderDetailView needs an answer here. The default is the real PENDING row of
-  // `PAYMENT_TRANSITIONS`.
-  http.get("*/api/admin/orders/:orderId/allowed-payment-transitions", () =>
+  // The order's money (R2, TASK-2047) — the «Оплата» block reads it, so every
+  // test that mounts OrderDetailView needs an answer here. Default: an unpaid
+  // 29,99 ₴ cash-on-delivery Nova Poshta order, nothing in the journal — the
+  // `makeOrder` fixtures of the card tests. Override per-test.
+  http.get("*/api/admin/orders/:orderId/money", ({ params }) =>
     HttpResponse.json({
       data: {
-        current: "PENDING",
-        allowed: ["PAID", "FAILED"],
+        orderId: params.orderId,
+        orderStatus: "PENDING",
+        paymentStatus: "PENDING",
+        paymentMethod: "ON_DELIVERY",
+        deliveryMethod: "NOVA_POSHTA",
         updatedAt: "2026-06-01T10:00:00.000Z",
+        totals: {
+          totalKop: 2999,
+          paidKop: 0,
+          refundedKop: 0,
+          returnCreditKop: 0,
+          balanceKop: 2999,
+        },
+        entries: [],
+        allowedInKinds: ["COD_NOVA_POSHTA", "BANK_TRANSFER"],
+        refundablePayments: null,
+        outWithoutReturnMaxKop: 0,
+        returns: [],
       },
     }),
   ),

@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import {
+  MoneyEntryKind,
   OrderStatus,
   PaymentStatus,
   PaymentMethod,
@@ -10,6 +11,7 @@ import {
 } from '@prisma/client';
 import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
 import { OrderRepository } from './order.repository';
+import type { OrderMoneyRepository } from './order-money.repository';
 import { PrismaService } from '../prisma';
 import {
   CacheService,
@@ -35,6 +37,19 @@ const cacheMock = {
 const productIndexerMock = {
   index: jest.fn().mockResolvedValue(undefined),
   remove: jest.fn().mockResolvedValue(undefined),
+};
+
+// ─── OrderMoneyRepository mock (TASK-1500 / TASK-2047, R2 A2) ─────────────────
+
+const moneyMock = {
+  lockOrder: jest.fn(),
+  findProviderEntry: jest.fn(),
+  insertEntry: jest.fn(),
+  recompute: jest.fn(),
+  confirmOldestRequestedRefund: jest.fn(),
+  findOldestRequestedRefund: jest.fn(),
+  syncAttemptStatus: jest.fn(),
+  paymentProviderTotals: jest.fn(),
 };
 
 // ─── Prisma mock ────────────────────────────────────────────────────────────
@@ -180,6 +195,7 @@ describe('OrderRepository', () => {
       prismaMock as unknown as PrismaService,
       cacheMock as unknown as CacheService,
       productIndexerMock as unknown as ProductIndexer,
+      moneyMock as unknown as OrderMoneyRepository,
     );
   });
 
@@ -882,19 +898,22 @@ describe('OrderRepository', () => {
   describe('reviveAndReserve', () => {
     const seedTx = () => {
       const tx = makeTx();
-      tx.order.findUniqueOrThrow.mockResolvedValue({
-        id: 'order-1',
-        status: OrderStatus.CANCELLED,
-        items: [
-          { productId: 'product-uuid-1', quantity: 2, product: { name: 'iPhone 15 Pro Case' } },
-          { productId: 'product-uuid-2', quantity: 1, product: { name: 'Screen Protector' } },
-        ],
-      });
-      tx.order.update.mockResolvedValue({
-        id: 'order-1',
-        status: OrderStatus.PENDING,
-        items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
-      });
+      // First read: the order as it stands; last read (after the R2 A4 recompute):
+      // the revived order the caches are evicted from.
+      tx.order.findUniqueOrThrow
+        .mockResolvedValueOnce({
+          id: 'order-1',
+          status: OrderStatus.CANCELLED,
+          items: [
+            { productId: 'product-uuid-1', quantity: 2, product: { name: 'iPhone 15 Pro Case' } },
+            { productId: 'product-uuid-2', quantity: 1, product: { name: 'Screen Protector' } },
+          ],
+        })
+        .mockResolvedValue({
+          id: 'order-1',
+          status: OrderStatus.PENDING,
+          items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
+        });
       // TASK-627: the restockedAt arbiter claims the row before any stock moves.
       tx.order.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
@@ -950,8 +969,10 @@ describe('OrderRepository', () => {
           paymentStatus: PaymentStatus.PAID,
           restockedAt: null,
         },
-        include: expect.any(Object),
       });
+      // R2 A4: the balance moves with the status, in the same transaction.
+      expect(moneyMock.lockOrder).toHaveBeenCalledWith(tx, 'order-1');
+      expect(moneyMock.recompute).toHaveBeenCalledWith(tx, 'order-1', null);
     });
 
     // ── TASK-251: history row uses the pre-revive status (CANCELLED) as fromStatus ──
@@ -1028,7 +1049,8 @@ describe('OrderRepository', () => {
     describe('promo redemption re-claim (TASK-771)', () => {
       const seedPromoTx = () => {
         const tx = seedTx();
-        tx.order.findUniqueOrThrow.mockResolvedValue({
+        // Every read answers with the promo order (mockReset drops seedTx's queue).
+        tx.order.findUniqueOrThrow.mockReset().mockResolvedValue({
           id: 'order-1',
           userId: 'user-uuid-1',
           discountCode: 'SPRING10',
@@ -1339,90 +1361,85 @@ describe('OrderRepository', () => {
     });
   });
 
-  // ─── updatePaymentStatus — transactional history write (TASK-251) ───────────
+  // ─── requestProviderRefund — the operator's LiqPay payout (R2 A3) ──────────
+  // The order module's payout rules run under the order lock BEFORE the
+  // provider ceiling is read; the entry carries the return and the reason, and
+  // the return's status is re-derived from the REQUESTED payout (it counts).
 
-  describe('updatePaymentStatus', () => {
-    const seedTx = () => {
-      const tx = makeTx();
-      // First call reads the pre-update status for the history row; the last one
-      // re-reads the joined order to return.
-      tx.order.findUniqueOrThrow
-        .mockResolvedValueOnce({ paymentStatus: PaymentStatus.PENDING })
-        .mockResolvedValue({ id: 'order-1', items: [] });
-      tx.order.update.mockResolvedValue({ id: 'order-1', items: [] });
-      tx.order.updateMany.mockResolvedValue({ count: 1 });
-      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
-      return tx;
-    };
+  describe('requestProviderRefund — guarded operator payout (R2 A3)', () => {
+    const locked = { id: 'order-1', totalKop: 100_000 };
+    const tx = { marker: 'tx' };
 
-    it('updates the payment status inside a transaction', async () => {
-      const tx = seedTx();
-
-      await repository.updatePaymentStatus('order-1', PaymentStatus.PAID, 'admin-uuid-1');
-
-      expect(tx.order.update).toHaveBeenCalledWith({
-        where: { id: 'order-1' },
-        data: { paymentStatus: PaymentStatus.PAID },
+    beforeEach(() => {
+      Object.assign(moneyMock, {
+        transaction: jest.fn((_id: string, body: (t: unknown, o: unknown) => unknown) =>
+          body(tx, locked),
+        ),
+        totalsFromLedger: jest.fn().mockResolvedValue({ paidKop: 100_000, refundedKop: 0 }),
+        syncReturnStatus: jest.fn(),
+        voidEntry: jest.fn(),
       });
+      moneyMock.paymentProviderTotals.mockResolvedValue({ inKop: 100_000, refundedKop: 0 });
+      moneyMock.insertEntry.mockResolvedValue({ id: 'entry-1' });
     });
 
-    // ── The compare-and-set (review of plan 180) ──────────────────────────────
-    // The service validates against a status read in an earlier query. Two
-    // operators picking DIFFERENT legal moves in the same second both pass that
-    // validation, and the second write lands on a row the first already moved —
-    // composing two legal moves into a transition the table forbids, and leaving
-    // two history rows that claim the same starting point.
+    it('runs the guard first, writes the return and the reason, and re-derives the return', async () => {
+      const guard = jest.fn().mockResolvedValue(undefined);
 
-    it('pins the write to the status the caller validated against', async () => {
-      const tx = seedTx();
-
-      await repository.updatePaymentStatus('order-1', PaymentStatus.REFUNDED, 'admin-uuid-1', {
-        expectedFrom: PaymentStatus.PAID,
+      const result = await repository.requestProviderRefund({
+        orderId: 'order-1',
+        paymentId: 'pay-1',
+        amountKop: 40_000,
+        actorId: 'admin-1',
+        returnId: 'ret-1',
+        reason: 'повернення',
+        guard,
       });
 
-      expect(tx.order.updateMany).toHaveBeenCalledWith({
-        where: { id: 'order-1', paymentStatus: PaymentStatus.PAID },
-        data: { paymentStatus: PaymentStatus.REFUNDED },
-      });
-      // The unconditional door stays shut when a premise was declared.
-      expect(tx.order.update).not.toHaveBeenCalled();
-    });
-
-    it('writes nothing — not even history — when the premise is gone', async () => {
-      const tx = seedTx();
-      tx.order.updateMany.mockResolvedValue({ count: 0 });
-
-      const result = await repository.updatePaymentStatus(
-        'order-1',
-        PaymentStatus.REFUNDED,
-        'admin-uuid-1',
-        { expectedFrom: PaymentStatus.PAID },
+      expect(result).toEqual({ status: 'requested', entryId: 'entry-1', amountKop: 40_000 });
+      expect(guard).toHaveBeenCalledWith(tx, locked);
+      expect(guard.mock.invocationCallOrder[0]).toBeLessThan(
+        moneyMock.paymentProviderTotals.mock.invocationCallOrder[0],
       );
-
-      expect(result).toBeNull();
-      // A change that did not take effect is not an event.
-      expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+      expect(moneyMock.insertEntry).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({ returnId: 'ret-1', reason: 'повернення', amountKop: 40_000 }),
+      );
+      expect(
+        (moneyMock as unknown as { syncReturnStatus: jest.Mock }).syncReturnStatus,
+      ).toHaveBeenCalledWith(tx, 'ret-1');
     });
 
-    it('writes a PAYMENT_STATUS history row (from pre-update → new) in the same transaction', async () => {
-      const tx = seedTx();
-
-      await repository.updatePaymentStatus('order-1', PaymentStatus.PAID, 'admin-uuid-1');
-
-      // fromPaymentStatus is read from the pre-update row inside the tx.
-      expect(tx.order.findUniqueOrThrow).toHaveBeenCalledWith({
-        where: { id: 'order-1' },
-        select: { paymentStatus: true },
-      });
-      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
-        data: {
+    it('writes nothing when the guard refuses', async () => {
+      const refusal = new Error('refused');
+      await expect(
+        repository.requestProviderRefund({
           orderId: 'order-1',
-          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
-          fromPaymentStatus: PaymentStatus.PENDING,
-          toPaymentStatus: PaymentStatus.PAID,
-          changedBy: 'admin-uuid-1',
-        },
+          paymentId: 'pay-1',
+          amountKop: 1,
+          actorId: 'admin-1',
+          guard: jest.fn().mockRejectedValue(refusal),
+        }),
+      ).rejects.toBe(refusal);
+      expect(moneyMock.insertEntry).not.toHaveBeenCalled();
+    });
+
+    it('re-derives the return when a refused refund is voided', async () => {
+      const money = moneyMock as unknown as {
+        voidEntry: jest.Mock;
+        syncReturnStatus: jest.Mock;
+        findEntry: jest.Mock;
+      };
+      money.voidEntry.mockResolvedValue(true);
+      money.findEntry = jest.fn().mockResolvedValue({ id: 'entry-1', returnId: 'ret-1' });
+
+      await repository.voidProviderRefund('order-1', 'entry-1', 'LiqPay said no', 'admin-1');
+
+      expect(moneyMock.recompute).toHaveBeenCalledWith(tx, 'order-1', 'admin-1', {
+        payoutUndone: true,
       });
+
+      expect(money.syncReturnStatus).toHaveBeenCalledWith(tx, 'ret-1');
     });
   });
 
@@ -1437,6 +1454,14 @@ describe('OrderRepository', () => {
       tx.order.findUniqueOrThrow.mockResolvedValue({ id: 'order-1', items: [] });
       tx.order.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      moneyMock.lockOrder.mockResolvedValue({
+        id: 'order-1',
+        status: OrderStatus.PENDING,
+        paymentStatus: PaymentStatus.PENDING,
+      });
+      moneyMock.findProviderEntry.mockResolvedValue(null);
+      moneyMock.insertEntry.mockResolvedValue({ id: 'entry-1' });
+      moneyMock.recompute.mockResolvedValue({ paymentStatus: PaymentStatus.PAID });
       return tx;
     };
 
@@ -1447,11 +1472,58 @@ describe('OrderRepository', () => {
       attemptStatus: PaymentAttemptStatus.SUCCEEDED,
       providerPaymentId: 'liqpay-9001',
       settledAt: new Date('2026-07-28T10:30:00.000Z'),
-      paymentStatusChange: { from: PaymentStatus.PENDING, to: PaymentStatus.PAID },
+      receipt: { amountKop: 124_900, occurredAt: new Date('2026-07-28T10:30:00.000Z') },
       paidAt: new Date('2026-07-28T10:30:00.000Z'),
       clearReservation: true,
       statusChange: { from: OrderStatus.PENDING, to: OrderStatus.CONFIRMED },
     };
+
+    // ── TASK-1500 / TASK-2047 (R2 A2): the money goes through the ledger ──────
+    it('locks the order row before it touches the payment row (orders → payments)', async () => {
+      const tx = seedTx();
+
+      await repository.applyPaymentOutcome(successPlan);
+
+      expect(moneyMock.lockOrder).toHaveBeenCalledWith(tx, 'order-1');
+      expect(moneyMock.lockOrder.mock.invocationCallOrder[0]).toBeLessThan(
+        tx.payment.update.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('writes the receipt as a LIQPAY_PAYMENT entry and derives the status by recompute', async () => {
+      const tx = seedTx();
+
+      await repository.applyPaymentOutcome(successPlan);
+
+      expect(moneyMock.insertEntry).toHaveBeenCalledWith(tx, {
+        orderId: 'order-1',
+        kind: MoneyEntryKind.LIQPAY_PAYMENT,
+        amountKop: 124_900,
+        paymentId: 'payment-1',
+        providerRef: 'success',
+        actorId: null,
+        occurredAt: successPlan.receipt.occurredAt,
+      });
+      expect(moneyMock.recompute).toHaveBeenCalledWith(tx, 'order-1', null, {});
+      expect(moneyMock.insertEntry.mock.invocationCallOrder[0]).toBeLessThan(
+        moneyMock.recompute.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('does nothing at all when the attempt already has its receipt (a repeat)', async () => {
+      const tx = seedTx();
+      moneyMock.findProviderEntry.mockResolvedValue({ id: 'entry-1' });
+      const onPaid = jest.fn();
+
+      await repository.applyPaymentOutcome(successPlan, onPaid);
+
+      expect(moneyMock.findProviderEntry).toHaveBeenCalledWith(tx, 'payment-1', 'success');
+      expect(tx.payment.update).not.toHaveBeenCalled();
+      expect(tx.order.updateMany).not.toHaveBeenCalled();
+      expect(moneyMock.insertEntry).not.toHaveBeenCalled();
+      expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+      expect(onPaid).not.toHaveBeenCalled();
+    });
 
     it('settles the attempt with the provider id it learned', async () => {
       const tx = seedTx();
@@ -1468,15 +1540,17 @@ describe('OrderRepository', () => {
       });
     });
 
-    it('moves payment status, order status, paidAt and the reservation in ONE conditional order update', async () => {
+    it('moves order status, paidAt and the reservation in ONE conditional order update', async () => {
       const tx = seedTx();
 
       await repository.applyPaymentOutcome(successPlan);
 
+      // The payment status is not in the plan any more — recompute derives it —
+      // and so not in the condition either: a manual receipt that committed
+      // first (under the same order lock) must not make the webhook retry.
       expect(tx.order.updateMany).toHaveBeenCalledWith({
-        where: { id: 'order-1', status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING },
+        where: { id: 'order-1', status: OrderStatus.PENDING },
         data: {
-          paymentStatus: PaymentStatus.PAID,
           status: OrderStatus.CONFIRMED,
           paidAt: successPlan.paidAt,
           // A paid order's reservation is no longer provisional — leaving this set
@@ -1486,20 +1560,12 @@ describe('OrderRepository', () => {
       });
     });
 
-    it('writes both history rows with changedBy null (a callback has no acting user)', async () => {
+    it('writes the STATUS row with changedBy null (a callback has no acting user)', async () => {
       const tx = seedTx();
 
       await repository.applyPaymentOutcome(successPlan);
 
-      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
-        data: {
-          orderId: 'order-1',
-          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
-          fromPaymentStatus: PaymentStatus.PENDING,
-          toPaymentStatus: PaymentStatus.PAID,
-          changedBy: null,
-        },
-      });
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledTimes(1);
       expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
         data: {
           orderId: 'order-1',
@@ -1523,26 +1589,17 @@ describe('OrderRepository', () => {
         expected: { status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PENDING },
         attemptStatus: PaymentAttemptStatus.SUCCEEDED,
         settledAt: successPlan.settledAt,
-        paymentStatusChange: {
-          from: PaymentStatus.PENDING,
-          to: PaymentStatus.PAID,
-          note: OrderHistoryNote.PAID_AFTER_CANCEL,
-        },
+        receipt: { ...successPlan.receipt, note: OrderHistoryNote.PAID_AFTER_CANCEL },
         paidAt: successPlan.paidAt,
         clearReservation: true,
       });
 
-      expect(tx.orderStatusHistory.create).toHaveBeenCalledTimes(1);
-      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
-        data: {
-          orderId: 'order-1',
-          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
-          fromPaymentStatus: PaymentStatus.PENDING,
-          toPaymentStatus: PaymentStatus.PAID,
-          note: OrderHistoryNote.PAID_AFTER_CANCEL,
-          changedBy: null,
-        },
+      // The money is written; the PAYMENT_STATUS row recompute adds carries the note.
+      expect(moneyMock.insertEntry).toHaveBeenCalled();
+      expect(moneyMock.recompute).toHaveBeenCalledWith(tx, 'order-1', null, {
+        note: OrderHistoryNote.PAID_AFTER_CANCEL,
       });
+      expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
       const orderData = (tx.order.updateMany.mock.calls[0][0] as { data: Record<string, unknown> })
         .data;
       expect(orderData).not.toHaveProperty('status');
@@ -1590,12 +1647,8 @@ describe('OrderRepository', () => {
 
       await repository.applyPaymentOutcome(planWithoutStatusMove);
 
-      expect(tx.orderStatusHistory.create).toHaveBeenCalledTimes(1);
-      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ changeType: OrderHistoryChangeType.PAYMENT_STATUS }),
-        }),
-      );
+      expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+      expect(moneyMock.recompute).toHaveBeenCalled();
     });
 
     it('touches the order at all only when the plan changes something on it', async () => {
@@ -1626,17 +1679,161 @@ describe('OrderRepository', () => {
 
       await expect(repository.applyPaymentOutcome(successPlan)).rejects.toThrow(ConflictException);
       expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+      expect(moneyMock.insertEntry).not.toHaveBeenCalled();
     });
 
     it('rolls back everything when a write inside the transaction rejects', async () => {
-      const tx = makeTx();
-      tx.order.updateMany.mockResolvedValue({ count: 1 });
+      const tx = seedTx();
       tx.orderStatusHistory.create.mockRejectedValue(new Error('history insert failed'));
-      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
 
       await expect(repository.applyPaymentOutcome(successPlan)).rejects.toThrow(
         'history insert failed',
       );
+    });
+
+    // ── R2 review: a failed attempt re-derives the payment status ────────────
+    describe('rederivePaymentStatus (a FAILED attempt)', () => {
+      it('writes the attempt first, then recomputes — no hand-written payment status', async () => {
+        const tx = seedTx();
+
+        await repository.applyPaymentOutcome({
+          paymentId: 'payment-1',
+          orderId: 'order-1',
+          expected: { status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING },
+          attemptStatus: PaymentAttemptStatus.FAILED,
+          rederivePaymentStatus: true,
+        });
+
+        expect(tx.payment.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: { status: PaymentAttemptStatus.FAILED } }),
+        );
+        expect(moneyMock.recompute).toHaveBeenCalledWith(tx, 'order-1', null);
+        expect(tx.payment.update.mock.invocationCallOrder[0]).toBeLessThan(
+          moneyMock.recompute.mock.invocationCallOrder[0],
+        );
+        expect(tx.order.updateMany).not.toHaveBeenCalled();
+        expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+      });
+    });
+
+    // ── TASK-1500 (R2 A2): a `reversed` callback confirms what WE requested ──
+    describe('providerRefund', () => {
+      const refundPlan = {
+        paymentId: 'payment-1',
+        orderId: 'order-1',
+        expected: {
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+        },
+        attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+        providerRefund: { providerAmountKop: 40_000 },
+      };
+
+      const seedRefundTx = () => {
+        const tx = seedTx();
+        moneyMock.lockOrder.mockResolvedValue({
+          id: 'order-1',
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+        });
+        moneyMock.findOldestRequestedRefund.mockResolvedValue({
+          id: 'refund-1',
+          amountKop: 40_000,
+        });
+        moneyMock.confirmOldestRequestedRefund.mockResolvedValue({ id: 'refund-1' });
+        moneyMock.recompute.mockResolvedValue({ paymentStatus: PaymentStatus.PARTIALLY_REFUNDED });
+        moneyMock.syncAttemptStatus.mockResolvedValue(PaymentAttemptStatus.SUCCEEDED);
+        return tx;
+      };
+
+      it('confirms the oldest requested refund and recomputes; the order is not moved', async () => {
+        const tx = seedRefundTx();
+
+        await repository.applyPaymentOutcome(refundPlan);
+
+        expect(moneyMock.confirmOldestRequestedRefund).toHaveBeenCalledWith(tx, 'payment-1');
+        expect(moneyMock.recompute).toHaveBeenCalledWith(tx, 'order-1', null, {});
+        expect(tx.order.updateMany).not.toHaveBeenCalled();
+        expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+        expect(moneyMock.insertEntry).not.toHaveBeenCalled();
+      });
+
+      it('re-derives the attempt status from its CONFIRMED refunds, after the recompute', async () => {
+        const tx = seedRefundTx();
+
+        await repository.applyPaymentOutcome(refundPlan);
+
+        // The REFUNDED-or-SUCCEEDED rule lives in `attemptStatusAfterRefunds`;
+        // the attempt is never marked REFUNDED here by hand.
+        expect(moneyMock.syncAttemptStatus).toHaveBeenCalledWith(tx, 'payment-1');
+        expect(moneyMock.recompute.mock.invocationCallOrder[0]).toBeLessThan(
+          moneyMock.syncAttemptStatus.mock.invocationCallOrder[0],
+        );
+        expect(tx.payment.update).not.toHaveBeenCalledWith(
+          expect.objectContaining({ data: { status: PaymentAttemptStatus.REFUNDED } }),
+        );
+        // TASK-1969 (R2 A4): the order's REFUNDED is derived inside recompute
+        // (returns + payouts), never moved here by the callback.
+        expect(tx.order.updateMany).not.toHaveBeenCalled();
+      });
+
+      // R2 pre-merge review: the plan's attemptStatus was read before the lock; a
+      // `reversed` committed meanwhile may have made the attempt REFUNDED.
+      it('never writes the pre-lock attempt status back', async () => {
+        const tx = seedRefundTx();
+
+        await repository.applyPaymentOutcome(refundPlan);
+        await repository.applyPaymentOutcome({
+          ...refundPlan,
+          providerRefund: { providerAmountKop: 30_000 },
+        });
+
+        for (const [call] of (tx.payment.update as jest.Mock).mock.calls as Array<
+          [{ data: Record<string, unknown> }]
+        >) {
+          expect(call.data).not.toHaveProperty('status');
+        }
+      });
+
+      it('a provider amount other than the request is not confirmed — one UNMATCHED row (TASK-2336)', async () => {
+        const tx = seedRefundTx();
+
+        await repository.applyPaymentOutcome({
+          ...refundPlan,
+          providerRefund: { providerAmountKop: 30_000 },
+        });
+
+        expect(moneyMock.confirmOldestRequestedRefund).not.toHaveBeenCalled();
+        expect(moneyMock.recompute).not.toHaveBeenCalled();
+        expect(moneyMock.syncAttemptStatus).not.toHaveBeenCalled();
+        expect(tx.orderStatusHistory.create).toHaveBeenCalledTimes(1);
+        expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ note: OrderHistoryNote.PROVIDER_REFUND_UNMATCHED }),
+        });
+      });
+
+      it('a refund nobody requested writes no money — one PROVIDER_REFUND_UNMATCHED row', async () => {
+        const tx = seedRefundTx();
+        moneyMock.findOldestRequestedRefund.mockResolvedValue(null);
+
+        await repository.applyPaymentOutcome(refundPlan);
+
+        expect(moneyMock.confirmOldestRequestedRefund).not.toHaveBeenCalled();
+        expect(moneyMock.recompute).not.toHaveBeenCalled();
+        expect(moneyMock.insertEntry).not.toHaveBeenCalled();
+        expect(tx.order.updateMany).not.toHaveBeenCalled();
+        expect(tx.orderStatusHistory.create).toHaveBeenCalledTimes(1);
+        expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+          data: {
+            orderId: 'order-1',
+            changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+            fromPaymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+            toPaymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+            note: OrderHistoryNote.PROVIDER_REFUND_UNMATCHED,
+            changedBy: null,
+          },
+        });
+      });
     });
 
     // ── TASK-678: the in-transaction hook that announces a paid online order ──
@@ -1646,11 +1843,7 @@ describe('OrderRepository', () => {
         orderId: 'order-1',
         expected: { status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PENDING },
         attemptStatus: PaymentAttemptStatus.SUCCEEDED,
-        paymentStatusChange: {
-          from: PaymentStatus.PENDING,
-          to: PaymentStatus.PAID,
-          note: OrderHistoryNote.PAID_AFTER_CANCEL,
-        },
+        receipt: { ...successPlan.receipt, note: OrderHistoryNote.PAID_AFTER_CANCEL },
         paidAt: successPlan.paidAt,
         clearReservation: true,
       };
@@ -1691,27 +1884,23 @@ describe('OrderRepository', () => {
           {
             expected: { status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING },
             attemptStatus: PaymentAttemptStatus.FAILED,
-            paymentStatusChange: { from: PaymentStatus.PENDING, to: PaymentStatus.FAILED },
+            rederivePaymentStatus: true as const,
           },
         ],
         [
-          'a REFUNDED event',
+          'a provider refund',
           {
-            expected: { status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID },
-            attemptStatus: PaymentAttemptStatus.REFUNDED,
-            paymentStatusChange: { from: PaymentStatus.PAID, to: PaymentStatus.REFUNDED },
-          },
-        ],
-        [
-          'a refused move',
-          {
-            expected: { status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.REFUNDED },
+            expected: { status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID },
             attemptStatus: PaymentAttemptStatus.SUCCEEDED,
-            refusedPaymentStatusChange: {
-              current: PaymentStatus.REFUNDED,
-              rejected: PaymentStatus.PAID,
-              reason: 'table' as const,
-            },
+            providerRefund: { providerAmountKop: null },
+          },
+        ],
+        [
+          'a second receipt on an order already paid',
+          {
+            expected: { status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID },
+            attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+            receipt: successPlan.receipt,
           },
         ],
         [
@@ -1777,7 +1966,6 @@ describe('OrderRepository', () => {
             where: {
               id: 'order-1',
               status: OrderStatus.PENDING,
-              paymentStatus: PaymentStatus.PENDING,
               restockedAt: null,
             },
           }),
@@ -1847,11 +2035,8 @@ describe('OrderRepository', () => {
         expect(tx.order.update).not.toHaveBeenCalled();
         // The payment still landed.
         expect(tx.payment.update).toHaveBeenCalled();
-        expect(tx.orderStatusHistory.create).toHaveBeenCalledWith(
-          expect.objectContaining({
-            data: expect.objectContaining({ toPaymentStatus: PaymentStatus.PAID }),
-          }),
-        );
+        expect(moneyMock.insertEntry).toHaveBeenCalled();
+        expect(moneyMock.recompute).toHaveBeenCalled();
       });
 
       it('released: evicts product caches only when stock actually moved', async () => {
@@ -2112,11 +2297,11 @@ describe('OrderRepository', () => {
   });
 
   describe('findAll — unpaidInTransit filter (TASK-248)', () => {
-    // "money we still expect" AND status NOT IN (CANCELLED, REFUNDED).
-    // PARTIALLY_REFUNDED sits with PAID: it is only reachable FROM PAID, so the
-    // money arrived and the shop is owed nothing.
+    // R2 A4: "money we still expect" is the ledger balance — balanceKop > 0 —
+    // on an order that has not ended. A partly paid (PARTIALLY_PAID) order is
+    // owed its remainder; a partly refunded one usually nothing.
     const UNPAID_IN_TRANSIT = {
-      paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+      balanceKop: { gt: 0 },
       status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
     };
 
@@ -2135,13 +2320,14 @@ describe('OrderRepository', () => {
       expect(where.deletedAt).toBeNull();
     });
 
-    it('does not count a partially refunded order as unpaid', async () => {
+    it('reads the ledger balance, never a payment-status list (R2 A4)', async () => {
       prismaMock.$transaction.mockResolvedValue([0, []]);
 
       await repository.findAll({ unpaidInTransit: true });
 
       const where = prismaMock.order.count.mock.calls[0][0].where;
-      expect(where.AND[0].paymentStatus.notIn).toContain(PaymentStatus.PARTIALLY_REFUNDED);
+      expect(where.AND[0].balanceKop).toEqual({ gt: 0 });
+      expect(where.AND[0].paymentStatus).toBeUndefined();
     });
 
     it('composes the unpaidInTransit filter with the created-at date range', async () => {
@@ -2436,7 +2622,7 @@ describe('OrderRepository', () => {
       });
 
       expect(where.AND).toContainEqual({
-        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+        balanceKop: { gt: 0 },
         status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
       });
       expect(where.AND).toContainEqual({ paymentStatus: PaymentStatus.PENDING });
@@ -2648,12 +2834,12 @@ describe('OrderRepository', () => {
       jest.useRealTimers();
     });
 
-    it('«Борг» is DELIVERED and paid neither fully nor back', async () => {
+    it('«Борг» is a DELIVERED order with a positive ledger balance (R2 A4)', async () => {
       const where = await whereFor({ hasDebt: true });
 
       expect(where.AND).toContainEqual({
+        balanceKop: { gt: 0 },
         status: OrderStatus.DELIVERED,
-        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
       });
     });
 
@@ -2727,12 +2913,12 @@ describe('OrderRepository', () => {
       const where = await whereFor({ unpaidInTransit: true, hasDebt: true });
 
       expect(where.AND).toContainEqual({
-        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+        balanceKop: { gt: 0 },
         status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
       });
       expect(where.AND).toContainEqual({
+        balanceKop: { gt: 0 },
         status: OrderStatus.DELIVERED,
-        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
       });
     });
 
@@ -2827,35 +3013,6 @@ describe('OrderRepository', () => {
       await expect(repository.claimGuestOrders('user-uuid-1', 'guest@example.com')).resolves.toBe(
         2,
       );
-    });
-  });
-
-  // ─── TASK-620: who set the latest payment mark ──────────────────────────────
-
-  describe('findLastPaymentMark', () => {
-    it('reads the newest PAYMENT_STATUS row that set the given status', async () => {
-      prismaMock.orderStatusHistory.findFirst.mockResolvedValue({ changedBy: 'admin-7' });
-
-      const mark = await repository.findLastPaymentMark('order-1', PaymentStatus.REFUNDED);
-
-      expect(prismaMock.orderStatusHistory.findFirst).toHaveBeenCalledWith({
-        where: {
-          orderId: 'order-1',
-          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
-          toPaymentStatus: PaymentStatus.REFUNDED,
-        },
-        orderBy: { changedAt: 'desc' },
-        select: { changedBy: true },
-      });
-      expect(mark).toEqual({ changedBy: 'admin-7' });
-    });
-
-    it('is null when no such row exists', async () => {
-      prismaMock.orderStatusHistory.findFirst.mockResolvedValue(null);
-
-      await expect(
-        repository.findLastPaymentMark('order-1', PaymentStatus.REFUNDED),
-      ).resolves.toBeNull();
     });
   });
 

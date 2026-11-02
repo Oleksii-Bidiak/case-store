@@ -24,10 +24,11 @@ import { OrderStatus, PaymentStatus } from '@prisma/client';
  *   PENDING ─→ CONFIRMED ─→ PROCESSING ─→ SHIPPED ─→ DELIVERED
  *      └───────────┴─────────────┴───────────┴──────────┘
  *                            ↓ (any)
- *                        CANCELLED ⇄ REFUNDED
- *                            │            ↑
- *                            └─ revive ─┐ │
- *                    (PENDING/CONFIRMED/PROCESSING)
+ *                        CANCELLED
+ *                            │
+ *                            └─ revive ─→ (PENDING/CONFIRMED/PROCESSING)
+ *
+ *   REFUNDED is in nobody's row — see {@link DERIVED_REFUNDED_FROM}.
  *
  * Four rules produce it:
  *
@@ -39,9 +40,11 @@ import { OrderStatus, PaymentStatus } from '@prisma/client';
  *     DELIVERED → CANCELLED is allowed. What differs by source status is whether
  *     stock comes back automatically — that decision belongs to
  *     `shouldAutoRestock` in the service, not here.
- *  3. **Refund only after the goods or the money moved.** SHIPPED, DELIVERED and
- *     CANCELLED may become REFUNDED. A PENDING order has nothing to refund; the
- *     honest action there is to cancel it.
+ *  3. **Nobody sets REFUNDED** (TASK-1969, R2 A4). It used to be a label any
+ *     operator could pick — «refunded» with no return, no stock and no money
+ *     behind it. It is now DERIVED from the money ledger: see
+ *     {@link DERIVED_REFUNDED_FROM}. A cancelled order whose money went back
+ *     stays CANCELLED (`refundedAfterCancel` on the entity, TASK-1970).
  *  4. **Revive lands in the queue, never in transit.** A mistaken cancellation is
  *     undone into PENDING/CONFIRMED/PROCESSING — the statuses whose stock the
  *     revive path re-reserves. CANCELLED → SHIPPED is refused because it would
@@ -72,26 +75,33 @@ export const ORDER_TRANSITIONS: Readonly<Record<OrderStatus, readonly OrderStatu
       OrderStatus.DELIVERED,
       OrderStatus.CANCELLED,
     ]),
-    [OrderStatus.SHIPPED]: Object.freeze([
-      OrderStatus.DELIVERED,
-      OrderStatus.CANCELLED,
-      OrderStatus.REFUNDED,
-    ]),
-    [OrderStatus.DELIVERED]: Object.freeze([OrderStatus.CANCELLED, OrderStatus.REFUNDED]),
+    [OrderStatus.SHIPPED]: Object.freeze([OrderStatus.DELIVERED, OrderStatus.CANCELLED]),
+    [OrderStatus.DELIVERED]: Object.freeze([OrderStatus.CANCELLED]),
     // Revive targets are exactly the pre-shipment statuses — see rule 4 above.
     [OrderStatus.CANCELLED]: Object.freeze([
       OrderStatus.PENDING,
       OrderStatus.CONFIRMED,
       OrderStatus.PROCESSING,
-      OrderStatus.REFUNDED,
     ]),
-    // Terminal but for its twin: the two terminal statuses may be corrected into
-    // one another (the service's revive branch already treats CANCELLED ⇄ REFUNDED
-    // as a stock-neutral move). Nothing else leaves REFUNDED — the money is back
-    // with the customer, and a "refunded" order returning to PROCESSING is a
-    // bookkeeping fiction.
-    [OrderStatus.REFUNDED]: Object.freeze([OrderStatus.CANCELLED]),
+    // Terminal for every writer of this table (TASK-1969). Only the ledger moves
+    // it — back to where it came from, when a reversal breaks the refund.
+    [OrderStatus.REFUNDED]: Object.freeze([]),
   });
+
+/**
+ * The statuses from which an order BECOMES REFUNDED by itself (TASK-1969, R2 A4).
+ *
+ * `OrderMoneyRepository.recompute` (`deriveOrderStatus` in `order-money.ts`)
+ * moves a SHIPPED/DELIVERED order to REFUNDED when every line is covered by
+ * REFUND-decided returns and each of them is paid out up to its credit — and
+ * moves it back to the status it came from when a reversal breaks that. A
+ * CANCELLED order never becomes REFUNDED: its money going back is shown as
+ * «Скасовано · кошти повернено» (TASK-1970), not as a second ending.
+ */
+export const DERIVED_REFUNDED_FROM: readonly OrderStatus[] = Object.freeze([
+  OrderStatus.SHIPPED,
+  OrderStatus.DELIVERED,
+]);
 
 /**
  * Whether an order may move from `from` to `to`.
@@ -161,15 +171,14 @@ export function allowedTransitions(from: OrderStatus): OrderStatus[] {
  * no clock — and a status is never its own successor, so a re-asserted status
  * never appends a second history row.
  *
- * ── One cross-rule lives NOT here, on purpose ───────────────────────────────
- * "A full REFUNDED is allowed only while the order itself is CANCELLED or
- * REFUNDED" reads two columns at once, so it is not expressible in a
- * `from → to` table. It is enforced in the service, `OrderService`, by the
- * private predicate `isPaymentTargetReachable(orderStatus, to)` — asked on the
- * admin write (a 409), by the allowed-transitions list and on the webhook plan
- * path — and by its mirror `isOrderTargetReachable(paymentStatus, to)` for the
- * case where the ORDER column moves instead. Grep those two names to find both
- * halves of the rule together.
+ * ── Since R2 A3 nobody sets this column by hand ─────────────────────────────
+ * The operator's payment picker, the correction door and their
+ * allowed-transitions list are gone: the payment status is DERIVED from the
+ * order money ledger (`order-money.ts`, `OrderMoneyRepository.recompute`), and
+ * "a refund on a live order" is refused where money moves
+ * (`assessPayout` — cancel first). What still asks this table is the LiqPay
+ * webhook plan (`planPaymentApplication`), which ignores a move it forbids and
+ * records that it did.
  */
 export const PAYMENT_TRANSITIONS: Readonly<Record<PaymentStatus, readonly PaymentStatus[]>> =
   Object.freeze({
@@ -182,52 +191,25 @@ export const PAYMENT_TRANSITIONS: Readonly<Record<PaymentStatus, readonly Paymen
     [PaymentStatus.PARTIALLY_REFUNDED]: Object.freeze([PaymentStatus.REFUNDED]),
     // Rule 4: terminal.
     [PaymentStatus.REFUNDED]: Object.freeze([]),
+    // TASK-2047 (R2): derived from the money ledger, never a target of this
+    // table. Until the admin path moves to the ledger (A3) it is "not fully
+    // paid": the rest may arrive, or what came in may go back.
+    [PaymentStatus.PARTIALLY_PAID]: Object.freeze([
+      PaymentStatus.PAID,
+      PaymentStatus.PARTIALLY_REFUNDED,
+      PaymentStatus.REFUNDED,
+    ]),
   });
 
 /**
  * Whether an order's payment may move from `from` to `to`.
  *
- * The single question every payment writer asks — the admin endpoint, the LiqPay
- * webhook and the reconcile worker alike. What differs between them is the
- * REACTION to a `false`, never the answer: the admin door raises a 409 the
- * operator can read, while the callback door ignores the move and records that
- * it did, because a 409 to a provider is an infinite retry loop.
+ * Asked by the LiqPay webhook and the reconcile worker (the admin door is the
+ * money ledger since R2 A3). A `false` is ignored and recorded, never raised:
+ * a 409 to a provider is an infinite retry loop.
  *
  * `false` for a same-status "transition" — see the table's docblock.
  */
 export function canTransitionPayment(from: PaymentStatus, to: PaymentStatus): boolean {
   return PAYMENT_TRANSITIONS[from].includes(to);
-}
-
-/**
- * Every payment status reachable from `from`, as a fresh (caller-owned) array.
- *
- * Backs `GET /api/admin/orders/:orderId/allowed-payment-transitions`, so the
- * admin panel offers exactly the legal targets instead of "everything except the
- * current value" and letting the operator discover the truth from a 409.
- */
-export function allowedPaymentTransitions(from: PaymentStatus): PaymentStatus[] {
-  return [...PAYMENT_TRANSITIONS[from]];
-}
-
-/**
- * Corrections of a mistaken payment MARK (TASK-620, owner decision B-11 №7).
- *
- * Deliberately NOT an edge of {@link PAYMENT_TRANSITIONS}: rule 4 (REFUNDED is
- * terminal) stays true for every writer that records FACTS — the LiqPay
- * callback, the reconcile worker, the ordinary admin payment select. This table
- * answers a different question: "an operator typed REFUNDED by mistake — what
- * may it be put back to?" Only the states REFUNDED can have been reached from,
- * and only through its own door (`OrderService.adminCorrectRefundedPayment`),
- * which additionally requires the `payments:correct` key, a reason, and that
- * the mark was set by an operator rather than reported by the provider.
- */
-const PAYMENT_CORRECTIONS: Readonly<Partial<Record<PaymentStatus, readonly PaymentStatus[]>>> =
-  Object.freeze({
-    [PaymentStatus.REFUNDED]: Object.freeze([PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED]),
-  });
-
-/** Whether a mistaken `from` mark may be corrected to `to` (TASK-620). */
-export function canCorrectPayment(from: PaymentStatus, to: PaymentStatus): boolean {
-  return PAYMENT_CORRECTIONS[from]?.includes(to) ?? false;
 }

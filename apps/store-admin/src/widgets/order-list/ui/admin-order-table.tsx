@@ -14,6 +14,7 @@ import {
   isShippingCostPending,
   orderDeliveryMethod,
   orderDerivedMarks,
+  orderHeadlineStatusLabel,
   orderStatusBadgeVariant,
   orderStatusLabel,
   paymentStatusBadgeVariant,
@@ -281,8 +282,10 @@ function ClientCell({ order }: { order: OrderEntity }) {
 function StatusCell({ order, now }: { order: OrderEntity; now: number }) {
   return (
     <span className="flex flex-wrap items-center gap-1">
+      {/* TASK-1970: the same headline the card shows — «Скасовано · кошти
+          повернено» on a cancelled order whose money went back. */}
       <Badge variant={orderStatusBadgeVariant(order.status)}>
-        {orderStatusLabel(order.status)}
+        {orderHeadlineStatusLabel(order)}
       </Badge>
       {/* TASK-470 / 471 / 472: the derived marks of B-1, beside the status
           they qualify. The clock is `dataUpdatedAt` — «Очікує оплати · N хв»
@@ -510,7 +513,7 @@ function renderCard(
           <OrderNumber id={order.id} />
         )}
         <Badge variant={orderStatusBadgeVariant(order.status)}>
-          {orderStatusLabel(order.status)}
+          {orderHeadlineStatusLabel(order)}
         </Badge>
       </div>
       {marks.length ? (

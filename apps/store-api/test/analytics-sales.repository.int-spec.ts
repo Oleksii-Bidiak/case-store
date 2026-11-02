@@ -3,27 +3,31 @@ import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import {
-  OrderHistoryChangeType,
-  OrderHistoryNote,
+  MoneyDirection,
+  MoneyEntryKind,
+  MoneyProviderState,
   OrderStatus,
   PaymentStatus,
-  ReturnStatus,
 } from '@prisma/client';
 import { SalesRepository } from '../src/analytics/reports/sales.repository';
 import { ReportRange, resolveReportPeriod } from '../src/analytics/reports/report-period';
 import { PrismaService } from '../src/prisma';
 
 /**
- * Integration tests for the sales report's money (TASK-686, plan 188) — the REAL
- * `SalesRepository` against a REAL Postgres. This is the formula the owner will
- * answer "how much did I earn in August" with, so it is pinned here on real rows
- * rather than on a mocked repository:
+ * Integration tests for the sales report's money (TASK-686, plan 188; refunds
+ * from the order money ledger since R2 A4) — the REAL `SalesRepository` against
+ * a REAL Postgres. This is the formula the owner will answer "how much did I earn
+ * in August" with, so it is pinned here on real rows rather than on a mocked
+ * repository:
  *
  * - **Sales** of a range = Σ `orders.total` of orders CREATED in it whose payment
- *   is PAID / PARTIALLY_REFUNDED / REFUNDED. A later refund never changes it.
- * - **Refunds** of a range = returns REFUNDED in it (by `resolved_at`) plus the
- *   full-refund residual of orders whose payment is now REFUNDED, dated by the
- *   move into REFUNDED in the order's history.
+ *   is PAID / PARTIALLY_REFUNDED / REFUNDED. A later refund never changes it; a
+ *   PARTIALLY_PAID order is not a sale until it is paid (R2 assumption 3).
+ * - **Refunds** of a range = the ledger's OUT entries (`order_money_entries`)
+ *   dated by `occurred_at` in it, each reversal subtracted on its own day,
+ *   voided requests ignored. LiqPay's partial refunds count like any other
+ *   (TASK-1500); the old Return-row + history-residual rule is gone — the R2
+ *   backfill turned those residuals into entries.
  *
  * The three plan-188 gates come first; nothing is accepted without them.
  *
@@ -70,39 +74,32 @@ describe('SalesRepository (integration)', () => {
     return order.id;
   }
 
-  async function addReturn(
-    orderId: string,
-    opts: { amount: string | null; resolvedAt: string | null; status?: ReturnStatus },
-  ): Promise<void> {
-    await prisma.return.create({
-      data: {
-        orderId,
-        status: opts.status ?? ReturnStatus.REFUNDED,
-        refundedAmount: opts.amount,
-        resolvedAt: opts.resolvedAt === null ? null : new Date(opts.resolvedAt),
-      },
-    });
-  }
-
-  async function addPaymentMove(
+  /** One OUT entry of the ledger, in kopecks; returns its id. */
+  async function addOut(
     orderId: string,
     opts: {
-      from: PaymentStatus;
-      to: PaymentStatus;
-      changedAt: string;
-      note?: OrderHistoryNote;
+      amountKop: number;
+      at: string;
+      kind?: MoneyEntryKind;
+      reversalOfId?: string;
+      voidedAt?: string;
+      providerState?: MoneyProviderState;
     },
-  ): Promise<void> {
-    await prisma.orderStatusHistory.create({
+  ): Promise<string> {
+    const entry = await prisma.orderMoneyEntry.create({
       data: {
         orderId,
-        changeType: OrderHistoryChangeType.PAYMENT_STATUS,
-        fromPaymentStatus: opts.from,
-        toPaymentStatus: opts.to,
-        changedAt: new Date(opts.changedAt),
-        ...(opts.note ? { note: opts.note } : {}),
+        direction: MoneyDirection.OUT,
+        kind: opts.kind ?? MoneyEntryKind.CASH_REFUND,
+        amountKop: opts.amountKop,
+        occurredAt: new Date(opts.at),
+        reversalOfId: opts.reversalOfId ?? null,
+        voidedAt: opts.voidedAt ? new Date(opts.voidedAt) : null,
+        providerState: opts.providerState ?? null,
+        ...(opts.reversalOfId ? { reason: 'помилка' } : {}),
       },
     });
+    return entry.id;
   }
 
   function dayOf<T extends { date: string }>(series: T[], date: string): T {
@@ -132,8 +129,7 @@ describe('SalesRepository (integration)', () => {
     const year = { gte: new Date('2024-12-31T00:00:00Z'), lt: new Date('2026-01-02T00:00:00Z') };
     const leftovers =
       (await prisma.order.count({ where: { createdAt: year } })) +
-      (await prisma.return.count({ where: { resolvedAt: year } })) +
-      (await prisma.orderStatusHistory.count({ where: { changedAt: year } }));
+      (await prisma.orderMoneyEntry.count({ where: { occurredAt: year } }));
     if (leftovers > 0) {
       throw new Error(
         `The test database already holds ${leftovers} rows dated 2025; clean it first`,
@@ -144,8 +140,11 @@ describe('SalesRepository (integration)', () => {
   afterEach(async () => {
     if (createdOrderIds.length === 0) return;
     const ids = createdOrderIds.splice(0);
-    // Returns are Restrict on the order; history rows cascade with it.
-    await prisma.return.deleteMany({ where: { orderId: { in: ids } } });
+    // Ledger rows are Restrict on the order and on what they reverse: reversals first.
+    await prisma.orderMoneyEntry.deleteMany({
+      where: { orderId: { in: ids }, reversalOfId: { not: null } },
+    });
+    await prisma.orderMoneyEntry.deleteMany({ where: { orderId: { in: ids } } });
     await prisma.order.deleteMany({ where: { id: { in: ids } } });
   });
 
@@ -162,7 +161,7 @@ describe('SalesRepository (integration)', () => {
         total: '1000.10',
         paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
       });
-      await addReturn(orderId, { amount: '300.05', resolvedAt: '2025-09-05T10:00:00Z' });
+      await addOut(orderId, { amountKop: 30_005, at: '2025-09-05T10:00:00Z' });
     });
 
     it('gives August the full sale and no refund', async () => {
@@ -193,13 +192,13 @@ describe('SalesRepository (integration)', () => {
   });
 
   describe('gate 2 — PARTIALLY_REFUNDED stays in sales with its full total', () => {
-    it('counts the whole order in its month and the partial return in the return’s month only', async () => {
+    it('counts the whole order in its month and the partial refund in the refund’s month only', async () => {
       const orderId = await createOrder({
         createdAt: '2025-08-12T08:00:00Z',
         total: '800.00',
         paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
       });
-      await addReturn(orderId, { amount: '250.00', resolvedAt: '2025-08-20T08:00:00Z' });
+      await addOut(orderId, { amountKop: 25_000, at: '2025-08-20T08:00:00Z' });
 
       expect(await repo.getTotals(AUG)).toEqual({ sales: 800, refunds: 250, orders: 1 });
       expect(await repo.getTotals(SEP)).toEqual({ sales: 0, refunds: 0, orders: 0 });
@@ -244,160 +243,114 @@ describe('SalesRepository (integration)', () => {
 
       expect(await repo.getTotals(AUG)).toEqual({ sales: 0, refunds: 0, orders: 0 });
     });
+
+    it('ignores a PARTIALLY_PAID order until it is paid (R2 assumption 3)', async () => {
+      await createOrder({
+        createdAt: '2025-08-05T09:00:00Z',
+        total: '900.00',
+        paymentStatus: PaymentStatus.PARTIALLY_PAID,
+        status: OrderStatus.CONFIRMED,
+      });
+
+      expect(await repo.getTotals(AUG)).toEqual({ sales: 0, refunds: 0, orders: 0 });
+    });
   });
 
-  // ── The full-refund residual ──────────────────────────────────────────────
+  // ── Refunds come from the ledger ──────────────────────────────────────────
 
-  describe('full-refund residual (a REFUNDED payment without a Return)', () => {
-    it('counts a cancellation after payment as a refund in the month the payment went REFUNDED', async () => {
+  describe('refunds from the money ledger (R2 A4)', () => {
+    it('counts a refund after a cancellation in the month the money went back', async () => {
       const orderId = await createOrder({
         createdAt: '2025-08-15T09:00:00Z',
         total: '1200.00',
         paymentStatus: PaymentStatus.REFUNDED,
         status: OrderStatus.CANCELLED,
       });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.PENDING,
-        to: PaymentStatus.PAID,
-        changedAt: '2025-08-15T09:05:00Z',
-      });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.PAID,
-        to: PaymentStatus.REFUNDED,
-        changedAt: '2025-09-03T12:00:00Z',
-      });
+      await addOut(orderId, { amountKop: 120_000, at: '2025-09-03T12:00:00Z' });
 
       expect(await repo.getTotals(AUG)).toEqual({ sales: 1200, refunds: 0, orders: 1 });
       expect(await repo.getTotals(SEP)).toEqual({ sales: 0, refunds: 1200, orders: 0 });
       expect(dayOf(await repo.getDaily(SEP), '2025-09-03').refunds).toBe(1200);
     });
 
-    it('does not count a full refund twice when a Return already carries the whole amount', async () => {
+    it('counts LiqPay partial refunds — every one, requested or confirmed (TASK-1500)', async () => {
       const orderId = await createOrder({
         createdAt: '2025-08-05T09:00:00Z',
         total: '700.00',
-        paymentStatus: PaymentStatus.REFUNDED,
-        status: OrderStatus.REFUNDED,
+        paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
       });
-      await addReturn(orderId, { amount: '700.00', resolvedAt: '2025-09-04T10:00:00Z' });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.PAID,
-        to: PaymentStatus.REFUNDED,
-        changedAt: '2025-09-04T10:01:00Z',
+      await addOut(orderId, {
+        amountKop: 10_000,
+        at: '2025-08-20T10:00:00Z',
+        kind: MoneyEntryKind.LIQPAY_REFUND,
+        providerState: MoneyProviderState.CONFIRMED,
+      });
+      await addOut(orderId, {
+        amountKop: 15_000,
+        at: '2025-08-25T10:00:00Z',
+        kind: MoneyEntryKind.LIQPAY_REFUND,
+        providerState: MoneyProviderState.REQUESTED,
       });
 
-      expect(await repo.getTotals(SEP)).toEqual({ sales: 0, refunds: 700, orders: 0 });
+      expect(await repo.getTotals(AUG)).toEqual({ sales: 700, refunds: 250, orders: 1 });
     });
 
-    it('adds only what the Returns did not cover, in the month of the full refund', async () => {
+    it('ignores a voided LiqPay request — it never moved money', async () => {
       const orderId = await createOrder({
         createdAt: '2025-08-05T09:00:00Z',
         total: '700.00',
-        paymentStatus: PaymentStatus.REFUNDED,
-        status: OrderStatus.CANCELLED,
+        paymentStatus: PaymentStatus.PAID,
       });
-      await addReturn(orderId, { amount: '200.00', resolvedAt: '2025-08-25T10:00:00Z' });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.PARTIALLY_REFUNDED,
-        to: PaymentStatus.REFUNDED,
-        changedAt: '2025-09-06T10:00:00Z',
-      });
-
-      expect(await repo.getTotals(AUG)).toEqual({ sales: 700, refunds: 200, orders: 1 });
-      expect(await repo.getTotals(SEP)).toEqual({ sales: 0, refunds: 500, orders: 0 });
-    });
-
-    it('ignores history rows that carry a note when dating the refund', async () => {
-      const orderId = await createOrder({
-        createdAt: '2025-08-07T09:00:00Z',
-        total: '400.00',
-        paymentStatus: PaymentStatus.REFUNDED,
-        status: OrderStatus.CANCELLED,
-      });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.PAID,
-        to: PaymentStatus.REFUNDED,
-        changedAt: '2025-08-20T10:00:00Z',
-      });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.PAID,
-        to: PaymentStatus.REFUNDED,
-        changedAt: '2025-09-15T10:00:00Z',
-        note: OrderHistoryNote.PAID_AFTER_CANCEL,
-      });
-
-      expect((await repo.getTotals(AUG)).refunds).toBe(400);
-      expect((await repo.getTotals(SEP)).refunds).toBe(0);
-    });
-
-    it('ignores a refused provider event recorded as REFUNDED → REFUNDED when dating the refund', async () => {
-      // `applyPaymentOutcome` writes a refused move as `current → current` with no
-      // note (e.g. a late "success" on an order already REFUNDED). It is not the
-      // moment the money went back, so it must not move the refund to its month.
-      const orderId = await createOrder({
-        createdAt: '2025-08-07T09:00:00Z',
-        total: '400.00',
-        paymentStatus: PaymentStatus.REFUNDED,
-        status: OrderStatus.CANCELLED,
-      });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.PAID,
-        to: PaymentStatus.REFUNDED,
-        changedAt: '2025-08-20T10:00:00Z',
-      });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.REFUNDED,
-        to: PaymentStatus.REFUNDED,
-        changedAt: '2025-09-15T10:00:00Z',
-      });
-
-      expect((await repo.getTotals(AUG)).refunds).toBe(400);
-      expect((await repo.getTotals(SEP)).refunds).toBe(0);
-    });
-
-    it('dates by the LATEST move into REFUNDED', async () => {
-      // REFUNDED by mistake in August, corrected to PAID, refunded for real in September.
-      const orderId = await createOrder({
-        createdAt: '2025-08-07T09:00:00Z',
-        total: '400.00',
-        paymentStatus: PaymentStatus.REFUNDED,
-        status: OrderStatus.CANCELLED,
-      });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.PAID,
-        to: PaymentStatus.REFUNDED,
-        changedAt: '2025-08-20T10:00:00Z',
-      });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.REFUNDED,
-        to: PaymentStatus.PAID,
-        changedAt: '2025-08-21T10:00:00Z',
-      });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.PAID,
-        to: PaymentStatus.REFUNDED,
-        changedAt: '2025-09-10T10:00:00Z',
+      await addOut(orderId, {
+        amountKop: 70_000,
+        at: '2025-08-20T10:00:00Z',
+        kind: MoneyEntryKind.LIQPAY_REFUND,
+        providerState: MoneyProviderState.REQUESTED,
+        voidedAt: '2025-08-20T10:05:00Z',
       });
 
       expect((await repo.getTotals(AUG)).refunds).toBe(0);
-      expect((await repo.getTotals(SEP)).refunds).toBe(400);
     });
 
-    it('counts nothing for an order whose REFUNDED mark was corrected back to PAID', async () => {
+    it('nets a reversal out on its own day: same month → 0, next month → negative there', async () => {
+      const orderId = await createOrder({
+        createdAt: '2025-08-07T09:00:00Z',
+        total: '400.00',
+        paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+      });
+      const sameMonth = await addOut(orderId, { amountKop: 10_000, at: '2025-08-20T10:00:00Z' });
+      await addOut(orderId, {
+        amountKop: 10_000,
+        at: '2025-08-21T10:00:00Z',
+        reversalOfId: sameMonth,
+      });
+      const lateFix = await addOut(orderId, { amountKop: 5_000, at: '2025-08-22T10:00:00Z' });
+      await addOut(orderId, {
+        amountKop: 5_000,
+        at: '2025-09-10T10:00:00Z',
+        reversalOfId: lateFix,
+      });
+
+      // A closed month is never rewritten: August keeps the 50 ₴ it reported,
+      // September carries the correction.
+      expect((await repo.getTotals(AUG)).refunds).toBe(50);
+      expect((await repo.getTotals(SEP)).refunds).toBe(-50);
+    });
+
+    it('ignores money coming IN', async () => {
       const orderId = await createOrder({
         createdAt: '2025-08-07T09:00:00Z',
         total: '400.00',
         paymentStatus: PaymentStatus.PAID,
       });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.PAID,
-        to: PaymentStatus.REFUNDED,
-        changedAt: '2025-08-20T10:00:00Z',
-      });
-      await addPaymentMove(orderId, {
-        from: PaymentStatus.REFUNDED,
-        to: PaymentStatus.PAID,
-        changedAt: '2025-08-22T10:00:00Z',
+      await prisma.orderMoneyEntry.create({
+        data: {
+          orderId,
+          direction: MoneyDirection.IN,
+          kind: MoneyEntryKind.COD_NOVA_POSHTA,
+          amountKop: 40_000,
+          occurredAt: new Date('2025-08-08T10:00:00Z'),
+        },
       });
 
       expect(await repo.getTotals(AUG)).toEqual({ sales: 400, refunds: 0, orders: 1 });
@@ -421,51 +374,19 @@ describe('SalesRepository (integration)', () => {
       expect(dayOf(daily, '2025-09-01').sales).toBe(150);
     });
 
-    it('dates returns and full refunds by the Kyiv day too', async () => {
-      const withReturn = await createOrder({
+    it('dates refunds by the Kyiv day too', async () => {
+      const orderId = await createOrder({
         createdAt: '2025-09-02T09:00:00Z',
         total: '100.00',
         paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
       });
-      // 00:30 Kyiv on 1 October.
-      await addReturn(withReturn, { amount: '40.00', resolvedAt: '2025-09-30T21:30:00Z' });
-
-      const refunded = await createOrder({
-        createdAt: '2025-09-02T09:00:00Z',
-        total: '60.00',
-        paymentStatus: PaymentStatus.REFUNDED,
-        status: OrderStatus.CANCELLED,
-      });
-      await addPaymentMove(refunded, {
-        from: PaymentStatus.PAID,
-        to: PaymentStatus.REFUNDED,
-        changedAt: '2025-09-30T21:45:00Z',
-      });
+      // 00:30 and 00:45 Kyiv on 1 October.
+      await addOut(orderId, { amountKop: 4_000, at: '2025-09-30T21:30:00Z' });
+      await addOut(orderId, { amountKop: 6_000, at: '2025-09-30T21:45:00Z' });
 
       expect((await repo.getTotals(SEP)).refunds).toBe(0);
       expect((await repo.getTotals(OCT)).refunds).toBe(100);
       expect(dayOf(await repo.getDaily(OCT), '2025-10-01').refunds).toBe(100);
-    });
-  });
-
-  // ── Returns that are not money yet ────────────────────────────────────────
-
-  describe('returns that are not refunds', () => {
-    it('ignores returns not in REFUNDED and REFUNDED returns without an amount or a date', async () => {
-      const orderId = await createOrder({
-        createdAt: '2025-08-02T09:00:00Z',
-        total: '500.00',
-        paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
-      });
-      await addReturn(orderId, {
-        amount: '100.00',
-        resolvedAt: '2025-08-10T09:00:00Z',
-        status: ReturnStatus.RECEIVED,
-      });
-      await addReturn(orderId, { amount: null, resolvedAt: '2025-08-11T09:00:00Z' });
-      await addReturn(orderId, { amount: '30.00', resolvedAt: null });
-
-      expect(await repo.getTotals(AUG)).toEqual({ sales: 500, refunds: 0, orders: 1 });
     });
   });
 
@@ -480,10 +401,10 @@ describe('SalesRepository (integration)', () => {
         total: '1000.10',
         paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
       });
-      await addReturn(partial, { amount: '300.05', resolvedAt: '2025-09-05T10:00:00Z' });
+      await addOut(partial, { amountKop: 30_005, at: '2025-09-05T10:00:00Z' });
 
-      // REFUNDED with no history row (e.g. written before history existed):
-      // its sale counts, the residual cannot be dated and contributes nothing.
+      // A REFUNDED label with no ledger row behind it: its sale counts, and a
+      // refund nobody recorded is not invented.
       await createOrder({
         createdAt: '2025-08-11T09:00:00Z',
         total: '50.00',

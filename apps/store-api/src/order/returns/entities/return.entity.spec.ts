@@ -290,3 +290,43 @@ describe('ReturnEntity — customer projection', () => {
     ]);
   });
 });
+
+/**
+ * TASK-2339 (R2 A4): what was paid out on a return comes from the order ledger
+ * (Σ OUT on this return, net of reversals, voided ignored) — the legacy
+ * `returns.refunded_amount` column is no longer read.
+ */
+describe('ReturnEntity — paid out from the ledger (TASK-2339)', () => {
+  const out = (amountKop: number, over: Record<string, unknown> = {}) => ({
+    direction: 'OUT' as const,
+    amountKop,
+    reversalOfId: null,
+    voidedAt: null,
+    ...over,
+  });
+
+  it('refundedAmount is Σ of the payouts in hryvnias, net of reversals and voids', () => {
+    const row = makeRow({
+      refundedAmount: { toString: () => '999.00' },
+      moneyEntries: [
+        out(20_000),
+        out(27_222),
+        out(20_000, { reversalOfId: 'x' }),
+        out(5_000, { voidedAt: t2 }),
+      ],
+    });
+    expect(ReturnEntity.fromPrisma(row).refundedAmount).toBe('272.22');
+    expect(ReturnEntity.fromPrisma(row, { includeInternal: true }).paidOutKop).toBe(27_222);
+  });
+
+  it('is null with nothing paid out, whatever the legacy column says', () => {
+    const row = makeRow({ refundedAmount: { toString: () => '499.00' }, moneyEntries: [] });
+    expect(ReturnEntity.fromPrisma(row).refundedAmount).toBeNull();
+    expect(ReturnEntity.fromPrisma(row, { includeInternal: true }).paidOutKop).toBe(0);
+  });
+
+  it('keeps paidOutKop off the customer projection', () => {
+    const row = makeRow({ moneyEntries: [out(100)] });
+    expect(ReturnEntity.fromPrisma(row).paidOutKop).toBeUndefined();
+  });
+});

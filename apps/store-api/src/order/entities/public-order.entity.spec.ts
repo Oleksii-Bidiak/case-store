@@ -234,3 +234,25 @@ describe('isShippingCostPending', () => {
     ).toBe(true);
   });
 });
+
+/**
+ * R2 A4 (TASK-2047 / TASK-2340): a stranger with the order number and the phone
+ * sees «Сплачено X з Y» for a partly paid order — the totals, never the journal.
+ */
+describe('PublicOrderEntity.fromRow — money (R2 A4)', () => {
+  it('carries what was paid and the total, in kopecks', () => {
+    const entity = PublicOrderEntity.fromRow(
+      makeRow({ paymentStatus: PaymentStatus.PARTIALLY_PAID, paidKop: 20_000 }),
+    );
+    expect(entity.paidKop).toBe(20_000);
+    expect(entity.totalKop).toBe(66_800);
+  });
+
+  it('reads 0 paid for rows without the ledger column', () => {
+    expect(PublicOrderEntity.fromRow(makeRow()).paidKop).toBe(0);
+  });
+
+  it('never exposes the ledger entries', () => {
+    expect(PublicOrderEntity.fromRow(makeRow({ paidKop: 1 }))).not.toHaveProperty('moneyEntries');
+  });
+});

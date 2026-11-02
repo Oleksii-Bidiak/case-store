@@ -64,7 +64,9 @@ export class ReturnListQueryDto {
   search?: string;
 
   @ApiProperty({
-    description: `Sort field (${RETURN_SORT_FIELDS.join(', ')})`,
+    description:
+      `Sort field (${RETURN_SORT_FIELDS.join(', ')}). ` +
+      'refundedAmount orders by «До повернення» (creditKop) since R2 — TASK-2339.',
     required: false,
     default: 'requestedAt',
     example: 'requestedAt',

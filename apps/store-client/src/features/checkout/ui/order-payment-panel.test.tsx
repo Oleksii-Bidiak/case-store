@@ -1,5 +1,6 @@
 import { renderWithProviders, screen } from "@/shared/test/render";
 import { dict } from "@/shared/config";
+import { formatMoney } from "@/shared/lib";
 import { OrderPaymentPanel } from "./order-payment-panel";
 
 /**
@@ -173,5 +174,46 @@ describe("OrderPaymentPanel — a closed order (TASK-407)", () => {
 
     expect(screen.getByText(copy.refundedTitle)).toBeInTheDocument();
     expect(retryButton()).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * R2 A4 (TASK-2047 / TASK-2340): a prepaid order. Part of the money came in
+ * (the operator recorded it), the rest is paid on delivery or by transfer — an
+ * online attempt would charge the whole total again, so the API refuses it and
+ * the panel offers none.
+ */
+describe("OrderPaymentPanel — a partly paid order (R2 A4)", () => {
+  it("says «Сплачено X з Y» and offers no way to pay", () => {
+    renderPanel({
+      paymentStatus: "PARTIALLY_PAID",
+      orderStatus: "CONFIRMED",
+      hasRecentAttempt: false,
+      partial: { paidKop: 50_000, total: "1200.00" },
+    });
+
+    expect(screen.getByText(copy.partiallyPaidTitle)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        copy.partiallyPaidBody(formatMoney("500.00"), formatMoney("1200.00")),
+        // formatMoney groups with a no-break space; the default normalizer
+        // would turn it into a plain one on the page side only.
+        { normalizer: (text) => text },
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("offers no «Оплатити» even with the reservation still running", () => {
+    renderPanel({
+      paymentStatus: "PARTIALLY_PAID",
+      orderStatus: "PENDING",
+      hasRecentAttempt: true,
+      isAwaitingCallback: false,
+      partial: { paidKop: 1, total: "10.00" },
+      awaiting: { minutes: 23, until: "14:52", total: "10 ₴" },
+    });
+
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 });

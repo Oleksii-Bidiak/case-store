@@ -136,7 +136,7 @@ describe("AdminReturnTable — sorting and refresh (TASK-354)", () => {
 
     await userEvent.click(
       screen.getByRole("button", {
-        name: dict.common.sortByAria(d.colRefunded),
+        name: dict.common.sortByAria(d.colCredit),
       }),
     );
 
@@ -176,20 +176,37 @@ describe("AdminReturnTable — sorting and refresh (TASK-354)", () => {
     await waitFor(() => expect(params).toHaveLength(2));
   });
 
-  it("renders an unrefunded return as a dash, not as 0 ₴", async () => {
+  it("reads «До повернення» from the ledger — a dash where there is no credit", async () => {
     stubReturns([
-      makeReturnRow(),
-      makeReturnRow({ id: "refunded-uuid-2", refundedAmount: "0" }),
+      // Not a refund (or not decided yet): no credit, not «0 ₴».
+      makeReturnRow({ creditKop: null, paidOutKop: 0 }),
+      // Received, 100 of 799 paid out: what is still owed is under the credit.
+      makeReturnRow({
+        id: "received-uuid-2",
+        status: "RECEIVED",
+        creditKop: 79900,
+        paidOutKop: 10000,
+        refundedAmount: "100.00",
+      }),
+      // Refunded: what was paid out.
+      makeReturnRow({
+        id: "refunded-uuid-3",
+        status: "REFUNDED",
+        creditKop: 79900,
+        paidOutKop: 79900,
+        refundedAmount: "799.00",
+      }),
     ]);
 
     const { container } = renderWithProviders(<AdminReturnTable />);
     await screen.findByText(ROW_NUMBER);
 
-    const refunded = container.querySelectorAll(
-      'td[data-column-id="refunded"]',
-    );
-    expect(refunded[0]).toHaveTextContent("—");
-    expect(refunded[1]).not.toHaveTextContent("—");
+    const cells = container.querySelectorAll('td[data-column-id="refunded"]');
+    const plain = (node: Element) =>
+      (node.textContent ?? "").replace(/[  ]/g, " ");
+    expect(plain(cells[0])).toBe("—");
+    expect(plain(cells[1])).toBe("799 ₴винні 699 ₴");
+    expect(plain(cells[2])).toBe("799 ₴виплачено 799 ₴");
   });
 });
 

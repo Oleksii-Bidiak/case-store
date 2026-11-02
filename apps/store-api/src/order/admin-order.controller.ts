@@ -25,7 +25,7 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { OrderStatus } from '@prisma/client';
 import { OrderService } from './order.service';
 import {
   OrderEntity,
@@ -36,8 +36,6 @@ import {
 import {
   AdminOrderListQueryDto,
   UpdateOrderStatusDto,
-  UpdateOrderPaymentStatusDto,
-  CorrectPaymentStatusDto,
   UpdateOrderDetailsDto,
   CreateManualOrderDto,
 } from './dto';
@@ -188,45 +186,6 @@ class AdminOrderAllowedTransitionsResponse {
 }
 
 /**
- * The PAYMENT moves an order may currently make (TASK-431).
- *
- * A deliberate twin of {@link AdminOrderAllowedTransitions} rather than a shared
- * generic: the two lists are drawn from different enums and are consumed by two
- * different pickers, and a merged shape would have had to say "strings" and lose
- * the enum in the generated client.
- *
- * `allowed` can legitimately be EMPTY — from REFUNDED there is nowhere left to
- * go — and the picker renders that as "no changes possible", not as a failure.
- */
-class AdminOrderAllowedPaymentTransitions {
-  @ApiProperty({ description: "The order's current payment status", enum: PaymentStatus })
-  current!: PaymentStatus;
-
-  @ApiProperty({
-    description:
-      'Payment statuses the order may legally move to right now. Already filtered by the ' +
-      'cross-rule that a full REFUNDED needs the order cancelled or refunded first, so every ' +
-      'value here is one the PATCH will accept.',
-    enum: PaymentStatus,
-    isArray: true,
-  })
-  allowed!: PaymentStatus[];
-
-  @ApiProperty({
-    description:
-      "The order's current `updatedAt` — the same optimistic-lock token the status " +
-      'transitions endpoint returns, so both pickers on the page read one version of the order.',
-    example: '2026-07-28T10:15:30.000Z',
-  })
-  updatedAt!: Date;
-}
-
-class AdminOrderAllowedPaymentTransitionsResponse {
-  @ApiProperty({ type: AdminOrderAllowedPaymentTransitions })
-  data!: AdminOrderAllowedPaymentTransitions;
-}
-
-/**
  * Orders per delivery method (TASK-648). All four keys are always present, 0
  * when nothing matches — the admin chips are fixed and read a missing key as
  * "unknown".
@@ -272,7 +231,7 @@ class AdminOrderFacetsResponse {
  *   GET    /admin/orders/:orderId/allowed-transitions — Legal next statuses (TASK-332)
  *   PATCH  /admin/orders/:orderId                     — Waybill / internal notes (335, 336)
  *   PATCH  /admin/orders/:orderId/status              — Update an order's status
- *   PATCH  /admin/orders/:orderId/payment-status      — Update an order's payment status
+ *   (money — receipts, payouts, reversals — is AdminOrderMoneyController, R2 A3)
  *   POST   /admin/orders/:orderId/access-link         — Issue a new buyer link (TASK-484)
  *
  * Separate from the customer-facing {@link OrderController} (`/api/orders`),
@@ -291,8 +250,6 @@ class AdminOrderFacetsResponse {
   AdminOrderHistoryResponse,
   AdminOrderAllowedTransitions,
   AdminOrderAllowedTransitionsResponse,
-  AdminOrderAllowedPaymentTransitions,
-  AdminOrderAllowedPaymentTransitionsResponse,
   AdminOrderCreatedMeta,
   AdminOrderCreatedResponseEnvelope,
   AdminOrderAccessLink,
@@ -566,37 +523,6 @@ export class AdminOrderController {
   }
 
   /**
-   * GET /api/admin/orders/:orderId/allowed-payment-transitions
-   *
-   * The payment statuses this order may legally move to right now (TASK-431).
-   * The twin of the route above, for the other picker on the same page: until
-   * this existed, the payment select offered every value except the current one,
-   * so "REFUNDED" sat there on a delivered order looking like a decision the
-   * operator was allowed to make.
-   */
-  @Get(':orderId/allowed-payment-transitions')
-  @ApiBearerAuth('access-token')
-  @ApiOperation({
-    summary: 'List legal next payment statuses for an order (admin)',
-    operationId: 'adminOrderControllerGetAllowedPaymentTransitions',
-  })
-  @ApiParam({ name: 'orderId', description: 'Order UUID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Current payment status, the legal targets, and the optimistic-lock token',
-    type: AdminOrderAllowedPaymentTransitionsResponse,
-  })
-  @ApiResponse({ status: 404, description: 'Order not found' })
-  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async getAllowedPaymentTransitions(
-    @Param('orderId') orderId: string,
-  ): Promise<AdminOrderAllowedPaymentTransitionsResponse> {
-    const data = await this.orderService.getAllowedPaymentTransitions(orderId);
-
-    return { data };
-  }
-
-  /**
    * PATCH /api/admin/orders/:orderId/status
    *
    * Update an order's status. Admin-only. TASK-332: the transition is validated
@@ -609,7 +535,7 @@ export class AdminOrderController {
   @RequirePermission('orders:write')
   @ApiBearerAuth('access-token')
   // Admin-only state mutation; throttle to blunt scripted misuse even from an
-  // authenticated admin token (mirrors the payment-status route).
+  // authenticated admin token.
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({
     summary: 'Update order status (admin)',
@@ -694,112 +620,6 @@ export class AdminOrderController {
         ...(dto.internalNotes !== undefined ? { internalNotes: dto.internalNotes } : {}),
       },
       dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {},
-    );
-
-    return { data: order };
-  }
-
-  /**
-   * PATCH /api/admin/orders/:orderId/payment-status
-   *
-   * Set an order's payment status directly, independently of its order status
-   * (TASK-151). This is the supported way for an admin to mark an order
-   * paid/unpaid/refunded; it never changes the order status. Admin-only.
-   */
-  @Patch(':orderId/payment-status')
-  @RequirePermission('orders:write')
-  @ApiBearerAuth('access-token')
-  // Admin-only state mutation; throttle to blunt scripted misuse even from an
-  // authenticated admin token (mirrors the status route).
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
-  @ApiOperation({
-    summary: 'Update order payment status (admin)',
-    operationId: 'adminOrderControllerUpdatePaymentStatus',
-  })
-  @ApiParam({ name: 'orderId', description: 'Order UUID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Order payment status updated',
-    type: AdminOrderResponseEnvelope,
-  })
-  @ApiResponse({ status: 404, description: 'Order not found' })
-  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  // The 409s this route actually raises (review of plan 180), written as one
-  // response like the status route's. Without it the contract published to Orval
-  // said this endpoint cannot conflict, while the admin panel already decodes two
-  // distinct codes off it — and anyone else generating a client from the spec
-  // would write no handling at all.
-  @ApiResponse({
-    status: 409,
-    description:
-      'ORDER_PAYMENT_TRANSITION_INVALID — the payment state machine forbids the move, or ' +
-      'the starting status changed underneath the write; or ' +
-      'ORDER_REFUND_REQUIRES_CLOSED_ORDER — a full refund was asked for on an order that ' +
-      'is neither cancelled nor refunded',
-  })
-  async updatePaymentStatus(
-    @Param('orderId') orderId: string,
-    @Body() dto: UpdateOrderPaymentStatusDto,
-    // TASK-251: the acting admin is recorded as the history row's changedBy.
-    @CurrentUser('id') adminUserId: string,
-  ): Promise<AdminOrderResponseEnvelope> {
-    const order = await this.orderService.adminUpdatePaymentStatus(
-      orderId,
-      dto.paymentStatus,
-      adminUserId,
-    );
-
-    return { data: order };
-  }
-
-  /**
-   * POST /api/admin/orders/:orderId/payment-correction
-   *
-   * Lift an operator's mistaken «Кошти повернено» back to PAID or
-   * PARTIALLY_REFUNDED (TASK-620, decision B-11 №7). A door of its own, not an
-   * edge in the payment table: REFUNDED stays terminal for every fact-driven
-   * writer. Its own key (`payments:correct`, no backfill), a required reason, and
-   * an action-log row written by the audit interceptor (the body carries the
-   * reason). A REFUNDED the provider reported cannot be lifted.
-   */
-  @Post(':orderId/payment-correction')
-  @RequirePermission('payments:correct')
-  @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth('access-token')
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
-  @ApiOperation({
-    summary: 'Correct a mistaken REFUNDED payment mark (admin)',
-    operationId: 'adminOrderControllerCorrectPaymentStatus',
-  })
-  @ApiParam({ name: 'orderId', description: 'Order UUID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Payment mark corrected',
-    type: AdminOrderResponseEnvelope,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Missing reason, or a target other than PAID / PARTIALLY_REFUNDED',
-  })
-  @ApiResponse({ status: 403, description: 'Forbidden — payments:correct required' })
-  @ApiResponse({ status: 404, description: 'Order not found' })
-  @ApiResponse({
-    status: 409,
-    description:
-      'ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND — the REFUNDED mark was reported by the ' +
-      'payment provider, not set by an operator; or ORDER_PAYMENT_TRANSITION_INVALID — the ' +
-      'payment is not REFUNDED (or changed underneath the write)',
-  })
-  async correctPaymentStatus(
-    @Param('orderId') orderId: string,
-    @Body() dto: CorrectPaymentStatusDto,
-    @CurrentUser('id') adminUserId: string,
-  ): Promise<AdminOrderResponseEnvelope> {
-    const order = await this.orderService.adminCorrectRefundedPayment(
-      orderId,
-      dto.paymentStatus,
-      dto.reason,
-      adminUserId,
     );
 
     return { data: order };

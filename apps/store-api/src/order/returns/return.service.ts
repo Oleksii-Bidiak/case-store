@@ -24,6 +24,7 @@ import type {
   AddRepairStepDto,
   CreateReturnDto,
   DecideReturnDto,
+  ReduceReturnCreditDto,
   ResolveReturnDto,
   ReturnListQueryDto,
 } from './dto';
@@ -32,16 +33,17 @@ import {
   repairResultNotAllowedError,
   repairResultRequiredError,
   repairStepOutOfOrderError,
+  creditAboveComputedError,
+  creditBelowPaidOutError,
+  creditNotRefundError,
   decisionLockedError,
-  refundRecordedError,
   decisionReasonRequiredError,
   decisionUnchangedError,
   invalidReturnTransitionError,
+  refundIsDerivedError,
   returnQuantityExceededOnReopenError,
   useDecisionEndpointError,
   orderNotReturnableError,
-  refundExceedsOrderBalanceError,
-  refundExceedsReturnedValueError,
   restockRequiresReceivedError,
   returnAlreadyRestockedError,
   returnItemNotInOrderError,
@@ -51,12 +53,12 @@ import {
   returnStatusRequiredError,
   returnUpdateEmptyError,
 } from './return.errors';
-import { centsToString, toCents } from '../../addon-service';
 import type { Paginated } from '../../common/pagination';
+import { assessCreditChange } from '../order-money';
 import type {
-  AssertRefundWithinBalance,
   AssertReturnClaimable,
   ReturnClaimRow,
+  ReturnDecideOptions,
   ReturnWithItems,
 } from './return.types';
 
@@ -364,9 +366,9 @@ export class ReturnService {
    * @throws NotFoundException when the return does not exist.
    * @throws ConflictException when the state machine forbids the move, or when
    *   the goods were already credited back to stock.
-   * @throws BadRequestException when `refundedAmount` exceeds the value of the
-   *   returned lines or what the order has left to refund (TASK-785) — see
-   *   {@link assertRefundWithinCeilings}.
+   * @throws BadRequestException RETURN_USE_DECISION_ENDPOINT for APPROVED /
+   *   REJECTED, RETURN_REFUND_DERIVED for REFUNDED (R2 A3: it follows from the
+   *   payouts on the order ledger).
    */
   async resolveReturn(returnId: string, dto: ResolveReturnDto): Promise<ReturnEntity> {
     if (dto.status === undefined) {
@@ -377,6 +379,12 @@ export class ReturnService {
     // reason the customer sees. Setting them here would bypass both.
     if (DECISION_STATUSES.has(dto.status)) {
       throw useDecisionEndpointError(dto.status);
+    }
+
+    // R2 A3 (TASK-2046): money goes out as payouts on the order ledger, and a
+    // return is REFUNDED once they cover its credit — never by a label.
+    if (dto.status === ReturnStatus.REFUNDED) {
+      throw refundIsDerivedError();
     }
 
     const existing = await this.returnRepository.findById(returnId);
@@ -413,18 +421,11 @@ export class ReturnService {
       {
         status: dto.status,
         ...(dto.operatorNotes !== undefined ? { operatorNotes: dto.operatorNotes } : {}),
-        ...(dto.refundedAmount !== undefined ? { refundedAmount: dto.refundedAmount } : {}),
         // "Resolved" means a decision was reached, so every status but the initial
         // request stamps it.
         resolvedAt: new Date(),
       },
-      {
-        restock: dto.restock === true,
-        // Only a real amount can be over a ceiling; null clears a mistyped one.
-        ...(typeof dto.refundedAmount === 'string'
-          ? { assertRefundable: assertRefundWithinCeilings(dto.refundedAmount) }
-          : {}),
-      },
+      { restock: dto.restock === true },
     );
 
     this.logger.info(
@@ -449,12 +450,12 @@ export class ReturnService {
    * the notes to ride on. No transition: `resolvedAt` and the decision stay.
    *
    * @throws BadRequestException RETURN_UPDATE_EMPTY (no notes either),
-   *   RETURN_STATUS_REQUIRED (refundedAmount or restock without a status)
+   *   RETURN_STATUS_REQUIRED (restock without a status)
    * @throws NotFoundException RETURN_NOT_FOUND
    */
   private async updateReturnNotes(returnId: string, dto: ResolveReturnDto): Promise<ReturnEntity> {
-    // Money and stock are steps of a transition — never a side effect of a note.
-    if (dto.refundedAmount !== undefined || dto.restock !== undefined) {
+    // Stock is a step of a transition — never a side effect of a note.
+    if (dto.restock !== undefined) {
       throw returnStatusRequiredError();
     }
     if (dto.operatorNotes === undefined) {
@@ -516,16 +517,6 @@ export class ReturnService {
       throw decisionLockedError();
     }
 
-    // A recorded amount counts against the order's refund balance until R2's
-    // payout ledger replaces it; only a refund (or a refusal, which the state
-    // machine refuses on RECEIVED anyway) may stand on top of it.
-    if (
-      existing.refundedAmount !== null &&
-      (dto.decision === ReturnDecision.REPLACEMENT || dto.decision === ReturnDecision.REPAIR)
-    ) {
-      throw refundRecordedError(dto.decision);
-    }
-
     const reason = dto.reason ?? null;
     const needsReason = dto.decision === ReturnDecision.REJECT || existing.decision !== null;
     if (needsReason && reason === null) {
@@ -543,6 +534,23 @@ export class ReturnService {
 
     const reclaimsUnits =
       existing.status === ReturnStatus.REJECTED && status !== ReturnStatus.REJECTED;
+    const wasRefund = existing.decision === ReturnDecision.REFUND;
+    const isRefund = dto.decision === ReturnDecision.REFUND;
+
+    const options: ReturnDecideOptions = {
+      ...(reclaimsUnits ? { assertClaimable: assertReturnReclaimable(existing) } : {}),
+      // R2 A3 (TASK-2046): once money went out on this return (payouts on the
+      // order ledger — only ever under a REFUND decision), only a refund may
+      // stand on top of it; a refusal is refused on RECEIVED by the state
+      // machine anyway.
+      ...(wasRefund &&
+      (dto.decision === ReturnDecision.REPLACEMENT || dto.decision === ReturnDecision.REPAIR)
+        ? { refuseIfPaidOut: true }
+        : {}),
+      // «До повернення» exists exactly while the decision is REFUND.
+      ...(isRefund && !wasRefund ? { credit: 'compute' as const, actorId } : {}),
+      ...(!isRefund && wasRefund ? { credit: 'clear' as const, actorId } : {}),
+    };
 
     const decided = await this.returnRepository.decide(
       {
@@ -558,7 +566,7 @@ export class ReturnService {
         decidedById: actorId,
         decidedAt: new Date(),
       },
-      reclaimsUnits ? { assertClaimable: assertReturnReclaimable(existing) } : {},
+      options,
     );
 
     this.logger.info(
@@ -575,6 +583,66 @@ export class ReturnService {
     );
 
     return ReturnEntity.fromPrisma(decided, { includeInternal: true });
+  }
+
+  /**
+   * Admin — lower a refund return's credit («до повернення», R2 A3, TASK-2046):
+   * an incomplete set, a scratched case. Only down from the computed value,
+   * never below what was already paid out, always with a reason; the order's
+   * balance and the return's derived status follow in the same transaction.
+   *
+   * @throws NotFoundException RETURN_NOT_FOUND
+   * @throws BadRequestException RETURN_CREDIT_ABOVE_COMPUTED
+   * @throws ConflictException RETURN_CREDIT_NOT_REFUND, RETURN_CREDIT_BELOW_PAID_OUT
+   */
+  async reduceReturnCredit(
+    returnId: string,
+    actorId: string,
+    dto: ReduceReturnCreditDto,
+  ): Promise<ReturnEntity> {
+    const existing = await this.returnRepository.findById(returnId);
+
+    if (!existing) {
+      throw returnNotFoundError();
+    }
+    if (existing.decision !== ReturnDecision.REFUND || existing.creditKop == null) {
+      throw creditNotRefundError();
+    }
+
+    const updated = await this.returnRepository.setCredit(
+      {
+        id: existing.id,
+        orderId: existing.orderId,
+        status: existing.status,
+        decision: existing.decision,
+      },
+      { creditKop: dto.creditKop, creditReason: dto.reason },
+      {
+        assertCredit: (ceilings) => {
+          const verdict = assessCreditChange({ ...ceilings, requestedKop: dto.creditKop });
+          if (!verdict.ok) {
+            throw verdict.refusal === 'ABOVE_COMPUTED'
+              ? creditAboveComputedError(ceilings.computedKop)
+              : creditBelowPaidOutError(ceilings.paidOutKop);
+          }
+        },
+        actorId,
+      },
+    );
+
+    this.logger.info(
+      {
+        event: 'return.creditReduced',
+        returnId,
+        orderId: existing.orderId,
+        actorId,
+        from: existing.creditKop,
+        to: dto.creditKop,
+      },
+      'Return credit lowered',
+    );
+
+    return ReturnEntity.fromPrisma(updated, { includeInternal: true });
   }
 
   /**
@@ -761,45 +829,6 @@ function assertReturnReclaimable(existing: ReturnWithItems): AssertReturnClaimab
     existing.items.map((item) => [item.orderItemId, item.orderItem?.quantity ?? 0]),
   );
   return claimCap(ordered, sumByLine(existing.items), returnQuantityExceededOnReopenError);
-}
-
-/**
- * The two ceilings on `refundedAmount` (TASK-785), returned as a closure for the
- * repository to run inside the resolve transaction against a ledger read under a
- * lock on the order row — the same shape as the quantity cap (TASK-784).
- *
- * 1. **Returned value** — Σ (unit price × returned quantity) over this return's
- *    lines. GROSS line value: a discount is stored once on the order
- *    (`Order.discount`, clamped against `subtotal`) and never allocated to lines,
- *    so there is no per-line net price to use. Add-ons and shipping are not part
- *    of it, matching the DTO's "may be less than the line total".
- * 2. **Order balance** — `order.total` less every amount already recorded on the
- *    order's OTHER returns. This is the one that catches the discount: a 499.00
- *    line bought for 400.00 after a coupon refunds at most 400.00.
- *
- * All arithmetic in integer cents, like every money total in this codebase.
- */
-function assertRefundWithinCeilings(refundedAmount: string): AssertRefundWithinBalance {
-  const requested = toCents(refundedAmount);
-
-  return ({ orderTotal, otherRefunds, items }) => {
-    const returnedValue = items.reduce(
-      (sum, item) => sum + toCents(item.unitPrice) * item.quantity,
-      0,
-    );
-    if (requested > returnedValue) {
-      throw refundExceedsReturnedValueError(refundedAmount, centsToString(returnedValue));
-    }
-
-    const alreadyRefunded = otherRefunds.reduce(
-      (sum, row) => sum + (row.refundedAmount === null ? 0 : toCents(row.refundedAmount)),
-      0,
-    );
-    const remaining = Math.max(toCents(orderTotal) - alreadyRefunded, 0);
-    if (requested > remaining) {
-      throw refundExceedsOrderBalanceError(refundedAmount, centsToString(remaining));
-    }
-  };
 }
 
 /** Re-exported for the module's public surface. */

@@ -13411,7 +13411,8 @@
                 "PAID",
                 "FAILED",
                 "PARTIALLY_REFUNDED",
-                "REFUNDED"
+                "REFUNDED",
+                "PARTIALLY_PAID"
               ]
             }
           },
@@ -13426,7 +13427,8 @@
               "enum": [
                 "ONLINE",
                 "ON_DELIVERY",
-                "INSTALLMENTS"
+                "INSTALLMENTS",
+                "BANK_TRANSFER"
               ]
             }
           },
@@ -13705,7 +13707,8 @@
                 "PAID",
                 "FAILED",
                 "PARTIALLY_REFUNDED",
-                "REFUNDED"
+                "REFUNDED",
+                "PARTIALLY_PAID"
               ]
             }
           },
@@ -13720,7 +13723,8 @@
               "enum": [
                 "ONLINE",
                 "ON_DELIVERY",
-                "INSTALLMENTS"
+                "INSTALLMENTS",
+                "BANK_TRANSFER"
               ]
             }
           },
@@ -13954,7 +13958,8 @@
                 "PAID",
                 "FAILED",
                 "PARTIALLY_REFUNDED",
-                "REFUNDED"
+                "REFUNDED",
+                "PARTIALLY_PAID"
               ]
             }
           },
@@ -13969,7 +13974,8 @@
               "enum": [
                 "ONLINE",
                 "ON_DELIVERY",
-                "INSTALLMENTS"
+                "INSTALLMENTS",
+                "BANK_TRANSFER"
               ]
             }
           },
@@ -14266,49 +14272,6 @@
         ]
       }
     },
-    "/api/admin/orders/{orderId}/allowed-payment-transitions": {
-      "get": {
-        "operationId": "adminOrderControllerGetAllowedPaymentTransitions",
-        "parameters": [
-          {
-            "name": "orderId",
-            "required": true,
-            "in": "path",
-            "description": "Order UUID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Current payment status, the legal targets, and the optimistic-lock token",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AdminOrderAllowedPaymentTransitionsResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden — admin access required"
-          },
-          "404": {
-            "description": "Order not found"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "List legal next payment statuses for an order (admin)",
-        "tags": [
-          "Admin Orders"
-        ]
-      }
-    },
     "/api/admin/orders/{orderId}/status": {
       "patch": {
         "operationId": "adminOrderControllerUpdateStatus",
@@ -14365,9 +14328,10 @@
         ]
       }
     },
-    "/api/admin/orders/{orderId}/payment-status": {
-      "patch": {
-        "operationId": "adminOrderControllerUpdatePaymentStatus",
+    "/api/admin/orders/{orderId}/money": {
+      "get": {
+        "description": "Totals (paid, refunded, return credit, balance), the journal with authors and reversals, the receipt kinds this order admits, what may go back with and without a return, and the LiqPay attempts still refundable (null without payments:read).",
+        "operationId": "adminOrderMoneyControllerGet",
         "parameters": [
           {
             "name": "orderId",
@@ -14379,35 +14343,22 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateOrderPaymentStatusDto"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
-            "description": "Order payment status updated",
+            "description": "The order's money",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminOrderResponseEnvelope"
+                  "$ref": "#/components/schemas/AdminOrderMoneyResponse"
                 }
               }
             }
           },
           "403": {
-            "description": "Forbidden — admin access required"
+            "description": "Forbidden — orders:read required"
           },
           "404": {
             "description": "Order not found"
-          },
-          "409": {
-            "description": "ORDER_PAYMENT_TRANSITION_INVALID — the payment state machine forbids the move, or the starting status changed underneath the write; or ORDER_REFUND_REQUIRES_CLOSED_ORDER — a full refund was asked for on an order that is neither cancelled nor refunded"
           }
         },
         "security": [
@@ -14415,15 +14366,16 @@
             "access-token": []
           }
         ],
-        "summary": "Update order payment status (admin)",
+        "summary": "Get an order's money: totals, journal, what may be recorded (admin)",
         "tags": [
           "Admin Orders"
         ]
       }
     },
-    "/api/admin/orders/{orderId}/payment-correction": {
+    "/api/admin/orders/{orderId}/money/in": {
       "post": {
-        "operationId": "adminOrderControllerCorrectPaymentStatus",
+        "description": "NP cash on delivery, paid at the point, paid to the courier (by the order's delivery method) or a bank transfer; in part (prepayment) or in full. More than is owed needs a note. LiqPay payments are recorded by LiqPay only.",
+        "operationId": "adminOrderMoneyControllerRecordReceipt",
         "parameters": [
           {
             "name": "orderId",
@@ -14440,33 +14392,33 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CorrectPaymentStatusDto"
+                "$ref": "#/components/schemas/RecordMoneyInDto"
               }
             }
           }
         },
         "responses": {
-          "200": {
-            "description": "Payment mark corrected",
+          "201": {
+            "description": "Recorded",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminOrderResponseEnvelope"
+                  "$ref": "#/components/schemas/AdminOrderMoneyResponse"
                 }
               }
             }
           },
           "400": {
-            "description": "Missing reason, or a target other than PAID / PARTIALLY_REFUNDED"
+            "description": "ORDER_MONEY_IN_KIND_NOT_ALLOWED (the kind does not fit the delivery method), ORDER_MONEY_OVERPAYMENT_REASON_REQUIRED, ORDER_MONEY_ENTRY_INVALID (dated in the future), or a validation error (amountKop not a whole number ≥ 1)"
           },
           "403": {
-            "description": "Forbidden — payments:correct required"
+            "description": "Forbidden — orders:write required"
           },
           "404": {
             "description": "Order not found"
           },
           "409": {
-            "description": "ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND — the REFUNDED mark was reported by the payment provider, not set by an operator; or ORDER_PAYMENT_TRANSITION_INVALID — the payment is not REFUNDED (or changed underneath the write)"
+            "description": "ORDER_STALE — expectedUpdatedAt no longer matches the order (reload GET …/money)"
           }
         },
         "security": [
@@ -14474,7 +14426,205 @@
             "access-token": []
           }
         ],
-        "summary": "Correct a mistaken REFUNDED payment mark (admin)",
+        "summary": "Record money received (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
+    "/api/admin/orders/{orderId}/money/out": {
+      "post": {
+        "description": "Cash, bank transfer, or a LiqPay refund to the card (paymentId; REQUESTED until LiqPay confirms by callback, voided if it refuses). With returnId: a payout for a REFUND-decided, RECEIVED return, up to what is still owed on it (needs returns:write too) — the return becomes REFUNDED once its payouts cover it. Without: a cancelled order up to paid − refunded, or an overpayment. A shipped/delivered order otherwise pays out through a return; a live order is cancelled first.",
+        "operationId": "adminOrderMoneyControllerRecordPayout",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordMoneyOutDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderMoneyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "ORDER_MONEY_ENTRY_INVALID (paymentId missing on LIQPAY_REFUND, or given on another kind), or a validation error"
+          },
+          "403": {
+            "description": "Forbidden — payments:refund required; with returnId also returns:write"
+          },
+          "404": {
+            "description": "Order, return or payment not found"
+          },
+          "409": {
+            "description": "ORDER_STALE — expectedUpdatedAt no longer matches the order (reload GET …/money); ORDER_MONEY_NOTHING_PAID, ORDER_MONEY_ORDER_LIVE (cancel first), ORDER_MONEY_RETURN_REQUIRED, ORDER_MONEY_RETURN_NOT_REFUND, ORDER_MONEY_RETURN_NOT_RECEIVED, ORDER_MONEY_REFUND_EXCEEDS_PAID (over the ceiling, named in the message), or the LiqPay attempt is not SUCCEEDED"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Record money paid back (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
+    "/api/admin/orders/{orderId}/money/entries/{entryId}/reversal": {
+      "post": {
+        "description": "Writes a reversal of the same kind and amount with the reason; the original stays in the journal. Refused for LiqPay rows, reversals, voided rows, an entry already reversed, and a receipt the payouts depend on. A reversed payout can send its return back to RECEIVED.",
+        "operationId": "adminOrderMoneyControllerReverseEntry",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "entryId",
+            "required": true,
+            "in": "path",
+            "description": "Money entry UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoneyCorrectionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Reversed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderMoneyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Blank reason (validation)"
+          },
+          "403": {
+            "description": "Forbidden — payments:correct required"
+          },
+          "404": {
+            "description": "Order or entry not found"
+          },
+          "409": {
+            "description": "ORDER_STALE — expectedUpdatedAt no longer matches the order (reload GET …/money); ORDER_MONEY_REVERSAL_REFUSED, or ORDER_MONEY_REFUND_EXCEEDS_PAID (the receipt backs payouts — reverse the payout first)"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reverse (сторнувати) a money entry (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
+    "/api/admin/orders/{orderId}/money/entries/{entryId}/void": {
+      "post": {
+        "description": "For a REQUESTED LiqPay refund the provider refused but that could not be voided automatically: it stops counting against what may still be refunded.",
+        "operationId": "adminOrderMoneyControllerVoidEntry",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "entryId",
+            "required": true,
+            "in": "path",
+            "description": "Money entry UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoneyCorrectionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Voided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderMoneyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Blank reason (validation)"
+          },
+          "403": {
+            "description": "Forbidden — payments:correct required"
+          },
+          "404": {
+            "description": "Order or entry not found"
+          },
+          "409": {
+            "description": "ORDER_STALE — expectedUpdatedAt no longer matches the order (reload GET …/money); ORDER_MONEY_VOID_REFUSED (not a live REQUESTED LiqPay refund)"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Void a LiqPay refund stuck awaiting confirmation (admin)",
         "tags": [
           "Admin Orders"
         ]
@@ -14737,7 +14887,7 @@
             "name": "sortBy",
             "required": false,
             "in": "query",
-            "description": "Sort field (requestedAt, status, refundedAmount)",
+            "description": "Sort field (requestedAt, status, refundedAmount). refundedAmount orders by «До повернення» (creditKop) since R2 — TASK-2339.",
             "schema": {
               "default": "requestedAt",
               "example": "requestedAt",
@@ -14822,7 +14972,7 @@
         ]
       },
       "patch": {
-        "description": "With a status: a guarded transition (RECEIVED or REFUNDED), optionally with notes, refundedAmount and restock. Without a status: saves operatorNotes alone on a return of any status — no transition, resolvedAt and the decision untouched.",
+        "description": "With a status: the guarded move to RECEIVED (the goods are back), optionally with notes and restock. Without a status: saves operatorNotes alone on a return of any status — no transition, resolvedAt and the decision untouched. No money here: payouts are recorded on the order (POST /admin/orders/:orderId/money/out) and REFUNDED follows from them.",
         "operationId": "adminReturnControllerResolve",
         "parameters": [
           {
@@ -14857,13 +15007,13 @@
             }
           },
           "400": {
-            "description": "error: RETURN_UPDATE_EMPTY (neither a status nor operatorNotes), RETURN_STATUS_REQUIRED (refundedAmount or restock without a status), RETURN_USE_DECISION_ENDPOINT (APPROVED and REJECTED are set only by a decision), RETURN_RESTOCK_REQUIRES_RECEIVED (restock requested for a status other than RECEIVED), RETURN_REFUND_EXCEEDS_RETURNED_VALUE or RETURN_REFUND_EXCEEDS_ORDER_BALANCE"
+            "description": "error: RETURN_UPDATE_EMPTY (neither a status nor operatorNotes), RETURN_STATUS_REQUIRED (restock without a status), RETURN_USE_DECISION_ENDPOINT (APPROVED and REJECTED are set only by a decision), RETURN_REFUND_DERIVED (REFUNDED follows from the payouts), or a validation error (an unknown field such as the retired refundedAmount)"
           },
           "404": {
             "description": "Return not found — error: RETURN_NOT_FOUND"
           },
           "409": {
-            "description": "error: RETURN_TRANSITION_INVALID (illegal transition, or REFUNDED without a REFUND decision) or RETURN_ALREADY_RESTOCKED (the goods were already credited back to inventory)"
+            "description": "error: RETURN_TRANSITION_INVALID (illegal transition) or RETURN_ALREADY_RESTOCKED (the goods were already credited back to inventory)"
           }
         },
         "security": [
@@ -14872,6 +15022,66 @@
           }
         ],
         "summary": "Resolve a return, or save its operator notes (admin)",
+        "tags": [
+          "Admin Returns"
+        ]
+      }
+    },
+    "/api/admin/returns/{returnId}/credit": {
+      "patch": {
+        "description": "Reduce-only: at most the computed value (the returned lines less their promo share), at least what was already paid out on the return; the reason is required and kept as creditReason. Recomputes the order balance; a credit lowered to what was paid out makes the return REFUNDED.",
+        "operationId": "adminReturnControllerReduceCredit",
+        "parameters": [
+          {
+            "name": "returnId",
+            "required": true,
+            "in": "path",
+            "description": "Return UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReduceReturnCreditDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credit lowered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReturnResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "error: RETURN_CREDIT_ABOVE_COMPUTED (more than the computed value), or a validation error (creditKop not a whole number ≥ 0, blank reason)"
+          },
+          "403": {
+            "description": "Forbidden — returns:write required"
+          },
+          "404": {
+            "description": "Return not found — error: RETURN_NOT_FOUND"
+          },
+          "409": {
+            "description": "error: RETURN_CREDIT_NOT_REFUND (the return is not decided as a refund) or RETURN_CREDIT_BELOW_PAID_OUT (less than was already paid out — reverse a payout first)"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Lower the amount owed back on a refund return (admin)",
         "tags": [
           "Admin Returns"
         ]
@@ -15620,57 +15830,6 @@
           }
         ],
         "summary": "List every payment attempt for an order (admin)",
-        "tags": [
-          "Payments"
-        ]
-      }
-    },
-    "/api/admin/payments/{paymentId}/refund": {
-      "post": {
-        "operationId": "adminRefundPayment",
-        "parameters": [
-          {
-            "name": "paymentId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RefundRequestDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Refund requested. The payment becomes REFUNDED only when the provider confirms it by callback — do not treat this response as confirmation."
-          },
-          "400": {
-            "description": "Amount is zero or not a two-decimal string, or exceeds what is left to refund on the attempt after earlier refunds (`error: PAYMENT_REFUND_EXCEEDS_BALANCE`)"
-          },
-          "403": {
-            "description": "Forbidden — payments:refund required"
-          },
-          "404": {
-            "description": "Payment not found"
-          },
-          "409": {
-            "description": "The attempt is not SUCCEEDED — nothing to refund"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Request a refund for a payment (admin)",
         "tags": [
           "Payments"
         ]
@@ -23185,7 +23344,8 @@
               "PAID",
               "FAILED",
               "PARTIALLY_REFUNDED",
-              "REFUNDED"
+              "REFUNDED",
+              "PARTIALLY_PAID"
             ],
             "example": "PAID"
           },
@@ -29477,7 +29637,8 @@
               "PAID",
               "FAILED",
               "PARTIALLY_REFUNDED",
-              "REFUNDED"
+              "REFUNDED",
+              "PARTIALLY_PAID"
             ],
             "example": "PENDING"
           },
@@ -29487,7 +29648,8 @@
             "enum": [
               "ONLINE",
               "ON_DELIVERY",
-              "INSTALLMENTS"
+              "INSTALLMENTS",
+              "BANK_TRANSFER"
             ],
             "example": "ON_DELIVERY"
           },
@@ -29553,8 +29715,33 @@
           },
           "refundedTotal": {
             "type": "string",
-            "description": "Total refunded across this order's return requests, as a string (\"X\" of \"X of Y\", with Y = `total`). Derived at read time from Σ `Return.refundedAmount`; present on admin responses only.",
+            "description": "Total refunded on this order, as a string (\"X\" of \"Повернуто X з Y\"). Since R2 the ledger total `refundedKop` in hryvnias; present on admin responses only.",
             "example": "499.00"
+          },
+          "paidKop": {
+            "type": "number",
+            "description": "Money received for this order, integer kopecks — Σ IN of the order money ledger, net of reversals (R2, TASK-2047).",
+            "example": 177000
+          },
+          "refundedKop": {
+            "type": "number",
+            "description": "Money sent back, integer kopecks — Σ OUT of the ledger, net of reversals, voided ignored; a LiqPay refund counts from the moment it is requested.",
+            "example": 0
+          },
+          "returnCreditKop": {
+            "type": "number",
+            "description": "Σ «До повернення» of the order's REFUND-decided returns, integer kopecks: the part of the total the customer no longer owes for goods that came back.",
+            "example": 0
+          },
+          "balanceKop": {
+            "type": "number",
+            "description": "What is still owed, integer kopecks: > 0 the customer owes the shop («Борг»), < 0 the shop owes the customer («Винні покупцю»). Nothing is due on a CANCELLED order.",
+            "example": 0
+          },
+          "refundedAfterCancel": {
+            "type": "boolean",
+            "description": "A CANCELLED order whose money (some or all) went back — «Скасовано · кошти повернено» (TASK-1970). A cancelled order never becomes REFUNDED.",
+            "example": false
           },
           "unavailableItemIds": {
             "description": "Ids of the order lines whose product is no longer orderable — deleted, unpublished, oversold, or holding a reservation the TTL worker has released (TASK-470). Derived at read time; present on admin responses only, and absent (never empty) elsewhere.",
@@ -29662,6 +29849,11 @@
           "tax",
           "addonsTotal",
           "total",
+          "paidKop",
+          "refundedKop",
+          "returnCreditKop",
+          "balanceKop",
+          "refundedAfterCancel",
           "pickupPointId",
           "shippingAddress",
           "billingAddress",
@@ -29719,7 +29911,8 @@
               "PAID",
               "FAILED",
               "PARTIALLY_REFUNDED",
-              "REFUNDED"
+              "REFUNDED",
+              "PARTIALLY_PAID"
             ],
             "example": "PENDING"
           },
@@ -29729,7 +29922,8 @@
             "enum": [
               "ONLINE",
               "ON_DELIVERY",
-              "INSTALLMENTS"
+              "INSTALLMENTS",
+              "BANK_TRANSFER"
             ],
             "example": "ON_DELIVERY"
           },
@@ -29795,8 +29989,33 @@
           },
           "refundedTotal": {
             "type": "string",
-            "description": "Total refunded across this order's return requests, as a string (\"X\" of \"X of Y\", with Y = `total`). Derived at read time from Σ `Return.refundedAmount`; present on admin responses only.",
+            "description": "Total refunded on this order, as a string (\"X\" of \"Повернуто X з Y\"). Since R2 the ledger total `refundedKop` in hryvnias; present on admin responses only.",
             "example": "499.00"
+          },
+          "paidKop": {
+            "type": "number",
+            "description": "Money received for this order, integer kopecks — Σ IN of the order money ledger, net of reversals (R2, TASK-2047).",
+            "example": 177000
+          },
+          "refundedKop": {
+            "type": "number",
+            "description": "Money sent back, integer kopecks — Σ OUT of the ledger, net of reversals, voided ignored; a LiqPay refund counts from the moment it is requested.",
+            "example": 0
+          },
+          "returnCreditKop": {
+            "type": "number",
+            "description": "Σ «До повернення» of the order's REFUND-decided returns, integer kopecks: the part of the total the customer no longer owes for goods that came back.",
+            "example": 0
+          },
+          "balanceKop": {
+            "type": "number",
+            "description": "What is still owed, integer kopecks: > 0 the customer owes the shop («Борг»), < 0 the shop owes the customer («Винні покупцю»). Nothing is due on a CANCELLED order.",
+            "example": 0
+          },
+          "refundedAfterCancel": {
+            "type": "boolean",
+            "description": "A CANCELLED order whose money (some or all) went back — «Скасовано · кошти повернено» (TASK-1970). A cancelled order never becomes REFUNDED.",
+            "example": false
           },
           "unavailableItemIds": {
             "description": "Ids of the order lines whose product is no longer orderable — deleted, unpublished, oversold, or holding a reservation the TTL worker has released (TASK-470). Derived at read time; present on admin responses only, and absent (never empty) elsewhere.",
@@ -29909,6 +30128,11 @@
           "tax",
           "addonsTotal",
           "total",
+          "paidKop",
+          "refundedKop",
+          "returnCreditKop",
+          "balanceKop",
+          "refundedAfterCancel",
           "pickupPointId",
           "shippingAddress",
           "billingAddress",
@@ -30100,7 +30324,8 @@
               "PAID",
               "FAILED",
               "PARTIALLY_REFUNDED",
-              "REFUNDED"
+              "REFUNDED",
+              "PARTIALLY_PAID"
             ],
             "example": "PENDING"
           },
@@ -30110,7 +30335,8 @@
             "enum": [
               "ONLINE",
               "ON_DELIVERY",
-              "INSTALLMENTS"
+              "INSTALLMENTS",
+              "BANK_TRANSFER"
             ],
             "example": "ON_DELIVERY"
           },
@@ -30155,6 +30381,16 @@
             "description": "Grand total as string",
             "example": "668.00"
           },
+          "totalKop": {
+            "type": "number",
+            "description": "Grand total in integer kopecks — the Y of «Сплачено X з Y» next to paidKop (R2).",
+            "example": 66800
+          },
+          "paidKop": {
+            "type": "number",
+            "description": "Money received for this order so far, integer kopecks (R2, TASK-2047) — the X of «Сплачено X з Y» on a PARTIALLY_PAID order. The ledger entries are never exposed.",
+            "example": 0
+          },
           "delivery": {
             "description": "Delivery destination",
             "allOf": [
@@ -30183,6 +30419,8 @@
           "shippingCost",
           "addonsTotal",
           "total",
+          "totalKop",
+          "paidKop",
           "delivery",
           "trackingNumber"
         ]
@@ -30322,8 +30560,8 @@
             "type": "string",
             "description": "Intended payment method. Omitted defaults to ON_DELIVERY. ONLINE and INSTALLMENTS additionally start the reservation countdown after which an unpaid order is auto-cancelled and its stock returned.",
             "enum": [
-              "ONLINE",
               "ON_DELIVERY",
+              "ONLINE",
               "INSTALLMENTS"
             ],
             "default": "ON_DELIVERY"
@@ -30530,7 +30768,8 @@
               "PAID",
               "FAILED",
               "PARTIALLY_REFUNDED",
-              "REFUNDED"
+              "REFUNDED",
+              "PARTIALLY_PAID"
             ],
             "nullable": true,
             "example": "PENDING"
@@ -30543,7 +30782,8 @@
               "PAID",
               "FAILED",
               "PARTIALLY_REFUNDED",
-              "REFUNDED"
+              "REFUNDED",
+              "PARTIALLY_PAID"
             ],
             "nullable": true,
             "example": "PAID"
@@ -30560,7 +30800,9 @@
             "enum": [
               "PAID_AFTER_CANCEL",
               "SHIPPED_UNPAID",
-              "PAYMENT_EVENT_REFUSED"
+              "PAYMENT_EVENT_REFUSED",
+              "LEGACY_MONEY_UNKNOWN",
+              "PROVIDER_REFUND_UNMATCHED"
             ],
             "nullable": true,
             "example": null
@@ -30573,7 +30815,8 @@
               "PAID",
               "FAILED",
               "PARTIALLY_REFUNDED",
-              "REFUNDED"
+              "REFUNDED",
+              "PARTIALLY_PAID"
             ],
             "nullable": true,
             "example": null
@@ -30725,58 +30968,6 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/AdminOrderAllowedTransitions"
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
-      "AdminOrderAllowedPaymentTransitions": {
-        "type": "object",
-        "properties": {
-          "current": {
-            "type": "string",
-            "description": "The order's current payment status",
-            "enum": [
-              "PENDING",
-              "PAID",
-              "FAILED",
-              "PARTIALLY_REFUNDED",
-              "REFUNDED"
-            ]
-          },
-          "allowed": {
-            "type": "array",
-            "description": "Payment statuses the order may legally move to right now. Already filtered by the cross-rule that a full REFUNDED needs the order cancelled or refunded first, so every value here is one the PATCH will accept.",
-            "items": {
-              "type": "string",
-              "enum": [
-                "PENDING",
-                "PAID",
-                "FAILED",
-                "PARTIALLY_REFUNDED",
-                "REFUNDED"
-              ]
-            }
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string",
-            "description": "The order's current `updatedAt` — the same optimistic-lock token the status transitions endpoint returns, so both pickers on the page read one version of the order.",
-            "example": "2026-07-28T10:15:30.000Z"
-          }
-        },
-        "required": [
-          "current",
-          "allowed",
-          "updatedAt"
-        ]
-      },
-      "AdminOrderAllowedPaymentTransitionsResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/AdminOrderAllowedPaymentTransitions"
           }
         },
         "required": [
@@ -30977,11 +31168,12 @@
           },
           "paymentMethod": {
             "type": "string",
-            "description": "How the customer will pay",
+            "description": "How the customer will pay. BANK_TRANSFER («Переказ на рахунок ФОП») is admin-only — any delivery method admits it here, the storefront checkout never does; it carries no reservation deadline. The money is recorded on the order (POST …/money/in).",
             "enum": [
               "ONLINE",
               "ON_DELIVERY",
-              "INSTALLMENTS"
+              "INSTALLMENTS",
+              "BANK_TRANSFER"
             ],
             "default": "ON_DELIVERY"
           },
@@ -31065,55 +31257,526 @@
           }
         }
       },
-      "UpdateOrderPaymentStatusDto": {
+      "OrderStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "CONFIRMED",
+          "PROCESSING",
+          "SHIPPED",
+          "DELIVERED",
+          "CANCELLED",
+          "REFUNDED"
+        ]
+      },
+      "PaymentStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "PAID",
+          "FAILED",
+          "PARTIALLY_REFUNDED",
+          "REFUNDED",
+          "PARTIALLY_PAID"
+        ],
+        "description": "Derived from the ledger — a label to show, not a control"
+      },
+      "PaymentMethod": {
+        "type": "string",
+        "enum": [
+          "ONLINE",
+          "ON_DELIVERY",
+          "INSTALLMENTS",
+          "BANK_TRANSFER"
+        ]
+      },
+      "OrderMoneyTotalsEntity": {
         "type": "object",
         "properties": {
-          "paymentStatus": {
-            "type": "string",
-            "description": "Target payment status",
-            "enum": [
-              "PENDING",
-              "PAID",
-              "FAILED",
-              "PARTIALLY_REFUNDED",
-              "REFUNDED"
-            ]
+          "totalKop": {
+            "type": "number",
+            "description": "Order total, kopecks",
+            "example": 129900
+          },
+          "paidKop": {
+            "type": "number",
+            "description": "Σ receipts, net of reversals, kopecks",
+            "example": 129900
+          },
+          "refundedKop": {
+            "type": "number",
+            "description": "Σ payouts, net of reversals; a LiqPay refund counts from the request on",
+            "example": 0
+          },
+          "returnCreditKop": {
+            "type": "number",
+            "description": "Σ «до повернення» of the REFUND-decided returns",
+            "example": 0
+          },
+          "balanceKop": {
+            "type": "number",
+            "description": "> 0 the customer owes («Борг»), < 0 the shop owes the customer («Винні покупцю»). total − returnCredit − paid + refunded; 0 is due on a CANCELLED order.",
+            "example": 0
           }
         },
         "required": [
-          "paymentStatus"
+          "totalKop",
+          "paidKop",
+          "refundedKop",
+          "returnCreditKop",
+          "balanceKop"
         ]
       },
-      "PaymentCorrectionTarget": {
+      "MoneyDirection": {
         "type": "string",
         "enum": [
-          "PAID",
-          "PARTIALLY_REFUNDED"
-        ],
-        "description": "What the mistaken REFUNDED mark should have been"
+          "IN",
+          "OUT"
+        ]
       },
-      "CorrectPaymentStatusDto": {
+      "MoneyEntryKind": {
+        "type": "string",
+        "enum": [
+          "LIQPAY_PAYMENT",
+          "COD_NOVA_POSHTA",
+          "PAID_AT_POINT",
+          "PAID_TO_COURIER",
+          "BANK_TRANSFER",
+          "LIQPAY_REFUND",
+          "CASH_REFUND",
+          "TRANSFER_REFUND"
+        ]
+      },
+      "MoneyProviderState": {
+        "type": "string",
+        "enum": [
+          "REQUESTED",
+          "CONFIRMED"
+        ],
+        "description": "LiqPay refunds only: REQUESTED until the provider confirms («очікує підтвердження LiqPay»), then CONFIRMED"
+      },
+      "OrderMoneyEntryEntity": {
         "type": "object",
         "properties": {
-          "paymentStatus": {
-            "description": "What the mistaken REFUNDED mark should have been",
-            "example": "PAID",
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "direction": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/PaymentCorrectionTarget"
+                "$ref": "#/components/schemas/MoneyDirection"
               }
             ]
           },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MoneyEntryKind"
+              }
+            ]
+          },
+          "amountKop": {
+            "type": "number",
+            "description": "Integer kopecks, always > 0 — the direction (and reversalOfId) carry the sign",
+            "example": 50000
+          },
+          "returnId": {
+            "type": "string",
+            "description": "The return this payout settles",
+            "nullable": true
+          },
+          "paymentId": {
+            "type": "string",
+            "description": "The LiqPay attempt of a LiqPay row",
+            "nullable": true
+          },
+          "providerState": {
+            "description": "LiqPay refunds only: REQUESTED until the provider confirms («очікує підтвердження LiqPay»), then CONFIRMED",
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MoneyProviderState"
+              }
+            ]
+          },
+          "actorId": {
+            "type": "string",
+            "description": "Who wrote it; null for LiqPay/system rows",
+            "nullable": true
+          },
+          "actorName": {
+            "type": "string",
+            "description": "First and last name (or email) of the author; null for LiqPay/system rows",
+            "nullable": true,
+            "example": "Олена Коваль"
+          },
           "reason": {
             "type": "string",
-            "description": "Why the mark is being corrected — required, stored in the action log",
-            "example": "Помилково натиснула «Кошти повернено» замість «Частково повернено»",
-            "maxLength": 500
+            "description": "Note or reason",
+            "nullable": true
+          },
+          "reversalOfId": {
+            "type": "string",
+            "description": "Set on a reversal (сторно): the entry it cancels",
+            "nullable": true
+          },
+          "reversedById": {
+            "type": "string",
+            "description": "Set when another entry reverses this one — show it struck through",
+            "nullable": true
+          },
+          "voidedAt": {
+            "type": "string",
+            "description": "A LiqPay refund the provider refused (or an operator voided) — never moved money",
+            "format": "date-time",
+            "nullable": true
+          },
+          "voidReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "legacy": {
+            "type": "boolean",
+            "description": "Inferred by the R2 backfill from pre-ledger labels"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the money moved"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When it was written"
           }
         },
         "required": [
+          "id",
+          "direction",
+          "kind",
+          "amountKop",
+          "returnId",
+          "paymentId",
+          "providerState",
+          "actorId",
+          "actorName",
+          "reason",
+          "reversalOfId",
+          "reversedById",
+          "voidedAt",
+          "voidReason",
+          "legacy",
+          "occurredAt",
+          "createdAt"
+        ]
+      },
+      "OrderMoneyRefundablePaymentEntity": {
+        "type": "object",
+        "properties": {
+          "paymentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "remainingKop": {
+            "type": "number",
+            "description": "Most that may still go back to this card through LiqPay, kopecks",
+            "example": 129900
+          }
+        },
+        "required": [
+          "paymentId",
+          "remainingKop"
+        ]
+      },
+      "ReturnStatus": {
+        "type": "string",
+        "enum": [
+          "REQUESTED",
+          "APPROVED",
+          "REJECTED",
+          "RECEIVED",
+          "REFUNDED"
+        ]
+      },
+      "OrderMoneyReturnEntity": {
+        "type": "object",
+        "properties": {
+          "returnId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReturnStatus"
+              }
+            ]
+          },
+          "creditKop": {
+            "type": "number",
+            "description": "«До повернення», kopecks",
+            "example": 33333
+          },
+          "creditReason": {
+            "type": "string",
+            "description": "Why the credit was lowered",
+            "nullable": true
+          },
+          "paidOutKop": {
+            "type": "number",
+            "description": "Σ payouts on this return, net of reversals",
+            "example": 10000
+          },
+          "owedKop": {
+            "type": "number",
+            "description": "Still owed on this return (credit − payouts, ≥ 0)",
+            "example": 23333
+          }
+        },
+        "required": [
+          "returnId",
+          "status",
+          "creditKop",
+          "creditReason",
+          "paidOutKop",
+          "owedKop"
+        ]
+      },
+      "OrderMoneyEntity": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orderStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderStatus"
+              }
+            ]
+          },
+          "paymentStatus": {
+            "description": "Derived from the ledger — a label to show, not a control",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          },
+          "paymentMethod": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentMethod"
+              }
+            ]
+          },
+          "deliveryMethod": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryMethod"
+              }
+            ]
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "The order's updatedAt — send it back as expectedUpdatedAt on the next money write"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/OrderMoneyTotalsEntity"
+          },
+          "entries": {
+            "description": "The journal, oldest first (by when the money moved)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderMoneyEntryEntity"
+            }
+          },
+          "allowedInKinds": {
+            "type": "array",
+            "description": "What «Записати надходження» may offer, the customer-chosen kind first: the delivery hand-over kind and BANK_TRANSFER (only BANK_TRANSFER for OTHER delivery)",
+            "items": {
+              "$ref": "#/components/schemas/MoneyEntryKind"
+            }
+          },
+          "refundablePayments": {
+            "description": "LiqPay attempts that can still be refunded to the card. Null for a reader without payments:read.",
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderMoneyRefundablePaymentEntity"
+            }
+          },
+          "outWithoutReturnMaxKop": {
+            "type": "number",
+            "description": "Most that may go back WITHOUT a return right now: paid − refunded on a cancelled order, the overpayment otherwise; 0 when only a return can pay out",
+            "example": 0
+          },
+          "returns": {
+            "description": "The REFUND-decided returns with what is owed and paid out on each",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderMoneyReturnEntity"
+            }
+          }
+        },
+        "required": [
+          "orderId",
+          "orderStatus",
           "paymentStatus",
-          "reason"
+          "paymentMethod",
+          "deliveryMethod",
+          "updatedAt",
+          "totals",
+          "entries",
+          "allowedInKinds",
+          "refundablePayments",
+          "outWithoutReturnMaxKop",
+          "returns"
+        ]
+      },
+      "AdminOrderMoneyResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OrderMoneyEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "MoneyInKind": {
+        "type": "string",
+        "enum": [
+          "COD_NOVA_POSHTA",
+          "PAID_AT_POINT",
+          "PAID_TO_COURIER",
+          "BANK_TRANSFER"
+        ],
+        "description": "What came in. Must be one of the order's `allowedInKinds` (GET …/money): the delivery's own hand-over kind (NP cash on delivery, paid at the pickup point, paid to the courier) or a bank transfer. LIQPAY_PAYMENT is written only by LiqPay."
+      },
+      "RecordMoneyInDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "description": "What came in. Must be one of the order's `allowedInKinds` (GET …/money): the delivery's own hand-over kind (NP cash on delivery, paid at the pickup point, paid to the courier) or a bank transfer. LIQPAY_PAYMENT is written only by LiqPay.",
+            "example": "COD_NOVA_POSHTA",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MoneyInKind"
+              }
+            ]
+          },
+          "amountKop": {
+            "type": "integer",
+            "description": "Integer kopecks, > 0. A part payment (prepayment) is fine; more than the order still owes needs a `note` (ORDER_MONEY_OVERPAYMENT_REASON_REQUIRED).",
+            "minimum": 1,
+            "maximum": 2147483647,
+            "example": 129900
+          },
+          "occurredAt": {
+            "type": "string",
+            "description": "When the money actually arrived; defaults to now, never in the future",
+            "format": "date-time"
+          },
+          "note": {
+            "type": "string",
+            "description": "Free text for the journal; required for an overpayment. Blank becomes null.",
+            "nullable": true,
+            "maxLength": 500
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "description": "The order's `updatedAt` as the screen last read it (from GET …/money). A stale value is refused with 409 ORDER_STALE.",
+            "format": "date-time",
+            "example": "2026-11-01T10:15:30.000Z"
+          }
+        },
+        "required": [
+          "kind",
+          "amountKop",
+          "expectedUpdatedAt"
+        ]
+      },
+      "MoneyOutKind": {
+        "type": "string",
+        "enum": [
+          "CASH_REFUND",
+          "TRANSFER_REFUND",
+          "LIQPAY_REFUND"
+        ],
+        "description": "How the money goes back: cash at the point, a bank transfer, or a LiqPay refund to the card (needs `paymentId`; confirmed later by the LiqPay callback)."
+      },
+      "RecordMoneyOutDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "description": "How the money goes back: cash at the point, a bank transfer, or a LiqPay refund to the card (needs `paymentId`; confirmed later by the LiqPay callback).",
+            "example": "CASH_REFUND",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MoneyOutKind"
+              }
+            ]
+          },
+          "amountKop": {
+            "type": "integer",
+            "description": "Integer kopecks, > 0, at most what may go back (`returns[].owedKop` for a return, `outWithoutReturnMaxKop` without one, `refundablePayments[].remainingKop` for LiqPay).",
+            "minimum": 1,
+            "maximum": 2147483647,
+            "example": 50000
+          },
+          "returnId": {
+            "type": "string",
+            "description": "The return this payout settles (needs returns:write as well). Omit for a cancelled order or an overpayment.",
+            "format": "uuid"
+          },
+          "paymentId": {
+            "type": "string",
+            "description": "The LiqPay payment attempt to refund — required for LIQPAY_REFUND only",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Free text for the journal. Blank becomes null. Required without `returnId` (a cancelled order, an overpayment) — ORDER_MONEY_PAYOUT_REASON_REQUIRED otherwise.",
+            "nullable": true,
+            "maxLength": 500
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "description": "The order's `updatedAt` as the screen last read it (from GET …/money). A stale value is refused with 409 ORDER_STALE.",
+            "format": "date-time",
+            "example": "2026-11-01T10:15:30.000Z"
+          }
+        },
+        "required": [
+          "kind",
+          "amountKop",
+          "expectedUpdatedAt"
+        ]
+      },
+      "MoneyCorrectionDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Why — required, kept on the entry and in the action log",
+            "maxLength": 500,
+            "example": "Касир помилково вніс суму двічі"
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "description": "The order's `updatedAt` as the screen last read it (from GET …/money). A stale value is refused with 409 ORDER_STALE.",
+            "format": "date-time",
+            "example": "2026-11-01T10:15:30.000Z"
+          }
+        },
+        "required": [
+          "reason",
+          "expectedUpdatedAt"
         ]
       },
       "ReturnActorEntity": {
@@ -31382,9 +32045,25 @@
           },
           "refundedAmount": {
             "type": "string",
-            "description": "What was actually refunded, as a string; null until money moves",
+            "description": "What was paid out on this return, in hryvnias as a string — Σ of its payouts on the order money ledger, net of reversals, voided ignored (R2, TASK-2339); null while nothing was paid out. The legacy returns.refunded_amount column is no longer read.",
             "nullable": true,
             "example": "499.00"
+          },
+          "paidOutKop": {
+            "type": "number",
+            "description": "Admin only. The same payouts as refundedAmount, integer kopecks (R2, TASK-2339).",
+            "example": 49900
+          },
+          "creditKop": {
+            "type": "number",
+            "description": "Admin only. «До повернення» in integer kopecks (R2, TASK-2046): the returned lines value less their promo share, set when the decision becomes REFUND, null otherwise. Lowered with PATCH /admin/returns/:returnId/credit. What was paid out against it is on the order ledger (GET /admin/orders/:orderId/money → returns[]).",
+            "nullable": true,
+            "example": 33333
+          },
+          "creditReason": {
+            "type": "string",
+            "description": "Admin only. Why the credit was lowered; null while it is the computed value.",
+            "nullable": true
           },
           "createdByUserId": {
             "type": "string",
@@ -31638,7 +32317,7 @@
         "properties": {
           "status": {
             "type": "string",
-            "description": "New return status: RECEIVED or REFUNDED. Validated against the return state machine; REFUNDED needs a REFUND decision. APPROVED and REJECTED are set only by a decision (POST /admin/returns/:returnId/decision) and are refused here with RETURN_USE_DECISION_ENDPOINT. Omit it to save operatorNotes alone on a return of any status — no transition, resolvedAt and the decision untouched; refundedAmount and restock are then refused with RETURN_STATUS_REQUIRED.",
+            "description": "New return status: RECEIVED. Validated against the return state machine. APPROVED and REJECTED are set only by a decision (POST /admin/returns/:returnId/decision) and are refused here with RETURN_USE_DECISION_ENDPOINT; REFUNDED is derived from the payouts (POST /admin/orders/:orderId/money/out) and is refused with RETURN_REFUND_DERIVED. Omit it to save operatorNotes alone on a return of any status — no transition, resolvedAt and the decision untouched; restock is then refused with RETURN_STATUS_REQUIRED.",
             "enum": [
               "REQUESTED",
               "APPROVED",
@@ -31653,18 +32332,33 @@
             "nullable": true,
             "maxLength": 2000
           },
-          "refundedAmount": {
-            "type": "object",
-            "description": "What was actually refunded, as a decimal string. May be less than the line total — shipping is not always refundable and partial returns are normal.",
-            "nullable": true,
-            "example": "499.00"
-          },
           "restock": {
             "type": "boolean",
             "description": "Credit the returned units back to sellable stock. Only meaningful when moving to RECEIVED — the goods are physically back. Guarded so the same return can never be restocked twice.",
             "example": true
           }
         }
+      },
+      "ReduceReturnCreditDto": {
+        "type": "object",
+        "properties": {
+          "creditKop": {
+            "type": "integer",
+            "description": "The new «до повернення» in integer kopecks — at most the computed value, at least what was already paid out on this return",
+            "minimum": 0,
+            "example": 30000
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the amount is lowered — required",
+            "maxLength": 500,
+            "example": "Повернули без зарядного блока"
+          }
+        },
+        "required": [
+          "creditKop",
+          "reason"
+        ]
       },
       "DecideReturnDto": {
         "type": "object",
@@ -31925,14 +32619,6 @@
           "phone",
           "workingHours",
           "mapUrl"
-        ]
-      },
-      "PaymentMethod": {
-        "type": "string",
-        "enum": [
-          "ONLINE",
-          "ON_DELIVERY",
-          "INSTALLMENTS"
         ]
       },
       "DeliveryPaymentMatrixDto": {
@@ -32546,16 +33232,6 @@
         "required": [
           "data"
         ]
-      },
-      "RefundRequestDto": {
-        "type": "object",
-        "properties": {
-          "amount": {
-            "type": "string",
-            "description": "Amount to refund as a decimal string. Omit to refund in full.",
-            "example": "499.00"
-          }
-        }
       },
       "DailyDataPointDto": {
         "type": "object",

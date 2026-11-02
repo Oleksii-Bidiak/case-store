@@ -850,6 +850,10 @@ describe("AdminOrderTable — the derived marks of B-1 (TASK-470/471/472)", () =
       status: "DELIVERED",
       paymentStatus: "PENDING",
       total: "1200.00",
+      paidKop: 0,
+      refundedKop: 0,
+      returnCreditKop: 0,
+      balanceKop: 120000,
     });
     renderWithProviders(<AdminOrderTable />);
     expect((await table()).getByText(/Борг\s/)).toHaveTextContent(/1\s?200/);
@@ -879,16 +883,38 @@ describe("AdminOrderTable — the derived marks of B-1 (TASK-470/471/472)", () =
     ).toBeInTheDocument();
   });
 
-  it("shows the refunded fraction on a partially refunded order", async () => {
+  it("shows what went back of the returned goods — AD-RET-17, no «Борг»", async () => {
     stubRow({
+      status: "DELIVERED",
       paymentStatus: "PARTIALLY_REFUNDED",
-      refundedTotal: "499.00",
-      total: "1200.00",
+      total: "2397.00",
+      paidKop: 239700,
+      refundedKop: 10000,
+      returnCreditKop: 79900,
+      balanceKop: -69900,
     });
     renderWithProviders(<AdminOrderTable />);
-    const chip = (await table()).getByText(/Частково повернуто \d/);
-    expect(chip).toHaveTextContent(/499/);
-    expect(chip).toHaveTextContent(/1\s?200/);
+    const row = await table();
+    const chip = row.getByText(/Частково повернуто \d/);
+    expect(chip).toHaveTextContent(/100\s₴ з 799\s₴/);
+    expect(row.getByText(/Винні покупцю 699/)).toBeInTheDocument();
+    expect(row.queryByText(/Борг/)).not.toBeInTheDocument();
+  });
+
+  it("reads «Скасовано · кошти повернено» on a cancelled order refunded in full (TASK-1970)", async () => {
+    stubRow({
+      status: "CANCELLED",
+      paymentStatus: "REFUNDED",
+      paidKop: 120000,
+      refundedKop: 120000,
+      returnCreditKop: 0,
+      balanceKop: 0,
+      refundedAfterCancel: true,
+    });
+    renderWithProviders(<AdminOrderTable />);
+    expect(
+      (await table()).getByText(dict.orderStatus.cancelledRefunded),
+    ).toBeInTheDocument();
   });
 
   it("draws no mark at all on an ordinary paid order", async () => {

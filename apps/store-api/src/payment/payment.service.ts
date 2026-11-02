@@ -16,14 +16,20 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
-import type { OrderEntity } from '../order';
+import { centsToString } from '../addon-service';
+import type { LedgerRefundRequest, OrderEntity, ProviderRefundPort } from '../order';
 import {
   deliveryPaymentNotAllowedError,
   isPaymentAllowedForDelivery,
+  moneyRefundExceedsPaidError,
   OrderService,
 } from '../order';
 import { PAYMENT_CLOCK, type Clock } from './payment.clock';
-import { refundExceedsBalanceError } from './payment.errors';
+import {
+  checkoutBankTransferError,
+  checkoutPartlyPaidError,
+  RefundOutcomeUnknownException,
+} from './payment.errors';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment.port';
 import { isDuplicateEventError, PaymentRepository } from './payment.repository';
 import { PaymentOutcome, type PaymentApplyResult, type PaymentEventInput } from './payment.types';
@@ -52,7 +58,7 @@ const PAYABLE_STATUSES: ReadonlySet<OrderStatus> = new Set([
  *    {@link OrderService.applyPaymentEvent}, or they drift apart.
  */
 @Injectable()
-export class PaymentService {
+export class PaymentService implements ProviderRefundPort {
   constructor(
     private readonly paymentRepository: PaymentRepository,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
@@ -91,6 +97,16 @@ export class PaymentService {
 
     if (order.paymentStatus === PaymentStatus.PAID) {
       throw new ConflictException('Order is already paid');
+    }
+
+    // TASK-2340 (R2 A4): an attempt charges the WHOLE total. A bank-transfer
+    // order is paid outside LiqPay, and an order with money already in
+    // (PARTIALLY_PAID, or anything paid since) would be charged twice.
+    if (order.paymentMethod === PaymentMethod.BANK_TRANSFER) {
+      throw checkoutBankTransferError();
+    }
+    if ((order.paidKop ?? 0) > 0) {
+      throw checkoutPartlyPaidError();
     }
 
     if (!PAYABLE_STATUSES.has(order.status)) {
@@ -174,26 +190,26 @@ export class PaymentService {
    *
    * @throws BadRequestException when the reported money does not match the attempt.
    */
-  async applyEvent(reported: PaymentEventInput): Promise<PaymentApplyResult> {
-    const payment = await this.paymentRepository.findById(reported.paymentId);
+  async applyEvent(event: PaymentEventInput): Promise<PaymentApplyResult> {
+    const payment = await this.paymentRepository.findById(event.paymentId);
 
     if (!payment) {
       // The signature verified, so this is genuinely from the provider — but it
       // names a payment we have no record of. Retrying cannot help, so answer
       // "nothing to do" and make the log loud enough to investigate.
       this.logger.error(
-        { event: 'payment.event.unknown_payment', paymentId: reported.paymentId },
+        { event: 'payment.event.unknown_payment', paymentId: event.paymentId },
         'Verified provider event references an unknown payment',
       );
       return { applied: false, orderId: '' };
     }
 
-    this.assertMoneyMatches(payment, reported);
-    const event = this.classifyRefund(payment, reported);
+    this.assertMoneyMatches(payment, event);
 
     // The idempotency claim. A duplicate INSERT is rejected by the unique
-    // constraint on (paymentId, providerStatus, providerPaymentId) — that
-    // rejection IS the duplicate check (rule 2).
+    // constraint on (paymentId, providerStatus, providerPaymentId, dedupeKey) —
+    // that rejection IS the duplicate check (rule 2). The dedupe key (TASK-1500)
+    // keeps a second PARTIAL refund from colliding with the first.
     let eventId: string;
     try {
       eventId = (await this.paymentRepository.insertEvent(event)).id;
@@ -254,62 +270,81 @@ export class PaymentService {
   }
 
   /**
-   * Ask the provider to send money back.
+   * Ask LiqPay to send money back (TASK-1500 / TASK-2047, R2 A2/A3) — the ONLY
+   * refund door: `PROVIDER_REFUND_PORT`, bound to this class in `PaymentModule`
+   * and reached through the operator's payout (`POST …/money/out`). The
+   * guard-less `refund(paymentId, amount)` that bypassed the A3 payout rules was
+   * removed in the R2 review.
    *
-   * Returns as soon as the provider ACCEPTS. It does not set REFUNDED — that is
-   * confirmed by the `reversed` callback which comes back through
-   * {@link applyEvent}, so the label can never claim a refund that did not
-   * happen (edge case E-12).
+   * 1. The refund is written to the order ledger FIRST — OUT `LIQPAY_REFUND`,
+   *    `REQUESTED`, under the order-row lock — by {@link OrderService.requestProviderRefund}.
+   *    The order module's payout rules (`request.guard`) run inside that
+   *    transaction, right after the lock. The entry counts as refunded from that
+   *    moment, so the ceiling (what is left on the attempt, and never more than
+   *    the order's `paid − refunded` across every kind — TASK-951) holds for a
+   *    second request racing this one.
+   * 2. Then the provider is asked. If it refuses (or the call throws), the
+   *    entry is VOIDED and stops counting; the error is rethrown.
+   * 3. It is NOT marked confirmed here — the `reversed` callback (or the
+   *    reconcile poll) does that through {@link applyEvent}, so the record can
+   *    never claim a refund the provider did not make (edge case E-12).
    *
-   * The ceiling is what is LEFT on the attempt — `amount - refundedAmount` —
-   * not what it charged (TASK-1302): a partial refund leaves the attempt
-   * SUCCEEDED, so checking against the charge alone let 600 + 500 out of 1000
-   * both through. The amount is reserved by one conditional UPDATE before the
-   * provider is called, so two simultaneous requests cannot both spend the same
-   * remainder; if the provider refuses, the reservation is given back.
-   * Omitting `amount` refunds the remainder.
-   *
-   * @throws NotFoundException when the payment does not exist.
-   * @throws ConflictException when the attempt never succeeded.
-   * @throws BadRequestException for a zero amount, or one above the remainder
-   *   (`PAYMENT_REFUND_EXCEEDS_BALANCE`).
+   * @throws NotFoundException when the payment does not exist or is not this order's.
+   * @throws ConflictException when the attempt never succeeded, whatever the
+   *   guard throws, or ORDER_MONEY_REFUND_EXCEEDS_PAID over what is left on the
+   *   attempt.
    */
-  async refund(paymentId: string, amount?: string): Promise<void> {
-    const payment = await this.paymentRepository.findById(paymentId);
+  async requestLedgerRefund(request: LedgerRefundRequest): Promise<void> {
+    const payment = await this.paymentRepository.findById(request.paymentId);
 
-    if (!payment) {
+    // A payment of another order is reported exactly like a missing one.
+    if (!payment || payment.orderId !== request.orderId) {
       throw new NotFoundException('Payment not found');
     }
 
     this.assertRefundable(payment);
 
-    const remaining = payment.amount.minus(payment.refundedAmount);
-    const refundAmount = amount ?? remaining.toString();
+    const written = await this.orderService.requestProviderRefund({
+      orderId: request.orderId,
+      paymentId: payment.id,
+      amountKop: request.amountKop,
+      actorId: request.actorId,
+      returnId: request.returnId,
+      reason: request.reason,
+      guard: request.guard,
+    });
 
-    if (amount !== undefined && !new Prisma.Decimal(amount).greaterThan(0)) {
-      throw new BadRequestException('Refund amount must be more than zero');
+    if (written.status === 'exceeds') {
+      throw moneyRefundExceedsPaidError(request.amountKop, written.availableKop);
     }
 
-    if (!remaining.greaterThan(0) || new Prisma.Decimal(refundAmount).greaterThan(remaining)) {
-      throw refundExceedsBalanceError(refundAmount, remaining.toString());
-    }
+    await this.askProviderToRefund(payment, written.entryId, written.amountKop, request.actorId);
+  }
 
-    if (!(await this.paymentRepository.reserveRefund(payment.id, refundAmount))) {
-      // Lost a race: another refund took the balance, or the attempt moved on
-      // (a full `reversed` callback) between the read and the reservation.
-      const fresh = await this.paymentRepository.findById(payment.id);
-      if (!fresh) throw new NotFoundException('Payment not found');
-      this.assertRefundable(fresh);
-      throw refundExceedsBalanceError(
-        refundAmount,
-        fresh.amount.minus(fresh.refundedAmount).toString(),
-      );
-    }
-
+  /**
+   * Ask LiqPay for a refund already REQUESTED on the ledger; void it only if
+   * LiqPay refuses. An unknown outcome (no readable answer) leaves the entry
+   * REQUESTED — counted, so nothing can be paid out twice — for the `reversed`
+   * callback or the reconcile poll to settle (R2 pre-merge review).
+   */
+  private async askProviderToRefund(
+    payment: Payment,
+    entryId: string,
+    amountKop: number,
+    actorId: string | null,
+  ): Promise<void> {
+    const refundAmount = centsToString(amountKop);
     try {
       await this.provider.refund({ paymentId: payment.id, amount: refundAmount });
     } catch (err) {
-      await this.paymentRepository.releaseRefund(payment.id, refundAmount);
+      if (err instanceof RefundOutcomeUnknownException) {
+        this.logger.warn(
+          { event: 'payment.refund.outcome_unknown', paymentId: payment.id, entryId },
+          'LiqPay gave no readable answer to a refund; the entry stays REQUESTED for the poll',
+        );
+      } else {
+        await this.voidRefund(payment, entryId, err, actorId);
+      }
       throw err;
     }
 
@@ -317,8 +352,9 @@ export class PaymentService {
       {
         event: 'payment.refund.requested',
         paymentId: payment.id,
+        orderId: payment.orderId,
+        entryId,
         amount: refundAmount,
-        remainingBefore: remaining.toString(),
       },
       'Refund requested; awaiting the provider callback that confirms it',
     );
@@ -350,14 +386,17 @@ export class PaymentService {
    * Scope of the check is deliberate:
    *  - SUCCEEDED must match exactly — the whole amount, in the currency invoiced.
    *  - REFUNDED must be in the same currency, more than zero and no more than
-   *    we charged; a partial refund legitimately reports less, and
-   *    {@link classifyRefund} then relabels it PARTIALLY_REFUNDED so the order
-   *    module's exact-amount check agrees with this one (TASK-618).
+   *    we charged. Whether LiqPay reports the single refund or the running
+   *    total is not confirmed (TASK-1500), so the amount is only sanity-checked
+   *    and logged: the money of a refund is what the shop requested.
    *  - FAILED / IGNORED move no money, and providers routinely omit the amount
    *    on them, so there is nothing to verify.
    */
   private assertMoneyMatches(payment: Payment, event: PaymentEventInput): void {
-    if (event.outcome !== PaymentOutcome.SUCCEEDED && event.outcome !== PaymentOutcome.REFUNDED) {
+    const isRefund =
+      event.outcome === PaymentOutcome.REFUNDED ||
+      event.outcome === PaymentOutcome.PARTIALLY_REFUNDED;
+    if (event.outcome !== PaymentOutcome.SUCCEEDED && !isRefund) {
       return;
     }
 
@@ -393,67 +432,67 @@ export class PaymentService {
       reject('amount mismatch');
     }
 
-    if (event.outcome === PaymentOutcome.REFUNDED && reported.greaterThan(payment.amount)) {
+    if (isRefund && reported.greaterThan(payment.amount)) {
       reject('refund exceeds the amount paid');
     }
 
-    if (event.outcome === PaymentOutcome.REFUNDED && !reported.greaterThan(0)) {
+    if (isRefund && !reported.greaterThan(0)) {
       reject('refund of nothing');
     }
   }
 
   /**
-   * Decide whether a refund is partial or full (TASK-618).
+   * Record the attempt's outcome on the Payment row.
    *
-   * The adapter cannot: a provider reports `reversed` either way, and the adapter
-   * never sees what was charged. This class holds the Payment row, so it decides,
-   * and the order module receives an outcome with an exact amount contract —
-   * REFUNDED means the whole charge, PARTIALLY_REFUNDED strictly less. Called
-   * only after {@link assertMoneyMatches}, so the amount is known to parse and to
-   * lie in (0, charged].
+   * A refund event is NOT settled here (TASK-1500, R2 A2): which refund it
+   * confirms, and whether the attempt is now fully REFUNDED, is decided by the
+   * order module from the ledger, in the same locked transaction — settling
+   * from the event's amount would mark a partial refund as a full one.
    */
-  private classifyRefund(payment: Payment, event: PaymentEventInput): PaymentEventInput {
-    if (event.outcome !== PaymentOutcome.REFUNDED) return event;
-    if (!new Prisma.Decimal(event.amount).lessThan(payment.amount)) return event;
-    return { ...event, outcome: PaymentOutcome.PARTIALLY_REFUNDED };
-  }
-
-  /** Record the attempt's outcome on the Payment row. */
   private async settle(payment: Payment, event: PaymentEventInput): Promise<void> {
-    // A partial refund leaves the attempt SUCCEEDED — part of the money is still
-    // ours, and `refund()` accepts only a SUCCEEDED attempt, so anything else
-    // would block refunding the remainder. It does not move `settledAt` (the
-    // attempt settled when the money arrived) and never downgrades an attempt
-    // that is already fully REFUNDED.
-    if (event.outcome === PaymentOutcome.PARTIALLY_REFUNDED) {
-      await this.paymentRepository.settle(payment.id, {
-        status:
-          payment.status === PaymentAttemptStatus.REFUNDED
-            ? PaymentAttemptStatus.REFUNDED
-            : PaymentAttemptStatus.SUCCEEDED,
-        ...(event.providerPaymentId ? { providerPaymentId: event.providerPaymentId } : {}),
-      });
+    if (
+      event.outcome === PaymentOutcome.REFUNDED ||
+      event.outcome === PaymentOutcome.PARTIALLY_REFUNDED ||
+      event.outcome === PaymentOutcome.IGNORED
+    ) {
       return;
     }
 
-    const status = {
-      [PaymentOutcome.SUCCEEDED]: PaymentAttemptStatus.SUCCEEDED,
-      [PaymentOutcome.FAILED]: PaymentAttemptStatus.FAILED,
-      [PaymentOutcome.REFUNDED]: PaymentAttemptStatus.REFUNDED,
-    }[
-      event.outcome as Exclude<
-        PaymentOutcome,
-        PaymentOutcome.IGNORED | PaymentOutcome.PARTIALLY_REFUNDED
-      >
-    ];
-
     await this.paymentRepository.settle(payment.id, {
-      status,
+      status:
+        event.outcome === PaymentOutcome.SUCCEEDED
+          ? PaymentAttemptStatus.SUCCEEDED
+          : PaymentAttemptStatus.FAILED,
       ...(event.providerPaymentId ? { providerPaymentId: event.providerPaymentId } : {}),
       ...(event.failureCode !== undefined ? { failureCode: event.failureCode } : {}),
       ...(event.failureMessage !== undefined ? { failureMessage: event.failureMessage } : {}),
       settledAt: this.clock.now(),
     });
+  }
+
+  /**
+   * Void a REQUESTED refund the provider refused. Best effort: if the void
+   * itself fails, the entry stays REQUESTED (and counted, so the ceiling errs
+   * on the side of refunding LESS) and the failure is logged loudly; the
+   * provider's own error is what the caller sees.
+   */
+  private async voidRefund(
+    payment: Payment,
+    entryId: string,
+    cause: unknown,
+    actorId: string | null,
+  ): Promise<void> {
+    const reason = `Provider refused the refund: ${
+      cause instanceof Error ? cause.message : String(cause)
+    }`;
+    try {
+      await this.orderService.voidProviderRefund(payment.orderId, entryId, reason, actorId);
+    } catch (err) {
+      this.logger.error(
+        { event: 'payment.refund.void_failed', paymentId: payment.id, entryId, err },
+        'Could not void a refused refund; the ledger still counts it as requested',
+      );
+    }
   }
 
   /**

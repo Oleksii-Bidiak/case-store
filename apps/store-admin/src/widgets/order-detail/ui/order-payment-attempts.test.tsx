@@ -2,7 +2,6 @@ import { http, HttpResponse } from "msw";
 import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
-import { formatCurrency } from "@/shared/lib";
 import { OrderPaymentAttempts } from "./order-payment-attempts";
 
 const ORDER_ID = "order-uuid-1";
@@ -50,13 +49,11 @@ function stubAttempts(rows: unknown[] = ATTEMPTS) {
   return seen;
 }
 
-const ONLINE = { id: ORDER_ID, paymentMethod: "ONLINE" as const };
-
-describe("OrderPaymentAttempts (TASK-371)", () => {
+describe("OrderPaymentAttempts (TASK-371, read-only since R2)", () => {
   it("renders nothing and asks nothing without payments:read", async () => {
     const seen = stubAttempts();
     const { container } = renderWithProviders(
-      <OrderPaymentAttempts order={ONLINE} />,
+      <OrderPaymentAttempts orderId={ORDER_ID} />,
       { auth: { permissions: ["orders:read"] } },
     );
 
@@ -68,7 +65,7 @@ describe("OrderPaymentAttempts (TASK-371)", () => {
 
   it("lists every attempt, newest first, with status, amount, provider id and failure", async () => {
     stubAttempts();
-    renderWithProviders(<OrderPaymentAttempts order={ONLINE} />, {
+    renderWithProviders(<OrderPaymentAttempts orderId={ORDER_ID} />, {
       auth: { permissions: ["orders:read", "payments:read"] },
     });
 
@@ -81,79 +78,22 @@ describe("OrderPaymentAttempts (TASK-371)", () => {
     expect(rows[1]).toHaveTextContent("4159 — Card declined");
   });
 
-  it("offers the refund only on the SUCCEEDED attempt, and only with payments:refund", async () => {
+  it("offers no money action at all — refunds go through the «Оплата» block (R2)", async () => {
     stubAttempts();
-    renderWithProviders(<OrderPaymentAttempts order={ONLINE} />, {
+    renderWithProviders(<OrderPaymentAttempts orderId={ORDER_ID} />, {
       auth: {
         permissions: ["orders:read", "payments:read", "payments:refund"],
       },
     });
 
     await screen.findAllByTestId("payment-attempt");
-    expect(
-      screen.getAllByRole("button", { name: t.refundAction }),
-    ).toHaveLength(1);
-  });
-
-  it("shows what was already refunded and drops the button once nothing is left (TASK-1302)", async () => {
-    const [succeeded, failed] = ATTEMPTS;
-    stubAttempts([
-      { ...succeeded, id: "pay-3", refundedAmount: "800" },
-      { ...succeeded, id: "pay-2", refundedAmount: "1299" },
-      failed,
-    ]);
-    renderWithProviders(<OrderPaymentAttempts order={ONLINE} />, {
-      auth: {
-        permissions: ["orders:read", "payments:read", "payments:refund"],
-      },
-    });
-
-    const rows = await screen.findAllByTestId("payment-attempt");
-    const plain = (value: string) => value.replace(/\s+/g, " ");
-    expect(rows[0]).toHaveTextContent(
-      plain(
-        t.refundedOfTotal(formatCurrency("800"), formatCurrency("1299.00")),
-      ),
-    );
-    // 499 left on the first attempt, nothing on the second.
-    expect(
-      screen.getAllByRole("button", { name: t.refundAction }),
-    ).toHaveLength(1);
-    expect(rows[0]).toContainElement(
-      screen.getByRole("button", { name: t.refundAction }),
-    );
-  });
-
-  it("shows the history but no refund button to a reader without payments:refund", async () => {
-    stubAttempts();
-    renderWithProviders(<OrderPaymentAttempts order={ONLINE} />, {
-      auth: { permissions: ["orders:read", "payments:read"] },
-    });
-
-    await screen.findAllByTestId("payment-attempt");
-    expect(
-      screen.queryByRole("button", { name: t.refundAction }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("says an order paid on delivery has no online attempts, without asking the server", async () => {
-    const seen = stubAttempts();
-    renderWithProviders(
-      <OrderPaymentAttempts
-        order={{ id: ORDER_ID, paymentMethod: "ON_DELIVERY" }}
-      />,
-      { auth: { permissions: ["orders:read", "payments:read"] } },
-    );
-
-    expect(screen.getByText(t.paymentAttemptsOnDelivery)).toBeInTheDocument();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(seen.calls).toBe(0);
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("has an empty state and an error state", async () => {
     stubAttempts([]);
     const { unmount } = renderWithProviders(
-      <OrderPaymentAttempts order={ONLINE} />,
+      <OrderPaymentAttempts orderId={ORDER_ID} />,
       { auth: { permissions: ["payments:read"] } },
     );
     expect(await screen.findByText(t.paymentAttemptsEmpty)).toBeInTheDocument();
@@ -164,7 +104,7 @@ describe("OrderPaymentAttempts (TASK-371)", () => {
         HttpResponse.json({ message: "boom" }, { status: 500 }),
       ),
     );
-    renderWithProviders(<OrderPaymentAttempts order={ONLINE} />, {
+    renderWithProviders(<OrderPaymentAttempts orderId={ORDER_ID} />, {
       auth: { permissions: ["payments:read"] },
     });
     await waitFor(() =>

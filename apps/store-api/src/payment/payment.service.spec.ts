@@ -10,6 +10,7 @@ import {
   OrderStatus,
   Payment,
   PaymentAttemptStatus,
+  PaymentMethod,
   PaymentStatus,
   Prisma,
 } from '@prisma/client';
@@ -17,6 +18,7 @@ import type { PinoLogger } from 'nestjs-pino';
 import type { OrderEntity } from '../order';
 import { DeliveryOrderErrorCode, OrderService } from '../order';
 import type { Clock } from './payment.clock';
+import { PaymentErrorCode, RefundOutcomeUnknownException } from './payment.errors';
 import type { PaymentProvider } from './payment.port';
 import { PaymentRepository } from './payment.repository';
 import { PaymentService } from './payment.service';
@@ -39,8 +41,6 @@ const repositoryMock = {
   insertEvent: jest.fn(),
   deleteEvent: jest.fn(),
   settle: jest.fn(),
-  reserveRefund: jest.fn(),
-  releaseRefund: jest.fn(),
 };
 
 const providerMock = {
@@ -54,6 +54,8 @@ const providerMock = {
 
 const orderServiceMock = {
   applyPaymentEvent: jest.fn(),
+  requestProviderRefund: jest.fn(),
+  voidProviderRefund: jest.fn(),
 };
 
 const configValues: Record<string, string> = {
@@ -135,8 +137,6 @@ describe('PaymentService', () => {
     repositoryMock.insertEvent.mockResolvedValue({ id: 'evt-1' });
     repositoryMock.settle.mockResolvedValue(makePayment());
     orderServiceMock.applyPaymentEvent.mockResolvedValue({ applied: true, orderId: 'order-1' });
-    repositoryMock.reserveRefund.mockReset().mockResolvedValue(true);
-    repositoryMock.releaseRefund.mockReset().mockResolvedValue(undefined);
     providerMock.refund.mockReset().mockResolvedValue(undefined);
   });
 
@@ -218,6 +218,36 @@ describe('PaymentService', () => {
         buildService().createCheckout(makeOrder({ paymentStatus: PaymentStatus.PAID })),
       ).rejects.toThrow(ConflictException);
       expect(repositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    // TASK-2340 (R2 A4): an online attempt always charges the whole total, so it
+    // must not open where money already came in or where the customer pays by
+    // bank transfer — that is how a prepaid order got charged twice.
+    it('refuses an order paid by bank transfer (409 PAYMENT_CHECKOUT_BANK_TRANSFER)', async () => {
+      const attempt = buildService().createCheckout(
+        makeOrder({ paymentMethod: PaymentMethod.BANK_TRANSFER }),
+      );
+      await expect(attempt).rejects.toThrow(ConflictException);
+      await expect(attempt).rejects.toMatchObject({
+        response: { error: PaymentErrorCode.CHECKOUT_BANK_TRANSFER },
+      });
+      expect(repositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an order with money already in (409 PAYMENT_CHECKOUT_PARTLY_PAID)', async () => {
+      const attempt = buildService().createCheckout(
+        makeOrder({ paymentStatus: PaymentStatus.PARTIALLY_PAID, paidKop: 20_000 }),
+      );
+      await expect(attempt).rejects.toThrow(ConflictException);
+      await expect(attempt).rejects.toMatchObject({
+        response: { error: PaymentErrorCode.CHECKOUT_PARTLY_PAID },
+      });
+      expect(repositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('still opens an attempt for an unpaid online order (paidKop 0)', async () => {
+      await buildService().createCheckout(makeOrder({ paidKop: 0 }));
+      expect(repositoryMock.create).toHaveBeenCalled();
     });
 
     it('refuses to open an attempt for a cancelled order', async () => {
@@ -486,25 +516,13 @@ describe('PaymentService', () => {
       );
     });
 
-    it('settles a reversal as REFUNDED', async () => {
-      await buildService().applyEvent(
-        makeEvent({
-          outcome: PaymentOutcome.REFUNDED,
-          providerStatus: 'reversed',
-          amount: '1249.00',
-        }),
-      );
-
-      expect(repositoryMock.settle).toHaveBeenCalledWith(
-        'pay-1',
-        expect.objectContaining({ status: PaymentAttemptStatus.REFUNDED }),
-      );
-    });
-
-    // TASK-618: the adapter cannot tell a partial refund from a full one — it does
-    // not know what was charged. This service does, so it decides, and hands the
-    // order module an outcome whose amount contract is exact.
-    describe('partial vs full reversal (TASK-618)', () => {
+    // TASK-1500 (R2 A2): the money of a refund is what the shop REQUESTED (a
+    // ledger entry); the `reversed` event only confirms it. So its amount —
+    // single refund or running total, LiqPay does not say — no longer decides
+    // partial vs full, and this service no longer settles the attempt for it:
+    // the order module marks the attempt REFUNDED once its refunds cover it,
+    // inside the same locked transaction.
+    describe('a reversal (TASK-1500)', () => {
       const reversal = (amount: string) =>
         makeEvent({ outcome: PaymentOutcome.REFUNDED, providerStatus: 'reversed', amount });
 
@@ -514,44 +532,31 @@ describe('PaymentService', () => {
         ),
       );
 
-      it('hands a reversal of LESS than was charged on as PARTIALLY_REFUNDED', async () => {
+      it('hands the event on unchanged, whatever amount it reports', async () => {
         await buildService().applyEvent(reversal('200.00'));
 
         expect(orderServiceMock.applyPaymentEvent).toHaveBeenCalledWith(
           expect.objectContaining({
-            outcome: PaymentOutcome.PARTIALLY_REFUNDED,
+            outcome: PaymentOutcome.REFUNDED,
             amount: '200.00',
             providerStatus: 'reversed',
           }),
         );
       });
 
-      it('hands a reversal of the WHOLE charge on as REFUNDED', async () => {
-        await buildService().applyEvent(reversal('1249'));
+      it('does not settle the attempt itself', async () => {
+        await buildService().applyEvent(reversal('1249.00'));
 
-        expect(orderServiceMock.applyPaymentEvent).toHaveBeenCalledWith(
-          expect.objectContaining({ outcome: PaymentOutcome.REFUNDED }),
-        );
+        expect(repositoryMock.settle).not.toHaveBeenCalled();
       });
 
-      it('settles a partial reversal as still SUCCEEDED, without moving settledAt', async () => {
-        await buildService().applyEvent(reversal('200.00'));
+      it('records the event with its dedupe key, so a second partial is not a duplicate', async () => {
+        const event = { ...reversal('200.00'), dedupeKey: 'refund-a' };
 
-        const [, params] = repositoryMock.settle.mock.calls[0] as [string, { settledAt?: Date }];
-        expect(params).toMatchObject({ status: PaymentAttemptStatus.SUCCEEDED });
-        expect(params.settledAt).toBeUndefined();
-      });
+        await buildService().applyEvent(event);
 
-      it('never downgrades an attempt that is already REFUNDED', async () => {
-        repositoryMock.findById.mockResolvedValue(
-          makePayment({ status: PaymentAttemptStatus.REFUNDED }),
-        );
-
-        await buildService().applyEvent(reversal('200.00'));
-
-        expect(repositoryMock.settle).toHaveBeenCalledWith(
-          'pay-1',
-          expect.objectContaining({ status: PaymentAttemptStatus.REFUNDED }),
+        expect(repositoryMock.insertEvent).toHaveBeenCalledWith(
+          expect.objectContaining({ dedupeKey: 'refund-a' }),
         );
       });
     });
@@ -582,162 +587,95 @@ describe('PaymentService', () => {
     });
   });
 
-  describe('refund', () => {
-    it('asks the provider and does NOT mark the payment refunded itself', async () => {
+  // R2 A3: the operator's LIQPAY_REFUND payout (POST /admin/orders/:id/money/out)
+  // reaches the provider through PROVIDER_REFUND_PORT — the ONLY refund door
+  // (the guard-less `refund` was removed in the R2 review): REQUESTED on the
+  // ledger first, then the provider, voided if it refuses; the order module's
+  // guard, the return and the reason; a payment that must belong to the order.
+  describe('requestLedgerRefund (PROVIDER_REFUND_PORT)', () => {
+    const guard = jest.fn();
+    const request = {
+      orderId: 'order-1',
+      paymentId: 'pay-1',
+      amountKop: 20_000,
+      actorId: 'admin-1',
+      returnId: 'ret-1',
+      reason: 'повернення',
+      guard,
+    };
+
+    beforeEach(() => {
       repositoryMock.findById.mockResolvedValue(
         makePayment({ status: PaymentAttemptStatus.SUCCEEDED }),
       );
-
-      await buildService().refund('pay-1');
-
-      expect(providerMock.refund).toHaveBeenCalledWith({ paymentId: 'pay-1', amount: '1249' });
-      // REFUNDED is confirmed by the `reversed` callback, so the label can never
-      // claim a refund that did not happen (E-12).
-      expect(repositoryMock.settle).not.toHaveBeenCalled();
+      orderServiceMock.requestProviderRefund.mockResolvedValue({
+        status: 'requested',
+        entryId: 'entry-1',
+        amountKop: 20_000,
+      });
+      orderServiceMock.voidProviderRefund.mockResolvedValue(undefined);
     });
 
-    it('supports a partial refund amount', async () => {
-      repositoryMock.findById.mockResolvedValue(
-        makePayment({ status: PaymentAttemptStatus.SUCCEEDED }),
-      );
+    it('hands the guard, the return and the reason to the ledger write, then asks LiqPay', async () => {
+      await buildService().requestLedgerRefund(request);
 
-      await buildService().refund('pay-1', '200.00');
-
+      expect(orderServiceMock.requestProviderRefund).toHaveBeenCalledWith({
+        orderId: 'order-1',
+        paymentId: 'pay-1',
+        amountKop: 20_000,
+        actorId: 'admin-1',
+        returnId: 'ret-1',
+        reason: 'повернення',
+        guard,
+      });
       expect(providerMock.refund).toHaveBeenCalledWith({ paymentId: 'pay-1', amount: '200.00' });
     });
 
-    it('refuses to refund more than was paid', async () => {
-      repositoryMock.findById.mockResolvedValue(
-        makePayment({ status: PaymentAttemptStatus.SUCCEEDED }),
-      );
-
-      await expect(buildService().refund('pay-1', '99999')).rejects.toThrow(BadRequestException);
-      expect(providerMock.refund).not.toHaveBeenCalled();
+    it('404s a payment of another order, asking nobody', async () => {
+      await expect(
+        buildService().requestLedgerRefund({ ...request, orderId: 'order-2' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(orderServiceMock.requestProviderRefund).not.toHaveBeenCalled();
     });
 
-    it('refuses to refund an attempt that never succeeded', async () => {
+    it('409s an attempt that never succeeded', async () => {
       repositoryMock.findById.mockResolvedValue(
         makePayment({ status: PaymentAttemptStatus.FAILED }),
       );
+      await expect(buildService().requestLedgerRefund(request)).rejects.toThrow(ConflictException);
+    });
 
-      await expect(buildService().refund('pay-1')).rejects.toThrow(ConflictException);
+    it('answers over the attempt ceiling with the ledger code ORDER_MONEY_REFUND_EXCEEDS_PAID', async () => {
+      orderServiceMock.requestProviderRefund.mockResolvedValue({
+        status: 'exceeds',
+        availableKop: 5_000,
+      });
+      const error = (await buildService()
+        .requestLedgerRefund(request)
+        .catch((e: unknown) => e)) as ConflictException;
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.getResponse()).toMatchObject({ error: 'ORDER_MONEY_REFUND_EXCEEDS_PAID' });
       expect(providerMock.refund).not.toHaveBeenCalled();
     });
 
-    it('404s an unknown payment', async () => {
-      repositoryMock.findById.mockResolvedValue(null);
-
-      await expect(buildService().refund('ghost')).rejects.toThrow(NotFoundException);
+    it('voids the entry when LiqPay refuses, and rethrows', async () => {
+      providerMock.refund.mockRejectedValue(new Error('LiqPay said no'));
+      await expect(buildService().requestLedgerRefund(request)).rejects.toThrow('LiqPay said no');
+      expect(orderServiceMock.voidProviderRefund).toHaveBeenCalledWith(
+        'order-1',
+        'entry-1',
+        expect.stringContaining('LiqPay said no'),
+        'admin-1',
+      );
     });
 
-    // TASK-1302: the ceiling is what is LEFT on the attempt, not what it charged.
-    // A partial refund leaves the attempt SUCCEEDED, so without a running total
-    // 600 + 500 out of 1000 would both pass and send back more than was paid.
-    describe('cumulative ceiling (TASK-1302)', () => {
-      const succeeded = (refunded: string) =>
-        makePayment({
-          status: PaymentAttemptStatus.SUCCEEDED,
-          amount: new Prisma.Decimal('1000.00'),
-          refundedAmount: new Prisma.Decimal(refunded),
-        });
-
-      it('refuses an amount above what is left after earlier refunds, with a stable code', async () => {
-        repositoryMock.findById.mockResolvedValue(succeeded('600.00'));
-
-        const error = await buildService()
-          .refund('pay-1', '500.00')
-          .catch((e: unknown) => e);
-
-        expect(error).toBeInstanceOf(BadRequestException);
-        expect((error as BadRequestException).getResponse()).toMatchObject({
-          error: 'PAYMENT_REFUND_EXCEEDS_BALANCE',
-        });
-        expect(repositoryMock.reserveRefund).not.toHaveBeenCalled();
-        expect(providerMock.refund).not.toHaveBeenCalled();
-      });
-
-      it('reserves the amount before asking the provider', async () => {
-        repositoryMock.findById.mockResolvedValue(succeeded('600.00'));
-        const calls: string[] = [];
-        repositoryMock.reserveRefund.mockImplementation(async () => {
-          calls.push('reserve');
-          return true;
-        });
-        providerMock.refund.mockImplementation(async () => {
-          calls.push('provider');
-        });
-
-        await buildService().refund('pay-1', '400.00');
-
-        expect(repositoryMock.reserveRefund).toHaveBeenCalledWith('pay-1', '400.00');
-        expect(providerMock.refund).toHaveBeenCalledWith({ paymentId: 'pay-1', amount: '400.00' });
-        expect(calls).toEqual(['reserve', 'provider']);
-      });
-
-      it('refunds only the remainder when the amount is omitted', async () => {
-        repositoryMock.findById.mockResolvedValue(succeeded('600.00'));
-
-        await buildService().refund('pay-1');
-
-        expect(repositoryMock.reserveRefund).toHaveBeenCalledWith('pay-1', '400');
-        expect(providerMock.refund).toHaveBeenCalledWith({ paymentId: 'pay-1', amount: '400' });
-      });
-
-      it('refuses when nothing is left to refund', async () => {
-        repositoryMock.findById.mockResolvedValue(succeeded('1000.00'));
-
-        await expect(buildService().refund('pay-1')).rejects.toThrow(BadRequestException);
-        expect(providerMock.refund).not.toHaveBeenCalled();
-      });
-
-      it('refuses a refund of zero', async () => {
-        repositoryMock.findById.mockResolvedValue(succeeded('0'));
-
-        await expect(buildService().refund('pay-1', '0')).rejects.toThrow(BadRequestException);
-        await expect(buildService().refund('pay-1', '0.00')).rejects.toThrow(BadRequestException);
-        expect(repositoryMock.reserveRefund).not.toHaveBeenCalled();
-        expect(providerMock.refund).not.toHaveBeenCalled();
-      });
-
-      it('refuses when a concurrent refund took the balance first', async () => {
-        // The read says 600 is left; by the time the atomic reservation runs,
-        // another request has already reserved 500 of it.
-        repositoryMock.findById
-          .mockResolvedValueOnce(succeeded('400.00'))
-          .mockResolvedValueOnce(succeeded('900.00'));
-        repositoryMock.reserveRefund.mockResolvedValue(false);
-
-        const error = await buildService()
-          .refund('pay-1', '600.00')
-          .catch((e: unknown) => e);
-
-        expect(error).toBeInstanceOf(BadRequestException);
-        expect((error as BadRequestException).getResponse()).toMatchObject({
-          error: 'PAYMENT_REFUND_EXCEEDS_BALANCE',
-        });
-        expect(providerMock.refund).not.toHaveBeenCalled();
-      });
-
-      it('409s when the attempt stopped being refundable before the reservation', async () => {
-        repositoryMock.findById.mockResolvedValueOnce(succeeded('0')).mockResolvedValueOnce(
-          makePayment({
-            status: PaymentAttemptStatus.REFUNDED,
-            amount: new Prisma.Decimal('1000.00'),
-          }),
-        );
-        repositoryMock.reserveRefund.mockResolvedValue(false);
-
-        await expect(buildService().refund('pay-1', '100.00')).rejects.toThrow(ConflictException);
-        expect(providerMock.refund).not.toHaveBeenCalled();
-      });
-
-      it('gives the reservation back when the provider refuses', async () => {
-        repositoryMock.findById.mockResolvedValue(succeeded('0'));
-        providerMock.refund.mockRejectedValue(new Error('LiqPay said no'));
-
-        await expect(buildService().refund('pay-1', '250.00')).rejects.toThrow('LiqPay said no');
-        expect(repositoryMock.releaseRefund).toHaveBeenCalledWith('pay-1', '250.00');
-      });
+    // R2 pre-merge review: LiqPay may have sent the money even though its answer
+    // was lost — voiding would make the ledger show it still in the shop.
+    it('keeps the entry REQUESTED when the outcome is unknown, and rethrows', async () => {
+      const unknown = new RefundOutcomeUnknownException();
+      providerMock.refund.mockRejectedValue(unknown);
+      await expect(buildService().requestLedgerRefund(request)).rejects.toBe(unknown);
+      expect(orderServiceMock.voidProviderRefund).not.toHaveBeenCalled();
     });
   });
 });

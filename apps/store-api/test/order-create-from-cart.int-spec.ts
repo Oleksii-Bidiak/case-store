@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DeliveryMethod, PaymentMethod, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import type { CreateOrderParams } from '../src/order/order.types';
 import { CacheService } from '../src/cache';
 import { PrismaService } from '../src/prisma';
@@ -48,6 +49,7 @@ describe('OrderRepository.createFromCart — persisted row (integration)', () =>
       providers: [
         PrismaService,
         OrderRepository,
+        OrderMoneyRepository,
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },
         {
           provide: ProductIndexer,

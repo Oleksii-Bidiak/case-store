@@ -84,6 +84,7 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   [OrderEntityPaymentMethod.ONLINE]: d.paymentMethodOnline,
   [OrderEntityPaymentMethod.ON_DELIVERY]: d.paymentMethodOnDelivery,
   [OrderEntityPaymentMethod.INSTALLMENTS]: d.paymentMethodInstallments,
+  [OrderEntityPaymentMethod.BANK_TRANSFER]: d.paymentMethodBankTransfer,
 };
 
 export const paymentMethodLabel = (method: string): string =>
