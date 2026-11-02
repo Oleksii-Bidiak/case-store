@@ -473,16 +473,17 @@ describe('EmailVerificationService (TASK-342)', () => {
       );
     });
 
-    // Review of S5-API: at most ONE «Задайте пароль» letter per address per hour,
-    // whatever the IP. The account is still created — just no second letter.
-    it('sends no second letter to an address that got one in the last hour', async () => {
+    // Review of S5-API: at most ONE «Задайте пароль» letter per hour, whatever
+    // the IP. Review of R5: per ACCOUNT, not per address — a new account on an
+    // address an operator freed within the hour still gets its letter.
+    it('sends no second letter to an account that got one in the last hour', async () => {
       authRepositoryMock.hasRecentUnusedEmailToken.mockResolvedValue(true);
       const before = Date.now();
 
       await service.issueAccountSetupLink({ id: 'user-1', email: 'new@example.com' }, tx);
 
       expect(authRepositoryMock.hasRecentUnusedEmailToken).toHaveBeenCalledWith(
-        'new@example.com',
+        'user-1',
         'ACCOUNT_SETUP',
         expect.any(Date),
         tx,

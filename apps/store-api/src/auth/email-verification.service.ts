@@ -264,13 +264,14 @@ export class EmailVerificationService {
     user: { id: string; email: string },
     tx: Prisma.TransactionClient,
   ): Promise<void> {
-    // Review of S5-API: one letter per address per hour. The account is
-    // created all the same; a second request inside the hour only sends nothing
-    // more to an inbox that may not be the requester's.
+    // Review of S5-API: one letter per account per hour (per account, not per
+    // address — review of R5). The account is created all the same; a second
+    // request inside the hour only sends nothing more to an inbox that may not
+    // be the requester's.
     const since = new Date(Date.now() - ACCOUNT_SETUP_LETTER_WINDOW_MS);
     if (
       await this.authRepository.hasRecentUnusedEmailToken(
-        user.email,
+        user.id,
         EmailTokenPurpose.ACCOUNT_SETUP,
         since,
         tx,

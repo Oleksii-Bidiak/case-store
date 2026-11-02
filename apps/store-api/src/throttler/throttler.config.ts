@@ -301,7 +301,7 @@ export function createOrderNumberTracker(
  * Accounts one CLIENT IP may create at checkout per hour (B-12 тема 2 (е)).
  * Counted per IP, not per e-mail: the e-mail side is capped elsewhere — one
  * account per address (409 ACCOUNT_EXISTS) and one «Задайте пароль» letter per
- * address per hour (`EmailVerificationService.issueAccountSetupLink`).
+ * account per hour (`EmailVerificationService.issueAccountSetupLink`).
  *
  * Five matches the per-account review bucket and is far above what one
  * household checking out needs, while a script creating accounts on scraped

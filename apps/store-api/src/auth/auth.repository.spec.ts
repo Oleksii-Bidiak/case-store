@@ -427,13 +427,16 @@ describe('AuthRepository', () => {
   });
 
   describe('hasRecentUnusedEmailToken (TASK-2010 review)', () => {
-    it('looks for an unused link of that purpose for the ADDRESS, whoever owns it, since the cut-off', async () => {
+    // Review of R5: scoped to the ACCOUNT, not the address. A new account can
+    // reach an address only after an operator deleted or re-addressed the old
+    // one, and that new account must still get its letter.
+    it('looks for an unused link of that purpose for the ACCOUNT, since the cut-off', async () => {
       const txMock = { emailVerificationToken: { count: jest.fn().mockResolvedValue(1) } };
       const since = new Date('2026-11-01T10:00:00.000Z');
 
       await expect(
         repository.hasRecentUnusedEmailToken(
-          'a@example.com',
+          'user-uuid-1',
           'ACCOUNT_SETUP',
           since,
           txMock as never,
@@ -442,7 +445,7 @@ describe('AuthRepository', () => {
 
       expect(txMock.emailVerificationToken.count).toHaveBeenCalledWith({
         where: {
-          email: 'a@example.com',
+          userId: 'user-uuid-1',
           purpose: 'ACCOUNT_SETUP',
           usedAt: null,
           createdAt: { gte: since },

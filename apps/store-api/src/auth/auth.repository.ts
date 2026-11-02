@@ -286,18 +286,20 @@ export class AuthRepository {
   }
 
   /**
-   * Whether an unused link of `purpose` was issued for this ADDRESS since
-   * `since` — whichever account it belongs to (TASK-2010 review: at most one
-   * «Задайте пароль» letter per address per hour, however many requests ask).
+   * Whether an unused link of `purpose` was issued to this ACCOUNT since
+   * `since` (TASK-2010 review: at most one «Задайте пароль» letter per account
+   * per hour). Scoped to the account, not the address: a new account reaches an
+   * address only after an operator deleted or re-addressed the previous owner,
+   * and an unused link of that previous owner must not swallow its letter.
    */
   async hasRecentUnusedEmailToken(
-    email: string,
+    userId: string,
     purpose: EmailTokenPurpose,
     since: Date,
     tx?: Prisma.TransactionClient,
   ): Promise<boolean> {
     const count = await (tx ?? this.prisma).emailVerificationToken.count({
-      where: { email, purpose, usedAt: null, createdAt: { gte: since } },
+      where: { userId, purpose, usedAt: null, createdAt: { gte: since } },
     });
     return count > 0;
   }
