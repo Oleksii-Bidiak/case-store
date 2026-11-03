@@ -929,6 +929,46 @@ describe("OrderAddressForm — Nova Poshta from the directory (TASK-1973)", () =
     });
   });
 
+  it("holds the version for a branch picked from the list without typing (review R3)", async () => {
+    // A pick is an edit: were it not marked dirty, the lock token would follow
+    // the poll and the save would overwrite the colleague without a 409 — and the
+    // poll would put the old branch back over the operator's pick.
+    const { rerender } = renderWithProviders(
+      <OrderAddressForm order={npOrder()} />,
+      WRITER,
+    );
+    await open();
+
+    await userEvent.click(
+      screen.getByLabelText(dict.orderCreate.addressAddress1),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: new RegExp(`Вибрати «${LVIV_BRANCH.description}»`, "i"),
+      }),
+    );
+    rerender(
+      <OrderAddressForm
+        order={
+          {
+            ...npOrder(),
+            updatedAt: "2026-06-01T10:00:30.000Z",
+          } as OrderEntity
+        }
+      />,
+    );
+    expect(screen.getByLabelText(dict.orderCreate.addressAddress1)).toHaveValue(
+      LVIV_BRANCH.description,
+    );
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      expectedUpdatedAt: "2026-06-01T10:00:00.000Z",
+      shippingAddress: { npWarehouseRef: "np-wh-lviv-1" },
+    });
+  });
+
   it("moves an OTHER order TO Nova Poshta", async () => {
     renderWithProviders(
       <OrderAddressForm order={makeOrder("PENDING")} />,

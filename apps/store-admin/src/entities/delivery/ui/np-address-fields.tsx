@@ -149,10 +149,13 @@ export function NpCityField<T extends NpAddressValues>({
             // directory wrote for the OLD settlement and is now a lie; empty means
             // the operator typed it and it is theirs to keep.
             if (form.getValues("npWarehouseRef") !== "") {
-              form.setValue("address1", "", { shouldValidate: true });
+              form.setValue("address1", "", {
+                shouldValidate: true,
+                shouldDirty: true,
+              });
             }
-            form.setValue("npCityRef", "");
-            form.setValue("npWarehouseRef", "");
+            form.setValue("npCityRef", "", { shouldDirty: true });
+            form.setValue("npWarehouseRef", "", { shouldDirty: true });
             setOpen(true);
             debouncedSetQuery(event.target.value);
           },
@@ -190,8 +193,15 @@ export function NpCityField<T extends NpAddressValues>({
                   size="sm"
                   aria-label={t.npPickAria(city.name)}
                   onClick={() => {
-                    form.setValue("city", city.name, { shouldValidate: true });
-                    form.setValue("npCityRef", city.ref);
+                    // `shouldDirty` on every write here: a pick IS an edit, and the
+                    // order card holds its lock token only while the form is dirty
+                    // (`useEditLockToken`) — a pick-only change must not be saved
+                    // against a colleague's newer version without a 409.
+                    form.setValue("city", city.name, {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    });
+                    form.setValue("npCityRef", city.ref, { shouldDirty: true });
                     // Same rule as the keystroke path above, repeated rather than
                     // relied upon: today a pick is always preceded by typing, so
                     // the guard there has usually already fired — but the two are
@@ -200,9 +210,12 @@ export function NpCityField<T extends NpAddressValues>({
                     // keystroke handler) must not be able to reintroduce a Kyiv
                     // branch under a Brovary address.
                     if (form.getValues("npWarehouseRef") !== "") {
-                      form.setValue("address1", "", { shouldValidate: true });
+                      form.setValue("address1", "", {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      });
                     }
-                    form.setValue("npWarehouseRef", "");
+                    form.setValue("npWarehouseRef", "", { shouldDirty: true });
                     setOpen(false);
                     setQuery("");
                   }}
@@ -289,7 +302,7 @@ export function NpWarehouseField<T extends NpAddressValues>({
         onFocus={() => setOpen(true)}
         {...form.register("address1", {
           onChange: (event: ChangeEvent<HTMLInputElement>) => {
-            form.setValue("npWarehouseRef", "");
+            form.setValue("npWarehouseRef", "", { shouldDirty: true });
             setOpen(true);
             debouncedSetQuery(event.target.value);
           },
@@ -324,8 +337,11 @@ export function NpWarehouseField<T extends NpAddressValues>({
                   onClick={() => {
                     form.setValue("address1", warehouse.description, {
                       shouldValidate: true,
+                      shouldDirty: true,
                     });
-                    form.setValue("npWarehouseRef", warehouse.ref);
+                    form.setValue("npWarehouseRef", warehouse.ref, {
+                      shouldDirty: true,
+                    });
                     setOpen(false);
                     setQuery("");
                   }}
