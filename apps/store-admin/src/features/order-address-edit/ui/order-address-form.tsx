@@ -187,7 +187,15 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
   // by field next to the draft; the token moves only on the operator's word.
   const review = useStaleDraftReview<OrderAddressFormValues>({
     draft,
-    apply: (field, value) => form.resetField(field, { defaultValue: value }),
+    apply: (field, value) => {
+      form.resetField(field, { defaultValue: value });
+      // `resetField` is a no-op for a field with no input — the NP refs, the
+      // method, the point — so those are written directly (review R3). Left
+      // dirty, which only keeps the lock held until the operator acknowledges.
+      if (form.getValues(field) !== value) {
+        form.setValue(field, value as never, { shouldDirty: true });
+      }
+    },
     rebase: (version, fresh) => lock.rebase(version, fresh),
   });
 
