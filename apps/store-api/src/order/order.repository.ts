@@ -7,6 +7,7 @@ import {
   OrderStatus,
   PaymentStatus,
   PaymentMethod,
+  PaymentAttemptStatus,
   OrderHistoryChangeType,
   OrderHistoryNote,
 } from '@prisma/client';
@@ -46,7 +47,7 @@ import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto'
 // than re-typed. A 48 copied into this module is a 72 the day someone changes
 // the other one, and the chip would then quietly disagree with the tile.
 import { PENDING_STALE_HOURS } from '../dashboard';
-import { staleOrderError } from './order.errors';
+import { orderPaymentInProgressError, staleOrderError } from './order.errors';
 import { centsToString, sumLineCents, toCents } from '../addon-service';
 import { kyivDayRange } from '../common/time';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
@@ -1555,6 +1556,16 @@ export class OrderRepository {
       const total = new Prisma.Decimal(current.total.toString())
         .minus(new Prisma.Decimal(current.shippingCost.toString()))
         .plus(shipping);
+
+      // A live LiqPay link is signed for the CURRENT total: re-pricing under it
+      // would let the buyer pay the old amount (review R3, TASK-2373). Read under
+      // the order lock, which the payment callback takes too.
+      if (!total.equals(current.total)) {
+        const live = await tx.payment.count({
+          where: { orderId, status: PaymentAttemptStatus.PENDING },
+        });
+        if (live > 0) throw orderPaymentInProgressError();
+      }
 
       const { count } = await tx.order.updateMany({
         where: { id: orderId, ...guard },

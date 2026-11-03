@@ -27,6 +27,7 @@ import { MailService } from '../src/mail/mail.service';
 import { NotificationOutboxService } from '../src/notification-outbox';
 import { ShopNotifier } from '../src/notification/shop-notifier.service';
 import { NovaPoshtaClient } from '../src/delivery';
+import { orderPaymentInProgressError } from '../src/order/order.errors';
 import type { OrderWithItems } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -3755,9 +3756,31 @@ describe('OrderController (e2e)', () => {
           makeOrder({ status: OrderStatus.SHIPPED, deliveryMethod: 'OTHER' }),
         );
 
-        await patch({ shippingCost: 180 }).expect(409);
+        const res = await patch({ shippingCost: 180 }).expect(409);
 
+        // Its own code (review R3), not the anonymous 409 the admin read as stale.
+        expect(res.body.error).toBe('ORDER_DELIVERY_LOCKED');
         expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+      });
+
+      it('refuses a delivery change against a colleague’s newer version (409 ORDER_STALE)', async () => {
+        orderRepositoryMock.findById.mockResolvedValue(
+          makeOrder({ deliveryMethod: 'OTHER', updatedAt: new Date('2026-01-01T00:05:00.000Z') }),
+        );
+
+        const res = await patch({ shippingCost: 180 }).expect(409);
+
+        expect(res.body.error).toBe('ORDER_STALE');
+        expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+      });
+
+      it('says a live payment link blocks the re-price (409 ORDER_PAYMENT_IN_PROGRESS)', async () => {
+        orderRepositoryMock.findById.mockResolvedValue(makeOrder({ deliveryMethod: 'OTHER' }));
+        orderRepositoryMock.updateDetails.mockRejectedValue(orderPaymentInProgressError());
+
+        const res = await patch({ shippingCost: 180 }).expect(409);
+
+        expect(res.body.error).toBe('ORDER_PAYMENT_IN_PROGRESS');
       });
     });
   });

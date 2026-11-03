@@ -75,6 +75,8 @@ const makeTx = () => ({
   // TASK-330: the payment attempt is settled in the same transaction as the order.
   payment: {
     update: jest.fn(),
+    // Review R3: a live attempt blocks a re-price of the delivery.
+    count: jest.fn().mockResolvedValue(0),
   },
   // TASK-251: history rows are written inside every mutation transaction.
   orderStatusHistory: {
@@ -3353,6 +3355,37 @@ describe('OrderRepository', () => {
           ),
         ).rejects.toMatchObject({ response: { error: 'ORDER_STALE' } });
         expect(moneyMock.recompute).not.toHaveBeenCalled();
+      });
+
+      it('refuses to re-price while the buyer holds a live LiqPay link (review R3)', async () => {
+        tx.payment.count.mockResolvedValue(1);
+
+        await expect(
+          repository.updateDetails(
+            'order-1',
+            { shippingAddress: address, shippingCost: 180 },
+            { expectedUpdatedAt: version },
+          ),
+        ).rejects.toMatchObject({ response: { error: 'ORDER_PAYMENT_IN_PROGRESS' } });
+        expect(tx.payment.count).toHaveBeenCalledWith({
+          where: { orderId: 'order-1', status: 'PENDING' },
+        });
+        expect(tx.order.updateMany).not.toHaveBeenCalled();
+        expect(moneyMock.recompute).not.toHaveBeenCalled();
+      });
+
+      it('lets a same-price delivery edit through a live LiqPay link', async () => {
+        tx.payment.count.mockResolvedValue(1);
+        tx.order.updateMany.mockResolvedValue({ count: 1 });
+
+        await repository.updateDetails(
+          'order-1',
+          { shippingAddress: address, shippingCost: 30 },
+          { expectedUpdatedAt: version },
+        );
+
+        expect(tx.payment.count).not.toHaveBeenCalled();
+        expect(tx.order.updateMany).toHaveBeenCalled();
       });
     });
   });

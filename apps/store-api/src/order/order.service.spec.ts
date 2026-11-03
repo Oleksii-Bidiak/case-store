@@ -3519,7 +3519,11 @@ describe('OrderService', () => {
       async (status) => {
         seed({ status, deliveryMethod: 'OTHER', shippingAddress: otherSnapshot as never });
 
-        await expect(edit({ shippingCost: 50 })).rejects.toThrow(ConflictException);
+        // A code of its own (review R3), not the anonymous 409 the admin read as
+        // «замовлення змінилося».
+        await expect(edit({ shippingCost: 50 })).rejects.toMatchObject({
+          response: { error: 'ORDER_DELIVERY_LOCKED' },
+        });
         await expect(edit({ deliveryMethod: 'NOVA_POSHTA' })).rejects.toThrow(ConflictException);
         expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
       },

@@ -187,6 +187,24 @@ describe('Agreed OTHER shipping cost on an existing order (integration, AD-ORD-8
     expect(order.balanceKop).toBe(GOODS_KOP + 9_000);
   });
 
+  it('refuses to re-price under a live LiqPay link, and lets it through once the link is gone (review R3)', async () => {
+    const orderId = await otherOrder(PaymentMethod.ON_DELIVERY);
+    const attempt = await prisma.payment.create({
+      data: { orderId, provider: 'liqpay', amount: 299, status: 'PENDING' },
+    });
+
+    await expect(
+      orders.updateDetails(orderId, { shippingCost: 150 }, { changedBy: adminId }),
+    ).rejects.toMatchObject({ response: { error: 'ORDER_PAYMENT_IN_PROGRESS' } });
+    expect((await read(orderId)).total.toString()).toBe('299');
+
+    await prisma.payment.update({ where: { id: attempt.id }, data: { status: 'EXPIRED' } });
+    await orders.updateDetails(orderId, { shippingCost: 150 }, { changedBy: adminId });
+
+    expect((await read(orderId)).total.toString()).toBe('449');
+    await prisma.payment.deleteMany({ where: { orderId } });
+  });
+
   it('refuses a stale version and leaves the money untouched', async () => {
     const orderId = await otherOrder(PaymentMethod.ON_DELIVERY);
 

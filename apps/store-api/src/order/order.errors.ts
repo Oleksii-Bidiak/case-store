@@ -29,6 +29,14 @@ export const OrderErrorCode = {
    */
   VERSION_REQUIRED: 'ORDER_VERSION_REQUIRED',
   /**
+   * A delivery edit that would change the total while the buyer holds a live
+   * LiqPay link (a PENDING attempt): the link is signed for the old amount, so
+   * paying it would leave a debt or an overpayment (review R3, TASK-2373).
+   */
+  PAYMENT_IN_PROGRESS: 'ORDER_PAYMENT_IN_PROGRESS',
+  /** A delivery edit (address, method, point, cost) once the order has shipped or closed. */
+  DELIVERY_LOCKED: 'ORDER_DELIVERY_LOCKED',
+  /**
    * «Live order + fully refunded money» (B-1 §1), refused from the ORDER
    * side: the order was asked to return to a live status while its payment
    * is recorded as fully REFUNDED (review of plan 180).
@@ -138,6 +146,27 @@ export function orderVersionRequiredError(): BadRequestException {
     error: OrderErrorCode.VERSION_REQUIRED,
     message:
       'A delivery change must carry expectedUpdatedAt — the version of the order it was decided on',
+  });
+}
+
+/**
+ * 409 for a delivery edit that would re-price an order with a live LiqPay
+ * attempt (review R3, TASK-2373). The admin says to wait until the buyer pays
+ * or the link expires; a contact or same-price edit is still let through.
+ */
+export function orderPaymentInProgressError(): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.PAYMENT_IN_PROGRESS,
+    message:
+      'The buyer has a live payment link for the current total — the delivery price cannot change until it is paid or expires',
+  });
+}
+
+/** 409 for a delivery edit after the order left the pre-shipment statuses. */
+export function orderDeliveryLockedError(): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.DELIVERY_LOCKED,
+    message: 'The delivery can only be changed before the order ships',
   });
 }
 

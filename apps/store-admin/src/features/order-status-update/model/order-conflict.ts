@@ -25,6 +25,10 @@ export const ORDER_CONFLICT_CODE = {
    * fully returned (review of plan 180).
    */
   REVIVE_REFUNDED_PAYMENT: "ORDER_REVIVE_REFUNDED_PAYMENT",
+  /** A delivery re-price under a live LiqPay link (review R3, TASK-2373). */
+  PAYMENT_IN_PROGRESS: "ORDER_PAYMENT_IN_PROGRESS",
+  /** A delivery edit after the order shipped or closed (review R3). */
+  DELIVERY_LOCKED: "ORDER_DELIVERY_LOCKED",
   /*
    * AD-ORD-51 (TASK-1966) — reviving a cancelled order re-claims the promo slot
    * its cancel released (TASK-771). `OrderRepository.reclaimRedemption` refuses
@@ -134,6 +138,12 @@ export function orderConflictMessage(
   if (code === ORDER_CONFLICT_CODE.REVIVE_REFUNDED_PAYMENT) {
     return dict.orderStatus.conflict.ORDER_REVIVE_REFUNDED_PAYMENT;
   }
+  if (code === ORDER_CONFLICT_CODE.PAYMENT_IN_PROGRESS) {
+    return dict.orderStatus.conflict.ORDER_PAYMENT_IN_PROGRESS;
+  }
+  if (code === ORDER_CONFLICT_CODE.DELIVERY_LOCKED) {
+    return dict.orderStatus.conflict.ORDER_DELIVERY_LOCKED;
+  }
   if (code === ORDER_CONFLICT_CODE.PROMO_EXHAUSTED) {
     return dict.orderStatus.conflict.DISCOUNT_MAX_REDEMPTIONS_REACHED;
   }
@@ -164,6 +174,8 @@ export function orderConflictMessage(
 const NO_RELOAD_CODES: readonly string[] = [
   ORDER_CONFLICT_CODE.TRANSITION_INVALID,
   ORDER_CONFLICT_CODE.REVIVE_REFUNDED_PAYMENT,
+  ORDER_CONFLICT_CODE.PAYMENT_IN_PROGRESS,
+  ORDER_CONFLICT_CODE.DELIVERY_LOCKED,
   ORDER_CONFLICT_CODE.PROMO_EXHAUSTED,
   ORDER_CONFLICT_CODE.PROMO_USER_LIMIT,
   ORDER_CONFLICT_CODE.PROMO_GONE,

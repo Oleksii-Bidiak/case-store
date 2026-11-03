@@ -54,6 +54,17 @@ describe("orderConflictMessage (TASK-332)", () => {
     expect(orderConflictMessage(error)).toContain("нове замовлення");
   });
 
+  // Review R3: the delivery edit's own refusals — neither is a stale screen.
+  it.each([
+    [ORDER_CONFLICT_CODE.PAYMENT_IN_PROGRESS, "ORDER_PAYMENT_IN_PROGRESS"],
+    [ORDER_CONFLICT_CODE.DELIVERY_LOCKED, "ORDER_DELIVERY_LOCKED"],
+  ] as const)("words %s and does not demand a reload", (code, key) => {
+    const error = rejection(409, code);
+
+    expect(orderConflictMessage(error)).toBe(dict.orderStatus.conflict[key]);
+    expect(requiresReload(error)).toBe(false);
+  });
+
   // AD-ORD-51 (TASK-1966): reviving a cancelled order re-claims its promo slot
   // (TASK-771); `OrderRepository.reclaimRedemption` refuses with a DISCOUNT_*
   // 409 and the order stays CANCELLED. These used to fall into conflictUnknown —

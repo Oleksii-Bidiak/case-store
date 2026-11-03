@@ -59,6 +59,7 @@ import {
   discountAccountRequiredError,
   paymentAccountRequiredError,
   manualOrderDeliveryPaymentNotAllowedError,
+  orderDeliveryLockedError,
   orderVersionRequiredError,
   invalidTransitionError,
   reviveRefundedPaymentError,
@@ -1626,9 +1627,7 @@ export class OrderService {
       shippingCost !== undefined;
 
     if (deliveryEdit && !PRE_SHIPMENT_STATUSES.has(existing.status)) {
-      throw new ConflictException(
-        'The delivery address can only be changed before the order ships',
-      );
+      throw orderDeliveryLockedError();
     }
     // The method change, the payment-matrix verdict and the price below are all
     // decided from `existing`; the write must be guarded by that same version,
@@ -1773,11 +1772,14 @@ export class OrderService {
     }
 
     // «To be quoted» until someone quotes it: set by a move to OTHER without a
-    // cost, cleared by a cost, otherwise carried over as it was.
+    // cost, cleared by a cost, otherwise carried over as it was. Only OTHER is
+    // ever quoted by hand — every other method has its own price (review R3).
     const shippingCostPending =
-      shippingCost !== undefined
-        ? edit.shippingCost === undefined
-        : current.shippingCostPending === true;
+      method !== DeliveryMethod.OTHER
+        ? false
+        : shippingCost !== undefined
+          ? edit.shippingCost === undefined
+          : current.shippingCostPending === true;
 
     return {
       shippingAddress: buildDeliverySnapshot(source, method, {
