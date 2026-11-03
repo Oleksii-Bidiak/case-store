@@ -283,6 +283,7 @@ export function allowedPaymentMethods(
  * - `amount` — pickup (0), the courier's flat price (0 from its threshold), or
  *   the agreed OTHER cost;
  * - `pending` — OTHER with no cost yet: «узгодить оператор», nothing added.
+ *   Also a courier whose terms are not loaded.
  */
 export type ShippingQuote =
   | { kind: "carrier" }
@@ -300,10 +301,13 @@ export function operatorShippingCost(
     case "PICKUP":
       return { kind: "amount", amount: 0 };
     case "COURIER": {
+      // Terms not loaded (or no courier offer): the server prices it — say
+      // «узгодить оператор» rather than a «Безкоштовно» nobody decided (review R3).
+      if (!courier) return { kind: "pending" };
       const freeFrom =
         courier?.freeFrom == null ? null : Number(courier.freeFrom);
       const free = freeFrom !== null && goods >= freeFrom;
-      return { kind: "amount", amount: free ? 0 : Number(courier?.price ?? 0) };
+      return { kind: "amount", amount: free ? 0 : Number(courier.price) };
     }
     case "OTHER": {
       const amount = parseShippingCost(values.shippingCost);

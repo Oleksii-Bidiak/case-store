@@ -487,6 +487,16 @@ describe("operatorShippingCost — what the summary adds to the total (TASK-1808
     ).toEqual({ kind: "amount", amount: 0 });
   });
 
+  it("is still to be agreed when the courier terms are not loaded (review R3)", () => {
+    expect(
+      operatorShippingCost(
+        values({ deliveryMethod: "COURIER" }),
+        undefined,
+        500,
+      ),
+    ).toEqual({ kind: "pending" });
+  });
+
   it("is the agreed cost for OTHER, or still to be agreed", () => {
     expect(
       operatorShippingCost(values({ shippingCost: "150,5" }), courier, 500),
