@@ -128,12 +128,13 @@ test.describe("admin orders — delivery (TASK-648)", () => {
     ).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByText("узгодить оператор")).toBeVisible();
 
-    // An agreed cost goes into «Разом» (TASK-1019).
+    // An agreed cost goes into «Разом» (TASK-1019): with no goods yet, the
+    // delivery row and the total both read 150 ₴.
     await page.getByLabel("Узгоджена вартість доставки, ₴").fill("150");
     await expect(
       page
         .getByRole("complementary", { name: "Підсумок" })
         .getByText(/^150\s₴$/),
-    ).toBeVisible();
+    ).toHaveCount(2);
   });
 });

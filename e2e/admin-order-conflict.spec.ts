@@ -34,7 +34,9 @@ const T = {
   save: "Зберегти",
   addressEdit: "Змінити доставку й контакти",
   addressSave: "Зберегти доставку",
-  city: "Місто",
+  // A free-text field: the NP city is picked from the directory since TASK-1973,
+  // so a typed city is refused before any PATCH goes out.
+  firstName: "Імʼя",
   takeTheirs: "Взяти версію колеги",
   keepMine: "Переглянув(-ла) — зберегти мою чернетку",
   saveHint: "Щоб зберегти, спершу перегляньте зміни колеги вище.",
@@ -81,7 +83,11 @@ test.describe("admin order card — two operators, one order (TASK-1972)", () =>
           paymentMethod: "ON_DELIVERY",
           subtotal: TOTAL,
           total: TOTAL,
+          // A free-text address is «Інша доставка»: a Nova Poshta order needs
+          // a directory ref (TASK-642 invariant), which this seed has none of.
+          deliveryMethod: "OTHER",
           shippingAddress: {
+            deliveryMethod: "OTHER",
             firstName: "Olena",
             lastName: "Shevchenko",
             phone: "+380501234567",
@@ -165,21 +171,22 @@ test.describe("admin order card — two operators, one order (TASK-1972)", () =>
     }
   });
 
-  test("address: «Взяти версію колеги» keeps the colleague's city", async ({
+  test("address: «Взяти версію колеги» keeps the colleague's name", async ({
     page,
     browser,
     baseURL,
     extraHTTPHeaders,
   }) => {
     test.setTimeout(120_000);
-    const cityOf = (tab: Page) => tab.getByRole("textbox", { name: T.city });
+    const nameOf = (tab: Page) =>
+      tab.getByRole("textbox", { name: T.firstName });
     const { tabA, tabB, close } = await twoTabs(
       page,
       async (tab) => {
         const edit = tab.getByRole("button", { name: T.addressEdit });
         await waitForHydration(edit);
         await edit.click();
-        await expect(cityOf(tab)).toBeVisible();
+        await expect(nameOf(tab)).toBeVisible();
       },
       browser,
       { baseURL, extraHTTPHeaders },
@@ -188,19 +195,19 @@ test.describe("admin order card — two operators, one order (TASK-1972)", () =>
       const saveOf = (tab: Page) =>
         tab.getByRole("button", { name: T.addressSave, exact: true });
 
-      await cityOf(tabA).fill("Lviv");
-      await cityOf(tabB).fill("Odesa");
+      await nameOf(tabA).fill("Oksana");
+      await nameOf(tabB).fill("Iryna");
       expect(await patchStatus(tabB, () => saveOf(tabB).click())).toBe(200);
 
       expect(await patchStatus(tabA, () => saveOf(tabA).click())).toBe(409);
       const row = tabA
         .locator('[data-slot="stale-draft-panel"]')
-        .getByRole("group", { name: T.city });
-      await expect(row.getByText("Odesa")).toBeVisible();
+        .getByRole("group", { name: T.firstName });
+      await expect(row.getByText("Iryna")).toBeVisible();
       await expect(saveOf(tabA)).toBeDisabled();
 
       await row.getByRole("button", { name: T.takeTheirs }).click();
-      await expect(cityOf(tabA)).toHaveValue("Odesa");
+      await expect(nameOf(tabA)).toHaveValue("Iryna");
     } finally {
       await close();
     }
