@@ -75,6 +75,8 @@ const makeTx = () => ({
   // TASK-330: the payment attempt is settled in the same transaction as the order.
   payment: {
     update: jest.fn(),
+    // Review R3: a live attempt blocks a re-price of the delivery.
+    count: jest.fn().mockResolvedValue(0),
   },
   // TASK-251: history rows are written inside every mutation transaction.
   orderStatusHistory: {
@@ -112,6 +114,10 @@ const prismaMock = {
     findMany: jest.fn(),
     // TASK-620: who set the REFUNDED mark a correction would lift.
     findFirst: jest.fn(),
+  },
+  // TASK-1975: the history timeline names the accounts behind `changedBy`.
+  user: {
+    findMany: jest.fn(),
   },
   // TASK-771: the revive's cap check compares against a field reference.
   discount: {
@@ -617,6 +623,30 @@ describe('OrderRepository', () => {
       );
 
       expect(orderData(tx).deliveryMethod).toBe('OTHER');
+    });
+
+    // TASK-1973 / TASK-1019: the point of a pickup phone order, and an agreed
+    // OTHER cost that the buyer owes with the goods.
+    it('createManual writes the pickup point and puts the shipping cost into the total', async () => {
+      const tx = withTx();
+
+      await repository.createManual(
+        {
+          userId: 'user-uuid-1',
+          items: [{ productId: 'product-uuid-1', quantity: 1, price: '10.00', name: 'Case' }],
+          shippingAddress: baseParams.shippingAddress as never,
+          deliveryMethod: 'PICKUP',
+          pickupPointId: 'point-uuid-1',
+          shippingCost: 150,
+        },
+        'admin-uuid-1',
+      );
+
+      const data = orderData(tx) as unknown as Record<string, { toString(): string } | number>;
+      expect(data.pickupPointId).toBe('point-uuid-1');
+      expect(data.shippingCost.toString()).toBe('150');
+      expect(data.total.toString()).toBe('160');
+      expect(data.balanceKop).toBe(16000);
     });
   });
 
@@ -2269,6 +2299,57 @@ describe('OrderRepository', () => {
         orderBy: { changedAt: 'asc' },
       });
     });
+
+    // TASK-1975: who changed it, without an N+1.
+    const historyRow = (id: string, changedBy: string | null) => ({
+      id,
+      orderId: 'order-1',
+      changeType: OrderHistoryChangeType.STATUS,
+      fromStatus: null,
+      toStatus: OrderStatus.PENDING,
+      fromPaymentStatus: null,
+      toPaymentStatus: null,
+      changedBy,
+      note: null,
+      rejectedPaymentStatus: null,
+      changedAt: new Date('2026-11-02T10:00:00.000Z'),
+    });
+
+    it('names the authors with ONE account query for the distinct ids, soft-deleted included', async () => {
+      prismaMock.orderStatusHistory.findMany.mockResolvedValue([
+        historyRow('h1', null),
+        historyRow('h2', 'admin-1'),
+        historyRow('h3', 'admin-1'),
+        historyRow('h4', 'gone-1'),
+      ]);
+      const admin = {
+        id: 'admin-1',
+        email: 'olena@example.com',
+        originalEmail: null,
+        firstName: 'Олена',
+        lastName: 'Коваль',
+      };
+      prismaMock.user.findMany.mockResolvedValue([admin]);
+
+      const rows = await repository.findHistoryByOrderId('order-1');
+
+      expect(prismaMock.user.findMany).toHaveBeenCalledTimes(1);
+      expect(prismaMock.user.findMany).toHaveBeenCalledWith({
+        // No deletedAt filter: a soft-deleted operator still confirmed the order.
+        where: { id: { in: ['admin-1', 'gone-1'] } },
+        select: { id: true, email: true, originalEmail: true, firstName: true, lastName: true },
+      });
+      expect(rows.map((row) => row.actor)).toEqual([null, admin, admin, null]);
+    });
+
+    it('skips the account query when every row is a system row', async () => {
+      prismaMock.orderStatusHistory.findMany.mockResolvedValue([historyRow('h1', null)]);
+
+      const rows = await repository.findHistoryByOrderId('order-1');
+
+      expect(prismaMock.user.findMany).not.toHaveBeenCalled();
+      expect(rows[0].actor).toBeNull();
+    });
   });
 
   // ─── soft-delete read filters & tombstone (TASK-104) ───────────────────────
@@ -3194,6 +3275,117 @@ describe('OrderRepository', () => {
       expect(prismaMock.order.updateMany.mock.calls[0][0].where).toEqual({
         id: 'order-1',
         updatedAt: version,
+      });
+    });
+
+    it('writes a method change and a cleared pickup point in the same guarded statement', async () => {
+      prismaMock.order.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.updateDetails('order-1', {
+        shippingAddress: address,
+        deliveryMethod: 'NOVA_POSHTA',
+        pickupPointId: null,
+      });
+
+      expect(prismaMock.order.updateMany.mock.calls[0][0].data).toEqual({
+        shippingAddress: address,
+        deliveryMethod: 'NOVA_POSHTA',
+        pickupPointId: null,
+      });
+    });
+
+    // AD-ORD-86 / TASK-1019: a shipping cost moves the money — total and
+    // balance in the same transaction, under the order lock, like every
+    // ledger write (R2 A2).
+    describe('with a shipping cost', () => {
+      const PRE_SHIPMENT = {
+        in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING],
+      };
+      let tx: ReturnType<typeof makeTx>;
+
+      beforeEach(() => {
+        tx = makeTx();
+        tx.order.findUniqueOrThrow
+          .mockResolvedValueOnce({
+            total: new Prisma.Decimal('530.00'),
+            shippingCost: new Prisma.Decimal('30.00'),
+          })
+          .mockResolvedValueOnce({ id: 'order-1', total: new Prisma.Decimal('680.00') });
+        prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+        moneyMock.lockOrder.mockResolvedValue({ id: 'order-1' });
+        moneyMock.recompute.mockResolvedValue({});
+      });
+
+      it('replaces the old cost in the total, then recomputes the balance — locked first', async () => {
+        tx.order.updateMany.mockResolvedValue({ count: 1 });
+
+        const result = await repository.updateDetails(
+          'order-1',
+          { shippingAddress: address, shippingCost: 180 },
+          { expectedUpdatedAt: version, changedBy: 'admin-1' },
+        );
+
+        expect(moneyMock.lockOrder).toHaveBeenCalledWith(tx, 'order-1');
+        expect(moneyMock.lockOrder.mock.invocationCallOrder[0]).toBeLessThan(
+          tx.order.updateMany.mock.invocationCallOrder[0],
+        );
+        const call = tx.order.updateMany.mock.calls[0][0];
+        expect(call.where).toEqual({ id: 'order-1', updatedAt: version, status: PRE_SHIPMENT });
+        expect(call.data.shippingAddress).toBe(address);
+        expect(call.data.shippingCost.toString()).toBe('180');
+        // 530 − 30 + 180: the goods, discount and add-ons are untouched.
+        expect(call.data.total.toString()).toBe('680');
+        expect(moneyMock.recompute).toHaveBeenCalledWith(tx, 'order-1', 'admin-1');
+        expect(moneyMock.recompute.mock.invocationCallOrder[0]).toBeGreaterThan(
+          tx.order.updateMany.mock.invocationCallOrder[0],
+        );
+        expect(result).toEqual({ id: 'order-1', total: new Prisma.Decimal('680.00') });
+        // Nothing outside the transaction.
+        expect(prismaMock.order.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('throws ORDER_STALE and recomputes nothing when the guarded row moved on', async () => {
+        tx.order.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(
+          repository.updateDetails(
+            'order-1',
+            { shippingAddress: address, shippingCost: 180 },
+            { expectedUpdatedAt: version },
+          ),
+        ).rejects.toMatchObject({ response: { error: 'ORDER_STALE' } });
+        expect(moneyMock.recompute).not.toHaveBeenCalled();
+      });
+
+      it('refuses to re-price while the buyer holds a live LiqPay link (review R3)', async () => {
+        tx.payment.count.mockResolvedValue(1);
+
+        await expect(
+          repository.updateDetails(
+            'order-1',
+            { shippingAddress: address, shippingCost: 180 },
+            { expectedUpdatedAt: version },
+          ),
+        ).rejects.toMatchObject({ response: { error: 'ORDER_PAYMENT_IN_PROGRESS' } });
+        expect(tx.payment.count).toHaveBeenCalledWith({
+          where: { orderId: 'order-1', status: 'PENDING' },
+        });
+        expect(tx.order.updateMany).not.toHaveBeenCalled();
+        expect(moneyMock.recompute).not.toHaveBeenCalled();
+      });
+
+      it('lets a same-price delivery edit through a live LiqPay link', async () => {
+        tx.payment.count.mockResolvedValue(1);
+        tx.order.updateMany.mockResolvedValue({ count: 1 });
+
+        await repository.updateDetails(
+          'order-1',
+          { shippingAddress: address, shippingCost: 30 },
+          { expectedUpdatedAt: version },
+        );
+
+        expect(tx.payment.count).not.toHaveBeenCalled();
+        expect(tx.order.updateMany).toHaveBeenCalled();
       });
     });
   });

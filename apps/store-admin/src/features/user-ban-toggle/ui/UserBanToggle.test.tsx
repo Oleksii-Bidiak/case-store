@@ -106,7 +106,12 @@ describe("UserBanToggle — customers:write gate (TASK-716)", () => {
     });
 
     expect(
-      screen.getByRole("button", { name: dict.userBan.cannotSelf }),
+      screen.getByRole("button", { name: dict.common.deactivate }),
     ).toBeDisabled();
+    // TASK-1978: the reason is reachable on touch too — a tappable «ⓘ» beside
+    // the disabled button, which shows no tooltip of its own.
+    expect(
+      screen.getByRole("button", { name: dict.common.infoHintAria }),
+    ).toHaveAccessibleDescription(dict.userBan.cannotSelf);
   });
 });

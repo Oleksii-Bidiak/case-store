@@ -22,6 +22,11 @@ import { orderStatusLabel, paymentStatusLabel } from "./status-label";
  * Who authored a change: the customer (self-cancel — `changedBy` is the order's
  * own owner), an admin (any other non-null id), or the system (null — order
  * creation, a future payment webhook).
+ *
+ * TASK-1975: an admin row names the operator — `actorName` is the server's
+ * `actor.name` (first + last name, else the email). An id that matches no
+ * account comes with no name and falls back to «Адміністратор»; the customer
+ * and system rows keep their labels whatever the name.
  */
 export function historyActorLabel(
   changedBy: string | null,
@@ -32,6 +37,7 @@ export function historyActorLabel(
   // caller-side cast, which is how a null reaches the comparison and every
   // system row starts claiming to be the customer.
   orderUserId: string | null,
+  actorName?: string | null,
 ): string {
   if (changedBy === null) {
     return "Система";
@@ -39,7 +45,7 @@ export function historyActorLabel(
   if (changedBy === orderUserId) {
     return "Клієнт";
   }
-  return "Адміністратор";
+  return actorName?.trim() || "Адміністратор";
 }
 
 /**

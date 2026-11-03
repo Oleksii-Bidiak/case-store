@@ -10,8 +10,9 @@ import { waitForHydration } from "./fixtures/hydration";
  * `GET /admin/orders` accepts and actually filters by (the seeded orders are
  * NOVA_POSHTA by the column default), the facets endpoint answers the sheet,
  * the `?pickupPointId=` deep link from `/settings/delivery` round-trips as a
- * chip, and the phone-order form refuses card payment up front for an address
- * with no Nova Poshta city (the server's delivery × payment matrix).
+ * chip, and the phone-order form offers the enabled delivery methods and
+ * refuses card payment up front for «Інша доставка» (the server's delivery ×
+ * payment matrix, TASK-1973).
  *
  * The widget-level halves live next to the code:
  * `widgets/order-list/ui/admin-order-table.test.tsx`,
@@ -91,22 +92,49 @@ test.describe("admin orders — delivery (TASK-648)", () => {
     await expect(block.getByText("Отримувач")).toBeVisible();
   });
 
-  test("a phone order offers card payment only for a Nova Poshta city (TASK-1021)", async ({
+  test("a phone order chooses its delivery method; «Інша доставка» refuses card payment (TASK-1973 / TASK-1021)", async ({
     page,
   }) => {
     await page.goto("/orders/new");
-    const group = page.getByRole("group", { name: /Спосіб оплати/i });
-    await waitForHydration(page.locator("form").filter({ has: group }));
+    const payment = page.getByRole("group", { name: /Спосіб оплати/i });
+    await waitForHydration(page.locator("form").filter({ has: payment }));
+    const delivery = page.getByRole("group", { name: "Спосіб доставки" });
 
-    await expect(group.getByRole("button", { name: "Картка онлайн" })).toBeDisabled();
+    // Nova Poshta by default: card and instalments are offered.
+    await expect(delivery.getByRole("button", { name: NP })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await expect(
-      group.getByRole("button", { name: "Оплата частинами" }),
+      payment.getByRole("button", { name: "Картка онлайн" }),
+    ).toBeEnabled();
+    await expect(
+      page.getByText("за тарифом НП, оплата у відділенні"),
+    ).toBeVisible();
+
+    // «Інша доставка»: its cost is agreed by the operator, so no card.
+    await delivery.getByRole("button", { name: OTHER }).click();
+    await expect(
+      payment.getByRole("button", { name: "Картка онлайн" }),
     ).toBeDisabled();
     await expect(
-      page.getByText(/лише для міста зі списку Нової Пошти/),
+      payment.getByRole("button", { name: "Оплата частинами" }),
+    ).toBeDisabled();
+    await expect(
+      page.getByText(/недоступні для «Іншої доставки»/),
     ).toBeVisible();
     await expect(
-      group.getByRole("button", { name: "Оплата при отриманні" }),
+      payment.getByRole("button", { name: "Оплата при отриманні" }),
     ).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("узгодить оператор")).toBeVisible();
+
+    // An agreed cost goes into «Разом» (TASK-1019): with no goods yet, the
+    // delivery row and the total both read 150 ₴.
+    await page.getByLabel("Узгоджена вартість доставки, ₴").fill("150");
+    await expect(
+      page
+        .getByRole("complementary", { name: "Підсумок" })
+        .getByText(/^150\s₴$/),
+    ).toHaveCount(2);
   });
 });

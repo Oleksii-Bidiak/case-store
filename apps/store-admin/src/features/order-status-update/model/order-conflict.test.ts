@@ -2,6 +2,7 @@ import { dict } from "@/shared/config";
 import {
   ORDER_CONFLICT_CODE,
   isOrderConflict,
+  isStaleWriteConflict,
   orderConflictMessage,
   orderWriteErrorMessage,
   requiresReload,
@@ -51,6 +52,17 @@ describe("orderConflictMessage (TASK-332)", () => {
     // And it must name the only move that works, not a payment status the
     // operator cannot reach — PAYMENT_TRANSITIONS[REFUNDED] is empty.
     expect(orderConflictMessage(error)).toContain("нове замовлення");
+  });
+
+  // Review R3: the delivery edit's own refusals — neither is a stale screen.
+  it.each([
+    [ORDER_CONFLICT_CODE.PAYMENT_IN_PROGRESS, "ORDER_PAYMENT_IN_PROGRESS"],
+    [ORDER_CONFLICT_CODE.DELIVERY_LOCKED, "ORDER_DELIVERY_LOCKED"],
+  ] as const)("words %s and does not demand a reload", (code, key) => {
+    const error = rejection(409, code);
+
+    expect(orderConflictMessage(error)).toBe(dict.orderStatus.conflict[key]);
+    expect(requiresReload(error)).toBe(false);
   });
 
   // AD-ORD-51 (TASK-1966): reviving a cancelled order re-claims its promo slot
@@ -158,5 +170,26 @@ describe("orderWriteErrorMessage (TASK-622)", () => {
     ).toBeNull();
     expect(orderWriteErrorMessage(rejection(400, "Bad Request"))).toBeNull();
     expect(orderWriteErrorMessage({})).toBeNull();
+  });
+});
+
+/**
+ * TASK-1972: a lost update on an edit form opens the stale-draft review; every
+ * other refusal keeps its message. A 409 with no code at all (a proxy ate the
+ * body) is not provably a lost update, so it is not reviewed either.
+ */
+describe("isStaleWriteConflict (TASK-1972)", () => {
+  it("is true only for a 409 ORDER_STALE", () => {
+    expect(
+      isStaleWriteConflict(rejection(409, ORDER_CONFLICT_CODE.STALE)),
+    ).toBe(true);
+    expect(
+      isStaleWriteConflict(
+        rejection(409, ORDER_CONFLICT_CODE.TRANSITION_INVALID),
+      ),
+    ).toBe(false);
+    expect(isStaleWriteConflict(rejection(409))).toBe(false);
+    expect(isStaleWriteConflict(rejection(403, "Forbidden"))).toBe(false);
+    expect(isStaleWriteConflict(null)).toBe(false);
   });
 });

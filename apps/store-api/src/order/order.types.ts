@@ -38,6 +38,28 @@ export interface OrderStatusHistoryRow {
    */
   rejectedPaymentStatus: PaymentStatus | null;
   changedAt: Date;
+  /**
+   * TASK-1975: the account behind `changedBy`, as the timeline names it. Set by
+   * `OrderRepository.findHistoryByOrderId`; null for a system row and for an id
+   * that matches no account. Optional because nothing else that reads this
+   * shape resolves it.
+   */
+  actor?: OrderHistoryActorRow | null;
+}
+
+/**
+ * The account a history row names (TASK-1975). `changedBy` is a bare id with no
+ * relation, so the repository looks the accounts up in one query per timeline.
+ * Soft-deleted accounts are included on purpose: who confirmed an order stays
+ * true after the account is gone (`email` is then mangled and `originalEmail`
+ * holds the readable one — TASK-104).
+ */
+export interface OrderHistoryActorRow {
+  id: string;
+  email: string;
+  originalEmail: string | null;
+  firstName: string | null;
+  lastName: string | null;
 }
 
 /**
@@ -225,6 +247,8 @@ export interface OrderWithItems {
   paymentMethod?: PaymentMethod;
   /** How the order ships (TASK-642); the column defaults to NOVA_POSHTA. */
   deliveryMethod?: DeliveryMethod;
+  /** The pickup point of a PICKUP order (TASK-643); null for every other method. */
+  pickupPointId?: string | null;
   /** When money actually settled (TASK-330); null while unpaid. */
   paidAt?: Date | null;
   /** Deadline on an unpaid ONLINE order's stock reservation (TASK-330). */
@@ -662,16 +686,23 @@ export interface ManualOrderParams {
     /** For the insufficient-stock message; not persisted. */
     name: string;
   }>;
-  shippingAddress: AddressDto;
+  /** The delivery snapshot the service built (TASK-1973); a bare address before it. */
+  shippingAddress: AddressDto | ShippingAddressData;
   billingAddress?: AddressDto;
   notes?: string;
   internalNotes?: string;
+  /**
+   * Decided by the service per method (TASK-1019): 0 for NP (paid at the branch,
+   * B-13) and pickup, the courier price, or the cost the operator agreed for OTHER.
+   */
   shippingCost?: number;
+  /** The pickup point of a PICKUP phone order (TASK-1973); absent otherwise. */
+  pickupPointId?: string;
   paymentMethod?: PaymentMethod;
   /**
-   * How the phone order is delivered (TASK-643), classified by the same rule as
-   * a legacy checkout: NP city ref → NOVA_POSHTA, otherwise OTHER. Absent → the
-   * column default (NOVA_POSHTA).
+   * How the phone order is delivered: chosen by the operator (TASK-1973) or,
+   * absent from the request, classified by the TASK-643 rule (NP city ref →
+   * NOVA_POSHTA, otherwise OTHER). Absent here → the column default (NOVA_POSHTA).
    */
   deliveryMethod?: DeliveryMethod;
   /**

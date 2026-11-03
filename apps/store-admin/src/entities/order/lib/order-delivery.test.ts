@@ -97,6 +97,39 @@ describe("order-delivery (TASK-648)", () => {
     ).toBe(false);
   });
 
+  // TASK-1019: the operator agreed free delivery — the snapshot the server
+  // rebuilt says OTHER and carries no flag, so 0 is a quote, not a gap. A
+  // pre-TASK-1973 phone order has no method in its snapshot and stays pending.
+  it("reads an OTHER at 0 as agreed once the server's snapshot dropped the flag", () => {
+    const address = { firstName: "", lastName: "", address1: "", city: "" };
+    expect(
+      isShippingCostPending({
+        deliveryMethod: "OTHER",
+        shippingAddress: { ...address, deliveryMethod: "OTHER" },
+        shippingCost: "0.00",
+      }),
+    ).toBe(false);
+    expect(
+      isShippingCostPending({
+        deliveryMethod: "OTHER",
+        shippingAddress: address,
+        shippingCost: "0.00",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps the pickup point's map link (TASK-1979)", () => {
+    expect(
+      deliverySnapshot({
+        firstName: "",
+        lastName: "",
+        address1: "",
+        city: "",
+        pickupPointMapUrl: " https://maps.example.com/p/1 ",
+      }).pickupPointMapUrl,
+    ).toBe("https://maps.example.com/p/1");
+  });
+
   it("trims the snapshot and leaves blanks out", () => {
     expect(
       deliverySnapshot({

@@ -36,6 +36,7 @@ import { CONTENT_IMAGE_ACCEPT } from "@/shared/lib/image-upload-error";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { toast } from "@/shared/ui/toast";
+import { LabelTooltip } from "@/shared/ui/tooltip";
 import { dict } from "@/shared/config";
 import { CaptionedTable } from "./captioned-table";
 import { ImageNode } from "./image-node";
@@ -1026,34 +1027,36 @@ export function RichTextEditor({
                   const applicable = editor
                     ? (button.isEnabled?.(editor) ?? true)
                     : false;
+                  // TASK-1978: the label shows on hover AND keyboard focus (a
+                  // native `title` showed it on hover only).
                   return (
-                    <button
-                      key={button.label}
-                      type="button"
-                      title={button.label}
-                      aria-label={button.label}
-                      // Only the toggles are toggles. "Insert table" and "add row"
-                      // do a thing and are done; announcing them as permanently
-                      // "not pressed" is noise a screen-reader user has to sit
-                      // through on every button in the strip.
-                      aria-pressed={button.isActive ? active : undefined}
-                      disabled={!editable || !editor || !applicable}
-                      onClick={() =>
-                        editor && button.run(editor, { openLinkEditor })
-                      }
-                      className={cn(
-                        "inline-flex h-7 items-center justify-center rounded-sm text-muted-foreground transition-colors",
-                        Icon ? "w-7" : "px-2 text-xs whitespace-nowrap",
-                        "hover:bg-accent hover:text-accent-foreground",
-                        // The grey fill marks the button inactive: its enabled
-                        // `muted-foreground` is only 4.34:1 on `bg-disabled`, so
-                        // the text steps to `disabled-foreground` (TASK-735).
-                        "disabled:pointer-events-none disabled:bg-disabled disabled:text-disabled-foreground",
-                        active && "bg-accent text-accent-foreground",
-                      )}
-                    >
-                      {Icon ? <Icon className="h-4 w-4" /> : button.short}
-                    </button>
+                    <LabelTooltip key={button.label} label={button.label}>
+                      <button
+                        type="button"
+                        aria-label={button.label}
+                        // Only the toggles are toggles. "Insert table" and "add row"
+                        // do a thing and are done; announcing them as permanently
+                        // "not pressed" is noise a screen-reader user has to sit
+                        // through on every button in the strip.
+                        aria-pressed={button.isActive ? active : undefined}
+                        disabled={!editable || !editor || !applicable}
+                        onClick={() =>
+                          editor && button.run(editor, { openLinkEditor })
+                        }
+                        className={cn(
+                          "inline-flex h-7 items-center justify-center rounded-sm text-muted-foreground transition-colors",
+                          Icon ? "w-7" : "px-2 text-xs whitespace-nowrap",
+                          "hover:bg-accent hover:text-accent-foreground",
+                          // The grey fill marks the button inactive: its enabled
+                          // `muted-foreground` is only 4.34:1 on `bg-disabled`, so
+                          // the text steps to `disabled-foreground` (TASK-735).
+                          "disabled:pointer-events-none disabled:bg-disabled disabled:text-disabled-foreground",
+                          active && "bg-accent text-accent-foreground",
+                        )}
+                      >
+                        {Icon ? <Icon className="h-4 w-4" /> : button.short}
+                      </button>
+                    </LabelTooltip>
                   );
                 })}
               </React.Fragment>

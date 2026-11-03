@@ -4,7 +4,6 @@ export {
   OrderCustomerPicker,
   toPickedCustomer,
 } from "./ui/order-customer-picker";
-export { NpCityField, NpWarehouseField } from "./ui/np-address-fields";
 export {
   CREATE_ORDER_DEFAULTS,
   CUSTOMER_MODE,

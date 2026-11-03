@@ -15,6 +15,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  LabelTooltip,
 } from "@/shared/ui";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
@@ -84,18 +85,19 @@ export function AdminHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="hidden sm:inline-flex"
-          aria-label={dict.header.sectionHelp}
-          title={dict.header.sectionHelp}
-          aria-haspopup="dialog"
-          onClick={() => setHelpOpen(true)}
-        >
-          <BookOpen className="size-5" />
-        </Button>
+        <LabelTooltip label={dict.header.sectionHelp}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="hidden sm:inline-flex"
+            aria-label={dict.header.sectionHelp}
+            aria-haspopup="dialog"
+            onClick={() => setHelpOpen(true)}
+          >
+            <BookOpen className="size-5" />
+          </Button>
+        </LabelTooltip>
 
         {roleLabel && (
           <Badge
@@ -113,6 +115,8 @@ export function AdminHeader({
               variant="ghost"
               size="sm"
               aria-label={dict.header.accountMenu}
+              // TASK-1978: kept — the full address behind a truncated one,
+              // repeated in the menu's first line; not an explanation.
               title={email ?? userId ?? undefined}
               data-active={onProfile ? "true" : undefined}
               className={cn(

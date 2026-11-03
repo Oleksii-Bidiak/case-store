@@ -12,6 +12,7 @@ import {
   deliverySnapshot,
   formatOrderNumber,
   isShippingCostPending,
+  orderCardHref,
   orderDeliveryMethod,
   orderDerivedMarks,
   orderHeadlineStatusLabel,
@@ -249,7 +250,6 @@ function sortLabel(sortBy: string, sortOrder: "asc" | "desc"): string {
   return asc ? d.sortCreatedAsc : d.sortCreatedDesc;
 }
 
-const orderHref = (order: OrderEntity) => `/orders/${order.id}`;
 const rowLabel = (order: OrderEntity) => d.rowAria(formatOrderNumber(order.id));
 const getRowId = (order: OrderEntity) => order.id;
 
@@ -590,6 +590,10 @@ export function AdminOrderTable() {
   const statusParam = searchParams.get("status") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
+  // TASK-1977: a row opens the card WITH this list's query, so «← Замовлення»
+  // comes back to the same tab, filters, page, search, page size and sort.
+  const listSearch = searchParams.toString();
+  const orderHref = (order: OrderEntity) => orderCardHref(order.id, listSearch);
 
   const updateParams = useUrlParams();
   const { sortBy, sortOrder, onSort } = useTableSort(

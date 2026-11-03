@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { LabelTooltip } from "@/shared/ui/tooltip";
 import { dict } from "@/shared/config";
 import type { RichTextImageSources } from "./image-sources";
 
@@ -107,21 +108,23 @@ export function RichTextImageMenu({ label = t.imageMenu }: { label?: string }) {
 
   return (
     <DropdownMenu modal={false}>
-      <DropdownMenuTrigger
-        type="button"
-        title={label}
-        aria-label={label}
-        disabled={!editable}
-        className={cn(
-          "inline-flex h-7 items-center justify-center gap-0.5 rounded-sm px-1.5 text-muted-foreground transition-colors outline-none",
-          "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
-          "data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
-          "disabled:pointer-events-none disabled:bg-disabled disabled:text-disabled-foreground",
-        )}
-      >
-        <ImageIcon className="size-4" aria-hidden="true" />
-        <ChevronDown className="size-3" aria-hidden="true" />
-      </DropdownMenuTrigger>
+      {/* TASK-1978: a Radix tooltip (hover + focus), not a native `title`. */}
+      <LabelTooltip label={label}>
+        <DropdownMenuTrigger
+          type="button"
+          aria-label={label}
+          disabled={!editable}
+          className={cn(
+            "inline-flex h-7 items-center justify-center gap-0.5 rounded-sm px-1.5 text-muted-foreground transition-colors outline-none",
+            "hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring",
+            "data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
+            "disabled:pointer-events-none disabled:bg-disabled disabled:text-disabled-foreground",
+          )}
+        >
+          <ImageIcon className="size-4" aria-hidden="true" />
+          <ChevronDown className="size-3" aria-hidden="true" />
+        </DropdownMenuTrigger>
+      </LabelTooltip>
       <DropdownMenuContent align="start">
         <ImageSourceMenuItems target={{ kind: "insert" }} withHint />
       </DropdownMenuContent>

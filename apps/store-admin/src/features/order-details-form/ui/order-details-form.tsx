@@ -7,22 +7,25 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
   getAdminOrderControllerFindAllQueryKey,
+  fetchFreshOrder,
   getAdminOrderControllerFindByIdQueryKey,
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
   useAdminOrderControllerUpdateDetails,
   type OrderEntity,
 } from "@/entities/order";
 import {
+  ORDER_STALE_REVIEW_LABELS,
+  isStaleWriteConflict,
   orderConflictMessage,
   orderWriteErrorMessage,
-  requiresReload,
   type ApiErrorLike,
 } from "@/features/order-status-update";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
-import { Button, Input, Label, Textarea } from "@/shared/ui";
+import { Button, Input, Label, StaleDraftPanel, Textarea } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { useEditLockToken } from "@/shared/lib/use-edit-lock-token";
+import { useStaleDraftReview } from "@/shared/lib/use-stale-draft-review";
 import {
   createOrderDetailsSchema,
   isValidWaybill,
@@ -77,6 +80,13 @@ interface OrderDetailsFormProps {
  * Neither branch renders while the grant set is still loading: `can()` answers
  * false in that window for everyone, and choosing the text view on it flashed a
  * read-only card at every writer (the owner too) before swapping in the form.
+ *
+ * ── A colleague saved first (TASK-1972, AD-ORD-67) ──────────────────────────
+ * The 409 opens `StaleDraftPanel`: the colleague's value next to the draft for
+ * every field both of them changed. «Зберегти» stays off until the operator
+ * takes the colleague's value or says they have looked — only then does the
+ * lock token move (`useStaleDraftReview`). There is no «Оновити» any more: the
+ * refetch it did is what the panel now shows.
  */
 export function OrderDetailsForm({
   order,
@@ -172,41 +182,54 @@ function OrderDetailsEditor({
   // landed meanwhile is overwritten without a 409 — see `useEditLockToken`.
   // `dirtyFields`, not `isDirty`: a values-driven reset drops `isDirty` for a
   // render even though the typed text is kept, which would let go of the token.
+  // `seeded` rides along as the base: the values of the version the token names,
+  // which the stale-draft review compares the colleague's save against.
   const lock = useEditLockToken(
     Object.keys(form.formState.dirtyFields).length > 0,
     order.updatedAt,
+    seeded,
   );
+
+  const draft: OrderDetailsFormValues = {
+    ...seeded,
+    ...useWatch({ control: form.control }),
+  };
+
+  // TASK-1972: a 409 opens a review — the colleague's version next to the
+  // draft — and the token moves only when the operator has looked at it.
+  const review = useStaleDraftReview<OrderDetailsFormValues>({
+    draft,
+    // `resetField` with a default: the field holds the colleague's value AND is
+    // pristine, so a later poll may refresh it and it is not re-sent as ours.
+    apply: (field, value) => form.resetField(field, { defaultValue: value }),
+    rebase: (version, fresh) => lock.rebase(version, fresh),
+  });
 
   // A 409 conflict or a 403 «немає права» (TASK-622). A 400 — the waybill rule
   // included — is neither and yields null: the conflict check is gated on the
   // status now, so the old `isWaybillRejection` carve-out here is gone.
-  const conflict = orderWriteErrorMessage(updateDetails.error as ApiErrorLike);
-  const showReload = requiresReload(updateDetails.error as ApiErrorLike);
+  // A stale refusal whose fresh version could not be fetched has its own line:
+  // the remedy is «Зберегти» again, there is no «Оновити» to point at.
+  const conflict = review.fetchFailed
+    ? dict.orderStatus.staleReviewFetchFailed
+    : orderWriteErrorMessage(updateDetails.error as ApiErrorLike);
 
   // К1/К3: the tracking link appears for a real waybill; the error says how
   // many digits there are now.
-  const trackingValue =
-    useWatch({ control: form.control, name: "trackingNumber" }) ?? "";
+  const trackingValue = draft.trackingNumber;
   const trackingDigits = trackingValue.replace(/\D/g, "").length;
   const trackingUrl = isValidWaybill(trackingValue)
     ? npTrackingUrl(trackingValue)
     : null;
 
-  /** «Оновити» on the 409 banner: refetch the order, clear the refusal. */
-  const handleReload = () => {
-    updateDetails.reset();
-    const key = getAdminOrderControllerFindByIdQueryKey(order.id);
-    void queryClient
-      .invalidateQueries({ queryKey: key })
-      .then(() =>
-        lock.rebase(
-          queryClient.getQueryData<{ data?: OrderEntity }>(key)?.data
-            ?.updatedAt,
-        ),
-      );
+  const fieldLabels: Record<keyof OrderDetailsFormValues, string> = {
+    trackingNumber: dict.orders.trackingNumber,
+    internalNotes: dict.orders.internalNotes,
   };
 
   const onSubmit = (values: OrderDetailsFormValues) => {
+    // A new attempt: drop a «could not fetch» line left by the previous one.
+    review.close();
     updateDetails.mutate(
       {
         orderId: order.id,
@@ -255,20 +278,29 @@ function OrderDetailsEditor({
           }
 
           const message = orderConflictMessage(error as ApiErrorLike);
+          if (isStaleWriteConflict(error as ApiErrorLike)) {
+            // TASK-1972: fetch the colleague's version and put it next to the
+            // draft. The token is NOT rebased here — that used to happen before
+            // the operator saw anything, and the next save overwrote the
+            // colleague's change. The panel answers the refusal; if the version
+            // cannot be fetched, one inline line says to save again — no toast
+            // on top. `begin` ignores an answer that lands after unmount.
+            const base = lock.base;
+            updateDetails.reset();
+            const pending = review.begin();
+            void fetchFreshOrder(queryClient, order.id)
+              .then((fresh) =>
+                pending.open({
+                  base,
+                  draft: form.getValues(),
+                  fresh: mapOrderToDetailsValues(fresh),
+                  version: fresh.updatedAt,
+                }),
+              )
+              .catch(() => pending.fail());
+            return;
+          }
           if (message) {
-            // The operator has now been told the order changed; the refetch
-            // refreshes the fields they did not touch. Their next save is made
-            // over THAT version, so it becomes the held token (TASK-629) —
-            // otherwise every retry would send the refused one again.
-            const key = getAdminOrderControllerFindByIdQueryKey(order.id);
-            void queryClient
-              .invalidateQueries({ queryKey: key })
-              .then(() =>
-                lock.rebase(
-                  queryClient.getQueryData<{ data?: OrderEntity }>(key)?.data
-                    ?.updatedAt,
-                ),
-              );
             toast.error(message);
             return;
           }
@@ -359,33 +391,50 @@ function OrderDetailsEditor({
         ) : null}
       </div>
 
-      {conflict ? (
-        <div
+      {review.review ? (
+        <StaleDraftPanel
+          rows={review.diverging.map((name) => ({
+            name,
+            label: fieldLabels[name],
+            theirs: review.review?.fresh[name] ?? "",
+            mine: draft[name],
+          }))}
+          labels={ORDER_STALE_REVIEW_LABELS}
+          onTakeTheirs={(name) =>
+            review.takeTheirs(name as keyof OrderDetailsFormValues)
+          }
+          onAcknowledge={review.acknowledge}
+        />
+      ) : conflict ? (
+        <p
           role="alert"
-          className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
         >
-          <span className="flex-1">{conflict}</span>
-          {showReload ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleReload}
-            >
-              {dict.orderStatus.reloadCta}
-            </Button>
-          ) : null}
-        </div>
+          {conflict}
+        </p>
       ) : null}
 
-      <div>
+      <div className="flex flex-col items-start gap-1.5">
         <Button
           type="submit"
           size="sm"
-          disabled={updateDetails.isPending || !form.formState.isDirty}
+          disabled={
+            updateDetails.isPending || !form.formState.isDirty || review.pending
+          }
+          aria-describedby={
+            review.pending ? "order-details-save-hint" : undefined
+          }
         >
           {dict.orders.detailsSave}
         </Button>
+        {review.pending ? (
+          <p
+            id="order-details-save-hint"
+            className="text-xs text-muted-foreground"
+          >
+            {dict.orderStatus.staleReviewSaveHint}
+          </p>
+        ) : null}
       </div>
     </form>
   );

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { Badge, Button, Checkbox, Separator } from "@/shared/ui";
+import { Badge, Button, Checkbox, InfoHint, Separator } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import type { ZoneGroup } from "../model/permission-zones";
 import { PERMISSIONS_WITHOUT_ROUTES } from "../model/permissions-without-routes";
@@ -191,12 +191,12 @@ export function PermissionZoneGrid({
                         {permission.key}
                       </code>
                       {permissionsWithoutRoutes.has(permission.key) && (
-                        <Badge
-                          variant="destructive"
-                          title={d.badgeNoRouteTitle}
+                        <InfoHint
+                          badgeVariant="destructive"
+                          hint={d.badgeNoRouteTitle}
                         >
                           {d.badgeNoRoute}
-                        </Badge>
+                        </InfoHint>
                       )}
                     </li>
                   ))}

@@ -20,3 +20,43 @@ describe('CreateManualOrderDto — payment method', () => {
     expect(paymentErrors('CRYPTO')).not.toEqual([]);
   });
 });
+
+/** TASK-1973 / TASK-1019: the operator chooses how the order is delivered. */
+describe('CreateManualOrderDto — delivery', () => {
+  const errorsFor = (property: string, value: unknown) =>
+    validateSync(plainToInstance(CreateManualOrderDto, { [property]: value })).filter(
+      (error) => error.property === property,
+    );
+
+  it.each(['NOVA_POSHTA', 'PICKUP', 'COURIER', 'OTHER'])('accepts deliveryMethod %s', (m) => {
+    expect(errorsFor('deliveryMethod', m)).toEqual([]);
+  });
+
+  it('refuses an unknown delivery method', () => {
+    expect(errorsFor('deliveryMethod', 'DRONE')).not.toEqual([]);
+  });
+
+  it('accepts a pickup point uuid and refuses garbage', () => {
+    expect(errorsFor('pickupPointId', '6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11')).toEqual([]);
+    expect(errorsFor('pickupPointId', 'not-a-uuid')).not.toEqual([]);
+  });
+
+  it.each([0, 150, 99.5, 120.25])('accepts an agreed shipping cost of %p', (cost) => {
+    expect(errorsFor('shippingCost', cost)).toEqual([]);
+  });
+
+  it.each([-1, 1.005, 100001, '150', Number.NaN])('refuses shipping cost %p', (cost) => {
+    expect(errorsFor('shippingCost', cost)).not.toEqual([]);
+  });
+
+  // Verifier: `@IsOptional` let null through — an OTHER order was then booked
+  // at 0 ₴ WITHOUT the «to be quoted» flag. Absent means «to be quoted»; null
+  // is not a cost.
+  it('refuses a null shipping cost (omit the field instead)', () => {
+    expect(errorsFor('shippingCost', null)).not.toEqual([]);
+  });
+
+  it('leaves the shipping cost optional when absent', () => {
+    expect(errorsFor('shippingCost', undefined)).toEqual([]);
+  });
+});

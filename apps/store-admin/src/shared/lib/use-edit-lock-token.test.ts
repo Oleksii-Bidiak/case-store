@@ -53,3 +53,51 @@ describe("useEditLockToken (TASK-629)", () => {
     expect(result.current.token).toBe("v2");
   });
 });
+
+/**
+ * TASK-1972: the stale-draft review needs the VALUES the operator started from,
+ * not just the token — and the two must move together, or "what the colleague
+ * changed" is judged against a different version than the one the save sends.
+ */
+describe("useEditLockToken — the base values (TASK-1972)", () => {
+  type Snap = { notes: string };
+  type SnapProps = { isDirty: boolean; current: string; snapshot: Snap };
+
+  function setupWithSnapshot(initial: SnapProps) {
+    return renderHook(
+      ({ isDirty, current, snapshot }: SnapProps) =>
+        useEditLockToken(isDirty, current, snapshot),
+      { initialProps: initial },
+    );
+  }
+
+  it("holds the values the form became dirty on while a refetch moves on", () => {
+    const { result, rerender } = setupWithSnapshot({
+      isDirty: false,
+      current: "v1",
+      snapshot: { notes: "" },
+    });
+    expect(result.current.base).toEqual({ notes: "" });
+
+    rerender({ isDirty: true, current: "v1", snapshot: { notes: "" } });
+    rerender({ isDirty: true, current: "v2", snapshot: { notes: "колеги" } });
+
+    expect(result.current.token).toBe("v1");
+    expect(result.current.base).toEqual({ notes: "" });
+  });
+
+  it("moves only on rebase, and then token and base together", () => {
+    const { result, rerender } = setupWithSnapshot({
+      isDirty: true,
+      current: "v1",
+      snapshot: { notes: "" },
+    });
+    rerender({ isDirty: true, current: "v2", snapshot: { notes: "колеги" } });
+    expect(result.current.token).toBe("v1");
+
+    act(() => result.current.rebase("v2", { notes: "колеги" }));
+
+    expect(result.current.token).toBe("v2");
+    expect(result.current.base).toEqual({ notes: "колеги" });
+  });
+});

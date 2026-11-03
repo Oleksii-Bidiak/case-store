@@ -14,6 +14,7 @@ import {
 import { Label } from "@/shared/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { Textarea } from "@/shared/ui/textarea";
+import { LabelTooltip } from "@/shared/ui/tooltip";
 import { dict } from "@/shared/config";
 import { ImageSourceMenuItems } from "./image-actions";
 
@@ -91,18 +92,19 @@ export function ImageNodeView({
             </DropdownMenuContent>
           </DropdownMenu>
           <span className="mx-0.5 h-5 w-px bg-border" aria-hidden="true" />
-          <button
-            type="button"
-            title={t.remove}
-            aria-label={t.remove}
-            onClick={() => deleteNode()}
-            className={cn(
-              PANEL_BUTTON,
-              "w-7 px-0 text-destructive hover:text-destructive",
-            )}
-          >
-            <Trash2 className="size-4" aria-hidden="true" />
-          </button>
+          <LabelTooltip label={t.remove}>
+            <button
+              type="button"
+              aria-label={t.remove}
+              onClick={() => deleteNode()}
+              className={cn(
+                PANEL_BUTTON,
+                "w-7 px-0 text-destructive hover:text-destructive",
+              )}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+            </button>
+          </LabelTooltip>
         </div>
       )}
 

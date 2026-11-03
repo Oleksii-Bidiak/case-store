@@ -131,7 +131,10 @@ export {
   TooltipTrigger,
   TooltipContent,
   TooltipProvider,
+  LabelTooltip,
 } from "./tooltip";
+// TASK-1978: a chip/status explanation reachable by hover, focus AND tap.
+export { InfoHint, type InfoHintProps } from "./info-hint";
 export { FormActionsBar } from "./form-actions-bar";
 export {
   ReorderUndoButton,
@@ -192,6 +195,13 @@ export { Popover, PopoverContent, PopoverTrigger } from "./popover";
 export { FieldError } from "./field-error";
 export { FormAlert } from "./form-alert";
 export { Callout, calloutVariants, type CalloutProps } from "./callout";
+// TASK-1972: a colleague's saved version next to the operator's draft.
+export {
+  StaleDraftPanel,
+  type StaleDraftPanelLabels,
+  type StaleDraftPanelProps,
+  type StaleDraftRow,
+} from "./stale-draft-panel";
 export { ErrorState, type ErrorStateProps } from "./error-state";
 export { PasswordInput } from "./password-input";
 export {

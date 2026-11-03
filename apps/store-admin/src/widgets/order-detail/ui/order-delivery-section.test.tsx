@@ -125,6 +125,76 @@ describe("OrderDeliverySection — one block for four methods (TASK-648, ДН-1.
     expect(screen.queryByText(d.trackingNumber)).not.toBeInTheDocument();
   });
 
+  // TASK-1979: the point opens on a map, in a new tab, without handing the
+  // map site this window.
+  it("Самовивіз: links the point on a map", () => {
+    renderWithProviders(
+      <OrderDeliverySection
+        order={makeOrder({
+          deliveryMethod: "PICKUP",
+          shippingCost: "0",
+          shippingAddress: {
+            ...RECIPIENT,
+            city: "Київ",
+            address1: "вул. Хрещатик, 1",
+            deliveryMethod: "PICKUP",
+            pickupPointName: "Магазин на Хрещатику",
+            pickupPointMapUrl: "https://maps.example.com/p/1",
+          },
+        })}
+      />,
+    );
+
+    const link = screen.getByRole("link", {
+      name: d.deliveryPickupMapAria("Магазин на Хрещатику"),
+    });
+    expect(link).toHaveAttribute("href", "https://maps.example.com/p/1");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+  });
+
+  it("Самовивіз: no link for a map address that is not a web page", () => {
+    renderWithProviders(
+      <OrderDeliverySection
+        order={makeOrder({
+          deliveryMethod: "PICKUP",
+          shippingCost: "0",
+          shippingAddress: {
+            ...RECIPIENT,
+            city: "Київ",
+            address1: "вул. Хрещатик, 1",
+            deliveryMethod: "PICKUP",
+            pickupPointName: "Магазин на Хрещатику",
+            pickupPointMapUrl: "javascript:alert(1)",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  // TASK-1019: the operator agreed to deliver for free — a quote, not a gap.
+  it("Інша доставка agreed at 0: «Безкоштовно», plain tone, no warning", () => {
+    renderWithProviders(
+      <OrderDeliverySection
+        order={makeOrder({
+          deliveryMethod: "OTHER",
+          shippingCost: "0.00",
+          shippingAddress: {
+            ...RECIPIENT,
+            city: "Житомир",
+            address1: "вул. Київська, 3",
+            deliveryMethod: "OTHER",
+          },
+        })}
+      />,
+    );
+
+    expect(row(d.deliveryCost)).toHaveTextContent(d.deliveryFree);
+    expect(screen.queryByText(d.deliveryOtherWarning)).not.toBeInTheDocument();
+  });
+
   it("Курʼєр: the address and the price", () => {
     renderWithProviders(
       <OrderDeliverySection

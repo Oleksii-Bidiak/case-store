@@ -13481,7 +13481,7 @@
             "name": "search",
             "required": false,
             "in": "query",
-            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID.",
+            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID. The number may be pasted as the admin prints it — \"#0871A795\": surrounding spaces and a leading \"#\" are dropped, and the id is matched case-insensitively (TASK-1976).",
             "schema": {
               "maxLength": 120,
               "example": "ABC12345",
@@ -13705,7 +13705,7 @@
             }
           },
           "400": {
-            "description": "No customer identified, a product is unavailable, or stock is short"
+            "description": "No customer identified, a product is unavailable, stock is short, or a DELIVERY_* refusal (method switched off, payment not admitted, NP without city ref, pickup point missing or inactive, shipping cost on a method other than OTHER)"
           },
           "403": {
             "description": "Forbidden — admin access required"
@@ -13799,7 +13799,7 @@
             "name": "search",
             "required": false,
             "in": "query",
-            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID.",
+            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID. The number may be pasted as the admin prints it — \"#0871A795\": surrounding spaces and a leading \"#\" are dropped, and the id is matched case-insensitively (TASK-1976).",
             "schema": {
               "maxLength": 120,
               "example": "ABC12345",
@@ -14028,7 +14028,7 @@
             "name": "search",
             "required": false,
             "in": "query",
-            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID.",
+            "description": "Free-text search across order number (id prefix), email and phone — for account AND guest orders (TASK-336). This is what an operator actually has when a customer rings up: \"my order ABC12345\", or a phone number. Never a UUID. The number may be pasted as the admin prints it — \"#0871A795\": surrounding spaces and a leading \"#\" are dropped, and the id is matched case-insensitively (TASK-1976).",
             "schema": {
               "maxLength": 120,
               "example": "ABC12345",
@@ -14307,6 +14307,9 @@
               }
             }
           },
+          "400": {
+            "description": "DELIVERY_* — method switched off, payment not admitted, NP without city ref, pickup point missing or inactive, or a shipping cost on a method other than OTHER; ORDER_VERSION_REQUIRED — a delivery edit without expectedUpdatedAt"
+          },
           "403": {
             "description": "Forbidden — admin access required"
           },
@@ -14322,7 +14325,7 @@
             "access-token": []
           }
         ],
-        "summary": "Update order tracking number / internal notes (admin)",
+        "summary": "Update order tracking number / internal notes / delivery (method, pickup point, agreed cost, address) (admin)",
         "tags": [
           "Admin Orders"
         ]
@@ -31010,6 +31013,25 @@
           "data"
         ]
       },
+      "OrderHistoryActorEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Account id",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "First and last name as stored; the email when the account has no name",
+            "example": "Олена Коваль"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
       "OrderStatusHistoryEntity": {
         "type": "object",
         "properties": {
@@ -31128,6 +31150,16 @@
             "type": "string",
             "description": "When the change happened",
             "example": "2024-01-01T00:00:00.000Z"
+          },
+          "actor": {
+            "description": "TASK-1975: the account behind changedBy, so the timeline can say who changed it. Null for a system row and for an id that matches no account; a soft-deleted account is still named.",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderHistoryActorEntity"
+              }
+            ]
           }
         },
         "required": [
@@ -31141,7 +31173,8 @@
           "changedBy",
           "note",
           "rejectedPaymentStatus",
-          "changedAt"
+          "changedAt",
+          "actor"
         ]
       },
       "AdminOrderPaginationMeta": {
@@ -31479,6 +31512,26 @@
             ],
             "default": "ON_DELIVERY"
           },
+          "deliveryMethod": {
+            "description": "Delivery method (TASK-1973). Omitted → derived from the address: shippingAddress.npCityRef present → NOVA_POSHTA, otherwise OTHER. Refused (400) when the method is switched off in the delivery settings, a PICKUP has no active pickupPointId, a NOVA_POSHTA has no npCityRef, or the admin delivery × payment matrix forbids the payment method. Nova Poshta is paid by the buyer at the branch and is never added to the total (B-13); PICKUP is free; COURIER uses the flat courier price.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryMethod"
+              }
+            ]
+          },
+          "pickupPointId": {
+            "type": "string",
+            "description": "Pickup point id (an active one, from GET /api/delivery/methods). Required for PICKUP; ignored for every other method.",
+            "format": "uuid"
+          },
+          "shippingCost": {
+            "type": "number",
+            "description": "Agreed shipping cost, UAH (0–100000, at most 2 decimals). Allowed ONLY with deliveryMethod OTHER (400 DELIVERY_SHIPPING_COST_NOT_ALLOWED otherwise); added to the total. Omitted on an OTHER order → booked 0 and flagged «to be quoted» (shippingAddress.shippingCostPending).",
+            "example": 150,
+            "minimum": 0,
+            "maximum": 100000
+          },
           "notes": {
             "type": "string",
             "description": "Notes shown to the customer",
@@ -31551,9 +31604,29 @@
               }
             ]
           },
+          "deliveryMethod": {
+            "description": "New delivery method (TASK-1973). Pre-shipment only (409 otherwise). A CHANGED method is checked like a new phone order: enabled in the settings, admitted by the admin delivery × payment matrix for the order's payment method, NOVA_POSHTA with shippingAddress.npCityRef, PICKUP with an active pickupPointId. Re-prices the delivery: NOVA_POSHTA/PICKUP → 0 (NP is paid at the branch, B-13), COURIER → the flat price, OTHER → shippingCost or 0 «to be quoted». Total and balance are recomputed.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryMethod"
+              }
+            ]
+          },
+          "pickupPointId": {
+            "type": "string",
+            "description": "Pickup point for a PICKUP order (TASK-1806): required when switching to PICKUP; on a PICKUP order, a different id moves the order to that (active) point. Ignored otherwise.",
+            "format": "uuid"
+          },
+          "shippingCost": {
+            "type": "number",
+            "description": "Agreed shipping cost, UAH (0–100000, at most 2 decimals) — OTHER orders only (400 DELIVERY_SHIPPING_COST_NOT_ALLOWED otherwise), pre-shipment only (AD-ORD-86). Replaces the order's shipping cost, recomputes total and balance in one transaction, and clears shippingAddress.shippingCostPending. Allowed on an order already paid: the balance then shows what is still owed.",
+            "example": 150,
+            "minimum": 0,
+            "maximum": 100000
+          },
           "expectedUpdatedAt": {
             "type": "string",
-            "description": "The order's `updatedAt` as the client last read it. When supplied and no longer current, the request is rejected with 409 ORDER_STALE.",
+            "description": "The order's `updatedAt` as the client last read it. When supplied and no longer current, the request is rejected with 409 ORDER_STALE. REQUIRED with any delivery field (shippingAddress, deliveryMethod, pickupPointId, shippingCost) — 400 ORDER_VERSION_REQUIRED otherwise (TASK-1973); optional for a waybill or notes edit.",
             "format": "date-time",
             "example": "2026-07-28T10:15:30.000Z"
           }

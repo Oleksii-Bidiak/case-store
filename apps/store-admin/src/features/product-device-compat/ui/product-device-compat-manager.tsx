@@ -19,7 +19,7 @@ import {
 import { getProductControllerFindByIdQueryKey } from "@/entities/product";
 import { DeviceSeriesPicker } from "@/features/device-series-picker";
 import type { SectionSaveController } from "@/shared/lib/section-save";
-import { Button } from "@/shared/ui";
+import { Button, InfoHint } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
 const c = dict.productCompat;
@@ -201,15 +201,19 @@ export function ProductDeviceCompatManager({
             </Button>
           )}
           {groupId && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleApplyToGroup}
-              disabled={pending}
-              title={c.applyToGroupHint}
-            >
-              {c.applyToGroup}
-            </Button>
+            // TASK-1978: the button's click applies, so what it does is told
+            // by a separate tappable «ⓘ», not a `title` on the button.
+            <span className="inline-flex items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleApplyToGroup}
+                disabled={pending}
+              >
+                {c.applyToGroup}
+              </Button>
+              <InfoHint hint={c.applyToGroupHint} />
+            </span>
           )}
         </div>
       ) : (

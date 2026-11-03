@@ -10,6 +10,7 @@ import {
 import { PinoLogger } from 'nestjs-pino';
 import {
   DeliveryMethod,
+  OrderHistoryChangeType,
   OrderHistoryNote,
   OrderStatus,
   PaymentMethod,
@@ -194,6 +195,8 @@ const orderRepositoryMock = {
   findByUserId: jest.fn(),
   findAll: jest.fn(),
   findById: jest.fn(),
+  // TASK-1975: the admin history timeline.
+  findHistoryByOrderId: jest.fn(),
   findByIdForAdmin: jest.fn(),
   // TASK-338: guest order access + claiming on registration.
   findByAccessTokenHash: jest.fn(),
@@ -2698,12 +2701,217 @@ describe('OrderService', () => {
       });
     });
 
-    it('records a free-text phone order as OTHER', async () => {
+    it('records a free-text phone order as OTHER, its cost still to be agreed', async () => {
       await service.adminCreateOrder(dto, ADMIN_ID);
 
       const [params] = orderRepositoryMock.createManual.mock.calls[0];
       expect(params.deliveryMethod).toBe('OTHER');
-      expect(params).not.toHaveProperty('shippingCost');
+      // TASK-1019: booked 0 like a storefront OTHER, and flagged so no surface
+      // renders the 0 as free delivery.
+      expect(params.shippingCost).toBe(0);
+      expect(params.shippingAddress).toMatchObject({ shippingCostPending: true, carrier: null });
+    });
+
+    // TASK-1973 / TASK-1019: the operator chooses the method, like a shopper does.
+    describe('an explicit delivery method (TASK-1973)', () => {
+      const POINT_ID = '6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11';
+      const point = {
+        id: POINT_ID,
+        name: 'Магазин на Хрещатику',
+        city: 'Київ',
+        address: 'вул. Хрещатик, 1',
+        phone: '+380441234567',
+        workingHours: 'Пн–Пт 10:00–19:00',
+        mapUrl: 'https://maps.example.com/p/1',
+      };
+      const npAddress = { ...address, npCityRef: 'city-ref-1', npWarehouseRef: 'wh-ref-1' };
+      const allEnabled = {
+        enabledMethods: ['NOVA_POSHTA', 'PICKUP', 'COURIER', 'OTHER'],
+        courier: { price: '120.00', freeFrom: null, cityName: 'Київ' },
+      };
+
+      const params = () =>
+        orderRepositoryMock.createManual.mock.calls[0][0] as Record<string, unknown> & {
+          shippingAddress: Record<string, unknown>;
+        };
+
+      async function delivery400(promise: Promise<unknown>, code: string): Promise<void> {
+        let caught: unknown;
+        try {
+          await promise;
+        } catch (err) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(BadRequestException);
+        const body = (caught as BadRequestException).getResponse() as {
+          error: string;
+          message: unknown;
+        };
+        expect(body.error).toBe(code);
+        expect(body.message).toMatch(/[а-щьюяєіїґ]/i);
+        expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+      }
+
+      beforeEach(() => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue(allEnabled);
+        deliveryServiceMock.resolveActivePickupPoint.mockResolvedValue(point);
+      });
+
+      it('books a pickup at an active point with the point frozen into the snapshot', async () => {
+        await service.adminCreateOrder(
+          { ...dto, shippingAddress: npAddress, deliveryMethod: 'PICKUP', pickupPointId: POINT_ID },
+          ADMIN_ID,
+        );
+
+        expect(deliveryServiceMock.resolveActivePickupPoint).toHaveBeenCalledWith(POINT_ID);
+        const p = params();
+        expect(p.deliveryMethod).toBe('PICKUP');
+        expect(p.pickupPointId).toBe(POINT_ID);
+        expect(p.shippingCost).toBe(0);
+        expect(p.shippingAddress).toMatchObject({
+          firstName: 'Olena',
+          city: 'Київ',
+          address1: 'вул. Хрещатик, 1',
+          deliveryMethod: 'PICKUP',
+          carrier: null,
+          pickupPointName: 'Магазин на Хрещатику',
+          pickupPointAddress: 'вул. Хрещатик, 1',
+          pickupPointHours: 'Пн–Пт 10:00–19:00',
+          pickupPointPhone: '+380441234567',
+          pickupPointMapUrl: 'https://maps.example.com/p/1',
+        });
+        // NP refs on a pickup order would make it read as a parcel.
+        expect(p.shippingAddress).not.toHaveProperty('npCityRef');
+      });
+
+      it('refuses PICKUP without a point', async () => {
+        await delivery400(
+          service.adminCreateOrder({ ...dto, deliveryMethod: 'PICKUP' }, ADMIN_ID),
+          'DELIVERY_PICKUP_POINT_REQUIRED',
+        );
+      });
+
+      it('refuses a point that is gone or deactivated', async () => {
+        deliveryServiceMock.resolveActivePickupPoint.mockResolvedValue(null);
+
+        await delivery400(
+          service.adminCreateOrder(
+            { ...dto, deliveryMethod: 'PICKUP', pickupPointId: POINT_ID },
+            ADMIN_ID,
+          ),
+          'DELIVERY_PICKUP_POINT_UNAVAILABLE',
+        );
+      });
+
+      it('adds an agreed OTHER cost to the order and drops the «to be quoted» flag (TASK-1019)', async () => {
+        await service.adminCreateOrder(
+          { ...dto, shippingAddress: npAddress, deliveryMethod: 'OTHER', shippingCost: 150 },
+          ADMIN_ID,
+        );
+
+        const p = params();
+        expect(p.deliveryMethod).toBe('OTHER');
+        expect(p.shippingCost).toBe(150);
+        expect(p.shippingAddress).toMatchObject({ deliveryMethod: 'OTHER', carrier: null });
+        expect(p.shippingAddress).not.toHaveProperty('shippingCostPending');
+        expect(p.shippingAddress).not.toHaveProperty('npCityRef');
+      });
+
+      it('books an explicit OTHER without a cost as «to be quoted»', async () => {
+        await service.adminCreateOrder({ ...dto, deliveryMethod: 'OTHER' }, ADMIN_ID);
+
+        expect(params().shippingCost).toBe(0);
+        expect(params().shippingAddress).toMatchObject({ shippingCostPending: true });
+      });
+
+      // B-13 / TASK-2054: the buyer pays Nova Poshta at the branch, so its
+      // estimate is not part of what they owe the shop.
+      it('keeps Nova Poshta out of the total — no estimate is asked for', async () => {
+        await service.adminCreateOrder(
+          { ...dto, shippingAddress: npAddress, deliveryMethod: 'NOVA_POSHTA' },
+          ADMIN_ID,
+        );
+
+        expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
+        expect(params().shippingCost).toBe(0);
+        expect(params().shippingAddress).toMatchObject({
+          deliveryMethod: 'NOVA_POSHTA',
+          carrier: 'NOVA_POSHTA',
+          npCityRef: 'city-ref-1',
+        });
+      });
+
+      it('prices an enabled courier at the shop’s flat rate', async () => {
+        await service.adminCreateOrder({ ...dto, deliveryMethod: 'COURIER' }, ADMIN_ID);
+
+        expect(params().deliveryMethod).toBe('COURIER');
+        expect(params().shippingCost).toBe(120);
+      });
+
+      it.each(['NOVA_POSHTA', 'PICKUP', 'COURIER'] as const)(
+        'refuses an agreed cost on %s with 400 DELIVERY_SHIPPING_COST_NOT_ALLOWED',
+        async (deliveryMethod) => {
+          await delivery400(
+            service.adminCreateOrder(
+              {
+                ...dto,
+                shippingAddress: npAddress,
+                deliveryMethod,
+                pickupPointId: POINT_ID,
+                shippingCost: 50,
+              },
+              ADMIN_ID,
+            ),
+            'DELIVERY_SHIPPING_COST_NOT_ALLOWED',
+          );
+        },
+      );
+
+      it.each(['PICKUP', 'COURIER', 'OTHER', 'NOVA_POSHTA'] as const)(
+        'refuses %s while the shop has it switched off',
+        async (deliveryMethod) => {
+          deliveryServiceMock.getMethodSettings.mockResolvedValue({
+            ...allEnabled,
+            enabledMethods: allEnabled.enabledMethods.filter((m) => m !== deliveryMethod),
+          });
+
+          await delivery400(
+            service.adminCreateOrder(
+              { ...dto, shippingAddress: npAddress, deliveryMethod, pickupPointId: POINT_ID },
+              ADMIN_ID,
+            ),
+            'DELIVERY_METHOD_UNAVAILABLE',
+          );
+        },
+      );
+
+      // TASK-1020: «ref ⇔ not OTHER» — a Nova Poshta order without a city ref
+      // cannot be handed to the carrier.
+      it('refuses an explicit NOVA_POSHTA without an NP city', async () => {
+        await delivery400(
+          service.adminCreateOrder({ ...dto, deliveryMethod: 'NOVA_POSHTA' }, ADMIN_ID),
+          'DELIVERY_NP_CITY_REQUIRED',
+        );
+      });
+
+      it('lets a pickup order be paid ONLINE — its amount is final', async () => {
+        await service.adminCreateOrder(
+          { ...dto, deliveryMethod: 'PICKUP', pickupPointId: POINT_ID, paymentMethod: 'ONLINE' },
+          ADMIN_ID,
+        );
+
+        expect(params()).toMatchObject({ deliveryMethod: 'PICKUP', paymentMethod: 'ONLINE' });
+      });
+
+      it('refuses OTHER paid ONLINE even with an agreed cost — the admin matrix is unchanged', async () => {
+        await delivery400(
+          service.adminCreateOrder(
+            { ...dto, deliveryMethod: 'OTHER', shippingCost: 100, paymentMethod: 'ONLINE' },
+            ADMIN_ID,
+          ),
+          'DELIVERY_PAYMENT_NOT_ALLOWED',
+        );
+      });
     });
 
     it('records the acting operator on the order', async () => {
@@ -2952,11 +3160,17 @@ describe('OrderService', () => {
       async (status) => {
         orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status }));
 
-        await service.adminUpdateDetails('order-uuid-1', { shippingAddress: newAddress });
-
-        expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+        await service.adminUpdateDetails(
           'order-uuid-1',
           { shippingAddress: newAddress },
+          { expectedUpdatedAt: now },
+        );
+
+        // TASK-1020: written as a delivery snapshot, never as a bare address —
+        // a legacy order without an NP ref reads as OTHER.
+        expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+          'order-uuid-1',
+          { shippingAddress: { ...newAddress, deliveryMethod: 'OTHER', carrier: null } },
           expect.anything(),
         );
       },
@@ -2997,7 +3211,11 @@ describe('OrderService', () => {
       expect(orderRepositoryMock.updateDetails).toHaveBeenCalledTimes(1);
       expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
         'order-uuid-1',
-        { shippingAddress: newAddress, trackingNumber: '20450000000001', internalNotes: 'x' },
+        {
+          shippingAddress: { ...newAddress, deliveryMethod: 'OTHER', carrier: null },
+          trackingNumber: '20450000000001',
+          internalNotes: 'x',
+        },
         { expectedUpdatedAt },
       );
     });
@@ -3029,6 +3247,287 @@ describe('OrderService', () => {
       ).rejects.toThrow(ConflictException);
       expect(mailOutboxServiceMock.enqueueOrderShipped).not.toHaveBeenCalled();
     });
+  });
+
+  // ─── Delivery edit on an existing order (TASK-1973 / 1020 / 1806 / AD-ORD-86) ─
+  // The operator changes the method, the point or the agreed OTHER cost through
+  // the same PATCH, and a contact edit no longer wipes the snapshot.
+
+  describe('adminUpdateDetails — delivery', () => {
+    const POINT_ID = '6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11';
+    const OTHER_POINT_ID = '7a2d2e5f-7e9d-4d97-8e68-3b4f6a1d0b22';
+    const point = {
+      id: OTHER_POINT_ID,
+      name: 'Магазин на Подолі',
+      city: 'Київ',
+      address: 'вул. Сагайдачного, 5',
+      phone: null,
+      workingHours: 'Щодня 10:00–20:00',
+      mapUrl: 'https://maps.example.com/p/2',
+    };
+    const pickupSnapshot = {
+      ...address,
+      city: 'Київ',
+      address1: 'вул. Хрещатик, 1',
+      deliveryMethod: 'PICKUP',
+      carrier: null,
+      pickupPointName: 'Магазин на Хрещатику',
+      pickupPointAddress: 'вул. Хрещатик, 1',
+      pickupPointHours: 'Пн–Пт 10:00–19:00',
+      pickupPointPhone: '+380441234567',
+      pickupPointMapUrl: 'https://maps.example.com/p/1',
+    };
+    const npAddress = { ...address, npCityRef: 'city-ref-1', npWarehouseRef: 'wh-ref-1' };
+    const npSnapshot = { ...npAddress, deliveryMethod: 'NOVA_POSHTA', carrier: 'NOVA_POSHTA' };
+    const otherSnapshot = {
+      ...address,
+      deliveryMethod: 'OTHER',
+      carrier: null,
+      shippingCostPending: true,
+    };
+
+    // Verifier: a delivery edit is always guarded by the version it was
+    // decided on (ORDER_VERSION_REQUIRED otherwise).
+    const edit = (
+      fields: Parameters<OrderService['adminUpdateDetails']>[1],
+      options: { changedBy?: string } = {},
+    ) => service.adminUpdateDetails('order-uuid-1', fields, { expectedUpdatedAt: now, ...options });
+
+    const seed = (current: Partial<OrderWithItems>) => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CONFIRMED, ...current }),
+      );
+      orderRepositoryMock.updateDetails.mockResolvedValue(makeOrder(current));
+    };
+    const written = () =>
+      orderRepositoryMock.updateDetails.mock.calls[0][1] as Record<string, unknown> & {
+        shippingAddress: Record<string, unknown>;
+      };
+
+    async function refusedWith(promise: Promise<unknown>, code: string): Promise<void> {
+      let caught: unknown;
+      try {
+        await promise;
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(BadRequestException);
+      expect((caught as BadRequestException).getResponse()).toMatchObject({ error: code });
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+    }
+
+    beforeEach(() => {
+      deliveryServiceMock.getMethodSettings.mockResolvedValue({
+        enabledMethods: ['NOVA_POSHTA', 'PICKUP', 'OTHER'],
+        courier: { price: '120.00', freeFrom: null, cityName: 'Київ' },
+      });
+      deliveryServiceMock.resolveActivePickupPoint.mockResolvedValue(point);
+    });
+
+    // TASK-1020 / TASK-1806: the review of plan 184 U — a contact edit replaced
+    // the snapshot and the point's name, hours and phone vanished.
+    it('keeps the frozen pickup point when only the contacts change', async () => {
+      seed({
+        deliveryMethod: 'PICKUP',
+        pickupPointId: POINT_ID,
+        shippingAddress: pickupSnapshot as never,
+      } as Partial<OrderWithItems>);
+
+      await edit({
+        shippingAddress: { ...address, firstName: 'Ірина', city: 'typed', address1: 'typed' },
+      });
+
+      expect(deliveryServiceMock.resolveActivePickupPoint).not.toHaveBeenCalled();
+      const w = written();
+      expect(w.shippingAddress).toEqual({ ...pickupSnapshot, firstName: 'Ірина' });
+      // Nothing about the method or the money moved.
+      expect(w).not.toHaveProperty('deliveryMethod');
+      expect(w).not.toHaveProperty('pickupPointId');
+      expect(w).not.toHaveProperty('shippingCost');
+    });
+
+    it('keeps the «to be quoted» flag of an OTHER order across a contact edit', async () => {
+      seed({ deliveryMethod: 'OTHER', shippingAddress: otherSnapshot as never });
+
+      await edit({
+        shippingAddress: { ...address, phone: '+380671112233' },
+      });
+
+      expect(written().shippingAddress).toEqual({ ...otherSnapshot, phone: '+380671112233' });
+    });
+
+    it('keeps an NP order’s carrier and refuses to drop its city ref (ref ⇔ not OTHER)', async () => {
+      seed({ deliveryMethod: 'NOVA_POSHTA', shippingAddress: npSnapshot as never });
+
+      await refusedWith(edit({ shippingAddress: address }), 'DELIVERY_NP_CITY_REQUIRED');
+
+      await edit({
+        shippingAddress: { ...npAddress, npCityRef: 'city-ref-2' },
+      });
+      expect(written().shippingAddress).toEqual({ ...npSnapshot, npCityRef: 'city-ref-2' });
+    });
+
+    it('moves an NP order to pickup: point resolved and frozen, NP refs dropped, cost 0', async () => {
+      seed({ deliveryMethod: 'NOVA_POSHTA', shippingAddress: npSnapshot as never });
+
+      await edit({
+        deliveryMethod: 'PICKUP',
+        pickupPointId: OTHER_POINT_ID,
+        shippingAddress: npAddress,
+      });
+
+      expect(deliveryServiceMock.resolveActivePickupPoint).toHaveBeenCalledWith(OTHER_POINT_ID);
+      const w = written();
+      expect(w).toMatchObject({
+        deliveryMethod: 'PICKUP',
+        pickupPointId: OTHER_POINT_ID,
+        shippingCost: 0,
+      });
+      expect(w.shippingAddress).toMatchObject({
+        city: 'Київ',
+        address1: 'вул. Сагайдачного, 5',
+        pickupPointName: 'Магазин на Подолі',
+        pickupPointMapUrl: 'https://maps.example.com/p/2',
+        carrier: null,
+      });
+      expect(w.shippingAddress).not.toHaveProperty('npCityRef');
+    });
+
+    it('moves a pickup order to another point', async () => {
+      seed({
+        deliveryMethod: 'PICKUP',
+        pickupPointId: POINT_ID,
+        shippingAddress: pickupSnapshot as never,
+      } as Partial<OrderWithItems>);
+
+      await edit({ pickupPointId: OTHER_POINT_ID });
+
+      expect(written()).toMatchObject({ pickupPointId: OTHER_POINT_ID });
+      expect(written().shippingAddress).toMatchObject({
+        pickupPointName: 'Магазин на Подолі',
+        pickupPointPhone: null,
+      });
+    });
+
+    it('moves a pickup order to Nova Poshta: the point is cleared from the order', async () => {
+      seed({
+        deliveryMethod: 'PICKUP',
+        pickupPointId: POINT_ID,
+        shippingAddress: pickupSnapshot as never,
+      } as Partial<OrderWithItems>);
+
+      await edit({
+        deliveryMethod: 'NOVA_POSHTA',
+        shippingAddress: npAddress,
+      });
+
+      const w = written();
+      expect(w).toMatchObject({
+        deliveryMethod: 'NOVA_POSHTA',
+        pickupPointId: null,
+        shippingCost: 0,
+      });
+      expect(w.shippingAddress).toEqual(npSnapshot);
+    });
+
+    it('refuses PICKUP without a point', async () => {
+      seed({ deliveryMethod: 'NOVA_POSHTA', shippingAddress: npSnapshot as never });
+
+      await refusedWith(edit({ deliveryMethod: 'PICKUP' }), 'DELIVERY_PICKUP_POINT_REQUIRED');
+    });
+
+    it('refuses a method the shop switched off', async () => {
+      seed({ deliveryMethod: 'NOVA_POSHTA', shippingAddress: npSnapshot as never });
+
+      await refusedWith(edit({ deliveryMethod: 'COURIER' }), 'DELIVERY_METHOD_UNAVAILABLE');
+    });
+
+    it('refuses a move the payment matrix forbids (a card order to OTHER)', async () => {
+      seed({
+        deliveryMethod: 'NOVA_POSHTA',
+        paymentMethod: 'ONLINE',
+        shippingAddress: npSnapshot as never,
+      } as Partial<OrderWithItems>);
+
+      await refusedWith(edit({ deliveryMethod: 'OTHER' }), 'DELIVERY_PAYMENT_NOT_ALLOWED');
+    });
+
+    it('books a move to OTHER without a cost as «to be quoted»', async () => {
+      seed({ deliveryMethod: 'NOVA_POSHTA', shippingAddress: npSnapshot as never });
+
+      await edit({
+        deliveryMethod: 'OTHER',
+        shippingAddress: address,
+      });
+
+      expect(written()).toMatchObject({ deliveryMethod: 'OTHER', shippingCost: 0 });
+      expect(written().shippingAddress).toEqual(otherSnapshot);
+    });
+
+    // AD-ORD-86 / TASK-1019: the operator quotes the OTHER delivery afterwards.
+    it('sets the agreed OTHER cost and clears the «to be quoted» flag', async () => {
+      seed({ deliveryMethod: 'OTHER', shippingAddress: otherSnapshot as never });
+
+      await edit({ shippingCost: 180 }, { changedBy: ADMIN_ID });
+
+      const [, w, options] = orderRepositoryMock.updateDetails.mock.calls[0];
+      expect(w.shippingCost).toBe(180);
+      expect(w).not.toHaveProperty('deliveryMethod');
+      expect(w.shippingAddress).toEqual({ ...address, deliveryMethod: 'OTHER', carrier: null });
+      // The money write records who quoted it (the ledger's history row).
+      expect(options).toEqual({ expectedUpdatedAt: now, changedBy: ADMIN_ID });
+    });
+
+    it.each(['NOVA_POSHTA', 'PICKUP'] as const)(
+      'refuses an agreed cost on a %s order',
+      async (deliveryMethod) => {
+        seed({
+          deliveryMethod,
+          pickupPointId: POINT_ID,
+          shippingAddress: (deliveryMethod === 'PICKUP' ? pickupSnapshot : npSnapshot) as never,
+        } as Partial<OrderWithItems>);
+
+        await refusedWith(edit({ shippingCost: 50 }), 'DELIVERY_SHIPPING_COST_NOT_ALLOWED');
+      },
+    );
+
+    it('refuses a delivery edit without the version it was decided on (400 ORDER_VERSION_REQUIRED)', async () => {
+      seed({ deliveryMethod: 'OTHER', shippingAddress: otherSnapshot as never });
+
+      for (const fields of [
+        { shippingCost: 180 },
+        { deliveryMethod: 'PICKUP' as const, pickupPointId: POINT_ID },
+        { shippingAddress: address },
+      ]) {
+        await expect(service.adminUpdateDetails('order-uuid-1', fields)).rejects.toMatchObject({
+          response: { error: 'ORDER_VERSION_REQUIRED' },
+        });
+      }
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+    });
+
+    it('still takes a waybill or a note without a version', async () => {
+      seed({ deliveryMethod: 'OTHER', shippingAddress: otherSnapshot as never });
+
+      await service.adminUpdateDetails('order-uuid-1', { internalNotes: 'x' });
+
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalled();
+    });
+
+    it.each([OrderStatus.SHIPPED, OrderStatus.DELIVERED])(
+      'refuses a delivery change once the order is %s',
+      async (status) => {
+        seed({ status, deliveryMethod: 'OTHER', shippingAddress: otherSnapshot as never });
+
+        // A code of its own (review R3), not the anonymous 409 the admin read as
+        // «замовлення змінилося».
+        await expect(edit({ shippingCost: 50 })).rejects.toMatchObject({
+          response: { error: 'ORDER_DELIVERY_LOCKED' },
+        });
+        await expect(edit({ deliveryMethod: 'NOVA_POSHTA' })).rejects.toThrow(ConflictException);
+        expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+      },
+    );
   });
 
   // ─── Tracking number + shipment notice (TASK-335) ────────────────────────────
@@ -5202,6 +5701,83 @@ describe('OrderService', () => {
       orderRepositoryMock.findByIdForAdmin.mockResolvedValue(null);
 
       await expect(service.adminGetOrder('missing')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ─── getOrderHistory — who changed it (TASK-1975) ─────────────────────────────
+
+  describe('getOrderHistory — who changed it (TASK-1975)', () => {
+    const row = (
+      changedBy: string | null,
+      actor: {
+        id: string;
+        email: string;
+        originalEmail: string | null;
+        firstName: string | null;
+        lastName: string | null;
+      } | null,
+    ) => ({
+      id: `h-${changedBy ?? 'system'}`,
+      orderId: 'order-uuid-1',
+      changeType: OrderHistoryChangeType.STATUS,
+      fromStatus: OrderStatus.PENDING,
+      toStatus: OrderStatus.CONFIRMED,
+      fromPaymentStatus: null,
+      toPaymentStatus: null,
+      changedBy,
+      note: null,
+      rejectedPaymentStatus: null,
+      changedAt: new Date('2026-11-02T10:00:00.000Z'),
+      actor,
+    });
+
+    it('names the actor by first + last name, else the readable email; null stays null', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      orderRepositoryMock.findHistoryByOrderId.mockResolvedValue([
+        row(null, null),
+        row('admin-1', {
+          id: 'admin-1',
+          email: 'olena@example.com',
+          originalEmail: null,
+          firstName: ' Олена ',
+          lastName: 'Коваль',
+        }),
+        row('admin-2', {
+          id: 'admin-2',
+          email: 'staff@example.com',
+          originalEmail: null,
+          firstName: null,
+          lastName: '',
+        }),
+        // Soft-deleted (TASK-104): `email` is mangled, `originalEmail` is readable.
+        row('admin-3', {
+          id: 'admin-3',
+          email: 'deleted:admin-3:gone@example.com',
+          originalEmail: 'gone@example.com',
+          firstName: null,
+          lastName: null,
+        }),
+        // An id with no account at all.
+        row('unknown-1', null),
+      ]);
+
+      const result = await service.getOrderHistory('order-uuid-1');
+
+      expect(result.map((entry) => entry.actor)).toEqual([
+        null,
+        { id: 'admin-1', name: 'Олена Коваль' },
+        { id: 'admin-2', name: 'staff@example.com' },
+        { id: 'admin-3', name: 'gone@example.com' },
+        null,
+      ]);
+      expect(result[4].changedBy).toBe('unknown-1');
+    });
+
+    it('404s before reading history when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.getOrderHistory('missing')).rejects.toThrow(NotFoundException);
+      expect(orderRepositoryMock.findHistoryByOrderId).not.toHaveBeenCalled();
     });
   });
 

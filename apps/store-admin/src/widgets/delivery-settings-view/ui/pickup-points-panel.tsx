@@ -78,6 +78,7 @@ import {
   type SortableTreeRowRenderProps,
 } from "@/shared/ui";
 import { cn } from "@/shared/lib/utils";
+import { isHttpUrl } from "@/shared/lib/http-url";
 import { dict } from "@/shared/config";
 import { PickupPointDeleteDialog } from "./pickup-point-delete-dialog";
 
@@ -456,6 +457,21 @@ function PickupPointRow({
           <span className="text-xs break-words text-muted-foreground">
             {t.location(point.city, point.address)}
           </span>
+          {/* TASK-1979: only an http(s) link becomes an anchor — a stored
+              `javascript:` must never be clickable; `noopener` keeps the map
+              site away from this window. */}
+          {point.mapUrl && isHttpUrl(point.mapUrl) ? (
+            <a
+              href={point.mapUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              tabIndex={tabIndex}
+              aria-label={t.mapLinkAria(point.name)}
+              className="rounded-xs text-xs text-primary underline outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {t.mapLink}
+            </a>
+          ) : null}
         </div>
       </TableCell>
 

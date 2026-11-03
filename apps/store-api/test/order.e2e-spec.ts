@@ -27,6 +27,7 @@ import { MailService } from '../src/mail/mail.service';
 import { NotificationOutboxService } from '../src/notification-outbox';
 import { ShopNotifier } from '../src/notification/shop-notifier.service';
 import { NovaPoshtaClient } from '../src/delivery';
+import { orderPaymentInProgressError } from '../src/order/order.errors';
 import type { OrderWithItems } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -1311,6 +1312,23 @@ describe('OrderController (e2e)', () => {
       );
     });
 
+    it('should search by an order number pasted as "#0871A795" (TASK-1976)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findAll.mockResolvedValue({ orders: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders')
+        .query({ search: '  #0871A795 ' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      // The "#" and the spaces never reach the repository, whose id arm then
+      // lowercases "0871A795" for its `startsWith` on the uuid column.
+      expect(orderRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ search: '0871A795' }),
+      );
+    });
+
     it('should return 400 for an unknown payment status (TASK-425)', async () => {
       const token = generateAccessToken(admin.id, admin.role);
 
@@ -1761,6 +1779,33 @@ describe('OrderController (e2e)', () => {
         OrderHistoryNote.SHIPPED_UNPAID,
         OrderHistoryNote.PAID_AFTER_CANCEL,
       ]);
+    });
+
+    it('names who changed it — actor {id, name}, null for a system row (TASK-1975)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      orderRepositoryMock.findHistoryByOrderId.mockResolvedValue([
+        { ...historyRows[0], actor: null },
+        {
+          ...historyRows[1],
+          actor: {
+            id: admin.id,
+            email: 'olena@example.com',
+            originalEmail: null,
+            firstName: 'Олена',
+            lastName: 'Коваль',
+          },
+        },
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/history')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data[0].actor).toBeNull();
+      // {id, name} only — the history does not hand out the operator's email.
+      expect(response.body.data[1].actor).toEqual({ id: admin.id, name: 'Олена Коваль' });
     });
 
     it('should return 404 when the order does not exist', async () => {
@@ -3466,6 +3511,280 @@ describe('OrderController (e2e)', () => {
     });
   });
 
+  // ─── Phone orders and existing orders: the delivery method (TASK-1973) ───────
+
+  describe('admin orders — delivery method (TASK-1973 / 1019 / 1020 / 1806)', () => {
+    const manualProductId = '550e8400-e29b-41d4-a716-446655440010';
+    const POINT_ID = '6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11';
+    const point = {
+      id: POINT_ID,
+      name: 'Магазин на Хрещатику',
+      city: 'Київ',
+      address: 'вул. Хрещатик, 1',
+      phone: '+380441234567',
+      workingHours: 'Пн–Пт 10:00–19:00',
+      mapUrl: 'https://maps.example.com/p/1',
+    };
+    /** NP, pickup and OTHER on; the courier off, as in production. */
+    const settingsRow = {
+      id: '00000000-0000-0000-0000-000000000003',
+      senderCityRef: null,
+      senderCityName: null,
+      senderWarehouseRef: null,
+      defaultWeightKg: 0.5,
+      npEnabled: true,
+      pickupEnabled: true,
+      courierEnabled: false,
+      otherEnabled: true,
+      courierCityName: null,
+      courierPrice: new Prisma.Decimal('0'),
+      courierFreeFrom: null,
+      createdAt: new Date('2026-09-26T00:00:00Z'),
+      updatedAt: new Date('2026-09-26T00:00:00Z'),
+    };
+
+    const auth = () => `Bearer ${generateAccessToken(admin.id, admin.role)}`;
+
+    beforeEach(() => {
+      prismaServiceMock.deliverySetting.findUnique.mockResolvedValue(settingsRow);
+      prismaServiceMock.pickupPoint.findFirst.mockResolvedValue(point);
+    });
+
+    describe('POST /api/admin/orders', () => {
+      const body = (extra: Record<string, unknown>) => ({
+        contact: { name: 'Олена Шевченко', phone: '050 123 4567' },
+        shippingAddress: validAddress,
+        items: [{ productId: manualProductId, quantity: 2 }],
+        ...extra,
+      });
+      const created = () =>
+        orderRepositoryMock.createManual.mock.calls[0]?.[0] as Record<string, unknown> & {
+          shippingAddress: Record<string, unknown>;
+        };
+      const post = (extra: Record<string, unknown>) =>
+        request(app.getHttpServer())
+          .post('/api/admin/orders')
+          .set('Authorization', auth())
+          .send(body(extra));
+
+      beforeEach(() => {
+        orderRepositoryMock.findOrderableProducts.mockResolvedValue([
+          {
+            id: manualProductId,
+            name: 'iPhone 15 Pro Case',
+            price: { toString: () => '29.99' },
+            stock: 50,
+            isActive: true,
+            category: { isActive: true, ancestorsActive: true },
+          },
+        ]);
+        orderRepositoryMock.createManual.mockResolvedValue(makeOrder({ userId: null }));
+      });
+
+      it('takes a pickup phone order at an active point, frozen with its map link (201)', async () => {
+        await post({ deliveryMethod: 'PICKUP', pickupPointId: POINT_ID }).expect(201);
+
+        expect(prismaServiceMock.pickupPoint.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: POINT_ID, isActive: true } }),
+        );
+        expect(created()).toMatchObject({
+          deliveryMethod: 'PICKUP',
+          pickupPointId: POINT_ID,
+          shippingCost: 0,
+        });
+        expect(created().shippingAddress).toMatchObject({
+          city: 'Київ',
+          address1: 'вул. Хрещатик, 1',
+          pickupPointName: 'Магазин на Хрещатику',
+          pickupPointMapUrl: 'https://maps.example.com/p/1',
+        });
+      });
+
+      it('takes an OTHER phone order with the agreed cost in the total (201)', async () => {
+        await post({ deliveryMethod: 'OTHER', shippingCost: 150 }).expect(201);
+
+        expect(created()).toMatchObject({ deliveryMethod: 'OTHER', shippingCost: 150 });
+        expect(created().shippingAddress).not.toHaveProperty('shippingCostPending');
+      });
+
+      it('keeps Nova Poshta out of the total (B-13)', async () => {
+        await post({
+          deliveryMethod: 'NOVA_POSHTA',
+          shippingAddress: { ...validAddress, npCityRef: 'city-ref-1' },
+        }).expect(201);
+
+        expect(novaPoshtaClientMock.estimateShipping).not.toHaveBeenCalled();
+        expect(created()).toMatchObject({ deliveryMethod: 'NOVA_POSHTA', shippingCost: 0 });
+      });
+
+      it('refuses a method the shop switched off (400 DELIVERY_METHOD_UNAVAILABLE)', async () => {
+        const res = await post({ deliveryMethod: 'COURIER' }).expect(400);
+
+        expect(res.body.error).toBe('DELIVERY_METHOD_UNAVAILABLE');
+        expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+      });
+
+      it('refuses Nova Poshta without a city from the directory (400)', async () => {
+        const res = await post({ deliveryMethod: 'NOVA_POSHTA' }).expect(400);
+
+        expect(res.body.error).toBe('DELIVERY_NP_CITY_REQUIRED');
+        expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+      });
+
+      it('refuses an agreed cost on anything but OTHER (400)', async () => {
+        const res = await post({
+          deliveryMethod: 'PICKUP',
+          pickupPointId: POINT_ID,
+          shippingCost: 50,
+        }).expect(400);
+
+        expect(res.body.error).toBe('DELIVERY_SHIPPING_COST_NOT_ALLOWED');
+      });
+
+      it('refuses a null cost at the DTO — omit it for «to be quoted» (400)', async () => {
+        await post({ deliveryMethod: 'OTHER', shippingCost: null }).expect(400);
+
+        expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+      });
+
+      // B-6 §4, locked in (verifier): a legacy phone order with a hand-typed
+      // address and no method is OTHER «to be quoted», like a storefront one.
+      it('books a legacy free-text phone order (no method) as OTHER «to be quoted»', async () => {
+        await post({}).expect(201);
+
+        expect(created()).toMatchObject({ deliveryMethod: 'OTHER', shippingCost: 0 });
+        expect(created().shippingAddress).toMatchObject({
+          deliveryMethod: 'OTHER',
+          carrier: null,
+          shippingCostPending: true,
+        });
+      });
+
+      it('refuses a negative cost at the DTO (400)', async () => {
+        await post({ deliveryMethod: 'OTHER', shippingCost: -1 }).expect(400);
+
+        expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('PATCH /api/admin/orders/:orderId', () => {
+      const npSnapshot = {
+        ...validAddress,
+        npCityRef: 'city-ref-1',
+        deliveryMethod: 'NOVA_POSHTA',
+        carrier: 'NOVA_POSHTA',
+      };
+      const VERSION = '2026-01-01T00:00:00.000Z';
+      // A delivery edit carries the version it was decided on (ORDER_VERSION_REQUIRED).
+      const patch = (payload: Record<string, unknown>) =>
+        request(app.getHttpServer())
+          .patch('/api/admin/orders/order-e2e-1')
+          .set('Authorization', auth())
+          .send({ expectedUpdatedAt: VERSION, ...payload });
+      const written = () =>
+        orderRepositoryMock.updateDetails.mock.calls[0]?.[1] as Record<string, unknown> & {
+          shippingAddress: Record<string, unknown>;
+        };
+
+      beforeEach(() => {
+        orderRepositoryMock.updateDetails.mockResolvedValue(makeOrder());
+      });
+
+      it('moves a Nova Poshta order to pickup (200)', async () => {
+        orderRepositoryMock.findById.mockResolvedValue(
+          makeOrder({ deliveryMethod: 'NOVA_POSHTA', shippingAddress: npSnapshot as never }),
+        );
+
+        await patch({
+          deliveryMethod: 'PICKUP',
+          pickupPointId: POINT_ID,
+          shippingAddress: validAddress,
+        }).expect(200);
+
+        expect(written()).toMatchObject({
+          deliveryMethod: 'PICKUP',
+          pickupPointId: POINT_ID,
+          shippingCost: 0,
+        });
+        expect(written().shippingAddress).toMatchObject({
+          pickupPointName: 'Магазин на Хрещатику',
+          carrier: null,
+        });
+        expect(written().shippingAddress).not.toHaveProperty('npCityRef');
+      });
+
+      it('quotes an OTHER order: cost written, «to be quoted» cleared, operator recorded (200)', async () => {
+        orderRepositoryMock.findById.mockResolvedValue(
+          makeOrder({
+            deliveryMethod: 'OTHER',
+            shippingAddress: {
+              ...validAddress,
+              deliveryMethod: 'OTHER',
+              carrier: null,
+              shippingCostPending: true,
+            } as never,
+          }),
+        );
+
+        await patch({ shippingCost: 180 }).expect(200);
+
+        expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+          'order-e2e-1',
+          {
+            shippingAddress: { ...validAddress, deliveryMethod: 'OTHER', carrier: null },
+            shippingCost: 180,
+          },
+          { expectedUpdatedAt: new Date(VERSION), changedBy: admin.id },
+        );
+      });
+
+      it('refuses a delivery edit without the version it was decided on (400)', async () => {
+        orderRepositoryMock.findById.mockResolvedValue(makeOrder({ deliveryMethod: 'OTHER' }));
+
+        const res = await request(app.getHttpServer())
+          .patch('/api/admin/orders/order-e2e-1')
+          .set('Authorization', auth())
+          .send({ shippingCost: 180 })
+          .expect(400);
+
+        expect(res.body.error).toBe('ORDER_VERSION_REQUIRED');
+        expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+      });
+
+      it('refuses a delivery change once the order has shipped (409)', async () => {
+        orderRepositoryMock.findById.mockResolvedValue(
+          makeOrder({ status: OrderStatus.SHIPPED, deliveryMethod: 'OTHER' }),
+        );
+
+        const res = await patch({ shippingCost: 180 }).expect(409);
+
+        // Its own code (review R3), not the anonymous 409 the admin read as stale.
+        expect(res.body.error).toBe('ORDER_DELIVERY_LOCKED');
+        expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+      });
+
+      it('refuses a delivery change against a colleague’s newer version (409 ORDER_STALE)', async () => {
+        orderRepositoryMock.findById.mockResolvedValue(
+          makeOrder({ deliveryMethod: 'OTHER', updatedAt: new Date('2026-01-01T00:05:00.000Z') }),
+        );
+
+        const res = await patch({ shippingCost: 180 }).expect(409);
+
+        expect(res.body.error).toBe('ORDER_STALE');
+        expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+      });
+
+      it('says a live payment link blocks the re-price (409 ORDER_PAYMENT_IN_PROGRESS)', async () => {
+        orderRepositoryMock.findById.mockResolvedValue(makeOrder({ deliveryMethod: 'OTHER' }));
+        orderRepositoryMock.updateDetails.mockRejectedValue(orderPaymentInProgressError());
+
+        const res = await patch({ shippingCost: 180 }).expect(409);
+
+        expect(res.body.error).toBe('ORDER_PAYMENT_IN_PROGRESS');
+      });
+    });
+  });
+
   // ─── PATCH /api/admin/orders/:orderId — the ТТН (TASK-335 / TASK-426) ─────────
 
   describe('PATCH /api/admin/orders/:orderId', () => {
@@ -3491,7 +3810,7 @@ describe('OrderController (e2e)', () => {
       expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
         'order-e2e-1',
         { trackingNumber: '20450000000001' },
-        {},
+        { changedBy: admin.id },
       );
     });
 
@@ -3550,7 +3869,7 @@ describe('OrderController (e2e)', () => {
       expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
         'order-e2e-1',
         { internalNotes: 'Передзвонити' },
-        {},
+        { changedBy: admin.id },
       );
       // Not `{ trackingNumber: 'ТТН уточнюється', … }`: the legacy value is not
       // re-sent, so it is never judged — and never rewritten either.
@@ -3576,7 +3895,7 @@ describe('OrderController (e2e)', () => {
       expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
         'order-e2e-1',
         { trackingNumber: null },
-        {},
+        { changedBy: admin.id },
       );
     });
 
@@ -3617,7 +3936,7 @@ describe('OrderController (e2e)', () => {
           shippingAddress: expect.objectContaining({ city: 'Львів' }),
           trackingNumber: '20450000000001',
         }),
-        { expectedUpdatedAt: version },
+        { expectedUpdatedAt: version, changedBy: admin.id },
       );
     });
 

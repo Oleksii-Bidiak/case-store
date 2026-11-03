@@ -22,6 +22,21 @@ export const OrderErrorCode = {
   /** The order changed after the client read it — a lost update (edge case E-11). */
   STALE: 'ORDER_STALE',
   /**
+   * A delivery edit (address, method, point, shipping cost) came without the
+   * version the client read (TASK-1973, verifier): the method change, the
+   * matrix verdict and the price are decided from that version, so it must be
+   * the one the write is guarded by.
+   */
+  VERSION_REQUIRED: 'ORDER_VERSION_REQUIRED',
+  /**
+   * A delivery edit that would change the total while the buyer holds a live
+   * LiqPay link (a PENDING attempt): the link is signed for the old amount, so
+   * paying it would leave a debt or an overpayment (review R3, TASK-2373).
+   */
+  PAYMENT_IN_PROGRESS: 'ORDER_PAYMENT_IN_PROGRESS',
+  /** A delivery edit (address, method, point, cost) once the order has shipped or closed. */
+  DELIVERY_LOCKED: 'ORDER_DELIVERY_LOCKED',
+  /**
    * «Live order + fully refunded money» (B-1 §1), refused from the ORDER
    * side: the order was asked to return to a live status while its payment
    * is recorded as fully REFUNDED (review of plan 180).
@@ -121,6 +136,40 @@ export function staleOrderError(): ConflictException {
   });
 }
 
+/**
+ * 400 for a delivery edit without `expectedUpdatedAt` (TASK-1973). The admin
+ * always sends it; an unguarded delivery edit could re-price an order from a
+ * state that is no longer the stored one.
+ */
+export function orderVersionRequiredError(): BadRequestException {
+  return new BadRequestException({
+    error: OrderErrorCode.VERSION_REQUIRED,
+    message:
+      'A delivery change must carry expectedUpdatedAt — the version of the order it was decided on',
+  });
+}
+
+/**
+ * 409 for a delivery edit that would re-price an order with a live LiqPay
+ * attempt (review R3, TASK-2373). The admin says to wait until the buyer pays
+ * or the link expires; a contact or same-price edit is still let through.
+ */
+export function orderPaymentInProgressError(): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.PAYMENT_IN_PROGRESS,
+    message:
+      'The buyer has a live payment link for the current total — the delivery price cannot change until it is paid or expires',
+  });
+}
+
+/** 409 for a delivery edit after the order left the pre-shipment statuses. */
+export function orderDeliveryLockedError(): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.DELIVERY_LOCKED,
+    message: 'The delivery can only be changed before the order ships',
+  });
+}
+
 // ─── What a guest checkout needs an account for (TASK-2010) ─────────────────
 
 /**
@@ -179,6 +228,11 @@ export const DeliveryOrderErrorCode = {
   PICKUP_POINT_REQUIRED: 'DELIVERY_PICKUP_POINT_REQUIRED',
   /** The named pickup point does not exist or has been deactivated. */
   PICKUP_POINT_UNAVAILABLE: 'DELIVERY_PICKUP_POINT_UNAVAILABLE',
+  /**
+   * An operator-agreed shipping cost on a method that has its own price
+   * (TASK-1019): only «Інша доставка» is quoted by hand.
+   */
+  SHIPPING_COST_NOT_ALLOWED: 'DELIVERY_SHIPPING_COST_NOT_ALLOWED',
 } as const;
 
 export type DeliveryOrderErrorCode =
@@ -234,9 +288,8 @@ export function manualOrderDeliveryPaymentNotAllowedError(
     error: DeliveryOrderErrorCode.PAYMENT_NOT_ALLOWED,
     message:
       method === DeliveryMethod.OTHER
-        ? 'Для адреси без міста зі списку Нової Пошти вартість доставки ще не відома, тому ' +
-          'онлайн-оплата й оплата частинами недоступні — оберіть оплату при отриманні або ' +
-          'вкажіть місто Нової Пошти'
+        ? 'Для «Іншої доставки» онлайн-оплата й оплата частинами недоступні — оберіть оплату ' +
+          'при отриманні чи переказ на рахунок ФОП, або інший спосіб доставки'
         : 'Обраний спосіб оплати недоступний для цього способу доставки — оберіть інший',
   });
 }
@@ -254,6 +307,16 @@ export function deliveryPickupPointRequiredError(): BadRequestException {
   return new BadRequestException({
     error: DeliveryOrderErrorCode.PICKUP_POINT_REQUIRED,
     message: 'Оберіть пункт самовивозу',
+  });
+}
+
+/** 400 for an agreed shipping cost on anything but OTHER (TASK-1019). */
+export function deliveryShippingCostNotAllowedError(): BadRequestException {
+  return new BadRequestException({
+    error: DeliveryOrderErrorCode.SHIPPING_COST_NOT_ALLOWED,
+    message:
+      'Вартість доставки вводиться вручну лише для «Іншої доставки» — для інших способів її ' +
+      'визначає магазин',
   });
 }
 

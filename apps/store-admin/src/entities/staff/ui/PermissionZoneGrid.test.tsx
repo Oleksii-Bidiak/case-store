@@ -160,6 +160,10 @@ describe("PermissionZoneGrid", () => {
     expect(
       await screen.findByText(dict.staff.badgeNoRoute),
     ).toBeInTheDocument();
+    // TASK-1978: why it is flagged opens on a tap, not in a hover-only title.
+    expect(
+      screen.getByRole("button", { name: dict.staff.badgeNoRoute }),
+    ).toHaveAccessibleDescription(dict.staff.badgeNoRouteTitle);
   });
 
   it("badges nothing when every permission has a route — the state today", async () => {

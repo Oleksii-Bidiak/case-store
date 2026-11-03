@@ -205,6 +205,36 @@ export const handlers = [
     }),
   ),
 
+  // What the shop offers (public; TASK-1973) — the phone order and the order
+  // card's delivery edit read the enabled methods, the active points and the
+  // payment matrix from here. NP, pickup (one point) and OTHER on, the courier
+  // off — as in production. Override per-test.
+  http.get("*/api/delivery/methods", () =>
+    HttpResponse.json({
+      data: {
+        methods: ["NOVA_POSHTA", "PICKUP", "OTHER"],
+        courier: { price: "0.00", freeFrom: null, cityName: null },
+        pickupPoints: [
+          {
+            id: "6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11",
+            name: "Магазин на Хрещатику",
+            city: "Київ",
+            address: "вул. Хрещатик, 1",
+            phone: "+380441234567",
+            workingHours: "Пн–Пт 10:00–19:00",
+            mapUrl: "https://maps.example.com/p/1",
+          },
+        ],
+        paymentMatrix: {
+          NOVA_POSHTA: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+          PICKUP: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+          COURIER: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+          OTHER: ["ON_DELIVERY"],
+        },
+      },
+    }),
+  ),
+
   // Admin returns queue — empty by default. Since TASK-613 the dashboard's
   // «Нові заявки на повернення» tile reads `meta.total` of
   // `?status=REQUESTED&limit=1` from here for any session with `returns:read`,

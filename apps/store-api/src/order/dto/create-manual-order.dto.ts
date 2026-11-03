@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -6,14 +6,17 @@ import {
   IsArray,
   IsEnum,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { PaymentMethod } from '@prisma/client';
+import { DeliveryMethod, PaymentMethod } from '@prisma/client';
 import { AddressDto } from './address.dto';
 import { GuestContactDto } from './guest-contact.dto';
 
@@ -138,6 +141,59 @@ export class CreateManualOrderDto {
   @IsOptional()
   @IsEnum(PaymentMethod)
   paymentMethod?: PaymentMethod;
+
+  /**
+   * How the phone order is delivered (TASK-1973). Optional for backward
+   * compatibility: absent, it is read off the address exactly as before —
+   * `npCityRef` → NOVA_POSHTA, otherwise OTHER.
+   */
+  @ApiPropertyOptional({
+    description:
+      'Delivery method (TASK-1973). Omitted → derived from the address: ' +
+      'shippingAddress.npCityRef present → NOVA_POSHTA, otherwise OTHER. Refused (400) when the ' +
+      'method is switched off in the delivery settings, a PICKUP has no active pickupPointId, a ' +
+      'NOVA_POSHTA has no npCityRef, or the admin delivery × payment matrix forbids the payment ' +
+      'method. Nova Poshta is paid by the buyer at the branch and is never added to the total ' +
+      '(B-13); PICKUP is free; COURIER uses the flat courier price.',
+    enum: DeliveryMethod,
+    enumName: 'DeliveryMethod',
+  })
+  @IsOptional()
+  @IsEnum(DeliveryMethod)
+  deliveryMethod?: DeliveryMethod;
+
+  @ApiPropertyOptional({
+    description:
+      'Pickup point id (an active one, from GET /api/delivery/methods). Required for PICKUP; ' +
+      'ignored for every other method.',
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsUUID('loose', { message: 'pickupPointId must be a valid UUID' })
+  pickupPointId?: string;
+
+  /**
+   * The shipping cost the operator agreed with the customer — «Інша доставка»
+   * only (TASK-1019). Unlike item prices this IS the operator's to set: OTHER
+   * has no tariff, and the alternative is the «уточнить оператор» placeholder.
+   */
+  @ApiPropertyOptional({
+    description:
+      'Agreed shipping cost, UAH (0–100000, at most 2 decimals). Allowed ONLY with ' +
+      'deliveryMethod OTHER (400 DELIVERY_SHIPPING_COST_NOT_ALLOWED otherwise); added to the ' +
+      'total. Omitted on an OTHER order → booked 0 and flagged «to be quoted» ' +
+      '(shippingAddress.shippingCostPending).',
+    example: 150,
+    minimum: 0,
+    maximum: 100000,
+  })
+  // Not @IsOptional: it skips null too, and a null cost would book an OTHER
+  // order at 0 ₴ WITHOUT the «to be quoted» flag. Only an ABSENT key is skipped.
+  @ValidateIf((o: CreateManualOrderDto) => o.shippingCost !== undefined)
+  @IsNumber({ maxDecimalPlaces: 2, allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Max(100000)
+  shippingCost?: number;
 
   @ApiProperty({ description: 'Notes shown to the customer', required: false, maxLength: 500 })
   @IsOptional()

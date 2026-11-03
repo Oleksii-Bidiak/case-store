@@ -25,6 +25,10 @@ export const ORDER_CONFLICT_CODE = {
    * fully returned (review of plan 180).
    */
   REVIVE_REFUNDED_PAYMENT: "ORDER_REVIVE_REFUNDED_PAYMENT",
+  /** A delivery re-price under a live LiqPay link (review R3, TASK-2373). */
+  PAYMENT_IN_PROGRESS: "ORDER_PAYMENT_IN_PROGRESS",
+  /** A delivery edit after the order shipped or closed (review R3). */
+  DELIVERY_LOCKED: "ORDER_DELIVERY_LOCKED",
   /*
    * AD-ORD-51 (TASK-1966) — reviving a cancelled order re-claims the promo slot
    * its cancel released (TASK-771). `OrderRepository.reclaimRedemption` refuses
@@ -75,6 +79,40 @@ export function isOrderConflict(
 }
 
 /**
+ * True when an edit was refused as a lost update — the order moved since the
+ * operator started typing (TASK-1972). The edit forms answer it with the
+ * stale-draft review (the colleague's version next to the draft), not a toast.
+ *
+ * Only the CODED stale refusal: a 409 without a code is not provably a lost
+ * update, and the other codes are refusals of what the order is, which no
+ * side-by-side comparison would resolve.
+ */
+export function isStaleWriteConflict(
+  error: ApiErrorLike | null | undefined,
+): boolean {
+  return (
+    isOrderConflict(error) && apiErrorCode(error) === ORDER_CONFLICT_CODE.STALE
+  );
+}
+
+/**
+ * The words of the stale-draft review panel, for both order edit forms. Built
+ * here, next to the rest of the conflict vocabulary, so the two forms cannot
+ * drift into saying the same thing two ways.
+ */
+export const ORDER_STALE_REVIEW_LABELS = {
+  title: dict.orderStatus.staleReviewTitle,
+  diverging: dict.orderStatus.staleReviewDiverging,
+  refreshed: dict.orderStatus.staleReviewRefreshed,
+  theirs: dict.orderStatus.staleReviewTheirs,
+  mine: dict.orderStatus.staleReviewMine,
+  empty: dict.orderStatus.staleReviewEmpty,
+  takeTheirs: dict.orderStatus.staleReviewTakeTheirs,
+  keepMine: dict.orderStatus.staleReviewKeepMine,
+  acknowledge: dict.orderStatus.staleReviewAcknowledge,
+} as const;
+
+/**
  * The Ukrainian sentence for a rejected status write, or `null` when the failure
  * was not a conflict at all (network, 500, 403) and the caller should fall back
  * to its generic message.
@@ -99,6 +137,12 @@ export function orderConflictMessage(
   }
   if (code === ORDER_CONFLICT_CODE.REVIVE_REFUNDED_PAYMENT) {
     return dict.orderStatus.conflict.ORDER_REVIVE_REFUNDED_PAYMENT;
+  }
+  if (code === ORDER_CONFLICT_CODE.PAYMENT_IN_PROGRESS) {
+    return dict.orderStatus.conflict.ORDER_PAYMENT_IN_PROGRESS;
+  }
+  if (code === ORDER_CONFLICT_CODE.DELIVERY_LOCKED) {
+    return dict.orderStatus.conflict.ORDER_DELIVERY_LOCKED;
   }
   if (code === ORDER_CONFLICT_CODE.PROMO_EXHAUSTED) {
     return dict.orderStatus.conflict.DISCOUNT_MAX_REDEMPTIONS_REACHED;
@@ -130,6 +174,8 @@ export function orderConflictMessage(
 const NO_RELOAD_CODES: readonly string[] = [
   ORDER_CONFLICT_CODE.TRANSITION_INVALID,
   ORDER_CONFLICT_CODE.REVIVE_REFUNDED_PAYMENT,
+  ORDER_CONFLICT_CODE.PAYMENT_IN_PROGRESS,
+  ORDER_CONFLICT_CODE.DELIVERY_LOCKED,
   ORDER_CONFLICT_CODE.PROMO_EXHAUSTED,
   ORDER_CONFLICT_CODE.PROMO_USER_LIMIT,
   ORDER_CONFLICT_CODE.PROMO_GONE,

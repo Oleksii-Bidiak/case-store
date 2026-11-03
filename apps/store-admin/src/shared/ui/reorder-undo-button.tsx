@@ -17,6 +17,7 @@
 
 import { Undo2Icon } from "lucide-react";
 import { Button } from "./button";
+import { LabelTooltip } from "./tooltip";
 
 export interface ReorderUndoButtonProps {
   canUndo: boolean;
@@ -46,14 +47,13 @@ export function ReorderUndoButton({
   label,
   iconOnly = false,
 }: ReorderUndoButtonProps) {
-  return (
+  const button = (
     <Button
       type="button"
       variant="outline"
       size={iconOnly ? "icon-sm" : "sm"}
       aria-disabled={!canUndo}
       aria-label={iconOnly ? label : undefined}
-      title={iconOnly ? label : undefined}
       className={canUndo ? undefined : UNAVAILABLE}
       onClick={() => {
         if (!canUndo) return;
@@ -62,5 +62,12 @@ export function ReorderUndoButton({
     >
       {iconOnly ? <Undo2Icon aria-hidden="true" /> : label}
     </Button>
+  );
+  // TASK-1978: the icon variant shows its label on hover AND keyboard focus —
+  // the native `title` it replaces showed it on hover only.
+  return iconOnly ? (
+    <LabelTooltip label={label}>{button}</LabelTooltip>
+  ) : (
+    button
   );
 }

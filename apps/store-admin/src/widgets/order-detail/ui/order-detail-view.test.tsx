@@ -14,8 +14,10 @@ import { formatCurrency } from "@/shared/lib";
 import { OrderDetailView } from "./order-detail-view";
 
 // next/navigation is unavailable under jsdom — mock the router.
+// TASK-1977: one `replace` to see where the not-found redirect goes.
+const mockReplace = jest.fn();
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace }),
 }));
 
 function makeOrder(
@@ -684,6 +686,26 @@ describe("OrderDetailView — the derived marks of B-1 (TASK-470/471/472)", () =
     ).toBeInTheDocument();
   });
 
+  it("explains «Позиція недоступна» on a tap, not in a hover-only title (TASK-1978)", async () => {
+    stub({ unavailableItemIds: ["item-1"] });
+    const user = userEvent.setup();
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    const chip = await screen.findByRole("button", {
+      name: dict.orders.markItemUnavailable,
+    });
+    expect(chip).not.toHaveAttribute("title");
+    expect(chip).toHaveAccessibleDescription(
+      dict.orders.markItemUnavailableHint,
+    );
+
+    await user.click(chip);
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      dict.orders.markItemUnavailableHint,
+    );
+  });
+
   it("leaves a line unmarked when the server measured it and found it fine", async () => {
     stub({ unavailableItemIds: [] });
 
@@ -1054,6 +1076,54 @@ describe("OrderDetailView — the card by mockup (TASK-1046)", () => {
     expect(
       screen.getByRole("link", { name: dict.orders.back }),
     ).toHaveAttribute("href", "/orders");
+  });
+
+  it("goes back to the list it was opened from — filters, page, search (TASK-1977)", async () => {
+    serve();
+    const list = "status=PENDING&pickupPointId=pp-1&page=2&search=olena";
+    renderWithProviders(
+      <OrderDetailView orderId="order-uuid-12345678" from={list} />,
+    );
+
+    expect(
+      await screen.findByRole("link", { name: dict.orders.back }),
+    ).toHaveAttribute("href", `/orders?${list}`);
+  });
+
+  it("never sends «← Замовлення» off /orders, whatever `from` says (TASK-1977)", async () => {
+    serve();
+    renderWithProviders(
+      <OrderDetailView
+        orderId="order-uuid-12345678"
+        from="https://evil.example/orders"
+      />,
+    );
+
+    const href = (
+      await screen.findByRole("link", { name: dict.orders.back })
+    ).getAttribute("href");
+    expect(href?.startsWith("/orders?")).toBe(true);
+    expect(new URL(href ?? "", "https://admin.example").origin).toBe(
+      "https://admin.example",
+    );
+  });
+
+  it("redirects a missing order to the list it was opened from (TASK-1977)", async () => {
+    mockReplace.mockClear();
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ message: "Order not found" }, { status: 404 }),
+      ),
+    );
+    renderWithProviders(
+      <OrderDetailView orderId="missing" from="status=CANCELLED&page=4" />,
+    );
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        "/orders?status=CANCELLED&page=4",
+      ),
+    );
   });
 
   it("draws the order path with the current step and the time each was reached", async () => {

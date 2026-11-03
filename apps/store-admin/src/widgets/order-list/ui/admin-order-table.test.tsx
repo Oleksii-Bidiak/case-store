@@ -941,6 +941,34 @@ describe("AdminOrderTable — the row's «⋯» (was «Переглянути»)
     );
   }
 
+  it("carries the list's query into every way of opening the card (TASK-1977)", async () => {
+    const list =
+      "status=PENDING&pickupPointId=pp-1&page=2&search=olena&pageSize=50&sortBy=total&sortOrder=asc";
+    mockSearchParams = new URLSearchParams(list);
+    serveRows([rowWithTtn]);
+    renderWithProviders(<AdminOrderTable />, {
+      auth: { permissions: ["orders:read", "orders:write"] },
+    });
+
+    const card = `/orders/order-uuid-12345678?${new URLSearchParams({
+      from: list,
+    }).toString()}`;
+    expect((await screen.findByText(ROW_NUMBER)).closest("a")).toHaveAttribute(
+      "href",
+      card,
+    );
+    await openMenu();
+    expect(
+      await screen.findByRole("menuitem", { name: d.rowOpen }),
+    ).toHaveAttribute("href", card);
+    expect(
+      screen.getByRole("menuitem", { name: d.rowOpenNewTab }),
+    ).toHaveAttribute("href", card);
+    expect(
+      screen.getByRole("menuitem", { name: d.rowChangeStatus }),
+    ).toHaveAttribute("href", `${card}#order-status`);
+  });
+
   it("opens the order, also in a new tab", async () => {
     serveRows([rowWithTtn]);
     renderWithProviders(<AdminOrderTable />);

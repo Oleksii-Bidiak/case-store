@@ -1391,12 +1391,11 @@ describe("AdminCategoryTree — product counts and inherited visibility (TASK-40
       }),
     ).toBeInTheDocument();
     // …and «через батьківську» is what explains why it is hidden anyway.
-    const badge = within(statusCell).getByText(
-      dict.categories.tree.hiddenByParent,
-    );
-    expect(badge).toBeInTheDocument();
-    expect(badge).toHaveAttribute(
-      "title",
+    // TASK-1978: a tappable «ⓘ» described by the hint, not a `title`.
+    const badge = within(statusCell).getByRole("button", {
+      name: dict.categories.tree.hiddenByParent,
+    });
+    expect(badge).toHaveAccessibleDescription(
       dict.categories.tree.hiddenByParentHint(NAMES[A]),
     );
 
@@ -1430,11 +1429,10 @@ describe("AdminCategoryTree — product counts and inherited visibility (TASK-40
       }),
     );
 
-    const badge = await within(rowEl(A1A)).findByText(
-      dict.categories.tree.hiddenByParent,
-    );
-    expect(badge).toHaveAttribute(
-      "title",
+    const badge = await within(rowEl(A1A)).findByRole("button", {
+      name: dict.categories.tree.hiddenByParent,
+    });
+    expect(badge).toHaveAccessibleDescription(
       dict.categories.tree.hiddenByParentHint(NAMES[A1]),
     );
   });

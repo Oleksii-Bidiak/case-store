@@ -1,31 +1,42 @@
 import { http, HttpResponse } from "msw";
+import { toast as sonnerToast } from "sonner";
 import {
   renderWithProviders,
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
-import type { OrderEntity } from "@/entities/order";
+import {
+  useAdminOrderControllerFindById,
+  type OrderEntity,
+} from "@/entities/order";
 import { OrderAddressForm } from "./order-address-form";
 
 jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
 
-/** Only what the control reads: the id, the lock token, status and address. */
+/**
+ * Only what the control reads: the id, the lock token, status and address.
+ * «Інша доставка», so the city and the address are plain text boxes — a Nova
+ * Poshta order takes them from the directory (TASK-1973), covered below.
+ */
 function makeOrder(status: string): OrderEntity {
   return {
     id: "order-uuid-1",
     status,
     updatedAt: "2026-06-01T10:00:00.000Z",
+    deliveryMethod: "OTHER",
     shippingAddress: {
       firstName: "Olena",
       lastName: "Shevchenko",
       city: "Kyiv",
       address1: "Khreshchatyk 1",
       phone: "+380501234567",
+      deliveryMethod: "OTHER",
     },
   } as unknown as OrderEntity;
 }
@@ -144,8 +155,8 @@ describe("OrderAddressForm — refusals (TASK-622)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("still words a 409 as the conflict it is", async () => {
-    stubPatch(409, "ORDER_STALE");
+  it("still words a 409 that is not a lost update as the conflict it is", async () => {
+    stubPatch(409, "ORDER_TRANSITION_INVALID");
     renderWithProviders(
       <OrderAddressForm order={makeOrder("PENDING")} />,
       WRITER,
@@ -154,8 +165,100 @@ describe("OrderAddressForm — refusals (TASK-622)", () => {
     await submitAddress();
 
     expect(
-      await screen.findByText(dict.orderStatus.conflict.ORDER_STALE),
+      await screen.findByText(
+        dict.orderStatus.conflict.ORDER_TRANSITION_INVALID,
+      ),
     ).toBeInTheDocument();
+  });
+
+  it("says to save again — once, inline — when the colleague's version cannot be fetched", async () => {
+    (sonnerToast.error as jest.Mock).mockClear();
+    stubPatch(409, "ORDER_STALE");
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ statusCode: 500 }, { status: 500 }),
+      ),
+    );
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+
+    await submitAddress();
+
+    // «Оновити» is gone, so the line names the step that does work: save again
+    // → another 409 → another try at fetching the colleague's version.
+    expect(
+      await screen.findByText(dict.orderStatus.staleReviewFetchFailed),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orderStatus.conflict.ORDER_STALE),
+    ).not.toBeInTheDocument();
+    // One message, not a sticky toast on top of the banner.
+    expect(sonnerToast.error).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByText(dict.orderStatus.staleReviewTitle),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not open the review on the next edit when the first was cancelled mid-fetch", async () => {
+    stubPatch(409, "ORDER_STALE");
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let fetched = false;
+    server.use(
+      http.get("*/api/admin/orders/:orderId", async () => {
+        fetched = true;
+        await gate;
+        return HttpResponse.json({
+          data: {
+            ...makeOrder("PENDING"),
+            updatedAt: "2026-06-01T10:00:30.000Z",
+            shippingAddress: {
+              ...(makeOrder("PENDING").shippingAddress as object),
+              city: "Odesa",
+            },
+          },
+        });
+      }),
+    );
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Lviv");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+    await waitFor(() => expect(fetched).toBe(true));
+
+    // The operator gives up while the colleague's version is still on its way…
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEditCancel }),
+    );
+    release();
+    // …and it lands after the form closed. The next edit starts clean.
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.orders.addressEdit }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(
+      screen.queryByText(dict.orderStatus.staleReviewTitle),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    ).toBeEnabled();
   });
 });
 
@@ -285,6 +388,153 @@ describe("OrderAddressForm — the lock token under polling (TASK-629)", () => {
 });
 
 /**
+ * TASK-1972 (AD-ORD-105): the same lost update as the notes (AD-ORD-67). After
+ * the 409 the form rebased its token onto the refetched version at once and kept
+ * the operator's draft, so the second «Зберегти адресу» overwrote the
+ * colleague's correction without anyone having seen it. Now the colleague's
+ * address is shown field by field next to the draft, and the token moves only
+ * when the operator decides.
+ */
+describe("OrderAddressForm — a colleague saved first (TASK-1972)", () => {
+  const WRITER = { auth: { permissions: ["orders:read", "orders:write"] } };
+  const V1 = "2026-06-01T10:00:00.000Z";
+  const V2 = "2026-06-01T10:00:30.000Z";
+  const V3 = "2026-06-01T10:02:00.000Z";
+
+  let serverOrder: OrderEntity;
+  let bodies: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    serverOrder = makeOrder("PENDING");
+    bodies = [];
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: serverOrder }),
+      ),
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        if (body.expectedUpdatedAt !== serverOrder.updatedAt) {
+          return HttpResponse.json(
+            { statusCode: 409, error: "ORDER_STALE", message: "stale" },
+            { status: 409 },
+          );
+        }
+        serverOrder = {
+          ...serverOrder,
+          shippingAddress: body.shippingAddress,
+          updatedAt: V3,
+        } as OrderEntity;
+        return HttpResponse.json({ data: serverOrder });
+      }),
+    );
+  });
+
+  /** The order card's wiring: the form is fed by the polled detail query. */
+  function Card() {
+    const { data } = useAdminOrderControllerFindById("order-uuid-1");
+    return data?.data ? <OrderAddressForm order={data.data} /> : null;
+  }
+
+  const saveButton = () =>
+    screen.getByRole("button", { name: dict.orders.addressSave });
+  // By role: once the review is open, its row is a group named after the field.
+  const input = (name: string) => screen.getByRole("textbox", { name });
+
+  /** Tab A corrects the city; tab B saves `colleague` meanwhile; A is refused. */
+  async function conflictOn(colleague: Record<string, string>) {
+    renderWithProviders(<Card />, WRITER);
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.orders.addressEdit }),
+    );
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Lviv");
+    serverOrder = {
+      ...serverOrder,
+      shippingAddress: { ...serverOrder.shippingAddress, ...colleague },
+      updatedAt: V2,
+    } as unknown as OrderEntity;
+    await userEvent.click(saveButton());
+    await waitFor(() => expect(bodies).toHaveLength(1));
+  }
+
+  it("shows the colleague's city next to the draft and sends nothing until reviewed", async () => {
+    await conflictOn({ city: "Odesa" });
+
+    const row = await screen.findByRole("group", {
+      name: dict.orderCreate.addressCity,
+    });
+    expect(within(row).getByText("Odesa")).toBeInTheDocument();
+    expect(input(dict.orderCreate.addressCity)).toHaveValue("Lviv");
+    expect(saveButton()).toBeDisabled();
+    await userEvent.click(saveButton());
+    expect(bodies).toHaveLength(1);
+  });
+
+  it("«Переглянув — зберегти мою» sends the draft over the colleague's version", async () => {
+    await conflictOn({ city: "Odesa" });
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.orderStatus.staleReviewKeepMine,
+      }),
+    );
+    await userEvent.click(saveButton());
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[0]).toMatchObject({ expectedUpdatedAt: V1 });
+    expect(bodies[1]).toMatchObject({
+      expectedUpdatedAt: V2,
+      shippingAddress: expect.objectContaining({ city: "Lviv" }),
+    });
+  });
+
+  it("«Взяти версію колеги» puts the colleague's city in the box", async () => {
+    await conflictOn({ city: "Odesa" });
+
+    const row = await screen.findByRole("group", {
+      name: dict.orderCreate.addressCity,
+    });
+    await userEvent.click(
+      within(row).getByRole("button", {
+        name: dict.orderStatus.staleReviewTakeTheirs,
+      }),
+    );
+
+    expect(input(dict.orderCreate.addressCity)).toHaveValue("Odesa");
+    expect(bodies).toHaveLength(1);
+  });
+
+  it("refreshes a field the operator did not touch and waits for «Зрозуміло»", async () => {
+    await conflictOn({ phone: "+380671112233" });
+
+    expect(
+      await screen.findByText(dict.orderStatus.staleReviewRefreshed),
+    ).toBeInTheDocument();
+    expect(input(dict.orderCreate.addressPhone)).toHaveValue("+380671112233");
+    expect(input(dict.orderCreate.addressCity)).toHaveValue("Lviv");
+    expect(saveButton()).toBeDisabled();
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.orderStatus.staleReviewAcknowledge,
+      }),
+    );
+    await userEvent.click(saveButton());
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toMatchObject({
+      expectedUpdatedAt: V2,
+      shippingAddress: expect.objectContaining({
+        city: "Lviv",
+        phone: "+380671112233",
+      }),
+    });
+  });
+});
+
+/**
  * TASK-577: `123` used to pass the form (`min(1)`), reach the API and come back
  * as a 400 — which the conflict mapper of the day read as «замовлення
  * змінилося». Now the form stops it, under the field, before any request.
@@ -320,5 +570,516 @@ describe("OrderAddressForm — phone validation (TASK-577)", () => {
     expect(
       screen.queryByText(dict.orderStatus.conflictUnknown),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-1973 / 1806 / 1020 / AD-ORD-86 / AD-ORD-63 — the control edits the
+ * delivery and the contacts, and says so.
+ */
+describe("OrderAddressForm — the delivery (TASK-1973)", () => {
+  const WRITER = { auth: { permissions: ["orders:read", "orders:write"] } };
+  const POINT_ID = "6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11";
+  let bodies: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    bodies = [];
+    server.use(
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        return HttpResponse.json({
+          data: {
+            ...makeOrder("PENDING"),
+            updatedAt: "2026-06-01T10:05:00.000Z",
+          },
+        });
+      }),
+    );
+  });
+
+  const pickupOrder = () =>
+    ({
+      ...makeOrder("CONFIRMED"),
+      deliveryMethod: "PICKUP",
+      pickupPointId: POINT_ID,
+      shippingCost: "0.00",
+      shippingAddress: {
+        firstName: "Olena",
+        lastName: "Shevchenko",
+        phone: "+380501234567",
+        city: "Київ",
+        address1: "вул. Хрещатик, 1",
+        deliveryMethod: "PICKUP",
+        carrier: null,
+        pickupPointName: "Магазин на Хрещатику",
+        pickupPointAddress: "вул. Хрещатик, 1",
+      },
+    }) as unknown as OrderEntity;
+
+  const otherOrder = () =>
+    ({
+      ...makeOrder("PENDING"),
+      deliveryMethod: "OTHER",
+      pickupPointId: null,
+      shippingCost: "0.00",
+      shippingAddress: {
+        ...makeOrder("PENDING").shippingAddress,
+        deliveryMethod: "OTHER",
+        carrier: null,
+        shippingCostPending: true,
+      },
+    }) as unknown as OrderEntity;
+
+  const open = async () =>
+    userEvent.click(
+      await screen.findByRole("button", { name: dict.orders.addressEdit }),
+    );
+  const save = () =>
+    userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+  it("is called what it does: delivery and contacts (AD-ORD-63)", () => {
+    expect(dict.orders.addressEdit).toBe("Змінити доставку й контакти");
+  });
+
+  it("offers the point of a pickup order instead of address fields (TASK-1806)", async () => {
+    renderWithProviders(<OrderAddressForm order={pickupOrder()} />, WRITER);
+    await open();
+
+    expect(
+      await screen.findByRole("radio", { name: "Магазин на Хрещатику" }),
+    ).toBeChecked();
+    expect(document.getElementById("order-address-city")).toBeNull();
+    expect(document.getElementById("order-address-address1")).toBeNull();
+  });
+
+  it("saves a contact edit of a pickup order without moving the point (TASK-1020)", async () => {
+    renderWithProviders(<OrderAddressForm order={pickupOrder()} />, WRITER);
+    await open();
+    const name = screen.getByLabelText(dict.orderCreate.addressFirstName);
+    await userEvent.clear(name);
+    await userEvent.type(name, "Ірина");
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).not.toHaveProperty("deliveryMethod");
+    expect(bodies[0]).not.toHaveProperty("pickupPointId");
+    expect(bodies[0].shippingAddress).toMatchObject({
+      firstName: "Ірина",
+      city: "Київ",
+      address1: "вул. Хрещатик, 1",
+    });
+  });
+
+  it("moves an order to pickup", async () => {
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+    await open();
+
+    const methods = within(
+      await screen.findByRole("group", {
+        name: dict.orderCreate.deliveryMethodAria,
+      }),
+    );
+    await userEvent.click(
+      await methods.findByRole("button", { name: "Самовивіз" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("radio", { name: "Магазин на Хрещатику" }),
+    );
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      deliveryMethod: "PICKUP",
+      pickupPointId: POINT_ID,
+      shippingAddress: { city: "Київ", address1: "вул. Хрещатик, 1" },
+    });
+  });
+
+  it("quotes an OTHER order: the agreed cost goes with the PATCH (AD-ORD-86)", async () => {
+    renderWithProviders(<OrderAddressForm order={otherOrder()} />, WRITER);
+    await open();
+
+    await userEvent.type(
+      screen.getByLabelText(dict.orderCreate.shippingCostLabel),
+      "180",
+    );
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ shippingCost: 180 });
+    expect(bodies[0]).not.toHaveProperty("deliveryMethod");
+  });
+
+  it("shows the server's delivery refusal under the form", async () => {
+    const message =
+      "Обраний пункт самовивозу більше недоступний — оберіть інший";
+    server.use(
+      http.patch("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "DELIVERY_PICKUP_POINT_UNAVAILABLE",
+            message,
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+    await open();
+    const methods = within(
+      await screen.findByRole("group", {
+        name: dict.orderCreate.deliveryMethodAria,
+      }),
+    );
+    await userEvent.click(
+      await methods.findByRole("button", { name: "Самовивіз" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("radio", { name: "Магазин на Хрещатику" }),
+    );
+    await save();
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+  });
+
+  // TASK-1972 for the new fields: a colleague's method change is reviewed by
+  // its NAME, not by its code.
+  it("reviews a colleague's method change by name", async () => {
+    let serverOrder = makeOrder("PENDING");
+    const patches: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: serverOrder }),
+      ),
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        patches.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json(
+          { statusCode: 409, error: "ORDER_STALE", message: "stale" },
+          { status: 409 },
+        );
+      }),
+    );
+    function Card() {
+      const { data } = useAdminOrderControllerFindById("order-uuid-1");
+      return data?.data ? <OrderAddressForm order={data.data} /> : null;
+    }
+    renderWithProviders(<Card />, WRITER);
+    await open();
+    const methods = within(
+      await screen.findByRole("group", {
+        name: dict.orderCreate.deliveryMethodAria,
+      }),
+    );
+    await userEvent.click(
+      await methods.findByRole("button", { name: "Самовивіз" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("radio", { name: "Магазин на Хрещатику" }),
+    );
+    serverOrder = {
+      ...serverOrder,
+      deliveryMethod: "COURIER",
+      shippingAddress: {
+        ...serverOrder.shippingAddress,
+        deliveryMethod: "COURIER",
+      },
+      updatedAt: "2026-06-01T10:00:30.000Z",
+    } as unknown as OrderEntity;
+    await save();
+
+    // The pills are a group of the same name; the review row is the one
+    // without toggle buttons.
+    await screen.findByText(dict.orderStatus.staleReviewTakeTheirs, {
+      exact: false,
+    });
+    const row = screen
+      .getAllByRole("group", { name: dict.orders.deliveryMethodLabel })
+      .find((group) => group.querySelector("[aria-pressed]") === null)!;
+    expect(within(row).getByText("Курʼєр")).toBeInTheDocument();
+    expect(within(row).getByText("Самовивіз")).toBeInTheDocument();
+    expect(within(row).queryByText("COURIER")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Verifier items 1–2 (TASK-2371, closed in TASK-1973): a Nova Poshta order
+ * takes its city and branch from the directory — the refs change with the
+ * names, and a city retyped by hand never ships by the old city's ref.
+ */
+describe("OrderAddressForm — Nova Poshta from the directory (TASK-1973)", () => {
+  const WRITER = { auth: { permissions: ["orders:read", "orders:write"] } };
+  const LVIV = {
+    ref: "np-city-lviv",
+    name: "Львів",
+    area: "Львівська",
+    warehouses: 1,
+  };
+  const LVIV_BRANCH = {
+    ref: "np-wh-lviv-1",
+    description: "Відділення №1: вул. Городоцька, 1",
+    number: "1",
+    typeOfWarehouse: "branch",
+  };
+  let bodies: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    bodies = [];
+    server.use(
+      http.get("*/api/delivery/cities", () =>
+        HttpResponse.json({ data: [LVIV] }),
+      ),
+      http.get("*/api/delivery/warehouses", () =>
+        HttpResponse.json({ data: [LVIV_BRANCH] }),
+      ),
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({ data: makeOrder("PENDING") });
+      }),
+    );
+  });
+
+  const npOrder = () =>
+    ({
+      ...makeOrder("PENDING"),
+      deliveryMethod: "NOVA_POSHTA",
+      shippingCost: "0.00",
+      shippingAddress: {
+        firstName: "Olena",
+        lastName: "Shevchenko",
+        phone: "+380501234567",
+        city: "Київ",
+        address1: "Відділення №5",
+        npCityRef: "np-city-kyiv",
+        npWarehouseRef: "np-wh-kyiv-5",
+        npWarehouseName: "Відділення №5",
+        deliveryMethod: "NOVA_POSHTA",
+        carrier: "NOVA_POSHTA",
+      },
+    }) as unknown as OrderEntity;
+
+  const open = async () =>
+    userEvent.click(
+      await screen.findByRole("button", { name: dict.orders.addressEdit }),
+    );
+  const save = () =>
+    userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+  async function pickLviv() {
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Льв");
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Вибрати «Львів»/i }),
+    );
+    await userEvent.click(
+      screen.getByLabelText(dict.orderCreate.addressAddress1),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: new RegExp(`Вибрати «${LVIV_BRANCH.description}»`, "i"),
+      }),
+    );
+  }
+
+  it("refuses a city typed by hand — the Kyiv ref must not ship to Lviv", async () => {
+    server.use(
+      http.get("*/api/delivery/cities", () => HttpResponse.json({ data: [] })),
+    );
+    renderWithProviders(<OrderAddressForm order={npOrder()} />, WRITER);
+    await open();
+
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Львів");
+    await save();
+
+    expect(
+      await screen.findByText(dict.orderCreate.deliveryNpCityRequired),
+    ).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("changes the NP city and branch from the directory, refs and names together", async () => {
+    renderWithProviders(<OrderAddressForm order={npOrder()} />, WRITER);
+    await open();
+
+    await pickLviv();
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).not.toHaveProperty("deliveryMethod");
+    expect(bodies[0].shippingAddress).toMatchObject({
+      city: "Львів",
+      npCityRef: "np-city-lviv",
+      address1: LVIV_BRANCH.description,
+      npWarehouseRef: "np-wh-lviv-1",
+      npWarehouseName: LVIV_BRANCH.description,
+    });
+  });
+
+  it("holds the version for a branch picked from the list without typing (review R3)", async () => {
+    // A pick is an edit: were it not marked dirty, the lock token would follow
+    // the poll and the save would overwrite the colleague without a 409 — and the
+    // poll would put the old branch back over the operator's pick.
+    const { rerender } = renderWithProviders(
+      <OrderAddressForm order={npOrder()} />,
+      WRITER,
+    );
+    await open();
+
+    await userEvent.click(
+      screen.getByLabelText(dict.orderCreate.addressAddress1),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: new RegExp(`Вибрати «${LVIV_BRANCH.description}»`, "i"),
+      }),
+    );
+    rerender(
+      <OrderAddressForm
+        order={
+          {
+            ...npOrder(),
+            updatedAt: "2026-06-01T10:00:30.000Z",
+          } as OrderEntity
+        }
+      />,
+    );
+    expect(screen.getByLabelText(dict.orderCreate.addressAddress1)).toHaveValue(
+      LVIV_BRANCH.description,
+    );
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      expectedUpdatedAt: "2026-06-01T10:00:00.000Z",
+      shippingAddress: { npWarehouseRef: "np-wh-lviv-1" },
+    });
+  });
+
+  it("drops the NP refs on leaving Nova Poshta — a retyped city never ships the old ref (review R3)", async () => {
+    renderWithProviders(<OrderAddressForm order={npOrder()} />, WRITER);
+    await open();
+    const methods = within(
+      await screen.findByRole("group", {
+        name: dict.orderCreate.deliveryMethodAria,
+      }),
+    );
+
+    await userEvent.click(
+      await methods.findByRole("button", { name: "Інша доставка" }),
+    );
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Львів");
+    await userEvent.click(methods.getByRole("button", { name: "Нова Пошта" }));
+    await save();
+
+    expect(
+      await screen.findByText(dict.orderCreate.deliveryNpCityRequired),
+    ).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("moves an OTHER order TO Nova Poshta", async () => {
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+    await open();
+
+    const methods = within(
+      await screen.findByRole("group", {
+        name: dict.orderCreate.deliveryMethodAria,
+      }),
+    );
+    await userEvent.click(
+      await methods.findByRole("button", { name: "Нова Пошта" }),
+    );
+    await pickLviv();
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      deliveryMethod: "NOVA_POSHTA",
+      shippingAddress: {
+        npCityRef: "np-city-lviv",
+        npWarehouseRef: "np-wh-lviv-1",
+      },
+    });
+  });
+
+  it("takes a colleague's NP city together with its ref", async () => {
+    let serverOrder = npOrder();
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: serverOrder }),
+      ),
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        bodies.push(body);
+        if (body.expectedUpdatedAt !== serverOrder.updatedAt) {
+          return HttpResponse.json(
+            { statusCode: 409, error: "ORDER_STALE", message: "stale" },
+            { status: 409 },
+          );
+        }
+        return HttpResponse.json({ data: serverOrder });
+      }),
+    );
+    function Card() {
+      const { data } = useAdminOrderControllerFindById("order-uuid-1");
+      return data?.data ? <OrderAddressForm order={data.data} /> : null;
+    }
+    renderWithProviders(<Card />, WRITER);
+    await open();
+    await pickLviv();
+    serverOrder = {
+      ...serverOrder,
+      shippingAddress: {
+        ...serverOrder.shippingAddress,
+        city: "Одеса",
+        npCityRef: "np-city-odesa",
+      },
+      updatedAt: "2026-06-01T10:00:30.000Z",
+    } as unknown as OrderEntity;
+    await save();
+
+    // One «Місто» row — the ref is folded into it, never a row of its own.
+    const row = await screen.findByRole("group", {
+      name: dict.orderCreate.addressCity,
+    });
+    expect(within(row).getByText("Одеса")).toBeInTheDocument();
+    expect(screen.queryByText("np-city-odesa")).not.toBeInTheDocument();
+    await userEvent.click(
+      within(row).getByRole("button", {
+        name: dict.orderStatus.staleReviewTakeTheirs,
+      }),
+    );
+    // Nothing diverges any more — the panel asks for «Зрозуміло».
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.orderStatus.staleReviewAcknowledge,
+      }),
+    );
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1].shippingAddress).toMatchObject({
+      city: "Одеса",
+      npCityRef: "np-city-odesa",
+    });
   });
 });

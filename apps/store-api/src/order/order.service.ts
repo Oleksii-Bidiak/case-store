@@ -25,7 +25,7 @@ import { CartService, type CartWithItems } from '../cart';
 import { UserRepository } from '../user';
 import { NotificationOutboxService } from '../notification-outbox';
 import { CustomerNotifier, ShopNotifier } from '../notification';
-import { DeliveryService, isDeliveryNotConfigured } from '../delivery';
+import { DeliveryService, isDeliveryNotConfigured, type DeliveryMethodSettings } from '../delivery';
 import { DiscountService } from '../discount';
 import { CheckoutAccountService, type IssuedSession } from '../auth';
 import { OrderEntity, OrderStatusHistoryEntity, PublicOrderEntity } from './entities';
@@ -44,14 +44,23 @@ import {
 } from './shop-order-ping';
 import { flatShippingCost, resolveDeliveryMethod } from './shipping-cost';
 import {
+  buildDeliverySnapshot,
+  pickupPointFromSnapshot,
+  pickupPointSnapshot,
+  type PickupPointSnapshot,
+} from './delivery-snapshot';
+import {
   deliveryMethodUnavailableError,
   deliveryNpCityRequiredError,
   deliveryPaymentNotAllowedError,
   deliveryPickupPointRequiredError,
   deliveryPickupPointUnavailableError,
+  deliveryShippingCostNotAllowedError,
   discountAccountRequiredError,
   paymentAccountRequiredError,
   manualOrderDeliveryPaymentNotAllowedError,
+  orderDeliveryLockedError,
+  orderVersionRequiredError,
   invalidTransitionError,
   reviveRefundedPaymentError,
   staleOrderError,
@@ -731,15 +740,13 @@ export class OrderService {
    *  1. **Resolve.** An explicit `dto.deliveryMethod` is used as is; absent, the
    *     address decides (`npCityRef` → NOVA_POSHTA, else OTHER). That keeps every
    *     pre-TASK-643 client working, with the same NP total as before the wave.
-   *  2. **Validate.** The method must be enabled in the shop's settings — a
-   *     derived NOVA_POSHTA too, but NOT a derived OTHER (the manual-city
-   *     fallback while NP is down, TASK-1097) — and the delivery × payment matrix
-   *     must admit the
-   *     payment method. Then the method's own requirements: NP needs a city ref
-   *     (never a silent 0), PICKUP an active point.
+   *  2. **Validate** — {@link checkDeliveryChoice}, shared with the operator's
+   *     phone order: enabled method (a derived OTHER excepted, TASK-1097), the
+   *     storefront delivery × payment matrix, NP city ref, active pickup point.
    *  3. **Price.** NOVA_POSHTA → the carrier estimate ({@link estimateNpShipping});
    *     everything else → {@link flatShippingCost} on the PRODUCT subtotal.
-   *  4. **Snapshot.** The method, the carrier and — for pickup — the point's
+   *  4. **Snapshot** ({@link buildDeliverySnapshot}). The method, the carrier
+   *     and — for pickup — the point's
    *     name and address go into the persisted address JSON, so a later edit of
    *     the point cannot rewrite this order's history. Refs that belong to a
    *     different method (a stray `pickupPointId`, NP refs on a non-NP order) are
@@ -758,38 +765,21 @@ export class OrderService {
       npCityRef,
     });
 
-    // TASK-1097 (owner decision 2026-10-05): an INFERRED OTHER skips the
-    // `otherEnabled` switch. Since plan 184 part U the storefront sends
-    // `deliveryMethod` explicitly for every choice the shopper makes on the
-    // method step — and OMITS it on exactly one path: Nova Poshta is unreachable
-    // and the shopper typed the city by hand (no `npCityRef`). That is the
-    // storefront's fallback for a carrier outage, not «Інша доставка» chosen from
-    // the list, so the owner switching OTHER off must not close it. It is still
-    // booked as OTHER (shipping quoted by the operator, `shippingCostPending`),
-    // and the delivery × payment matrix below still applies: manual city + card
-    // → 400 DELIVERY_PAYMENT_NOT_ALLOWED. An EXPLICIT `deliveryMethod: 'OTHER'`
-    // and an inferred NOVA_POSHTA keep the switch check. The fallback only
-    // stands in for Nova Poshta, so with NP itself switched off there is no
-    // outage to fall back from and the inferred OTHER is checked like any other.
-    const { enabledMethods, courier } = await this.deliveryService.getMethodSettings();
-    const inferredOther =
-      !dto.deliveryMethod &&
-      deliveryMethod === DeliveryMethod.OTHER &&
-      enabledMethods.includes(DeliveryMethod.NOVA_POSHTA);
-
-    if (!inferredOther && !enabledMethods.includes(deliveryMethod)) {
-      throw deliveryMethodUnavailableError(deliveryMethod);
-    }
-    if (!isPaymentAllowedForDelivery(deliveryMethod, paymentMethod)) {
-      throw deliveryPaymentNotAllowedError(deliveryMethod);
-    }
+    const { point, courier } = await this.checkDeliveryChoice({
+      deliveryMethod,
+      explicit: Boolean(dto.deliveryMethod),
+      npCityRef,
+      pickupPointId: dto.pickupPointId,
+      paymentAllowed: isPaymentAllowedForDelivery(deliveryMethod, paymentMethod),
+      paymentRefusal: () => deliveryPaymentNotAllowedError(deliveryMethod),
+    });
 
     if (deliveryMethod === DeliveryMethod.NOVA_POSHTA) {
-      if (!npCityRef) throw deliveryNpCityRequiredError();
       return {
         deliveryMethod,
-        shippingCost: await this.estimateNpShipping(npCityRef),
-        shippingAddress: { ...dto.shippingAddress, deliveryMethod, carrier: 'NOVA_POSHTA' },
+        // `checkDeliveryChoice` refused an NP order without a ref.
+        shippingCost: await this.estimateNpShipping(npCityRef!),
+        shippingAddress: buildDeliverySnapshot(dto.shippingAddress, deliveryMethod),
       };
     }
 
@@ -800,47 +790,80 @@ export class OrderService {
         courierFreeFrom: courier.freeFrom,
       }),
     );
-    const address = withoutNpRefs(dto.shippingAddress);
-
-    if (deliveryMethod === DeliveryMethod.PICKUP) {
-      if (!dto.pickupPointId) throw deliveryPickupPointRequiredError();
-      const point = await this.deliveryService.resolveActivePickupPoint(dto.pickupPointId);
-      if (!point) throw deliveryPickupPointUnavailableError();
-      return {
-        deliveryMethod,
-        pickupPointId: point.id,
-        shippingCost,
-        shippingAddress: {
-          ...address,
-          // The server's copy of the point wins over whatever the client typed:
-          // the parcel is collected THERE, whatever the form said.
-          city: point.city,
-          address1: point.address,
-          deliveryMethod,
-          carrier: null,
-          pickupPointName: point.name,
-          pickupPointAddress: point.address,
-          // TASK-647: what the letter and the order pages tell the shopper about
-          // collecting it — frozen like the rest, null when the point has none.
-          pickupPointHours: point.workingHours ?? null,
-          pickupPointPhone: point.phone ?? null,
-          pickupPointMapUrl: point.mapUrl ?? null,
-        },
-      };
-    }
 
     return {
       deliveryMethod,
+      ...(point ? { pickupPointId: point.id } : {}),
       shippingCost,
-      shippingAddress: {
-        ...address,
-        deliveryMethod,
-        carrier: null,
-        // OTHER books 0 now and the operator quotes later — say so in the
-        // record, so no surface renders the 0 as "free delivery" (B-6 §4).
-        ...(deliveryMethod === DeliveryMethod.OTHER ? { shippingCostPending: true } : {}),
-      },
+      // PICKUP: the server's copy of the point wins over whatever the client
+      // typed — the parcel is collected THERE. OTHER books 0 now and the
+      // operator quotes later — say so in the record, so no surface renders the
+      // 0 as "free delivery" (B-6 §4).
+      shippingAddress: buildDeliverySnapshot(dto.shippingAddress, deliveryMethod, {
+        point: point ? pickupPointSnapshot(point) : null,
+        shippingCostPending: deliveryMethod === DeliveryMethod.OTHER,
+      }),
     };
+  }
+
+  /**
+   * The checks every delivery choice passes, shopper's or operator's
+   * (TASK-643, shared since TASK-1973), in this order:
+   *
+   *  1. the method is enabled in the shop's settings — except an INFERRED OTHER
+   *     while Nova Poshta is on (TASK-1097, see below);
+   *  2. the delivery × payment matrix admits the payment (the caller passes the
+   *     verdict of its own matrix and its own wording of the refusal);
+   *  3. NOVA_POSHTA carries a city ref (never a silent 0, «ref ⇔ not OTHER»);
+   *  4. PICKUP names an active point — returned, so the caller can freeze it.
+   *
+   * TASK-1097 (owner decision 2026-10-05): an INFERRED OTHER skips the
+   * `otherEnabled` switch. The storefront sends `deliveryMethod` explicitly for
+   * every choice the shopper makes on the method step — and OMITS it on exactly
+   * one path: Nova Poshta is unreachable and the shopper typed the city by hand.
+   * That is a fallback for a carrier outage, not «Інша доставка» chosen from the
+   * list, so the owner switching OTHER off must not close it. With NP itself
+   * switched off there is no outage to fall back from, and the inferred OTHER is
+   * checked like any other.
+   *
+   * @throws BadRequestException with a `DELIVERY_*` code (see order.errors.ts).
+   */
+  private async checkDeliveryChoice(input: {
+    deliveryMethod: DeliveryMethod;
+    explicit: boolean;
+    npCityRef?: string | null;
+    pickupPointId?: string | null;
+    paymentAllowed: boolean;
+    paymentRefusal: () => Error;
+  }): Promise<{ point: ActivePickupPoint | null; courier: DeliveryMethodSettings['courier'] }> {
+    const method = input.deliveryMethod;
+    const { enabledMethods, courier } = await this.deliveryService.getMethodSettings();
+    const inferredOther =
+      !input.explicit &&
+      method === DeliveryMethod.OTHER &&
+      enabledMethods.includes(DeliveryMethod.NOVA_POSHTA);
+
+    if (!inferredOther && !enabledMethods.includes(method)) {
+      throw deliveryMethodUnavailableError(method);
+    }
+    if (!input.paymentAllowed) {
+      throw input.paymentRefusal();
+    }
+    if (method === DeliveryMethod.NOVA_POSHTA && !input.npCityRef) {
+      throw deliveryNpCityRequiredError();
+    }
+    if (method !== DeliveryMethod.PICKUP) {
+      return { point: null, courier };
+    }
+    return { point: await this.resolvePickupPoint(input.pickupPointId), courier };
+  }
+
+  /** An active pickup point by id, or the matching 400 (TASK-643). */
+  private async resolvePickupPoint(id: string | null | undefined): Promise<ActivePickupPoint> {
+    if (!id) throw deliveryPickupPointRequiredError();
+    const point = await this.deliveryService.resolveActivePickupPoint(id);
+    if (!point) throw deliveryPickupPointUnavailableError();
+    return point;
   }
 
   /**
@@ -1573,6 +1596,8 @@ export class OrderService {
    * @throws NotFoundException when the order does not exist.
    * @throws ConflictException `ORDER_STALE` on a concurrent edit, or when the
    *   address is edited on an order that has already shipped.
+   * @throws BadRequestException `ORDER_VERSION_REQUIRED` for a delivery edit
+   *   (address, method, point, cost) without `expectedUpdatedAt` (TASK-1973).
    */
   async adminUpdateDetails(
     orderId: string,
@@ -1580,8 +1605,11 @@ export class OrderService {
       trackingNumber?: string | null;
       internalNotes?: string | null;
       shippingAddress?: AddressDto;
+      deliveryMethod?: DeliveryMethod;
+      pickupPointId?: string;
+      shippingCost?: number;
     },
-    options: { expectedUpdatedAt?: Date } = {},
+    options: { expectedUpdatedAt?: Date; changedBy?: string } = {},
   ): Promise<OrderEntity> {
     const existing = await this.orderRepository.findById(orderId);
 
@@ -1591,11 +1619,34 @@ export class OrderService {
 
     this.assertFresh(existing, options.expectedUpdatedAt);
 
-    if (fields.shippingAddress !== undefined && !PRE_SHIPMENT_STATUSES.has(existing.status)) {
-      throw new ConflictException(
-        'The delivery address can only be changed before the order ships',
-      );
+    const { shippingAddress, deliveryMethod, pickupPointId, shippingCost, ...plain } = fields;
+    const deliveryEdit =
+      shippingAddress !== undefined ||
+      deliveryMethod !== undefined ||
+      pickupPointId !== undefined ||
+      shippingCost !== undefined;
+
+    if (deliveryEdit && !PRE_SHIPMENT_STATUSES.has(existing.status)) {
+      throw orderDeliveryLockedError();
     }
+    // The method change, the payment-matrix verdict and the price below are all
+    // decided from `existing`; the write must be guarded by that same version,
+    // or a concurrent edit could be re-priced from a state that is gone.
+    if (deliveryEdit && !options.expectedUpdatedAt) {
+      throw orderVersionRequiredError();
+    }
+
+    const write = deliveryEdit
+      ? {
+          ...plain,
+          ...(await this.resolveDeliveryEdit(existing, {
+            shippingAddress,
+            deliveryMethod,
+            pickupPointId,
+            shippingCost,
+          })),
+        }
+      : plain;
 
     // A waybill appearing on an order that ALREADY shipped is the second half of
     // the common workflow: the operator marks the parcel gone, then the courier
@@ -1607,7 +1658,7 @@ export class OrderService {
       fields.trackingNumber !== null &&
       !existing.trackingNumber;
 
-    const order = await this.orderRepository.updateDetails(orderId, fields, options);
+    const order = await this.orderRepository.updateDetails(orderId, write, options);
 
     if (gainedTracking && order.status === OrderStatus.SHIPPED) {
       await this.notifyShipped(order);
@@ -1624,6 +1675,121 @@ export class OrderService {
     );
 
     return OrderEntity.fromPrisma(order, { includeInternal: true });
+  }
+
+  /**
+   * What an operator's delivery edit writes (TASK-1973, TASK-1020, TASK-1806,
+   * AD-ORD-86): the rebuilt snapshot always, plus the method, the point and the
+   * shipping cost when they change.
+   *
+   * ── The snapshot is REBUILT, never replaced ────────────────────────────────
+   * The admin form sends a plain address. Written as is, it used to wipe the
+   * method, the carrier, the frozen pickup point and the «to be quoted» flag
+   * (TASK-1020). Now the address is only the contact/destination part, and the
+   * snapshot is built from it the same way checkout builds it. An unchanged
+   * pickup point is read back from the old snapshot rather than looked up again:
+   * the buyer was promised THAT point, even if it has been edited since.
+   *
+   * ── Money moves only on purpose ────────────────────────────────────────────
+   * An address edit within the same method never re-prices the order (TASK-1020:
+   * the buyer has already seen the amount). The cost changes only when the
+   * method does (NP/PICKUP → 0, COURIER → the flat price, OTHER → the agreed cost
+   * or 0 «to be quoted»), or when an OTHER order is given its agreed cost. The
+   * repository then recomputes the total and the balance under the order lock.
+   *
+   * A changed method is checked like a new order's (enabled, admin payment
+   * matrix with the order's own payment method, NP ref, active point); an
+   * unchanged one is not — editing a phone number must not fail because the
+   * owner has since switched the method off.
+   */
+  private async resolveDeliveryEdit(
+    existing: OrderWithItems,
+    edit: {
+      shippingAddress?: AddressDto;
+      deliveryMethod?: DeliveryMethod;
+      pickupPointId?: string;
+      shippingCost?: number;
+    },
+  ): Promise<{
+    shippingAddress: ShippingAddressData;
+    deliveryMethod?: DeliveryMethod;
+    pickupPointId?: string | null;
+    shippingCost?: number;
+  }> {
+    const current = (existing.shippingAddress ?? {}) as Partial<ShippingAddressData>;
+    const currentMethod =
+      existing.deliveryMethod ??
+      current.deliveryMethod ??
+      resolveDeliveryMethod({ npCityRef: current.npCityRef });
+    const method = edit.deliveryMethod ?? currentMethod;
+    const methodChanged = method !== currentMethod;
+    const source = edit.shippingAddress ?? current;
+
+    if (edit.shippingCost !== undefined && method !== DeliveryMethod.OTHER) {
+      throw deliveryShippingCostNotAllowedError();
+    }
+
+    let pickup: PickupPointSnapshot | null = null;
+    let pickupPointId: string | null | undefined;
+    let courier: DeliveryMethodSettings['courier'] | null = null;
+
+    if (methodChanged) {
+      const paymentMethod = existing.paymentMethod ?? PaymentMethod.ON_DELIVERY;
+      const choice = await this.checkDeliveryChoice({
+        deliveryMethod: method,
+        explicit: true,
+        npCityRef: source.npCityRef,
+        pickupPointId: edit.pickupPointId,
+        paymentAllowed: isPaymentAllowedForAdminDelivery(method, paymentMethod),
+        paymentRefusal: () => manualOrderDeliveryPaymentNotAllowedError(method),
+      });
+      courier = choice.courier;
+      pickup = choice.point ? pickupPointSnapshot(choice.point) : null;
+      pickupPointId = choice.point?.id ?? null;
+    } else if (method === DeliveryMethod.NOVA_POSHTA) {
+      // «ref ⇔ not OTHER» (TASK-1020): an NP order keeps a city to ship to.
+      if (!source.npCityRef) throw deliveryNpCityRequiredError();
+    } else if (method === DeliveryMethod.PICKUP) {
+      if (edit.pickupPointId && edit.pickupPointId !== existing.pickupPointId) {
+        const point = await this.resolvePickupPoint(edit.pickupPointId);
+        pickup = pickupPointSnapshot(point);
+        pickupPointId = point.id;
+      } else {
+        pickup = pickupPointFromSnapshot(current);
+      }
+    }
+
+    let shippingCost: number | undefined;
+    if (methodChanged) {
+      shippingCost = this.operatorShippingCost(
+        method,
+        courier!,
+        toCents(existing.subtotal),
+        edit.shippingCost,
+      );
+    } else if (edit.shippingCost !== undefined) {
+      shippingCost = edit.shippingCost;
+    }
+
+    // «To be quoted» until someone quotes it: set by a move to OTHER without a
+    // cost, cleared by a cost, otherwise carried over as it was. Only OTHER is
+    // ever quoted by hand — every other method has its own price (review R3).
+    const shippingCostPending =
+      method !== DeliveryMethod.OTHER
+        ? false
+        : shippingCost !== undefined
+          ? edit.shippingCost === undefined
+          : current.shippingCostPending === true;
+
+    return {
+      shippingAddress: buildDeliverySnapshot(source, method, {
+        point: pickup,
+        shippingCostPending,
+      }),
+      ...(methodChanged ? { deliveryMethod: method } : {}),
+      ...(pickupPointId !== undefined ? { pickupPointId } : {}),
+      ...(shippingCost !== undefined ? { shippingCost } : {}),
+    };
   }
 
   /**
@@ -1674,17 +1840,13 @@ export class OrderService {
       }
     }
 
-    // TASK-643: classified by the same rule as a legacy checkout and the
-    // TASK-642 backfill. Pricing of a phone order is deliberately unchanged.
-    const deliveryMethod = resolveDeliveryMethod({ npCityRef: dto.shippingAddress.npCityRef });
     const paymentMethod = dto.paymentMethod ?? PaymentMethod.ON_DELIVERY;
-    // TASK-1021: the delivery × payment matrix is a money invariant, not a
-    // checkout nicety — an OTHER phone order paid online would send the customer
-    // a link for an amount whose shipping nobody has quoted yet. Checked before
-    // anything is read or reserved.
-    if (!isPaymentAllowedForAdminDelivery(deliveryMethod, paymentMethod)) {
-      throw manualOrderDeliveryPaymentNotAllowedError(deliveryMethod);
-    }
+    // TASK-1973: the operator names the method; absent, the address decides as
+    // it did since TASK-643. Every check runs before anything is read or
+    // reserved — TASK-1021: the delivery × payment matrix is a money invariant,
+    // and an OTHER phone order paid online would send the customer a link for an
+    // amount whose shipping nobody has quoted yet.
+    const delivery = await this.resolveManualDelivery(dto, paymentMethod);
 
     const productIds = [...new Set(dto.items.map((item) => item.productId))];
     const products = await this.orderRepository.findOrderableProducts(productIds);
@@ -1726,8 +1888,10 @@ export class OrderService {
         ...(dto.contact ? { guest: dto.contact } : {}),
         accessTokenHash: hashGuestToken(accessToken),
         items,
-        shippingAddress: dto.shippingAddress,
-        deliveryMethod,
+        shippingAddress: delivery.shippingAddress,
+        deliveryMethod: delivery.deliveryMethod,
+        ...(delivery.pickupPointId ? { pickupPointId: delivery.pickupPointId } : {}),
+        shippingCost: delivery.price(sumLineCents(items)),
         ...(dto.notes ? { notes: dto.notes } : {}),
         ...(dto.internalNotes ? { internalNotes: dto.internalNotes } : {}),
         ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
@@ -1778,6 +1942,77 @@ export class OrderService {
     }
 
     return { order: entity, accessUrl };
+  }
+
+  /**
+   * How a phone order is delivered and what that adds to its total (TASK-1973,
+   * TASK-1019). The same checks and the same snapshot as a checkout
+   * ({@link checkDeliveryChoice}, {@link buildDeliverySnapshot}); the price
+   * differs on purpose:
+   *
+   * - NOVA_POSHTA → 0. The buyer pays the carrier at the branch, so its
+   *   estimate is not part of what they owe the shop (owner decision B-13).
+   * - PICKUP → 0; COURIER → the flat courier price on the goods subtotal.
+   * - OTHER → the cost the operator agreed with the customer, or 0 flagged
+   *   «to be quoted» (`shippingCostPending`) when none was entered.
+   *
+   * The price is returned as a function of the goods subtotal because the
+   * courier's free threshold needs it, and the lines are only priced after
+   * these checks have run.
+   */
+  private async resolveManualDelivery(
+    dto: CreateManualOrderDto,
+    paymentMethod: PaymentMethod,
+  ): Promise<{
+    deliveryMethod: DeliveryMethod;
+    pickupPointId?: string;
+    shippingAddress: ShippingAddressData;
+    price: (subtotalCents: number) => number;
+  }> {
+    const npCityRef = dto.shippingAddress.npCityRef;
+    const deliveryMethod = resolveDeliveryMethod({ deliveryMethod: dto.deliveryMethod, npCityRef });
+
+    if (dto.shippingCost !== undefined && deliveryMethod !== DeliveryMethod.OTHER) {
+      throw deliveryShippingCostNotAllowedError();
+    }
+
+    const { point, courier } = await this.checkDeliveryChoice({
+      deliveryMethod,
+      explicit: Boolean(dto.deliveryMethod),
+      npCityRef,
+      pickupPointId: dto.pickupPointId,
+      paymentAllowed: isPaymentAllowedForAdminDelivery(deliveryMethod, paymentMethod),
+      paymentRefusal: () => manualOrderDeliveryPaymentNotAllowedError(deliveryMethod),
+    });
+
+    return {
+      deliveryMethod,
+      ...(point ? { pickupPointId: point.id } : {}),
+      shippingAddress: buildDeliverySnapshot(dto.shippingAddress, deliveryMethod, {
+        point: point ? pickupPointSnapshot(point) : null,
+        shippingCostPending: dto.shippingCost === undefined,
+      }),
+      price: (subtotalCents) =>
+        this.operatorShippingCost(deliveryMethod, courier, subtotalCents, dto.shippingCost),
+    };
+  }
+
+  /** The operator's price for `method` — see {@link resolveManualDelivery}. */
+  private operatorShippingCost(
+    method: DeliveryMethod,
+    courier: DeliveryMethodSettings['courier'],
+    subtotalCents: number,
+    agreedCost: number | undefined,
+  ): number {
+    if (method === DeliveryMethod.OTHER) return agreedCost ?? 0;
+    if (method !== DeliveryMethod.COURIER) return 0;
+    return Number(
+      flatShippingCost(method, {
+        subtotal: centsToString(subtotalCents),
+        courierPrice: courier.price,
+        courierFreeFrom: courier.freeFrom,
+      }),
+    );
   }
 
   /**
@@ -2616,19 +2851,10 @@ interface ResolvedDelivery {
   shippingAddress: ShippingAddressData;
 }
 
-/**
- * A copy of the typed address without the Nova Poshta refs (TASK-643). Used for
- * every non-NP method: an `npCityRef` on a courier order would make any reader
- * that recognises NP parcels by that ref (the TASK-642 backfill rule, the admin
- * card) treat it as one.
- */
-function withoutNpRefs(address: AddressDto): ShippingAddressData {
-  const copy: ShippingAddressData = { ...address };
-  delete copy.npCityRef;
-  delete copy.npWarehouseName;
-  delete copy.npWarehouseRef;
-  return copy;
-}
+/** An active pickup point as the delivery service resolves it (TASK-643). */
+type ActivePickupPoint = NonNullable<
+  Awaited<ReturnType<DeliveryService['resolveActivePickupPoint']>>
+>;
 
 /**
  * Compute the cart subtotal as a "XX.YY" decimal string with the one shared

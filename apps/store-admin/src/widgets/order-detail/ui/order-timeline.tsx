@@ -75,8 +75,12 @@ export function OrderTimeline({ orderId, customerUserId }: OrderTimelineProps) {
               <span className="text-xs font-medium text-warning">{note}</span>
             )}
             <span className="text-xs text-muted-foreground">
-              {historyActorLabel(entry.changedBy, customerUserId)} ·{" "}
-              {formatDateTime(entry.changedAt)}
+              {historyActorLabel(
+                entry.changedBy,
+                customerUserId,
+                entry.actor?.name,
+              )}{" "}
+              · {formatDateTime(entry.changedAt)}
             </span>
           </li>
         );

@@ -70,4 +70,34 @@ function TooltipContent({
   );
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider };
+/**
+ * LabelTooltip (TASK-1978) — the visible name of an icon-only control on hover
+ * and keyboard focus, in place of a native `title` (which shows nothing on
+ * focus and nothing on touch). The control keeps its own `aria-label`: this is
+ * the sighted user's copy of that name, not a replacement for it. The child
+ * must forward refs and props (a `Button`, a Radix trigger with `asChild`).
+ */
+function LabelTooltip({
+  label,
+  children,
+  side,
+}: {
+  label: React.ReactNode;
+  children: React.ReactElement;
+  side?: React.ComponentProps<typeof TooltipPrimitive.Content>["side"];
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side={side}>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+export {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+  LabelTooltip,
+};
