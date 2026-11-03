@@ -89,7 +89,10 @@ export function InfoHint({
                   badgeVariant
                     ? badgeVariants({ variant: badgeVariant })
                     : "inline-flex items-center gap-1 rounded-xs focus-visible:ring-3 focus-visible:ring-ring/50",
-                  bare && "text-muted-foreground hover:text-foreground",
+                  // A 24px target around the 14px icon (WCAG 2.5.8) — the bare «ⓘ»
+                  // exists so that touch works, so it must be tappable (review R3).
+                  bare &&
+                    "min-h-6 min-w-6 justify-center text-muted-foreground hover:text-foreground",
                   className,
                 )}
               >

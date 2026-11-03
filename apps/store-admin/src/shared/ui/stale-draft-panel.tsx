@@ -1,4 +1,7 @@
+"use client";
+
 import { TriangleAlertIcon } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 import { Button } from "./button";
 
@@ -45,6 +48,10 @@ export interface StaleDraftPanelProps {
  * A live region (`role="alert"`) because it appears as the answer to the
  * operator's click — it replaces the sticky error toast, so it must be
  * announced the way the toast was.
+ *
+ * It also takes focus when it appears (review R3): the click that raised it was
+ * on «Зберегти», which the review now disables, so focus would otherwise fall
+ * to the page body and a keyboard user would have to hunt for the decision.
  */
 export function StaleDraftPanel({
   rows,
@@ -52,11 +59,18 @@ export function StaleDraftPanel({
   onTakeTheirs,
   onAcknowledge,
 }: StaleDraftPanelProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+
   return (
     <div
+      ref={ref}
+      tabIndex={-1}
       role="alert"
       data-slot="stale-draft-panel"
-      className="flex flex-col gap-3 rounded-md border border-warning/35 bg-warning/8 p-3 text-sm text-foreground"
+      className="flex flex-col gap-3 rounded-md border border-warning/35 bg-warning/8 p-3 text-sm text-foreground outline-none"
     >
       <p className="flex items-start gap-2 font-medium">
         <TriangleAlertIcon

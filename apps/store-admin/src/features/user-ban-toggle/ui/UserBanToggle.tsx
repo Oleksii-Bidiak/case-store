@@ -108,7 +108,8 @@ export function UserBanToggle({
   if (isSelf) {
     // TASK-1978: a disabled button shows no tooltip on touch (and a native
     // `title` never did), so the reason sits next to it as a tappable «ⓘ».
-    // The button keeps the reason as its name for a screen reader.
+    // The button is named by its visible text (WCAG 2.5.3 label-in-name, for
+    // voice control); the reason is the «ⓘ»'s description (review R3).
     return (
       <div className={cn("flex items-center gap-2", className)}>
         <Button
@@ -116,7 +117,6 @@ export function UserBanToggle({
           variant="outline"
           size="sm"
           disabled
-          aria-label={dict.userBan.cannotSelf}
           className="flex-1"
         >
           {dict.common.deactivate}
