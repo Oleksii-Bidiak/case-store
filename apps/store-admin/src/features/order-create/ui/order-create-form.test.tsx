@@ -792,6 +792,27 @@ describe("OrderCreateForm — the delivery method (TASK-1973 / 1019 / 1808)", ()
     ).toBeInTheDocument();
   });
 
+  it("drops the NP refs on leaving Nova Poshta — a retyped city never ships the old ref (review R3)", async () => {
+    const user = userEvent.setup();
+    const bodies = captureCreate();
+    renderWithProviders(<OrderCreateForm />);
+    await fillGuest(user);
+    await pickKyivFromDirectory(user);
+    await chooseMethod(user, "Інша доставка");
+    await user.clear(field("city"));
+    await user.type(field("city"), "Львів");
+    await chooseMethod(user, "Нова Пошта");
+    await user.type(field("address1"), "Відділення №12");
+    await addCase(user);
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    expect(
+      await screen.findByText(t.deliveryNpCityRequired),
+    ).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+  });
+
   it("says Nova Poshta is paid at the branch and keeps it out of the total (B-13)", async () => {
     const user = userEvent.setup();
     renderWithProviders(<OrderCreateForm />);

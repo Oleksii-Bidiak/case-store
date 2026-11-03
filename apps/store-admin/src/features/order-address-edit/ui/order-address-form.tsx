@@ -25,6 +25,7 @@ import {
 import {
   NpCityField,
   NpWarehouseField,
+  clearNpRefs,
   PickupPointPicker,
   useGetDeliveryMethods,
   type DeliveryMethod,
@@ -361,6 +362,8 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
             value={method}
             onChange={(next) => {
               form.setValue("deliveryMethod", next, { shouldDirty: true });
+              // Leaving NP drops the directory refs (review R3): see `clearNpRefs`.
+              if (next !== "NOVA_POSHTA") clearNpRefs(form);
               form.clearErrors([
                 "city",
                 "address1",

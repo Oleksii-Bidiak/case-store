@@ -41,6 +41,7 @@ export { PickupPointPicker } from "./ui/pickup-point-picker";
 export {
   NpCityField,
   NpWarehouseField,
+  clearNpRefs,
   type NpAddressValues,
 } from "./ui/np-address-fields";
 

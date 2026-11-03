@@ -56,6 +56,20 @@ function narrow<T extends NpAddressValues>(
 }
 
 /**
+ * Drop the NP directory refs — for a form whose delivery method just left Nova
+ * Poshta. The other methods' plain city box does not clear them, so without this
+ * NP → «Інша» → a retyped city → NP would ship the new name under the old ref
+ * (review R3). Coming back to NP then asks for a city from the list again.
+ */
+export function clearNpRefs<T extends NpAddressValues>(
+  form: UseFormReturn<T>,
+): void {
+  const f = narrow(form);
+  f.setValue("npCityRef", "", { shouldDirty: true });
+  f.setValue("npWarehouseRef", "", { shouldDirty: true });
+}
+
+/**
  * Nova Poshta city + warehouse pickers for the operator's create-order form
  * (TASK-426) and, since TASK-1973, the delivery edit of an existing order, mirroring `features/checkout/ui/np-city-field.tsx` and
  * `np-warehouse-field.tsx` on the storefront.

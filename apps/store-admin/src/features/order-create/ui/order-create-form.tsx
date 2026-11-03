@@ -27,6 +27,7 @@ import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/da
 import {
   NpCityField,
   NpWarehouseField,
+  clearNpRefs,
   PickupPointPicker,
   useGetDeliveryMethods,
   type DeliveryMethod,
@@ -250,6 +251,8 @@ export function OrderCreateForm() {
     form.setValue("deliveryMethod", method as DeliveryMethod, {
       shouldDirty: true,
     });
+    // Leaving NP drops the directory refs (review R3): see `clearNpRefs`.
+    if (method !== "NOVA_POSHTA") clearNpRefs(form);
     // Errors of the previous method's fields are no longer the operator's.
     form.clearErrors(["city", "address1", "pickupPointId", "shippingCost"]);
   };

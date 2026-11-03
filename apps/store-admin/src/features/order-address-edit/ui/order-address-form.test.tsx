@@ -969,6 +969,30 @@ describe("OrderAddressForm — Nova Poshta from the directory (TASK-1973)", () =
     });
   });
 
+  it("drops the NP refs on leaving Nova Poshta — a retyped city never ships the old ref (review R3)", async () => {
+    renderWithProviders(<OrderAddressForm order={npOrder()} />, WRITER);
+    await open();
+    const methods = within(
+      await screen.findByRole("group", {
+        name: dict.orderCreate.deliveryMethodAria,
+      }),
+    );
+
+    await userEvent.click(
+      await methods.findByRole("button", { name: "Інша доставка" }),
+    );
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Львів");
+    await userEvent.click(methods.getByRole("button", { name: "Нова Пошта" }));
+    await save();
+
+    expect(
+      await screen.findByText(dict.orderCreate.deliveryNpCityRequired),
+    ).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+  });
+
   it("moves an OTHER order TO Nova Poshta", async () => {
     renderWithProviders(
       <OrderAddressForm order={makeOrder("PENDING")} />,
