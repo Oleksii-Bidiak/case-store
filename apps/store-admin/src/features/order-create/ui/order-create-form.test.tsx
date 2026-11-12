@@ -155,6 +155,38 @@ describe("OrderCreateForm — the customer (TASK-426)", () => {
     expect(field("contactPhone")).toHaveValue("+48 123 456 789");
   });
 
+  it("drops the account's «оберіть клієнта» on switching to a walk-in after a submit", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+
+    await user.click(screen.getByRole("tab", { name: "Існуючий акаунт" }));
+    await user.click(
+      screen.getByRole("button", { name: dict.orderCreate.submit }),
+    );
+    expect(
+      await screen.findByRole("link", {
+        name: dict.orderCreate.customerHeading,
+      }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("tab", { name: dict.orderCreate.modeGuest }),
+    );
+
+    // The walk-in has no account to pick — that error is no longer the
+    // operator's, while the walk-in's own fields are still asked for.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("link", {
+          name: dict.orderCreate.customerHeading,
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("link", { name: dict.orderCreate.contactPhone }),
+    ).toBeInTheDocument();
+  });
+
   it("does not render the recipient fields while «той самий клієнт» is ticked", () => {
     renderWithProviders(<OrderCreateForm />);
 

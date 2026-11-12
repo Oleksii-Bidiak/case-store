@@ -160,8 +160,9 @@ function CorrectionDialogBody({
           return;
         }
         // TASK-1984 Rule 6: a 400 about the reason goes under it; the banner
-        // only for a refusal of the correction itself.
-        const placed = placeMoneyRefusal(error);
+        // only for a refusal of the correction itself — this dialog has no
+        // amount, so a refusal about one is the banner's too.
+        const placed = placeMoneyRefusal(error, ["reason"]);
         if (placed.fields.reason) setReasonError(placed.fields.reason);
         setFormError(placed.banner);
         if (moneyRefusalNeedsRefetch(error)) onWritten(null);

@@ -40,6 +40,7 @@ import { toast } from "@/shared/ui/toast";
 import { dict } from "@/shared/config";
 import {
   mapServerFieldErrors,
+  readFieldErrors,
   type ServerFieldMap,
 } from "@/shared/lib/form-errors";
 
@@ -218,7 +219,12 @@ function ReturnCreateForm({
             const fields = mapServerFieldErrors(failure, CREATE_FIELD_MAP);
             if (fields.comment) {
               setCommentError(fields.comment);
-              return;
+              // Fully placed — nothing more to say. A remainder (a line the
+              // DTO refused) still needs the banner.
+              const rest = readFieldErrors(failure).filter(
+                (entry) => !(entry.field in CREATE_FIELD_MAP),
+              );
+              if (rest.length === 0) return;
             }
           }
           setError(refusal?.message ?? d.createFailed);

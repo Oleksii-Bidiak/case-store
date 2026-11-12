@@ -91,6 +91,27 @@ describe("placeMoneyRefusal", () => {
     expect(placed.banner).toBe(dict.orderMoney.errors.generic);
   });
 
+  it("says a refusal about an input the dialog lacks in the banner", () => {
+    // The entry correction has a reason and no amount: a reversal that would
+    // leave more refunded than paid must not vanish into an unrendered field.
+    expect(
+      placeMoneyRefusal(failure(409, "ORDER_MONEY_REFUND_EXCEEDS_PAID"), [
+        "reason",
+      ]),
+    ).toEqual({
+      fields: {},
+      banner: dict.orderMoney.errors.receiptReversalBelowRefunded,
+    });
+    const dto = placeMoneyRefusal(
+      withFields([{ field: "amountKop", constraint: "max" }]),
+      ["reason"],
+    );
+    expect(dto).toEqual({
+      fields: {},
+      banner: dict.orderMoney.errors.generic,
+    });
+  });
+
   it("leaves a field-less refusal to the banner", () => {
     expect(placeMoneyRefusal(failure(409, "ORDER_MONEY_NOTHING_PAID"))).toEqual(
       {

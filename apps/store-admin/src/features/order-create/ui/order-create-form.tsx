@@ -460,12 +460,16 @@ export function OrderCreateForm() {
         <Section number={1} title={t.customerHeading} id={CUSTOMER_ANCHOR}>
           <Tabs
             value={customerMode}
-            onValueChange={(value) =>
+            onValueChange={(value) => {
               form.setValue(
                 "customerMode",
                 value as CreateOrderFormValues["customerMode"],
-              )
-            }
+              );
+              // Which client fields are judged just changed (Rule 4a): after
+              // a submit, re-judge, so the other mode's error («оберіть
+              // клієнта», the walk-in's email) does not linger in the list.
+              if (form.formState.isSubmitted) void form.trigger();
+            }}
           >
             <TabsList aria-label={t.modeAria}>
               <TabsTrigger value={CUSTOMER_MODE.GUEST}>

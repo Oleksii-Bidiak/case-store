@@ -135,16 +135,26 @@ export const MONEY_FIELD_MAP: ServerFieldMap = {
  * without a reason, a refund above what was paid) or a 400's `fieldErrors` —
  * and in the dialog's banner ONLY when no input can carry it. Never both.
  *
+ * `inputs` are the inputs THIS dialog renders. A refusal about one it lacks is
+ * the banner's: the entry correction has no amount, and a reversal refused
+ * with `ORDER_MONEY_REFUND_EXCEEDS_PAID` (it would leave more refunded than
+ * paid) must still be said somewhere.
+ *
  * The dialogs are `useState` forms, so this returns messages rather than
  * calling `setError`. The stale 409 is the caller's (it closes the dialog).
  */
-export function placeMoneyRefusal(error: unknown): {
+export function placeMoneyRefusal(
+  error: unknown,
+  inputs: readonly MoneyField[] = ["amount", "reason"],
+): {
   fields: Partial<Record<MoneyField, string>>;
   banner: string | null;
 } {
   const coded = CODED_FIELD[apiErrorCode(error) ?? ""];
   if (coded) {
-    return { fields: { [coded]: moneyWriteErrorMessage(error) }, banner: null };
+    return inputs.includes(coded)
+      ? { fields: { [coded]: moneyWriteErrorMessage(error) }, banner: null }
+      : { fields: {}, banner: moneyWriteErrorMessage(error) };
   }
 
   if (apiErrorStatus(error) === 400) {
@@ -154,10 +164,16 @@ export function placeMoneyRefusal(error: unknown): {
     const collect = ((name: MoneyField, { message }: { message?: string }) => {
       fields[name] = message ?? dict.forms.invalid;
     }) as unknown as UseFormSetError<Record<MoneyField, string>>;
+    // Only the inputs on screen take an error; the rest is the remainder.
+    const fieldMap: ServerFieldMap = Object.fromEntries(
+      Object.entries(MONEY_FIELD_MAP).filter(([, input]) =>
+        inputs.includes(input as MoneyField),
+      ),
+    );
     const { mapped, unmapped } = applyServerFieldErrors(
       error,
       collect,
-      MONEY_FIELD_MAP,
+      fieldMap,
       { amount: dict.orderMoney.amountInvalid },
     );
     if (mapped.length > 0) {

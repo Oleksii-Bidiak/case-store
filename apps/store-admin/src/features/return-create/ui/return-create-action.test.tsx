@@ -419,6 +419,43 @@ describe("ReturnCreateAction — the dialog (TASK-1963)", () => {
     );
   });
 
+  it("keeps the banner for a refused line next to the comment's error", async () => {
+    stubCreate(() =>
+      HttpResponse.json(
+        {
+          statusCode: 400,
+          error: "Bad Request",
+          message:
+            "reason must be shorter; items.0.quantity must be an integer",
+          fieldErrors: [
+            { field: "reason", constraint: "maxLength" },
+            { field: "items.0.quantity", constraint: "isInt" },
+          ],
+        },
+        { status: 400 },
+      ),
+    );
+    renderWithProviders(<ReturnCreateAction order={makeOrder()} />, {
+      auth: WRITER,
+    });
+    const dialog = await openDialog();
+
+    await userEvent.click(
+      await within(dialog).findByRole("button", {
+        name: d.createIncrease("Кабель"),
+      }),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.createSubmit }),
+    );
+
+    await waitFor(() =>
+      expect(within(dialog).getAllByRole("alert")).toHaveLength(2),
+    );
+    expect(within(dialog).getByText(dict.forms.tooLong)).toBeInTheDocument();
+    expect(within(dialog).getByText(d.createFailed)).toBeInTheDocument();
+  });
+
   it("opens from the outside in controlled mode", async () => {
     renderWithProviders(
       <ReturnCreateAction order={makeOrder()} open onOpenChange={jest.fn()} />,
