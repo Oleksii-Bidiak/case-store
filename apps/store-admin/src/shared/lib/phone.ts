@@ -126,9 +126,20 @@ export function normalizeUAPhone(raw: string): string {
   return digits;
 }
 
-/** Whether `raw` is a Ukrainian number, whatever separators it was typed with. */
+/**
+ * Whether `raw` is a Ukrainian number, whatever separators it was typed with.
+ *
+ * Shape first ({@link PHONE_SHAPE}, below), then digits — the API's `@IsUaPhone`
+ * order (TASK-1984). The normaliser strips every non-digit, so without the shape
+ * check `050 111 2233 ccc` reduced to a valid number here while the server
+ * refused it.
+ */
 export function isValidUAPhone(raw: string): boolean {
-  return UA_PHONE_PATTERN.test(normalizeUAPhone(raw));
+  const trimmed = raw.trim();
+  return (
+    PHONE_SHAPE.test(trimmed) &&
+    UA_PHONE_PATTERN.test(normalizeUAPhone(trimmed))
+  );
 }
 
 // ─── The country-agnostic rule the order endpoints actually enforce ───────────
@@ -147,6 +158,20 @@ export const PHONE_MAX_DIGITS = 15;
  * normalise such a value for exactly that reason.
  */
 export const PHONE_SHAPE = /^\+?[\d\s().-]+$/;
+
+/** One character outside the {@link PHONE_SHAPE} alphabet. */
+const NOT_PHONE_CHAR = /[^\d\s+().-]/g;
+
+/**
+ * What `PhoneInput` hands the form (TASK-1984, Rule 5b): the raw string with
+ * every character outside the {@link PHONE_SHAPE} alphabet removed — letters
+ * typed or pasted never reach the value. NEVER truncates and never reorders, so
+ * the rule still judges exactly what the operator meant; a second `+` is kept
+ * for {@link PHONE_SHAPE} to refuse.
+ */
+export function sanitizePhoneInput(raw: string): string {
+  return raw.replace(NOT_PHONE_CHAR, "");
+}
 
 /**
  * Whether `raw` is a dialable number of ANY country — the admin mirror of the

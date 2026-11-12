@@ -228,13 +228,16 @@ drifts. The apps cannot import each other, so the parity test is what keeps the 
 
 ### 5b. Schema helper and mask
 
-- **Schema:** `phoneField({ rule: "ua" | "international", optional? })` from `shared/lib/phone.ts` —
-  never a hand-written `.refine` or regex in a form schema. `optional: true` accepts `""` (the form
-  then sends `null` / omits the key, as the DTO expects).
+- **Schema:** `phoneField({ rule: "ua" | "international", optional? })` from
+  `shared/lib/phone-field.ts` (the storefront takes `rule: "ua"` only) — never a hand-written
+  `.refine` or regex in a form schema. `optional: true` accepts `""` (the form then sends `null` /
+  omits the key, as the DTO expects). zod stays out of `phone.ts`, which the parity spec loads as code.
 - **Input:** `PhoneInput` from `shared/ui/phone-input.tsx` (both apps):
-  - `rule="ua"` draws the `+380 NN NNN NNNN` mask;
-  - `rule="international"` draws nothing and only drops characters outside `PHONE_SHAPE`.
-    Either way it emits the **sanitised raw** string — never the truncating mask (Rule 4b).
+  - `rule="ua"` draws the `+380 NN NNN NNNN` mask (the storefront input is always this one and
+    has no `rule` prop);
+  - `rule="international"` (admin) draws nothing and only drops characters outside `PHONE_SHAPE`.
+    Either way it emits the **sanitised raw** string (`sanitizePhoneInput`) — never the
+    truncating mask (Rule 4b).
 
 ### 5c. Email
 

@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { formatUAPhone } from "@/shared/lib/phone";
+import { formatUAPhone, sanitizePhoneInput } from "@/shared/lib/phone";
 import { Input } from "./input";
 
 export type PhoneInputProps = Omit<
@@ -22,6 +22,10 @@ export type PhoneInputProps = Omit<
  * emits is the RAW string, never the mask: whoever consumes it must normalise
  * before deciding anything (`isValidUAPhone`).
  *
+ * The raw string is SANITISED, not truncated (TASK-1984, Rule 5b): characters
+ * outside the `PHONE_SHAPE` alphabet are dropped by `sanitizePhoneInput`, so a
+ * pasted `050 111 2233 ccc` reaches the form without the letters.
+ *
  * Sets `type="tel"` and `inputMode="numeric"` for the correct mobile keyboard,
  * and forwards its ref so RHF `Controller` can register the field. Remaining
  * input props (`id`, `autoComplete`, `aria-invalid`, …) pass straight through.
@@ -34,7 +38,7 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
         type="tel"
         inputMode="numeric"
         value={formatUAPhone(value)}
-        onChange={(e) => onChange?.(e.target.value)}
+        onChange={(e) => onChange?.(sanitizePhoneInput(e.target.value))}
         {...props}
       />
     );

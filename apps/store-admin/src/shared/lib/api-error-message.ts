@@ -74,6 +74,16 @@ export function apiErrorCode(error: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/**
+ * The raw `fieldErrors` value of a failed request's body (TASK-1984, D3) — the
+ * list the API's global ValidationPipe attaches to a 400. Untyped on purpose:
+ * `readFieldErrors` in `form-errors.ts` validates every entry before use.
+ */
+export function apiErrorFieldErrors(error: unknown): unknown {
+  return (errorBody(error) as { fieldErrors?: unknown } | undefined)
+    ?.fieldErrors;
+}
+
 /** HTTP status of a failed request, when there is one. */
 export function apiErrorStatus(error: unknown): number | undefined {
   return (error as { response?: { status?: number } })?.response?.status;

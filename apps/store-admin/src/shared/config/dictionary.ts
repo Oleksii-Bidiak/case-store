@@ -315,6 +315,18 @@ export const dict = {
     needsActionFailedTelegram: "Telegram не доставив",
   },
 
+  // Shared field rules and server field errors (TASK-1984, forms convention
+  // Rules 5–6): the defaults of `phoneField`, `emailField` and
+  // `applyServerFieldErrors` in `shared/lib`. Same texts as the storefront's
+  // `dict.forms`.
+  forms: {
+    phoneInvalid: "Вкажіть коректний номер телефону",
+    emailInvalid: "Вкажіть коректну електронну пошту",
+    tooLong: "Задовге значення",
+    required: "Обов'язкове поле",
+    invalid: "Перевірте це поле",
+  },
+
   common: {
     save: "Зберегти",
     saving: "Збереження…",

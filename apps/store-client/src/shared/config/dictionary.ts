@@ -61,6 +61,18 @@ export const dict = {
     errorCode: (digest: string) => `Код помилки: ${digest}`,
   },
 
+  // Shared field rules and server field errors (TASK-1984, forms convention
+  // Rules 5–6): the defaults of `phoneField`, `emailField` and
+  // `applyServerFieldErrors` in `shared/lib`. The phone and email texts are the
+  // ones the profile and checkout forms already show.
+  forms: {
+    phoneInvalid: "Вкажіть коректний номер телефону",
+    emailInvalid: "Вкажіть коректну електронну пошту",
+    tooLong: "Задовге значення",
+    required: "Обов'язкове поле",
+    invalid: "Перевірте це поле",
+  },
+
   nav: {
     primaryAria: "Головне меню",
     accountAria: "Акаунт",

@@ -2,6 +2,8 @@ import {
   displayPhone,
   formatUAPhone,
   isValidUAPhone,
+  PHONE_SHAPE,
+  sanitizePhoneInput,
   normalizeUAPhone,
   toTelHref,
   UA_PHONE_LOCAL_LENGTH,
@@ -59,6 +61,7 @@ describe("isValidUAPhone", () => {
     ["80501234567", "old inter-city prefix"],
     ["501234567", "bare local part"],
     ["+38 (050) 123-45-67", "brackets and dashes"],
+    ["  +380 50 123 4567  ", "surrounding whitespace"],
   ])("accepts %s (%s)", (phone) => {
     expect(isValidUAPhone(phone)).toBe(true);
   });
@@ -71,8 +74,17 @@ describe("isValidUAPhone", () => {
     ["+1 234 567 8901", "a foreign number the mask would have truncated"],
     ["(((((((((((", "the punctuation the old mask-shaped regex accepted"],
     ["+380 50 123 456", "eight local digits"],
+    // TASK-1984 (Rule 5a): the shape is checked BEFORE the digits are counted, as
+    // the API's `@IsUaPhone` does — letters make the value refused, never cleaned.
+    ["050 111 2233 ccc", "a valid number followed by letters"],
+    ["++380501234567", "a second plus"],
+    ["+380 50 123 4567 ext 5", "an extension"],
   ])("rejects %s (%s)", (phone) => {
     expect(isValidUAPhone(phone)).toBe(false);
+  });
+
+  it("exports the API's PHONE_SHAPE literal (pinned by phone-parity.spec.ts in store-api)", () => {
+    expect(PHONE_SHAPE).toEqual(/^\+?[\d\s().-]+$/);
   });
 
   it("keeps the local length at 9 digits", () => {
@@ -108,4 +120,20 @@ describe("toTelHref (TASK-873)", () => {
       expect(toTelHref(input)).toBeNull();
     },
   );
+});
+
+/**
+ * TASK-1984 (Rule 5b) — what `PhoneInput` hands the form: the raw string with
+ * every character outside the `PHONE_SHAPE` alphabet removed, never truncated.
+ */
+describe("sanitizePhoneInput", () => {
+  it.each([
+    ["050 111 2233 ccc", "050 111 2233 "],
+    ["+38 (050) 111-22.33", "+38 (050) 111-22.33"],
+    ["тел. 050ф1112233", ". 0501112233"],
+    ["+48 123 456 789 012 345", "+48 123 456 789 012 345"],
+    ["", ""],
+  ])("%p → %p", (raw, expected) => {
+    expect(sanitizePhoneInput(raw)).toBe(expected);
+  });
 });
