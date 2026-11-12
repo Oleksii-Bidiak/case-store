@@ -47,3 +47,19 @@ export {
   useMyDevices,
   useMyDevicesHydrated,
 } from "./model/use-my-devices";
+
+// The catalogue filter's defaults (TASK-2076/2077) — localStorage
+// `my-devices-settings:v1`. Moved here from widgets/my-devices-manager
+// (TASK-1959), which re-exports them.
+export {
+  DEFAULT_MY_DEVICES_SETTINGS,
+  MY_DEVICES_SETTINGS_STORAGE_KEY,
+  catalogFilterDefault,
+  parseMyDevicesSettings,
+  readMyDevicesSettings,
+  updateMyDevicesSettings,
+  type CompatScope,
+  type MyDevicesSettings,
+} from "./model/my-devices-settings";
+// "use client" module.
+export { useMyDevicesSettings } from "./model/use-my-devices-settings";

@@ -1,23 +1,4 @@
 "use client";
 
-// The live «Мої пристрої» settings hook, split from ./my-devices-settings so
-// that module stays server-safe (the widget barrel reaches server pages).
-
-import { useSyncExternalStore } from "react";
-import {
-  DEFAULT_MY_DEVICES_SETTINGS,
-  getMyDevicesSettingsSnapshot,
-  subscribeMyDevicesSettings,
-  type MyDevicesSettings,
-} from "./my-devices-settings";
-
-const getServerSnapshot = () => DEFAULT_MY_DEVICES_SETTINGS;
-
-/** The settings, live (defaults during SSR and hydration). */
-export function useMyDevicesSettings(): Readonly<MyDevicesSettings> {
-  return useSyncExternalStore(
-    subscribeMyDevicesSettings,
-    getMyDevicesSettingsSnapshot,
-    getServerSnapshot,
-  );
-}
+// Moved to entities/my-devices (TASK-1959); re-exported for the widget.
+export { useMyDevicesSettings } from "@/entities/my-devices/model/use-my-devices-settings";
