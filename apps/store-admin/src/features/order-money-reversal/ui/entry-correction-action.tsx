@@ -9,6 +9,7 @@ import {
   isReversibleEntry,
   moneyRefusalNeedsRefetch,
   moneyWriteErrorMessage,
+  placeMoneyRefusal,
   useAdminOrderMoneyControllerReverseEntry,
   useAdminOrderMoneyControllerVoidEntry,
   type OrderMoneyEntity,
@@ -158,7 +159,11 @@ function CorrectionDialogBody({
           onWritten(null);
           return;
         }
-        setFormError(message);
+        // TASK-1984 Rule 6: a 400 about the reason goes under it; the banner
+        // only for a refusal of the correction itself.
+        const placed = placeMoneyRefusal(error);
+        if (placed.fields.reason) setReasonError(placed.fields.reason);
+        setFormError(placed.banner);
         if (moneyRefusalNeedsRefetch(error)) onWritten(null);
       },
     };

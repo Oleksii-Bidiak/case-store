@@ -1,3 +1,4 @@
+import type { UseFormSetError } from "react-hook-form";
 import { dict } from "@/shared/config";
 import {
   apiErrorCode,
@@ -5,6 +6,10 @@ import {
   apiErrorStatus,
   formatKop,
 } from "@/shared/lib";
+import {
+  applyServerFieldErrors,
+  type ServerFieldMap,
+} from "@/shared/lib/form-errors";
 
 const e = dict.orderMoney.errors;
 
@@ -105,6 +110,65 @@ export function moneyWriteErrorMessage(error: unknown): string {
     default:
       return e.generic;
   }
+}
+
+/** The two inputs a money dialog has: the sum, and the note / reason. */
+export type MoneyField = "amount" | "reason";
+
+/** The coded refusals that are about ONE input (TASK-1984 Rule 6b). */
+const CODED_FIELD: Partial<Record<string, MoneyField>> = {
+  [ORDER_MONEY_ERROR.OVERPAYMENT_REASON_REQUIRED]: "reason",
+  [ORDER_MONEY_ERROR.PAYOUT_REASON_REQUIRED]: "reason",
+  [ORDER_MONEY_ERROR.REFUND_EXCEEDS_PAID]: "amount",
+};
+
+/** `RecordMoneyInDto` / `RecordMoneyOutDto` / `MoneyCorrectionDto` → input. */
+export const MONEY_FIELD_MAP: ServerFieldMap = {
+  amountKop: "amount",
+  note: "reason",
+  reason: "reason",
+};
+
+/**
+ * Where a refused money write is said (TASK-1984, forms convention Rule 6):
+ * under the input it is about — a coded refusal naming one (overpayment
+ * without a reason, a refund above what was paid) or a 400's `fieldErrors` —
+ * and in the dialog's banner ONLY when no input can carry it. Never both.
+ *
+ * The dialogs are `useState` forms, so this returns messages rather than
+ * calling `setError`. The stale 409 is the caller's (it closes the dialog).
+ */
+export function placeMoneyRefusal(error: unknown): {
+  fields: Partial<Record<MoneyField, string>>;
+  banner: string | null;
+} {
+  const coded = CODED_FIELD[apiErrorCode(error) ?? ""];
+  if (coded) {
+    return { fields: { [coded]: moneyWriteErrorMessage(error) }, banner: null };
+  }
+
+  if (apiErrorStatus(error) === 400) {
+    const fields: Partial<Record<MoneyField, string>> = {};
+    // `mapServerFieldErrors` does not say what it left unplaced, so the RHF
+    // variant is fed a collecting `setError` — the remainder decides the banner.
+    const collect = ((name: MoneyField, { message }: { message?: string }) => {
+      fields[name] = message ?? dict.forms.invalid;
+    }) as unknown as UseFormSetError<Record<MoneyField, string>>;
+    const { mapped, unmapped } = applyServerFieldErrors(
+      error,
+      collect,
+      MONEY_FIELD_MAP,
+      { amount: dict.orderMoney.amountInvalid },
+    );
+    if (mapped.length > 0) {
+      return {
+        fields,
+        banner: unmapped.length > 0 ? moneyWriteErrorMessage(error) : null,
+      };
+    }
+  }
+
+  return { fields: {}, banner: moneyWriteErrorMessage(error) };
 }
 
 /**

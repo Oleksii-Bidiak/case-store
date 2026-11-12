@@ -39,14 +39,30 @@ describe("repairErrorOf — the repair-step refusals in Ukrainian (TASK-2045)", 
     ).toEqual({ kind: "toast", message: d.repairStepInvalid, refetch: true });
   });
 
-  it("puts a DTO refusal under the field it names", () => {
+  it("puts a DTO refusal under the field it names (fieldErrors, TASK-1984)", () => {
+    expect(
+      repairErrorOf({
+        response: {
+          status: 400,
+          data: {
+            statusCode: 400,
+            error: "Bad Request",
+            message: ["ttn must be shorter than or equal to 64 characters"],
+            fieldErrors: [{ field: "ttn", constraint: "maxLength" }],
+          },
+        },
+      }),
+    ).toEqual({ kind: "field", field: "ttn", message: d.repairTtnTooLong });
+  });
+
+  it("no longer reads the field off the English message", () => {
     expect(
       repairErrorOf(
         failure(400, "Bad Request", [
           "ttn must be shorter than or equal to 64 characters",
         ]),
       ),
-    ).toEqual({ kind: "field", field: "ttn", message: d.repairTtnTooLong });
+    ).toEqual({ kind: "toast", message: d.repairFailed, refetch: false });
   });
 
   it("says the return is gone on a 404", () => {

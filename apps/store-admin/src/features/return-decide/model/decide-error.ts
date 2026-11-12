@@ -4,13 +4,23 @@ import {
   returnRemainingOf,
 } from "@/entities/return";
 import { dict } from "@/shared/config";
-import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { apiErrorStatus } from "@/shared/lib";
+import {
+  mapServerFieldErrors,
+  type ServerFieldMap,
+} from "@/shared/lib/form-errors";
 
 const d = dict.returns;
 
+/** `DecideReturnDto` path → the form field. */
+const DECIDE_FIELD_MAP: ServerFieldMap = {
+  reason: "reason",
+  decision: "decision",
+};
+
 /** Where a refusal of the decision belongs on screen. */
 export type DecideErrorOutcome =
-  | { kind: "field"; field: "reason"; message: string }
+  | { kind: "field"; field: "reason" | "decision"; message: string }
   | {
       kind: "toast";
       message: string;
@@ -75,9 +85,19 @@ export function decideErrorOf(error: unknown): DecideErrorOutcome {
   if (status === 404) {
     return { kind: "toast", message: d.refusalNotFound, refetch: true };
   }
-  // A DTO refusal names its field (TASK-956) — the only free-text one here.
-  if (status === 400 && /\breason\b/.test(apiErrorMessage(error) ?? "")) {
-    return { kind: "field", field: "reason", message: d.decideReasonTooLong };
+  // A DTO refusal names its field in `fieldErrors` (TASK-1984 Rule 6b) — it
+  // used to be read off the English message with a regex.
+  if (status === 400) {
+    const fields = mapServerFieldErrors(error, DECIDE_FIELD_MAP, {
+      reason: d.decideReasonTooLong,
+      decision: d.decideDecisionRequired,
+    });
+    if (fields.reason) {
+      return { kind: "field", field: "reason", message: fields.reason };
+    }
+    if (fields.decision) {
+      return { kind: "field", field: "decision", message: fields.decision };
+    }
   }
 
   return FAILED;

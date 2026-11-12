@@ -382,6 +382,43 @@ describe("ReturnCreateAction — the dialog (TASK-1963)", () => {
     );
   });
 
+  // TASK-1984 Rule 6b: a DTO refusal of the comment goes under the comment.
+  it("puts a server refusal of the comment under it — not in the banner", async () => {
+    stubCreate(() =>
+      HttpResponse.json(
+        {
+          statusCode: 400,
+          error: "Bad Request",
+          message: "reason must be shorter",
+          fieldErrors: [{ field: "reason", constraint: "maxLength" }],
+        },
+        { status: 400 },
+      ),
+    );
+    renderWithProviders(<ReturnCreateAction order={makeOrder()} />, {
+      auth: WRITER,
+    });
+    const dialog = await openDialog();
+
+    await userEvent.click(
+      await within(dialog).findByRole("button", {
+        name: d.createIncrease("Кабель"),
+      }),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.createSubmit }),
+    );
+
+    const comment = within(dialog).getByLabelText(d.reasonOperator);
+    await waitFor(() =>
+      expect(comment).toHaveAttribute("aria-invalid", "true"),
+    );
+    expect(within(dialog).getAllByRole("alert")).toHaveLength(1);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      dict.forms.tooLong,
+    );
+  });
+
   it("opens from the outside in controlled mode", async () => {
     renderWithProviders(
       <ReturnCreateAction order={makeOrder()} open onOpenChange={jest.fn()} />,
