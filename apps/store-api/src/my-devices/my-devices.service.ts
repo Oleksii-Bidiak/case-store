@@ -12,6 +12,8 @@ function normalizeLabel(label: string | null | undefined): string | null {
   return trimmed ? trimmed.slice(0, MAX_DEVICE_LABEL_LENGTH) : null;
 }
 
+const isLater = (a: Date, b: Date): boolean => a.getTime() > b.getTime();
+
 /** Newest first; the list never grows past {@link MAX_MY_DEVICES}. */
 function newestFirst(devices: StoredDevice[]): StoredDevice[] {
   return [...devices]
@@ -41,10 +43,9 @@ export function mergeDeviceStates(
     byModel.set(device.modelId, {
       modelId: device.modelId,
       label: device.label ?? existing.label,
-      lastUsedAt:
-        device.lastUsedAt.getTime() > existing.lastUsedAt.getTime()
-          ? device.lastUsedAt
-          : existing.lastUsedAt,
+      lastUsedAt: isLater(device.lastUsedAt, existing.lastUsedAt)
+        ? device.lastUsedAt
+        : existing.lastUsedAt,
     });
   }
   return {
@@ -92,7 +93,7 @@ export class MyDevicesService {
         lastUsedAt: new Date(input.lastUsedAt),
       };
       const existing = byModel.get(device.modelId);
-      if (!existing || device.lastUsedAt.getTime() > existing.lastUsedAt.getTime()) {
+      if (!existing || isLater(device.lastUsedAt, existing.lastUsedAt)) {
         byModel.set(device.modelId, device);
       }
     }
