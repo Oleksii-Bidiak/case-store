@@ -8,8 +8,9 @@ import { PromoNewsletter } from "./promo-newsletter";
 
 /**
  * Id of the «Товари зі знижкою» section: the hero CTA jumps to it, and the
- * listing in the `deals` slot points every URL it writes back at it
- * (`ProductListView` `anchorId`, TASK-1301) so a filter click stays on the deals.
+ * listing in the `deals` slot points its page links and category-tree links
+ * at it (`ProductListView` `anchorId`, TASK-1301). Filter, sort and view
+ * changes need no anchor: they keep the scroll position (TASK-2414).
  */
 export const PROMO_DEALS_ANCHOR = "deals";
 
