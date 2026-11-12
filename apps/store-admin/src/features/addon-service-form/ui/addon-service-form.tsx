@@ -25,6 +25,7 @@ import { formatCurrency } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
 import {
+  ADDON_DESCRIPTION_DTO_MAX,
   ADDON_DESCRIPTION_MAX,
   ADDON_NAME_MAX,
   addonServiceSchemaFor,
@@ -203,6 +204,7 @@ function EditableAddonServiceForm({
           <Textarea
             id="addon-description"
             rows={2}
+            maxLength={ADDON_DESCRIPTION_DTO_MAX}
             placeholder={f.descriptionPlaceholder}
             aria-invalid={errors.description ? true : undefined}
             aria-describedby={describedBy(

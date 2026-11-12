@@ -703,6 +703,7 @@ function CategoryDeleteForm({
   const nameErrorId = `${baseId}-name-error`;
   const parentInputId = `${baseId}-parent`;
   const parentHintId = `${baseId}-parent-hint`;
+  const parentErrorId = `${baseId}-parent-error`;
   const consequencesId = `${baseId}-consequences`;
   const hasChildren = impact.subcategoryCount > 0;
 
@@ -849,10 +850,20 @@ function CategoryDeleteForm({
                       // parent — it stays, nothing else is offered.
                       disabled={busy || treeFailed}
                       showSelectedPath
-                      aria-describedby={parentHintId}
+                      // A server 400 on `moveToNew.parentId` is placed here
+                      // (TASK-1984, Rule 6a) — never on a field with no message.
+                      aria-invalid={errors.parentId ? true : undefined}
+                      aria-describedby={
+                        errors.parentId
+                          ? `${parentHintId} ${parentErrorId}`
+                          : parentHintId
+                      }
                     />
                   )}
                 />
+                <FieldError id={parentErrorId}>
+                  {errors.parentId?.message}
+                </FieldError>
                 <p id={parentHintId} className="text-xs text-muted-foreground">
                   {d.newParentHint(name)}
                 </p>

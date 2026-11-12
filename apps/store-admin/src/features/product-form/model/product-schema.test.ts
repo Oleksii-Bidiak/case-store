@@ -1,5 +1,22 @@
 import { dict } from "@/shared/config";
-import { productSchema } from "./product-schema";
+import { PRODUCT_LIMITS, productSchema } from "./product-schema";
+
+describe("product form — the OG image link keeps the DTO's 2048 cap (TASK-1984)", () => {
+  const { ogImage } = productSchema.shape;
+  const base = "https://cdn.example.com/";
+  const url = (length: number) => base + "a".repeat(length - base.length);
+
+  it("accepts a link of exactly PRODUCT_LIMITS.ogImage characters", () => {
+    expect(ogImage.safeParse(url(PRODUCT_LIMITS.ogImage)).success).toBe(true);
+  });
+
+  it("refuses a longer one under the field, as @MaxLength would", () => {
+    expect(
+      ogImage.safeParse(url(PRODUCT_LIMITS.ogImage + 1)).error?.issues[0]
+        ?.message,
+    ).toBe(dict.seoFields.errors.ogImageMax(PRODUCT_LIMITS.ogImage));
+  });
+});
 
 /**
  * TASK-808 (the front half of TASK-397). The form posts back the category,

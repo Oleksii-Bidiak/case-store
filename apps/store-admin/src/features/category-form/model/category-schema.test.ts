@@ -1,5 +1,26 @@
 import { dict } from "@/shared/config";
-import { categoryFormValuesToDto, categorySchema } from "./category-schema";
+import {
+  CATEGORY_LIMITS,
+  categoryFormValuesToDto,
+  categorySchema,
+} from "./category-schema";
+
+describe("category form — the OG image link keeps the DTO's 2048 cap (TASK-1984)", () => {
+  const { ogImage } = categorySchema.shape;
+  const base = "https://cdn.example.com/";
+  const url = (length: number) => base + "a".repeat(length - base.length);
+
+  it("accepts a link of exactly CATEGORY_LIMITS.ogImage characters", () => {
+    expect(ogImage.safeParse(url(CATEGORY_LIMITS.ogImage)).success).toBe(true);
+  });
+
+  it("refuses a longer one under the field, as @MaxLength would", () => {
+    expect(
+      ogImage.safeParse(url(CATEGORY_LIMITS.ogImage + 1)).error?.issues[0]
+        ?.message,
+    ).toBe(dict.seoFields.errors.ogImageMax(CATEGORY_LIMITS.ogImage));
+  });
+});
 
 /**
  * TASK-808. `parentId` is an id the form read off the database (a legacy seed

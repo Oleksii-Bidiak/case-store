@@ -28,6 +28,12 @@ const e = dict.addonServiceForm.errors;
  */
 export const ADDON_DESCRIPTION_MAX = 300;
 
+/**
+ * The DTOs' own `@MaxLength(2000)` on `description` — the textarea's hard
+ * `maxLength` (Rule 5d): past 300 the schema speaks, past 2000 nothing types.
+ */
+export const ADDON_DESCRIPTION_DTO_MAX = 2000;
+
 /** The DTOs' `@MaxLength(255)` on `name` (create-addon-service.dto.ts). */
 export const ADDON_NAME_MAX = 255;
 
@@ -95,7 +101,9 @@ export const addonServiceSchemaFor = (savedDescription?: string | null) =>
     // TASK-1984 (Rule 5e): the money helper, never `Number(x)` alone —
     // «Infinity» / «1e3» are refused here, not by the API's `@IsNumber()`. The
     // floor is the DTO's `@Min(0)`; a minus sign is not an amount at all.
-    // Stricter on purpose (Rule 5f): at most two decimals (money).
+    // Stricter on purpose (Rule 5f): at most two decimals (money), and
+    // `parseKop`'s int4-kopeck ceiling (~21.4 M ₴) where the DTO has no
+    // `@Max` — far above any service price.
     price: z
       .string()
       .trim()

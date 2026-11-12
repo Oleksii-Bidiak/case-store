@@ -372,6 +372,16 @@ export function ProductForm({
     onUploaded: (url) =>
       setValue("ogImage", url, { shouldDirty: true, shouldValidate: true }),
   });
+  // TASK-1984 (Rule 5d): the DTO's cap set on the link input itself —
+  // `ContentImageField`'s `urlInputProps` has no `maxLength`.
+  const ogImageRegistration = register("ogImage");
+  const ogImageInput = {
+    ...ogImageRegistration,
+    ref: (element: HTMLInputElement | null) => {
+      ogImageRegistration.ref(element);
+      if (element) element.maxLength = PRODUCT_LIMITS.ogImage;
+    },
+  };
 
   // TASK-236: leaves of the FULL admin tree (inactive ones included).
   const categoriesQuery = useCategoryControllerGetAdminTree();
@@ -973,7 +983,7 @@ export function ProductForm({
                   )}
                   copy={dict.seoFields.ogImageUpload}
                   value={ogImageValue}
-                  urlInput={register("ogImage")}
+                  urlInput={ogImageInput}
                   onRemove={() =>
                     setValue("ogImage", "", {
                       shouldDirty: true,

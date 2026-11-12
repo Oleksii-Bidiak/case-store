@@ -1643,6 +1643,43 @@ describe("CategoryDeleteDialog — refusals keep the choice (ДН-2.8)", () => {
     ).toHaveAttribute("aria-invalid", "true");
   });
 
+  it("a server 400 on the new parent is shown under the parent field (TASK-1984)", async () => {
+    const user = userEvent.setup();
+    stub({
+      respond: () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "Bad Request",
+            message: ["moveToNew.parentId must be a UUID"],
+            fieldErrors: [
+              { field: "moveToNew.parentId", constraint: "isUuid" },
+            ],
+          },
+          { status: 400 },
+        ),
+    });
+    renderDialog();
+    await ready();
+    await user.click(screen.getByRole("radio", { name: d.modeNew }));
+    await user.type(
+      screen.getByRole("textbox", { name: /Назва нової/ }),
+      "Аудіо",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Видалити й перенести 15 товарів" }),
+    );
+
+    // Placed on the field, so the box stays away — and the message is
+    // rendered, not set on a field nobody can see.
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(dict.forms.invalid);
+    expect(screen.queryByText(d.errorTitle)).not.toBeInTheDocument();
+    const parent = screen.getByRole("combobox", { name: d.newParent });
+    expect(parent).toHaveAttribute("aria-invalid", "true");
+    expect(parent.getAttribute("aria-describedby")).toContain(alert.id);
+  });
+
   it("403 in «Створити нову» says the write permission is missing", async () => {
     const user = userEvent.setup();
     stub({

@@ -7543,6 +7543,9 @@ export const dict = {
       keywordLength: (max: number) =>
         `Один тег має містити не більше ${max} символів`,
       ogImageUrl: "Вкажіть коректний URL картинки (http:// або https://)",
+      // TASK-1984: `IsOgImageField`'s @MaxLength(OG_IMAGE_MAX_LENGTH).
+      ogImageMax: (max: number) =>
+        `Посилання на картинку задовге (максимум ${max} символів)`,
       // TASK-811: one copy for all eight entity forms (was eight/five copies,
       // one of which had already drifted to a different wording).
       slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",

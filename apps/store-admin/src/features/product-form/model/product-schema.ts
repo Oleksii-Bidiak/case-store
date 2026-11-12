@@ -17,14 +17,17 @@ const seoErrors = dict.seoFields.errors;
 /**
  * The DTO's `@MaxLength` caps (`apps/store-api/src/product/dto/create-product
  * .dto.ts`; `description` is its `MAX_DESCRIPTION_LENGTH` from
- * `product.constants.ts`) — the schema's `.max()` and the inputs' `maxLength`
- * both read them (TASK-1984, forms Rule 5d).
+ * `product.constants.ts`; `ogImage` is `OG_IMAGE_MAX_LENGTH` of
+ * `IsOgImageField` in `apps/store-api/src/common/validators/seo-fields
+ * .decorator.ts`) — the schema's `.max()` and the inputs' `maxLength` both read
+ * them (TASK-1984, forms Rule 5d).
  */
 export const PRODUCT_LIMITS = {
   name: 255,
   slug: 255,
   description: 20_000,
   sku: 50,
+  ogImage: 2048,
 } as const;
 
 /** `@Min(0.01)` on `price` / `compareAtPrice` (create-product.dto.ts), in kopecks. */
@@ -183,7 +186,12 @@ export const productSchema = z.object({
       seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
     ),
 
-  ogImage: ogImageField(),
+  // `ogImageField` checks the URL rule only; the cap is the DTO's
+  // `IsOgImageField` → `@MaxLength(OG_IMAGE_MAX_LENGTH)` (Rule 5d).
+  ogImage: ogImageField().refine(
+    (value) => value === undefined || value.length <= PRODUCT_LIMITS.ogImage,
+    seoErrors.ogImageMax(PRODUCT_LIMITS.ogImage),
+  ),
 });
 
 export type ProductFormInput = z.input<typeof productSchema>;

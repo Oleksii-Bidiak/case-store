@@ -259,6 +259,16 @@ export function CategoryForm({
     onUploaded: (url) =>
       setValue("ogImage", url, { shouldDirty: true, shouldValidate: true }),
   });
+  // TASK-1984 (Rule 5d): the DTO's cap set on the link input itself —
+  // `ContentImageField`'s `urlInputProps` has no `maxLength`.
+  const ogImageRegistration = register("ogImage");
+  const ogImageInput = {
+    ...ogImageRegistration,
+    ref: (element: HTMLInputElement | null) => {
+      ogImageRegistration.ref(element);
+      if (element) element.maxLength = CATEGORY_LIMITS.ogImage;
+    },
+  };
 
   // Live SERP preview (TASK-268): resolve the exact title/description the
   // storefront would render for this category page through the same three-tier
@@ -708,7 +718,7 @@ export function CategoryForm({
                   )}
                   copy={dict.seoFields.ogImageUpload}
                   value={ogImageValue}
-                  urlInput={register("ogImage")}
+                  urlInput={ogImageInput}
                   onRemove={() =>
                     setValue("ogImage", "", {
                       shouldDirty: true,

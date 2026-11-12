@@ -65,6 +65,19 @@ describe("AddonServiceForm (wave 198)", () => {
     expect(screen.getByText(f.descriptionHint)).toBeInTheDocument();
   });
 
+  it("caps the inputs at the DTO's @MaxLength (TASK-1984, Rule 5d)", () => {
+    renderForm();
+
+    expect(screen.getByRole("textbox", { name: f.name })).toHaveAttribute(
+      "maxLength",
+      "255",
+    );
+    // 300 is the schema's (stricter, Rule 5f); 2000 is the DTO's hard cap.
+    expect(
+      screen.getByRole("textbox", { name: f.description }),
+    ).toHaveAttribute("maxLength", "2000");
+  });
+
   it("draws «₴» inside the price field and the hint under it", () => {
     renderForm();
 

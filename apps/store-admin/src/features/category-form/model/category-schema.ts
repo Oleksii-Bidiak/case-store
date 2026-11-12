@@ -26,13 +26,15 @@ const seoErrors = dict.seoFields.errors;
 
 /**
  * The DTO's `@MaxLength` caps (`apps/store-api/src/category/dto/create-category
- * .dto.ts`) — read by the schema and by the inputs' `maxLength` (TASK-1984,
- * Rule 5d).
+ * .dto.ts`; `ogImage` is `OG_IMAGE_MAX_LENGTH` of `IsOgImageField` in
+ * `apps/store-api/src/common/validators/seo-fields.decorator.ts`) — read by the
+ * schema and by the inputs' `maxLength` (TASK-1984, Rule 5d).
  */
 export const CATEGORY_LIMITS = {
   name: 255,
   slug: 255,
   description: 2000,
+  ogImage: 2048,
 } as const;
 
 /** `CreateCategoryDto` / `UpdateCategoryDto` paths → form fields (Rule 6b). */
@@ -156,7 +158,12 @@ export const categorySchema = z.object({
       seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
     ),
 
-  ogImage: ogImageField(),
+  // `ogImageField` checks the URL rule only; the cap is the DTO's
+  // `IsOgImageField` → `@MaxLength(OG_IMAGE_MAX_LENGTH)` (Rule 5d).
+  ogImage: ogImageField().refine(
+    (value) => value === undefined || value.length <= CATEGORY_LIMITS.ogImage,
+    seoErrors.ogImageMax(CATEGORY_LIMITS.ogImage),
+  ),
 });
 
 export type CategoryFormInput = z.input<typeof categorySchema>;

@@ -141,7 +141,8 @@ export function ProductAddonDeltaPanel({
    * The typed price as the DTO's number, or `null` with the reason under the
    * field. The money helper, never `Number(x)` (Rule 5e): `AddonDeltaPrice
    * Constraint` wants a finite number ≥ 0, so «1e3» or a minus is refused here.
-   * Stricter on purpose (Rule 5f): at most two decimals — it is money.
+   * Stricter on purpose (Rule 5f): at most two decimals — it is money — and
+   * `parseKop`'s int4-kopeck ceiling (~21.4 M ₴), where the DTO has no bound.
    */
   const readPrice = (): number | null => {
     const kop = priceDraft.trim().startsWith("-") ? null : parseKop(priceDraft);
