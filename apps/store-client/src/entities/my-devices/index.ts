@@ -1,6 +1,7 @@
 // «Мої пристрої» entity (TASK-2074): the browser-local list of the shopper's
-// devices — any number, ordered by last use, the first one active. Client-only
-// (localStorage `my-devices:v1`); account sync is TASK-1959.
+// devices — any number, ordered by last use, the first one active. Read from
+// localStorage `my-devices:v1`; for a signed-in shopper that is a mirror of the
+// account, kept in sync by features/my-devices-sync (TASK-1959).
 export {
   EMPTY_DEVICES,
   MAX_DEVICE_LABEL_LENGTH,
@@ -22,9 +23,20 @@ export {
   clearMyDevices,
   readMyDevices,
   removeDevice,
+  replaceMyDevices,
   setActiveDevice,
   setDeviceLabelById as setLabel,
 } from "./model/my-devices-storage";
+
+// Account mirror (TASK-1959): the shopper's own edits vs the server state
+// applied locally, and whose account the local copy belongs to.
+export { subscribeMyDevicesEdits } from "./model/my-devices-edits";
+export {
+  MY_DEVICES_OWNER_STORAGE_KEY,
+  hasLocalMyDevicesState,
+  readMyDevicesOwner,
+  writeMyDevicesOwner,
+} from "./model/my-devices-owner";
 
 // Device → store input (family resolved once) and the single picker's
 // open command, callable from any layer above entities (TASK-2070).
@@ -57,6 +69,7 @@ export {
   catalogFilterDefault,
   parseMyDevicesSettings,
   readMyDevicesSettings,
+  replaceMyDevicesSettings,
   updateMyDevicesSettings,
   type CompatScope,
   type MyDevicesSettings,

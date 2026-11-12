@@ -13,6 +13,8 @@
 // by the server page app/devices, and a hook here would break the RSC build.
 // The hook lives in the "use client" module ./use-my-devices-settings.
 
+import { notifyMyDevicesEdit } from "./my-devices-edits";
+
 export const MY_DEVICES_SETTINGS_STORAGE_KEY = "my-devices-settings:v1";
 
 export type CompatScope = "active" | "all";
@@ -84,14 +86,27 @@ function readRaw(): string | null {
   }
 }
 
-function writeRaw(raw: string): void {
+function writeRaw(raw: string | null): void {
   memoryRaw = raw;
   if (useMemory) return;
   try {
-    window.localStorage.setItem(MY_DEVICES_SETTINGS_STORAGE_KEY, raw);
+    if (raw === null) {
+      window.localStorage.removeItem(MY_DEVICES_SETTINGS_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(MY_DEVICES_SETTINGS_STORAGE_KEY, raw);
+    }
   } catch {
     useMemory = true;
   }
+}
+
+/**
+ * Whether this browser ever stored settings — i.e. the shopper touched the
+ * panel. The account sync merges only what was actually chosen (TASK-1959).
+ */
+export function hasStoredMyDevicesSettings(): boolean {
+  if (typeof window === "undefined") return false;
+  return readRaw() !== null;
 }
 
 let cachedRaw: string | null = null;
@@ -141,6 +156,28 @@ export function updateMyDevicesSettings(
     return;
   }
   writeRaw(JSON.stringify(next));
+  for (const listener of listeners) listener();
+  // The shopper's own change — the account sync pushes it (TASK-1959).
+  notifyMyDevicesEdit();
+}
+
+/**
+ * Apply settings that came FROM the account (TASK-1959) without reporting an
+ * edit — no echo back to the server. `null` forgets them (back to defaults).
+ */
+export function replaceMyDevicesSettings(
+  settings: Readonly<MyDevicesSettings> | null,
+): void {
+  if (typeof window === "undefined") return;
+  const raw =
+    settings === null
+      ? null
+      : JSON.stringify({
+          compatOnly: settings.compatOnly,
+          compatScope: settings.compatScope,
+        });
+  if (raw === readRaw()) return;
+  writeRaw(raw);
   for (const listener of listeners) listener();
 }
 

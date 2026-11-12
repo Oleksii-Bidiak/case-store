@@ -90,7 +90,7 @@ describe("replaceMyDevices — the server state applied locally", () => {
 describe("subscribeMyDevicesEdits — the shopper's own changes", () => {
   it.each([
     ["addDevice", () => addDevice(IPHONE)],
-    ["setActiveDevice", () => setActiveDevice("m-galaxy")],
+    ["setActiveDevice", () => setActiveDevice("m-iphone")],
     ["removeDevice", () => removeDevice("m-galaxy")],
     ["setLabel", () => setLabel("m-galaxy", "Тато")],
     ["clearMyDevices", () => clearMyDevices()],
