@@ -6,3 +6,7 @@ export {
   type BlogCategoryFormInput,
   type BlogCategoryFormValues,
 } from "./model/blog-category-schema";
+export {
+  placeBlogCategorySaveError,
+  type BlogCategoryFormSetError,
+} from "./model/save-error";

@@ -57,6 +57,7 @@ import {
 } from "@/shared/ui";
 import { toast } from "@/shared/ui/toast";
 import { cn } from "@/shared/lib/utils";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import { dict } from "@/shared/config";
 import {
   MAX_TABS,
@@ -69,6 +70,8 @@ import {
   toCreateDto,
   toUpdateDto,
   validateDraft,
+  homeBlockSaveErrors,
+  TITLE_MAX_LENGTH,
   type BlockShow,
   type CreatableBlockType,
   type HomeBlockDraft,
@@ -191,8 +194,12 @@ export function HomeBlockDialog({
       } else {
         await create.mutateAsync({ data: toCreateDto(draft) });
       }
-    } catch {
-      toast.error(t.toastFailed);
+    } catch (error) {
+      // TASK-1984 Rule 6b: a refused field lands under it; anything else is a
+      // toast in the server's words.
+      const { fields, placed } = homeBlockSaveErrors(error);
+      setErrors(fields);
+      if (!placed) toast.error(refusalMessage(error) ?? t.toastFailed);
       return;
     }
     void queryClient.invalidateQueries({
@@ -350,6 +357,7 @@ export function HomeBlockDialog({
                   id={ids.title}
                   value={draft.title}
                   onChange={(event) => patch({ title: event.target.value })}
+                  maxLength={TITLE_MAX_LENGTH}
                   required
                   aria-invalid={errors.title ? true : undefined}
                   aria-describedby={cn(

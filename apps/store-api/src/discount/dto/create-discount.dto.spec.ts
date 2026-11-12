@@ -34,3 +34,26 @@ describe('UpdateDiscountDto — minSpend', () => {
     expect(await errorsFor(UpdateDiscountDto, { minSpend: null })).toEqual([]);
   });
 });
+
+describe('CreateDiscountDto — money ceiling (TASK-1984)', () => {
+  const fixed = { ...base, type: 'FIXED' };
+
+  it('accepts the largest amount Decimal(10, 2) holds', async () => {
+    expect(
+      await errorsFor(CreateDiscountDto, {
+        ...fixed,
+        value: 99_999_999.99,
+        minSpend: 99_999_999.99,
+      }),
+    ).toEqual([]);
+  });
+
+  it('refuses an amount above it instead of overflowing the column', async () => {
+    const errors = await errorsFor(CreateDiscountDto, {
+      ...fixed,
+      value: 100_000_000,
+      minSpend: 100_000_000,
+    });
+    expect(errors).toEqual(expect.arrayContaining(['value', 'minSpend']));
+  });
+});

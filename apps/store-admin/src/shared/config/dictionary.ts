@@ -2405,6 +2405,10 @@ export const dict = {
       decimalsMax: "Не більше двох знаків після коми",
       // DiscountsProposal ПК4: a cap of 0 is not «no cap» — say what it means.
       capZero: "0 означає «нікому». Залиште порожнім, якщо ліміту немає.",
+      // TASK-1984: `parseKop` refused it (Infinity, 1e3, above 21 474 836,47).
+      amountInvalid: "Вкажіть суму, наприклад 150 або 99,50",
+      // TASK-1984: the API's 400 DISCOUNT_CODE_TAKEN, under the code field.
+      codeTaken: "Такий код уже є в іншого промокоду. Оберіть інший.",
     },
     // TASK-795: the window is a pair of KYIV calendar days, inclusive.
     datesHint:
@@ -2590,6 +2594,9 @@ export const dict = {
       slugMax: "Slug має містити не більше 255 символів",
       excerptMax: "Короткий опис має містити не більше 500 символів",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої сторінки",
+      // TASK-1984: the API would publish a past schedule at once, silently.
+      scheduledAtPast:
+        "Цей час уже минув. Оберіть момент у майбутньому або статус «Опубліковано».",
       // TASK-435 — a hub row whose slug names no hub renders nowhere.
       hubSlugRequired: "Оберіть розділ, для якого задаються мета-теги",
     },
@@ -2773,6 +2780,14 @@ export const dict = {
       coverUrl: "Вкажіть коректний URL обкладинки",
       readingInt: "Час читання має бути додатним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої статті",
+      // TASK-1984: the API's 409 BLOG_POST_SLUG_CONFLICT, under the slug.
+      slugTaken: "Ця адреса вже зайнята іншою статтею. Змініть slug.",
+      // TASK-1984: the API would publish a past schedule at once, silently.
+      scheduledAtPast:
+        "Цей час уже минув. Оберіть момент у майбутньому або статус «Опубліковано».",
+      // TASK-1984: the DTO's `@MaxLength(2048)` on the cover link.
+      coverUrlMax: (max: number) =>
+        `Посилання на обкладинку має містити не більше ${max} символів`,
       contentMax: (max: string) =>
         `Текст задовгий — сайт приймає до ${max} символів розмітки`,
     },
@@ -2904,6 +2919,8 @@ export const dict = {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 120 символів",
       slugMax: "Адреса має містити не більше 255 символів",
+      // TASK-1984: the API's 409 BLOG_CATEGORY_SLUG_CONFLICT, under the slug.
+      slugTaken: "Ця адреса вже зайнята іншою рубрикою. Змініть її.",
     },
     // --- Wave 198, BlogCategoriesProposal КБ4 (TASK-1072) --------------------
     slugPrefix: "/blog?category=",
@@ -3048,6 +3065,9 @@ export const dict = {
       ctaHrefMax: "Посилання кнопки має містити не більше 2048 символів",
       themeMax: "Тема має містити не більше 50 символів",
       scheduledAtRequired: "Вкажіть дату публікації для запланованого банера",
+      // TASK-1984: the API would publish a past schedule at once, silently.
+      scheduledAtPast:
+        "Цей час уже минув. Оберіть момент у майбутньому або статус «Опубліковано».",
       // TASK-429: an end before the start is not a window.
       scheduledUntilBeforeStart:
         "Дата зняття має бути пізніше за дату публікації",
@@ -4280,6 +4300,10 @@ export const dict = {
     // The reply dialog (В8): the 1000-character limit, counted as you type.
     replyHint: "Відповідь з'явиться під відгуком одразу після публікації.",
     replyCounter: (length: number, max: number) => `${length} / ${max}`,
+    // TASK-1984: the DTO's `@IsNotEmpty` / `@MaxLength(1000)`, under the field.
+    replyRequired: "Напишіть відповідь — порожню опублікувати не можна.",
+    replyTooLong: (max: number) =>
+      `Відповідь має містити не більше ${max} символів`,
     // «Сигнали накрутки» (В3, TASK-1004): the explanation card over the series
     // the dashboard links to. Counted from the rows the API returned.
     abuseTitleProduct: (count: string, span: string, product: string) =>
@@ -4334,6 +4358,9 @@ export const dict = {
     fieldOrderRef: "Замовлення",
     fieldAdminNote: "Внутрішня примітка",
     adminNotePlaceholder: "Примітка для команди (не бачить клієнт)…",
+    // TASK-1984: the DTO's `@MaxLength(2000)`, under the note.
+    adminNoteTooLong: (max: number) =>
+      `Примітка має містити не більше ${max} символів`,
     markRead: "Позначити прочитаним",
     markArchived: "В архів",
     markNew: "Повернути в нові",
@@ -7242,6 +7269,9 @@ export const dict = {
       categoryRequired: "Оберіть категорію для джерела «Категорія»",
       itemLimitRange: "Кількість товарів має бути цілим числом від 1 до 24",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої каруселі",
+      // TASK-1984: the API would publish a past schedule at once, silently.
+      scheduledAtPast:
+        "Цей час уже минув. Оберіть момент у майбутньому або статус «Опубліковано».",
     },
 
     // Wave 198 (TASK-1074, CarouselsProposal КР5–КР8).
@@ -8603,6 +8633,9 @@ export const dict = {
     errors: {
       carouselRequired: "Оберіть карусель",
       titleRequired: "Вкажіть заголовок блоку",
+      // TASK-1984: the DTO's `@MaxLength(255)` on a tabs block's title.
+      titleMax: (max: number) =>
+        `Заголовок має містити не більше ${max} символів`,
       tabsRequired: "Додайте хоча б одну вкладку",
       tabsTooMany: (max: number) => `Не більше ${max} вкладок в одному блоці`,
       scheduledAtRequired: "Вкажіть дату й час показу",

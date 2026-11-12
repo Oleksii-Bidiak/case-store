@@ -76,6 +76,38 @@ describe("FaqFormDialog — create (ЧП5)", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
+  // TASK-1984 Rule 6b: a server 400 lands under the field it names, the dialog
+  // stays open and no toast repeats it.
+  it("puts a refused answer under the answer field", async () => {
+    server.use(
+      http.post("*/api/admin/faq", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "Bad Request",
+            message: "Answer must be at most 5000 characters",
+            fieldErrors: [{ field: "answer", constraint: "maxLength" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    const { onOpenChange } = renderDialog();
+
+    await userEvent.type(questionField(), "Як оплатити?");
+    await userEvent.type(answerField(), "Карткою.");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.faq.createSubmit }),
+    );
+
+    expect(await screen.findByText(dict.forms.tooLong)).toBeInTheDocument();
+    expect(answerField()).toHaveAttribute("aria-invalid", "true");
+    expect(
+      jest.requireMock("@/shared/ui/toast").toast.error,
+    ).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
   it("names what is missing above the form and under each field", async () => {
     renderDialog();
 

@@ -24,10 +24,12 @@ import { FormSectionCard } from "@/shared/ui/form-section-card";
 import { cn, formatCurrency } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import {
+  DISCOUNT_CODE_MAX_LENGTH,
   discountSchema,
   type DiscountFormInput,
   type DiscountFormValues,
 } from "../model/discount-schema";
+import type { DiscountFormSetError } from "../model/save-error";
 import { generateDiscountCode } from "../model/generate-code";
 
 const f = dict.discountForm;
@@ -40,7 +42,14 @@ interface DiscountFormProps {
   /** Edit mode: re-seeded by `id`. Create mode: a synchronous seed (the copy
    *  «Дублювати» opens with), read once on mount. */
   defaultValues?: Partial<DiscountFormInput>;
-  onSubmit: (values: DiscountFormValues) => void;
+  /**
+   * The page's save. `setError` is how a server refusal lands under its field
+   * (TASK-1984, Rule 6b) — hand it to `placeDiscountSaveError`.
+   */
+  onSubmit: (
+    values: DiscountFormValues,
+    setError: DiscountFormSetError,
+  ) => void;
   isPending: boolean;
   submitLabel?: string;
   /** In edit mode the code is immutable — old mailings and banners keep working. */
@@ -271,6 +280,7 @@ function EditableDiscountForm({
     handleSubmit,
     reset,
     setValue,
+    setError,
     formState: { errors, dirtyFields, submitCount },
   } = useForm<DiscountFormInput, unknown, DiscountFormValues>({
     resolver: zodResolver(discountSchema),
@@ -318,7 +328,7 @@ function EditableDiscountForm({
   const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     // A submit bubbling through a portal (a dialog's own form) is not ours.
     if (event.target !== event.currentTarget) return;
-    void handleSubmit(onSubmit)(event);
+    void handleSubmit((values) => onSubmit(values, setError))(event);
   };
 
   const fieldA11y = (field: FieldName, ...extraIds: (string | undefined)[]) => {
@@ -380,6 +390,7 @@ function EditableDiscountForm({
                   disabled={lockCode}
                   aria-required={!lockCode}
                   className="font-mono uppercase"
+                  maxLength={DISCOUNT_CODE_MAX_LENGTH}
                   {...fieldA11y("code", "discount-code-hint")}
                   {...register("code")}
                 />

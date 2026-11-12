@@ -9,7 +9,8 @@ import { toast } from "@/shared/ui/toast";
 import {
   PageForm,
   pageFormValuesToUpdateDto,
-  pageSaveConflictMessage,
+  placePageSaveError,
+  type PageFormSetError,
   type PageFormInput,
   type PageFormValues,
 } from "@/features/page-form";
@@ -31,6 +32,7 @@ import {
   useConfirmDialog,
 } from "@/shared/ui";
 import { formatKeywords } from "@/shared/lib/seo";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import type { FormSubmitController } from "@/shared/lib/form-submit-controller";
 import {
   dict,
@@ -101,7 +103,10 @@ export function EditPageView({ pageId }: EditPageViewProps) {
     });
   };
 
-  const handleSubmit = async (values: PageFormValues) => {
+  const handleSubmit = async (
+    values: PageFormValues,
+    setError: PageFormSetError,
+  ) => {
     // TASK-285: renaming a PUBLISHED page's slug kills its indexed URL — ask
     // first. A blank slug means "auto-generate" (no rename here).
     const nextSlug = values.slug?.trim();
@@ -130,9 +135,11 @@ export function EditPageView({ pageId }: EditPageViewProps) {
         data: pageFormValuesToUpdateDto(values),
       });
     } catch (error) {
-      toast.error(
-        pageSaveConflictMessage(error, values.kind) ?? d.toastUpdateFailed,
-      );
+      // TASK-1984 Rule 6b: a taken slug or a refused field lands under that
+      // field; anything else is a toast in the server's words.
+      if (!placePageSaveError(error, values.kind, setError)) {
+        toast.error(refusalMessage(error) ?? d.toastUpdateFailed);
+      }
       return false;
     }
     invalidate();

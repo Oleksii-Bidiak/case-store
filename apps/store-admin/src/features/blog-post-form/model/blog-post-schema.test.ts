@@ -146,6 +146,51 @@ describe("blogPostSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  // TASK-1984 (Rule 5): the client half of each DTO rule.
+  it("rejects 0 reading minutes like the DTO's @Min(1)", () => {
+    const result = blogPostSchema.safeParse({
+      ...baseInput,
+      readingMinutes: "0",
+    });
+    expect(result.error?.issues[0].message).toBe(
+      dict.blogPostForm.errors.readingInt,
+    );
+  });
+
+  it.each(["mailto:a@b.c", "javascript:alert(1)", "cdn.example.com/a.jpg"])(
+    "rejects %s as a cover link (absolute http(s) only)",
+    (coverImageUrl) => {
+      const result = blogPostSchema.safeParse({ ...baseInput, coverImageUrl });
+      expect(result.error?.issues[0].message).toBe(
+        dict.blogPostForm.errors.coverUrl,
+      );
+    },
+  );
+
+  it("caps the cover link at the DTO's 2048 characters", () => {
+    const url = (length: number) =>
+      `https://e.com/${"a".repeat(length - "https://e.com/".length)}`;
+    expect(
+      blogPostSchema.safeParse({ ...baseInput, coverImageUrl: url(2048) })
+        .success,
+    ).toBe(true);
+    expect(
+      blogPostSchema.safeParse({ ...baseInput, coverImageUrl: url(2049) }).error
+        ?.issues[0].message,
+    ).toBe(dict.blogPostForm.errors.coverUrlMax(2048));
+  });
+
+  it("refuses a SCHEDULED post whose moment has already passed", () => {
+    const result = blogPostSchema.safeParse({
+      ...baseInput,
+      status: "SCHEDULED",
+      scheduledAt: "2020-01-01T09:00",
+    });
+    expect(result.error?.issues[0].message).toBe(
+      dict.blogPostForm.errors.scheduledAtPast,
+    );
+  });
+
   // TASK-437 — the tag limits mirror the API's, so the form refuses what the
   // backend would refuse instead of surfacing a bare 400.
   it("rejects more than 20 tags", () => {

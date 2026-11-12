@@ -2,8 +2,15 @@ import { z } from "zod";
 import type { CreateBlogPostDto, UpdateBlogPostDto } from "@/entities/blog";
 import { dict } from "@/shared/config";
 import { SLUG_PATTERN } from "@/shared/lib/slug";
-import { ogImageField, seoTextFields } from "@/shared/lib/seo-fields-schema";
+import {
+  META_DESCRIPTION_MAX_LENGTH,
+  META_TITLE_MAX_LENGTH,
+  ogImageField,
+  seoTextFields,
+} from "@/shared/lib/seo-fields-schema";
 import { fromKyivDateTimeLocal } from "@/shared/lib";
+import { optionalHttpUrl } from "@/shared/lib/http-url";
+import { isPastKyivDateTimeLocal } from "@/shared/lib/scheduled-at";
 import {
   KEYWORDS_MAX_COUNT,
   KEYWORD_MAX_LENGTH,
@@ -13,6 +20,23 @@ import { BLOG_CONTENT_MAX_LENGTH } from "./content-stats";
 
 const e = dict.blogPostForm.errors;
 const seoErrors = dict.seoFields.errors;
+
+/**
+ * The DTO's `@MaxLength` caps (`apps/store-api/src/blog/dto/create-blog-post.dto.ts`;
+ * `ogImage` is `OG_IMAGE_MAX_LENGTH` of `IsOgImageField` in
+ * `apps/store-api/src/common/validators/seo-fields.decorator.ts`) — read by the
+ * schema and by the inputs' `maxLength` (TASK-1984, Rule 5d).
+ */
+export const BLOG_POST_LIMITS = {
+  title: 255,
+  slug: 255,
+  excerpt: 500,
+  authorName: 120,
+  coverImageUrl: 2048,
+  metaTitle: META_TITLE_MAX_LENGTH,
+  metaDescription: META_DESCRIPTION_MAX_LENGTH,
+  ogImage: 2048,
+} as const;
 
 /** Publish lifecycle values — mirror of the API's PublishStatus enum. */
 export const BLOG_POST_STATUS = ["DRAFT", "SCHEDULED", "PUBLISHED"] as const;
@@ -29,17 +53,27 @@ export type BlogPostStatus = (typeof BLOG_POST_STATUS)[number];
  */
 export const blogPostSchema = z
   .object({
-    title: z.string().trim().min(1, e.titleRequired).max(255, e.titleMax),
+    // Stricter on purpose (Rule 5f): `CreateBlogPostDto.title` / `excerpt` /
+    // `authorName` have no minimum, but each is shown on every article card.
+    title: z
+      .string()
+      .trim()
+      .min(1, e.titleRequired)
+      .max(BLOG_POST_LIMITS.title, e.titleMax),
 
     slug: z
       .string()
       .trim()
-      .max(255, e.slugMax)
+      .max(BLOG_POST_LIMITS.slug, e.slugMax)
       .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
       .optional()
       .or(z.literal("")),
 
-    excerpt: z.string().trim().min(1, e.excerptRequired).max(500, e.excerptMax),
+    excerpt: z
+      .string()
+      .trim()
+      .min(1, e.excerptRequired)
+      .max(BLOG_POST_LIMITS.excerpt, e.excerptMax),
 
     content: z
       .string()
@@ -60,21 +94,25 @@ export const blogPostSchema = z
       .string()
       .trim()
       .min(1, e.authorRequired)
-      .max(120, e.authorMax),
+      .max(BLOG_POST_LIMITS.authorName, e.authorMax),
 
-    coverImageUrl: z
-      .string()
-      .trim()
-      .url(e.coverUrl)
-      .optional()
-      .or(z.literal("")),
+    // TASK-1984 (Rule 5): the DTO's `@IsUrl(BLOG_COVER_URL_OPTIONS)` — an
+    // absolute http(s) link (zod's `.url()` took `mailto:` and `javascript:`)
+    // — and its `@MaxLength(2048)`.
+    coverImageUrl: optionalHttpUrl(e.coverUrl).refine(
+      (value) =>
+        value === undefined || value.length <= BLOG_POST_LIMITS.coverImageUrl,
+      e.coverUrlMax(BLOG_POST_LIMITS.coverImageUrl),
+    ),
 
+    // `@IsInt() @Min(1)`: «0 хвилин» is refused, with the same words.
     readingMinutes: z
       .string()
       .trim()
       .optional()
       .refine(
-        (v) => v === undefined || v === "" || /^\d+$/.test(v),
+        (v) =>
+          v === undefined || v === "" || (/^\d+$/.test(v) && Number(v) >= 1),
         e.readingInt,
       )
       .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
@@ -101,7 +139,13 @@ export const blogPostSchema = z
         seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
       ),
 
-    ogImage: ogImageField(),
+    // `ogImageField` checks the URL rule only; the cap is the DTO's
+    // `IsOgImageField` → `@MaxLength(OG_IMAGE_MAX_LENGTH)` (Rule 5d).
+    ogImage: ogImageField().refine(
+      (value) =>
+        value === undefined || value.length <= BLOG_POST_LIMITS.ogImage,
+      seoErrors.ogImageMax(BLOG_POST_LIMITS.ogImage),
+    ),
 
     status: z.enum(BLOG_POST_STATUS),
 
@@ -114,6 +158,18 @@ export const blogPostSchema = z
         code: z.ZodIssueCode.custom,
         path: ["scheduledAt"],
         message: e.scheduledAtRequired,
+      });
+    }
+
+    // TASK-1984 (Rule 5e): the API would publish a past schedule NOW, silently.
+    if (
+      values.status === "SCHEDULED" &&
+      isPastKyivDateTimeLocal(values.scheduledAt)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scheduledAt"],
+        message: e.scheduledAtPast,
       });
     }
   });

@@ -54,11 +54,13 @@ import {
 } from "@/shared/lib/seo";
 import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
+  BLOG_POST_LIMITS,
   blogPostSchema,
   type BlogPostFormInput,
   type BlogPostFormValues,
   type BlogPostStatus,
 } from "../model/blog-post-schema";
+import type { BlogPostFormSetError } from "../model/save-error";
 import {
   BLOG_CONTENT_MAX_LENGTH,
   blogContentStats,
@@ -152,7 +154,12 @@ interface BlogPostFormProps {
    * The form's one «Зберегти». May return a promise: resolving to `true` means
    * it saved and the form takes the submitted values as its baseline.
    */
-  onSubmit: (values: BlogPostFormValues) => void | Promise<boolean | void>;
+  onSubmit: (
+    values: BlogPostFormValues,
+    /** How a server refusal lands under its field (TASK-1984, Rule 6b) —
+     *  hand it to `placeBlogPostSaveError`. */
+    setError: BlogPostFormSetError,
+  ) => void | Promise<boolean | void>;
   isPending: boolean;
   submitLabel?: string;
   /**
@@ -215,6 +222,7 @@ export function BlogPostForm({
     reset,
     getValues,
     setValue,
+    setError,
     formState: { errors, dirtyFields, submitCount },
   } = useForm<BlogPostFormInput, unknown, BlogPostFormValues>({
     resolver: zodResolver(blogPostSchema),
@@ -264,6 +272,26 @@ export function BlogPostForm({
     onUploaded: (url) =>
       setValue("ogImage", url, { shouldDirty: true, shouldValidate: true }),
   });
+  // TASK-1984 (Rule 5d): the DTO's 2048 caps on both URL boxes too.
+  // `ContentImageField` takes the registration as is, so it is set on the node.
+  const withMaxLength = (
+    registration: ReturnType<typeof register>,
+    maxLength: number,
+  ) => ({
+    ...registration,
+    ref: (element: HTMLInputElement | null) => {
+      registration.ref(element);
+      if (element) element.maxLength = maxLength;
+    },
+  });
+  const coverImageUrlInput = withMaxLength(
+    register("coverImageUrl"),
+    BLOG_POST_LIMITS.coverImageUrl,
+  );
+  const ogImageInput = withMaxLength(
+    register("ogImage"),
+    BLOG_POST_LIMITS.ogImage,
+  );
   // Live SERP preview (TASK-437). The tiers are the storefront's own
   // (`resolveSeo`): the overrides below, then the post's title/excerpt, then
   // the SeoSettings defaults.
@@ -310,7 +338,7 @@ export function BlogPostForm({
     .map((section) => section.label);
 
   const submit = async (values: BlogPostFormValues) => {
-    const saved = await onSubmit(values);
+    const saved = await onSubmit(values, setError);
     if (saved === true) reset(getValues());
     return saved === true;
   };
@@ -382,6 +410,7 @@ export function BlogPostForm({
               <Input
                 id="post-title"
                 aria-required="true"
+                maxLength={BLOG_POST_LIMITS.title}
                 {...fieldA11y("title")}
                 {...register("title")}
               />
@@ -442,6 +471,7 @@ export function BlogPostForm({
                   id="post-author"
                   aria-required="true"
                   autoComplete="off"
+                  maxLength={BLOG_POST_LIMITS.authorName}
                   {...fieldA11y("authorName")}
                   {...register("authorName")}
                 />
@@ -464,6 +494,7 @@ export function BlogPostForm({
                   id="post-slug"
                   placeholder={f.slugPlaceholder}
                   className="rounded-l-none font-mono"
+                  maxLength={BLOG_POST_LIMITS.slug}
                   {...fieldA11y("slug", "post-slug-hint")}
                   {...register("slug")}
                 />
@@ -493,6 +524,7 @@ export function BlogPostForm({
                 rows={2}
                 aria-required="true"
                 placeholder={f.excerptPlaceholder}
+                maxLength={BLOG_POST_LIMITS.excerpt}
                 {...fieldA11y("excerpt", "post-excerpt-hint")}
                 {...register("excerpt")}
               />
@@ -638,7 +670,7 @@ export function BlogPostForm({
               urlPlaceholder={f.coverImageUrlPlaceholder}
               copy={f.coverUpload}
               value={coverValue}
-              urlInput={register("coverImageUrl")}
+              urlInput={coverImageUrlInput}
               onRemove={() =>
                 setValue("coverImageUrl", "", {
                   shouldDirty: true,
@@ -716,6 +748,7 @@ export function BlogPostForm({
               <Input
                 id="post-meta-title"
                 placeholder={f.metaTitlePlaceholder}
+                maxLength={BLOG_POST_LIMITS.metaTitle}
                 {...fieldA11y("metaTitle", "post-meta-title-hint")}
                 {...register("metaTitle")}
               />
@@ -736,6 +769,7 @@ export function BlogPostForm({
                 id="post-meta-description"
                 rows={3}
                 placeholder={f.metaDescriptionPlaceholder}
+                maxLength={BLOG_POST_LIMITS.metaDescription}
                 {...fieldA11y("metaDescription", "post-meta-description-hint")}
                 {...register("metaDescription")}
               />
@@ -791,7 +825,7 @@ export function BlogPostForm({
                   )}
                   copy={dict.seoFields.ogImageUpload}
                   value={ogImageValue}
-                  urlInput={register("ogImage")}
+                  urlInput={ogImageInput}
                   // The hint and the `FieldError` below keep their ids, so the
                   // error is rendered there and not passed as `fieldError`.
                   urlInputProps={fieldA11y("ogImage", "post-og-image-hint")}

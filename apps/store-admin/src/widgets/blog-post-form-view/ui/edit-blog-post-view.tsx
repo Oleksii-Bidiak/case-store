@@ -10,6 +10,8 @@ import {
   BlogPostForm,
   blogPostFormValuesToUpdateDto,
   type BlogPostFormInput,
+  placeBlogPostSaveError,
+  type BlogPostFormSetError,
   type BlogPostFormValues,
 } from "@/features/blog-post-form";
 import { SitePreviewButton } from "@/features/site-preview";
@@ -23,6 +25,7 @@ import {
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { formatKeywords } from "@/shared/lib/seo";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import type { FormSubmitController } from "@/shared/lib/form-submit-controller";
 import { AdminFormSkeleton, Badge, useConfirmDialog } from "@/shared/ui";
 import { dict, STOREFRONT_URL } from "@/shared/config";
@@ -72,7 +75,10 @@ export function EditBlogPostView({ postId }: EditBlogPostViewProps) {
 
   const post = data?.data;
 
-  const handleSubmit = async (values: BlogPostFormValues): Promise<boolean> => {
+  const handleSubmit = async (
+    values: BlogPostFormValues,
+    setError: BlogPostFormSetError,
+  ): Promise<boolean> => {
     // TASK-285: renaming a PUBLISHED post's slug kills its indexed URL — warn
     // first (an AlertDialog since TASK-812). A blank slug means "auto-generate"
     // (treated as no rename here).
@@ -91,8 +97,12 @@ export function EditBlogPostView({ postId }: EditBlogPostViewProps) {
         id: postId,
         data: blogPostFormValuesToUpdateDto(values),
       });
-    } catch {
-      toast.error(d.toastUpdateFailed);
+    } catch (error) {
+      // TASK-1984 Rule 6b: a taken slug or a refused field lands under that
+      // field; anything else is a toast in the server's words.
+      if (!placeBlogPostSaveError(error, setError)) {
+        toast.error(refusalMessage(error) ?? d.toastUpdateFailed);
+      }
       return false;
     }
     void queryClient.invalidateQueries({

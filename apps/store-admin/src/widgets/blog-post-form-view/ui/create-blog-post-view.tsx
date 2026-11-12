@@ -7,6 +7,8 @@ import { toast } from "@/shared/ui/toast";
 import {
   BlogPostForm,
   blogPostFormValuesToCreateDto,
+  placeBlogPostSaveError,
+  type BlogPostFormSetError,
   type BlogPostFormValues,
 } from "@/features/blog-post-form";
 import {
@@ -14,6 +16,7 @@ import {
   useAdminBlogControllerCreate,
 } from "@/entities/blog";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 
 /**
  * Create-post body: renders the form and wires the create mutation, list-cache
@@ -24,7 +27,10 @@ export function CreateBlogPostView() {
   const queryClient = useQueryClient();
   const create = useAdminBlogControllerCreate();
 
-  const handleSubmit = (values: BlogPostFormValues) => {
+  const handleSubmit = (
+    values: BlogPostFormValues,
+    setError: BlogPostFormSetError,
+  ) => {
     create.mutate(
       { data: blogPostFormValuesToCreateDto(values) },
       {
@@ -35,8 +41,13 @@ export function CreateBlogPostView() {
           toast.success(dict.blogPosts.toastCreated);
           router.push("/blog");
         },
-        onError: () => {
-          toast.error(dict.blogPosts.toastCreateFailed);
+        onError: (error) => {
+          // TASK-1984 Rule 6b: a taken slug or a refused field lands under
+          // that field; anything else is a toast in the server's words.
+          if (placeBlogPostSaveError(error, setError)) return;
+          toast.error(
+            refusalMessage(error) ?? dict.blogPosts.toastCreateFailed,
+          );
         },
       },
     );

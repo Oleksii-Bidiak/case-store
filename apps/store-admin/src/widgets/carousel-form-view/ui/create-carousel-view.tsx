@@ -8,6 +8,8 @@ import { toast } from "@/shared/ui/toast";
 import {
   CarouselForm,
   carouselFormValuesToCreateDto,
+  placeCarouselSaveError,
+  type CarouselFormSetError,
   type CarouselFormValues,
 } from "@/features/carousel-form";
 import type { CarouselPickedItem } from "@/features/carousel-item-picker";
@@ -17,6 +19,7 @@ import {
   useAdminCarouselControllerSetItems,
 } from "@/entities/carousel";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import {
   AutoSourcePanel,
   ManualItemsPanel,
@@ -37,15 +40,22 @@ export function CreateCarouselView() {
   const setItems = useAdminCarouselControllerSetItems();
   const [items, setItemsDraft] = useState<CarouselPickedItem[]>([]);
 
-  const handleSubmit = async (values: CarouselFormValues) => {
+  const handleSubmit = async (
+    values: CarouselFormValues,
+    setError: CarouselFormSetError,
+  ) => {
     let createdId: string;
     try {
       const created = await create.mutateAsync({
         data: carouselFormValuesToCreateDto(values),
       });
       createdId = created.data.id;
-    } catch {
-      toast.error(dict.carousels.toastCreateFailed);
+    } catch (error) {
+      // TASK-1984 Rule 6b: a refused field lands under it; anything else is a
+      // toast in the server's words.
+      if (!placeCarouselSaveError(error, setError)) {
+        toast.error(refusalMessage(error) ?? dict.carousels.toastCreateFailed);
+      }
       return;
     }
 

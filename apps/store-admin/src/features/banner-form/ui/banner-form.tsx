@@ -32,12 +32,14 @@ import { LinkPicker } from "@/features/link-picker";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
 import {
+  BANNER_LIMITS,
   bannerSchema,
   type BannerFormInput,
   type BannerFormValues,
   type BannerPlacementValue,
   type BannerStatusValue,
 } from "../model/banner-schema";
+import type { BannerFormSetError } from "../model/save-error";
 import {
   usePromoTileSlots,
   type PromoTileSlots,
@@ -54,7 +56,11 @@ interface BannerFormProps {
    *  seed the first render instead. */
   id?: string;
   defaultValues?: Partial<BannerFormInput>;
-  onSubmit: (values: BannerFormValues) => void;
+  /**
+   * The page's save. `setError` is how a server refusal lands under its field
+   * (TASK-1984, Rule 6b) — hand it to `placeBannerSaveError`.
+   */
+  onSubmit: (values: BannerFormValues, setError: BannerFormSetError) => void;
   isPending: boolean;
   /** The sticky bar's primary button: «Зберегти» / «Створити банер». */
   submitLabel?: string;
@@ -172,6 +178,7 @@ export function BannerForm({
     handleSubmit,
     reset,
     setValue,
+    setError,
     formState: { errors, dirtyFields, submitCount },
   } = useForm<BannerFormInput, unknown, BannerFormValues>({
     resolver: zodResolver(bannerSchema),
@@ -220,6 +227,16 @@ export function BannerForm({
     onUploaded: (url) =>
       setValue("imageUrl", url, { shouldDirty: true, shouldValidate: true }),
   });
+  // TASK-1984 (Rule 5d): the DTO's 2048 cap on the URL box too.
+  // `ContentImageField` takes the registration as is, so it is set on the node.
+  const imageUrlRegistration = register("imageUrl");
+  const imageUrlInput = {
+    ...imageUrlRegistration,
+    ref: (element: HTMLInputElement | null) => {
+      imageUrlRegistration.ref(element);
+      if (element) element.maxLength = BANNER_LIMITS.imageUrl;
+    },
+  };
 
   // «Своє…» was picked explicitly (the value may still be empty). A value that
   // is already outside the palette is «Своє…» on its own — derived, not seeded.
@@ -267,7 +284,10 @@ export function BannerForm({
   const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     // A submit bubbling through a portal (a dialog's own form) is not ours.
     if (event.target !== event.currentTarget) return;
-    void handleSubmit(onSubmit, () => setActivePanel("form"))(event);
+    void handleSubmit(
+      (values) => onSubmit(values, setError),
+      () => setActivePanel("form"),
+    )(event);
   };
 
   const fieldA11y = (field: FieldName, ...extraIds: (string | undefined)[]) => {
@@ -361,6 +381,7 @@ export function BannerForm({
                 <Input
                   id="banner-title"
                   aria-required="true"
+                  maxLength={BANNER_LIMITS.title}
                   {...fieldA11y("title", counterId)}
                   {...register("title")}
                 />
@@ -381,6 +402,7 @@ export function BannerForm({
                   id="banner-subtitle"
                   rows={2}
                   placeholder={f.subtitlePlaceholder}
+                  maxLength={BANNER_LIMITS.subtitle}
                   {...fieldA11y("subtitle", counterId)}
                   {...register("subtitle")}
                 />
@@ -399,7 +421,7 @@ export function BannerForm({
               // The proportion hint follows the chosen placement (БН5).
               copy={{ ...f.imageUpload, hint: f.imageHints[placementValue] }}
               value={imageUrlValue}
-              urlInput={register("imageUrl")}
+              urlInput={imageUrlInput}
               onRemove={() =>
                 setValue("imageUrl", "", {
                   shouldDirty: true,
@@ -431,6 +453,7 @@ export function BannerForm({
                 <Input
                   id="banner-cta-label"
                   placeholder={f.ctaLabelPlaceholder}
+                  maxLength={BANNER_LIMITS.ctaLabel}
                   {...fieldA11y("ctaLabel")}
                   {...register("ctaLabel")}
                 />
@@ -475,6 +498,7 @@ export function BannerForm({
                 <Input
                   id="banner-theme"
                   placeholder={f.themePlaceholder}
+                  maxLength={BANNER_LIMITS.theme}
                   {...fieldA11y("theme")}
                   {...register("theme")}
                 />

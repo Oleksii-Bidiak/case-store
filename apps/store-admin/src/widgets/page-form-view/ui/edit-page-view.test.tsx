@@ -264,8 +264,9 @@ describe("EditPageView — header", () => {
  * about the calendar DAY here.
  */
 describe("EditPageView — the schedule is Kyiv time, not the browser's", () => {
-  const SCHEDULED_UTC = "2026-10-01T21:00:00.000Z";
-  const SCHEDULED_KYIV_INPUT = "2026-10-02T00:00";
+  // Far in the future: a past schedule is refused by the form (TASK-1984).
+  const SCHEDULED_UTC = "2099-10-01T21:00:00.000Z";
+  const SCHEDULED_KYIV_INPUT = "2099-10-02T00:00";
 
   it("seeds the input with the Kyiv wall clock the list shows", async () => {
     await renderAndWaitForForm(makePage("SCHEDULED", SCHEDULED_UTC));
@@ -339,7 +340,8 @@ describe("EditPageView — slug-rename guard (TASK-285)", () => {
   });
 
   // TASK-566 — a slug is unique per kind; the refusal names the kind holding it.
-  it("names the kind in the toast when the address is already taken", async () => {
+  // TASK-1984 Rule 6b: under the slug field, not in a toast.
+  it("names the kind under the slug when the address is already taken", async () => {
     const page = { ...makePage("DRAFT"), kind: "INFO" };
     server.use(
       http.get(`*/api/admin/pages/${PAGE_ID}`, () =>
@@ -365,9 +367,43 @@ describe("EditPageView — slug-rename guard (TASK-285)", () => {
     await renameSlug("oplata");
     await submit();
 
-    await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith(d.toastSlugTaken(d.kindInfo)),
+    expect(
+      await screen.findByText(d.toastSlugTaken(d.kindInfo)),
+    ).toBeInTheDocument();
+    expect(slugField()).toHaveAttribute("aria-invalid", "true");
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("puts a server 400 on the field its fieldErrors name", async () => {
+    const page = makePage("DRAFT");
+    server.use(
+      http.get(`*/api/admin/pages/${PAGE_ID}`, () =>
+        HttpResponse.json({ data: page }),
+      ),
+      http.put(`*/api/admin/pages/${PAGE_ID}`, () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "Bad Request",
+            message: "Excerpt must be at most 500 characters",
+            fieldErrors: [{ field: "excerpt", constraint: "maxLength" }],
+          },
+          { status: 400 },
+        ),
+      ),
     );
+    renderWithProviders(
+      <WithAuth isOwner>
+        <EditPageView pageId={PAGE_ID} />
+      </WithAuth>,
+    );
+    await waitFor(() => expect(slugField()).toHaveValue(page.slug));
+
+    await renameSlug("nova");
+    await submit();
+
+    expect(await screen.findByText(dict.forms.tooLong)).toBeInTheDocument();
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   it("never asks about a slug change on a DRAFT page", async () => {

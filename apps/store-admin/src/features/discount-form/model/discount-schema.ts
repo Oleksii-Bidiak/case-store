@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { CreateDiscountDto, UpdateDiscountDto } from "@/entities/discount";
 import { dict } from "@/shared/config";
 import { fromKyivDateEnd, fromKyivDateStart } from "@/shared/lib";
+import { parseKop } from "@/shared/lib/money-kop";
 
 const e = dict.discountForm.errors;
 
@@ -45,6 +46,37 @@ const optionalIntString = (message: string) =>
 const hasAtMostTwoDecimals = (v: string | undefined) =>
   v === undefined || !/[.,]\d{3,}/.test(v);
 
+/**
+ * The DTO's `@MaxLength(64)` on `code`
+ * (`apps/store-api/src/discount/dto/create-discount.dto.ts`) — read by the
+ * schema and by the input's `maxLength` (TASK-1984, Rule 5d).
+ */
+export const DISCOUNT_CODE_MAX_LENGTH = 64;
+
+const isNegative = (v: string) => v.trim().startsWith("-");
+
+/**
+ * A money field judged by the admin's money parser (TASK-1984, Rule 5e), never
+ * by `Number(x)` alone: `Infinity`, `1e400` and `1e3` are not amounts. Checked
+ * in the order the operator should read them: decimals, sign, shape, `> 0`.
+ *
+ * Stricter on purpose (Rule 5f): the parser's ceiling is `int4` kopecks,
+ * 21 474 836,47 ₴, below the DTO's `@Max(DISCOUNT_MONEY_MAX)` (99 999 999,99,
+ * the column's `Decimal(10, 2)`). No promo code or minimum spend comes near
+ * either, and one money parser across the panel beats a second one for this form.
+ */
+const moneyIssue = (v: string, { positive }: { positive: boolean }) => {
+  if (!hasAtMostTwoDecimals(v)) return e.decimalsMax;
+  if (isNegative(v)) return positive ? e.valuePositive : e.minSpendInvalid;
+  const kop = parseKop(v);
+  if (kop === null) return e.amountInvalid;
+  if (positive && kop <= 0) return e.valuePositive;
+  return null;
+};
+
+/** Kopecks → the UAH number the DTO takes (`@IsNumber({ maxDecimalPlaces: 2 })`). */
+const toUah = (v: string) => (parseKop(v) ?? 0) / 100;
+
 /** Both are `YYYY-MM-DD`, which orders lexicographically — no zone needed. */
 const windowInOrder = (data: { startsAt?: string; expiresAt?: string }) =>
   !data.startsAt || !data.expiresAt || data.startsAt <= data.expiresAt;
@@ -55,7 +87,7 @@ export const discountSchema = z
       .string()
       .trim()
       .min(1, e.codeRequired)
-      .max(64, e.codeMax)
+      .max(DISCOUNT_CODE_MAX_LENGTH, e.codeMax)
       .transform((v) => v.toUpperCase()),
 
     type: z.enum(["PERCENT", "FIXED"]),
@@ -64,20 +96,22 @@ export const discountSchema = z
       .string()
       .trim()
       .min(1, e.valueRequired)
-      .refine((v) => Number(v) > 0, e.valuePositive)
-      .refine(hasAtMostTwoDecimals, e.decimalsMax)
-      .transform((v) => Number(v)),
+      .superRefine((v, ctx) => {
+        const message = moneyIssue(v, { positive: true });
+        if (message) ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      })
+      .transform(toUah),
 
     minSpend: z
       .string()
       .trim()
       .optional()
-      .refine(
-        (v) => v === undefined || v === "" || Number(v) >= 0,
-        e.minSpendInvalid,
-      )
-      .refine(hasAtMostTwoDecimals, e.decimalsMax)
-      .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
+      .superRefine((v, ctx) => {
+        if (v === undefined || v === "") return;
+        const message = moneyIssue(v, { positive: false });
+        if (message) ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      })
+      .transform((v) => (v === undefined || v === "" ? undefined : toUah(v))),
 
     maxRedemptions: optionalIntString(e.intInvalid),
     perUserLimit: optionalIntString(e.intInvalid),
