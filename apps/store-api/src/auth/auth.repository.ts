@@ -61,6 +61,20 @@ export interface EmailVerificationTokenWithUser extends EmailVerificationToken {
   user: User;
 }
 
+/** One rotation (TASK-2405): the successor's id is chosen by the caller, so the
+ * issued pair can be parked under it before the transaction runs. */
+export interface RotateRefreshTokenInput {
+  oldTokenId: string;
+  newTokenId: string;
+  userId: string;
+  rawToken: string;
+  expiresAt: Date;
+}
+
+/** Thrown inside the rotation transaction to roll it back when another
+ * rotation already revoked the presented row. Never leaves the repository. */
+class LostRotationRace extends Error {}
+
 @Injectable()
 export class AuthRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -143,34 +157,70 @@ export class AuthRepository {
   }
 
   /**
-   * Rotate a refresh token (TASK-496): persist the replacement, then revoke the
-   * presented token — both in ONE transaction.
+   * Rotate a refresh token: revoke the presented token and persist its
+   * replacement in ONE transaction (TASK-496), but only while the presented
+   * token is still live (TASK-2405).
    *
-   * The order and the atomicity are the point. Revoking first and inserting
-   * second meant any failed insert left the session with no live token; the
-   * client then retried the now-revoked cookie, which reuse detection correctly
-   * reads as theft and answers by revoking every session the user holds. Here a
-   * failed insert rolls the revoke back with it, so the presented token stays
-   * exactly as live as it was and the retry simply succeeds.
+   * The atomicity is the point of TASK-496. A failed insert rolls the revoke
+   * back with it, so the presented token stays exactly as live as it was and
+   * the client's retry simply succeeds instead of reading as theft.
    *
-   * The replacement is hashed like {@link saveRefreshToken}; the raw value is
-   * never stored.
+   * The condition is the point of TASK-2405. An unconditional `update where
+   * {id}` let two truly simultaneous refreshes both pass the service's check
+   * and both rotate — the session forked into two live tokens. The revoke is
+   * now `updateMany where {id, isRevoked: false}`: Postgres row-locks the row,
+   * so the second writer re-evaluates the condition after the first commits
+   * and matches nothing. That loser throws inside the transaction (nothing of
+   * it is written) and gets `false`; the caller treats it as a replay of the
+   * winner's rotation.
+   *
+   * The revoked row records when it was rotated and by which row, which is
+   * what the one-time grace replay checks. The replacement is hashed like
+   * {@link saveRefreshToken}; the raw value is never stored.
+   *
+   * @returns `true` when this call rotated the token, `false` when another
+   *   rotation had already revoked it.
    */
-  async rotateRefreshToken(
-    oldTokenId: string,
-    userId: string,
-    rawToken: string,
-    expiresAt: Date,
-  ): Promise<void> {
-    await this.prisma.$transaction([
-      this.prisma.refreshToken.create({
-        data: { token: this.hashToken(rawToken), userId, expiresAt },
-      }),
-      this.prisma.refreshToken.update({
-        where: { id: oldTokenId },
-        data: { isRevoked: true },
-      }),
-    ]);
+  async rotateRefreshToken(input: RotateRefreshTokenInput): Promise<boolean> {
+    const { oldTokenId, newTokenId, userId, rawToken, expiresAt } = input;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.refreshToken.updateMany({
+          where: { id: oldTokenId, isRevoked: false },
+          data: { isRevoked: true, rotatedAt: new Date(), replacedById: newTokenId },
+        });
+        if (count === 0) {
+          throw new LostRotationRace();
+        }
+        await tx.refreshToken.create({
+          data: { id: newTokenId, token: this.hashToken(rawToken), userId, expiresAt },
+        });
+      });
+      return true;
+    } catch (err) {
+      if (err instanceof LostRotationRace) {
+        return false;
+      }
+      throw err;
+    }
+  }
+
+  /** Read a refresh token row by its id — the successor of a rotation (TASK-2405). */
+  findRefreshTokenById(id: string): Promise<RefreshToken | null> {
+    return this.prisma.refreshToken.findUnique({ where: { id } });
+  }
+
+  /**
+   * Spend the one-time grace replay of a rotated token (TASK-2405). Atomic: of
+   * any number of concurrent claims exactly one stamps `graceUsedAt` and gets
+   * `true`; every later claim gets `false`.
+   */
+  async claimRefreshGrace(id: string): Promise<boolean> {
+    const { count } = await this.prisma.refreshToken.updateMany({
+      where: { id, graceUsedAt: null },
+      data: { graceUsedAt: new Date() },
+    });
+    return count === 1;
   }
 
   /**

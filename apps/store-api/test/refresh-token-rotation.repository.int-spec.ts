@@ -72,7 +72,16 @@ describe('AuthRepository.rotateRefreshToken (integration)', () => {
   it('persists the replacement and revokes the presented token', async () => {
     const presented = await repo.saveRefreshToken(userId, raw('old'), expiresAt());
 
-    await repo.rotateRefreshToken(presented.id, userId, raw('new'), expiresAt());
+    const newTokenId = randomUUID();
+    await expect(
+      repo.rotateRefreshToken({
+        oldTokenId: presented.id,
+        newTokenId,
+        userId,
+        rawToken: raw('new'),
+        expiresAt: expiresAt(),
+      }),
+    ).resolves.toBe(true);
 
     const old = await repo.findRefreshToken(raw('old'));
     const replacement = await repo.findRefreshToken(raw('new'));
@@ -80,6 +89,70 @@ describe('AuthRepository.rotateRefreshToken (integration)', () => {
     expect(replacement).not.toBeNull();
     expect(replacement?.isRevoked).toBe(false);
     expect(replacement?.userId).toBe(userId);
+    // TASK-2405: the presented row records when and by whom it was replaced.
+    expect(replacement?.id).toBe(newTokenId);
+    expect(old?.replacedById).toBe(newTokenId);
+    expect(old?.rotatedAt).toBeInstanceOf(Date);
+    expect(old?.graceUsedAt).toBeNull();
+  });
+
+  // ─── TASK-2405: the rotation is conditional on the presented row being live ──
+
+  it('rotates nothing for an already-revoked row: false, rolled back, nothing inserted', async () => {
+    const presented = await repo.saveRefreshToken(userId, raw('old'), expiresAt());
+    await repo.revokeToken(presented.id);
+
+    await expect(
+      repo.rotateRefreshToken({
+        oldTokenId: presented.id,
+        newTokenId: randomUUID(),
+        userId,
+        rawToken: raw('new'),
+        expiresAt: expiresAt(),
+      }),
+    ).resolves.toBe(false);
+
+    await expect(repo.findRefreshToken(raw('new'))).resolves.toBeNull();
+    const old = await repo.findRefreshToken(raw('old'));
+    expect(old?.rotatedAt).toBeNull();
+    expect(old?.replacedById).toBeNull();
+    await expect(prisma.refreshToken.count({ where: { userId } })).resolves.toBe(1);
+  });
+
+  it('two concurrent rotations of one row: exactly one wins, exactly one live successor', async () => {
+    const presented = await repo.saveRefreshToken(userId, raw('old'), expiresAt());
+
+    const results = await Promise.all(
+      ['a', 'b'].map((side) =>
+        repo.rotateRefreshToken({
+          oldTokenId: presented.id,
+          newTokenId: randomUUID(),
+          userId,
+          rawToken: raw(`new-${side}`),
+          expiresAt: expiresAt(),
+        }),
+      ),
+    );
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    await expect(prisma.refreshToken.count({ where: { userId, isRevoked: false } })).resolves.toBe(
+      1,
+    );
+    await expect(prisma.refreshToken.count({ where: { userId } })).resolves.toBe(2);
+  });
+
+  it('claimRefreshGrace succeeds exactly once, even when raced', async () => {
+    const presented = await repo.saveRefreshToken(userId, raw('old'), expiresAt());
+
+    const claims = await Promise.all([
+      repo.claimRefreshGrace(presented.id),
+      repo.claimRefreshGrace(presented.id),
+    ]);
+
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    await expect(repo.claimRefreshGrace(presented.id)).resolves.toBe(false);
+    const row = await repo.findRefreshTokenById(presented.id);
+    expect(row?.graceUsedAt).toBeInstanceOf(Date);
   });
 
   it('rolls the revoke back when the replacement cannot be saved — the presented token stays live', async () => {
@@ -89,7 +162,13 @@ describe('AuthRepository.rotateRefreshToken (integration)', () => {
     await repo.saveRefreshToken(userId, raw('taken'), expiresAt());
 
     await expect(
-      repo.rotateRefreshToken(presented.id, userId, raw('taken'), expiresAt()),
+      repo.rotateRefreshToken({
+        oldTokenId: presented.id,
+        newTokenId: randomUUID(),
+        userId,
+        rawToken: raw('taken'),
+        expiresAt: expiresAt(),
+      }),
     ).rejects.toThrow();
 
     const old = await repo.findRefreshToken(raw('old'));
