@@ -17,7 +17,8 @@ function values(
 ): CreateOrderFormValues {
   return {
     ...CREATE_ORDER_DEFAULTS,
-    contactName: "Олена Шевченко",
+    contactFirstName: "Олена",
+    contactLastName: "Шевченко",
     contactEmail: "olena@example.com",
     contactPhone: "+380501234567",
     firstName: "Олена",
@@ -183,18 +184,52 @@ describe("createOrderSchema — contact validation follows the chosen mode", () 
     ).toContain("userId");
   });
 
-  it("does not demand contact details in account mode", () => {
+  it("does not demand contact details in account mode for another recipient", () => {
     expect(
       parse(
         values({
           customerMode: CUSTOMER_MODE.ACCOUNT,
           userId: PICKED_USER_ID,
-          contactName: "",
+          sameRecipient: false,
+          contactFirstName: "",
+          contactLastName: "",
           contactEmail: "",
           contactPhone: "",
         }),
       ).success,
     ).toBe(true);
+  });
+
+  it("does not judge the account mode's email at all — it is never sent", () => {
+    expect(
+      parse(
+        values({
+          customerMode: CUSTOMER_MODE.ACCOUNT,
+          userId: PICKED_USER_ID,
+          contactEmail: "олена@",
+        }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("asks the account mode's client block for the recipient while it IS the recipient", () => {
+    expect(
+      issuePaths(
+        values({
+          customerMode: CUSTOMER_MODE.ACCOUNT,
+          userId: PICKED_USER_ID,
+          contactFirstName: "",
+          contactLastName: "",
+          contactPhone: "",
+        }),
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        "contactFirstName",
+        "contactLastName",
+        "contactPhone",
+      ]),
+    );
   });
 
   it("refuses an order nobody can be reached about", () => {
@@ -209,7 +244,9 @@ describe("createOrderSchema — contact validation follows the chosen mode", () 
   it("requires the address fields the courier cannot deliver without", () => {
     expect(parse(values({ city: "" })).success).toBe(false);
     expect(parse(values({ address1: "" })).success).toBe(false);
-    expect(parse(values({ phone: "" })).success).toBe(false);
+    expect(parse(values({ sameRecipient: false, phone: "" })).success).toBe(
+      false,
+    );
   });
 
   // ─── TASK-426: the phone rule, and the country it must NOT assume ────────────
@@ -265,12 +302,15 @@ describe("createOrderSchema — contact validation follows the chosen mode", () 
     });
 
     it("applies the same rule to the RECIPIENT phone, in both modes", () => {
-      expect(issuePaths(values({ phone: "123456" }))).toContain("phone");
+      expect(
+        issuePaths(values({ sameRecipient: false, phone: "123456" })),
+      ).toContain("phone");
       expect(
         issuePaths(
           values({
             customerMode: CUSTOMER_MODE.ACCOUNT,
             userId: PICKED_USER_ID,
+            sameRecipient: false,
             phone: "123456",
           }),
         ),
@@ -281,9 +321,130 @@ describe("createOrderSchema — contact validation follows the chosen mode", () 
       // Not twice: "обовʼязкове поле" AND "wrong format" for the same blank input
       // is two messages for one mistake.
       expect(
-        issuePaths(values({ phone: "" })).filter((path) => path === "phone"),
+        issuePaths(values({ sameRecipient: false, phone: "" })).filter(
+          (path) => path === "phone",
+        ),
       ).toHaveLength(1);
     });
+
+    it("judges the email by the shared rule, at the DTO's 254 characters", () => {
+      // The old `/^\S+@\S+\.\S+$/` took `a@b..c`; `@IsEmail` does not.
+      expect(issuePaths(values({ contactEmail: "a@b..c" }))).toContain(
+        "contactEmail",
+      );
+      expect(
+        issuePaths(values({ contactEmail: `${"a".repeat(250)}@x.ua` })),
+      ).toContain("contactEmail");
+    });
+
+    it("refuses a contact phone longer than the recipient copy may be", () => {
+      expect(
+        issuePaths(
+          values({ contactPhone: `+380 50 123 4567${" ".repeat(20)}1` }),
+        ),
+      ).toContain("contactPhone");
+    });
+  });
+});
+
+// TASK-2398: the client's name is two fields; «той самий клієнт» is honoured
+// by the schema, not by a hidden copy and an unticked checkbox.
+describe("createOrderSchema — the client is the recipient (TASK-2398)", () => {
+  const issues = (v: CreateOrderFormValues) =>
+    createOrderSchema.safeParse(v).error?.issues ?? [];
+  const paths = (v: CreateOrderFormValues) =>
+    issues(v).map((issue) => issue.path[0]);
+
+  it("does not judge the hidden recipient fields while the box is ticked", () => {
+    expect(
+      createOrderSchema.safeParse(
+        values({ firstName: "", lastName: "", phone: "123" }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("asks for the client's surname — under «Прізвище» — for a one-word name", () => {
+    const result = issues(values({ contactLastName: "" }));
+    expect(result.map((issue) => issue.path[0])).toEqual(["contactLastName"]);
+    expect(result[0].message).toBe(dict.orderCreate.addressRequired);
+  });
+
+  it("lets a walk-in be one word when the parcel goes to someone else", () => {
+    expect(
+      createOrderSchema.safeParse(
+        values({ contactLastName: "", sameRecipient: false }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it("then judges the recipient by AddressDto", () => {
+    expect(
+      paths(
+        values({
+          sameRecipient: false,
+          firstName: "",
+          lastName: "",
+          phone: "",
+        }),
+      ),
+    ).toEqual(["firstName", "lastName", "phone"]);
+  });
+
+  it("holds every name to AddressDto's 100 characters", () => {
+    const long = "я".repeat(101);
+    expect(paths(values({ contactFirstName: long }))).toContain(
+      "contactFirstName",
+    );
+    expect(paths(values({ sameRecipient: false, lastName: long }))).toContain(
+      "lastName",
+    );
+  });
+
+  it("holds the joined walk-in name to GuestContactDto's 120", () => {
+    const result = issues(
+      values({
+        contactFirstName: "я".repeat(70),
+        contactLastName: "я".repeat(60),
+      }),
+    );
+    expect(result.map((issue) => issue.path[0])).toEqual(["contactLastName"]);
+    expect(result[0].message).toBe(dict.orderCreate.contactNameTooLong(120));
+  });
+
+  it("holds city, address and postal code to their DTO limits", () => {
+    expect(paths(values({ city: "я".repeat(101) }))).toContain("city");
+    expect(paths(values({ address1: "я".repeat(501) }))).toContain("address1");
+    expect(paths(values({ postalCode: "1".repeat(21) }))).toContain(
+      "postalCode",
+    );
+  });
+
+  it("sends the client block as the recipient while ticked, the typed one otherwise", () => {
+    const typed = {
+      firstName: "Ірина",
+      lastName: "Коваль",
+      phone: "+48 123 456 789",
+    };
+    expect(
+      createOrderValuesToDto(values(typed), LINES).shippingAddress,
+    ).toMatchObject({
+      firstName: "Олена",
+      lastName: "Шевченко",
+      phone: "+380501234567",
+    });
+    expect(
+      createOrderValuesToDto(values({ ...typed, sameRecipient: false }), LINES)
+        .shippingAddress,
+    ).toMatchObject(typed);
+  });
+
+  it("joins the two names into the walk-in's contact name", () => {
+    expect(
+      createOrderValuesToDto(
+        values({ contactLastName: "", sameRecipient: false }),
+        LINES,
+      ).contact?.name,
+    ).toBe("Олена");
   });
 });
 

@@ -6,13 +6,40 @@ import {
   type OrderEntity,
   type UpdateOrderDetailsDto,
 } from "@/entities/order";
+import { ADDRESS_LIMITS } from "@/entities/delivery";
 import { dict } from "@/shared/config";
-// From the module, not the `@/shared/lib` barrel — the barrel also exports the
-// UA-only rule, and an order address is NOT held to it (see create-order-schema).
-import { isValidInternationalPhone } from "@/shared/lib/phone";
+// `AddressDto.phone` is `@IsInternationalPhone` (TASK-338) — the rule named the
+// same here (forms convention Rule 5a), never the UA one.
+import { phoneField } from "@/shared/lib/phone-field";
+import type { ServerFieldMap } from "@/shared/lib/form-errors";
 import { parseMoneyInput } from "@/shared/lib/money-input";
 
 const required = dict.orderCreate.addressRequired;
+const tooLong = dict.forms.tooLong;
+
+/**
+ * `UpdateOrderDetailsDto` path → the field of this edit (Rule 6b), for
+ * `applyServerFieldErrors`. A pickup order's city and address are the point's,
+ * so their refusal lands on the point; an NP ref's on the name it belongs to.
+ */
+export function addressFieldMap(method: string): ServerFieldMap {
+  const atPoint = method === "PICKUP";
+  const city = atPoint ? "pickupPointId" : "city";
+  const address1 = atPoint ? "pickupPointId" : "address1";
+  return {
+    "shippingAddress.firstName": "firstName",
+    "shippingAddress.lastName": "lastName",
+    "shippingAddress.phone": "phone",
+    "shippingAddress.city": city,
+    "shippingAddress.npCityRef": city,
+    "shippingAddress.address1": address1,
+    "shippingAddress.npWarehouseRef": address1,
+    "shippingAddress.npWarehouseName": address1,
+    "shippingAddress.postalCode": "postalCode",
+    pickupPointId: "pickupPointId",
+    shippingCost: "shippingCost",
+  };
+}
 
 const DELIVERY_METHODS = ["NOVA_POSHTA", "PICKUP", "COURIER", "OTHER"] as const;
 type DeliveryMethodValue = (typeof DELIVERY_METHODS)[number];
@@ -36,16 +63,30 @@ type DeliveryMethodValue = (typeof DELIVERY_METHODS)[number];
  */
 export const orderAddressSchema = z
   .object({
-    firstName: z.string().trim().min(1, required),
-    lastName: z.string().trim().min(1, required),
+    firstName: z
+      .string()
+      .trim()
+      .min(1, required)
+      .max(ADDRESS_LIMITS.name, tooLong),
+    lastName: z
+      .string()
+      .trim()
+      .min(1, required)
+      .max(ADDRESS_LIMITS.name, tooLong),
     phone: z
       .string()
       .trim()
       .min(1, required)
-      .refine(isValidInternationalPhone, dict.orderCreate.contactPhoneInvalid),
-    city: z.string().trim(),
-    address1: z.string().trim(),
-    postalCode: z.string().trim(),
+      .max(ADDRESS_LIMITS.phone, tooLong)
+      .pipe(
+        phoneField({
+          rule: "international",
+          message: dict.orderCreate.contactPhoneInvalid,
+        }),
+      ),
+    city: z.string().trim().max(ADDRESS_LIMITS.city, tooLong),
+    address1: z.string().trim().max(ADDRESS_LIMITS.address1, tooLong),
+    postalCode: z.string().trim().max(ADDRESS_LIMITS.postalCode, tooLong),
     deliveryMethod: z.string(),
     pickupPointId: z.string().trim(),
     shippingCost: z.string().trim(),

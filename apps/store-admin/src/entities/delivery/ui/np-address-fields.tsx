@@ -17,6 +17,7 @@ import {
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { Button, Input, Label } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { ADDRESS_LIMITS } from "../model/address-limits";
 
 const SEARCH_DEBOUNCE_MS = 300;
 /** The backend refuses a shorter settlement query, so don't ask it one. */
@@ -154,6 +155,7 @@ export function NpCityField<T extends NpAddressValues>({
             .filter(Boolean)
             .join(" ") || undefined
         }
+        maxLength={ADDRESS_LIMITS.city}
         {...form.register("city", {
           onChange: (event: ChangeEvent<HTMLInputElement>) => {
             // Typed by hand → this is no longer a directory address, so the refs
@@ -314,6 +316,7 @@ export function NpWarehouseField<T extends NpAddressValues>({
         // branch list is short and browsable, and an operator reading options out
         // loud should not have to guess a search term first.
         onFocus={() => setOpen(true)}
+        maxLength={ADDRESS_LIMITS.address1}
         {...form.register("address1", {
           onChange: (event: ChangeEvent<HTMLInputElement>) => {
             form.setValue("npWarehouseRef", "", { shouldDirty: true });

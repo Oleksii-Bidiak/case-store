@@ -3799,15 +3799,9 @@ export const dict = {
     // --- Returns cross-link (TASK-340) ----------------------------------------
     returnsForOrder: "Повернення",
 
-    // --- A rejected save says WHICH field and WHICH rule (TASK-426) -----------
-    // `detailsFailed` above is the honest fallback for a failure nobody can act
-    // on. It is the wrong answer when the server refused one named field: the
-    // operator was editing the notes, the ТТН they never touched was what the
-    // API rejected, and «не вдалося зберегти» sends them looking in the wrong
-    // place. The English constraint text from class-validator never reaches the
-    // screen — this is our sentence for our own rule.
-    detailsFailedTracking:
-      "Замовлення не збережено: ТТН Нової Пошти — це рівно 14 цифр. Виправте номер або очистіть поле.",
+    // `detailsFailedTracking` (TASK-426) stood here until TASK-1984: a refused
+    // ТТН now says `trackingNumberInvalid` under its field, from the API's
+    // `fieldErrors` — the toast that repeated it was the same error twice.
 
     // --- What the order actually contains (TASK-425) --------------------------
     // The add-ons were on the wire and off the screen, which is why the summary
@@ -5180,9 +5174,15 @@ export const dict = {
     // block. The keys are gone rather than left unused, because a dictionary that
     // still tells operators to copy an ID describes a panel that no longer exists.
     contactName: "Імʼя",
+    // TASK-2398: the client's surname is its own field — it used to be guessed
+    // from one «Імʼя» box, and a one-word name left the order unplaceable.
+    contactLastName: "Прізвище",
     contactEmail: "Електронна пошта",
     contactPhone: "Телефон",
     contactNameInvalid: "Вкажіть імʼя клієнта.",
+    // `GuestContactDto.name` is both names joined, `@MaxLength(120)`.
+    contactNameTooLong: (max: number) =>
+      `Імʼя та прізвище разом — не більше ${max} символів.`,
     contactEmailInvalid: "Вкажіть коректну електронну пошту.",
     contactPhoneInvalid: "Вкажіть коректний номер телефону.",
 
@@ -5274,7 +5274,7 @@ export const dict = {
       "Акаунт деактивовано — оформити на нього замовлення не можна.",
     customerRequired: "Виберіть клієнта зі списку.",
     customerSelectedHint:
-      "Порожні поля отримувача заповнено з картки клієнта — за потреби змініть їх.",
+      "Імʼя, прізвище й телефон заповнено з картки клієнта — за потреби змініть їх.",
 
     // --- Phone (TASK-426) ------------------------------------------------------
     // Says «будь-яка країна» out loud, because the operator's own form used to
@@ -5342,8 +5342,8 @@ export const dict = {
     serverErrorTitle: "Замовлення не створено",
     serverErrorLine:
       "Одна позиція вже недоступна — див. «Товари». Інші дані збережено у формі.",
-    serverErrorFields:
-      "Сервер не прийняв позначені поля — інші дані збережено у формі.",
+    // `serverErrorFields` stood here until TASK-1984: a refused field now says
+    // so under itself and in «Перевірте N полів» — a third line was a duplicate.
     // TASK-1973: оператор обирає спосіб доставки (раніше — лише НП).
     deliveryMethodAria: "Спосіб доставки",
     deliveryNpCityRequired:

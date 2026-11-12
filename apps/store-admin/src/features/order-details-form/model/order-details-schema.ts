@@ -1,16 +1,20 @@
 import { z } from "zod";
 import type { OrderEntity, UpdateOrderDetailsDto } from "@/entities/order";
 import { dict } from "@/shared/config";
-import {
-  apiErrorMessage,
-  apiErrorStatus,
-  nullableTextField,
-} from "@/shared/lib";
+import { nullableTextField } from "@/shared/lib";
+import type {
+  ServerFieldMap,
+  ServerFieldMessages,
+} from "@/shared/lib/form-errors";
 
 const t = dict.orders;
 
 /** Digits in a Nova Poshta waybill (ТТН). Fourteen, always — NP issues no other length. */
 export const WAYBILL_DIGITS = 14;
+/** `UpdateOrderDetailsDto.trackingNumber` — `@MaxLength(64)`. */
+export const TRACKING_NUMBER_MAX_LENGTH = 64;
+/** `UpdateOrderDetailsDto.internalNotes` — `@MaxLength(2000)`. */
+export const INTERNAL_NOTES_MAX_LENGTH = 2000;
 
 /**
  * The characters a human legitimately types AROUND the digits of a waybill.
@@ -77,7 +81,7 @@ export function createOrderDetailsSchema(seededTrackingNumber: string) {
     trackingNumber: z
       .string()
       .trim()
-      .max(64, t.trackingNumberInvalid)
+      .max(TRACKING_NUMBER_MAX_LENGTH, t.trackingNumberInvalid)
       .refine(
         (value) =>
           // Blank stays valid: a waybill is assigned later, and clearing one the
@@ -87,7 +91,10 @@ export function createOrderDetailsSchema(seededTrackingNumber: string) {
           isValidWaybill(value),
         { message: t.trackingNumberInvalid },
       ),
-    internalNotes: z.string().trim().max(2000, t.internalNotesInvalid),
+    internalNotes: z
+      .string()
+      .trim()
+      .max(INTERNAL_NOTES_MAX_LENGTH, t.internalNotesInvalid),
   });
 }
 
@@ -157,17 +164,17 @@ export function orderDetailsValuesToDto(
 }
 
 /**
- * Did the API refuse this save because of the WAYBILL specifically?
- *
- * The generic «не вдалося зберегти» is the right answer to a failure nobody can
- * act on, and the wrong one here: the server named a field and a rule, and the
- * operator needs both to fix it. `class-validator` answers with
- * `message: string[]` carrying the English constraint text, which must never
- * reach an operator — so we look for the field it names and say the rule in our
- * own words (`dict.orders.detailsFailedTracking`).
+ * `UpdateOrderDetailsDto` path → field, for `applyServerFieldErrors` (TASK-1984
+ * Rule 6b). The server names the field in `fieldErrors`; it used to be found
+ * by a regex over the English `message` (`isWaybillRejection`).
  */
-export function isWaybillRejection(error: unknown): boolean {
-  if (apiErrorStatus(error) !== 400) return false;
+export const ORDER_DETAILS_FIELD_MAP: ServerFieldMap = {
+  trackingNumber: "trackingNumber",
+  internalNotes: "internalNotes",
+};
 
-  return /waybill|trackingnumber|ттн/i.test(apiErrorMessage(error) ?? "");
-}
+/** Our wording of each field's rule, whichever constraint the server named. */
+export const ORDER_DETAILS_FIELD_MESSAGES: ServerFieldMessages = {
+  trackingNumber: t.trackingNumberInvalid,
+  internalNotes: t.internalNotesInvalid,
+};

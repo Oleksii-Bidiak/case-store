@@ -516,10 +516,11 @@ describe("OrderDetailsForm — an order carrying a legacy waybill", () => {
 });
 
 describe("OrderDetailsForm — a rejected save says which field and which rule", () => {
-  it("names the waybill instead of the generic «не вдалося зберегти»", async () => {
+  it("names the waybill under its field — and only there (TASK-1984)", async () => {
     const bodies: Array<Record<string, unknown>> = [];
     // A 400 the client rule did not anticipate — the two ends disagreeing is
     // exactly when the operator needs the server's reason, in our own words.
+    // The field comes from `fieldErrors`, never from the English message.
     capturePatch(bodies, {
       status: 400,
       body: {
@@ -528,6 +529,9 @@ describe("OrderDetailsForm — a rejected save says which field and which rule",
         message: [
           "trackingNumber: A Nova Poshta waybill (ТТН) is exactly 14 digits",
         ],
+        fieldErrors: [
+          { field: "trackingNumber", constraint: "isNovaPoshtaWaybill" },
+        ],
       },
     });
 
@@ -535,19 +539,17 @@ describe("OrderDetailsForm — a rejected save says which field and which rule",
     await saveWaybill();
 
     await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(sonnerToast.error).toHaveBeenCalledWith(
-      dict.orders.detailsFailedTracking,
-      expect.anything(),
-    );
-    expect(sonnerToast.error).not.toHaveBeenCalledWith(
-      dict.orders.detailsFailed,
-      expect.anything(),
-    );
-    // …and under the field as well: a toast is gone in a moment, the box that
-    // needs fixing is still there.
     expect(
       await screen.findByText(dict.orders.trackingNumberInvalid),
     ).toBeInTheDocument();
+    // One error, shown once (Rule 6c): no toast on top of the field.
+    expect(sonnerToast.error).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("textbox", { name: dict.orders.trackingNumber }),
+    ).toHaveAttribute(
+      "aria-describedby",
+      "order-tracking-number-hint order-tracking-number-error",
+    );
     // The English constraint text never reaches an operator.
     expect(screen.queryByText(/Nova Poshta waybill/i)).not.toBeInTheDocument();
     // And it is not dressed up as a lost update: Nest's 400 envelope carries
@@ -573,6 +575,38 @@ describe("OrderDetailsForm — a rejected save says which field and which rule",
         expect.anything(),
       ),
     );
+  });
+
+  it("puts an internal-notes refusal under the notes (TASK-1984)", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    capturePatch(bodies, {
+      status: 400,
+      body: {
+        statusCode: 400,
+        error: "Bad Request",
+        message: ["internalNotes must be shorter than or equal to 2000"],
+        fieldErrors: [{ field: "internalNotes", constraint: "maxLength" }],
+      },
+    });
+
+    renderWithProviders(<OrderDetailsForm order={ORDER} />, { auth: WRITER });
+    await saveWaybill();
+
+    expect(
+      await screen.findByText(dict.orders.internalNotesInvalid),
+    ).toBeInTheDocument();
+    expect(sonnerToast.error).not.toHaveBeenCalled();
+  });
+
+  it("caps both fields at the DTO's limits", () => {
+    renderWithProviders(<OrderDetailsForm order={ORDER} />, { auth: WRITER });
+
+    expect(
+      screen.getByRole("textbox", { name: dict.orders.trackingNumber }),
+    ).toHaveAttribute("maxLength", "64");
+    expect(
+      screen.getByRole("textbox", { name: dict.orders.internalNotes }),
+    ).toHaveAttribute("maxLength", "2000");
   });
 });
 

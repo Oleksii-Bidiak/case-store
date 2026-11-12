@@ -34,6 +34,8 @@ export {
   useReorderPickupPoints,
 } from "@/shared/api/generated/delivery/delivery";
 
+// TASK-1984: `AddressDto`'s length limits, mirrored by both address forms.
+export { ADDRESS_LIMITS } from "./model/address-limits";
 // TASK-1973: the pickup point cards of the phone order and the delivery edit.
 export { PickupPointPicker } from "./ui/pickup-point-picker";
 // TASK-1973: the NP directory pickers, shared by the phone order and the
