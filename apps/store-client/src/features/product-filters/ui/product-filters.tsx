@@ -102,9 +102,11 @@ const panelClass =
 /**
  * One section of it: a hairline above every section but the first (Catalog
  * §12). `first:` / `last:` trim the outer padding against the panel's own.
+ * `scroll-mt-*` lands a section brought back into view after a filter change
+ * (TASK-2414) below the sticky header.
  */
 const sectionClass =
-  "border-t border-border px-1.5 py-3.5 first:border-t-0 first:pt-2 last:pb-2";
+  "scroll-mt-(--sticky-header-offset) border-t border-border px-1.5 py-3.5 first:border-t-0 first:pt-2 last:pb-2";
 const sectionTitleClass = "text-sm font-bold text-card-foreground";
 
 /**

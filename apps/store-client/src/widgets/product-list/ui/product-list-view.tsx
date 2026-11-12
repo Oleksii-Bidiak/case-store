@@ -44,6 +44,7 @@ import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { findCategoryNodeBySlug } from "../model/catalog-header";
 import { buildCatalogListingParams } from "../model/listing-params";
+import { useKeepFilterSectionInView } from "../model/use-keep-filter-section-in-view";
 import { ProductList } from "./product-list";
 import { ProductListSkeleton } from "./product-list-skeleton";
 
@@ -131,12 +132,11 @@ interface ProductListViewProps {
    */
   lockedOnSale?: boolean;
   /**
-   * Id of the element every URL this listing writes points back at — filters,
-   * sort, view and the page links (TASK-1301). Next scrolls a search-param
-   * navigation to the top of the page; on `/products` that is where the
-   * toolbar is, but on `/promo` the listing sits under the hero and coupons,
-   * and each chip click flung the shopper back up to the hero. With an anchor
-   * the navigation lands on the listing's own section instead.
+   * Id of the element the page links and `/promo`'s category tree point back
+   * at (TASK-1301): on `/promo` the listing sits under the hero and coupons,
+   * and a page change should land on the listing, not at the top. Filters,
+   * sort and view no longer carry it (TASK-2414) — they replace the URL with
+   * `scroll: false` and stay where the shopper is.
    */
   anchorId?: string;
   /**
@@ -225,17 +225,18 @@ export function ProductListView({
   // default-filtered query after hydration (TASK-2421) must not show the
   // unfiltered server count as its placeholder, and neither should a switch
   // of the device filter.
-  const { data: countData } = useProductControllerFindAll(params, {
-    query: {
-      placeholderData: (previous, previousQuery) =>
-        (
-          previousQuery?.queryKey[1] as
-            ProductControllerFindAllParams | undefined
-        )?.device === params.device
-          ? keepPreviousData(previous)
-          : undefined,
-    },
-  });
+  const { data: countData, isFetching: resultsFetching } =
+    useProductControllerFindAll(params, {
+      query: {
+        placeholderData: (previous, previousQuery) =>
+          (
+            previousQuery?.queryKey[1] as
+              ProductControllerFindAllParams | undefined
+          )?.device === params.device
+            ? keepPreviousData(previous)
+            : undefined,
+      },
+    });
   const resultCount = countData?.meta?.total;
 
   // «з N товарів» — the category as the route fixes it (category, keyword,
@@ -278,8 +279,21 @@ export function ProductListView({
     includeOnSale: !lockedOnSale,
   });
 
+  // A rail filter change keeps the section the shopper clicked on screen
+  // (TASK-2414); every other change — sort, view, chips — keeps the position.
+  const {
+    attachRail,
+    rememberSection,
+    arm: armKeepSection,
+    disarm: disarmKeepSection,
+  } = useKeepFilterSectionInView(searchParams.toString(), !resultsFetching);
+
+  // No `#anchor` and `scroll: false` (TASK-2414): Next would otherwise scroll
+  // a search-param navigation to the top of the page, and a click on a filter
+  // deep in the rail flung the shopper back up to the toolbar.
   const applyFilters = useCallback(
     (rawUpdates: Record<string, string | undefined>) => {
+      disarmKeepSection();
       // Clearing `device=` where a default applies would only bring the
       // default straight back — so it also writes `compat=off`, and setting a
       // device drops the marker. Never on a route-locked device.
@@ -295,23 +309,40 @@ export function ProductListView({
         }
       }
       next.set("page", "1"); // reset pagination on any filter/sort change
-      router.replace(`${pathname}?${next.toString()}${fragment}`);
+      router.replace(`${pathname}?${next.toString()}`, { scroll: false });
     },
-    [searchParams, pathname, router, fragment, lockedDevice, hasDeviceDefault],
+    [
+      searchParams,
+      pathname,
+      router,
+      lockedDevice,
+      hasDeviceDefault,
+      disarmKeepSection,
+    ],
+  );
+
+  // The desktop rail's own writer: the same change, then the section check.
+  const applyRailFilters = useCallback(
+    (updates: Record<string, string | undefined>) => {
+      applyFilters(updates);
+      armKeepSection();
+    },
+    [applyFilters, armKeepSection],
   );
 
   // View toggle preserves the current page (it does not change the result set).
   const setView = useCallback(
     (nextView: CatalogView) => {
+      disarmKeepSection();
       const next = new URLSearchParams(searchParams.toString());
       if (nextView === "grid") {
         next.delete("view");
       } else {
         next.set("view", nextView);
       }
-      router.replace(`${pathname}?${next.toString()}${fragment}`);
+      router.replace(`${pathname}?${next.toString()}`, { scroll: false });
     },
-    [searchParams, pathname, router, fragment],
+    [searchParams, pathname, router, disarmKeepSection],
   );
 
   const clearFilters = useCallback(() => {
@@ -539,7 +570,12 @@ export function ProductListView({
             instead of being a sticky box that scrolls inside itself: with the
             tree on top, a capped sticky rail hid every filter below its own
             fold, where page scroll never reaches. */}
-        <aside className="hidden lg:flex lg:flex-col lg:gap-3 lg:self-start">
+        <aside
+          ref={attachRail}
+          onPointerDownCapture={rememberSection}
+          onKeyDownCapture={rememberSection}
+          className="hidden lg:flex lg:flex-col lg:gap-3 lg:self-start"
+        >
           {withCategoryTree &&
             (categoryTreePending ? (
               <CategoryTreePanelSkeleton />
@@ -555,7 +591,7 @@ export function ProductListView({
             categoryId={activeCategoryId}
             lockedDevice={Boolean(lockedDevice)}
             lockedOnSale={lockedOnSale}
-            onFilterChange={applyFilters}
+            onFilterChange={applyRailFilters}
             withMyDevices
           />
         </aside>
