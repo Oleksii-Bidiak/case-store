@@ -475,6 +475,7 @@ export function BannerForm({
                       describedBy={
                         errors.ctaHref ? errorId("ctaHref") : undefined
                       }
+                      maxLength={BANNER_LIMITS.ctaHref}
                     />
                   )}
                 />
