@@ -4,9 +4,26 @@ import type {
   UpdateSeoSettingsDto,
 } from "@/entities/seo-settings";
 import { dict } from "@/shared/config";
-import { isHttpUrl, optionalHttpUrl } from "@/shared/lib/http-url";
+import { isHttpUrl } from "@/shared/lib/http-url";
 
 const e = dict.seoSettingsForm.errors;
+
+/**
+ * The `@MaxLength` / `@ArrayMaxSize` of
+ * `apps/store-api/src/seo-settings/dto/update-seo-settings.dto.ts` (Rule 5d) —
+ * the inputs carry the same `maxLength`.
+ */
+export const SEO_LIMITS = {
+  siteName: 120,
+  defaultMetaTitle: 255,
+  defaultMetaDescription: 500,
+  titleTemplate: 255,
+  ogImage: 500,
+  llmsTxtSummary: 2000,
+  /** Each `additionalSameAsLinks` entry. */
+  link: 500,
+  sameAsCount: 20,
+} as const;
 
 /** Parse a newline-separated textarea value into a trimmed, blank-free list. */
 export function parseSameAsLinks(raw: string): string[] {
@@ -78,8 +95,13 @@ export const seoSettingsSchema = z.object({
     .or(z.literal("")),
 
   // http(s) only (TASK-573): zod's `.url()` let `javascript:` / `data:` through
-  // to a generic 400 from the API.
-  defaultOgImage: optionalHttpUrl(e.urlInvalid),
+  // to a generic 400 from the API. 500 is the DTO's @MaxLength (TASK-1984).
+  defaultOgImage: z
+    .string()
+    .trim()
+    .max(SEO_LIMITS.ogImage, e.ogImageTooLong)
+    .refine((value) => value === "" || isHttpUrl(value), e.urlInvalid)
+    .optional(),
 
   googleSiteVerification: z
     .string()
@@ -104,10 +126,37 @@ export const seoSettingsSchema = z.object({
     .optional()
     .or(z.literal("")),
 
+  // The DTO's @ArrayMaxSize(20) + @IsUrl / @MaxLength(500) each (TASK-1984).
   additionalSameAsLinks: z
     .string()
-    .refine((raw) => parseSameAsLinks(raw).every(isHttpUrl), e.sameAsInvalid),
+    .refine((raw) => parseSameAsLinks(raw).every(isHttpUrl), e.sameAsInvalid)
+    .refine(
+      (raw) =>
+        parseSameAsLinks(raw).every((line) => line.length <= SEO_LIMITS.link),
+      e.sameAsTooLong,
+    )
+    .refine(
+      (raw) => parseSameAsLinks(raw).length <= SEO_LIMITS.sameAsCount,
+      e.sameAsTooMany,
+    ),
 });
+
+/**
+ * DTO path → form field for a server 400 (Rule 6b). The names are the DTO's;
+ * a refused sameAs link (`additionalSameAsLinks.3`) lands on the textarea.
+ */
+export const SEO_SETTINGS_FIELD_MAP = {
+  siteName: "siteName",
+  defaultMetaTitle: "defaultMetaTitle",
+  defaultMetaDescription: "defaultMetaDescription",
+  titleTemplate: "titleTemplate",
+  defaultOgImage: "defaultOgImage",
+  googleSiteVerification: "googleSiteVerification",
+  bingSiteVerification: "bingSiteVerification",
+  llmsTxtSummary: "llmsTxtSummary",
+  additionalSameAsLinks: "additionalSameAsLinks",
+  "additionalSameAsLinks.*": "additionalSameAsLinks",
+} as const;
 
 export type SeoSettingsFormInput = z.input<typeof seoSettingsSchema>;
 export type SeoSettingsFormValues = z.output<typeof seoSettingsSchema>;

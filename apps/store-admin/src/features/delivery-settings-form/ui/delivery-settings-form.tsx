@@ -27,14 +27,19 @@ import {
   Label,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { applyServerFieldErrors } from "@/shared/lib/form-errors";
 import {
   getGetDeliverySettingsQueryKey,
   useUpdateDeliverySettings,
   type DeliverySettingDto,
 } from "@/entities/delivery";
 import {
+  CITY_NAME_MAX,
   DELIVERY_FIELD_ORDER,
   DELIVERY_SECTIONS,
+  DELIVERY_SERVER_MESSAGES,
+  deliveryFieldMap,
   deliverySettingsFormToDto,
   deliverySettingsSchema,
   mapSettingsToForm,
@@ -133,6 +138,7 @@ export function DeliverySettingsForm({
     register,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, dirtyFields },
   } = form;
 
@@ -196,7 +202,29 @@ export function DeliverySettingsForm({
           });
           toast.success(dict.deliverySettings.toastUpdated);
         },
-        onError: () => {
+        onError: (error) => {
+          // TASK-1984 Rule 6b: a 400 lands under the field it is about — of a
+          // card that is on screen; only the remainder becomes the toast.
+          if (apiErrorStatus(error) === 400) {
+            const { mapped, unmapped } = applyServerFieldErrors(
+              error,
+              setError,
+              deliveryFieldMap(submitted),
+              DELIVERY_SERVER_MESSAGES,
+            );
+            if (mapped.length > 0) {
+              const first = DELIVERY_FIELD_ORDER.find((name) =>
+                mapped.includes(name),
+              );
+              if (first)
+                document.getElementById(DELIVERY_FIELD_IDS[first])?.focus();
+              if (unmapped.length === 0) return;
+            }
+            toast.error(
+              apiErrorMessage(error) ?? dict.deliverySettings.toastUpdateFailed,
+            );
+            return;
+          }
           toast.error(dict.deliverySettings.toastUpdateFailed);
         },
       },
@@ -292,6 +320,7 @@ export function DeliverySettingsForm({
                     <Input
                       id={fid.courierCityName}
                       type="text"
+                      maxLength={CITY_NAME_MAX}
                       aria-required="true"
                       placeholder={t.courierCityPlaceholder}
                       aria-invalid={errors.courierCityName ? true : undefined}

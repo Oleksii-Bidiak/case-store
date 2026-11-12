@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, type TransformFnParams } from 'class-transformer';
 import { IsBoolean, IsNotEmpty, IsString, IsUrl, MaxLength, ValidateIf } from 'class-validator';
 import { ReorderFlatDto } from '../../common/dto';
+import { IsInternationalPhone } from '../../common/validators';
 import { PickupPointPublicDto } from './delivery-methods.dto';
 
 /**
@@ -12,6 +13,10 @@ import { PickupPointPublicDto } from './delivery-methods.dto';
  *   snapshots, so they are trimmed and must not be empty. On create they are
  *   required; on update they are validated whenever PRESENT — `null` included,
  *   which must be a 400 rather than a Prisma error.
+ * - `phone` is `@IsInternationalPhone` (TASK-1984, forms Rule 5a): 9 to 15
+ *   digits, letters refused. It is the shop's own number, so a `0 800` or a
+ *   foreign line is legitimate, and it is stored AS TYPED (no `normalizePhone`)
+ *   so the checkout shows it the way the owner wrote it.
  * - `phone`, `workingHours`, `mapUrl` are nullable. A blank string (what an
  *   admin form sends for a cleared input) is stored as null, so the checkout
  *   never renders an empty "Телефон:" row.
@@ -71,7 +76,7 @@ export class CreatePickupPointDto {
   address!: string;
 
   @ApiPropertyOptional({
-    description: 'Free-form phone; blank or null = none',
+    description: 'Phone, 9 to 15 digits, stored as typed; blank or null = none',
     type: String,
     nullable: true,
     example: '+380441234567',
@@ -79,6 +84,7 @@ export class CreatePickupPointDto {
   @Transform(trimmedOrNull)
   @ValidateIf((o: CreatePickupPointDto) => o.phone !== undefined && o.phone !== null)
   @IsString()
+  @IsInternationalPhone()
   @MaxLength(PHONE_MAX)
   phone?: string | null;
 
@@ -150,6 +156,7 @@ export class UpdatePickupPointDto {
   @Transform(trimmedOrNull)
   @ValidateIf((o: UpdatePickupPointDto) => o.phone !== undefined && o.phone !== null)
   @IsString()
+  @IsInternationalPhone()
   @MaxLength(PHONE_MAX)
   phone?: string | null;
 

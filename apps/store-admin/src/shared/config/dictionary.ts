@@ -3412,7 +3412,9 @@ export const dict = {
     // Хвиля 198 (TASK-1053, Н1).
     sectionContact: "Як з вами зв'язатися",
     sectionMessengers: "Месенджери й соцмережі",
-    phoneHint: "Формат +380 XX XXX XX XX — так він і з'явиться на сайті",
+    // TASK-1984: the shop's own number is international (0 800, foreign lines).
+    phoneHint:
+      "Від 9 до 15 цифр, можна 0 800 чи закордонний — на сайті з'явиться так, як ви його вкажете",
     workingHoursOpen: "Працюємо",
     // The switch is ON for a working day; its name says what ON means.
     workingHoursOpenDayAria: (day: string) => `${day} — працюємо`,
@@ -3526,6 +3528,10 @@ export const dict = {
       sameAsInvalid:
         "Кожне посилання має бути коректним URL (https://…), по одному в рядку.",
       siteNameTooLong: "Назва задовга (максимум 120 символів)",
+      // TASK-1984: the DTO's @MaxLength(500) / @ArrayMaxSize(20).
+      ogImageTooLong: "Посилання задовге (максимум 500 символів)",
+      sameAsTooLong: "Кожне посилання — не довше 500 символів",
+      sameAsTooMany: "Не більше 20 посилань",
     },
     // Store name (TASK-433) — rendered first in the form; the keys sit at the
     // end of the block only to keep concurrent waves from colliding here.

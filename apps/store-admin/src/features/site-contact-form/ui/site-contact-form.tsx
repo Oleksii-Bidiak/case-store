@@ -1,19 +1,25 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import { Button, FieldError, FormActionsBar, Input, Label } from "@/shared/ui";
 import { FormSectionCard } from "@/shared/ui/form-section-card";
+import { PhoneInput } from "@/shared/ui/phone-input";
 import { dict } from "@/shared/config";
+import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { applyServerFieldErrors } from "@/shared/lib/form-errors";
+import { EMAIL_MAX_LENGTH } from "@/shared/lib/form-fields";
 import {
   getSiteContactControllerGetSettingsQueryKey,
   useAdminSiteContactControllerUpdate,
   type SiteContactSettingsEntity,
 } from "@/entities/site-contact";
 import {
+  SITE_CONTACT_FIELD_MAP,
+  SITE_CONTACT_LIMITS,
   siteContactSchema,
   siteContactFormValuesToDto,
   mapSettingsToFormValues,
@@ -130,6 +136,7 @@ export function SiteContactForm({ settings }: SiteContactFormProps) {
     control,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, dirtyFields },
   } = useForm<SiteContactFormInput, unknown, SiteContactFormValues>({
     resolver: zodResolver(siteContactSchema),
@@ -215,7 +222,28 @@ export function SiteContactForm({ settings }: SiteContactFormProps) {
           });
           toast.success(dict.siteContact.toastUpdated);
         },
-        onError: () => {
+        onError: (error) => {
+          // TASK-1984 Rule 6b: a 400 lands under the field it is about; only
+          // what no rendered input can take becomes the toast. In structured
+          // mode the hours have no text input, so their error stays a toast.
+          if (apiErrorStatus(error) === 400) {
+            const { workingHours, ...rest } = SITE_CONTACT_FIELD_MAP;
+            const fieldMap: Record<string, string> =
+              workingHoursState.mode === "raw"
+                ? { ...rest, workingHours }
+                : rest;
+            const { mapped, unmapped } = applyServerFieldErrors(
+              error,
+              setError,
+              fieldMap,
+            );
+            if (mapped.length > 0 && unmapped.length === 0) return;
+            // A refusal no field takes: the server's words say what to fix.
+            toast.error(
+              apiErrorMessage(error) ?? dict.siteContact.toastUpdateFailed,
+            );
+            return;
+          }
           toast.error(dict.siteContact.toastUpdateFailed);
         },
       },
@@ -225,6 +253,7 @@ export function SiteContactForm({ settings }: SiteContactFormProps) {
   const emailErrorId = `${ids}-email-error`;
   const phoneHintId = `${ids}-phone-hint`;
   const phoneErrorId = `${ids}-phone-error`;
+  const workingHoursErrorId = `${ids}-workingHours-error`;
   const previewHeadingId = `${ids}-preview`;
 
   const messengers = LINK_FIELDS.filter(({ name }) =>
@@ -249,6 +278,7 @@ export function SiteContactForm({ settings }: SiteContactFormProps) {
                   id="contact-email"
                   type="email"
                   required
+                  maxLength={EMAIL_MAX_LENGTH}
                   placeholder={t.emailPlaceholder}
                   aria-invalid={errors.email ? true : undefined}
                   aria-describedby={errors.email ? emailErrorId : undefined}
@@ -262,18 +292,31 @@ export function SiteContactForm({ settings }: SiteContactFormProps) {
                 <Label htmlFor="contact-phone" required>
                   {t.phone}
                 </Label>
-                <Input
-                  id="contact-phone"
-                  type="tel"
-                  required
-                  placeholder={t.phonePlaceholder}
-                  aria-invalid={errors.phone ? true : undefined}
-                  aria-describedby={
-                    errors.phone
-                      ? `${phoneErrorId} ${phoneHintId}`
-                      : phoneHintId
-                  }
-                  {...register("phone")}
+                {/* Rule 5b: `UpdateSiteContactDto.phone` is
+                    `@IsInternationalPhone` — no +380 mask, kept as typed. */}
+                <Controller
+                  control={control}
+                  name="phone"
+                  render={({ field }) => (
+                    <PhoneInput
+                      id="contact-phone"
+                      rule="international"
+                      required
+                      maxLength={SITE_CONTACT_LIMITS.phone}
+                      placeholder={t.phonePlaceholder}
+                      aria-invalid={errors.phone ? true : undefined}
+                      aria-describedby={
+                        errors.phone
+                          ? `${phoneErrorId} ${phoneHintId}`
+                          : phoneHintId
+                      }
+                      ref={field.ref}
+                      name={field.name}
+                      value={field.value}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                    />
+                  )}
                 />
                 <FieldError id={phoneErrorId}>
                   {errors.phone?.message}
@@ -316,14 +359,17 @@ export function SiteContactForm({ settings }: SiteContactFormProps) {
                 <Input
                   id="contact-workingHours"
                   type="text"
+                  maxLength={SITE_CONTACT_LIMITS.workingHours}
                   placeholder={t.workingHoursPlaceholder}
+                  aria-invalid={errors.workingHours ? true : undefined}
+                  aria-describedby={
+                    errors.workingHours ? workingHoursErrorId : undefined
+                  }
                   {...register("workingHours")}
                 />
-                {errors.workingHours && (
-                  <p role="alert" className="text-sm text-destructive">
-                    {errors.workingHours.message}
-                  </p>
-                )}
+                <FieldError id={workingHoursErrorId}>
+                  {errors.workingHours?.message}
+                </FieldError>
                 <div>
                   <Button
                     type="button"
@@ -347,6 +393,7 @@ export function SiteContactForm({ settings }: SiteContactFormProps) {
                     <Input
                       id={`contact-${name}`}
                       type={type}
+                      maxLength={SITE_CONTACT_LIMITS.link}
                       placeholder={t[`${name}Placeholder`]}
                       aria-invalid={errors[name] ? true : undefined}
                       aria-describedby={errors[name] ? errorId : undefined}

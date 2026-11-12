@@ -16,7 +16,8 @@ import {
   Textarea,
 } from "@/shared/ui";
 import { FormSectionCard } from "@/shared/ui/form-section-card";
-import { cn } from "@/shared/lib";
+import { apiErrorMessage, apiErrorStatus, cn } from "@/shared/lib";
+import { applyServerFieldErrors } from "@/shared/lib/form-errors";
 import {
   resolveSeoPreviewTitle,
   resolveSeoPreviewDescription,
@@ -37,6 +38,8 @@ import {
 } from "@/features/content-image-upload";
 import { MediaPicker } from "@/features/media-picker";
 import {
+  SEO_LIMITS,
+  SEO_SETTINGS_FIELD_MAP,
   seoSettingsSchema,
   seoSettingsFormValuesToDto,
   mapSettingsToFormValues,
@@ -125,6 +128,7 @@ export function SeoSettingsForm({ settings, logoSlot }: SeoSettingsFormProps) {
     reset,
     getValues,
     setValue,
+    setError,
     formState: { errors, dirtyFields },
   } = useForm<SeoSettingsFormInput, unknown, SeoSettingsFormValues>({
     resolver: zodResolver(seoSettingsSchema),
@@ -247,7 +251,21 @@ export function SeoSettingsForm({ settings, logoSlot }: SeoSettingsFormProps) {
           });
           toast.success(dict.seoSettings.toastUpdated);
         },
-        onError: () => {
+        onError: (error) => {
+          // TASK-1984 Rule 6b: a 400 lands under the field it is about (a
+          // folded section unfolds by itself); only the remainder is a toast.
+          if (apiErrorStatus(error) === 400) {
+            const { mapped, unmapped } = applyServerFieldErrors(
+              error,
+              setError,
+              SEO_SETTINGS_FIELD_MAP,
+            );
+            if (mapped.length > 0 && unmapped.length === 0) return;
+            toast.error(
+              apiErrorMessage(error) ?? dict.seoSettings.toastUpdateFailed,
+            );
+            return;
+          }
           toast.error(dict.seoSettings.toastUpdateFailed);
         },
       },
@@ -274,6 +292,7 @@ export function SeoSettingsForm({ settings, logoSlot }: SeoSettingsFormProps) {
           <Label htmlFor="seo-site-name">{f.siteName}</Label>
           <Input
             id="seo-site-name"
+            maxLength={SEO_LIMITS.siteName}
             placeholder={f.siteNamePlaceholder(dict.brand)}
             aria-invalid={errors.siteName ? true : undefined}
             aria-describedby={describedBy(
@@ -302,6 +321,7 @@ export function SeoSettingsForm({ settings, logoSlot }: SeoSettingsFormProps) {
           <Label htmlFor="seo-default-title">{f.defaultMetaTitle}</Label>
           <Input
             id="seo-default-title"
+            maxLength={SEO_LIMITS.defaultMetaTitle}
             className="scroll-mt-4"
             placeholder={f.defaultMetaTitlePlaceholder}
             aria-invalid={
@@ -339,6 +359,7 @@ export function SeoSettingsForm({ settings, logoSlot }: SeoSettingsFormProps) {
           </Label>
           <Textarea
             id="seo-default-description"
+            maxLength={SEO_LIMITS.defaultMetaDescription}
             rows={3}
             placeholder={f.defaultMetaDescriptionPlaceholder}
             aria-invalid={errors.defaultMetaDescription ? true : undefined}
@@ -363,6 +384,7 @@ export function SeoSettingsForm({ settings, logoSlot }: SeoSettingsFormProps) {
           <Label htmlFor="seo-title-template">{f.titleTemplate}</Label>
           <Input
             id="seo-title-template"
+            maxLength={SEO_LIMITS.titleTemplate}
             placeholder={f.titleTemplatePlaceholder}
             aria-invalid={errors.titleTemplate ? true : undefined}
             aria-describedby={describedBy(
@@ -492,6 +514,8 @@ export function SeoSettingsForm({ settings, logoSlot }: SeoSettingsFormProps) {
               // The hint and the `FieldError` below keep their ids, so the
               // error is rendered there and not passed as `fieldError`.
               urlInputProps={{
+                // No `maxLength` here: `ContentImageField` does not pass it
+                // through; the schema's .max(500) speaks under the field.
                 type: "url",
                 "aria-invalid": errors.defaultOgImage ? true : undefined,
                 "aria-describedby": describedBy(
@@ -661,6 +685,7 @@ export function SeoSettingsForm({ settings, logoSlot }: SeoSettingsFormProps) {
           <Label htmlFor="seo-llms-summary">{f.llmsTxtSummary}</Label>
           <Textarea
             id="seo-llms-summary"
+            maxLength={SEO_LIMITS.llmsTxtSummary}
             rows={3}
             placeholder={f.llmsTxtSummaryPlaceholder}
             aria-invalid={errors.llmsTxtSummary ? true : undefined}

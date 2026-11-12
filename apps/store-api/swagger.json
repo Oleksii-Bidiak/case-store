@@ -28740,7 +28740,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "Support phone number (free-form)",
+            "description": "Support phone number: 9 to 15 digits with the usual separators. Stored as typed (no normalisation), so a 0 800 line is shown and dialled as written.",
             "example": "+380 44 000 0000"
           },
           "workingHours": {
@@ -33392,7 +33392,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "Free-form phone; blank or null = none",
+            "description": "Phone, 9 to 15 digits, stored as typed; blank or null = none",
             "nullable": true,
             "example": "+380441234567"
           },

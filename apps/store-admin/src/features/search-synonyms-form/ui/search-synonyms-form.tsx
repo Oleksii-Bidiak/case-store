@@ -15,12 +15,15 @@ import {
 import { Button, FormActionsBar, Input, useConfirmDialog } from "@/shared/ui";
 import { RowActionsMenu } from "@/shared/ui/data-registry";
 import { toast } from "@/shared/ui/toast";
-import { apiErrorMessage, cn } from "@/shared/lib";
+import { apiErrorMessage, apiErrorStatus, cn } from "@/shared/lib";
+import { applyServerFieldErrors } from "@/shared/lib/form-errors";
 import { dict } from "@/shared/config";
 import {
+  SYNONYMS_SERVER_MESSAGES,
   mapSynonymsToFormValues,
   parseSynonymTerms,
   searchSynonymsSchema,
+  synonymsServerFieldMap,
   type SearchSynonymsFormInput,
   type SearchSynonymsFormValues,
 } from "../model/search-synonyms-schema";
@@ -106,6 +109,8 @@ export function SearchSynonymsForm({ settings }: SearchSynonymsFormProps) {
     handleSubmit,
     reset,
     setFocus,
+    setError,
+    getValues,
     formState: { errors, isDirty, defaultValues },
   } = useForm<SearchSynonymsFormInput, unknown, SearchSynonymsFormValues>({
     resolver: zodResolver(searchSynonymsSchema),
@@ -148,6 +153,8 @@ export function SearchSynonymsForm({ settings }: SearchSynonymsFormProps) {
   };
 
   const save = (body: UpdateSearchSynonymsDto, restoring: boolean) => {
+    // The rows as typed — what a server refusal's group index is mapped onto.
+    const rows = getValues("groups");
     update.mutate(
       { data: body },
       {
@@ -162,6 +169,17 @@ export function SearchSynonymsForm({ settings }: SearchSynonymsFormProps) {
           toast.success(restoring ? d.toastRestored : d.toastSaved);
         },
         onError: (error) => {
+          // TASK-1984 Rule 6b: a refused group lands under its own row; only
+          // what no row takes (or a non-400) is a toast.
+          if (!restoring && apiErrorStatus(error) === 400) {
+            const { mapped, unmapped } = applyServerFieldErrors(
+              error,
+              setError,
+              synonymsServerFieldMap(rows),
+              SYNONYMS_SERVER_MESSAGES,
+            );
+            if (mapped.length > 0 && unmapped.length === 0) return;
+          }
           toast.error(apiErrorMessage(error) ?? d.toastFailed);
         },
       },

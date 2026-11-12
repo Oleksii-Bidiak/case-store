@@ -4,6 +4,7 @@ import {
   mapSynonymsToFormValues,
   parseSynonymTerms,
   searchSynonymsSchema,
+  synonymsServerFieldMap,
 } from "./search-synonyms-schema";
 
 const e = dict.searchSynonyms.errors;
@@ -79,5 +80,20 @@ describe("mapSynonymsToFormValues", () => {
         groups: [{ terms: ["чохол", "case"] }, { terms: ["a", "b", "c"] }],
       }),
     ).toEqual({ groups: [{ terms: "чохол, case" }, { terms: "a, b, c" }] });
+  });
+});
+
+describe("synonymsServerFieldMap (TASK-1984)", () => {
+  it("maps a body group index past the blank rows the body dropped", () => {
+    const map = synonymsServerFieldMap([
+      { terms: "чохол, case" },
+      { terms: "  " },
+      { terms: "айфон, iphone" },
+    ]);
+    expect(map["groups.0.terms"]).toBe("groups.0.terms");
+    expect(map["groups.1.terms"]).toBe("groups.2.terms");
+    expect(map["groups.1.*"]).toBe("groups.2.terms");
+    expect(map["groups.2.terms"]).toBeUndefined();
+    expect(map.groups).toBe("groups.root");
   });
 });
