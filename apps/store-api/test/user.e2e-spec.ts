@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -12,6 +12,7 @@ import { UserRepository } from '../src/user/user.repository';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * E2E tests for the User module.
@@ -173,16 +174,7 @@ describe('UserController (e2e)', () => {
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get<JwtService>(JwtService);
 
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: {
-          enableImplicitConversion: true,
-        },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
 
     app.setGlobalPrefix('api', {
       exclude: ['health'],
@@ -316,9 +308,28 @@ describe('UserController (e2e)', () => {
         .send({ phone: '----------' })
         .expect(400);
 
-      expect(JSON.stringify(response.body)).toContain('9 to 15 digits');
+      expect(JSON.stringify(response.body)).toContain('+380 followed by 9 digits');
       expect(userRepositoryMock.update).not.toHaveBeenCalled();
     });
+
+    // TASK-1984 (D1): the profile is the shopper's own number, and the
+    // storefront form only takes a UA one — so does the endpoint now.
+    it.each(['+48 123 456 789', '+1 234 567 8901', '050 111 2233 ccc'])(
+      'should return 400 for the non-UA phone %p and never write it',
+      async (phone) => {
+        const token = generateAccessToken(testUser.id, testUser.role);
+        userRepositoryMock.findById.mockResolvedValue(testUser);
+
+        const response = await request(app.getHttpServer())
+          .put('/api/users/me')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ phone })
+          .expect(400);
+
+        expect(JSON.stringify(response.body)).toContain('+380 followed by 9 digits');
+        expect(userRepositoryMock.update).not.toHaveBeenCalled();
+      },
+    );
 
     it('should store a valid phone normalised to digits', async () => {
       const token = generateAccessToken(testUser.id, testUser.role);

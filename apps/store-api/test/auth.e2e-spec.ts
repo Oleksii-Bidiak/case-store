@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ExecutionContext, INestApplication, ValidationPipe } from '@nestjs/common';
+import { ExecutionContext, INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard, ThrottlerStorage } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -16,6 +16,7 @@ import { OrderService } from '../src/order/order.service';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 import * as argon2 from 'argon2';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 // Google OAuth must stay UNCONFIGURED for this suite: part of what the Google
 // cases below prove is that AppModule boots with ZERO Google env vars
@@ -194,16 +195,7 @@ describe('AuthController (e2e)', () => {
     // JwtRefreshStrategy can extract it from req.cookies.
     app.use(cookieParser());
 
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: {
-          enableImplicitConversion: true,
-        },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
 
     app.setGlobalPrefix('api', {
       exclude: ['health'],

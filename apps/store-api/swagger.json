@@ -23846,7 +23846,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "User phone number: 9 to 15 digits, any country code, separators allowed. Stored normalised, as digits only. Omit the field to leave the number unchanged; send `null` (or an empty string) to REMOVE it. Anything else that is not a dialable number — e.g. `----------` — is refused with 400, never stored as empty.",
+            "description": "User phone number: a Ukrainian number (+380 followed by 9 digits), typed with any of `+ ( ) . -` and spaces as separators — letters or an extension are refused. Stored normalised as `380XXXXXXXXX`. Omit the field to leave the number unchanged; send `null` (or an empty string) to REMOVE it. Anything else that is not a dialable number — e.g. `----------` — is refused with 400, never stored as empty.",
             "example": "+380991234567",
             "nullable": true
           }

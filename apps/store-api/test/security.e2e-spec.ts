@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AbstractLoader, ExpressLoader } from '@nestjs/serve-static';
 import helmet from 'helmet';
@@ -17,6 +17,7 @@ import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 import { CsrfService } from '../src/csrf';
 import { buildHelmetOptions } from '../src/config/security.config';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * E2E tests for the Phase 5 security hardening (TASK-046):
@@ -134,14 +135,7 @@ describe('Security hardening (e2e)', () => {
     app.use('/api/cart', csrfService.protect);
     app.use('/api/wishlist', csrfService.protect);
 
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     app.setGlobalPrefix('api', { exclude: ['health'] });
 
     await app.init();

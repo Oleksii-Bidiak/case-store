@@ -49,6 +49,9 @@ describe('CreateContactMessageDto phone', () => {
     ['+380 67 123 4567', 'the mask the storefront input renders'],
     ['0671234567', 'domestic leading zero'],
     ['+38 (067) 123-45-67', 'brackets and dashes'],
+    ['+380 50 111 2233', 'the storefront mask'],
+    ['0501112233', 'bare domestic digits'],
+    ['+38 (050) 111-22-33', 'brackets, dashes and the short +38 prefix'],
   ])('accepts %s (%s)', async (phone) => {
     expect(await phoneErrors(phone)).toHaveLength(0);
   });
@@ -59,6 +62,11 @@ describe('CreateContactMessageDto phone', () => {
     ['+380 67 123', 'a half-typed number'],
     ['+1 234 567 8901', 'a foreign number'],
     ['((((((((((', 'punctuation only'],
+    // TASK-1984 (D2): a valid number with letters glued on is not "a number plus
+    // decoration" — PHONE_SHAPE refuses it before the digits are counted.
+    ['050 111 2233 ccc', 'a valid number followed by letters'],
+    ['+380 50 111 2233 ext 5', 'an extension'],
+    ['++380501112233', 'a second plus'],
   ])('rejects %s (%s)', async (phone) => {
     expect((await phoneErrors(phone)).length).toBeGreaterThan(0);
   });

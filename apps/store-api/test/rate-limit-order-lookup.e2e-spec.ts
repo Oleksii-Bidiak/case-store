@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { Logger, Module, ValidationPipe } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import type { ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -14,6 +14,7 @@ import { OrderService } from '../src/order/order.service';
 import { AuthSessionResponder, JwtAuthGuard } from '../src/auth';
 import { OptionalJwtAuthGuard } from '../src/cart/guards';
 import { CartIdentityInterceptor } from '../src/cart/interceptors';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * E2E for TASK-624 — `POST /api/orders/lookup` is capped per ORDER NUMBER, not
@@ -93,7 +94,7 @@ describe('Order lookup is rate-limited per order number (e2e, TASK-624)', () => 
 
     app = moduleFixture.createNestApplication<NestExpressApplication>();
     applyProxyTrust(app);
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    app.useGlobalPipes(createGlobalValidationPipe());
     await app.init();
   });
 
