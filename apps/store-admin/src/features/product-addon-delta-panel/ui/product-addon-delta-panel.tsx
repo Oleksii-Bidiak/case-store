@@ -17,6 +17,7 @@ import {
 import {
   Badge,
   Button,
+  FieldError,
   Input,
   Label,
   Select,
@@ -26,6 +27,10 @@ import {
   SelectValue,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { apiErrorStatus } from "@/shared/lib";
+import { mapServerFieldErrors } from "@/shared/lib/form-errors";
+import { parseKop } from "@/shared/lib/money-kop";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 
 /**
  * One add-on an operator picked BEFORE the product existed (TASK-442). Replayed
@@ -123,6 +128,29 @@ export function ProductAddonDeltaPanel({
   /** Which add-on's price input is open, and its current draft value. */
   const [priceDraftFor, setPriceDraftFor] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState("");
+  /** The open price field's message (TASK-1984, Rule 6a) — never a toast. */
+  const [priceError, setPriceError] = useState<string | null>(null);
+
+  const openPrice = (addonServiceId: string | null, draft = "") => {
+    setPriceDraftFor(addonServiceId);
+    setPriceDraft(draft);
+    setPriceError(null);
+  };
+
+  /**
+   * The typed price as the DTO's number, or `null` with the reason under the
+   * field. The money helper, never `Number(x)` (Rule 5e): `AddonDeltaPrice
+   * Constraint` wants a finite number ≥ 0, so «1e3» or a minus is refused here.
+   * Stricter on purpose (Rule 5f): at most two decimals — it is money.
+   */
+  const readPrice = (): number | null => {
+    const kop = priceDraft.trim().startsWith("-") ? null : parseKop(priceDraft);
+    if (kop === null) {
+      setPriceError(d.priceInvalid);
+      return null;
+    }
+    return Number((kop / 100).toFixed(2));
+  };
   const [addPick, setAddPick] = useState("");
 
   const addons = resolved.data?.data ?? [];
@@ -157,11 +185,25 @@ export function ProductAddonDeltaPanel({
       {
         onSuccess: () => {
           invalidate();
-          setPriceDraftFor(null);
+          openPrice(null);
           setAddPick("");
           toast.success(d.toastSaved);
         },
-        onError: () => toast.error(d.toastFailed),
+        onError: (error) => {
+          // TASK-1984 Rule 6b: a 400 on the price goes under the open price
+          // field; anything else is said once, in the server's words.
+          const priceMessage =
+            price !== undefined &&
+            priceDraftFor === addonServiceId &&
+            apiErrorStatus(error) === 400
+              ? mapServerFieldErrors(error, { price: "price" }).price
+              : undefined;
+          if (priceMessage) {
+            setPriceError(priceMessage);
+            return;
+          }
+          toast.error(refusalMessage(error) ?? d.toastFailed);
+        },
       },
     );
   };
@@ -175,7 +217,7 @@ export function ProductAddonDeltaPanel({
           invalidate();
           toast.success(d.toastReverted);
         },
-        onError: () => toast.error(d.toastFailed),
+        onError: (error) => toast.error(refusalMessage(error) ?? d.toastFailed),
       },
     );
   };
@@ -190,11 +232,8 @@ export function ProductAddonDeltaPanel({
    * price as an ADD; only an inherited (or already overridden) entry overrides.
    */
   const submitPrice = (addon: ResolvedAddonEntity) => {
-    const price = Number(priceDraft);
-    if (priceDraft.trim() === "" || Number.isNaN(price) || price < 0) {
-      toast.error(d.toastBadPrice);
-      return;
-    }
+    const price = readPrice();
+    if (price === null) return;
     mutateDelta(
       addon.addonServiceId,
       addon.source === "add" ? "ADD" : "OVERRIDE",
@@ -216,17 +255,14 @@ export function ProductAddonDeltaPanel({
     );
 
   const stagePrice = (addonServiceId: string) => {
-    const price = Number(priceDraft);
-    if (priceDraft.trim() === "" || Number.isNaN(price) || price < 0) {
-      toast.error(d.toastBadPrice);
-      return;
-    }
+    const price = readPrice();
+    if (price === null) return;
     onStage?.(
       stagedAddons.map((row) =>
         row.addonServiceId === addonServiceId ? { ...row, price } : row,
       ),
     );
-    setPriceDraftFor(null);
+    openPrice(null);
   };
 
   // Only services that are NOT already resolved for this product can be added as
@@ -298,8 +334,15 @@ export function ProductAddonDeltaPanel({
                             min="0"
                             className="w-32"
                             value={priceDraft}
-                            onChange={(event) =>
-                              setPriceDraft(event.target.value)
+                            onChange={(event) => {
+                              setPriceDraft(event.target.value);
+                              setPriceError(null);
+                            }}
+                            aria-invalid={priceError ? true : undefined}
+                            aria-describedby={
+                              priceError
+                                ? `addon-price-${row.addonServiceId}-error`
+                                : undefined
                             }
                           />
                           <Button
@@ -313,10 +356,16 @@ export function ProductAddonDeltaPanel({
                             type="button"
                             size="sm"
                             variant="ghost"
-                            onClick={() => setPriceDraftFor(null)}
+                            onClick={() => openPrice(null)}
                           >
                             {dict.common.cancel}
                           </Button>
+                          <FieldError
+                            id={`addon-price-${row.addonServiceId}-error`}
+                            className="basis-full"
+                          >
+                            {priceError}
+                          </FieldError>
                         </>
                       ) : (
                         <>
@@ -324,10 +373,9 @@ export function ProductAddonDeltaPanel({
                             type="button"
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              setPriceDraftFor(row.addonServiceId);
-                              setPriceDraft(shownPrice);
-                            }}
+                            onClick={() =>
+                              openPrice(row.addonServiceId, shownPrice)
+                            }
                           >
                             {d.actionOwnPrice}
                           </Button>
@@ -411,8 +459,15 @@ export function ProductAddonDeltaPanel({
                             min="0"
                             className="w-32"
                             value={priceDraft}
-                            onChange={(event) =>
-                              setPriceDraft(event.target.value)
+                            onChange={(event) => {
+                              setPriceDraft(event.target.value);
+                              setPriceError(null);
+                            }}
+                            aria-invalid={priceError ? true : undefined}
+                            aria-describedby={
+                              priceError
+                                ? `addon-price-${addon.addonServiceId}-error`
+                                : undefined
                             }
                           />
                           <Button
@@ -427,10 +482,16 @@ export function ProductAddonDeltaPanel({
                             type="button"
                             size="sm"
                             variant="ghost"
-                            onClick={() => setPriceDraftFor(null)}
+                            onClick={() => openPrice(null)}
                           >
                             {dict.common.cancel}
                           </Button>
+                          <FieldError
+                            id={`addon-price-${addon.addonServiceId}-error`}
+                            className="basis-full"
+                          >
+                            {priceError}
+                          </FieldError>
                         </>
                       ) : (
                         <>
@@ -439,10 +500,9 @@ export function ProductAddonDeltaPanel({
                             size="sm"
                             variant="outline"
                             disabled={isPending}
-                            onClick={() => {
-                              setPriceDraftFor(addon.addonServiceId);
-                              setPriceDraft(addon.price);
-                            }}
+                            onClick={() =>
+                              openPrice(addon.addonServiceId, addon.price)
+                            }
                           >
                             {d.actionOwnPrice}
                           </Button>

@@ -8,7 +8,9 @@ import { toast } from "@/shared/ui/toast";
 import {
   GroupPositionsSection,
   ProductGroupForm,
+  placeProductGroupSaveError,
   productGroupFormValuesToDto,
+  type ProductGroupFormSetError,
   type ProductGroupFormInput,
   type ProductGroupFormValues,
 } from "@/features/product-group-form";
@@ -23,6 +25,7 @@ import { useAuth } from "@/entities/session";
 import { PERM } from "@/entities/permission";
 import { Badge, ErrorState } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import { ProductGroupFormSkeleton } from "./product-group-form-skeleton";
 
 const g = dict.productGroups;
@@ -61,7 +64,10 @@ export function EditProductGroupView({ groupId }: EditProductGroupViewProps) {
 
   const group = data?.data;
 
-  const handleSubmit = (values: ProductGroupFormValues) => {
+  const handleSubmit = (
+    values: ProductGroupFormValues,
+    setError: ProductGroupFormSetError,
+  ) => {
     update.mutate(
       { id: groupId, data: productGroupFormValuesToDto(values) },
       {
@@ -75,7 +81,12 @@ export function EditProductGroupView({ groupId }: EditProductGroupViewProps) {
           toast.success(g.toastUpdated);
           router.push(LIST_PATH);
         },
-        onError: () => toast.error(g.toastUpdateFailed),
+        // TASK-1984 Rule 6b: under the field when it is about one; a refusal
+        // no field takes in the server's own words.
+        onError: (error) => {
+          if (placeProductGroupSaveError(error, setError)) return;
+          toast.error(refusalMessage(error) ?? g.toastUpdateFailed);
+        },
       },
     );
   };

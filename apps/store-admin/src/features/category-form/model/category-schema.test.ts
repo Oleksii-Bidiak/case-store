@@ -47,6 +47,28 @@ describe("category form — OG image is http(s) only (TASK-573)", () => {
   );
 });
 
+describe("category form — the tile image follows the DTO's @IsUrl (TASK-1984)", () => {
+  const { image } = categorySchema.shape;
+
+  it.each([
+    "",
+    "https://cdn.example.com/a.jpg",
+    "http://localhost:3001/uploads/a.jpg",
+  ])("accepts %j", (value) => {
+    expect(image.safeParse(value).success).toBe(true);
+  });
+
+  it.each([
+    "javascript:alert(1)",
+    "ftp://cdn.example.com/a.jpg",
+    "cdn.example.com/a.jpg",
+  ])("rejects %j under the field", (value) => {
+    expect(image.safeParse(value).error?.issues[0]?.message).toBe(
+      dict.categoryForm.errors.imageUrl,
+    );
+  });
+});
+
 describe("category form — icon (TASK-1956)", () => {
   const { icon } = categorySchema.shape;
   const base = { name: "Зарядні пристрої", icon: "" };

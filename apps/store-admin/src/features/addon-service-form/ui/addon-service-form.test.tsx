@@ -12,7 +12,11 @@ import {
   waitFor,
 } from "@/shared/test/render";
 import { dict } from "@/shared/config";
-import { AddonServiceForm } from "./addon-service-form";
+import { placeAddonServiceSaveError } from "../model/addon-service-schema";
+import {
+  AddonServiceForm,
+  type AddonServiceFormSetError,
+} from "./addon-service-form";
 
 const f = dict.addonServiceForm;
 
@@ -113,6 +117,42 @@ describe("AddonServiceForm (wave 198)", () => {
         price: "199",
         isActive: false,
       }),
+    );
+  });
+
+  // TASK-1984 (Rule 6b): the dialog's 400 lands under the field it is about.
+  it("a server 400 on the price replaces the price hint", async () => {
+    const onSubmit = jest.fn(
+      (_values: unknown, setError: AddonServiceFormSetError) => {
+        placeAddonServiceSaveError(
+          {
+            response: {
+              status: 400,
+              data: {
+                message: ["Price must be a number"],
+                fieldErrors: [{ field: "price", constraint: "isNumber" }],
+              },
+            },
+          },
+          setError,
+        );
+      },
+    );
+    renderForm({
+      onSubmit,
+      defaultValues: { name: "Скло", description: "", price: "199" },
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    expect(await screen.findByText(dict.forms.invalid)).toHaveAttribute(
+      "role",
+      "alert",
+    );
+    expect(screen.queryByText(f.priceHint)).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: f.price })).toHaveAttribute(
+      "aria-invalid",
+      "true",
     );
   });
 

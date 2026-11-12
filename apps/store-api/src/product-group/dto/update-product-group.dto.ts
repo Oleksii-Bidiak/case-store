@@ -8,7 +8,8 @@ import {
   MinLength,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { trimString } from '../../common/utils';
 import { ProductGroupAxisInputDto } from './product-group-axis-input.dto';
 
 /**
@@ -22,6 +23,8 @@ export class UpdateProductGroupDto {
     required: false,
   })
   @IsOptional()
+  // TASK-1984: trimmed first, so "   " is refused like the admin form's trim().min(1).
+  @Transform(trimString)
   @IsString()
   @MinLength(1, { message: 'Group name cannot be empty' })
   @MaxLength(255, { message: 'Group name must be at most 255 characters' })

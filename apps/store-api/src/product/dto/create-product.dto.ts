@@ -1,4 +1,5 @@
 import {
+  IsNotEmpty,
   IsString,
   IsOptional,
   IsNumber,
@@ -11,7 +12,8 @@ import {
   Matches,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { trimString } from '../../common/utils';
 import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 import { MAX_DESCRIPTION_LENGTH } from '../product.constants';
 
@@ -26,7 +28,11 @@ export class CreateProductDto {
     description: 'Product name',
     example: 'iPhone 15 Pro Case — Clear MagSafe',
   })
+  // TASK-1984 (forms Rule 5d): the admin form refuses a blank name, so the API
+  // does too — trimmed first, so "   " is blank rather than a name.
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty({ message: 'Product name must not be empty' })
   @MaxLength(255, { message: 'Product name must be at most 255 characters' })
   name!: string;
 

@@ -15,8 +15,27 @@ const carriesFiles = (event: DragEvent) =>
 /** `.xlsx` by name — the API checks the name AND the MIME type again. */
 export const isXlsx = (file: File) => file.name.toLowerCase().endsWith(".xlsx");
 
+/**
+ * The upload ceiling, mirroring `MAX_IMPORT_BYTES` in
+ * `apps/store-api/src/catalog-import/catalog-import.service.ts` (also the multer
+ * `fileSize` limit of the upload route). The API does not expose it, so it is
+ * kept in step by hand: a file above it is refused under the zone before an
+ * upload is spent on a sure refusal (TASK-1984, forms Rule 5d).
+ */
+export const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
+const MAX_IMPORT_MB = MAX_IMPORT_BYTES / 1024 / 1024;
+
+/** Why a picked file is refused before upload, or `null` when it may go. */
+export function importFileError(file: File): string | null {
+  if (!isXlsx(file)) return d.wrongType;
+  // The API answers «Файл порожній.» to an empty upload — say it here.
+  if (file.size === 0) return d.emptyFile;
+  if (file.size > MAX_IMPORT_BYTES) return d.fileTooLarge(MAX_IMPORT_MB);
+  return null;
+}
+
 interface ImportDropzoneProps {
-  /** A file the operator chose or dropped — already checked to be `.xlsx`. */
+  /** A file the operator chose or dropped — already checked by `importFileError`. */
   onFile: (file: File) => void;
   isUploading: boolean;
 }
@@ -32,17 +51,15 @@ interface ImportDropzoneProps {
 export function ImportDropzone({ onFile, isUploading }: ImportDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  const [wrongType, setWrongType] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const errorId = useId();
   const hintId = useId();
 
   const take = (file: File | undefined) => {
     if (!file) return;
-    if (!isXlsx(file)) {
-      setWrongType(true);
-      return;
-    }
-    setWrongType(false);
+    const refusal = importFileError(file);
+    setFileError(refusal);
+    if (refusal) return;
     onFile(file);
   };
 
@@ -111,7 +128,7 @@ export function ImportDropzone({ onFile, isUploading }: ImportDropzoneProps) {
           className="mt-1 aria-disabled:opacity-50"
           aria-disabled={isUploading || undefined}
           aria-busy={isUploading || undefined}
-          aria-describedby={wrongType ? `${hintId} ${errorId}` : hintId}
+          aria-describedby={fileError ? `${hintId} ${errorId}` : hintId}
           onClick={() => {
             if (!isUploading) inputRef.current?.click();
           }}
@@ -138,7 +155,7 @@ export function ImportDropzone({ onFile, isUploading }: ImportDropzoneProps) {
       <p id={hintId} className="text-xs text-muted-foreground">
         {d.dropHint}
       </p>
-      <FieldError id={errorId}>{wrongType ? d.wrongType : null}</FieldError>
+      <FieldError id={errorId}>{fileError}</FieldError>
     </div>
   );
 }

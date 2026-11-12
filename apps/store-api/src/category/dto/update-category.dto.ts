@@ -6,9 +6,13 @@ import {
   MaxLength,
   Matches,
   IsUrl,
+  IsNotEmpty,
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { trimString } from '../../common/utils';
+import { CATEGORY_IMAGE_URL_OPTIONS } from './create-category.dto';
 import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 import { IsCategoryIconField, type CategoryIconKey } from '../category-icons';
 
@@ -25,7 +29,10 @@ export class UpdateCategoryDto {
     required: false,
   })
   @IsOptional()
+  // TASK-1984: absent = unchanged, but a sent name is trimmed and must not be blank.
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty({ message: 'Category name must not be empty' })
   @MaxLength(255, { message: 'Category name must be at most 255 characters' })
   name?: string;
 
@@ -64,7 +71,7 @@ export class UpdateCategoryDto {
   // See the note on CreateCategoryDto.image — `require_tld: false` admits the
   // store-api uploads origin (`http://localhost:3001/…`) while still rejecting
   // `javascript:` and relative paths (TASK-364).
-  @IsUrl({ require_tld: false }, { message: 'Image must be a valid URL' })
+  @IsUrl(CATEGORY_IMAGE_URL_OPTIONS, { message: 'Image must be a valid URL' })
   image?: string;
 
   @ApiProperty({

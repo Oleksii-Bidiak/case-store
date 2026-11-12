@@ -1,4 +1,6 @@
-import { IsString, IsOptional, IsBoolean, MaxLength, Matches } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MaxLength, Matches, IsNotEmpty } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { trimString } from '../../common/utils';
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
@@ -8,7 +10,10 @@ import { ApiProperty } from '@nestjs/swagger';
 export class UpdateDeviceBrandDto {
   @ApiProperty({ description: 'Device brand name', example: 'Apple', required: false })
   @IsOptional()
+  // TASK-1984: absent = unchanged, but a sent name is trimmed and must not be blank.
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty({ message: 'Device brand name must not be empty' })
   @MaxLength(255, { message: 'Device brand name must be at most 255 characters' })
   name?: string;
 

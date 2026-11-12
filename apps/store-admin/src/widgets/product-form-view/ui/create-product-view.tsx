@@ -8,8 +8,10 @@ import { Check, Loader2, TriangleAlert } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
   ProductForm,
+  placeProductSaveError,
   productFormValuesToDto,
   productSaveErrorMessage,
+  type ProductFormSubmitContext,
   type ProductFormValues,
 } from "@/features/product-form";
 import {
@@ -123,7 +125,10 @@ export function CreateProductView() {
   const setStep = (key: keyof ReplayState, status: StepStatus) =>
     setReplay((prev) => (prev ? { ...prev, [key]: status } : prev));
 
-  const handleSubmit = async (values: ProductFormValues) => {
+  const handleSubmit = async (
+    values: ProductFormValues,
+    { setError }: ProductFormSubmitContext,
+  ) => {
     setReplay(IDLE_REPLAY);
 
     let productId: string;
@@ -136,6 +141,9 @@ export function CreateProductView() {
       // Nothing was created, so nothing is half-done: back to the untouched
       // form with the server's own words (TASK-397).
       setReplay(null);
+      // TASK-1984 Rule 6b: a refusal about one field (slug / SKU taken, a
+      // 400 on a field) is said under that field, and only there.
+      if (placeProductSaveError(error, setError)) return;
       toast.error(
         productSaveErrorMessage(error) ?? dict.products.toastCreateFailed,
       );

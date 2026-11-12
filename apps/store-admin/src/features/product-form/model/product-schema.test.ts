@@ -30,6 +30,41 @@ describe("product form — id fields are shape-checked (TASK-808)", () => {
   );
 });
 
+describe("product form — prices go through the money helper (TASK-1984)", () => {
+  const { price, compareAtPrice } = productSchema.shape;
+
+  it.each([
+    ["499", 499],
+    ["499,90", 499.9],
+    ["0.01", 0.01],
+    ["150000", 150000],
+  ])("reads %j as %p", (raw, amount) => {
+    expect(price.parse(raw)).toBe(amount);
+    expect(compareAtPrice.parse(raw)).toBe(amount);
+  });
+
+  it.each(["Infinity", "1e3", "12.345", "abc", "-5"])(
+    "refuses %j as a price, as the API's @IsNumber would",
+    (raw) => {
+      const result = price.safeParse(raw);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.message).toBe(
+        dict.productForm.errors.priceNumber,
+      );
+    },
+  );
+
+  it("refuses 0 with the DTO's @Min(0.01) message", () => {
+    expect(price.safeParse("0").error?.issues[0]?.message).toBe(
+      dict.productForm.errors.pricePositive,
+    );
+  });
+
+  it("keeps an empty compare-at price as «not set»", () => {
+    expect(compareAtPrice.parse("")).toBeUndefined();
+  });
+});
+
 describe("product form — OG image is http(s) only (TASK-573)", () => {
   const { ogImage } = productSchema.shape;
 

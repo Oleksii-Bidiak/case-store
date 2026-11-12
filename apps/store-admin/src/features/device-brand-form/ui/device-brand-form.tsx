@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, type FormEvent, type ReactNode } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, type UseFormSetError } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Button,
@@ -16,6 +16,7 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
+  DEVICE_BRAND_LIMITS,
   deviceBrandSchema,
   type DeviceBrandFormInput,
   type DeviceBrandFormValues,
@@ -23,11 +24,18 @@ import {
 
 const f = dict.deviceBrandForm;
 
+export type DeviceBrandFormSetError = UseFormSetError<DeviceBrandFormInput>;
+
 interface DeviceBrandFormProps {
   /** Entity id (edit mode) — drives the forms.md Rule 2b id-keyed reset. */
   id?: string;
   defaultValues?: Partial<DeviceBrandFormInput>;
-  onSubmit: (values: DeviceBrandFormValues) => void;
+  /** `setError` puts a server refusal under its field (TASK-1984) — hand it
+   *  to `placeDeviceBrandSaveError`. */
+  onSubmit: (
+    values: DeviceBrandFormValues,
+    setError: DeviceBrandFormSetError,
+  ) => void;
   isPending: boolean;
   submitLabel?: string;
   /** «Скасувати» — the dialog closes. */
@@ -107,6 +115,7 @@ function EditableDeviceBrandForm({
     control,
     handleSubmit,
     reset,
+    setError,
     formState: { errors },
   } = useForm<DeviceBrandFormInput, unknown, DeviceBrandFormValues>({
     resolver: zodResolver(deviceBrandSchema),
@@ -124,7 +133,7 @@ function EditableDeviceBrandForm({
 
   const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     if (event.target !== event.currentTarget) return;
-    void handleSubmit(onSubmit)(event);
+    void handleSubmit((values) => onSubmit(values, setError))(event);
   };
 
   const a11y = (field: FieldName, hintId?: string) => {
@@ -146,6 +155,7 @@ function EditableDeviceBrandForm({
         <Input
           id="device-brand-name"
           aria-required="true"
+          maxLength={DEVICE_BRAND_LIMITS.name}
           {...a11y("name")}
           {...register("name")}
         />
@@ -157,6 +167,7 @@ function EditableDeviceBrandForm({
         <Input
           id="device-brand-slug"
           placeholder={f.slugPlaceholder}
+          maxLength={DEVICE_BRAND_LIMITS.slug}
           {...a11y("slug", "device-brand-slug-hint")}
           {...register("slug")}
         />

@@ -6,10 +6,26 @@ import {
   MaxLength,
   Matches,
   IsUrl,
+  IsNotEmpty,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { trimString } from '../../common/utils';
 import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 import { IsCategoryIconField, type CategoryIconKey } from '../category-icons';
+
+/**
+ * The image-link rule, shared with `IsOgImageField` and the admin's `isHttpUrl`
+ * (TASK-1984, forms Rule 5): an absolute http(s) URL. `require_protocol` keeps a
+ * bare host (`cdn.example.com/x.png`) out — the storefront would resolve it against
+ * its own origin; `require_tld: false` lets `http://localhost:3001/uploads/…`, what
+ * store-api itself serves in dev, through (TASK-364).
+ */
+export const CATEGORY_IMAGE_URL_OPTIONS = {
+  require_tld: false,
+  require_protocol: true,
+  protocols: ['http', 'https'],
+};
 
 /**
  * DTO for creating a new category.
@@ -22,7 +38,11 @@ export class CreateCategoryDto {
     description: 'Category name',
     example: 'Phone Cases',
   })
+  // TASK-1984 (forms Rule 5d): the admin form refuses a blank name, so the API
+  // does too — trimmed first, so "   " is blank rather than a name.
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty({ message: 'Category name must not be empty' })
   @MaxLength(255, { message: 'Category name must be at most 255 characters' })
   name!: string;
 
@@ -63,7 +83,7 @@ export class CreateCategoryDto {
   // The default (`require_tld: true`) rejected it, which made saving ANY field of a
   // seeded category fail with 400. Everything dangerous is still rejected: `javascript:`
   // and bare relative paths do not validate either way (TASK-364).
-  @IsUrl({ require_tld: false }, { message: 'Image must be a valid URL' })
+  @IsUrl(CATEGORY_IMAGE_URL_OPTIONS, { message: 'Image must be a valid URL' })
   image?: string;
 
   @ApiProperty({

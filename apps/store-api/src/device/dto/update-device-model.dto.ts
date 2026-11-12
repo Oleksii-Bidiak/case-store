@@ -9,9 +9,11 @@ import {
   Max,
   Matches,
   ValidateIf,
+  IsNotEmpty,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { trimString } from '../../common/utils';
 
 /**
  * DTO for updating a device model (TASK-190). Admin-only. All fields optional —
@@ -30,7 +32,10 @@ export class UpdateDeviceModelDto {
 
   @ApiProperty({ description: 'Device model name', example: 'iPhone 15 Pro', required: false })
   @IsOptional()
+  // TASK-1984: absent = unchanged, but a sent name is trimmed and must not be blank.
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty({ message: 'Device model name must not be empty' })
   @MaxLength(255, { message: 'Device model name must be at most 255 characters' })
   name?: string;
 

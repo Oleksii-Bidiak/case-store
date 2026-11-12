@@ -209,6 +209,56 @@ describe("EditDeviceModelView — SEO block (TASK-713 / TASK-841)", () => {
   });
 });
 
+describe("EditDeviceModelView — a refused save (TASK-1984)", () => {
+  async function saveWith(status: number, body: Record<string, unknown>) {
+    stubModel();
+    server.use(
+      http.put(`*/api/admin/devices/models/${MODEL_ID}`, () =>
+        HttpResponse.json({ statusCode: status, ...body }, { status }),
+      ),
+    );
+    renderWithProviders(<EditDeviceModelView modelId={MODEL_ID} />, {
+      auth: WRITER,
+    });
+    await waitFor(() =>
+      expect(screen.getByLabelText(t.metaTitle)).not.toHaveValue(""),
+    );
+    await userEvent.click(screen.getByRole("button", { name: t.submit }));
+  }
+
+  it("puts a 409 slug conflict under the slug and stays on the page", async () => {
+    await saveWith(409, {
+      error: "DEVICE_MODEL_SLUG_CONFLICT",
+      message: "A device model with this slug already exists",
+    });
+
+    const message = await screen.findByText(t.errors.slugTaken);
+    expect(message).toHaveAttribute("role", "alert");
+    expect(screen.getByLabelText(t.slug)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("puts a 400 on the series under the series field", async () => {
+    await saveWith(400, {
+      error: "Bad Request",
+      message: ["Series must be at most 255 characters"],
+      fieldErrors: [{ field: "series", constraint: "maxLength" }],
+    });
+
+    expect(await screen.findByText(dict.forms.tooLong)).toHaveAttribute(
+      "role",
+      "alert",
+    );
+    expect(screen.getByLabelText(t.series)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+  });
+});
+
 describe("EditDeviceModelView — canon layout (ПР7, ПР11)", () => {
   it("names the model in the heading with its status and «← Пристрої · Моделі»", async () => {
     stubModel();

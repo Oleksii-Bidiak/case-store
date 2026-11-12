@@ -498,7 +498,9 @@ export const dict = {
       toastSaved: "Виняток збережено",
       toastReverted: "Виняток скасовано — товар знову успадковує категорію",
       toastFailed: "Не вдалося зберегти виняток",
-      toastBadPrice: "Вкажіть коректну ціну (число, не менше 0)",
+      // TASK-1984: shown under the price field (it was a toast).
+      priceInvalid:
+        "Вкажіть ціну: 0 або більше, до двох знаків після коми — напр. 199,50",
       // TASK-442 — на сторінці створення успадкування ще нема від чого рахувати
       // (шаблон застосовується до рядка, якого ще не існує), тож лишається саме
       // те, що має сенс наперед: ексклюзивні послуги цього товару.
@@ -1039,6 +1041,10 @@ export const dict = {
     dropReleaseHint:
       "Розбір займає до хвилини; нічого не запишемо без вашого підтвердження.",
     wrongType: "Це не .xlsx — оберіть файл у форматі постачальника.",
+    // TASK-1984: the API's own refusals, said before the upload.
+    emptyFile: "Файл порожній — оберіть інший.",
+    fileTooLarge: (mb: number) =>
+      `Файл більший за ${mb} МБ — розділіть його на кілька частин.`,
     parsedMeta: (date: string, email: string | null | undefined) =>
       email ? `розібрано ${date} · ${email}` : `розібрано ${date}`,
     noChangesBadge: "Без змін",
@@ -1213,11 +1219,18 @@ export const dict = {
       slugMax: "Slug має містити не більше 255 символів",
       descriptionMax: "Опис має містити не більше 20000 символів",
       priceRequired: "Вкажіть ціну",
-      priceNumber: "Ціна має бути числом",
+      // TASK-1984: parsed by the money helper — digits, up to 2 decimals.
+      priceNumber:
+        "Ціна — число до двох знаків після коми, напр. 499 або 499,90",
       pricePositive: "Ціна має бути більшою за 0",
-      compareNumber: "Стара ціна має бути числом",
+      compareNumber:
+        "Стара ціна — число до двох знаків після коми, напр. 599 або 599,90",
       comparePositive: "Стара ціна має бути більшою за 0",
       skuMax: "Артикул має містити не більше 50 символів",
+      // TASK-1984: the API's 409 PRODUCT_SLUG_CONFLICT / PRODUCT_SKU_CONFLICT.
+      slugTaken:
+        "Ця адреса вже зайнята іншим товаром — вкажіть іншу або змініть назву.",
+      skuTaken: "Цей артикул уже має інший товар — вкажіть інший.",
       stockInt: "Вільний залишок має бути цілим числом ≥ 0",
       categoryRequired: "Оберіть категорію",
       groupInvalid: "Оберіть коректну групу",
@@ -1716,8 +1729,12 @@ export const dict = {
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
       descriptionMax: "Опис має містити не більше 2000 символів",
-      imageUrl: "Вкажіть коректний URL",
+      // TASK-1984: the API's rule — an absolute http(s) link.
+      imageUrl: "Вкажіть посилання на зображення, що починається з https://",
       parentInvalid: "Оберіть коректну категорію",
+      // TASK-1984: the API's 409 CATEGORY_SLUG_CONFLICT, under the slug field.
+      slugTaken:
+        "Ця адреса вже зайнята іншою категорією — вкажіть іншу або змініть назву.",
     },
     // TASK-424: the image field accepts a FILE as well as a link. «Прибрати» is
     // deliberately not «Видалити» — it clears this form's field and nothing else.
@@ -1937,6 +1954,9 @@ export const dict = {
       slugMax: "Slug має містити не більше 255 символів",
       slugPattern:
         "Лише малі латинські літери, цифри й дефіси — напр. «apple».",
+      // TASK-1984: the API's 409 DEVICE_BRAND_SLUG_CONFLICT.
+      slugTaken:
+        "Ця адреса вже зайнята іншим брендом пристроїв — вкажіть іншу або змініть назву.",
     },
     // Wave 198, DevicesProposal ПР6 — the form as a dialog (TASK-1082).
     slugHint: "Залиште порожнім — зробимо з назви.",
@@ -1978,6 +1998,9 @@ export const dict = {
       descriptionMax: "Опис має містити не більше 2000 символів",
       slugPattern:
         "Лише малі латинські літери, цифри й дефіси — напр. «iphone-15-pro».",
+      // TASK-1984: the API's 409 DEVICE_MODEL_SLUG_CONFLICT.
+      slugTaken:
+        "Ця адреса вже зайнята іншою моделлю — вкажіть іншу або змініть назву.",
     },
     // Wave 198, DevicesProposal ПР7–ПР11 (TASK-1082).
     sectionMain: "Основне",
@@ -3232,10 +3255,14 @@ export const dict = {
       nameRequired: "Вкажіть назву бренду",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      logoUrl: "Вкажіть коректний URL логотипа",
+      // TASK-1984: the API's rule — an absolute http(s) link.
+      logoUrl: "Вкажіть посилання на логотип, що починається з https://",
       // БР7 — what the slug may contain, with an example (wave 198).
       slugPattern:
         "Лише малі латинські літери, цифри й дефіси — напр. «apple-inc».",
+      // TASK-1984: the API's 409 BRAND_SLUG_CONFLICT, under the slug field.
+      slugTaken:
+        "Ця адреса вже зайнята іншим брендом — вкажіть іншу або змініть назву.",
     },
     // TASK-424: the brand logo accepts a FILE as well as a link.
     logoUpload: {
@@ -3348,7 +3375,9 @@ export const dict = {
       descriptionMax: "Опис має містити не більше 300 символів",
       priceRequired:
         "Вкажіть ціну — 0 або більше. Якщо послуга безкоштовна, напишіть 0.",
-      priceNumber: "Ціна має бути числом",
+      // TASK-1984: parsed by the money helper — digits, up to 2 decimals.
+      priceNumber:
+        "Ціна — число до двох знаків після коми, напр. 199 або 199,50",
       priceNonNegative:
         "Вкажіть ціну — 0 або більше. Якщо послуга безкоштовна, напишіть 0.",
     },
@@ -6546,6 +6575,8 @@ export const dict = {
     errors: {
       nameRequired: "Вкажіть назву групи.",
       nameMax: "Назва має містити не більше 255 символів",
+      // TASK-1984: ProductGroupAxisInputDto.name @MaxLength(50).
+      axisMax: "Назва характеристики — не довше 50 символів",
     },
 
     // Wave 198 (ProductGroupsProposal ГТ3–ГТ6, TASK-1084).

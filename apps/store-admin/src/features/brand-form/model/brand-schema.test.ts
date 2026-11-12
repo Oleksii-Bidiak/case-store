@@ -49,6 +49,25 @@ describe("brandSchema", () => {
     const result = brandSchema.safeParse({ ...baseInput, logo: "not-a-url" });
     expect(result.success).toBe(false);
   });
+
+  // TASK-1984: the DTO's @IsUrl(BRAND_LOGO_URL_OPTIONS), on the client.
+  it.each([
+    "javascript:alert(1)",
+    "ftp://cdn.example.com/a.png",
+    "cdn.example.com/a.png",
+  ])("rejects %j as the API does", (logo) => {
+    const result = brandSchema.safeParse({ ...baseInput, logo });
+    expect(result.error?.issues[0]?.message).toBe(
+      dict.brandForm.errors.logoUrl,
+    );
+  });
+
+  it.each([
+    "https://cdn.example.com/a.svg",
+    "http://localhost:3001/uploads/a.png",
+  ])("accepts %j as the API does", (logo) => {
+    expect(brandSchema.safeParse({ ...baseInput, logo }).success).toBe(true);
+  });
 });
 
 describe("brandFormValuesToDto", () => {

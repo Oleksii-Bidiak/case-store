@@ -40,6 +40,21 @@ describe("addonServiceSchema (TASK-174)", () => {
     ).toBe(false);
   });
 
+  // TASK-1984 (Rule 5e): the money helper, not `Number(x)`.
+  it.each(["Infinity", "1e3", "12.345"])(
+    "rejects %j as the API's @IsNumber would",
+    (price) => {
+      expect(
+        addonServiceSchema.safeParse({ ...baseInput, price }).success,
+      ).toBe(false);
+    },
+  );
+
+  it("reads a comma as the decimal mark", () => {
+    const parsed = addonServiceSchema.parse({ ...baseInput, price: "199,50" });
+    expect(addonServiceFormValuesToDto(parsed).price).toBe(199.5);
+  });
+
   // AddonServicesProposal ДП4 — the description is one line next to a cart
   // checkbox; the counter and the limit are 300 (TASK-1083).
   it("caps the description at 300 characters", () => {

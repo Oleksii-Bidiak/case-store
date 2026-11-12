@@ -9,6 +9,7 @@ import {
   ProductForm,
   productFormSectionLabel,
   productFormValuesToDto,
+  placeProductSaveError,
   productSaveErrorMessage,
   type ProductFormInput,
   type ProductFormSubmitContext,
@@ -132,7 +133,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
 
   const handleSubmit = async (
     values: ProductFormValues,
-    { mainDirty, mainSections }: ProductFormSubmitContext,
+    { mainDirty, mainSections, setError }: ProductFormSubmitContext,
   ): Promise<ProductFormSubmitResult> => {
     setSaving(true);
     setFailure(null);
@@ -172,6 +173,16 @@ export function EditProductView({ productId }: EditProductViewProps) {
       complete = true;
       toast.success(dict.products.toastUpdated);
     } catch (saveError) {
+      // TASK-1984 Rule 6b: the product's own write refused about one field
+      // (slug / SKU taken, a 400 on a field) — said under that field and only
+      // there. Nothing was saved yet, so there is no «saved partly» to report.
+      if (
+        !mainSaved &&
+        writeMain &&
+        placeProductSaveError(saveError, setError)
+      ) {
+        return { mainSaved, complete };
+      }
       // TASK-397: the server's own words whenever it sends any.
       const message = productSaveErrorMessage(saveError);
       if (!mainSaved && writeMain) {

@@ -7,8 +7,11 @@ import { toast } from "@/shared/ui/toast";
 import {
   CategoryForm,
   categoryFormValuesToDto,
+  placeCategorySaveError,
+  type CategoryFormSetError,
   type CategoryFormValues,
 } from "@/features/category-form";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import {
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   getCategoryControllerGetAdminTreeQueryKey,
@@ -25,7 +28,10 @@ export function CreateCategoryView() {
   const queryClient = useQueryClient();
   const create = useAdminCategoryControllerCreate();
 
-  const handleSubmit = (values: CategoryFormValues) => {
+  const handleSubmit = (
+    values: CategoryFormValues,
+    setError: CategoryFormSetError,
+  ) => {
     create.mutate(
       { data: categoryFormValuesToDto(values) },
       {
@@ -41,8 +47,13 @@ export function CreateCategoryView() {
           toast.success(dict.categories.toastCreated);
           router.push("/categories");
         },
-        onError: () => {
-          toast.error(dict.categories.toastCreateFailed);
+        onError: (error) => {
+          // TASK-1984 Rule 6b: under the field when it is about one; the
+          // server's own words otherwise.
+          if (placeCategorySaveError(error, setError)) return;
+          toast.error(
+            refusalMessage(error) ?? dict.categories.toastCreateFailed,
+          );
         },
       },
     );

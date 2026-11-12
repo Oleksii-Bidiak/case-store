@@ -21,6 +21,14 @@ import type { Paginated, PaginationMeta } from '../common/pagination';
 import { DEVICE_HUBS_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 /**
+ * `error` codes of the 409 a create / update answers when the slug is held by
+ * another device brand / model (TASK-1984): the admin forms key off them to put
+ * the refusal under the slug field. Keep the values stable.
+ */
+export const DEVICE_BRAND_SLUG_CONFLICT = 'DEVICE_BRAND_SLUG_CONFLICT';
+export const DEVICE_MODEL_SLUG_CONFLICT = 'DEVICE_MODEL_SLUG_CONFLICT';
+
+/**
  * DeviceService — business logic for the device-compatibility taxonomy
  * (TASK-190): slug auto-generation (mirrors `CategoryService`), slug-uniqueness
  * and brand-existence validation, and entity mapping. Never touches Prisma
@@ -82,7 +90,10 @@ export class DeviceService {
     const slug = input.slug ?? generateSlug(input.name);
     const existing = await this.deviceRepository.findBrandBySlug(slug);
     if (existing) {
-      throw new ConflictException('A device brand with this slug already exists');
+      throw new ConflictException({
+        error: DEVICE_BRAND_SLUG_CONFLICT,
+        message: 'A device brand with this slug already exists',
+      });
     }
     const brand = await this.deviceRepository.createBrand({ ...input, slug });
     return DeviceBrandEntity.fromPrisma(brand);
@@ -96,7 +107,10 @@ export class DeviceService {
     if (input.slug !== undefined && input.slug !== brand.slug) {
       const existing = await this.deviceRepository.findBrandBySlug(input.slug);
       if (existing && existing.id !== id) {
-        throw new ConflictException('A device brand with this slug already exists');
+        throw new ConflictException({
+          error: DEVICE_BRAND_SLUG_CONFLICT,
+          message: 'A device brand with this slug already exists',
+        });
       }
     }
     const updated = await this.deviceRepository.updateBrand(id, input);
@@ -204,7 +218,10 @@ export class DeviceService {
     const slug = input.slug ?? generateSlug(input.name);
     const existing = await this.deviceRepository.findModelBySlug(slug);
     if (existing) {
-      throw new ConflictException('A device model with this slug already exists');
+      throw new ConflictException({
+        error: DEVICE_MODEL_SLUG_CONFLICT,
+        message: 'A device model with this slug already exists',
+      });
     }
     const model = await this.deviceRepository.createModel({ ...input, slug });
     // The storefront may have ISR-cached a 404 for this slug (TASK-1954).
@@ -228,7 +245,10 @@ export class DeviceService {
     if (slugChanging) {
       const existing = await this.deviceRepository.findModelBySlug(input.slug!);
       if (existing && existing.id !== id) {
-        throw new ConflictException('A device model with this slug already exists');
+        throw new ConflictException({
+          error: DEVICE_MODEL_SLUG_CONFLICT,
+          message: 'A device model with this slug already exists',
+        });
       }
     }
     // TASK-699: the model slug is the second segment of the public compatibility

@@ -546,6 +546,10 @@ describe('CategoryService', () => {
       categoryRepositoryMock.findBySlug.mockResolvedValue(mockCategory);
 
       await expect(service.create(createInput)).rejects.toThrow(ConflictException);
+      // TASK-1984: the code the admin form puts under the slug field.
+      await expect(service.create(createInput)).rejects.toMatchObject({
+        response: { error: 'CATEGORY_SLUG_CONFLICT' },
+      });
       expect(categoryRepositoryMock.create).not.toHaveBeenCalled();
     });
 

@@ -7,6 +7,7 @@ import {
   useForm,
   useWatch,
   type FieldErrors,
+  type UseFormSetError,
 } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2 } from "lucide-react";
@@ -62,10 +63,15 @@ import {
 import { MediaPicker, MediaPickerEditorButton } from "@/features/media-picker";
 import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
+  PRODUCT_LIMITS,
   productSchema,
   type ProductFormInput,
   type ProductFormValues,
 } from "../model/product-schema";
+import {
+  META_DESCRIPTION_MAX_LENGTH,
+  META_TITLE_MAX_LENGTH,
+} from "@/shared/lib/seo-fields-schema";
 import { OptionCombobox } from "./option-combobox";
 
 const t = dict.productForm;
@@ -164,6 +170,12 @@ export interface ProductFormSubmitContext {
   mainDirty: boolean;
   /** Titles of the sections whose FORM fields changed («Основне», «Опис»…). */
   mainSections: string[];
+  /**
+   * Puts a server refusal under its field (TASK-1984, forms Rule 6b): opens
+   * the folded SEO block when the field is in it and focuses the first field
+   * set. Pass it to `placeProductSaveError`.
+   */
+  setError: UseFormSetError<ProductFormInput>;
 }
 
 export interface ProductFormSubmitResult {
@@ -306,6 +318,7 @@ export function ProductForm({
     getValues,
     reset,
     handleSubmit,
+    setError,
     formState: { errors, dirtyFields },
   } = useForm<ProductFormInput, unknown, ProductFormValues>({
     resolver: zodResolver(productSchema),
@@ -464,7 +477,21 @@ export function ProductForm({
   const slugDraftId = React.useId();
 
   const save = async (values: ProductFormValues) => {
-    const result = await onSubmit(values, { mainDirty, mainSections });
+    let focused = false;
+    const setServerError: UseFormSetError<ProductFormInput> = (
+      name,
+      error,
+      options,
+    ) => {
+      if (SEO_FIELDS.includes(name)) setSeoOpen(true);
+      setError(name, error, { shouldFocus: !focused, ...options });
+      focused = true;
+    };
+    const result = await onSubmit(values, {
+      mainDirty,
+      mainSections,
+      setError: setServerError,
+    });
     if (result?.mainSaved) {
       // Pristine at what was just written; the refetch then lands on equal
       // values (Rule 2a), so nothing flickers back to «є зміни».
@@ -491,12 +518,22 @@ export function ProductForm({
 
   const discount = discountPercent(priceValue, compareValue);
 
-  const fieldError = (message?: string) =>
+  // Forms Rule 6a: the message under its field, named by the field's
+  // `aria-describedby` (see `fieldA11y`).
+  const errorId = (field: string) => `product-${field}-error`;
+  const fieldError = (field: string, message?: string) =>
     message ? (
-      <p role="alert" className="text-sm text-destructive">
+      <p id={errorId(field)} role="alert" className="text-sm text-destructive">
         {message}
       </p>
     ) : null;
+  const fieldA11y = (field: keyof ProductFormInput) =>
+    errors[field]
+      ? {
+          "aria-invalid": true as const,
+          "aria-describedby": errorId(field),
+        }
+      : {};
 
   return (
     <div className="flex flex-col gap-4">
@@ -522,10 +559,11 @@ export function ProductForm({
               <Input
                 id="product-name"
                 aria-required="true"
-                aria-invalid={errors.name ? true : undefined}
+                maxLength={PRODUCT_LIMITS.name}
+                {...fieldA11y("name")}
                 {...register("name")}
               />
-              {fieldError(errors.name?.message)}
+              {fieldError("name", errors.name?.message)}
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -541,6 +579,7 @@ export function ProductForm({
                         id="product-slug"
                         readOnly
                         value={slugValue}
+                        {...fieldA11y("slug")}
                         className="min-w-0 flex-1 truncate bg-transparent text-foreground outline-none"
                       />
                     </div>
@@ -564,6 +603,8 @@ export function ProductForm({
                   <Input
                     id="product-slug"
                     placeholder={t.slugPlaceholder}
+                    maxLength={PRODUCT_LIMITS.slug}
+                    {...fieldA11y("slug")}
                     {...register("slug")}
                   />
                   {!slugValue && nameValue.trim().length > 0 && (
@@ -576,7 +617,7 @@ export function ProductForm({
                   )}
                 </>
               )}
-              {fieldError(errors.slug?.message)}
+              {fieldError("slug", errors.slug?.message)}
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -595,11 +636,11 @@ export function ProductForm({
                       options={categoryOptions}
                       isLoading={categoriesQuery.isLoading}
                       placeholder={t.categoryPlaceholder}
-                      aria-invalid={errors.categoryId ? true : undefined}
+                      {...fieldA11y("categoryId")}
                     />
                   )}
                 />
-                {fieldError(errors.categoryId?.message)}
+                {fieldError("categoryId", errors.categoryId?.message)}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -616,11 +657,11 @@ export function ProductForm({
                       isLoading={brandsQuery.isLoading}
                       placeholder={t.brandNone}
                       clearLabel={t.brandNone}
-                      aria-invalid={errors.brandId ? true : undefined}
+                      {...fieldA11y("brandId")}
                     />
                   )}
                 />
-                {fieldError(errors.brandId?.message)}
+                {fieldError("brandId", errors.brandId?.message)}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -639,11 +680,11 @@ export function ProductForm({
                       // «Без групи» is a real entry: the operator can take
                       // the product back out of a group.
                       clearLabel={t.groupNone}
-                      aria-invalid={errors.groupId ? true : undefined}
+                      {...fieldA11y("groupId")}
                     />
                   )}
                 />
-                {fieldError(errors.groupId?.message)}
+                {fieldError("groupId", errors.groupId?.message)}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -656,9 +697,10 @@ export function ProductForm({
                   inputMode="numeric"
                   step="1"
                   min="0"
+                  {...fieldA11y("positionOrder")}
                   {...register("positionOrder")}
                 />
-                {fieldError(errors.positionOrder?.message)}
+                {fieldError("positionOrder", errors.positionOrder?.message)}
               </div>
             </div>
 
@@ -720,10 +762,10 @@ export function ProductForm({
                   step="0.01"
                   min="0"
                   aria-required="true"
-                  aria-invalid={errors.price ? true : undefined}
+                  {...fieldA11y("price")}
                   {...register("price")}
                 />
-                {fieldError(errors.price?.message)}
+                {fieldError("price", errors.price?.message)}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -736,6 +778,7 @@ export function ProductForm({
                   inputMode="decimal"
                   step="0.01"
                   min="0"
+                  {...fieldA11y("compareAtPrice")}
                   {...register("compareAtPrice")}
                 />
                 {discount !== null ? (
@@ -743,13 +786,18 @@ export function ProductForm({
                     {t.compareAtHint(discount)}
                   </p>
                 ) : null}
-                {fieldError(errors.compareAtPrice?.message)}
+                {fieldError("compareAtPrice", errors.compareAtPrice?.message)}
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="product-sku">{t.sku}</Label>
-                <Input id="product-sku" {...register("sku")} />
-                {fieldError(errors.sku?.message)}
+                <Input
+                  id="product-sku"
+                  maxLength={PRODUCT_LIMITS.sku}
+                  {...fieldA11y("sku")}
+                  {...register("sku")}
+                />
+                {fieldError("sku", errors.sku?.message)}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -760,9 +808,10 @@ export function ProductForm({
                   inputMode="numeric"
                   step="1"
                   min="0"
+                  {...fieldA11y("stock")}
                   {...register("stock")}
                 />
-                {fieldError(errors.stock?.message)}
+                {fieldError("stock", errors.stock?.message)}
               </div>
 
               <div className="flex flex-col gap-1 text-sm text-muted-foreground sm:col-span-2 sm:pt-6">
@@ -819,7 +868,7 @@ export function ProductForm({
                 />
               </TabsContent>
             </Tabs>
-            {fieldError(errors.description?.message)}
+            {fieldError("description", errors.description?.message)}
           </SectionCard>
 
           {/* ── Характеристики (own endpoint, saved by the bar) ───── */}
@@ -869,12 +918,14 @@ export function ProductForm({
                 <Input
                   id="product-meta-title"
                   placeholder={t.metaTitlePlaceholder}
+                  maxLength={META_TITLE_MAX_LENGTH}
+                  {...fieldA11y("metaTitle")}
                   {...register("metaTitle")}
                 />
                 <p className="text-sm text-muted-foreground">
                   {t.metaTitleHint}
                 </p>
-                {fieldError(errors.metaTitle?.message)}
+                {fieldError("metaTitle", errors.metaTitle?.message)}
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -885,12 +936,14 @@ export function ProductForm({
                   id="product-meta-description"
                   rows={3}
                   placeholder={t.metaDescriptionPlaceholder}
+                  maxLength={META_DESCRIPTION_MAX_LENGTH}
+                  {...fieldA11y("metaDescription")}
                   {...register("metaDescription")}
                 />
                 <p className="text-sm text-muted-foreground">
                   {t.metaDescriptionHint}
                 </p>
-                {fieldError(errors.metaDescription?.message)}
+                {fieldError("metaDescription", errors.metaDescription?.message)}
               </div>
 
               {/* TASK-437 — tags and the social card sit above the SERP
@@ -902,12 +955,13 @@ export function ProductForm({
                 <Input
                   id="product-keywords"
                   placeholder={dict.seoFields.keywordsPlaceholder}
+                  {...fieldA11y("keywords")}
                   {...register("keywords")}
                 />
                 <p className="text-sm text-muted-foreground">
                   {dict.seoFields.keywordsHint}
                 </p>
-                {fieldError(errors.keywords?.message)}
+                {fieldError("keywords", errors.keywords?.message)}
               </div>
 
               <div className="flex flex-col gap-1.5">

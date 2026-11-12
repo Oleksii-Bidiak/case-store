@@ -18,11 +18,16 @@ import {
   DialogTitle,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import {
   deviceBrandValuesToDto,
+  placeDeviceBrandSaveError,
   type DeviceBrandFormValues,
 } from "../model/device-brand-schema";
-import { DeviceBrandForm } from "./device-brand-form";
+import {
+  DeviceBrandForm,
+  type DeviceBrandFormSetError,
+} from "./device-brand-form";
 
 const d = dict.devices;
 const f = dict.deviceBrandForm;
@@ -65,7 +70,16 @@ export function DeviceBrandFormDialog({
     }
   };
 
-  const handleSubmit = (values: DeviceBrandFormValues) => {
+  const handleSubmit = (
+    values: DeviceBrandFormValues,
+    setError: DeviceBrandFormSetError,
+  ) => {
+    // TASK-1984 Rule 6b: under the field when it is about one; a refusal no
+    // field takes in the server's own words; the dialog stays open.
+    const onError = (fallback: string) => (error: unknown) => {
+      if (placeDeviceBrandSaveError(error, setError)) return;
+      toast.error(refusalMessage(error) ?? fallback);
+    };
     if (brand) {
       update.mutate(
         {
@@ -78,7 +92,7 @@ export function DeviceBrandFormDialog({
             toast.success(d.toastBrandUpdated);
             onOpenChange(false);
           },
-          onError: () => toast.error(d.toastBrandUpdateFailed),
+          onError: onError(d.toastBrandUpdateFailed),
         },
       );
       return;
@@ -91,7 +105,7 @@ export function DeviceBrandFormDialog({
           toast.success(d.toastBrandCreated);
           onOpenChange(false);
         },
-        onError: () => toast.error(d.toastBrandCreateFailed),
+        onError: onError(d.toastBrandCreateFailed),
       },
     );
   };

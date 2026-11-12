@@ -1,5 +1,16 @@
-import { IsString, IsOptional, IsBoolean, MaxLength, Matches, IsUrl } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsNotEmpty,
+  MaxLength,
+  Matches,
+  IsUrl,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { trimString } from '../../common/utils';
+import { BRAND_LOGO_URL_OPTIONS } from './create-brand.dto';
 
 /**
  * DTO for updating an existing brand (admin-only).
@@ -13,7 +24,10 @@ export class UpdateBrandDto {
     required: false,
   })
   @IsOptional()
+  // TASK-1984: absent = unchanged, but a sent name is trimmed and must not be blank.
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty({ message: 'Brand name must not be empty' })
   @MaxLength(255, { message: 'Brand name must be at most 255 characters' })
   name?: string;
 
@@ -38,7 +52,7 @@ export class UpdateBrandDto {
     nullable: true,
   })
   @IsOptional()
-  @IsUrl({}, { message: 'Logo must be a valid URL' })
+  @IsUrl(BRAND_LOGO_URL_OPTIONS, { message: 'Logo must be a valid URL' })
   logo?: string;
 
   @ApiProperty({

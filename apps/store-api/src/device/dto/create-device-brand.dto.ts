@@ -1,4 +1,6 @@
-import { IsString, IsOptional, IsBoolean, MaxLength, Matches } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MaxLength, Matches, IsNotEmpty } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { trimString } from '../../common/utils';
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
@@ -7,7 +9,11 @@ import { ApiProperty } from '@nestjs/swagger';
  */
 export class CreateDeviceBrandDto {
   @ApiProperty({ description: 'Device brand name', example: 'Apple' })
+  // TASK-1984 (forms Rule 5d): the admin form refuses a blank name, so the API
+  // does too — trimmed first, so "   " is blank rather than a name.
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty({ message: 'Device brand name must not be empty' })
   @MaxLength(255, { message: 'Device brand name must be at most 255 characters' })
   name!: string;
 
