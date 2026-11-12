@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,7 +12,9 @@ import { dict } from "@/shared/config";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders, which this client form does not need.
 import { customerPasswordSchema } from "@/shared/lib/password-policy";
+import { apiErrorStatus } from "@/shared/lib/api-error";
 import { Button } from "@/shared/ui";
+import { applyNewPasswordServerError } from "../lib/new-password-server-error";
 import { AuthField } from "./auth-field";
 
 const changePasswordSchema = z
@@ -72,10 +75,15 @@ export function ChangePasswordForm({ onCancel }: { onCancel?: () => void }) {
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
   } = useForm<ChangePasswordValues>({
     resolver: zodResolver(changePasswordSchema),
   });
+
+  // Whether the last failure was placed under a field (forms Rule 6b) — then
+  // the banner below stays silent: one error is shown once (Rule 6c).
+  const [onField, setOnField] = useState(false);
 
   const onSubmit = (values: ChangePasswordValues) => {
     changePassword.mutate(
@@ -94,17 +102,30 @@ export function ChangePasswordForm({ onCancel }: { onCancel?: () => void }) {
           queryClient.clear();
           router.push("/login");
         },
+        onError: (error) => {
+          // 401 is the wrong CURRENT password — it belongs under that field.
+          if (apiErrorStatus(error) === 401) {
+            setError("currentPassword", {
+              type: "server",
+              message: dict.auth.changePassword.errorWrongCurrent,
+            });
+            setOnField(true);
+            return;
+          }
+          // 400 — the DTO or the staff policy refused a field.
+          setOnField(
+            applyNewPasswordServerError(error, setError, {
+              newPassword: "newPassword",
+              currentPassword: "currentPassword",
+            }),
+          );
+        },
       },
     );
   };
 
-  const status = changePassword.error?.response?.status;
   const errorMessage =
-    status === 401
-      ? dict.auth.changePassword.errorWrongCurrent
-      : changePassword.isError
-        ? dict.common.genericError
-        : null;
+    changePassword.isError && !onField ? dict.common.genericError : null;
 
   const d = dict.auth.changePassword;
 

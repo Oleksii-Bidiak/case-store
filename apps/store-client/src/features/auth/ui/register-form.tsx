@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -14,6 +14,12 @@ import { dict, LEGAL_OFFER_PATH, LEGAL_PRIVACY_PATH } from "@/shared/config";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders, which this client form does not need.
 import { customerPasswordSchema } from "@/shared/lib/password-policy";
+import { apiErrorStatus } from "@/shared/lib/api-error";
+import { EMAIL_MAX_LENGTH, emailField } from "@/shared/lib/form-fields";
+import {
+  applyServerFieldErrors,
+  readFieldErrors,
+} from "@/shared/lib/form-errors";
 import { Button, Honeypot } from "@/shared/ui";
 import { sanitizeRedirectTarget } from "../lib/sanitize-redirect-target";
 import { AUTH_LINK_CLASS, AUTH_SUBMIT_CLASS, AuthField } from "./auth-field";
@@ -25,11 +31,38 @@ import { AUTH_LINK_CLASS, AUTH_SUBMIT_CLASS, AuthField } from "./auth-field";
  */
 const REGISTER_HONEYPOT_FIELD = "hpCheck";
 
+/** Mirrors `RegisterDto`'s `@MaxLength(100)` on both names (`apps/store-api/src/auth/dto/register.dto.ts`). */
+const REGISTER_NAME_MAX = 100;
+
+/** `RegisterDto` path → form field (the names are the same). */
+const REGISTER_FIELD_MAP = {
+  email: "email",
+  firstName: "firstName",
+  lastName: "lastName",
+  password: "password",
+};
+
+/**
+ * A name: trimmed, capped at the DTO's 100. REQUIRED here although `RegisterDto`
+ * makes both names optional — stricter on purpose (forms Rule 5f): the
+ * storefront sign-up has always asked for a name so the cabinet and the admin's
+ * customer list have one to show; the DTO stays optional, which this form never
+ * relies on. `"   "` is refused (trimmed), the 101st character too.
+ */
+function nameField(requiredMessage: string) {
+  return z
+    .string()
+    .trim()
+    .min(1, requiredMessage)
+    .max(REGISTER_NAME_MAX, dict.forms.tooLong);
+}
+
 const registerSchema = z
   .object({
-    email: z.string().email(dict.auth.register.validationEmail),
-    firstName: z.string().min(1, dict.auth.register.validationFirstName),
-    lastName: z.string().min(1, dict.auth.register.validationLastName),
+    // The one email rule (forms Rule 5c), as `RegisterDto`.
+    email: emailField({ message: dict.auth.register.validationEmail }),
+    firstName: nameField(dict.auth.register.validationFirstName),
+    lastName: nameField(dict.auth.register.validationLastName),
     // Mirrors the API shopper policy (TASK-407): min 8 + a letter + a digit.
     password: customerPasswordSchema,
     passwordConfirm: z.string(),
@@ -78,8 +111,12 @@ export function RegisterForm({
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
   } = useForm<RegisterValues>({ resolver: zodResolver(registerSchema) });
+
+  // The last failure is shown under a field — no banner then (Rule 6c).
+  const [onField, setOnField] = useState(false);
 
   const registerUser = useAuthControllerRegister();
 
@@ -124,19 +161,43 @@ export function RegisterForm({
             router.push(redirectTarget);
           }
         },
+        onError: (error) => {
+          // Field-specific refusals go under their field (forms Rule 6b): the
+          // 409 "already registered" under the email, a DTO 400 wherever
+          // `fieldErrors` points. Only the rest becomes the banner.
+          if (apiErrorStatus(error) === 409) {
+            setError("email", {
+              type: "server",
+              message: dict.auth.register.errorConflict,
+            });
+            setOnField(true);
+            return;
+          }
+          const passwordConstraint = readFieldErrors(error).find(
+            (entry) => entry.field === "password",
+          )?.constraint;
+          const { mapped, unmapped } = applyServerFieldErrors(
+            error,
+            setError,
+            REGISTER_FIELD_MAP,
+            {
+              // Email and names: the localized default by constraint.
+              password:
+                passwordConstraint === "minLength"
+                  ? dict.auth.register.validationPassword
+                  : dict.auth.register.validationPasswordPolicy,
+            },
+          );
+          setOnField(mapped.length > 0 && unmapped.length === 0);
+        },
       },
     );
   };
 
   const d = dict.auth.register;
 
-  const status = registerUser.error?.response?.status;
   const errorMessage =
-    status === 409
-      ? d.errorConflict
-      : registerUser.isError
-        ? dict.common.genericError
-        : null;
+    registerUser.isError && !onField ? dict.common.genericError : null;
 
   return (
     <form
@@ -149,6 +210,7 @@ export function RegisterForm({
         label={d.email}
         type="email"
         autoComplete="email"
+        maxLength={EMAIL_MAX_LENGTH}
         error={errors.email?.message}
         {...register("email")}
       />
@@ -161,6 +223,7 @@ export function RegisterForm({
           label={d.firstName}
           type="text"
           autoComplete="given-name"
+          maxLength={REGISTER_NAME_MAX}
           error={errors.firstName?.message}
           {...register("firstName")}
         />
@@ -169,6 +232,7 @@ export function RegisterForm({
           label={d.lastName}
           type="text"
           autoComplete="family-name"
+          maxLength={REGISTER_NAME_MAX}
           error={errors.lastName?.message}
           {...register("lastName")}
         />

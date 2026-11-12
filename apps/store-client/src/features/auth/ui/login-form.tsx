@@ -14,13 +14,15 @@ import { getGetCartQueryKey } from "@/entities/cart";
 import { getGetWishlistQueryKey } from "@/entities/wishlist";
 import { dict } from "@/shared/config";
 import { apiErrorStatus } from "@/shared/lib";
+import { EMAIL_MAX_LENGTH, emailField } from "@/shared/lib/form-fields";
 import { Button } from "@/shared/ui";
 import { PASSWORD_RESET_DONE_PARAM } from "../lib/password-reset-done";
 import { sanitizeRedirectTarget } from "../lib/sanitize-redirect-target";
 import { AUTH_LINK_CLASS, AUTH_SUBMIT_CLASS, AuthField } from "./auth-field";
 
 const loginSchema = z.object({
-  email: z.string().email(dict.auth.login.validationEmail),
+  // The one email rule (forms Rule 5c), as `LoginDto`: trim → max(254) → email.
+  email: emailField({ message: dict.auth.login.validationEmail }),
   password: z.string().min(1, dict.auth.login.validationPassword),
 });
 
@@ -219,6 +221,7 @@ export function LoginForm({
         label={dict.auth.login.email}
         type="email"
         autoComplete="email"
+        maxLength={EMAIL_MAX_LENGTH}
         error={errors.email?.message}
         {...register("email")}
       />
