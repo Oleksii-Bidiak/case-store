@@ -345,6 +345,28 @@ describe("local edits while signed in", () => {
     expect(of("PUT")).toHaveLength(0);
   });
 
+  it("stop syncing once another tab signed out and cleared the mirror", async () => {
+    await signedInAndSynced();
+    const getsBefore = of("GET").length;
+
+    // What the other tab's sign-out leaves in the shared localStorage.
+    act(() => {
+      replaceMyDevices([]);
+      replaceMyDevicesSettings(null);
+      writeMyDevicesOwner(null);
+    });
+    act(() => addDevice(LOCAL));
+    await sleep(MY_DEVICES_PUSH_DELAY_MS + 300);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await sleep(50);
+
+    expect(of("PUT")).toHaveLength(0);
+    expect(of("GET")).toHaveLength(getsBefore);
+    expect(readMyDevicesOwner()).toBeNull();
+  });
+
   it("a guest's edits are never PUT", async () => {
     mount(signedOut);
 

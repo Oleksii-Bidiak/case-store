@@ -95,6 +95,20 @@ function apply(
   s.syncedFor = userId;
 }
 
+/**
+ * Whether the local copy is still this user's mirror. Another tab that signed
+ * out clears the shared mirror and its owner marker while this tab's in-memory
+ * session lives on: a PUT from here would then replace the account with
+ * whatever was added since (deleting the rest), and a GET would write the
+ * account back into a browser that just signed out. So once the marker is
+ * gone (or foreign), this tab stops syncing until its own session restarts.
+ */
+function ownsMirror(s: SyncState, userId: string): boolean {
+  if (readMyDevicesOwner() === userId) return true;
+  s.syncedFor = null;
+  return false;
+}
+
 async function pull(s: SyncState, userId: string): Promise<void> {
   const seq = s.editSeq;
   try {
@@ -143,7 +157,7 @@ export function useMyDevicesSync(): void {
     const s = ref.current;
     s.pending = false;
     const uid = s.userId;
-    if (!uid || s.syncedFor !== uid) return;
+    if (!uid || s.syncedFor !== uid || !ownsMirror(s, uid)) return;
     const seq = s.editSeq;
     s.inFlight += 1;
     putMyDevices(localPayload())
@@ -195,6 +209,7 @@ export function useMyDevicesSync(): void {
       const s = ref.current;
       const uid = s.userId;
       if (!uid || s.syncedFor !== uid || s.pending || s.inFlight > 0) return;
+      if (!ownsMirror(s, uid)) return;
       void pull(s, uid);
     };
     window.addEventListener("focus", onFocus);
