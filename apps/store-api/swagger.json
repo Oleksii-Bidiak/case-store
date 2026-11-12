@@ -12975,6 +12975,122 @@
         ]
       }
     },
+    "/api/me/devices": {
+      "get": {
+        "operationId": "getMyDevices",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyDevicesResponseEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get my saved devices and catalogue settings",
+        "tags": [
+          "My devices"
+        ]
+      },
+      "put": {
+        "description": "Full replacement of the list and the settings. Unknown or inactive device models are dropped silently; at most 100 devices.",
+        "operationId": "replaceMyDevices",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MyDevicesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyDevicesResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Replace my saved devices and catalogue settings",
+        "tags": [
+          "My devices"
+        ]
+      }
+    },
+    "/api/me/devices/merge": {
+      "post": {
+        "description": "Union by model; the later lastUsedAt wins; the guest label wins when set; the account settings win when the account already has them. Returns the merged state.",
+        "operationId": "mergeMyDevices",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MyDevicesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyDevicesResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Merge the guest device list into my account",
+        "tags": [
+          "My devices"
+        ]
+      }
+    },
     "/api/orders": {
       "post": {
         "operationId": "createOrder",
@@ -29544,6 +29660,193 @@
             "nullable": true
           }
         }
+      },
+      "MyDeviceEntity": {
+        "type": "object",
+        "properties": {
+          "modelId": {
+            "type": "string",
+            "description": "Device model ID",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "slug": {
+            "type": "string",
+            "description": "Device model slug",
+            "example": "iphone-15-pro"
+          },
+          "name": {
+            "type": "string",
+            "description": "Device model name",
+            "example": "iPhone 15 Pro"
+          },
+          "brandName": {
+            "type": "string",
+            "description": "Device brand name",
+            "example": "Apple"
+          },
+          "brandSlug": {
+            "type": "string",
+            "description": "Device brand slug",
+            "example": "apple"
+          },
+          "series": {
+            "type": "string",
+            "description": "Model series, used with the brand to resolve the device family",
+            "nullable": true,
+            "example": "iPhone 15"
+          },
+          "label": {
+            "type": "string",
+            "description": "Owner’s note",
+            "nullable": true,
+            "example": "Мама"
+          },
+          "lastUsedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Last add / activation; the list is ordered by it, newest (= active) first",
+            "example": "2026-11-01T10:00:00.000Z"
+          }
+        },
+        "required": [
+          "modelId",
+          "slug",
+          "name",
+          "brandName",
+          "brandSlug",
+          "series",
+          "label",
+          "lastUsedAt"
+        ]
+      },
+      "DeviceCompatScope": {
+        "type": "string",
+        "enum": [
+          "active",
+          "all"
+        ],
+        "description": "Filter for the active device or for all saved devices"
+      },
+      "MyDevicesSettingsEntity": {
+        "type": "object",
+        "properties": {
+          "compatOnly": {
+            "type": "boolean",
+            "description": "«У каталозі — лише сумісне»",
+            "example": true
+          },
+          "compatScope": {
+            "description": "Filter for the active device or for all saved devices",
+            "example": "active",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeviceCompatScope"
+              }
+            ]
+          }
+        },
+        "required": [
+          "compatOnly",
+          "compatScope"
+        ]
+      },
+      "MyDevicesStateEntity": {
+        "type": "object",
+        "properties": {
+          "devices": {
+            "description": "Saved devices, newest first; the first is the active device",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MyDeviceEntity"
+            }
+          },
+          "settings": {
+            "$ref": "#/components/schemas/MyDevicesSettingsEntity"
+          }
+        },
+        "required": [
+          "devices",
+          "settings"
+        ]
+      },
+      "MyDevicesResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MyDevicesStateEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "MyDeviceInputDto": {
+        "type": "object",
+        "properties": {
+          "modelId": {
+            "type": "string",
+            "description": "Device model ID. Unknown or inactive models are dropped silently.",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "label": {
+            "type": "string",
+            "description": "Owner’s note («Мама»); blank or absent = no label.",
+            "nullable": true,
+            "maxLength": 30,
+            "example": "Мама"
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "description": "Last add / activation (ISO 8601). The latest one is the active device.",
+            "example": "2026-11-01T10:00:00.000Z"
+          }
+        },
+        "required": [
+          "modelId",
+          "lastUsedAt"
+        ]
+      },
+      "MyDevicesSettingsDto": {
+        "type": "object",
+        "properties": {
+          "compatOnly": {
+            "type": "boolean",
+            "description": "«У каталозі — лише сумісне»",
+            "example": true
+          },
+          "compatScope": {
+            "description": "Filter for the active device or for all saved devices",
+            "example": "active",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeviceCompatScope"
+              }
+            ]
+          }
+        },
+        "required": [
+          "compatOnly",
+          "compatScope"
+        ]
+      },
+      "MyDevicesDto": {
+        "type": "object",
+        "properties": {
+          "devices": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MyDeviceInputDto"
+            }
+          },
+          "settings": {
+            "$ref": "#/components/schemas/MyDevicesSettingsDto"
+          }
+        },
+        "required": [
+          "devices",
+          "settings"
+        ]
       },
       "OrderGuestData": {
         "type": "object",

@@ -472,6 +472,10 @@ model User {
   /// connected it (audit only), a CUSTOMER chat whose notifications it receives.
   notificationBindings    NotificationBinding[]
   notificationTokens      NotificationBindingToken[]
+  /// «Мої пристрої» saved to the account (TASK-1959). The guest list lives in
+  /// the browser only; the storefront merges it in on sign-in.
+  devices                 UserDevice[]
+  deviceSettings          UserDeviceSettings?
 
   // Partial: unique for `true` only. Not a lookup key — see `isOwner` (TASK-634).
   @@unique([isOwner], where: { isOwner: true }, map: "users_single_owner_key")
@@ -1916,10 +1920,53 @@ model DeviceModel {
   /// back to the generated subtitle.
   description     String?
 
-  compat ProductDeviceCompat[]
+  compat      ProductDeviceCompat[]
+  /// Accounts that saved this model to «Мої пристрої» (TASK-1959).
+  userDevices UserDevice[]
 
   @@index([deviceBrandId])
   @@map("device_models")
+}
+
+/// «Мої пристрої» of a signed-in customer (TASK-1959) — the account copy of the
+/// storefront's `my-devices:v1` list. A set per user (one row per model). The
+/// ACTIVE device is not a column: it is the row with the latest `lastUsedAt`,
+/// exactly as the client orders its list. The API replaces the whole list at
+/// once (`PUT /me/devices`), so the row `id` is never exposed.
+model UserDevice {
+  id            String      @id @default(uuid())
+  userId        String      @map("user_id")
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceModelId String      @map("device_model_id")
+  deviceModel   DeviceModel @relation(fields: [deviceModelId], references: [id], onDelete: Cascade)
+  /// Owner's note («Мама»), capped like the storefront's MAX_DEVICE_LABEL_LENGTH.
+  label         String?     @db.VarChar(30)
+  lastUsedAt    DateTime    @map("last_used_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  @@unique([userId, deviceModelId])
+  @@index([userId])
+  @@map("user_devices")
+}
+
+/// Scope of the catalogue's «З урахуванням моїх пристроїв» default (TASK-2077):
+/// the active device only, or every saved device.
+enum DeviceCompatScope {
+  active
+  all
+}
+
+/// The «Мої пристрої» settings panel of a signed-in customer (TASK-1959) — the
+/// account copy of `my-devices-settings:v1`. The row's EXISTENCE carries meaning:
+/// on the guest → account merge the account settings win only when it exists.
+model UserDeviceSettings {
+  userId      String            @id @map("user_id")
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  compatOnly  Boolean           @default(true) @map("compat_only")
+  compatScope DeviceCompatScope @default(active) @map("compat_scope")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  @@map("user_device_settings")
 }
 
 /// Join table for the Product ↔ DeviceModel many-to-many device-compatibility
