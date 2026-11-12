@@ -171,6 +171,17 @@ export function SeoSettingsForm({ settings, logoSlot }: SeoSettingsFormProps) {
   // TASK-1053: one preview card, the two samples behind a switch.
   const live = useWatch({ control });
 
+  // TASK-1984 (Rule 5d): the DTO's @MaxLength(500) on the OG image link, set on
+  // the input itself — `ContentImageField`'s `urlInputProps` has no `maxLength`.
+  const ogImageRegistration = register("defaultOgImage");
+  const ogImageInput = {
+    ...ogImageRegistration,
+    ref: (element: HTMLInputElement | null) => {
+      ogImageRegistration.ref(element);
+      if (element) element.maxLength = SEO_LIMITS.ogImage;
+    },
+  };
+
   // TASK-2002: the default social-card image takes a file and a library pick
   // as well as a link, like the product OG. The settings have no image route
   // of their own (the logo's is a different field), so the file goes into the
@@ -510,12 +521,12 @@ export function SeoSettingsForm({ settings, logoSlot }: SeoSettingsFormProps) {
               urlPlaceholder={f.defaultOgImagePlaceholder(STOREFRONT_HOST)}
               copy={dict.seoFields.ogImageUpload}
               value={live.defaultOgImage ?? ""}
-              urlInput={register("defaultOgImage")}
+              urlInput={ogImageInput}
               // The hint and the `FieldError` below keep their ids, so the
               // error is rendered there and not passed as `fieldError`.
               urlInputProps={{
-                // No `maxLength` here: `ContentImageField` does not pass it
-                // through; the schema's .max(500) speaks under the field.
+                // `maxLength` is set on the element by `ogImageInput`'s ref:
+                // `ContentImageField` does not pass it through here.
                 type: "url",
                 "aria-invalid": errors.defaultOgImage ? true : undefined,
                 "aria-describedby": describedBy(

@@ -365,6 +365,20 @@ describe("SeoSettingsForm — server refusals (TASK-1984)", () => {
     expect(defaultDescriptionField()).toHaveAttribute("maxlength", "500");
     expect(templateField()).toHaveAttribute("maxlength", "255");
   });
+
+  it("caps the OG image link at the DTO's 500", () => {
+    renderWithProviders(
+      <SeoSettingsForm
+        settings={makeSettings({ defaultOgImage: "https://shop.ua/og.jpg" })}
+      />,
+    );
+
+    expand(f.sectionSocial);
+    expect(screen.getByLabelText(f.defaultOgImage)).toHaveAttribute(
+      "maxlength",
+      "500",
+    );
+  });
 });
 
 describe("SeoSettingsForm — by mockup Н2/Н5 (TASK-1053)", () => {
