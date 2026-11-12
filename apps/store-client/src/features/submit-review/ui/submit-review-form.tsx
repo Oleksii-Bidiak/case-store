@@ -241,6 +241,9 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
         },
         onError: (error) => {
           if (error?.response?.status === 409) {
+            // Field-less, so a toast and ONLY a toast (forms Rule 6c). It was
+            // also repeated in an inline line that outlived the switch to edit
+            // mode below, still saying «вже залишили» over the edit box.
             toast.error(dict.reviews.alreadyReviewed);
             // A 409 means a review exists that this form did not know about — a
             // second tab, a stale `mine`. Refetch it so the form flips to the
@@ -256,8 +259,6 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
     );
   };
 
-  // Surface the 409 inline as well (in addition to the toast) for clarity.
-  const alreadyReviewed = submit.error?.response?.status === 409;
   const isSaving = existing ? update.isPending : submit.isPending;
   // An empty box must not be savable: the API reads `comment: ""` as «erase it»,
   // which would wipe a published text AND drop it back into the queue. Requiring
@@ -395,12 +396,6 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
           </p>
         )}
       </div>
-
-      {alreadyReviewed && (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.reviews.alreadyReviewed}
-        </p>
-      )}
 
       <Button
         type="submit"

@@ -113,6 +113,50 @@ describe("SubmitReviewForm — where a refusal is said (TASK-1984)", () => {
     expect(toastError).toHaveBeenCalledTimes(1);
   });
 
+  it("says a 409 once, as a toast, and flips to the edit form", async () => {
+    let mine: OwnReviewEntity | null = null;
+    server.use(
+      http.get("*/api/products/:productId/reviews/mine", () =>
+        HttpResponse.json({ data: mine }),
+      ),
+      http.post("*/api/products/:productId/reviews", () => {
+        // The review another tab left — the refetch after the 409 finds it.
+        mine = {
+          id: "review-1",
+          productId: PRODUCT_ID,
+          rating: 4,
+          comment: null,
+          textStatus: "PENDING",
+          createdAt: "2026-06-01T00:00:00.000Z",
+        };
+        return HttpResponse.json(
+          {
+            statusCode: 409,
+            message: "You have already reviewed this product",
+          },
+          { status: 409 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<SubmitReviewForm productId={PRODUCT_ID} />, {
+      auth: authedUser,
+    });
+
+    await submitNewReview(user);
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(dict.reviews.alreadyReviewed),
+    );
+    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText(dict.reviews.yourReview),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.reviews.alreadyReviewed),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps the generic toast for a 500", async () => {
     serveMine(null);
     server.use(

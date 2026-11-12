@@ -158,6 +158,40 @@ describe("NewsletterSubscribeForm", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("says «too long», not «invalid», for a server maxLength on the email", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post(SUBSCRIBE_URL, () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: ["Email must be at most 254 characters"],
+            fieldErrors: [{ field: "email", constraint: "maxLength" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    renderWithProviders(<NewsletterSubscribeForm />);
+
+    await user.type(
+      screen.getByRole("textbox", { name: dict.newsletterForm.emailLabel }),
+      "shopper@example.com",
+    );
+    await user.click(
+      screen.getByRole("button", { name: dict.newsletterForm.submit }),
+    );
+
+    expect(await screen.findByText(dict.forms.tooLong)).toHaveAttribute(
+      "role",
+      "alert",
+    );
+    expect(
+      screen.queryByText(dict.newsletterForm.invalidEmail),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps the generic line for a 400 about the host's source tag", async () => {
     const user = userEvent.setup();
     server.use(

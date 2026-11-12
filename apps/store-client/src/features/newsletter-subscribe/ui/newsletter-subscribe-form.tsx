@@ -8,7 +8,10 @@ import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { trackEvent } from "@/shared/lib";
 import { EMAIL_MAX_LENGTH } from "@/shared/lib/form-fields";
-import { applyServerFieldErrors } from "@/shared/lib/form-errors";
+import {
+  applyServerFieldErrors,
+  readFieldErrors,
+} from "@/shared/lib/form-errors";
 import {
   newsletterSchema,
   type NewsletterFormValues,
@@ -77,11 +80,17 @@ export function NewsletterSubscribeForm({
         // the form's own sentence. A refusal about the host's `source` tag is
         // not the subscriber's to fix — it stays the generic line.
         onError: (error) => {
+          // The sentence follows the constraint, as the schema's does: a
+          // too-long address is «задовге», not «некоректна пошта».
+          const tooLong = readFieldErrors(error).some(
+            (entry) =>
+              entry.field === "email" && entry.constraint === "maxLength",
+          );
           const { mapped, unmapped } = applyServerFieldErrors(
             error,
             setError,
             NEWSLETTER_FIELD_MAP,
-            { email: dict.newsletterForm.invalidEmail },
+            tooLong ? {} : { email: dict.newsletterForm.invalidEmail },
           );
           setOnField(mapped.length > 0 && unmapped.length === 0);
         },
