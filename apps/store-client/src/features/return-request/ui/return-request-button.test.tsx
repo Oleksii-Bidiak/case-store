@@ -2,6 +2,7 @@ import { focusManager } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import {
   act,
+  fireEvent,
   renderWithProviders,
   screen,
   userEvent,
@@ -777,5 +778,116 @@ describe("ReturnRequestButton on a guest order", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(calls).toBe(1);
+  });
+});
+
+/** A DTO 400 as the global ValidationPipe sends it (TASK-1984). */
+function validationResponse(
+  fieldErrors: Array<{ field: string; constraint: string }>,
+) {
+  return HttpResponse.json(
+    { statusCode: 400, message: ["refused"], fieldErrors },
+    { status: 400 },
+  );
+}
+
+// TASK-1984 (forms Rules 5d / 6): the reason has its DTO limit on screen, and
+// a 400 about an input is said under that input — never also as a toast.
+describe("ReturnRequestButton — field standard (TASK-1984)", () => {
+  beforeEach(() => stubExistingReturns([]));
+
+  it("caps the reason at 1000 and counts what is typed", async () => {
+    const user = userEvent.setup();
+    renderButton();
+    await open(user);
+
+    const reason = screen.getByLabelText(dict.returnRequest.reason);
+    expect(reason).toHaveAttribute("maxLength", "1000");
+    await user.type(reason, "брак");
+    expect(screen.getByText("4/1000")).toBeInTheDocument();
+  });
+
+  it("refuses an over-long reason under the field, without a request", async () => {
+    const user = userEvent.setup();
+    const post = stubCreate(() =>
+      HttpResponse.json({ data: { id: "return-1" } }, { status: 201 }),
+    );
+    renderButton();
+    await open(user);
+    await chooseOne(user);
+
+    // Past the attribute, the way autofill or a script can.
+    const reason = screen.getByLabelText(dict.returnRequest.reason);
+    fireEvent.change(reason, { target: { value: "а".repeat(1001) } });
+    await user.click(submitButton());
+
+    const error = await screen.findByText(dict.returnRequest.reasonMax);
+    expect(error).toHaveAttribute("role", "alert");
+    expect(reason).toHaveAttribute("aria-invalid", "true");
+    expect(reason.getAttribute("aria-describedby")).toContain(error.id);
+    expect(post.bodies).toHaveLength(0);
+  });
+
+  it("puts a server 400 on the reason under the reason, with no toast", async () => {
+    const user = userEvent.setup();
+    stubCreate(() =>
+      validationResponse([{ field: "reason", constraint: "maxLength" }]),
+    );
+    renderButton();
+    await open(user);
+    await chooseOne(user);
+    await user.type(screen.getByLabelText(dict.returnRequest.reason), "брак");
+    await user.click(submitButton());
+
+    expect(
+      await screen.findByText(dict.returnRequest.reasonMax),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.returnRequest.error),
+    ).not.toBeInTheDocument();
+
+    // Editing the reason clears its error.
+    await user.type(screen.getByLabelText(dict.returnRequest.reason), "!");
+    expect(
+      screen.queryByText(dict.returnRequest.reasonMax),
+    ).not.toBeInTheDocument();
+  });
+
+  it("puts a server 400 on a line under the line list", async () => {
+    const user = userEvent.setup();
+    stubCreate(() =>
+      validationResponse([{ field: "items.0.quantity", constraint: "min" }]),
+    );
+    renderButton();
+    await open(user);
+    await chooseOne(user);
+    await user.click(submitButton());
+
+    expect(
+      await screen.findByText(dict.returnRequest.itemsInvalid),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(dict.returnRequest.quantityAria("Чохол")),
+    ).toHaveAttribute("aria-invalid", "true");
+    expect(
+      screen.queryByText(dict.returnRequest.error),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the toast for the part of a 400 no field takes", async () => {
+    const user = userEvent.setup();
+    stubCreate(() =>
+      validationResponse([
+        { field: "unknownProp", constraint: "whitelistValidation" },
+      ]),
+    );
+    renderButton();
+    await open(user);
+    await chooseOne(user);
+    await user.click(submitButton());
+
+    expect(
+      await screen.findByText(dict.returnRequest.error),
+    ).toBeInTheDocument();
   });
 });

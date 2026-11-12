@@ -35065,7 +35065,8 @@
           "email": {
             "type": "string",
             "description": "Subscriber email address",
-            "example": "user@example.com"
+            "example": "user@example.com",
+            "maxLength": 254
           },
           "source": {
             "type": "string",

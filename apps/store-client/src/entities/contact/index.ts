@@ -16,3 +16,9 @@ export {
   CONTACT_COOLDOWN_ERROR,
   type ContactSubmitErrorKind,
 } from "./lib/submit-error";
+// Field rules and the server-400 → field map, shared by both forms (TASK-1984).
+export {
+  CONTACT_LIMITS,
+  CONTACT_FIELD_MAP,
+  contactServerFieldMessages,
+} from "./lib/contact-field-errors";

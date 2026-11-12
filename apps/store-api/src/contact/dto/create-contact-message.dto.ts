@@ -54,7 +54,9 @@ export class CreateContactMessageDto {
   // TASK-772: lowercased too — the customer card matches messages by email.
   @Transform(normalizeEmail)
   @IsEmail({}, { message: 'A valid email is required' })
-  @MaxLength(255, { message: 'Email must be at most 255 characters' })
+  // TASK-1984 (forms Rule 5c): 254, the cap of every other email DTO and of
+  // both storefront contact forms' `emailField` (it was 255 here alone).
+  @MaxLength(254, { message: 'Email must be at most 254 characters' })
   email!: string;
 
   @ApiProperty({

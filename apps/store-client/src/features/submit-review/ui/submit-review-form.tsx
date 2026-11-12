@@ -20,6 +20,11 @@ import {
 } from "@/entities/review";
 import { Button, ReviewRatingStars, Textarea } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { apiErrorStatus } from "@/shared/lib/api-error";
+import {
+  applyServerFieldErrors,
+  readFieldErrors,
+} from "@/shared/lib/form-errors";
 import {
   REVIEW_COMMENT_MAX,
   reviewSchema,
@@ -28,6 +33,21 @@ import {
 
 interface SubmitReviewFormProps {
   productId: string;
+}
+
+/** `CreateReviewDto` / `UpdateReviewDto` path → form field (same names). */
+const REVIEW_FIELD_MAP = { rating: "rating", comment: "comment" };
+
+/**
+ * The toast for a refusal no field takes. The review throttle's 429 gets its
+ * own sentence (TASK-1984): «не вдалося» read as an outage to someone who was
+ * merely too quick.
+ */
+function refusalText(error: unknown, mode: "submit" | "update"): string {
+  if (apiErrorStatus(error) === 429) return dict.reviews.rateLimited;
+  return mode === "update"
+    ? dict.reviews.updateError
+    : dict.reviews.submitError;
 }
 
 /** A blank form. A module constant so RHF's `values` keeps a stable identity. */
@@ -104,6 +124,7 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
     register,
     handleSubmit,
     setValue,
+    setError,
     control,
     reset,
     formState: { errors, isDirty },
@@ -162,6 +183,28 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
     });
   };
 
+  // TASK-1984 (forms Rule 6b): a DTO 400 lands under the field it names, with
+  // the form's own sentence. True only when ALL of it found a field — the toast
+  // is for the rest (Rule 6c), never in addition to the field.
+  const placeOnField = (error: unknown): boolean => {
+    const commentConstraint = readFieldErrors(error).find(
+      (entry) => entry.field === "comment",
+    )?.constraint;
+    const { mapped, unmapped } = applyServerFieldErrors(
+      error,
+      setError,
+      REVIEW_FIELD_MAP,
+      {
+        rating: dict.reviews.ratingRequired,
+        comment:
+          commentConstraint === "maxLength"
+            ? dict.reviews.commentMax
+            : dict.forms.required,
+      },
+    );
+    return mapped.length > 0 && unmapped.length === 0;
+  };
+
   const onSubmit = (formValues: ReviewFormValues) => {
     const text = (formValues.comment ?? "").trim();
 
@@ -177,7 +220,9 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
             reset({ rating: existing.rating, comment: text });
             invalidateReviews();
           },
-          onError: () => toast.error(dict.reviews.updateError),
+          onError: (error) => {
+            if (!placeOnField(error)) toast.error(refusalText(error, "update"));
+          },
         },
       );
       return;
@@ -205,7 +250,7 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
             });
             return;
           }
-          toast.error(dict.reviews.submitError);
+          if (!placeOnField(error)) toast.error(refusalText(error, "submit"));
         },
       },
     );

@@ -3,7 +3,7 @@ import { dict } from "@/shared/config";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders this form model has no use for, exactly as the contact form's
 // model does.
-import { isValidUAPhone } from "@/shared/lib/phone";
+import { phoneField } from "@/shared/lib/phone-field";
 
 /**
  * How many characters the order number on the confirmation email has
@@ -32,20 +32,38 @@ export function normalizeOrderNumber(value: string): string {
  * server answers one identical 404 for every kind of miss, and a client that
  * distinguished them would leak exactly what the server refuses to.
  */
+/** `OrderLookupDto.number` — `@MaxLength(64)`; the input caps at it too. */
+export const ORDER_LOOKUP_NUMBER_MAX = 64;
+
+/** `OrderLookupDto.phone` — `@MaxLength(32)`; the input caps at it too. */
+export const ORDER_LOOKUP_PHONE_MAX = 32;
+
+/**
+ * Both rules are STRICTER than `OrderLookupDto` on purpose (forms Rule 5f): the
+ * DTO only bounds the strings and answers one generic 404 for anything that
+ * matches no order (anti-enumeration), so a malformed number or a non-UA phone
+ * would cost a request and a rate-limit slot just to be told «не знайдено». The
+ * client says what is wrong with the SHAPE before asking — it never says
+ * anything about whether an order exists.
+ */
 export const orderLookupSchema = z.object({
   number: z
     .string()
     .trim()
-    .max(64, dict.orderLookup.errors.numberRequired)
+    .max(ORDER_LOOKUP_NUMBER_MAX, dict.orderLookup.errors.numberRequired)
     .refine(
       (value) => /^[0-9a-f]{8}$/.test(normalizeOrderNumber(value)),
       dict.orderLookup.errors.numberRequired,
     ),
-  phone: z
-    .string()
-    .trim()
-    .max(32, dict.orderLookup.errors.phoneRequired)
-    .refine(isValidUAPhone, dict.orderLookup.errors.phoneRequired),
+  // TASK-1984 (Rule 5b): the shared UA `phoneField` — shape before digits, so
+  // `050 111 2233 ccc` is refused instead of having its letters stripped. Orders
+  // are taken for UA numbers at checkout, which is why the UA rule is the one.
+  phone: phoneField({
+    rule: "ua",
+    message: dict.orderLookup.errors.phoneRequired,
+  }).refine((value) => value.length <= ORDER_LOOKUP_PHONE_MAX, {
+    message: dict.orderLookup.errors.phoneRequired,
+  }),
 });
 
 export type OrderLookupFormValues = z.infer<typeof orderLookupSchema>;
