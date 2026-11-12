@@ -1,15 +1,19 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { z } from "zod";
 import { useGetCheckoutEmailStatus } from "@/entities/session";
+// Direct import — not in the shared/lib barrel.
+import { emailField } from "@/shared/lib/form-fields";
 
 /** Compare addresses the way the server does — case and whitespace aside. */
 export function normalizeCheckoutEmail(email: string | undefined): string {
   return (email ?? "").trim().toLowerCase();
 }
 
-const isEmail = (value: string) => z.string().email().safeParse(value).success;
+// The same rule as `CheckoutEmailStatusDto.email` (`@IsEmail @MaxLength(254)`),
+// so an address the server would refuse is never probed (forms Rule 5c).
+const EMAIL_RULE = emailField();
+const isEmail = (value: string) => EMAIL_RULE.safeParse(value).success;
 
 interface KnownStatus {
   email: string;

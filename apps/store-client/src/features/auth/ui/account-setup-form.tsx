@@ -14,8 +14,21 @@ import { apiErrorStatus } from "@/shared/lib";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders, which this client form does not need.
 import { customerPasswordSchema } from "@/shared/lib/password-policy";
+import {
+  applyServerFieldErrors,
+  readFieldErrors,
+} from "@/shared/lib/form-errors";
 import { Button } from "@/shared/ui";
 import { AUTH_LINK_CLASS, AUTH_SUBMIT_CLASS, AuthField } from "./auth-field";
+
+/** `ConfirmAccountSetupDto.password` → the password input. */
+const PASSWORD_FIELD_MAP = { password: "password" };
+
+/** The constraint a 400 refused the password on (`minLength` / `matches`). */
+function passwordConstraint(error: unknown): string | undefined {
+  return readFieldErrors(error).find((entry) => entry.field === "password")
+    ?.constraint;
+}
 
 const setupSchema = z
   .object({
@@ -81,6 +94,7 @@ export function AccountSetupForm() {
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
   } = useForm<SetupValues>({
     resolver: zodResolver(setupSchema),
@@ -97,19 +111,43 @@ export function AccountSetupForm() {
     );
   }
 
+  // A 400 about the password itself (forms Rule 6b) — a policy drift between
+  // the two apps — goes under the field, in the policy's own words, instead of
+  // calling a live link dead.
   const onSubmit = (values: SetupValues) =>
-    confirm.mutate({ data: { token, password: values.password } });
+    confirm.mutate(
+      { data: { token, password: values.password } },
+      {
+        onError: (error) => {
+          const constraint = passwordConstraint(error);
+          if (!constraint) return;
+          applyServerFieldErrors(error, setError, PASSWORD_FIELD_MAP, {
+            password:
+              constraint === "minLength"
+                ? dict.auth.register.validationPassword
+                : dict.auth.register.validationPasswordPolicy,
+          });
+        },
+      },
+    );
   const onSkip = () => confirm.mutate({ data: { token } });
 
   const status = apiErrorStatus(confirm.error);
-  const linkDead = confirm.isError && status === 400;
-  const errorMessage = !confirm.isError
-    ? null
-    : linkDead
-      ? d.errorInvalid
-      : status === 429
-        ? d.errorTooMany
-        : dict.common.genericError;
+  // Every `fieldErrors` entry is on the password: it is shown under the field,
+  // and nothing about the link is wrong. Any other 400 is the dead link.
+  const fieldErrors = readFieldErrors(confirm.error);
+  const passwordOnly =
+    fieldErrors.length > 0 &&
+    fieldErrors.every((entry) => entry.field === "password");
+  const linkDead = confirm.isError && status === 400 && !passwordOnly;
+  const errorMessage =
+    !confirm.isError || passwordOnly
+      ? null
+      : linkDead
+        ? d.errorInvalid
+        : status === 429
+          ? d.errorTooMany
+          : dict.common.genericError;
   // Leaving: the session is stored and the cabinet is on its way.
   const busy = confirm.isPending || confirm.isSuccess;
 

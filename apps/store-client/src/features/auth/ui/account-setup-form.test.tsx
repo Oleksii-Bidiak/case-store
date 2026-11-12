@@ -132,6 +132,41 @@ describe("AccountSetupForm (TASK-2010)", () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
+  // TASK-1984 (forms Rule 6b): a policy refusal is about the password, not
+  // the link — it lands under the field, and no «link dead» banner appears.
+  it("puts a 400 on the password under the field instead of calling the link dead", async () => {
+    captureConfirm(() =>
+      HttpResponse.json(
+        {
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Password must contain a lowercase letter and a digit",
+          fieldErrors: [{ field: "password", constraint: "matches" }],
+        },
+        { status: 400 },
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<AccountSetupForm />);
+
+    await user.type(screen.getByLabelText(d.password), "secret123");
+    await user.type(screen.getByLabelText(d.confirmPassword), "secret123");
+    await user.click(screen.getByRole("button", { name: d.submit }));
+
+    const message = await screen.findByText(
+      dict.auth.register.validationPasswordPolicy,
+    );
+    expect(message).toHaveAttribute("id", "account-setup-password-error");
+    expect(message).toHaveAttribute("role", "alert");
+    expect(screen.getByLabelText(d.password)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(screen.queryByText(d.errorInvalid)).toBeNull();
+    expect(screen.queryByRole("link", { name: d.toForgotPassword })).toBeNull();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
   it("asks nothing of the server when the link has no token", () => {
     mockToken = null;
     const bodies = captureConfirm();

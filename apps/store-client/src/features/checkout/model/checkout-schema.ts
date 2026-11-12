@@ -1,13 +1,67 @@
 import { z } from "zod";
 import { dict } from "@/shared/config";
-// Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
+// Direct imports (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders this form model has no use for.
-import { isValidUAPhone } from "@/shared/lib/phone";
+import { phoneField } from "@/shared/lib/phone-field";
+import { emailField } from "@/shared/lib/form-fields";
 import {
   CHECKOUT_PAYMENT_METHODS,
   DEFAULT_PAYMENT_METHOD,
 } from "./payment-methods";
-import { CHECKOUT_DELIVERY_METHODS, DEFAULT_DELIVERY_METHOD } from "./delivery";
+import {
+  CHECKOUT_DELIVERY_METHODS,
+  DEFAULT_DELIVERY_METHOD,
+  courierAddressLine,
+} from "./delivery";
+
+/*
+ * Length limits, each the client half of a DTO rule (forms convention Rule 5d).
+ * Mirrors `apps/store-api/src/order/dto/address.dto.ts` (`AddressDto`),
+ * `guest-contact.dto.ts` (`GuestContactDto`) and `create-order.dto.ts`.
+ */
+/** `AddressDto.firstName` / `lastName` — `@MaxLength(100)` each. */
+export const CHECKOUT_NAME_MAX_LENGTH = 100;
+/**
+ * `GuestContactDto.name` — `@MaxLength(120)`. A guest's contact name is
+ * «first last» (see {@link checkoutContactName}), so two names of 100 that the
+ * address accepts can still be refused here.
+ */
+export const CHECKOUT_CONTACT_NAME_MAX_LENGTH = 120;
+/** `AddressDto.city` — `@MaxLength(100)`. */
+export const CHECKOUT_CITY_MAX_LENGTH = 100;
+/**
+ * `AddressDto.address1` — `@MaxLength(500)`: the typed address, or the courier's
+ * «вулиця, буд, кв. N» composed from three inputs.
+ */
+export const CHECKOUT_ADDRESS_MAX_LENGTH = 500;
+/** `CreateOrderDto.notes` — `@MaxLength(500)`. */
+export const CHECKOUT_NOTES_MAX_LENGTH = 500;
+
+/**
+ * The guest's `contact.name` — the recipient's two names, reused rather than
+ * asked for twice (TASK-338). The schema and `useCheckout` both build it here.
+ */
+export function checkoutContactName(values: {
+  firstName?: string;
+  lastName?: string;
+}): string {
+  const first = (values.firstName ?? "").trim();
+  const last = (values.lastName ?? "").trim();
+  return `${first} ${last}`.trim();
+}
+
+/**
+ * A required name: trimmed, so `"   "` does not pass (Rule 5d). Stricter than
+ * `AddressDto`'s bare `@IsNotEmpty` on purpose (Rule 5f): a guest's names also
+ * become `contact.name`, which the server trims before its `@MinLength(1)` —
+ * a blank name is refused there, so it is refused here for everyone.
+ */
+const requiredName = (message: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, message)
+    .max(CHECKOUT_NAME_MAX_LENGTH, dict.forms.tooLong);
 
 /**
  * Checkout form schema — simplified for the Ukrainian market. We collect the
@@ -36,17 +90,19 @@ import { CHECKOUT_DELIVERY_METHODS, DEFAULT_DELIVERY_METHOD } from "./delivery";
  * missing altogether (`undefined` where a string belongs) skips it. That is a
  * second reason every field has a default (forms.md Rule 4c).
  *
- * UA phone (TASK-407): validated on the NORMALISED number, not on the mask.
- * `isValidUAPhone` strips the separators first and then requires `380` + 9
- * digits — the old mask-shaped regex let a string of brackets through.
+ * UA phone (TASK-407): validated on the NORMALISED number, not on the mask —
+ * `phoneField` checks the shape, then `380` + 9 digits (forms Rule 5a–5b).
  */
 const checkoutFields = z.object({
-  firstName: z.string().min(1, dict.checkout.validation.firstName),
-  lastName: z.string().min(1, dict.checkout.validation.lastName),
-  phone: z
-    .string()
-    .min(1, dict.checkout.validation.phone)
-    .refine(isValidUAPhone, dict.checkout.validation.phone),
+  firstName: requiredName(dict.checkout.validation.firstName),
+  lastName: requiredName(dict.checkout.validation.lastName),
+  /**
+   * Stricter than the server on purpose (forms Rule 5f): `AddressDto.phone` and
+   * `GuestContactDto.phone` are `@IsInternationalPhone` — an operator may take a
+   * foreign number by phone (TASK-338) — while the storefront checkout takes
+   * only the Ukrainian numbers its couriers and Nova Poshta can ring.
+   */
+  phone: phoneField({ rule: "ua", message: dict.checkout.validation.phone }),
   /**
    * Delivery method (TASK-646). Defaults to Nova Poshta; the view moves it to
    * the first method the shop offers once `GET /api/delivery/methods` answers.
@@ -73,7 +129,10 @@ const checkoutFields = z.object({
    * screen insists). Otherwise the city is the shop's and this stays empty.
    */
   courierCity: z.string().optional(),
-  notes: z.string().max(500, dict.checkout.validation.notesMax).optional(),
+  notes: z
+    .string()
+    .max(CHECKOUT_NOTES_MAX_LENGTH, dict.checkout.validation.notesMax)
+    .optional(),
   /**
    * Guest contact email (TASK-338). Optional here and required by
    * {@link guestCheckoutSchema}, because a signed-in shopper has no such field —
@@ -128,6 +187,19 @@ function refineDelivery(
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message });
     }
   };
+  // A typed text's length cap (Rule 5d) — checked only for the fields the
+  // chosen branch shows and sends, so a value left behind by another branch
+  // can never block the step from a field that is not on screen.
+  const limit = (
+    field: keyof CheckoutFormValues,
+    value: string | undefined,
+    max: number,
+    message: string = dict.forms.tooLong,
+  ) => {
+    if ((value ?? "").trim().length > max) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message });
+    }
+  };
   const v = dict.checkout.validation;
   const dv = dict.checkout.delivery.validation;
 
@@ -138,13 +210,27 @@ function refineDelivery(
     case "COURIER":
       if (!courierCityFixed) {
         require("courierCity", values.courierCity, v.city);
+        limit("courierCity", values.courierCity, CHECKOUT_CITY_MAX_LENGTH);
       }
       require("courierStreet", values.courierStreet, dv.courierStreet);
       require("courierHouse", values.courierHouse, dv.courierHouse);
+      // The three inputs travel as ONE `address1` (`courierAddressLine`).
+      limit(
+        "courierStreet",
+        courierAddressLine(values),
+        CHECKOUT_ADDRESS_MAX_LENGTH,
+        v.courierAddressTooLong,
+      );
       return;
     case "OTHER":
       require("city", values.city, v.city);
       require("deliveryAddress", values.deliveryAddress, dv.otherAddress);
+      limit("city", values.city, CHECKOUT_CITY_MAX_LENGTH);
+      limit(
+        "deliveryAddress",
+        values.deliveryAddress,
+        CHECKOUT_ADDRESS_MAX_LENGTH,
+      );
       return;
     case "NOVA_POSHTA":
     default:
@@ -156,27 +242,47 @@ function refineDelivery(
         require("city", values.npCityRef, dv.npCity);
       }
       require("deliveryAddress", values.deliveryAddress, v.deliveryAddress);
+      limit("city", values.city, CHECKOUT_CITY_MAX_LENGTH);
+      limit(
+        "deliveryAddress",
+        values.deliveryAddress,
+        CHECKOUT_ADDRESS_MAX_LENGTH,
+      );
   }
 }
 
-/** The guest's email: required, and an email. */
-function refineGuestEmail(values: CheckoutFormValues, ctx: z.RefinementCtx) {
-  const email = values.email?.trim() ?? "";
-
-  if (!email) {
+/**
+ * The guest's contact block: the e-mail is required and an e-mail (`emailField`
+ * — trim, 254, email; `GuestContactDto.email`), and the two names together fit
+ * `contact.name` (`@MaxLength(120)`) — reported under the last name, the field
+ * that tipped it over.
+ */
+function refineGuestContact(values: CheckoutFormValues, ctx: z.RefinementCtx) {
+  const email = values.email ?? "";
+  if (!email.trim()) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["email"],
       message: dict.checkout.guest.validationEmailRequired,
     });
-    return;
+  } else {
+    const parsed = emailField({
+      message: dict.checkout.guest.validationEmail,
+    }).safeParse(email);
+    if (!parsed.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["email"],
+        message: parsed.error.issues[0]?.message ?? dict.forms.emailInvalid,
+      });
+    }
   }
 
-  if (!z.string().email().safeParse(email).success) {
+  if (checkoutContactName(values).length > CHECKOUT_CONTACT_NAME_MAX_LENGTH) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ["email"],
-      message: dict.checkout.guest.validationEmail,
+      path: ["lastName"],
+      message: dict.checkout.validation.fullNameTooLong,
     });
   }
 }
@@ -193,7 +299,7 @@ function buildSchemas(options: CheckoutSchemaOptions) {
   const signedIn = checkoutFields.superRefine((values, ctx) =>
     refineDelivery(values, ctx, options),
   );
-  return { signedIn, guest: signedIn.superRefine(refineGuestEmail) };
+  return { signedIn, guest: signedIn.superRefine(refineGuestContact) };
 }
 
 // Built once each: the resolver is re-read on every render.

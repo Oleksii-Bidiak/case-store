@@ -1565,6 +1565,11 @@ export const dict = {
       phone: "Вкажіть коректний номер телефону",
       deliveryAddress: "Адреса доставки є обов'язковою",
       notesMax: "Примітки не можуть перевищувати 500 символів",
+      // TASK-1984: a guest's two names travel as one `contact.name` (max 120).
+      fullNameTooLong: "Ім'я та прізвище разом — не більше 120 символів",
+      // TASK-1984: street, house and flat travel as one `address1` (max 500).
+      courierAddressTooLong:
+        "Вулиця, будинок і квартира разом — не більше 500 символів",
       billingRequired:
         "Адреса оплати є обов'язковою, якщо вона відрізняється від адреси доставки.",
     },

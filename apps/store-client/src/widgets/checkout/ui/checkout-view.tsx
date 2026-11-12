@@ -72,8 +72,9 @@ const MOBILE_BAR_CTA =
 
 /**
  * The server's refusal of the last order attempt (CheckoutDelivery.dc.html
- * #error): a title, then the server's own sentence word for word. Focusable so
- * the return from step 2 can land on it.
+ * #error): a title, then the Ukrainian reason `useCheckout` chose — a delivery
+ * refusal's own sentence, or the localized fallback; never the API's English
+ * (TASK-1984). Focusable so the return from step 2 can land on it.
  */
 function OrderErrorAlert({
   message,
@@ -139,19 +140,6 @@ export function CheckoutView() {
     query: { enabled: !isInitializing },
   });
 
-  const {
-    submitOrder,
-    isPending,
-    isError,
-    errorMessage,
-    clearError,
-    isOrderSubmitted,
-    placedOrder,
-    guestAccessToken,
-    handoffMessage,
-    accountPending,
-  } = useCheckout({ isGuest });
-
   // The shop's delivery offer (TASK-646): which methods, the courier's terms,
   // the pickup points and the delivery × payment matrix.
   const { options: deliveryOptions, isLoading: isDeliveryLoading } =
@@ -165,6 +153,7 @@ export function CheckoutView() {
     getValues,
     setValue,
     setFocus,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<CheckoutFormValues>({
     // Guests validate one extra field, and a courier whose city the shop never
@@ -177,6 +166,21 @@ export function CheckoutView() {
     ),
     defaultValues: CHECKOUT_DEFAULT_VALUES,
   });
+
+  // `setError` puts a server 400 under the field it names (TASK-1984).
+  const {
+    submitOrder,
+    firstRefusedField,
+    isPending,
+    isError,
+    errorMessage,
+    clearError,
+    isOrderSubmitted,
+    placedOrder,
+    guestAccessToken,
+    handoffMessage,
+    accountPending,
+  } = useCheckout({ isGuest, setError });
 
   // Seed the form with the logged-in user's saved contact details (name + phone).
   // Also when a guest signs in from the contact block (TASK-2010): the profile
@@ -519,6 +523,21 @@ export function CheckoutView() {
       goToDelivery();
       return;
     }
+    // TASK-1984: a 400 that names its fields lands under them on step 1, and
+    // the return focuses the first one — the same path a blocked submit takes
+    // (`focusFirstError`). Any unmapped remainder is the alert above.
+    if (outcome === "invalid") {
+      const first = firstRefusedField();
+      if (first) {
+        focusFirstError({
+          [first]: { type: "server" },
+        } as FieldErrors<CheckoutFormValues>);
+        return;
+      }
+      pendingAlertFocus.current = true;
+      goToDelivery();
+      return;
+    }
     if (outcome !== "refused") return;
     pendingAlertFocus.current = true;
     goToDelivery();
@@ -639,9 +658,9 @@ export function CheckoutView() {
         <div className="flex min-w-0 flex-col gap-4">
           {step === 1 && (
             <>
-              {/* The server's refusal of the last attempt, word for word,
-                  above everything it may be about (#error). Focused on the
-                  way back from step 2. */}
+              {/* The server's refusal of the last attempt, above everything
+                  it may be about (#error) — only what no field below carries
+                  (TASK-1984). Focused on the way back from step 2. */}
               {isError && errorMessage && (
                 <OrderErrorAlert ref={orderErrorRef} message={errorMessage} />
               )}

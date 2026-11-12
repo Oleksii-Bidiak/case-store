@@ -21,7 +21,11 @@ const authed = {
 /** Answer the preview endpoint with the API's own error envelope. */
 function previewFails(
   status: number,
-  body: { error?: string; message?: string } = {},
+  body: {
+    error?: string;
+    message?: string;
+    fieldErrors?: { field: string; constraint: string }[];
+  } = {},
 ) {
   server.use(
     http.post("*/api/cart/discount/preview", () =>
@@ -190,10 +194,12 @@ describe("ApplyDiscount", () => {
       ).toBeInTheDocument();
     });
 
-    it("shows the API's own sentence for an unmapped 4xx code", async () => {
+    // TASK-1984 (forms Rule 6b): the API's `message` is English — an unknown
+    // code reads as the localized fallback, never as the server's sentence.
+    it("shows the localized fallback, not the API's sentence, for an unmapped 4xx code", async () => {
       previewFails(400, {
         error: "DISCOUNT_UNKNOWN_FUTURE_CODE",
-        message: "Цей промокод не діє для товарів зі знижкою.",
+        message: "This code does not apply to discounted items",
       });
       const user = userEvent.setup();
       renderWithProviders(<ApplyDiscount />, authed);
@@ -201,8 +207,41 @@ describe("ApplyDiscount", () => {
       await applyCode(user, "WELCOME10");
 
       expect(
-        await screen.findByText("Цей промокод не діє для товарів зі знижкою."),
+        await screen.findByText(dict.discounts.errors.generic),
       ).toBeInTheDocument();
+      expect(
+        screen.queryByText("This code does not apply to discounted items"),
+      ).toBeNull();
+    });
+
+    it("puts a DTO 400 on the code under the input in Ukrainian", async () => {
+      previewFails(400, {
+        error: "Bad Request",
+        message: "Code must be at most 64 characters",
+        fieldErrors: [{ field: "code", constraint: "maxLength" }],
+      });
+      const user = userEvent.setup();
+      renderWithProviders(<ApplyDiscount />, authed);
+
+      await applyCode(user, "WELCOME10");
+
+      const message = await screen.findByText(dict.forms.tooLong);
+      expect(message).toHaveAttribute("role", "alert");
+      expect(screen.getByLabelText(dict.discounts.inputAria)).toHaveAttribute(
+        "aria-describedby",
+        message.id,
+      );
+      expect(
+        screen.queryByText("Code must be at most 64 characters"),
+      ).toBeNull();
+    });
+
+    it("caps the input at the DTO's 64 characters", () => {
+      renderWithProviders(<ApplyDiscount />, authed);
+      expect(screen.getByLabelText(dict.discounts.inputAria)).toHaveAttribute(
+        "maxLength",
+        "64",
+      );
     });
 
     it("never renders a 5xx body — infrastructure English is not shopper copy", async () => {

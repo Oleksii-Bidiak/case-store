@@ -375,3 +375,112 @@ describe("checkoutSchema — delivery branches (TASK-646)", () => {
     });
   });
 });
+
+// TASK-1984 (forms convention Rule 5): every value the form accepts is one the
+// `CreateOrderDto` accepts.
+describe("checkout schema — the DTO's rules (TASK-1984)", () => {
+  const messagesAt = (
+    schema: typeof checkoutSchema | typeof guestCheckoutSchema,
+    values: Record<string, unknown>,
+  ): Record<string, string> => {
+    const result = schema.safeParse(values);
+    if (result.success) return {};
+    return Object.fromEntries(
+      result.error.issues.map((issue) => [issue.path.join("."), issue.message]),
+    );
+  };
+
+  it("refuses a blank name — the guest's contact.name is trimmed server-side", () => {
+    const issues = messagesAt(checkoutSchema, {
+      ...validForm,
+      firstName: "   ",
+    });
+    expect(issues.firstName).toBe(dict.checkout.validation.firstName);
+  });
+
+  it("caps each name at AddressDto's 100", () => {
+    const issues = messagesAt(checkoutSchema, {
+      ...validForm,
+      lastName: "К".repeat(101),
+    });
+    expect(issues.lastName).toBe(dict.forms.tooLong);
+    expect(
+      checkoutSchema.safeParse({ ...validForm, lastName: "К".repeat(100) })
+        .success,
+    ).toBe(true);
+  });
+
+  it("refuses letters after a valid number (shape before digits)", () => {
+    const issues = messagesAt(checkoutSchema, {
+      ...validForm,
+      phone: "050 111 2233 ccc",
+    });
+    expect(issues.phone).toBe(dict.checkout.validation.phone);
+  });
+
+  it("caps a typed city at 100 and an address at 500", () => {
+    const issues = messagesAt(checkoutSchema, {
+      ...validForm,
+      deliveryMethod: "OTHER",
+      city: "К".repeat(101),
+      deliveryAddress: "а".repeat(501),
+    });
+    expect(issues.city).toBe(dict.forms.tooLong);
+    expect(issues.deliveryAddress).toBe(dict.forms.tooLong);
+  });
+
+  it("caps the courier's street + house + flat as one address1", () => {
+    const issues = messagesAt(checkoutSchema, {
+      ...validForm,
+      deliveryMethod: "COURIER",
+      courierStreet: "в".repeat(300),
+      courierHouse: "1".repeat(150),
+      courierApartment: "2".repeat(60),
+    });
+    expect(issues.courierStreet).toBe(
+      dict.checkout.validation.courierAddressTooLong,
+    );
+  });
+
+  it("does not judge a branch's text the chosen method does not send", () => {
+    expect(
+      checkoutSchema.safeParse({
+        ...validForm,
+        deliveryMethod: "PICKUP",
+        pickupPointId: "pp-1",
+        city: "К".repeat(101),
+      }).success,
+    ).toBe(true);
+  });
+
+  describe("guest contact", () => {
+    const guest = { ...validForm, email: "guest@example.com" };
+
+    it("refuses an e-mail over the DTO's 254", () => {
+      const issues = messagesAt(guestCheckoutSchema, {
+        ...guest,
+        email: `${"a".repeat(64)}@${"b".repeat(186)}.com`,
+      });
+      expect(issues.email).toBe(dict.forms.tooLong);
+    });
+
+    it("refuses two names that do not fit contact.name's 120 — under the last name", () => {
+      const issues = messagesAt(guestCheckoutSchema, {
+        ...guest,
+        firstName: "О".repeat(60),
+        lastName: "К".repeat(60),
+      });
+      expect(issues.lastName).toBe(dict.checkout.validation.fullNameTooLong);
+    });
+
+    it("accepts two names that fit exactly", () => {
+      expect(
+        guestCheckoutSchema.safeParse({
+          ...guest,
+          firstName: "О".repeat(59),
+          lastName: "К".repeat(60),
+        }).success,
+      ).toBe(true);
+    });
+  });
+});

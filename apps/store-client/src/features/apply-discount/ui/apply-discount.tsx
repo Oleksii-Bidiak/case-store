@@ -12,17 +12,18 @@ import {
 } from "@/entities/discount";
 import { useAuth } from "@/entities/session";
 import { dict } from "@/shared/config";
-import {
-  apiErrorCode,
-  apiErrorMessage,
-  apiErrorStatus,
-  formatMoney,
-} from "@/shared/lib";
+import { apiErrorCode, apiErrorStatus, formatMoney } from "@/shared/lib";
+// Direct import — not in the shared/lib barrel.
+import { mapServerFieldErrors } from "@/shared/lib/form-errors";
 import { Button, Input, Label } from "@/shared/ui";
 import {
+  DISCOUNT_CODE_MAX_LENGTH,
   discountSchema,
   type DiscountFormValues,
 } from "../model/discount-schema";
+
+/** `PreviewDiscountDto.code` → the one input (forms Rule 6b). */
+const DISCOUNT_FIELD_MAP = { code: "code" };
 
 /**
  * ApplyDiscount — the cart promo-code control.
@@ -110,8 +111,10 @@ export function ApplyDiscount() {
 
   const status = apiErrorStatus(preview.error);
   const errorCode = apiErrorCode(preview.error);
-  const apiMessage = apiErrorMessage(preview.error);
 
+  // Every branch is Ukrainian copy (TASK-1984, forms Rule 6b): a DTO 400 on
+  // `code` by its constraint, a coded refusal by its code, else the generic
+  // sentence. The API's own `message` is English and is never rendered.
   const errorMessage = !preview.isError
     ? null
     : status === 403
@@ -119,9 +122,7 @@ export function ApplyDiscount() {
       : status === 429
         ? dict.discounts.errors.tooManyRequests
         : (errorCode && dict.discounts.errors[errorCode]) ||
-          // The API's own sentence, but only for a 4xx: a 5xx message is
-          // infrastructure English ("Internal server error"), not shopper copy.
-          (status !== undefined && status < 500 ? apiMessage : undefined) ||
+          mapServerFieldErrors(preview.error, DISCOUNT_FIELD_MAP).code ||
           dict.discounts.errors.generic;
 
   if (applied) {
@@ -187,6 +188,7 @@ export function ApplyDiscount() {
                 .join(" ") || undefined
             }
             autoCapitalize="characters"
+            maxLength={DISCOUNT_CODE_MAX_LENGTH}
             {...codeField}
             onChange={(event) => {
               void codeField.onChange(event);
