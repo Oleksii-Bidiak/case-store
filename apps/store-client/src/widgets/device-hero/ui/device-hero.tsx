@@ -43,9 +43,9 @@ interface DeviceHeroProps {
  *
  * Device state is browser-local, so the server renders the neutral picker
  * (cached HTML holds nothing personal). Until hydration, a returning
- * shopper — `html[data-has-device]`, set before paint by the header's device
- * bar — sees a panel-shaped placeholder instead of a picker that would flash
- * and swap.
+ * shopper — `html[data-has-device]`, set before paint by the root layout's
+ * pre-paint script — sees a panel-shaped placeholder instead of a picker
+ * that would flash and swap.
  *
  * Not wrapped in a page container: the page places it.
  */

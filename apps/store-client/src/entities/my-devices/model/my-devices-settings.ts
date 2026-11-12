@@ -13,6 +13,7 @@
 // by the server page app/devices, and a hook here would break the RSC build.
 // The hook lives in the "use client" module ./use-my-devices-settings.
 
+import { hasDeviceFlag, syncDeviceFlags } from "./device-flags";
 import { notifyMyDevicesEdit } from "./my-devices-edits";
 
 export const MY_DEVICES_SETTINGS_STORAGE_KEY = "my-devices-settings:v1";
@@ -126,6 +127,7 @@ export function subscribeMyDevicesSettings(onChange: () => void): () => void {
   listeners.add(onChange);
   const onStorage = (event: StorageEvent) => {
     if (event.key === null || event.key === MY_DEVICES_SETTINGS_STORAGE_KEY) {
+      syncFlags();
       onChange();
     }
   };
@@ -134,6 +136,15 @@ export function subscribeMyDevicesSettings(onChange: () => void): () => void {
     listeners.delete(onChange);
     window.removeEventListener("storage", onStorage);
   };
+}
+
+/**
+ * Keep `data-device-filter` (TASK-2421) in line with «лише сумісне». The
+ * device half is read off <html>: the device store keeps `data-has-device`
+ * live, and importing that store here would close an import cycle.
+ */
+function syncFlags(): void {
+  syncDeviceFlags(hasDeviceFlag(), getMyDevicesSettingsSnapshot().compatOnly);
 }
 
 /** Plain read for non-React callers (server-safe: defaults on the server). */
@@ -156,6 +167,7 @@ export function updateMyDevicesSettings(
     return;
   }
   writeRaw(JSON.stringify(next));
+  syncFlags();
   for (const listener of listeners) listener();
   // The shopper's own change — the account sync pushes it (TASK-1959).
   notifyMyDevicesEdit();
@@ -178,6 +190,7 @@ export function replaceMyDevicesSettings(
         });
   if (raw === readRaw()) return;
   writeRaw(raw);
+  syncFlags();
   for (const listener of listeners) listener();
 }
 

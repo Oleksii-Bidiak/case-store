@@ -137,12 +137,18 @@ export function DeviceFitMark({
   // changes. `h-9.5` = two 15px lines + the mark's 8px of padding, the most a
   // clamped mark can take. A one-line mark sits at the bottom, next to the
   // stock line it reads with; the spare space goes above it.
+  //
+  // Without a saved device there is never a mark, so the slot collapses
+  // (TASK-2410): `data-has-device` is on <html> before first paint (root
+  // layout script) and kept live by the device store, so the slot is decided
+  // by CSS on the server markup itself — held for a returning shopper, gone
+  // for everyone else, with no shift either way.
   return (
     <span
       data-slot="device-fit-slot"
       aria-hidden={mark ? undefined : true}
       className={cn(
-        "flex flex-col justify-end",
+        "flex flex-col justify-end [html:not([data-has-device])_&]:hidden",
         wrap ? "h-9.5" : "h-6",
         className,
       )}

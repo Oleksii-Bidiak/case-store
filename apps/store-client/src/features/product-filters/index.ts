@@ -8,6 +8,7 @@ export { MyDevicesEmptyState } from "./ui/my-devices-empty-state";
 export { MyDevicesSwitch } from "./ui/my-devices-switch";
 export {
   CATALOG_MY_DEVICES_DEFAULT,
+  COMPAT_OFF,
   COMPAT_PARAM,
   MAX_DEVICE_FILTER_SLUGS,
   allMyDevicesParam,

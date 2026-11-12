@@ -15,7 +15,9 @@ import {
   type MyDevice,
   type MyDeviceInput,
 } from "./my-devices";
+import { syncDeviceFlags } from "./device-flags";
 import { notifyMyDevicesEdit } from "./my-devices-edits";
+import { readMyDevicesSettings } from "./my-devices-settings";
 
 export const MY_DEVICES_STORAGE_KEY = "my-devices:v1";
 
@@ -51,6 +53,14 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
+/** Keep the <html> flags (TASK-2421/2410) in line with the stored list. */
+function syncFlags(): void {
+  syncDeviceFlags(
+    getMyDevicesSnapshot().length > 0,
+    readMyDevicesSettings().compatOnly,
+  );
+}
+
 // getSnapshot must return the same reference while the data is unchanged —
 // cache the parsed list keyed by the raw string.
 let cachedRaw: string | null = null;
@@ -72,7 +82,10 @@ export function subscribeMyDevices(onChange: () => void): () => void {
   listeners.add(onChange);
   // Cross-tab sync: another tab wrote our key (or cleared all storage).
   const onStorage = (event: StorageEvent) => {
-    if (event.key === null || event.key === MY_DEVICES_STORAGE_KEY) onChange();
+    if (event.key === null || event.key === MY_DEVICES_STORAGE_KEY) {
+      syncFlags();
+      onChange();
+    }
   };
   window.addEventListener("storage", onStorage);
   return () => {
@@ -95,6 +108,7 @@ function update(
   const next = change(current);
   if (next === current) return;
   writeRaw(next.length > 0 ? serializeMyDevices(next) : null);
+  syncFlags();
   emit();
   // The shopper's own change — the account sync pushes it (TASK-1959).
   notifyMyDevicesEdit();
@@ -110,6 +124,7 @@ export function replaceMyDevices(list: readonly MyDevice[]): void {
   const raw = list.length > 0 ? serializeMyDevices(sortByLastUsed(list)) : null;
   if (raw === readRaw()) return;
   writeRaw(raw);
+  syncFlags();
   emit();
 }
 

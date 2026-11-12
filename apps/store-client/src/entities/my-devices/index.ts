@@ -28,6 +28,16 @@ export {
   setDeviceLabelById as setLabel,
 } from "./model/my-devices-storage";
 
+// The <html> flags CSS lays the page out by before React knows the devices
+// (TASK-2074/2421/2410): the root layout's pre-paint script sets them, the
+// stores keep them live.
+export {
+  DEVICE_FILTER_ATTR,
+  HAS_DEVICE_ATTR,
+  syncDeviceFlags,
+} from "./model/device-flags";
+export { PRE_PAINT_FLAGS_SCRIPT } from "./model/pre-paint-flags";
+
 // Account mirror (TASK-1959): the shopper's own edits vs the server state
 // applied locally, and whose account the local copy belongs to.
 export { subscribeMyDevicesEdits } from "./model/my-devices-edits";

@@ -31,11 +31,11 @@ import { cn } from "@/shared/lib/utils";
  * for the shopper's active device (TASK-1953). It appears only after the
  * device store hydrates, into a fixed two-line slot that every product with
  * compatibility data holds from the server render on; the mark is clamped to
- * those two lines, so it never shifts the card. Trade-off: without a saved
- * device the slot stays empty, and in a row that mixes compat and non-compat
- * products the compat cards' prices sit one slot higher than their
- * neighbours' (stock lines and buttons still align). Collapsing the slot for
- * visitors without a device needs a pre-paint flag in the root layout.
+ * those two lines, so it never shifts the card. Without a saved device the
+ * slot collapses before first paint (TASK-2410, the root layout's
+ * `data-has-device` flag). With one, in a row that mixes compat and
+ * non-compat products the compat cards' prices sit one slot higher than their
+ * neighbours' (stock lines and buttons still align).
  */
 export function ProductCardActions({
   product,

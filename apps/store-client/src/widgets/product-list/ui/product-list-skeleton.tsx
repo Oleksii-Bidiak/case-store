@@ -94,6 +94,17 @@ function ProductCardSkeleton() {
         <Skeleton className="mt-auto h-7 w-20" />
       </div>
       <div className="flex flex-col gap-2 px-4 pb-4">
+        {/* The device-fit slot (`DeviceFitMark reserveSpace`, 38px): the real
+            card holds it for a shopper with a saved device and drops it for
+            everyone else (TASK-2410) — the same pre-paint <html> flag decides
+            here, so the default-filtered grid that replaces this skeleton
+            (TASK-2421) lands in the same box. Empty, like the real slot
+            before hydration. */}
+        <div
+          aria-hidden="true"
+          data-testid="device-fit-slot-skeleton"
+          className="hidden h-9.5 [html[data-has-device]_&]:block"
+        />
         <p
           className="flex items-center gap-1.5 text-xs select-none"
           data-testid="stock-line-skeleton"

@@ -29,6 +29,7 @@ import {
   useMyDevicesFilter,
   useCatalogDeviceParam,
   withCompatMarker,
+  COMPAT_OFF,
   COMPAT_PARAM,
   clearFilterUpdates,
   countActiveFilters,
@@ -38,10 +39,27 @@ import {
   type CatalogView,
   type MyDevicesFilterDefault,
 } from "@/features/product-filters";
+import { useMyDevicesHydrated } from "@/entities/my-devices";
 import { dict } from "@/shared/config";
+import { cn } from "@/shared/lib/utils";
 import { findCategoryNodeBySlug } from "../model/catalog-header";
 import { buildCatalogListingParams } from "../model/listing-params";
 import { ProductList } from "./product-list";
+import { ProductListSkeleton } from "./product-list-skeleton";
+
+/**
+ * While the «Мої пристрої» default filter is still pending (TASK-2421), the
+ * server grid and counts are the UNFILTERED listing. For a shopper the
+ * default will apply to — `html[data-device-filter]`, set before first paint
+ * by the root layout — CSS hides them and shows the skeleton instead; for
+ * everyone else (no device, «лише сумісне» off) they paint as they are. The
+ * markup is the same on the server and in hydration, only CSS differs, so
+ * there is no hydration mismatch and nothing personal in the cached HTML.
+ * The counts go `invisible`, keeping their line.
+ */
+const PENDING_RESULTS_CLASS = "[html[data-device-filter]_&]:hidden";
+const PENDING_SKELETON_CLASS = "hidden [html[data-device-filter]_&]:block";
+const PENDING_COUNT_CLASS = "[html[data-device-filter]_&]:invisible";
 
 // Hydration flag (TASK-534): `false` for the server render and for hydration,
 // `true` for every client render after that — and for a fresh client mount.
@@ -175,6 +193,17 @@ export function ProductListView({
     myDevicesDefault,
   );
   const hasDeviceDefault = catalogDevice.hasDevices && myDevicesDefault.on;
+  // The server and hydration renders cannot know whether the default applies
+  // (TASK-2421): the route opts in, nothing in the URL or the route fixes the
+  // device, and the device store has not hydrated yet. Then the pre-paint
+  // flag decides, in CSS, between the server grid and the skeleton.
+  const devicesHydrated = useMyDevicesHydrated();
+  const defaultPending =
+    myDevicesDefault.on &&
+    !lockedDevice &&
+    !searchParams.get("device") &&
+    searchParams.get(COMPAT_PARAM) !== COMPAT_OFF &&
+    !devicesHydrated;
   const readParam = (key: string) =>
     key === "device" ? (catalogDevice.device ?? null) : searchParams.get(key);
   const params = buildCatalogListingParams(readParam, {
@@ -190,11 +219,22 @@ export function ProductListView({
   // Live result count — the count line under the H1 (Catalog §3), the
   // toolbar's short count below `lg` (§4) and the drawer's / sheet's «Показати
   // N» (TASK-084). Same `params` (and therefore React Query cache key) the grid
-  // fetches, so it costs no request of its own. `keepPreviousData` holds the
-  // last count on screen while a post-filter-change refetch is in flight
-  // instead of flashing to a loading state.
+  // fetches, so it costs no request of its own. The last count stays on
+  // screen while a post-filter-change refetch is in flight instead of
+  // flashing to a loading state — but only for the same `device`: the first
+  // default-filtered query after hydration (TASK-2421) must not show the
+  // unfiltered server count as its placeholder, and neither should a switch
+  // of the device filter.
   const { data: countData } = useProductControllerFindAll(params, {
-    query: { placeholderData: keepPreviousData },
+    query: {
+      placeholderData: (previous, previousQuery) =>
+        (
+          previousQuery?.queryKey[1] as
+            ProductControllerFindAllParams | undefined
+        )?.device === params.device
+          ? keepPreviousData(previous)
+          : undefined,
+    },
   });
   const resultCount = countData?.meta?.total;
 
@@ -421,7 +461,7 @@ export function ProductListView({
       {/* The count line right under the page's H1 (Catalog §3): «18 з 214
           товарів», and with the device filter on, who it is for. */}
       <ListingCountLine
-        className="mt-1.5"
+        className={cn("mt-1.5", defaultPending && PENDING_COUNT_CLASS)}
         shown={resultCount}
         total={categoryTotal}
         device={activeMyDevice}
@@ -469,7 +509,11 @@ export function ProductListView({
           {resultCount !== undefined && (
             <span
               aria-hidden="true"
-              className="mr-auto shrink-0 text-sm text-muted-foreground tabular-nums lg:hidden"
+              data-testid="toolbar-result-count"
+              className={cn(
+                "mr-auto shrink-0 text-sm text-muted-foreground tabular-nums lg:hidden",
+                defaultPending && PENDING_COUNT_CLASS,
+              )}
             >
               {dict.catalog.countProducts(resultCount)}
             </span>
@@ -517,16 +561,31 @@ export function ProductListView({
         </aside>
 
         <section className="min-w-0">
-          <ProductList
-            params={params}
-            buildPageHref={buildPageHref}
-            view={view}
-            empty={
-              myDeviceEmpty
-                ? { ...emptyState, custom: myDeviceEmpty }
-                : emptyState
-            }
-          />
+          {/* The wrapper is always there, so the list keeps its place in the
+              tree when `defaultPending` ends — only its class changes. */}
+          <div
+            data-testid="product-list-results"
+            className={defaultPending ? PENDING_RESULTS_CLASS : undefined}
+          >
+            <ProductList
+              params={params}
+              buildPageHref={buildPageHref}
+              view={view}
+              empty={
+                myDeviceEmpty
+                  ? { ...emptyState, custom: myDeviceEmpty }
+                  : emptyState
+              }
+            />
+          </div>
+          {defaultPending && (
+            <div
+              data-testid="default-filter-skeleton"
+              className={PENDING_SKELETON_CLASS}
+            >
+              <ProductListSkeleton view={view} />
+            </div>
+          )}
         </section>
       </div>
 

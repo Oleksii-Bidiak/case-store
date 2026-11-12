@@ -90,6 +90,36 @@ describe("DeviceFitMark", () => {
     expect(slot).toContainElement(text);
   });
 
+  it("collapses the slot in CSS when <html> has no saved device (TASK-2410)", () => {
+    // Server markup carries the rule itself: the pre-paint `data-has-device`
+    // flag decides before first paint, with no personal data in the HTML.
+    const html = renderToString(
+      <DeviceFitMark compatibleDeviceModelIds={["m-15pro"]} reserveSpace />,
+    );
+    expect(html).toContain("[html:not([data-has-device])_&amp;]:hidden");
+
+    for (const layout of ["wrap", "truncate"] as const) {
+      const { container, unmount } = render(
+        <DeviceFitMark
+          compatibleDeviceModelIds={["m-15pro"]}
+          layout={layout}
+          reserveSpace
+        />,
+      );
+      expect(
+        container.querySelector("[data-slot='device-fit-slot']"),
+      ).toHaveClass("[html:not([data-has-device])_&]:hidden");
+      unmount();
+    }
+  });
+
+  it("flags <html> when a device is saved, so the slot shows for its mark", () => {
+    addDevice(iphone15Pro);
+    expect(document.documentElement).toHaveAttribute("data-has-device");
+    clearMyDevices();
+    expect(document.documentElement).not.toHaveAttribute("data-has-device");
+  });
+
   it("reserves one line in the list-row layout", () => {
     const { container } = render(
       <DeviceFitMark

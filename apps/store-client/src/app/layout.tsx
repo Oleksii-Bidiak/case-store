@@ -6,6 +6,7 @@ import { SiteHeader } from "./site-header";
 import { Footer } from "@/widgets";
 import { PreviewBar } from "@/widgets/preview-bar";
 import { ThemeColorSync } from "@/features/theme";
+import { PRE_PAINT_FLAGS_SCRIPT } from "@/entities/my-devices";
 import {
   SITE_URL,
   THEME_COLOR,
@@ -200,10 +201,19 @@ export default async function RootLayout({
       // this element from an inline script that runs before hydration, so the
       // client tree legitimately differs from the server HTML here. Without the
       // flag React logs a hydration warning on every page load; scoped to <html>
-      // alone, so real mismatches anywhere inside still surface.
+      // alone, so real mismatches anywhere inside still surface. The same holds
+      // for the «Мої пристрої» flags the <head> script below sets.
       suppressHydrationWarning
       className={`${onest.variable} ${unbounded.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/* «Мої пристрої» flags on <html> before first paint (TASK-2421):
+            `data-has-device` / `data-device-filter`, read from localStorage.
+            Parser-blocking on purpose and in <head>, so no part of
+            <body> is painted without them; the cached HTML stays the same
+            for everyone (SF-CAT-87). */}
+        <script dangerouslySetInnerHTML={{ __html: PRE_PAINT_FLAGS_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <Providers>
           <ThemeColorSync />

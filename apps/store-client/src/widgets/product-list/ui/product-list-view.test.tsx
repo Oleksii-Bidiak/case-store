@@ -954,3 +954,123 @@ describe("ProductListView — the «Мої пристрої» default (TASK-2076
     ).toBe(true);
   });
 });
+
+describe("ProductListView — no unfiltered first paint (TASK-2421)", () => {
+  const pro = {
+    modelId: "m-15p",
+    slug: "iphone-15-pro",
+    name: "iPhone 15 Pro",
+    brandName: "Apple",
+    family: "iphone" as const,
+  };
+  const ON = { on: true, scope: "active" } as const;
+
+  const serverHtml = (ui: React.ReactElement) => {
+    const doc = document.createElement("div");
+    // innerHTML never runs scripts — the markup is only inspected.
+    doc.innerHTML = renderToString(
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthContext.Provider
+          value={{
+            accessToken: null,
+            userId: null,
+            role: null,
+            isAuthenticated: false,
+            isInitializing: false,
+            setTokens: jest.fn(),
+            clearTokens: jest.fn(),
+          }}
+        >
+          {ui}
+        </AuthContext.Provider>
+      </QueryClientProvider>,
+    );
+    return doc;
+  };
+  const results = (doc: ParentNode) =>
+    doc.querySelector('[data-testid="product-list-results"]');
+  const skeleton = (doc: ParentNode) =>
+    doc.querySelector('[data-testid="default-filter-skeleton"]');
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    clearMyDevices();
+  });
+
+  it("server HTML: keys the grid, the counts and a skeleton to html[data-device-filter]", () => {
+    // A saved device must not change the server markup (SF-CAT-87).
+    addDevice(pro);
+    const doc = serverHtml(<ProductListView myDevicesDefault={ON} />);
+
+    expect(doc.innerHTML).not.toContain(pro.name);
+    expect(results(doc)).toHaveClass("[html[data-device-filter]_&]:hidden");
+    expect(skeleton(doc)).toHaveClass(
+      "hidden",
+      "[html[data-device-filter]_&]:block",
+    );
+    expect(doc.querySelector("p[aria-live='polite']")).toHaveClass(
+      "[html[data-device-filter]_&]:invisible",
+    );
+  });
+
+  it.each([
+    ["compat=off in the URL", "compat=off", {}],
+    ["a device in the URL", "device=galaxy-s24", {}],
+    ["a route-locked device", "", { lockedDevice: { slug: "iphone-15-pro" } }],
+  ])("server HTML: nothing hidden with %s", (_, query, extra) => {
+    currentQuery = query;
+    const doc = serverHtml(
+      <ProductListView myDevicesDefault={ON} {...extra} />,
+    );
+    expect(skeleton(doc)).toBeNull();
+    expect(results(doc)?.className ?? "").toBe("");
+  });
+
+  it("server HTML: nothing hidden on a route without the default (/promo)", () => {
+    currentPathname = "/promo";
+    const doc = serverHtml(<ProductListView lockedOnSale anchorId="deals" />);
+    expect(skeleton(doc)).toBeNull();
+    expect(results(doc)?.className ?? "").toBe("");
+  });
+
+  it("after hydration: no CSS gate — the list shows its own state", async () => {
+    installCatalogHandlers();
+    addDevice(pro);
+    const { container } = renderWithProviders(
+      <ProductListView myDevicesDefault={ON} />,
+    );
+    await screen.findByText("Alpha Case");
+    expect(skeleton(container)).toBeNull();
+    expect(results(container)?.className ?? "").toBe("");
+  });
+
+  it("never shows another device's count as the placeholder", async () => {
+    installCatalogHandlers();
+    // The device-filtered listing never answers: its count stays pending.
+    server.use(
+      http.get("*/api/products", ({ request }) =>
+        new URL(request.url).searchParams.has("device")
+          ? new Promise<never>(() => {})
+          : undefined,
+      ),
+    );
+    addDevice(pro);
+    currentQuery = "compat=off";
+    const { rerender } = renderWithProviders(
+      <ProductListView myDevicesDefault={ON} />,
+    );
+    await screen.findByText("Alpha Case");
+    expect(screen.getByTestId("toolbar-result-count")).toHaveTextContent(
+      dict.catalog.countProducts(1),
+    );
+
+    // The default applies — as on the first render after hydration.
+    currentQuery = "";
+    rerender(<ProductListView myDevicesDefault={ON} />);
+
+    expect(screen.queryByTestId("toolbar-result-count")).toBeNull();
+    expect(
+      screen.queryByText(dict.catalog.countProducts(1)),
+    ).not.toBeInTheDocument();
+  });
+});
