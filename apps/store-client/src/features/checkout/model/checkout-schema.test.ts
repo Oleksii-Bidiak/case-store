@@ -429,6 +429,15 @@ describe("checkout schema — the DTO's rules (TASK-1984)", () => {
     expect(issues.deliveryAddress).toBe(dict.forms.tooLong);
   });
 
+  it("counts a typed city's padding — it is sent untrimmed", () => {
+    const issues = messagesAt(checkoutSchema, {
+      ...validForm,
+      deliveryMethod: "OTHER",
+      city: `Київ${" ".repeat(97)}`,
+    });
+    expect(issues.city).toBe(dict.forms.tooLong);
+  });
+
   it("caps the courier's street + house + flat as one address1", () => {
     const issues = messagesAt(checkoutSchema, {
       ...validForm,

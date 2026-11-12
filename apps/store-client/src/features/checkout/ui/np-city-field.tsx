@@ -10,7 +10,10 @@ import { Combobox, Label, type ComboboxOption } from "@/shared/ui";
 import { useSearchDeliveryCities } from "@/entities/delivery";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { dict } from "@/shared/config";
-import type { CheckoutFormValues } from "../model/checkout-schema";
+import {
+  CHECKOUT_CITY_MAX_LENGTH,
+  type CheckoutFormValues,
+} from "../model/checkout-schema";
 
 interface NpCityFieldProps {
   control: Control<CheckoutFormValues>;
@@ -88,6 +91,7 @@ export function NpCityField({
           isError ? dict.checkout.searchUnavailable : dict.checkout.searchEmpty
         }
         autoComplete="address-level2"
+        maxLength={CHECKOUT_CITY_MAX_LENGTH}
         aria-invalid={fieldState.error ? true : undefined}
         aria-describedby={
           [

@@ -39,6 +39,16 @@ function Harness() {
 }
 
 describe("NpCityField", () => {
+  // TASK-1984 (forms Rule 5d): free text typed here is sent as
+  // `shippingAddress.city`, `@MaxLength(100)`.
+  it("caps the typed city at AddressDto's 100", () => {
+    renderWithProviders(<Harness />);
+    expect(screen.getByLabelText(dict.checkout.fields.city)).toHaveAttribute(
+      "maxLength",
+      "100",
+    );
+  });
+
   it("searches and lists matching cities after typing", async () => {
     const user = userEvent.setup();
     renderWithProviders(<Harness />);

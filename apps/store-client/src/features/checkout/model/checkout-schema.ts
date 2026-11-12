@@ -189,14 +189,16 @@ function refineDelivery(
   };
   // A typed text's length cap (Rule 5d) — checked only for the fields the
   // chosen branch shows and sends, so a value left behind by another branch
-  // can never block the step from a field that is not on screen.
+  // can never block the step from a field that is not on screen. The value is
+  // measured as `toDeliveryPayload` sends it — `city` / `deliveryAddress` go out
+  // untrimmed, and `@MaxLength` counts their padding too.
   const limit = (
     field: keyof CheckoutFormValues,
     value: string | undefined,
     max: number,
     message: string = dict.forms.tooLong,
   ) => {
-    if ((value ?? "").trim().length > max) {
+    if ((value ?? "").length > max) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message });
     }
   };
@@ -210,7 +212,12 @@ function refineDelivery(
     case "COURIER":
       if (!courierCityFixed) {
         require("courierCity", values.courierCity, v.city);
-        limit("courierCity", values.courierCity, CHECKOUT_CITY_MAX_LENGTH);
+        // Sent trimmed (`courierCity()` in ./delivery).
+        limit(
+          "courierCity",
+          values.courierCity?.trim(),
+          CHECKOUT_CITY_MAX_LENGTH,
+        );
       }
       require("courierStreet", values.courierStreet, dv.courierStreet);
       require("courierHouse", values.courierHouse, dv.courierHouse);
