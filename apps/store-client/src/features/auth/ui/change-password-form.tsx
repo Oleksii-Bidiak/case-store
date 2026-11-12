@@ -79,6 +79,12 @@ export function ChangePasswordForm({ onCancel }: { onCancel?: () => void }) {
     formState: { errors },
   } = useForm<ChangePasswordValues>({
     resolver: zodResolver(changePasswordSchema),
+    // Every validated field has a default (forms Rule 4c).
+    defaultValues: {
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    },
   });
 
   // Whether the last failure was placed under a field (forms Rule 6b) — then

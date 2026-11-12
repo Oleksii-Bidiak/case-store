@@ -56,7 +56,11 @@ export function ResetPasswordForm() {
     handleSubmit,
     setError,
     formState: { errors },
-  } = useForm<ResetValues>({ resolver: zodResolver(resetSchema) });
+  } = useForm<ResetValues>({
+    resolver: zodResolver(resetSchema),
+    // Every validated field has a default (forms Rule 4c).
+    defaultValues: { newPassword: "", confirmPassword: "" },
+  });
 
   // The last failure is shown under a field — no banner then (Rule 6c).
   const [onField, setOnField] = useState(false);

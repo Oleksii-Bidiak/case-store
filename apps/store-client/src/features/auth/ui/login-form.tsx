@@ -135,7 +135,8 @@ export function LoginForm({
     formState: { errors },
   } = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: defaultEmail ? { email: defaultEmail } : undefined,
+    // Every validated field has a default (forms Rule 4c).
+    defaultValues: { email: defaultEmail ?? "", password: "" },
   });
 
   const login = useAuthControllerLogin();

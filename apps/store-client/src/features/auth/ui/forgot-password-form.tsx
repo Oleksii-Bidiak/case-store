@@ -47,7 +47,11 @@ export function ForgotPasswordForm({
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<ForgotValues>({ resolver: zodResolver(forgotSchema) });
+  } = useForm<ForgotValues>({
+    resolver: zodResolver(forgotSchema),
+    // Every validated field has a default (forms Rule 4c).
+    defaultValues: { email: "" },
+  });
 
   const onSubmit = (values: ForgotValues) => {
     requestReset.mutate(

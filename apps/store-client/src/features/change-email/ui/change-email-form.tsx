@@ -61,7 +61,11 @@ export function ChangeEmailForm({
     handleSubmit,
     setError,
     formState: { errors },
-  } = useForm<ChangeEmailValues>({ resolver: zodResolver(schema) });
+  } = useForm<ChangeEmailValues>({
+    resolver: zodResolver(schema),
+    // Every validated field has a default (forms Rule 4c).
+    defaultValues: { newEmail: "", currentPassword: "" },
+  });
 
   // The last failure is shown under a field — no banner then (Rule 6c).
   const [onField, setOnField] = useState(false);

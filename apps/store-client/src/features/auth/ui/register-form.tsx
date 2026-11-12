@@ -113,7 +113,19 @@ export function RegisterForm({
     handleSubmit,
     setError,
     formState: { errors },
-  } = useForm<RegisterValues>({ resolver: zodResolver(registerSchema) });
+  } = useForm<RegisterValues>({
+    resolver: zodResolver(registerSchema),
+    // Every validated field has a default (forms Rule 4c).
+    defaultValues: {
+      email: "",
+      firstName: "",
+      lastName: "",
+      password: "",
+      passwordConfirm: "",
+      terms: false,
+      hpCheck: "",
+    },
+  });
 
   // The last failure is shown under a field — no banner then (Rule 6c).
   const [onField, setOnField] = useState(false);

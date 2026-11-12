@@ -104,6 +104,26 @@ describe("ChangePasswordForm", () => {
     }
   });
 
+  // Forms Rule 4c: every field has a default, so an untouched one gets the
+  // localized message, never zod's English "Required".
+  it("names each empty field in Ukrainian on a blank submit", async () => {
+    const calls = captureChangePassword();
+    const user = userEvent.setup();
+    renderWithProviders(<ChangePasswordForm />, {
+      auth: { isAuthenticated: true },
+    });
+
+    await user.click(screen.getByRole("button", { name: d.submit }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(d.currentPassword),
+      ).toHaveAccessibleDescription(d.validationCurrentRequired),
+    );
+    expect(screen.queryByText("Required")).not.toBeInTheDocument();
+    expect(calls).toHaveLength(0);
+  });
+
   it("rejects a weak new password without calling the API", async () => {
     const calls = captureChangePassword();
     const user = userEvent.setup();
