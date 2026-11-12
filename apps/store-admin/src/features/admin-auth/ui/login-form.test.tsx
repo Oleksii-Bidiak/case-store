@@ -248,6 +248,53 @@ describe("AdminLoginForm", () => {
       );
     });
 
+    it("sends the email trimmed and caps it at 254 (TASK-1984, emailField)", async () => {
+      const bodies: unknown[] = [];
+      server.use(
+        http.post("*/api/auth/login", async ({ request }) => {
+          bodies.push(await request.json());
+          return unauthorized("Invalid credentials");
+        }),
+      );
+      const user = userEvent.setup();
+      renderLoginForm();
+
+      const email = screen.getByLabelText(dict.login.email);
+      expect(email).toHaveAttribute("maxlength", "254");
+      await user.type(email, "  admin@test.ua ");
+      await user.type(screen.getByLabelText(dict.login.password), "x");
+      await user.click(screen.getByRole("button", { name: dict.login.signIn }));
+
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toMatchObject({ email: "admin@test.ua" });
+    });
+
+    it("keeps a server 400 in the one generic banner (Rule 6d), not under a field", async () => {
+      server.use(
+        http.post("*/api/auth/login", () =>
+          HttpResponse.json(
+            {
+              statusCode: 400,
+              message: "Please provide a valid email address",
+              fieldErrors: [{ field: "email", constraint: "isEmail" }],
+            },
+            { status: 400 },
+          ),
+        ),
+      );
+      const user = userEvent.setup();
+      renderLoginForm();
+
+      await submitCredentials(user);
+
+      expect(
+        await screen.findByText(dict.login.errorGeneric),
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText(dict.login.email)).not.toHaveAttribute(
+        "aria-invalid",
+      );
+    });
+
     it("puts no asterisks on the labels — both fields are required", () => {
       renderLoginForm();
 

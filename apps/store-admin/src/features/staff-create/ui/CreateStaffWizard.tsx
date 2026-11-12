@@ -46,11 +46,30 @@ import {
   type StepperStep,
 } from "@/shared/ui";
 import { apiErrorMessage, apiErrorStatus, isStaffPassword } from "@/shared/lib";
+import { mapServerFieldErrors } from "@/shared/lib/form-errors";
+import { EMAIL_MAX_LENGTH, emailField } from "@/shared/lib/form-fields";
 import { dict } from "@/shared/config";
 
 const d = dict.staff;
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * `CreateStaffDto.email` — `@IsEmail @MaxLength(254)` after a trim (TASK-1984,
+ * forms Rule 5c). No local regex: the old one let `a@-b.c` through to a 400.
+ */
+const emailRule = emailField({ message: d.emailInvalid });
+
+/** `CreateStaffDto.firstName` / `lastName` — `@MaxLength(100)` (Rule 5d). */
+const NAME_MAX_LENGTH = 100;
+
+/** `CreateStaffDto` path → the wizard field that shows it (Rule 6b). */
+const STAFF_FIELD_MAP = {
+  email: "email",
+  password: "password",
+  firstName: "firstName",
+  lastName: "lastName",
+} as const;
+
+type NameField = "firstName" | "lastName";
 
 /** No template chosen. A sentinel rather than `""`, which Radix rejects. */
 const NO_TEMPLATE = "__none__";
@@ -67,7 +86,9 @@ const IDS = {
   emailHint: "staff-wizard-email-hint",
   emailError: "staff-wizard-email-error",
   firstName: "staff-wizard-first-name",
+  firstNameError: "staff-wizard-first-name-error",
   lastName: "staff-wizard-last-name",
+  lastNameError: "staff-wizard-last-name-error",
   template: "staff-wizard-template",
   templateHint: "staff-wizard-template-hint",
   password: "staff-wizard-password",
@@ -154,6 +175,9 @@ export function CreateStaffWizard({
   // now hold rights open (the grid decides that once, on mount).
   const [gridKey, setGridKey] = useState(0);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [nameErrors, setNameErrors] = useState<
+    Partial<Record<NameField, string>>
+  >({});
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -189,6 +213,7 @@ export function CreateStaffWizard({
     setTemplateId(NO_TEMPLATE);
     setGranted(new Set<string>());
     setEmailError(null);
+    setNameErrors({});
     setPasswordError(null);
     setFormError(null);
   };
@@ -234,11 +259,19 @@ export function CreateStaffWizard({
   };
 
   const goFromWho = () => {
-    if (!EMAIL.test(email.trim())) {
-      setEmailError(d.emailInvalid);
-      return;
+    const parsed = emailRule.safeParse(email);
+    const names: Partial<Record<NameField, string>> = {};
+    for (const [field, value] of [
+      ["firstName", firstName],
+      ["lastName", lastName],
+    ] as const) {
+      if (value.trim().length > NAME_MAX_LENGTH) {
+        names[field] = dict.forms.tooLong;
+      }
     }
-    setEmailError(null);
+    setEmailError(parsed.success ? null : parsed.error.issues[0].message);
+    setNameErrors(names);
+    if (!parsed.success || Object.keys(names).length > 0) return;
     setStep("access");
   };
 
@@ -347,19 +380,40 @@ export function CreateStaffWizard({
             },
           );
         },
+        // TASK-1984 (Rule 6b/6c): each refusal is shown ONCE — under its field
+        // or in the step's banner — never repeated in a toast.
         onError: (mutationError) => {
+          const status = apiErrorStatus(mutationError);
           // A taken address is a fact about the FIELD on step one: go back to
           // it and say so under it (form canon 1.5), instead of a red line on
           // a step where nothing can be done about it.
-          if (apiErrorStatus(mutationError) === 409) {
+          if (status === 409) {
             setEmailError(d.emailTaken);
             setStep("who");
-            toast.error(d.emailTaken);
             return;
           }
-          const message = apiErrorMessage(mutationError) ?? d.createToastFailed;
-          setFormError(message);
-          toast.error(message);
+          if (status === 400) {
+            const fields = mapServerFieldErrors(
+              mutationError,
+              STAFF_FIELD_MAP,
+              { password: dict.users.passwordWeak },
+            );
+            if (fields.password) setPasswordError(fields.password);
+            const onWho =
+              fields.email !== undefined ||
+              fields.firstName !== undefined ||
+              fields.lastName !== undefined;
+            if (onWho) {
+              setEmailError(fields.email ?? null);
+              setNameErrors({
+                firstName: fields.firstName,
+                lastName: fields.lastName,
+              });
+              setStep("who");
+            }
+            if (Object.keys(fields).length > 0) return;
+          }
+          setFormError(apiErrorMessage(mutationError) ?? d.createToastFailed);
         },
       },
     );
@@ -431,6 +485,7 @@ export function CreateStaffWizard({
                 id={IDS.email}
                 type="email"
                 autoComplete="off"
+                maxLength={EMAIL_MAX_LENGTH}
                 value={email}
                 aria-invalid={emailError ? true : undefined}
                 aria-describedby={
@@ -461,16 +516,48 @@ export function CreateStaffWizard({
                 <Input
                   id={IDS.firstName}
                   value={firstName}
-                  onChange={(event) => setFirstName(event.target.value)}
+                  maxLength={NAME_MAX_LENGTH}
+                  aria-invalid={nameErrors.firstName ? true : undefined}
+                  aria-describedby={
+                    nameErrors.firstName ? IDS.firstNameError : undefined
+                  }
+                  onChange={(event) => {
+                    setFirstName(event.target.value);
+                    if (nameErrors.firstName) {
+                      setNameErrors((prev) => ({
+                        ...prev,
+                        firstName: undefined,
+                      }));
+                    }
+                  }}
                 />
+                <FieldError id={IDS.firstNameError}>
+                  {nameErrors.firstName}
+                </FieldError>
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor={IDS.lastName}>{d.fieldLastName}</Label>
                 <Input
                   id={IDS.lastName}
                   value={lastName}
-                  onChange={(event) => setLastName(event.target.value)}
+                  maxLength={NAME_MAX_LENGTH}
+                  aria-invalid={nameErrors.lastName ? true : undefined}
+                  aria-describedby={
+                    nameErrors.lastName ? IDS.lastNameError : undefined
+                  }
+                  onChange={(event) => {
+                    setLastName(event.target.value);
+                    if (nameErrors.lastName) {
+                      setNameErrors((prev) => ({
+                        ...prev,
+                        lastName: undefined,
+                      }));
+                    }
+                  }}
                 />
+                <FieldError id={IDS.lastNameError}>
+                  {nameErrors.lastName}
+                </FieldError>
               </div>
             </div>
           </div>

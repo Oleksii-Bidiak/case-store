@@ -32,6 +32,9 @@ export class CreateStaffDto {
   @ApiProperty({ description: 'Email address (also the login)', example: 'manager@example.com' })
   @Transform(normalizeEmail) // TASK-772: the login lookup is lowercased
   @IsEmail({}, { message: 'Please provide a valid email address' })
+  // TASK-1984 (forms Rule 5c): the same 254 cap as every other email DTO and as
+  // the admin wizard's `emailField`.
+  @MaxLength(254)
   email!: string;
 
   @ApiProperty({

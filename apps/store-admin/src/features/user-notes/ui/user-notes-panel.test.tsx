@@ -47,6 +47,10 @@ jest.mock("@/entities/session", () => ({
   }),
 }));
 
+jest.mock("@/shared/ui/toast", () => ({
+  toast: { success: jest.fn(), error: jest.fn() },
+}));
+
 const USER_ID = "user-1";
 const d = dict.users;
 
@@ -236,5 +240,82 @@ describe("UserNotesPanel (TASK-430)", () => {
       expect(screen.getByText("Щойно додана")).toBeInTheDocument(),
     );
     expect(reads).toBeGreaterThan(1);
+  });
+
+  describe("field standard (TASK-1984)", () => {
+    const { toast } = jest.requireMock("@/shared/ui/toast") as {
+      toast: { error: jest.Mock };
+    };
+    beforeEach(() => toast.error.mockClear());
+
+    it("measures the note trimmed, as the API does — trailing spaces do not block it", async () => {
+      stubNotes();
+      renderWithProviders(<UserNotesPanel userId={USER_ID} />);
+
+      const box = await screen.findByLabelText(d.notesAddLabel);
+      await userEvent.click(box);
+      await userEvent.paste(`${"я".repeat(2000)}   `);
+
+      expect(box).not.toHaveAttribute("aria-invalid");
+      expect(
+        screen.getByRole("button", { name: d.notesAddSubmit }),
+      ).toBeEnabled();
+    });
+
+    it("puts a server 400 about the text under the textarea, with no toast", async () => {
+      stubNotes();
+      server.use(
+        http.post("*/api/admin/users/:userId/notes", () =>
+          HttpResponse.json(
+            {
+              statusCode: 400,
+              message: "body must be shorter than or equal to 2000 characters",
+              fieldErrors: [{ field: "body", constraint: "maxLength" }],
+            },
+            { status: 400 },
+          ),
+        ),
+      );
+      renderWithProviders(<UserNotesPanel userId={USER_ID} />);
+
+      const box = await screen.findByLabelText(d.notesAddLabel);
+      await userEvent.type(box, "Нотатка");
+      await userEvent.click(
+        screen.getByRole("button", { name: d.notesAddSubmit }),
+      );
+
+      await waitFor(() => expect(box).toHaveAttribute("aria-invalid", "true"));
+      expect(box).toHaveAccessibleDescription(
+        expect.stringContaining(dict.forms.tooLong),
+      );
+      expect(toast.error).not.toHaveBeenCalled();
+      // The text the operator typed survives the refusal.
+      expect(box).toHaveValue("Нотатка");
+    });
+
+    it("toasts any other refusal in the server's own words", async () => {
+      stubNotes();
+      server.use(
+        http.post("*/api/admin/users/:userId/notes", () =>
+          HttpResponse.json(
+            { statusCode: 403, message: "Missing permission customers:write" },
+            { status: 403 },
+          ),
+        ),
+      );
+      renderWithProviders(<UserNotesPanel userId={USER_ID} />);
+
+      const box = await screen.findByLabelText(d.notesAddLabel);
+      await userEvent.type(box, "Нотатка");
+      await userEvent.click(
+        screen.getByRole("button", { name: d.notesAddSubmit }),
+      );
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          "Missing permission customers:write",
+        ),
+      );
+    });
   });
 });

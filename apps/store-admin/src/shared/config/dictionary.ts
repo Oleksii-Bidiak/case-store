@@ -5507,6 +5507,8 @@ export const dict = {
     changeEmailToastFailed: "Не вдалося змінити email",
     changeEmailInvalid: "Вкажіть коректну адресу",
     changeEmailSame: "Це вже поточна адреса клієнта",
+    // TASK-1984: the API's 409 — the address belongs to another account.
+    changeEmailTaken: "Ця адреса вже належить іншому акаунту",
     changeEmailReasonRequired: "Опишіть причину — щонайменше 5 символів",
 
     // `lastAdminRefusal` stood here until TASK-480, unreferenced since TASK-476:
@@ -5706,6 +5708,10 @@ export const dict = {
     templateName: "Назва",
     templateDescription: "Для чого цей шаблон",
     templateNameRequired: "Вкажіть назву шаблону",
+    // TASK-1984: the DTO's @MinLength(2) / @MaxLength(100), and the 409.
+    templateNameLength: "Назва — від 2 до 100 символів",
+    templateNameTaken: "Шаблон з такою назвою вже є",
+    templateDescriptionTooLong: "Опис — не довше 500 символів",
     templateToastCreated: (name: string) => `Шаблон «${name}» створено`,
     templateToastSaved: (name: string) => `Шаблон «${name}» збережено`,
     templateToastFailed: "Не вдалося зберегти шаблон",
@@ -5815,6 +5821,8 @@ export const dict = {
     transferToastDone: (email: string) => `Власність передано: ${email}`,
     transferToastFailed: "Не вдалося передати власність",
     transferWrongPassword: "Пароль не підійшов. Спробуйте ще раз.",
+    // TASK-1984: an empty field is not a wrong password.
+    transferPasswordRequired: "Вкажіть свій поточний пароль",
     transferSessionsHint:
       "Після передачі сесії обох акаунтів завершаться — вам доведеться увійти знову.",
 

@@ -16,10 +16,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  FieldError,
   Input,
   Label,
 } from "@/shared/ui";
-import { apiErrorMessage, isStaffPassword } from "@/shared/lib";
+import { apiErrorMessage, apiErrorStatus, isStaffPassword } from "@/shared/lib";
+import { mapServerFieldErrors } from "@/shared/lib/form-errors";
 import { dict } from "@/shared/config";
 
 const d = dict.users;
@@ -48,11 +50,16 @@ export function UserPasswordResetDialog({
   const queryClient = useQueryClient();
   const setPassword = useSetStaffPassword();
   const [newPassword, setNewPassword] = useState("");
+  // TASK-1984 (Rule 6a/6c): a refusal of the password sits under the input;
+  // `error` is one with no field (permission, 5xx…). Each is shown once — no
+  // toast repeating it.
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const close = (next: boolean) => {
     if (!next) {
       setNewPassword("");
+      setPasswordError(null);
       setError(null);
     }
     onOpenChange(next);
@@ -61,11 +68,12 @@ export function UserPasswordResetDialog({
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
 
+    setError(null);
     if (!isStaffPassword(newPassword)) {
-      setError(d.passwordWeak);
+      setPasswordError(d.passwordWeak);
       return;
     }
-    setError(null);
+    setPasswordError(null);
 
     setPassword.mutate(
       { id: userId, data: { newPassword } },
@@ -90,10 +98,22 @@ export function UserPasswordResetDialog({
           close(false);
         },
         onError: (mutationError) => {
-          const message =
-            apiErrorMessage(mutationError) ?? d.passwordResetToastFailed;
-          setError(message);
-          toast.error(message);
+          if (apiErrorStatus(mutationError) === 400) {
+            // `SetStaffPasswordDto.newPassword` is `@IsStaffPassword` — the
+            // rule `isStaffPassword` already checked, in the client's words.
+            const fields = mapServerFieldErrors(
+              mutationError,
+              { newPassword: "newPassword" },
+              { newPassword: d.passwordWeak },
+            );
+            if (fields.newPassword) {
+              setPasswordError(fields.newPassword);
+              return;
+            }
+          }
+          setError(
+            apiErrorMessage(mutationError) ?? d.passwordResetToastFailed,
+          );
         },
       },
     );
@@ -119,9 +139,26 @@ export function UserPasswordResetDialog({
               type="password"
               autoComplete="new-password"
               value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
+              onChange={(event) => {
+                setNewPassword(event.target.value);
+                if (passwordError) setPasswordError(null);
+              }}
+              aria-invalid={passwordError ? true : undefined}
+              aria-describedby={
+                passwordError
+                  ? "reset-password-new-error reset-password-new-hint"
+                  : "reset-password-new-hint"
+              }
             />
-            <p className="text-xs text-muted-foreground">{d.passwordHint}</p>
+            <FieldError id="reset-password-new-error">
+              {passwordError}
+            </FieldError>
+            <p
+              id="reset-password-new-hint"
+              className="text-xs text-muted-foreground"
+            >
+              {d.passwordHint}
+            </p>
           </div>
 
           {error && (

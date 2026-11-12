@@ -23,14 +23,48 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  FieldError,
   Input,
   Label,
   Textarea,
 } from "@/shared/ui";
-import { apiErrorMessage } from "@/shared/lib";
+import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { mapServerFieldErrors } from "@/shared/lib/form-errors";
 import { dict } from "@/shared/config";
 
 const d = dict.staff;
+
+/**
+ * `CreatePermissionTemplateDto` / `UpdatePermissionTemplateDto`: name
+ * `@MinLength(2) @MaxLength(100)`, description `@MaxLength(500)` (TASK-1984,
+ * forms Rule 5d). The name is measured trimmed — what is sent.
+ */
+const TEMPLATE_NAME_MIN = 2;
+const TEMPLATE_NAME_MAX = 100;
+const TEMPLATE_DESCRIPTION_MAX = 500;
+
+type TemplateField = "name" | "description";
+
+/** DTO path → this form's field (Rule 6b). */
+const TEMPLATE_FIELD_MAP = {
+  name: "name",
+  description: "description",
+} as const;
+
+function validateTemplate(
+  name: string,
+  description: string,
+): Partial<Record<TemplateField, string>> {
+  const errors: Partial<Record<TemplateField, string>> = {};
+  if (name.length === 0) errors.name = d.templateNameRequired;
+  else if (name.length < TEMPLATE_NAME_MIN || name.length > TEMPLATE_NAME_MAX) {
+    errors.name = d.templateNameLength;
+  }
+  if (description.length > TEMPLATE_DESCRIPTION_MAX) {
+    errors.description = d.templateDescriptionTooLong;
+  }
+  return errors;
+}
 
 interface PermissionTemplateDialogProps {
   /** `null` creates a new template; a template edits that one. */
@@ -112,12 +146,18 @@ export function PermissionTemplateDialog({
   const [granted, setGranted] = useState<ReadonlySet<string>>(
     () => new Set(template?.permissions ?? []),
   );
+  // Field errors live under their input (Rule 6a); `error` is the refusal
+  // that belongs to no field (a permission key, a 5xx…).
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<TemplateField, string>>
+  >({});
   const [error, setError] = useState<string | null>(null);
   if (signature !== syncedSignature) {
     setSyncedSignature(signature);
     setName(template?.name ?? "");
     setDescription(template?.description ?? "");
     setGranted(new Set(template?.permissions ?? []));
+    setFieldErrors({});
     setError(null);
   }
 
@@ -157,19 +197,34 @@ export function PermissionTemplateDialog({
     event.preventDefault();
 
     const trimmedName = name.trim();
-    if (trimmedName.length === 0) {
-      setError(d.templateNameRequired);
-      return;
-    }
+    const trimmedDescription = description.trim();
+    const next = validateTemplate(trimmedName, trimmedDescription);
+    setFieldErrors(next);
     setError(null);
+    if (Object.keys(next).length > 0) return;
 
     const permissions = [...granted].sort();
-    const trimmedDescription = description.trim();
 
+    // TASK-1984 (Rule 6b/6c): a refusal about the name or the description
+    // goes under that field; only the rest is the form's line. Shown once —
+    // no toast repeating it.
     const onError = (mutationError: unknown) => {
-      const message = apiErrorMessage(mutationError) ?? d.templateToastFailed;
-      setError(message);
-      toast.error(message);
+      const status = apiErrorStatus(mutationError);
+      if (status === 409) {
+        setFieldErrors({ name: d.templateNameTaken });
+        return;
+      }
+      if (status === 400) {
+        const mapped = mapServerFieldErrors(mutationError, TEMPLATE_FIELD_MAP, {
+          name: d.templateNameLength,
+          description: d.templateDescriptionTooLong,
+        });
+        if (Object.keys(mapped).length > 0) {
+          setFieldErrors(mapped);
+          return;
+        }
+      }
+      setError(apiErrorMessage(mutationError) ?? d.templateToastFailed);
     };
 
     if (template) {
@@ -233,8 +288,21 @@ export function PermissionTemplateDialog({
             <Input
               id="permission-template-name"
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              maxLength={TEMPLATE_NAME_MAX}
+              aria-invalid={fieldErrors.name ? true : undefined}
+              aria-describedby={
+                fieldErrors.name ? "permission-template-name-error" : undefined
+              }
+              onChange={(event) => {
+                setName(event.target.value);
+                if (fieldErrors.name) {
+                  setFieldErrors((prev) => ({ ...prev, name: undefined }));
+                }
+              }}
             />
+            <FieldError id="permission-template-name-error">
+              {fieldErrors.name}
+            </FieldError>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -245,8 +313,26 @@ export function PermissionTemplateDialog({
               id="permission-template-description"
               rows={2}
               value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              maxLength={TEMPLATE_DESCRIPTION_MAX}
+              aria-invalid={fieldErrors.description ? true : undefined}
+              aria-describedby={
+                fieldErrors.description
+                  ? "permission-template-description-error"
+                  : undefined
+              }
+              onChange={(event) => {
+                setDescription(event.target.value);
+                if (fieldErrors.description) {
+                  setFieldErrors((prev) => ({
+                    ...prev,
+                    description: undefined,
+                  }));
+                }
+              }}
             />
+            <FieldError id="permission-template-description-error">
+              {fieldErrors.description}
+            </FieldError>
           </div>
 
           <Badge variant="secondary" className="w-fit">

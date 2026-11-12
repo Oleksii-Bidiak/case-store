@@ -15,10 +15,14 @@ import {
   Label,
 } from "@/shared/ui";
 import { dict, STOREFRONT_URL } from "@/shared/config";
+import { EMAIL_MAX_LENGTH, emailField } from "@/shared/lib/form-fields";
 import { loginRedirectTarget } from "../lib/sanitize-redirect-target";
 
+// TASK-1984 (Rule 5c): `LoginDto.email` is `@IsEmail @MaxLength(254)` after a
+// trim — `emailField` is that rule. A server refusal still stays the one
+// generic banner below (Rule 6d: never say which field was wrong at login).
 const loginSchema = z.object({
-  email: z.string().email(dict.login.emailInvalid),
+  email: emailField({ message: dict.login.emailInvalid }),
   password: z.string().min(1, dict.login.passwordRequired),
 });
 
@@ -153,6 +157,7 @@ export function AdminLoginForm() {
           id="login-email"
           type="email"
           autoComplete="email"
+          maxLength={EMAIL_MAX_LENGTH}
           aria-invalid={errors.email ? true : undefined}
           aria-describedby={errors.email ? EMAIL_ERROR_ID : undefined}
           {...register("email")}
