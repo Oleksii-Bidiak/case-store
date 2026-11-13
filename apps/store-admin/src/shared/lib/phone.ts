@@ -192,8 +192,9 @@ export function maskedPhoneValue(raw: string): string {
     MASK_PREFIX_TRUNK_ZERO,
     MASK_PREFIX,
   );
-  const digits = clean.replace(/\D/g, "");
-  return MASK_PREFIX.slice(1).startsWith(digits) ? "" : clean;
+  // Only what is left OF the drawn prefix counts as empty — `----------` is
+  // something typed, and stays for the rule to refuse (TASK-799).
+  return MASK_PREFIX.startsWith(clean.replace(/\s/g, "")) ? "" : clean;
 }
 
 /**

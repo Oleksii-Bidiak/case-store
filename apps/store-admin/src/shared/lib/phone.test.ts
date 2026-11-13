@@ -185,6 +185,9 @@ describe("maskedPhoneValue (what the masked field emits)", () => {
     ["0501112233", "0501112233"],
     ["+38 (050) 111-22.33 4455", "+38 (050) 111-22.33 4455"],
     ["+380 50 111 2233 ccc", "+380 50 111 2233 "],
+    // Digitless, but typed — not "empty", or it would erase a saved number.
+    ["----------", "----------"],
+    ["((((((((((", "(((((((((("],
   ])("%p → %p", (raw, expected) => {
     expect(maskedPhoneValue(raw)).toBe(expected);
   });
