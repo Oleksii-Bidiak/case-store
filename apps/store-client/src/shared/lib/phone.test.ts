@@ -2,6 +2,8 @@ import {
   displayPhone,
   formatUAPhone,
   isValidUAPhone,
+  maskedPhoneDisplay,
+  maskedPhoneValue,
   PHONE_SHAPE,
   sanitizePhoneInput,
   normalizeUAPhone,
@@ -135,5 +137,56 @@ describe("sanitizePhoneInput", () => {
     ["", ""],
   ])("%p → %p", (raw, expected) => {
     expect(sanitizePhoneInput(raw)).toBe(expected);
+  });
+});
+
+/**
+ * TASK-1984 — the mask draws `+380` into every field, so what the browser hands
+ * `onChange` always starts with it. `maskedPhoneValue` turns that back into the
+ * value the person meant.
+ */
+describe("maskedPhoneValue (what the masked field emits)", () => {
+  it.each([
+    // Only the drawn prefix, or what Backspace left of it: an empty field.
+    ["+380", ""],
+    ["+38", ""],
+    ["+3", ""],
+    ["+", ""],
+    ["", ""],
+    // A domestic 0 typed after the drawn +380 is the trunk zero — no UA local
+    // number starts with 0.
+    ["+3800", ""],
+    ["+3800501112233", "+380501112233"],
+    ["+3805", "+3805"],
+    ["+380 50 111 2233", "+380 50 111 2233"],
+    // Not the drawn prefix: passed whole, only sanitised (Rule 5b).
+    ["0501112233", "0501112233"],
+    ["+38 (050) 111-22.33 4455", "+38 (050) 111-22.33 4455"],
+    ["+380 50 111 2233 ccc", "+380 50 111 2233 "],
+  ])("%p → %p", (raw, expected) => {
+    expect(maskedPhoneValue(raw)).toBe(expected);
+  });
+
+  it("turns a domestic number typed after the drawn prefix into a valid one", () => {
+    expect(isValidUAPhone(maskedPhoneValue("+3800501112233"))).toBe(true);
+  });
+});
+
+/**
+ * TASK-1984 — what the masked FIELD shows. Unlike `formatUAPhone` (a stored
+ * number shown back, only ever called on a valid one) it never hides a digit the
+ * value carries: a 10th digit hidden by the mask left a field that looked right
+ * saying "invalid phone".
+ */
+describe("maskedPhoneDisplay (what the masked field shows)", () => {
+  it.each([
+    ["", "+380"],
+    ["+3805", "+380 5"],
+    ["0501112233", "+380 50 111 2233"],
+    ["+380501112233", "+380 50 111 2233"],
+    ["+380 50 111 22334", "+380 50 111 22334"],
+    ["12345678901", "+380 12 345 678901"],
+  ])("%p → %p", (raw, expected) => {
+    expect(maskedPhoneDisplay(raw)).toBe(expected);
   });
 });

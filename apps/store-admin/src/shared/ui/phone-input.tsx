@@ -2,7 +2,12 @@
 
 import * as React from "react";
 
-import { formatUAPhone, sanitizePhoneInput } from "@/shared/lib/phone";
+import {
+  isWholePhonePaste,
+  maskedPhoneDisplay,
+  maskedPhoneValue,
+  sanitizePhoneInput,
+} from "@/shared/lib/phone";
 import { Input } from "./input";
 
 export type PhoneInputProps = Omit<
@@ -51,15 +56,33 @@ export type PhoneInputProps = Omit<
 export function PhoneInput({
   value = "",
   onChange,
+  onPaste,
   rule,
   ...props
 }: PhoneInputProps) {
+  const masked = rule === "ua";
   return (
     <Input
       type="tel"
-      inputMode={rule === "ua" ? "numeric" : "tel"}
-      value={rule === "ua" ? formatUAPhone(value) : value}
-      onChange={(event) => onChange?.(sanitizePhoneInput(event.target.value))}
+      inputMode={masked ? "numeric" : "tel"}
+      value={masked ? maskedPhoneDisplay(value) : value}
+      onChange={(event) =>
+        onChange?.(
+          masked
+            ? maskedPhoneValue(event.target.value)
+            : sanitizePhoneInput(event.target.value),
+        )
+      }
+      onPaste={(event) => {
+        onPaste?.(event);
+        if (!masked || event.defaultPrevented) return;
+        // A whole number pasted at the caret would land after the drawn
+        // `+380` — it replaces the value instead (TASK-1984).
+        const text = event.clipboardData.getData("text");
+        if (!isWholePhonePaste(text)) return;
+        event.preventDefault();
+        onChange?.(maskedPhoneValue(text));
+      }}
       {...props}
     />
   );

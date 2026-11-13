@@ -2,6 +2,8 @@ import {
   formatUAPhone,
   isValidInternationalPhone,
   isValidUAPhone,
+  maskedPhoneDisplay,
+  maskedPhoneValue,
   PHONE_SHAPE,
   sanitizePhoneInput,
   normalizeUAPhone,
@@ -166,4 +168,58 @@ describe("sanitizePhoneInput", () => {
   ])("%p → %p", (raw, expected) => {
     expect(sanitizePhoneInput(raw)).toBe(expected);
   });
+});
+
+/** TASK-1984 — mirror of the storefront's cases for the masked (`rule="ua"`) field. */
+describe("maskedPhoneValue (what the masked field emits)", () => {
+  it.each([
+    ["+380", ""],
+    ["+38", ""],
+    ["+3", ""],
+    ["+", ""],
+    ["", ""],
+    ["+3800", ""],
+    ["+3800501112233", "+380501112233"],
+    ["+3805", "+3805"],
+    ["+380 50 111 2233", "+380 50 111 2233"],
+    ["0501112233", "0501112233"],
+    ["+38 (050) 111-22.33 4455", "+38 (050) 111-22.33 4455"],
+    ["+380 50 111 2233 ccc", "+380 50 111 2233 "],
+  ])("%p → %p", (raw, expected) => {
+    expect(maskedPhoneValue(raw)).toBe(expected);
+  });
+});
+
+describe("maskedPhoneDisplay (what the masked field shows)", () => {
+  it.each([
+    ["", "+380"],
+    ["+3805", "+380 5"],
+    ["0501112233", "+380 50 111 2233"],
+    ["+380 50 111 22334", "+380 50 111 22334"],
+    ["12345678901", "+380 12 345 678901"],
+  ])("%p → %p", (raw, expected) => {
+    expect(maskedPhoneDisplay(raw)).toBe(expected);
+  });
+});
+
+/**
+ * TASK-1984 — DTOs that store the number AS TYPED (no `normalizePhone`: pickup
+ * point, site contacts) count the typed digits, so the form must too.
+ */
+describe("isValidInternationalPhone(raw, { normalized: false })", () => {
+  it.each([
+    ["0123456", true, false],
+    ["05011122", true, false],
+    ["012345678901234", false, true],
+    ["+48 123 456 789", true, true],
+    ["0 800 30 30 30", true, true],
+  ])(
+    "%p: normalised %p, as typed %p",
+    (phone, normalisedVerdict, typedVerdict) => {
+      expect(isValidInternationalPhone(phone)).toBe(normalisedVerdict);
+      expect(isValidInternationalPhone(phone, { normalized: false })).toBe(
+        typedVerdict,
+      );
+    },
+  );
 });

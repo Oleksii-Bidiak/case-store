@@ -39,20 +39,17 @@ export const UA_PHONE_PATTERN = /^380\d{9}$/;
  *   - `"+380 50 123 4"` → `"501234"`    (partial)
  */
 function localDigits(raw: string): string {
+  return localPart(raw).slice(0, UA_PHONE_LOCAL_LENGTH);
+}
+
+/** {@link localDigits} without the cap — every digit after the prefix. */
+function localPart(raw: string): string {
   const digits = raw.replace(/\D/g, "");
 
-  let local: string;
-  if (digits.startsWith("380")) {
-    local = digits.slice(3);
-  } else if (digits.startsWith("80")) {
-    local = digits.slice(2);
-  } else if (digits.startsWith("0")) {
-    local = digits.slice(1);
-  } else {
-    local = digits;
-  }
-
-  return local.slice(0, UA_PHONE_LOCAL_LENGTH);
+  if (digits.startsWith("380")) return digits.slice(3);
+  if (digits.startsWith("80")) return digits.slice(2);
+  if (digits.startsWith("0")) return digits.slice(1);
+  return digits;
 }
 
 /**
@@ -125,6 +122,58 @@ const NOT_PHONE_CHAR = /[^\d\s+().-]/g;
  */
 export function sanitizePhoneInput(raw: string): string {
   return raw.replace(NOT_PHONE_CHAR, "");
+}
+
+/** The prefix {@link formatUAPhone} draws into every masked field, empty or not. */
+const MASK_PREFIX = "+380";
+
+/** The drawn prefix followed by a domestic trunk zero: `+380` + `0…`. */
+const MASK_PREFIX_TRUNK_ZERO = /^\+380\s*0/;
+
+/**
+ * What the masked `PhoneInput` hands the form for what the browser now holds
+ * (TASK-1984). The mask draws `+380` into every field, so everything a person
+ * types lands AFTER it; without this the value carried the drawn prefix too:
+ *
+ *   - only the prefix, or what Backspace left of it (`+38`, `+3`, `+`) → `""`,
+ *     so the field can be emptied (and an optional number removed);
+ *   - a domestic `0…` typed after it is the trunk zero — no UA local number
+ *     starts with 0 — so it is dropped: `+3800501112233` → `+380501112233`.
+ *
+ * Everything else is {@link sanitizePhoneInput}d and passed whole (Rule 5b). A
+ * pasted whole number never gets here with the prefix: `PhoneInput` replaces the
+ * value with it ({@link isWholePhonePaste}).
+ */
+export function maskedPhoneValue(raw: string): string {
+  const clean = sanitizePhoneInput(raw).replace(
+    MASK_PREFIX_TRUNK_ZERO,
+    MASK_PREFIX,
+  );
+  const digits = clean.replace(/\D/g, "");
+  return MASK_PREFIX.slice(1).startsWith(digits) ? "" : clean;
+}
+
+/**
+ * Whether pasted text is a whole number (at least a UA local number's worth of
+ * digits) — `PhoneInput` then REPLACES the value with it instead of inserting it
+ * after the drawn `+380` (TASK-1984): `+380` + `+380501112233` is two numbers.
+ */
+export function isWholePhonePaste(text: string): boolean {
+  return text.replace(/\D/g, "").length >= UA_PHONE_LOCAL_LENGTH;
+}
+
+/**
+ * What the masked `PhoneInput` SHOWS (TASK-1984): {@link formatUAPhone}, but a
+ * digit past the ninth is shown rather than cut. The field's value is never
+ * truncated (Rule 5b), so a mask that hid the 10th digit showed a valid-looking
+ * number under the error that refused it.
+ */
+export function maskedPhoneDisplay(raw: string): string {
+  const masked = formatUAPhone(raw);
+  const local = localPart(raw);
+  return local.length > UA_PHONE_LOCAL_LENGTH
+    ? masked + local.slice(UA_PHONE_LOCAL_LENGTH)
+    : masked;
 }
 
 /**

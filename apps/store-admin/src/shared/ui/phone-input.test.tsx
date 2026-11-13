@@ -1,6 +1,7 @@
 import { createRef, useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { isValidUAPhone } from "@/shared/lib/phone";
 import { PhoneInput } from "./phone-input";
 
 /**
@@ -229,5 +230,93 @@ describe("PhoneInput rule=international", () => {
     );
 
     expect(screen.getByLabelText("phone")).toHaveAttribute("type", "tel");
+  });
+
+  it("inserts a pasted number at the caret as typed — no mask, no rewrite", async () => {
+    const user = userEvent.setup();
+    render(<Masked rule="international" />);
+
+    await user.click(screen.getByLabelText("phone"));
+    await user.paste("+48 123 456 789");
+
+    expect(valueOf()).toBe("+48 123 456 789");
+  });
+});
+
+/** A controlled field with its value printed beside it. */
+function Masked({
+  rule,
+  initial = "",
+}: {
+  rule: "ua" | "international";
+  initial?: string;
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    <>
+      <PhoneInput
+        rule={rule}
+        aria-label="phone"
+        value={value}
+        onChange={setValue}
+      />
+      <output aria-label="value">{value}</output>
+    </>
+  );
+}
+
+const valueOf = () => screen.getByLabelText("value").textContent ?? "";
+
+// TASK-1984: the UA mask draws `+380` into the field, and an operator pastes or
+// types AFTER it — what reaches the form must still be the number they meant.
+describe("PhoneInput rule=ua: the drawn +380 never leaks into the value", () => {
+  it.each([
+    ["0501112233"],
+    ["+380501112233"],
+    ["050-111-22-33"],
+    ["38 050 111 2233"],
+  ])("pasting %p into an empty field gives a valid number", async (pasted) => {
+    const user = userEvent.setup();
+    render(<Masked rule="ua" />);
+
+    const input = screen.getByLabelText("phone");
+    await user.click(input);
+    await user.paste(pasted);
+
+    expect(input).toHaveValue("+380 50 111 2233");
+    expect(isValidUAPhone(valueOf())).toBe(true);
+  });
+
+  it("typing a domestic number after the drawn +380 gives a valid number", async () => {
+    const user = userEvent.setup();
+    render(<Masked rule="ua" />);
+
+    await user.type(screen.getByLabelText("phone"), "0501112233");
+
+    expect(isValidUAPhone(valueOf())).toBe(true);
+  });
+
+  it("erasing with Backspace empties the value", async () => {
+    const user = userEvent.setup();
+    render(<Masked rule="ua" initial="+380501112233" />);
+
+    const input = screen.getByLabelText("phone");
+    await user.click(input);
+    await user.keyboard("{Backspace>20/}");
+
+    expect(valueOf()).toBe("");
+    expect(input).toHaveValue("+380");
+  });
+
+  it("shows a 10th digit instead of hiding it behind a valid-looking mask", async () => {
+    const user = userEvent.setup();
+    render(<Masked rule="ua" initial="+380501112233" />);
+
+    const input = screen.getByLabelText("phone");
+    await user.click(input);
+    await user.keyboard("4");
+
+    expect(isValidUAPhone(valueOf())).toBe(false);
+    expect(input).toHaveValue("+380 50 111 22334");
   });
 });

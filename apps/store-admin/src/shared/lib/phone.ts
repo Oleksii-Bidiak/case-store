@@ -63,20 +63,17 @@ export const UA_PHONE_PATTERN = /^380\d{9}$/;
  *   - `"+380 50 123 4"` → `"501234"`    (partial)
  */
 function localDigits(raw: string): string {
+  return localPart(raw).slice(0, UA_PHONE_LOCAL_LENGTH);
+}
+
+/** {@link localDigits} without the cap — every digit after the prefix. */
+function localPart(raw: string): string {
   const digits = raw.replace(/\D/g, "");
 
-  let local: string;
-  if (digits.startsWith("380")) {
-    local = digits.slice(3);
-  } else if (digits.startsWith("80")) {
-    local = digits.slice(2);
-  } else if (digits.startsWith("0")) {
-    local = digits.slice(1);
-  } else {
-    local = digits;
-  }
-
-  return local.slice(0, UA_PHONE_LOCAL_LENGTH);
+  if (digits.startsWith("380")) return digits.slice(3);
+  if (digits.startsWith("80")) return digits.slice(2);
+  if (digits.startsWith("0")) return digits.slice(1);
+  return digits;
 }
 
 /**
@@ -173,6 +170,54 @@ export function sanitizePhoneInput(raw: string): string {
   return raw.replace(NOT_PHONE_CHAR, "");
 }
 
+/** The prefix {@link formatUAPhone} draws into every masked field, empty or not. */
+const MASK_PREFIX = "+380";
+
+/** The drawn prefix followed by a domestic trunk zero: `+380` + `0…`. */
+const MASK_PREFIX_TRUNK_ZERO = /^\+380\s*0/;
+
+/**
+ * What the masked (`rule="ua"`) `PhoneInput` hands the form for what the browser
+ * now holds (TASK-1984) — mirror of the storefront's. The mask draws `+380` into
+ * every field, so everything typed lands AFTER it:
+ *
+ *   - only the prefix, or what Backspace left of it (`+38`, `+3`, `+`) → `""`;
+ *   - a domestic `0…` typed after it is the trunk zero — no UA local number
+ *     starts with 0 — so it is dropped: `+3800501112233` → `+380501112233`.
+ *
+ * Everything else is {@link sanitizePhoneInput}d and passed whole (Rule 5b).
+ */
+export function maskedPhoneValue(raw: string): string {
+  const clean = sanitizePhoneInput(raw).replace(
+    MASK_PREFIX_TRUNK_ZERO,
+    MASK_PREFIX,
+  );
+  const digits = clean.replace(/\D/g, "");
+  return MASK_PREFIX.slice(1).startsWith(digits) ? "" : clean;
+}
+
+/**
+ * Whether pasted text is a whole number (at least a UA local number's worth of
+ * digits) — the masked `PhoneInput` then REPLACES the value with it instead of
+ * inserting it after the drawn `+380` (TASK-1984).
+ */
+export function isWholePhonePaste(text: string): boolean {
+  return text.replace(/\D/g, "").length >= UA_PHONE_LOCAL_LENGTH;
+}
+
+/**
+ * What the masked `PhoneInput` SHOWS (TASK-1984): {@link formatUAPhone}, but a
+ * digit past the ninth is shown rather than cut — the value is never truncated
+ * (Rule 5b), so the field must not look valid while the value is not.
+ */
+export function maskedPhoneDisplay(raw: string): string {
+  const masked = formatUAPhone(raw);
+  const local = localPart(raw);
+  return local.length > UA_PHONE_LOCAL_LENGTH
+    ? masked + local.slice(UA_PHONE_LOCAL_LENGTH)
+    : masked;
+}
+
 /**
  * Whether `raw` is a dialable number of ANY country — the admin mirror of the
  * API's `@IsInternationalPhone`.
@@ -186,11 +231,21 @@ export function sanitizePhoneInput(raw: string): string {
  * `380501234567`. Counting the typed digits instead would let a 15-digit value
  * beginning with `0` pass here and 400 there — the same "the two halves must
  * agree" defect this function exists to close, one rule further down.
+ *
+ * `normalized: false` is for the DTOs that store the number AS TYPED, with no
+ * `normalizePhone` transform (the pickup point and the site contacts, TASK-1984):
+ * the server counts the typed digits there, so this must too — otherwise
+ * `0123456` (7 typed, 9 normalised) passes here and 400s there.
  */
-export function isValidInternationalPhone(raw: string): boolean {
+export function isValidInternationalPhone(
+  raw: string,
+  { normalized = true }: { normalized?: boolean } = {},
+): boolean {
   const trimmed = raw.trim();
   if (!PHONE_SHAPE.test(trimmed)) return false;
 
-  const digits = normalizeUAPhone(trimmed).length;
+  const digits = (
+    normalized ? normalizeUAPhone(trimmed) : trimmed.replace(/\D/g, "")
+  ).length;
   return digits >= PHONE_MIN_DIGITS && digits <= PHONE_MAX_DIGITS;
 }

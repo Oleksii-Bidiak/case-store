@@ -1,6 +1,7 @@
 import * as React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { isValidUAPhone } from "@/shared/lib/phone";
 import { PhoneInput } from "./phone-input";
 
 // `formatUAPhone` moved to `shared/lib/phone.ts` alongside the validation rule
@@ -130,6 +131,104 @@ describe("PhoneInput", () => {
       });
 
       expect(onChange).toHaveBeenCalledWith("+38 (050) 111-22.33 4455");
+    });
+  });
+
+  // TASK-1984: the field always shows the drawn `+380`, and a shopper pastes or
+  // types AFTER it. What reaches the form must still be the number they meant —
+  // judged by the final value and what the field shows, not by `toContain`.
+  describe("the drawn +380 never leaks into the value", () => {
+    function Controlled({
+      initial = "",
+      onEmit,
+    }: {
+      initial?: string;
+      onEmit?: (value: string) => void;
+    }) {
+      const [value, setValue] = React.useState(initial);
+      return (
+        <>
+          <PhoneInput
+            aria-label="phone"
+            value={value}
+            onChange={(next) => {
+              onEmit?.(next);
+              setValue(next);
+            }}
+          />
+          <output aria-label="value">{value}</output>
+        </>
+      );
+    }
+
+    const valueOf = () => screen.getByLabelText("value").textContent ?? "";
+
+    it.each([
+      ["0501112233"],
+      ["+380501112233"],
+      ["050-111-22-33"],
+      ["38 050 111 2233"],
+      ["+38 (050) 111-22-33"],
+    ])(
+      "pasting %p at the caret of an empty field gives a valid number",
+      async (pasted) => {
+        const user = userEvent.setup();
+        render(<Controlled />);
+
+        const input = screen.getByLabelText("phone");
+        await user.click(input);
+        await user.paste(pasted);
+
+        expect(input).toHaveValue("+380 50 111 2233");
+        expect(isValidUAPhone(valueOf())).toBe(true);
+      },
+    );
+
+    it("pasting a whole number over a filled field replaces it", async () => {
+      const user = userEvent.setup();
+      render(<Controlled initial="+380671234567" />);
+
+      const input = screen.getByLabelText("phone");
+      await user.click(input);
+      await user.paste("0501112233");
+
+      expect(input).toHaveValue("+380 50 111 2233");
+      expect(isValidUAPhone(valueOf())).toBe(true);
+    });
+
+    it("typing a domestic number after the drawn +380 gives a valid number", async () => {
+      const user = userEvent.setup();
+      render(<Controlled />);
+
+      const input = screen.getByLabelText("phone");
+      await user.type(input, "0501112233");
+
+      expect(input).toHaveValue("+380 50 111 2233");
+      expect(isValidUAPhone(valueOf())).toBe(true);
+    });
+
+    it("erasing with Backspace empties the value", async () => {
+      const user = userEvent.setup();
+      render(<Controlled initial="+380501112233" />);
+
+      const input = screen.getByLabelText("phone");
+      await user.click(input);
+      await user.keyboard("{Backspace>20/}");
+
+      expect(valueOf()).toBe("");
+      expect(input).toHaveValue("+380");
+    });
+
+    it("shows a 10th digit instead of hiding it behind a valid-looking mask", async () => {
+      const user = userEvent.setup();
+      render(<Controlled initial="+380501112233" />);
+
+      const input = screen.getByLabelText("phone");
+      await user.click(input);
+      await user.keyboard("4");
+
+      expect(isValidUAPhone(valueOf())).toBe(false);
+      expect(input).toHaveValue("+380 50 111 22334");
     });
   });
 });
