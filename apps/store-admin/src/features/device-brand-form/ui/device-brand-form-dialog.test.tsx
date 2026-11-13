@@ -8,6 +8,7 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { toast } from "@/shared/ui/toast";
 import { DeviceBrandFormDialog } from "./device-brand-form-dialog";
 
 const d = dict.devices;
@@ -16,6 +17,8 @@ const f = dict.deviceBrandForm;
 jest.mock("@/shared/ui/toast", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
+
+beforeEach(() => (toast.error as jest.Mock).mockClear());
 
 const APPLE = {
   id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -104,6 +107,61 @@ describe("DeviceBrandFormDialog (ПР6)", () => {
     );
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toMatchObject({ name: "Google" });
+  });
+
+  // TASK-1984 Rule 6b: one refusal, said once, under its field.
+  it("puts a 409 slug conflict under the slug and stays open", async () => {
+    server.use(
+      http.put(`*/api/admin/devices/brands/${APPLE.id}`, () =>
+        HttpResponse.json(
+          {
+            statusCode: 409,
+            error: "DEVICE_BRAND_SLUG_CONFLICT",
+            message: "A device brand with this slug already exists",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    const onOpenChange = jest.fn();
+    renderWithProviders(
+      <DeviceBrandFormDialog open onOpenChange={onOpenChange} brand={APPLE} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    const slug = screen.getByRole("textbox", { name: f.slug });
+    await waitFor(() => expect(slug).toHaveAttribute("aria-invalid", "true"));
+    expect(screen.getByText(f.errors.slugTaken)).toHaveAttribute(
+      "role",
+      "alert",
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("shows a refusal no field takes in the server's own words", async () => {
+    server.use(
+      http.put(`*/api/admin/devices/brands/${APPLE.id}`, () =>
+        HttpResponse.json(
+          {
+            statusCode: 409,
+            error: "UNIQUE_CONSTRAINT_VIOLATION",
+            message: "Такий запис уже існує",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderWithProviders(
+      <DeviceBrandFormDialog open onOpenChange={() => {}} brand={APPLE} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Такий запис уже існує"),
+    );
   });
 
   it("view-only: the values as text and nothing to save", () => {

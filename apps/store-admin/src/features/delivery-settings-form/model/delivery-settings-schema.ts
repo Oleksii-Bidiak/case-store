@@ -12,6 +12,11 @@ export const WEIGHT_MIN_KG = 0.1;
 export const WEIGHT_MAX_KG = 30;
 /** The API's `@Max(100000)` on the courier price and threshold. */
 export const MONEY_MAX = 100_000;
+/**
+ * The API's `@MaxLength(255)` on `courierCityName` and `senderCityName`
+ * (`apps/store-api/src/delivery/dto/update-delivery-setting.dto.ts`, Rule 5d).
+ */
+export const CITY_NAME_MAX = 255;
 
 /**
  * A decimal the operator typed — «150», «0,5», « 2 000 » — as a number, or
@@ -78,6 +83,12 @@ export const deliverySettingsSchema = z
           path: ["senderCityName"],
           message: e.senderCityPick,
         });
+      } else if (values.senderCityName.trim().length > CITY_NAME_MAX) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["senderCityName"],
+          message: dict.forms.tooLong,
+        });
       }
       if (
         values.senderWarehouseName.trim() !== "" &&
@@ -104,6 +115,12 @@ export const deliverySettingsSchema = z
           code: "custom",
           path: ["courierCityName"],
           message: e.courierCityRequired,
+        });
+      } else if (values.courierCityName.trim().length > CITY_NAME_MAX) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["courierCityName"],
+          message: dict.forms.tooLong,
         });
       }
       if (values.courierPrice.trim() === "") {
@@ -171,6 +188,42 @@ export const DELIVERY_SECTIONS = {
 >;
 
 export type DeliverySectionKey = keyof typeof DELIVERY_SECTIONS;
+
+/**
+ * DTO path → form field for a server 400 (Rule 6b) — only the fields on screen
+ * for these flags: a switched-off card's body is not rendered, and an error
+ * set under a hidden input is a save that silently does nothing. Whatever is
+ * left out reaches the caller as `unmapped` and becomes the toast.
+ */
+export function deliveryFieldMap(flags: {
+  npEnabled: boolean;
+  courierEnabled: boolean;
+}): Record<string, keyof DeliverySettingsFormValues> {
+  return {
+    ...(flags.npEnabled
+      ? {
+          senderCityRef: "senderCityName",
+          senderCityName: "senderCityName",
+          senderWarehouseRef: "senderWarehouseName",
+          defaultWeightKg: "defaultWeightKg",
+        }
+      : {}),
+    ...(flags.courierEnabled
+      ? {
+          courierCityName: "courierCityName",
+          courierPrice: "courierPrice",
+          courierFreeFrom: "courierFreeFrom",
+        }
+      : {}),
+  };
+}
+
+/** Messages for a server refusal of the money/weight fields — the client's own words. */
+export const DELIVERY_SERVER_MESSAGES = {
+  courierPrice: e.moneyInvalid,
+  courierFreeFrom: e.moneyInvalid,
+  defaultWeightKg: e.weightInvalid,
+} as const;
 
 /** «150.00» → «150», «29.90» → «29.9»: the number as an operator would type it. */
 function moneyToField(value: string): string {

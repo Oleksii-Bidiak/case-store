@@ -9,18 +9,31 @@ import { SLUG_PATTERN } from "@/shared/lib/slug";
 const e = dict.blogCategoryForm.errors;
 
 /**
+ * The DTO's `@MaxLength` caps
+ * (`apps/store-api/src/blog/dto/create-blog-category.dto.ts`) — read by the
+ * schema and by the inputs' `maxLength` (TASK-1984, Rule 5d).
+ */
+export const BLOG_CATEGORY_LIMITS = { name: 120, slug: 255 } as const;
+
+/**
  * Validation schema for the admin blog-category form.
  *
  * TASK-295: no `sortOrder` field — the order is set by dragging (or keyboard-moving)
  * rows in the categories grid, and a new category is appended by the backend.
  */
 export const blogCategorySchema = z.object({
-  name: z.string().trim().min(1, e.nameRequired).max(120, e.nameMax),
+  // Stricter on purpose (Rule 5f): `CreateBlogCategoryDto.name` has no
+  // minimum, but a nameless filter chip is never what the operator meant.
+  name: z
+    .string()
+    .trim()
+    .min(1, e.nameRequired)
+    .max(BLOG_CATEGORY_LIMITS.name, e.nameMax),
 
   slug: z
     .string()
     .trim()
-    .max(255, e.slugMax)
+    .max(BLOG_CATEGORY_LIMITS.slug, e.slugMax)
     .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
     .optional()
     .or(z.literal("")),

@@ -281,6 +281,37 @@ describe("EditProductView — update failure toast (TASK-397)", () => {
     await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
     expect(toastError).toHaveBeenCalledWith(dict.products.toastUpdateFailed);
   });
+
+  // TASK-1984 Rule 6b: one refusal, said once — under its field, with no
+  // toast and no «saved partly» block.
+  it("puts a 409 SKU conflict under the SKU and nowhere else", async () => {
+    await renderAndWaitForForm(makeProduct(false));
+    server.use(
+      http.put(`*/api/products/${PRODUCT_ID}`, () =>
+        HttpResponse.json(
+          {
+            statusCode: 409,
+            error: "PRODUCT_SKU_CONFLICT",
+            message: "A product with this SKU already exists",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    await submit();
+
+    const message = await screen.findByText(dict.productForm.errors.skuTaken);
+    expect(message).toHaveAttribute("id", "product-sku-error");
+    expect(screen.getByLabelText(dict.productForm.sku)).toHaveAttribute(
+      "aria-describedby",
+      "product-sku-error",
+    );
+    expect(toastError).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText(dict.productForm.saveFailedGeneric, { exact: false }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 /**

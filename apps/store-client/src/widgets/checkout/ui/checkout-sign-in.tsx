@@ -1,9 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { useAuthControllerRequestPasswordReset } from "@/entities/session";
 import { LoginForm } from "@/features/auth";
 import { dict } from "@/shared/config";
 import { apiErrorStatus } from "@/shared/lib";
+import { emailField } from "@/shared/lib/form-fields";
+
+/** The reset-link address rule — `RequestPasswordResetDto.email`. */
+const RESET_EMAIL = emailField();
 
 interface CheckoutSignInProps {
   /** The checkout e-mail — the address that has the account. */
@@ -38,7 +43,19 @@ export function CheckoutSignIn({
 }: CheckoutSignInProps) {
   const g = dict.checkout.guest;
   const reset = useAuthControllerRequestPasswordReset();
-  const sendLink = () => reset.mutate({ data: { email } });
+  // The checkout address is judged by the same rule as `RequestPasswordResetDto`
+  // before anything is sent (forms Rule 5c) — a request that can only 400 is
+  // not made, and the shopper is told what to fix instead of "no luck".
+  const [invalidEmail, setInvalidEmail] = useState(false);
+  const sendLink = () => {
+    const parsed = RESET_EMAIL.safeParse(email);
+    setInvalidEmail(!parsed.success);
+    if (!parsed.success) {
+      reset.reset();
+      return;
+    }
+    reset.mutate({ data: { email: parsed.data } });
+  };
 
   const status = apiErrorStatus(reset.error);
 
@@ -65,6 +82,11 @@ export function CheckoutSignIn({
       {reset.isSuccess && (
         <p role="status" className="text-sm text-foreground">
           {g.noPasswordSent}
+        </p>
+      )}
+      {invalidEmail && (
+        <p role="alert" className="text-sm text-destructive">
+          {dict.forms.emailInvalid}
         </p>
       )}
       {reset.isError && (

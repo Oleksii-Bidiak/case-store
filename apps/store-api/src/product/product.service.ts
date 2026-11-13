@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AttributeDefinition, AttributeType } from '@prisma/client';
 import {
@@ -24,6 +19,8 @@ import {
   categoryGoneProduct,
   conflictProduct,
   restoreConflictCode,
+  skuTakenProduct,
+  slugTakenProduct,
 } from './product.errors';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
 import { PRODUCT_DELETE_AUDIT } from './product.constants';
@@ -644,14 +641,14 @@ export class ProductService {
     // Check slug uniqueness
     const existingBySlug = await this.productRepository.findBySlug(slug);
     if (existingBySlug) {
-      throw new ConflictException('A product with this slug already exists');
+      throw slugTakenProduct();
     }
 
     // Check SKU uniqueness (only if SKU is provided)
     if (input.sku) {
       const existingBySku = await this.productRepository.findBySku(input.sku);
       if (existingBySku) {
-        throw new ConflictException('A product with this SKU already exists');
+        throw skuTakenProduct();
       }
     }
 
@@ -699,7 +696,7 @@ export class ProductService {
     if (input.slug !== undefined && input.slug !== product.slug) {
       const existingBySlug = await this.productRepository.findBySlug(input.slug);
       if (existingBySlug && existingBySlug.id !== id) {
-        throw new ConflictException('A product with this slug already exists');
+        throw slugTakenProduct();
       }
     }
 
@@ -707,7 +704,7 @@ export class ProductService {
     if (input.sku !== undefined && input.sku !== null && input.sku !== product.sku) {
       const existingBySku = await this.productRepository.findBySku(input.sku);
       if (existingBySku && existingBySku.id !== id) {
-        throw new ConflictException('A product with this SKU already exists');
+        throw skuTakenProduct();
       }
     }
 

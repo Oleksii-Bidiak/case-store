@@ -397,6 +397,58 @@ describe("EditCategoryView — CategoriesProposal КТ5 (wave 198)", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
+  // TASK-1984 Rule 6b: one refusal, said once, under its field.
+  it("puts a 409 slug conflict under the slug, not in a toast", async () => {
+    await renderAndWaitForForm(makeCategory(false));
+    server.use(
+      http.put(`*/api/admin/categories/${CATEGORY_ID}`, () =>
+        HttpResponse.json(
+          {
+            statusCode: 409,
+            error: "CATEGORY_SLUG_CONFLICT",
+            message: "A category with this slug already exists",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    await submit();
+
+    const slug = screen.getByLabelText(dict.categoryForm.slug);
+    await waitFor(() => expect(slug).toHaveAttribute("aria-invalid", "true"));
+    expect(
+      screen.getByText(dict.categoryForm.errors.slugTaken),
+    ).toHaveAttribute("id", "category-slug-error");
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("puts a 400 on the image link under that field", async () => {
+    await renderAndWaitForForm(makeCategory(false));
+    server.use(
+      http.put(`*/api/admin/categories/${CATEGORY_ID}`, () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "Bad Request",
+            message: ["Image must be a valid URL"],
+            fieldErrors: [{ field: "image", constraint: "isUrl" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    await submit();
+
+    expect(await screen.findByText(dict.forms.invalid)).toHaveAttribute(
+      "role",
+      "alert",
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   it("says what DID save when a later section fails, and stays on the page", async () => {
     const { calls } = await renderAndWaitForForm(makeCategory(false), {
       addonStatus: 500,

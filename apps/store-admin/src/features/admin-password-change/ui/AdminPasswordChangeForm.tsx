@@ -12,9 +12,19 @@ import {
   PasswordRequirements,
 } from "@/shared/ui";
 import { apiErrorMessage, apiErrorStatus, isStaffPassword } from "@/shared/lib";
+import {
+  mapServerFieldErrors,
+  readFieldErrors,
+} from "@/shared/lib/form-errors";
 import { dict } from "@/shared/config";
 
 const d = dict.profile;
+
+/** `ChangePasswordDto` path → this form's field (Rule 6b). */
+const PASSWORD_FIELD_MAP = {
+  currentPassword: "current",
+  newPassword: "next",
+} as const;
 
 const IDS = {
   current: "profile-current-password",
@@ -91,16 +101,36 @@ export function AdminPasswordChangeForm() {
           setConfirmPassword("");
           toast.success(d.passwordToastDone);
         },
+        // TASK-1984 (Rule 6b/6c): each refusal is shown ONCE — under the field
+        // it is about, or in the form's banner when it has none. No toast on
+        // top: it only repeated the text already on screen.
         onError: (mutationError) => {
-          if (apiErrorStatus(mutationError) === 401) {
+          const status = apiErrorStatus(mutationError);
+          if (status === 401) {
             setErrors({ current: d.passwordWrongCurrent });
-            toast.error(d.passwordWrongCurrent);
             return;
           }
-          const message =
-            apiErrorMessage(mutationError) ?? d.passwordToastFailed;
-          setErrors({ form: message });
-          toast.error(message);
+          if (status === 400) {
+            const fieldErrors = mapServerFieldErrors(
+              mutationError,
+              PASSWORD_FIELD_MAP,
+              { next: d.passwordWeak },
+            );
+            if (Object.keys(fieldErrors).length > 0) {
+              setErrors(fieldErrors);
+              return;
+            }
+            // The only 400 without `fieldErrors` this endpoint sends is
+            // `AuthService.assertPasswordMeetsRolePolicy` — the stricter staff
+            // rule the DTO alone does not apply. It is about the new password.
+            if (readFieldErrors(mutationError).length === 0) {
+              setErrors({ next: d.passwordWeak });
+              return;
+            }
+          }
+          setErrors({
+            form: apiErrorMessage(mutationError) ?? d.passwordToastFailed,
+          });
         },
       },
     );

@@ -323,17 +323,40 @@ describe("BannerForm — «Показ» (TASK-429, БН5)", () => {
     await chooseStatus(f.statusScheduled);
     await userEvent.type(
       screen.getByLabelText(f.scheduledAt),
-      "2026-09-01T09:00",
+      "2099-09-01T09:00",
     );
     await userEvent.type(
       screen.getByLabelText(f.scheduledUntil),
-      "2026-08-01T09:00",
+      "2099-08-01T09:00",
     );
     await userEvent.click(submitButton());
 
     expect(
       await screen.findByText(f.errors.scheduledUntilBeforeStart),
     ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  // TASK-1984 (Rule 5e): the API would publish a past schedule now, silently.
+  it("refuses a schedule whose moment has already passed", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<BannerForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(titleInput(), "Акція");
+    await chooseStatus(f.statusScheduled);
+    await userEvent.type(
+      screen.getByLabelText(f.scheduledAt),
+      "2020-01-01T09:00",
+    );
+    await userEvent.click(submitButton());
+
+    expect(
+      await screen.findByText(f.errors.scheduledAtPast),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(f.scheduledAt)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -345,19 +368,19 @@ describe("BannerForm — «Показ» (TASK-429, БН5)", () => {
     await chooseStatus(f.statusScheduled);
     await userEvent.type(
       screen.getByLabelText(f.scheduledAt),
-      "2026-08-01T09:00",
+      "2099-08-01T09:00",
     );
     await userEvent.type(
       screen.getByLabelText(f.scheduledUntil),
-      "2026-09-01T09:00",
+      "2099-09-01T09:00",
     );
     await userEvent.click(submitButton());
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
       status: "SCHEDULED",
-      scheduledAt: "2026-08-01T09:00",
-      scheduledUntil: "2026-09-01T09:00",
+      scheduledAt: "2099-08-01T09:00",
+      scheduledUntil: "2099-09-01T09:00",
     });
   });
 

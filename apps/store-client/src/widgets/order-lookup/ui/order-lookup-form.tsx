@@ -8,6 +8,8 @@ import { dict } from "@/shared/config";
 import { Button, Input, Label, PhoneInput } from "@/shared/ui";
 import {
   normalizeOrderNumber,
+  ORDER_LOOKUP_NUMBER_MAX,
+  ORDER_LOOKUP_PHONE_MAX,
   orderLookupSchema,
   type OrderLookupFormValues,
 } from "../model/order-lookup-schema";
@@ -137,6 +139,9 @@ export function OrderLookupForm() {
   // shopper back on the form with no word at all — as if the button did nothing.
   // It reads exactly like the 404: wording it differently would tell a guesser
   // which of the two answers came back, the one distinction the API hides.
+  //
+  // Server errors are deliberately NOT mapped to fields — the written
+  // exception of forms Rule 6d (no field-level oracle on a public lookup).
   const status = lookup.error?.response?.status;
   const errorMessage = lookup.isError
     ? status === 404
@@ -175,6 +180,7 @@ export function OrderLookupForm() {
             <Input
               id="order-lookup-number"
               autoComplete="off"
+              maxLength={ORDER_LOOKUP_NUMBER_MAX}
               placeholder={d.fieldNumberPlaceholder}
               aria-invalid={errors.number ? true : undefined}
               aria-describedby={
@@ -192,13 +198,9 @@ export function OrderLookupForm() {
               {d.fieldNumberHint}
             </span>
             {errors.number && (
-              <span
-                id="order-lookup-number-error"
-                role="alert"
-                className={ERROR}
-              >
+              <p id="order-lookup-number-error" role="alert" className={ERROR}>
                 {errors.number.message}
-              </span>
+              </p>
             )}
           </div>
 
@@ -219,6 +221,7 @@ export function OrderLookupForm() {
                 <PhoneInput
                   id="order-lookup-phone"
                   autoComplete="tel"
+                  maxLength={ORDER_LOOKUP_PHONE_MAX}
                   placeholder={d.fieldPhonePlaceholder}
                   aria-invalid={errors.phone ? true : undefined}
                   aria-describedby={
@@ -230,13 +233,9 @@ export function OrderLookupForm() {
               )}
             />
             {errors.phone && (
-              <span
-                id="order-lookup-phone-error"
-                role="alert"
-                className={ERROR}
-              >
+              <p id="order-lookup-phone-error" role="alert" className={ERROR}>
                 {errors.phone.message}
-              </span>
+              </p>
             )}
           </div>
 

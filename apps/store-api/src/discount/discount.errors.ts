@@ -22,6 +22,11 @@ export const DiscountErrorCode = {
   MAX_REDEMPTIONS_REACHED: 'DISCOUNT_MAX_REDEMPTIONS_REACHED',
   /** The caller has already redeemed this code up to its `perUserLimit`. */
   USER_LIMIT_REACHED: 'DISCOUNT_USER_LIMIT_REACHED',
+  /**
+   * Admin create / update: another discount already has this code (TASK-1984).
+   * The admin form keys off it to put the refusal under the code field.
+   */
+  CODE_TAKEN: 'DISCOUNT_CODE_TAKEN',
 } as const;
 
 export type DiscountErrorCode = (typeof DiscountErrorCode)[keyof typeof DiscountErrorCode];

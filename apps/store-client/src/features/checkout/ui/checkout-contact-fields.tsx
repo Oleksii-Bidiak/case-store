@@ -4,6 +4,8 @@ import type { ReactNode, Ref } from "react";
 import type { UseFormRegister, FieldErrors } from "react-hook-form";
 import { UserRound } from "lucide-react";
 import { dict } from "@/shared/config";
+// Direct import — not in the shared/lib barrel.
+import { EMAIL_MAX_LENGTH } from "@/shared/lib/form-fields";
 import { Input, Label } from "@/shared/ui";
 import type { CheckoutFormValues } from "../model/checkout-schema";
 
@@ -98,6 +100,7 @@ export function CheckoutContactFields({
           type="email"
           inputMode="email"
           autoComplete="email"
+          maxLength={EMAIL_MAX_LENGTH}
           form={formId}
           placeholder={g.emailPlaceholder}
           aria-invalid={message ? true : undefined}

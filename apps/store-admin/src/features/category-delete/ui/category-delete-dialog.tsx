@@ -72,6 +72,7 @@ import {
   deletionErrorIsHiddenTarget,
   deletionErrorIsStale,
   deletionErrorMessage,
+  placeDeletionFieldError,
 } from "../model/deletion-error";
 
 const d = dict.categories.delete;
@@ -395,13 +396,20 @@ function CategoryDeleteForm({
 
   const isEmpty = isEmptyBranch(impact);
   const schema = useMemo(() => makeCategoryDeleteSchema(isEmpty), [isEmpty]);
-  const { control, register, handleSubmit, setFocus, clearErrors, formState } =
-    useForm<CategoryDeleteFormValues>({
-      // Default `onSubmit` mode (forms.md Rule 4a): nothing is said before the
-      // first press of the button.
-      resolver: zodResolver(schema),
-      defaultValues: CATEGORY_DELETE_DEFAULTS,
-    });
+  const {
+    control,
+    register,
+    handleSubmit,
+    setFocus,
+    setError,
+    clearErrors,
+    formState,
+  } = useForm<CategoryDeleteFormValues>({
+    // Default `onSubmit` mode (forms.md Rule 4a): nothing is said before the
+    // first press of the button.
+    resolver: zodResolver(schema),
+    defaultValues: CATEGORY_DELETE_DEFAULTS,
+  });
   const errors = formState.errors;
   const [mode, targetId, newName, parentId] = useWatch({
     control,
@@ -573,6 +581,16 @@ function CategoryDeleteForm({
           forgetDeletedCategories(queryClient, doomed);
         },
         onError: (error) => {
+          // TASK-1984 Rule 6b: a refusal about the new category's name — a
+          // 400 on `moveToNew.name`, or its derived slug taken — goes under
+          // that field, not into the box.
+          if (
+            requestMode === "new" &&
+            placeDeletionFieldError(error, newSlug, setError)
+          ) {
+            setFocus("name");
+            return;
+          }
           // The choice stays exactly as it was — only the box appears.
           setServerError(
             deletionErrorMessage(error, {
@@ -685,6 +703,7 @@ function CategoryDeleteForm({
   const nameErrorId = `${baseId}-name-error`;
   const parentInputId = `${baseId}-parent`;
   const parentHintId = `${baseId}-parent-hint`;
+  const parentErrorId = `${baseId}-parent-error`;
   const consequencesId = `${baseId}-consequences`;
   const hasChildren = impact.subcategoryCount > 0;
 
@@ -831,10 +850,20 @@ function CategoryDeleteForm({
                       // parent — it stays, nothing else is offered.
                       disabled={busy || treeFailed}
                       showSelectedPath
-                      aria-describedby={parentHintId}
+                      // A server 400 on `moveToNew.parentId` is placed here
+                      // (TASK-1984, Rule 6a) — never on a field with no message.
+                      aria-invalid={errors.parentId ? true : undefined}
+                      aria-describedby={
+                        errors.parentId
+                          ? `${parentHintId} ${parentErrorId}`
+                          : parentHintId
+                      }
                     />
                   )}
                 />
+                <FieldError id={parentErrorId}>
+                  {errors.parentId?.message}
+                </FieldError>
                 <p id={parentHintId} className="text-xs text-muted-foreground">
                   {d.newParentHint(name)}
                 </p>

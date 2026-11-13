@@ -145,6 +145,61 @@ describe("ProductAddonDeltaPanel (TASK-174)", () => {
     );
   });
 
+  // TASK-1984 (Rules 5e, 6a): the price is judged by the money helper and a
+  // refusal is said under the field — never in a toast.
+  it("refuses a third decimal under the price field and sends nothing", async () => {
+    arrange({ resolved: [warranty] });
+
+    const sent = await typeOwnPrice("Гарантія", "12.345");
+
+    const message = await screen.findByText(d.priceInvalid);
+    expect(message).toHaveAttribute("role", "alert");
+    const input = screen.getByLabelText(d.ownPriceLabel("Гарантія"));
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute("aria-describedby", message.id);
+    expect(sent).toEqual({});
+
+    // Typing again clears the message (Rule 4a).
+    await userEvent.clear(input);
+    expect(screen.queryByText(d.priceInvalid)).not.toBeInTheDocument();
+  });
+
+  it("puts the server's 400 on the price under the field", async () => {
+    arrange({ resolved: [warranty] });
+    renderWithProviders(<ProductAddonDeltaPanel productId="p1" />);
+    server.use(
+      http.put(
+        "*/api/addon-services/deltas/product/:productId/:addonServiceId",
+        () =>
+          HttpResponse.json(
+            {
+              statusCode: 400,
+              error: "Bad Request",
+              message: ["price must be a non-negative number"],
+              fieldErrors: [{ field: "price", constraint: "addonDeltaPrice" }],
+            },
+            { status: 400 },
+          ),
+      ),
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: d.actionOwnPrice }),
+    );
+    const input = await screen.findByLabelText(d.ownPriceLabel("Гарантія"));
+    await userEvent.clear(input);
+    await userEvent.type(input, "350");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.save }),
+    );
+
+    expect(await screen.findByText(dict.forms.invalid)).toHaveAttribute(
+      "role",
+      "alert",
+    );
+    expect(input).toHaveAttribute("aria-invalid", "true");
+  });
+
   // TASK-404: one delta row per (product, add-on) pair, so an OVERRIDE here
   // would REPLACE the ADD row and the service would vanish from the product.
   it("PUTs an ADD delta with the typed price for a product-EXCLUSIVE service", async () => {

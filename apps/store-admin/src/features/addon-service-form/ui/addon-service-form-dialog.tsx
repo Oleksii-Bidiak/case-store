@@ -18,12 +18,17 @@ import {
   Skeleton,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import {
   addonServiceFormValuesToDto,
   mapAddonServiceToFormValues,
+  placeAddonServiceSaveError,
   type AddonServiceFormValues,
 } from "../model/addon-service-schema";
-import { AddonServiceForm } from "./addon-service-form";
+import {
+  AddonServiceForm,
+  type AddonServiceFormSetError,
+} from "./addon-service-form";
 
 const d = dict.addonServices;
 
@@ -67,8 +72,17 @@ export function AddonServiceFormDialog({
     }
   };
 
-  const handleSubmit = (values: AddonServiceFormValues) => {
+  const handleSubmit = (
+    values: AddonServiceFormValues,
+    setError: AddonServiceFormSetError,
+  ) => {
     const data = addonServiceFormValuesToDto(values);
+    // TASK-1984 Rule 6b: under the field when it is about one; a refusal no
+    // field takes in the server's own words; the dialog stays open.
+    const onError = (fallback: string) => (error: unknown) => {
+      if (placeAddonServiceSaveError(error, setError)) return;
+      toast.error(refusalMessage(error) ?? fallback);
+    };
     if (service) {
       update.mutate(
         { id: service.id, data },
@@ -78,7 +92,7 @@ export function AddonServiceFormDialog({
             toast.success(d.toastUpdated);
             onOpenChange(false);
           },
-          onError: () => toast.error(d.toastUpdateFailed),
+          onError: onError(d.toastUpdateFailed),
         },
       );
       return;
@@ -91,7 +105,7 @@ export function AddonServiceFormDialog({
           toast.success(d.toastCreated);
           onOpenChange(false);
         },
-        onError: () => toast.error(d.toastCreateFailed),
+        onError: onError(d.toastCreateFailed),
       },
     );
   };

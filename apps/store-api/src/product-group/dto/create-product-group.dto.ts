@@ -8,7 +8,8 @@ import {
   MinLength,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { trimString } from '../../common/utils';
 import { ProductGroupAxisInputDto } from './product-group-axis-input.dto';
 
 /**
@@ -17,6 +18,8 @@ import { ProductGroupAxisInputDto } from './product-group-axis-input.dto';
  */
 export class CreateProductGroupDto {
   @ApiProperty({ description: 'Group name', example: 'Tempered Glass for iPhone 15' })
+  // TASK-1984: trimmed first, so "   " is refused like the admin form's trim().min(1).
+  @Transform(trimString)
   @IsString()
   @MinLength(1, { message: 'Group name is required' })
   @MaxLength(255, { message: 'Group name must be at most 255 characters' })

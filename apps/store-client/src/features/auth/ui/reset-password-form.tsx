@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -10,7 +11,9 @@ import { dict } from "@/shared/config";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders, which this client form does not need.
 import { customerPasswordSchema } from "@/shared/lib/password-policy";
+import { apiErrorStatus } from "@/shared/lib/api-error";
 import { Button } from "@/shared/ui";
+import { applyNewPasswordServerError } from "../lib/new-password-server-error";
 import { PASSWORD_RESET_DONE_PARAM } from "../lib/password-reset-done";
 import { AUTH_LINK_CLASS, AUTH_SUBMIT_CLASS, AuthField } from "./auth-field";
 
@@ -51,8 +54,16 @@ export function ResetPasswordForm() {
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
-  } = useForm<ResetValues>({ resolver: zodResolver(resetSchema) });
+  } = useForm<ResetValues>({
+    resolver: zodResolver(resetSchema),
+    // Every validated field has a default (forms Rule 4c).
+    defaultValues: { newPassword: "", confirmPassword: "" },
+  });
+
+  // The last failure is shown under a field — no banner then (Rule 6c).
+  const [onField, setOnField] = useState(false);
 
   const d = dict.auth.resetPassword;
 
@@ -81,15 +92,23 @@ export function ResetPasswordForm() {
       { data: { token, newPassword: values.newPassword } },
       {
         onSuccess: () => router.push(LOGIN_AFTER_RESET),
+        // A 400 about the new password (DTO, or the staff policy once the token
+        // is accepted) goes under the field (forms Rule 6b).
+        onError: (error) =>
+          setOnField(
+            applyNewPasswordServerError(error, setError, {
+              newPassword: "newPassword",
+            }),
+          ),
       },
     );
   };
 
-  const status = confirmReset.error?.response?.status;
+  const status = apiErrorStatus(confirmReset.error);
   const tokenRejected = status === 401;
   const errorMessage = tokenRejected
     ? d.errorInvalidToken
-    : confirmReset.isError
+    : confirmReset.isError && !onField
       ? dict.common.genericError
       : null;
 

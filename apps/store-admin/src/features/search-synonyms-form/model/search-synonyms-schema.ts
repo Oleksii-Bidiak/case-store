@@ -79,6 +79,33 @@ export const searchSynonymsSchema = z
 export type SearchSynonymsFormInput = z.input<typeof searchSynonymsSchema>;
 export type SearchSynonymsFormValues = z.output<typeof searchSynonymsSchema>;
 
+/**
+ * DTO path → form field for a server 400 (TASK-1984, Rule 6b). The PUT body
+ * drops blank rows, so body group `k` is the k-th NON-blank row of the form —
+ * the map translates the index, and a refusal lands under the row the operator
+ * typed it in. A refusal of the whole list (`groups` — e.g. too many) goes to
+ * the list's own message.
+ */
+export function synonymsServerFieldMap(
+  rows: readonly ({ terms?: string } | undefined)[],
+): Record<string, string> {
+  const map: Record<string, string> = { groups: "groups.root" };
+  let bodyIndex = 0;
+  rows.forEach((row, formIndex) => {
+    if (parseSynonymTerms(row?.terms).length === 0) return;
+    const target = `groups.${formIndex}.terms`;
+    map[`groups.${bodyIndex}.terms`] = target;
+    map[`groups.${bodyIndex}.*`] = target;
+    bodyIndex += 1;
+  });
+  return map;
+}
+
+/** The list-level refusal in the client's own words. */
+export const SYNONYMS_SERVER_MESSAGES = {
+  "groups.root": e.tooManyGroups(SYNONYM_GROUPS_MAX),
+};
+
 /** Server list → form rows (one comma-separated line per group). */
 export function mapSynonymsToFormValues(
   settings: Pick<SearchSynonymsEntity, "groups">,

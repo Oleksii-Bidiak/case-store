@@ -4,6 +4,7 @@ import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
 } from 'class-validator';
+import { PHONE_SHAPE } from './is-international-phone.decorator';
 
 /** Digits in a UA local number, after the `380` country code. */
 export const UA_PHONE_LOCAL_LENGTH = 9;
@@ -38,7 +39,14 @@ export function normalizeUaPhone(value: string): string {
 @ValidatorConstraint({ name: 'isUaPhone', async: false })
 class IsUaPhoneConstraint implements ValidatorConstraintInterface {
   validate(value: unknown): boolean {
-    return typeof value === 'string' && UA_PHONE_PATTERN.test(normalizeUaPhone(value));
+    if (typeof value !== 'string') return false;
+
+    // Shape first (TASK-1984, D2): `normalizeUaPhone` strips every non-digit, so
+    // without this `050 111 2233 ccc` reduced to a valid number and passed while
+    // `@IsInternationalPhone` refused it. Letters, a second `+` or an extension
+    // make the value refused, never cleaned — the same shape rule in both decorators.
+    const trimmed = value.trim();
+    return PHONE_SHAPE.test(trimmed) && UA_PHONE_PATTERN.test(normalizeUaPhone(trimmed));
   }
 
   defaultMessage(): string {

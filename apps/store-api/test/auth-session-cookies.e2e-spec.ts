@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
@@ -10,6 +10,7 @@ import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 import { CartService } from '../src/cart/cart.service';
 import { WishlistService } from '../src/wishlist/wishlist.service';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * The session cookies a sign-in leaves in the browser (TASK-789).
@@ -86,14 +87,7 @@ describe('Auth session cookies (e2e)', () => {
     wishlistService = moduleFixture.get(WishlistService);
     app = moduleFixture.createNestApplication();
     app.use(cookieParser());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     app.setGlobalPrefix('api', { exclude: ['health'] });
     await app.init();
   });

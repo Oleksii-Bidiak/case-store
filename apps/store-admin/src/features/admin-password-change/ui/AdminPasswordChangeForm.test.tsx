@@ -10,7 +10,14 @@ import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { AdminPasswordChangeForm } from "./AdminPasswordChangeForm";
 
+jest.mock("@/shared/ui/toast", () => ({
+  toast: { success: jest.fn(), error: jest.fn() },
+}));
+
 const d = dict.profile;
+const { toast } = jest.requireMock("@/shared/ui/toast") as {
+  toast: { error: jest.Mock };
+};
 
 /**
  * Wave 198 (TASK-1055, Profile П3): show/hide on every field, the live rule
@@ -164,6 +171,72 @@ describe("AdminPasswordChangeForm", () => {
       expect(current()).toHaveAttribute("aria-invalid", "true"),
     );
     expect(current()).toHaveAccessibleDescription(d.passwordWrongCurrent);
+    // TASK-1984 (Rule 6c): shown once — no toast repeating the field error.
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  async function submitValid() {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPasswordChangeForm />);
+    await user.type(current(), "Old-pass1");
+    await user.type(next(), "Password123");
+    await user.type(confirm(), "Password123");
+    await user.click(screen.getByRole("button", { name: d.passwordSubmit }));
+  }
+
+  it("puts a DTO 400 about the new password under «Новий пароль» (TASK-1984)", async () => {
+    toast.error.mockClear();
+    server.use(
+      http.post("*/api/auth/password/change", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: "Password must contain a lowercase letter and a digit",
+            fieldErrors: [
+              { field: "newPassword", constraint: "isCustomerPassword" },
+            ],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await submitValid();
+
+    await waitFor(() => expect(next()).toHaveAttribute("aria-invalid", "true"));
+    expect(next()).toHaveAccessibleDescription(
+      expect.stringContaining(d.passwordWeak),
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("puts the service's staff-policy 400 (no fieldErrors) under «Новий пароль»", async () => {
+    toast.error.mockClear();
+    server.use(
+      http.post("*/api/auth/password/change", () =>
+        HttpResponse.json(
+          { statusCode: 400, message: "Staff password must contain…" },
+          { status: 400 },
+        ),
+      ),
+    );
+    await submitValid();
+
+    await waitFor(() => expect(next()).toHaveAttribute("aria-invalid", "true"));
+    expect(screen.queryByText("Staff password must contain…")).toBeNull();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("shows a field-less failure once, in the form's banner", async () => {
+    toast.error.mockClear();
+    server.use(
+      http.post("*/api/auth/password/change", () =>
+        HttpResponse.json({ message: "boom" }, { status: 500 }),
+      ),
+    );
+    await submitValid();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("keeps the note that other sessions end", () => {

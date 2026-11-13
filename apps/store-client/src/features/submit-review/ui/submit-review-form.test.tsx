@@ -125,33 +125,8 @@ describe("SubmitReviewForm", () => {
     await waitFor(() => expect(submittedRating).toBe(4));
   });
 
-  it("surfaces the already-reviewed message on a 409 response", async () => {
-    const user = userEvent.setup();
-    serveMine(null);
-    server.use(
-      http.post("*/api/products/:productId/reviews", () =>
-        HttpResponse.json(
-          { message: "You have already reviewed this product" },
-          { status: 409 },
-        ),
-      ),
-    );
-
-    renderWithProviders(<SubmitReviewForm productId={PRODUCT_ID} />, {
-      auth: authedUser,
-    });
-
-    await user.click(
-      await screen.findByRole("button", { name: dict.reviews.starAria(5) }),
-    );
-    await user.click(
-      screen.getByRole("button", { name: dict.reviews.submitReview }),
-    );
-
-    expect(
-      await screen.findByText(dict.reviews.alreadyReviewed),
-    ).toBeInTheDocument();
-  });
+  // The 409 «already reviewed» is a toast only (forms Rule 6c) — asserted in
+  // `submit-review-form.errors.test.tsx`, which mocks sonner.
 });
 
 // TASK-446 / owner's decision 5. A rating already left used to be a dead end:

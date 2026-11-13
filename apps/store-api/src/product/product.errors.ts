@@ -11,9 +11,12 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
  * «Нова адреса» field, the «Новий артикул» field, or both. Keep the values stable.
  */
 export const ProductErrorCode = {
-  /** Restoring would put the product back on a slug a live product now holds. */
+  /**
+   * Restoring would put the product back on a slug a live product now holds — and,
+   * since TASK-1984, a create / update would write a slug another product holds.
+   */
   SLUG_CONFLICT: 'PRODUCT_SLUG_CONFLICT',
-  /** Restoring would put the product back on a SKU a live product now holds. */
+  /** The SKU twin of `SLUG_CONFLICT` (restore, and since TASK-1984 create / update). */
   SKU_CONFLICT: 'PRODUCT_SKU_CONFLICT',
   /** Both the slug and the SKU are held by live products. */
   SLUG_SKU_CONFLICT: 'PRODUCT_SLUG_SKU_CONFLICT',
@@ -147,6 +150,27 @@ const CONFLICT_MESSAGES: Record<ProductConflictCode, string> = {
 /** Build a 409 Conflict carrying a stable product error code. */
 export function conflictProduct(code: ProductConflictCode): ConflictException {
   return new ConflictException({ error: code, message: CONFLICT_MESSAGES[code] });
+}
+
+/**
+ * The 409 a create / update answers when the slug it would write is held by another
+ * product. It carries the same code as the restore conflict on that column, so the
+ * admin product form can put the refusal under the slug field without reading the
+ * English message (TASK-1984, forms convention Rule 6b). The message is unchanged.
+ */
+export function slugTakenProduct(): ConflictException {
+  return new ConflictException({
+    error: ProductErrorCode.SLUG_CONFLICT,
+    message: 'A product with this slug already exists',
+  });
+}
+
+/** The SKU twin of {@link slugTakenProduct}: the SKU is held by another product. */
+export function skuTakenProduct(): ConflictException {
+  return new ConflictException({
+    error: ProductErrorCode.SKU_CONFLICT,
+    message: 'A product with this SKU already exists',
+  });
 }
 
 /**

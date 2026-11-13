@@ -287,7 +287,10 @@ export class DiscountService {
 
     const existing = await this.discountRepository.findByCode(dto.code);
     if (existing) {
-      throw new BadRequestException(`A discount with code "${dto.code}" already exists`);
+      throw badDiscount(
+        DiscountErrorCode.CODE_TAKEN,
+        `A discount with code "${dto.code}" already exists`,
+      );
     }
 
     const input: CreateDiscountInput = {
@@ -330,7 +333,10 @@ export class DiscountService {
     if (dto.code && dto.code !== existing.code) {
       const clash = await this.discountRepository.findByCode(dto.code);
       if (clash) {
-        throw new BadRequestException(`A discount with code "${dto.code}" already exists`);
+        throw badDiscount(
+          DiscountErrorCode.CODE_TAKEN,
+          `A discount with code "${dto.code}" already exists`,
+        );
       }
     }
 

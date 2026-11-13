@@ -9,6 +9,8 @@ import {
   DiscountForm,
   discountFormValuesToDto,
   discountToFormInput,
+  placeDiscountSaveError,
+  type DiscountFormSetError,
   type DiscountFormValues,
 } from "@/features/discount-form";
 import {
@@ -22,7 +24,7 @@ import {
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { dict } from "@/shared/config";
-import { apiErrorMessage } from "@/shared/lib";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import { DiscountFormSkeleton } from "./discount-form-skeleton";
 
 const d = dict.discounts;
@@ -64,7 +66,10 @@ export function EditDiscountView({ discountId }: EditDiscountViewProps) {
 
   const discount = data?.data;
 
-  const handleSubmit = (values: DiscountFormValues) => {
+  const handleSubmit = (
+    values: DiscountFormValues,
+    setError: DiscountFormSetError,
+  ) => {
     update.mutate(
       {
         id: discountId,
@@ -81,10 +86,11 @@ export function EditDiscountView({ discountId }: EditDiscountViewProps) {
           toast.success(d.toastUpdated);
           router.push("/discounts");
         },
-        // The server's own words when it has them (TASK-796); the generic copy
-        // is only the fallback.
+        // TASK-1984 Rule 6b: under the field when it is about one; otherwise
+        // the server's own words (TASK-796), the generic copy as the fallback.
         onError: (mutationError) => {
-          toast.error(apiErrorMessage(mutationError) ?? d.toastUpdateFailed);
+          if (placeDiscountSaveError(mutationError, setError)) return;
+          toast.error(refusalMessage(mutationError) ?? d.toastUpdateFailed);
         },
       },
     );

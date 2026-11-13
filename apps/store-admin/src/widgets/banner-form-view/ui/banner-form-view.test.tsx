@@ -73,6 +73,32 @@ describe("CreateBannerView", () => {
     ).toBeInTheDocument();
   });
 
+  // TASK-1984 Rule 6b: a server 400 lands under the field it names.
+  it("puts a refused title under the title field", async () => {
+    server.use(
+      http.post("*/api/admin/banners", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "Bad Request",
+            message: "Title must be at most 255 characters",
+            fieldErrors: [{ field: "title", constraint: "maxLength" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(<CreateBannerView />, { auth: WRITER });
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: new RegExp(dict.bannerForm.title) }),
+      "Акція",
+    );
+    await userEvent.click(screen.getByRole("button", { name: d.createSubmit }));
+
+    expect(await screen.findByText(dict.forms.tooLong)).toBeInTheDocument();
+  });
+
   it("ignores an unknown ?placement=", () => {
     mockSearchParams = new URLSearchParams("placement=NOPE");
     renderWithProviders(<CreateBannerView />);

@@ -37,7 +37,10 @@ export const CategoryErrorCode = {
   MOVE_TARGET_IN_SUBTREE: 'CATEGORY_MOVE_TARGET_IN_SUBTREE',
   /** The move target (or the new target's parent) does not exist or is deleted. */
   MOVE_TARGET_NOT_FOUND: 'CATEGORY_MOVE_TARGET_NOT_FOUND',
-  /** The slug a new move target would take is already held by another category. */
+  /**
+   * The slug a new move target would take is already held by another category — and,
+   * since TASK-1984, the slug a create / update would write.
+   */
   SLUG_CONFLICT: 'CATEGORY_SLUG_CONFLICT',
   /**
    * The EXISTING move target of a delete is hidden (`isActive = false`) and the request

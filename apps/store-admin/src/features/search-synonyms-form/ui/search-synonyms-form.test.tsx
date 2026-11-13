@@ -344,6 +344,35 @@ describe("SearchSynonymsForm (TASK-559)", () => {
       ),
     );
   });
+
+  it("puts a 400 about one group under that group's row, with no toast (TASK-1984)", async () => {
+    stubSave(() =>
+      HttpResponse.json(
+        {
+          statusCode: 400,
+          message: "Each synonym must be a single word",
+          fieldErrors: [{ field: "groups.1.terms", constraint: "matches" }],
+        },
+        { status: 400 },
+      ),
+    );
+    renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
+
+    await submit();
+
+    // The refused group's card opens on its input, the message under it.
+    const second = await screen.findByRole("textbox", {
+      name: s.termsLabel(2),
+    });
+    expect(second).toHaveAttribute("aria-invalid", "true");
+    expect(second).toHaveAccessibleDescription(
+      expect.stringContaining(dict.forms.invalid),
+    );
+    expect(
+      screen.queryByRole("textbox", { name: s.termsLabel(1) }),
+    ).not.toBeInTheDocument();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
 });
 
 describe("SearchSynonymsForm — chip grid by mockup Н3 (TASK-1053)", () => {

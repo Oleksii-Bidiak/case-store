@@ -8,6 +8,7 @@ import {
   useForm,
   useWatch,
   type Control,
+  type UseFormSetError,
 } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ExternalLinkIcon, GripVertical, PlusIcon, XIcon } from "lucide-react";
@@ -32,6 +33,7 @@ import { formatCurrency } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import { dict, STOREFRONT_URL } from "@/shared/config";
 import {
+  PRODUCT_GROUP_LIMITS,
   productGroupSchema,
   type ProductGroupFormInput,
   type ProductGroupFormValues,
@@ -49,6 +51,8 @@ const g = dict.productGroups;
 
 const FORM_ID = "product-group-form";
 
+export type ProductGroupFormSetError = UseFormSetError<ProductGroupFormInput>;
+
 /** Empty form baseline used for create mode and as the merge base in edit mode. */
 const EMPTY_VALUES: ProductGroupFormInput = {
   name: "",
@@ -65,7 +69,12 @@ interface ProductGroupFormProps {
   defaultValues?: Partial<ProductGroupFormInput>;
   /** The group's positions — the source of axis suggestions, values, problems. */
   positions?: readonly ProductSiblingEntity[];
-  onSubmit: (values: ProductGroupFormValues) => void;
+  /** `setError` puts a server refusal under its field (TASK-1984) — hand it
+   *  to `placeProductGroupSaveError`. */
+  onSubmit: (
+    values: ProductGroupFormValues,
+    setError: ProductGroupFormSetError,
+  ) => void;
   isPending: boolean;
   submitLabel?: string;
   /** «Скасувати» goes back to the list. */
@@ -118,6 +127,7 @@ export function ProductGroupForm({
     control,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, submitCount, dirtyFields },
   } = useForm<ProductGroupFormInput, unknown, ProductGroupFormValues>({
     resolver: zodResolver(productGroupSchema),
@@ -163,7 +173,7 @@ export function ProductGroupForm({
   return (
     <form
       id={FORM_ID}
-      onSubmit={handleSubmit(onSubmit)}
+      onSubmit={handleSubmit((values) => onSubmit(values, setError))}
       className="flex flex-col gap-4"
       noValidate
     >
@@ -194,6 +204,7 @@ export function ProductGroupForm({
               <Input
                 id="group-name"
                 aria-required="true"
+                maxLength={PRODUCT_GROUP_LIMITS.name}
                 placeholder={f.namePlaceholder}
                 aria-invalid={errors.name ? true : undefined}
                 aria-describedby={
@@ -231,6 +242,11 @@ export function ProductGroupForm({
               onMove={move}
               onRemove={remove}
             />
+            {/* A server refusal of the axes as a whole (TASK-1984): the
+                payload drops blank rows, so its index is not a row here. */}
+            <FieldError id={errorId("axes")}>
+              {errors.axes?.message ?? errors.axes?.root?.message}
+            </FieldError>
             {positions.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 {f.axesNoPositions}
@@ -395,16 +411,27 @@ function AxisList({
           <Controller
             control={control}
             name={`axes.${index}.name` as const}
-            render={({ field }) => (
-              <Combobox
-                id={inputId}
-                value={field.value ?? ""}
-                onInputChange={field.onChange}
-                onSelect={(option) => field.onChange(option.value)}
-                options={options}
-                disabled={readOnly}
-                placeholder={f.axisPlaceholder}
-              />
+            render={({ field, fieldState }) => (
+              <>
+                {/* No `maxLength` here: the shared Combobox does not pass it
+                    through, so the schema's .max(50) speaks under the row. */}
+                <Combobox
+                  id={inputId}
+                  value={field.value ?? ""}
+                  onInputChange={field.onChange}
+                  onSelect={(option) => field.onChange(option.value)}
+                  options={options}
+                  disabled={readOnly}
+                  placeholder={f.axisPlaceholder}
+                  aria-invalid={fieldState.error ? true : undefined}
+                  aria-describedby={
+                    fieldState.error ? `${inputId}-error` : undefined
+                  }
+                />
+                <FieldError id={`${inputId}-error`} className="mt-1">
+                  {fieldState.error?.message}
+                </FieldError>
+              </>
             )}
           />
         </div>

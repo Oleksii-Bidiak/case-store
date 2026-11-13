@@ -39,7 +39,8 @@ import {
 } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
-import { scheduleError } from "../model/home-block-form";
+import { homeBlockSaveErrors, scheduleError } from "../model/home-block-form";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 
 const t = dict.homeBlockDialog;
 
@@ -89,8 +90,14 @@ export function ScheduleHomeBlockDialog({
         id: block.id,
         data: { status: "SCHEDULED", scheduledAt: at.toISOString() },
       });
-    } catch {
-      toast.error(t.toastFailed);
+    } catch (failure) {
+      // TASK-1984 Rule 6b: a refused date lands under the field; anything else
+      // is a toast in the server's words.
+      const { fields, placed } = homeBlockSaveErrors(failure);
+      if (fields.scheduledAt) setError(fields.scheduledAt);
+      if (!placed || !fields.scheduledAt) {
+        toast.error(refusalMessage(failure) ?? t.toastFailed);
+      }
       return;
     }
     void queryClient.invalidateQueries({

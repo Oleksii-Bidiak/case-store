@@ -10,7 +10,10 @@ import { Combobox, Label, type ComboboxOption } from "@/shared/ui";
 import { useSearchDeliveryWarehouses } from "@/entities/delivery";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { dict } from "@/shared/config";
-import type { CheckoutFormValues } from "../model/checkout-schema";
+import {
+  CHECKOUT_ADDRESS_MAX_LENGTH,
+  type CheckoutFormValues,
+} from "../model/checkout-schema";
 
 interface NpWarehouseFieldProps {
   control: Control<CheckoutFormValues>;
@@ -69,6 +72,7 @@ export function NpWarehouseField({
         loadingText={dict.checkout.searchLoading}
         emptyText={dict.checkout.searchEmpty}
         autoComplete="street-address"
+        maxLength={CHECKOUT_ADDRESS_MAX_LENGTH}
         aria-invalid={fieldState.error ? true : undefined}
         aria-describedby={fieldState.error ? `${id}-error` : undefined}
         onInputChange={(text) => {

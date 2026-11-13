@@ -7,7 +7,9 @@ import { toast } from "@/shared/ui/toast";
 import {
   GroupPositionsSection,
   ProductGroupForm,
+  placeProductGroupSaveError,
   productGroupFormValuesToDto,
+  type ProductGroupFormSetError,
   type ProductGroupFormValues,
 } from "@/features/product-group-form";
 import {
@@ -17,6 +19,7 @@ import {
 import { useAuth } from "@/entities/session";
 import { PERM } from "@/entities/permission";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 
 const g = dict.productGroups;
 
@@ -36,7 +39,10 @@ export function CreateProductGroupView() {
   const canWrite = can(PERM.productsWrite);
   const create = useProductGroupControllerCreate();
 
-  const handleSubmit = (values: ProductGroupFormValues) => {
+  const handleSubmit = (
+    values: ProductGroupFormValues,
+    setError: ProductGroupFormSetError,
+  ) => {
     create.mutate(
       { data: productGroupFormValuesToDto(values) },
       {
@@ -47,7 +53,12 @@ export function CreateProductGroupView() {
           toast.success(g.toastCreated);
           router.push(LIST_PATH);
         },
-        onError: () => toast.error(g.toastCreateFailed),
+        // TASK-1984 Rule 6b: under the field when it is about one; a refusal
+        // no field takes in the server's own words.
+        onError: (error) => {
+          if (placeProductGroupSaveError(error, setError)) return;
+          toast.error(refusalMessage(error) ?? g.toastCreateFailed);
+        },
       },
     );
   };

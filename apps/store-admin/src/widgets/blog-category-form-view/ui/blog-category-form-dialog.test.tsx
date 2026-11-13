@@ -23,10 +23,11 @@ jest.mock("next/navigation", () => ({
 }));
 
 const toastSuccess = jest.fn();
+const toastError = jest.fn();
 jest.mock("@/shared/ui/toast", () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccess(...args),
-    error: jest.fn(),
+    error: (...args: unknown[]) => toastError(...args),
   },
 }));
 
@@ -45,6 +46,7 @@ const category = {
 beforeEach(() => {
   mockReplace.mockClear();
   toastSuccess.mockClear();
+  toastError.mockClear();
   mockSearchParams = new URLSearchParams("");
 });
 
@@ -112,6 +114,45 @@ describe("BlogCategoryFormDialog (КБ4 — the form over the list)", () => {
     await waitFor(() =>
       expect(toastSuccess).toHaveBeenCalledWith(c.toastUpdated),
     );
+  });
+
+  // TASK-1984 Rule 6b: a taken slug is said under the slug, not in a toast.
+  it("puts BLOG_CATEGORY_SLUG_CONFLICT under the slug field", async () => {
+    mockSearchParams = new URLSearchParams("new=1");
+    server.use(
+      http.post("*/api/admin/blog/categories", () =>
+        HttpResponse.json(
+          {
+            statusCode: 409,
+            error: "BLOG_CATEGORY_SLUG_CONFLICT",
+            message: "Slug is already taken",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderWithProviders(<BlogCategoryFormDialog />, { auth: WRITER });
+
+    const dialog = await screen.findByRole("dialog", {
+      name: c.createHeading,
+    });
+    await userEvent.type(
+      within(dialog).getByRole("textbox", { name: f.name }),
+      "Огляди",
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: c.createSubmit }),
+    );
+
+    expect(
+      await within(dialog).findByText(f.errors.slugTaken),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(f.slug)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(toastError).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("«Скасувати» closes it by dropping the param", async () => {

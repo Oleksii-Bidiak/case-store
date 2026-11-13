@@ -17,6 +17,19 @@ import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 import { PublishFieldsDto } from '../../publishing';
 
 /**
+ * The cover-link rule, shared with `IsOgImageField` and the admin's `isHttpUrl`
+ * (TASK-1984, forms Rule 5): an absolute http(s) URL. `require_protocol` keeps a
+ * bare host (`cdn.example.com/x.jpg`) out — the storefront would resolve it against
+ * its own origin — and `protocols` keeps `ftp:` out; `require_tld: false` lets
+ * `http://localhost:3001/uploads/…`, what store-api serves in dev, through.
+ */
+export const BLOG_COVER_URL_OPTIONS = {
+  require_tld: false,
+  require_protocol: true,
+  protocols: ['http', 'https'],
+};
+
+/**
  * DTO for creating a blog post (admin-only). Slug is auto-generated from the
  * title when omitted. Publish control (`status` + `scheduledAt`) comes from the
  * shared {@link PublishFieldsDto}. The HTML `content` is sanitized server-side.
@@ -75,7 +88,7 @@ export class CreateBlogPostDto extends PublishFieldsDto {
     required: false,
   })
   @IsOptional()
-  @IsUrl({ require_tld: false }, { message: 'coverImageUrl must be a valid URL' })
+  @IsUrl(BLOG_COVER_URL_OPTIONS, { message: 'coverImageUrl must be a valid URL' })
   @MaxLength(2048, { message: 'Cover image URL must be at most 2048 characters' })
   coverImageUrl?: string;
 

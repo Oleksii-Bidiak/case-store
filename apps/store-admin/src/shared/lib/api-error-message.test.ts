@@ -1,5 +1,6 @@
 import {
   apiErrorCode,
+  apiErrorFieldErrors,
   apiErrorMessage,
   apiErrorStatus,
 } from "./api-error-message";
@@ -75,5 +76,28 @@ describe("apiErrorCode — the envelope code, read in one place (TASK-810)", () 
     ).toBeUndefined();
     expect(apiErrorCode({})).toBeUndefined();
     expect(apiErrorCode(undefined)).toBeUndefined();
+  });
+});
+
+/**
+ * TASK-1984 (D3): the global ValidationPipe's 400 carries `fieldErrors`. This
+ * reader only fetches the raw value off the body; `readFieldErrors` in
+ * `form-errors.ts` validates its entries.
+ */
+describe("apiErrorFieldErrors", () => {
+  it("returns the body's fieldErrors value", () => {
+    const fieldErrors = [{ field: "email", constraint: "isEmail" }];
+    expect(
+      apiErrorFieldErrors({ response: { status: 400, data: { fieldErrors } } }),
+    ).toBe(fieldErrors);
+  });
+
+  it("returns undefined when there is no body or no key", () => {
+    expect(apiErrorFieldErrors(new Error("Network Error"))).toBeUndefined();
+    expect(
+      apiErrorFieldErrors({ response: { data: { message: "x" } } }),
+    ).toBeUndefined();
+    expect(apiErrorFieldErrors({ response: { data: "text" } })).toBeUndefined();
+    expect(apiErrorFieldErrors(undefined)).toBeUndefined();
   });
 });

@@ -1,4 +1,5 @@
 import {
+  IsNotEmpty,
   IsString,
   IsOptional,
   IsNumber,
@@ -12,7 +13,8 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { trimString } from '../../common/utils';
 import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 import { MAX_DESCRIPTION_LENGTH } from '../product.constants';
 
@@ -59,7 +61,10 @@ export class UpdateProductDto {
     required: false,
   })
   @IsOptional()
+  // TASK-1984: absent = unchanged, but a sent name is trimmed and must not be blank.
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty({ message: 'Product name must not be empty' })
   @MaxLength(255, { message: 'Product name must be at most 255 characters' })
   name?: string;
 

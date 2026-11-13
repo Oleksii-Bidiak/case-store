@@ -8,11 +8,13 @@ import { z } from "zod";
 import { useAuthControllerRequestPasswordReset } from "@/entities/session";
 import { dict } from "@/shared/config";
 import { apiErrorStatus } from "@/shared/lib";
+import { EMAIL_MAX_LENGTH, emailField } from "@/shared/lib/form-fields";
 import { Button } from "@/shared/ui";
 import { AUTH_LINK_CLASS, AUTH_SUBMIT_CLASS, AuthField } from "./auth-field";
 
 const forgotSchema = z.object({
-  email: z.string().email(dict.auth.forgotPassword.validationEmail),
+  // The one email rule (forms Rule 5c), as `RequestPasswordResetDto`.
+  email: emailField({ message: dict.auth.forgotPassword.validationEmail }),
 });
 
 type ForgotValues = z.infer<typeof forgotSchema>;
@@ -45,7 +47,11 @@ export function ForgotPasswordForm({
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<ForgotValues>({ resolver: zodResolver(forgotSchema) });
+  } = useForm<ForgotValues>({
+    resolver: zodResolver(forgotSchema),
+    // Every validated field has a default (forms Rule 4c).
+    defaultValues: { email: "" },
+  });
 
   const onSubmit = (values: ForgotValues) => {
     requestReset.mutate(
@@ -59,11 +65,16 @@ export function ForgotPasswordForm({
 
   const d = dict.auth.forgotPassword;
 
-  const errorMessage = requestReset.isError
-    ? apiErrorStatus(requestReset.error) === 429
+  // One banner, never a field (forms Rule 6d) — but it names the right cause:
+  // a 400 is the address the API refused, not the connection (TASK-1984).
+  const status = apiErrorStatus(requestReset.error);
+  const errorMessage = !requestReset.isError
+    ? null
+    : status === 429
       ? d.errorTooMany
-      : d.errorNetwork
-    : null;
+      : status === 400
+        ? d.validationEmail
+        : d.errorNetwork;
 
   const backToLogin = onSwitchToLogin ? (
     <button type="button" onClick={onSwitchToLogin} className={AUTH_LINK_CLASS}>
@@ -101,6 +112,7 @@ export function ForgotPasswordForm({
         label={d.email}
         type="email"
         autoComplete="email"
+        maxLength={EMAIL_MAX_LENGTH}
         error={errors.email?.message}
         {...register("email")}
       />

@@ -379,6 +379,8 @@ describe("ReturnResolveForm — 400 texts (TASK-956)", () => {
           message: [
             "operatorNotes must be shorter than or equal to 2000 characters",
           ],
+          // TASK-1984: the field is read from here, not from the message.
+          fieldErrors: [{ field: "operatorNotes", constraint: "maxLength" }],
           statusCode: 400,
         },
         { status: 400 },
@@ -596,6 +598,8 @@ describe("ReturnResolveForm — «Зберегти примітки» on every s
           message: [
             "operatorNotes must be shorter than or equal to 2000 characters",
           ],
+          // TASK-1984: the field is read from here, not from the message.
+          fieldErrors: [{ field: "operatorNotes", constraint: "maxLength" }],
           statusCode: 400,
         },
         { status: 400 },

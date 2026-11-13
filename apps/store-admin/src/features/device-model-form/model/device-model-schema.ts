@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { UseFormSetError } from "react-hook-form";
 import type {
   CreateDeviceModelDto,
   UpdateDeviceModelDto,
@@ -7,8 +8,66 @@ import { dict } from "@/shared/config";
 import { SLUG_PATTERN } from "@/shared/lib/slug";
 import { seoTextFields } from "@/shared/lib/seo-fields-schema";
 import { UUID_PATTERN } from "@/shared/lib/uuid";
+import { apiErrorCode, apiErrorStatus } from "@/shared/lib";
+import {
+  applyServerFieldErrors,
+  type ServerFieldMap,
+} from "@/shared/lib/form-errors";
 
 const e = dict.deviceModelForm.errors;
+
+/**
+ * The DTO's `@MaxLength` caps (`apps/store-api/src/device/dto/create-device
+ * -model.dto.ts`) — read by the schema and the inputs' `maxLength`
+ * (TASK-1984, Rule 5d). The SEO pair is `seoTextFields`' 255 / 500.
+ */
+export const DEVICE_MODEL_LIMITS = {
+  name: 255,
+  slug: 255,
+  series: 255,
+  description: 2000,
+} as const;
+
+/** `CreateDeviceModelDto` / `UpdateDeviceModelDto` paths → form fields. */
+const DEVICE_MODEL_FIELD_MAP: ServerFieldMap = {
+  deviceBrandId: "deviceBrandId",
+  name: "name",
+  slug: "slug",
+  series: "series",
+  releaseYear: "releaseYear",
+  metaTitle: "metaTitle",
+  metaDescription: "metaDescription",
+  description: "description",
+};
+
+/**
+ * Puts a refused device-model save under its field (TASK-1984, Rule 6b) and
+ * says whether it did — `false` leaves the toast to the caller. 409
+ * `DEVICE_MODEL_SLUG_CONFLICT` is the slug (typed, or from the name) taken.
+ */
+export function placeDeviceModelSaveError(
+  error: unknown,
+  setError: UseFormSetError<DeviceModelFormInput>,
+): boolean {
+  const status = apiErrorStatus(error);
+  if (status === 409 && apiErrorCode(error) === "DEVICE_MODEL_SLUG_CONFLICT") {
+    setError(
+      "slug",
+      { type: "server", message: e.slugTaken },
+      { shouldFocus: true },
+    );
+    return true;
+  }
+  if (status === 400) {
+    const { mapped, unmapped } = applyServerFieldErrors(
+      error,
+      setError,
+      DEVICE_MODEL_FIELD_MAP,
+    );
+    return mapped.length > 0 && unmapped.length === 0;
+  }
+  return false;
+}
 
 /**
  * Validation schema for the admin device-model form (TASK-190). `releaseYear` is
@@ -17,15 +76,24 @@ const e = dict.deviceModelForm.errors;
 export const deviceModelSchema = z.object({
   // Shape only — the brand id was read off the database (TASK-808).
   deviceBrandId: z.string().trim().regex(UUID_PATTERN, e.brandRequired),
-  name: z.string().trim().min(1, e.nameRequired).max(255, e.nameMax),
+  name: z
+    .string()
+    .trim()
+    .min(1, e.nameRequired)
+    .max(DEVICE_MODEL_LIMITS.name, e.nameMax),
   slug: z
     .string()
     .trim()
-    .max(255, e.slugMax)
+    .max(DEVICE_MODEL_LIMITS.slug, e.slugMax)
     .regex(SLUG_PATTERN, e.slugPattern)
     .optional()
     .or(z.literal("")),
-  series: z.string().trim().max(255, e.seriesMax).optional().or(z.literal("")),
+  series: z
+    .string()
+    .trim()
+    .max(DEVICE_MODEL_LIMITS.series, e.seriesMax)
+    .optional()
+    .or(z.literal("")),
   releaseYear: z
     .string()
     .trim()
@@ -47,7 +115,7 @@ export const deviceModelSchema = z.object({
   description: z
     .string()
     .trim()
-    .max(2000, e.descriptionMax)
+    .max(DEVICE_MODEL_LIMITS.description, e.descriptionMax)
     .optional()
     .or(z.literal("")),
 });

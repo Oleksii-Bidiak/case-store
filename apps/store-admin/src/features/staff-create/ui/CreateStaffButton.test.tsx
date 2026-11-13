@@ -17,6 +17,12 @@ const mockPush = jest.fn();
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush, replace: jest.fn() }),
 }));
+jest.mock("@/shared/ui/toast", () => ({
+  toast: { success: jest.fn(), error: jest.fn() },
+}));
+const { toast } = jest.requireMock("@/shared/ui/toast") as {
+  toast: { error: jest.Mock };
+};
 
 // The label carries the required «*» (aria-hidden), which jsdom still reads.
 const EMAIL_NAME = new RegExp(`^${d.fieldEmail}`);
@@ -295,6 +301,72 @@ describe("CreateStaffButton", () => {
       expect(
         screen.getByRole("textbox", { name: EMAIL_NAME }),
       ).toHaveAccessibleDescription(expect.stringContaining(d.emailTaken));
+      // TASK-1984 (Rule 6c): said once, under the field — no toast on top.
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    it("refuses an address the API's @IsEmail refuses (no local regex, TASK-1984)", async () => {
+      stubCatalogue();
+      const dialog = await openWizard();
+
+      await fillWho("a@-b.co");
+
+      expect(screen.getByRole("textbox", { name: EMAIL_NAME })).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+      expect(currentStep(dialog)).toHaveTextContent(d.stepWho);
+    });
+
+    it("caps the names at the DTO's 100 and the email at 254", async () => {
+      stubCatalogue();
+      await openWizard();
+
+      expect(screen.getByRole("textbox", { name: EMAIL_NAME })).toHaveAttribute(
+        "maxlength",
+        "254",
+      );
+      expect(
+        screen.getByRole("textbox", { name: d.fieldFirstName }),
+      ).toHaveAttribute("maxlength", "100");
+      expect(
+        screen.getByRole("textbox", { name: d.fieldLastName }),
+      ).toHaveAttribute("maxlength", "100");
+    });
+
+    it("sends a server 400 about a name back to step one, under that field, no toast", async () => {
+      toast.error.mockClear();
+      stubHiring();
+      server.use(
+        http.post("*/api/admin/staff", () =>
+          HttpResponse.json(
+            {
+              statusCode: 400,
+              message: "First name must be at most 100 characters",
+              fieldErrors: [{ field: "firstName", constraint: "maxLength" }],
+            },
+            { status: 400 },
+          ),
+        ),
+      );
+      const dialog = await openWizard();
+      await fillWho();
+      await userEvent.click(screen.getByRole("button", { name: d.next }));
+      await userEvent.type(
+        screen.getByLabelText(d.fieldPassword, { exact: false }),
+        STRONG_PASSWORD,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: d.createSubmit }),
+      );
+
+      await waitFor(() =>
+        expect(currentStep(dialog)).toHaveTextContent(d.stepWho),
+      );
+      const first = screen.getByRole("textbox", { name: d.fieldFirstName });
+      expect(first).toHaveAttribute("aria-invalid", "true");
+      expect(first).toHaveAccessibleDescription(dict.forms.tooLong);
+      expect(toast.error).not.toHaveBeenCalled();
     });
   });
 

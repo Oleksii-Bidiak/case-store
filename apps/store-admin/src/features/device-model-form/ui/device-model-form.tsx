@@ -7,7 +7,12 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import {
+  Controller,
+  useForm,
+  useWatch,
+  type UseFormSetError,
+} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ExternalLinkIcon } from "lucide-react";
 import {
@@ -43,12 +48,19 @@ import {
 import { FormSectionCard } from "@/shared/ui/form-section-card";
 import { dict, STOREFRONT_HOST, STOREFRONT_URL } from "@/shared/config";
 import {
+  DEVICE_MODEL_LIMITS,
   deviceModelSchema,
   type DeviceModelFormInput,
   type DeviceModelFormValues,
 } from "../model/device-model-schema";
+import {
+  META_DESCRIPTION_MAX_LENGTH,
+  META_TITLE_MAX_LENGTH,
+} from "@/shared/lib/seo-fields-schema";
 
 const f = dict.deviceModelForm;
+
+export type DeviceModelFormSetError = UseFormSetError<DeviceModelFormInput>;
 const FORM_ID = "device-model-form";
 
 /**
@@ -63,7 +75,12 @@ const LEAD_COMFORT = 1000;
 interface DeviceModelFormProps {
   id?: string;
   defaultValues?: Partial<DeviceModelFormInput>;
-  onSubmit: (values: DeviceModelFormValues) => void;
+  /** `setError` puts a server refusal under its field (TASK-1984) — hand it
+   *  to `placeDeviceModelSaveError`. */
+  onSubmit: (
+    values: DeviceModelFormValues,
+    setError: DeviceModelFormSetError,
+  ) => void;
   isPending: boolean;
   /** The sticky bar's primary button: «Зберегти» / «Створити модель». */
   submitLabel?: string;
@@ -147,6 +164,7 @@ export function DeviceModelForm({
     control,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, dirtyFields, submitCount },
   } = useForm<DeviceModelFormInput, unknown, DeviceModelFormValues>({
     resolver: zodResolver(deviceModelSchema),
@@ -204,7 +222,7 @@ export function DeviceModelForm({
 
   const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     if (event.target !== event.currentTarget) return;
-    void handleSubmit(onSubmit)(event);
+    void handleSubmit((values) => onSubmit(values, setError))(event);
   };
 
   const fieldA11y = (field: FieldName, ...hintIds: (string | undefined)[]) => {
@@ -293,6 +311,7 @@ export function DeviceModelForm({
                     id="device-model-name"
                     aria-required="true"
                     {...fieldA11y("name")}
+                    maxLength={DEVICE_MODEL_LIMITS.name}
                     {...register("name")}
                   />
                   <FieldError id={errorId("name")}>
@@ -307,6 +326,7 @@ export function DeviceModelForm({
                       id="device-model-series"
                       placeholder={f.seriesPlaceholder}
                       {...fieldA11y("series", "device-model-series-hint")}
+                      maxLength={DEVICE_MODEL_LIMITS.series}
                       {...register("series")}
                     />
                     <p
@@ -350,6 +370,7 @@ export function DeviceModelForm({
                     id="device-model-slug"
                     placeholder={f.slugPlaceholder}
                     {...fieldA11y("slug", "device-model-slug-hint")}
+                    maxLength={DEVICE_MODEL_LIMITS.slug}
                     {...register("slug")}
                   />
                   <FieldError id={errorId("slug")}>
@@ -405,6 +426,7 @@ export function DeviceModelForm({
                       id="device-model-meta-title"
                       placeholder={f.metaTitlePlaceholder}
                       {...fieldA11y("metaTitle", describedBy)}
+                      maxLength={META_TITLE_MAX_LENGTH}
                       {...register("metaTitle")}
                     />
                   )}
@@ -428,6 +450,7 @@ export function DeviceModelForm({
                       rows={2}
                       placeholder={f.metaDescriptionPlaceholder}
                       {...fieldA11y("metaDescription", describedBy)}
+                      maxLength={META_DESCRIPTION_MAX_LENGTH}
                       {...register("metaDescription")}
                     />
                   )}
@@ -451,6 +474,7 @@ export function DeviceModelForm({
                       rows={3}
                       placeholder={f.descriptionPlaceholder}
                       {...fieldA11y("description", describedBy)}
+                      maxLength={DEVICE_MODEL_LIMITS.description}
                       {...register("description")}
                     />
                   )}

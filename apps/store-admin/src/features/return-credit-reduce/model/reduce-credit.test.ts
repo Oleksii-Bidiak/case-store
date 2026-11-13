@@ -1,6 +1,63 @@
 import { dict } from "@/shared/config";
 import { formatKop } from "@/shared/lib";
-import { checkReduceReason, checkReducedCredit } from "./reduce-credit";
+import {
+  checkReduceReason,
+  checkReducedCredit,
+  placeReduceRefusal,
+} from "./reduce-credit";
+
+/** TASK-1984 Rule 6 — where a refused reduce is said. */
+describe("placeReduceRefusal", () => {
+  const coded = (status: number, error: string) => ({
+    response: { status, data: { statusCode: status, error, message: "x" } },
+  });
+
+  it("puts a moved bound under the amount, keeps the dialog and re-reads the page", () => {
+    expect(
+      placeReduceRefusal(coded(409, "RETURN_CREDIT_BELOW_PAID_OUT")),
+    ).toEqual({
+      fields: { amount: dict.returns.refusalCreditBelowPaidOut },
+      refetch: true,
+      close: false,
+      banner: null,
+    });
+  });
+
+  it("closes on a refusal of the action itself", () => {
+    expect(
+      placeReduceRefusal(coded(409, "RETURN_CREDIT_NOT_REFUND")),
+    ).toMatchObject({
+      close: true,
+      banner: dict.returns.refusalCreditNotRefund,
+    });
+  });
+
+  it("maps a DTO 400 onto the inputs", () => {
+    expect(
+      placeReduceRefusal({
+        response: {
+          status: 400,
+          data: {
+            statusCode: 400,
+            message: "Bad Request",
+            fieldErrors: [{ field: "reason", constraint: "maxLength" }],
+          },
+        },
+      }),
+    ).toEqual({
+      fields: { reason: dict.forms.tooLong },
+      refetch: false,
+      close: false,
+      banner: null,
+    });
+  });
+
+  it("keeps the banner for a failure no input carries", () => {
+    expect(placeReduceRefusal({ response: { status: 500 } }).banner).toBe(
+      r.reduceFailed,
+    );
+  });
+});
 
 const r = dict.returnMoney;
 const bounds = { currentKop: 79900, paidOutKop: 10000 };

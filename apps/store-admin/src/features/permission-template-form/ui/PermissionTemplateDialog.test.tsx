@@ -5,6 +5,13 @@ import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { dict } from "@/shared/config";
 import { PermissionTemplateDialog } from "./PermissionTemplateDialog";
 
+jest.mock("@/shared/ui/toast", () => ({
+  toast: { success: jest.fn(), error: jest.fn() },
+}));
+const { toast } = jest.requireMock("@/shared/ui/toast") as {
+  toast: { error: jest.Mock };
+};
+
 function stubCatalogue() {
   server.use(
     http.get("*/api/admin/staff/:id/permissions", () =>
@@ -232,5 +239,100 @@ describe("PermissionTemplateDialog", () => {
     );
 
     expect(requested).not.toHaveBeenCalled();
+  });
+});
+
+describe("PermissionTemplateDialog — field standard (TASK-1984)", () => {
+  const d = dict.staff;
+  const nameField = () => screen.getByLabelText(d.templateName);
+  const save = () =>
+    userEvent.click(screen.getByRole("button", { name: dict.common.save }));
+
+  function renderCreate() {
+    stubCatalogue();
+    renderWithProviders(
+      <WithAuth isOwner>
+        <PermissionTemplateDialog
+          template={null}
+          open
+          onOpenChange={() => {}}
+        />
+      </WithAuth>,
+    );
+  }
+
+  beforeEach(() => toast.error.mockClear());
+
+  it("says «required» under the name, with aria, and sends nothing", async () => {
+    const posted = jest.fn();
+    server.use(
+      http.post("*/api/admin/permission-templates", () => {
+        posted();
+        return HttpResponse.json({ data: TEMPLATE });
+      }),
+    );
+    renderCreate();
+
+    await save();
+
+    expect(nameField()).toHaveAttribute("aria-invalid", "true");
+    expect(nameField()).toHaveAccessibleDescription(d.templateNameRequired);
+    expect(posted).not.toHaveBeenCalled();
+  });
+
+  it("refuses a one-character name like the DTO's @MinLength(2)", async () => {
+    renderCreate();
+
+    await userEvent.type(nameField(), "А");
+    await save();
+
+    expect(nameField()).toHaveAccessibleDescription(d.templateNameLength);
+    expect(nameField()).toHaveAttribute("maxlength", "100");
+    expect(screen.getByLabelText(d.templateDescription)).toHaveAttribute(
+      "maxlength",
+      "500",
+    );
+  });
+
+  it("puts a taken name (409) under the name, with no toast", async () => {
+    server.use(
+      http.post("*/api/admin/permission-templates", () =>
+        HttpResponse.json(
+          {
+            statusCode: 409,
+            message: "A permission template with this name already exists",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderCreate();
+
+    await userEvent.type(nameField(), "Оператор");
+    await save();
+
+    expect(await screen.findByText(d.templateNameTaken)).toBeInTheDocument();
+    expect(nameField()).toHaveAttribute("aria-invalid", "true");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("shows a field-less failure once, as the form's line — no toast", async () => {
+    server.use(
+      http.post("*/api/admin/permission-templates", () =>
+        HttpResponse.json(
+          { statusCode: 400, message: "staff:write cannot be granted" },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderCreate();
+
+    await userEvent.type(nameField(), "Оператор");
+    await save();
+
+    expect(
+      await screen.findByText("staff:write cannot be granted"),
+    ).toBeInTheDocument();
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });

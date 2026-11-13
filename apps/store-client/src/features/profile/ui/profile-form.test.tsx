@@ -11,6 +11,16 @@ import { makeUser } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
 import { ProfileForm } from "./profile-form";
 
+const toastError = jest.fn();
+jest.mock("sonner", () => ({
+  toast: {
+    success: jest.fn(),
+    error: (...args: unknown[]) => toastError(...args),
+  },
+}));
+
+beforeEach(() => toastError.mockClear());
+
 /**
  * TASK-794: `firstName`/`lastName` carried a bare `.max(100)` with no error
  * rendered and no `maxLength` on the input. An over-long name (a paste, an
@@ -128,5 +138,106 @@ describe("ProfileForm — phone (TASK-799)", () => {
 
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toMatchObject({ phone: null });
+  });
+});
+
+/**
+ * TASK-1984 / SF-ACC-36: `050 111 2233 ccc` passed the profile schema (the
+ * letters were stripped before judging) while the API refused it, and the 400
+ * came back as a generic toast. Now the field is the masked `PhoneInput` (UA,
+ * like `@IsUaPhone`), capped at the DTO's 30, and a 400 lands under its field.
+ */
+describe("ProfileForm — field standard (TASK-1984)", () => {
+  function respondWith(status: number, body: unknown) {
+    const bodies: unknown[] = [];
+    server.use(
+      http.put("*/api/users/me", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(body as Record<string, unknown>, { status });
+      }),
+    );
+    return bodies;
+  }
+
+  it("draws the UA mask and caps the phone at the DTO's 30 characters", () => {
+    renderWithProviders(
+      <ProfileForm user={{ ...makeUser().data, phone: "380501112233" }} />,
+    );
+
+    const input = screen.getByLabelText(dict.account.phone);
+    expect(input).toHaveAttribute("maxLength", "30");
+    expect(input).toHaveValue("+380 50 111 2233");
+  });
+
+  it("never sends the letters of a pasted '050 111 2233 ccc'", async () => {
+    const user = userEvent.setup();
+    const bodies = respondWith(200, makeUser());
+
+    renderWithProviders(<ProfileForm user={makeUser().data} />);
+
+    fireEvent.change(screen.getByLabelText(dict.account.phone), {
+      target: { value: "050 111 2233 ccc" },
+    });
+    await user.click(screen.getByRole("button", { name: dict.account.save }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect((bodies[0] as { phone: string }).phone).not.toMatch(/[a-z]/i);
+  });
+
+  it("puts a server 400 on the phone under the phone field, with no toast", async () => {
+    const user = userEvent.setup();
+    respondWith(400, {
+      statusCode: 400,
+      message: ["phone must be a valid Ukrainian phone number"],
+      fieldErrors: [{ field: "phone", constraint: "isUaPhone" }],
+    });
+
+    renderWithProviders(<ProfileForm user={makeUser().data} />);
+
+    const input = screen.getByLabelText(dict.account.phone);
+    fireEvent.change(input, { target: { value: "050 111 2233" } });
+    await user.click(screen.getByRole("button", { name: dict.account.save }));
+
+    await waitFor(() =>
+      expect(input).toHaveAccessibleDescription(dict.forms.phoneInvalid),
+    );
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("puts a server 400 on a name under that name", async () => {
+    const user = userEvent.setup();
+    respondWith(400, {
+      statusCode: 400,
+      message: ["First name must be at most 100 characters"],
+      fieldErrors: [{ field: "firstName", constraint: "maxLength" }],
+    });
+
+    renderWithProviders(<ProfileForm user={makeUser().data} />);
+
+    const input = screen.getByLabelText(dict.account.firstName);
+    fireEvent.change(input, { target: { value: "Олена" } });
+    await user.click(screen.getByRole("button", { name: dict.account.save }));
+
+    await waitFor(() =>
+      expect(input).toHaveAccessibleDescription(dict.account.firstNameMax),
+    );
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("keeps the toast for an error no field can hold", async () => {
+    const user = userEvent.setup();
+    respondWith(500, { statusCode: 500 });
+
+    renderWithProviders(<ProfileForm user={makeUser().data} />);
+
+    fireEvent.change(screen.getByLabelText(dict.account.firstName), {
+      target: { value: "Олена" },
+    });
+    await user.click(screen.getByRole("button", { name: dict.account.save }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(dict.account.updateError),
+    );
   });
 });

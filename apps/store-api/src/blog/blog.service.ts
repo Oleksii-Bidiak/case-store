@@ -34,6 +34,21 @@ import { reorderErrorToHttp } from '../common/reorder';
 import type { Paginated, PaginationMeta } from '../common/pagination';
 
 /**
+ * The `error` codes of the 409 a create / update answers when the slug is held
+ * by another post / category (TASK-1984): the admin forms key off them to put
+ * the refusal under the slug field. The message stays «Slug is already taken».
+ * Keep the values stable.
+ */
+export const BLOG_POST_SLUG_CONFLICT = 'BLOG_POST_SLUG_CONFLICT';
+export const BLOG_CATEGORY_SLUG_CONFLICT = 'BLOG_CATEGORY_SLUG_CONFLICT';
+type BlogSlugConflictCode = typeof BLOG_POST_SLUG_CONFLICT | typeof BLOG_CATEGORY_SLUG_CONFLICT;
+
+const slugTaken = (code: BlogSlugConflictCode) => ({
+  error: code,
+  message: 'Slug is already taken',
+});
+
+/**
  * The admin category list is a `Paginated` page even for an unpaginated read, so
  * the panel can show a truthful row count without branching on the query — and so
  * the reorder answer, which the panel writes straight into the list cache, can
@@ -246,7 +261,7 @@ export class BlogService {
 
     const existing = await this.blogRepository.findBySlugAny(slug);
     if (existing) {
-      throw new ConflictException('Slug is already taken');
+      throw new ConflictException(slugTaken(BLOG_POST_SLUG_CONFLICT));
     }
 
     await this.ensureCategoryExists(dto.categoryId);
@@ -289,7 +304,7 @@ export class BlogService {
       }
       return entity;
     } catch (error) {
-      this.rethrowUniqueConflict(error);
+      this.rethrowUniqueConflict(error, BLOG_POST_SLUG_CONFLICT);
     }
   }
 
@@ -309,7 +324,7 @@ export class BlogService {
     if (dto.slug !== undefined && dto.slug !== post.slug) {
       const existing = await this.blogRepository.findBySlugAny(dto.slug);
       if (existing && existing.id !== id) {
-        throw new ConflictException('Slug is already taken');
+        throw new ConflictException(slugTaken(BLOG_POST_SLUG_CONFLICT));
       }
     }
 
@@ -375,7 +390,7 @@ export class BlogService {
       }
       return entity;
     } catch (error) {
-      this.rethrowUniqueConflict(error);
+      this.rethrowUniqueConflict(error, BLOG_POST_SLUG_CONFLICT);
     }
   }
 
@@ -463,7 +478,7 @@ export class BlogService {
     const slug = dto.slug ?? generateSlug(dto.name);
     const existing = await this.blogRepository.findCategoryBySlugAny(slug);
     if (existing) {
-      throw new ConflictException('Slug is already taken');
+      throw new ConflictException(slugTaken(BLOG_CATEGORY_SLUG_CONFLICT));
     }
 
     try {
@@ -473,7 +488,7 @@ export class BlogService {
       });
       return BlogCategoryEntity.fromPrisma(category);
     } catch (error) {
-      this.rethrowUniqueConflict(error);
+      this.rethrowUniqueConflict(error, BLOG_CATEGORY_SLUG_CONFLICT);
     }
   }
 
@@ -486,7 +501,7 @@ export class BlogService {
     if (dto.slug !== undefined && dto.slug !== category.slug) {
       const existing = await this.blogRepository.findCategoryBySlugAny(dto.slug);
       if (existing && existing.id !== id) {
-        throw new ConflictException('Slug is already taken');
+        throw new ConflictException(slugTaken(BLOG_CATEGORY_SLUG_CONFLICT));
       }
     }
 
@@ -499,7 +514,7 @@ export class BlogService {
       await this.revalidation.revalidate(this.collectionRevalidateTarget());
       return BlogCategoryEntity.fromPrisma(updated);
     } catch (error) {
-      this.rethrowUniqueConflict(error);
+      this.rethrowUniqueConflict(error, BLOG_CATEGORY_SLUG_CONFLICT);
     }
   }
 
@@ -645,9 +660,9 @@ export class BlogService {
     await this.revalidation.revalidate({ tags: [...tags], paths: [...paths] });
   }
 
-  private rethrowUniqueConflict(error: unknown): never {
+  private rethrowUniqueConflict(error: unknown, code: BlogSlugConflictCode): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      throw new ConflictException('Slug is already taken');
+      throw new ConflictException(slugTaken(code));
     }
     throw error;
   }

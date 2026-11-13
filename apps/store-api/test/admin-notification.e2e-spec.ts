@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, NotFoundException, ValidationPipe } from '@nestjs/common';
+import { INestApplication, NotFoundException } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -17,6 +17,7 @@ import {
 } from '../src/notification/telegram/telegram-channel.state';
 import { TELEGRAM_TEST_MESSAGE } from '../src/notification/telegram/telegram-admin.service';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * /api/admin/notifications/telegram/* over HTTP (TASK-674, TASK-675).
@@ -128,14 +129,7 @@ describe('Admin notifications (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get<JwtService>(JwtService);
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     app.setGlobalPrefix('api', { exclude: ['health'] });
     await app.init();
   });

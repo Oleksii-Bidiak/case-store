@@ -1,6 +1,11 @@
 import { RETURN_ERROR_CODE, returnRefusalOf } from "@/entities/return";
 import { dict } from "@/shared/config";
-import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { apiErrorStatus } from "@/shared/lib";
+import {
+  mapServerFieldErrors,
+  type ServerFieldMap,
+  type ServerFieldMessages,
+} from "@/shared/lib/form-errors";
 
 const d = dict.returns;
 
@@ -30,16 +35,24 @@ const STALE: RepairErrorOutcome = {
   refetch: true,
 };
 
-/** A DTO refusal names its field (TASK-956) — the free-text ones here. */
-const DTO_FIELDS = [
-  {
-    pattern: /\bdestination\b/,
-    field: "destination",
-    message: d.repairServiceTooLong,
-  },
-  { pattern: /\bttn\b/, field: "ttn", message: d.repairTtnTooLong },
-  { pattern: /\bnote\b/, field: "note", message: d.repairNoteTooLong },
-] as const;
+/**
+ * `AddRepairStepDto` path → form field (TASK-1984 Rule 6b): the server names
+ * the field in `fieldErrors` — it used to be found by a regex over the English
+ * message. The free-text fields can only fail on length, hence their wording.
+ */
+const DTO_FIELD_MAP: ServerFieldMap = {
+  destination: "destination",
+  ttn: "ttn",
+  note: "note",
+  result: "result",
+};
+const DTO_FIELD_MESSAGES: ServerFieldMessages = {
+  destination: d.repairServiceTooLong,
+  ttn: d.repairTtnTooLong,
+  note: d.repairNoteTooLong,
+  result: d.repairResultRequired,
+};
+const DTO_FIELD_ORDER = ["destination", "ttn", "result", "note"] as const;
 
 /**
  * Map a failed `POST /admin/returns/:id/repair-steps` to what the operator
@@ -76,10 +89,15 @@ export function repairErrorOf(error: unknown): RepairErrorOutcome {
   }
 
   if (status === 400) {
-    const message = apiErrorMessage(error) ?? "";
-    const named = DTO_FIELDS.find(({ pattern }) => pattern.test(message));
-    if (named) {
-      return { kind: "field", field: named.field, message: named.message };
+    const fields = mapServerFieldErrors(
+      error,
+      DTO_FIELD_MAP,
+      DTO_FIELD_MESSAGES,
+    );
+    // The first refused field in form order is the one focused and shown.
+    const field = DTO_FIELD_ORDER.find((name) => fields[name]);
+    if (field) {
+      return { kind: "field", field, message: fields[field] as string };
     }
   }
 

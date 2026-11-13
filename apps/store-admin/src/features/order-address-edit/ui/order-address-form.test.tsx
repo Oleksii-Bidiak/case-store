@@ -573,6 +573,115 @@ describe("OrderAddressForm — phone validation (TASK-577)", () => {
   });
 });
 
+/** TASK-1984 — the field standard: DTO limits, the shared phone input, 400 → field. */
+describe("OrderAddressForm — one rule per field, both ends (TASK-1984)", () => {
+  const WRITER = { auth: { permissions: ["orders:read", "orders:write"] } };
+
+  beforeEach(() => jest.mocked(sonnerToast.error).mockClear());
+
+  it("caps each field at AddressDto's limit", async () => {
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+
+    expect(
+      screen.getByLabelText(dict.orderCreate.addressFirstName),
+    ).toHaveAttribute("maxLength", "100");
+    expect(
+      screen.getByLabelText(dict.orderCreate.addressPhone),
+    ).toHaveAttribute("maxLength", "30");
+    expect(
+      screen.getByLabelText(dict.orderCreate.addressAddress1),
+    ).toHaveAttribute("maxLength", "500");
+    expect(
+      screen.getByLabelText(dict.orderCreate.addressPostalCode),
+    ).toHaveAttribute("maxLength", "20");
+  });
+
+  it("drops letters from the phone as typed, keeping a foreign number", async () => {
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    const phone = screen.getByLabelText(dict.orderCreate.addressPhone);
+    await userEvent.clear(phone);
+    await userEvent.type(phone, "+48 123 456 789x");
+
+    expect(phone).toHaveValue("+48 123 456 789");
+  });
+
+  it("puts a server 400 under the field it names, with no toast", async () => {
+    server.use(
+      http.patch("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "Bad Request",
+            message: "shippingAddress.lastName must be shorter",
+            fieldErrors: [
+              { field: "shippingAddress.lastName", constraint: "maxLength" },
+            ],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+    const lastName = screen.getByLabelText(dict.orderCreate.addressLastName);
+    await waitFor(() =>
+      expect(lastName).toHaveAttribute("aria-invalid", "true"),
+    );
+    expect(lastName).toHaveAttribute(
+      "aria-describedby",
+      "order-address-lastName-error",
+    );
+    expect(
+      document.getElementById("order-address-lastName-error"),
+    ).toHaveTextContent(dict.forms.tooLong);
+    expect(sonnerToast.error).not.toHaveBeenCalled();
+  });
+
+  it("still toasts a 400 that names no field it shows", async () => {
+    server.use(
+      http.patch("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json(
+          { statusCode: 400, error: "Bad Request", message: "nope" },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+    await waitFor(() => expect(sonnerToast.error).toHaveBeenCalledTimes(1));
+  });
+});
+
 /**
  * TASK-1973 / 1806 / 1020 / AD-ORD-86 / AD-ORD-63 — the control edits the
  * delivery and the contacts, and says so.

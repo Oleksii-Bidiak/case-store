@@ -332,4 +332,29 @@ describe("LoginForm", () => {
       screen.getByLabelText(dict.auth.login.password),
     ).toHaveAccessibleDescription(dict.auth.login.validationPassword);
   });
+
+  // TASK-1984 (Rule 5c): the one email rule — trimmed, capped at 254, as LoginDto.
+  it("trims the address and caps it at 254 characters", async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post("*/api/auth/login", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({ data: { accessToken: "t" } });
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<LoginForm />);
+
+    const email = screen.getByLabelText(dict.auth.login.email);
+    expect(email).toHaveAttribute("maxLength", "254");
+    await user.type(email, " user@test.ua  ");
+    await user.type(screen.getByLabelText(dict.auth.login.password), "secret");
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.login.submit }),
+    );
+
+    await waitFor(() =>
+      expect(bodies).toEqual([{ email: "user@test.ua", password: "secret" }]),
+    );
+  });
 });

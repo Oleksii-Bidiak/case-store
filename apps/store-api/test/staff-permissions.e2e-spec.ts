@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -11,6 +11,7 @@ import { AuthService } from '../src/auth/auth.service';
 import { UserRepository } from '../src/user/user.repository';
 import { StaffRepository } from '../src/staff/staff.repository';
 import { PrismaService } from '../src/prisma';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * Per-person permissions and templates over HTTP (TASK-477, plan 181).
@@ -372,14 +373,7 @@ describe('Staff permissions & templates (e2e)', () => {
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get<JwtService>(JwtService);
 
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     app.setGlobalPrefix('api', { exclude: ['health'] });
     await app.init();
   });

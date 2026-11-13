@@ -1,7 +1,7 @@
 import { IsString, IsOptional, IsEmail, IsUrl, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { normalizeEmail } from '../../common/validators';
+import { IsInternationalPhone, normalizeEmail } from '../../common/validators';
 
 /**
  * DTO for updating the singleton site-contact settings (admin-only).
@@ -16,15 +16,23 @@ export class UpdateSiteContactDto {
   @IsOptional()
   @Transform(normalizeEmail) // TASK-772
   @IsEmail({}, { message: 'Email must be a valid email address' })
-  @MaxLength(255)
+  // TASK-1984 (forms Rule 5c): 254 like every other email the API takes — the
+  // admin form's `emailField` has the same cap.
+  @MaxLength(254)
   email?: string;
 
   @ApiPropertyOptional({
-    description: 'Support phone number (free-form)',
+    description:
+      'Support phone number: 9 to 15 digits with the usual separators. Stored as typed ' +
+      '(no normalisation), so a 0 800 line is shown and dialled as written.',
     example: '+380 44 000 0000',
   })
   @IsOptional()
   @IsString()
+  // TASK-1984 (forms Rule 5a): the shop's own number may be a 0 800 or a foreign
+  // line, so the country-agnostic rule — and deliberately NO `normalizePhone`
+  // transform: the storefront shows the number exactly as the owner typed it.
+  @IsInternationalPhone()
   @MaxLength(50)
   phone?: string;
 

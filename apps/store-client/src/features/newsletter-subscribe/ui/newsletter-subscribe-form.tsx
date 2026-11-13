@@ -1,16 +1,24 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNewsletterControllerSubscribe } from "@/entities/newsletter";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { trackEvent } from "@/shared/lib";
+import { EMAIL_MAX_LENGTH } from "@/shared/lib/form-fields";
+import {
+  applyServerFieldErrors,
+  readFieldErrors,
+} from "@/shared/lib/form-errors";
 import {
   newsletterSchema,
   type NewsletterFormValues,
 } from "../model/newsletter-schema";
+
+/** `SubscribeDto` path → form field; `source` is the host's, not typed. */
+const NEWSLETTER_FIELD_MAP = { email: "email" };
 
 interface NewsletterSubscribeFormProps {
   /** Attribution tag persisted with the subscription (e.g. "home", "promo"). */
@@ -38,13 +46,17 @@ export function NewsletterSubscribeForm({
   buttonClassName,
 }: NewsletterSubscribeFormProps) {
   const inputId = useId();
+  const errorId = `${inputId}-error`;
   const statusId = useId();
   const subscribe = useNewsletterControllerSubscribe();
+  // True when the last refusal now lives under the input (forms Rule 6c).
+  const [onField, setOnField] = useState(false);
 
   const {
     register,
     handleSubmit,
     reset,
+    setError,
     formState: { errors },
   } = useForm<NewsletterFormValues>({
     resolver: zodResolver(newsletterSchema),
@@ -54,6 +66,7 @@ export function NewsletterSubscribeForm({
   const succeeded = subscribe.isSuccess;
 
   const onSubmit = (values: NewsletterFormValues) => {
+    setOnField(false);
     subscribe.mutate(
       { data: { email: values.email, source } },
       {
@@ -63,15 +76,34 @@ export function NewsletterSubscribeForm({
           // attribution source when present.
           trackEvent("newsletter_subscribe", source ? { source } : undefined);
         },
+        // TASK-1984 (Rule 6b): a 400 about the email goes under the input with
+        // the form's own sentence. A refusal about the host's `source` tag is
+        // not the subscriber's to fix — it stays the generic line.
+        onError: (error) => {
+          // The sentence follows the constraint, as the schema's does: a
+          // too-long address is «задовге», not «некоректна пошта».
+          const tooLong = readFieldErrors(error).some(
+            (entry) =>
+              entry.field === "email" && entry.constraint === "maxLength",
+          );
+          const { mapped, unmapped } = applyServerFieldErrors(
+            error,
+            setError,
+            NEWSLETTER_FIELD_MAP,
+            tooLong ? {} : { email: dict.newsletterForm.invalidEmail },
+          );
+          setOnField(mapped.length > 0 && unmapped.length === 0);
+        },
       },
     );
   };
 
-  // Prefer the inline zod error; otherwise map the mutation failure (429 → a
-  // dedicated rate-limit message, anything else → the generic error).
-  const errorMessage = errors.email
-    ? errors.email.message
-    : subscribe.isError
+  // The field's own error (zod or a mapped 400) lives under the input; the
+  // request outcome (429 → its own copy, anything else → the generic error, or
+  // the success line) lives in the status region below it.
+  const fieldError = errors.email?.message;
+  const requestError =
+    !fieldError && subscribe.isError && !onField
       ? subscribe.error?.response?.status === 429
         ? dict.newsletterForm.rateLimited
         : dict.newsletterForm.error
@@ -96,9 +128,10 @@ export function NewsletterSubscribeForm({
           id={inputId}
           type="email"
           autoComplete="email"
+          maxLength={EMAIL_MAX_LENGTH}
           placeholder={dict.newsletterForm.placeholder}
-          aria-invalid={errorMessage ? true : undefined}
-          aria-describedby={statusId}
+          aria-invalid={fieldError ? true : undefined}
+          aria-describedby={fieldError ? `${errorId} ${statusId}` : statusId}
           {...register("email")}
           className={cn(
             "h-12 w-full min-w-0 rounded-xl border border-border bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring sm:flex-1",
@@ -120,17 +153,27 @@ export function NewsletterSubscribeForm({
         </button>
       </div>
 
-      {/* Single polite live region: announces success or surfaces an error. */}
+      {/* The field error under the input (forms Rule 6a). */}
+      {fieldError && (
+        <p id={errorId} role="alert" className="text-xs text-destructive">
+          {fieldError}
+        </p>
+      )}
+
+      {/* Polite live region for the request: success or a field-less error.
+          It keeps its line reserved while empty, and steps aside (sr-only)
+          while the field error holds that line. */}
       <p
         id={statusId}
-        role={errorMessage ? "alert" : "status"}
+        role={requestError ? "alert" : "status"}
         aria-live="polite"
         className={cn(
-          "min-h-[1.25rem] text-xs",
-          errorMessage ? "text-destructive" : "text-muted-foreground",
+          "text-xs",
+          fieldError ? "sr-only" : "min-h-[1.25rem]",
+          requestError ? "text-destructive" : "text-muted-foreground",
         )}
       >
-        {errorMessage ?? (succeeded ? dict.newsletterForm.success : "")}
+        {requestError ?? (succeeded ? dict.newsletterForm.success : "")}
       </p>
     </form>
   );

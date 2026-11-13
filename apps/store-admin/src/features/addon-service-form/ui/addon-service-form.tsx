@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import {
+  Controller,
+  useForm,
+  useWatch,
+  type UseFormSetError,
+} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Button,
@@ -20,13 +25,17 @@ import { formatCurrency } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
 import {
+  ADDON_DESCRIPTION_DTO_MAX,
   ADDON_DESCRIPTION_MAX,
+  ADDON_NAME_MAX,
   addonServiceSchemaFor,
   type AddonServiceFormInput,
   type AddonServiceFormValues,
 } from "../model/addon-service-schema";
 
 const f = dict.addonServiceForm;
+
+export type AddonServiceFormSetError = UseFormSetError<AddonServiceFormInput>;
 
 interface AddonServiceFormProps {
   /**
@@ -36,7 +45,12 @@ interface AddonServiceFormProps {
    */
   id?: string;
   defaultValues?: Partial<AddonServiceFormInput>;
-  onSubmit: (values: AddonServiceFormValues) => void;
+  /** `setError` puts a server refusal under its field (TASK-1984) — hand it
+   *  to `placeAddonServiceSaveError`. */
+  onSubmit: (
+    values: AddonServiceFormValues,
+    setError: AddonServiceFormSetError,
+  ) => void;
   isPending: boolean;
   submitLabel?: string;
   /** «Скасувати» (or «Закрити» when read-only). */
@@ -133,6 +147,7 @@ function EditableAddonServiceForm({
     control,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, submitCount },
   } = useForm<AddonServiceFormInput, unknown, AddonServiceFormValues>({
     // Held to the SAVED description: an older, longer one still saves as is.
@@ -159,7 +174,7 @@ function EditableAddonServiceForm({
 
   return (
     <form
-      onSubmit={handleSubmit(onSubmit)}
+      onSubmit={handleSubmit((values) => onSubmit(values, setError))}
       className="flex flex-col gap-4"
       noValidate
     >
@@ -175,6 +190,7 @@ function EditableAddonServiceForm({
           <Input
             id="addon-name"
             aria-required="true"
+            maxLength={ADDON_NAME_MAX}
             placeholder={f.namePlaceholder}
             aria-invalid={errors.name ? true : undefined}
             aria-describedby={describedBy(errors.name && errorId("name"))}
@@ -188,6 +204,7 @@ function EditableAddonServiceForm({
           <Textarea
             id="addon-description"
             rows={2}
+            maxLength={ADDON_DESCRIPTION_DTO_MAX}
             placeholder={f.descriptionPlaceholder}
             aria-invalid={errors.description ? true : undefined}
             aria-describedby={describedBy(

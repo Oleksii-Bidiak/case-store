@@ -850,6 +850,11 @@ describe('DiscountService.update — field by field (TASK-823)', () => {
     await expect(service.update('d1', { code: 'TAKEN' })).rejects.toThrow(
       'A discount with code "TAKEN" already exists',
     );
+    // TASK-1984: the code the admin form puts under the code field.
+    await expect(service.update('d1', { code: 'TAKEN' })).rejects.toMatchObject({
+      status: 400,
+      response: { error: 'DISCOUNT_CODE_TAKEN' },
+    });
     expect(repositoryMock.findByCode).toHaveBeenCalledWith('TAKEN');
     expect(repositoryMock.update).not.toHaveBeenCalled();
   });

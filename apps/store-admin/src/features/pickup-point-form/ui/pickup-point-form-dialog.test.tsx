@@ -187,3 +187,79 @@ describe("PickupPointFormDialog (TASK-645)", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });
+
+describe("PickupPointFormDialog — field standard (TASK-1984)", () => {
+  const { toast } = jest.requireMock("@/shared/ui/toast") as {
+    toast: { error: jest.Mock };
+  };
+  beforeEach(() => toast.error.mockClear());
+
+  it("refuses a stored phone with letters under the field, sending nothing", async () => {
+    let puts = 0;
+    server.use(
+      http.put("*/api/admin/pickup-points/:id", () => {
+        puts += 1;
+        return HttpResponse.json({ data: OBOLON });
+      }),
+    );
+    renderDialog({ ...OBOLON, phone: "222фіфів" });
+    await waitFor(() => expect(field(t.phone)).toHaveValue("222фіфів"));
+
+    await userEvent.click(screen.getByRole("button", { name: t.submit }));
+
+    expect(
+      await screen.findByText(dict.forms.phoneInvalid),
+    ).toBeInTheDocument();
+    expect(field(t.phone)).toHaveAttribute("aria-invalid", "true");
+    expect(puts).toBe(0);
+  });
+
+  it("keeps a 0 800 line as typed and caps the inputs at the DTO lengths", async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.put("*/api/admin/pickup-points/:id", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({ data: OBOLON });
+      }),
+    );
+    renderDialog(OBOLON);
+    await waitFor(() => expect(field(t.name)).toHaveValue(OBOLON.name));
+    expect(field(t.phone)).toHaveAttribute("maxlength", "50");
+    expect(field(t.address)).toHaveAttribute("maxlength", "500");
+
+    await userEvent.clear(field(t.phone));
+    await userEvent.type(field(t.phone), "0 800 123 456");
+    await userEvent.click(screen.getByRole("button", { name: t.submit }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ phone: "0 800 123 456" });
+  });
+
+  it("puts a server 400 under the field it names, with no toast", async () => {
+    server.use(
+      http.put("*/api/admin/pickup-points/:id", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: "A valid phone number is required",
+            fieldErrors: [
+              { field: "phone", constraint: "isInternationalPhone" },
+            ],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderDialog(OBOLON);
+    await waitFor(() => expect(field(t.name)).toHaveValue(OBOLON.name));
+
+    await userEvent.click(screen.getByRole("button", { name: t.submit }));
+
+    expect(
+      await screen.findByText(dict.forms.phoneInvalid),
+    ).toBeInTheDocument();
+    expect(field(t.phone)).toHaveAttribute("aria-invalid", "true");
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+});

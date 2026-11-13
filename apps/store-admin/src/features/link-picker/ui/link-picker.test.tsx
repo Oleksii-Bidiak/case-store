@@ -189,6 +189,22 @@ describe("LinkPicker", () => {
     expect(onChange).toHaveBeenLastCalledWith("https://partner.example/sale");
   });
 
+  it("puts the host's maxLength on the «Своє» address (forms Rule 5d)", async () => {
+    renderWithProviders(
+      <>
+        <Label htmlFor="cta">Куди веде кнопка</Label>
+        <LinkPicker id="cta" value="" onChange={() => {}} maxLength={2048} />
+      </>,
+    );
+
+    await userEvent.click(trigger());
+    await userEvent.click(screen.getByRole("tab", { name: l.tabCustom }));
+
+    expect(
+      screen.getByRole("textbox", { name: l.customLabel }),
+    ).toHaveAttribute("maxLength", "2048");
+  });
+
   it("clears the link", async () => {
     const onChange = jest.fn();
     renderWithProviders(<Host initial="/promo" onChange={onChange} />);

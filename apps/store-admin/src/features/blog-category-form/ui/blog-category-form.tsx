@@ -7,17 +7,26 @@ import { Button, FieldError, Input, Label } from "@/shared/ui";
 import { slugify } from "@/shared/lib/slug";
 import { dict } from "@/shared/config";
 import {
+  BLOG_CATEGORY_LIMITS,
   blogCategorySchema,
   type BlogCategoryFormInput,
   type BlogCategoryFormValues,
 } from "../model/blog-category-schema";
+import type { BlogCategoryFormSetError } from "../model/save-error";
 
 const f = dict.blogCategoryForm;
 
 interface BlogCategoryFormProps {
   id?: string;
   defaultValues?: Partial<BlogCategoryFormInput>;
-  onSubmit: (values: BlogCategoryFormValues) => void;
+  /**
+   * The dialog's save. `setError` is how a server refusal lands under its
+   * field (TASK-1984, Rule 6b) — hand it to `placeBlogCategorySaveError`.
+   */
+  onSubmit: (
+    values: BlogCategoryFormValues,
+    setError: BlogCategoryFormSetError,
+  ) => void;
   /** «Скасувати» — shown when the host (a dialog) can be closed. */
   onCancel?: () => void;
   isPending: boolean;
@@ -50,6 +59,7 @@ export function BlogCategoryForm({
     control,
     handleSubmit,
     reset,
+    setError,
     formState: { errors },
   } = useForm<BlogCategoryFormInput, unknown, BlogCategoryFormValues>({
     resolver: zodResolver(blogCategorySchema),
@@ -69,7 +79,7 @@ export function BlogCategoryForm({
 
   return (
     <form
-      onSubmit={handleSubmit(onSubmit)}
+      onSubmit={handleSubmit((values) => onSubmit(values, setError))}
       className="flex flex-col gap-4"
       noValidate
     >
@@ -80,6 +90,7 @@ export function BlogCategoryForm({
         <Input
           id="blog-category-name"
           aria-required="true"
+          maxLength={BLOG_CATEGORY_LIMITS.name}
           aria-invalid={errors.name ? true : undefined}
           aria-describedby={errors.name ? errorId("name") : undefined}
           {...register("name")}
@@ -100,6 +111,7 @@ export function BlogCategoryForm({
             id="blog-category-slug"
             placeholder={f.slugPlaceholder}
             className="rounded-l-none font-mono"
+            maxLength={BLOG_CATEGORY_LIMITS.slug}
             aria-invalid={errors.slug ? true : undefined}
             aria-describedby={[
               "blog-category-slug-hint",

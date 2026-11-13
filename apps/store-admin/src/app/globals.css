@@ -283,6 +283,52 @@
 }
 
 /* ─────────────────────────────────────────────
+   Browser autofill keeps the design tokens (TASK-1984, forms convention Rule 7)
+
+   Chrome / Safari paint an autofilled field with their own pale-blue or yellow
+   background and black text, which ignores both themes. The background cannot
+   be overridden directly, so an opaque inset box-shadow covers it with the
+   colour the field has anyway, and the 9999s background transition keeps the
+   browser's own fill from flashing in first.
+
+   The fill is what `shared/ui/input.tsx` shows: `bg-transparent` over the card
+   the form sits on (`--color-card`), and `dark:bg-input/30` in the dark theme
+   (the admin follows the OS preference only, as its token blocks do).
+
+   UNLAYERED on purpose: `<Input>`'s `shadow-xs` and focus / aria-invalid rings
+   are utilities, which beat anything in `@layer base`. The fill is appended to
+   Tailwind's own shadow stack, so the focus and error rings still draw. Only
+   `-webkit-autofill` is listed: a browser that does not know one selector in a
+   list drops the whole rule, and every engine we support knows this one. Do not
+   restyle autofill per component.
+   ───────────────────────────────────────────── */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  --autofill-bg: var(--color-card);
+  @variant dark {
+    --autofill-bg: color-mix(in oklab, var(--color-input) 30%, var(--color-card));
+  }
+
+  -webkit-text-fill-color: var(--color-foreground);
+  caret-color: var(--color-foreground);
+  box-shadow:
+    var(--tw-inset-shadow, 0 0 transparent),
+    var(--tw-inset-ring-shadow, 0 0 transparent),
+    var(--tw-ring-offset-shadow, 0 0 transparent),
+    var(--tw-ring-shadow, 0 0 transparent),
+    var(--tw-shadow, 0 0 transparent),
+    inset 0 0 0 1000px var(--autofill-bg);
+  transition: background-color 9999s ease-out 0s;
+}
+
+/* ─────────────────────────────────────────────
    Scrollbars — standardized to match the storefront and driven by design
    tokens. Thin + rounded, transparent track, branded thumb that darkens on
    hover. `scrollbar-color`/`scrollbar-width` are inherited, so setting them on

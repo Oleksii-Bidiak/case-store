@@ -607,6 +607,18 @@ describe('BlogService', () => {
           authorName: 'A',
         }),
       ).rejects.toThrow(ConflictException);
+      // TASK-1984: the code the admin form puts under the slug field.
+      await expect(
+        service.create({
+          title: 'iPhone 16 проти iPhone 15',
+          excerpt: 'x',
+          content: '<p>x</p>',
+          categoryId: 'cat-1',
+          authorName: 'A',
+        }),
+      ).rejects.toMatchObject({
+        response: { error: 'BLOG_POST_SLUG_CONFLICT', message: 'Slug is already taken' },
+      });
     });
   });
 
@@ -867,6 +879,10 @@ describe('BlogService', () => {
       await expect(service.createCategory({ name: 'Dup', slug: 'dup' })).rejects.toThrow(
         ConflictException,
       );
+      // TASK-1984: the race answers the same code as the pre-check.
+      await expect(service.createCategory({ name: 'Dup', slug: 'dup' })).rejects.toMatchObject({
+        response: { error: 'BLOG_CATEGORY_SLUG_CONFLICT' },
+      });
     });
   });
 

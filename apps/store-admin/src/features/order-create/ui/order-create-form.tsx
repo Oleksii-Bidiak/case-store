@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useRef,
   useState,
   type ComponentProps,
   type FormEvent,
@@ -9,6 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Controller,
   useForm,
   useWatch,
   type FieldErrors,
@@ -25,6 +27,7 @@ import {
 } from "@/entities/order";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import {
+  ADDRESS_LIMITS,
   NpCityField,
   NpWarehouseField,
   clearNpRefs,
@@ -46,9 +49,13 @@ import {
   TabsTrigger,
   Textarea,
 } from "@/shared/ui";
+import { PhoneInput } from "@/shared/ui/phone-input";
 import { dict } from "@/shared/config";
-import { cn, countLabel, formatCurrency } from "@/shared/lib";
+import { apiErrorStatus, cn, countLabel, formatCurrency } from "@/shared/lib";
+import { applyServerFieldErrors } from "@/shared/lib/form-errors";
+import { EMAIL_MAX_LENGTH } from "@/shared/lib/form-fields";
 import {
+  CONTACT_PHONE_MAX_LENGTH,
   CREATE_ORDER_DEFAULTS,
   CUSTOMER_MODE,
   INTERNAL_NOTES_MAX_LENGTH,
@@ -62,6 +69,8 @@ import {
   type PickedCustomer,
 } from "../model/create-order-schema";
 import {
+  CREATE_ORDER_FIELD_MESSAGES,
+  createOrderFieldMap,
   readCreateOrderRefusal,
   type CreateOrderRefusal,
 } from "../model/create-order-error";
@@ -91,8 +100,22 @@ const METHOD_LABELS = dict.orders.deliveryMethodLabels as Record<
   string
 >;
 
-/** Recipient fields the «той самий клієнт» checkbox hides and fills. */
+/** Recipient fields the «той самий клієнт» checkbox hides. */
 const RECIPIENT_FIELDS = ["firstName", "lastName", "phone"] as const;
+
+/**
+ * Client fields the customer picker fills (TASK-2398). The picker remembers
+ * what it wrote, so a later pick (or «Змінити клієнта») replaces only what is
+ * still its own — an edit by the operator is never overwritten, and a previous
+ * customer's details never linger silently.
+ */
+const PREFILL_FIELDS = [
+  "contactFirstName",
+  "contactLastName",
+  "contactPhone",
+  "contactEmail",
+] as const;
+type PrefillField = (typeof PREFILL_FIELDS)[number];
 
 /** Why card / instalments are off for this delivery method (TASK-1021). */
 const PAYMENT_REASON_ID = "order-create-payment-reason";
@@ -110,7 +133,8 @@ type ErrorLink = { id: string; label: string };
 const CLIENT_FIELDS: ReadonlyArray<[keyof CreateOrderFormValues, string]> = [
   ["userId", t.customerHeading],
   ["contactPhone", t.contactPhone],
-  ["contactName", t.contactName],
+  ["contactFirstName", t.contactName],
+  ["contactLastName", t.contactLastName],
   ["contactEmail", t.contactEmail],
 ];
 const REST_FIELDS: ReadonlyArray<[keyof CreateOrderFormValues, string]> = [
@@ -136,26 +160,18 @@ const anchorOf = (name: keyof CreateOrderFormValues): string =>
 function errorLinksOf(
   errors: FieldErrors<CreateOrderFormValues>,
   itemsMissing: boolean,
-  sameRecipient: boolean,
 ): ErrorLink[] {
-  // While the recipient IS the client, its fields are hidden and their errors
-  // are the client's — listed once, under the client.
-  const hidden: readonly string[] = sameRecipient ? RECIPIENT_FIELDS : [];
+  // The recipient fields carry no error while they are hidden: the schema does
+  // not judge them then (TASK-2398), so nothing here has to filter them out.
   const links = (fields: typeof CLIENT_FIELDS) =>
     fields
-      .filter(([name]) => errors[name] && !hidden.includes(name))
+      .filter(([name]) => errors[name])
       .map(([name, label]) => ({ id: anchorOf(name), label }));
   return [
     ...links(CLIENT_FIELDS),
     ...(itemsMissing ? [{ id: ITEMS_ANCHOR, label: t.itemsHeading }] : []),
     ...links(REST_FIELDS),
   ];
-}
-
-/** First word → first name, the rest → last name: «Оксана Шевченко». */
-function splitName(full: string): { firstName: string; lastName: string } {
-  const [first = "", ...rest] = full.trim().split(/\s+/);
-  return { firstName: first, lastName: rest.join(" ") };
 }
 
 /**
@@ -167,11 +183,11 @@ function splitName(full: string): { firstName: string; lastName: string } {
  * field), what the server refused, the totals, a checklist, and the two
  * buttons. One column on a phone.
  *
- * «Одержувач — той самий клієнт» is on by default: the recipient's name and
- * phone are then copied from the client at submit time — split from the
- * guest's name, or taken from the picked account. If that copy would leave a
- * required recipient field empty (a one-word name, an account with no phone),
- * the checkbox turns itself off so the fields and their errors are on screen.
+ * «Одержувач — той самий клієнт» is on by default (TASK-2398): the recipient
+ * fields are then neither rendered nor validated, and the client block — its
+ * own «Імʼя», «Прізвище» and «Телефон», in both modes — is sent as the
+ * recipient. A missing surname is therefore an error under the client's
+ * «Прізвище», and the checkbox is the operator's alone: nothing unticks it.
  *
  * This is a CREATE form, so forms.md Rule 2 does not bite: nothing async seeds
  * it. The picked lines are local state — a list with its own add/remove/qty.
@@ -184,8 +200,9 @@ export function OrderCreateForm() {
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [linesTouched, setLinesTouched] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [sameRecipient, setSameRecipient] = useState(true);
   const [refusal, setRefusal] = useState<CreateOrderRefusal | null>(null);
+  // What the customer picker last wrote into each client field (TASK-2398).
+  const prefilled = useRef<Partial<Record<PrefillField, string>>>({});
   // The chosen account's display data (TASK-426). Lives HERE because the picker
   // unmounts every time the operator switches to the «за телефоном» tab.
   const [customer, setCustomer] = useState<PickedCustomer | null>(null);
@@ -205,6 +222,7 @@ export function OrderCreateForm() {
   // reads most of the form, so the whole value set is watched once here.
   const values = useWatch({ control: form.control }) as CreateOrderFormValues;
   const customerMode = values.customerMode;
+  const sameRecipient = values.sameRecipient;
 
   // TASK-1973: what the shop offers right now — the same public read the
   // checkout uses: enabled methods (PICKUP only with an active point), the
@@ -258,49 +276,53 @@ export function OrderCreateForm() {
   };
 
   /**
-   * Record the picked account, and fill the recipient block from it — only
-   * EMPTY fields: "send it to my sister" is a normal instruction.
+   * Write the picked account's details into the client block (TASK-2398) — a
+   * field only while it is EMPTY or still holds what the previous pick wrote;
+   * whatever the operator typed stays. `null` (the customer cleared) takes the
+   * previous pick's values back out the same way.
    */
+  const prefillClient = (picked: PickedCustomer | null) => {
+    const next: Record<PrefillField, string> = {
+      contactFirstName: picked?.firstName ?? "",
+      contactLastName: picked?.lastName ?? "",
+      contactPhone: picked?.phone ?? "",
+      contactEmail: picked?.email ?? "",
+    };
+    const written: Partial<Record<PrefillField, string>> = {};
+    for (const field of PREFILL_FIELDS) {
+      const current = form.getValues(field);
+      const ours = prefilled.current[field];
+      if (current !== "" && current !== ours) continue; // the operator's
+      if (current !== next[field]) {
+        // Rule 4a: a value set from code re-validates — once there was a
+        // submit, so nothing is said before it.
+        form.setValue(field, next[field], {
+          shouldDirty: true,
+          shouldValidate: form.formState.isSubmitted,
+        });
+      }
+      if (next[field] !== "") written[field] = next[field];
+    }
+    prefilled.current = written;
+  };
+
   const selectCustomer = (picked: PickedCustomer) => {
     setCustomer(picked);
     form.setValue("userId", picked.id, { shouldValidate: true });
-
-    const prefill = (
-      field: "firstName" | "lastName" | "phone",
-      value: string,
-    ) => {
-      if (value !== "" && form.getValues(field) === "") {
-        form.setValue(field, value);
-      }
-    };
-
-    prefill("firstName", picked.firstName);
-    prefill("lastName", picked.lastName);
-    prefill("phone", picked.phone);
+    prefillClient(picked);
   };
 
   const clearCustomer = () => {
     setCustomer(null);
     form.setValue("userId", "");
+    prefillClient(null);
   };
 
-  /** «Той самий клієнт»: copy the client into the recipient before validating. */
-  const copyRecipientFromClient = () => {
-    const current = form.getValues();
-    const source =
-      current.customerMode === CUSTOMER_MODE.ACCOUNT
-        ? {
-            firstName: customer?.firstName ?? "",
-            lastName: customer?.lastName ?? "",
-            phone: customer?.phone ?? "",
-          }
-        : {
-            ...splitName(current.contactName),
-            phone: current.contactPhone,
-          };
-    for (const field of RECIPIENT_FIELDS) {
-      form.setValue(field, source[field]);
-    }
+  const toggleSameRecipient = (checked: boolean) => {
+    form.setValue("sameRecipient", checked, { shouldDirty: true });
+    // Which fields are judged just changed: after a submit, re-judge them all
+    // so an error of a field that is no longer asked for does not linger.
+    if (form.formState.isSubmitted) void form.trigger();
   };
 
   const onValid = (formValues: CreateOrderFormValues) => {
@@ -325,23 +347,34 @@ export function OrderCreateForm() {
           setCreated({
             id: response.data.id,
             accessUrl: response.meta.accessUrl,
-            emailed: formValues.contactEmail.trim() !== "",
+            // Only a walk-in's email is sent (the picker may have filled the
+            // field from an account; that order goes to the account instead).
+            emailed:
+              formValues.customerMode === CUSTOMER_MODE.GUEST &&
+              formValues.contactEmail.trim() !== "",
           });
         },
         onError: (error) => {
-          // TASK-957 / Н3: a 400 is placed where it can be fixed — under the
-          // line or the field it names; the box in «Підсумок» says what
-          // happened. The toast stays for the operator looking elsewhere.
-          const placed = readCreateOrderRefusal(error, lines);
-          if (placed) {
-            setRefusal(placed);
-            for (const [field, message] of Object.entries(placed.fields)) {
-              form.setError(field as "notes" | "internalNotes", {
-                type: "server",
-                message,
-              });
-            }
-            toast.error(placed.summary);
+          // TASK-957 / Н3, TASK-1984 Rule 6: a 400 is placed where it can be
+          // fixed — `fieldErrors` under the fields (the «Перевірте N полів»
+          // list then points at them), a refused line under that line. Only
+          // what nobody could place is said in the «Підсумок» box — once, so
+          // no toast on top of it.
+          const placed =
+            apiErrorStatus(error) === 400
+              ? applyServerFieldErrors(
+                  error,
+                  form.setError,
+                  createOrderFieldMap(
+                    formValues.sameRecipient,
+                    formValues.deliveryMethod,
+                  ),
+                  CREATE_ORDER_FIELD_MESSAGES,
+                )
+              : undefined;
+          const refusal = readCreateOrderRefusal(error, lines, placed);
+          if (refusal) {
+            setRefusal(refusal);
             return;
           }
           toast.error(t.failed);
@@ -350,28 +383,10 @@ export function OrderCreateForm() {
     );
   };
 
-  const onInvalid = (errors: FieldErrors<CreateOrderFormValues>) => {
-    // An error on a field the checkbox hides is an error nobody can see — but
-    // while the CLIENT is itself wrong, that error is the client's, already on
-    // screen, and the checkbox stays (Н2).
-    const clientInvalid =
-      form.getValues("customerMode") === CUSTOMER_MODE.ACCOUNT
-        ? Boolean(errors.userId)
-        : Boolean(errors.contactName || errors.contactPhone);
-    if (
-      sameRecipient &&
-      !clientInvalid &&
-      RECIPIENT_FIELDS.some((field) => errors[field])
-    ) {
-      setSameRecipient(false);
-    }
-  };
-
   const submit = (event: FormEvent<HTMLFormElement>) => {
     setSubmitted(true);
     setLinesTouched(true);
-    if (sameRecipient) copyRecipientFromClient();
-    return form.handleSubmit(onValid, onInvalid)(event);
+    return form.handleSubmit(onValid)(event);
   };
 
   if (created) {
@@ -385,9 +400,7 @@ export function OrderCreateForm() {
 
   const errors = form.formState.errors;
   const itemsMissing = linesTouched && lines.length === 0;
-  const errorLinks = submitted
-    ? errorLinksOf(errors, itemsMissing, sameRecipient)
-    : [];
+  const errorLinks = submitted ? errorLinksOf(errors, itemsMissing) : [];
 
   const quantity = lines.reduce((sum, line) => sum + line.quantity, 0);
   const goods =
@@ -397,9 +410,18 @@ export function OrderCreateForm() {
     ) / 100;
 
   const clientDone =
-    customerMode === CUSTOMER_MODE.ACCOUNT
+    (customerMode === CUSTOMER_MODE.ACCOUNT
       ? Boolean(values.userId)
-      : Boolean(values.contactName?.trim() && values.contactPhone?.trim());
+      : Boolean(
+          values.contactFirstName?.trim() && values.contactPhone?.trim(),
+        )) &&
+    // While the client is also the recipient, its surname and phone are due.
+    (!sameRecipient ||
+      Boolean(
+        values.contactFirstName?.trim() &&
+        values.contactLastName?.trim() &&
+        values.contactPhone?.trim(),
+      ));
   // TASK-1808: what the delivery adds, per method — Nova Poshta is paid at the
   // branch (B-13), an OTHER cost only once one has been agreed.
   const quote = operatorShippingCost(values, offer?.courier, goods);
@@ -438,12 +460,16 @@ export function OrderCreateForm() {
         <Section number={1} title={t.customerHeading} id={CUSTOMER_ANCHOR}>
           <Tabs
             value={customerMode}
-            onValueChange={(value) =>
+            onValueChange={(value) => {
               form.setValue(
                 "customerMode",
                 value as CreateOrderFormValues["customerMode"],
-              )
-            }
+              );
+              // Which client fields are judged just changed (Rule 4a): after
+              // a submit, re-judge, so the other mode's error («оберіть
+              // клієнта», the walk-in's email) does not linger in the list.
+              if (form.formState.isSubmitted) void form.trigger();
+            }}
           >
             <TabsList aria-label={t.modeAria}>
               <TabsTrigger value={CUSTOMER_MODE.GUEST}>
@@ -462,23 +488,40 @@ export function OrderCreateForm() {
               onClear={clearCustomer}
               error={errors.userId?.message}
             />
-          ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <PhoneField
-                name="contactPhone"
-                label={t.contactPhone}
-                form={form}
-              />
-              <Field name="contactName" label={t.contactName} form={form} />
+          ) : null}
+          {/* TASK-2398: «Імʼя» and «Прізвище» are two fields in both modes —
+              the client block is what «той самий клієнт» sends as the
+              recipient, so a missing surname is said HERE. */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <PhoneField
+              name="contactPhone"
+              label={t.contactPhone}
+              maxLength={CONTACT_PHONE_MAX_LENGTH}
+              form={form}
+            />
+            <Field
+              name="contactFirstName"
+              label={t.contactName}
+              maxLength={ADDRESS_LIMITS.name}
+              form={form}
+            />
+            <Field
+              name="contactLastName"
+              label={t.contactLastName}
+              maxLength={ADDRESS_LIMITS.name}
+              form={form}
+            />
+            {customerMode === CUSTOMER_MODE.GUEST ? (
               <Field
                 name="contactEmail"
                 label={t.contactEmail}
                 type="email"
                 hint={t.contactEmailOptional}
+                maxLength={EMAIL_MAX_LENGTH}
                 form={form}
               />
-            </div>
-          )}
+            ) : null}
+          </div>
         </Section>
 
         <Section
@@ -520,7 +563,9 @@ export function OrderCreateForm() {
             <Checkbox
               id="order-create-same-recipient"
               checked={sameRecipient}
-              onCheckedChange={(checked) => setSameRecipient(checked === true)}
+              onCheckedChange={(checked) =>
+                toggleSameRecipient(checked === true)
+              }
             />
             <Label htmlFor="order-create-same-recipient">
               {t.sameRecipient}
@@ -528,9 +573,24 @@ export function OrderCreateForm() {
           </div>
           {sameRecipient ? null : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <Field name="firstName" label={t.addressFirstName} form={form} />
-              <Field name="lastName" label={t.addressLastName} form={form} />
-              <PhoneField name="phone" label={t.addressPhone} form={form} />
+              <Field
+                name="firstName"
+                label={t.addressFirstName}
+                maxLength={ADDRESS_LIMITS.name}
+                form={form}
+              />
+              <Field
+                name="lastName"
+                label={t.addressLastName}
+                maxLength={ADDRESS_LIMITS.name}
+                form={form}
+              />
+              <PhoneField
+                name="phone"
+                label={t.addressPhone}
+                maxLength={ADDRESS_LIMITS.phone}
+                form={form}
+              />
             </div>
           )}
           {deliveryMethod === "NOVA_POSHTA" ? (
@@ -540,6 +600,7 @@ export function OrderCreateForm() {
               <Field
                 name="postalCode"
                 label={t.addressPostalCode}
+                maxLength={ADDRESS_LIMITS.postalCode}
                 form={form}
               />
             </div>
@@ -547,11 +608,22 @@ export function OrderCreateForm() {
             <PickupField form={form} points={pickupPoints} />
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field name="city" label={t.addressCity} form={form} />
-              <Field name="address1" label={t.addressAddress1} form={form} />
+              <Field
+                name="city"
+                label={t.addressCity}
+                maxLength={ADDRESS_LIMITS.city}
+                form={form}
+              />
+              <Field
+                name="address1"
+                label={t.addressAddress1}
+                maxLength={ADDRESS_LIMITS.address1}
+                form={form}
+              />
               <Field
                 name="postalCode"
                 label={t.addressPostalCode}
+                maxLength={ADDRESS_LIMITS.postalCode}
                 form={form}
               />
               {deliveryMethod === "OTHER" ? (
@@ -669,7 +741,7 @@ export function OrderCreateForm() {
           </FormAlert>
         ) : null}
 
-        {refusal ? (
+        {refusal?.summary ? (
           <FormAlert>
             <p className="font-semibold">{t.serverErrorTitle}</p>
             <p className="mt-1">{refusal.summary}</p>
@@ -908,26 +980,59 @@ function NoteField({
 }
 
 /**
- * One labelled phone field: a PLAIN input and the rule underneath (TASK-426).
- * No `+380` mask: the endpoints accept any country (TASK-338), and the mask
- * rewrote foreign numbers into a different Ukrainian one.
+ * One labelled phone field (TASK-426; TASK-1984 Rule 5b): `PhoneInput` with
+ * the INTERNATIONAL rule — both endpoints are `@IsInternationalPhone`
+ * (TASK-338), so there is no `+380` mask (it rewrote foreign numbers into a
+ * different Ukrainian one); the input only drops characters no phone has.
  */
 function PhoneField({
   name,
   label,
+  maxLength,
   form,
 }: {
   name: "phone" | "contactPhone";
   label: string;
+  maxLength: number;
   form: CreateForm;
 }) {
+  const id = `order-create-${name}`;
+  const hintId = `${id}-hint`;
+  const errorId = `${id}-error`;
   return (
-    <Field
+    <Controller
+      control={form.control}
       name={name}
-      label={label}
-      form={form}
-      type="tel"
-      hint={t.phoneHint}
+      render={({ field, fieldState }) => (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={id}>{label}</Label>
+          <PhoneInput
+            id={id}
+            rule="international"
+            autoComplete="off"
+            maxLength={maxLength}
+            aria-describedby={
+              [hintId, fieldState.error ? errorId : null]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
+            aria-invalid={fieldState.error ? true : undefined}
+            ref={field.ref}
+            name={field.name}
+            value={field.value}
+            onChange={field.onChange}
+            onBlur={field.onBlur}
+          />
+          <p id={hintId} className="text-xs text-muted-foreground">
+            {t.phoneHint}
+          </p>
+          {fieldState.error ? (
+            <p id={errorId} role="alert" className="text-xs text-destructive">
+              {fieldState.error.message}
+            </p>
+          ) : null}
+        </div>
+      )}
     />
   );
 }
@@ -992,14 +1097,17 @@ function Field({
   placeholder,
   hint,
   inputMode,
+  maxLength,
 }: {
-  name: keyof CreateOrderFormValues;
+  name: Exclude<keyof CreateOrderFormValues, "sameRecipient">;
   label: string;
   form: CreateForm;
   type?: string;
   placeholder?: string;
   hint?: string;
   inputMode?: "decimal";
+  /** The DTO's `@MaxLength` (Rule 5d) — the schema carries the same `.max`. */
+  maxLength?: number;
 }) {
   const error = form.formState.errors[name];
   const id = `order-create-${name}`;
@@ -1013,6 +1121,7 @@ function Field({
         id={id}
         type={type}
         inputMode={inputMode}
+        maxLength={maxLength}
         autoComplete="off"
         placeholder={placeholder}
         aria-describedby={

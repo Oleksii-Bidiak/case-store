@@ -193,6 +193,55 @@ describe("ResetPasswordForm", () => {
     ).not.toBeInTheDocument();
   });
 
+  // TASK-1984 (Rule 6b): a staff account's reset is refused by the strict
+  // policy server-side — a 400 with no fieldErrors, about the new password.
+  it.each([
+    [
+      "the staff policy (no fieldErrors)",
+      {
+        statusCode: 400,
+        error: "BadRequestException",
+        message: "Password must contain …",
+      },
+      dict.auth.register.validationPasswordPolicyStaff,
+    ],
+    [
+      "a DTO refusal on newPassword",
+      {
+        statusCode: 400,
+        message: ["…"],
+        fieldErrors: [{ field: "newPassword", constraint: "matches" }],
+      },
+      dict.auth.register.validationPasswordPolicy,
+    ],
+  ])("puts %s under the new-password field", async (_case, body, message) => {
+    server.use(
+      http.post("*/api/auth/password-reset/confirm", () =>
+        HttpResponse.json(body, { status: 400 }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ResetPasswordForm />);
+
+    const input = screen.getByLabelText(dict.auth.resetPassword.newPassword);
+    await user.type(input, "strongpass123");
+    await user.type(
+      screen.getByLabelText(dict.auth.resetPassword.confirmPassword),
+      "strongpass123",
+    );
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.resetPassword.submit }),
+    );
+
+    await waitFor(() => expect(input).toHaveAccessibleDescription(message));
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(
+      screen.queryByText(dict.common.genericError),
+    ).not.toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
   it("links the field error to its input (a11y)", async () => {
     const user = userEvent.setup();
     renderWithProviders(<ResetPasswordForm />);

@@ -9,6 +9,7 @@ import { PinoLogger } from 'nestjs-pino';
 import * as Sentry from '@sentry/nestjs';
 import { HttpExceptionFilter } from './http-exception.filter';
 import { RetryAfterException } from './retry-after.exception';
+import { ValidationFailedException } from './validation-failed.exception';
 
 // Sentry is stubbed so the spec asserts capture behaviour without any DSN/network.
 jest.mock('@sentry/nestjs', () => ({
@@ -147,6 +148,48 @@ describe('HttpExceptionFilter', () => {
       expect(body).not.toHaveProperty('retryAfterSeconds');
       expect(body).not.toHaveProperty('internal');
       expect(setHeader).not.toHaveBeenCalled();
+    });
+  });
+
+  // TASK-1984 (D3): the second key allowed through, on the same terms as
+  // `retryAfterSeconds` — by class, never by body shape.
+  describe('ValidationFailedException', () => {
+    it('passes fieldErrors through and keeps the joined message unchanged', () => {
+      filter.catch(
+        new ValidationFailedException(
+          ['shippingAddress.phone must be a phone', 'email must be an email'],
+          [
+            { field: 'shippingAddress.phone', constraint: 'isInternationalPhone' },
+            { field: 'email', constraint: 'isEmail' },
+          ],
+        ),
+        createHost('/api/orders', 'POST'),
+      );
+
+      expect(statusMock).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+      expect(jsonMock.mock.calls[0][0]).toMatchObject({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'shippingAddress.phone must be a phone; email must be an email',
+        fieldErrors: [
+          { field: 'shippingAddress.phone', constraint: 'isInternationalPhone' },
+          { field: 'email', constraint: 'isEmail' },
+        ],
+      });
+    });
+
+    it('drops a fieldErrors key carried by any other exception body', () => {
+      filter.catch(
+        new BadRequestException({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'm',
+          fieldErrors: [{ field: 'x', constraint: 'y' }],
+        }),
+        createHost(),
+      );
+
+      expect(jsonMock.mock.calls[0][0]).not.toHaveProperty('fieldErrors');
     });
   });
 });

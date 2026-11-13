@@ -15,7 +15,11 @@ import {
   within,
 } from "@/shared/test/render";
 import { dict } from "@/shared/config";
-import { ProductGroupForm } from "./product-group-form";
+import { placeProductGroupSaveError } from "../model/product-group-schema";
+import {
+  ProductGroupForm,
+  type ProductGroupFormSetError,
+} from "./product-group-form";
 
 const f = dict.productGroupForm;
 const g = dict.productGroups;
@@ -117,6 +121,58 @@ describe("ProductGroupForm (wave 198)", () => {
         name: "Кабель Hoco",
         axes: [{ name: "Довжина" }],
       }),
+    );
+  });
+
+  // TASK-1984 (Rule 5d): ProductGroupAxisInputDto.name is @MaxLength(50).
+  it("refuses an axis name over 50 characters under that row", async () => {
+    const { onSubmit } = renderForm({
+      defaultValues: { name: "Кабель", axes: [], isActive: true },
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: f.addAxis }));
+    fireEvent.change(axisInput(1), { target: { value: "я".repeat(51) } });
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    const message = await screen.findByText(f.errors.axisMax);
+    expect(message).toHaveAttribute("role", "alert");
+    expect(axisInput(1)).toHaveAttribute("aria-invalid", "true");
+    expect(axisInput(1)).toHaveAttribute("aria-describedby", message.id);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  // TASK-1984 (Rule 6b): the page's 400 lands under the field it is about.
+  it("hands the page a setError that puts a server 400 under the name", async () => {
+    const onSubmit = jest.fn(
+      (_values: unknown, setError: ProductGroupFormSetError) => {
+        placeProductGroupSaveError(
+          {
+            response: {
+              status: 400,
+              data: {
+                message: ["Group name is required"],
+                fieldErrors: [{ field: "name", constraint: "minLength" }],
+              },
+            },
+          },
+          setError,
+        );
+      },
+    );
+    renderForm({
+      onSubmit,
+      defaultValues: { name: "Кабель", axes: [], isActive: true },
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    expect(await screen.findByText(dict.forms.required)).toHaveAttribute(
+      "id",
+      "group-name-error",
+    );
+    expect(screen.getByRole("textbox", { name: f.name })).toHaveAttribute(
+      "aria-invalid",
+      "true",
     );
   });
 

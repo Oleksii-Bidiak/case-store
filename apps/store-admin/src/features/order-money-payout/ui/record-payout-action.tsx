@@ -8,6 +8,7 @@ import {
   isOrderStaleError,
   moneyRefusalNeedsRefetch,
   moneyWriteErrorMessage,
+  placeMoneyRefusal,
   MoneyOutKind,
   payoutKindLabel,
   useAdminOrderMoneyControllerRecordPayout,
@@ -210,7 +211,12 @@ function PayoutDialogBody({
             onWritten(null);
             return;
           }
-          setFormError(message);
+          // TASK-1984 Rule 6: a refusal about the sum or the reason goes under
+          // that input; the banner only for what neither can carry.
+          const placed = placeMoneyRefusal(error);
+          if (placed.fields.amount) setAmountError(placed.fields.amount);
+          if (placed.fields.reason) setReasonError(placed.fields.reason);
+          setFormError(placed.banner);
           if (moneyRefusalNeedsRefetch(error)) onWritten(null);
         },
       },

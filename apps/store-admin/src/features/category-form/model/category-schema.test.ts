@@ -1,5 +1,26 @@
 import { dict } from "@/shared/config";
-import { categoryFormValuesToDto, categorySchema } from "./category-schema";
+import {
+  CATEGORY_LIMITS,
+  categoryFormValuesToDto,
+  categorySchema,
+} from "./category-schema";
+
+describe("category form — the OG image link keeps the DTO's 2048 cap (TASK-1984)", () => {
+  const { ogImage } = categorySchema.shape;
+  const base = "https://cdn.example.com/";
+  const url = (length: number) => base + "a".repeat(length - base.length);
+
+  it("accepts a link of exactly CATEGORY_LIMITS.ogImage characters", () => {
+    expect(ogImage.safeParse(url(CATEGORY_LIMITS.ogImage)).success).toBe(true);
+  });
+
+  it("refuses a longer one under the field, as @MaxLength would", () => {
+    expect(
+      ogImage.safeParse(url(CATEGORY_LIMITS.ogImage + 1)).error?.issues[0]
+        ?.message,
+    ).toBe(dict.seoFields.errors.ogImageMax(CATEGORY_LIMITS.ogImage));
+  });
+});
 
 /**
  * TASK-808. `parentId` is an id the form read off the database (a legacy seed
@@ -45,6 +66,28 @@ describe("category form — OG image is http(s) only (TASK-573)", () => {
       );
     },
   );
+});
+
+describe("category form — the tile image follows the DTO's @IsUrl (TASK-1984)", () => {
+  const { image } = categorySchema.shape;
+
+  it.each([
+    "",
+    "https://cdn.example.com/a.jpg",
+    "http://localhost:3001/uploads/a.jpg",
+  ])("accepts %j", (value) => {
+    expect(image.safeParse(value).success).toBe(true);
+  });
+
+  it.each([
+    "javascript:alert(1)",
+    "ftp://cdn.example.com/a.jpg",
+    "cdn.example.com/a.jpg",
+  ])("rejects %j under the field", (value) => {
+    expect(image.safeParse(value).error?.issues[0]?.message).toBe(
+      dict.categoryForm.errors.imageUrl,
+    );
+  });
 });
 
 describe("category form — icon (TASK-1956)", () => {

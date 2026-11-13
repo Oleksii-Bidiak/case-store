@@ -5,11 +5,15 @@ import {
   useEffect,
   useMemo,
   useState,
-  type BaseSyntheticEvent,
   type FormEvent,
   type ReactNode,
 } from "react";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import {
+  Controller,
+  useForm,
+  useWatch,
+  type UseFormSetError,
+} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   flattenAdminCategoryTree,
@@ -57,6 +61,11 @@ import {
 } from "@/features/category-icon-picker";
 import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
+  META_DESCRIPTION_MAX_LENGTH,
+  META_TITLE_MAX_LENGTH,
+} from "@/shared/lib/seo-fields-schema";
+import {
+  CATEGORY_LIMITS,
   categorySchema,
   type CategoryFormInput,
   type CategoryFormValues,
@@ -111,7 +120,9 @@ interface CategoryFormProps {
    */
   onSubmit: (
     values: CategoryFormValues,
-    event?: BaseSyntheticEvent,
+    /** Puts a server refusal under its field (TASK-1984, Rule 6b) — hand it
+     *  to `placeCategorySaveError`. Opens the SEO block for its fields. */
+    setError: CategoryFormSetError,
   ) => void | Promise<boolean | void>;
   isPending: boolean;
   submitLabel?: string;
@@ -143,6 +154,8 @@ const EMPTY_VALUES: CategoryFormInput = {
 
 const errorId = (field: string) => `category-${field}-error`;
 
+export type CategoryFormSetError = UseFormSetError<CategoryFormInput>;
+
 /**
  * Reusable create/edit category form — sectioned since wave 198
  * (CategoriesProposal КТ5): an index on the left, «Основне», «Зображення», the
@@ -171,6 +184,7 @@ export function CategoryForm({
     reset,
     getValues,
     setValue,
+    setError,
     formState: { errors, dirtyFields },
   } = useForm<CategoryFormInput, unknown, CategoryFormValues>({
     resolver: zodResolver(categorySchema),
@@ -245,6 +259,16 @@ export function CategoryForm({
     onUploaded: (url) =>
       setValue("ogImage", url, { shouldDirty: true, shouldValidate: true }),
   });
+  // TASK-1984 (Rule 5d): the DTO's cap set on the link input itself —
+  // `ContentImageField`'s `urlInputProps` has no `maxLength`.
+  const ogImageRegistration = register("ogImage");
+  const ogImageInput = {
+    ...ogImageRegistration,
+    ref: (element: HTMLInputElement | null) => {
+      ogImageRegistration.ref(element);
+      if (element) element.maxLength = CATEGORY_LIMITS.ogImage;
+    },
+  };
 
   // Live SERP preview (TASK-268): resolve the exact title/description the
   // storefront would render for this category page through the same three-tier
@@ -353,11 +377,13 @@ export function CategoryForm({
     ...(seoSection.dirty ? [seoSection.label] : []),
   ];
 
-  const submit = async (
-    values: CategoryFormValues,
-    event?: BaseSyntheticEvent,
-  ) => {
-    const saved = await onSubmit(values, event);
+  const setServerError: CategoryFormSetError = (name, error, options) => {
+    if ((SEO_FIELDS as readonly string[]).includes(name)) setSeoOpen(true);
+    setError(name, error, options);
+  };
+
+  const submit = async (values: CategoryFormValues) => {
+    const saved = await onSubmit(values, setServerError);
     // Everything went through: what was submitted is the new baseline.
     if (saved === true) reset(getValues());
   };
@@ -405,6 +431,7 @@ export function CategoryForm({
                 <Input
                   id="category-name"
                   aria-required="true"
+                  maxLength={CATEGORY_LIMITS.name}
                   {...fieldA11y("name")}
                   {...register("name")}
                 />
@@ -529,6 +556,7 @@ export function CategoryForm({
                 <Input
                   id="category-slug"
                   placeholder={f.slugPlaceholder}
+                  maxLength={CATEGORY_LIMITS.slug}
                   {...fieldA11y("slug")}
                   {...register("slug")}
                 />
@@ -542,6 +570,7 @@ export function CategoryForm({
                 <Textarea
                   id="category-description"
                   rows={3}
+                  maxLength={CATEGORY_LIMITS.description}
                   {...fieldA11y("description")}
                   {...register("description")}
                 />
@@ -631,6 +660,7 @@ export function CategoryForm({
                 <Input
                   id="category-meta-title"
                   placeholder={f.metaTitlePlaceholder}
+                  maxLength={META_TITLE_MAX_LENGTH}
                   {...fieldA11y("metaTitle")}
                   {...register("metaTitle")}
                 />
@@ -647,6 +677,7 @@ export function CategoryForm({
                   id="category-meta-description"
                   rows={3}
                   placeholder={f.metaDescriptionPlaceholder}
+                  maxLength={META_DESCRIPTION_MAX_LENGTH}
                   {...fieldA11y("metaDescription")}
                   {...register("metaDescription")}
                 />
@@ -687,7 +718,7 @@ export function CategoryForm({
                   )}
                   copy={dict.seoFields.ogImageUpload}
                   value={ogImageValue}
-                  urlInput={register("ogImage")}
+                  urlInput={ogImageInput}
                   onRemove={() =>
                     setValue("ogImage", "", {
                       shouldDirty: true,
