@@ -52,9 +52,10 @@ export const pickupPointSchema = z.object({
   address: required(e.addressRequired, PICKUP_POINT_LIMITS.address),
   // TASK-1984 (Rule 5a): the DTO is `@IsInternationalPhone` — the shop's own
   // number, so a 0 800 or foreign line passes; stored as typed. Letters
-  // (`222фіфів`) are refused under the field.
+  // (`222фіфів`) are refused under the field. No `normalizePhone` on the DTO,
+  // so the typed digits are counted (`normalized: false`).
   phone: optional(PICKUP_POINT_LIMITS.phone).pipe(
-    phoneField({ rule: "international", optional: true }),
+    phoneField({ rule: "international", optional: true, normalized: false }),
   ),
   workingHours: optional(PICKUP_POINT_LIMITS.workingHours),
   mapUrl: optional(PICKUP_POINT_LIMITS.mapUrl).refine(

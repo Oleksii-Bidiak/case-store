@@ -36,7 +36,7 @@ interface StorefrontPhone {
 interface AdminPhone extends StorefrontPhone {
   PHONE_MIN_DIGITS: number;
   PHONE_MAX_DIGITS: number;
-  isValidInternationalPhone(raw: string): boolean;
+  isValidInternationalPhone(raw: string, options?: { normalized?: boolean }): boolean;
 }
 
 const APPS = path.resolve(__dirname, '../../../..');
@@ -61,26 +61,49 @@ class InternationalFixture {
   phone!: string;
 }
 
-function apiAccepts(dto: typeof UaFixture | typeof InternationalFixture, phone: string): boolean {
+// The DTOs that store the number AS TYPED — no `normalizePhone` (the pickup
+// point, the site contacts): the decorator counts the typed digits.
+class InternationalAsTypedFixture {
+  @IsInternationalPhone()
+  phone!: string;
+}
+
+function apiAccepts(
+  dto: typeof UaFixture | typeof InternationalFixture | typeof InternationalAsTypedFixture,
+  phone: string,
+): boolean {
   return validateSync(plainToInstance(dto, { phone })).length === 0;
 }
 
-/** [value, UA verdict, international verdict] — the same table on every side. */
-const CASES: [string, boolean, boolean][] = [
-  ['050 111 2233 ccc', false, false],
-  ['----------', false, false],
-  ['+1 234 567 8901', false, true],
-  ['+48 123 456 789', false, true],
-  ['050 111 2233', true, true],
-  ['0501112233', true, true],
-  ['+380501112233', true, true],
-  ['+380 50 111 2233', true, true],
-  ['+38 (050) 111-22-33', true, true],
-  ['12345', false, false],
+/**
+ * [value, UA, international, international as typed] — the same table on every
+ * side. Only verdicts are compared: the clients never normalise what they send
+ * (the DTO does), so there is no client-side normalised value to compare.
+ */
+const CASES: [string, boolean, boolean, boolean][] = [
+  ['050 111 2233 ccc', false, false, false],
+  ['----------', false, false, false],
+  ['+1 234 567 8901', false, true, true],
+  ['+48 123 456 789', false, true, true],
+  ['050 111 2233', true, true, true],
+  ['0501112233', true, true, true],
+  ['+380501112233', true, true, true],
+  ['+380 50 111 2233', true, true, true],
+  ['+38 (050) 111-22-33', true, true, true],
+  ['380501112233', true, true, true],
+  ['80501112233', true, true, true],
+  ['0501112233 ', true, true, true],
+  ['050 111 2233', true, true, true],
+  ['０５０１１１２２３３', false, false, false],
+  ['12345', false, false, false],
   // A UA free-phone line: 12 digits once normalised, so both rules take it.
-  ['0 800 30 30 30', true, true],
-  ['(((((((((', false, false],
-  ['', false, false],
+  ['0 800 30 30 30', true, true, true],
+  // Where normalising changes the digit count, the two international paths part.
+  ['0123456', false, true, false],
+  ['05011122', false, true, false],
+  ['012345678901234', false, false, true],
+  ['(((((((((', false, false, false],
+  ['', false, false, false],
 ];
 
 describe('phone rule parity: API ↔ storefront ↔ admin (TASK-1984)', () => {
@@ -104,7 +127,7 @@ describe('phone rule parity: API ↔ storefront ↔ admin (TASK-1984)', () => {
     });
   });
 
-  describe.each(CASES)('%p', (phone, ua, international) => {
+  describe.each(CASES)('%p', (phone, ua, international, asTyped) => {
     it(`UA rule → ${ua ? 'accepted' : 'refused'} by the API, the storefront and the admin`, () => {
       expect({
         api: apiAccepts(UaFixture, phone),
@@ -118,6 +141,13 @@ describe('phone rule parity: API ↔ storefront ↔ admin (TASK-1984)', () => {
         api: apiAccepts(InternationalFixture, phone),
         admin: admin.isValidInternationalPhone(phone),
       }).toEqual({ api: international, admin: international });
+    });
+
+    it(`international rule, stored as typed → ${asTyped ? 'accepted' : 'refused'} by the API and the admin`, () => {
+      expect({
+        api: apiAccepts(InternationalAsTypedFixture, phone),
+        admin: admin.isValidInternationalPhone(phone, { normalized: false }),
+      }).toEqual({ api: asTyped, admin: asTyped });
     });
   });
 });

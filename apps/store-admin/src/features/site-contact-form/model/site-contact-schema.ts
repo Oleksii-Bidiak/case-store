@@ -52,13 +52,14 @@ export const siteContactSchema = z.object({
     .pipe(emailField({ message: e.emailInvalid })),
 
   // TASK-1984 (Rule 5a): the DTO is `@IsInternationalPhone` — the shop's own
-  // number may be a 0 800 or a foreign line, stored as typed.
+  // number may be a 0 800 or a foreign line, stored as typed — no
+  // `normalizePhone` on the DTO, so the typed digits are counted.
   phone: z
     .string()
     .trim()
     .min(1, e.phoneRequired)
     .max(SITE_CONTACT_LIMITS.phone, dict.forms.tooLong)
-    .pipe(phoneField({ rule: "international" })),
+    .pipe(phoneField({ rule: "international", normalized: false })),
 
   workingHours: z
     .string()

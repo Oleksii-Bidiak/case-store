@@ -23,23 +23,30 @@ export interface PhoneFieldOptions {
   optional?: boolean;
   /** Overrides the default `dict.forms.phoneInvalid`. */
   message?: string;
+  /**
+   * `false` when the DTO stores the number AS TYPED — no
+   * `@Transform(normalizePhone)` before `@IsInternationalPhone` (pickup point,
+   * site contacts). The server then counts the typed digits, and so must the
+   * form. International rule only; defaults to `true`.
+   */
+  normalized?: boolean;
 }
 
-const RULES: Record<PhoneRule, (raw: string) => boolean> = {
-  ua: isValidUAPhone,
-  international: isValidInternationalPhone,
-};
-
 /**
- * Judges the NORMALISED number (Rule 4b) and returns the value as typed — the
- * DTO decides whether it is normalised before storage.
+ * Judges the number the way the DTO will (Rule 4b): normalised unless the DTO
+ * stores it as typed (`normalized: false`). Returns the value as typed — the DTO
+ * decides whether it is normalised before storage.
  */
 export function phoneField({
   rule,
   optional = false,
   message = dict.forms.phoneInvalid,
+  normalized = true,
 }: PhoneFieldOptions) {
-  const isValid = RULES[rule];
+  const isValid =
+    rule === "ua"
+      ? isValidUAPhone
+      : (raw: string) => isValidInternationalPhone(raw, { normalized });
   return z
     .string()
     .refine((value) => (optional && value.trim() === "") || isValid(value), {
