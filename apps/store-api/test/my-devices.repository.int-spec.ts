@@ -180,6 +180,37 @@ describe('MyDevicesRepository (integration)', () => {
     expect(await prisma.userDevice.count({ where: { userId: userA } })).toBe(1);
   });
 
+  it('a PUT keeps a hidden device: reactivating its model brings it back', async () => {
+    const toggled = (
+      await prisma.deviceModel.create({
+        data: {
+          deviceBrandId: brandId,
+          name: 'iPhone 14',
+          slug: `int-iphone-14-${randomUUID()}`,
+          series: 'iPhone 14',
+        },
+      })
+    ).id;
+    await repo.replaceState(userA, {
+      devices: [{ modelId: toggled, label: 'Мама', lastUsedAt: t('2026-11-01T10:00:00.000Z') }],
+      settings: { compatOnly: true, compatScope: 'active' },
+    });
+    await prisma.deviceModel.update({ where: { id: toggled }, data: { isActive: false } });
+
+    // The storefront's mirror never saw the hidden device, so its PUT lacks it.
+    await service.replaceState(userA, {
+      devices: [{ modelId: modelA, label: null, lastUsedAt: '2026-11-05T10:00:00.000Z' }],
+      settings: { compatOnly: true, compatScope: 'active' },
+    });
+    await prisma.deviceModel.update({ where: { id: toggled }, data: { isActive: true } });
+
+    const state = await repo.findState(userA);
+    expect(state.devices.map((d) => [d.modelId, d.label])).toEqual([
+      [modelA, null],
+      [toggled, 'Мама'],
+    ]);
+  });
+
   it('findActiveModelIds keeps only ids of existing, active models', async () => {
     const ids = await repo.findActiveModelIds([modelA, modelInactive, randomUUID()]);
     expect(ids).toEqual([modelA]);
@@ -233,6 +264,85 @@ describe('MyDevicesRepository (integration)', () => {
     expect(
       await prisma.userDevice.count({ where: { userId: userA, deviceModelId: modelInactive } }),
     ).toBe(0);
+  });
+
+  it('mergeState hands the compute only the visible rows and keeps the hidden ones', async () => {
+    await prisma.userDevice.create({
+      data: {
+        userId: userA,
+        deviceModelId: modelInactive,
+        label: 'Син',
+        lastUsedAt: t('2026-11-01T10:00:00.000Z'),
+      },
+    });
+
+    let seen: AccountDevicesSnapshot | undefined;
+    await repo.mergeState(userA, (account) => {
+      seen = account;
+      return {
+        devices: [{ modelId: modelA, label: null, lastUsedAt: t('2026-11-02T10:00:00.000Z') }],
+        settings: { compatOnly: true, compatScope: 'active' },
+      };
+    });
+
+    expect(seen?.devices).toEqual([]);
+    const hidden = await prisma.userDevice.findMany({
+      where: { userId: userA, deviceModelId: modelInactive },
+    });
+    expect(hidden).toEqual([expect.objectContaining({ label: 'Син' })]);
+  });
+
+  it('merging the same guest state twice changes nothing the second time', async () => {
+    await repo.replaceState(userA, {
+      devices: [{ modelId: modelA, label: 'Мама', lastUsedAt: t('2026-11-01T10:00:00.000Z') }],
+      settings: { compatOnly: false, compatScope: 'active' },
+    });
+    const guest = {
+      devices: [
+        { modelId: modelA, label: null, lastUsedAt: '2026-11-03T10:00:00.000Z' },
+        { modelId: modelB, label: 'Робочий', lastUsedAt: '2026-11-02T10:00:00.000Z' },
+      ],
+      settings: { compatOnly: true, compatScope: 'all' as const },
+    };
+
+    const first = await service.mergeGuestState(userA, guest);
+    const second = await service.mergeGuestState(userA, guest);
+
+    expect(second).toEqual(first);
+    expect(first.devices.map((d) => [d.modelId, d.label])).toEqual([
+      [modelA, 'Мама'],
+      [modelB, 'Робочий'],
+    ]);
+  });
+
+  it('two tabs writing at once: merge + merge and replace + merge both succeed without duplicates', async () => {
+    const guest = {
+      devices: [
+        { modelId: modelA, label: 'Мама', lastUsedAt: '2026-11-03T10:00:00.000Z' },
+        { modelId: modelB, label: null, lastUsedAt: '2026-11-02T10:00:00.000Z' },
+      ],
+      settings: { compatOnly: true, compatScope: 'active' as const },
+    };
+
+    await Promise.all([
+      service.mergeGuestState(userA, guest),
+      service.mergeGuestState(userA, guest),
+    ]);
+    await Promise.all([service.replaceState(userA, guest), service.mergeGuestState(userA, guest)]);
+
+    const rows = await prisma.userDevice.findMany({ where: { userId: userA } });
+    expect(rows.map((r) => r.deviceModelId).sort()).toEqual([modelA, modelB].sort());
+  });
+
+  it('one user’s merge is invisible to another user', async () => {
+    await service.mergeGuestState(userB, {
+      devices: [{ modelId: modelB, label: 'Тато', lastUsedAt: '2026-11-01T10:00:00.000Z' }],
+      settings: { compatOnly: false, compatScope: 'all' },
+    });
+
+    const a = await repo.findState(userA);
+    expect(a.devices).toEqual([]);
+    expect(await prisma.userDeviceSettings.count({ where: { userId: userA } })).toBe(0);
   });
 
   it('a fresh account adopts the guest settings on merge', async () => {

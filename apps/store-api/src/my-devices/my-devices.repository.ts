@@ -51,7 +51,7 @@ export class MyDevicesRepository {
     return ids.filter((id) => active.has(id));
   }
 
-  /** Replace the whole list and the settings in one transaction. */
+  /** Replace the visible list and the settings in one transaction. */
   replaceState(userId: string, state: DevicesStateWrite): Promise<MyDevicesStateEntity> {
     return this.prisma.$transaction(async (tx) => {
       await this.lockUser(tx, userId);
@@ -72,8 +72,10 @@ export class MyDevicesRepository {
     return this.prisma.$transaction(async (tx) => {
       await this.lockUser(tx, userId);
       // Sequential, not Promise.all: an interactive transaction is one connection.
+      // Visible rows only: the hidden ones (inactive model) stay as they are
+      // and never count towards the cap.
       const devices = await tx.userDevice.findMany({
-        where: { userId },
+        where: { userId, deviceModel: { isActive: true } },
         select: { deviceModelId: true, label: true, lastUsedAt: true },
       });
       const settings = await tx.userDeviceSettings.findUnique({
@@ -101,17 +103,26 @@ export class MyDevicesRepository {
    * `(user_id, device_model_id)` unique key with a 500.
    */
   private async lockUser(tx: Prisma.TransactionClient, userId: string): Promise<void> {
-    await tx.$queryRaw`SELECT 1 FROM users WHERE id = ${userId} FOR UPDATE`;
+    // NO KEY: serialises these writers without blocking the FK checks of the
+    // user's other inserts (cart, orders) the way a plain FOR UPDATE would.
+    await tx.$queryRaw`SELECT 1 FROM users WHERE id = ${userId} FOR NO KEY UPDATE`;
   }
 
+  /**
+   * Replace the VISIBLE list. A row whose model is inactive is not in the
+   * storefront's copy, so it is not in the write either — it must survive,
+   * or reactivating the model could not bring it back.
+   */
   private async writeState(
     tx: Prisma.TransactionClient,
     userId: string,
     state: DevicesStateWrite,
   ): Promise<void> {
-    await tx.userDevice.deleteMany({ where: { userId } });
+    await tx.userDevice.deleteMany({ where: { userId, deviceModel: { isActive: true } } });
     if (state.devices.length > 0) {
       await tx.userDevice.createMany({
+        // A model deactivated after `sanitize` may still have its hidden row.
+        skipDuplicates: true,
         data: state.devices.map((d) => ({
           userId,
           deviceModelId: d.modelId,
