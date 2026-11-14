@@ -43,6 +43,7 @@ import { SlugRedirectModule } from './slug-redirect';
 import { ContactModule } from './contact';
 import { CartModule } from './cart';
 import { WishlistModule } from './wishlist';
+import { MyDevicesModule } from './my-devices';
 import { OrderModule } from './order';
 import { PaymentModule } from './payment';
 import { DiscountModule } from './discount';
@@ -251,6 +252,10 @@ import { buildPinoHttpOptions, validateEnv } from './config';
 
     // Wishlist / favorites (guest via cookie, merges on login — TASK-076)
     WishlistModule,
+
+    // «Мої пристрої» in the account (signed-in only; the storefront merges the
+    // guest list in on sign-in — TASK-1959)
+    MyDevicesModule,
 
     // Orders
     OrderModule,

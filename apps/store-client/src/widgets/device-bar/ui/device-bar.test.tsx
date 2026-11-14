@@ -11,6 +11,7 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import {
+  HAS_DEVICE_ATTR,
   MY_DEVICES_STORAGE_KEY,
   closeDevicePicker,
   getDevicePickerState,
@@ -18,10 +19,6 @@ import {
   readMyDevices,
   type MyDevice,
 } from "@/entities/my-devices";
-import {
-  HAS_DEVICE_ATTR,
-  RESERVE_TIER_TWO_SCRIPT,
-} from "../model/reserve-tier-two";
 import { WIDE_VIEWPORT_QUERY } from "../model/use-wide-viewport";
 import { DeviceBar } from "./device-bar";
 
@@ -406,7 +403,7 @@ describe("DeviceBar — server HTML (TASK-2074, no layout shift)", () => {
     );
   }
 
-  it("ships a placeholder with the pre-paint script and a tier-2 reservation keyed to it", () => {
+  it("ships a placeholder with a tier-2 reservation keyed to the <html> flag", () => {
     seed([PRO]);
     const html = serverHtml();
     // innerHTML never runs scripts — the markup is only inspected.
@@ -415,9 +412,8 @@ describe("DeviceBar — server HTML (TASK-2074, no layout shift)", () => {
 
     // No personal content: the saved device never reaches the HTML.
     expect(html).not.toContain(PRO.name);
-    expect(doc.querySelector("script")?.textContent).toBe(
-      RESERVE_TIER_TWO_SCRIPT,
-    );
+    // The pre-paint script moved to the root layout's <head> (TASK-2421).
+    expect(doc.querySelector("script")).toBeNull();
 
     const reserve = doc.querySelector(
       '[data-slot="device-bar-tier-two-reserve"]',

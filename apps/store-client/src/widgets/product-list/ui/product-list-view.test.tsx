@@ -15,6 +15,7 @@ import {
   renderWithProviders,
   screen,
   userEvent,
+  waitFor,
   within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
@@ -316,9 +317,10 @@ describe("ProductListView — lockedOnSale (/promo, TASK-1301)", () => {
     expect(productRequests.at(-1)?.searchParams.get("onSale")).toBe("true");
   });
 
-  // Next scrolls a search-param navigation to the page top — on /promo that is
-  // the hero, two screens above the listing. The anchor keeps it on the deals.
-  it("points filter changes and page links back at its anchor", async () => {
+  // TASK-2414: a filter change replaces the URL without scrolling and without
+  // the anchor (TASK-1301's old workaround for the jump to the top) — the
+  // shopper stays where they are, on the deals.
+  it("writes filter changes without the anchor and without scrolling", async () => {
     const user = userEvent.setup();
     installCatalogHandlers({ empty: true });
     currentPathname = "/promo";
@@ -330,8 +332,79 @@ describe("ProductListView — lockedOnSale (/promo, TASK-1301)", () => {
       await screen.findByRole("button", { name: dict.catalog.clearAllFilters }),
     );
 
-    const target = mockReplace.mock.calls.at(-1)![0] as string;
-    expect(target).toMatch(/^\/promo\?[^#]*#deals$/);
+    const [target, options] = mockReplace.mock.calls.at(-1)!;
+    expect(target).toMatch(/^\/promo\?[^#]*$/);
+    expect(options).toEqual({ scroll: false });
+  });
+
+  // A page change is a deliberate jump to the listing: the page links keep it.
+  it("points the page links back at its anchor", async () => {
+    installCatalogHandlers();
+    server.use(
+      http.get("*/api/products", () =>
+        HttpResponse.json({
+          data: [makeProduct("p1", "Alpha Case")],
+          meta: { total: 60, page: 1, limit: 20, totalPages: 3 },
+        }),
+      ),
+    );
+    currentPathname = "/promo";
+
+    renderWithProviders(<ProductListView lockedOnSale anchorId="deals" />);
+
+    await screen.findByText("Alpha Case");
+    const pageTwo = await waitFor(() => {
+      const link = screen
+        .getAllByRole("link")
+        .find((node) =>
+          /[?&]page=2(&|#|$)/.test(node.getAttribute("href") ?? ""),
+        );
+      expect(link).toBeDefined();
+      return link!;
+    });
+    expect(pageTwo.getAttribute("href")).toMatch(/#deals$/);
+  });
+});
+
+/** TASK-2414 — filter, sort and view changes never scroll the page. */
+describe("ProductListView — scroll position (TASK-2414)", () => {
+  it("replaces the URL with scroll: false on a view change", async () => {
+    const user = userEvent.setup();
+    installCatalogHandlers();
+    currentQuery = "";
+
+    renderWithProviders(<ProductListView />);
+    await screen.findByText("Alpha Case");
+
+    await user.click(
+      screen.getByRole("button", { name: dict.filters.viewListAria }),
+    );
+
+    const [target, options] = mockReplace.mock.calls.at(-1)!;
+    expect(target).toContain("view=list");
+    expect(target).not.toContain("#");
+    expect(options).toEqual({ scroll: false });
+  });
+
+  it("replaces the URL with scroll: false on a rail filter change", async () => {
+    const user = userEvent.setup();
+    installCatalogHandlers();
+    currentQuery = "";
+
+    const { container } = renderWithProviders(<ProductListView />);
+    await screen.findByText("Alpha Case");
+
+    const rail = container.querySelector("aside")!;
+    await user.click(
+      within(rail as HTMLElement).getByRole("checkbox", {
+        name: dict.filters.inStockOnly,
+      }),
+    );
+
+    const [target, options] = mockReplace.mock.calls.at(-1)!;
+    expect(target).toContain("inStock=true");
+    expect(target).not.toContain("#");
+    expect(options).toEqual({ scroll: false });
   });
 });
 
@@ -952,5 +1025,127 @@ describe("ProductListView — the «Мої пристрої» default (TASK-2076
     expect(
       productRequests.every((url) => !url.searchParams.has("device")),
     ).toBe(true);
+  });
+});
+
+describe("ProductListView — no unfiltered first paint (TASK-2421)", () => {
+  const pro = {
+    modelId: "m-15p",
+    slug: "iphone-15-pro",
+    name: "iPhone 15 Pro",
+    brandName: "Apple",
+    family: "iphone" as const,
+  };
+  const ON = { on: true, scope: "active" } as const;
+
+  const serverHtml = (ui: React.ReactElement) => {
+    const doc = document.createElement("div");
+    // innerHTML never runs scripts — the markup is only inspected.
+    doc.innerHTML = renderToString(
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthContext.Provider
+          value={{
+            accessToken: null,
+            userId: null,
+            role: null,
+            isAuthenticated: false,
+            isInitializing: false,
+            setTokens: jest.fn(),
+            clearTokens: jest.fn(),
+          }}
+        >
+          {ui}
+        </AuthContext.Provider>
+      </QueryClientProvider>,
+    );
+    return doc;
+  };
+  const results = (doc: ParentNode) =>
+    doc.querySelector('[data-testid="product-list-results"]');
+  const skeleton = (doc: ParentNode) =>
+    doc.querySelector('[data-testid="default-filter-skeleton"]');
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    clearMyDevices();
+  });
+
+  it("server HTML: keys the grid, the counts and a skeleton to html[data-device-filter]", () => {
+    // A saved device must not change the server markup (SF-CAT-87).
+    addDevice(pro);
+    const doc = serverHtml(<ProductListView myDevicesDefault={ON} />);
+
+    expect(doc.innerHTML).not.toContain(pro.name);
+    expect(results(doc)).toHaveClass(
+      "[html[data-device-filter]:not([data-device-filter-expired])_&]:hidden",
+    );
+    expect(skeleton(doc)).toHaveClass(
+      "hidden",
+      "[html[data-device-filter]:not([data-device-filter-expired])_&]:block",
+    );
+    expect(doc.querySelector("p[aria-live='polite']")).toHaveClass(
+      "[html[data-device-filter]:not([data-device-filter-expired])_&]:invisible",
+    );
+  });
+
+  it.each([
+    ["compat=off in the URL", "compat=off", {}],
+    ["a device in the URL", "device=galaxy-s24", {}],
+    ["a route-locked device", "", { lockedDevice: { slug: "iphone-15-pro" } }],
+  ])("server HTML: nothing hidden with %s", (_, query, extra) => {
+    currentQuery = query;
+    const doc = serverHtml(
+      <ProductListView myDevicesDefault={ON} {...extra} />,
+    );
+    expect(skeleton(doc)).toBeNull();
+    expect(results(doc)?.className ?? "").toBe("");
+  });
+
+  it("server HTML: nothing hidden on a route without the default (/promo)", () => {
+    currentPathname = "/promo";
+    const doc = serverHtml(<ProductListView lockedOnSale anchorId="deals" />);
+    expect(skeleton(doc)).toBeNull();
+    expect(results(doc)?.className ?? "").toBe("");
+  });
+
+  it("after hydration: no CSS gate — the list shows its own state", async () => {
+    installCatalogHandlers();
+    addDevice(pro);
+    const { container } = renderWithProviders(
+      <ProductListView myDevicesDefault={ON} />,
+    );
+    await screen.findByText("Alpha Case");
+    expect(skeleton(container)).toBeNull();
+    expect(results(container)?.className ?? "").toBe("");
+  });
+
+  it("never shows another device's count as the placeholder", async () => {
+    installCatalogHandlers();
+    // The device-filtered listing never answers: its count stays pending.
+    server.use(
+      http.get("*/api/products", ({ request }) =>
+        new URL(request.url).searchParams.has("device")
+          ? new Promise<never>(() => {})
+          : undefined,
+      ),
+    );
+    addDevice(pro);
+    currentQuery = "compat=off";
+    const { rerender } = renderWithProviders(
+      <ProductListView myDevicesDefault={ON} />,
+    );
+    await screen.findByText("Alpha Case");
+    expect(screen.getByTestId("toolbar-result-count")).toHaveTextContent(
+      dict.catalog.countProducts(1),
+    );
+
+    // The default applies — as on the first render after hydration.
+    currentQuery = "";
+    rerender(<ProductListView myDevicesDefault={ON} />);
+
+    expect(screen.queryByTestId("toolbar-result-count")).toBeNull();
+    expect(
+      screen.queryByText(dict.catalog.countProducts(1)),
+    ).not.toBeInTheDocument();
   });
 });

@@ -195,3 +195,18 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("ProductListSkeleton — device-fit slot (TASK-2410/2421)", () => {
+  it("holds the card's 38px fit slot only under html[data-has-device]", () => {
+    render(<ProductListSkeleton />);
+    const slots = screen.getAllByTestId("device-fit-slot-skeleton");
+    expect(slots.length).toBeGreaterThan(0);
+    for (const slot of slots) {
+      expect(slot).toHaveClass(
+        "hidden",
+        "h-9.5",
+        "[html[data-has-device]_&]:block",
+      );
+    }
+  });
+});

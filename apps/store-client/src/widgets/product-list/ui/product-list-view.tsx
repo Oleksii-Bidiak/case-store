@@ -29,6 +29,7 @@ import {
   useMyDevicesFilter,
   useCatalogDeviceParam,
   withCompatMarker,
+  COMPAT_OFF,
   COMPAT_PARAM,
   clearFilterUpdates,
   countActiveFilters,
@@ -38,10 +39,33 @@ import {
   type CatalogView,
   type MyDevicesFilterDefault,
 } from "@/features/product-filters";
+import { useMyDevicesHydrated } from "@/entities/my-devices";
 import { dict } from "@/shared/config";
+import { cn } from "@/shared/lib/utils";
 import { findCategoryNodeBySlug } from "../model/catalog-header";
 import { buildCatalogListingParams } from "../model/listing-params";
+import { useKeepFilterSectionInView } from "../model/use-keep-filter-section-in-view";
 import { ProductList } from "./product-list";
+import { ProductListSkeleton } from "./product-list-skeleton";
+
+/**
+ * While the «Мої пристрої» default filter is still pending (TASK-2421), the
+ * server grid and counts are the UNFILTERED listing. For a shopper the
+ * default will apply to — `html[data-device-filter]`, set before first paint
+ * by the root layout — CSS hides them and shows the skeleton instead; for
+ * everyone else (no device, «лише сумісне» off) they paint as they are. The
+ * markup is the same on the server and in hydration, only CSS differs, so
+ * there is no hydration mismatch and nothing personal in the cached HTML.
+ * The counts go `invisible`, keeping their line. `data-device-filter-expired`
+ * (set by the same script a few seconds later) lifts the gate for an app that
+ * never hydrated, so a failed bundle shows the server grid, not a skeleton.
+ */
+const PENDING_RESULTS_CLASS =
+  "[html[data-device-filter]:not([data-device-filter-expired])_&]:hidden";
+const PENDING_SKELETON_CLASS =
+  "hidden [html[data-device-filter]:not([data-device-filter-expired])_&]:block";
+const PENDING_COUNT_CLASS =
+  "[html[data-device-filter]:not([data-device-filter-expired])_&]:invisible";
 
 // Hydration flag (TASK-534): `false` for the server render and for hydration,
 // `true` for every client render after that — and for a fresh client mount.
@@ -113,12 +137,11 @@ interface ProductListViewProps {
    */
   lockedOnSale?: boolean;
   /**
-   * Id of the element every URL this listing writes points back at — filters,
-   * sort, view and the page links (TASK-1301). Next scrolls a search-param
-   * navigation to the top of the page; on `/products` that is where the
-   * toolbar is, but on `/promo` the listing sits under the hero and coupons,
-   * and each chip click flung the shopper back up to the hero. With an anchor
-   * the navigation lands on the listing's own section instead.
+   * Id of the element the page links and `/promo`'s category tree point back
+   * at (TASK-1301): on `/promo` the listing sits under the hero and coupons,
+   * and a page change should land on the listing, not at the top. Filters,
+   * sort and view no longer carry it (TASK-2414) — they replace the URL with
+   * `scroll: false` and stay where the shopper is.
    */
   anchorId?: string;
   /**
@@ -175,6 +198,17 @@ export function ProductListView({
     myDevicesDefault,
   );
   const hasDeviceDefault = catalogDevice.hasDevices && myDevicesDefault.on;
+  // The server and hydration renders cannot know whether the default applies
+  // (TASK-2421): the route opts in, nothing in the URL or the route fixes the
+  // device, and the device store has not hydrated yet. Then the pre-paint
+  // flag decides, in CSS, between the server grid and the skeleton.
+  const devicesHydrated = useMyDevicesHydrated();
+  const defaultPending =
+    myDevicesDefault.on &&
+    !lockedDevice &&
+    !searchParams.get("device") &&
+    searchParams.get(COMPAT_PARAM) !== COMPAT_OFF &&
+    !devicesHydrated;
   const readParam = (key: string) =>
     key === "device" ? (catalogDevice.device ?? null) : searchParams.get(key);
   const params = buildCatalogListingParams(readParam, {
@@ -190,12 +224,24 @@ export function ProductListView({
   // Live result count — the count line under the H1 (Catalog §3), the
   // toolbar's short count below `lg` (§4) and the drawer's / sheet's «Показати
   // N» (TASK-084). Same `params` (and therefore React Query cache key) the grid
-  // fetches, so it costs no request of its own. `keepPreviousData` holds the
-  // last count on screen while a post-filter-change refetch is in flight
-  // instead of flashing to a loading state.
-  const { data: countData } = useProductControllerFindAll(params, {
-    query: { placeholderData: keepPreviousData },
-  });
+  // fetches, so it costs no request of its own. The last count stays on
+  // screen while a post-filter-change refetch is in flight instead of
+  // flashing to a loading state — but only for the same `device`: the first
+  // default-filtered query after hydration (TASK-2421) must not show the
+  // unfiltered server count as its placeholder, and neither should a switch
+  // of the device filter.
+  const { data: countData, isFetching: resultsFetching } =
+    useProductControllerFindAll(params, {
+      query: {
+        placeholderData: (previous, previousQuery) =>
+          (
+            previousQuery?.queryKey[1] as
+              ProductControllerFindAllParams | undefined
+          )?.device === params.device
+            ? keepPreviousData(previous)
+            : undefined,
+      },
+    });
   const resultCount = countData?.meta?.total;
 
   // «з N товарів» — the category as the route fixes it (category, keyword,
@@ -238,8 +284,21 @@ export function ProductListView({
     includeOnSale: !lockedOnSale,
   });
 
+  // A rail filter change keeps the section the shopper clicked on screen
+  // (TASK-2414); every other change — sort, view, chips — keeps the position.
+  const {
+    attachRail,
+    rememberSection,
+    arm: armKeepSection,
+    disarm: disarmKeepSection,
+  } = useKeepFilterSectionInView(searchParams.toString(), !resultsFetching);
+
+  // No `#anchor` and `scroll: false` (TASK-2414): Next would otherwise scroll
+  // a search-param navigation to the top of the page, and a click on a filter
+  // deep in the rail flung the shopper back up to the toolbar.
   const applyFilters = useCallback(
     (rawUpdates: Record<string, string | undefined>) => {
+      disarmKeepSection();
       // Clearing `device=` where a default applies would only bring the
       // default straight back — so it also writes `compat=off`, and setting a
       // device drops the marker. Never on a route-locked device.
@@ -255,23 +314,41 @@ export function ProductListView({
         }
       }
       next.set("page", "1"); // reset pagination on any filter/sort change
-      router.replace(`${pathname}?${next.toString()}${fragment}`);
+      const query = next.toString();
+      router.replace(`${pathname}?${query}`, { scroll: false });
+      return query;
     },
-    [searchParams, pathname, router, fragment, lockedDevice, hasDeviceDefault],
+    [
+      searchParams,
+      pathname,
+      router,
+      lockedDevice,
+      hasDeviceDefault,
+      disarmKeepSection,
+    ],
+  );
+
+  // The desktop rail's own writer: the same change, then the section check.
+  const applyRailFilters = useCallback(
+    (updates: Record<string, string | undefined>) => {
+      armKeepSection(applyFilters(updates));
+    },
+    [applyFilters, armKeepSection],
   );
 
   // View toggle preserves the current page (it does not change the result set).
   const setView = useCallback(
     (nextView: CatalogView) => {
+      disarmKeepSection();
       const next = new URLSearchParams(searchParams.toString());
       if (nextView === "grid") {
         next.delete("view");
       } else {
         next.set("view", nextView);
       }
-      router.replace(`${pathname}?${next.toString()}${fragment}`);
+      router.replace(`${pathname}?${next.toString()}`, { scroll: false });
     },
-    [searchParams, pathname, router, fragment],
+    [searchParams, pathname, router, disarmKeepSection],
   );
 
   const clearFilters = useCallback(() => {
@@ -421,7 +498,7 @@ export function ProductListView({
       {/* The count line right under the page's H1 (Catalog §3): «18 з 214
           товарів», and with the device filter on, who it is for. */}
       <ListingCountLine
-        className="mt-1.5"
+        className={cn("mt-1.5", defaultPending && PENDING_COUNT_CLASS)}
         shown={resultCount}
         total={categoryTotal}
         device={activeMyDevice}
@@ -469,7 +546,11 @@ export function ProductListView({
           {resultCount !== undefined && (
             <span
               aria-hidden="true"
-              className="mr-auto shrink-0 text-sm text-muted-foreground tabular-nums lg:hidden"
+              data-testid="toolbar-result-count"
+              className={cn(
+                "mr-auto shrink-0 text-sm text-muted-foreground tabular-nums lg:hidden",
+                defaultPending && PENDING_COUNT_CLASS,
+              )}
             >
               {dict.catalog.countProducts(resultCount)}
             </span>
@@ -495,7 +576,12 @@ export function ProductListView({
             instead of being a sticky box that scrolls inside itself: with the
             tree on top, a capped sticky rail hid every filter below its own
             fold, where page scroll never reaches. */}
-        <aside className="hidden lg:flex lg:flex-col lg:gap-3 lg:self-start">
+        <aside
+          ref={attachRail}
+          onPointerDownCapture={rememberSection}
+          onKeyDownCapture={rememberSection}
+          className="hidden lg:flex lg:flex-col lg:gap-3 lg:self-start"
+        >
           {withCategoryTree &&
             (categoryTreePending ? (
               <CategoryTreePanelSkeleton />
@@ -511,22 +597,42 @@ export function ProductListView({
             categoryId={activeCategoryId}
             lockedDevice={Boolean(lockedDevice)}
             lockedOnSale={lockedOnSale}
-            onFilterChange={applyFilters}
+            onFilterChange={applyRailFilters}
             withMyDevices
           />
         </aside>
 
         <section className="min-w-0">
-          <ProductList
-            params={params}
-            buildPageHref={buildPageHref}
-            view={view}
-            empty={
-              myDeviceEmpty
-                ? { ...emptyState, custom: myDeviceEmpty }
-                : emptyState
-            }
-          />
+          {/* The wrapper is always there, so the list keeps its place in the
+              tree when `defaultPending` ends — only its class changes. */}
+          <div
+            data-testid="product-list-results"
+            className={defaultPending ? PENDING_RESULTS_CLASS : undefined}
+          >
+            <ProductList
+              params={params}
+              buildPageHref={buildPageHref}
+              view={view}
+              empty={
+                myDeviceEmpty
+                  ? { ...emptyState, custom: myDeviceEmpty }
+                  : emptyState
+              }
+            />
+          </div>
+          {defaultPending && (
+            <div
+              data-testid="default-filter-skeleton"
+              className={PENDING_SKELETON_CLASS}
+            >
+              {/* The skeleton is aria-hidden; this is what a screen reader
+                  hears while it stands in for the grid (only when shown). */}
+              <p role="status" className="sr-only">
+                {dict.catalog.resultsLoading}
+              </p>
+              <ProductListSkeleton view={view} />
+            </div>
+          )}
         </section>
       </div>
 

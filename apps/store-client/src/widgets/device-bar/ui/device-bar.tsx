@@ -14,7 +14,6 @@ import {
 import { PAGE_CONTAINER } from "@/shared/config";
 import { Skeleton } from "@/shared/ui";
 
-import { RESERVE_TIER_TWO_SCRIPT } from "../model/reserve-tier-two";
 import { useDeviceCategories } from "@/entities/device";
 import { useWideViewport } from "../model/use-wide-viewport";
 import { PRIMARY_CONTROL_ATTR } from "./bar-styles";
@@ -41,8 +40,9 @@ const TIER_ONE_CLASS = `${PAGE_CONTAINER} flex min-h-14 items-center gap-3 py-1.
  * the hydration render cannot know it: they draw a 56px placeholder of the
  * exact tier-1 height, and the real tiers render once the client snapshot is
  * in use — tier 1 swaps in place without moving anything below it. Tier 2 is
- * reserved too: an inline pre-paint script flags <html> when a device is
- * saved, and the placeholder then holds tier 2's 52px at ≥ 1024.
+ * reserved too: the root layout's pre-paint script (entities/my-devices,
+ * TASK-2421) flags <html> with `data-has-device` when a device is saved, and
+ * the placeholder then holds tier 2's 52px at ≥ 1024.
  */
 export function DeviceBar() {
   const hydrated = useMyDevicesHydrated();
@@ -105,10 +105,6 @@ export function DeviceBar() {
   if (!hydrated) {
     return (
       <div className="border-t border-border">
-        <script
-          // Must run before the reservation row below is painted.
-          dangerouslySetInnerHTML={{ __html: RESERVE_TIER_TWO_SCRIPT }}
-        />
         <div aria-hidden="true" className={TIER_ONE_CLASS}>
           <Skeleton className="h-11 w-full rounded-full min-[480px]:w-72" />
         </div>

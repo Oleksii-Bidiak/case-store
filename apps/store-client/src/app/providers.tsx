@@ -5,6 +5,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ThemeProvider } from "next-themes";
 import { useState } from "react";
 import { AuthProvider } from "@/entities/session";
+import { MyDevicesSync } from "@/features/my-devices-sync";
 import { Toaster } from "@/shared/ui";
 import { useRecoverStrandedQueries } from "@/shared/lib/use-recover-stranded-queries";
 import { useRefreshOnBackNavigation } from "@/shared/lib/use-refresh-on-back-navigation";
@@ -67,6 +68,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <QueryRecovery />
         <AuthProvider>
+          {/* «Мої пристрої» ↔ the account (TASK-1959): reads the session, so
+              it must sit under AuthProvider. Renders nothing. */}
+          <MyDevicesSync />
           {children}
           {/* `clearMobileBar` (TASK-1771): on phones the toasts stack above the
               cart / checkout / PDP fixed bottom bar instead of over its action. */}

@@ -13,8 +13,9 @@
  * finds it in view and the page opens at the top. It must keep a box (not
  * `display: none`, not zero-sized) — Next skips an element whose rect is all
  * zeros and falls through to the next sibling, the listing. Filter, sort and
- * page changes are unaffected: they navigate to `#deals`, and a hash
- * navigation scrolls to that id instead.
+ * view changes are unaffected: they replace the URL with `scroll: false`
+ * (TASK-2414). Page links and the category tree navigate to `#deals`, and a
+ * hash navigation scrolls to that id instead.
  */
 export function PromoScrollAnchor() {
   return (

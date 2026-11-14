@@ -10,10 +10,14 @@ import {
   removeDeviceFrom,
   serializeMyDevices,
   setDeviceLabel,
+  sortByLastUsed,
   upsertDevice,
   type MyDevice,
   type MyDeviceInput,
 } from "./my-devices";
+import { syncDeviceFlags } from "./device-flags";
+import { notifyMyDevicesEdit } from "./my-devices-edits";
+import { readMyDevicesSettings } from "./my-devices-settings";
 
 export const MY_DEVICES_STORAGE_KEY = "my-devices:v1";
 
@@ -49,6 +53,18 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
+/**
+ * Keep the <html> flags (TASK-2421/2410) in line with the stored list. Also
+ * called once on the first client mount: the pre-paint script only checks the
+ * raw JSON, so a list whose entries all fail validation must clear the flags.
+ */
+export function syncFlags(): void {
+  syncDeviceFlags(
+    getMyDevicesSnapshot().length > 0,
+    readMyDevicesSettings().compatOnly,
+  );
+}
+
 // getSnapshot must return the same reference while the data is unchanged —
 // cache the parsed list keyed by the raw string.
 let cachedRaw: string | null = null;
@@ -70,7 +86,10 @@ export function subscribeMyDevices(onChange: () => void): () => void {
   listeners.add(onChange);
   // Cross-tab sync: another tab wrote our key (or cleared all storage).
   const onStorage = (event: StorageEvent) => {
-    if (event.key === null || event.key === MY_DEVICES_STORAGE_KEY) onChange();
+    if (event.key === null || event.key === MY_DEVICES_STORAGE_KEY) {
+      syncFlags();
+      onChange();
+    }
   };
   window.addEventListener("storage", onStorage);
   return () => {
@@ -93,6 +112,23 @@ function update(
   const next = change(current);
   if (next === current) return;
   writeRaw(next.length > 0 ? serializeMyDevices(next) : null);
+  syncFlags();
+  emit();
+  // The shopper's own change — the account sync pushes it (TASK-1959).
+  notifyMyDevicesEdit();
+}
+
+/**
+ * Apply a list that came FROM the account (TASK-1959): same write and
+ * re-render as an edit, but not reported as one, so the sync never PUTs the
+ * server's own state back. An empty list removes the key.
+ */
+export function replaceMyDevices(list: readonly MyDevice[]): void {
+  if (typeof window === "undefined") return;
+  const raw = list.length > 0 ? serializeMyDevices(sortByLastUsed(list)) : null;
+  if (raw === readRaw()) return;
+  writeRaw(raw);
+  syncFlags();
   emit();
 }
 
