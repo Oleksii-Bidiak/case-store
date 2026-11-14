@@ -267,18 +267,22 @@ for (const [label, viewport] of [
 }
 
 test.describe("catalogue first paint, edge cases (TASK-2421, TASK-2410)", () => {
-  // No JS = the pre-paint script cannot run either, so nothing is gated.
-  test("without JavaScript the server grid and its counts are there", async ({
+  // No JS = the pre-paint script cannot run either, so the device flags gate
+  // nothing. (The grid itself still streams through the route's <Suspense>,
+  // which React reveals with an inline script — without JS it stays in a
+  // hidden boundary; that is the route's, not this gate's, see TASK-2491.)
+  test("without JavaScript the device flags gate nothing", async ({
     browser,
   }) => {
     const context = await browser.newContext({ javaScriptEnabled: false });
     const page = await context.newPage();
     await page.goto(CATEGORY_PATH);
-    await expect(page.locator(UNFILTERED_ONLY).first()).toBeVisible();
-    await expect(page.locator(FITTING).first()).toBeVisible();
-    await expect(page.locator("html")).not.toHaveAttribute(
-      "data-device-filter",
-    );
+    const html = page.locator("html");
+    await expect(html).not.toHaveAttribute("data-has-device");
+    await expect(html).not.toHaveAttribute("data-device-filter");
+    // The unfiltered server listing is in the HTML, nothing personal swapped in.
+    await expect(page.locator(UNFILTERED_ONLY).first()).toBeAttached();
+    await expect(page.locator(FITTING).first()).toBeAttached();
     await context.close();
   });
 
