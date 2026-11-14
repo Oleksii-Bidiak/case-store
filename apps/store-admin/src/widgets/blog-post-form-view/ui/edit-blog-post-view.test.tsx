@@ -295,3 +295,33 @@ describe("EditBlogPostView — slug-rename guard (TASK-285)", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });
+
+// TASK-1984 Rule 6b: a taken slug is said under the slug — not a generic toast.
+describe("EditBlogPostView — refused save", () => {
+  it("puts BLOG_POST_SLUG_CONFLICT under the slug field", async () => {
+    await renderAndWaitForForm(makePost("DRAFT"));
+    server.use(
+      http.put(`*/api/admin/blog/posts/${POST_ID}`, () =>
+        HttpResponse.json(
+          {
+            statusCode: 409,
+            error: "BLOG_POST_SLUG_CONFLICT",
+            message: "Slug is already taken",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    await renameSlug();
+
+    expect(
+      await screen.findByText(dict.blogPostForm.errors.slugTaken),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(dict.blogPostForm.slug)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+});

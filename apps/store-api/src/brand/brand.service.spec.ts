@@ -196,6 +196,10 @@ describe('BrandService', () => {
       brandRepositoryMock.findBySlug.mockResolvedValue(mockBrand);
 
       await expect(service.create({ name: 'Spigen' })).rejects.toThrow(ConflictException);
+      // TASK-1984: the code the admin form puts under the slug field.
+      await expect(service.create({ name: 'Spigen' })).rejects.toMatchObject({
+        response: { error: 'BRAND_SLUG_CONFLICT' },
+      });
       expect(brandRepositoryMock.create).not.toHaveBeenCalled();
     });
 

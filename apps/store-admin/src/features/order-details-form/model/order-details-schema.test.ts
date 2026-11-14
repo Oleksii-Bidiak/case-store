@@ -1,7 +1,10 @@
+import { dict } from "@/shared/config";
+import { mapServerFieldErrors } from "@/shared/lib/form-errors";
 import {
+  ORDER_DETAILS_FIELD_MAP,
+  ORDER_DETAILS_FIELD_MESSAGES,
   createOrderDetailsSchema,
   isValidWaybill,
-  isWaybillRejection,
   mapOrderToDetailsValues,
   npTrackingUrl,
   orderDetailsValuesToDto,
@@ -173,30 +176,44 @@ describe("orderDetailsValuesToDto — what actually travels (TASK-426)", () => {
   });
 });
 
-describe("isWaybillRejection — naming the field the server refused", () => {
-  const rejection = (status: number, message: unknown) => ({
-    response: { status, data: { message } },
+describe("ORDER_DETAILS_FIELD_MAP — the field the server refused (TASK-1984)", () => {
+  const rejection = (
+    message: unknown,
+    fieldErrors?: Array<{ field: string; constraint: string }>,
+  ) => ({
+    response: { status: 400, data: { message, fieldErrors } },
+  });
+  const place = (error: unknown) =>
+    mapServerFieldErrors(
+      error,
+      ORDER_DETAILS_FIELD_MAP,
+      ORDER_DETAILS_FIELD_MESSAGES,
+    );
+
+  it("reads the field from fieldErrors, in our words", () => {
+    expect(
+      place(
+        rejection(
+          ["whatever"],
+          [
+            { field: "trackingNumber", constraint: "isNovaPoshtaWaybill" },
+            { field: "internalNotes", constraint: "maxLength" },
+          ],
+        ),
+      ),
+    ).toEqual({
+      trackingNumber: dict.orders.trackingNumberInvalid,
+      internalNotes: dict.orders.internalNotesInvalid,
+    });
   });
 
-  it("recognises the DTO failure class-validator sends back", () => {
+  it("no longer guesses the field from the English message", () => {
     expect(
-      isWaybillRejection(
-        rejection(400, [
+      place(
+        rejection([
           "trackingNumber: A Nova Poshta waybill (ТТН) is exactly 14 digits",
         ]),
       ),
-    ).toBe(true);
-  });
-
-  it("leaves other 400s to the generic message", () => {
-    expect(
-      isWaybillRejection(rejection(400, ["internalNotes is too long"])),
-    ).toBe(false);
-  });
-
-  it("is not fooled by a conflict or a network failure", () => {
-    expect(isWaybillRejection(rejection(409, ["ORDER_STALE"]))).toBe(false);
-    expect(isWaybillRejection({})).toBe(false);
-    expect(isWaybillRejection(undefined)).toBe(false);
+    ).toEqual({});
   });
 });

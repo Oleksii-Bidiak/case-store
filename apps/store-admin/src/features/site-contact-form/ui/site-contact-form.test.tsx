@@ -345,3 +345,119 @@ describe("SiteContactForm — by mockup Н1 (TASK-1053)", () => {
     expect(closeInput("Субота")).toHaveValue("17:00");
   });
 });
+
+describe("SiteContactForm — field standard (TASK-1984)", () => {
+  const { toast } = jest.requireMock("sonner") as {
+    toast: { error: jest.Mock };
+  };
+
+  beforeEach(() => toast.error.mockClear());
+
+  it("refuses a stored phone with letters under the field, without a request", async () => {
+    const bodies = stubUpdate();
+    renderWithProviders(
+      <SiteContactForm
+        settings={makeSettings(CANONICAL, { phone: "222фіфів" })}
+      />,
+    );
+
+    await submit();
+
+    expect(
+      await screen.findByText(dict.forms.phoneInvalid),
+    ).toBeInTheDocument();
+    expect(field(t.phone)).toHaveAttribute("aria-invalid", "true");
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("drops letters as they are typed and judges what is left", async () => {
+    const bodies = stubUpdate();
+    renderWithProviders(<SiteContactForm settings={makeSettings(CANONICAL)} />);
+
+    await userEvent.clear(field(t.phone));
+    await userEvent.type(field(t.phone), "222фіфів");
+    expect(field(t.phone)).toHaveValue("222");
+
+    await submit();
+    expect(
+      await screen.findByText(dict.forms.phoneInvalid),
+    ).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("keeps a 0 800 line as typed (international rule, no +380 mask)", async () => {
+    const bodies = stubUpdate();
+    renderWithProviders(<SiteContactForm settings={makeSettings(CANONICAL)} />);
+
+    await userEvent.clear(field(t.phone));
+    await userEvent.type(field(t.phone), "0 800 123 456");
+    await submit();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ phone: "0 800 123 456" });
+  });
+
+  it("refuses a non-http(s) messenger link and caps links at 500", async () => {
+    const bodies = stubUpdate();
+    renderWithProviders(<SiteContactForm settings={makeSettings(CANONICAL)} />);
+
+    expect(field(t.viberLink)).toHaveAttribute("maxlength", "500");
+    await userEvent.type(field(t.viberLink), "javascript:alert(1)");
+    await submit();
+
+    expect(await screen.findByText(t.errors.urlInvalid)).toBeInTheDocument();
+    expect(field(t.viberLink)).toHaveAttribute("aria-invalid", "true");
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("puts a server 400 under the field it names, with no toast", async () => {
+    server.use(
+      http.put("*/api/admin/site-contact", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: "A valid phone number is required",
+            fieldErrors: [
+              { field: "phone", constraint: "isInternationalPhone" },
+            ],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(<SiteContactForm settings={makeSettings(CANONICAL)} />);
+
+    await submit();
+
+    expect(
+      await screen.findByText(dict.forms.phoneInvalid),
+    ).toBeInTheDocument();
+    expect(field(t.phone)).toHaveAttribute("aria-invalid", "true");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("toasts a 400 about the hours while the structured editor has no input for them", async () => {
+    server.use(
+      http.put("*/api/admin/site-contact", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: "workingHours must be shorter",
+            fieldErrors: [{ field: "workingHours", constraint: "maxLength" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(<SiteContactForm settings={makeSettings(CANONICAL)} />);
+
+    await submit();
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "workingHours must be shorter",
+        expect.anything(),
+      ),
+    );
+  });
+});

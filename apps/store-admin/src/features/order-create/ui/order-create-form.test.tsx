@@ -15,6 +15,16 @@ jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: jest.fn(), back: jest.fn() }),
 }));
 
+const toastError = jest.fn();
+jest.mock("@/shared/ui/toast", () => ({
+  toast: {
+    success: jest.fn(),
+    error: (...args: unknown[]) => toastError(...args),
+  },
+}));
+
+beforeEach(() => toastError.mockClear());
+
 /**
  * The operator's create-order form (TASK-341), as TASK-426 left it.
  *
@@ -99,35 +109,92 @@ describe("OrderCreateForm — the customer (TASK-426)", () => {
     expect(screen.queryByPlaceholderText(/^550e8400-/)).not.toBeInTheDocument();
   });
 
-  it("fills the recipient block from the account it was given", async () => {
+  it("fills the client block from the account it was given (TASK-2398)", async () => {
     const user = userEvent.setup();
     renderWithProviders(<OrderCreateForm />);
 
     await pickOlena(user);
-    // The recipient is the client by default; the fields are one click away.
-    await showRecipient(user);
 
-    expect(field("firstName")).toHaveValue("Олена");
-    expect(field("lastName")).toHaveValue("Шевченко");
+    expect(field("contactFirstName")).toHaveValue("Олена");
+    expect(field("contactLastName")).toHaveValue("Шевченко");
     // Exactly the digits the account carries. There is no mask on this field any
     // more: it rewrote every value into a `+380` shape, which made a foreign
     // number impossible to enter — see the phone block below.
-    expect(field("phone")).toHaveValue("380501234567");
+    expect(field("contactPhone")).toHaveValue("380501234567");
   });
 
-  it("never overwrites a recipient the operator has already typed", async () => {
+  it("never overwrites a client field the operator has already typed", async () => {
     const user = userEvent.setup();
     renderWithProviders(<OrderCreateForm />);
 
-    // "Send it to my sister" is an ordinary instruction on a phone call.
-    await showRecipient(user);
-    await user.type(field("firstName"), "Ірина");
+    await user.click(screen.getByRole("tab", { name: "Існуючий акаунт" }));
+    await user.type(field("contactFirstName"), "Ірина");
     await pickOlena(user);
 
-    expect(field("firstName")).toHaveValue("Ірина");
+    expect(field("contactFirstName")).toHaveValue("Ірина");
     // The fields that were still empty are filled, so this is a prefill and not
     // an all-or-nothing copy.
-    expect(field("lastName")).toHaveValue("Шевченко");
+    expect(field("contactLastName")).toHaveValue("Шевченко");
+  });
+
+  it("takes the previous pick's details back out on «Змінити клієнта», keeping edits", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+
+    await pickOlena(user);
+    await user.clear(field("contactPhone"));
+    await user.type(field("contactPhone"), "+48 123 456 789");
+    await user.click(
+      screen.getByRole("button", { name: dict.orderCreate.customerChange }),
+    );
+
+    // Not left behind silently for the next customer…
+    expect(field("contactFirstName")).toHaveValue("");
+    expect(field("contactLastName")).toHaveValue("");
+    // …while what the operator typed is theirs.
+    expect(field("contactPhone")).toHaveValue("+48 123 456 789");
+  });
+
+  it("drops the account's «оберіть клієнта» on switching to a walk-in after a submit", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+
+    await user.click(screen.getByRole("tab", { name: "Існуючий акаунт" }));
+    await user.click(
+      screen.getByRole("button", { name: dict.orderCreate.submit }),
+    );
+    expect(
+      await screen.findByRole("link", {
+        name: dict.orderCreate.customerHeading,
+      }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("tab", { name: dict.orderCreate.modeGuest }),
+    );
+
+    // The walk-in has no account to pick — that error is no longer the
+    // operator's, while the walk-in's own fields are still asked for.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("link", {
+          name: dict.orderCreate.customerHeading,
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("link", { name: dict.orderCreate.contactPhone }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not render the recipient fields while «той самий клієнт» is ticked", () => {
+    renderWithProviders(<OrderCreateForm />);
+
+    expect(
+      screen.getByRole("checkbox", { name: dict.orderCreate.sameRecipient }),
+    ).toBeChecked();
+    expect(document.getElementById("order-create-firstName")).toBeNull();
+    expect(document.getElementById("order-create-phone")).toBeNull();
   });
 });
 
@@ -349,10 +416,11 @@ describe("OrderCreateForm — by mockup (TASK-1047)", () => {
 
   async function fillGuestAndAddress(
     user: ReturnType<typeof userEvent.setup>,
-    name = "Оксана Шевченко",
+    lastName = "Шевченко",
   ) {
     await user.type(field("contactPhone"), "+380 50 318 22 47");
-    await user.type(field("contactName"), name);
+    await user.type(field("contactFirstName"), "Оксана");
+    if (lastName) await user.type(field("contactLastName"), lastName);
     // A hand-typed address is «Інша доставка» (TASK-1973).
     await chooseMethod(user, "Інша доставка");
     server.use(
@@ -396,7 +464,7 @@ describe("OrderCreateForm — by mockup (TASK-1047)", () => {
       name: t.summaryHeading,
     });
     expect(
-      within(summary).getByText(t.errorsTitle("5 полів")),
+      within(summary).getByText(t.errorsTitle("6 полів")),
     ).toBeInTheDocument();
     expect(
       within(summary)
@@ -405,6 +473,7 @@ describe("OrderCreateForm — by mockup (TASK-1047)", () => {
     ).toEqual([
       t.contactPhone,
       t.contactName,
+      t.contactLastName,
       t.itemsHeading,
       t.addressCity,
       t.addressAddress1,
@@ -485,20 +554,89 @@ describe("OrderCreateForm — by mockup (TASK-1047)", () => {
     });
   });
 
-  it("turns «той самий клієнт» off when the client's name gives no surname", async () => {
+  // TASK-2398: the owner's one-word «Оксана» used to untick the box and show a
+  // «Обовʼязкове поле.» on a recipient surname the client block did not have.
+  it("asks for the client's surname under «Прізвище» and leaves the box ticked", async () => {
     const user = userEvent.setup();
+    const bodies = captureCreate();
     renderWithProviders(<OrderCreateForm />);
-    await fillGuestAndAddress(user, "Оксана");
+    await fillGuestAndAddress(user, "");
     await addFirstProduct(user);
 
     await user.click(screen.getByRole("button", { name: t.submit }));
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("checkbox", { name: t.sameRecipient }),
-      ).not.toBeChecked(),
+      expect(field("contactLastName")).toHaveAttribute("aria-invalid", "true"),
     );
-    expect(field("lastName")).toHaveAttribute("aria-invalid", "true");
+    expect(
+      document.getElementById("order-create-contactLastName-error"),
+    ).toHaveTextContent(t.addressRequired);
+    expect(
+      screen.getByRole("checkbox", { name: t.sameRecipient }),
+    ).toBeChecked();
+    expect(document.getElementById("order-create-lastName")).toBeNull();
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("places a one-word walk-in when the parcel goes to someone else", async () => {
+    const user = userEvent.setup();
+    const bodies = captureCreate();
+    renderWithProviders(<OrderCreateForm />);
+    await fillGuestAndAddress(user, "");
+    await addFirstProduct(user);
+    await showRecipient(user);
+    await user.type(field("firstName"), "Ірина");
+    await user.type(field("lastName"), "Коваль");
+    await user.type(field("phone"), "+48 123 456 789");
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0].contact).toMatchObject({ name: "Оксана" });
+    expect(bodies[0].shippingAddress).toMatchObject({
+      firstName: "Ірина",
+      lastName: "Коваль",
+      phone: "+48 123 456 789",
+    });
+  });
+
+  it("puts a server field refusal under its field — not in a box or a toast", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("*/api/admin/orders", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: "shippingAddress.phone must be a valid phone",
+            error: "Bad Request",
+            fieldErrors: [
+              {
+                field: "shippingAddress.phone",
+                constraint: "isInternationalPhone",
+              },
+            ],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(<OrderCreateForm />);
+    await fillGuestAndAddress(user);
+    await addFirstProduct(user);
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    // While «той самий клієнт» is ticked, the recipient phone IS the client's.
+    await waitFor(() =>
+      expect(
+        document.getElementById("order-create-contactPhone-error"),
+      ).toHaveTextContent(dict.forms.phoneInvalid),
+    );
+    const summary = within(
+      screen.getByRole("complementary", { name: t.summaryHeading }),
+    );
+    expect(summary.queryByText(t.serverErrorTitle)).not.toBeInTheDocument();
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   it("puts a stock refusal (400) under the line and says so in the summary", async () => {
@@ -528,7 +666,8 @@ describe("OrderCreateForm — by mockup (TASK-1047)", () => {
     expect(summary.getByText(t.serverErrorTitle)).toBeInTheDocument();
     expect(summary.getByText(t.serverErrorLine)).toBeInTheDocument();
     // The form is kept as it was.
-    expect(field("contactName")).toHaveValue("Оксана Шевченко");
+    expect(field("contactFirstName")).toHaveValue("Оксана");
+    expect(field("contactLastName")).toHaveValue("Шевченко");
   });
 
   it("chooses the payment method with pills", async () => {
@@ -649,7 +788,8 @@ async function addCase(user: ReturnType<typeof userEvent.setup>) {
 
 async function fillGuest(user: ReturnType<typeof userEvent.setup>) {
   await user.type(field("contactPhone"), "+380 50 318 22 47");
-  await user.type(field("contactName"), "Оксана Шевченко");
+  await user.type(field("contactFirstName"), "Оксана");
+  await user.type(field("contactLastName"), "Шевченко");
 }
 
 function captureCreate(): Array<Record<string, unknown>> {

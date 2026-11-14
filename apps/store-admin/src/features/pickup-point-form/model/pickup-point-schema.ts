@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { dict } from "@/shared/config";
+import { phoneField } from "@/shared/lib/phone-field";
 import type {
   AdminPickupPointDto,
   CreatePickupPointDto,
@@ -49,7 +50,13 @@ export const pickupPointSchema = z.object({
   name: required(e.nameRequired, PICKUP_POINT_LIMITS.name),
   city: required(e.cityRequired, PICKUP_POINT_LIMITS.city),
   address: required(e.addressRequired, PICKUP_POINT_LIMITS.address),
-  phone: optional(PICKUP_POINT_LIMITS.phone),
+  // TASK-1984 (Rule 5a): the DTO is `@IsInternationalPhone` — the shop's own
+  // number, so a 0 800 or foreign line passes; stored as typed. Letters
+  // (`222фіфів`) are refused under the field. No `normalizePhone` on the DTO,
+  // so the typed digits are counted (`normalized: false`).
+  phone: optional(PICKUP_POINT_LIMITS.phone).pipe(
+    phoneField({ rule: "international", optional: true, normalized: false }),
+  ),
   workingHours: optional(PICKUP_POINT_LIMITS.workingHours),
   mapUrl: optional(PICKUP_POINT_LIMITS.mapUrl).refine(
     (value) => value === "" || isHttpUrl(value),
@@ -59,6 +66,16 @@ export const pickupPointSchema = z.object({
 });
 
 export type PickupPointFormValues = z.infer<typeof pickupPointSchema>;
+
+/** DTO path → form field for a server 400 (Rule 6b): the names are the same. */
+export const PICKUP_POINT_FIELD_MAP = {
+  name: "name",
+  city: "city",
+  address: "address",
+  phone: "phone",
+  workingHours: "workingHours",
+  mapUrl: "mapUrl",
+} as const;
 
 /** A new point (forms.md Rule 4c: every validated field has a default). */
 export const EMPTY_PICKUP_POINT: PickupPointFormValues = {

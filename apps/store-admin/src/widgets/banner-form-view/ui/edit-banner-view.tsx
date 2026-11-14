@@ -9,6 +9,8 @@ import {
   BannerForm,
   bannerFormValuesToUpdateDto,
   type BannerFormInput,
+  placeBannerSaveError,
+  type BannerFormSetError,
   type BannerFormValues,
 } from "@/features/banner-form";
 import {
@@ -29,6 +31,7 @@ import { useAuth } from "@/entities/session";
 import { PERM } from "@/entities/permission";
 import { Badge, RowActionsMenu, useConfirmDialog } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import { toKyivDateTimeLocal } from "@/shared/lib";
 import { BannerFormSkeleton } from "./banner-form-skeleton";
 import { BannerReadOnly } from "./banner-read-only";
@@ -83,7 +86,10 @@ export function EditBannerView({ bannerId }: EditBannerViewProps) {
       queryKey: getAdminBannerControllerFindAllQueryKey(),
     });
 
-  const handleSubmit = (values: BannerFormValues) => {
+  const handleSubmit = (
+    values: BannerFormValues,
+    setError: BannerFormSetError,
+  ) => {
     update.mutate(
       { id: bannerId, data: bannerFormValuesToUpdateDto(values) },
       {
@@ -96,7 +102,14 @@ export function EditBannerView({ bannerId }: EditBannerViewProps) {
           router.push("/banners");
         },
         onError: (error) => {
-          toast.error(bannerWriteErrorMessage(error) ?? d.toastUpdateFailed);
+          // TASK-1984 Rule 6b: a refused field lands under it; the slot limit
+          // and anything else are a toast, in the server's words if it has any.
+          if (placeBannerSaveError(error, setError)) return;
+          toast.error(
+            bannerWriteErrorMessage(error) ??
+              refusalMessage(error) ??
+              d.toastUpdateFailed,
+          );
         },
       },
     );

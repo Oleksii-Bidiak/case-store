@@ -1,8 +1,12 @@
 import { z } from "zod";
+import { CONTACT_LIMITS } from "@/entities/contact";
 import { dict } from "@/shared/config";
-// Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
+// Direct imports (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders this form model has no use for.
-import { isValidUAPhone } from "@/shared/lib/phone";
+import { emailField } from "@/shared/lib/form-fields";
+import { phoneField } from "@/shared/lib/phone-field";
+
+const L = CONTACT_LIMITS;
 
 /**
  * Validation schema for the storefront contact form. Mirrors the backend
@@ -10,34 +14,38 @@ import { isValidUAPhone } from "@/shared/lib/phone";
  * length bounds; topic + orderRef optional). Consent is a client-only gate — it
  * is not sent to the API, so it lives here but not in the request payload.
  *
- * `phone` was `min(5)/max(32)` — a bound on the string, not a rule about a
- * number, so `12345` was a valid way to ask us to call back (TASK-407). It now
- * shares `isValidUAPhone` with checkout and with `@IsUaPhone()` on the DTO, and
- * the input carries the same `+380 NN NNN NNNN` mask the checkout field does.
+ * TASK-1984 (forms Rule 5): the phone is `phoneField({ rule: "ua" })` — the
+ * DTO's `@IsUaPhone` — so the shape is judged before the digits and
+ * `050 111 2233 ccc` is refused instead of having its letters stripped. Every
+ * `@MaxLength` has a `.max()` with its own sentence and a rendered error; the
+ * limits live in `CONTACT_LIMITS` (entities/contact), shared with /info.
  */
 export const contactSchema = z.object({
-  topic: z.string().max(60).optional(),
+  topic: z.string().max(L.topic.max, dict.contact.errors.topicMax).optional(),
   name: z
     .string()
     .trim()
-    .min(2, dict.contact.errors.nameRequired)
-    .max(120, dict.contact.errors.nameRequired),
-  phone: z
+    .min(L.name.min, dict.contact.errors.nameRequired)
+    .max(L.name.max, dict.contact.errors.nameMax),
+  // `@MaxLength(32)` runs on the normalised number server-side; checking it on
+  // the raw value is stricter only for a valid number padded past 32 chars.
+  phone: phoneField({
+    rule: "ua",
+    message: dict.contact.errors.phoneRequired,
+  }).refine((value) => value.length <= L.phone.max, {
+    message: dict.forms.tooLong,
+  }),
+  email: emailField({ message: dict.contact.errors.emailInvalid }),
+  orderRef: z
     .string()
     .trim()
-    .max(32, dict.contact.errors.phoneRequired)
-    .refine(isValidUAPhone, dict.contact.errors.phoneRequired),
-  email: z
-    .string()
-    .trim()
-    .email(dict.contact.errors.emailInvalid)
-    .max(255, dict.contact.errors.emailInvalid),
-  orderRef: z.string().trim().max(120).optional(),
+    .max(L.orderRef.max, dict.contact.errors.orderRefMax)
+    .optional(),
   message: z
     .string()
     .trim()
-    .min(10, dict.contact.errors.messageRequired)
-    .max(5000, dict.contact.errors.messageRequired),
+    .min(L.message.min, dict.contact.errors.messageRequired)
+    .max(L.message.max, dict.contact.errors.messageMax),
   consent: z.boolean().refine((v) => v === true, {
     message: dict.contact.errors.consentRequired,
   }),

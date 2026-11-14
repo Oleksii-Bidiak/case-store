@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -13,6 +13,7 @@ import { ContactMessagesNotFoundError, ContactRepository } from '../src/contact/
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * E2E tests for the Contact module: the admin inbox (TASK-177 + TASK-256) and
@@ -126,14 +127,7 @@ describe('Contact (e2e)', () => {
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get<JwtService>(JwtService);
 
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     app.setGlobalPrefix('api', { exclude: ['health'] });
     // The production envelope (main.ts): TASK-762 is about what survives it.
     app.useGlobalFilters(moduleFixture.get(HttpExceptionFilter));
@@ -230,12 +224,23 @@ describe('Contact (e2e)', () => {
       // A non-string does NOT 400: `enableImplicitConversion` turns `42` into
       // "42", which is simply a filled honeypot. The length bound is what keeps
       // the field from carrying a megabyte.
-      await request(app.getHttpServer())
+      const res = await request(app.getHttpServer())
         .post('/api/contact')
-        .send({ ...body, website: 'x'.repeat(256) })
+        .send({ ...body, website: 'x'.repeat(256), phone: '050 111 2233 ccc' })
         .expect(400);
 
       expect(contactRepositoryMock.create).not.toHaveBeenCalled();
+      // TASK-1984 (D2 + D3), asserted in this SAME request because the route's
+      // 5/min throttle counts every POST in this file: letters glued to a valid
+      // number are refused server-side, and the production envelope says which
+      // field failed which rule next to the unchanged joined `message`.
+      expect(typeof res.body.message).toBe('string');
+      expect(res.body.fieldErrors).toEqual(
+        expect.arrayContaining([
+          { field: 'website', constraint: 'maxLength' },
+          { field: 'phone', constraint: 'isUaPhone' },
+        ]),
+      );
     });
   });
 

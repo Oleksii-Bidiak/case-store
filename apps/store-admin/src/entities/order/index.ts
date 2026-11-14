@@ -149,4 +149,6 @@ export {
   isOrderStaleError,
   moneyRefusalNeedsRefetch,
   moneyWriteErrorMessage,
+  placeMoneyRefusal,
+  type MoneyField,
 } from "./lib/order-money-error";

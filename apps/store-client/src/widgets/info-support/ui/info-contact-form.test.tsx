@@ -202,3 +202,71 @@ describe("InfoContactForm — a failed submit keeps the form (TASK-764)", () => 
     expectInputKept();
   });
 });
+
+/** TASK-1984 (forms Rule 6): where each refusal is said. */
+describe("InfoContactForm — field standard (TASK-1984)", () => {
+  it("gives the per-IP 429 its own sentence, not the generic failure", async () => {
+    server.use(
+      http.post("*/api/contact", () =>
+        HttpResponse.json(
+          { statusCode: 429, message: "Too Many Requests" },
+          { status: 429 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<InfoContactForm />);
+
+    await fill(user);
+    await user.click(submitButton());
+
+    expect(
+      await screen.findByText(dict.contact.errors.rateLimited),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(d.formError)).not.toBeInTheDocument();
+  });
+
+  it("puts a server 400 under the field it names, with no banner", async () => {
+    server.use(
+      http.post("*/api/contact", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: ["refused"],
+            fieldErrors: [{ field: "message", constraint: "maxLength" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<InfoContactForm />);
+
+    await fill(user);
+    await user.click(submitButton());
+
+    const message = screen.getByRole("textbox", { name: d.formMessage });
+    expect(
+      await screen.findByText(dict.contact.errors.messageMax),
+    ).toHaveAttribute("id", "info-contact-message-error");
+    expect(message).toHaveAttribute("aria-invalid", "true");
+    expect(message).toHaveAccessibleDescription(dict.contact.errors.messageMax);
+    expect(screen.queryByText(d.formError)).not.toBeInTheDocument();
+  });
+
+  it("caps the inputs at the DTO limits", () => {
+    renderWithProviders(<InfoContactForm />);
+
+    expect(screen.getByRole("textbox", { name: d.formName })).toHaveAttribute(
+      "maxLength",
+      "120",
+    );
+    expect(screen.getByRole("textbox", { name: d.formEmail })).toHaveAttribute(
+      "maxLength",
+      "254",
+    );
+    expect(
+      screen.getByRole("textbox", { name: d.formMessage }),
+    ).toHaveAttribute("maxLength", "5000");
+  });
+});

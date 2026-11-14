@@ -11,9 +11,16 @@ import { normalizeEmail } from '../../common/validators';
  * short tag identifying the opt-in surface (e.g. `home`, `promo`).
  */
 export class SubscribeDto {
-  @ApiProperty({ description: 'Subscriber email address', example: 'user@example.com' })
+  @ApiProperty({
+    description: 'Subscriber email address',
+    example: 'user@example.com',
+    maxLength: 254,
+  })
   @Transform(normalizeEmail)
   @IsEmail({}, { message: 'A valid email is required' })
+  // TASK-1984 (forms Rule 5c): the same 254 cap as every other email DTO and as
+  // the storefront form's `emailField`. It had none at all.
+  @MaxLength(254, { message: 'Email must be at most 254 characters' })
   email!: string;
 
   @ApiProperty({

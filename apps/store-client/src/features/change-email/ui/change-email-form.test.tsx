@@ -4,6 +4,7 @@ import {
   renderWithProviders,
   screen,
   userEvent,
+  waitFor,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
@@ -97,11 +98,17 @@ describe("ChangeEmailForm (TASK-396)", () => {
 
     await fillAndSubmit("new@example.com", "wrong");
 
-    expect(await screen.findByText(d.errorWrongPassword)).toBeInTheDocument();
+    // TASK-1984 (Rule 6b): under the password field, shown once.
+    const password = screen.getByLabelText(d.currentPassword);
+    await waitFor(() =>
+      expect(password).toHaveAccessibleDescription(d.errorWrongPassword),
+    );
+    expect(password).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getAllByText(d.errorWrongPassword)).toHaveLength(1);
     expect(screen.queryByText(d.sentHeading)).not.toBeInTheDocument();
   });
 
-  it("says the address is taken on 409", async () => {
+  it("says the address is taken on 409, under the new-address field", async () => {
     captureRequests(() =>
       HttpResponse.json(
         { statusCode: 409, error: "ConflictException", message: "taken" },
@@ -112,6 +119,59 @@ describe("ChangeEmailForm (TASK-396)", () => {
 
     await fillAndSubmit("taken@example.com", "secret-pass");
 
-    expect(await screen.findByText(d.errorTaken)).toBeInTheDocument();
+    const newEmail = screen.getByLabelText(d.newEmail);
+    await waitFor(() =>
+      expect(newEmail).toHaveAccessibleDescription(d.errorTaken),
+    );
+    expect(newEmail).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getAllByText(d.errorTaken)).toHaveLength(1);
+  });
+
+  it("puts a DTO 400 under the field fieldErrors names", async () => {
+    captureRequests(() =>
+      HttpResponse.json(
+        {
+          statusCode: 400,
+          message: ["Please provide a valid email address"],
+          fieldErrors: [{ field: "newEmail", constraint: "isEmail" }],
+        },
+        { status: 400 },
+      ),
+    );
+    renderWithProviders(<ChangeEmailForm currentEmail={CURRENT} />);
+
+    await fillAndSubmit("new@example.com", "secret-pass");
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(d.newEmail)).toHaveAccessibleDescription(
+        d.validationEmail,
+      ),
+    );
+    expect(
+      screen.queryByText(dict.common.genericError),
+    ).not.toBeInTheDocument();
+  });
+
+  it("caps the new address at the DTO's 254 characters", () => {
+    renderWithProviders(<ChangeEmailForm currentEmail={CURRENT} />);
+
+    expect(screen.getByLabelText(d.newEmail)).toHaveAttribute(
+      "maxLength",
+      "254",
+    );
+  });
+
+  it("keeps a 429 as a banner — it is about no field", async () => {
+    captureRequests(() =>
+      HttpResponse.json({ statusCode: 429 }, { status: 429 }),
+    );
+    renderWithProviders(<ChangeEmailForm currentEmail={CURRENT} />);
+
+    await fillAndSubmit("new@example.com", "secret-pass");
+
+    expect(await screen.findByText(d.errorTooMany)).toBeInTheDocument();
+    expect(screen.getByLabelText(d.newEmail)).not.toHaveAttribute(
+      "aria-invalid",
+    );
   });
 });

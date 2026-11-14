@@ -11,4 +11,7 @@ export {
   type ProductFormInput,
   type ProductFormValues,
 } from "./model/product-schema";
-export { productSaveErrorMessage } from "./model/save-error";
+export {
+  placeProductSaveError,
+  productSaveErrorMessage,
+} from "./model/save-error";

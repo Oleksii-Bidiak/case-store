@@ -38,6 +38,13 @@ describe("resolveReturnSchema — the PATCH's own status (TASK-2044, R2 TASK-204
     expect(passes("")).toBe(false);
   });
 
+  it("says why a status is refused — never a silent rule (TASK-1984)", () => {
+    const result = resolveReturnSchema.safeParse(
+      values({ status: "REFUNDED" }),
+    );
+    expect(result.error?.issues[0]?.message).toBe(t.resolveConflict);
+  });
+
   it("maps to a body with no amount — money is a ledger entry now", () => {
     const dto = resolveValuesToDto(values({ restock: true }), null);
     expect(dto).toEqual({

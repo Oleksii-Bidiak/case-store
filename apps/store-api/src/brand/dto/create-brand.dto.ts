@@ -1,5 +1,28 @@
-import { IsString, IsOptional, IsBoolean, MaxLength, Matches, IsUrl } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsNotEmpty,
+  MaxLength,
+  Matches,
+  IsUrl,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { trimString } from '../../common/utils';
+
+/**
+ * The image-link rule, shared with `IsOgImageField` and the admin's `isHttpUrl`
+ * (TASK-1984, forms Rule 5): an absolute http(s) URL. `require_protocol` keeps a
+ * bare host (`cdn.example.com/x.png`) out — the storefront would resolve it against
+ * its own origin; `require_tld: false` lets `http://localhost:3001/uploads/…`, what
+ * store-api itself serves in dev, through (TASK-364).
+ */
+export const BRAND_LOGO_URL_OPTIONS = {
+  require_tld: false,
+  require_protocol: true,
+  protocols: ['http', 'https'],
+};
 
 /**
  * DTO for creating a new brand (admin-only).
@@ -12,7 +35,11 @@ export class CreateBrandDto {
     description: 'Brand name',
     example: 'Spigen',
   })
+  // TASK-1984 (forms Rule 5d): the admin form refuses a blank name, so the API
+  // does too — trimmed first, so "   " is blank rather than a name.
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty({ message: 'Brand name must not be empty' })
   @MaxLength(255, { message: 'Brand name must be at most 255 characters' })
   name!: string;
 
@@ -36,7 +63,7 @@ export class CreateBrandDto {
     required: false,
   })
   @IsOptional()
-  @IsUrl({}, { message: 'Logo must be a valid URL' })
+  @IsUrl(BRAND_LOGO_URL_OPTIONS, { message: 'Logo must be a valid URL' })
   logo?: string;
 
   @ApiProperty({

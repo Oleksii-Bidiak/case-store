@@ -16,6 +16,16 @@ jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
 }));
 
+const toastError = jest.fn();
+jest.mock("@/shared/ui/toast", () => ({
+  toast: {
+    success: jest.fn(),
+    error: (...args: unknown[]) => toastError(...args),
+  },
+}));
+
+beforeEach(() => toastError.mockReset());
+
 const BRAND_ID = "3f2b8c1e-5a4d-4e7f-9b21-0c6d8e9fa123";
 
 const brand = {
@@ -117,6 +127,54 @@ describe("EditBrandView — header and side panel (БР5, БР9)", () => {
     expect(
       screen.queryByRole("textbox", { name: dict.brandForm.name }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("EditBrandView — a refused save (TASK-1984)", () => {
+  async function saveWith(status: number, body: Record<string, unknown>) {
+    stubBrand();
+    server.use(
+      http.patch(`*/api/brands/${BRAND_ID}`, () =>
+        HttpResponse.json({ statusCode: status, ...body }, { status }),
+      ),
+    );
+    renderWithProviders(<EditBrandView brandId={BRAND_ID} />, {
+      auth: { permissions: [PERM.brandsWrite] },
+    });
+    await screen.findByRole("textbox", { name: dict.brandForm.name });
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.save }),
+    );
+  }
+
+  it("puts a 409 slug conflict under the slug, not in a toast", async () => {
+    await saveWith(409, { error: "BRAND_SLUG_CONFLICT", message: "taken" });
+
+    const slug = screen.getByRole("textbox", { name: dict.brandForm.slug });
+    await waitFor(() => expect(slug).toHaveAttribute("aria-invalid", "true"));
+    expect(
+      document.getElementById(
+        (slug.getAttribute("aria-describedby") ?? "").split(" ")[0],
+      ),
+    ).toHaveTextContent(dict.brandForm.errors.slugTaken);
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("puts a 400 on the logo under the logo link", async () => {
+    await saveWith(400, {
+      error: "Bad Request",
+      message: ["Logo must be a valid URL"],
+      fieldErrors: [{ field: "logo", constraint: "isUrl" }],
+    });
+
+    expect(await screen.findByText(dict.forms.invalid)).toBeInTheDocument();
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's own words when no field takes the refusal", async () => {
+    await saveWith(400, { error: "Bad Request", message: "Щось не так" });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Щось не так"));
   });
 });
 

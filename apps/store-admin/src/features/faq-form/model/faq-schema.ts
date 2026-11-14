@@ -15,7 +15,9 @@ export const FAQ_ANSWER_MAX = 5000;
  * TASK-428: no `sortOrder` field — the order is set by dragging (or keyboard-moving)
  * rows in the FAQ list, and a new item is appended to the end by the server. The old
  * hand-typed number defaulted to 0 for every row, so nothing was actually ordered.
- * `question`/`answer` are required; `isActive` is the visibility toggle.
+ * `question`/`answer` are required — stricter on purpose (Rule 5f): the DTO has
+ * no minimum, but an empty question or answer renders as a blank accordion row
+ * on /info. `isActive` is the visibility toggle.
  */
 export const faqSchema = z.object({
   question: z

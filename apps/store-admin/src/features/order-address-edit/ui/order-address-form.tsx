@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ComponentProps } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
@@ -23,6 +23,7 @@ import {
   type ApiErrorLike,
 } from "@/features/order-status-update";
 import {
+  ADDRESS_LIMITS,
   NpCityField,
   NpWarehouseField,
   clearNpRefs,
@@ -33,12 +34,15 @@ import {
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { Button, Input, Label, PillGroup, StaleDraftPanel } from "@/shared/ui";
-import { apiErrorCode, apiErrorMessage } from "@/shared/lib";
+import { PhoneInput } from "@/shared/ui/phone-input";
+import { apiErrorCode, apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { applyServerFieldErrors } from "@/shared/lib/form-errors";
 import { dict } from "@/shared/config";
 import { useEditLockToken } from "@/shared/lib/use-edit-lock-token";
 import { useStaleDraftReview } from "@/shared/lib/use-stale-draft-review";
 import {
   DELIVERY_METHODS,
+  addressFieldMap,
   deliveryEditToDto,
   mapOrderToAddressValues,
   orderAddressSchema,
@@ -51,16 +55,41 @@ interface OrderAddressFormProps {
 
 /** The recipient — on every delivery method. */
 const CONTACT_FIELDS = [
-  { name: "firstName", label: dict.orderCreate.addressFirstName },
-  { name: "lastName", label: dict.orderCreate.addressLastName },
-  { name: "phone", label: dict.orderCreate.addressPhone, type: "tel" },
+  {
+    name: "firstName",
+    label: dict.orderCreate.addressFirstName,
+    maxLength: ADDRESS_LIMITS.name,
+  },
+  {
+    name: "lastName",
+    label: dict.orderCreate.addressLastName,
+    maxLength: ADDRESS_LIMITS.name,
+  },
+  {
+    name: "phone",
+    label: dict.orderCreate.addressPhone,
+    type: "tel",
+    maxLength: ADDRESS_LIMITS.phone,
+  },
 ] as const;
 
 /** Where the parcel goes — on every method but pickup (TASK-1806). */
 const ADDRESS_FIELDS = [
-  { name: "city", label: dict.orderCreate.addressCity },
-  { name: "address1", label: dict.orderCreate.addressAddress1 },
-  { name: "postalCode", label: dict.orderCreate.addressPostalCode },
+  {
+    name: "city",
+    label: dict.orderCreate.addressCity,
+    maxLength: ADDRESS_LIMITS.city,
+  },
+  {
+    name: "address1",
+    label: dict.orderCreate.addressAddress1,
+    maxLength: ADDRESS_LIMITS.address1,
+  },
+  {
+    name: "postalCode",
+    label: dict.orderCreate.addressPostalCode,
+    maxLength: ADDRESS_LIMITS.postalCode,
+  },
 ] as const;
 
 /** The postal code — beside the NP pickers on a Nova Poshta order. */
@@ -345,6 +374,16 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
           }
           // A DELIVERY_* refusal is shown under the form, where it is fixed.
           if (deliveryRefusalOf(error)) return;
+          // TASK-1984 Rule 6b: a 400 lands under the field it is about; only
+          // a remainder nobody could place becomes the toast.
+          if (apiErrorStatus(error) === 400) {
+            const { mapped, unmapped } = applyServerFieldErrors(
+              error,
+              form.setError,
+              addressFieldMap(values.deliveryMethod),
+            );
+            if (mapped.length > 0 && unmapped.length === 0) return;
+          }
           toast.error(
             orderWriteErrorMessage(error as ApiErrorLike) ??
               dict.orders.detailsFailed,
@@ -492,6 +531,8 @@ function TextField({
     label: string;
     type?: string;
     hint?: string;
+    /** `AddressDto`'s `@MaxLength` (Rule 5d) — the schema has the same `.max`. */
+    maxLength?: number;
   };
   form: AddressForm;
   inputMode?: "decimal";
@@ -499,28 +540,56 @@ function TextField({
   const error = form.formState.errors[field.name];
   const id = `order-address-${field.name}`;
   const hintId = field.hint ? `${id}-hint` : undefined;
+  const errorId = `${id}-error`;
+  const describedBy =
+    [hintId, error ? errorId : null].filter(Boolean).join(" ") || undefined;
 
   return (
     <div className="flex flex-col gap-1">
       <Label htmlFor={id} className="text-xs">
         {field.label}
       </Label>
-      <Input
-        id={id}
-        type={field.type ?? "text"}
-        inputMode={inputMode}
-        autoComplete="off"
-        aria-invalid={error ? true : undefined}
-        aria-describedby={hintId}
-        {...form.register(field.name)}
-      />
+      {field.type === "tel" ? (
+        // Rule 5b: `AddressDto.phone` is `@IsInternationalPhone`, so the
+        // international input — no `+380` mask, foreign numbers as typed.
+        <Controller
+          control={form.control}
+          name={field.name}
+          render={({ field: control }) => (
+            <PhoneInput
+              id={id}
+              rule="international"
+              autoComplete="off"
+              maxLength={field.maxLength}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={describedBy}
+              ref={control.ref}
+              name={control.name}
+              value={control.value}
+              onChange={control.onChange}
+              onBlur={control.onBlur}
+            />
+          )}
+        />
+      ) : (
+        <Input
+          id={id}
+          type={field.type ?? "text"}
+          inputMode={inputMode}
+          maxLength={field.maxLength}
+          autoComplete="off"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
+          {...form.register(field.name)}
+        />
+      )}
       {field.hint ? (
         <p id={hintId} className="text-xs text-muted-foreground">
           {field.hint}
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="text-xs text-destructive">
+        <p id={errorId} role="alert" className="text-xs text-destructive">
           {error.message}
         </p>
       ) : null}

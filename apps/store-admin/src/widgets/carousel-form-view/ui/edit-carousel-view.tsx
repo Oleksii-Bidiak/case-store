@@ -9,6 +9,8 @@ import {
   CarouselForm,
   carouselFormValuesToUpdateDto,
   type CarouselFormInput,
+  placeCarouselSaveError,
+  type CarouselFormSetError,
   type CarouselFormValues,
 } from "@/features/carousel-form";
 import type { CarouselPickedItem } from "@/features/carousel-item-picker";
@@ -29,6 +31,7 @@ import { useAuth } from "@/entities/session";
 import { PERM } from "@/entities/permission";
 import { Badge, RowActionsMenu, useConfirmDialog } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import { formatDate, toKyivDateTimeLocal } from "@/shared/lib";
 import { CarouselFormSkeleton } from "./carousel-form-skeleton";
 import {
@@ -105,14 +108,21 @@ export function EditCarouselView({ carouselId }: EditCarouselViewProps) {
     });
   };
 
-  const handleSubmit = async (values: CarouselFormValues) => {
+  const handleSubmit = async (
+    values: CarouselFormValues,
+    setError: CarouselFormSetError,
+  ) => {
     try {
       await update.mutateAsync({
         id: carouselId,
         data: carouselFormValuesToUpdateDto(values),
       });
-    } catch {
-      toast.error(d.toastUpdateFailed);
+    } catch (error) {
+      // TASK-1984 Rule 6b: a refused field lands under it; anything else is a
+      // toast in the server's words.
+      if (!placeCarouselSaveError(error, setError)) {
+        toast.error(refusalMessage(error) ?? d.toastUpdateFailed);
+      }
       return;
     }
 

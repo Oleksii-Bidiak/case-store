@@ -24,7 +24,12 @@ const PATCH_STATUSES: readonly string[] = [ReturnEntityStatus.RECEIVED];
 /** The operator's step on a return (TASK-340): the status, the notes, restock. */
 export const resolveReturnSchema = z.object({
   // A string, not an enum, so the form can hold "" until a step button sets it.
-  status: z.string().refine((status) => PATCH_STATUSES.includes(status)),
+  // Only a step button sets it, so a refusal here means the page offered a
+  // step this PATCH does not take — a stale page; the message says so
+  // (TASK-1984: a rule with no message was a silent refusal).
+  status: z.string().refine((status) => PATCH_STATUSES.includes(status), {
+    message: t.resolveConflict,
+  }),
   operatorNotes: z
     .string()
     .trim()

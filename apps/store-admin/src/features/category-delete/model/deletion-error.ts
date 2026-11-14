@@ -1,5 +1,11 @@
+import type { UseFormSetError } from "react-hook-form";
 import { apiErrorCode, apiErrorStatus } from "@/shared/lib";
+import {
+  applyServerFieldErrors,
+  type ServerFieldMap,
+} from "@/shared/lib/form-errors";
 import { dict } from "@/shared/config";
+import type { CategoryDeleteFormValues } from "./delete-schema";
 
 const d = dict.categories.delete;
 
@@ -62,6 +68,45 @@ export function deletionErrorMessage(
   }
   if (deletionOutcomeUnknown(error)) return d.errorOutcomeUnknown;
   return d.errorGeneric;
+}
+
+/** `DeleteCategoryDto` paths → the dialog's fields (TASK-1984, Rule 6b). */
+const DELETION_FIELD_MAP: ServerFieldMap = {
+  "moveToNew.name": "name",
+  "moveToNew.parentId": "parentId",
+  moveToNew: "name",
+  moveToId: "targetId",
+};
+
+/**
+ * Puts a refusal of the «Створити нову» name under that field (TASK-1984,
+ * forms Rule 6b) and says whether it did — `false` leaves it to the box:
+ *
+ * - 409 `CATEGORY_SLUG_CONFLICT` — the slug derived from the name is taken;
+ *   the name is what the operator changes, so the message goes there;
+ * - a 400 whose `fieldErrors` all map onto the dialog's fields.
+ *
+ * `slug` is the one the dialog derived from the submitted name.
+ */
+export function placeDeletionFieldError(
+  error: unknown,
+  slug: string,
+  setError: UseFormSetError<CategoryDeleteFormValues>,
+): boolean {
+  const status = apiErrorStatus(error);
+  if (status === 409 && apiErrorCode(error) === "CATEGORY_SLUG_CONFLICT") {
+    setError("name", { type: "server", message: d.errorSlugConflict(slug) });
+    return true;
+  }
+  if (status === 400) {
+    const { mapped, unmapped } = applyServerFieldErrors(
+      error,
+      setError,
+      DELETION_FIELD_MAP,
+    );
+    return mapped.length > 0 && unmapped.length === 0;
+  }
+  return false;
 }
 
 /** No HTTP answer, or the server failed mid-way: the delete may have happened. */

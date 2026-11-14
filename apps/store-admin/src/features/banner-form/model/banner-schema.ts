@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { CreateBannerDto, UpdateBannerDto } from "@/entities/banner";
 import { dict } from "@/shared/config";
 import { fromKyivDateTimeLocal } from "@/shared/lib";
+import { isPastKyivDateTimeLocal } from "@/shared/lib/scheduled-at";
 
 const e = dict.bannerForm.errors;
 
@@ -13,6 +14,19 @@ export const BANNER_PLACEMENT = [
   "ANNOUNCEMENT_BAR",
 ] as const;
 export type BannerPlacementValue = (typeof BANNER_PLACEMENT)[number];
+
+/**
+ * The DTO's `@MaxLength` caps (`apps/store-api/src/banners/dto/create-banner.dto.ts`)
+ * — read by the schema and by the inputs' `maxLength` (TASK-1984, Rule 5d).
+ */
+export const BANNER_LIMITS = {
+  title: 255,
+  subtitle: 500,
+  imageUrl: 2048,
+  ctaLabel: 100,
+  ctaHref: 2048,
+  theme: 50,
+} as const;
 
 /** Publish lifecycle values — mirror of the API's PublishStatus enum. */
 export const BANNER_STATUS = ["DRAFT", "SCHEDULED", "PUBLISHED"] as const;
@@ -41,37 +55,48 @@ export const bannerSchema = z
   .object({
     placement: z.enum(BANNER_PLACEMENT),
 
-    title: z.string().trim().min(1, e.titleRequired).max(255, e.titleMax),
+    // Stricter on purpose (Rule 5f): `CreateBannerDto.title` has no minimum,
+    // but a banner with no headline is never what the operator meant.
+    title: z
+      .string()
+      .trim()
+      .min(1, e.titleRequired)
+      .max(BANNER_LIMITS.title, e.titleMax),
 
     subtitle: z
       .string()
       .trim()
-      .max(500, e.subtitleMax)
+      .max(BANNER_LIMITS.subtitle, e.subtitleMax)
       .optional()
       .or(z.literal("")),
 
     imageUrl: z
       .string()
       .trim()
-      .max(2048, e.imageUrlMax)
+      .max(BANNER_LIMITS.imageUrl, e.imageUrlMax)
       .optional()
       .or(z.literal("")),
 
     ctaLabel: z
       .string()
       .trim()
-      .max(100, e.ctaLabelMax)
+      .max(BANNER_LIMITS.ctaLabel, e.ctaLabelMax)
       .optional()
       .or(z.literal("")),
 
     ctaHref: z
       .string()
       .trim()
-      .max(2048, e.ctaHrefMax)
+      .max(BANNER_LIMITS.ctaHref, e.ctaHrefMax)
       .optional()
       .or(z.literal("")),
 
-    theme: z.string().trim().max(50, e.themeMax).optional().or(z.literal("")),
+    theme: z
+      .string()
+      .trim()
+      .max(BANNER_LIMITS.theme, e.themeMax)
+      .optional()
+      .or(z.literal("")),
 
     status: z.enum(BANNER_STATUS),
 
@@ -101,6 +126,18 @@ export const bannerSchema = z
         code: z.ZodIssueCode.custom,
         path: ["scheduledAt"],
         message: e.scheduledAtRequired,
+      });
+    }
+
+    // TASK-1984 (Rule 5e): the API would publish a past schedule NOW, silently.
+    if (
+      values.status === "SCHEDULED" &&
+      isPastKyivDateTimeLocal(values.scheduledAt)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scheduledAt"],
+        message: e.scheduledAtPast,
       });
     }
 

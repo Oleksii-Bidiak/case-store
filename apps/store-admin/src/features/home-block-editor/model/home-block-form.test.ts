@@ -10,6 +10,8 @@ import {
   toCreateDto,
   toUpdateDto,
   validateDraft,
+  homeBlockSaveErrors,
+  TITLE_MAX_LENGTH,
   type HomeBlockDraft,
 } from "./home-block-form";
 
@@ -134,6 +136,65 @@ describe("validateDraft", () => {
         NOW,
       ),
     ).toEqual({});
+  });
+
+  // TASK-1984 (Rule 5d): the DTO's `@MaxLength(255)`, said before the 400.
+  it("a TABS title is capped at the DTO's 255 characters", () => {
+    const draft: HomeBlockDraft = {
+      ...emptyDraft(0),
+      type: "TABS",
+      tabs: ["c-picks"],
+    };
+    expect(
+      validateDraft({ ...draft, title: "a".repeat(TITLE_MAX_LENGTH) }, "edit"),
+    ).toEqual({});
+    expect(
+      validateDraft(
+        { ...draft, title: "a".repeat(TITLE_MAX_LENGTH + 1) },
+        "edit",
+      ),
+    ).toEqual({ title: e.titleMax(TITLE_MAX_LENGTH) });
+  });
+});
+
+describe("homeBlockSaveErrors (TASK-1984, Rule 6b)", () => {
+  const refusal = (status: number, fieldErrors?: unknown) => ({
+    response: {
+      status,
+      data: { statusCode: status, message: "x", fieldErrors },
+    },
+  });
+
+  it("puts each refused DTO path on its draft field", () => {
+    expect(
+      homeBlockSaveErrors(
+        refusal(400, [
+          { field: "title", constraint: "maxLength" },
+          { field: "tabs.2", constraint: "isUuid" },
+        ]),
+      ),
+    ).toEqual({
+      fields: { title: dict.forms.tooLong, tabs: dict.forms.invalid },
+      placed: true,
+    });
+  });
+
+  it("is not placed when part of the 400 names no field of the dialog", () => {
+    expect(
+      homeBlockSaveErrors(
+        refusal(400, [
+          { field: "title", constraint: "maxLength" },
+          { field: "position", constraint: "min" },
+        ]),
+      ).placed,
+    ).toBe(false);
+  });
+
+  it("leaves a non-400 to the toast", () => {
+    expect(homeBlockSaveErrors(refusal(409))).toEqual({
+      fields: {},
+      placed: false,
+    });
   });
 });
 

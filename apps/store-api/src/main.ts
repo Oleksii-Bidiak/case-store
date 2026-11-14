@@ -7,12 +7,12 @@ import { ConfigService } from '@nestjs/config';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { CsrfService } from './csrf';
 import { applyProxyTrust, buildHelmetOptions } from './config';
 import { HttpExceptionFilter } from './common/filters';
+import { createGlobalValidationPipe } from './common/pipes';
 import { JSON_BODY_LIMIT_BYTES } from './common/sanitize';
 import { LoggingInterceptor } from './common/interceptors';
 
@@ -84,17 +84,9 @@ async function bootstrap() {
     exposedHeaders: ['Retry-After'],
   });
 
-  // Global validation pipe — validate all incoming DTOs
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    }),
-  );
+  // Global validation pipe — validate all incoming DTOs. One definition, shared
+  // with the e2e specs; its 400 carries `fieldErrors` (TASK-1984, D3).
+  app.useGlobalPipes(createGlobalValidationPipe());
 
   // Global exception filter — consistent error envelope (injected via DI for PinoLogger).
   // Registered AFTER AppModule's APP_FILTER (PrismaExceptionFilter), so Nest tries

@@ -216,9 +216,51 @@ describe("ReviewReplyAction (TASK-446)", () => {
     await screen.findByLabelText(d.replyLabel);
     await user.click(screen.getByRole("button", { name: d.replySubmit }));
 
-    // The DTO's `@MinLength(1)` would reject it anyway; the point is not to
-    // spend a round trip discovering that, and not to publish an empty answer.
-    await waitFor(() => expect(posted).toBe(false));
+    // The DTO's `@IsNotEmpty` would reject it anyway; the point is not to
+    // spend a round trip discovering that, and not to publish an empty answer
+    // — and, since TASK-1984, to say so under the field.
+    expect(await screen.findByText(d.replyRequired)).toBeInTheDocument();
+    expect(screen.getByLabelText(d.replyLabel)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(posted).toBe(false);
+  });
+
+  it("refuses an answer of spaces with the same words", async () => {
+    const user = userEvent.setup();
+    renderAction(makeReview());
+
+    await user.click(screen.getByRole("button", { name: d.replyAction }));
+    await user.type(await screen.findByLabelText(d.replyLabel), "   ");
+    await user.click(screen.getByRole("button", { name: d.replySubmit }));
+
+    expect(await screen.findByText(d.replyRequired)).toBeInTheDocument();
+  });
+
+  // TASK-1984 Rule 6b: a server 400 on `body` is said under the field.
+  it("puts a refused body under the field, not in a toast", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("*/api/admin/reviews/:id/reply", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "Bad Request",
+            message: "body must be shorter than or equal to 1000 characters",
+            fieldErrors: [{ field: "body", constraint: "maxLength" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderAction(makeReview());
+
+    await user.click(screen.getByRole("button", { name: d.replyAction }));
+    await user.type(await screen.findByLabelText(d.replyLabel), "Дякуємо!");
+    await user.click(screen.getByRole("button", { name: d.replySubmit }));
+
+    expect(await screen.findByText(dict.forms.tooLong)).toBeInTheDocument();
   });
 });
 

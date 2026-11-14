@@ -1066,6 +1066,7 @@ describe("ProductForm — sections, dots and the one sticky bar (TASK-1050)", ()
     expect(onSubmit.mock.calls[0][1]).toEqual({
       mainDirty: true,
       mainSections: [dict.productForm.sectionMain],
+      setError: expect.any(Function),
     });
     await waitFor(() =>
       expect(

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, INestApplication, ValidationPipe } from '@nestjs/common';
+import { ConflictException, INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerStorage } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
@@ -32,6 +32,7 @@ import type { OrderWithItems } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * E2E tests for the Order module.
@@ -362,14 +363,7 @@ describe('OrderController (e2e)', () => {
     // then compare against a UUID nobody sent (TASK-338).
     app.use(cookieParser());
 
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
 
     app.setGlobalPrefix('api', { exclude: ['health'] });
 

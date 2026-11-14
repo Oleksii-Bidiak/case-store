@@ -104,6 +104,26 @@ describe("ChangePasswordForm", () => {
     }
   });
 
+  // Forms Rule 4c: every field has a default, so an untouched one gets the
+  // localized message, never zod's English "Required".
+  it("names each empty field in Ukrainian on a blank submit", async () => {
+    const calls = captureChangePassword();
+    const user = userEvent.setup();
+    renderWithProviders(<ChangePasswordForm />, {
+      auth: { isAuthenticated: true },
+    });
+
+    await user.click(screen.getByRole("button", { name: d.submit }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(d.currentPassword),
+      ).toHaveAccessibleDescription(d.validationCurrentRequired),
+    );
+    expect(screen.queryByText("Required")).not.toBeInTheDocument();
+    expect(calls).toHaveLength(0);
+  });
+
   it("rejects a weak new password without calling the API", async () => {
     const calls = captureChangePassword();
     const user = userEvent.setup();
@@ -169,7 +189,7 @@ describe("ChangePasswordForm", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("surfaces 'current password is wrong' on a 401, not the generic error", async () => {
+  it("puts 'current password is wrong' under the current-password field on a 401", async () => {
     captureChangePassword(() => wrongCurrentPassword());
     const user = userEvent.setup();
     renderWithProviders(<ChangePasswordForm />, {
@@ -178,11 +198,76 @@ describe("ChangePasswordForm", () => {
 
     await fillForm(user);
 
-    expect(await screen.findByText(d.errorWrongCurrent)).toBeInTheDocument();
+    // TASK-1984 (Rule 6b): under the field, not a form-bottom banner.
+    const current = screen.getByLabelText(d.currentPassword);
+    await waitFor(() =>
+      expect(current).toHaveAttribute("aria-invalid", "true"),
+    );
+    expect(current).toHaveAccessibleDescription(d.errorWrongCurrent);
+    expect(screen.getAllByText(d.errorWrongCurrent)).toHaveLength(1);
     expect(
       screen.queryByText(dict.common.genericError),
     ).not.toBeInTheDocument();
     expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  // TASK-1984 (Rule 6b): a 400 about the new password lands under that field.
+  it("puts a DTO 400 on newPassword under the new-password field", async () => {
+    captureChangePassword(() =>
+      HttpResponse.json(
+        {
+          statusCode: 400,
+          message: ["Password must be at least 8 characters long"],
+          fieldErrors: [{ field: "newPassword", constraint: "minLength" }],
+        },
+        { status: 400 },
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<ChangePasswordForm />, {
+      auth: { isAuthenticated: true },
+    });
+
+    await fillForm(user);
+
+    const next = screen.getByLabelText(d.newPassword);
+    await waitFor(() => expect(next).toHaveAttribute("aria-invalid", "true"));
+    expect(next).toHaveAccessibleDescription(
+      dict.auth.register.validationPassword,
+    );
+    expect(
+      screen.queryByText(dict.common.genericError),
+    ).not.toBeInTheDocument();
+  });
+
+  it("puts the staff-policy 400 (no fieldErrors) under the new-password field", async () => {
+    captureChangePassword(() =>
+      HttpResponse.json(
+        {
+          statusCode: 400,
+          error: "BadRequestException",
+          message:
+            "Password must contain at least one lowercase letter, one uppercase letter and one digit",
+        },
+        { status: 400 },
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<ChangePasswordForm />, {
+      auth: { isAuthenticated: true },
+    });
+
+    await fillForm(user, { next: "strongpass123" });
+
+    const next = screen.getByLabelText(d.newPassword);
+    await waitFor(() =>
+      expect(next).toHaveAccessibleDescription(
+        dict.auth.register.validationPasswordPolicyStaff,
+      ),
+    );
+    expect(
+      screen.queryByText(dict.common.genericError),
+    ).not.toBeInTheDocument();
   });
 
   it("falls back to the generic error on a 500", async () => {

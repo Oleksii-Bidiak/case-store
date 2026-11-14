@@ -17376,7 +17376,8 @@
           "email": {
             "type": "string",
             "description": "User email address",
-            "example": "user@example.com"
+            "example": "user@example.com",
+            "maxLength": 254
           },
           "password": {
             "type": "string",
@@ -17395,7 +17396,8 @@
           "email": {
             "type": "string",
             "description": "Email address of the account to send a password-reset link to",
-            "example": "user@example.com"
+            "example": "user@example.com",
+            "maxLength": 254
           }
         },
         "required": [
@@ -23847,7 +23849,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "User phone number: 9 to 15 digits, any country code, separators allowed. Stored normalised, as digits only. Omit the field to leave the number unchanged; send `null` (or an empty string) to REMOVE it. Anything else that is not a dialable number — e.g. `----------` — is refused with 400, never stored as empty.",
+            "description": "User phone number: a Ukrainian number (+380 followed by 9 digits), typed with any of `+ ( ) . -` and spaces as separators — letters or an extension are refused. Stored normalised as `380XXXXXXXXX`. Omit the field to leave the number unchanged; send `null` (or an empty string) to REMOVE it. Anything else that is not a dialable number — e.g. `----------` — is refused with 400, never stored as empty.",
             "example": "+380991234567",
             "nullable": true
           }
@@ -28739,7 +28741,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "Support phone number (free-form)",
+            "description": "Support phone number: 9 to 15 digits with the usual separators. Stored as typed (no normalisation), so a 0 800 line is shown and dialled as written.",
             "example": "+380 44 000 0000"
           },
           "workingHours": {
@@ -33391,7 +33393,7 @@
           },
           "phone": {
             "type": "string",
-            "description": "Free-form phone; blank or null = none",
+            "description": "Phone, 9 to 15 digits, stored as typed; blank or null = none",
             "nullable": true,
             "example": "+380441234567"
           },
@@ -35064,7 +35066,8 @@
           "email": {
             "type": "string",
             "description": "Subscriber email address",
-            "example": "user@example.com"
+            "example": "user@example.com",
+            "maxLength": 254
           },
           "source": {
             "type": "string",

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -10,6 +10,7 @@ import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 import { JwtService } from '@nestjs/jwt';
 import { BlogSearchService, MeiliClient, SearchService } from '../src/search';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * E2E tests for the Search module (TASK-075).
@@ -160,14 +161,7 @@ describe('Search (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     app.setGlobalPrefix('api', { exclude: ['health'] });
     await app.init();
   });

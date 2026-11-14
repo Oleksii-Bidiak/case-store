@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
@@ -18,6 +18,7 @@ import { PermissionRepository, type PermissionActor } from '../src/auth/permissi
 import { OrderMoneyRepository, type LockedOrder } from '../src/order/order-money.repository';
 import { PrismaService } from '../src/prisma';
 import { UserRepository } from '../src/user/user.repository';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * Shared harness for the R2 A3 money-door e2e suites
@@ -170,14 +171,7 @@ export function createMoneyHarness() {
 
       app = moduleFixture.createNestApplication();
       jwt = moduleFixture.get(JwtService);
-      app.useGlobalPipes(
-        new ValidationPipe({
-          whitelist: true,
-          forbidNonWhitelisted: true,
-          transform: true,
-          transformOptions: { enableImplicitConversion: true },
-        }),
-      );
+      app.useGlobalPipes(createGlobalValidationPipe());
       app.setGlobalPrefix('api', { exclude: ['health'] });
       await app.init();
       return app;

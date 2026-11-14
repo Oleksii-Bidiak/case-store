@@ -2,8 +2,14 @@ import { z } from "zod";
 import type { CreatePageDto, UpdatePageDto } from "@/entities/page";
 import { dict, hubRouteForSlug } from "@/shared/config";
 import { SLUG_PATTERN } from "@/shared/lib/slug";
-import { ogImageField, seoTextFields } from "@/shared/lib/seo-fields-schema";
+import {
+  META_DESCRIPTION_MAX_LENGTH,
+  META_TITLE_MAX_LENGTH,
+  ogImageField,
+  seoTextFields,
+} from "@/shared/lib/seo-fields-schema";
 import { fromKyivDateTimeLocal } from "@/shared/lib";
+import { isPastKyivDateTimeLocal } from "@/shared/lib/scheduled-at";
 import {
   KEYWORDS_MAX_COUNT,
   KEYWORD_MAX_LENGTH,
@@ -19,6 +25,21 @@ const seoErrors = dict.seoFields.errors;
  * the stored HTML a page body may have.
  */
 export const MAX_PAGE_CONTENT_LENGTH = 100_000;
+
+/**
+ * The DTO's `@MaxLength` caps (`apps/store-api/src/pages/dto/create-page.dto.ts`;
+ * `ogImage` is `OG_IMAGE_MAX_LENGTH` of `IsOgImageField` in
+ * `apps/store-api/src/common/validators/seo-fields.decorator.ts`) — read by the
+ * schema and by the inputs' `maxLength` (TASK-1984, Rule 5d).
+ */
+export const PAGE_LIMITS = {
+  title: 255,
+  slug: 255,
+  excerpt: 500,
+  metaTitle: META_TITLE_MAX_LENGTH,
+  metaDescription: META_DESCRIPTION_MAX_LENGTH,
+  ogImage: 2048,
+} as const;
 
 /** Publish lifecycle values — mirror of the API's PublishStatus enum. */
 export const PAGE_STATUS = ["DRAFT", "SCHEDULED", "PUBLISHED"] as const;
@@ -40,12 +61,18 @@ export type PageKindValue = (typeof PAGE_KIND)[number];
  */
 export const pageSchema = z
   .object({
-    title: z.string().trim().min(1, e.titleRequired).max(255, e.titleMax),
+    // Stricter on purpose (Rule 5f): `CreatePageDto.title` has no minimum, but
+    // a page without a heading is never what the operator meant to save.
+    title: z
+      .string()
+      .trim()
+      .min(1, e.titleRequired)
+      .max(PAGE_LIMITS.title, e.titleMax),
 
     slug: z
       .string()
       .trim()
-      .max(255, e.slugMax)
+      .max(PAGE_LIMITS.slug, e.slugMax)
       .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
       .optional()
       .or(z.literal("")),
@@ -74,7 +101,7 @@ export const pageSchema = z
     excerpt: z
       .string()
       .trim()
-      .max(500, e.excerptMax)
+      .max(PAGE_LIMITS.excerpt, e.excerptMax)
       .optional()
       .or(z.literal("")),
 
@@ -95,7 +122,12 @@ export const pageSchema = z
         seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
       ),
 
-    ogImage: ogImageField(),
+    // `ogImageField` checks the URL rule only; the cap is the DTO's
+    // `IsOgImageField` → `@MaxLength(OG_IMAGE_MAX_LENGTH)` (Rule 5d).
+    ogImage: ogImageField().refine(
+      (value) => value === undefined || value.length <= PAGE_LIMITS.ogImage,
+      seoErrors.ogImageMax(PAGE_LIMITS.ogImage),
+    ),
 
     // No `sortOrder` (TASK-428, removed from the schema by TASK-729): the order is
     // set by dragging rows in the page list, and a new page is appended by the server.
@@ -113,6 +145,18 @@ export const pageSchema = z
         code: z.ZodIssueCode.custom,
         path: ["scheduledAt"],
         message: e.scheduledAtRequired,
+      });
+    }
+
+    // TASK-1984 (Rule 5e): the API would publish a past schedule NOW, silently.
+    if (
+      values.status === "SCHEDULED" &&
+      isPastKyivDateTimeLocal(values.scheduledAt)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scheduledAt"],
+        message: e.scheduledAtPast,
       });
     }
 

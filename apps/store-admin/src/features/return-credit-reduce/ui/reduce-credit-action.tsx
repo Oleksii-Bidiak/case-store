@@ -7,7 +7,6 @@ import {
   getAdminOrderReturnControllerFindForOrderQueryKey,
   getAdminReturnControllerFindAllQueryKey,
   getAdminReturnControllerFindByIdQueryKey,
-  returnRefusalOf,
   useAdminReturnControllerReduceCredit,
   type AdminReturnResponseEnvelope,
   type ReturnEntity,
@@ -36,7 +35,11 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatKop, kopToInput, parseKop } from "@/shared/lib";
-import { checkReduceReason, checkReducedCredit } from "../model/reduce-credit";
+import {
+  checkReduceReason,
+  checkReducedCredit,
+  placeReduceRefusal,
+} from "../model/reduce-credit";
 
 const r = dict.returnMoney;
 const m = dict.orderMoney;
@@ -172,15 +175,19 @@ function ReduceDialogBody({
           refresh(response.data);
         },
         onError: (error) => {
-          const refusal = returnRefusalOf(error);
-          if (refusal?.refetch) {
-            // The page was stale — say what moved and re-read it.
+          // TASK-1984 Rule 6: a refusal about the amount (a bound moved) or a
+          // 400 on either input goes under that input; a stale action closes
+          // with a toast; only the rest is the dialog's banner.
+          const placed = placeReduceRefusal(error);
+          if (placed.refetch) refresh(null);
+          if (placed.close) {
             onClose();
-            toast.error(refusal.message);
-            refresh(null);
+            if (placed.banner) toast.error(placed.banner);
             return;
           }
-          setFormError(refusal?.message ?? r.reduceFailed);
+          if (placed.fields.amount) setAmountError(placed.fields.amount);
+          if (placed.fields.reason) setReasonError(placed.fields.reason);
+          setFormError(placed.banner);
         },
       },
     );

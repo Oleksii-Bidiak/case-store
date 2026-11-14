@@ -17,6 +17,13 @@ import { BRAND_LIST_PREFIX, CacheService, brandListCategoryKey } from '../cache'
 const DEFAULT_CACHE_TTL_SECONDS = 300;
 
 /**
+ * The `error` code of the 409 a create / update answers when the slug is held by
+ * another brand (TASK-1984): the admin form keys off it to put the refusal under
+ * the slug field. Keep the value stable.
+ */
+export const BRAND_SLUG_CONFLICT = 'BRAND_SLUG_CONFLICT';
+
+/**
  * Business logic for brands (TASK-189). Thin over the repository: slug
  * auto-generation + uniqueness validation on write, existence checks on
  * mutation. Never touches PrismaClient directly.
@@ -108,7 +115,10 @@ export class BrandService {
 
     const existingBySlug = await this.brandRepository.findBySlug(slug);
     if (existingBySlug) {
-      throw new ConflictException('A brand with this slug already exists');
+      throw new ConflictException({
+        error: BRAND_SLUG_CONFLICT,
+        message: 'A brand with this slug already exists',
+      });
     }
 
     const input: CreateBrandInput = {
@@ -137,7 +147,10 @@ export class BrandService {
     if (dto.slug !== undefined && dto.slug !== brand.slug) {
       const existingBySlug = await this.brandRepository.findBySlug(dto.slug);
       if (existingBySlug && existingBySlug.id !== id) {
-        throw new ConflictException('A brand with this slug already exists');
+        throw new ConflictException({
+          error: BRAND_SLUG_CONFLICT,
+          message: 'A brand with this slug already exists',
+        });
       }
     }
 

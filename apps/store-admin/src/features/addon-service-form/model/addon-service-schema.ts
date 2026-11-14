@@ -1,4 +1,11 @@
 import { z } from "zod";
+import type { UseFormSetError } from "react-hook-form";
+import { apiErrorStatus } from "@/shared/lib";
+import {
+  applyServerFieldErrors,
+  type ServerFieldMap,
+} from "@/shared/lib/form-errors";
+import { parseKop } from "@/shared/lib/money-kop";
 import type {
   AddonServiceEntity,
   CreateAddonServiceDto,
@@ -11,10 +18,54 @@ const e = dict.addonServiceForm.errors;
 /**
  * The description is the one line a shopper reads next to the service's
  * checkbox in the cart — 300 is the owner-approved length (wave 198,
- * AddonServicesProposal ДП4, TASK-1083). The API still accepts 2000; aligning
- * its DTO is an API tail.
+ * AddonServicesProposal ДП4, TASK-1083).
+ *
+ * Stricter than the DTO ON PURPOSE (forms Rule 5f): `CreateAddonServiceDto` /
+ * `UpdateAddonServiceDto` keep `@MaxLength(2000)` because descriptions saved
+ * before the 300 rule exist, and the form lets such a text through unchanged
+ * (see `addonServiceSchemaFor`). Lowering the DTO would make every save of
+ * those services fail until someone cut the text.
  */
 export const ADDON_DESCRIPTION_MAX = 300;
+
+/**
+ * The DTOs' own `@MaxLength(2000)` on `description` — the textarea's hard
+ * `maxLength` (Rule 5d): past 300 the schema speaks, past 2000 nothing types.
+ */
+export const ADDON_DESCRIPTION_DTO_MAX = 2000;
+
+/** The DTOs' `@MaxLength(255)` on `name` (create-addon-service.dto.ts). */
+export const ADDON_NAME_MAX = 255;
+
+/** `CreateAddonServiceDto` / `UpdateAddonServiceDto` paths → form fields. */
+const ADDON_SERVICE_FIELD_MAP: ServerFieldMap = {
+  name: "name",
+  description: "description",
+  price: "price",
+};
+
+/**
+ * Puts a refused add-on save under its field (TASK-1984, Rule 6b) and says
+ * whether it did — `false` leaves the toast to the caller.
+ */
+export function placeAddonServiceSaveError(
+  error: unknown,
+  setError: UseFormSetError<AddonServiceFormInput>,
+): boolean {
+  if (apiErrorStatus(error) !== 400) return false;
+  const { mapped, unmapped } = applyServerFieldErrors(
+    error,
+    setError,
+    ADDON_SERVICE_FIELD_MAP,
+  );
+  return mapped.length > 0 && unmapped.length === 0;
+}
+
+/** A typed price in the DTO's hryvnia number, or `null` when it is not one. */
+function parsePrice(raw: string): number | null {
+  const kop = parseKop(raw);
+  return kop === null ? null : Number((kop / 100).toFixed(2));
+}
 
 /**
  * Validation schema for the admin add-on-service (catalog) form.
@@ -26,7 +77,11 @@ export const ADDON_DESCRIPTION_MAX = 300;
  */
 export const addonServiceSchemaFor = (savedDescription?: string | null) =>
   z.object({
-    name: z.string().trim().min(1, e.nameRequired).max(255, e.nameMax),
+    name: z
+      .string()
+      .trim()
+      .min(1, e.nameRequired)
+      .max(ADDON_NAME_MAX, e.nameMax),
 
     // A description saved before the 300 limit (the API took 2000) passes
     // UNCHANGED — otherwise changing a price meant cutting someone's text
@@ -43,12 +98,21 @@ export const addonServiceSchemaFor = (savedDescription?: string | null) =>
         e.descriptionMax,
       ),
 
+    // TASK-1984 (Rule 5e): the money helper, never `Number(x)` alone —
+    // «Infinity» / «1e3» are refused here, not by the API's `@IsNumber()`. The
+    // floor is the DTO's `@Min(0)`; a minus sign is not an amount at all.
+    // Stricter on purpose (Rule 5f): at most two decimals (money), and
+    // `parseKop`'s int4-kopeck ceiling (~21.4 M ₴) where the DTO has no
+    // `@Max` — far above any service price.
     price: z
       .string()
       .trim()
       .min(1, e.priceRequired)
-      .refine((value) => !Number.isNaN(Number(value)), e.priceNumber)
-      .refine((value) => Number(value) >= 0, e.priceNonNegative),
+      .refine((value) => !value.startsWith("-"), e.priceNonNegative)
+      .refine(
+        (value) => value.startsWith("-") || parsePrice(value) !== null,
+        e.priceNumber,
+      ),
 
     isActive: z.boolean().optional(),
   });
@@ -72,7 +136,8 @@ export function addonServiceFormValuesToDto(
   return {
     name: values.name,
     description: description ? description : undefined,
-    price: Number(values.price),
+    // The schema already refused anything `parsePrice` cannot read.
+    price: parsePrice(values.price) ?? 0,
     isActive: values.isActive,
   };
 }

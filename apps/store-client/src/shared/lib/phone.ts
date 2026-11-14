@@ -39,20 +39,17 @@ export const UA_PHONE_PATTERN = /^380\d{9}$/;
  *   - `"+380 50 123 4"` → `"501234"`    (partial)
  */
 function localDigits(raw: string): string {
+  return localPart(raw).slice(0, UA_PHONE_LOCAL_LENGTH);
+}
+
+/** {@link localDigits} without the cap — every digit after the prefix. */
+function localPart(raw: string): string {
   const digits = raw.replace(/\D/g, "");
 
-  let local: string;
-  if (digits.startsWith("380")) {
-    local = digits.slice(3);
-  } else if (digits.startsWith("80")) {
-    local = digits.slice(2);
-  } else if (digits.startsWith("0")) {
-    local = digits.slice(1);
-  } else {
-    local = digits;
-  }
-
-  return local.slice(0, UA_PHONE_LOCAL_LENGTH);
+  if (digits.startsWith("380")) return digits.slice(3);
+  if (digits.startsWith("80")) return digits.slice(2);
+  if (digits.startsWith("0")) return digits.slice(1);
+  return digits;
 }
 
 /**
@@ -105,9 +102,94 @@ export function normalizeUAPhone(raw: string): string {
   return digits;
 }
 
-/** Whether `raw` is a Ukrainian number, whatever separators it was typed with. */
+/**
+ * The characters a human legitimately types AROUND the digits — a leading `+`,
+ * then digits and the usual separators. Spelled exactly as `PHONE_SHAPE` in the
+ * API's `is-international-phone.decorator.ts`; `phone-parity.spec.ts` in
+ * store-api fails the moment the two differ (forms convention, Rule 5a).
+ */
+export const PHONE_SHAPE = /^\+?[\d\s().-]+$/;
+
+/** One character outside the {@link PHONE_SHAPE} alphabet. */
+const NOT_PHONE_CHAR = /[^\d\s+().-]/g;
+
+/**
+ * What `PhoneInput` hands the form (TASK-1984, Rule 5b): the raw string with
+ * every character outside the {@link PHONE_SHAPE} alphabet removed — letters
+ * typed or pasted never reach the value. NEVER truncates and never reorders, so
+ * the rule still judges exactly what the user meant (Rule 4b); a second `+` is
+ * kept for {@link PHONE_SHAPE} to refuse.
+ */
+export function sanitizePhoneInput(raw: string): string {
+  return raw.replace(NOT_PHONE_CHAR, "");
+}
+
+/** The prefix {@link formatUAPhone} draws into every masked field, empty or not. */
+const MASK_PREFIX = "+380";
+
+/** The drawn prefix followed by a domestic trunk zero: `+380` + `0…`. */
+const MASK_PREFIX_TRUNK_ZERO = /^\+380\s*0/;
+
+/**
+ * What the masked `PhoneInput` hands the form for what the browser now holds
+ * (TASK-1984). The mask draws `+380` into every field, so everything a person
+ * types lands AFTER it; without this the value carried the drawn prefix too:
+ *
+ *   - only the prefix, or what Backspace left of it (`+38`, `+3`, `+`) → `""`,
+ *     so the field can be emptied (and an optional number removed);
+ *   - a domestic `0…` typed after it is the trunk zero — no UA local number
+ *     starts with 0 — so it is dropped: `+3800501112233` → `+380501112233`.
+ *
+ * Everything else is {@link sanitizePhoneInput}d and passed whole (Rule 5b). A
+ * pasted whole number never gets here with the prefix: `PhoneInput` replaces the
+ * value with it ({@link isWholePhonePaste}).
+ */
+export function maskedPhoneValue(raw: string): string {
+  const clean = sanitizePhoneInput(raw).replace(
+    MASK_PREFIX_TRUNK_ZERO,
+    MASK_PREFIX,
+  );
+  // Only what is left OF the drawn prefix counts as empty — `----------` is
+  // something typed, and stays for the rule to refuse (TASK-799).
+  return MASK_PREFIX.startsWith(clean.replace(/\s/g, "")) ? "" : clean;
+}
+
+/**
+ * Whether pasted text is a whole number (at least a UA local number's worth of
+ * digits) — `PhoneInput` then REPLACES the value with it instead of inserting it
+ * after the drawn `+380` (TASK-1984): `+380` + `+380501112233` is two numbers.
+ */
+export function isWholePhonePaste(text: string): boolean {
+  return text.replace(/\D/g, "").length >= UA_PHONE_LOCAL_LENGTH;
+}
+
+/**
+ * What the masked `PhoneInput` SHOWS (TASK-1984): {@link formatUAPhone}, but a
+ * digit past the ninth is shown rather than cut. The field's value is never
+ * truncated (Rule 5b), so a mask that hid the 10th digit showed a valid-looking
+ * number under the error that refused it.
+ */
+export function maskedPhoneDisplay(raw: string): string {
+  const masked = formatUAPhone(raw);
+  const local = localPart(raw);
+  return local.length > UA_PHONE_LOCAL_LENGTH
+    ? masked + local.slice(UA_PHONE_LOCAL_LENGTH)
+    : masked;
+}
+
+/**
+ * Whether `raw` is a Ukrainian number, whatever separators it was typed with.
+ *
+ * Shape first, then digits — the API's `@IsUaPhone` order (TASK-1984). The
+ * normaliser strips every non-digit, so without the shape check
+ * `050 111 2233 ccc` reduced to a valid number here while the server refused it.
+ */
 export function isValidUAPhone(raw: string): boolean {
-  return UA_PHONE_PATTERN.test(normalizeUAPhone(raw));
+  const trimmed = raw.trim();
+  return (
+    PHONE_SHAPE.test(trimmed) &&
+    UA_PHONE_PATTERN.test(normalizeUAPhone(trimmed))
+  );
 }
 
 /**

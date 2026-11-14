@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -16,6 +16,7 @@ import { CategoryRepository } from '../src/category/category.repository';
 import { ProductDeviceCompatRepository } from '../src/product/product-device-compat.repository';
 import { DEVICE_HUBS_REVALIDATE_TARGET, RevalidationNotifier } from '../src/publishing';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * E2E for the device-side bulk compatibility write and the model coverage read
@@ -222,14 +223,7 @@ describe('Device compatibility — bulk write and coverage (e2e, TASK-1955)', ()
 
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get<JwtService>(JwtService);
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     app.useGlobalFilters(moduleFixture.get(HttpExceptionFilter));
     app.setGlobalPrefix('api', { exclude: ['health'] });
     await app.init();

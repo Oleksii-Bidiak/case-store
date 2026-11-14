@@ -1,5 +1,14 @@
-import { IsString, IsOptional, IsBoolean, IsNumber, Min, MaxLength } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsNumber,
+  Min,
+  MaxLength,
+  IsNotEmpty,
+} from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { trimString } from '../../common/utils';
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
@@ -9,7 +18,10 @@ import { ApiProperty } from '@nestjs/swagger';
 export class UpdateAddonServiceDto {
   @ApiProperty({ description: 'Add-on service name', example: 'Страхування', required: false })
   @IsOptional()
+  // TASK-1984: absent = unchanged, but a sent name is trimmed and must not be blank.
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty({ message: 'Add-on service name must not be empty' })
   @MaxLength(255, { message: 'Name must be at most 255 characters' })
   name?: string;
 

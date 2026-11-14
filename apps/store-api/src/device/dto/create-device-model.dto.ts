@@ -8,9 +8,11 @@ import {
   Min,
   Max,
   Matches,
+  IsNotEmpty,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { trimString } from '../../common/utils';
 
 /**
  * DTO for creating a device model (TASK-190). Admin-only. Slug is auto-generated
@@ -25,7 +27,11 @@ export class CreateDeviceModelDto {
   deviceBrandId!: string;
 
   @ApiProperty({ description: 'Device model name', example: 'iPhone 15 Pro' })
+  // TASK-1984 (forms Rule 5d): the admin form refuses a blank name, so the API
+  // does too — trimmed first, so "   " is blank rather than a name.
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty({ message: 'Device model name must not be empty' })
   @MaxLength(255, { message: 'Device model name must be at most 255 characters' })
   name!: string;
 

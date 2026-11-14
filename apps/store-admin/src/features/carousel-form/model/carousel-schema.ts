@@ -2,8 +2,16 @@ import { z } from "zod";
 import type { CreateCarouselDto, UpdateCarouselDto } from "@/entities/carousel";
 import { dict } from "@/shared/config";
 import { fromKyivDateTimeLocal } from "@/shared/lib";
+import { isPastKyivDateTimeLocal } from "@/shared/lib/scheduled-at";
 
 const e = dict.carouselForm.errors;
+
+/**
+ * The DTO's `@MaxLength(255)` on `title`
+ * (`apps/store-api/src/carousels/dto/create-carousel.dto.ts`) — read by the
+ * schema and by the input's `maxLength` (TASK-1984, Rule 5d).
+ */
+export const CAROUSEL_TITLE_MAX_LENGTH = 255;
 
 /** Product-list sources — mirror of the API's CarouselSource enum. */
 export const CAROUSEL_SOURCE = [
@@ -31,7 +39,13 @@ export type CarouselStatusValue = (typeof CAROUSEL_STATUS)[number];
  */
 export const carouselSchema = z
   .object({
-    title: z.string().trim().min(1, e.titleRequired).max(255, e.titleMax),
+    // Stricter on purpose (Rule 5f): `CreateCarouselDto.title` has no
+    // minimum, but it is the heading shown over the rail on the homepage.
+    title: z
+      .string()
+      .trim()
+      .min(1, e.titleRequired)
+      .max(CAROUSEL_TITLE_MAX_LENGTH, e.titleMax),
 
     source: z.enum(CAROUSEL_SOURCE),
 
@@ -68,6 +82,17 @@ export const carouselSchema = z
         code: z.ZodIssueCode.custom,
         path: ["scheduledAt"],
         message: e.scheduledAtRequired,
+      });
+    }
+    // TASK-1984 (Rule 5e): the API would publish a past schedule NOW, silently.
+    if (
+      values.status === "SCHEDULED" &&
+      isPastKyivDateTimeLocal(values.scheduledAt)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scheduledAt"],
+        message: e.scheduledAtPast,
       });
     }
     if (values.source === "CATEGORY" && !values.categoryId) {

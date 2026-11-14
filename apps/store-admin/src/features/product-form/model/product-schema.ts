@@ -9,9 +9,32 @@ import {
   parseKeywords,
 } from "@/shared/lib/seo";
 import { UUID_PATTERN } from "@/shared/lib/uuid";
+import { parseKop } from "@/shared/lib/money-kop";
 
 const e = dict.productForm.errors;
 const seoErrors = dict.seoFields.errors;
+
+/**
+ * The DTO's `@MaxLength` caps (`apps/store-api/src/product/dto/create-product
+ * .dto.ts`; `description` is its `MAX_DESCRIPTION_LENGTH` from
+ * `product.constants.ts`; `ogImage` is `OG_IMAGE_MAX_LENGTH` of
+ * `IsOgImageField` in `apps/store-api/src/common/validators/seo-fields
+ * .decorator.ts`) — the schema's `.max()` and the inputs' `maxLength` both read
+ * them (TASK-1984, forms Rule 5d).
+ */
+export const PRODUCT_LIMITS = {
+  name: 255,
+  slug: 255,
+  description: 20_000,
+  sku: 50,
+  ogImage: 2048,
+} as const;
+
+/** `@Min(0.01)` on `price` / `compareAtPrice` (create-product.dto.ts), in kopecks. */
+const MIN_PRICE_KOP = 1;
+
+/** Whole kopecks → the hryvnia amount the DTO takes (`499.9`), no float drift. */
+const kopToAmount = (kop: number) => Number((kop / 100).toFixed(2));
 
 /**
  * Is this rich-text value visually empty? Tiptap serializes a cleared document
@@ -37,12 +60,16 @@ function isBlankRichText(html: string): boolean {
  *   - `ProductFormValues` = `z.output` — the parsed values passed to `onSubmit`.
  */
 export const productSchema = z.object({
-  name: z.string().trim().min(1, e.nameRequired).max(255, e.nameMax),
+  name: z
+    .string()
+    .trim()
+    .min(1, e.nameRequired)
+    .max(PRODUCT_LIMITS.name, e.nameMax),
 
   slug: z
     .string()
     .trim()
-    .max(255, e.slugMax)
+    .max(PRODUCT_LIMITS.slug, e.slugMax)
     .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
     .optional()
     .or(z.literal("")),
@@ -52,33 +79,46 @@ export const productSchema = z.object({
   description: z
     .string()
     .trim()
-    .max(20000, e.descriptionMax)
+    .max(PRODUCT_LIMITS.description, e.descriptionMax)
     .optional()
     .or(z.literal("")),
 
+  // TASK-1984 (forms Rule 5e): parsed by the money helper, never `Number(x)`
+  // alone — «Infinity» and «1e3» are refused here instead of by the API's
+  // `@IsNumber()`. The bound is the DTO's `@Min(0.01)` (create/update-product
+  // .dto.ts). Stricter on purpose (Rule 5f): at most two decimals (the column is
+  // money, a third decimal would be rounded away silently) and `parseKop`'s
+  // int4-kopeck ceiling (~21.4 M ₴), far above any product price.
   price: z
     .string()
     .trim()
     .min(1, e.priceRequired)
-    .refine((v) => !Number.isNaN(Number(v)), e.priceNumber)
-    .refine((v) => Number(v) > 0, e.pricePositive)
-    .transform((v) => Number(v)),
+    .refine((v) => parseKop(v) !== null, e.priceNumber)
+    .refine((v) => (parseKop(v) ?? 0) >= MIN_PRICE_KOP, e.pricePositive)
+    .transform((v) => kopToAmount(parseKop(v) ?? 0)),
 
   compareAtPrice: z
     .string()
     .trim()
     .optional()
     .refine(
-      (v) => v === undefined || v === "" || !Number.isNaN(Number(v)),
+      (v) => v === undefined || v === "" || parseKop(v) !== null,
       e.compareNumber,
     )
     .refine(
-      (v) => v === undefined || v === "" || Number(v) > 0,
+      (v) => v === undefined || v === "" || (parseKop(v) ?? 0) >= MIN_PRICE_KOP,
       e.comparePositive,
     )
-    .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
+    .transform((v) =>
+      v === undefined || v === "" ? undefined : kopToAmount(parseKop(v) ?? 0),
+    ),
 
-  sku: z.string().trim().max(50, e.skuMax).optional().or(z.literal("")),
+  sku: z
+    .string()
+    .trim()
+    .max(PRODUCT_LIMITS.sku, e.skuMax)
+    .optional()
+    .or(z.literal("")),
 
   stock: z
     .string()
@@ -146,7 +186,12 @@ export const productSchema = z.object({
       seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
     ),
 
-  ogImage: ogImageField(),
+  // `ogImageField` checks the URL rule only; the cap is the DTO's
+  // `IsOgImageField` → `@MaxLength(OG_IMAGE_MAX_LENGTH)` (Rule 5d).
+  ogImage: ogImageField().refine(
+    (value) => value === undefined || value.length <= PRODUCT_LIMITS.ogImage,
+    seoErrors.ogImageMax(PRODUCT_LIMITS.ogImage),
+  ),
 });
 
 export type ProductFormInput = z.input<typeof productSchema>;

@@ -7,7 +7,8 @@ import { toast } from "@/shared/ui/toast";
 import {
   PageForm,
   pageFormValuesToCreateDto,
-  pageSaveConflictMessage,
+  placePageSaveError,
+  type PageFormSetError,
   type PageFormValues,
 } from "@/features/page-form";
 import {
@@ -17,6 +18,7 @@ import {
 import { useAuth } from "@/entities/session";
 import { PERM } from "@/entities/permission";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 
 /**
  * «Нова сторінка» (PagesProposal СР10): the sectioned form, whose sticky bar
@@ -30,14 +32,18 @@ export function CreatePageView() {
   const create = useAdminPageControllerCreate();
   const { mutateAsync: createAsync } = create;
 
-  const handleSubmit = async (values: PageFormValues) => {
+  const handleSubmit = async (
+    values: PageFormValues,
+    setError: PageFormSetError,
+  ) => {
     try {
       await createAsync({ data: pageFormValuesToCreateDto(values) });
     } catch (error) {
-      toast.error(
-        pageSaveConflictMessage(error, values.kind) ??
-          dict.pages.toastCreateFailed,
-      );
+      // TASK-1984 Rule 6b: a taken slug or a refused field lands under that
+      // field; anything else is a toast in the server's words.
+      if (!placePageSaveError(error, values.kind, setError)) {
+        toast.error(refusalMessage(error) ?? dict.pages.toastCreateFailed);
+      }
       return false;
     }
     void queryClient.invalidateQueries({

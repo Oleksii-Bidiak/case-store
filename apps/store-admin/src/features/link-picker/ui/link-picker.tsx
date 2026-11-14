@@ -50,6 +50,11 @@ export interface LinkPickerProps {
   /** Extra ids for `aria-describedby` (a field error). */
   describedBy?: string;
   disabled?: boolean;
+  /**
+   * The host DTO's `@MaxLength` for the address, put on the «Своє» input
+   * (forms Rule 5d) — e.g. `CreateBannerDto.ctaHref`'s 2048.
+   */
+  maxLength?: number;
 }
 
 /**
@@ -69,6 +74,7 @@ export function LinkPicker({
   invalid = false,
   describedBy,
   disabled = false,
+  maxLength,
 }: LinkPickerProps) {
   const hintId = useId();
   const contentId = useId();
@@ -194,6 +200,7 @@ export function LinkPicker({
               <CustomTab
                 initial={resolved?.kind === "custom" ? value : ""}
                 onApply={(href) => pick(href)}
+                maxLength={maxLength}
               />
             </TabsContent>
           </Tabs>
@@ -407,9 +414,11 @@ function ProductTab({
 function CustomTab({
   initial,
   onApply,
+  maxLength,
 }: {
   initial: string;
   onApply: (href: string) => void;
+  maxLength?: number;
 }) {
   const inputId = useId();
   // Seeded once per mount from a synchronous prop: the tab remounts every time
@@ -425,6 +434,7 @@ function CustomTab({
         <Input
           id={inputId}
           value={draft}
+          maxLength={maxLength}
           placeholder={l.customPlaceholder}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {

@@ -120,6 +120,36 @@ describe("seoSettingsSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  // TASK-1984 (Rule 5d): the DTO's @ArrayMaxSize(20) and @MaxLength(500).
+  const messages = (patch: Record<string, unknown>) => {
+    const result = seoSettingsSchema.safeParse({ ...base, ...patch });
+    return result.success ? [] : result.error.issues.map((i) => i.message);
+  };
+  const errors = dict.seoSettingsForm.errors;
+
+  it("caps sameAs at 20 links of at most 500 characters", () => {
+    const links = (n: number) =>
+      Array.from({ length: n }, (_, i) => `https://site${i}.com`).join("\n");
+    expect(messages({ additionalSameAsLinks: links(20) })).toEqual([]);
+    expect(messages({ additionalSameAsLinks: links(21) })).toEqual([
+      errors.sameAsTooMany,
+    ]);
+    expect(
+      messages({
+        additionalSameAsLinks: `https://a.com/${"x".repeat(500)}`,
+      }),
+    ).toEqual([errors.sameAsTooLong]);
+  });
+
+  it("caps the default OG image link at 500 characters", () => {
+    const url = (length: number) =>
+      `https://a.com/${"x".repeat(length - "https://a.com/".length)}`;
+    expect(messages({ defaultOgImage: url(500) })).toEqual([]);
+    expect(messages({ defaultOgImage: url(501) })).toEqual([
+      errors.ogImageTooLong,
+    ]);
+  });
 });
 
 describe("seoSettingsFormValuesToDto", () => {

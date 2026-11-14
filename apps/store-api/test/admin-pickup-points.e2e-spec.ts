@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -12,6 +12,7 @@ import { HttpExceptionFilter } from '../src/common/filters';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 import { NovaPoshtaClient } from '../src/delivery';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * E2E for the admin pickup-point CRUD (TASK-645):
@@ -242,14 +243,7 @@ describe('Admin pickup points (e2e, TASK-645)', () => {
 
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get(JwtService);
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     // The production filter, so the stable `REORDER_*` codes are asserted on the wire.
     app.useGlobalFilters(moduleFixture.get(HttpExceptionFilter));
     app.setGlobalPrefix('api', { exclude: ['health'] });

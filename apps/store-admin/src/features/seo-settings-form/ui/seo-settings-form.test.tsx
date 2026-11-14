@@ -318,6 +318,69 @@ describe("SeoSettingsForm — search-console verification fields (TASK-280)", ()
   });
 });
 
+describe("SeoSettingsForm — server refusals (TASK-1984)", () => {
+  const f = dict.seoSettingsForm;
+  const { toast } = jest.requireMock("sonner") as {
+    toast: { error: jest.Mock };
+  };
+  beforeEach(() => toast.error.mockClear());
+
+  it("puts a refused sameAs link under the textarea (unfolding it), no toast", async () => {
+    server.use(
+      http.put("*/api/admin/seo-settings", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: "each value in additionalSameAsLinks must be a URL",
+            fieldErrors: [
+              { field: "additionalSameAsLinks.0", constraint: "isUrl" },
+            ],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(
+      <SeoSettingsForm
+        settings={makeSettings({ additionalSameAsLinks: ["https://ok.com"] })}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    const textarea = await screen.findByLabelText(f.additionalSameAsLinks);
+    await waitFor(() =>
+      expect(textarea).toHaveAttribute("aria-invalid", "true"),
+    );
+    expect(textarea).toHaveAccessibleDescription(
+      expect.stringContaining(dict.forms.invalid),
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("caps the text inputs at the DTO lengths", () => {
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    expect(defaultTitleField()).toHaveAttribute("maxlength", "255");
+    expect(defaultDescriptionField()).toHaveAttribute("maxlength", "500");
+    expect(templateField()).toHaveAttribute("maxlength", "255");
+  });
+
+  it("caps the OG image link at the DTO's 500", () => {
+    renderWithProviders(
+      <SeoSettingsForm
+        settings={makeSettings({ defaultOgImage: "https://shop.ua/og.jpg" })}
+      />,
+    );
+
+    expand(f.sectionSocial);
+    expect(screen.getByLabelText(f.defaultOgImage)).toHaveAttribute(
+      "maxlength",
+      "500",
+    );
+  });
+});
+
 describe("SeoSettingsForm — by mockup Н2/Н5 (TASK-1053)", () => {
   const f = dict.seoSettingsForm;
 

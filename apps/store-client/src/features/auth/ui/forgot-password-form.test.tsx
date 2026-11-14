@@ -139,6 +139,63 @@ describe("ForgotPasswordForm", () => {
     ).not.toBeInTheDocument();
   });
 
+  // TASK-1984: a 400 is the address the API refused, not the connection. Still
+  // one banner, not a field (forms Rule 6d).
+  it("names the address, not the network, on a 400", async () => {
+    server.use(
+      http.post("*/api/auth/password-reset/request", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: ["Please provide a valid email address"],
+            fieldErrors: [{ field: "email", constraint: "isEmail" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ForgotPasswordForm />);
+
+    await user.type(
+      screen.getByLabelText(dict.auth.forgotPassword.email),
+      "user@test.ua",
+    );
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.forgotPassword.submit }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      dict.auth.forgotPassword.validationEmail,
+    );
+    expect(
+      screen.queryByText(dict.auth.forgotPassword.errorNetwork),
+    ).not.toBeInTheDocument();
+  });
+
+  it("trims the address and caps it at the DTO's 254 characters", async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post("*/api/auth/password-reset/request", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({ data: { message: "ok" } });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ForgotPasswordForm />);
+
+    const input = screen.getByLabelText(dict.auth.forgotPassword.email);
+    expect(input).toHaveAttribute("maxLength", "254");
+    await user.type(input, "  user@test.ua ");
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.forgotPassword.submit }),
+    );
+
+    await waitFor(() => expect(bodies).toEqual([{ email: "user@test.ua" }]));
+  });
+
   it("switches back to login via the callback in sheet mode", async () => {
     const onSwitchToLogin = jest.fn();
     const user = userEvent.setup();

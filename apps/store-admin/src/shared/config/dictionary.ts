@@ -315,6 +315,18 @@ export const dict = {
     needsActionFailedTelegram: "Telegram не доставив",
   },
 
+  // Shared field rules and server field errors (TASK-1984, forms convention
+  // Rules 5–6): the defaults of `phoneField`, `emailField` and
+  // `applyServerFieldErrors` in `shared/lib`. Same texts as the storefront's
+  // `dict.forms`.
+  forms: {
+    phoneInvalid: "Вкажіть коректний номер телефону",
+    emailInvalid: "Вкажіть коректну електронну пошту",
+    tooLong: "Задовге значення",
+    required: "Обов'язкове поле",
+    invalid: "Перевірте це поле",
+  },
+
   common: {
     save: "Зберегти",
     saving: "Збереження…",
@@ -486,7 +498,9 @@ export const dict = {
       toastSaved: "Виняток збережено",
       toastReverted: "Виняток скасовано — товар знову успадковує категорію",
       toastFailed: "Не вдалося зберегти виняток",
-      toastBadPrice: "Вкажіть коректну ціну (число, не менше 0)",
+      // TASK-1984: shown under the price field (it was a toast).
+      priceInvalid:
+        "Вкажіть ціну: 0 або більше, до двох знаків після коми — напр. 199,50",
       // TASK-442 — на сторінці створення успадкування ще нема від чого рахувати
       // (шаблон застосовується до рядка, якого ще не існує), тож лишається саме
       // те, що має сенс наперед: ексклюзивні послуги цього товару.
@@ -1027,6 +1041,10 @@ export const dict = {
     dropReleaseHint:
       "Розбір займає до хвилини; нічого не запишемо без вашого підтвердження.",
     wrongType: "Це не .xlsx — оберіть файл у форматі постачальника.",
+    // TASK-1984: the API's own refusals, said before the upload.
+    emptyFile: "Файл порожній — оберіть інший.",
+    fileTooLarge: (mb: number) =>
+      `Файл більший за ${mb} МБ — розділіть його на кілька частин.`,
     parsedMeta: (date: string, email: string | null | undefined) =>
       email ? `розібрано ${date} · ${email}` : `розібрано ${date}`,
     noChangesBadge: "Без змін",
@@ -1201,11 +1219,18 @@ export const dict = {
       slugMax: "Slug має містити не більше 255 символів",
       descriptionMax: "Опис має містити не більше 20000 символів",
       priceRequired: "Вкажіть ціну",
-      priceNumber: "Ціна має бути числом",
+      // TASK-1984: parsed by the money helper — digits, up to 2 decimals.
+      priceNumber:
+        "Ціна — число до двох знаків після коми, напр. 499 або 499,90",
       pricePositive: "Ціна має бути більшою за 0",
-      compareNumber: "Стара ціна має бути числом",
+      compareNumber:
+        "Стара ціна — число до двох знаків після коми, напр. 599 або 599,90",
       comparePositive: "Стара ціна має бути більшою за 0",
       skuMax: "Артикул має містити не більше 50 символів",
+      // TASK-1984: the API's 409 PRODUCT_SLUG_CONFLICT / PRODUCT_SKU_CONFLICT.
+      slugTaken:
+        "Ця адреса вже зайнята іншим товаром — вкажіть іншу або змініть назву.",
+      skuTaken: "Цей артикул уже має інший товар — вкажіть інший.",
       stockInt: "Вільний залишок має бути цілим числом ≥ 0",
       categoryRequired: "Оберіть категорію",
       groupInvalid: "Оберіть коректну групу",
@@ -1704,8 +1729,12 @@ export const dict = {
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
       descriptionMax: "Опис має містити не більше 2000 символів",
-      imageUrl: "Вкажіть коректний URL",
+      // TASK-1984: the API's rule — an absolute http(s) link.
+      imageUrl: "Вкажіть посилання на зображення, що починається з https://",
       parentInvalid: "Оберіть коректну категорію",
+      // TASK-1984: the API's 409 CATEGORY_SLUG_CONFLICT, under the slug field.
+      slugTaken:
+        "Ця адреса вже зайнята іншою категорією — вкажіть іншу або змініть назву.",
     },
     // TASK-424: the image field accepts a FILE as well as a link. «Прибрати» is
     // deliberately not «Видалити» — it clears this form's field and nothing else.
@@ -1925,6 +1954,9 @@ export const dict = {
       slugMax: "Slug має містити не більше 255 символів",
       slugPattern:
         "Лише малі латинські літери, цифри й дефіси — напр. «apple».",
+      // TASK-1984: the API's 409 DEVICE_BRAND_SLUG_CONFLICT.
+      slugTaken:
+        "Ця адреса вже зайнята іншим брендом пристроїв — вкажіть іншу або змініть назву.",
     },
     // Wave 198, DevicesProposal ПР6 — the form as a dialog (TASK-1082).
     slugHint: "Залиште порожнім — зробимо з назви.",
@@ -1966,6 +1998,9 @@ export const dict = {
       descriptionMax: "Опис має містити не більше 2000 символів",
       slugPattern:
         "Лише малі латинські літери, цифри й дефіси — напр. «iphone-15-pro».",
+      // TASK-1984: the API's 409 DEVICE_MODEL_SLUG_CONFLICT.
+      slugTaken:
+        "Ця адреса вже зайнята іншою моделлю — вкажіть іншу або змініть назву.",
     },
     // Wave 198, DevicesProposal ПР7–ПР11 (TASK-1082).
     sectionMain: "Основне",
@@ -2370,6 +2405,10 @@ export const dict = {
       decimalsMax: "Не більше двох знаків після коми",
       // DiscountsProposal ПК4: a cap of 0 is not «no cap» — say what it means.
       capZero: "0 означає «нікому». Залиште порожнім, якщо ліміту немає.",
+      // TASK-1984: `parseKop` refused it (Infinity, 1e3, above 21 474 836,47).
+      amountInvalid: "Вкажіть суму, наприклад 150 або 99,50",
+      // TASK-1984: the API's 400 DISCOUNT_CODE_TAKEN, under the code field.
+      codeTaken: "Такий код уже є в іншого промокоду. Оберіть інший.",
     },
     // TASK-795: the window is a pair of KYIV calendar days, inclusive.
     datesHint:
@@ -2555,6 +2594,9 @@ export const dict = {
       slugMax: "Slug має містити не більше 255 символів",
       excerptMax: "Короткий опис має містити не більше 500 символів",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої сторінки",
+      // TASK-1984: the API would publish a past schedule at once, silently.
+      scheduledAtPast:
+        "Цей час уже минув. Оберіть момент у майбутньому або статус «Опубліковано».",
       // TASK-435 — a hub row whose slug names no hub renders nowhere.
       hubSlugRequired: "Оберіть розділ, для якого задаються мета-теги",
     },
@@ -2738,6 +2780,14 @@ export const dict = {
       coverUrl: "Вкажіть коректний URL обкладинки",
       readingInt: "Час читання має бути додатним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої статті",
+      // TASK-1984: the API's 409 BLOG_POST_SLUG_CONFLICT, under the slug.
+      slugTaken: "Ця адреса вже зайнята іншою статтею. Змініть slug.",
+      // TASK-1984: the API would publish a past schedule at once, silently.
+      scheduledAtPast:
+        "Цей час уже минув. Оберіть момент у майбутньому або статус «Опубліковано».",
+      // TASK-1984: the DTO's `@MaxLength(2048)` on the cover link.
+      coverUrlMax: (max: number) =>
+        `Посилання на обкладинку має містити не більше ${max} символів`,
       contentMax: (max: string) =>
         `Текст задовгий — сайт приймає до ${max} символів розмітки`,
     },
@@ -2869,6 +2919,8 @@ export const dict = {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 120 символів",
       slugMax: "Адреса має містити не більше 255 символів",
+      // TASK-1984: the API's 409 BLOG_CATEGORY_SLUG_CONFLICT, under the slug.
+      slugTaken: "Ця адреса вже зайнята іншою рубрикою. Змініть її.",
     },
     // --- Wave 198, BlogCategoriesProposal КБ4 (TASK-1072) --------------------
     slugPrefix: "/blog?category=",
@@ -3013,6 +3065,9 @@ export const dict = {
       ctaHrefMax: "Посилання кнопки має містити не більше 2048 символів",
       themeMax: "Тема має містити не більше 50 символів",
       scheduledAtRequired: "Вкажіть дату публікації для запланованого банера",
+      // TASK-1984: the API would publish a past schedule at once, silently.
+      scheduledAtPast:
+        "Цей час уже минув. Оберіть момент у майбутньому або статус «Опубліковано».",
       // TASK-429: an end before the start is not a window.
       scheduledUntilBeforeStart:
         "Дата зняття має бути пізніше за дату публікації",
@@ -3220,10 +3275,14 @@ export const dict = {
       nameRequired: "Вкажіть назву бренду",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      logoUrl: "Вкажіть коректний URL логотипа",
+      // TASK-1984: the API's rule — an absolute http(s) link.
+      logoUrl: "Вкажіть посилання на логотип, що починається з https://",
       // БР7 — what the slug may contain, with an example (wave 198).
       slugPattern:
         "Лише малі латинські літери, цифри й дефіси — напр. «apple-inc».",
+      // TASK-1984: the API's 409 BRAND_SLUG_CONFLICT, under the slug field.
+      slugTaken:
+        "Ця адреса вже зайнята іншим брендом — вкажіть іншу або змініть назву.",
     },
     // TASK-424: the brand logo accepts a FILE as well as a link.
     logoUpload: {
@@ -3336,7 +3395,9 @@ export const dict = {
       descriptionMax: "Опис має містити не більше 300 символів",
       priceRequired:
         "Вкажіть ціну — 0 або більше. Якщо послуга безкоштовна, напишіть 0.",
-      priceNumber: "Ціна має бути числом",
+      // TASK-1984: parsed by the money helper — digits, up to 2 decimals.
+      priceNumber:
+        "Ціна — число до двох знаків після коми, напр. 199 або 199,50",
       priceNonNegative:
         "Вкажіть ціну — 0 або більше. Якщо послуга безкоштовна, напишіть 0.",
     },
@@ -3400,7 +3461,9 @@ export const dict = {
     // Хвиля 198 (TASK-1053, Н1).
     sectionContact: "Як з вами зв'язатися",
     sectionMessengers: "Месенджери й соцмережі",
-    phoneHint: "Формат +380 XX XXX XX XX — так він і з'явиться на сайті",
+    // TASK-1984: the shop's own number is international (0 800, foreign lines).
+    phoneHint:
+      "Від 9 до 15 цифр, можна 0 800 чи закордонний — на сайті з'явиться так, як ви його вкажете",
     workingHoursOpen: "Працюємо",
     // The switch is ON for a working day; its name says what ON means.
     workingHoursOpenDayAria: (day: string) => `${day} — працюємо`,
@@ -3514,6 +3577,10 @@ export const dict = {
       sameAsInvalid:
         "Кожне посилання має бути коректним URL (https://…), по одному в рядку.",
       siteNameTooLong: "Назва задовга (максимум 120 символів)",
+      // TASK-1984: the DTO's @MaxLength(500) / @ArrayMaxSize(20).
+      ogImageTooLong: "Посилання задовге (максимум 500 символів)",
+      sameAsTooLong: "Кожне посилання — не довше 500 символів",
+      sameAsTooMany: "Не більше 20 посилань",
     },
     // Store name (TASK-433) — rendered first in the form; the keys sit at the
     // end of the block only to keep concurrent waves from colliding here.
@@ -3787,15 +3854,9 @@ export const dict = {
     // --- Returns cross-link (TASK-340) ----------------------------------------
     returnsForOrder: "Повернення",
 
-    // --- A rejected save says WHICH field and WHICH rule (TASK-426) -----------
-    // `detailsFailed` above is the honest fallback for a failure nobody can act
-    // on. It is the wrong answer when the server refused one named field: the
-    // operator was editing the notes, the ТТН they never touched was what the
-    // API rejected, and «не вдалося зберегти» sends them looking in the wrong
-    // place. The English constraint text from class-validator never reaches the
-    // screen — this is our sentence for our own rule.
-    detailsFailedTracking:
-      "Замовлення не збережено: ТТН Нової Пошти — це рівно 14 цифр. Виправте номер або очистіть поле.",
+    // `detailsFailedTracking` (TASK-426) stood here until TASK-1984: a refused
+    // ТТН now says `trackingNumberInvalid` under its field, from the API's
+    // `fieldErrors` — the toast that repeated it was the same error twice.
 
     // --- What the order actually contains (TASK-425) --------------------------
     // The add-ons were on the wire and off the screen, which is why the summary
@@ -4239,6 +4300,10 @@ export const dict = {
     // The reply dialog (В8): the 1000-character limit, counted as you type.
     replyHint: "Відповідь з'явиться під відгуком одразу після публікації.",
     replyCounter: (length: number, max: number) => `${length} / ${max}`,
+    // TASK-1984: the DTO's `@IsNotEmpty` / `@MaxLength(1000)`, under the field.
+    replyRequired: "Напишіть відповідь — порожню опублікувати не можна.",
+    replyTooLong: (max: number) =>
+      `Відповідь має містити не більше ${max} символів`,
     // «Сигнали накрутки» (В3, TASK-1004): the explanation card over the series
     // the dashboard links to. Counted from the rows the API returned.
     abuseTitleProduct: (count: string, span: string, product: string) =>
@@ -4293,6 +4358,9 @@ export const dict = {
     fieldOrderRef: "Замовлення",
     fieldAdminNote: "Внутрішня примітка",
     adminNotePlaceholder: "Примітка для команди (не бачить клієнт)…",
+    // TASK-1984: the DTO's `@MaxLength(2000)`, under the note.
+    adminNoteTooLong: (max: number) =>
+      `Примітка має містити не більше ${max} символів`,
     markRead: "Позначити прочитаним",
     markArchived: "В архів",
     markNew: "Повернути в нові",
@@ -5168,9 +5236,15 @@ export const dict = {
     // block. The keys are gone rather than left unused, because a dictionary that
     // still tells operators to copy an ID describes a panel that no longer exists.
     contactName: "Імʼя",
+    // TASK-2398: the client's surname is its own field — it used to be guessed
+    // from one «Імʼя» box, and a one-word name left the order unplaceable.
+    contactLastName: "Прізвище",
     contactEmail: "Електронна пошта",
     contactPhone: "Телефон",
     contactNameInvalid: "Вкажіть імʼя клієнта.",
+    // `GuestContactDto.name` is both names joined, `@MaxLength(120)`.
+    contactNameTooLong: (max: number) =>
+      `Імʼя та прізвище разом — не більше ${max} символів.`,
     contactEmailInvalid: "Вкажіть коректну електронну пошту.",
     contactPhoneInvalid: "Вкажіть коректний номер телефону.",
 
@@ -5262,7 +5336,7 @@ export const dict = {
       "Акаунт деактивовано — оформити на нього замовлення не можна.",
     customerRequired: "Виберіть клієнта зі списку.",
     customerSelectedHint:
-      "Порожні поля отримувача заповнено з картки клієнта — за потреби змініть їх.",
+      "Імʼя, прізвище й телефон заповнено з картки клієнта — за потреби змініть їх.",
 
     // --- Phone (TASK-426) ------------------------------------------------------
     // Says «будь-яка країна» out loud, because the operator's own form used to
@@ -5330,8 +5404,8 @@ export const dict = {
     serverErrorTitle: "Замовлення не створено",
     serverErrorLine:
       "Одна позиція вже недоступна — див. «Товари». Інші дані збережено у формі.",
-    serverErrorFields:
-      "Сервер не прийняв позначені поля — інші дані збережено у формі.",
+    // `serverErrorFields` stood here until TASK-1984: a refused field now says
+    // so under itself and in «Перевірте N полів» — a third line was a duplicate.
     // TASK-1973: оператор обирає спосіб доставки (раніше — лише НП).
     deliveryMethodAria: "Спосіб доставки",
     deliveryNpCityRequired:
@@ -5489,6 +5563,8 @@ export const dict = {
     changeEmailToastFailed: "Не вдалося змінити email",
     changeEmailInvalid: "Вкажіть коректну адресу",
     changeEmailSame: "Це вже поточна адреса клієнта",
+    // TASK-1984: the API's 409 — the address belongs to another account.
+    changeEmailTaken: "Ця адреса вже належить іншому акаунту",
     changeEmailReasonRequired: "Опишіть причину — щонайменше 5 символів",
 
     // `lastAdminRefusal` stood here until TASK-480, unreferenced since TASK-476:
@@ -5688,6 +5764,10 @@ export const dict = {
     templateName: "Назва",
     templateDescription: "Для чого цей шаблон",
     templateNameRequired: "Вкажіть назву шаблону",
+    // TASK-1984: the DTO's @MinLength(2) / @MaxLength(100), and the 409.
+    templateNameLength: "Назва — від 2 до 100 символів",
+    templateNameTaken: "Шаблон з такою назвою вже є",
+    templateDescriptionTooLong: "Опис — не довше 500 символів",
     templateToastCreated: (name: string) => `Шаблон «${name}» створено`,
     templateToastSaved: (name: string) => `Шаблон «${name}» збережено`,
     templateToastFailed: "Не вдалося зберегти шаблон",
@@ -5797,6 +5877,8 @@ export const dict = {
     transferToastDone: (email: string) => `Власність передано: ${email}`,
     transferToastFailed: "Не вдалося передати власність",
     transferWrongPassword: "Пароль не підійшов. Спробуйте ще раз.",
+    // TASK-1984: an empty field is not a wrong password.
+    transferPasswordRequired: "Вкажіть свій поточний пароль",
     transferSessionsHint:
       "Після передачі сесії обох акаунтів завершаться — вам доведеться увійти знову.",
 
@@ -6520,6 +6602,8 @@ export const dict = {
     errors: {
       nameRequired: "Вкажіть назву групи.",
       nameMax: "Назва має містити не більше 255 символів",
+      // TASK-1984: ProductGroupAxisInputDto.name @MaxLength(50).
+      axisMax: "Назва характеристики — не довше 50 символів",
     },
 
     // Wave 198 (ProductGroupsProposal ГТ3–ГТ6, TASK-1084).
@@ -7185,6 +7269,9 @@ export const dict = {
       categoryRequired: "Оберіть категорію для джерела «Категорія»",
       itemLimitRange: "Кількість товарів має бути цілим числом від 1 до 24",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої каруселі",
+      // TASK-1984: the API would publish a past schedule at once, silently.
+      scheduledAtPast:
+        "Цей час уже минув. Оберіть момент у майбутньому або статус «Опубліковано».",
     },
 
     // Wave 198 (TASK-1074, CarouselsProposal КР5–КР8).
@@ -7486,6 +7573,9 @@ export const dict = {
       keywordLength: (max: number) =>
         `Один тег має містити не більше ${max} символів`,
       ogImageUrl: "Вкажіть коректний URL картинки (http:// або https://)",
+      // TASK-1984: `IsOgImageField`'s @MaxLength(OG_IMAGE_MAX_LENGTH).
+      ogImageMax: (max: number) =>
+        `Посилання на картинку задовге (максимум ${max} символів)`,
       // TASK-811: one copy for all eight entity forms (was eight/five copies,
       // one of which had already drifted to a different wording).
       slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
@@ -8543,6 +8633,9 @@ export const dict = {
     errors: {
       carouselRequired: "Оберіть карусель",
       titleRequired: "Вкажіть заголовок блоку",
+      // TASK-1984: the DTO's `@MaxLength(255)` on a tabs block's title.
+      titleMax: (max: number) =>
+        `Заголовок має містити не більше ${max} символів`,
       tabsRequired: "Додайте хоча б одну вкладку",
       tabsTooMany: (max: number) => `Не більше ${max} вкладок в одному блоці`,
       scheduledAtRequired: "Вкажіть дату й час показу",

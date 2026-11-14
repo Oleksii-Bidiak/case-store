@@ -2,6 +2,10 @@ import {
   formatUAPhone,
   isValidInternationalPhone,
   isValidUAPhone,
+  maskedPhoneDisplay,
+  maskedPhoneValue,
+  PHONE_SHAPE,
+  sanitizePhoneInput,
   normalizeUAPhone,
   PHONE_MAX_DIGITS,
   PHONE_MIN_DIGITS,
@@ -64,6 +68,7 @@ describe("isValidUAPhone", () => {
     ["80501234567", "old inter-city prefix"],
     ["501234567", "bare local part"],
     ["+38 (050) 123-45-67", "brackets and dashes"],
+    ["  +380 50 123 4567  ", "surrounding whitespace"],
   ])("accepts %s (%s)", (phone) => {
     expect(isValidUAPhone(phone)).toBe(true);
   });
@@ -77,8 +82,17 @@ describe("isValidUAPhone", () => {
     ["+1 234 567 8901", "a foreign number the mask would have truncated"],
     ["(((((((((((", "the punctuation a mask-shaped regex accepts"],
     ["+380 50 123 456", "eight local digits"],
+    // TASK-1984 (Rule 5a): the shape is checked BEFORE the digits are counted, as
+    // the API's `@IsUaPhone` does — letters make the value refused, never cleaned.
+    ["050 111 2233 ccc", "a valid number followed by letters"],
+    ["++380501234567", "a second plus"],
+    ["+380 50 123 4567 ext 5", "an extension"],
   ])("rejects %s (%s)", (phone) => {
     expect(isValidUAPhone(phone)).toBe(false);
+  });
+
+  it("exports the API's PHONE_SHAPE literal (pinned by phone-parity.spec.ts in store-api)", () => {
+    expect(PHONE_SHAPE).toEqual(/^\+?[\d\s().-]+$/);
   });
 
   it("keeps the local length at 9 digits", () => {
@@ -138,4 +152,77 @@ describe("isValidInternationalPhone", () => {
     expect(PHONE_MIN_DIGITS).toBe(9);
     expect(PHONE_MAX_DIGITS).toBe(15);
   });
+});
+
+/**
+ * TASK-1984 (Rule 5b) — what `PhoneInput` hands the form: the raw string with
+ * every character outside the `PHONE_SHAPE` alphabet removed, never truncated.
+ */
+describe("sanitizePhoneInput", () => {
+  it.each([
+    ["050 111 2233 ccc", "050 111 2233 "],
+    ["+38 (050) 111-22.33", "+38 (050) 111-22.33"],
+    ["тел. 050ф1112233", ". 0501112233"],
+    ["+48 123 456 789 012 345", "+48 123 456 789 012 345"],
+    ["", ""],
+  ])("%p → %p", (raw, expected) => {
+    expect(sanitizePhoneInput(raw)).toBe(expected);
+  });
+});
+
+/** TASK-1984 — mirror of the storefront's cases for the masked (`rule="ua"`) field. */
+describe("maskedPhoneValue (what the masked field emits)", () => {
+  it.each([
+    ["+380", ""],
+    ["+38", ""],
+    ["+3", ""],
+    ["+", ""],
+    ["", ""],
+    ["+3800", ""],
+    ["+3800501112233", "+380501112233"],
+    ["+3805", "+3805"],
+    ["+380 50 111 2233", "+380 50 111 2233"],
+    ["0501112233", "0501112233"],
+    ["+38 (050) 111-22.33 4455", "+38 (050) 111-22.33 4455"],
+    ["+380 50 111 2233 ccc", "+380 50 111 2233 "],
+    // Digitless, but typed — not "empty", or it would erase a saved number.
+    ["----------", "----------"],
+    ["((((((((((", "(((((((((("],
+  ])("%p → %p", (raw, expected) => {
+    expect(maskedPhoneValue(raw)).toBe(expected);
+  });
+});
+
+describe("maskedPhoneDisplay (what the masked field shows)", () => {
+  it.each([
+    ["", "+380"],
+    ["+3805", "+380 5"],
+    ["0501112233", "+380 50 111 2233"],
+    ["+380 50 111 22334", "+380 50 111 22334"],
+    ["12345678901", "+380 12 345 678901"],
+  ])("%p → %p", (raw, expected) => {
+    expect(maskedPhoneDisplay(raw)).toBe(expected);
+  });
+});
+
+/**
+ * TASK-1984 — DTOs that store the number AS TYPED (no `normalizePhone`: pickup
+ * point, site contacts) count the typed digits, so the form must too.
+ */
+describe("isValidInternationalPhone(raw, { normalized: false })", () => {
+  it.each([
+    ["0123456", true, false],
+    ["05011122", true, false],
+    ["012345678901234", false, true],
+    ["+48 123 456 789", true, true],
+    ["0 800 30 30 30", true, true],
+  ])(
+    "%p: normalised %p, as typed %p",
+    (phone, normalisedVerdict, typedVerdict) => {
+      expect(isValidInternationalPhone(phone)).toBe(normalisedVerdict);
+      expect(isValidInternationalPhone(phone, { normalized: false })).toBe(
+        typedVerdict,
+      );
+    },
+  );
 });

@@ -184,6 +184,41 @@ describe("MessageDetailSheet — internal note", () => {
     await waitFor(() => expect(patched).toEqual({ adminNote: "Called back" }));
   });
 
+  // TASK-1984 (Rule 5d): the DTO's 2000 cap, on the textarea itself.
+  it("caps the note at the DTO's 2000 characters", () => {
+    renderSheet(makeMessage());
+
+    expect(screen.getByLabelText(d.fieldAdminNote)).toHaveAttribute(
+      "maxLength",
+      "2000",
+    );
+  });
+
+  // TASK-1984 Rule 6b: a server 400 on the note is said under it.
+  it("puts a refused note under the field", async () => {
+    server.use(
+      http.patch("*/api/contact/admin/:id", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "Bad Request",
+            message: "Admin note must be at most 2000 characters",
+            fieldErrors: [{ field: "adminNote", constraint: "maxLength" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderSheet(makeMessage());
+
+    const note = screen.getByLabelText(d.fieldAdminNote);
+    await userEvent.type(note, "Called back");
+    await userEvent.click(screen.getByRole("button", { name: d.saveNote }));
+
+    expect(await screen.findByText(dict.forms.tooLong)).toBeInTheDocument();
+    expect(note).toHaveAttribute("aria-invalid", "true");
+  });
+
   it("opens the saved note for editing", () => {
     renderSheet(makeMessage({ adminNote: "Передзвонити після 15:00" }));
 

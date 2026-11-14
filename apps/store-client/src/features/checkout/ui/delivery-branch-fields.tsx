@@ -12,7 +12,11 @@ import { useGetCart } from "@/entities/cart";
 import type { PickupPointPublicDto } from "@/entities/delivery";
 import { dict } from "@/shared/config";
 import { Input, Label } from "@/shared/ui";
-import type { CheckoutFormValues } from "../model/checkout-schema";
+import {
+  CHECKOUT_ADDRESS_MAX_LENGTH,
+  CHECKOUT_CITY_MAX_LENGTH,
+  type CheckoutFormValues,
+} from "../model/checkout-schema";
 import {
   centsToMoney,
   courierFreeProgress,
@@ -166,6 +170,7 @@ export function NpManualBranch({
           label={dict.checkout.fields.city}
           placeholder={dict.checkout.delivery.manualCityPlaceholder}
           autoComplete="address-level2"
+          maxLength={CHECKOUT_CITY_MAX_LENGTH}
           register={register}
           errors={errors}
           inputRef={(node) => {
@@ -177,6 +182,7 @@ export function NpManualBranch({
           label={dict.checkout.delivery.manualAddressLabel}
           placeholder={dict.checkout.delivery.manualAddressPlaceholder}
           autoComplete="street-address"
+          maxLength={CHECKOUT_ADDRESS_MAX_LENGTH}
           register={register}
           errors={errors}
           // The city takes half a row, the address the whole one below it.
@@ -340,6 +346,7 @@ export function CourierBranch({
           name="courierCity"
           label={dict.checkout.fields.city}
           autoComplete="address-level2"
+          maxLength={CHECKOUT_CITY_MAX_LENGTH}
           register={register}
           errors={errors}
           wrapperClassName="sm:max-w-1/2"
@@ -370,6 +377,9 @@ export function CourierBranch({
           name="courierStreet"
           label={dict.checkout.delivery.courierStreet}
           autoComplete="address-line1"
+          // The three courier inputs share one `address1` (max 500) — the
+          // schema checks the sum; each input alone can never pass it.
+          maxLength={CHECKOUT_ADDRESS_MAX_LENGTH}
           register={register}
           errors={errors}
           wrapperClassName="sm:col-span-2"
@@ -377,6 +387,7 @@ export function CourierBranch({
         <TextField
           name="courierHouse"
           label={dict.checkout.delivery.courierHouse}
+          maxLength={CHECKOUT_ADDRESS_MAX_LENGTH}
           register={register}
           errors={errors}
         />
@@ -391,6 +402,7 @@ export function CourierBranch({
             </>
           }
           autoComplete="address-line2"
+          maxLength={CHECKOUT_ADDRESS_MAX_LENGTH}
           register={register}
           errors={errors}
         />
@@ -442,6 +454,7 @@ export function OtherBranch({ register, errors }: BranchProps) {
           name="city"
           label={dict.checkout.fields.city}
           autoComplete="address-level2"
+          maxLength={CHECKOUT_CITY_MAX_LENGTH}
           register={register}
           errors={errors}
         />
@@ -451,6 +464,7 @@ export function OtherBranch({ register, errors }: BranchProps) {
           placeholder={dict.checkout.delivery.otherAddressPlaceholder}
           hint={dict.checkout.delivery.otherAddressHint}
           autoComplete="street-address"
+          maxLength={CHECKOUT_ADDRESS_MAX_LENGTH}
           register={register}
           errors={errors}
           wrapperClassName="sm:col-span-2"

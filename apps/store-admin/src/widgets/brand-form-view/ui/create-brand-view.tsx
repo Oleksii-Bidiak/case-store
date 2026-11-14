@@ -7,8 +7,11 @@ import { toast } from "@/shared/ui/toast";
 import {
   BrandForm,
   brandFormValuesToDto,
+  placeBrandSaveError,
+  type BrandFormSetError,
   type BrandFormValues,
 } from "@/features/brand-form";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import {
   getBrandControllerAdminFindAllQueryKey,
   useAdminBrandControllerCreate,
@@ -27,7 +30,10 @@ export function CreateBrandView() {
   const queryClient = useQueryClient();
   const create = useAdminBrandControllerCreate();
 
-  const handleSubmit = (values: BrandFormValues) => {
+  const handleSubmit = (
+    values: BrandFormValues,
+    setError: BrandFormSetError,
+  ) => {
     create.mutate(
       { data: brandFormValuesToDto(values) },
       {
@@ -38,8 +44,11 @@ export function CreateBrandView() {
           toast.success(dict.brands.toastCreated);
           router.push("/brands");
         },
-        onError: () => {
-          toast.error(dict.brands.toastCreateFailed);
+        onError: (error) => {
+          // TASK-1984 Rule 6b: under the field when it is about one; the
+          // server's own words otherwise.
+          if (placeBrandSaveError(error, setError)) return;
+          toast.error(refusalMessage(error) ?? dict.brands.toastCreateFailed);
         },
       },
     );

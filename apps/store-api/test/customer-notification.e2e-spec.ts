@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerStorage } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
@@ -29,6 +29,7 @@ import {
 import type { OrderWithItems } from '../src/order/order.types';
 import { createCartRepositoryMock } from './cart-repository.mock';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * A customer's Telegram notifications over HTTP (TASK-679, owner decisions
@@ -211,14 +212,7 @@ describe('Customer Telegram notifications (e2e)', () => {
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get<JwtService>(JwtService);
     app.use(cookieParser());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     app.setGlobalPrefix('api', { exclude: ['health'] });
     await app.init();
   });

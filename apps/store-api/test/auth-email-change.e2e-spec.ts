@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
 import { EmailTokenPurpose, UserRole } from '@prisma/client';
@@ -14,6 +14,7 @@ import { PermissionRepository } from '../src/auth/permissions';
 import { NotificationOutboxRepository } from '../src/notification-outbox/notification-outbox.repository';
 import { AuditRepository } from '../src/audit/audit.repository';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * Changing the sign-in address, end to end (TASK-396).
@@ -300,14 +301,7 @@ describe('Email change (e2e, TASK-396)', () => {
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get(JwtService);
     app.use(cookieParser());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     app.setGlobalPrefix('api', { exclude: ['health'] });
     await app.init();
   });

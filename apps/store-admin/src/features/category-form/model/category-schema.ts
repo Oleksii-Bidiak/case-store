@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { UseFormSetError } from "react-hook-form";
 import {
   isCategoryIconKey,
   type CreateCategoryDto,
@@ -13,9 +14,72 @@ import {
   parseKeywords,
 } from "@/shared/lib/seo";
 import { UUID_PATTERN } from "@/shared/lib/uuid";
+import { optionalHttpUrl } from "@/shared/lib/http-url";
+import { apiErrorCode, apiErrorStatus } from "@/shared/lib";
+import {
+  applyServerFieldErrors,
+  type ServerFieldMap,
+} from "@/shared/lib/form-errors";
 
 const e = dict.categoryForm.errors;
 const seoErrors = dict.seoFields.errors;
+
+/**
+ * The DTO's `@MaxLength` caps (`apps/store-api/src/category/dto/create-category
+ * .dto.ts`; `ogImage` is `OG_IMAGE_MAX_LENGTH` of `IsOgImageField` in
+ * `apps/store-api/src/common/validators/seo-fields.decorator.ts`) — read by the
+ * schema and by the inputs' `maxLength` (TASK-1984, Rule 5d).
+ */
+export const CATEGORY_LIMITS = {
+  name: 255,
+  slug: 255,
+  description: 2000,
+  ogImage: 2048,
+} as const;
+
+/** `CreateCategoryDto` / `UpdateCategoryDto` paths → form fields (Rule 6b). */
+export const CATEGORY_FIELD_MAP: ServerFieldMap = {
+  name: "name",
+  slug: "slug",
+  description: "description",
+  image: "image",
+  parentId: "parentId",
+  icon: "icon",
+  metaTitle: "metaTitle",
+  metaDescription: "metaDescription",
+  keywords: "keywords",
+  "keywords.*": "keywords",
+  ogImage: "ogImage",
+};
+
+/**
+ * Puts a refused category save under its field (TASK-1984, Rule 6b) and says
+ * whether it did — `false` leaves the toast to the caller. 409
+ * `CATEGORY_SLUG_CONFLICT` is the slug (typed, or derived from the name) taken.
+ */
+export function placeCategorySaveError(
+  error: unknown,
+  setError: UseFormSetError<CategoryFormInput>,
+): boolean {
+  const status = apiErrorStatus(error);
+  if (status === 409 && apiErrorCode(error) === "CATEGORY_SLUG_CONFLICT") {
+    setError(
+      "slug",
+      { type: "server", message: e.slugTaken },
+      { shouldFocus: true },
+    );
+    return true;
+  }
+  if (status === 400) {
+    const { mapped, unmapped } = applyServerFieldErrors(
+      error,
+      setError,
+      CATEGORY_FIELD_MAP,
+    );
+    return mapped.length > 0 && unmapped.length === 0;
+  }
+  return false;
+}
 
 /**
  * Validation schema for the admin category form.
@@ -27,12 +91,16 @@ const seoErrors = dict.seoFields.errors;
  * typed number here could only fight the tree.
  */
 export const categorySchema = z.object({
-  name: z.string().trim().min(1, e.nameRequired).max(255, e.nameMax),
+  name: z
+    .string()
+    .trim()
+    .min(1, e.nameRequired)
+    .max(CATEGORY_LIMITS.name, e.nameMax),
 
   slug: z
     .string()
     .trim()
-    .max(255, e.slugMax)
+    .max(CATEGORY_LIMITS.slug, e.slugMax)
     .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
     .optional()
     .or(z.literal("")),
@@ -40,11 +108,13 @@ export const categorySchema = z.object({
   description: z
     .string()
     .trim()
-    .max(2000, e.descriptionMax)
+    .max(CATEGORY_LIMITS.description, e.descriptionMax)
     .optional()
     .or(z.literal("")),
 
-  image: z.string().trim().url(e.imageUrl).optional().or(z.literal("")),
+  // TASK-1984 (Rule 5): the DTO's `@IsUrl(CATEGORY_IMAGE_URL_OPTIONS)` — an
+  // absolute http(s) link, nothing else (zod's `.url()` took any scheme).
+  image: optionalHttpUrl(e.imageUrl),
 
   parentId: z
     .string()
@@ -88,7 +158,12 @@ export const categorySchema = z.object({
       seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
     ),
 
-  ogImage: ogImageField(),
+  // `ogImageField` checks the URL rule only; the cap is the DTO's
+  // `IsOgImageField` → `@MaxLength(OG_IMAGE_MAX_LENGTH)` (Rule 5d).
+  ogImage: ogImageField().refine(
+    (value) => value === undefined || value.length <= CATEGORY_LIMITS.ogImage,
+    seoErrors.ogImageMax(CATEGORY_LIMITS.ogImage),
+  ),
 });
 
 export type CategoryFormInput = z.input<typeof categorySchema>;

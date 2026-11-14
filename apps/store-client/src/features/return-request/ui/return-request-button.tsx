@@ -20,6 +20,12 @@ import {
 } from "@/shared/ui";
 import { readReturnRequestError } from "../model/return-error";
 import {
+  placeReturnFieldErrors,
+  RETURN_REASON_MAX,
+  type ReturnField,
+  type ReturnFieldErrors,
+} from "../model/return-fields";
+import {
   clampQuantity,
   returnableLines,
   type OrderLine,
@@ -91,10 +97,24 @@ export function ReturnRequestButton({
   const baseId = useId();
   const reasonId = `${baseId}-reason`;
   const hintId = `${baseId}-hint`;
+  const reasonHintId = `${baseId}-reason-hint`;
+  const reasonCountId = `${baseId}-reason-count`;
+  const reasonErrorId = `${baseId}-reason-error`;
+  const itemsErrorId = `${baseId}-items-error`;
+  const outcomeErrorId = `${baseId}-outcome-error`;
   const [open, setOpen] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [reason, setReason] = useState("");
   const [outcome, setOutcome] = useState<OutcomeChoice>("");
+  // TASK-1984 (forms Rule 6): an error about one input lives under it — the
+  // reason's length, or a server 400 placed by `placeReturnFieldErrors`.
+  const [fieldErrors, setFieldErrors] = useState<ReturnFieldErrors>({});
+  const clearFieldError = (field: ReturnField) =>
+    setFieldErrors((previous) =>
+      previous[field] === undefined
+        ? previous
+        : { ...previous, [field]: undefined },
+    );
   // Set while a request is waiting for the connection to come back.
   const [awaitingNetwork, setAwaitingNetwork] = useState(false);
 
@@ -131,6 +151,7 @@ export function ReturnRequestButton({
     setQuantities({});
     setReason("");
     setOutcome("");
+    setFieldErrors({});
     setAwaitingNetwork(false);
   }
 
@@ -139,6 +160,14 @@ export function ReturnRequestButton({
       setAwaitingNetwork(false);
       return;
     }
+    // The textarea caps at the limit, so only a value set around it reaches
+    // here — but a blocking rule is said under its field, never as a toast.
+    if (reason.trim().length > RETURN_REASON_MAX) {
+      setAwaitingNetwork(false);
+      setFieldErrors({ reason: dict.returnRequest.reasonMax });
+      return;
+    }
+    setFieldErrors({});
     // Known offline: do not even try — keep everything and wait for `online`.
     if (isBrowserOffline()) {
       setAwaitingNetwork(true);
@@ -167,6 +196,11 @@ export function ReturnRequestButton({
             return;
           }
           // Any refusal keeps the dialog open with everything typed (SF-ACC-31).
+          // A DTO 400 goes under the inputs it names (TASK-1984, Rule 6b); the
+          // toast is only for what found no field.
+          const placed = placeReturnFieldErrors(error);
+          setFieldErrors(placed.errors);
+          if (placed.complete) return;
           const { message, refreshLedger } = readReturnRequestError(error);
           if (refreshLedger) ledger.refreshLedger();
           toast.error(message);
@@ -265,30 +299,47 @@ export function ReturnRequestButton({
                     aria-label={dict.returnRequest.quantityAria(
                       line.productName,
                     )}
+                    aria-invalid={fieldErrors.items ? true : undefined}
+                    aria-describedby={
+                      fieldErrors.items ? itemsErrorId : undefined
+                    }
                     value={clampQuantity(
                       quantities[line.orderItemId] ?? 0,
                       line.remaining,
                     )}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setQuantities((previous) => ({
                         ...previous,
                         [line.orderItemId]: clampQuantity(
                           Number(event.target.value),
                           line.remaining,
                         ),
-                      }))
-                    }
+                      }));
+                      clearFieldError("items");
+                    }}
                     className="w-20"
                   />
                 )}
               </li>
             ))}
           </ul>
+          {fieldErrors.items ? (
+            <p
+              id={itemsErrorId}
+              role="alert"
+              className="text-sm text-destructive"
+            >
+              {fieldErrors.items}
+            </p>
+          ) : null}
         </div>
 
         {/* TASK-2044: what the customer would like — optional, the shop
             decides either way, so the default sends nothing. */}
-        <fieldset className="flex flex-col gap-1">
+        <fieldset
+          className="flex flex-col gap-1"
+          aria-describedby={fieldErrors.outcome ? outcomeErrorId : undefined}
+        >
           <legend className="mb-1 text-sm font-semibold text-foreground">
             {dict.returnRequest.outcomeLegend}
           </legend>
@@ -303,7 +354,10 @@ export function ReturnRequestButton({
                   name={`${baseId}-outcome`}
                   value={choice}
                   checked={outcome === choice}
-                  onChange={() => setOutcome(choice)}
+                  onChange={() => {
+                    setOutcome(choice);
+                    clearFieldError("outcome");
+                  }}
                   className="size-4 shrink-0 accent-primary"
                 />
                 {choice
@@ -312,6 +366,15 @@ export function ReturnRequestButton({
               </label>
             ))}
           </div>
+          {fieldErrors.outcome ? (
+            <p
+              id={outcomeErrorId}
+              role="alert"
+              className="text-sm text-destructive"
+            >
+              {fieldErrors.outcome}
+            </p>
+          ) : null}
         </fieldset>
 
         <div className="flex flex-col gap-2">
@@ -319,13 +382,45 @@ export function ReturnRequestButton({
           <Textarea
             id={reasonId}
             value={reason}
-            onChange={(event) => setReason(event.target.value)}
+            maxLength={RETURN_REASON_MAX}
+            onChange={(event) => {
+              setReason(event.target.value);
+              clearFieldError("reason");
+            }}
             placeholder={dict.returnRequest.reasonPlaceholder}
             rows={3}
+            aria-invalid={fieldErrors.reason ? true : undefined}
+            aria-describedby={[
+              fieldErrors.reason ? reasonErrorId : null,
+              reasonHintId,
+              reasonCountId,
+            ]
+              .filter(Boolean)
+              .join(" ")}
           />
-          <p className="text-xs text-muted-foreground">
-            {dict.returnRequest.reasonHint}
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <p id={reasonHintId} className="text-xs text-muted-foreground">
+              {dict.returnRequest.reasonHint}
+            </p>
+            <span
+              id={reasonCountId}
+              className="shrink-0 text-xs text-muted-foreground"
+            >
+              {dict.returnRequest.reasonCounter(
+                reason.length,
+                RETURN_REASON_MAX,
+              )}
+            </span>
+          </div>
+          {fieldErrors.reason ? (
+            <p
+              id={reasonErrorId}
+              role="alert"
+              className="text-sm text-destructive"
+            >
+              {fieldErrors.reason}
+            </p>
+          ) : null}
         </div>
 
         {/* Always mounted so screen readers announce the text when it appears.

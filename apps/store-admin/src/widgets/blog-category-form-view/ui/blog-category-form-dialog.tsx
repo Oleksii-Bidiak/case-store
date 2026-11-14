@@ -8,6 +8,8 @@ import {
   BlogCategoryForm,
   blogCategoryFormValuesToCreateDto,
   blogCategoryFormValuesToUpdateDto,
+  placeBlogCategorySaveError,
+  type BlogCategoryFormSetError,
   type BlogCategoryFormValues,
 } from "@/features/blog-category-form";
 import {
@@ -20,6 +22,7 @@ import {
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { useUrlParams } from "@/shared/lib/use-url-params";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import {
   Dialog,
   DialogContent,
@@ -89,7 +92,10 @@ function CreateBody({ onDone }: { onDone: () => void }) {
   const create = useAdminBlogControllerCreateCategory();
   const invalidate = useInvalidateCategories();
 
-  const handleSubmit = (values: BlogCategoryFormValues) => {
+  const handleSubmit = (
+    values: BlogCategoryFormValues,
+    setError: BlogCategoryFormSetError,
+  ) => {
     create.mutate(
       { data: blogCategoryFormValuesToCreateDto(values) },
       {
@@ -98,7 +104,12 @@ function CreateBody({ onDone }: { onDone: () => void }) {
           toast.success(c.toastCreated);
           onDone();
         },
-        onError: () => toast.error(c.toastCreateFailed),
+        // TASK-1984 Rule 6b: a taken slug or a refused field lands under
+        // that field; anything else is a toast in the server's words.
+        onError: (error) => {
+          if (placeBlogCategorySaveError(error, setError)) return;
+          toast.error(refusalMessage(error) ?? c.toastCreateFailed);
+        },
       },
     );
   };
@@ -134,7 +145,10 @@ function EditBody({
     if (isNotFound) onDone();
   }, [isNotFound, onDone]);
 
-  const handleSubmit = (values: BlogCategoryFormValues) => {
+  const handleSubmit = (
+    values: BlogCategoryFormValues,
+    setError: BlogCategoryFormSetError,
+  ) => {
     update.mutate(
       { id: categoryId, data: blogCategoryFormValuesToUpdateDto(values) },
       {
@@ -146,7 +160,10 @@ function EditBody({
           toast.success(c.toastUpdated);
           onDone();
         },
-        onError: () => toast.error(c.toastUpdateFailed),
+        onError: (error) => {
+          if (placeBlogCategorySaveError(error, setError)) return;
+          toast.error(refusalMessage(error) ?? c.toastUpdateFailed);
+        },
       },
     );
   };
