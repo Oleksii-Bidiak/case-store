@@ -599,6 +599,7 @@ export const dict = {
       return `Показати ще ${n} ${word}`;
     },
     loadMoreLoading: "Завантаження…",
+    resultsLoading: "Завантаження товарів…",
     loadMoreError: "Не вдалося завантажити більше товарів. Спробуйте ще раз.",
     shownOfTotal: (shown: number, total: number) =>
       `Показано ${shown} з ${total}`,

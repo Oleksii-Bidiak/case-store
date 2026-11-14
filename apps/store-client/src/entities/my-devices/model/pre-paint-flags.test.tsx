@@ -1,6 +1,8 @@
 import {
   DEVICE_FILTER_ATTR,
+  DEVICE_FILTER_EXPIRED_ATTR,
   HAS_DEVICE_ATTR,
+  PRE_PAINT_FILTER_TIMEOUT_MS,
   syncDeviceFlags,
 } from "./device-flags";
 import {
@@ -8,6 +10,7 @@ import {
   addDevice,
   clearMyDevices,
   replaceMyDevices,
+  syncFlags,
 } from "./my-devices-storage";
 import {
   MY_DEVICES_SETTINGS_STORAGE_KEY,
@@ -27,6 +30,7 @@ const DEVICE = JSON.stringify([{ modelId: "a", slug: "iphone-15-pro" }]);
 function resetFlags(): void {
   html().removeAttribute(HAS_DEVICE_ATTR);
   html().removeAttribute(DEVICE_FILTER_ATTR);
+  html().removeAttribute(DEVICE_FILTER_EXPIRED_ATTR);
 }
 
 beforeEach(() => {
@@ -76,6 +80,45 @@ describe("PRE_PAINT_FLAGS_SCRIPT (TASK-2421 / TASK-2074)", () => {
     runScript();
     expect(html()).not.toHaveAttribute(HAS_DEVICE_ATTR);
     expect(html()).not.toHaveAttribute(DEVICE_FILTER_ATTR);
+  });
+
+  it("sets no flag for a list without a single usable entry (`[{}]`)", () => {
+    window.localStorage.setItem(
+      MY_DEVICES_STORAGE_KEY,
+      '[{},null,{"modelId":""}]',
+    );
+    runScript();
+    expect(html()).not.toHaveAttribute(HAS_DEVICE_ATTR);
+    expect(html()).not.toHaveAttribute(DEVICE_FILTER_ATTR);
+  });
+
+  it("expires the filter gate when the app has not hydrated in time", () => {
+    jest.useFakeTimers();
+    try {
+      window.localStorage.setItem(MY_DEVICES_STORAGE_KEY, DEVICE);
+      runScript();
+      expect(html()).not.toHaveAttribute(DEVICE_FILTER_EXPIRED_ATTR);
+      jest.advanceTimersByTime(PRE_PAINT_FILTER_TIMEOUT_MS);
+      expect(html()).toHaveAttribute(DEVICE_FILTER_EXPIRED_ATTR);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("starts no expiry timer when the filter does not apply", () => {
+    jest.useFakeTimers();
+    try {
+      window.localStorage.setItem(MY_DEVICES_STORAGE_KEY, DEVICE);
+      window.localStorage.setItem(
+        MY_DEVICES_SETTINGS_STORAGE_KEY,
+        JSON.stringify({ compatOnly: false, compatScope: "all" }),
+      );
+      runScript();
+      jest.advanceTimersByTime(PRE_PAINT_FILTER_TIMEOUT_MS);
+      expect(html()).not.toHaveAttribute(DEVICE_FILTER_EXPIRED_ATTR);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("swallows a storage that throws (private mode) instead of erroring", () => {
@@ -158,6 +201,20 @@ describe("syncDeviceFlags — the flags stay live after first paint", () => {
     expect(html()).not.toHaveAttribute(DEVICE_FILTER_ATTR);
     syncDeviceFlags(true, false);
     expect(html()).toHaveAttribute(HAS_DEVICE_ATTR);
+    expect(html()).not.toHaveAttribute(DEVICE_FILTER_ATTR);
+  });
+
+  it("the first-mount resync clears flags the script set for an invalid entry", () => {
+    // Has a modelId, so the script flags it; misses slug/name, so the store drops it.
+    window.localStorage.setItem(
+      MY_DEVICES_STORAGE_KEY,
+      JSON.stringify([{ modelId: "a" }]),
+    );
+    runScript();
+    expect(html()).toHaveAttribute(HAS_DEVICE_ATTR);
+
+    syncFlags();
+    expect(html()).not.toHaveAttribute(HAS_DEVICE_ATTR);
     expect(html()).not.toHaveAttribute(DEVICE_FILTER_ATTR);
   });
 });

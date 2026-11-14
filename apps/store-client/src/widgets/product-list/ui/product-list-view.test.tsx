@@ -1076,13 +1076,15 @@ describe("ProductListView — no unfiltered first paint (TASK-2421)", () => {
     const doc = serverHtml(<ProductListView myDevicesDefault={ON} />);
 
     expect(doc.innerHTML).not.toContain(pro.name);
-    expect(results(doc)).toHaveClass("[html[data-device-filter]_&]:hidden");
+    expect(results(doc)).toHaveClass(
+      "[html[data-device-filter]:not([data-device-filter-expired])_&]:hidden",
+    );
     expect(skeleton(doc)).toHaveClass(
       "hidden",
-      "[html[data-device-filter]_&]:block",
+      "[html[data-device-filter]:not([data-device-filter-expired])_&]:block",
     );
     expect(doc.querySelector("p[aria-live='polite']")).toHaveClass(
-      "[html[data-device-filter]_&]:invisible",
+      "[html[data-device-filter]:not([data-device-filter-expired])_&]:invisible",
     );
   });
 

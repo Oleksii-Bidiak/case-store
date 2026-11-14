@@ -53,8 +53,12 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
-/** Keep the <html> flags (TASK-2421/2410) in line with the stored list. */
-function syncFlags(): void {
+/**
+ * Keep the <html> flags (TASK-2421/2410) in line with the stored list. Also
+ * called once on the first client mount: the pre-paint script only checks the
+ * raw JSON, so a list whose entries all fail validation must clear the flags.
+ */
+export function syncFlags(): void {
   syncDeviceFlags(
     getMyDevicesSnapshot().length > 0,
     readMyDevicesSettings().compatOnly,

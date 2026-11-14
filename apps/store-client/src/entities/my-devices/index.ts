@@ -26,6 +26,7 @@ export {
   replaceMyDevices,
   setActiveDevice,
   setDeviceLabelById as setLabel,
+  syncFlags as syncMyDevicesFlags,
 } from "./model/my-devices-storage";
 
 // The <html> flags CSS lays the page out by before React knows the devices

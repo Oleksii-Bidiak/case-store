@@ -56,11 +56,16 @@ import { ProductListSkeleton } from "./product-list-skeleton";
  * everyone else (no device, «лише сумісне» off) they paint as they are. The
  * markup is the same on the server and in hydration, only CSS differs, so
  * there is no hydration mismatch and nothing personal in the cached HTML.
- * The counts go `invisible`, keeping their line.
+ * The counts go `invisible`, keeping their line. `data-device-filter-expired`
+ * (set by the same script a few seconds later) lifts the gate for an app that
+ * never hydrated, so a failed bundle shows the server grid, not a skeleton.
  */
-const PENDING_RESULTS_CLASS = "[html[data-device-filter]_&]:hidden";
-const PENDING_SKELETON_CLASS = "hidden [html[data-device-filter]_&]:block";
-const PENDING_COUNT_CLASS = "[html[data-device-filter]_&]:invisible";
+const PENDING_RESULTS_CLASS =
+  "[html[data-device-filter]:not([data-device-filter-expired])_&]:hidden";
+const PENDING_SKELETON_CLASS =
+  "hidden [html[data-device-filter]:not([data-device-filter-expired])_&]:block";
+const PENDING_COUNT_CLASS =
+  "[html[data-device-filter]:not([data-device-filter-expired])_&]:invisible";
 
 // Hydration flag (TASK-534): `false` for the server render and for hydration,
 // `true` for every client render after that — and for a fresh client mount.
@@ -620,6 +625,11 @@ export function ProductListView({
               data-testid="default-filter-skeleton"
               className={PENDING_SKELETON_CLASS}
             >
+              {/* The skeleton is aria-hidden; this is what a screen reader
+                  hears while it stands in for the grid (only when shown). */}
+              <p role="status" className="sr-only">
+                {dict.catalog.resultsLoading}
+              </p>
               <ProductListSkeleton view={view} />
             </div>
           )}

@@ -18,6 +18,16 @@
 export const HAS_DEVICE_ATTR = "data-has-device";
 export const DEVICE_FILTER_ATTR = "data-device-filter";
 
+/**
+ * Set by the pre-paint script {@link PRE_PAINT_FILTER_TIMEOUT_MS} after it
+ * set `data-device-filter`: if the app never hydrated by then (a blocked or
+ * failed bundle), CSS gives the skeleton up and shows the server grid — the
+ * unfiltered list beats an endless skeleton. After hydration it changes
+ * nothing: the pending classes are gone by then.
+ */
+export const DEVICE_FILTER_EXPIRED_ATTR = "data-device-filter-expired";
+export const PRE_PAINT_FILTER_TIMEOUT_MS = 4000;
+
 /** Whether <html> is currently flagged as having a saved device. */
 export function hasDeviceFlag(): boolean {
   if (typeof document === "undefined") return false;

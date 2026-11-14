@@ -185,6 +185,15 @@ for (const [label, viewport] of [
         .first();
       await expect(slotSkeleton).toBeVisible();
       expect((await slotSkeleton.boundingBox())?.height).toBe(38);
+      // The app never hydrates here: after the pre-paint timeout the gate
+      // lifts and the server grid shows — never an endless skeleton.
+      await expect(html).toHaveAttribute("data-device-filter-expired", "", {
+        timeout: 10_000,
+      });
+      await expect(withDevice.locator(UNFILTERED_ONLY).first()).toBeVisible();
+      await expect(
+        withDevice.getByTestId("default-filter-skeleton"),
+      ).toBeHidden();
       await withDevice.close();
 
       // Without one: the server grid paints at once, no device-fit slot.
@@ -256,3 +265,40 @@ for (const [label, viewport] of [
     }
   });
 }
+
+test.describe("catalogue first paint, edge cases (TASK-2421, TASK-2410)", () => {
+  // No JS = the pre-paint script cannot run either, so nothing is gated.
+  test("without JavaScript the server grid and its counts are there", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false });
+    const page = await context.newPage();
+    await page.goto(CATEGORY_PATH);
+    await expect(page.locator(UNFILTERED_ONLY).first()).toBeVisible();
+    await expect(page.locator(FITTING).first()).toBeVisible();
+    await expect(page.locator("html")).not.toHaveAttribute(
+      "data-device-filter",
+    );
+    await context.close();
+  });
+
+  test("a corrupt saved list flags nothing and reserves no fit slot", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("my-devices:v1", JSON.stringify([{}]));
+    });
+    await page.goto(CATEGORY_PATH);
+    await expect(page.locator(UNFILTERED_ONLY).first()).toBeVisible({
+      timeout: 30_000,
+    });
+    const html = page.locator("html");
+    await expect(html).not.toHaveAttribute("data-has-device");
+    await expect(html).not.toHaveAttribute("data-device-filter");
+    for (const slot of await page
+      .locator('[data-slot="device-fit-slot"]')
+      .all()) {
+      await expect(slot).toBeHidden();
+    }
+  });
+});
