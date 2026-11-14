@@ -113,3 +113,47 @@ test("a brand ticked down the rail does not throw the page to the top", async ({
   expect(minScrollY).toBeGreaterThan(0);
   await expect(section).toBeInViewport();
 });
+
+// The same change from the keyboard: Space on the focused checkbox. The
+// section is remembered on keydown, and focus must survive the URL change so
+// the next Tab continues from the brand, not from the top of the page.
+test("Space on a brand keeps the scroll and the focus", async ({ page }) => {
+  await page.goto(CATEGORY_PATH);
+
+  const section = page.locator('aside [data-filter-section="brand"]');
+  const brand = section.getByRole("checkbox", { name: BRAND_NAME });
+  await expect(
+    section.locator("label").filter({ hasText: BRAND_NAME }),
+  ).toBeVisible({ timeout: 30_000 });
+  await waitForHydration(brand);
+
+  await section.evaluate((node) => {
+    const top = node.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo({ top: top - 120, behavior: "instant" });
+  });
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBeGreaterThan(0);
+  await page.evaluate(() => {
+    const w = window as unknown as { __minScrollY: number };
+    w.__minScrollY = window.scrollY;
+    const sample = () => {
+      w.__minScrollY = Math.min(w.__minScrollY, window.scrollY);
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+
+  await brand.focus();
+  await page.keyboard.press("Space");
+
+  await expect(page).toHaveURL(new RegExp(`[?&]brand=${BRAND_SLUG}`));
+  await expect(brand).toBeChecked();
+  await page.waitForTimeout(800);
+  const minScrollY = await page.evaluate(
+    () => (window as unknown as { __minScrollY: number }).__minScrollY,
+  );
+  expect(minScrollY).toBeGreaterThan(0);
+  await expect(section).toBeInViewport();
+  await expect(brand).toBeFocused();
+});

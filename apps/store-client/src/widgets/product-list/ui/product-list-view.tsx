@@ -309,7 +309,9 @@ export function ProductListView({
         }
       }
       next.set("page", "1"); // reset pagination on any filter/sort change
-      router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+      const query = next.toString();
+      router.replace(`${pathname}?${query}`, { scroll: false });
+      return query;
     },
     [
       searchParams,
@@ -324,8 +326,7 @@ export function ProductListView({
   // The desktop rail's own writer: the same change, then the section check.
   const applyRailFilters = useCallback(
     (updates: Record<string, string | undefined>) => {
-      applyFilters(updates);
-      armKeepSection();
+      armKeepSection(applyFilters(updates));
     },
     [applyFilters, armKeepSection],
   );

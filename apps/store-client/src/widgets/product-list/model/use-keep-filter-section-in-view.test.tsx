@@ -23,11 +23,15 @@ function Harness({
         onKeyDownCapture={rememberSection}
       >
         <div data-filter-section="brand" data-testid="brand-section">
-          <button type="button" onClick={arm}>
+          <button type="button" onClick={() => arm()}>
             Apple
           </button>
+          {/* A click whose write equals the current URL: nothing commits. */}
+          <button type="button" onClick={() => arm(commitKey)}>
+            Apple again
+          </button>
         </div>
-        <button type="button" onClick={arm}>
+        <button type="button" onClick={() => arm()}>
           Outside a section
         </button>
       </aside>
@@ -265,6 +269,38 @@ describe("useKeepFilterSectionInView (TASK-2414)", () => {
 
     rerender(<Harness commitKey="brand=apple" settled />);
     await nextFrame();
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it("arms nothing when the click wrote the URL it was already on", async () => {
+    const { rerender } = render(<Harness commitKey="brand=apple&page=1" />);
+    placeSection(240);
+    placeControl(300);
+
+    press("Apple again");
+    // Later, an unrelated navigation (a page link) moves the section away.
+    placeSection(-320);
+    placeControl(-260);
+    rerender(<Harness commitKey="brand=apple&page=2" />);
+    await nextFrame();
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  it("works from the keyboard: Space on a control remembers its section", async () => {
+    const { rerender } = render(<Harness commitKey="a" />);
+    placeSection(240);
+    placeControl(300);
+
+    const apple = screen.getByRole("button", { name: "Apple" });
+    fireEvent.keyDown(apple, { key: " ", code: "Space" });
+    fireEvent.click(apple);
+    placeSection(-320);
+    placeControl(-260);
+    rerender(<Harness commitKey="brand=apple" />);
+    await nextFrame();
+
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 

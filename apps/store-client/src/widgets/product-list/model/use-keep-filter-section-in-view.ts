@@ -123,7 +123,7 @@ export interface KeepFilterSectionInView {
     event: PointerEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
   ) => void;
   /** Call right after the rail wrote a filter change to the URL. */
-  arm: () => void;
+  arm: (nextKey?: string) => void;
   /** Call on every other URL change (sort, view, chips): keep the position. */
   disarm: () => void;
 }
@@ -193,8 +193,15 @@ export function useKeepFilterSectionInView(
     [],
   );
 
-  const arm = useCallback(() => {
-    armedFrom.current = remembered.current ? commitKeyRef.current : null;
+  // `nextKey`: the query string the change writes. When it equals the current
+  // one (a click that changed nothing) no commit will follow, so nothing is
+  // armed — a stale arm would fire on the NEXT unrelated navigation (a page
+  // link) and pull the shopper back to the rail.
+  const arm = useCallback((nextKey?: string) => {
+    armedFrom.current =
+      remembered.current && nextKey !== commitKeyRef.current
+        ? commitKeyRef.current
+        : null;
   }, []);
   const disarm = useCallback(() => {
     armedFrom.current = null;
