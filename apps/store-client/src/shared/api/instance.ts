@@ -263,10 +263,20 @@ async function withRefreshLock(
   }
 }
 
+/**
+ * Upper bound on one refresh request. The instance itself has no timeout, and
+ * the refresh runs while holding the cross-tab lock: a hung request would park
+ * every other tab's refresh behind it indefinitely. A timeout is folded into the
+ * outcome like any network failure — transient, the session marker survives.
+ */
+export const REFRESH_TIMEOUT_MS = 10_000;
+
 /** One `POST /api/auth/refresh`, its failure folded into the outcome. */
 function postRefresh(): Promise<RefreshOutcome> {
   return api
-    .post<{ data?: { accessToken?: string } }>("/api/auth/refresh")
+    .post<{ data?: { accessToken?: string } }>("/api/auth/refresh", undefined, {
+      timeout: REFRESH_TIMEOUT_MS,
+    })
     .then((response) => ({
       accessToken: response.data?.data?.accessToken ?? null,
     }))

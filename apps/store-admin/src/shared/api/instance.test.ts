@@ -177,7 +177,11 @@ describe("401 interceptor", () => {
     ).rejects.toBeInstanceOf(AxiosError);
 
     expect(post).toHaveBeenCalledTimes(1);
-    expect(post).toHaveBeenCalledWith("/api/auth/refresh");
+    expect(post).toHaveBeenCalledWith(
+      "/api/auth/refresh",
+      undefined,
+      expect.objectContaining({ timeout: expect.any(Number) }),
+    );
     expect(getAccessToken()).toBeNull();
     // The 401 from refresh ended the session: the next page load stays quiet.
     expect(shouldAttemptSessionRefresh()).toBe(false);
@@ -425,6 +429,36 @@ describe("cross-tab refresh (TASK-2405)", () => {
 
     expect(first).toEqual({ accessToken: "A1" });
     expect(second).toEqual({ accessToken: "A1" });
+    expect(server.presented).toEqual(["C0"]);
+  });
+
+  it("bounds a hung refresh, so the lock is released and the session survives", async () => {
+    const server = createSessionServer();
+    installLocks(createLockManager());
+    const tab = openTab();
+    tab.setAccessToken("header.payload.sig");
+    const timeouts: Array<number | undefined> = [];
+    let hung = true;
+    tab.api.defaults.adapter = async (config) => {
+      if (config.url?.includes("/csrf-token")) return server.adapter(config);
+      timeouts.push(config.timeout);
+      if (hung) {
+        hung = false;
+        // What Axios raises when `timeout` elapses: no response at all.
+        throw new AxiosError("timeout exceeded", "ECONNABORTED", config);
+      }
+      return server.adapter(config);
+    };
+
+    await expect(tab.refreshSession()).resolves.toEqual({
+      accessToken: null,
+      status: undefined,
+    });
+    expect(timeouts).toEqual([tab.REFRESH_TIMEOUT_MS]);
+    // A timeout is transient, like any network failure — not a sign-out.
+    expect(tab.shouldAttemptSessionRefresh()).toBe(true);
+    // The lock was released: the next refresh reaches the network.
+    await expect(tab.refreshSession()).resolves.toEqual({ accessToken: "A1" });
     expect(server.presented).toEqual(["C0"]);
   });
 

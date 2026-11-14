@@ -419,6 +419,36 @@ describe("cross-tab refresh (TASK-2405)", () => {
     expect(server.presented).toEqual(["C0"]);
   });
 
+  it("bounds a hung refresh, so the lock is released and the session survives", async () => {
+    const server = createSessionServer();
+    installNavigator({ locks: createLockManager() });
+    const tab = openTab();
+    tab.setAccessToken("header.payload.sig");
+    const timeouts: Array<number | undefined> = [];
+    let hung = true;
+    tab.api.defaults.adapter = async (config) => {
+      if (config.url?.includes("/csrf-token")) return server.adapter(config);
+      timeouts.push(config.timeout);
+      if (hung) {
+        hung = false;
+        // What Axios raises when `timeout` elapses: no response at all.
+        throw new AxiosError("timeout exceeded", "ECONNABORTED", config);
+      }
+      return server.adapter(config);
+    };
+
+    await expect(tab.refreshSession()).resolves.toEqual({
+      accessToken: null,
+      status: undefined,
+    });
+    expect(timeouts).toEqual([tab.REFRESH_TIMEOUT_MS]);
+    // A timeout is transient, like any network failure — not a sign-out.
+    expect(tab.shouldAttemptSessionRefresh()).toBe(true);
+    // The lock was released: the next refresh reaches the network.
+    await expect(tab.refreshSession()).resolves.toEqual({ accessToken: "A1" });
+    expect(server.presented).toEqual(["C0"]);
+  });
+
   it("works as before where the browser has no navigator.locks", async () => {
     const server = createSessionServer();
     installNavigator({});
