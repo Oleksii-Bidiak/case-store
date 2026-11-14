@@ -1241,6 +1241,14 @@ model RefreshToken {
   isRevoked Boolean  @default(false) @map("is_revoked")
   createdAt DateTime @default(now()) @map("created_at")
 
+  // TASK-2405: one-time grace for a just-rotated token (two tabs refreshing
+  // with the same cookie). Set by the rotation that revoked this row; the
+  // successor id is a plain column — no relation, the row may be cleaned up
+  // independently. `graceUsedAt` makes the replay single-use.
+  rotatedAt    DateTime? @map("rotated_at")
+  replacedById String?   @map("replaced_by_id")
+  graceUsedAt  DateTime? @map("grace_used_at")
+
   @@index([userId])
   @@index([expiresAt])
   @@map("refresh_tokens")

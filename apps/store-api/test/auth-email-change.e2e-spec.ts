@@ -87,9 +87,25 @@ describe('Email change (e2e, TASK-396)', () => {
       const row = refresh.get(raw);
       return row ? { ...row, user: users.get(row.userId as string) } : null;
     },
-    rotateRefreshToken: async (oldId: string, userId: string, raw: string, expiresAt: Date) => {
-      for (const row of refresh.values()) if (row.id === oldId) row.isRevoked = true;
-      refresh.set(raw, { id: nextId('rt'), token: raw, userId, expiresAt, isRevoked: false });
+    // TASK-2405: conditional — only a still-live row rotates.
+    rotateRefreshToken: async (input: {
+      oldTokenId: string;
+      newTokenId: string;
+      userId: string;
+      rawToken: string;
+      expiresAt: Date;
+    }) => {
+      const old = [...refresh.values()].find((row) => row.id === input.oldTokenId);
+      if (!old || old.isRevoked) return false;
+      old.isRevoked = true;
+      refresh.set(input.rawToken, {
+        id: input.newTokenId,
+        token: input.rawToken,
+        userId: input.userId,
+        expiresAt: input.expiresAt,
+        isRevoked: false,
+      });
+      return true;
     },
     revokeAllUserTokens: async (userId: string) => revokeAll(userId),
     clearFailedLogins: async () => undefined,

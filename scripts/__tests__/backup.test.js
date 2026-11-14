@@ -6,9 +6,11 @@
 // first on PATH:
 //
 //   docker — emulates the three `docker compose … exec -T <svc> <cmd>` calls the
-//            script makes: `pg_dump` (prints a fake dump), `pg_restore --list`
-//            (swallows stdin, prints a table of contents) and `tar czf -` of the
-//            uploads volume. What the tar call emits is chosen by STUB_UPLOADS:
+//            script makes: `pg_dump` (prints a fake dump; STUB_DUMP=valid|garbage),
+//            `pg_restore --list` (rejects a file argument and a non-PGDMP stdin
+//            the way the real one does under `exec -T`, else prints a table of
+//            contents) and `tar czf -` of the uploads volume. What the tar call
+//            emits is chosen by STUB_UPLOADS:
 //              valid     — a real gzip tar of a temp directory with files in it
 //              empty     — a real gzip tar of an empty directory (a fresh shop)
 //              garbage   — bytes that are not gzip at all
@@ -71,10 +73,35 @@ set -euo pipefail
 args=" $* "
 case "$args" in
   *" pg_dump "*)
-    printf 'PGDMP fake custom-format dump\\n'
+    case "\${STUB_DUMP:-valid}" in
+      valid)   printf 'PGDMP fake custom-format dump\\n' ;;
+      garbage) printf 'this is not a pg_dump archive, it only has a size\\n' ;;
+      *)
+        echo "docker stub: unknown STUB_DUMP=$STUB_DUMP" >&2
+        exit 2
+        ;;
+    esac
     ;;
   *" pg_restore "*)
+    # Behaves like the real pg_restore under \`exec -T\` (TASK-2380): given a
+    # FILE NAME it opens it to sniff the header, then opens it AGAIN to read the
+    # archive — on a pipe (/dev/stdin) the second open starts past the bytes
+    # already consumed, so the magic string is never found. Only a call with no
+    # file argument reads stdin once, through the lookahead buffer.
+    seen=false
+    for a in "$@"; do
+      if [[ "$seen" == true && "$a" != -* ]]; then
+        echo 'pg_restore: error: did not find magic string in file header' >&2
+        exit 1
+      fi
+      [[ "$a" == pg_restore ]] && seen=true
+    done
+    magic="$(head -c 5)"
     cat > /dev/null
+    if [[ "$magic" != PGDMP ]]; then
+      echo 'pg_restore: error: did not find magic string in file header' >&2
+      exit 1
+    fi
     printf '; Archive created by a stub\\n'
     printf '3001; 0 16384 TABLE DATA public users stub\\n'
     printf '3002; 0 16390 TABLE DATA public products stub\\n'
@@ -169,14 +196,15 @@ after(() => {
   if (root) fs.rmSync(root, { recursive: true, force: true });
 });
 
-function runBackup(mode, args = []) {
-  const backupDir = path.join(root, `backups-${mode}`);
-  const tmpDir = path.join(root, `tmp-${mode}`);
+function runBackup(mode, args = [], dump = 'valid') {
+  const backupDir = path.join(root, `backups-${mode}-${dump}`);
+  const tmpDir = path.join(root, `tmp-${mode}-${dump}`);
   fs.mkdirSync(tmpDir, { recursive: true });
   const env = {
     ...process.env,
     STUB_BIN: path.join(root, 'bin'),
     STUB_UPLOADS: mode,
+    STUB_DUMP: dump,
     STUB_UPLOADS_SRC: path.join(root, 'uploads-src'),
     ENV_FILE: path.join(root, 'backup-config'),
     BACKUP_DIR: backupDir,
@@ -242,4 +270,30 @@ test('--db-only never touches the uploads volume', { skip }, () => {
   const r = runBackup('garbage', ['--db-only']);
   assert.equal(r.status, 0, r.output);
   assert.doesNotMatch(r.output, /archiving uploaded images/);
+});
+
+// TASK-2380: the dump check used to pass `/dev/stdin` as pg_restore's file
+// argument, which the real pg_restore re-opens and so never finds the magic
+// string on a pipe — the stand failed this exact call on a valid dump.
+test('a readable database dump: verified and counted', { skip }, () => {
+  const r = runBackup('valid', ['--db-only']);
+  assert.equal(r.status, 0, r.output);
+  assert.match(r.output, /ok — 2 tables with data/);
+  assert.ok(
+    listDir(r.backupDir).some((f) => /^db-.*\.dump\.age$/.test(f)),
+    'no db .age for a valid dump',
+  );
+  assert.deepEqual(listDir(r.tmpDir), [], 'plaintext work dir left behind');
+});
+
+test('an unreadable database dump: the backup fails loudly', { skip }, () => {
+  const r = runBackup('valid', ['--db-only'], 'garbage');
+  assert.notEqual(r.status, 0, `backup reported success on a garbage dump:\n${r.output}`);
+  assert.match(r.output, /the dump is unreadable/);
+  assert.doesNotMatch(r.output, /tables with data/);
+  assert.ok(
+    !listDir(r.backupDir).some((f) => f.startsWith('db-')),
+    'a db artefact was written for an unreadable dump',
+  );
+  assert.deepEqual(listDir(r.tmpDir), [], 'plaintext work dir left behind');
 });

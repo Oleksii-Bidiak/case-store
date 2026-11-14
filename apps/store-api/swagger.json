@@ -210,11 +210,12 @@
     },
     "/api/auth/refresh": {
       "post": {
+        "description": "Rotates the refresh cookie and returns a new access token. A refresh token that was rotated less than 10 seconds ago may be presented ONCE more (two tabs refreshing with the same cookie): that replay gets the same access token and refresh cookie the rotation issued (TASK-2405).",
         "operationId": "AuthController_refresh",
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Token refreshed successfully",
+            "description": "Token refreshed successfully (or the one-time replay of a just-rotated token)",
             "content": {
               "application/json": {
                 "schema": {
@@ -224,7 +225,7 @@
             }
           },
           "401": {
-            "description": "Invalid or expired refresh token"
+            "description": "Invalid or expired refresh token. Presenting an already-rotated token a second time, or more than 10 seconds after its rotation, is treated as reuse: every session of the user is revoked (\"Token reuse detected — all sessions terminated\")."
           }
         },
         "security": [

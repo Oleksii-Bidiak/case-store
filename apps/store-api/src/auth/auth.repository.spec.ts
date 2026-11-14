@@ -272,44 +272,49 @@ describe('AuthRepository', () => {
     });
   });
 
-  // ─── rotateRefreshToken (TASK-496) ───────────────────────────────────────────
+  // ─── rotateRefreshToken (TASK-496, TASK-2405) ────────────────────────────────
 
-  describe('rotateRefreshToken (TASK-496)', () => {
+  describe('rotateRefreshToken (TASK-496, TASK-2405)', () => {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const input = {
+      oldTokenId: 'rt-uuid-1',
+      newTokenId: 'rt-uuid-2',
+      userId: 'user-uuid-1',
+      rawToken,
+      expiresAt,
+    };
 
     beforeEach(() => {
-      // Array dialect of `$transaction` (see markEmailVerified below): the
-      // callback form used by createUserFromOAuth leaves its implementation
-      // behind, so re-arm it for an array here.
-      prismaMock.$transaction.mockImplementation((operations: unknown[]) =>
-        Promise.resolve(operations),
+      // Interactive dialect: the callback runs against the mock as its `tx`.
+      prismaMock.$transaction.mockImplementation((fn: (tx: typeof prismaMock) => unknown) =>
+        fn(prismaMock),
       );
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
     });
 
-    it('persists the hashed replacement and revokes the old token in one transaction', async () => {
-      await repository.rotateRefreshToken('rt-uuid-1', 'user-uuid-1', rawToken, expiresAt);
+    it('revokes the presented token only while it is still live, linking its successor', async () => {
+      await expect(repository.rotateRefreshToken(input)).resolves.toBe(true);
 
-      expect(prismaMock.refreshToken.create).toHaveBeenCalledWith({
-        data: { token: hashedToken, userId: 'user-uuid-1', expiresAt },
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-uuid-1', isRevoked: false },
+        data: { isRevoked: true, rotatedAt: expect.any(Date), replacedById: 'rt-uuid-2' },
       });
-      expect(prismaMock.refreshToken.update).toHaveBeenCalledWith({
-        where: { id: 'rt-uuid-1' },
-        data: { isRevoked: true },
+      expect(prismaMock.refreshToken.create).toHaveBeenCalledWith({
+        data: { id: 'rt-uuid-2', token: hashedToken, userId: 'user-uuid-1', expiresAt },
       });
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
-      expect(prismaMock.$transaction.mock.calls[0][0]).toHaveLength(2);
     });
 
-    it('queues the insert BEFORE the revoke', async () => {
-      await repository.rotateRefreshToken('rt-uuid-1', 'user-uuid-1', rawToken, expiresAt);
+    it('returns false and inserts nothing when another rotation already won the row', async () => {
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 0 });
 
-      const [createOrder] = prismaMock.refreshToken.create.mock.invocationCallOrder;
-      const [updateOrder] = prismaMock.refreshToken.update.mock.invocationCallOrder;
-      expect(createOrder).toBeLessThan(updateOrder);
+      await expect(repository.rotateRefreshToken(input)).resolves.toBe(false);
+
+      expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
     });
 
     it('never stores the raw replacement token', async () => {
-      await repository.rotateRefreshToken('rt-uuid-1', 'user-uuid-1', rawToken, expiresAt);
+      await repository.rotateRefreshToken(input);
 
       expect(prismaMock.refreshToken.create.mock.calls[0][0].data.token).not.toBe(rawToken);
     });
@@ -317,9 +322,40 @@ describe('AuthRepository', () => {
     it('propagates a failed transaction so the caller never hands out an unsaved token', async () => {
       prismaMock.$transaction.mockRejectedValueOnce(new Error('unique constraint'));
 
-      await expect(
-        repository.rotateRefreshToken('rt-uuid-1', 'user-uuid-1', rawToken, expiresAt),
-      ).rejects.toThrow('unique constraint');
+      await expect(repository.rotateRefreshToken(input)).rejects.toThrow('unique constraint');
+    });
+  });
+
+  // ─── grace replay (TASK-2405) ────────────────────────────────────────────────
+
+  describe('findRefreshTokenById (TASK-2405)', () => {
+    it('reads the row by primary key', async () => {
+      prismaMock.refreshToken.findUnique.mockResolvedValue(mockRefreshTokenRecord);
+
+      await expect(repository.findRefreshTokenById('rt-uuid-1')).resolves.toBe(
+        mockRefreshTokenRecord,
+      );
+      expect(prismaMock.refreshToken.findUnique).toHaveBeenCalledWith({
+        where: { id: 'rt-uuid-1' },
+      });
+    });
+  });
+
+  describe('claimRefreshGrace (TASK-2405)', () => {
+    it('stamps graceUsedAt only when it is still empty, and reports the win', async () => {
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+
+      await expect(repository.claimRefreshGrace('rt-uuid-1')).resolves.toBe(true);
+      expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { id: 'rt-uuid-1', graceUsedAt: null },
+        data: { graceUsedAt: expect.any(Date) },
+      });
+    });
+
+    it('reports false when the grace was already used', async () => {
+      prismaMock.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(repository.claimRefreshGrace('rt-uuid-1')).resolves.toBe(false);
     });
   });
 
