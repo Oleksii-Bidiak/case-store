@@ -215,6 +215,45 @@ describe("EditCarouselView — the list saves with the one «Зберегти» 
     await waitFor(() => expect(push).toHaveBeenCalledWith("/carousels"));
   });
 
+  // TASK-1984 Rule 6b: a server 400 lands under the field it names, and the
+  // list is not written after a refused carousel.
+  it("puts a refused title under the title field", async () => {
+    const writes = stubCarousel("BESTSELLING");
+    server.use(
+      http.put(`*/api/admin/carousels/${carouselId}`, () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "Bad Request",
+            message: "Title must be at most 255 characters",
+            fieldErrors: [{ field: "title", constraint: "maxLength" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(<EditCarouselView carouselId={carouselId} />, {
+      auth: { permissions: [PERM.carouselsWrite] },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(new RegExp(f.title))).toHaveValue(
+        "Популярне",
+      ),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.save }),
+    );
+
+    expect(await screen.findByText(dict.forms.tooLong)).toBeInTheDocument();
+    expect(screen.getByLabelText(new RegExp(f.title))).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(writes).toHaveLength(0);
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("«Скасувати зміни» brings the saved list back", async () => {
     stubCarousel("MANUAL");
     renderWithProviders(<EditCarouselView carouselId={carouselId} />, {

@@ -26,7 +26,11 @@ import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { Button, Checkbox, FieldError, Label, Textarea } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { apiErrorStatus } from "@/shared/lib";
+import {
+  applyServerFieldErrors,
+  type ServerFieldMap,
+} from "@/shared/lib/form-errors";
 import { cn } from "@/shared/lib/utils";
 import {
   OPERATOR_NOTES_MAX_LENGTH,
@@ -38,6 +42,9 @@ import {
 } from "../model/resolve-schema";
 
 const d = dict.returns;
+
+/** `ResolveReturnDto` path → form field (TASK-1984 Rule 6b). */
+const RESOLVE_FIELD_MAP: ServerFieldMap = { operatorNotes: "operatorNotes" };
 
 interface ReturnResolveFormProps {
   rma: ReturnEntity;
@@ -244,17 +251,17 @@ function ReturnResolveEditor({ rma, money }: ReturnResolveFormProps) {
       return;
     }
     if (status === 400) {
-      // TASK-956: a DTO refusal names its field — put it under that
+      // TASK-956 → TASK-1984 Rule 6b: a DTO refusal names its field in
+      // `fieldErrors` (no regex over the English message) — put it under that
       // field. Anything else gets a sentence that is true.
-      const message = apiErrorMessage(error) ?? "";
-      if (/operatorNotes/.test(message)) {
-        setEditingNotes(true);
-        form.setError("operatorNotes", {
-          type: "server",
-          message: d.operatorNotesTooLong,
-        });
-        return;
-      }
+      const { mapped, unmapped } = applyServerFieldErrors(
+        error,
+        form.setError,
+        RESOLVE_FIELD_MAP,
+        { operatorNotes: d.operatorNotesTooLong },
+      );
+      if (mapped.includes("operatorNotes")) setEditingNotes(true);
+      if (mapped.length > 0 && unmapped.length === 0) return;
       toast.error(d.resolveBadRequest);
       return;
     }
@@ -308,6 +315,9 @@ function ReturnResolveEditor({ rma, money }: ReturnResolveFormProps) {
     void form.handleSubmit(onSubmit, (fieldErrors) => {
       // A note refused by the schema is only visible in its editor.
       if (fieldErrors.operatorNotes) setEditingNotes(true);
+      // The status has no field of its own — the step button is the action,
+      // so its refusal is a toast (Rule 6c), never a silent no-op.
+      if (fieldErrors.status?.message) toast.error(fieldErrors.status.message);
     })();
   };
 

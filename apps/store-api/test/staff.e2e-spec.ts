@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { INestApplication, UnauthorizedException } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -14,6 +14,7 @@ import { StaffRepository } from '../src/staff/staff.repository';
 import { PrismaService } from '../src/prisma';
 import { PermissionGrantRepository, PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * «Персонал» over HTTP — invariants 2 and 3 of plan 181, door by door (TASK-476).
@@ -197,14 +198,7 @@ describe('Staff (e2e)', () => {
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get<JwtService>(JwtService);
 
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     app.setGlobalPrefix('api', { exclude: ['health'] });
     await app.init();
   });

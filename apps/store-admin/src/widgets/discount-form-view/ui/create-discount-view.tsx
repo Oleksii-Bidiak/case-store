@@ -8,6 +8,8 @@ import {
   DiscountForm,
   discountFormValuesToDto,
   duplicateDiscountInput,
+  placeDiscountSaveError,
+  type DiscountFormSetError,
   type DiscountFormValues,
 } from "@/features/discount-form";
 import {
@@ -17,7 +19,7 @@ import {
 } from "@/entities/discount";
 import { Callout } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { apiErrorMessage } from "@/shared/lib";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import { DiscountFormSkeleton } from "./discount-form-skeleton";
 
 const d = dict.discounts;
@@ -44,7 +46,10 @@ export function CreateDiscountView() {
   });
   const sourceDiscount = fromId ? source.data?.data : undefined;
 
-  const handleSubmit = (values: DiscountFormValues) => {
+  const handleSubmit = (
+    values: DiscountFormValues,
+    setError: DiscountFormSetError,
+  ) => {
     create.mutate(
       { data: discountFormValuesToDto(values) },
       {
@@ -55,11 +60,12 @@ export function CreateDiscountView() {
           toast.success(d.toastCreated);
           router.push("/discounts");
         },
-        // The server's own words when it has them (TASK-796): «код уже існує»
-        // or a field it refused tells the operator what to fix; the generic
-        // copy is only the fallback.
+        // TASK-1984 Rule 6b: a taken code or a refused field lands under that
+        // field; anything else is a toast in the server's words (TASK-796),
+        // the generic copy only for a failure with no reason.
         onError: (error) => {
-          toast.error(apiErrorMessage(error) ?? d.toastCreateFailed);
+          if (placeDiscountSaveError(error, setError)) return;
+          toast.error(refusalMessage(error) ?? d.toastCreateFailed);
         },
       },
     );

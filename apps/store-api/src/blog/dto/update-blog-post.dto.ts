@@ -15,6 +15,7 @@ import { Type } from 'class-transformer';
 import { MAX_RICH_TEXT_CONTENT_LENGTH } from '../../common/sanitize';
 import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 import { PublishFieldsDto } from '../../publishing';
+import { BLOG_COVER_URL_OPTIONS } from './create-blog-post.dto';
 
 /**
  * DTO for updating a blog post (admin-only). All fields optional — only provided
@@ -82,7 +83,7 @@ export class UpdateBlogPostDto extends PublishFieldsDto {
     required: false,
   })
   @IsOptional()
-  @IsUrl({ require_tld: false }, { message: 'coverImageUrl must be a valid URL' })
+  @IsUrl(BLOG_COVER_URL_OPTIONS, { message: 'coverImageUrl must be a valid URL' })
   @MaxLength(2048, { message: 'Cover image URL must be at most 2048 characters' })
   coverImageUrl?: string;
 

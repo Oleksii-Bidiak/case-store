@@ -24,12 +24,17 @@ import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { Button, Input, Label, StaleDraftPanel, Textarea } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { apiErrorStatus } from "@/shared/lib";
+import { applyServerFieldErrors } from "@/shared/lib/form-errors";
 import { useEditLockToken } from "@/shared/lib/use-edit-lock-token";
 import { useStaleDraftReview } from "@/shared/lib/use-stale-draft-review";
 import {
+  INTERNAL_NOTES_MAX_LENGTH,
+  ORDER_DETAILS_FIELD_MAP,
+  ORDER_DETAILS_FIELD_MESSAGES,
+  TRACKING_NUMBER_MAX_LENGTH,
   createOrderDetailsSchema,
   isValidWaybill,
-  isWaybillRejection,
   npTrackingUrl,
   mapOrderToDetailsValues,
   orderDetailsValuesToDto,
@@ -263,18 +268,18 @@ function OrderDetailsEditor({
           toast.success(dict.orders.detailsSaved);
         },
         onError: (error) => {
-          // FIRST: the server refused ONE named field, which is neither a
-          // conflict nor an unknowable failure.
-          // Say which field and which rule — and put the message under the field
-          // as well, because the toast will go and the box that needs fixing
-          // stays.
-          if (isWaybillRejection(error)) {
-            form.setError("trackingNumber", {
-              type: "server",
-              message: dict.orders.trackingNumberInvalid,
-            });
-            toast.error(dict.orders.detailsFailedTracking);
-            return;
+          // FIRST: the server refused a named field, which is neither a
+          // conflict nor an unknowable failure. Its rule goes under the field
+          // — and only there (TASK-1984 Rule 6c: one error, shown once). Only
+          // a remainder `fieldErrors` does not place falls through to a toast.
+          if (apiErrorStatus(error) === 400) {
+            const { mapped, unmapped } = applyServerFieldErrors(
+              error,
+              form.setError,
+              ORDER_DETAILS_FIELD_MAP,
+              ORDER_DETAILS_FIELD_MESSAGES,
+            );
+            if (mapped.length > 0 && unmapped.length === 0) return;
           }
 
           const message = orderConflictMessage(error as ApiErrorLike);
@@ -328,8 +333,13 @@ function OrderDetailsEditor({
             id="order-tracking-number"
             inputMode="numeric"
             autoComplete="off"
+            maxLength={TRACKING_NUMBER_MAX_LENGTH}
             placeholder={dict.orders.trackingNumberPlaceholder}
-            aria-describedby="order-tracking-number-hint"
+            aria-describedby={
+              form.formState.errors.trackingNumber
+                ? "order-tracking-number-hint order-tracking-number-error"
+                : "order-tracking-number-hint"
+            }
             aria-invalid={
               form.formState.errors.trackingNumber ? true : undefined
             }
@@ -342,7 +352,11 @@ function OrderDetailsEditor({
             {dict.orders.trackingNumberHint}
           </p>
           {form.formState.errors.trackingNumber ? (
-            <p role="alert" className="text-xs text-destructive">
+            <p
+              id="order-tracking-number-error"
+              role="alert"
+              className="text-xs text-destructive"
+            >
               {form.formState.errors.trackingNumber.message}
               {/* К3: say how far off it is — «Зараз 13.» — so a dropped digit
                 is found without counting by hand. */}
@@ -374,7 +388,12 @@ function OrderDetailsEditor({
           id="order-internal-notes"
           rows={4}
           placeholder={dict.orders.internalNotesPlaceholder}
-          aria-describedby="order-internal-notes-hint"
+          maxLength={INTERNAL_NOTES_MAX_LENGTH}
+          aria-describedby={
+            form.formState.errors.internalNotes
+              ? "order-internal-notes-hint order-internal-notes-error"
+              : "order-internal-notes-hint"
+          }
           aria-invalid={form.formState.errors.internalNotes ? true : undefined}
           {...form.register("internalNotes")}
         />
@@ -385,7 +404,11 @@ function OrderDetailsEditor({
           {dict.orders.internalNotesHint}
         </p>
         {form.formState.errors.internalNotes ? (
-          <p role="alert" className="text-xs text-destructive">
+          <p
+            id="order-internal-notes-error"
+            role="alert"
+            className="text-xs text-destructive"
+          >
             {form.formState.errors.internalNotes.message}
           </p>
         ) : null}

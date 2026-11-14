@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ExecutionContext, INestApplication, ValidationPipe } from '@nestjs/common';
+import { ExecutionContext, INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard, ThrottlerStorage } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -16,6 +16,7 @@ import { OrderService } from '../src/order/order.service';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 import * as argon2 from 'argon2';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 // Google OAuth must stay UNCONFIGURED for this suite: part of what the Google
 // cases below prove is that AppModule boots with ZERO Google env vars
@@ -90,6 +91,11 @@ describe('AuthController (e2e)', () => {
     createUser: jest.fn(),
     findRefreshToken: jest.fn(),
     saveRefreshToken: jest.fn(),
+    // TASK-2405: rotation is conditional, and a just-rotated token may be
+    // replayed once (the grace claim reads the successor row).
+    rotateRefreshToken: jest.fn(),
+    findRefreshTokenById: jest.fn(),
+    claimRefreshGrace: jest.fn(),
     revokeToken: jest.fn(),
     revokeAllUserTokens: jest.fn(),
     savePasswordResetToken: jest.fn(),
@@ -194,16 +200,7 @@ describe('AuthController (e2e)', () => {
     // JwtRefreshStrategy can extract it from req.cookies.
     app.use(cookieParser());
 
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: {
-          enableImplicitConversion: true,
-        },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
 
     app.setGlobalPrefix('api', {
       exclude: ['health'],
@@ -391,6 +388,195 @@ describe('AuthController (e2e)', () => {
   describe('POST /api/auth/refresh', () => {
     it('should return 401 when refreshing without a token', async () => {
       await request(app.getHttpServer()).post('/api/auth/refresh').expect(401);
+    });
+
+    // ─── TASK-2405: two tabs presenting the same cookie ───────────────────────
+    //
+    // Two admin tabs that bootstrapped together hold access tokens with the
+    // same expiry, so both refresh at once with the same cookie C0. Tab A
+    // rotates C0 → C1; tab B's C0 is now revoked, and strict reuse detection
+    // signed the user out everywhere (confirmed on the demo stand, 2026-11-09).
+    // The API now honours ONE replay of a just-rotated token for 10 s by
+    // handing back the very pair the rotation issued — no second fork.
+    //
+    // The repository is a stateful in-memory fake (the suite's boundary is the
+    // repository); the real-Postgres atomicity of the rotation is proven in
+    // test/refresh-token-rotation.repository.int-spec.ts.
+    describe('one-time grace for a just-rotated token (TASK-2405)', () => {
+      interface FakeRefreshRow {
+        id: string;
+        token: string;
+        userId: string;
+        expiresAt: Date;
+        isRevoked: boolean;
+        createdAt: Date;
+        rotatedAt: Date | null;
+        replacedById: string | null;
+        graceUsedAt: Date | null;
+      }
+
+      const rows = new Map<string, FakeRefreshRow>();
+      let seq = 0;
+      const user = {
+        id: 'user-grace-1',
+        email: 'grace-e2e@example.com',
+        passwordHash: '',
+        role: 'CUSTOMER',
+        isActive: true,
+        deletedAt: null,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      };
+      const byId = (id: string) => [...rows.values()].find((r) => r.id === id) ?? null;
+      const liveRows = () => [...rows.values()].filter((r) => !r.isRevoked);
+      const refreshCookie = (res: request.Response): string | undefined => {
+        const raw = res.headers['set-cookie'] as unknown as string[] | string | undefined;
+        const lines = Array.isArray(raw) ? raw : raw ? [raw] : [];
+        return lines
+          .find((l) => l.startsWith('refreshToken='))
+          ?.match(/^refreshToken=([^;]*)/)?.[1];
+      };
+      const refreshWith = (cookie: string) =>
+        request(app.getHttpServer())
+          .post('/api/auth/refresh')
+          .set('Cookie', `refreshToken=${cookie}`);
+
+      beforeEach(async () => {
+        rows.clear();
+        user.passwordHash = await argon2.hash(testUser.password);
+        authRepositoryMock.findByEmail.mockResolvedValue(user);
+        authRepositoryMock.saveRefreshToken.mockImplementation(
+          async (userId: string, raw: string, expiresAt: Date) => {
+            const row: FakeRefreshRow = {
+              id: `rt-grace-${++seq}`,
+              token: raw,
+              userId,
+              expiresAt,
+              isRevoked: false,
+              createdAt: new Date(),
+              rotatedAt: null,
+              replacedById: null,
+              graceUsedAt: null,
+            };
+            rows.set(raw, row);
+            return row;
+          },
+        );
+        authRepositoryMock.findRefreshToken.mockImplementation(async (raw: string) => {
+          const row = rows.get(raw);
+          return row ? { ...row, user } : null;
+        });
+        authRepositoryMock.findRefreshTokenById.mockImplementation(async (id: string) => {
+          const row = byId(id);
+          return row ? { ...row } : null;
+        });
+        // Mirrors the real conditional update: only a still-live row rotates.
+        authRepositoryMock.rotateRefreshToken.mockImplementation(
+          async (input: {
+            oldTokenId: string;
+            newTokenId: string;
+            userId: string;
+            rawToken: string;
+            expiresAt: Date;
+          }) => {
+            const old = byId(input.oldTokenId);
+            if (!old || old.isRevoked) return false;
+            Object.assign(old, {
+              isRevoked: true,
+              rotatedAt: new Date(),
+              replacedById: input.newTokenId,
+            });
+            rows.set(input.rawToken, {
+              id: input.newTokenId,
+              token: input.rawToken,
+              userId: input.userId,
+              expiresAt: input.expiresAt,
+              isRevoked: false,
+              createdAt: new Date(),
+              rotatedAt: null,
+              replacedById: null,
+              graceUsedAt: null,
+            });
+            return true;
+          },
+        );
+        authRepositoryMock.claimRefreshGrace.mockImplementation(async (id: string) => {
+          const row = byId(id);
+          if (!row || row.graceUsedAt) return false;
+          row.graceUsedAt = new Date();
+          return true;
+        });
+        authRepositoryMock.revokeAllUserTokens.mockImplementation(async (userId: string) => {
+          for (const row of rows.values()) if (row.userId === userId) row.isRevoked = true;
+        });
+      });
+
+      afterEach(() => {
+        for (const fn of [
+          authRepositoryMock.findByEmail,
+          authRepositoryMock.saveRefreshToken,
+          authRepositoryMock.findRefreshToken,
+          authRepositoryMock.findRefreshTokenById,
+          authRepositoryMock.rotateRefreshToken,
+          authRepositoryMock.claimRefreshGrace,
+          authRepositoryMock.revokeAllUserTokens,
+        ]) {
+          fn.mockReset();
+        }
+      });
+
+      async function login(): Promise<string> {
+        const res = await request(app.getHttpServer())
+          .post('/api/auth/login')
+          .send({ email: user.email, password: testUser.password })
+          .expect(200);
+        const cookie = refreshCookie(res);
+        expect(cookie).toBeTruthy();
+        return cookie!;
+      }
+
+      it('answers a replay of the just-rotated cookie with the SAME pair, and the successor stays live', async () => {
+        const c0 = await login();
+
+        const first = await refreshWith(c0).expect(200);
+        const c1 = refreshCookie(first);
+        expect(c1).toBeTruthy();
+        expect(c1).not.toBe(c0);
+
+        // Tab B arrives with C0 after tab A's rotation landed.
+        const replay = await refreshWith(c0).expect(200);
+        expect(refreshCookie(replay)).toBe(c1);
+        expect(replay.body.data.accessToken).toBe(first.body.data.accessToken);
+
+        // The session did not fork and did not die: C1 still rotates.
+        expect(liveRows().map((r) => r.token)).toEqual([c1]);
+        await refreshWith(c1!).expect(200);
+      });
+
+      it('two concurrent refreshes with one cookie both succeed with exactly one live successor', async () => {
+        const c0 = await login();
+
+        const [a, b] = await Promise.all([refreshWith(c0), refreshWith(c0)]);
+
+        expect(a.status).toBe(200);
+        expect(b.status).toBe(200);
+        expect(refreshCookie(a)).toBe(refreshCookie(b));
+        expect(liveRows()).toHaveLength(1);
+        expect(liveRows()[0].token).toBe(refreshCookie(a));
+      });
+
+      it('a SECOND replay of the same cookie is theft: 401 and the successor dies too', async () => {
+        const c0 = await login();
+        const first = await refreshWith(c0).expect(200);
+        const c1 = refreshCookie(first)!;
+        await refreshWith(c0).expect(200);
+
+        const third = await refreshWith(c0).expect(401);
+
+        expect(third.body.message).toBe('Token reuse detected — all sessions terminated');
+        expect(liveRows()).toHaveLength(0);
+        await refreshWith(c1).expect(401);
+      });
     });
   });
 

@@ -10,6 +10,7 @@ import {
   moneyRefusalNeedsRefetch,
   moneyWriteErrorMessage,
   ORDER_MONEY_ERROR,
+  placeMoneyRefusal,
   receiptKindLabel,
   useAdminOrderMoneyControllerRecordReceipt,
   type MoneyInKind,
@@ -179,9 +180,13 @@ function ReceiptDialogBody({
             ORDER_MONEY_ERROR.OVERPAYMENT_REASON_REQUIRED
           ) {
             setServerWantsReason(true);
-            setNoteError(m.reasonRequired);
           }
-          setFormError(message);
+          // TASK-1984 Rule 6: under the input it is about, or in the banner —
+          // never both.
+          const placed = placeMoneyRefusal(error);
+          if (placed.fields.amount) setAmountError(placed.fields.amount);
+          if (placed.fields.reason) setNoteError(placed.fields.reason);
+          setFormError(placed.banner);
           if (moneyRefusalNeedsRefetch(error)) onWritten(null);
         },
       },

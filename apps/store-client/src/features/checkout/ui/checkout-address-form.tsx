@@ -11,7 +11,10 @@ import {
 } from "react-hook-form";
 import { dict } from "@/shared/config";
 import { Input, Label, PhoneInput } from "@/shared/ui";
-import type { CheckoutFormValues } from "../model/checkout-schema";
+import {
+  CHECKOUT_NAME_MAX_LENGTH,
+  type CheckoutFormValues,
+} from "../model/checkout-schema";
 import {
   FALLBACK_DELIVERY_OPTIONS,
   type CheckoutDeliveryMethod,
@@ -32,6 +35,8 @@ interface FieldConfig {
   label: string;
   autoComplete: string;
   type?: string;
+  /** The DTO's `@MaxLength` (forms Rule 5d). */
+  maxLength: number;
 }
 
 /**
@@ -43,11 +48,13 @@ const NAME_FIELDS: FieldConfig[] = [
     name: "firstName",
     label: dict.checkout.fields.firstName,
     autoComplete: "given-name",
+    maxLength: CHECKOUT_NAME_MAX_LENGTH,
   },
   {
     name: "lastName",
     label: dict.checkout.fields.lastName,
     autoComplete: "family-name",
+    maxLength: CHECKOUT_NAME_MAX_LENGTH,
   },
 ];
 
@@ -112,6 +119,7 @@ export function CheckoutAddressForm({
           id={id}
           type={field.type}
           autoComplete={field.autoComplete}
+          maxLength={field.maxLength}
           aria-invalid={message ? true : undefined}
           aria-describedby={message ? `${id}-error` : undefined}
           {...register(field.name)}

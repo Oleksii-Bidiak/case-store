@@ -123,6 +123,114 @@ describe("NewsletterSubscribeForm", () => {
     ).toBeInTheDocument();
   });
 
+  // ── TASK-1984: forms Rules 5c / 6 ─────────────────────────────────────────
+  it("puts a server 400 about the email under the input, not the generic line", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post(SUBSCRIBE_URL, () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: ["A valid email is required"],
+            fieldErrors: [{ field: "email", constraint: "isEmail" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    renderWithProviders(<NewsletterSubscribeForm />);
+
+    const input = screen.getByRole("textbox", {
+      name: dict.newsletterForm.emailLabel,
+    });
+    await user.type(input, "shopper@example.com");
+    await user.click(
+      screen.getByRole("button", { name: dict.newsletterForm.submit }),
+    );
+
+    const error = await screen.findByText(dict.newsletterForm.invalidEmail);
+    expect(error).toHaveAttribute("role", "alert");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input.getAttribute("aria-describedby")).toContain(error.id);
+    expect(
+      screen.queryByText(dict.newsletterForm.error),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says «too long», not «invalid», for a server maxLength on the email", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post(SUBSCRIBE_URL, () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: ["Email must be at most 254 characters"],
+            fieldErrors: [{ field: "email", constraint: "maxLength" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    renderWithProviders(<NewsletterSubscribeForm />);
+
+    await user.type(
+      screen.getByRole("textbox", { name: dict.newsletterForm.emailLabel }),
+      "shopper@example.com",
+    );
+    await user.click(
+      screen.getByRole("button", { name: dict.newsletterForm.submit }),
+    );
+
+    expect(await screen.findByText(dict.forms.tooLong)).toHaveAttribute(
+      "role",
+      "alert",
+    );
+    expect(
+      screen.queryByText(dict.newsletterForm.invalidEmail),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the generic line for a 400 about the host's source tag", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post(SUBSCRIBE_URL, () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: ["refused"],
+            fieldErrors: [{ field: "source", constraint: "maxLength" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    renderWithProviders(<NewsletterSubscribeForm source="x" />);
+
+    const input = screen.getByRole("textbox", {
+      name: dict.newsletterForm.emailLabel,
+    });
+    await user.type(input, "shopper@example.com");
+    await user.click(
+      screen.getByRole("button", { name: dict.newsletterForm.submit }),
+    );
+
+    expect(
+      await screen.findByText(dict.newsletterForm.error),
+    ).toBeInTheDocument();
+    expect(input).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("caps the email at the DTO's 254", () => {
+    renderWithProviders(<NewsletterSubscribeForm />);
+
+    expect(
+      screen.getByRole("textbox", { name: dict.newsletterForm.emailLabel }),
+    ).toHaveAttribute("maxLength", "254");
+  });
+
   // ── TASK-410: the row must survive a 320px screen ──────────────────────────
   it("stacks the input above the button until sm, and lets the input shrink", () => {
     renderWithProviders(<NewsletterSubscribeForm />);

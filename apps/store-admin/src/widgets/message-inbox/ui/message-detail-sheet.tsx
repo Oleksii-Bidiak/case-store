@@ -8,6 +8,7 @@ import {
   LockIcon,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
@@ -27,6 +28,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  FieldError,
   Label,
   Sheet,
   SheetContent,
@@ -36,15 +38,19 @@ import {
   Textarea,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatDateTime } from "@/shared/lib";
+import { apiErrorStatus, formatDateTime } from "@/shared/lib";
+import { applyServerFieldErrors } from "@/shared/lib/form-errors";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import { orderRefTarget, phoneText, topicLabel } from "../model/message-views";
+import {
+  ADMIN_NOTE_MAX_LENGTH,
+  noteSchema,
+  type NoteFormOutput,
+  type NoteFormValues,
+} from "../model/note-schema";
 import { statusBadgeVariant, statusLabel } from "./status-meta";
 
 const d = dict.messages;
-
-interface NoteFormValues {
-  adminNote: string;
-}
 
 interface MessageDetailSheetProps {
   message: ContactMessageEntity;
@@ -135,7 +141,12 @@ export function MessageDetailSheet({
   const canWrite = can(PERM.messagesWrite);
   const canReadOrders = can(PERM.ordersRead);
 
-  const { register, handleSubmit, formState } = useForm<NoteFormValues>({
+  const { register, handleSubmit, setError, formState } = useForm<
+    NoteFormValues,
+    unknown,
+    NoteFormOutput
+  >({
+    resolver: zodResolver(noteSchema),
     values: { adminNote: message.adminNote ?? "" },
     resetOptions: { keepDirtyValues: true },
   });
@@ -161,7 +172,19 @@ export function MessageDetailSheet({
           toast.success(d.updateSuccess);
           onDone?.();
         },
-        onError: () => toast.error(d.updateError),
+        onError: (error) => {
+          // TASK-1984 Rule 6b: a refused note is said under it; anything else
+          // (a status change has no field) is a toast in the server's words.
+          if (data.adminNote !== undefined && apiErrorStatus(error) === 400) {
+            const { mapped, unmapped } = applyServerFieldErrors(
+              error,
+              setError,
+              { adminNote: "adminNote" },
+            );
+            if (mapped.length > 0 && unmapped.length === 0) return;
+          }
+          toast.error(refusalMessage(error) ?? d.updateError);
+        },
       },
     );
   };
@@ -169,13 +192,15 @@ export function MessageDetailSheet({
   const setStatus = (status: UpdateContactMessageDtoStatus) =>
     runUpdate({ status }, () => onOpenChange(false));
 
-  const onSaveNote = (values: NoteFormValues) =>
+  const onSaveNote = (values: NoteFormOutput) =>
     runUpdate({ adminNote: values.adminNote });
 
   const title = message.topic ? topicLabel(message.topic) : d.detailTitle;
   const initial = message.name.trim().charAt(0).toUpperCase() || "?";
   const noteId = `message-note-${message.id}`;
   const noteHintId = `${noteId}-hint`;
+  const noteErrorId = `${noteId}-error`;
+  const noteError = formState.errors.adminNote?.message;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -316,10 +341,15 @@ export function MessageDetailSheet({
               id={noteId}
               rows={3}
               placeholder={d.adminNotePlaceholder}
-              aria-describedby={noteHintId}
+              maxLength={ADMIN_NOTE_MAX_LENGTH}
+              aria-invalid={noteError ? true : undefined}
+              aria-describedby={
+                noteError ? `${noteHintId} ${noteErrorId}` : noteHintId
+              }
               className="border-dashed border-warning/60 bg-warning/6"
               {...register("adminNote")}
             />
+            <FieldError id={noteErrorId}>{noteError}</FieldError>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p id={noteHintId} className="text-xs text-muted-foreground">
                 {d.noteHint}

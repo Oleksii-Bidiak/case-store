@@ -69,6 +69,58 @@ describe("CreateDiscountView — failed save (TASK-796)", () => {
     );
   });
 
+  // TASK-1984 Rule 6b: a taken code is about one field — said under it, once.
+  it("puts DISCOUNT_CODE_TAKEN under the code field, not in a toast", async () => {
+    server.use(
+      http.post("*/api/admin/discounts", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "DISCOUNT_CODE_TAKEN",
+            message: 'A discount with code "DUP" already exists',
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(<CreateDiscountView />, { auth: WRITER });
+
+    await fillAndSubmit();
+
+    expect(await screen.findByText(f.errors.codeTaken)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: f.code })).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("puts a server 400 on the field its fieldErrors name", async () => {
+    server.use(
+      http.post("*/api/admin/discounts", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "Bad Request",
+            message: "value must be at most 99999999.99",
+            fieldErrors: [{ field: "value", constraint: "max" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(<CreateDiscountView />, { auth: WRITER });
+
+    await fillAndSubmit();
+
+    expect(await screen.findByText(dict.forms.invalid)).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: f.value })).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
   it("falls back to the generic copy when the body says nothing", async () => {
     server.use(
       http.post("*/api/admin/discounts", () =>

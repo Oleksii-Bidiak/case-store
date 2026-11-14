@@ -90,6 +90,27 @@ describe("decideErrorOf — the decide endpoint's refusals in Ukrainian (TASK-20
 
   it("puts a DTO length refusal of the reason under the field", () => {
     expect(
+      decideErrorOf({
+        response: {
+          status: 400,
+          data: {
+            statusCode: 400,
+            error: "Bad Request",
+            message: "reason must be shorter than or equal to 1000 characters",
+            fieldErrors: [{ field: "reason", constraint: "maxLength" }],
+          },
+        },
+      }),
+    ).toEqual({
+      kind: "field",
+      field: "reason",
+      message: d.decideReasonTooLong,
+    });
+  });
+
+  // TASK-1984: the field comes from `fieldErrors`, never from the English text.
+  it("does not guess the field from the message", () => {
+    expect(
       decideErrorOf(
         failure(
           400,
@@ -97,10 +118,25 @@ describe("decideErrorOf — the decide endpoint's refusals in Ukrainian (TASK-20
           "reason must be shorter than or equal to 1000 characters",
         ),
       ),
+    ).toEqual({ kind: "toast", message: d.decideFailed, refetch: false });
+  });
+
+  it("puts a DTO refusal of the decision under the radios", () => {
+    expect(
+      decideErrorOf({
+        response: {
+          status: 400,
+          data: {
+            statusCode: 400,
+            message: "x",
+            fieldErrors: [{ field: "decision", constraint: "isEnum" }],
+          },
+        },
+      }),
     ).toEqual({
       kind: "field",
-      field: "reason",
-      message: d.decideReasonTooLong,
+      field: "decision",
+      message: d.decideDecisionRequired,
     });
   });
 

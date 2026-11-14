@@ -17,11 +17,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  FieldError,
   Input,
   Label,
   Separator,
 } from "@/shared/ui";
 import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { mapServerFieldErrors } from "@/shared/lib/form-errors";
 import { dict } from "@/shared/config";
 
 const d = dict.staff;
@@ -64,11 +66,16 @@ export function TransferOwnershipDialog({
   const queryClient = useQueryClient();
   const transfer = useTransferStaffOwnership();
   const [password, setPassword] = useState("");
+  // TASK-1984 (Rule 6a/6c): a refusal of the password sits under the field;
+  // `error` is the one about the act itself (not an admin any more, 5xx…).
+  // Each is shown once — no toast repeating it.
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const close = (next: boolean) => {
     if (!next) {
       setPassword("");
+      setPasswordError(null);
       setError(null);
     }
     onOpenChange(next);
@@ -77,11 +84,13 @@ export function TransferOwnershipDialog({
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
 
+    setError(null);
+    // `TransferOwnershipDto.password` is `@IsNotEmpty` — presence only.
     if (password.length === 0) {
-      setError(d.transferWrongPassword);
+      setPasswordError(d.transferPasswordRequired);
       return;
     }
-    setError(null);
+    setPasswordError(null);
 
     transfer.mutate(
       { id: userId, data: { password } },
@@ -102,12 +111,23 @@ export function TransferOwnershipDialog({
           close(false);
         },
         onError: (mutationError) => {
-          const message =
-            apiErrorStatus(mutationError) === 401
-              ? d.transferWrongPassword
-              : (apiErrorMessage(mutationError) ?? d.transferToastFailed);
-          setError(message);
-          toast.error(message);
+          const status = apiErrorStatus(mutationError);
+          if (status === 401) {
+            setPasswordError(d.transferWrongPassword);
+            return;
+          }
+          if (status === 400) {
+            const fields = mapServerFieldErrors(
+              mutationError,
+              { password: "password" },
+              { password: d.transferPasswordRequired },
+            );
+            if (fields.password) {
+              setPasswordError(fields.password);
+              return;
+            }
+          }
+          setError(apiErrorMessage(mutationError) ?? d.transferToastFailed);
         },
       },
     );
@@ -146,9 +166,20 @@ export function TransferOwnershipDialog({
               type="password"
               autoComplete="current-password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              aria-describedby="transfer-ownership-password-hint"
+              onChange={(event) => {
+                setPassword(event.target.value);
+                if (passwordError) setPasswordError(null);
+              }}
+              aria-invalid={passwordError ? true : undefined}
+              aria-describedby={
+                passwordError
+                  ? "transfer-ownership-password-error transfer-ownership-password-hint"
+                  : "transfer-ownership-password-hint"
+              }
             />
+            <FieldError id="transfer-ownership-password-error">
+              {passwordError}
+            </FieldError>
             <p
               id="transfer-ownership-password-hint"
               className="text-xs text-muted-foreground"

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ServiceUnavailableException, ValidationPipe } from '@nestjs/common';
+import { INestApplication, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerStorage } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
@@ -29,6 +29,7 @@ import { PermissionRepository } from '../src/auth/permissions';
 import { LiqPayAdapter } from '../src/payment/adapters/liqpay/liqpay.adapter';
 import { PrismaService } from '../src/prisma';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * E2E: the admin payment card (TASK-371) — `GET /api/admin/payments/orders/:orderId`
@@ -160,14 +161,7 @@ describe('Admin payments — attempt list and LiqPay payout (e2e, TASK-371, R2 A
 
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get(JwtService);
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     app.setGlobalPrefix('api', { exclude: ['health'] });
     await app.init();
   });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { dict } from "@/shared/config";
+import { emailField } from "@/shared/lib/form-fields";
 
 /**
  * The address-change form (TASK-396). Mirrors `RequestEmailChangeDto`: a valid
@@ -13,12 +14,9 @@ export function buildChangeEmailSchema(currentEmail: string) {
   const d = dict.auth.changeEmail;
 
   return z.object({
-    newEmail: z
-      .string()
-      .trim()
-      .toLowerCase()
-      .email(d.validationEmail)
-      .max(254, d.validationEmail)
+    // The one email rule (forms Rule 5c): trim → max(254) → email, as the DTO.
+    newEmail: emailField({ message: d.validationEmail })
+      .transform((value) => value.toLowerCase())
       .refine((value) => value !== currentEmail.trim().toLowerCase(), {
         message: d.validationSame,
       }),

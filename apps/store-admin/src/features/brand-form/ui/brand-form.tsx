@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, type FormEvent, type ReactNode } from "react";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import {
+  Controller,
+  useForm,
+  useWatch,
+  type UseFormSetError,
+} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { slugify } from "@/shared/lib";
 import {
@@ -22,6 +27,7 @@ import {
 import { MediaPicker } from "@/features/media-picker";
 import { dict } from "@/shared/config";
 import {
+  BRAND_LIMITS,
   brandSchema,
   type BrandFormInput,
   type BrandFormValues,
@@ -31,13 +37,19 @@ import { BrandReadOnly } from "./brand-read-only";
 const f = dict.brandForm;
 const FORM_ID = "brand-form";
 
+export type BrandFormSetError = UseFormSetError<BrandFormInput>;
+
 interface BrandFormProps {
   /** Entity id (edit mode). Drives the forms.md Rule 2b reset: the form
    *  re-seeds from `defaultValues` only when navigating to a different brand,
    *  never on a background refetch. Omitted in create mode. */
   id?: string;
   defaultValues?: Partial<BrandFormInput>;
-  onSubmit: (values: BrandFormValues) => void;
+  /**
+   * The page's save. `setError` is how a server refusal lands under its field
+   * (TASK-1984, Rule 6b) — hand it to `placeBrandSaveError`.
+   */
+  onSubmit: (values: BrandFormValues, setError: BrandFormSetError) => void;
   isPending: boolean;
   /** The sticky bar's primary button: «Зберегти» / «Створити бренд». */
   submitLabel?: string;
@@ -115,6 +127,7 @@ function EditableBrandForm({
     handleSubmit,
     reset,
     setValue,
+    setError,
     formState: { errors, dirtyFields, submitCount },
   } = useForm<BrandFormInput, unknown, BrandFormValues>({
     resolver: zodResolver(brandSchema),
@@ -160,7 +173,7 @@ function EditableBrandForm({
   const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     // A submit bubbling through a portal (the media picker's dialog) is not ours.
     if (event.target !== event.currentTarget) return;
-    void handleSubmit(onSubmit)(event);
+    void handleSubmit((values) => onSubmit(values, setError))(event);
   };
 
   const fieldA11y = (field: FieldName, hintId?: string) => {
@@ -195,6 +208,7 @@ function EditableBrandForm({
                   id="brand-name"
                   placeholder={f.namePlaceholder}
                   aria-required="true"
+                  maxLength={BRAND_LIMITS.name}
                   {...fieldA11y("name")}
                   {...register("name")}
                 />
@@ -208,6 +222,7 @@ function EditableBrandForm({
                 <Input
                   id="brand-slug"
                   placeholder={f.slugPlaceholder}
+                  maxLength={BRAND_LIMITS.slug}
                   {...fieldA11y(
                     "slug",
                     effectiveSlug ? "brand-slug-hint" : undefined,

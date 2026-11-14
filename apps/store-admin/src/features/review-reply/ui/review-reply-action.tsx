@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ReviewStars,
@@ -21,22 +22,23 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  FieldError,
   Label,
   Textarea,
 } from "@/shared/ui";
 import { toast } from "@/shared/ui/toast";
-import { apiErrorMessage } from "@/shared/lib";
+import { apiErrorStatus } from "@/shared/lib";
+import { applyServerFieldErrors } from "@/shared/lib/form-errors";
+import { refusalMessage } from "@/shared/lib/refusal-message";
+import {
+  REPLY_MAX_LENGTH,
+  replySchema,
+  type ReplyFormOutput,
+  type ReplyFormValues,
+} from "../model/reply-schema";
 import { dict } from "@/shared/config";
 
 const d = dict.reviews;
-
-/** `CreateReviewReplyDto.body` — `@MaxLength(1000)` on the API. */
-export const REPLY_MAX_LENGTH = 1000;
-
-/** The dialog's single field. */
-interface ReplyFormValues {
-  body: string;
-}
 
 interface ReviewReplyActionProps {
   /** The moderation row this answer belongs to. */
@@ -190,7 +192,14 @@ function ReplyForm({
   const queryClient = useQueryClient();
   const reply = useAdminReviewControllerReply();
 
-  const { register, handleSubmit, control } = useForm<ReplyFormValues>({
+  const {
+    register,
+    handleSubmit,
+    control,
+    setError,
+    formState: { errors },
+  } = useForm<ReplyFormValues, unknown, ReplyFormOutput>({
+    resolver: zodResolver(replySchema),
     values: { body: existing },
     resetOptions: { keepDirtyValues: true },
   });
@@ -201,14 +210,11 @@ function ReplyForm({
   // component — for one boolean that disables one button.
   const body = useWatch({ control, name: "body" }) ?? "";
 
-  const onSubmit = ({ body }: ReplyFormValues) => {
-    const trimmed = body.trim();
-    // The DTO's `@MinLength(1)` would refuse it anyway; not spending a round
-    // trip to find that out, and never publishing an empty answer.
-    if (!trimmed) return;
-
+  // The schema trims and refuses an empty answer (the DTO's `@IsNotEmpty`), so
+  // what arrives here is what gets published.
+  const onSubmit = ({ body }: ReplyFormOutput) => {
     reply.mutate(
-      { id: review.id, data: { body: trimmed } },
+      { id: review.id, data: { body } },
       {
         onSuccess: () => {
           // TASK-248 contract: the list carries `reply`, so it must refetch for
@@ -225,14 +231,26 @@ function ReplyForm({
           onDone();
           onReplied?.();
         },
-        onError: (error) => toast.error(apiErrorMessage(error) ?? d.replyError),
+        // TASK-1984 Rule 6b: a refused body is said under the field; anything
+        // else is a toast in the server's words.
+        onError: (error) => {
+          if (apiErrorStatus(error) === 400) {
+            const { mapped, unmapped } = applyServerFieldErrors(
+              error,
+              setError,
+              { body: "body" },
+            );
+            if (mapped.length > 0 && unmapped.length === 0) return;
+          }
+          toast.error(refusalMessage(error) ?? d.replyError);
+        },
       },
     );
   };
 
   const fieldId = `review-reply-${review.id}`;
   const hintId = `${fieldId}-hint`;
-  const isEmpty = !body.trim();
+  const errorId = `${fieldId}-error`;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
@@ -262,9 +280,11 @@ function ReplyForm({
           rows={4}
           maxLength={REPLY_MAX_LENGTH}
           placeholder={d.replyPlaceholder}
-          aria-describedby={hintId}
+          aria-invalid={errors.body ? true : undefined}
+          aria-describedby={errors.body ? `${hintId} ${errorId}` : hintId}
           {...register("body")}
         />
+        <FieldError id={errorId}>{errors.body?.message}</FieldError>
         <p
           id={hintId}
           className="flex justify-between gap-3 text-xs text-muted-foreground"
@@ -285,7 +305,9 @@ function ReplyForm({
         >
           {dict.common.cancel}
         </Button>
-        <Button type="submit" disabled={reply.isPending || isEmpty}>
+        {/* Not disabled while empty (TASK-1984): a dead button explained
+            nothing; the submit now says what is missing under the field. */}
+        <Button type="submit" disabled={reply.isPending}>
           {reply.isPending && (
             <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
           )}

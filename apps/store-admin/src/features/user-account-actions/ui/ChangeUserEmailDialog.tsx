@@ -21,9 +21,15 @@ import {
   Label,
   Textarea,
 } from "@/shared/ui";
-import { apiErrorMessage } from "@/shared/lib";
+import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { mapServerFieldErrors } from "@/shared/lib/form-errors";
+import { EMAIL_MAX_LENGTH } from "@/shared/lib/form-fields";
 import { dict } from "@/shared/config";
-import { buildChangeUserEmailSchema } from "../model/change-user-email-schema";
+import {
+  CHANGE_EMAIL_FIELD_MAP,
+  CHANGE_EMAIL_REASON_MAX,
+  buildChangeUserEmailSchema,
+} from "../model/change-user-email-schema";
 
 const d = dict.users;
 
@@ -110,12 +116,28 @@ export function ChangeUserEmailDialog({
           toast.success(d.changeEmailToastDone);
           close(false);
         },
+        // TASK-1984 (Rule 6b/6c): a taken address (409) or a DTO refusal goes
+        // under its field; only the rest (403, 5xx…) is the line below the
+        // form. Each is shown once — no toast repeating it.
         onError: (mutationError) => {
-          // 409 "already registered", 403 — the server's words are the answer.
-          const message =
-            apiErrorMessage(mutationError) ?? d.changeEmailToastFailed;
-          setServerError(message);
-          toast.error(message);
+          const status = apiErrorStatus(mutationError);
+          if (status === 409) {
+            setFieldErrors({ newEmail: d.changeEmailTaken });
+            return;
+          }
+          if (status === 400) {
+            const fields = mapServerFieldErrors(
+              mutationError,
+              CHANGE_EMAIL_FIELD_MAP,
+            );
+            if (Object.keys(fields).length > 0) {
+              setFieldErrors(fields);
+              return;
+            }
+          }
+          setServerError(
+            apiErrorMessage(mutationError) ?? d.changeEmailToastFailed,
+          );
         },
       },
     );
@@ -142,6 +164,7 @@ export function ChangeUserEmailDialog({
               id="change-user-email-new"
               type="email"
               autoComplete="off"
+              maxLength={EMAIL_MAX_LENGTH}
               value={newEmail}
               onChange={(event) => setNewEmail(event.target.value)}
               aria-invalid={fieldErrors.newEmail ? true : undefined}
@@ -167,7 +190,7 @@ export function ChangeUserEmailDialog({
             <Textarea
               id="change-user-email-reason"
               rows={3}
-              maxLength={500}
+              maxLength={CHANGE_EMAIL_REASON_MAX}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               aria-invalid={fieldErrors.reason ? true : undefined}

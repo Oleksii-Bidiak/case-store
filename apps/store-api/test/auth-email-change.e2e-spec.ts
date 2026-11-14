@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
 import { EmailTokenPurpose, UserRole } from '@prisma/client';
@@ -14,6 +14,7 @@ import { PermissionRepository } from '../src/auth/permissions';
 import { NotificationOutboxRepository } from '../src/notification-outbox/notification-outbox.repository';
 import { AuditRepository } from '../src/audit/audit.repository';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
  * Changing the sign-in address, end to end (TASK-396).
@@ -86,9 +87,25 @@ describe('Email change (e2e, TASK-396)', () => {
       const row = refresh.get(raw);
       return row ? { ...row, user: users.get(row.userId as string) } : null;
     },
-    rotateRefreshToken: async (oldId: string, userId: string, raw: string, expiresAt: Date) => {
-      for (const row of refresh.values()) if (row.id === oldId) row.isRevoked = true;
-      refresh.set(raw, { id: nextId('rt'), token: raw, userId, expiresAt, isRevoked: false });
+    // TASK-2405: conditional — only a still-live row rotates.
+    rotateRefreshToken: async (input: {
+      oldTokenId: string;
+      newTokenId: string;
+      userId: string;
+      rawToken: string;
+      expiresAt: Date;
+    }) => {
+      const old = [...refresh.values()].find((row) => row.id === input.oldTokenId);
+      if (!old || old.isRevoked) return false;
+      old.isRevoked = true;
+      refresh.set(input.rawToken, {
+        id: input.newTokenId,
+        token: input.rawToken,
+        userId: input.userId,
+        expiresAt: input.expiresAt,
+        isRevoked: false,
+      });
+      return true;
     },
     revokeAllUserTokens: async (userId: string) => revokeAll(userId),
     clearFailedLogins: async () => undefined,
@@ -284,14 +301,7 @@ describe('Email change (e2e, TASK-396)', () => {
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get(JwtService);
     app.use(cookieParser());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(createGlobalValidationPipe());
     app.setGlobalPrefix('api', { exclude: ['health'] });
     await app.init();
   });

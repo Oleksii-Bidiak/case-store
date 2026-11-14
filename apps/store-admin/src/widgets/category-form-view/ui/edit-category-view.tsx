@@ -8,6 +8,8 @@ import { toast } from "@/shared/ui/toast";
 import {
   CategoryForm,
   categoryFormValuesToDto,
+  placeCategorySaveError,
+  type CategoryFormSetError,
   type CategoryFormInput,
   type CategoryFormValues,
 } from "@/features/category-form";
@@ -33,6 +35,7 @@ import {
   ReadOnlyTags,
   useConfirmDialog,
 } from "@/shared/ui";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import { formatKeywords } from "@/shared/lib/seo";
 import { descendantsOf } from "@/shared/lib/sortable-tree";
 import {
@@ -231,7 +234,10 @@ function EditableCategoryBody({
   const { mutateAsync: updateAsync } = update;
   const addonTemplate = useCategoryAddonTemplate(categoryId);
 
-  const handleSubmit = async (values: CategoryFormValues) => {
+  const handleSubmit = async (
+    values: CategoryFormValues,
+    setError: CategoryFormSetError,
+  ) => {
     // TASK-285: renaming an ACTIVE category's slug kills its indexed URL — warn
     // first. A blank slug means "auto-generate" (treated as no rename here).
     const nextSlug = values.slug?.trim();
@@ -253,8 +259,16 @@ function EditableCategoryBody({
           id: categoryId,
           data: categoryFormValuesToDto(values, { isUpdate: true }),
         });
-      } catch {
-        toast.error(dict.categories.saveStepFailed("", f.sectionMain));
+      } catch (error) {
+        // TASK-1984 Rule 6b: under the field when it is about one; a refusal
+        // no field takes (4xx) in the server's own words; a failure (5xx, no
+        // answer) names the section that did not save.
+        if (!placeCategorySaveError(error, setError)) {
+          toast.error(
+            refusalMessage(error) ??
+              dict.categories.saveStepFailed("", f.sectionMain),
+          );
+        }
         return false;
       }
       void queryClient.invalidateQueries({

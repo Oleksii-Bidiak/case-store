@@ -1,5 +1,22 @@
 import { dict } from "@/shared/config";
-import { productSchema } from "./product-schema";
+import { PRODUCT_LIMITS, productSchema } from "./product-schema";
+
+describe("product form — the OG image link keeps the DTO's 2048 cap (TASK-1984)", () => {
+  const { ogImage } = productSchema.shape;
+  const base = "https://cdn.example.com/";
+  const url = (length: number) => base + "a".repeat(length - base.length);
+
+  it("accepts a link of exactly PRODUCT_LIMITS.ogImage characters", () => {
+    expect(ogImage.safeParse(url(PRODUCT_LIMITS.ogImage)).success).toBe(true);
+  });
+
+  it("refuses a longer one under the field, as @MaxLength would", () => {
+    expect(
+      ogImage.safeParse(url(PRODUCT_LIMITS.ogImage + 1)).error?.issues[0]
+        ?.message,
+    ).toBe(dict.seoFields.errors.ogImageMax(PRODUCT_LIMITS.ogImage));
+  });
+});
 
 /**
  * TASK-808 (the front half of TASK-397). The form posts back the category,
@@ -28,6 +45,41 @@ describe("product form — id fields are shape-checked (TASK-808)", () => {
       expect(categoryId.safeParse(id).success).toBe(false);
     },
   );
+});
+
+describe("product form — prices go through the money helper (TASK-1984)", () => {
+  const { price, compareAtPrice } = productSchema.shape;
+
+  it.each([
+    ["499", 499],
+    ["499,90", 499.9],
+    ["0.01", 0.01],
+    ["150000", 150000],
+  ])("reads %j as %p", (raw, amount) => {
+    expect(price.parse(raw)).toBe(amount);
+    expect(compareAtPrice.parse(raw)).toBe(amount);
+  });
+
+  it.each(["Infinity", "1e3", "12.345", "abc", "-5"])(
+    "refuses %j as a price, as the API's @IsNumber would",
+    (raw) => {
+      const result = price.safeParse(raw);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.message).toBe(
+        dict.productForm.errors.priceNumber,
+      );
+    },
+  );
+
+  it("refuses 0 with the DTO's @Min(0.01) message", () => {
+    expect(price.safeParse("0").error?.issues[0]?.message).toBe(
+      dict.productForm.errors.pricePositive,
+    );
+  });
+
+  it("keeps an empty compare-at price as «not set»", () => {
+    expect(compareAtPrice.parse("")).toBeUndefined();
+  });
 });
 
 describe("product form — OG image is http(s) only (TASK-573)", () => {

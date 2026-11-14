@@ -1219,6 +1219,14 @@ describe('ProductService', () => {
       productRepositoryMock.findBySlug.mockResolvedValue(mockProduct);
 
       await expect(service.create(createInput)).rejects.toThrow(ConflictException);
+      // TASK-1984: the code the admin form puts under the slug field; the
+      // message is the one this 409 always carried.
+      await expect(service.create(createInput)).rejects.toMatchObject({
+        response: {
+          error: 'PRODUCT_SLUG_CONFLICT',
+          message: 'A product with this slug already exists',
+        },
+      });
       expect(productRepositoryMock.create).not.toHaveBeenCalled();
     });
 
@@ -1227,6 +1235,9 @@ describe('ProductService', () => {
       productRepositoryMock.findBySku.mockResolvedValue(mockProduct);
 
       await expect(service.create(createInput)).rejects.toThrow(ConflictException);
+      await expect(service.create(createInput)).rejects.toMatchObject({
+        response: { error: 'PRODUCT_SKU_CONFLICT' },
+      });
       expect(productRepositoryMock.create).not.toHaveBeenCalled();
     });
 

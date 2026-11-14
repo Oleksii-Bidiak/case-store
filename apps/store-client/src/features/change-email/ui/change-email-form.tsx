@@ -6,11 +6,22 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRequestEmailChange } from "@/entities/session";
 import { dict } from "@/shared/config";
 import { apiErrorStatus } from "@/shared/lib/api-error";
+import { EMAIL_MAX_LENGTH } from "@/shared/lib/form-fields";
+import {
+  applyServerFieldErrors,
+  readFieldErrors,
+} from "@/shared/lib/form-errors";
 import { Button } from "@/shared/ui";
 import {
   buildChangeEmailSchema,
   type ChangeEmailValues,
 } from "../model/change-email-schema";
+
+/** `RequestEmailChangeDto` path → form field (the names are the same). */
+const FIELD_MAP = {
+  newEmail: "newEmail",
+  currentPassword: "currentPassword",
+};
 
 const fieldClass =
   "rounded-lg border border-border bg-background px-3 py-2 text-foreground transition-colors hover:border-muted-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -48,8 +59,48 @@ export function ChangeEmailForm({
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors },
-  } = useForm<ChangeEmailValues>({ resolver: zodResolver(schema) });
+  } = useForm<ChangeEmailValues>({
+    resolver: zodResolver(schema),
+    // Every validated field has a default (forms Rule 4c).
+    defaultValues: { newEmail: "", currentPassword: "" },
+  });
+
+  // The last failure is shown under a field — no banner then (Rule 6c).
+  const [onField, setOnField] = useState(false);
+
+  /**
+   * Field-specific refusals go under their field (forms Rule 6b): 409 (the
+   * address belongs to another account) under the new address, 401 (wrong
+   * password) under the password, a DTO 400 wherever `fieldErrors` points. A
+   * 400 with no `fieldErrors` is the service's "that is already your address".
+   * Returns whether the error was placed.
+   */
+  const placeOnField = (error: unknown): boolean => {
+    const status = apiErrorStatus(error);
+    if (status === 409) {
+      setError("newEmail", { type: "server", message: d.errorTaken });
+      return true;
+    }
+    if (status === 401) {
+      setError("currentPassword", {
+        type: "server",
+        message: d.errorWrongPassword,
+      });
+      return true;
+    }
+    if (status !== 400) return false;
+    if (readFieldErrors(error).length === 0) {
+      setError("newEmail", { type: "server", message: d.validationSame });
+      return true;
+    }
+    const { unmapped } = applyServerFieldErrors(error, setError, FIELD_MAP, {
+      newEmail: d.validationEmail,
+      currentPassword: d.validationPassword,
+    });
+    return unmapped.length === 0;
+  };
 
   const onSubmit = (values: ChangeEmailValues) => {
     request.mutate(
@@ -59,7 +110,10 @@ export function ChangeEmailForm({
           currentPassword: values.currentPassword,
         },
       },
-      { onSuccess: () => setSentTo(values.newEmail) },
+      {
+        onSuccess: () => setSentTo(values.newEmail),
+        onError: (error) => setOnField(placeOnField(error)),
+      },
     );
   };
 
@@ -72,16 +126,12 @@ export function ChangeEmailForm({
     );
   }
 
-  const status = apiErrorStatus(request.error);
-  const errorMessage = !request.isError
-    ? null
-    : status === 401
-      ? d.errorWrongPassword
-      : status === 409
-        ? d.errorTaken
-        : status === 429
-          ? d.errorTooMany
-          : dict.common.genericError;
+  const errorMessage =
+    !request.isError || onField
+      ? null
+      : apiErrorStatus(request.error) === 429
+        ? d.errorTooMany
+        : dict.common.genericError;
 
   return (
     <form
@@ -103,6 +153,7 @@ export function ChangeEmailForm({
           id="change-email-new"
           type="email"
           autoComplete="email"
+          maxLength={EMAIL_MAX_LENGTH}
           className={fieldClass}
           aria-invalid={errors.newEmail ? true : undefined}
           aria-describedby={

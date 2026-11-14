@@ -8,6 +8,8 @@ import { toast } from "@/shared/ui/toast";
 import {
   DeviceModelForm,
   deviceModelValuesToDto,
+  placeDeviceModelSaveError,
+  type DeviceModelFormSetError,
   type DeviceModelFormInput,
   type DeviceModelFormValues,
 } from "@/features/device-model-form";
@@ -23,6 +25,7 @@ import { useProductControllerAdminFindAll } from "@/entities/product";
 import { useAuth } from "@/entities/session";
 import { Badge, ErrorState } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import { DeviceModelFormSkeleton } from "./device-model-form-skeleton";
 
 const d = dict.devices;
@@ -70,7 +73,10 @@ export function EditDeviceModelView({ modelId }: EditDeviceModelViewProps) {
 
   const model = data?.data;
 
-  const handleSubmit = (values: DeviceModelFormValues) => {
+  const handleSubmit = (
+    values: DeviceModelFormValues,
+    setError: DeviceModelFormSetError,
+  ) => {
     update.mutate(
       { id: modelId, data: deviceModelValuesToDto(values, { isUpdate: true }) },
       {
@@ -84,7 +90,12 @@ export function EditDeviceModelView({ modelId }: EditDeviceModelViewProps) {
           toast.success(d.toastModelUpdated);
           router.push("/devices/models");
         },
-        onError: () => toast.error(d.toastModelUpdateFailed),
+        // TASK-1984 Rule 6b: under the field when it is about one; a refusal
+        // no field takes in the server's own words.
+        onError: (error) => {
+          if (placeDeviceModelSaveError(error, setError)) return;
+          toast.error(refusalMessage(error) ?? d.toastModelUpdateFailed);
+        },
       },
     );
   };

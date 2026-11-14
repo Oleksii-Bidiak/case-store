@@ -1338,6 +1338,91 @@ describe("CheckoutView — delivery method (TASK-646)", () => {
     expect(screen.queryByText(dict.checkout.orderErrorTitle)).toBeNull();
   });
 
+  // TASK-1984 (forms Rule 6b): a DTO 400 lands under the fields it names.
+  describe("a server 400 with fieldErrors", () => {
+    function createOrderRefuses(
+      fieldErrors: { field: string; constraint: string }[],
+    ) {
+      server.use(
+        http.post("*/api/orders", () =>
+          HttpResponse.json(
+            {
+              statusCode: 400,
+              error: "Bad Request",
+              message: "shippingAddress.phone must be a valid phone number",
+              fieldErrors,
+            },
+            { status: 400 },
+          ),
+        ),
+      );
+    }
+
+    async function fillCourier(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(methodRadio("Кур'єр · Київ"));
+      await fillRecipient(user);
+      await user.type(
+        screen.getByLabelText(dict.checkout.delivery.courierStreet),
+        "вул. Дерибасівська",
+      );
+      await user.type(
+        screen.getByLabelText(dict.checkout.delivery.courierHouse),
+        "10",
+      );
+    }
+
+    it("returns to step 1 with the error under the field, focused, and no banner", async () => {
+      offer();
+      createOrderRefuses([
+        { field: "shippingAddress.phone", constraint: "isInternationalPhone" },
+      ]);
+      setupBlankProfile();
+      const user = userEvent.setup();
+      renderWithProviders(<CheckoutView />, authed);
+      await screen.findByRole("heading", { name: dict.checkout.title });
+
+      await fillCourier(user);
+      await placeOrder(user);
+
+      const phone = await screen.findByLabelText(dict.checkout.fields.phone);
+      const message = await screen.findByText(dict.forms.phoneInvalid);
+      expect(message).toHaveAttribute("id", "checkout-phone-error");
+      expect(phone).toHaveAttribute("aria-invalid", "true");
+      expect(phone).toHaveAttribute("aria-describedby", "checkout-phone-error");
+      await waitFor(() => expect(phone).toHaveFocus());
+      expect(screen.queryByText(dict.checkout.orderErrorTitle)).toBeNull();
+      expect(screen.queryByText(/must be a valid phone/)).toBeNull();
+    });
+
+    it("maps the courier's address1 to the street and keeps only the remainder as a Ukrainian banner", async () => {
+      offer();
+      createOrderRefuses([
+        { field: "shippingAddress.address1", constraint: "maxLength" },
+        { field: "discountCode", constraint: "maxLength" },
+      ]);
+      setupBlankProfile();
+      const user = userEvent.setup();
+      renderWithProviders(<CheckoutView />, authed);
+      await screen.findByRole("heading", { name: dict.checkout.title });
+
+      await fillCourier(user);
+      await placeOrder(user);
+
+      const street = await screen.findByLabelText(
+        dict.checkout.delivery.courierStreet,
+      );
+      expect(await screen.findByText(dict.forms.tooLong)).toHaveAttribute(
+        "id",
+        "checkout-courierStreet-error",
+      );
+      await waitFor(() => expect(street).toHaveFocus());
+      expect(
+        screen.getByText(dict.checkout.orderErrorTitle).parentElement,
+      ).toHaveTextContent(dict.checkout.error400);
+      expect(screen.queryByText(/must be a valid phone/)).toBeNull();
+    });
+  });
+
   describe("the chosen method is switched off mid-checkout (TASK-1998)", () => {
     /** An offer the test can change under the page, then refetch. */
     function changingOffer(

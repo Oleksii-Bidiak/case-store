@@ -1,6 +1,6 @@
 "use client";
 
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -9,13 +9,22 @@ import {
   getUserControllerGetProfileQueryKey,
   type UserEntity,
 } from "@/entities/user";
-import { Button, Input, Label } from "@/shared/ui";
+import { Button, Input, Label, PhoneInput } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { applyServerFieldErrors } from "@/shared/lib/form-errors";
 import {
   PROFILE_NAME_MAX,
+  PROFILE_PHONE_MAX,
   profileSchema,
   type ProfileFormValues,
 } from "../model/profile-schema";
+
+/** `UpdateProfileDto` path → form field (the names are the same). */
+const PROFILE_FIELD_MAP = {
+  firstName: "firstName",
+  lastName: "lastName",
+  phone: "phone",
+};
 
 interface ProfileFormProps {
   user: UserEntity;
@@ -31,7 +40,9 @@ export function ProfileForm({ user }: ProfileFormProps) {
 
   const {
     register,
+    control,
     handleSubmit,
+    setError,
     formState: { errors, isDirty },
   } = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -55,8 +66,22 @@ export function ProfileForm({ user }: ProfileFormProps) {
         });
         toast.success(dict.account.saved);
       },
-      onError: () => {
-        toast.error(dict.account.updateError);
+      onError: (error) => {
+        // A 400 lands under the field it is about (forms Rule 6b); the toast is
+        // only for what no field can hold (Rule 6c) — a 5xx, the network, or
+        // the part of a 400 no field covers.
+        const { mapped, unmapped } = applyServerFieldErrors(
+          error,
+          setError,
+          PROFILE_FIELD_MAP,
+          {
+            firstName: dict.account.firstNameMax,
+            lastName: dict.account.lastNameMax,
+          },
+        );
+        if (mapped.length === 0 || unmapped.length > 0) {
+          toast.error(dict.account.updateError);
+        }
       },
     },
   });
@@ -69,7 +94,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
         // An emptied field is a deliberate removal, sent as `null`: the API now
         // refuses a garbled number with 400 instead of storing it as an empty
         // one, so "clear" has to be said explicitly (TASK-799).
-        phone: values.phone?.trim() ? values.phone : null,
+        phone: values.phone.trim() ? values.phone : null,
       },
     });
   };
@@ -138,26 +163,36 @@ export function ProfileForm({ user }: ProfileFormProps) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="account-phone">{dict.account.phone}</Label>
-        <Input
-          id="account-phone"
-          type="tel"
-          autoComplete="tel"
-          aria-invalid={errors.phone ? true : undefined}
-          aria-describedby={errors.phone ? "account-phone-error" : undefined}
-          {...register("phone")}
-        />
-        {errors.phone && (
-          <p
-            id="account-phone-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.phone.message}
-          </p>
+      {/* Controlled, not `register`ed: `PhoneInput` draws the UA mask and hands
+          the form the sanitised raw value (forms Rule 5b). */}
+      <Controller
+        name="phone"
+        control={control}
+        render={({ field, fieldState }) => (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="account-phone">{dict.account.phone}</Label>
+            <PhoneInput
+              id="account-phone"
+              autoComplete="tel"
+              maxLength={PROFILE_PHONE_MAX}
+              aria-invalid={fieldState.error ? true : undefined}
+              aria-describedby={
+                fieldState.error ? "account-phone-error" : undefined
+              }
+              {...field}
+            />
+            {fieldState.error && (
+              <p
+                id="account-phone-error"
+                role="alert"
+                className="text-sm text-destructive"
+              >
+                {fieldState.error.message}
+              </p>
+            )}
+          </div>
         )}
-      </div>
+      />
 
       <Button
         type="submit"

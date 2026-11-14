@@ -345,3 +345,62 @@ describe("DeliverySettingsForm (TASK-644, ДН-1.1)", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("DeliverySettingsForm — server refusals (TASK-1984)", () => {
+  const { toast } = jest.requireMock("sonner") as {
+    toast: { error: jest.Mock };
+  };
+  beforeEach(() => toast.error.mockClear());
+
+  function refuse(field: string, constraint: string) {
+    server.use(
+      http.put("*/api/admin/delivery-settings", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: `${field} is invalid`,
+            fieldErrors: [{ field, constraint }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+  }
+
+  it("puts a 400 on the courier price under that field, with no toast", async () => {
+    refuse("courierPrice", "max");
+    renderForm(makeSettings({ courierEnabled: true }));
+
+    await userEvent.click(saveButton());
+
+    const price = screen.getByRole("textbox", { name: t.courierPrice });
+    await waitFor(() => expect(price).toHaveAttribute("aria-invalid", "true"));
+    expect(price).toHaveAccessibleDescription(
+      expect.stringContaining(t.errors.moneyInvalid),
+    );
+    expect(price).toHaveFocus();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("toasts a 400 about a field of a switched-off card", async () => {
+    refuse("courierCityName", "maxLength");
+    renderForm();
+
+    await userEvent.click(saveButton());
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "courierCityName is invalid",
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("caps the courier city input at the DTO's 255", async () => {
+    renderForm(makeSettings({ courierEnabled: true }));
+
+    expect(
+      screen.getByRole("textbox", { name: t.courierCity }),
+    ).toHaveAttribute("maxlength", "255");
+  });
+});

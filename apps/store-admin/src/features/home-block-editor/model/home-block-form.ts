@@ -7,7 +7,11 @@ import {
   type HomeBlockEntity,
   type UpdateHomeBlockDto,
 } from "@/entities/home-block";
-import { fromKyivDateTimeLocal } from "@/shared/lib";
+import { apiErrorStatus, fromKyivDateTimeLocal } from "@/shared/lib";
+import {
+  applyServerFieldErrors,
+  type ServerFieldMap,
+} from "@/shared/lib/form-errors";
 import { dict } from "@/shared/config";
 
 const t = dict.homeBlockDialog;
@@ -21,6 +25,45 @@ const e = t.errors;
 
 /** The API's cap on tabs per block (`MAX_HOME_BLOCK_TABS`, CreateHomeBlockDto). */
 export const MAX_TABS = 20;
+
+/**
+ * The DTO's `@MaxLength(255)` on a TABS block's `title`
+ * (`apps/store-api/src/home-block/dto/create-home-block.dto.ts`) — read by
+ * {@link validateDraft} and by the input's `maxLength` (TASK-1984, Rule 5d).
+ */
+export const TITLE_MAX_LENGTH = 255;
+
+/** `CreateHomeBlockDto` / `UpdateHomeBlockDto` paths → draft fields (Rule 6b). */
+const HOME_BLOCK_FIELD_MAP: ServerFieldMap = {
+  carouselId: "carouselId",
+  title: "title",
+  tabs: "tabs",
+  "tabs.*": "tabs",
+  scheduledAt: "scheduledAt",
+};
+
+/**
+ * A refused home-block save's 400 as draft errors (TASK-1984, Rule 6b) — the
+ * dialogs keep their errors in `useState`, so they are collected rather than
+ * set on a form. `placed` is true when every part of the 400 found a field;
+ * otherwise the caller still owes a toast (Rule 6c).
+ */
+export function homeBlockSaveErrors(error: unknown): {
+  fields: HomeBlockDraftErrors;
+  placed: boolean;
+} {
+  const fields: HomeBlockDraftErrors = {};
+  if (apiErrorStatus(error) !== 400) return { fields, placed: false };
+  const { mapped, unmapped } = applyServerFieldErrors<HomeBlockDraftFields>(
+    error,
+    // Only mapped names arrive — the four keys of HOME_BLOCK_FIELD_MAP.
+    (name, { message }) => {
+      fields[name as keyof HomeBlockDraftFields] = message;
+    },
+    HOME_BLOCK_FIELD_MAP,
+  );
+  return { fields, placed: mapped.length > 0 && unmapped.length === 0 };
+}
 
 export type CreatableBlockType = "CAROUSEL" | "TABS";
 
@@ -43,9 +86,12 @@ export interface HomeBlockDraft {
   scheduledAt: string;
 }
 
-export type HomeBlockDraftErrors = Partial<
-  Record<"carouselId" | "title" | "tabs" | "scheduledAt", string>
+type HomeBlockDraftFields = Record<
+  "carouselId" | "title" | "tabs" | "scheduledAt",
+  string
 >;
+
+export type HomeBlockDraftErrors = Partial<HomeBlockDraftFields>;
 
 export function emptyDraft(position: number): HomeBlockDraft {
   return {
@@ -132,7 +178,10 @@ export function validateDraft(
   if (draft.type === "CAROUSEL") {
     if (!draft.carouselId) errors.carouselId = e.carouselRequired;
   } else {
-    if (draft.title.trim() === "") errors.title = e.titleRequired;
+    const title = draft.title.trim();
+    if (title === "") errors.title = e.titleRequired;
+    else if (title.length > TITLE_MAX_LENGTH)
+      errors.title = e.titleMax(TITLE_MAX_LENGTH);
     if (draft.tabs.length === 0) errors.tabs = e.tabsRequired;
     else if (draft.tabs.length > MAX_TABS)
       errors.tabs = e.tabsTooMany(MAX_TABS);

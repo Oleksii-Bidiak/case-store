@@ -9,7 +9,8 @@ import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import { PinoLogger } from 'nestjs-pino';
 import { randomBytes, randomUUID } from 'crypto';
 import { OAuthProvider, User, UserRole } from '@prisma/client';
-import { AuthRepository, CreateUserInput } from './auth.repository';
+import { AuthRepository, CreateUserInput, type RefreshTokenWithUser } from './auth.repository';
+import { CacheService } from '../cache';
 import type { IssuedSession } from './entities';
 import { RegisterDto } from './dto';
 import { REGISTER_HONEYPOT_FIELD } from './dto/register.dto';
@@ -86,6 +87,17 @@ const MAX_FAILED_LOGIN_ATTEMPTS = 5;
  * lock, so a genuinely stuck owner always has a way back in. */
 const LOGIN_LOCKOUT_MS = 15 * 60 * 1000;
 
+/** How long after a rotation ONE replay of the rotated refresh token is answered
+ * with the pair that rotation issued, instead of revoking every session
+ * (TASK-2405). Long enough for a second tab's request that was already in
+ * flight; short enough that a stolen token is useless soon after. A code
+ * constant, not an env knob: it is a security property, not a deployment one.
+ * See {@link AuthService.replayOrRevokeAll} for the trade-off. */
+const REFRESH_REUSE_GRACE_MS = 10_000;
+
+/** Cache key of the pair issued by a rotation, under the successor row's id. */
+const refreshGraceKey = (successorId: string) => `auth:refresh-grace:${successorId}`;
+
 @Injectable()
 export class AuthService {
   private readonly jwtSecret: string;
@@ -116,6 +128,8 @@ export class AuthService {
     // TASK-2010: the signup verification letter, and adopting an address that a
     // reset link or Google has just proven (revoke → stamp → claim).
     private readonly emailVerification: EmailVerificationService,
+    // TASK-2405: parks the pair a rotation issued for its one-time grace replay.
+    private readonly cache: CacheService,
   ) {
     this.logger.setContext(AuthService.name);
 
@@ -484,6 +498,8 @@ export class AuthService {
    * Security: If a revoked token is reused, this indicates a potential token theft.
    * Per RFC 6819 §5.2.2, we revoke ALL tokens for the user to terminate all sessions,
    * forcing re-authentication and preventing the attacker from continuing to use stolen tokens.
+   * The one exception is a single replay right after the rotation (two tabs, one
+   * cookie — TASK-2405); see {@link replayOrRevokeAll}.
    *
    * The account check mirrors `login()` exactly (TASK-314): a session must never
    * outlive the account it belongs to.
@@ -497,10 +513,7 @@ export class AuthService {
 
     // Check if token is revoked — reuse detection
     if (storedToken.isRevoked) {
-      // Token reuse detected: revoke ALL tokens for this user to terminate all sessions.
-      // This prevents an attacker who stole a token from continuing to use it.
-      await this.authRepository.revokeAllUserTokens(storedToken.user.id);
-      throw new UnauthorizedException('Token reuse detected — all sessions terminated');
+      return this.replayOrRevokeAll(storedToken);
     }
 
     // Check if token is expired
@@ -533,13 +546,97 @@ export class AuthService {
       storedToken.user.id,
       storedToken.user.role,
     );
-    await this.authRepository.rotateRefreshToken(
-      storedToken.id,
-      storedToken.user.id,
-      tokens.refreshToken,
-      refreshExpiresAt,
-    );
+
+    // TASK-2405: the successor's id is chosen here so the pair can be parked
+    // under it BEFORE the rotation commits — a replay that arrives the moment
+    // after the commit must already find it. A failed write is a cache miss
+    // later, i.e. the old strict behaviour, never a failed refresh.
+    const newTokenId = randomUUID();
+    const graceKey = refreshGraceKey(newTokenId);
+    await this.cache.set(graceKey, tokens, REFRESH_REUSE_GRACE_MS / 1000);
+
+    const rotated = await this.authRepository.rotateRefreshToken({
+      oldTokenId: storedToken.id,
+      newTokenId,
+      userId: storedToken.user.id,
+      rawToken: tokens.refreshToken,
+      expiresAt: refreshExpiresAt,
+    });
+    if (!rotated) {
+      // Lost a race to a simultaneous refresh with the same cookie: our row
+      // was never inserted, so neither is our pair any use. Re-read the token
+      // the winner just revoked and treat this request as a replay of it.
+      await this.cache.del(graceKey);
+      const rotatedToken = await this.authRepository.findRefreshToken(oldToken);
+      if (!rotatedToken) {
+        throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
+      }
+      return this.replayOrRevokeAll(rotatedToken);
+    }
     return tokens;
+  }
+
+  /**
+   * A revoked refresh token was presented (TASK-2405).
+   *
+   * Strictly, that is reuse: per RFC 6819 §5.2.2 we revoke ALL of the user's
+   * tokens, so an attacker who stole one cannot keep using it. But two tabs of
+   * one browser refresh with the same cookie at once — the first rotates it,
+   * the second arrives with the token just revoked — and strict detection
+   * signed the user out of every session.
+   *
+   * So ONE replay within {@link REFRESH_REUSE_GRACE_MS} of the rotation gets
+   * back the very pair that rotation issued — no new token, no fork — when all
+   * of these hold: the row was rotated (not logged out or revoked wholesale),
+   * the issued pair is still parked in the cache, the successor row exists and
+   * is live, the owner is active and not deleted, and this request wins the
+   * atomic one-time claim. Anything else is reuse, exactly as before.
+   *
+   * The trade-off, accepted deliberately: an attacker holding a stolen C0 who
+   * replays it FIRST within 10 s of the legitimate rotation gets the same live
+   * pair with no alarm. The second replay, or any replay after 10 s, still
+   * revokes everything. The pair sits ≤10 s in Redis RAM only — never in the
+   * database or its backups — and a Redis outage is a cache miss, i.e. the old
+   * strict behaviour.
+   */
+  private async replayOrRevokeAll(storedToken: RefreshTokenWithUser): Promise<IssuedSession> {
+    const replay = await this.graceReplay(storedToken);
+    if (replay) {
+      // A security-relevant event, logged without any token value.
+      this.logger.warn(
+        {
+          event: 'auth.refreshGraceReplay',
+          userId: storedToken.user.id,
+          tokenId: storedToken.id,
+          successorId: storedToken.replacedById,
+        },
+        'Just-rotated refresh token replayed within the grace window — issued pair returned',
+      );
+      return replay;
+    }
+
+    // Token reuse detected: revoke ALL tokens for this user to terminate all sessions.
+    // This prevents an attacker who stole a token from continuing to use it.
+    await this.authRepository.revokeAllUserTokens(storedToken.user.id);
+    throw new UnauthorizedException('Token reuse detected — all sessions terminated');
+  }
+
+  /** The parked pair for a grace replay, or `null` when any condition fails. */
+  private async graceReplay(storedToken: RefreshTokenWithUser): Promise<IssuedSession | null> {
+    const { rotatedAt, replacedById, user } = storedToken;
+    if (!rotatedAt || !replacedById) return null;
+    if (Date.now() - rotatedAt.getTime() > REFRESH_REUSE_GRACE_MS) return null;
+    if (!user.isActive || user.deletedAt) return null;
+
+    const pair = await this.cache.get<IssuedSession>(refreshGraceKey(replacedById));
+    if (!pair) return null;
+
+    const successor = await this.authRepository.findRefreshTokenById(replacedById);
+    if (!successor || successor.isRevoked) return null;
+
+    // Last, so a request that fails any check above does not spend the grace.
+    const claimed = await this.authRepository.claimRefreshGrace(storedToken.id);
+    return claimed ? pair : null;
   }
 
   /**

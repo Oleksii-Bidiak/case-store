@@ -8,3 +8,4 @@ export {
   buildCsvDocument,
 } from './csv.util';
 export { mapWithConcurrency } from './map-with-concurrency.util';
+export { trimString } from './trim-string.util';

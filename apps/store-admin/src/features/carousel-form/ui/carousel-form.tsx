@@ -20,6 +20,7 @@ import {
 import { FormSectionCard } from "@/shared/ui/form-section-card";
 import { dict } from "@/shared/config";
 import {
+  CAROUSEL_TITLE_MAX_LENGTH,
   carouselSchema,
   CAROUSEL_SOURCE,
   type CarouselFormInput,
@@ -27,6 +28,7 @@ import {
   type CarouselSourceValue,
   type CarouselStatusValue,
 } from "../model/carousel-schema";
+import type { CarouselFormSetError } from "../model/save-error";
 
 const f = dict.carouselForm;
 const FORM_ID = "carousel-form";
@@ -65,7 +67,14 @@ interface CarouselFormProps {
    *  carousel, never on a background refetch. Omitted in create mode. */
   id?: string;
   defaultValues?: Partial<CarouselFormInput>;
-  onSubmit: (values: CarouselFormValues) => void | Promise<void>;
+  /**
+   * The page's save. `setError` is how a server refusal lands under its field
+   * (TASK-1984, Rule 6b) — hand it to `placeCarouselSaveError`.
+   */
+  onSubmit: (
+    values: CarouselFormValues,
+    setError: CarouselFormSetError,
+  ) => void | Promise<void>;
   isPending: boolean;
   submitLabel?: string;
   /**
@@ -156,6 +165,7 @@ export function CarouselForm({
     control,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, dirtyFields, submitCount },
   } = useForm<CarouselFormInput, unknown, CarouselFormValues>({
     resolver: zodResolver(carouselSchema),
@@ -196,7 +206,7 @@ export function CarouselForm({
   const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     // A submit bubbling through a portal (a dialog's own form) is not ours.
     if (event.target !== event.currentTarget) return;
-    void handleSubmit(onSubmit)(event);
+    void handleSubmit((values) => onSubmit(values, setError))(event);
   };
 
   const fieldA11y = (field: FieldName, hintId?: string) => {
@@ -224,6 +234,7 @@ export function CarouselForm({
           <Input
             id="carousel-title"
             aria-required="true"
+            maxLength={CAROUSEL_TITLE_MAX_LENGTH}
             {...fieldA11y("title", "carousel-title-hint")}
             {...register("title")}
           />

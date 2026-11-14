@@ -7,8 +7,11 @@ import { toast } from "@/shared/ui/toast";
 import {
   DeviceModelForm,
   deviceModelValuesToDto,
+  placeDeviceModelSaveError,
+  type DeviceModelFormSetError,
   type DeviceModelFormValues,
 } from "@/features/device-model-form";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import {
   getAdminDeviceControllerFindModelsQueryKey,
   useAdminDeviceControllerCreateModel,
@@ -29,7 +32,10 @@ export function CreateDeviceModelView() {
   const queryClient = useQueryClient();
   const create = useAdminDeviceControllerCreateModel();
 
-  const handleSubmit = (values: DeviceModelFormValues) => {
+  const handleSubmit = (
+    values: DeviceModelFormValues,
+    setError: DeviceModelFormSetError,
+  ) => {
     create.mutate(
       { data: deviceModelValuesToDto(values) },
       {
@@ -40,7 +46,14 @@ export function CreateDeviceModelView() {
           toast.success(dict.devices.toastModelCreated);
           router.push("/devices/models");
         },
-        onError: () => toast.error(dict.devices.toastModelCreateFailed),
+        // TASK-1984 Rule 6b: under the field when it is about one; a refusal
+        // no field takes in the server's own words.
+        onError: (error) => {
+          if (placeDeviceModelSaveError(error, setError)) return;
+          toast.error(
+            refusalMessage(error) ?? dict.devices.toastModelCreateFailed,
+          );
+        },
       },
     );
   };

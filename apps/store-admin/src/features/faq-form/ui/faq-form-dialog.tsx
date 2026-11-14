@@ -17,11 +17,13 @@ import {
   DialogTitle,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import {
   faqFormValuesToDto,
   mapFaqToFormValues,
   type FaqFormValues,
 } from "../model/faq-schema";
+import { placeFaqSaveError, type FaqFormSetError } from "../model/save-error";
 import { FaqForm } from "./faq-form";
 
 interface FaqFormDialogProps {
@@ -61,7 +63,7 @@ export function FaqFormDialog({
     }
   };
 
-  const handleSubmit = (values: FaqFormValues) => {
+  const handleSubmit = (values: FaqFormValues, setError: FaqFormSetError) => {
     const data = faqFormValuesToDto(values);
     if (item) {
       update.mutate(
@@ -72,7 +74,12 @@ export function FaqFormDialog({
             toast.success(dict.faq.toastUpdated);
             onOpenChange(false);
           },
-          onError: () => toast.error(dict.faq.toastUpdateFailed),
+          // TASK-1984 Rule 6b: a refused field lands under it; anything else
+          // is a toast in the server's words.
+          onError: (error) => {
+            if (placeFaqSaveError(error, setError)) return;
+            toast.error(refusalMessage(error) ?? dict.faq.toastUpdateFailed);
+          },
         },
       );
       return;
@@ -85,7 +92,10 @@ export function FaqFormDialog({
           toast.success(dict.faq.toastCreated);
           onOpenChange(false);
         },
-        onError: () => toast.error(dict.faq.toastCreateFailed),
+        onError: (error) => {
+          if (placeFaqSaveError(error, setError)) return;
+          toast.error(refusalMessage(error) ?? dict.faq.toastCreateFailed);
+        },
       },
     );
   };

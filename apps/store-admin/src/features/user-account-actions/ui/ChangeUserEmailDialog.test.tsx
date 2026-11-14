@@ -10,6 +10,13 @@ import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { ChangeUserEmailDialog } from "./ChangeUserEmailDialog";
 
+jest.mock("@/shared/ui/toast", () => ({
+  toast: { success: jest.fn(), error: jest.fn() },
+}));
+const { toast } = jest.requireMock("@/shared/ui/toast") as {
+  toast: { error: jest.Mock };
+};
+
 const d = dict.users;
 
 /**
@@ -134,16 +141,53 @@ describe("ChangeUserEmailDialog (TASK-396)", () => {
     ]);
   });
 
-  it("shows the server's refusal verbatim (409 — address taken)", async () => {
+  // TASK-1984 (Rule 6b/6c): the taken address is a fact about the field —
+  // said under it, once, with no toast.
+  it("puts a taken address (409) under «Нова адреса», with no toast", async () => {
     stub(409);
     render();
 
     await fill("taken@example.com", "Клієнт телефонував");
 
-    expect(
-      await screen.findAllByText(
-        "This email address is already registered to another account",
+    expect(await screen.findByText(d.changeEmailTaken)).toBeInTheDocument();
+    const input = screen.getByLabelText(d.changeEmailNew);
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAccessibleDescription(d.changeEmailTaken);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("puts a DTO 400 on the reason under the reason", async () => {
+    server.use(
+      http.post("*/api/users/:id/email", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: "reason must be longer than or equal to 5 characters",
+            fieldErrors: [{ field: "reason", constraint: "minLength" }],
+          },
+          { status: 400 },
+        ),
       ),
-    ).not.toHaveLength(0);
+    );
+    render();
+
+    await fill("found@example.com", "Клієнт телефонував");
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(d.changeEmailReason)).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      ),
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("caps the address at 254 like the DTO", () => {
+    render();
+
+    expect(screen.getByLabelText(d.changeEmailNew)).toHaveAttribute(
+      "maxlength",
+      "254",
+    );
   });
 });

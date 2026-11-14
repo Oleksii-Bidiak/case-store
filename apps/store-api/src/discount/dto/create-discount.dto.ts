@@ -9,11 +9,19 @@ import {
   IsBoolean,
   IsDateString,
   Min,
+  Max,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { DiscountType } from '@prisma/client';
+
+/**
+ * The largest amount `Decimal(10, 2)` (`Discount.value` / `minSpend`) holds —
+ * above it Postgres overflows and the save is a 500 (TASK-1984). The admin form
+ * stops lower still, at `parseKop`'s int4-kopeck ceiling (forms Rule 5f).
+ */
+export const DISCOUNT_MONEY_MAX = 99_999_999.99;
 
 /**
  * DTO for creating a discount / promo code (admin only).
@@ -44,6 +52,7 @@ export class CreateDiscountDto {
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 }, { message: 'value must be a number with up to 2 decimals' })
   @Min(0.01, { message: 'value must be greater than 0' })
+  @Max(DISCOUNT_MONEY_MAX, { message: 'value must be at most 99999999.99' })
   value!: number;
 
   @ApiProperty({
@@ -58,6 +67,7 @@ export class CreateDiscountDto {
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 }, { message: 'minSpend must be a number with up to 2 decimals' })
   @Min(0, { message: 'minSpend must be at least 0' })
+  @Max(DISCOUNT_MONEY_MAX, { message: 'minSpend must be at most 99999999.99' })
   minSpend?: number;
 
   @ApiProperty({

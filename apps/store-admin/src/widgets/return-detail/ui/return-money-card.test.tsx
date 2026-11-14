@@ -636,11 +636,13 @@ describe("ReturnMoneyCard — «Зменшити» «До повернення»
     await user.type(reason, "Подряпина");
     await submit();
 
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(
-        dict.returns.refusalCreditBelowPaidOut,
-      ),
-    );
+    // TASK-1984 Rule 6b: a refusal about the amount is said under the amount,
+    // with the dialog left open, not as a toast.
+    expect(
+      await screen.findByText(dict.returns.refusalCreditBelowPaidOut),
+    ).toBeInTheDocument();
+    expect(amount).toHaveAttribute("aria-invalid", "true");
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("offers no «Зменшити» without returns:write", async () => {

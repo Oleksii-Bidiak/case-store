@@ -222,34 +222,77 @@ let refreshPromise: Promise<RefreshOutcome> | null = null;
  * `401 Token reuse detected — all sessions terminated`.
  *
  * Found via the admin panel's Playwright flake (TASK-463); the storefront
- * carries the identical shape, so it gets the identical fix. Not a dev-only
- * concern either: two tabs opened together do exactly this.
+ * carries the identical shape, so it gets the identical fix.
+ *
+ * Across tabs (TASK-2405): `refreshPromise` dedupes within ONE tab only. Two
+ * tabs whose access tokens expire together refresh at once with the same
+ * cookie, and the second one presented the token the first had just rotated,
+ * which signed the shopper out everywhere. The request therefore runs under a
+ * Web Lock shared by every tab of this origin: the second tab's request leaves
+ * only after the first one's response has landed, by which time the browser
+ * holds the NEW cookie, so it rotates legitimately. No token is shared between
+ * tabs. Without `navigator.locks` (older browser, SSR) the request runs as
+ * before; the API's one-time grace for a just-rotated token covers that case.
  */
 export function refreshSession(): Promise<RefreshOutcome> {
   if (!refreshPromise) {
-    refreshPromise = api
-      .post<{ data?: { accessToken?: string } }>("/api/auth/refresh")
-      .then((response) => ({
-        accessToken: response.data?.data?.accessToken ?? null,
-      }))
-      .catch((error: AxiosError) => {
-        const status = error.response?.status;
-        // 401 is the API saying the refresh cookie is gone, expired or revoked
-        // — the one definitive "no session". Drop the marker so the next page
-        // load starts as a guest and never asks again. Everything else (429,
-        // 5xx, a network blip) is transient and the bootstrap retries it, so
-        // the marker must survive: clearing it there would sign a signed-in
-        // user out over a rate-limit hiccup (fix/196).
-        if (status === 401) {
-          clearSessionMarker();
-        }
-        return { accessToken: null, status };
-      })
-      .finally(() => {
-        refreshPromise = null;
-      });
+    refreshPromise = withRefreshLock(postRefresh).finally(() => {
+      refreshPromise = null;
+    });
   }
   return refreshPromise;
+}
+
+/** The Web Lock every tab of the storefront takes around its refresh (TASK-2405). */
+const REFRESH_LOCK_NAME = "case-store-client:auth-refresh";
+
+/** Run `task` while holding the cross-tab refresh lock, or directly without one. */
+async function withRefreshLock(
+  task: () => Promise<RefreshOutcome>,
+): Promise<RefreshOutcome> {
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  if (!locks?.request) {
+    return task();
+  }
+  try {
+    return await locks.request(REFRESH_LOCK_NAME, task);
+  } catch {
+    // `task` never rejects, so this is the lock itself failing (e.g. a
+    // SecurityError in an opaque origin) — refresh without it.
+    return task();
+  }
+}
+
+/**
+ * Upper bound on one refresh request. The instance itself has no timeout, and
+ * the refresh runs while holding the cross-tab lock: a hung request would park
+ * every other tab's refresh behind it indefinitely. A timeout is folded into the
+ * outcome like any network failure — transient, the session marker survives.
+ */
+export const REFRESH_TIMEOUT_MS = 10_000;
+
+/** One `POST /api/auth/refresh`, its failure folded into the outcome. */
+function postRefresh(): Promise<RefreshOutcome> {
+  return api
+    .post<{ data?: { accessToken?: string } }>("/api/auth/refresh", undefined, {
+      timeout: REFRESH_TIMEOUT_MS,
+    })
+    .then((response) => ({
+      accessToken: response.data?.data?.accessToken ?? null,
+    }))
+    .catch((error: AxiosError) => {
+      const status = error.response?.status;
+      // 401 is the API saying the refresh cookie is gone, expired or revoked
+      // — the one definitive "no session". Drop the marker so the next page
+      // load starts as a guest and never asks again. Everything else (429,
+      // 5xx, a network blip) is transient and the bootstrap retries it, so
+      // the marker must survive: clearing it there would sign a signed-in
+      // user out over a rate-limit hiccup (fix/196).
+      if (status === 401) {
+        clearSessionMarker();
+      }
+      return { accessToken: null, status };
+    });
 }
 
 async function refreshAccessToken(): Promise<string | null> {

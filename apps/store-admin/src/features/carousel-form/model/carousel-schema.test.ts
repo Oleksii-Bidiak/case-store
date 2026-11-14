@@ -1,3 +1,4 @@
+import { dict } from "@/shared/config";
 import {
   carouselSchema,
   carouselFormValuesToCreateDto,
@@ -101,6 +102,35 @@ describe("carouselSchema", () => {
         result.error.issues.some((i) => i.path.join(".") === "scheduledAt"),
       ).toBe(true);
     }
+  });
+
+  // TASK-1984 (Rule 5e): the API would publish a past schedule now, silently.
+  it("refuses a SCHEDULED carousel whose moment has already passed", () => {
+    const result = carouselSchema.safeParse({
+      ...baseInput,
+      status: "SCHEDULED",
+      scheduledAt: "2020-01-01T09:00",
+    });
+    expect(result.error?.issues[0]).toMatchObject({
+      path: ["scheduledAt"],
+      message: dict.carouselForm.errors.scheduledAtPast,
+    });
+  });
+
+  it("accepts a schedule in the future", () => {
+    const result = carouselSchema.safeParse({
+      ...baseInput,
+      status: "SCHEDULED",
+      scheduledAt: "2099-01-01T09:00",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("caps the title at the DTO's 255 characters", () => {
+    expect(
+      carouselSchema.safeParse({ ...baseInput, title: "a".repeat(256) })
+        .success,
+    ).toBe(false);
   });
 });
 

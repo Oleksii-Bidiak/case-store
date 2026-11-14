@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import type { UseFormSetError } from "react-hook-form";
 import {
   useCreateOrder,
   type CreateOrderDto,
@@ -16,7 +17,13 @@ import { useAuth } from "@/entities/session";
 import { getGetWishlistQueryKey } from "@/entities/wishlist";
 import { dict } from "@/shared/config";
 import { apiErrorCode, apiErrorMessage, apiErrorStatus } from "@/shared/lib";
-import type { CheckoutFormValues } from "./checkout-schema";
+// Direct import — not in the shared/lib barrel.
+import { applyServerFieldErrors } from "@/shared/lib/form-errors";
+import {
+  checkoutContactName,
+  type CheckoutFormValues,
+} from "./checkout-schema";
+import { checkoutServerFieldMap } from "./checkout-server-errors";
 import {
   requiresPaymentHandoff,
   toOrderPaymentMethod,
@@ -132,7 +139,12 @@ export const GUEST_ORDER_PLACED_PARAM = "placed";
 
 /** How an order attempt ended — see `submitOrder`. */
 export type SubmitOrderOutcome =
-  "placed" | "refused" | "failed" | "account-exists" | "account-required";
+  | "placed"
+  | "refused"
+  | "invalid"
+  | "failed"
+  | "account-exists"
+  | "account-required";
 
 /** The server's account rules (TASK-2010) — `error` codes on `POST /orders`. */
 const ACCOUNT_EXISTS = "ACCOUNT_EXISTS";
@@ -149,7 +161,21 @@ export interface UseCheckoutOptions {
    * do not have.
    */
   isGuest: boolean;
+  /**
+   * The checkout form's `setError` (TASK-1984, forms Rule 6b): a 400 whose
+   * `fieldErrors` name a step-1 field is put under that field. Without it every
+   * 400 is a banner.
+   */
+  setError?: UseFormSetError<CheckoutFormValues>;
 }
+
+/**
+ * Delivery refusals (`DELIVERY_*`, TASK-643) are written for the shopper — one
+ * Ukrainian sentence per code (`order.errors.ts`) — so their `message` is shown
+ * as is. Every other 400 sentence is English and never reaches the page.
+ */
+const isDeliveryRefusal = (code: string | undefined) =>
+  code?.startsWith("DELIVERY_") ?? false;
 
 /**
  * useCheckout — order creation, cart invalidation, and whatever has to happen
@@ -186,7 +212,7 @@ export interface UseCheckoutOptions {
  * account exists but signing in failed after the commit: the guest panel is
  * shown with «перевірте пошту» — the «Задайте пароль» letter is the way in.
  */
-export function useCheckout({ isGuest }: UseCheckoutOptions) {
+export function useCheckout({ isGuest, setError }: UseCheckoutOptions) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { setTokens } = useAuth();
@@ -216,6 +242,11 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
   // back — the guest panel tells them to finish it from the letter.
   const [accountPending, setAccountPending] = useState(false);
 
+  // TASK-1984: the last 400 was put under its fields in full — nothing is left
+  // for the banner. The fields themselves are kept for the caller's focus.
+  const [fieldsCoverRefusal, setFieldsCoverRefusal] = useState(false);
+  const refusedFields = useRef<(keyof CheckoutFormValues)[]>([]);
+
   // Applied promo code (TASK-079) — sent as `discountCode`; the server recomputes
   // and persists it authoritatively. Cleared once the order is placed.
   const appliedDiscount = useAppliedDiscount();
@@ -235,6 +266,10 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
    *                 takes the shopper back to step 1, where the reason is shown
    *                 and the delivery can be changed (CheckoutDelivery.dc.html
    *                 #error).
+   *   - `invalid` — a 400 whose `fieldErrors` landed on step-1 fields
+   *                 (TASK-1984): the caller goes back to step 1 and focuses
+   *                 {@link firstRefusedField}. Whatever did not map stays the
+   *                 banner.
    *   - `failed`  — anything else (network, 5xx, an expired session): nothing
    *                 the shopper entered is wrong, so they stay put and retry.
    *   - `account-exists`   — 409 ACCOUNT_EXISTS (TASK-2010): the guest asked
@@ -266,7 +301,7 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
             contact: {
               email: (values.email ?? "").trim(),
               phone: values.phone,
-              name: `${values.firstName} ${values.lastName}`.trim(),
+              name: checkoutContactName(values),
               createAccount: values.createAccount === true,
             },
           }
@@ -293,7 +328,20 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
         return "account-exists";
       }
       if (code && code in ACCOUNT_REQUIRED_MESSAGES) return "account-required";
-      return apiErrorStatus(error) === 400 ? "refused" : "failed";
+      if (apiErrorStatus(error) !== 400) return "failed";
+
+      // A DTO failure names its fields (forms Rule 6b): put each under its
+      // input; only what no step-1 field covers is left for the banner.
+      const { mapped, unmapped } = setError
+        ? applyServerFieldErrors(
+            error,
+            setError,
+            checkoutServerFieldMap(values, deliveryOptions),
+          )
+        : { mapped: [], unmapped: [] };
+      refusedFields.current = mapped as (keyof CheckoutFormValues)[];
+      setFieldsCoverRefusal(mapped.length > 0 && unmapped.length === 0);
+      return mapped.length > 0 ? "invalid" : "refused";
     }
     if (!order) return "failed";
 
@@ -365,12 +413,13 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
     return "placed";
   };
 
-  // A 400 from `createOrder` is never generic: it names the exact line that
-  // blocked the order — a product withdrawn from sale, or one whose stock no
-  // longer covers the quantity (`order.service.ts`, the checkout backstop).
-  // Collapsing that into "деякі товари можуть бути недоступні" leaves the
-  // shopper to guess which of eight items to remove (TASK-402), so the server's
-  // own sentence wins whenever it wrote one; the constant remains the fallback.
+  // What a 400 from `createOrder` says on the page (TASK-1984, forms Rule 6b–c):
+  //   - a delivery refusal (`DELIVERY_*`) — the server's own sentence, written
+  //     in Ukrainian for the shopper (`order.errors.ts`);
+  //   - a DTO failure whose every field landed under its input — nothing more;
+  //   - anything else — `dict.checkout.error400`. The server's other 400
+  //     sentences («Product "…" is no longer available», the ValidationPipe's
+  //     list) are English and are never shown verbatim.
   //
   // TASK-2010: the account rules have their own Ukrainian sentences, and
   // ACCOUNT_EXISTS has none at all — checkout answers it with the sign-in
@@ -383,20 +432,37 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
     : errorCode && errorCode in ACCOUNT_REQUIRED_MESSAGES
       ? ACCOUNT_REQUIRED_MESSAGES[errorCode]
       : status === 400
-        ? (apiErrorMessage(mutation.error) ?? dict.checkout.error400)
+        ? isDeliveryRefusal(errorCode)
+          ? (apiErrorMessage(mutation.error) ?? dict.checkout.error400)
+          : fieldsCoverRefusal
+            ? null
+            : dict.checkout.error400
         : mutation.isError
           ? dict.common.genericError
           : null;
 
+  /** Forget a shown refusal — the shopper has moved on to try again. */
+  const clearError = () => {
+    mutation.reset();
+    setFieldsCoverRefusal(false);
+  };
+
+  /**
+   * The first step-1 field the last 400 landed on (in the server's order), for
+   * the caller's focus after an `invalid` outcome. Event-time only.
+   */
+  const firstRefusedField = (): keyof CheckoutFormValues | undefined =>
+    refusedFields.current[0];
+
   return {
     submitOrder,
+    firstRefusedField,
     // The submit button stays busy across BOTH calls: an order that is on its way
     // to the provider must not look finished, and must not be submittable twice.
     isPending: mutation.isPending || isStarting,
     isError: mutation.isError,
     errorMessage,
-    /** Forget a shown refusal — the shopper has moved on to try again. */
-    clearError: mutation.reset,
+    clearError,
     isOrderSubmitted,
     placedOrder,
     /** The guest's order access token from the create call; `null` otherwise. */

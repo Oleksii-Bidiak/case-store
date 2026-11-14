@@ -165,10 +165,91 @@ describe("RegisterForm", () => {
       screen.getByRole("button", { name: dict.auth.register.submit }),
     );
 
-    expect(
-      await screen.findByText(dict.auth.register.errorConflict),
-    ).toBeInTheDocument();
+    // TASK-1984 (Rule 6b): under the email field, shown once — no banner.
+    const email = screen.getByLabelText(dict.auth.register.email);
+    await waitFor(() =>
+      expect(email).toHaveAccessibleDescription(
+        dict.auth.register.errorConflict,
+      ),
+    );
+    expect(email).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getAllByText(dict.auth.register.errorConflict)).toHaveLength(
+      1,
+    );
     expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("puts a DTO 400 under the field fieldErrors names, with no banner", async () => {
+    server.use(
+      http.post("*/api/auth/register", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: ["First name must be at most 100 characters"],
+            fieldErrors: [{ field: "firstName", constraint: "maxLength" }],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<RegisterForm />);
+
+    await fillValidForm(user);
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.register.submit }),
+    );
+
+    const first = screen.getByLabelText(dict.auth.register.firstName);
+    await waitFor(() =>
+      expect(first).toHaveAccessibleDescription(dict.forms.tooLong),
+    );
+    expect(
+      screen.queryByText(dict.common.genericError),
+    ).not.toBeInTheDocument();
+  });
+
+  // TASK-1984 (Rule 5d): names mirror the DTO's 100 and refuse blanks.
+  it("caps the email at 254 and the names at 100", () => {
+    renderWithProviders(<RegisterForm />);
+
+    expect(screen.getByLabelText(dict.auth.register.email)).toHaveAttribute(
+      "maxLength",
+      "254",
+    );
+    for (const label of [
+      dict.auth.register.firstName,
+      dict.auth.register.lastName,
+    ]) {
+      expect(screen.getByLabelText(label)).toHaveAttribute("maxLength", "100");
+    }
+  });
+
+  it("refuses a whitespace-only first name without calling the API", async () => {
+    let called = false;
+    server.use(
+      http.post("*/api/auth/register", () => {
+        called = true;
+        return HttpResponse.json({ data: { accessToken: "t" } });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<RegisterForm />);
+
+    await fillValidForm(user);
+    fireEvent.change(screen.getByLabelText(dict.auth.register.firstName), {
+      target: { value: "   " },
+    });
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.register.submit }),
+    );
+
+    expect(
+      await screen.findByText(dict.auth.register.validationFirstName),
+    ).toBeInTheDocument();
+    expect(called).toBe(false);
   });
 
   it("shows the generic error message on a server failure (500)", async () => {

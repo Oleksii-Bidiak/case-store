@@ -112,6 +112,27 @@ describe("deliverySettingsSchema", () => {
     ).toEqual({ senderCityName: e.senderCityPick });
   });
 
+  it("caps the city names at the DTO's 255 and money at its 100 000 (TASK-1984)", () => {
+    const long = "К".repeat(256);
+    expect(
+      messagesOf(valuesWith({ courierCityName: long, senderCityName: long })),
+    ).toEqual({
+      courierCityName: dict.forms.tooLong,
+      senderCityName: dict.forms.tooLong,
+    });
+    expect(
+      messagesOf(valuesWith({ courierCityName: "К".repeat(255) })),
+    ).toEqual({});
+    expect(
+      messagesOf(
+        valuesWith({ courierPrice: "100000.01", courierFreeFrom: "1e999" }),
+      ),
+    ).toEqual({
+      courierPrice: e.moneyInvalid,
+      courierFreeFrom: e.moneyInvalid,
+    });
+  });
+
   it("holds the weight to NP's 0.1–30 kg, only while NP is on", () => {
     expect(messagesOf(valuesWith({ defaultWeightKg: "50" }))).toEqual({
       defaultWeightKg: e.weightInvalid,

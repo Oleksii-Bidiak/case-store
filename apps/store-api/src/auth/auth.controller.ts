@@ -435,13 +435,26 @@ export class AuthController {
   // page load refreshes, so a 503 here during a Redis blip would log everyone out.
   @UseGuards(JwtRefreshGuard)
   @ApiCookieAuth('refresh-token')
-  @ApiOperation({ summary: 'Refresh access token' })
+  @ApiOperation({
+    summary: 'Refresh access token',
+    description:
+      'Rotates the refresh cookie and returns a new access token. A refresh token that was ' +
+      'rotated less than 10 seconds ago may be presented ONCE more (two tabs refreshing with ' +
+      'the same cookie): that replay gets the same access token and refresh cookie the ' +
+      'rotation issued (TASK-2405).',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Token refreshed successfully',
+    description: 'Token refreshed successfully (or the one-time replay of a just-rotated token)',
     type: AuthResponseEnvelope,
   })
-  @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
+  @ApiResponse({
+    status: 401,
+    description:
+      'Invalid or expired refresh token. Presenting an already-rotated token a second time, or ' +
+      'more than 10 seconds after its rotation, is treated as reuse: every session of the ' +
+      'user is revoked ("Token reuse detected — all sessions terminated").',
+  })
   async refresh(
     // The refresh token alone identifies the session — AuthService resolves
     // its owner from the stored row. The `@CurrentUser('id')` that used to sit

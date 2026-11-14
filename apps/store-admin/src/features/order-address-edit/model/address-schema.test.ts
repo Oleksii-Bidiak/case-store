@@ -130,6 +130,34 @@ describe("orderAddressSchema — phone as the API judges it (TASK-577)", () => {
     expect(phoneIssue("")).toBe(dict.orderCreate.addressRequired);
   });
 
+  // TASK-1984 Rule 5a: letters make a number refused, never "cleaned".
+  it("refuses a number with letters stuck to it", () => {
+    expect(phoneIssue("050 111 2233 ccc")).toBe(
+      dict.orderCreate.contactPhoneInvalid,
+    );
+  });
+
+  it("holds every field to AddressDto's @MaxLength (TASK-1984)", () => {
+    const issueAt = (patch: Record<string, string>, path: string) =>
+      orderAddressSchema
+        .safeParse({ ...valid, ...patch })
+        .error?.issues.find((issue) => issue.path[0] === path)?.message;
+    expect(issueAt({ firstName: "я".repeat(101) }, "firstName")).toBe(
+      dict.forms.tooLong,
+    );
+    expect(issueAt({ lastName: "я".repeat(100) }, "lastName")).toBeUndefined();
+    expect(
+      issueAt({ phone: `+380501234567${" ".repeat(20)}` + "1" }, "phone"),
+    ).toBe(dict.forms.tooLong);
+    expect(issueAt({ city: "я".repeat(101) }, "city")).toBe(dict.forms.tooLong);
+    expect(issueAt({ address1: "я".repeat(501) }, "address1")).toBe(
+      dict.forms.tooLong,
+    );
+    expect(issueAt({ postalCode: "1".repeat(21) }, "postalCode")).toBe(
+      dict.forms.tooLong,
+    );
+  });
+
   it("accepts Ukrainian and foreign numbers, as @IsInternationalPhone does", () => {
     expect(phoneIssue("+380501234567")).toBeUndefined();
     expect(phoneIssue("0501234567")).toBeUndefined();

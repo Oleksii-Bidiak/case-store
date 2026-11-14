@@ -32,6 +32,11 @@ export interface ComboboxProps {
   autoComplete?: string;
   /** Focus the input on mount (a panel that opens on demand — TASK-411). */
   autoFocus?: boolean;
+  /**
+   * The input's `maxLength` — the DTO cap of the field it is bound to (forms
+   * convention Rule 5d): free text typed here is submitted as is.
+   */
+  maxLength?: number;
   "aria-invalid"?: boolean;
   /** Links the input to an external error message element (form a11y). */
   "aria-describedby"?: string;
@@ -80,6 +85,7 @@ export function Combobox({
   emptyText,
   autoComplete = "off",
   autoFocus = false,
+  maxLength,
   "aria-invalid": ariaInvalid,
   "aria-describedby": ariaDescribedBy,
   className,
@@ -189,6 +195,7 @@ export function Combobox({
             aria-activedescendant={activeDescendantId}
             autoComplete={autoComplete}
             autoFocus={autoFocus}
+            maxLength={maxLength}
             value={value}
             disabled={disabled}
             placeholder={placeholder}

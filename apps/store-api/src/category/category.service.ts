@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -232,7 +231,10 @@ export class CategoryService {
     // default would hide it, turning this guard into a 500 at the DB constraint.
     const existingBySlug = await this.categoryRepository.findBySlug(slug, { activeOnly: false });
     if (existingBySlug) {
-      throw new ConflictException('A category with this slug already exists');
+      throw conflictCategory(
+        CategoryErrorCode.SLUG_CONFLICT,
+        'A category with this slug already exists',
+      );
     }
 
     // Validate parent category exists if parentId is provided
@@ -283,7 +285,10 @@ export class CategoryService {
         activeOnly: false,
       });
       if (existingBySlug && existingBySlug.id !== id) {
-        throw new ConflictException('A category with this slug already exists');
+        throw conflictCategory(
+          CategoryErrorCode.SLUG_CONFLICT,
+          'A category with this slug already exists',
+        );
       }
     }
 

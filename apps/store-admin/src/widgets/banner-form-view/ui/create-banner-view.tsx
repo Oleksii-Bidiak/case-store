@@ -8,6 +8,8 @@ import {
   BannerForm,
   BANNER_PLACEMENT,
   bannerFormValuesToCreateDto,
+  placeBannerSaveError,
+  type BannerFormSetError,
   type BannerFormValues,
   type BannerPlacementValue,
 } from "@/features/banner-form";
@@ -17,6 +19,7 @@ import {
   useAdminBannerControllerCreate,
 } from "@/entities/banner";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 
 function placementFromQuery(
   value: string | null,
@@ -37,7 +40,10 @@ export function CreateBannerView() {
   const create = useAdminBannerControllerCreate();
   const placement = placementFromQuery(useSearchParams().get("placement"));
 
-  const handleSubmit = (values: BannerFormValues) => {
+  const handleSubmit = (
+    values: BannerFormValues,
+    setError: BannerFormSetError,
+  ) => {
     create.mutate(
       { data: bannerFormValuesToCreateDto(values) },
       {
@@ -49,8 +55,13 @@ export function CreateBannerView() {
           router.push("/banners");
         },
         onError: (error) => {
+          // TASK-1984 Rule 6b: a refused field lands under it; the slot limit
+          // and anything else are a toast, in the server's words if it has any.
+          if (placeBannerSaveError(error, setError)) return;
           toast.error(
-            bannerWriteErrorMessage(error) ?? dict.banners.toastCreateFailed,
+            bannerWriteErrorMessage(error) ??
+              refusalMessage(error) ??
+              dict.banners.toastCreateFailed,
           );
         },
       },

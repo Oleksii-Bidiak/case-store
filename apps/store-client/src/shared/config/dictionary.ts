@@ -61,6 +61,18 @@ export const dict = {
     errorCode: (digest: string) => `Код помилки: ${digest}`,
   },
 
+  // Shared field rules and server field errors (TASK-1984, forms convention
+  // Rules 5–6): the defaults of `phoneField`, `emailField` and
+  // `applyServerFieldErrors` in `shared/lib`. The phone and email texts are the
+  // ones the profile and checkout forms already show.
+  forms: {
+    phoneInvalid: "Вкажіть коректний номер телефону",
+    emailInvalid: "Вкажіть коректну електронну пошту",
+    tooLong: "Задовге значення",
+    required: "Обов'язкове поле",
+    invalid: "Перевірте це поле",
+  },
+
   nav: {
     primaryAria: "Головне меню",
     accountAria: "Акаунт",
@@ -776,6 +788,11 @@ export const dict = {
       phoneRequired: "Вкажіть коректний номер телефону.",
       emailInvalid: "Вкажіть коректну електронну пошту.",
       messageRequired: "Опишіть ваше питання (щонайменше 10 символів).",
+      // TASK-1984: межі довжини — окремі тексти, а не «вкажіть імʼя» на задовге.
+      nameMax: "Імʼя — не довше 120 символів.",
+      messageMax: "Повідомлення — не довше 5000 символів.",
+      orderRefMax: "Номер замовлення — не довше 120 символів.",
+      topicMax: "Тема — не довше 60 символів.",
       consentRequired: "Потрібна згода на обробку персональних даних.",
       submitFailed:
         "Не вдалося надіслати повідомлення. Перевірте зʼєднання та спробуйте ще раз.",
@@ -1287,6 +1304,8 @@ export const dict = {
     starAria: (n: number) => `${n} з 5 зірок`,
     commentLabel: "Коментар (необов'язково)",
     commentMax: "Коментар не може перевищувати 1000 символів",
+    // TASK-1984: 429 від ReviewSubmissionThrottle — власний текст, не «не вдалося».
+    rateLimited: "Забагато спроб. Зачекайте хвилину й спробуйте знову.",
     commentPlaceholder: "Поділіться враженнями про товар…",
     submitReview: "Надіслати відгук",
     submitting: "Надсилаємо…",
@@ -1554,6 +1573,11 @@ export const dict = {
       phone: "Вкажіть коректний номер телефону",
       deliveryAddress: "Адреса доставки є обов'язковою",
       notesMax: "Примітки не можуть перевищувати 500 символів",
+      // TASK-1984: a guest's two names travel as one `contact.name` (max 120).
+      fullNameTooLong: "Ім'я та прізвище разом — не більше 120 символів",
+      // TASK-1984: street, house and flat travel as one `address1` (max 500).
+      courierAddressTooLong:
+        "Вулиця, будинок і квартира разом — не більше 500 символів",
       billingRequired:
         "Адреса оплати є обов'язковою, якщо вона відрізняється від адреси доставки.",
     },
@@ -2248,6 +2272,10 @@ export const dict = {
     reason: "Причина повернення",
     reasonPlaceholder: "Наприклад: не підійшов розмір",
     reasonHint: "Необовʼязково, але допоможе нам розглянути заяву швидше.",
+    // TASK-1984: `CreateReturnDto.reason` — `@MaxLength(1000)`.
+    reasonMax: "Причина — не довше 1000 символів.",
+    reasonCounter: (length: number, max: number) => `${length}/${max}`,
+    itemsInvalid: "Перевірте вибрані позиції та кількість.",
     // Підказка стоїть поруч із вимкненою кнопкою: вимкнена кнопка без пояснення
     // читається як зламана форма, тож причину завжди видно поруч.
     nothingSelected: "Оберіть хоча б одну позицію.",

@@ -12,8 +12,9 @@ import {
 import { useAuth } from "@/entities/session";
 import { PERM } from "@/entities/permission";
 import { toast } from "@/shared/ui/toast";
-import { Button, Label, Skeleton, Textarea } from "@/shared/ui";
-import { formatDateTime } from "@/shared/lib";
+import { Button, FieldError, Label, Skeleton, Textarea } from "@/shared/ui";
+import { apiErrorMessage, apiErrorStatus, formatDateTime } from "@/shared/lib";
+import { mapServerFieldErrors } from "@/shared/lib/form-errors";
 import { dict } from "@/shared/config";
 
 const d = dict.users;
@@ -78,14 +79,19 @@ export function UserNotesPanel({ userId }: UserNotesPanelProps) {
   // whatever they ask.
   const canWrite = can(PERM.customersWrite);
   const trimmed = body.trim();
-  const remaining = USER_NOTE_MAX_LENGTH - body.length;
-  const tooLong = body.length > USER_NOTE_MAX_LENGTH;
+  // TASK-1984: measured TRIMMED, as sent — `CreateUserNoteDto` trims before its
+  // @MaxLength(2000), so trailing spaces must not block a note it would take.
+  const remaining = USER_NOTE_MAX_LENGTH - trimmed.length;
+  const tooLong = trimmed.length > USER_NOTE_MAX_LENGTH;
+  // A server refusal of the text, under the textarea (Rule 6b).
+  const [serverError, setServerError] = useState<string | null>(null);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!trimmed || tooLong || create.isPending) {
       return;
     }
+    setServerError(null);
 
     create.mutate(
       { userId, data: { body: trimmed } },
@@ -98,7 +104,18 @@ export function UserNotesPanel({ userId }: UserNotesPanelProps) {
           });
           toast.success(d.notesToastAdded);
         },
-        onError: () => toast.error(d.notesToastFailed),
+        // TASK-1984 (Rule 6b/6c): a 400 about the text goes under it; any other
+        // refusal is a toast in the server's own words, not a generic line.
+        onError: (error) => {
+          if (apiErrorStatus(error) === 400) {
+            const fields = mapServerFieldErrors(error, { body: "body" });
+            if (fields.body) {
+              setServerError(fields.body);
+              return;
+            }
+          }
+          toast.error(apiErrorMessage(error) ?? d.notesToastFailed);
+        },
       },
     );
   };
@@ -113,13 +130,21 @@ export function UserNotesPanel({ userId }: UserNotesPanelProps) {
           <Textarea
             id="user-note-body"
             value={body}
-            onChange={(event) => setBody(event.target.value)}
+            onChange={(event) => {
+              setBody(event.target.value);
+              if (serverError) setServerError(null);
+            }}
             placeholder={d.notesAddPlaceholder}
             rows={3}
-            aria-invalid={tooLong || undefined}
-            aria-describedby="user-note-body-counter"
+            aria-invalid={tooLong || serverError ? true : undefined}
+            aria-describedby={
+              serverError
+                ? "user-note-body-error user-note-body-counter"
+                : "user-note-body-counter"
+            }
             disabled={create.isPending}
           />
+          <FieldError id="user-note-body-error">{serverError}</FieldError>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span
               id="user-note-body-counter"

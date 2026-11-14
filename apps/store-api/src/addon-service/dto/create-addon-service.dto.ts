@@ -1,5 +1,14 @@
-import { IsString, IsOptional, IsBoolean, IsNumber, Min, MaxLength } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsNumber,
+  Min,
+  MaxLength,
+  IsNotEmpty,
+} from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { trimString } from '../../common/utils';
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
@@ -15,7 +24,11 @@ export class CreateAddonServiceDto {
     description: 'Add-on service name',
     example: 'Гарантійний сертифікат (24 міс.)',
   })
+  // TASK-1984 (forms Rule 5d): the admin form refuses a blank name, so the API
+  // does too — trimmed first, so "   " is blank rather than a name.
+  @Transform(trimString)
   @IsString()
+  @IsNotEmpty({ message: 'Add-on service name must not be empty' })
   @MaxLength(255, { message: 'Name must be at most 255 characters' })
   name!: string;
 

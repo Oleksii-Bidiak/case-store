@@ -25,6 +25,7 @@ import {
   type FaqFormInput,
   type FaqFormValues,
 } from "../model/faq-schema";
+import type { FaqFormSetError } from "../model/save-error";
 
 const f = dict.faqForm;
 
@@ -34,7 +35,11 @@ interface FaqFormProps {
    *  never on a background refetch. Omitted in create mode. */
   id?: string;
   defaultValues?: Partial<FaqFormInput>;
-  onSubmit: (values: FaqFormValues) => void;
+  /**
+   * The dialog's save. `setError` is how a server refusal lands under its
+   * field (TASK-1984, Rule 6b) — hand it to `placeFaqSaveError`.
+   */
+  onSubmit: (values: FaqFormValues, setError: FaqFormSetError) => void;
   isPending: boolean;
   submitLabel?: string;
   /** «Скасувати» (or «Закрити» when read-only). */
@@ -115,6 +120,7 @@ function EditableFaqForm({
     control,
     handleSubmit,
     reset,
+    setError,
     formState: { errors, submitCount },
   } = useForm<FaqFormInput, unknown, FaqFormValues>({
     resolver: zodResolver(faqSchema),
@@ -143,7 +149,7 @@ function EditableFaqForm({
 
   return (
     <form
-      onSubmit={handleSubmit(onSubmit)}
+      onSubmit={handleSubmit((values) => onSubmit(values, setError))}
       className="flex flex-col gap-4"
       noValidate
     >
@@ -167,6 +173,7 @@ function EditableFaqForm({
             id="faq-question"
             aria-required="true"
             placeholder={f.questionPlaceholder}
+            maxLength={FAQ_QUESTION_MAX}
             {...fieldA11y("question", "faq-question-hint")}
             {...register("question")}
           />
@@ -194,6 +201,7 @@ function EditableFaqForm({
             rows={4}
             aria-required="true"
             placeholder={f.answerPlaceholder}
+            maxLength={FAQ_ANSWER_MAX}
             {...fieldA11y("answer", "faq-answer-hint")}
             {...register("answer")}
           />

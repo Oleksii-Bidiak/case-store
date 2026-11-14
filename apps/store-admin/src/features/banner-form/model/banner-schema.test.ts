@@ -187,7 +187,7 @@ describe("bannerSchema validation", () => {
     const result = bannerSchema.safeParse({
       ...baseInput,
       status: "SCHEDULED",
-      scheduledAt: "2026-08-01T09:00",
+      scheduledAt: "2099-08-01T09:00",
     });
     expect(result.success).toBe(true);
   });
@@ -200,8 +200,8 @@ describe("bannerSchema — publication window (TASK-429)", () => {
     const result = bannerSchema.safeParse({
       ...baseInput,
       status: "SCHEDULED",
-      scheduledAt: "2026-08-01T09:00",
-      scheduledUntil: "2026-09-01T09:00",
+      scheduledAt: "2099-08-01T09:00",
+      scheduledUntil: "2099-09-01T09:00",
     });
     expect(result.success).toBe(true);
   });
@@ -210,8 +210,8 @@ describe("bannerSchema — publication window (TASK-429)", () => {
     const result = bannerSchema.safeParse({
       ...baseInput,
       status: "SCHEDULED",
-      scheduledAt: "2026-09-01T09:00",
-      scheduledUntil: "2026-08-01T09:00",
+      scheduledAt: "2099-09-01T09:00",
+      scheduledUntil: "2099-08-01T09:00",
     });
 
     expect(result.success).toBe(false);
@@ -222,8 +222,8 @@ describe("bannerSchema — publication window (TASK-429)", () => {
     const result = bannerSchema.safeParse({
       ...baseInput,
       status: "SCHEDULED",
-      scheduledAt: "2026-08-01T09:00",
-      scheduledUntil: "2026-08-01T09:00",
+      scheduledAt: "2099-08-01T09:00",
+      scheduledUntil: "2099-08-01T09:00",
     });
     expect(result.success).toBe(false);
   });
@@ -238,8 +238,8 @@ describe("bannerSchema — publication window (TASK-429)", () => {
     const result = bannerSchema.safeParse({
       ...baseInput,
       status: "SCHEDULED",
-      scheduledAt: "2026-10-25T02:30", // still EEST, UTC+3
-      scheduledUntil: "2026-10-25T03:30", // already EET, UTC+2
+      scheduledAt: "2099-10-25T02:30", // still EEST, UTC+3
+      scheduledUntil: "2099-10-25T03:30", // already EET, UTC+2
     });
 
     expect(result.success).toBe(true);
@@ -249,7 +249,7 @@ describe("bannerSchema — publication window (TASK-429)", () => {
     const result = bannerSchema.safeParse({
       ...baseInput,
       status: "SCHEDULED",
-      scheduledAt: "2026-08-01T09:00",
+      scheduledAt: "2099-08-01T09:00",
       scheduledUntil: "not-a-date",
     });
 

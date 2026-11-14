@@ -140,9 +140,42 @@ describe("pageSchema content validation", () => {
     const result = pageSchema.safeParse({
       ...baseInput,
       status: "SCHEDULED",
-      scheduledAt: "2026-08-01T09:00",
+      scheduledAt: "2099-08-01T09:00",
     });
     expect(result.success).toBe(true);
+  });
+
+  // TASK-1984 (Rule 5e): the API would publish a past schedule now, silently.
+  it("refuses a SCHEDULED page whose moment has already passed", () => {
+    const result = pageSchema.safeParse({
+      ...baseInput,
+      status: "SCHEDULED",
+      scheduledAt: "2020-01-01T09:00",
+    });
+    expect(result.success).toBe(false);
+    expect(
+      result.error?.issues.find((i) => i.path[0] === "scheduledAt")?.message,
+    ).toBe(dict.pageForm.errors.scheduledAtPast);
+  });
+
+  it("does not judge the date of a page that is not SCHEDULED", () => {
+    const result = pageSchema.safeParse({
+      ...baseInput,
+      status: "PUBLISHED",
+      scheduledAt: "2020-01-01T09:00",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("caps the OG image link at the DTO's 2048 characters", () => {
+    const url = (length: number) =>
+      `https://e.com/${"a".repeat(length - "https://e.com/".length)}`;
+    expect(
+      pageSchema.safeParse({ ...baseInput, ogImage: url(2048) }).success,
+    ).toBe(true);
+    expect(
+      pageSchema.safeParse({ ...baseInput, ogImage: url(2049) }).success,
+    ).toBe(false);
   });
 
   // TASK-437 — tags and the OG override.

@@ -18,7 +18,10 @@ import {
   Label,
   Switch,
 } from "@/shared/ui";
+import { PhoneInput } from "@/shared/ui/phone-input";
 import { dict } from "@/shared/config";
+import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
+import { applyServerFieldErrors } from "@/shared/lib/form-errors";
 import {
   getListAdminPickupPointsQueryKey,
   useCreatePickupPoint,
@@ -27,6 +30,8 @@ import {
 } from "@/entities/delivery";
 import {
   EMPTY_PICKUP_POINT,
+  PICKUP_POINT_FIELD_MAP,
+  PICKUP_POINT_LIMITS,
   mapPickupPointToForm,
   pickupPointFormToDto,
   pickupPointSchema,
@@ -82,6 +87,7 @@ export function PickupPointFormDialog({
     register,
     handleSubmit,
     reset,
+    setError,
     formState: { errors },
   } = form;
 
@@ -105,7 +111,22 @@ export function PickupPointFormDialog({
       toast.success(message);
       onOpenChange(false);
     };
-    const onError = () => toast.error(t.toastSaveFailed);
+    const onError = (error: unknown) => {
+      // TASK-1984 Rule 6b: a 400 lands under the field it is about; only a
+      // remainder no field can take becomes the toast.
+      if (apiErrorStatus(error) === 400) {
+        const { mapped, unmapped } = applyServerFieldErrors(
+          error,
+          setError,
+          PICKUP_POINT_FIELD_MAP,
+        );
+        if (mapped.length > 0 && unmapped.length === 0) return;
+        // A refusal no field takes: the server's words say what to fix.
+        toast.error(apiErrorMessage(error) ?? t.toastSaveFailed);
+        return;
+      }
+      toast.error(t.toastSaveFailed);
+    };
     if (point) {
       update.mutate(
         { id: point.id, data },
@@ -149,22 +170,46 @@ export function PickupPointFormDialog({
   ): ReactNode => {
     const id = fieldId(name);
     const error = errors[name]?.message;
+    const common = {
+      id,
+      maxLength: PICKUP_POINT_LIMITS[name],
+      autoComplete: options.autoComplete ?? "off",
+      placeholder: options.placeholder,
+      "aria-required": options.required ? ("true" as const) : undefined,
+      "aria-invalid": error ? true : undefined,
+      "aria-describedby": describe(name, Boolean(options.hint)),
+    };
     return (
       <div className="flex min-w-0 flex-col gap-1.5">
         <Label htmlFor={id} required={options.required}>
           {label}
         </Label>
-        <Input
-          id={id}
-          type={options.type ?? "text"}
-          inputMode={options.type === "url" ? "url" : undefined}
-          autoComplete={options.autoComplete ?? "off"}
-          placeholder={options.placeholder}
-          aria-required={options.required ? "true" : undefined}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={describe(name, Boolean(options.hint))}
-          {...register(name)}
-        />
+        {options.type === "tel" ? (
+          // Rule 5b: the DTO's phone is `@IsInternationalPhone` — no +380
+          // mask, letters dropped as typed, the number kept as written.
+          <Controller
+            control={control}
+            name={name}
+            render={({ field }) => (
+              <PhoneInput
+                {...common}
+                rule="international"
+                ref={field.ref}
+                name={field.name}
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+              />
+            )}
+          />
+        ) : (
+          <Input
+            {...common}
+            type={options.type ?? "text"}
+            inputMode={options.type === "url" ? "url" : undefined}
+            {...register(name)}
+          />
+        )}
         <FieldError id={`${id}-error`}>{error}</FieldError>
         {options.hint ? (
           <p id={`${id}-hint`} className="text-xs text-muted-foreground">

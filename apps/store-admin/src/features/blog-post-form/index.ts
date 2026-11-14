@@ -8,3 +8,7 @@ export {
   type BlogPostFormInput,
   type BlogPostFormValues,
 } from "./model/blog-post-schema";
+export {
+  placeBlogPostSaveError,
+  type BlogPostFormSetError,
+} from "./model/save-error";

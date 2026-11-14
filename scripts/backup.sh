@@ -184,11 +184,19 @@ $COMPOSE exec -T postgres pg_dump \
 # still has a size; `pg_restore --list` has to parse the archive's table of
 # contents to succeed, so it fails on exactly the files that would betray you at
 # 3am. This is the difference between having a backup and believing you do.
+#
+# The dump goes in on stdin with NO file argument, and is read once (TASK-2380).
+# Under `exec -T` the container's stdin is a pipe; given a file name such as
+# /dev/stdin, pg_restore opens it to sniff the format and then opens it AGAIN to
+# read the archive, and the second open of a pipe starts past the bytes already
+# consumed — "did not find magic string in file header" on a perfectly good dump.
+# Copying the dump into the container instead was rejected: it leaves a
+# plaintext copy outside WORK_DIR, where the cleanup trap cannot reach it.
 log "verifying the dump can be read back…"
-$COMPOSE exec -T postgres pg_restore --list /dev/stdin < "$DB_FILE" > /dev/null \
+TOC=$($COMPOSE exec -T postgres pg_restore --list < "$DB_FILE") \
   || die "the dump is unreadable — pg_restore could not parse it. NOT a usable backup."
 
-TABLES=$($COMPOSE exec -T postgres pg_restore --list /dev/stdin < "$DB_FILE" | grep -c "TABLE DATA" || true)
+TABLES=$(grep -c "TABLE DATA" <<<"$TOC" || true)
 log "  ok — $TABLES tables with data"
 
 age -r "$AGE_PUBLIC_KEY" -o "$DB_AGE" "$DB_FILE" || die "encryption failed"

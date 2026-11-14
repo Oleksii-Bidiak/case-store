@@ -139,6 +139,10 @@ describe('DeviceService', () => {
       await expect(service.createBrand({ name: 'Apple' })).rejects.toBeInstanceOf(
         ConflictException,
       );
+      // TASK-1984: the code the admin form puts under the slug field.
+      await expect(service.createBrand({ name: 'Apple' })).rejects.toMatchObject({
+        response: { error: 'DEVICE_BRAND_SLUG_CONFLICT' },
+      });
       expect(deviceRepositoryMock.createBrand).not.toHaveBeenCalled();
     });
   });
@@ -350,6 +354,9 @@ describe('DeviceService', () => {
       await expect(
         service.updateModel('model-1', { slug: 'iphone-15-pro-max' }),
       ).rejects.toBeInstanceOf(ConflictException);
+      await expect(
+        service.updateModel('model-1', { slug: 'iphone-15-pro-max' }),
+      ).rejects.toMatchObject({ response: { error: 'DEVICE_MODEL_SLUG_CONFLICT' } });
       expect(deviceRepositoryMock.updateModel).not.toHaveBeenCalled();
     });
   });

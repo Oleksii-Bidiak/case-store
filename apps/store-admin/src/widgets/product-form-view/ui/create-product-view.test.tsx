@@ -433,6 +433,60 @@ describe("CreateProductView — replaying the staged areas onto the new product"
     );
     expect(mockPush).not.toHaveBeenCalled();
   });
+
+  // TASK-1984 Rule 6b: one refusal, said once, under the field it is about.
+  it.each([
+    [
+      "409 SKU taken",
+      409,
+      { error: "PRODUCT_SKU_CONFLICT", message: "taken" },
+      dict.productForm.errors.skuTaken,
+      dict.productForm.sku,
+    ],
+    [
+      "409 slug taken",
+      409,
+      { error: "PRODUCT_SLUG_CONFLICT", message: "taken" },
+      dict.productForm.errors.slugTaken,
+      dict.productForm.slug,
+    ],
+    [
+      "a 400 on the price",
+      400,
+      {
+        error: "Bad Request",
+        message: ["Price must be a number"],
+        fieldErrors: [{ field: "price", constraint: "isNumber" }],
+      },
+      dict.forms.invalid,
+      dict.productForm.price,
+    ],
+  ])(
+    "%s lands under the field, not in a toast",
+    async (_, status, body, text, label) => {
+      arrange();
+      server.use(
+        http.post("*/api/products", () =>
+          HttpResponse.json({ statusCode: status, ...body }, { status }),
+        ),
+      );
+
+      renderWithProviders(<CreateProductView />);
+      await fillRequiredFields();
+      await submit();
+
+      const field = await screen.findByLabelText(
+        new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+      );
+      await waitFor(() =>
+        expect(field).toHaveAttribute("aria-invalid", "true"),
+      );
+      const describedBy = field.getAttribute("aria-describedby") ?? "";
+      expect(document.getElementById(describedBy)).toHaveTextContent(text);
+      expect(toastError).not.toHaveBeenCalled();
+      expect(mockPush).not.toHaveBeenCalled();
+    },
+  );
 });
 
 /**

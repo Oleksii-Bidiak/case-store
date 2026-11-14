@@ -1,11 +1,15 @@
 import { z } from "zod";
 import type { CreateManualOrderDto } from "@/entities/order";
-import type { CourierTermsDto, DeliveryMethod } from "@/entities/delivery";
+import {
+  ADDRESS_LIMITS,
+  type CourierTermsDto,
+  type DeliveryMethod,
+} from "@/entities/delivery";
 import { dict } from "@/shared/config";
-// Imported from the module rather than the `@/shared/lib` barrel: the barrel
-// re-exports the UA rule beside this one, and the whole point of the fix is that
-// the two are not interchangeable here.
-import { isValidInternationalPhone } from "@/shared/lib/phone";
+// Both phones are `@IsInternationalPhone` on the API (`GuestContactDto.phone`,
+// `AddressDto.phone`, TASK-338) — the rule named the same here (Rule 5a).
+import { phoneField } from "@/shared/lib/phone-field";
+import { emailField } from "@/shared/lib/form-fields";
 import { parseMoneyInput } from "@/shared/lib/money-input";
 
 const t = dict.orderCreate;
@@ -14,6 +18,41 @@ const t = dict.orderCreate;
 export const NOTES_MAX_LENGTH = 500;
 /** `CreateManualOrderDto.internalNotes` — `@MaxLength(2000)`. */
 export const INTERNAL_NOTES_MAX_LENGTH = 2000;
+/** `GuestContactDto.name` (`guest-contact.dto.ts`) — `@MaxLength(120)`. */
+export const CONTACT_NAME_MAX_LENGTH = 120;
+/**
+ * The client's phone. `GuestContactDto.phone` allows 32 characters, but this
+ * number is ALSO the recipient's while «той самий клієнт» is ticked, and
+ * `AddressDto.phone` allows 30 — stricter on purpose (Rule 5f), so the copy can
+ * never be refused. Fifteen digits with separators fit in 30 with room to spare.
+ */
+export const CONTACT_PHONE_MAX_LENGTH = ADDRESS_LIMITS.phone;
+
+/** A name `AddressDto` takes: present, at most 100 characters. */
+const requiredName = (message: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, message)
+    .max(ADDRESS_LIMITS.name, dict.forms.tooLong);
+const optionalName = z
+  .string()
+  .trim()
+  .max(ADDRESS_LIMITS.name, dict.forms.tooLong);
+
+const contactPhoneRule = z
+  .string()
+  .trim()
+  .max(CONTACT_PHONE_MAX_LENGTH, dict.forms.tooLong)
+  .pipe(phoneField({ rule: "international", message: t.contactPhoneInvalid }));
+// An empty recipient phone is ONE message, «обовʼязкове поле» — not that AND
+// «wrong format» for the same blank input.
+const recipientPhoneRule = z
+  .string()
+  .trim()
+  .min(1, t.addressRequired)
+  .max(ADDRESS_LIMITS.phone, dict.forms.tooLong)
+  .pipe(phoneField({ rule: "international", message: t.contactPhoneInvalid }));
 
 /** A line the operator has picked, carrying enough to render it back. */
 export interface DraftLine {
@@ -109,18 +148,32 @@ export const createOrderSchema = z
   .object({
     customerMode: z.enum([CUSTOMER_MODE.ACCOUNT, CUSTOMER_MODE.GUEST]),
     userId: z.string().trim(),
-    contactName: z.string().trim(),
+    // TASK-2398: the client's name is two fields, never one split by guesswork —
+    // `splitName("Оксана")` left the surname empty and the order unplaceable.
+    // Every client field is judged in the refinement, by mode and checkbox.
+    contactFirstName: z.string().trim(),
+    contactLastName: z.string().trim(),
     contactEmail: z.string().trim(),
     contactPhone: z.string().trim(),
 
-    firstName: z.string().trim().min(1, t.addressRequired),
-    lastName: z.string().trim().min(1, t.addressRequired),
-    phone: z.string().trim().min(1, t.addressRequired),
+    // «Одержувач — той самий клієнт» (TASK-2398). While it is ticked the
+    // recipient fields below are not rendered and NOT judged: the client block
+    // IS the recipient, copied into `shippingAddress` by `createOrderValuesToDto`.
+    sameRecipient: z.boolean(),
+    firstName: z.string().trim(),
+    lastName: z.string().trim(),
+    phone: z.string().trim(),
     // Required per method (TASK-1973) — see the refinement: a pickup order is
     // collected at the point, so it asks for the point, not for an address.
-    city: z.string().trim(),
-    address1: z.string().trim(),
-    postalCode: z.string().trim(),
+    city: z.string().trim().max(ADDRESS_LIMITS.city, dict.forms.tooLong),
+    address1: z
+      .string()
+      .trim()
+      .max(ADDRESS_LIMITS.address1, dict.forms.tooLong),
+    postalCode: z
+      .string()
+      .trim()
+      .max(ADDRESS_LIMITS.postalCode, dict.forms.tooLong),
     // Nova Poshta refs, filled only when the operator picked from the directory
     // (TASK-426). Free text stays fully supported — NP refuses keyless calls, so
     // an unavailable directory must not be able to block a phone order.
@@ -149,54 +202,81 @@ export const createOrderSchema = z
   .superRefine((values, ctx) => {
     refineDelivery(values, ctx);
 
-    // The recipient's phone is needed in BOTH modes — it is the number on the
-    // parcel, not the customer's contact detail.
-    if (values.phone !== "" && !isValidInternationalPhone(values.phone)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["phone"],
-        message: t.contactPhoneInvalid,
-      });
-    }
-
-    if (values.customerMode === CUSTOMER_MODE.ACCOUNT) {
-      if (!UUID_RE.test(values.userId)) {
+    const judge = (path: string, rule: z.ZodTypeAny, value: string) => {
+      const result = rule.safeParse(value);
+      if (!result.success) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["userId"],
-          message: t.customerRequired,
+          path: [path],
+          message: result.error.issues[0]?.message ?? dict.forms.invalid,
         });
       }
-      return;
+    };
+
+    const guest = values.customerMode === CUSTOMER_MODE.GUEST;
+    if (!guest && !UUID_RE.test(values.userId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["userId"],
+        message: t.customerRequired,
+      });
     }
 
-    if (values.contactName === "") {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["contactName"],
-        message: t.contactNameInvalid,
-      });
+    // The client block. A walk-in's name and phone go to `contact`; in either
+    // mode, while the checkbox is ticked, they are also the recipient — so they
+    // carry the recipient's rules then (`AddressDto`: both names required).
+    if (guest || values.sameRecipient) {
+      judge(
+        "contactFirstName",
+        requiredName(guest ? t.contactNameInvalid : t.addressRequired),
+        values.contactFirstName,
+      );
+      judge("contactPhone", contactPhoneRule, values.contactPhone);
     }
-    // Optional, but a typo is still a typo: an address that is present must be
-    // one we could actually send the order-status link to.
-    if (
-      values.contactEmail !== "" &&
-      !/^\S+@\S+\.\S+$/.test(values.contactEmail)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["contactEmail"],
-        message: t.contactEmailInvalid,
-      });
+    judge(
+      "contactLastName",
+      values.sameRecipient ? requiredName(t.addressRequired) : optionalName,
+      values.contactLastName,
+    );
+    if (guest) {
+      // `GuestContactDto.name` is the two names joined — `@MaxLength(120)`,
+      // tighter than the two `AddressDto` names (100 each) added up.
+      if (
+        contactFullName(values).length > CONTACT_NAME_MAX_LENGTH &&
+        values.contactLastName !== ""
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["contactLastName"],
+          message: t.contactNameTooLong(CONTACT_NAME_MAX_LENGTH),
+        });
+      }
+      // Optional, but a typo is still a typo: an address that is present must
+      // be one we could actually send the order-status link to.
+      judge(
+        "contactEmail",
+        emailField({ optional: true, message: t.contactEmailInvalid }),
+        values.contactEmail,
+      );
     }
-    if (!isValidInternationalPhone(values.contactPhone)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["contactPhone"],
-        message: t.contactPhoneInvalid,
-      });
+
+    // A different recipient (the checkbox off): the number on the parcel and
+    // the name on it, judged by `AddressDto`'s rules in BOTH modes.
+    if (!values.sameRecipient) {
+      judge("firstName", requiredName(t.addressRequired), values.firstName);
+      judge("lastName", requiredName(t.addressRequired), values.lastName);
+      judge("phone", recipientPhoneRule, values.phone);
     }
   });
+
+/** The walk-in's `contact.name`: both names, one space between. */
+export function contactFullName(
+  values: Pick<CreateOrderFormValues, "contactFirstName" | "contactLastName">,
+): string {
+  return [values.contactFirstName.trim(), values.contactLastName.trim()]
+    .filter(Boolean)
+    .join(" ");
+}
 
 export type CreateOrderFormValues = z.infer<typeof createOrderSchema>;
 
@@ -319,9 +399,11 @@ export function operatorShippingCost(
 export const CREATE_ORDER_DEFAULTS: CreateOrderFormValues = {
   customerMode: CUSTOMER_MODE.GUEST,
   userId: "",
-  contactName: "",
+  contactFirstName: "",
+  contactLastName: "",
   contactEmail: "",
   contactPhone: "",
+  sameRecipient: true,
   firstName: "",
   lastName: "",
   phone: "",
@@ -367,13 +449,27 @@ export function createOrderValuesToDto(
   const isNp = values.deliveryMethod === "NOVA_POSHTA";
   const atPoint = values.deliveryMethod === "PICKUP" ? pickupPoint : undefined;
   const agreedCost = parseShippingCost(values.shippingCost);
+  // TASK-2398: «той самий клієнт» copies the client block at submit — here, in
+  // the payload, never into the hidden recipient fields (which would then show
+  // stale values once the checkbox is unticked).
+  const recipient = values.sameRecipient
+    ? {
+        firstName: values.contactFirstName,
+        lastName: values.contactLastName,
+        phone: values.contactPhone,
+      }
+    : {
+        firstName: values.firstName,
+        lastName: values.lastName,
+        phone: values.phone,
+      };
 
   return {
     ...(values.customerMode === CUSTOMER_MODE.ACCOUNT
       ? { userId: values.userId }
       : {
           contact: {
-            name: values.contactName,
+            name: contactFullName(values),
             phone: values.contactPhone,
             // Omitted rather than sent empty (TASK-426): `''` is not an address,
             // and the DTO would have to guess which of the two we meant.
@@ -383,9 +479,7 @@ export function createOrderValuesToDto(
           },
         }),
     shippingAddress: {
-      firstName: values.firstName,
-      lastName: values.lastName,
-      phone: values.phone,
+      ...recipient,
       city: atPoint?.city ?? values.city,
       address1: atPoint?.address ?? values.address1,
       ...(optional(values.postalCode) ? { postalCode: values.postalCode } : {}),

@@ -8,6 +8,8 @@ import { toast } from "@/shared/ui/toast";
 import {
   BrandForm,
   brandFormValuesToDto,
+  placeBrandSaveError,
+  type BrandFormSetError,
   type BrandFormInput,
   type BrandFormValues,
 } from "@/features/brand-form";
@@ -22,6 +24,7 @@ import { PERM } from "@/entities/permission";
 import { useProductControllerAdminFindAll } from "@/entities/product";
 import { useAuth } from "@/entities/session";
 import { dict } from "@/shared/config";
+import { refusalMessage } from "@/shared/lib/refusal-message";
 import { formatDateTime } from "@/shared/lib/format/formatDate";
 import { Badge, CollapsibleSection, CopyButton } from "@/shared/ui";
 import { BrandFormSkeleton } from "./brand-form-skeleton";
@@ -71,7 +74,10 @@ export function EditBrandView({ brandId }: EditBrandViewProps) {
 
   const brand = data?.data;
 
-  const handleSubmit = (values: BrandFormValues) => {
+  const handleSubmit = (
+    values: BrandFormValues,
+    setError: BrandFormSetError,
+  ) => {
     update.mutate(
       { id: brandId, data: brandFormValuesToDto(values) },
       {
@@ -85,8 +91,11 @@ export function EditBrandView({ brandId }: EditBrandViewProps) {
           toast.success(d.toastUpdated);
           router.push("/brands");
         },
-        onError: () => {
-          toast.error(d.toastUpdateFailed);
+        onError: (error) => {
+          // TASK-1984 Rule 6b: under the field when it is about one; the
+          // server's own words otherwise.
+          if (placeBrandSaveError(error, setError)) return;
+          toast.error(refusalMessage(error) ?? d.toastUpdateFailed);
         },
       },
     );

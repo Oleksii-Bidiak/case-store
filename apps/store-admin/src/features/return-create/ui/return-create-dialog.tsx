@@ -38,11 +38,19 @@ import {
 } from "@/shared/ui";
 import { toast } from "@/shared/ui/toast";
 import { dict } from "@/shared/config";
+import {
+  mapServerFieldErrors,
+  readFieldErrors,
+  type ServerFieldMap,
+} from "@/shared/lib/form-errors";
 
 const d = dict.returns;
 
 /** The API caps the reason at 1000 characters (`CreateReturnDto.reason`). */
 const COMMENT_MAX_LENGTH = 1000;
+
+/** `CreateReturnDto` path → this dialog's input (TASK-1984 Rule 6b). */
+const CREATE_FIELD_MAP: ServerFieldMap = { reason: "comment" };
 
 /** «Не сказав» — the segmented control needs a value for "no answer". */
 const NO_OUTCOME = "";
@@ -112,12 +120,14 @@ function ReturnCreateForm({
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [outcome, setOutcome] = useState<OutcomeChoice>(NO_OUTCOME);
   const [comment, setComment] = useState("");
+  const [commentError, setCommentError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ id: string } | null>(null);
 
   const outcomeLabelId = useId();
   const commentId = useId();
   const commentHintId = `${commentId}-hint`;
+  const commentErrorId = `${commentId}-error`;
   const nothingHintId = useId();
 
   const lines = returnableLines(order.items, claims.data?.data ?? []);
@@ -165,6 +175,7 @@ function ReturnCreateForm({
   const submit = () => {
     if (nothingSelected) return;
     setError(null);
+    setCommentError(null);
     const trimmed = comment.trim();
     const data: CreateReturnDto = {
       items: picked,
@@ -201,6 +212,20 @@ function ReturnCreateForm({
             void queryClient.invalidateQueries({
               queryKey: getAdminOrderControllerFindByIdQueryKey(order.id),
             });
+          }
+          // TASK-1984 Rule 6b: a DTO 400 on the comment goes under it. The
+          // lines have no field of their own, so the rest stays in the banner.
+          if (!refusal) {
+            const fields = mapServerFieldErrors(failure, CREATE_FIELD_MAP);
+            if (fields.comment) {
+              setCommentError(fields.comment);
+              // Fully placed — nothing more to say. A remainder (a line the
+              // DTO refused) still needs the banner.
+              const rest = readFieldErrors(failure).filter(
+                (entry) => !(entry.field in CREATE_FIELD_MAP),
+              );
+              if (rest.length === 0) return;
+            }
           }
           setError(refusal?.message ?? d.createFailed);
         },
@@ -310,15 +335,30 @@ function ReturnCreateForm({
         <Textarea
           id={commentId}
           value={comment}
-          onChange={(event) => setComment(event.target.value)}
+          onChange={(event) => {
+            setComment(event.target.value);
+            setCommentError(null);
+          }}
           placeholder={d.createCommentPlaceholder}
           maxLength={COMMENT_MAX_LENGTH}
-          aria-describedby={commentHintId}
+          aria-invalid={commentError ? true : undefined}
+          aria-describedby={
+            commentError ? `${commentHintId} ${commentErrorId}` : commentHintId
+          }
           rows={3}
         />
         <p id={commentHintId} className="text-xs text-muted-foreground">
           {d.createCommentHint}
         </p>
+        {commentError ? (
+          <p
+            id={commentErrorId}
+            role="alert"
+            className="text-xs text-destructive"
+          >
+            {commentError}
+          </p>
+        ) : null}
       </div>
 
       {error ? (

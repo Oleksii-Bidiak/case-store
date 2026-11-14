@@ -11,6 +11,7 @@ import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { NotificationOutboxService } from '../notification-outbox/notification-outbox.service';
 import { EmailVerificationService } from './email-verification.service';
+import { CacheService } from '../cache';
 import { buildUser } from '../../test/user.fixture';
 
 // ─── Mock argon2 ──────────────────────────────────────────────────────────────
@@ -47,6 +48,9 @@ const mockRefreshTokenRecord = {
   expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   isRevoked: false,
   createdAt: new Date(),
+  rotatedAt: null as Date | null,
+  replacedById: null as string | null,
+  graceUsedAt: null as Date | null,
   user: mockUser,
 };
 
@@ -87,6 +91,8 @@ describe('AuthService', () => {
     adoptProvenAddress: jest.Mock;
     confirm: jest.Mock;
   };
+  // TASK-2405: the pair a rotation issued waits here for a one-time replay.
+  let cacheMock: { get: jest.Mock; set: jest.Mock; del: jest.Mock };
 
   beforeEach(async () => {
     // Reset argon2 mocks before each test (clear call history AND re-arm resolves
@@ -108,7 +114,9 @@ describe('AuthService', () => {
       createUser: jest.fn(),
       findRefreshToken: jest.fn(),
       saveRefreshToken: jest.fn(),
-      rotateRefreshToken: jest.fn(),
+      rotateRefreshToken: jest.fn().mockResolvedValue(true),
+      findRefreshTokenById: jest.fn(),
+      claimRefreshGrace: jest.fn(),
       revokeToken: jest.fn(),
       revokeAllUserTokens: jest.fn(),
       savePasswordResetToken: jest.fn(),
@@ -155,9 +163,16 @@ describe('AuthService', () => {
       confirm: jest.fn(),
     };
 
+    cacheMock = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(undefined),
+      del: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
+        { provide: CacheService, useValue: cacheMock },
         { provide: AuthRepository, useValue: authRepositoryMock },
         { provide: JwtService, useValue: jwtServiceMock },
         { provide: ConfigService, useValue: configMock },
@@ -1195,10 +1210,14 @@ describe('AuthService', () => {
       await expect(service.refreshToken('invalid-token')).rejects.toThrow(UnauthorizedException);
     });
 
-    it('should revoke ALL user tokens and throw when revoked token is reused (reuse detection)', async () => {
+    it('should revoke ALL user tokens and throw when a revoked token is reused outside the grace window (reuse detection)', async () => {
+      // TASK-2405: a replay within 10 s of the rotation may be honoured once;
+      // this one comes 11 s later, so it is theft as before.
       const revokedToken = {
         ...mockRefreshTokenRecord,
         isRevoked: true,
+        rotatedAt: new Date(Date.now() - 11_000),
+        replacedById: 'rt-successor',
       };
       authRepository.findRefreshToken.mockResolvedValue(revokedToken);
       authRepository.revokeAllUserTokens.mockResolvedValue(undefined);
@@ -1227,7 +1246,7 @@ describe('AuthService', () => {
       authRepository.findRefreshToken.mockResolvedValue(mockRefreshTokenRecord);
       jwtService.sign.mockReturnValueOnce('new-access-token');
       jwtService.sign.mockReturnValueOnce('new-refresh-token');
-      authRepository.rotateRefreshToken.mockResolvedValue(undefined);
+      authRepository.rotateRefreshToken.mockResolvedValue(true);
 
       const result = await service.refreshToken('refresh-token-value');
 
@@ -1239,12 +1258,13 @@ describe('AuthService', () => {
       // The replacement is persisted and the old token revoked in ONE
       // repository call (one transaction) — TASK-496.
       expect(authRepository.rotateRefreshToken).toHaveBeenCalledTimes(1);
-      expect(authRepository.rotateRefreshToken).toHaveBeenCalledWith(
-        mockRefreshTokenRecord.id,
-        mockUser.id,
-        'new-refresh-token',
-        expect.any(Date),
-      );
+      expect(authRepository.rotateRefreshToken).toHaveBeenCalledWith({
+        oldTokenId: mockRefreshTokenRecord.id,
+        newTokenId: expect.any(String),
+        userId: mockUser.id,
+        rawToken: 'new-refresh-token',
+        expiresAt: expect.any(Date),
+      });
       // …and never as two separate writes, which is what let the old token die
       // before its replacement existed.
       expect(authRepository.revokeToken).not.toHaveBeenCalled();
@@ -1299,7 +1319,7 @@ describe('AuthService', () => {
         .mockReturnValueOnce('refresh-2');
       authRepository.rotateRefreshToken
         .mockRejectedValueOnce(new Error('transient'))
-        .mockResolvedValueOnce(undefined);
+        .mockResolvedValueOnce(true);
 
       await expect(service.refreshToken('refresh-token-value')).rejects.toThrow('transient');
       const retry = await service.refreshToken('refresh-token-value');
@@ -1379,6 +1399,160 @@ describe('AuthService', () => {
       // login() refuses to reveal that difference, so this path cannot either.
       expect(bannedMessage).toBe(unknownTokenMessage);
       expect(tombstonedMessage).toBe(unknownTokenMessage);
+    });
+
+    // ─── TASK-2405: one-time grace for a just-rotated token ──────────────────
+    //
+    // Two tabs refresh with the same cookie: the first rotates it, the second
+    // presents a now-revoked token. Within 10 s of the rotation that ONE replay
+    // gets back the pair the rotation issued; anything else is theft as before.
+
+    describe('one-time grace for a just-rotated token (TASK-2405)', () => {
+      const successorId = 'rt-successor';
+      const issuedPair: IssuedSession = {
+        userId: mockUser.id,
+        accessToken: 'issued-access',
+        refreshToken: 'issued-refresh',
+      };
+      const successorRow = {
+        ...mockRefreshTokenRecord,
+        id: successorId,
+        token: 'successor-hash',
+      };
+      const justRotated = (overrides: Record<string, unknown> = {}) => ({
+        ...mockRefreshTokenRecord,
+        isRevoked: true,
+        rotatedAt: new Date(Date.now() - 2_000),
+        replacedById: successorId,
+        graceUsedAt: null,
+        ...overrides,
+      });
+
+      const expectRevokeAll = async () => {
+        await expect(service.refreshToken('refresh-token-value')).rejects.toThrow(
+          new UnauthorizedException('Token reuse detected — all sessions terminated'),
+        );
+        expect(authRepository.revokeAllUserTokens).toHaveBeenCalledWith(mockUser.id);
+      };
+
+      beforeEach(() => {
+        cacheMock.get.mockResolvedValue(issuedPair);
+        authRepository.findRefreshTokenById.mockResolvedValue(successorRow);
+        authRepository.claimRefreshGrace.mockResolvedValue(true);
+      });
+
+      it('parks the issued pair under the successor id for 10 s BEFORE rotating', async () => {
+        authRepository.findRefreshToken.mockResolvedValue(mockRefreshTokenRecord);
+        jwtService.sign.mockReturnValueOnce('new-access').mockReturnValueOnce('new-refresh');
+
+        await service.refreshToken('refresh-token-value');
+
+        const [{ newTokenId }] = authRepository.rotateRefreshToken.mock.calls[0];
+        expect(cacheMock.set).toHaveBeenCalledWith(
+          `auth:refresh-grace:${newTokenId}`,
+          { userId: mockUser.id, accessToken: 'new-access', refreshToken: 'new-refresh' },
+          10,
+        );
+        expect(cacheMock.set.mock.invocationCallOrder[0]).toBeLessThan(
+          authRepository.rotateRefreshToken.mock.invocationCallOrder[0],
+        );
+      });
+
+      it('returns the SAME pair for one replay within 10 s, and logs a warning', async () => {
+        authRepository.findRefreshToken.mockResolvedValue(justRotated());
+
+        await expect(service.refreshToken('refresh-token-value')).resolves.toEqual(issuedPair);
+
+        expect(cacheMock.get).toHaveBeenCalledWith(`auth:refresh-grace:${successorId}`);
+        expect(authRepository.claimRefreshGrace).toHaveBeenCalledWith(mockRefreshTokenRecord.id);
+        expect(authRepository.revokeAllUserTokens).not.toHaveBeenCalled();
+        expect(authRepository.rotateRefreshToken).not.toHaveBeenCalled();
+        expect(loggerMock.warn).toHaveBeenCalledTimes(1);
+        // Never a token value in the log line.
+        expect(JSON.stringify(loggerMock.warn.mock.calls[0])).not.toContain('issued-refresh');
+        expect(JSON.stringify(loggerMock.warn.mock.calls[0])).not.toContain('issued-access');
+      });
+
+      it('revokes everything for a replay after the 10 s window', async () => {
+        authRepository.findRefreshToken.mockResolvedValue(
+          justRotated({ rotatedAt: new Date(Date.now() - 10_001) }),
+        );
+
+        await expectRevokeAll();
+        expect(authRepository.claimRefreshGrace).not.toHaveBeenCalled();
+      });
+
+      it('revokes everything when the grace was already used (second replay)', async () => {
+        authRepository.findRefreshToken.mockResolvedValue(justRotated());
+        authRepository.claimRefreshGrace.mockResolvedValue(false);
+
+        await expectRevokeAll();
+      });
+
+      it('revokes everything on a cache miss (expired entry or Redis down)', async () => {
+        authRepository.findRefreshToken.mockResolvedValue(justRotated());
+        cacheMock.get.mockResolvedValue(null);
+
+        await expectRevokeAll();
+        expect(authRepository.claimRefreshGrace).not.toHaveBeenCalled();
+      });
+
+      it('revokes everything when the successor is already revoked', async () => {
+        authRepository.findRefreshToken.mockResolvedValue(justRotated());
+        authRepository.findRefreshTokenById.mockResolvedValue({
+          ...successorRow,
+          isRevoked: true,
+        });
+
+        await expectRevokeAll();
+        expect(authRepository.claimRefreshGrace).not.toHaveBeenCalled();
+      });
+
+      it('revokes everything when the successor row is gone', async () => {
+        authRepository.findRefreshToken.mockResolvedValue(justRotated());
+        authRepository.findRefreshTokenById.mockResolvedValue(null);
+
+        await expectRevokeAll();
+      });
+
+      it('revokes everything for a revoked token that was never rotated (logout, revoke-all)', async () => {
+        authRepository.findRefreshToken.mockResolvedValue(
+          justRotated({ rotatedAt: null, replacedById: null }),
+        );
+
+        await expectRevokeAll();
+        expect(cacheMock.get).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['deactivated', { isActive: false }],
+        ['soft-deleted', { deletedAt: new Date() }],
+      ])('returns no pair for a %s owner', async (_label, userOverride) => {
+        authRepository.findRefreshToken.mockResolvedValue(
+          justRotated({ user: { ...mockUser, ...userOverride } }),
+        );
+
+        await expect(service.refreshToken('refresh-token-value')).rejects.toThrow(
+          UnauthorizedException,
+        );
+        expect(authRepository.claimRefreshGrace).not.toHaveBeenCalled();
+      });
+
+      it('a lost rotation race falls through to the replay of the winner', async () => {
+        // Both requests read C0 as live; the other one committed first.
+        authRepository.findRefreshToken
+          .mockResolvedValueOnce(mockRefreshTokenRecord)
+          .mockResolvedValueOnce(justRotated());
+        authRepository.rotateRefreshToken.mockResolvedValue(false);
+        jwtService.sign.mockReturnValueOnce('loser-access').mockReturnValueOnce('loser-refresh');
+
+        await expect(service.refreshToken('refresh-token-value')).resolves.toEqual(issuedPair);
+
+        // The loser's own parked pair is dropped — its row was never inserted.
+        const [{ newTokenId }] = authRepository.rotateRefreshToken.mock.calls[0];
+        expect(cacheMock.del).toHaveBeenCalledWith(`auth:refresh-grace:${newTokenId}`);
+        expect(authRepository.revokeAllUserTokens).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -1852,6 +2026,7 @@ describe('AuthService — durations have no silent fallback', () => {
         {} as NotificationOutboxService,
         logger,
         {} as EmailVerificationService,
+        {} as CacheService,
       );
   };
 

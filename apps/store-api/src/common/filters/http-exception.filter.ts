@@ -4,6 +4,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { Request, Response } from 'express';
 import { translatePrismaError } from './prisma-error.translator';
 import { RetryAfterException } from './retry-after.exception';
+import { ValidationFailedException } from './validation-failed.exception';
 import { redactUrlSecrets } from '../security';
 
 @Catch()
@@ -98,6 +99,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (exception instanceof RetryAfterException) {
       responseBody.retryAfterSeconds = exception.retryAfterSeconds;
       response.setHeader('Retry-After', String(exception.retryAfterSeconds));
+    }
+
+    // TASK-1984 (D3): the second pass-through, on the same terms — by class.
+    // The global ValidationPipe's 400 says which field failed which constraint,
+    // so a client can put the error under its field (forms convention, Rule 6b).
+    if (exception instanceof ValidationFailedException) {
+      responseBody.fieldErrors = exception.fieldErrors;
     }
 
     response.status(status).json(responseBody);

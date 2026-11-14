@@ -61,11 +61,13 @@ import { isInlinedOnInfoHub } from "@/shared/config/hub-pages";
 import {
   MAX_PAGE_CONTENT_LENGTH,
   PAGE_KIND,
+  PAGE_LIMITS,
   pageSchema,
   type PageFormInput,
   type PageFormValues,
   type PageKindValue,
 } from "../model/page-schema";
+import type { PageFormSetError } from "../model/page-conflict";
 import { PageReadOnly } from "./page-read-only";
 
 const f = dict.pageForm;
@@ -133,6 +135,9 @@ interface PageFormProps {
    */
   onSubmit: (
     values: PageFormValues,
+    /** How a server refusal lands under its field (TASK-1984, Rule 6b) —
+     *  hand it to `placePageSaveError`. */
+    setError: PageFormSetError,
     event?: BaseSyntheticEvent,
   ) => void | Promise<boolean | void>;
   isPending: boolean;
@@ -201,6 +206,7 @@ function EditablePageForm({
     handleSubmit,
     reset,
     getValues,
+    setError,
     setValue,
     formState: { errors, dirtyFields, submitCount },
   } = useForm<PageFormInput, unknown, PageFormValues>({
@@ -248,6 +254,16 @@ function EditablePageForm({
     onUploaded: (url) =>
       setValue("ogImage", url, { shouldDirty: true, shouldValidate: true }),
   });
+  // TASK-1984 (Rule 5d): the DTO's 2048 cap on the URL box too.
+  // `ContentImageField` takes the registration as is, so it is set on the node.
+  const ogImageRegistration = register("ogImage");
+  const ogImageInput = {
+    ...ogImageRegistration,
+    ref: (element: HTMLInputElement | null) => {
+      ogImageRegistration.ref(element);
+      if (element) element.maxLength = PAGE_LIMITS.ogImage;
+    },
+  };
 
   const previewTitle = resolveSeoPreviewTitle({
     entityTitle: metaTitleValue,
@@ -348,7 +364,7 @@ function EditablePageForm({
   const showErrors = submitCount > 0 && failedFields.length > 0;
 
   const submit = async (values: PageFormValues, event?: BaseSyntheticEvent) => {
-    const saved = await onSubmit(values, event);
+    const saved = await onSubmit(values, setError, event);
     if (saved === true) reset(getValues());
     return saved === true;
   };
@@ -414,6 +430,7 @@ function EditablePageForm({
                 <Input
                   id="page-title"
                   aria-required="true"
+                  maxLength={PAGE_LIMITS.title}
                   {...fieldA11y("title")}
                   {...register("title")}
                 />
@@ -524,6 +541,7 @@ function EditablePageForm({
                     id="page-slug"
                     placeholder={f.addressPlaceholder}
                     className="rounded-l-none font-mono"
+                    maxLength={PAGE_LIMITS.slug}
                     {...fieldA11y(
                       "slug",
                       inlined
@@ -638,6 +656,7 @@ function EditablePageForm({
                 id="page-excerpt"
                 rows={2}
                 placeholder={f.excerptPlaceholder}
+                maxLength={PAGE_LIMITS.excerpt}
                 {...fieldA11y("excerpt")}
                 {...register("excerpt")}
               />
@@ -652,6 +671,7 @@ function EditablePageForm({
               <Label htmlFor="page-meta-title">{f.metaTitle}</Label>
               <Input
                 id="page-meta-title"
+                maxLength={PAGE_LIMITS.metaTitle}
                 {...fieldA11y("metaTitle")}
                 {...register("metaTitle")}
               />
@@ -665,6 +685,7 @@ function EditablePageForm({
               <Textarea
                 id="page-meta-description"
                 rows={2}
+                maxLength={PAGE_LIMITS.metaDescription}
                 {...fieldA11y("metaDescription")}
                 {...register("metaDescription")}
               />
@@ -713,7 +734,7 @@ function EditablePageForm({
                 )}
                 copy={dict.seoFields.ogImageUpload}
                 value={ogImageValue}
-                urlInput={register("ogImage")}
+                urlInput={ogImageInput}
                 // The hint and the `FieldError` below keep their ids, so the
                 // error is rendered there and not passed as `fieldError`.
                 urlInputProps={fieldA11y("ogImage", "page-og-image-hint")}
