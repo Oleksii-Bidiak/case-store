@@ -319,3 +319,26 @@ describe('OrderEntity.fromPrisma — ledger money (R2 A4)', () => {
     expect(OrderEntity.fromPrisma(ledger({ refundedKop: 47_222 })).refundedTotal).toBeUndefined();
   });
 });
+
+/** TASK-2048: «Копія #старе» on the copy, «Замінено на #нове» on the original. */
+describe('OrderEntity — copy links (TASK-2048)', () => {
+  it('names the original of a copy', () => {
+    const entity = OrderEntity.fromPrisma(buildOrder({ copiedFromId: 'order-0' }));
+
+    expect(entity.copiedFromId).toBe('order-0');
+  });
+
+  it('reads an order that is not a copy as null', () => {
+    expect(OrderEntity.fromPrisma(buildOrder()).copiedFromId).toBeNull();
+  });
+
+  it('lists the copies on reads that joined them, oldest first as read', () => {
+    const entity = OrderEntity.fromPrisma(buildOrder({ copies: [{ id: 'c-1' }, { id: 'c-2' }] }));
+
+    expect(entity.copyIds).toEqual(['c-1', 'c-2']);
+  });
+
+  it('says nothing about copies on reads that did not join them', () => {
+    expect(OrderEntity.fromPrisma(buildOrder()).copyIds).toBeUndefined();
+  });
+});

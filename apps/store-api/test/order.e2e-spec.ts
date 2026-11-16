@@ -78,6 +78,9 @@ describe('OrderController (e2e)', () => {
     rotateAccessToken: jest.fn(),
     // TASK-335: who the «відправлено» letter goes to.
     findRecipient: jest.fn(),
+    // TASK-2048: «Створити копію».
+    findCopySource: jest.fn(),
+    createManualCopy: jest.fn(),
   };
 
   // TASK-483: the public "check my order" form has its own narrow repository, so
@@ -147,6 +150,8 @@ describe('OrderController (e2e)', () => {
     dispatchDue: jest.fn().mockResolvedValue({ sent: 0, retried: 0, failed: 0 }),
     // TASK-2010: «Задайте пароль».
     enqueueAccountSetup: jest.fn(),
+    // TASK-2048: «Замовлення #старе замінено на #нове».
+    enqueueOrderReplaced: jest.fn(),
   };
 
   const prismaServiceMock = {
@@ -3973,6 +3978,170 @@ describe('OrderController (e2e)', () => {
         .expect(409);
 
       expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── TASK-2048: «Створити копію» ──────────────────────────────────────────────
+
+  describe('order copy (TASK-2048)', () => {
+    const SOURCE_ID = '550e8400-e29b-41d4-a716-446655440020';
+    const copyProductId = '550e8400-e29b-41d4-a716-446655440021';
+    const adminAuth = () => `Bearer ${generateAccessToken(admin.id, admin.role)}`;
+
+    const source = (status: OrderStatus = OrderStatus.PROCESSING) => ({
+      id: SOURCE_ID,
+      status,
+      restockedAt: null,
+      userId: null,
+      user: null,
+      guestEmail: 'guest@example.com',
+      guestPhone: '380501234567',
+      guestName: 'Олена Шевченко',
+      paymentMethod: 'ON_DELIVERY',
+      deliveryMethod: 'OTHER',
+      pickupPointId: null,
+      shippingAddress: { ...validAddress, deliveryMethod: 'OTHER', carrier: null },
+      shippingCost: { toString: () => '0' },
+      notes: null,
+      paidKop: 0,
+      refundedKop: 0,
+      items: [
+        {
+          productId: copyProductId,
+          quantity: 1,
+          product: {
+            id: copyProductId,
+            name: 'iPhone 15 Pro Case',
+            sku: null,
+            price: { toString: () => '549.00' },
+            stock: 0,
+            isActive: true,
+            deletedAt: null,
+            category: { isActive: true, ancestorsActive: true },
+          },
+        },
+      ],
+    });
+
+    describe('GET /api/admin/orders/:orderId/copy-draft', () => {
+      it('answers the prefill in the { data } envelope (200)', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(source());
+
+        const res = await request(app.getHttpServer())
+          .get(`/api/admin/orders/${SOURCE_ID}/copy-draft`)
+          .set('Authorization', adminAuth())
+          .expect(200);
+
+        expect(res.body.data).toMatchObject({
+          sourceOrderId: SOURCE_ID,
+          canCancelOriginal: true,
+          contact: { name: 'Олена Шевченко', phone: '380501234567' },
+          // The last unit: shelf 0 + the 1 the original's cancel gives back.
+          items: [{ productId: copyProductId, price: '549.00', quantity: 1, stock: 1 }],
+          dropped: [],
+        });
+      });
+
+      it('is a 404 for an unknown order', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(null);
+
+        await request(app.getHttpServer())
+          .get(`/api/admin/orders/${SOURCE_ID}/copy-draft`)
+          .set('Authorization', adminAuth())
+          .expect(404);
+      });
+
+      it('is a 403 for a customer', async () => {
+        await request(app.getHttpServer())
+          .get(`/api/admin/orders/${SOURCE_ID}/copy-draft`)
+          .set('Authorization', `Bearer ${generateAccessToken(userA.id, userA.role)}`)
+          .expect(403);
+
+        expect(orderRepositoryMock.findCopySource).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('POST /api/admin/orders with copyOfOrderId', () => {
+      const body = (extra: Record<string, unknown> = {}) => ({
+        contact: { name: 'Олена Шевченко', phone: '050 123 4567', email: 'guest@example.com' },
+        shippingAddress: validAddress,
+        items: [{ productId: copyProductId, quantity: 1 }],
+        copyOfOrderId: SOURCE_ID,
+        cancelOriginal: true,
+        ...extra,
+      });
+
+      beforeEach(() => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(source());
+        orderRepositoryMock.findOrderableProducts.mockResolvedValue([
+          {
+            id: copyProductId,
+            name: 'iPhone 15 Pro Case',
+            price: { toString: () => '549.00' },
+            stock: 0,
+            isActive: true,
+            category: { isActive: true, ancestorsActive: true },
+          },
+        ]);
+        orderRepositoryMock.createManualCopy.mockResolvedValue({
+          order: makeOrder({ id: 'copy-e2e-1', userId: null }),
+          offsetKop: 0,
+          originalCancelled: true,
+        });
+        orderRepositoryMock.findRecipient.mockResolvedValue({ email: 'guest@example.com' });
+      });
+
+      it('cancels the original and creates the copy in one call (201)', async () => {
+        const res = await request(app.getHttpServer())
+          .post('/api/admin/orders')
+          .set('Authorization', adminAuth())
+          .send(body())
+          .expect(201);
+
+        expect(res.body.data.id).toBe('copy-e2e-1');
+        expect(orderRepositoryMock.createManualCopy).toHaveBeenCalledWith(
+          expect.objectContaining({ items: [expect.objectContaining({ price: '549.00' })] }),
+          { sourceOrderId: SOURCE_ID, cancelOriginal: true },
+          admin.id,
+        );
+        expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+        expect(mailOutboxServiceMock.enqueueOrderReplaced).toHaveBeenCalledWith(
+          expect.objectContaining({ oldOrderId: SOURCE_ID, newOrderId: 'copy-e2e-1' }),
+        );
+      });
+
+      it('is a 409 when the original shipped in the meantime', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(source(OrderStatus.SHIPPED));
+
+        const res = await request(app.getHttpServer())
+          .post('/api/admin/orders')
+          .set('Authorization', adminAuth())
+          .send(body())
+          .expect(409);
+
+        expect(res.body.error).toBe('ORDER_COPY_ORIGINAL_NOT_CANCELLABLE');
+        expect(orderRepositoryMock.createManualCopy).not.toHaveBeenCalled();
+      });
+
+      it('is a 400 for «cancel the original» with no original', async () => {
+        await request(app.getHttpServer())
+          .post('/api/admin/orders')
+          .set('Authorization', adminAuth())
+          .send(body({ copyOfOrderId: undefined }))
+          .expect(400);
+
+        expect(orderRepositoryMock.findCopySource).not.toHaveBeenCalled();
+      });
+
+      it('is a 404 for an unknown original', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(null);
+
+        await request(app.getHttpServer())
+          .post('/api/admin/orders')
+          .set('Authorization', adminAuth())
+          .send(body())
+          .expect(404);
+      });
     });
   });
 });

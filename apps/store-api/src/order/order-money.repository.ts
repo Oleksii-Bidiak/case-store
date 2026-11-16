@@ -68,6 +68,8 @@ export interface MoneyEntry {
   reversalOfId: string | null;
   voidedAt: Date | null;
   voidReason: string | null;
+  /** «Залік» rows only (TASK-2048): the other order of the pair. */
+  counterpartOrderId: string | null;
   legacy: boolean;
   occurredAt: Date;
   createdAt: Date;
@@ -85,6 +87,8 @@ export interface NewMoneyEntry {
   /** Null for LiqPay/system writes. */
   actorId?: string | null;
   reason?: string | null;
+  /** «Залік» rows only (TASK-2048): the other order of the pair. */
+  counterpartOrderId?: string | null;
   /** When the money actually moved; defaults to now. */
   occurredAt?: Date;
 }
@@ -255,6 +259,7 @@ export class OrderMoneyRepository {
         providerState: input.providerState ?? null,
         actorId: input.actorId ?? null,
         reason: input.reason ?? null,
+        ...(input.counterpartOrderId ? { counterpartOrderId: input.counterpartOrderId } : {}),
         occurredAt: input.occurredAt ?? new Date(),
       },
     });
@@ -831,6 +836,7 @@ function toMoneyEntry(row: Prisma.OrderMoneyEntryGetPayload<object>): MoneyEntry
     reversalOfId: row.reversalOfId,
     voidedAt: row.voidedAt,
     voidReason: row.voidReason,
+    counterpartOrderId: row.counterpartOrderId ?? null,
     legacy: row.legacy,
     occurredAt: row.occurredAt,
     createdAt: row.createdAt,

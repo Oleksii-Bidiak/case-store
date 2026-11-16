@@ -14,7 +14,12 @@ import {
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma';
 import { OrderMoneyRepository } from './order-money.repository';
-import { deriveBalance, providerRefundAvailableKop, providerRefundMatches } from './order-money';
+import {
+  deriveBalance,
+  offsetAmountKop,
+  providerRefundAvailableKop,
+  providerRefundMatches,
+} from './order-money';
 import { normalizeUaPhone, phoneDigits } from '../common/validators';
 import {
   CacheService,
@@ -34,6 +39,7 @@ import type {
   PaymentWithOrderRow,
   PaymentApplyPlan,
   ManualOrderParams,
+  OrderCopySource,
   ProviderRefundRequest,
   ProviderRefundRequestInput,
   ShippingAddressData,
@@ -47,7 +53,11 @@ import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto'
 // than re-typed. A 48 copied into this module is a 72 the day someone changes
 // the other one, and the chip would then quietly disagree with the tile.
 import { PENDING_STALE_HOURS } from '../dashboard';
-import { orderPaymentInProgressError, staleOrderError } from './order.errors';
+import {
+  copyOriginalNotCancellableError,
+  orderPaymentInProgressError,
+  staleOrderError,
+} from './order.errors';
 import { centsToString, sumLineCents, toCents } from '../addon-service';
 import { kyivDayRange } from '../common/time';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
@@ -145,6 +155,12 @@ const ADMIN_ORDERS_INCLUDE = {
    * Admin include only. The label belongs to the admin list and order card.
    */
   returns: { select: { id: true } },
+  /** TASK-2048: «Замінено на #нове» / «Копії» on the card. */
+  copies: {
+    where: { deletedAt: null },
+    orderBy: { createdAt: 'asc' as const },
+    select: { id: true },
+  },
 } satisfies Prisma.OrderInclude;
 
 /**
@@ -618,6 +634,26 @@ export class OrderRepository {
    * @throws ConflictException when a line's stock is gone at commit time.
    */
   async createManual(params: ManualOrderParams, changedBy: string | null): Promise<OrderWithItems> {
+    const order = await this.prisma.$transaction((tx) =>
+      this.createManualTx(tx, params, changedBy),
+    );
+
+    await this.evictProductCaches(order.items);
+
+    return order;
+  }
+
+  /**
+   * The body of {@link createManual} inside a caller's transaction (TASK-2048:
+   * «Створити копію» runs it after cancelling the original, in the same one).
+   * `note` lands on the order's birth row.
+   */
+  private async createManualTx(
+    tx: Prisma.TransactionClient,
+    params: ManualOrderParams,
+    changedBy: string | null,
+    options: { copiedFromId?: string; note?: OrderHistoryNote } = {},
+  ): Promise<OrderWithItems> {
     const itemData = params.items.map((item) => ({
       productId: item.productId,
       quantity: item.quantity,
@@ -628,91 +664,189 @@ export class OrderRepository {
     const shipping = new Prisma.Decimal((params.shippingCost ?? 0).toString());
     const total = subtotal.plus(shipping);
 
-    const order = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.order.create({
-        data: {
-          userId: params.userId ?? null,
-          ...(params.guest
-            ? {
-                guestEmail: params.guest.email,
-                guestPhone: params.guest.phone,
-                guestName: params.guest.name,
-              }
-            : {}),
-          // TASK-484: the buyer's key to their own order, on a phone order too.
-          // `accessTokenIssuedAt` is written in the same breath and is not
-          // decoration: the link's TTL is counted from it, so an order whose
-          // token is re-issued months later hands out a link that is alive, not
-          // one that was dead before it was pasted into a chat (B-5 §4).
-          ...(params.accessTokenHash
-            ? {
-                accessTokenHash: params.accessTokenHash,
-                accessTokenIssuedAt: new Date(),
-              }
-            : {}),
-          status: OrderStatus.PENDING,
-          paymentStatus: PaymentStatus.PENDING,
-          ...(params.paymentMethod ? { paymentMethod: params.paymentMethod } : {}),
-          // The countdown after which an unpaid card order is auto-cancelled and
-          // its stock returned. Only ONLINE/INSTALLMENTS carry one — cash on
-          // delivery holds its reservation until an operator intervenes — so the
-          // service passes null for those and this column stays null, which is
-          // exactly what `findExpiredReservations` filters on.
-          ...(params.reservationExpiresAt !== undefined
-            ? { reservationExpiresAt: params.reservationExpiresAt }
-            : {}),
-          // TASK-643: the service classifies a phone order (NP ref → NOVA_POSHTA,
-          // else OTHER); absent → the column default.
-          ...(params.deliveryMethod ? { deliveryMethod: params.deliveryMethod } : {}),
-          // TASK-1973: the point a PICKUP phone order is collected from.
-          ...(params.pickupPointId ? { pickupPointId: params.pickupPointId } : {}),
-          subtotal,
-          discount: new Prisma.Decimal(0),
-          shippingCost: shipping,
-          tax: new Prisma.Decimal(0),
-          addonsTotal: new Prisma.Decimal(0),
-          total,
-          balanceKop: openingBalanceKop(total),
-          shippingAddress: params.shippingAddress as unknown as Prisma.InputJsonValue,
-          billingAddress: billingAddressColumn(params.billingAddress),
-          notes: params.notes ?? null,
-          internalNotes: params.internalNotes ?? null,
-          items: { create: itemData },
-        },
-        include: ORDERS_INCLUDE,
-      });
-
-      // The order's birth record. Unlike a self-service order this one HAS an
-      // acting user — the operator who took the call — and recording them is the
-      // whole point of an audit trail on manually-created orders.
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: created.id,
-          changeType: OrderHistoryChangeType.STATUS,
-          fromStatus: null,
-          toStatus: OrderStatus.PENDING,
-          changedBy,
-        },
-      });
-
-      for (const item of params.items) {
-        const { count } = await tx.product.updateMany({
-          where: { id: item.productId, stock: { gte: item.quantity } },
-          data: { stock: { decrement: item.quantity } },
-        });
-        if (count === 0) {
-          throw new ConflictException(
-            `Insufficient stock for "${item.name}" — please review the order`,
-          );
-        }
-      }
-
-      return created;
+    const created = await tx.order.create({
+      data: {
+        userId: params.userId ?? null,
+        // TASK-2048: the order this one was copied from by «Створити копію».
+        ...(options.copiedFromId ? { copiedFromId: options.copiedFromId } : {}),
+        ...(params.guest
+          ? {
+              guestEmail: params.guest.email,
+              guestPhone: params.guest.phone,
+              guestName: params.guest.name,
+            }
+          : {}),
+        // TASK-484: the buyer's key to their own order, on a phone order too.
+        // `accessTokenIssuedAt` is written in the same breath and is not
+        // decoration: the link's TTL is counted from it, so an order whose
+        // token is re-issued months later hands out a link that is alive, not
+        // one that was dead before it was pasted into a chat (B-5 §4).
+        ...(params.accessTokenHash
+          ? {
+              accessTokenHash: params.accessTokenHash,
+              accessTokenIssuedAt: new Date(),
+            }
+          : {}),
+        status: OrderStatus.PENDING,
+        paymentStatus: PaymentStatus.PENDING,
+        ...(params.paymentMethod ? { paymentMethod: params.paymentMethod } : {}),
+        // The countdown after which an unpaid card order is auto-cancelled and
+        // its stock returned. Only ONLINE/INSTALLMENTS carry one — cash on
+        // delivery holds its reservation until an operator intervenes — so the
+        // service passes null for those and this column stays null, which is
+        // exactly what `findExpiredReservations` filters on.
+        ...(params.reservationExpiresAt !== undefined
+          ? { reservationExpiresAt: params.reservationExpiresAt }
+          : {}),
+        // TASK-643: the service classifies a phone order (NP ref → NOVA_POSHTA,
+        // else OTHER); absent → the column default.
+        ...(params.deliveryMethod ? { deliveryMethod: params.deliveryMethod } : {}),
+        // TASK-1973: the point a PICKUP phone order is collected from.
+        ...(params.pickupPointId ? { pickupPointId: params.pickupPointId } : {}),
+        subtotal,
+        discount: new Prisma.Decimal(0),
+        shippingCost: shipping,
+        tax: new Prisma.Decimal(0),
+        addonsTotal: new Prisma.Decimal(0),
+        total,
+        balanceKop: openingBalanceKop(total),
+        shippingAddress: params.shippingAddress as unknown as Prisma.InputJsonValue,
+        billingAddress: billingAddressColumn(params.billingAddress),
+        notes: params.notes ?? null,
+        internalNotes: params.internalNotes ?? null,
+        items: { create: itemData },
+      },
+      include: ORDERS_INCLUDE,
     });
 
-    await this.evictProductCaches((order as OrderWithItems).items);
+    // The order's birth record. Unlike a self-service order this one HAS an
+    // acting user — the operator who took the call — and recording them is the
+    // whole point of an audit trail on manually-created orders.
+    await tx.orderStatusHistory.create({
+      data: {
+        orderId: created.id,
+        changeType: OrderHistoryChangeType.STATUS,
+        fromStatus: null,
+        toStatus: OrderStatus.PENDING,
+        changedBy,
+        ...(options.note ? { note: options.note } : {}),
+      },
+    });
 
-    return order as OrderWithItems;
+    for (const item of params.items) {
+      const { count } = await tx.product.updateMany({
+        where: { id: item.productId, stock: { gte: item.quantity } },
+        data: { stock: { decrement: item.quantity } },
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          `Insufficient stock for "${item.name}" — please review the order`,
+        );
+      }
+    }
+
+    return created as OrderWithItems;
+  }
+
+  /**
+   * «Створити копію» (TASK-2048): optionally cancel the original, create the
+   * copy, and move the money already paid — ONE transaction, so any failure
+   * leaves the original exactly as it was.
+   *
+   * Order of operations, and why:
+   * 1. Lock the original (orders before products — the money lock order). Under
+   *    the lock its status is authoritative: «Скасувати» on an original that
+   *    shipped or was cancelled meanwhile is a 409 before anything is written.
+   * 2. Cancel it and RELEASE its stock — before the copy reserves, so the last
+   *    unit on the shelf can move from the original to its copy.
+   * 3. Create the copy (`copiedFromId`) and reserve its stock with the same
+   *    conditional decrement as every order; a short line throws, rolling the
+   *    cancel back with it.
+   * 4. When the original is cancelled (now or before), «Залік»: what it still
+   *    holds, capped by the copy's total ({@link offsetAmountKop}), goes OUT of
+   *    it and IN to the copy; both are recomputed. The rest stays on the
+   *    original as «Винні покупцю».
+   *
+   * @throws ConflictException ORDER_COPY_ORIGINAL_NOT_CANCELLABLE, or a stock
+   *   conflict of either half.
+   */
+  async createManualCopy(
+    params: ManualOrderParams,
+    copy: { sourceOrderId: string; cancelOriginal: boolean },
+    changedBy: string | null,
+  ): Promise<{ order: OrderWithItems; offsetKop: number; originalCancelled: boolean }> {
+    const { sourceOrderId, cancelOriginal } = copy;
+    const result = await this.prisma.$transaction(async (tx) => {
+      const source = await this.money.lockOrder(tx, sourceOrderId);
+      if (cancelOriginal && !PRE_SHIPMENT_STATUSES.has(source.status)) {
+        throw copyOriginalNotCancellableError(source.status);
+      }
+
+      const original = cancelOriginal
+        ? await this.cancelAndRestockTx(tx, sourceOrderId, changedBy, {
+            note: OrderHistoryNote.COPIED_TO_ORDER,
+          })
+        : null;
+      if (!cancelOriginal) {
+        // No status moved, but the original's timeline still says a copy was made.
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: sourceOrderId,
+            changeType: OrderHistoryChangeType.STATUS,
+            fromStatus: source.status,
+            toStatus: source.status,
+            changedBy,
+            note: OrderHistoryNote.COPIED_TO_ORDER,
+          },
+        });
+      }
+
+      const created = await this.createManualTx(tx, params, changedBy, {
+        copiedFromId: sourceOrderId,
+        note: OrderHistoryNote.COPY_OF_ORDER,
+      });
+
+      const originalCancelled = cancelOriginal || source.status === OrderStatus.CANCELLED;
+      const offsetKop = originalCancelled
+        ? offsetAmountKop({
+            ...(await this.money.totalsFromLedger(tx, sourceOrderId)),
+            copyTotalKop: toCents(created.total),
+          })
+        : 0;
+      if (offsetKop > 0) {
+        await this.money.insertEntry(tx, {
+          orderId: sourceOrderId,
+          kind: MoneyEntryKind.OFFSET_TO_ORDER,
+          amountKop: offsetKop,
+          counterpartOrderId: created.id,
+          actorId: changedBy,
+        });
+        await this.money.insertEntry(tx, {
+          orderId: created.id,
+          kind: MoneyEntryKind.OFFSET_FROM_ORDER,
+          amountKop: offsetKop,
+          counterpartOrderId: sourceOrderId,
+          actorId: changedBy,
+        });
+      }
+      await this.money.recompute(tx, sourceOrderId, changedBy);
+      await this.money.recompute(tx, created.id, changedBy);
+
+      const order = (await tx.order.findUniqueOrThrow({
+        where: { id: created.id },
+        include: ORDERS_INCLUDE,
+      })) as OrderWithItems;
+      return { order, offsetKop, originalCancelled, released: original?.items ?? [] };
+    });
+
+    // Both halves moved stock: the released lines and the reserved ones.
+    await this.evictProductCaches([...result.released, ...result.order.items]);
+
+    return {
+      order: result.order,
+      offsetKop: result.offsetKop,
+      originalCancelled: result.originalCancelled,
+    };
   }
 
   /**
@@ -1157,98 +1291,113 @@ export class OrderRepository {
     changedBy: string | null,
     options: { expectedUpdatedAt?: Date } = {},
   ): Promise<OrderWithItems> {
-    const expectedUpdatedAt = options.expectedUpdatedAt;
-    const updated = (await this.prisma.$transaction(async (tx) => {
-      // R2 A4: lock the order row first (orders → products, the money lock order).
-      await this.money.lockOrder(tx, orderId);
-      const order = await tx.order.findUniqueOrThrow({
-        where: { id: orderId },
-        include: ORDERS_INCLUDE,
-      });
-
-      // The arbiter. Runs BEFORE any stock write, so a losing concurrent cancel
-      // cannot credit inventory on its way out. TASK-228: restockedAt also tells a
-      // later revive that this order's stock was given back and must be re-reserved.
-      // TASK-332: the caller's version joins the condition, so a lost update loses
-      // here too rather than silently winning.
-      const { count } = await tx.order.updateMany({
-        where: {
-          id: orderId,
-          restockedAt: null,
-          ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
-        },
-        data: { status: OrderStatus.CANCELLED, restockedAt: new Date() },
-      });
-
-      // TASK-627: a LIVE order whose hold ORDER_RESERVATION_EXPIRY=release already
-      // gave back. Its stock is on the shelf, so this cancel credits nothing — but
-      // it is still a cancel (the customer's own used to answer 409 «already
-      // returned»), and the promo slot still goes back. Same row-lock arbiter
-      // shape: `restockedAt IS NOT NULL` on a pre-shipment status, so a second
-      // cancel, or a payment that re-took the stock first, matches nothing.
-      const releasedHold =
-        count === 0
-          ? (
-              await tx.order.updateMany({
-                where: {
-                  id: orderId,
-                  restockedAt: { not: null },
-                  status: { in: [...PRE_SHIPMENT_STATUSES] },
-                  ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
-                },
-                data: { status: OrderStatus.CANCELLED },
-              })
-            ).count > 0
-          : false;
-
-      if (count === 0 && !releasedHold) {
-        // Two different failures share one zero-row outcome, and the operator
-        // needs to be told which: "someone already cancelled this" and "someone
-        // edited this while you were deciding" call for different next moves. The
-        // freshly-read row above is inside this transaction, so it is authoritative.
-        if (expectedUpdatedAt && order.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
-          throw staleOrderError();
-        }
-        throw new ConflictException('This order’s stock has already been returned to inventory');
-      }
-
-      if (!releasedHold) {
-        for (const item of order.items) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: { increment: item.quantity } },
-          });
-        }
-      }
-
-      // TASK-771: the promo slot goes back with the stock, behind the same arbiter.
-      await this.releaseRedemption(tx, orderId);
-
-      // TASK-251: audit row — the pre-cancel status (read via the existing
-      // findUniqueOrThrow above) is the fromStatus, so no extra read is needed.
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId,
-          changeType: OrderHistoryChangeType.STATUS,
-          fromStatus: order.status,
-          toStatus: OrderStatus.CANCELLED,
-          changedBy,
-        },
-      });
-
-      // Nothing is due on a cancelled order: money kept on it is owed back.
-      await this.money.recompute(tx, orderId, changedBy);
-
-      return tx.order.findUniqueOrThrow({
-        where: { id: orderId },
-        include: ORDERS_INCLUDE,
-      });
-    })) as OrderWithItems;
+    const updated = await this.prisma.$transaction((tx) =>
+      this.cancelAndRestockTx(tx, orderId, changedBy, options),
+    );
 
     // Restock changed position stock — evict the same caches as createFromCart.
     await this.evictProductCaches(updated.items);
 
     return updated;
+  }
+
+  /**
+   * The body of {@link cancelAndRestock} inside a caller's transaction
+   * (TASK-2048: «Створити копію» cancels the original before creating the copy,
+   * in one transaction). `note` lands on the cancel's history row.
+   */
+  private async cancelAndRestockTx(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    changedBy: string | null,
+    options: { expectedUpdatedAt?: Date; note?: OrderHistoryNote } = {},
+  ): Promise<OrderWithItems> {
+    const expectedUpdatedAt = options.expectedUpdatedAt;
+    // R2 A4: lock the order row first (orders → products, the money lock order).
+    await this.money.lockOrder(tx, orderId);
+    const order = await tx.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: ORDERS_INCLUDE,
+    });
+
+    // The arbiter. Runs BEFORE any stock write, so a losing concurrent cancel
+    // cannot credit inventory on its way out. TASK-228: restockedAt also tells a
+    // later revive that this order's stock was given back and must be re-reserved.
+    // TASK-332: the caller's version joins the condition, so a lost update loses
+    // here too rather than silently winning.
+    const { count } = await tx.order.updateMany({
+      where: {
+        id: orderId,
+        restockedAt: null,
+        ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
+      },
+      data: { status: OrderStatus.CANCELLED, restockedAt: new Date() },
+    });
+
+    // TASK-627: a LIVE order whose hold ORDER_RESERVATION_EXPIRY=release already
+    // gave back. Its stock is on the shelf, so this cancel credits nothing — but
+    // it is still a cancel (the customer's own used to answer 409 «already
+    // returned»), and the promo slot still goes back. Same row-lock arbiter
+    // shape: `restockedAt IS NOT NULL` on a pre-shipment status, so a second
+    // cancel, or a payment that re-took the stock first, matches nothing.
+    const releasedHold =
+      count === 0
+        ? (
+            await tx.order.updateMany({
+              where: {
+                id: orderId,
+                restockedAt: { not: null },
+                status: { in: [...PRE_SHIPMENT_STATUSES] },
+                ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
+              },
+              data: { status: OrderStatus.CANCELLED },
+            })
+          ).count > 0
+        : false;
+
+    if (count === 0 && !releasedHold) {
+      // Two different failures share one zero-row outcome, and the operator
+      // needs to be told which: "someone already cancelled this" and "someone
+      // edited this while you were deciding" call for different next moves. The
+      // freshly-read row above is inside this transaction, so it is authoritative.
+      if (expectedUpdatedAt && order.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+        throw staleOrderError();
+      }
+      throw new ConflictException('This order’s stock has already been returned to inventory');
+    }
+
+    if (!releasedHold) {
+      for (const item of order.items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stock: { increment: item.quantity } },
+        });
+      }
+    }
+
+    // TASK-771: the promo slot goes back with the stock, behind the same arbiter.
+    await this.releaseRedemption(tx, orderId);
+
+    // TASK-251: audit row — the pre-cancel status (read via the existing
+    // findUniqueOrThrow above) is the fromStatus, so no extra read is needed.
+    await tx.orderStatusHistory.create({
+      data: {
+        orderId,
+        changeType: OrderHistoryChangeType.STATUS,
+        fromStatus: order.status,
+        toStatus: OrderStatus.CANCELLED,
+        changedBy,
+        ...(options.note ? { note: options.note } : {}),
+      },
+    });
+
+    // Nothing is due on a cancelled order: money kept on it is owed back.
+    await this.money.recompute(tx, orderId, changedBy);
+
+    return (await tx.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: ORDERS_INCLUDE,
+    })) as OrderWithItems;
   }
 
   /**
@@ -1582,6 +1731,56 @@ export class OrderRepository {
         include: ADMIN_ORDERS_INCLUDE,
       });
     }) as Promise<OrderWithItems>;
+  }
+
+  /**
+   * The original of «Створити копію» (TASK-2048): buyer, delivery, money held,
+   * and every line with its product as the catalogue has it NOW — deleted ones
+   * included, so the copy form can say what was dropped and why.
+   */
+  async findCopySource(orderId: string): Promise<OrderCopySource | null> {
+    return this.prisma.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      select: {
+        id: true,
+        status: true,
+        restockedAt: true,
+        userId: true,
+        user: {
+          select: { id: true, email: true, firstName: true, lastName: true, phone: true },
+        },
+        guestEmail: true,
+        guestPhone: true,
+        guestName: true,
+        paymentMethod: true,
+        deliveryMethod: true,
+        pickupPointId: true,
+        shippingAddress: true,
+        shippingCost: true,
+        notes: true,
+        paidKop: true,
+        refundedKop: true,
+        items: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            productId: true,
+            quantity: true,
+            product: {
+              select: {
+                id: true,
+                name: true,
+                sku: true,
+                price: true,
+                stock: true,
+                isActive: true,
+                deletedAt: true,
+                category: { select: { isActive: true, ancestorsActive: true } },
+              },
+            },
+          },
+        },
+      },
+    });
   }
 
   /**

@@ -32,6 +32,7 @@ import {
   OrderItemEntity,
   OrderCustomerData,
   OrderStatusHistoryEntity,
+  OrderCopyDraftEntity,
 } from './entities';
 import {
   AdminOrderListQueryDto,
@@ -139,6 +140,12 @@ class AdminOrderAccessLink {
 class AdminOrderAccessLinkResponse {
   @ApiProperty({ type: AdminOrderAccessLink })
   data!: AdminOrderAccessLink;
+}
+
+/** Envelope for the «Створити копію» prefill (TASK-2048). */
+class AdminOrderCopyDraftResponse {
+  @ApiProperty({ type: OrderCopyDraftEntity })
+  data!: OrderCopyDraftEntity;
 }
 
 /**
@@ -468,6 +475,33 @@ export class AdminOrderController {
     const order = await this.orderService.adminGetOrder(orderId);
 
     return { data: order };
+  }
+
+  /**
+   * GET /api/admin/orders/:orderId/copy-draft
+   *
+   * «Створити копію» (TASK-2048): the prefill of `/orders/new?copyOf=<id>`.
+   * `orders:write`, not the class-level read — it exists only to create an
+   * order, and a role that cannot create one has no use for it.
+   */
+  @Get(':orderId/copy-draft')
+  @RequirePermission('orders:write')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Prefill for «Створити копію» (admin)',
+    operationId: 'adminOrderControllerGetCopyDraft',
+  })
+  @ApiParam({ name: 'orderId', description: 'Order UUID of the original' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Customer, delivery and lines at today’s price; `dropped` lists lines not copied whole',
+    type: AdminOrderCopyDraftResponse,
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — orders:write required' })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  async getCopyDraft(@Param('orderId') orderId: string): Promise<AdminOrderCopyDraftResponse> {
+    return { data: await this.orderService.adminGetCopyDraft(orderId) };
   }
 
   /**

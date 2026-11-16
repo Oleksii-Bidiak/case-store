@@ -35,13 +35,15 @@ export const IN_KINDS: readonly MoneyEntryKind[] = Object.freeze([
   MoneyEntryKind.PAID_AT_POINT,
   MoneyEntryKind.PAID_TO_COURIER,
   MoneyEntryKind.BANK_TRANSFER,
+  MoneyEntryKind.OFFSET_FROM_ORDER,
 ]);
 
-/** Kinds that send money back to the customer. */
+/** Kinds that send money back to the customer (or on to a copy, OFFSET_TO_ORDER). */
 export const OUT_KINDS: readonly MoneyEntryKind[] = Object.freeze([
   MoneyEntryKind.LIQPAY_REFUND,
   MoneyEntryKind.CASH_REFUND,
   MoneyEntryKind.TRANSFER_REFUND,
+  MoneyEntryKind.OFFSET_TO_ORDER,
 ]);
 
 /** Entries only the LiqPay path writes and only it may change (never reversed by hand). */
@@ -49,6 +51,16 @@ const PROVIDER_KINDS: readonly MoneyEntryKind[] = [
   MoneyEntryKind.LIQPAY_PAYMENT,
   MoneyEntryKind.LIQPAY_REFUND,
 ];
+
+/**
+ * «Залік» (TASK-2048): the pair «Створити копію» writes — OUT of the original,
+ * IN to the copy. Never recorded by hand, and never reversed one row at a time:
+ * undoing one half would leave the other order holding money nobody paid it.
+ */
+export const OFFSET_KINDS: readonly MoneyEntryKind[] = Object.freeze([
+  MoneyEntryKind.OFFSET_TO_ORDER,
+  MoneyEntryKind.OFFSET_FROM_ORDER,
+]);
 
 /** Which way a kind moves money. */
 export function directionOf(kind: MoneyEntryKind): MoneyDirection {
@@ -375,6 +387,23 @@ export function ledgerTotals(entries: ReadonlyArray<LedgerRow>): {
   return { paidKop, refundedKop };
 }
 
+// ── «Залік» to a copy (TASK-2048) ───────────────────────────────────────────
+
+/**
+ * How much of the original's money moves to its copy: what it still holds
+ * (`paid − refunded`), but never more than the copy costs — the rest stays on
+ * the cancelled original as «Винні покупцю». Never negative.
+ */
+export function offsetAmountKop(input: {
+  paidKop: number;
+  refundedKop: number;
+  copyTotalKop: number;
+}): number {
+  const { paidKop, refundedKop, copyTotalKop } = input;
+  assertKopecks(paidKop, refundedKop, copyTotalKop);
+  return Math.max(0, Math.min(paidKop - refundedKop, copyTotalKop));
+}
+
 // ── LiqPay refunds ──────────────────────────────────────────────────────────
 
 export interface ProviderRefundCeilingInput {
@@ -457,7 +486,7 @@ export interface ReversibleEntry {
 }
 
 export type ReverseRefusal =
-  'REVERSAL_OF_REVERSAL' | 'PROVIDER_ENTRY' | 'VOIDED' | 'ALREADY_REVERSED';
+  'REVERSAL_OF_REVERSAL' | 'PROVIDER_ENTRY' | 'OFFSET_ENTRY' | 'VOIDED' | 'ALREADY_REVERSED';
 
 /** Whether an operator may reverse (сторнувати) this entry. */
 export function canReverse(
@@ -468,6 +497,9 @@ export function canReverse(
   }
   if (PROVIDER_KINDS.includes(entry.kind)) {
     return { ok: false, reason: 'PROVIDER_ENTRY' };
+  }
+  if (OFFSET_KINDS.includes(entry.kind)) {
+    return { ok: false, reason: 'OFFSET_ENTRY' };
   }
   if (entry.voidedAt !== null) {
     return { ok: false, reason: 'VOIDED' };

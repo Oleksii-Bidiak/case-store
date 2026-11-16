@@ -443,6 +443,24 @@ export class OrderEntity {
   })
   internalNotes?: string | null;
 
+  @ApiProperty({
+    description:
+      'TASK-2048 «Створити копію»: the order this one is a copy of («Копія #старе»), or null',
+    type: String,
+    nullable: true,
+    format: 'uuid',
+  })
+  copiedFromId!: string | null;
+
+  @ApiProperty({
+    description:
+      'TASK-2048: the copies made of this order, oldest first («Замінено на #нове» / «Копії»). ' +
+      'Admin reads only — absent elsewhere.',
+    type: [String],
+    required: false,
+  })
+  copyIds?: string[];
+
   /**
    * Create an OrderEntity from a repository order. Converts all Decimal money
    * fields to strings and maps each line into an {@link OrderItemEntity}.
@@ -550,6 +568,11 @@ export class OrderEntity {
       entity.unavailableItemIds = unavailableItemIds;
     }
     entity.restockedAt = order.restockedAt;
+    // TASK-2048: the copy links. `copies` only on reads that joined them.
+    entity.copiedFromId = order.copiedFromId ?? null;
+    if (order.copies) {
+      entity.copyIds = order.copies.map((copy) => copy.id);
+    }
     entity.trackingNumber = order.trackingNumber ?? null;
     // TASK-336: opt-in, never automatic — see the docblock above.
     if (options.includeInternal) {

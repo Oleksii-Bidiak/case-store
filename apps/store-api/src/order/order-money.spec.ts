@@ -16,6 +16,7 @@ import {
   derivePaymentStatus,
   directionOf,
   ledgerTotals,
+  offsetAmountKop,
   providerRefundAvailableKop,
   reversalDraft,
   unitsCreditKop,
@@ -379,6 +380,59 @@ describe('order-money', () => {
         kind: MoneyEntryKind.COD_NOVA_POSHTA,
         amountKop: 12_345,
         reversalOfId: 'in-1',
+      });
+    });
+  });
+
+  // TASK-2048: «Створити копію» moves what the customer already paid to the copy
+  // as a pair of «Залік» rows — OUT on the original, IN on the copy.
+  describe('offset kinds (TASK-2048)', () => {
+    it('the original gives the money (OUT), the copy receives it (IN)', () => {
+      expect(directionOf(MoneyEntryKind.OFFSET_TO_ORDER)).toBe(MoneyDirection.OUT);
+      expect(directionOf(MoneyEntryKind.OFFSET_FROM_ORDER)).toBe(MoneyDirection.IN);
+    });
+
+    it('an operator is never offered an offset as a receipt kind', () => {
+      for (const method of Object.values(PaymentMethod)) {
+        for (const delivery of Object.values(DeliveryMethod)) {
+          expect(allowedInKinds(method, delivery)).not.toContain(MoneyEntryKind.OFFSET_FROM_ORDER);
+        }
+      }
+    });
+
+    it.each([MoneyEntryKind.OFFSET_TO_ORDER, MoneyEntryKind.OFFSET_FROM_ORDER])(
+      'an offset row (%s) is never reversed on its own — its twin is on the other order',
+      (kind) => {
+        expect(
+          canReverse({
+            id: 'off-1',
+            direction: directionOf(kind),
+            kind,
+            amountKop: 10_000,
+            reversalOfId: null,
+            voidedAt: null,
+            reversed: false,
+          }),
+        ).toEqual({ ok: false, reason: 'OFFSET_ENTRY' });
+      },
+    );
+
+    describe('offsetAmountKop', () => {
+      it.each<[string, number, number, number, number]>([
+        ['all of it when the copy costs more', 50_000, 0, 80_000, 50_000],
+        ['the copy total when it costs less — the rest stays owed back', 80_000, 0, 50_000, 50_000],
+        ['net of what already went back', 80_000, 30_000, 100_000, 50_000],
+        ['nothing when nothing is held', 40_000, 40_000, 100_000, 0],
+        ['nothing when nothing was paid', 0, 0, 100_000, 0],
+        ['nothing for a free copy', 40_000, 0, 0, 0],
+      ])('%s', (_label, paidKop, refundedKop, copyTotalKop, expected) => {
+        expect(offsetAmountKop({ paidKop, refundedKop, copyTotalKop })).toBe(expected);
+      });
+
+      it('refuses anything but integer kopecks', () => {
+        expect(() => offsetAmountKop({ paidKop: 1.5, refundedKop: 0, copyTotalKop: 10 })).toThrow(
+          RangeError,
+        );
       });
     });
   });

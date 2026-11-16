@@ -81,6 +81,12 @@ export const OrderErrorCode = {
   MONEY_RETURN_NOT_RECEIVED: 'ORDER_MONEY_RETURN_NOT_RECEIVED',
   /** Only a live REQUESTED LiqPay refund can be voided (R2 A3, TASK-2337). */
   MONEY_VOID_REFUSED: 'ORDER_MONEY_VOID_REFUSED',
+  /**
+   * «Створити копію» with «Скасувати #старе» (TASK-2048), but the original left
+   * the pre-shipment statuses after the operator opened the copy form (shipped
+   * or cancelled in another tab): nothing is cancelled and no copy is made.
+   */
+  COPY_ORIGINAL_NOT_CANCELLABLE: 'ORDER_COPY_ORIGINAL_NOT_CANCELLABLE',
 } as const;
 
 export type OrderErrorCode = (typeof OrderErrorCode)[keyof typeof OrderErrorCode];
@@ -159,6 +165,14 @@ export function orderPaymentInProgressError(): ConflictException {
     error: OrderErrorCode.PAYMENT_IN_PROGRESS,
     message:
       'The buyer has a live payment link for the current total — the delivery price cannot change until it is paid or expires',
+  });
+}
+
+/** 409 for a copy that would cancel an original no longer pre-shipment (TASK-2048). */
+export function copyOriginalNotCancellableError(status: OrderStatus): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.COPY_ORIGINAL_NOT_CANCELLABLE,
+    message: `The original order is ${status} now and can no longer be cancelled — reload and decide again`,
   });
 }
 
