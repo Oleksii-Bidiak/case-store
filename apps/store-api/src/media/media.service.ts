@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { MediaAsset } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 import { MEDIA_SUBDIR } from '../storage';
-import { ImageUploadService } from '../uploads';
+import { ImageUploadService, type StoredImage } from '../uploads';
 import { MediaRepository, UpdateMediaAssetInput } from './media.repository';
 import { MediaUsageRepository } from './media-usage.repository';
 import { normaliseOriginalFilename } from './media-filename';
@@ -20,6 +20,15 @@ import {
 export interface MediaListMeta extends PaginationMeta {
   counts: MediaListCounts;
 }
+
+/**
+ * What {@link MediaService.recordStored} needs to know about a file that is
+ * already on disk. {@link StoredImage} satisfies it as-is.
+ */
+export type StoredFileFacts = Pick<
+  StoredImage,
+  'url' | 'blurDataUrl' | 'width' | 'height' | 'bytes' | 'mime' | 'sourceMime'
+>;
 
 /** How many usages the delete refusal spells out before it says "and N more". */
 const MAX_USAGES_IN_REFUSAL = 8;
@@ -107,6 +116,25 @@ export class MediaService {
   ): Promise<MediaAssetDetailEntity> {
     const stored = await this.uploads.store(file, MEDIA_SUBDIR);
 
+    return this.recordStored(stored, file?.originalname, uploadedById, metadata);
+  }
+
+  /**
+   * Record a file that another pipeline has ALREADY written as a library asset
+   * (TASK-2041).
+   *
+   * The store logo keeps its own stricter pipeline — SVG sanitising, a 1 MB cap,
+   * the `branding/` subdir — that the shared image pipeline does not have, so it
+   * cannot go through {@link upload}. It still has to land in the library, or the
+   * operator can neither find it, reuse it nor ever clean it up. This is the
+   * row-making half of `upload`, which `upload` itself also goes through.
+   */
+  async recordStored(
+    stored: StoredFileFacts,
+    originalName: string | undefined,
+    uploadedById: string | null,
+    metadata: MediaMetadataDto = {},
+  ): Promise<MediaAssetDetailEntity> {
     const asset = await this.repository.create({
       url: stored.url,
       blurDataUrl: stored.blurDataUrl,
@@ -118,7 +146,7 @@ export class MediaService {
       tags: metadata.tags ?? [],
       uploadedById,
       // A label for the card and for search (TASK-1731); see media-filename.ts.
-      originalFilename: normaliseOriginalFilename(file?.originalname),
+      originalFilename: normaliseOriginalFilename(originalName),
       originalMime: stored.sourceMime,
     });
 
@@ -130,6 +158,16 @@ export class MediaService {
     // A just-created asset is used nowhere yet, but the detail shape is what the
     // picker consumes, so it is built the same way here as on every other read.
     return MediaAssetDetailEntity.fromPrismaWithUsage(asset, []);
+  }
+
+  /**
+   * Whether a library row holds this exact URL (TASK-2041). A caller that used
+   * to delete the file behind a URL it is letting go of asks this first: a
+   * library asset is removed only through {@link delete}, whose usage gate is the
+   * one place that knows nothing else still shows it.
+   */
+  async isLibraryAsset(url: string): Promise<boolean> {
+    return (await this.repository.findByUrl(url)) !== null;
   }
 
   /** Edit alt text and tags. Nothing else about an asset is editable. */

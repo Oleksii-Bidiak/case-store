@@ -3642,7 +3642,7 @@ export const dict = {
     delete: "Видалити логотип",
     deleteTitle: "Видалити логотип?",
     deleteDescription:
-      "Логотип буде видалено назавжди, а сайт і адмін-панель повернуться до текстової назви магазину. Дію не можна скасувати.",
+      "Сайт і адмін-панель повернуться до текстової назви магазину. Сам файл лишиться в медіатеці — його можна обрати знову.",
     toastUploaded: "Логотип оновлено",
     toastDeleted: "Логотип видалено",
     toastDeleteFailed: "Не вдалося видалити логотип",
@@ -3655,6 +3655,12 @@ export const dict = {
     errorRejected:
       "Не вдалося обробити файл. Перевірте, що це справжнє зображення, і спробуйте інший файл.",
     errorGeneric: "Не вдалося завантажити логотип. Спробуйте ще раз.",
+    // TASK-2041 — choosing the logo from the media library.
+    pickerAria: "Обрати логотип з медіатеки",
+    errorLibraryRejected:
+      "Це зображення не підходить для логотипа. Оберіть SVG, PNG, WebP або JPG.",
+    errorPickFailed:
+      "Не вдалося встановити логотип з медіатеки. Спробуйте ще раз.",
   },
 
   // --- FAQ (TASK-242) ---------------------------------------------------------
@@ -6189,6 +6195,8 @@ export const dict = {
       restore: "відновлено",
       // TASK-668: DELETE /admin/preview-tokens — «Відкликати всі прев'ю».
       revokeAll: "відкликано всі прев'ю",
+      // TASK-2041: PUT /admin/seo-settings/logo — the logo chosen from the library.
+      setLogoFromLibrary: "обрано логотип з медіатеки",
     },
 
     /** How the two halves are joined: «Замовлення — змінено статус». */

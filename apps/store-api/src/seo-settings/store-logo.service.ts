@@ -11,6 +11,8 @@ import { SeoSettingsEntity } from './entities';
 import {
   ALLOWED_LOGO_MIME,
   ALLOWED_LOGO_RASTER_FORMATS,
+  LOGO_LIBRARY_MIME,
+  LOGO_RASTER_SOURCE_MIME,
   MAX_LOGO_BYTES,
   SVG_MIME,
 } from './store-logo.constants';
@@ -21,9 +23,21 @@ import {
   sanitizeSvg,
   STORAGE_SERVICE,
 } from '../storage';
+import { MediaService, type StoredFileFacts } from '../media';
 
 /** The URL path segment under which uploads are served (ServeStaticModule root). */
 const PUBLIC_UPLOADS_PREFIX = '/uploads/';
+
+/** A neutralised logo, ready to write, plus the facts the library row records. */
+interface PreparedLogo {
+  buffer: Buffer;
+  ext: string;
+  mime: string;
+  sourceMime: string;
+  blurDataUrl: string | null;
+  width: number;
+  height: number;
+}
 
 /**
  * Store-logo upload/removal (TASK-299). The logo lives on the SeoSettings
@@ -33,6 +47,14 @@ const PUBLIC_UPLOADS_PREFIX = '/uploads/';
  * Every accepted upload is neutralised before it reaches the disk: SVG through
  * {@link sanitizeSvg}, raster through a `sharp` re-encode. Nothing a client sends
  * is ever written verbatim.
+ *
+ * THE LOGO IS A LIBRARY ASSET (TASK-2041). An upload keeps this stricter pipeline
+ * (sanitised SVG, 1 MB, `branding/`) but is also recorded as a `MediaAsset`, and
+ * the logo can be chosen from the library instead of uploaded. That changes what
+ * "replace" and "remove" may do to the previous file: a library asset is never
+ * deleted here — the library's own delete, gated on usage, is the only way it
+ * goes. Only a legacy `branding/` file that predates this (no library row) is
+ * still removed when it stops being the logo, exactly as before.
  */
 @Injectable()
 export class StoreLogoService {
@@ -43,6 +65,7 @@ export class StoreLogoService {
     @Inject(STORAGE_SERVICE) private readonly storage: IStorageService,
     private readonly imageProcessor: ImageProcessor,
     private readonly config: ConfigService,
+    private readonly media: MediaService,
   ) {
     this.publicBaseUrl = (
       this.config.get<string>('PUBLIC_BASE_URL') ?? 'http://localhost:3001'
@@ -50,35 +73,85 @@ export class StoreLogoService {
   }
 
   /**
-   * Validate, neutralise, store and persist a new logo, replacing any previous
-   * one. The old file is removed only after the new URL is committed, so a failed
-   * write never leaves the settings pointing at a deleted file.
+   * Validate, neutralise, store, record in the library and persist a new logo.
+   *
+   * The asset row is written BEFORE the settings point at the file, and a failed
+   * row removes the file again: the logo is then exactly what it was, and no
+   * unlisted file is left behind. The previous logo is let go of only after the
+   * new URL is committed, so a failed write never leaves the settings pointing at
+   * a deleted file.
    */
-  async uploadLogo(file?: Express.Multer.File): Promise<SeoSettingsEntity> {
+  async uploadLogo(
+    file?: Express.Multer.File,
+    uploadedById: string | null = null,
+  ): Promise<SeoSettingsEntity> {
     if (!file) {
       throw new BadRequestException('No file provided');
     }
     this.assertValidFile(file);
 
     const previous = await this.settings.getSettings();
-    const { buffer, ext } = await this.prepareFile(file);
-    const relativePath = await this.storage.save(buffer, ext, BRANDING_SUBDIR);
+    const prepared = await this.prepareFile(file);
+    const relativePath = await this.storage.save(prepared.buffer, prepared.ext, BRANDING_SUBDIR);
+    const url = `${this.publicBaseUrl}${PUBLIC_UPLOADS_PREFIX}${relativePath}`;
 
-    const updated = await this.settings.updateSettings({
-      logoUrl: `${this.publicBaseUrl}${PUBLIC_UPLOADS_PREFIX}${relativePath}`,
-    });
+    const facts: StoredFileFacts = {
+      url,
+      blurDataUrl: prepared.blurDataUrl,
+      width: prepared.width,
+      height: prepared.height,
+      bytes: prepared.buffer.length,
+      mime: prepared.mime,
+      sourceMime: prepared.sourceMime,
+    };
+    try {
+      await this.media.recordStored(facts, file.originalname, uploadedById);
+    } catch (error) {
+      await this.storage.delete(relativePath);
+      throw error;
+    }
 
-    await this.removeStoredFile(previous.logoUrl);
+    const updated = await this.settings.updateSettings({ logoUrl: url });
+
+    await this.releasePrevious(previous.logoUrl, url);
 
     return updated;
   }
 
-  /** Clear `logoUrl` and remove the stored file. Idempotent when no logo is set. */
+  /**
+   * Make an existing library asset the logo (TASK-2041). 404 for an unknown id
+   * (from {@link MediaService.findById}); 400 for a type the logo slot does not
+   * take — the same list the upload accepts, so a GIF is refused.
+   *
+   * The asset was already neutralised on its way into the library: rasters are
+   * WebP re-encodes, and the only SVGs there are logos sanitised by
+   * {@link uploadLogo}. Nothing is written to disk here.
+   */
+  async setLogoFromLibrary(mediaAssetId: string): Promise<SeoSettingsEntity> {
+    const asset = await this.media.findById(mediaAssetId);
+    if (!LOGO_LIBRARY_MIME.has(asset.mime)) {
+      throw new BadRequestException(
+        `This image cannot be the store logo (${asset.mime}). Allowed: ${[...LOGO_LIBRARY_MIME].join(', ')}`,
+      );
+    }
+
+    const previous = await this.settings.getSettings();
+    const updated = await this.settings.updateSettings({ logoUrl: asset.url });
+
+    await this.releasePrevious(previous.logoUrl, asset.url);
+
+    return updated;
+  }
+
+  /**
+   * Clear `logoUrl`. Idempotent when no logo is set. The file itself goes only
+   * when it is a legacy branding file — see {@link releasePrevious}.
+   */
   async deleteLogo(): Promise<SeoSettingsEntity> {
     const previous = await this.settings.getSettings();
     const updated = await this.settings.updateSettings({ logoUrl: null });
 
-    await this.removeStoredFile(previous.logoUrl);
+    await this.releasePrevious(previous.logoUrl, null);
 
     return updated;
   }
@@ -91,8 +164,11 @@ export class StoreLogoService {
    * survives, the upload was not a usable logo and is rejected. Raster uploads are
    * re-encoded to WebP by `sharp`, which both proves the bytes really are the
    * declared format and drops any appended payload.
+   *
+   * An SVG reports 0×0: its size is whatever it is drawn at, and the library
+   * treats 0 as "unknown" (the same convention as its backfilled rows).
    */
-  private async prepareFile(file: Express.Multer.File): Promise<{ buffer: Buffer; ext: string }> {
+  private async prepareFile(file: Express.Multer.File): Promise<PreparedLogo> {
     if (file.mimetype === SVG_MIME) {
       const svg = sanitizeSvg(file.buffer.toString('utf8'));
       if (!svg) {
@@ -100,7 +176,15 @@ export class StoreLogoService {
           'The uploaded SVG is not a valid image, or nothing safe remained after sanitization',
         );
       }
-      return { buffer: Buffer.from(svg, 'utf8'), ext: 'svg' };
+      return {
+        buffer: Buffer.from(svg, 'utf8'),
+        ext: 'svg',
+        mime: SVG_MIME,
+        sourceMime: SVG_MIME,
+        blurDataUrl: null,
+        width: 0,
+        height: 0,
+      };
     }
 
     const format = await this.imageProcessor.detectFormat(file.buffer);
@@ -108,8 +192,16 @@ export class StoreLogoService {
       throw new UnsupportedMediaTypeException('File contents are not a valid PNG/JPEG/WebP image');
     }
 
-    const { webp } = await this.imageProcessor.process(file.buffer);
-    return { buffer: webp, ext: 'webp' };
+    const { webp, blurDataUrl, width, height } = await this.imageProcessor.process(file.buffer);
+    return {
+      buffer: webp,
+      ext: 'webp',
+      mime: 'image/webp',
+      sourceMime: LOGO_RASTER_SOURCE_MIME[format],
+      blurDataUrl,
+      width,
+      height,
+    };
   }
 
   /**
@@ -127,15 +219,29 @@ export class StoreLogoService {
     }
   }
 
-  /** Best-effort removal of a stored logo file, given its public URL. */
-  private async removeStoredFile(url: string | null): Promise<void> {
-    if (!url) {
+  /**
+   * Let go of the logo file that was just replaced or removed.
+   *
+   * Removed only when ALL of these hold: it is not the new logo, it lives in
+   * `branding/` (only this service ever wrote there — anything else is not ours
+   * to delete), and no library row holds it. A library asset stays: the library
+   * lists it, may show it elsewhere, and deletes it through its usage gate.
+   */
+  private async releasePrevious(previousUrl: string | null, nextUrl: string | null): Promise<void> {
+    if (!previousUrl || previousUrl === nextUrl) {
       return;
     }
-    const idx = url.indexOf(PUBLIC_UPLOADS_PREFIX);
+    const idx = previousUrl.indexOf(PUBLIC_UPLOADS_PREFIX);
     if (idx < 0) {
       return;
     }
-    await this.storage.delete(url.slice(idx + PUBLIC_UPLOADS_PREFIX.length));
+    const relativePath = previousUrl.slice(idx + PUBLIC_UPLOADS_PREFIX.length);
+    if (!relativePath.startsWith(`${BRANDING_SUBDIR}/`)) {
+      return;
+    }
+    if (await this.media.isLibraryAsset(previousUrl)) {
+      return;
+    }
+    await this.storage.delete(relativePath);
   }
 }

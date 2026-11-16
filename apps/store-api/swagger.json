@@ -12334,6 +12334,53 @@
           "SeoSettings"
         ]
       },
+      "put": {
+        "operationId": "adminSeoSettingsControllerSetLogoFromLibrary",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetLogoFromLibraryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Logo set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeoSettingsResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid asset id, or an asset type that cannot be the logo (e.g. GIF)"
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "403": {
+            "description": "Forbidden — settings:seo required"
+          },
+          "404": {
+            "description": "Media asset not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Set the store logo from the media library (admin)",
+        "tags": [
+          "SeoSettings"
+        ]
+      },
       "delete": {
         "operationId": "adminSeoSettingsControllerDeleteLogo",
         "parameters": [],
@@ -29210,6 +29257,20 @@
             }
           }
         }
+      },
+      "SetLogoFromLibraryDto": {
+        "type": "object",
+        "properties": {
+          "mediaAssetId": {
+            "type": "string",
+            "description": "Id of the media-library asset to use as the store logo",
+            "example": "550e8400-e29b-41d4-a716-446655440000",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "mediaAssetId"
+        ]
       },
       "FaqItemEntity": {
         "type": "object",

@@ -7,6 +7,14 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { PERM } from "@/entities/permission";
+import { getSeoSettingsControllerGetSettingsQueryKey } from "@/entities/seo-settings";
+import {
+  chooseInOpenPicker,
+  makeMediaAsset,
+  MEDIA_PERMISSIONS,
+  stubMediaLibrary,
+} from "@/features/media-picker/model/media-picker.fixture";
 import { StoreLogoUpload } from "./store-logo-upload";
 
 jest.mock("sonner", () => ({
@@ -136,6 +144,87 @@ describe("StoreLogoUpload (TASK-299)", () => {
     await waitFor(() =>
       expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
     );
+  });
+
+  describe("from the media library (TASK-2041)", () => {
+    const pickerTrigger = () =>
+      screen.queryByRole("button", { name: dict.storeLogo.pickerAria });
+
+    /** Stub the PUT route; collects the posted asset ids. */
+    function stubSetFromLibrary(status = 200) {
+      const sent: string[] = [];
+      server.use(
+        http.put("*/api/admin/seo-settings/logo", async ({ request }) => {
+          const body = (await request.json()) as { mediaAssetId: string };
+          sent.push(body.mediaAssetId);
+          if (status !== 200) {
+            return HttpResponse.json(
+              { statusCode: status, message: "nope", error: "Bad Request" },
+              { status },
+            );
+          }
+          return HttpResponse.json({
+            data: { id: "s1", logoUrl: makeMediaAsset("m1").url },
+          });
+        }),
+      );
+      return sent;
+    }
+
+    it("offers the picker to an operator with media:read", () => {
+      renderWithProviders(<StoreLogoUpload logoUrl={null} />, {
+        auth: { permissions: MEDIA_PERMISSIONS },
+      });
+
+      expect(pickerTrigger()).toBeInTheDocument();
+    });
+
+    it("hides the picker without media:read, even with media:write", () => {
+      renderWithProviders(<StoreLogoUpload logoUrl={null} />, {
+        auth: { permissions: [PERM.mediaWrite] },
+      });
+
+      expect(pickerTrigger()).not.toBeInTheDocument();
+      // The direct upload keeps working for them.
+      expect(
+        screen.getByRole("button", { name: dict.storeLogo.upload }),
+      ).toBeInTheDocument();
+    });
+
+    it("sets the picked asset as the logo and refreshes the settings", async () => {
+      stubMediaLibrary();
+      const sent = stubSetFromLibrary();
+      const { queryClient } = renderWithProviders(
+        <StoreLogoUpload logoUrl={null} />,
+        { auth: { permissions: MEDIA_PERMISSIONS } },
+      );
+      const invalidate = jest.spyOn(queryClient, "invalidateQueries");
+
+      await userEvent.click(pickerTrigger()!);
+      await chooseInOpenPicker();
+
+      await waitFor(() => expect(sent).toEqual(["m1"]));
+      await waitFor(() =>
+        expect(invalidate).toHaveBeenCalledWith({
+          queryKey: getSeoSettingsControllerGetSettingsQueryKey(),
+        }),
+      );
+    });
+
+    it("explains a refused asset (400) inline", async () => {
+      stubMediaLibrary();
+      stubSetFromLibrary(400);
+      renderWithProviders(<StoreLogoUpload logoUrl={null} />, {
+        auth: { permissions: MEDIA_PERMISSIONS },
+      });
+
+      await userEvent.click(pickerTrigger()!);
+      await chooseInOpenPicker();
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        dict.storeLogo.errorLibraryRejected,
+      );
+    });
   });
 
   describe("delete", () => {

@@ -58,6 +58,8 @@ const FORMAT_NAMES: Record<string, string> = {
   "image/png": "PNG",
   "image/gif": "GIF",
   "image/avif": "AVIF",
+  // The store logo is a library asset since TASK-2041, and it may be an SVG.
+  "image/svg+xml": "SVG",
 };
 
 /**

@@ -24,9 +24,11 @@ import {
 import { memoryStorage } from 'multer';
 import { SeoSettingsService } from './seo-settings.service';
 import { StoreLogoService } from './store-logo.service';
-import { UpdateSeoSettingsDto, SeoHealthResponseEnvelope } from './dto';
+import { UpdateSeoSettingsDto, SeoHealthResponseEnvelope, SetLogoFromLibraryDto } from './dto';
 import { ALLOWED_LOGO_MIME, LOGO_MULTER_MAX_BYTES } from './store-logo.constants';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
+// The `auth/decorators` sub-barrel, NOT the `../auth` barrel — see media.controller.ts.
+import { CurrentUser } from '../auth/decorators';
 import { SeoSettingsEntity, SeoHealthEntity } from './entities';
 import { SeoSettingsResponseEnvelope } from './seo-settings.controller';
 
@@ -38,6 +40,9 @@ import { SeoSettingsResponseEnvelope } from './seo-settings.controller';
  */
 const logoMulterOptions = {
   storage: memoryStorage(),
+  // UTF-8 file names, as in `imageMulterOptions` (TASK-1731): the logo is a
+  // library asset since TASK-2041, and its original name is the card's label.
+  defParamCharset: 'utf8',
   limits: { fileSize: LOGO_MULTER_MAX_BYTES, files: 1 },
   fileFilter: (
     _req: unknown,
@@ -58,6 +63,7 @@ const logoMulterOptions = {
  *   PUT    /api/admin/seo-settings         — upsert the SEO settings (ADMIN)
  *   GET    /api/admin/seo-settings/health  — SEO-health checklist counts (ADMIN)
  *   POST   /api/admin/seo-settings/logo    — upload the store logo (ADMIN)
+ *   PUT    /api/admin/seo-settings/logo    — use a media-library asset as the logo (ADMIN)
  *   DELETE /api/admin/seo-settings/logo    — remove the store logo (ADMIN)
  */
 @ApiTags('SeoSettings')
@@ -156,9 +162,39 @@ export class AdminSeoSettingsController {
   @ApiResponse({ status: 413, description: 'File exceeds the 1 MB limit' })
   @ApiResponse({ status: 415, description: 'Unsupported file type' })
   async uploadLogo(
+    @CurrentUser('id') uploadedById: string,
     @UploadedFile() file: Express.Multer.File,
   ): Promise<SeoSettingsResponseEnvelope> {
-    const data = await this.logoService.uploadLogo(file);
+    const data = await this.logoService.uploadLogo(file, uploadedById);
+
+    return { data };
+  }
+
+  /**
+   * PUT /api/admin/seo-settings/logo
+   *
+   * Makes an existing media-library asset the store logo (TASK-2041). The URL is
+   * read off the asset; SVG, PNG, JPEG and WebP assets are accepted, a GIF is
+   * not. The previous logo file is kept when it is itself a library asset.
+   */
+  @Put('logo')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Set the store logo from the media library (admin)',
+    operationId: 'adminSeoSettingsControllerSetLogoFromLibrary',
+  })
+  @ApiResponse({ status: 200, description: 'Logo set', type: SeoSettingsResponseEnvelope })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid asset id, or an asset type that cannot be the logo (e.g. GIF)',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized — authentication required' })
+  @ApiResponse({ status: 403, description: 'Forbidden — settings:seo required' })
+  @ApiResponse({ status: 404, description: 'Media asset not found' })
+  async setLogoFromLibrary(
+    @Body() dto: SetLogoFromLibraryDto,
+  ): Promise<SeoSettingsResponseEnvelope> {
+    const data = await this.logoService.setLogoFromLibrary(dto.mediaAssetId);
 
     return { data };
   }

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import {
   BadRequestException,
+  NotFoundException,
   PayloadTooLargeException,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { StoreLogoService } from './store-logo.service';
 import { SeoSettingsService } from './seo-settings.service';
 import { SeoSettingsEntity } from './entities';
 import { ImageProcessor, STORAGE_SERVICE } from '../storage';
+import { MediaService } from '../media';
 
 const SAFE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="#1e78d2"/></svg>`;
 const HOSTILE_SVG = `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`;
@@ -40,6 +42,7 @@ describe('StoreLogoService', () => {
   let settings: { getSettings: jest.Mock; updateSettings: jest.Mock };
   let storage: { save: jest.Mock; delete: jest.Mock };
   let imageProcessor: { process: jest.Mock; detectFormat: jest.Mock };
+  let media: { recordStored: jest.Mock; isLibraryAsset: jest.Mock; findById: jest.Mock };
 
   beforeEach(async () => {
     settings = {
@@ -58,8 +61,18 @@ describe('StoreLogoService', () => {
       process: jest.fn().mockResolvedValue({
         webp: Buffer.from('optimized-webp'),
         blurDataUrl: 'data:image/webp;base64,BLUR',
+        width: 400,
+        height: 120,
+        bytes: 14,
+        sourceFormat: 'png',
       }),
       detectFormat: jest.fn().mockResolvedValue('png'),
+    };
+    media = {
+      recordStored: jest.fn().mockResolvedValue({ id: 'asset-new' }),
+      // Default: a previous logo is a legacy branding file with no library row.
+      isLibraryAsset: jest.fn().mockResolvedValue(false),
+      findById: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -68,6 +81,7 @@ describe('StoreLogoService', () => {
         { provide: SeoSettingsService, useValue: settings },
         { provide: STORAGE_SERVICE, useValue: storage },
         { provide: ImageProcessor, useValue: imageProcessor },
+        { provide: MediaService, useValue: media },
         { provide: ConfigService, useValue: { get: () => 'http://localhost:3001' } },
       ],
     }).compile();
@@ -177,29 +191,175 @@ describe('StoreLogoService', () => {
     });
   });
 
+  describe('uploadLogo — media library asset (TASK-2041)', () => {
+    it('records the stored SVG as a library asset with its uploader and original name', async () => {
+      await service.uploadLogo(makeFile({ originalname: 'Лого магазину.svg' }), 'admin-1');
+
+      expect(media.recordStored).toHaveBeenCalledTimes(1);
+      const [stored, originalName, uploadedById] = media.recordStored.mock.calls[0];
+      expect(stored).toMatchObject({
+        url: 'http://localhost:3001/uploads/branding/abc.svg',
+        mime: 'image/svg+xml',
+        sourceMime: 'image/svg+xml',
+        blurDataUrl: null,
+        width: 0,
+        height: 0,
+      });
+      expect(stored.bytes).toBe((storage.save.mock.calls[0][0] as Buffer).length);
+      expect(originalName).toBe('Лого магазину.svg');
+      expect(uploadedById).toBe('admin-1');
+    });
+
+    it('records a raster logo as the stored WebP, with the detected source type', async () => {
+      storage.save.mockResolvedValue('branding/abc.webp');
+
+      await service.uploadLogo(
+        makeFile({ mimetype: 'image/png', originalname: 'logo.png', buffer: Buffer.from('png') }),
+        'admin-1',
+      );
+
+      const [stored] = media.recordStored.mock.calls[0];
+      expect(stored).toMatchObject({
+        url: 'http://localhost:3001/uploads/branding/abc.webp',
+        mime: 'image/webp',
+        sourceMime: 'image/png',
+        blurDataUrl: 'data:image/webp;base64,BLUR',
+        width: 400,
+        height: 120,
+        bytes: Buffer.from('optimized-webp').length,
+      });
+    });
+
+    it('records the asset before the settings point at it', async () => {
+      await service.uploadLogo(makeFile(), 'admin-1');
+
+      expect(media.recordStored.mock.invocationCallOrder[0]).toBeLessThan(
+        settings.updateSettings.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('removes the just-written file and keeps the old logo when the asset cannot be recorded', async () => {
+      media.recordStored.mockRejectedValue(new Error('db down'));
+
+      await expect(service.uploadLogo(makeFile(), 'admin-1')).rejects.toThrow('db down');
+      expect(settings.updateSettings).not.toHaveBeenCalled();
+      expect(storage.delete).toHaveBeenCalledWith('branding/abc.svg');
+    });
+  });
+
   describe('uploadLogo — replacing an existing logo', () => {
-    it('deletes the previously stored file after the new URL is committed', async () => {
+    it('keeps the previous file when it is a library asset', async () => {
+      const previous = 'http://localhost:3001/uploads/branding/old.svg';
+      settings.getSettings.mockResolvedValue(makeSettings(previous));
+      media.isLibraryAsset.mockResolvedValue(true);
+
+      await service.uploadLogo(makeFile(), 'admin-1');
+
+      expect(media.isLibraryAsset).toHaveBeenCalledWith(previous);
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+
+    it('still removes a legacy branding file with no library row, after the new URL is committed', async () => {
       settings.getSettings.mockResolvedValue(
         makeSettings('http://localhost:3001/uploads/branding/old.svg'),
       );
 
-      await service.uploadLogo(makeFile());
+      await service.uploadLogo(makeFile(), 'admin-1');
 
       expect(storage.delete).toHaveBeenCalledWith('branding/old.svg');
-      const saveOrder = storage.save.mock.invocationCallOrder[0];
+      const updateOrder = settings.updateSettings.mock.invocationCallOrder[0];
       const deleteOrder = storage.delete.mock.invocationCallOrder[0];
-      expect(deleteOrder).toBeGreaterThan(saveOrder);
+      expect(deleteOrder).toBeGreaterThan(updateOrder);
+    });
+
+    it('never removes a file outside branding/ that has no library row', async () => {
+      settings.getSettings.mockResolvedValue(
+        makeSettings('http://localhost:3001/uploads/content/cover.webp'),
+      );
+
+      await service.uploadLogo(makeFile(), 'admin-1');
+
+      expect(storage.delete).not.toHaveBeenCalled();
     });
 
     it('does not attempt a delete when there was no previous logo', async () => {
-      await service.uploadLogo(makeFile());
+      await service.uploadLogo(makeFile(), 'admin-1');
+
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('setLogoFromLibrary (TASK-2041)', () => {
+    const LIBRARY_URL = 'http://localhost:3001/uploads/media/pick.webp';
+
+    it('points logoUrl at the chosen asset', async () => {
+      media.findById.mockResolvedValue({ id: 'a1', url: LIBRARY_URL, mime: 'image/webp' });
+
+      const result = await service.setLogoFromLibrary('a1');
+
+      expect(media.findById).toHaveBeenCalledWith('a1');
+      expect(settings.updateSettings).toHaveBeenCalledWith({ logoUrl: LIBRARY_URL });
+      expect(result.logoUrl).toBe(LIBRARY_URL);
+    });
+
+    it.each(['image/svg+xml', 'image/png', 'image/jpeg', 'image/webp'])(
+      'accepts a %s asset',
+      async (mime) => {
+        media.findById.mockResolvedValue({ id: 'a1', url: LIBRARY_URL, mime });
+
+        await expect(service.setLogoFromLibrary('a1')).resolves.toBeDefined();
+      },
+    );
+
+    it('rejects a GIF asset with 400 and leaves the logo alone', async () => {
+      media.findById.mockResolvedValue({ id: 'a1', url: LIBRARY_URL, mime: 'image/gif' });
+
+      await expect(service.setLogoFromLibrary('a1')).rejects.toThrow(BadRequestException);
+      expect(settings.updateSettings).not.toHaveBeenCalled();
+    });
+
+    it('propagates 404 for an unknown asset', async () => {
+      media.findById.mockRejectedValue(new NotFoundException('Media asset not found'));
+
+      await expect(service.setLogoFromLibrary('missing')).rejects.toThrow(NotFoundException);
+      expect(settings.updateSettings).not.toHaveBeenCalled();
+    });
+
+    it('keeps the previous logo file when it is a library asset', async () => {
+      settings.getSettings.mockResolvedValue(
+        makeSettings('http://localhost:3001/uploads/branding/old.svg'),
+      );
+      media.isLibraryAsset.mockResolvedValue(true);
+      media.findById.mockResolvedValue({ id: 'a1', url: LIBRARY_URL, mime: 'image/webp' });
+
+      await service.setLogoFromLibrary('a1');
+
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+
+    it('removes a legacy previous logo file with no library row', async () => {
+      settings.getSettings.mockResolvedValue(
+        makeSettings('http://localhost:3001/uploads/branding/old.svg'),
+      );
+      media.findById.mockResolvedValue({ id: 'a1', url: LIBRARY_URL, mime: 'image/webp' });
+
+      await service.setLogoFromLibrary('a1');
+
+      expect(storage.delete).toHaveBeenCalledWith('branding/old.svg');
+    });
+
+    it('does nothing to the file when the same asset is picked again', async () => {
+      settings.getSettings.mockResolvedValue(makeSettings(LIBRARY_URL));
+      media.findById.mockResolvedValue({ id: 'a1', url: LIBRARY_URL, mime: 'image/webp' });
+
+      await service.setLogoFromLibrary('a1');
 
       expect(storage.delete).not.toHaveBeenCalled();
     });
   });
 
   describe('deleteLogo', () => {
-    it('clears logoUrl and removes the stored file', async () => {
+    it('clears logoUrl and removes a legacy stored file', async () => {
       settings.getSettings.mockResolvedValue(
         makeSettings('http://localhost:3001/uploads/branding/old.svg'),
       );
@@ -208,6 +368,19 @@ describe('StoreLogoService', () => {
 
       expect(settings.updateSettings).toHaveBeenCalledWith({ logoUrl: null });
       expect(storage.delete).toHaveBeenCalledWith('branding/old.svg');
+      expect(result.logoUrl).toBeNull();
+    });
+
+    it('clears logoUrl but keeps the file when it is a library asset', async () => {
+      settings.getSettings.mockResolvedValue(
+        makeSettings('http://localhost:3001/uploads/branding/old.svg'),
+      );
+      media.isLibraryAsset.mockResolvedValue(true);
+
+      const result = await service.deleteLogo();
+
+      expect(settings.updateSettings).toHaveBeenCalledWith({ logoUrl: null });
+      expect(storage.delete).not.toHaveBeenCalled();
       expect(result.logoUrl).toBeNull();
     });
 

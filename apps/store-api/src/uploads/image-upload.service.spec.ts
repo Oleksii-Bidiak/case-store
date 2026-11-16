@@ -5,8 +5,17 @@ import {
   PayloadTooLargeException,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ImageUploadService } from './image-upload.service';
-import { ImageProcessor, STORAGE_SERVICE } from '../storage';
+import {
+  BRANDING_SUBDIR,
+  ImageProcessor,
+  LocalDiskStorageService,
+  STORAGE_SERVICE,
+} from '../storage';
 
 /** A real 1×1 GIF89a (header, colour table, GCE, one frame) with no metadata. */
 const TINY_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
@@ -289,6 +298,30 @@ describe('ImageUploadService', () => {
       await service.removeByUrl('https://cdn.example.com/logo.png');
       await service.removeByUrl(null);
       expect(storage.delete).not.toHaveBeenCalled();
+    });
+
+    it('removes a store-logo file in branding/ from a real disk (TASK-2041)', async () => {
+      // The library's delete gate is the only path that removes a logo asset once
+      // it is unused, so a branding/ file must really go — not just be asked to.
+      const uploadRoot = await mkdtemp(join(tmpdir(), 'case-store-branding-'));
+      try {
+        const config = {
+          get: (key: string) => (key === 'PUBLIC_BASE_URL' ? 'http://localhost:3001' : uploadRoot),
+        } as unknown as ConfigService;
+        const disk = new LocalDiskStorageService(config);
+        const real = new ImageUploadService(
+          disk,
+          imageProcessor as unknown as ImageProcessor,
+          config,
+        );
+        const relativePath = await disk.save(Buffer.from('<svg/>'), 'svg', BRANDING_SUBDIR);
+
+        await real.removeByUrl(real.publicUrl(relativePath));
+
+        expect(existsSync(join(uploadRoot, relativePath))).toBe(false);
+      } finally {
+        await rm(uploadRoot, { recursive: true, force: true });
+      }
     });
   });
 });

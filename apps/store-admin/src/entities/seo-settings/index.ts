@@ -12,6 +12,8 @@ export {
   // there is no `useSeoSettingsControllerUploadLogo`.
   useAdminSeoSettingsControllerUploadLogo,
   useAdminSeoSettingsControllerDeleteLogo,
+  // TASK-2041 — use a media-library asset as the logo.
+  useAdminSeoSettingsControllerSetLogoFromLibrary,
   getSeoSettingsControllerGetSettingsQueryKey,
 } from "@/shared/api";
 

@@ -329,6 +329,54 @@ describe('MediaService', () => {
     });
   });
 
+  describe('recordStored (TASK-2041)', () => {
+    it('records a file another pipeline already stored, without storing it again', async () => {
+      const logoUrl = 'http://localhost:3001/uploads/branding/logo.svg';
+
+      await service.recordStored(
+        {
+          url: logoUrl,
+          blurDataUrl: null,
+          width: 0,
+          height: 0,
+          bytes: 512,
+          mime: 'image/svg+xml',
+          sourceMime: 'image/svg+xml',
+        },
+        'C:\\Лого\\ logo.svg ',
+        'admin-1',
+      );
+
+      expect(uploads.store).not.toHaveBeenCalled();
+      expect(repository.create).toHaveBeenCalledWith({
+        url: logoUrl,
+        blurDataUrl: null,
+        width: 0,
+        height: 0,
+        bytes: 512,
+        mime: 'image/svg+xml',
+        alt: null,
+        tags: [],
+        uploadedById: 'admin-1',
+        originalFilename: 'logo.svg',
+        originalMime: 'image/svg+xml',
+      });
+    });
+  });
+
+  describe('isLibraryAsset (TASK-2041)', () => {
+    it('is true when a library row holds the URL', async () => {
+      repository.findByUrl.mockResolvedValue(makeAsset());
+
+      await expect(service.isLibraryAsset(ASSET_URL)).resolves.toBe(true);
+      expect(repository.findByUrl).toHaveBeenCalledWith(ASSET_URL);
+    });
+
+    it('is false when no row holds it', async () => {
+      await expect(service.isLibraryAsset(ASSET_URL)).resolves.toBe(false);
+    });
+  });
+
   describe('update', () => {
     it('writes alt and tags', async () => {
       await service.update(ASSET_ID, { alt: 'Новий опис', tags: ['банер'] });
