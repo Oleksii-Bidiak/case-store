@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CopyIcon } from "lucide-react";
+import { CopyIcon, CopyPlusIcon } from "lucide-react";
 import {
   formatOrderNumber,
   isPreShipmentStatus,
@@ -110,6 +110,43 @@ function copyNumber(order: OrderEntity) {
 }
 
 /**
+ * «Копія #старе» on a copy; «Замінено на #нове» on a cancelled original, or
+ * «Копії: …» on one that stayed live (TASK-2048). Nothing on any other order.
+ */
+function CopyLinks({
+  order,
+}: {
+  order: Pick<OrderEntity, "status" | "copiedFromId" | "copyIds">;
+}) {
+  const copies = order.copyIds ?? [];
+  if (!order.copiedFromId && copies.length === 0) return null;
+  const orderLink = (id: string) => (
+    <Link
+      key={id}
+      href={`/orders/${id}`}
+      className="font-mono text-primary hover:underline"
+    >
+      {formatOrderNumber(id)}
+    </Link>
+  );
+  const replaced = order.status === "CANCELLED" && copies.length === 1;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+      {order.copiedFromId ? (
+        <span className="flex items-center gap-1.5">
+          {d.copyOf} {orderLink(order.copiedFromId)}
+        </span>
+      ) : null}
+      {copies.length ? (
+        <span className="flex flex-wrap items-center gap-1.5">
+          {replaced ? d.replacedBy : d.copiesLabel} {copies.map(orderLink)}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * The order card (wave 198, TASK-1046, OrdersProposal К1–К4).
  *
  * Header: «← Замовлення», the number in mono with «Скопіювати номер», the
@@ -208,6 +245,16 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
   const more = moreActions.length ? (
     <RowActionsMenu label={d.moreActionsAria} items={moreActions} />
   ) : null;
+  // TASK-2048: «Створити копію» — on any order; the create form decides
+  // whether «Скасувати #старе» is offered.
+  const copyAction = (
+    <Button asChild variant="outline">
+      <Link href={`/orders/new?copyOf=${order.id}`}>
+        <CopyPlusIcon aria-hidden="true" />
+        {d.copyAction}
+      </Link>
+    </Button>
+  );
   // Renders nothing without `returns:write` or off SHIPPED / DELIVERED.
   const returnAction = (
     <ReturnCreateAction
@@ -279,6 +326,7 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
               )}
             </span>
           </div>
+          <CopyLinks order={order} />
         </div>
 
         {/* `#order-status`: the list's «⋯ → Змінити статус…» lands here. */}
@@ -294,6 +342,7 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
               trailing={
                 <>
                   {returnAction}
+                  {copyAction}
                   {more}
                 </>
               }

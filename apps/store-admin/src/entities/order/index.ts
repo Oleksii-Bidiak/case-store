@@ -18,6 +18,9 @@ export {
   // with no query twin on purpose — the server keeps only the token's hash, so
   // "read the current link" is a question nothing can answer.
   useAdminOrderControllerIssueAccessLink,
+  // TASK-2048: the «Створити копію» prefill.
+  useAdminOrderControllerGetCopyDraft,
+  getAdminOrderControllerGetCopyDraftQueryKey,
   getAdminOrderControllerFindAllQueryKey,
   getAdminOrderControllerFindByIdQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
@@ -87,6 +90,10 @@ export type {
   RecordMoneyInDto,
   RecordMoneyOutDto,
   MoneyCorrectionDto,
+  // TASK-2048: «Створити копію».
+  OrderCopyDraftEntity,
+  OrderCopyDraftDroppedEntity,
+  AdminOrderCopyDraftResponse,
 } from "@/shared/api";
 
 export {

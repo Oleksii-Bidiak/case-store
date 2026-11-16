@@ -23,6 +23,7 @@ import {
   moneyDueText,
   moneyKindLabel,
   OrderEntityPaymentMethod,
+  formatOrderNumber,
   OrderEntityStatus,
   OrderStatusHistoryEntityNote,
   paymentStatusBadgeVariant,
@@ -489,6 +490,17 @@ function JournalRow({
             className="text-primary hover:underline"
           >
             {m.forReturn}
+          </Link>
+        ) : null}
+        {/* TASK-2048: «Залік» — the other order of the pair. */}
+        {entry.counterpartOrderId ? (
+          <Link
+            href={`/orders/${entry.counterpartOrderId}`}
+            className="text-primary hover:underline"
+          >
+            {(isIn ? m.offsetFromOrder : m.offsetToOrder)(
+              formatOrderNumber(entry.counterpartOrderId),
+            )}
           </Link>
         ) : null}
       </div>

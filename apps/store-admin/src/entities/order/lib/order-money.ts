@@ -44,6 +44,10 @@ export function moneyKindLabel(kind: string): string {
       return m.kindLabels.CASH_REFUND;
     case MoneyEntryKind.TRANSFER_REFUND:
       return m.kindLabels.TRANSFER_REFUND;
+    case MoneyEntryKind.OFFSET_TO_ORDER:
+      return m.kindLabels.OFFSET_TO_ORDER;
+    case MoneyEntryKind.OFFSET_FROM_ORDER:
+      return m.kindLabels.OFFSET_FROM_ORDER;
     default:
       return kind;
   }
@@ -131,6 +135,12 @@ const PROVIDER_KINDS: readonly string[] = [
   MoneyEntryKind.LIQPAY_REFUND,
 ];
 
+/** TASK-2048: the «Залік» pair — never reversed one half at a time. */
+const OFFSET_KINDS: readonly string[] = [
+  MoneyEntryKind.OFFSET_TO_ORDER,
+  MoneyEntryKind.OFFSET_FROM_ORDER,
+];
+
 /**
  * Whether «Сторнувати» is worth offering on a row — `canReverse` of
  * `order-money.ts` on the server, mirrored so a button that can only be
@@ -147,6 +157,7 @@ export function isReversibleEntry(
   return (
     entry.reversalOfId === null &&
     !PROVIDER_KINDS.includes(entry.kind) &&
+    !OFFSET_KINDS.includes(entry.kind) &&
     entry.voidedAt === null &&
     entry.reversedById === null
   );

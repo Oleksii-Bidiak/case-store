@@ -53,7 +53,9 @@ describe("orderPath — the order path of the card (К1)", () => {
   });
 
   it("names the fourth step «Готово до видачі» on a pickup order only (TASK-2052)", () => {
-    const titles = (deliveryMethod: string) =>
+    const titles = (
+      deliveryMethod: Parameters<typeof orderPath>[0]["deliveryMethod"],
+    ) =>
       orderPath(
         { status: "SHIPPED", createdAt: CREATED, deliveryMethod },
         [],

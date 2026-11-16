@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
@@ -38,6 +39,7 @@ import { toTransitionOptions } from "../model/transitions";
 import {
   orderConflictMessage,
   orderWriteErrorMessage,
+  offersCopy,
   requiresReload,
   type ApiErrorLike,
 } from "../model/order-conflict";
@@ -192,6 +194,8 @@ function OrderStatusSelectControl({
   // the missing grant — both stay on screen until the next attempt.
   const conflict = orderWriteErrorMessage(updateStatus.error as ApiErrorLike);
   const showReload = requiresReload(updateStatus.error as ApiErrorLike);
+  // TASK-2048 / AD-ORD-96: a spent promo code — the way out is a copy without it.
+  const showCopy = offersCopy(updateStatus.error as ApiErrorLike);
 
   /**
    * The soft warning of decision B-1: shipping an online order whose payment
@@ -450,7 +454,21 @@ function OrderStatusSelectControl({
           role="alert"
           className="flex basis-full flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
         >
-          <span className="flex-1">{conflict}</span>
+          <span className="flex-1">
+            {conflict}
+            {showCopy ? (
+              <span className="mt-1 block text-foreground">
+                {dict.orderStatus.promoCopyHint}
+              </span>
+            ) : null}
+          </span>
+          {showCopy ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/orders/new?copyOf=${orderId}`}>
+                {dict.orders.copyAction}
+              </Link>
+            </Button>
+          ) : null}
           {showReload ? (
             <Button variant="outline" size="sm" onClick={handleReload}>
               {dict.orderStatus.reloadCta}

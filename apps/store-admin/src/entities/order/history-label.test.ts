@@ -148,6 +148,20 @@ describe("historyNoteLabel", () => {
   it("is null on an ordinary row", () => {
     expect(historyNoteLabel(makeEntry({ note: null }))).toBeNull();
   });
+
+  // TASK-2048: «Створити копію» marks both timelines.
+  it("names the copy made of this order, and the copy's own birth", () => {
+    expect(
+      historyNoteLabel(
+        makeEntry({ note: OrderStatusHistoryEntityNote.COPIED_TO_ORDER }),
+      ),
+    ).toBe(dict.orderStatus.copiedToOrderHistoryNote);
+    expect(
+      historyNoteLabel(
+        makeEntry({ note: OrderStatusHistoryEntityNote.COPY_OF_ORDER }),
+      ),
+    ).toBe(dict.orderStatus.copyOfOrderHistoryNote);
+  });
 });
 
 // TASK-621: the row the webhook writes when it refuses an event.

@@ -139,6 +139,11 @@ export function historyNoteLabel(
       return dict.orderMoney.unmatchedRefundChip;
     case OrderStatusHistoryEntityNote.LEGACY_MONEY_UNKNOWN:
       return dict.orderMoney.legacyUnknownHint;
+    // TASK-2048: «Створити копію» — the links themselves are in the header.
+    case OrderStatusHistoryEntityNote.COPIED_TO_ORDER:
+      return dict.orderStatus.copiedToOrderHistoryNote;
+    case OrderStatusHistoryEntityNote.COPY_OF_ORDER:
+      return dict.orderStatus.copyOfOrderHistoryNote;
     default:
       return null;
   }

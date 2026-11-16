@@ -95,6 +95,25 @@ export function isStaleWriteConflict(
   );
 }
 
+/** The promo-code refusals of a revive (AD-ORD-51). */
+const PROMO_CODES: readonly string[] = [
+  ORDER_CONFLICT_CODE.PROMO_EXHAUSTED,
+  ORDER_CONFLICT_CODE.PROMO_USER_LIMIT,
+  ORDER_CONFLICT_CODE.PROMO_GONE,
+];
+
+/**
+ * Whether the refusal is answered with «Створити копію» (TASK-2048, AD-ORD-96):
+ * a revive the spent promo code blocks cannot be repaired, but a copy without
+ * the code at today's prices can be placed.
+ */
+export function offersCopy(error: ApiErrorLike | null | undefined): boolean {
+  const code = apiErrorCode(error);
+  return (
+    isOrderConflict(error) && code !== undefined && PROMO_CODES.includes(code)
+  );
+}
+
 /**
  * The words of the stale-draft review panel, for both order edit forms. Built
  * here, next to the rest of the conflict vocabulary, so the two forms cannot

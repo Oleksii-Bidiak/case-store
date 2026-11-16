@@ -96,6 +96,14 @@ export function readCreateOrderRefusal(
   lines: readonly DraftLine[],
   placed: AppliedServerFieldErrors = { mapped: [], unmapped: [] },
 ): CreateOrderRefusal | null {
+  // TASK-2048: «Скасувати #старе», but the original shipped or was cancelled
+  // after the copy form opened — nothing was written.
+  if (
+    apiErrorStatus(error) === 409 &&
+    apiErrorCode(error) === "ORDER_COPY_ORIGINAL_NOT_CANCELLABLE"
+  ) {
+    return { lines: {}, summary: t.copyOriginalGone };
+  }
   if (apiErrorStatus(error) !== 400) return null;
   const message = apiErrorMessage(error) ?? "";
 

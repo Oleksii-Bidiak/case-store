@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { OrderCreateForm } from "@/features/order-create";
 import { dict } from "@/shared/config";
+import { OrderCopyForm } from "./order-copy-form";
 
 /**
  * Page body for creating an order on a customer's behalf (TASK-341; wave 198
@@ -9,8 +10,10 @@ import { dict } from "@/shared/config";
  * Carries the standing note about line editing: the backend deliberately does
  * NOT change an existing order's lines, so the operator is told here, once,
  * while they can still get the lines right.
+ *
+ * `copyOf` (TASK-2048, «Створити копію»): the original the form starts from.
  */
-export function OrderCreateView() {
+export function OrderCreateView({ copyOf }: { copyOf?: string } = {}) {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
@@ -28,7 +31,7 @@ export function OrderCreateView() {
         </p>
       </div>
 
-      <OrderCreateForm />
+      {copyOf ? <OrderCopyForm copyOf={copyOf} /> : <OrderCreateForm />}
     </div>
   );
 }

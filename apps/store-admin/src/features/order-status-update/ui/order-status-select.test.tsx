@@ -301,6 +301,60 @@ describe("OrderStatusSelect — 409 conflicts (TASK-332, edge case E-11)", () =>
       screen.queryByRole("button", { name: dict.orderStatus.reloadCta }),
     ).not.toBeInTheDocument();
   });
+
+  // TASK-2048 / AD-ORD-96: the way out of a spent promo code is a copy without it.
+  it.each([
+    "DISCOUNT_MAX_REDEMPTIONS_REACHED",
+    "DISCOUNT_USER_LIMIT_REACHED",
+    "DISCOUNT_NOT_FOUND",
+  ])("offers «Створити копію» beside the %s refusal", async (code) => {
+    stubOrder({ status: "CANCELLED" });
+    stubTransitions(["PENDING"]);
+    stubStatusPatch(() =>
+      HttpResponse.json(
+        { statusCode: 409, error: code, message: "refused" },
+        { status: 409 },
+      ),
+    );
+
+    renderSelect();
+    await openPicker();
+    await userEvent.click(
+      await screen.findByRole("menuitem", {
+        name: orderStatusLabel("PENDING"),
+      }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(dict.orderStatus.promoCopyHint);
+    expect(
+      within(alert).getByRole("link", { name: dict.orders.copyAction }),
+    ).toHaveAttribute("href", `/orders/new?copyOf=${ORDER_ID}`);
+  });
+
+  it("offers no copy beside any other refusal", async () => {
+    stubOrder({ status: "CANCELLED" });
+    stubTransitions(["PENDING"]);
+    stubStatusPatch(() =>
+      HttpResponse.json(
+        { statusCode: 409, error: "ORDER_STALE", message: "stale" },
+        { status: 409 },
+      ),
+    );
+
+    renderSelect();
+    await openPicker();
+    await userEvent.click(
+      await screen.findByRole("menuitem", {
+        name: orderStatusLabel("PENDING"),
+      }),
+    );
+
+    await screen.findByRole("alert");
+    expect(
+      screen.queryByRole("link", { name: dict.orders.copyAction }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 /**
