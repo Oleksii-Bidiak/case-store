@@ -2161,6 +2161,8 @@ export class OrderService {
         order: {
           id: order.id,
           trackingNumber: order.trackingNumber ?? null,
+          // TASK-1883: a pickup order gets «готове до видачі», not a parcel letter.
+          deliveryMethod: order.deliveryMethod ?? null,
         },
       });
 

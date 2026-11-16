@@ -3555,8 +3555,23 @@ describe('OrderService', () => {
       expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledWith({
         to: 'buyer@example.com',
         customerName: 'Olena',
-        order: { id: 'order-uuid-1', trackingNumber: '20450000000001' },
+        order: { id: 'order-uuid-1', trackingNumber: '20450000000001', deliveryMethod: null },
       });
+    });
+
+    it('passes the delivery method, so a pickup order gets the «готове до видачі» letter', async () => {
+      seedShipped(
+        { status: OrderStatus.PROCESSING },
+        { status: OrderStatus.SHIPPED, deliveryMethod: 'PICKUP', trackingNumber: null },
+      );
+
+      await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
+
+      expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledWith(
+        expect.objectContaining({
+          order: { id: 'order-uuid-1', trackingNumber: null, deliveryMethod: 'PICKUP' },
+        }),
+      );
     });
 
     it('still tells the customer when no waybill has been entered yet', async () => {
@@ -3569,7 +3584,9 @@ describe('OrderService', () => {
 
       // "On its way" with no number still beats silence.
       expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledWith(
-        expect.objectContaining({ order: { id: 'order-uuid-1', trackingNumber: null } }),
+        expect.objectContaining({
+          order: { id: 'order-uuid-1', trackingNumber: null, deliveryMethod: null },
+        }),
       );
     });
 
@@ -3811,7 +3828,7 @@ describe('OrderService', () => {
 
       expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledWith(
         expect.objectContaining({
-          order: { id: 'order-uuid-1', trackingNumber: '20450000000001' },
+          order: { id: 'order-uuid-1', trackingNumber: '20450000000001', deliveryMethod: null },
         }),
       );
     });
