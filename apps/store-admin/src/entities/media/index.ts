@@ -20,9 +20,12 @@ export type {
   MediaMetadataDto,
   MediaUsageEntity,
   MediaControllerFindAllParams,
+  MediaListCountsEntity,
 } from "@/shared/api";
 
 export { MediaUsageEntityKind } from "@/shared/api";
+// TASK-1730 — the list's views and orderings, as the API spells them.
+export { MediaListView, MediaListSort } from "@/shared/api";
 
 export {
   MAX_MEDIA_ALT_LENGTH,

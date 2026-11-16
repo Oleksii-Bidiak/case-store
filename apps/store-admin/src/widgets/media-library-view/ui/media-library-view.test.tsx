@@ -23,6 +23,10 @@ import { server } from "@/shared/test/msw-server";
 import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { PERM } from "@/entities/permission";
 import { dict } from "@/shared/config";
+import {
+  makeMediaAsset,
+  stubMediaLibrary,
+} from "@/features/media-picker/model/media-picker.fixture";
 import { MediaLibraryView } from "./media-library-view";
 
 const t = dict.mediaLibrary;
@@ -811,5 +815,158 @@ describe("MediaLibraryView — the asset dialog (МТ5–МТ9)", () => {
       within(dialog).queryByRole("button", { name: t.tagRemoveAria("банер") }),
     ).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText(t.tagsLabel)).toBeDisabled();
+  });
+});
+
+describe("MediaLibraryView — views and sort (TASK-1730)", () => {
+  const library = () => [
+    makeMediaAsset("used", {
+      alt: "Банер",
+      usedInCount: 2,
+      bytes: 100,
+      createdAt: "2026-09-03T10:00:00.000Z",
+    }),
+    makeMediaAsset("free", {
+      alt: "Вільне",
+      bytes: 900,
+      createdAt: "2026-09-02T10:00:00.000Z",
+    }),
+    makeMediaAsset("bare", {
+      alt: null,
+      usedInCount: 1,
+      bytes: 500,
+      createdAt: "2026-09-01T10:00:00.000Z",
+    }),
+  ];
+
+  it("shows «Усі · Не використовуються · Без опису» with the counts the API reports", async () => {
+    stubMediaLibrary(library());
+
+    renderLibrary();
+
+    const views = await screen.findByRole("radiogroup", { name: t.viewsAria });
+    const all = within(views).getByRole("radio", {
+      name: new RegExp(t.viewAll),
+    });
+    const unused = within(views).getByRole("radio", {
+      name: new RegExp(t.viewUnused),
+    });
+    const noAlt = within(views).getByRole("radio", {
+      name: new RegExp(t.viewNoAlt),
+    });
+
+    await waitFor(() => expect(all).toHaveTextContent("3"));
+    expect(unused).toHaveTextContent("1");
+    expect(noAlt).toHaveTextContent("1");
+    expect(all).toBeChecked();
+  });
+
+  it("does not send a view or a sort the operator never chose", async () => {
+    const { listRequests } = stubMediaLibrary(library());
+
+    renderLibrary();
+
+    await waitFor(() => expect(listRequests.length).toBeGreaterThan(0));
+    expect(listRequests[0].searchParams.get("view")).toBeNull();
+    expect(listRequests[0].searchParams.get("sort")).toBeNull();
+  });
+
+  it("asks the API for the view and sort the URL carries", async () => {
+    mockSearchParams = new URLSearchParams("view=unused&sort=largest");
+    const { listRequests } = stubMediaLibrary(library());
+
+    renderLibrary();
+
+    expect(
+      await screen.findByRole("button", { name: t.openCardAria("Вільне") }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: t.openCardAria("Банер") }),
+    ).not.toBeInTheDocument();
+    expect(listRequests[0].searchParams.get("view")).toBe("unused");
+    expect(listRequests[0].searchParams.get("sort")).toBe("largest");
+    expect(
+      screen.getByRole("radio", { name: new RegExp(t.viewUnused) }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("combobox", { name: t.sortAria }),
+    ).toHaveTextContent(t.sortLargest);
+  });
+
+  it("ignores a view or sort the API does not know", async () => {
+    mockSearchParams = new URLSearchParams("view=bogus&sort=smallest");
+    const { listRequests } = stubMediaLibrary(library());
+
+    renderLibrary();
+
+    await waitFor(() => expect(listRequests.length).toBeGreaterThan(0));
+    expect(listRequests[0].searchParams.get("view")).toBeNull();
+    expect(listRequests[0].searchParams.get("sort")).toBeNull();
+    expect(
+      screen.getByRole("radio", { name: new RegExp(t.viewAll) }),
+    ).toBeChecked();
+  });
+
+  it("writes the chosen view into the URL, keeping the search and resetting the page", async () => {
+    mockSearchParams = new URLSearchParams("search=x&page=3");
+    stubMediaLibrary(library());
+
+    renderLibrary();
+
+    await userEvent.click(
+      await screen.findByRole("radio", { name: new RegExp(t.viewNoAlt) }),
+    );
+
+    expect(mockReplace).toHaveBeenLastCalledWith("/media?search=x&view=noAlt");
+  });
+
+  it("drops ?view= when the operator goes back to «Усі»", async () => {
+    mockSearchParams = new URLSearchParams("view=unused");
+    stubMediaLibrary(library());
+
+    renderLibrary();
+
+    await userEvent.click(
+      await screen.findByRole("radio", { name: new RegExp(t.viewAll) }),
+    );
+
+    expect(mockReplace).toHaveBeenLastCalledWith("/media");
+  });
+
+  it("writes the chosen sort into the URL and resets the page; «Спершу нові» is the default", async () => {
+    mockSearchParams = new URLSearchParams("page=2");
+    stubMediaLibrary(library());
+    const user = userEvent.setup();
+
+    renderLibrary();
+
+    const sort = await screen.findByRole("combobox", { name: t.sortAria });
+    expect(sort).toHaveTextContent(t.sortNewest);
+
+    await user.click(sort);
+    await user.click(screen.getByRole("option", { name: t.sortOldest }));
+
+    expect(mockReplace).toHaveBeenLastCalledWith("/media?sort=oldest");
+  });
+
+  it("says why a view is empty instead of calling the library empty", async () => {
+    mockSearchParams = new URLSearchParams("view=unused");
+    stubMediaLibrary([
+      makeMediaAsset("used", { alt: "Банер", usedInCount: 1 }),
+    ]);
+
+    renderLibrary();
+
+    expect(await screen.findByText(t.emptyUnused)).toBeInTheDocument();
+    expect(screen.queryByText(t.empty)).not.toBeInTheDocument();
+  });
+
+  it("says every image has a description when the noAlt view is empty", async () => {
+    mockSearchParams = new URLSearchParams("view=noAlt");
+    stubMediaLibrary([makeMediaAsset("a", { alt: "Банер" })]);
+
+    renderLibrary();
+
+    expect(await screen.findByText(t.emptyNoAlt)).toBeInTheDocument();
   });
 });

@@ -3,13 +3,16 @@
 import type { ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import {
+  MediaListView,
   useMediaControllerFindAll,
   type MediaAssetEntity,
+  type MediaListSort,
 } from "@/entities/media";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
 import { MediaAssetCard } from "./media-asset-card";
 import { MediaLibrarySkeleton } from "./media-library-skeleton";
+import { mediaListParams } from "../model/media-list-params";
 
 const t = dict.mediaLibrary;
 
@@ -31,6 +34,12 @@ export interface MediaAssetGridProps {
   /** 1-based page. */
   page: number;
   pageSize: number;
+  /**
+   * Which slice of the library to show (TASK-1730). The picker passes neither
+   * this nor `sort` and gets every asset, newest first.
+   */
+  view?: MediaListView;
+  sort?: MediaListSort;
   /** What activating a tile does — open its card, or pick it. */
   onOpen: (asset: MediaAssetEntity) => void;
   /** Accessible name for a tile. See {@link MediaAssetCard}. */
@@ -82,6 +91,8 @@ export function MediaAssetGrid({
   search,
   page,
   pageSize,
+  view = MediaListView.all,
+  sort,
   onOpen,
   cardLabel,
   footer,
@@ -91,11 +102,9 @@ export function MediaAssetGrid({
   selectedId,
   layout = "page",
 }: MediaAssetGridProps) {
-  const { data, isLoading, isFetching, isError } = useMediaControllerFindAll({
-    search: search || undefined,
-    page,
-    limit: pageSize,
-  });
+  const { data, isLoading, isFetching, isError } = useMediaControllerFindAll(
+    mediaListParams({ search, page, pageSize, view, sort }),
+  );
 
   const assets = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
@@ -114,7 +123,13 @@ export function MediaAssetGrid({
   if (assets.length === 0 && !leading) {
     return (
       <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-        {search ? dict.common.table.emptyFiltered : t.empty}
+        {search
+          ? dict.common.table.emptyFiltered
+          : view === MediaListView.unused
+            ? t.emptyUnused
+            : view === MediaListView.noAlt
+              ? t.emptyNoAlt
+              : t.empty}
       </div>
     );
   }
