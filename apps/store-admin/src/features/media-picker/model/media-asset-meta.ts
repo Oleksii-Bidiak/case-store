@@ -38,6 +38,19 @@ export function mediaCardMeta(asset: MediaAssetEntity): string {
   return parts.join(" · ");
 }
 
+/**
+ * The dialog's format line: «WebP», or «WebP · зменшено з JPEG» when the
+ * pipeline re-encoded the upload (TASK-1731). `originalMime` is what the API
+ * DETECTED in the uploaded bytes; null (older rows, the backfill) says nothing.
+ */
+export function mediaFormatLine(
+  asset: Pick<MediaAssetEntity, "mime" | "originalMime">,
+): string {
+  const stored = mediaFormatName(asset.mime);
+  if (!asset.originalMime || asset.originalMime === asset.mime) return stored;
+  return `${stored} · ${t.convertedFrom(mediaFormatName(asset.originalMime))}`;
+}
+
 /** Display names for the media types the upload endpoint accepts. */
 const FORMAT_NAMES: Record<string, string> = {
   "image/webp": "WebP",

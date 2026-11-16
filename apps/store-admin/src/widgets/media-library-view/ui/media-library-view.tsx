@@ -74,8 +74,8 @@ const t = dict.mediaLibrary;
  * own request: `mediaListParams` builds one key for both, so reading them here
  * costs no second fetch.
  *
- * NOT DRAWN yet (wave 198 tail): search by file name and the original file name
- * on the card (MediaAsset stores no original name).
+ * The search also matches the original file name, which the cards show on
+ * their second line (TASK-1731).
  *
  * `LiveAnnouncer` wraps the body rather than sitting inside it: the uploads
  * hook and the toolbar call `useAnnouncer()`, and a hook called in the same

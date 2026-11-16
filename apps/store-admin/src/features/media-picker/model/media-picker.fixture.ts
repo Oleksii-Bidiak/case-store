@@ -32,6 +32,8 @@ export interface MediaAssetStub {
   alt: string | null;
   tags: string[];
   uploadedById: string | null;
+  originalFilename: string | null;
+  originalMime: string | null;
   usedInCount: number;
   createdAt: string;
   updatedAt: string;
@@ -52,6 +54,8 @@ export function makeMediaAsset(
     alt: null,
     tags: [],
     uploadedById: null,
+    originalFilename: null,
+    originalMime: null,
     usedInCount: 0,
     createdAt: "2026-09-01T10:00:00.000Z",
     updatedAt: "2026-09-01T10:00:00.000Z",

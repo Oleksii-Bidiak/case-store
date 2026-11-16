@@ -67,6 +67,8 @@ interface Asset {
   alt: string | null;
   tags: string[];
   uploadedById: string | null;
+  originalFilename: string | null;
+  originalMime: string | null;
   usedInCount: number;
   createdAt: string;
   updatedAt: string;
@@ -84,6 +86,8 @@ function makeAsset(id: string, overrides: Partial<Asset> = {}): Asset {
     alt: null,
     tags: [],
     uploadedById: null,
+    originalFilename: null,
+    originalMime: null,
     usedInCount: 0,
     createdAt: "2026-09-01T10:00:00.000Z",
     updatedAt: "2026-09-01T10:00:00.000Z",
@@ -968,5 +972,93 @@ describe("MediaLibraryView — views and sort (TASK-1730)", () => {
     renderLibrary();
 
     expect(await screen.findByText(t.emptyNoAlt)).toBeInTheDocument();
+  });
+});
+
+describe("MediaLibraryView — original file name (TASK-1731)", () => {
+  it("puts the uploaded file's own name on the card's second line", async () => {
+    stubMediaLibrary([
+      makeMediaAsset("a1", {
+        alt: "Банер",
+        uploadedById: "admin-1",
+        originalFilename: "autumn-sale-hero.jpg",
+        originalMime: "image/jpeg",
+      }),
+    ]);
+
+    renderLibrary();
+
+    const card = await screen.findByRole("button", {
+      name: t.openCardAria("Банер"),
+    });
+    expect(within(card).getByText("autumn-sale-hero.jpg")).toBeInTheDocument();
+  });
+
+  it("keeps «з каталогу (імпорт)» for an imported asset and shows no file line for an unknown name", async () => {
+    stubMediaLibrary([
+      makeMediaAsset("imp", { alt: "Імпорт", width: 0, height: 0, bytes: 0 }),
+      makeMediaAsset("old", { alt: "Старе", uploadedById: "admin-1" }),
+    ]);
+
+    renderLibrary();
+
+    const imported = await screen.findByRole("button", {
+      name: t.openCardAria("Імпорт"),
+    });
+    expect(within(imported).getByText(t.importedSource)).toBeInTheDocument();
+    const old = screen.getByRole("button", { name: t.openCardAria("Старе") });
+    expect(within(old).queryByText(t.importedSource)).not.toBeInTheDocument();
+    expect(within(old).queryByText(/\.webp$/)).not.toBeInTheDocument();
+  });
+
+  it("invites searching by file name", async () => {
+    stubMediaLibrary([]);
+
+    renderLibrary();
+
+    expect(
+      await screen.findByRole("searchbox", { name: t.searchAria }),
+    ).toHaveAttribute("placeholder", "Опис, тег або назва файлу…");
+  });
+
+  it("says in the dialog what the file was before the pipeline re-encoded it", async () => {
+    stubMedia([
+      makeAsset("a1", {
+        alt: "Банер",
+        uploadedById: "admin-1",
+        originalFilename: "Банер осінь.jpg",
+        originalMime: "image/jpeg",
+      }),
+    ]);
+
+    renderLibrary();
+    const dialog = await openCard("Банер");
+
+    expect(
+      await within(dialog).findByText("Банер осінь.jpg"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(`WebP · ${t.convertedFrom("JPEG")}`),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about a conversion when the stored type is the uploaded one", async () => {
+    stubMedia([
+      makeAsset("g1", {
+        alt: "Гіфка",
+        uploadedById: "admin-1",
+        mime: "image/gif",
+        originalFilename: "spin.gif",
+        originalMime: "image/gif",
+      }),
+    ]);
+
+    renderLibrary();
+    const dialog = await openCard("Гіфка");
+
+    expect(await within(dialog).findByText("GIF")).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText(new RegExp(t.convertedFrom("GIF"))),
+    ).not.toBeInTheDocument();
   });
 });

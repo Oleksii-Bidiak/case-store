@@ -55,10 +55,10 @@ interface MediaAssetCardProps {
  * THREE LINES UNDER THE PICTURE (wave 198, МТ1): the description, where the
  * file came from, and what it is (dimensions · weight · date). The second line
  * is the honest one for the catalogue backfill — «з каталогу (імпорт)» rather
- * than «невідомо · невідомо». The ORIGINAL file name the artboard shows there
- * for fresh uploads is not stored by the API yet (MediaAsset has no such
- * column); until it is, an upload's second line is simply absent rather than a
- * hashed storage key nobody chose.
+ * than «невідомо · невідомо». For an upload it is the ORIGINAL file name the
+ * operator picked (TASK-1731); where that is unknown (rows from before it was
+ * recorded) the line is simply absent rather than a hashed storage key nobody
+ * chose.
  *
  * The whole tile is a single `<button>`, so there is exactly one tab stop per
  * asset and Enter/Space do what a click does. Everything inside is therefore
@@ -114,10 +114,16 @@ export function MediaAssetCard({
           >
             {alt || (canWrite ? t.noAltAdd : t.noAlt)}
           </span>
-          {imported && (
+          {imported ? (
             <span className="truncate font-mono text-xs text-muted-foreground">
               {t.importedSource}
             </span>
+          ) : (
+            asset.originalFilename && (
+              <span className="truncate font-mono text-xs text-muted-foreground">
+                {asset.originalFilename}
+              </span>
+            )
           )}
           <span className="text-xs text-muted-foreground">
             {mediaCardMeta(asset)}
