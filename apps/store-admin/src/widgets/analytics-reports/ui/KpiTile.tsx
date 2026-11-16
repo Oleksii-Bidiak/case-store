@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { DeltaBadge, type DeltaBadgeProps } from "./DeltaBadge";
@@ -17,6 +19,8 @@ export interface KpiTileProps {
    * the primary colour so the eye lands on it first.
    */
   accent?: boolean;
+  /** One more line under «було …» — «з них очікує …» (TASK-2395). */
+  note?: ReactNode;
   className?: string;
 }
 
@@ -32,6 +36,7 @@ export function KpiTile({
   changePct,
   goodWhen,
   accent = false,
+  note,
   className,
 }: KpiTileProps) {
   return (
@@ -52,6 +57,9 @@ export function KpiTile({
         <DeltaBadge changePct={changePct} goodWhen={goodWhen} />
         <span className="text-xs text-muted-foreground">{d.was(previous)}</span>
       </span>
+      {note ? (
+        <span className="text-xs text-muted-foreground">{note}</span>
+      ) : null}
     </div>
   );
 }

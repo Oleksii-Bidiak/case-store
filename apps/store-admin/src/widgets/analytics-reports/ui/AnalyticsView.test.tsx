@@ -119,7 +119,7 @@ describe("AnalyticsView — the period", () => {
 });
 
 describe("AnalyticsView — the reports", () => {
-  it("draws all five reports for the owner, «Продажі» first, with its tiles", async () => {
+  it("draws all six reports for the owner, «Продажі» first, with its tiles", async () => {
     renderWithProviders(<AnalyticsView />, OWNER);
 
     const sales = await screen.findByRole("region", { name: d.salesTitle });
@@ -138,6 +138,7 @@ describe("AnalyticsView — the reports", () => {
       .map((id) => document.getElementById(id ?? "")?.textContent);
     expect(regions).toEqual([
       d.salesTitle,
+      d.moneyFlowTitle,
       d.catalogueTitle,
       d.productsTitle,
       d.funnelTitle,

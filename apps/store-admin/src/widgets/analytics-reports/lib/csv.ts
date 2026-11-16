@@ -19,11 +19,14 @@ import type {
   CategoryReportRowEntity,
   ComparedValueEntity,
   FunnelReportEntity,
+  MoneyFlowEntryEntity,
+  MoneyFlowReportEntity,
   ProductsReportEntity,
   RegistrationsReportEntity,
   ReportPeriodEntity,
   SalesReportEntity,
 } from "@/entities/analytics";
+import { MoneyDirection } from "@/entities/analytics";
 import { dict } from "@/shared/config";
 import {
   buildCsv,
@@ -33,8 +36,15 @@ import {
   t,
   type CsvCell,
 } from "@/shared/lib/csv";
-import { toKyivDateInput } from "@/shared/lib/format";
+import { toKyivDateInput, toKyivDateTimeLocal } from "@/shared/lib/format";
 import { isEmptySales, soldNothing } from "./empty";
+import {
+  entryActor,
+  entryShopKop,
+  isEmptyMoneyFlow,
+  kindRowsOf,
+  moneyKindLabel,
+} from "./money-flow";
 
 const d = dict.analytics;
 
@@ -44,7 +54,14 @@ export interface CsvFile {
 }
 
 export type CsvReport =
-  "sales" | "categories" | "brands" | "products" | "funnel" | "registrations";
+  | "sales"
+  | "categories"
+  | "brands"
+  | "products"
+  | "funnel"
+  | "registrations"
+  | "money-flow"
+  | "money-flow-entries";
 
 /** `sales-2026-09-06_2026-10-05.csv` — the report and the server's days. */
 export function csvFilename(report: CsvReport, period: ReportPeriodEntity) {
@@ -331,5 +348,128 @@ export function registrationsCsv(data: RegistrationsReportEntity): CsvFile {
   return {
     filename: csvFilename("registrations", data.period),
     csv: joinCsvSections([summary, daily]),
+  };
+}
+
+/* ── Money flow (TASK-2395) ────────────────────────────────────────────── */
+
+/**
+ * Whole kopecks as hryvnias — `123405` → `1234.05`. An integer divided by 100
+ * prints as its exact two-decimal value, so this matches `money` above
+ * without a float round-trip.
+ */
+const kopMoney = (kop: number) => n(kop === 0 ? 0 : kop / 100);
+
+/**
+ * The summary as the card shows it: the three tiles (out NEGATIVE, as the
+ * screen prints «−»; the LiqPay-pending part too, when the card mentions it),
+ * then the eight kinds from the shop's side. The balances are left out: they
+ * are «станом на зараз», not figures of the period the file is named after.
+ */
+export function moneyFlowCsv(data: MoneyFlowReportEntity): CsvFile {
+  const { totals } = data;
+  const outgoing = (kop: number) => kopMoney(-kop);
+  const row = (
+    label: string,
+    value: ComparedValueEntity,
+    cell: (kop: number) => CsvCell,
+  ): CsvCell[] => [
+    t(label),
+    cell(value.current),
+    cell(value.previous),
+    change(value.changePct),
+  ];
+  const summary = buildCsv(
+    [d.csvMetric, d.csvCurrent, d.csvPrevious, d.csvChange],
+    [
+      row(d.moneyFlowInTile, totals.inKop, kopMoney),
+      row(d.moneyFlowOutTile, totals.outKop, outgoing),
+      row(d.moneyFlowNetTile, totals.netKop, kopMoney),
+      ...(totals.requestedOutKop.current > 0
+        ? [row(d.csvRequestedRow, totals.requestedOutKop, outgoing)]
+        : []),
+    ],
+  );
+  const groups: Array<[string, MoneyDirection]> = [
+    [d.moneyFlowGroupIn, MoneyDirection.IN],
+    [d.moneyFlowGroupOut, MoneyDirection.OUT],
+  ];
+  const kinds = buildCsv(
+    [
+      d.csvDirection,
+      d.moneyFlowColKind,
+      d.moneyFlowColGross,
+      d.moneyFlowColReversed,
+      d.moneyFlowColNet,
+      d.moneyFlowColCount,
+    ],
+    groups.flatMap(([group, direction]) =>
+      kindRowsOf(data, direction).map((kind) => [
+        t(group),
+        t(moneyKindLabel(kind.kind)),
+        kopMoney(kind.grossKop),
+        kopMoney(kind.reversedKop),
+        kopMoney(kind.netKop),
+        n(kind.count),
+      ]),
+    ),
+  );
+  return {
+    filename: csvFilename("money-flow", data.period),
+    // An empty period has a sentence on screen instead of the kinds table.
+    csv: joinCsvSections(isEmptyMoneyFlow(data) ? [summary] : [summary, kinds]),
+  };
+}
+
+/** `2026-09-24 18:40` — a Kyiv timestamp a spreadsheet sorts as text. */
+const kyivStamp = (iso: string) => toKyivDateTimeLocal(iso).replace("T", " ");
+
+/** The marks of an entry, in words — the register's «Стан». */
+function entryState(entry: MoneyFlowEntryEntity): string {
+  const marks: string[] = [];
+  if (entry.isReversal) marks.push(d.moneyFlowMarkReversal);
+  if (entry.requested) marks.push(d.moneyFlowMarkRequestedFull);
+  if (entry.legacy) marks.push(d.moneyFlowMarkLegacy);
+  return marks.join("; ");
+}
+
+/**
+ * The whole register — every page, already fetched — one row per entry.
+ * «Сума» is from the shop's side: IN plus, OUT minus, a reversal flipped.
+ */
+export function moneyFlowEntriesCsv(
+  period: ReportPeriodEntity,
+  entries: readonly MoneyFlowEntryEntity[],
+): CsvFile {
+  return {
+    filename: csvFilename("money-flow-entries", period),
+    csv: buildCsv(
+      [
+        d.moneyFlowColDate,
+        d.moneyFlowColCreated,
+        d.moneyFlowColOrder,
+        d.csvDirection,
+        d.moneyFlowColKind,
+        d.moneyFlowColAmount,
+        d.moneyFlowColState,
+        d.moneyFlowColActor,
+        d.moneyFlowColReason,
+      ],
+      entries.map((entry) => [
+        t(kyivStamp(entry.occurredAt)),
+        t(kyivStamp(entry.createdAt)),
+        t(`#${entry.orderNumber}`),
+        t(
+          entry.direction === MoneyDirection.OUT
+            ? d.moneyFlowGroupOut
+            : d.moneyFlowGroupIn,
+        ),
+        t(moneyKindLabel(entry.kind)),
+        kopMoney(entryShopKop(entry)),
+        t(entryState(entry)),
+        t(entryActor(entry)),
+        entry.reason ? t(entry.reason) : null,
+      ]),
+    ),
   };
 }

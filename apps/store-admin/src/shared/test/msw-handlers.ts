@@ -3,6 +3,7 @@ import {
   brandReport,
   categoryReport,
   funnelReport,
+  moneyFlowReport,
   productsReport,
   registrationsReport,
   salesReport,
@@ -68,6 +69,16 @@ export const handlers = [
   ),
   http.get("*/api/admin/analytics/reports/registrations", () =>
     HttpResponse.json({ data: registrationsReport() }),
+  ),
+  // TASK-2395: «Рух коштів» — the summary, and an empty register.
+  http.get("*/api/admin/analytics/reports/money-flow", () =>
+    HttpResponse.json({ data: moneyFlowReport() }),
+  ),
+  http.get("*/api/admin/analytics/reports/money-flow/entries", () =>
+    HttpResponse.json({
+      data: [],
+      meta: { total: 0, page: 1, limit: 50, totalPages: 0 },
+    }),
   ),
 
   // Needs-action counters (TASK-248, +pendingOver48h TASK-251) — all-clear by

@@ -14,6 +14,7 @@ import { Callout, Skeleton } from "@/shared/ui";
 import { readReportPeriod, reportPeriodToQuery } from "../model/report-period";
 import { CatalogueReport } from "./CatalogueReport";
 import { FunnelReport } from "./FunnelReport";
+import { MoneyFlowReport } from "./MoneyFlowReport";
 import { PeriodBar } from "./PeriodBar";
 import { ProductsReport } from "./ProductsReport";
 import { RegistrationsReport } from "./RegistrationsReport";
@@ -43,6 +44,8 @@ export function AnalyticsView() {
   const registrations = useGetRegistrationsReport(query);
   const { can } = useAuth();
   const canRevenue = can(PERM.analyticsRevenue);
+  // TASK-2395: the ledger is money AND payments — both rights, or no block.
+  const canMoneyFlow = canRevenue && can(PERM.paymentsRead);
 
   return (
     <div className="flex flex-col gap-4" data-slot="analytics-view">
@@ -73,6 +76,13 @@ export function AnalyticsView() {
           the right — no card, no request. Unlike ДН-8.7, an empty period
           still shows the funnel and registrations with their own zeros. */}
       {canRevenue ? <SalesReport query={query} enabled={canRevenue} /> : null}
+      {canMoneyFlow ? (
+        <MoneyFlowReport
+          query={query}
+          selection={selection}
+          enabled={canMoneyFlow}
+        />
+      ) : null}
       <CatalogueReport query={query} />
       <ProductsReport query={query} />
       <FunnelReport query={query} />

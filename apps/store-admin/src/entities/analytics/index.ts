@@ -43,3 +43,23 @@ export type {
   RegistrationsReportEntity,
   FunnelReportEntity,
 } from "@/shared/api";
+
+// TASK-2395 — «Рух коштів»: the money ledger read by the day money moved.
+// Both endpoints need `analytics:revenue` AND `payments:read`. The register's
+// CSV pages through every entry with the plain (non-hook) function.
+export {
+  useGetMoneyFlowReport,
+  useGetMoneyFlowEntries,
+  getMoneyFlowEntries,
+  MoneyEntryKind,
+  MoneyDirection,
+} from "@/shared/api";
+
+export type {
+  GetMoneyFlowReportParams,
+  GetMoneyFlowEntriesParams,
+  MoneyFlowReportEntity,
+  MoneyFlowKindRowEntity,
+  MoneyFlowEntryEntity,
+  MoneyBalanceEntity,
+} from "@/shared/api";

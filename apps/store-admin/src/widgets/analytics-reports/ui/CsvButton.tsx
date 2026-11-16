@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Download } from "lucide-react";
 
 import { dict } from "@/shared/config";
@@ -15,9 +16,11 @@ export interface CsvButtonProps {
   title: string;
   /**
    * Builds the file from what is on screen. `null` while there is nothing to
-   * export (loading, failed) — the button is then disabled.
+   * export (loading, failed) — the button is then disabled. May be async
+   * (TASK-2395: the money-flow register fetches every page first); the button
+   * stays disabled until the file is saved or has failed.
    */
-  build: (() => CsvFile) | null;
+  build: (() => CsvFile | Promise<CsvFile>) | null;
 }
 
 /**
@@ -27,6 +30,28 @@ export interface CsvButtonProps {
  * a figure that failed the numeric guard — is a toast, not a broken download.
  */
 export function CsvButton({ title, build }: CsvButtonProps) {
+  const [busy, setBusy] = useState(false);
+
+  function handleClick() {
+    if (!build || busy) return;
+    let result: CsvFile | Promise<CsvFile>;
+    try {
+      result = build();
+      if (!(result instanceof Promise)) {
+        downloadCsv(result.csv, result.filename);
+        return;
+      }
+    } catch {
+      toast.error(d.csvError);
+      return;
+    }
+    setBusy(true);
+    result
+      .then(({ csv, filename }) => downloadCsv(csv, filename))
+      .catch(() => toast.error(d.csvError))
+      .finally(() => setBusy(false));
+  }
+
   return (
     <Button
       type="button"
@@ -34,16 +59,9 @@ export function CsvButton({ title, build }: CsvButtonProps) {
       size="sm"
       className="min-h-11 md:min-h-8"
       aria-label={d.csvAria(title)}
-      disabled={build === null}
-      onClick={() => {
-        if (!build) return;
-        try {
-          const { csv, filename } = build();
-          downloadCsv(csv, filename);
-        } catch {
-          toast.error(d.csvError);
-        }
-      }}
+      aria-busy={busy || undefined}
+      disabled={build === null || busy}
+      onClick={handleClick}
     >
       <Download aria-hidden="true" />
       {d.csvButton}
