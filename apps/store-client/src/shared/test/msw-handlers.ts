@@ -119,6 +119,8 @@ export function makeOrder(overrides: Partial<OrderEntity> = {}): {
       paidKop: 0,
       refundedKop: 0,
       returnCreditKop: 0,
+      // TASK-2048 — not a copy of another order.
+      copiedFromId: null,
       balanceKop: 99_800,
       refundedAfterCancel: false,
       subtotal: "998.00",
