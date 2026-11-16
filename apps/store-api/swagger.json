@@ -4182,250 +4182,6 @@
         ]
       }
     },
-    "/api/admin/uploads/categories": {
-      "post": {
-        "operationId": "uploadsControllerUploadCategoryImage",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "file"
-                ],
-                "properties": {
-                  "file": {
-                    "type": "string",
-                    "format": "binary"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Image stored",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "No file, or a disallowed MIME type"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Forbidden — categories:write required"
-          },
-          "413": {
-            "description": "File exceeds the 20 MB limit"
-          },
-          "415": {
-            "description": "File contents are not a valid image"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Upload a category image (admin)",
-        "tags": [
-          "Uploads"
-        ]
-      }
-    },
-    "/api/admin/uploads/brands": {
-      "post": {
-        "operationId": "uploadsControllerUploadBrandLogo",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "file"
-                ],
-                "properties": {
-                  "file": {
-                    "type": "string",
-                    "format": "binary"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Image stored",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "No file, or a disallowed MIME type"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Forbidden — brands:write required"
-          },
-          "413": {
-            "description": "File exceeds the 20 MB limit"
-          },
-          "415": {
-            "description": "File contents are not a valid image"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Upload a brand logo (admin)",
-        "tags": [
-          "Uploads"
-        ]
-      }
-    },
-    "/api/admin/uploads/banners": {
-      "post": {
-        "operationId": "uploadsControllerUploadBannerImage",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "file"
-                ],
-                "properties": {
-                  "file": {
-                    "type": "string",
-                    "format": "binary"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Image stored",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "No file, or a disallowed MIME type"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Forbidden — banners:write required"
-          },
-          "413": {
-            "description": "File exceeds the 20 MB limit"
-          },
-          "415": {
-            "description": "File contents are not a valid image"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Upload a banner image (admin)",
-        "tags": [
-          "Uploads"
-        ]
-      }
-    },
-    "/api/admin/uploads/blog": {
-      "post": {
-        "operationId": "uploadsControllerUploadBlogCover",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "file"
-                ],
-                "properties": {
-                  "file": {
-                    "type": "string",
-                    "format": "binary"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Image stored",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "No file, or a disallowed MIME type"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Forbidden — blog:write required"
-          },
-          "413": {
-            "description": "File exceeds the 20 MB limit"
-          },
-          "415": {
-            "description": "File contents are not a valid image"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Upload a blog cover image (admin)",
-        "tags": [
-          "Uploads"
-        ]
-      }
-    },
     "/api/brands": {
       "get": {
         "operationId": "BrandController_findAll",
@@ -6294,6 +6050,250 @@
         "summary": "Delete a media asset — only when nothing uses it (admin)",
         "tags": [
           "Media"
+        ]
+      }
+    },
+    "/api/admin/uploads/categories": {
+      "post": {
+        "operationId": "uploadsControllerUploadCategoryImage",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — categories:write required"
+          },
+          "413": {
+            "description": "File exceeds the 20 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a category image (admin)",
+        "tags": [
+          "Uploads"
+        ]
+      }
+    },
+    "/api/admin/uploads/brands": {
+      "post": {
+        "operationId": "uploadsControllerUploadBrandLogo",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — brands:write required"
+          },
+          "413": {
+            "description": "File exceeds the 20 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a brand logo (admin)",
+        "tags": [
+          "Uploads"
+        ]
+      }
+    },
+    "/api/admin/uploads/banners": {
+      "post": {
+        "operationId": "uploadsControllerUploadBannerImage",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — banners:write required"
+          },
+          "413": {
+            "description": "File exceeds the 20 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a banner image (admin)",
+        "tags": [
+          "Uploads"
+        ]
+      }
+    },
+    "/api/admin/uploads/blog": {
+      "post": {
+        "operationId": "uploadsControllerUploadBlogCover",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadedImageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — blog:write required"
+          },
+          "413": {
+            "description": "File exceeds the 20 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload a blog cover image (admin)",
+        "tags": [
+          "Uploads"
         ]
       }
     },
@@ -21782,37 +21782,6 @@
           "data"
         ]
       },
-      "UploadedImageEntity": {
-        "type": "object",
-        "properties": {
-          "url": {
-            "type": "string",
-            "description": "Absolute public URL of the stored image",
-            "example": "http://localhost:3001/uploads/content/8f1c….webp"
-          },
-          "blurDataUrl": {
-            "type": "string",
-            "description": "base64 LQIP for `next/image` blur-up, or null when the file was stored as-is (animated GIF)",
-            "nullable": true,
-            "example": "data:image/webp;base64,UklGR…"
-          }
-        },
-        "required": [
-          "url",
-          "blurDataUrl"
-        ]
-      },
-      "UploadedImageResponseEnvelope": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/UploadedImageEntity"
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
       "BrandEntity": {
         "type": "object",
         "properties": {
@@ -23373,6 +23342,37 @@
             }
           }
         }
+      },
+      "UploadedImageEntity": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute public URL of the stored image",
+            "example": "http://localhost:3001/uploads/content/8f1c….webp"
+          },
+          "blurDataUrl": {
+            "type": "string",
+            "description": "base64 LQIP for `next/image` blur-up, or null when the file was stored as-is (animated GIF)",
+            "nullable": true,
+            "example": "data:image/webp;base64,UklGR…"
+          }
+        },
+        "required": [
+          "url",
+          "blurDataUrl"
+        ]
+      },
+      "UploadedImageResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/UploadedImageEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
       },
       "WishlistItemEntity": {
         "type": "object",

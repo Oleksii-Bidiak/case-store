@@ -53,10 +53,10 @@ describe('UploadsController (content-field uploads)', () => {
   afterEach(() => jest.clearAllMocks());
 
   it.each([
-    ['uploadCategoryImage', 'categories'],
-    ['uploadBrandLogo', 'brands'],
-    ['uploadBannerImage', 'banners'],
-    ['uploadBlogCover', 'blog'],
+    'uploadCategoryImage',
+    'uploadBrandLogo',
+    'uploadBannerImage',
+    'uploadBlogCover',
   ] as const)('%s stores the file as a library asset owned by the uploader', async (handler) => {
     await controller[handler](USER_ID, file);
 

@@ -31,6 +31,10 @@ export const IMPORTS_SUBDIR = 'imports';
  * exactly what this whitelist exists to prevent. Served publicly, like
  * `products`/`branding`: the storefront's `next.config.ts` already allows
  * `/uploads/**`, so `/uploads/content/**` needs no config change.
+ *
+ * Legacy since TASK-2042: those four routes now record library assets and write
+ * to {@link MEDIA_SUBDIR}. The subdir stays whitelisted because the files already
+ * in it are still served and still referenced by URL.
  */
 export const CONTENT_SUBDIR = 'content';
 
