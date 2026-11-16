@@ -21,6 +21,18 @@ import {
   PUBLIC_UPLOADS_PREFIX,
 } from './image-upload.constants';
 
+/**
+ * Media type for each format sharp can report on an ACCEPTED upload
+ * (TASK-1731). Only the four the upload gate lets in can actually occur; a
+ * format missing here is reported as unknown (null) rather than guessed.
+ */
+const SOURCE_FORMAT_MIME: Readonly<Record<string, string>> = {
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: GIF_MIME,
+};
+
 /** One stored upload. */
 export interface StoredImage {
   /** Absolute public URL of the stored file. */
@@ -45,6 +57,13 @@ export interface StoredImage {
   bytes: number;
   /** Media type of the STORED file (`image/webp`, or `image/gif` passthrough). */
   mime: string;
+  /**
+   * Media type of the file as UPLOADED, sniffed from its bytes by the pipeline
+   * (TASK-1731) — never the client's Content-Type. Equals `mime` for a GIF
+   * passthrough; `image/jpeg` for a JPEG stored as WebP. Null when the decoded
+   * format has no entry in {@link SOURCE_FORMAT_MIME}.
+   */
+  sourceMime: string | null;
 }
 
 /**
@@ -125,6 +144,7 @@ export class ImageUploadService {
         height: prepared.height,
         bytes: prepared.buffer.length,
         mime: prepared.mime,
+        sourceMime: prepared.sourceMime,
       });
     }
     return stored;
@@ -176,6 +196,7 @@ export class ImageUploadService {
     buffer: Buffer;
     ext: string;
     mime: string;
+    sourceMime: string | null;
     blurDataUrl: string | null;
     width: number;
     height: number;
@@ -205,6 +226,8 @@ export class ImageUploadService {
         buffer: stripped,
         ext: ALLOWED_IMAGE_MIME_EXT[GIF_MIME],
         mime: GIF_MIME,
+        // The probe above already proved the bytes are a GIF.
+        sourceMime: GIF_MIME,
         blurDataUrl: null,
         width: probe.width,
         height: probe.height,
@@ -212,8 +235,18 @@ export class ImageUploadService {
     }
 
     try {
-      const { webp, blurDataUrl, width, height } = await this.imageProcessor.process(file.buffer);
-      return { buffer: webp, ext: 'webp', mime: 'image/webp', blurDataUrl, width, height };
+      const { webp, blurDataUrl, width, height, sourceFormat } = await this.imageProcessor.process(
+        file.buffer,
+      );
+      return {
+        buffer: webp,
+        ext: 'webp',
+        mime: 'image/webp',
+        sourceMime: SOURCE_FORMAT_MIME[sourceFormat] ?? null,
+        blurDataUrl,
+        width,
+        height,
+      };
     } catch {
       throw new UnsupportedMediaTypeException('File contents are not a decodable image');
     }

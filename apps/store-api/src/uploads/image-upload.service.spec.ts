@@ -45,6 +45,7 @@ describe('ImageUploadService', () => {
         width: 2000,
         height: 1333,
         bytes: 'optimized-webp'.length,
+        sourceFormat: 'jpeg',
       }),
       detectFormat: jest.fn().mockResolvedValue('jpeg'),
       probe: jest.fn().mockResolvedValue({ format: 'jpeg', width: 2000, height: 1333 }),
@@ -89,6 +90,8 @@ describe('ImageUploadService', () => {
         height: 1333,
         bytes: Buffer.from('optimized-webp').length,
         mime: 'image/webp',
+        // What the pipeline DECODED (TASK-1731) — sniffed, not the client's claim.
+        sourceMime: 'image/jpeg',
       });
       // The trailing slash on PUBLIC_BASE_URL must not double up in the URL.
       expect(stored.url).not.toContain('//uploads');
@@ -189,6 +192,37 @@ describe('ImageUploadService', () => {
       expect(stored.height).toBe(240);
       expect(stored.bytes).toBe(TINY_GIF.length);
       expect(stored.mime).toBe('image/gif');
+      expect(stored.sourceMime).toBe('image/gif');
+    });
+
+    it('reports the SNIFFED source type, not the declared one (TASK-1731)', async () => {
+      imageProcessor.process.mockResolvedValue({
+        webp: Buffer.from('optimized-webp'),
+        blurDataUrl: 'data:image/webp;base64,BLUR',
+        width: 10,
+        height: 10,
+        bytes: 14,
+        sourceFormat: 'png',
+      });
+
+      const stored = await service.store(makeFile({ mimetype: 'image/jpeg' }), 'content');
+
+      expect(stored.sourceMime).toBe('image/png');
+    });
+
+    it('reports null for a source format it has no media type for (TASK-1731)', async () => {
+      imageProcessor.process.mockResolvedValue({
+        webp: Buffer.from('optimized-webp'),
+        blurDataUrl: 'data:image/webp;base64,BLUR',
+        width: 10,
+        height: 10,
+        bytes: 14,
+        sourceFormat: 'magick',
+      });
+
+      const stored = await service.store(makeFile(), 'content');
+
+      expect(stored.sourceMime).toBeNull();
     });
 
     // TASK-587. "Passthrough" keeps the frames, not the client's metadata.

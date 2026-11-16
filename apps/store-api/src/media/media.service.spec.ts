@@ -23,6 +23,8 @@ function makeAsset(overrides: Partial<MediaAsset> = {}): MediaAsset {
     alt: 'Чохол',
     tags: ['iphone'],
     uploadedById: 'admin-1',
+    originalFilename: 'photo.jpg',
+    originalMime: 'image/jpeg',
     createdAt: new Date('2026-09-14T10:00:00.000Z'),
     updatedAt: new Date('2026-09-14T10:00:00.000Z'),
     ...overrides,
@@ -38,6 +40,7 @@ function makeStored(overrides: Partial<StoredImage> = {}): StoredImage {
     height: 1333,
     bytes: 184320,
     mime: 'image/webp',
+    sourceMime: 'image/jpeg',
     ...overrides,
   };
 }
@@ -278,7 +281,36 @@ describe('MediaService', () => {
         alt: 'Чохол',
         tags: ['iphone'],
         uploadedById: 'admin-1',
+        originalFilename: 'photo.jpg',
+        originalMime: 'image/jpeg',
       });
+    });
+
+    it('records the file name the operator picked, cleaned up (TASK-1731)', async () => {
+      const file = { ...makeFile(), originalname: 'C:\\Фото\\  Банер осінь.jpg ' };
+
+      await service.upload(file, {}, 'admin-1');
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ originalFilename: 'Банер осінь.jpg' }),
+      );
+    });
+
+    it('records the DETECTED source type, not the one the client declared (TASK-1731)', async () => {
+      uploads.store.mockResolvedValue(makeStored({ sourceMime: 'image/png' }));
+
+      await service.upload({ ...makeFile(), mimetype: 'image/jpeg' }, {}, 'admin-1');
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ originalMime: 'image/png' }),
+      );
+    });
+
+    it('returns both on the created asset (TASK-1731)', async () => {
+      const asset = await service.upload(makeFile(), {}, 'admin-1');
+
+      expect(asset.originalFilename).toBe('photo.jpg');
+      expect(asset.originalMime).toBe('image/jpeg');
     });
 
     it('stores no row when the pipeline rejects the file', async () => {

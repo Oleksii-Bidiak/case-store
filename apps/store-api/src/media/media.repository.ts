@@ -15,6 +15,10 @@ export interface CreateMediaAssetInput {
   alt: string | null;
   tags: string[];
   uploadedById: string | null;
+  /** The client's file name, already normalised; null = unknown (TASK-1731). */
+  originalFilename: string | null;
+  /** The uploaded file's DETECTED media type; null = unknown (TASK-1731). */
+  originalMime: string | null;
 }
 
 /** Editable metadata. Only provided keys are written. */
@@ -25,7 +29,10 @@ export interface UpdateMediaAssetInput {
 
 /** Filters for the admin library list. */
 export interface FindAllMediaParams {
-  /** Free-text needle matched against `alt` (case-insensitive substring) or an exact tag. */
+  /**
+   * Free-text needle matched against `alt` and `originalFilename`
+   * (case-insensitive substring) or an exact tag.
+   */
   search?: string;
   /** Exact tag the asset must carry. */
   tag?: string;
@@ -164,6 +171,9 @@ export class MediaRepository {
   /**
    * The search/tag filters as one SQL condition.
    *
+   * The original file name (TASK-1731) is matched exactly like alt — an operator
+   * looking for «осінь» may remember the file, not the description.
+   *
    * The alt match is `strpos(lower(alt), lower(needle)) > 0` rather than
    * `ILIKE '%' || needle || '%'`: a substring test has no wildcards, so an
    * operator's `%` or `_` is just a character and nothing needs escaping. Same
@@ -180,6 +190,7 @@ export class MediaRepository {
     if (params.search) {
       clauses.push(Prisma.sql`(
         strpos(lower(m.alt), lower(${params.search})) > 0
+        OR strpos(lower(m.original_filename), lower(${params.search})) > 0
         OR m.tags @> ARRAY[${params.search}]::text[]
       )`);
     }

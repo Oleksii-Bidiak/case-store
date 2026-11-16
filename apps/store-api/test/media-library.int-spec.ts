@@ -396,4 +396,49 @@ describe('Media library views (integration, TASK-1730)', () => {
       expect(result.assets.map((asset) => asset.id)).toEqual(expected.map((key) => ids[key]));
     });
   });
+
+  describe('search by the original file name (TASK-1731)', () => {
+    const TAG3 = `int-1731-${s}`;
+    const ids: Record<string, string> = {};
+
+    beforeAll(async () => {
+      const make = async (key: string, originalFilename: string | null) => {
+        const row = await prisma.mediaAsset.create({
+          data: {
+            url: urlFor(`c-${key}`),
+            mime: 'image/webp',
+            alt: null,
+            tags: [TAG3],
+            originalFilename,
+            originalMime: originalFilename ? 'image/jpeg' : null,
+          },
+        });
+        assetIds.push(row.id);
+        ids[key] = row.id;
+      };
+      await make('autumn', 'Банер осінь.JPG');
+      await make('pct', '50%_off.png');
+      await make('quote', "O'Brien.png");
+      await make('unknown', null);
+    });
+
+    const list3 = (search: string) =>
+      media.findAll({ tag: TAG3, search, view: 'all', sort: 'oldest', page: 1, limit: 100 });
+
+    it.each([
+      ['осінь', ['autumn']],
+      ['БАНЕР ОСІНЬ.jpg', ['autumn']],
+      ['%', ['pct']],
+      ['_', ['pct']],
+      ['50%_', ['pct']],
+      // Would match «50%_off» and more if % and _ were wildcards.
+      ['5%f', [] as string[]],
+      ["o'b", ['quote']],
+      ["' OR original_filename IS NULL --", [] as string[]],
+    ])('search %p matches the original file name literally', async (needle, expected) => {
+      const result = await list3(needle);
+
+      expect(result.assets.map((asset) => asset.id)).toEqual(expected.map((key) => ids[key]));
+    });
+  });
 });

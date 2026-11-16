@@ -5,6 +5,7 @@ import { MEDIA_SUBDIR } from '../storage';
 import { ImageUploadService } from '../uploads';
 import { MediaRepository, UpdateMediaAssetInput } from './media.repository';
 import { MediaUsageRepository } from './media-usage.repository';
+import { normaliseOriginalFilename } from './media-filename';
 import { MEDIA_USAGE_KIND_ORDER, MediaUsage } from './media-usage.types';
 import { MediaListQueryDto, MediaMetadataDto, DEFAULT_MEDIA_PAGE_SIZE } from './dto';
 import { MediaAssetDetailEntity, MediaAssetEntity } from './entities';
@@ -116,6 +117,9 @@ export class MediaService {
       alt: this.normaliseAlt(metadata.alt),
       tags: metadata.tags ?? [],
       uploadedById,
+      // A label for the card and for search (TASK-1731); see media-filename.ts.
+      originalFilename: normaliseOriginalFilename(file?.originalname),
+      originalMime: stored.sourceMime,
     });
 
     this.logger.info(

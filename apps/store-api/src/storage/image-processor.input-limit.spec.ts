@@ -24,6 +24,8 @@ jest.mock('sharp', () => {
   chain.rotate = jest.fn(() => chain);
   chain.resize = jest.fn(() => chain);
   chain.webp = jest.fn(() => chain);
+  // A header read on the same instance, for the source format (TASK-1731).
+  chain.metadata = jest.fn(() => Promise.resolve({ format: 'jpeg' }));
   // The full-size encode asks for `{ resolveWithObject: true }` so it gets the
   // stored render's own width/height/size back (TASK-441); the LQIP pass does
   // not. The mock has to honour both shapes or it stops resembling sharp.

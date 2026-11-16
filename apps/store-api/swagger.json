@@ -23041,6 +23041,18 @@
             "nullable": true,
             "example": "550e8400-e29b-41d4-a716-446655440000"
           },
+          "originalFilename": {
+            "type": "string",
+            "description": "Name of the file the operator uploaded (basename, cleaned up). Null = unknown: assets from before TASK-1731, the TASK-441 backfill and the seed.",
+            "nullable": true,
+            "example": "Банер осінь.jpg"
+          },
+          "originalMime": {
+            "type": "string",
+            "description": "Media type of the uploaded file as the pipeline DETECTED it from the bytes. Differs from `mime` when the upload was re-encoded (a JPEG stored as WebP). Null = unknown.",
+            "nullable": true,
+            "example": "image/jpeg"
+          },
           "usedInCount": {
             "type": "number",
             "description": "How many places currently reference this asset. COMPUTED on every read, never stored — see MediaUsageRepository. 0 is the only state in which a delete succeeds.",
@@ -23070,6 +23082,8 @@
           "alt",
           "tags",
           "uploadedById",
+          "originalFilename",
+          "originalMime",
           "usedInCount",
           "createdAt",
           "updatedAt"
@@ -23178,6 +23192,18 @@
             "nullable": true,
             "example": "550e8400-e29b-41d4-a716-446655440000"
           },
+          "originalFilename": {
+            "type": "string",
+            "description": "Name of the file the operator uploaded (basename, cleaned up). Null = unknown: assets from before TASK-1731, the TASK-441 backfill and the seed.",
+            "nullable": true,
+            "example": "Банер осінь.jpg"
+          },
+          "originalMime": {
+            "type": "string",
+            "description": "Media type of the uploaded file as the pipeline DETECTED it from the bytes. Differs from `mime` when the upload was re-encoded (a JPEG stored as WebP). Null = unknown.",
+            "nullable": true,
+            "example": "image/jpeg"
+          },
           "usedInCount": {
             "type": "number",
             "description": "How many places currently reference this asset. COMPUTED on every read, never stored — see MediaUsageRepository. 0 is the only state in which a delete succeeds.",
@@ -23214,6 +23240,8 @@
           "alt",
           "tags",
           "uploadedById",
+          "originalFilename",
+          "originalMime",
           "usedInCount",
           "createdAt",
           "updatedAt",
