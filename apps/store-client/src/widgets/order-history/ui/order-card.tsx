@@ -113,7 +113,7 @@ export function OrderCard({
             status={order.status}
             srLabel={dict.orderHistory.statusSr}
           >
-            {dict.order.orderStatusLabels[order.status] ?? order.status}
+            {dict.order.orderStatusLabelFor(order.status, order.deliveryMethod)}
           </OrderStatusBadge>
           {/* «Оплата: …» names itself — no sr prefix needed. */}
           <OrderStatusBadge status={order.paymentStatus}>

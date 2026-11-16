@@ -1,7 +1,7 @@
 import {
   OrderEntityStatus,
   OrderStatusHistoryEntityChangeType,
-  orderStatusLabel,
+  orderStatusLabelFor,
   type OrderEntity,
   type OrderStatusHistoryEntity,
 } from "@/entities/order";
@@ -19,17 +19,19 @@ export const ORDER_PATH: readonly string[] = [
 ];
 
 /**
- * «Створено → Підтверджено → В обробці → Відправлено → Доставлено», each with
- * the time it was reached, read off the status history.
+ * «Створено → Підтверджено → В обробці → Відправлено → Отримано покупцем»,
+ * each with the time it was reached, read off the status history. On a pickup
+ * order the fourth step is «Готово до видачі» (TASK-2052).
  *
- * - The current status is «now»; Доставлено, being the end, is «done».
+ * - The current status is «now»; Отримано покупцем, being the end, is «done».
  * - A step the order jumped over (PENDING straight to SHIPPED) is «skip» —
  *   once the history has loaded and shows no arrival there.
  * - A cancelled or refunded order is off the path: the steps it did reach are
  *   «done», the rest «skip»; the header badge says where it ended.
  */
 export function orderPath(
-  order: Pick<OrderEntity, "status" | "createdAt">,
+  order: Pick<OrderEntity, "status" | "createdAt"> &
+    Partial<Pick<OrderEntity, "deliveryMethod">>,
   history: readonly OrderStatusHistoryEntity[] | undefined,
 ): StepperStep[] {
   const reachedAt = new Map<string, string>([
@@ -61,7 +63,10 @@ export function orderPath(
     }
     return {
       id: status,
-      title: i === 0 ? dict.orders.colCreated : orderStatusLabel(status),
+      title:
+        i === 0
+          ? dict.orders.colCreated
+          : orderStatusLabelFor(status, order.deliveryMethod),
       description: at && state !== "skip" ? formatDateTime(at) : undefined,
       state,
     };

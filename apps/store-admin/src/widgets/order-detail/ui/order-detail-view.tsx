@@ -464,7 +464,11 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
             <h3 className="text-sm font-semibold text-foreground">
               {d.timelineHeading}
             </h3>
-            <OrderTimeline orderId={order.id} customerUserId={order.userId} />
+            <OrderTimeline
+              orderId={order.id}
+              customerUserId={order.userId}
+              deliveryMethod={order.deliveryMethod}
+            />
           </section>
         </div>
 

@@ -4,7 +4,7 @@ import {
   OrderStatusHistoryEntityNote,
 } from "@/shared/api";
 import { dict } from "@/shared/config";
-import { orderStatusLabel, paymentStatusLabel } from "./status-label";
+import { orderStatusLabelFor, paymentStatusLabel } from "./status-label";
 
 /**
  * Ukrainian labels for the order status/payment-status history timeline
@@ -80,7 +80,11 @@ export function isRefusedPaymentEvent(
  * treated as the order's birth), a payment-status change, or a refused payment
  * event (TASK-621).
  */
-export function historyChangeLabel(entry: OrderStatusHistoryEntity): string {
+export function historyChangeLabel(
+  entry: OrderStatusHistoryEntity,
+  /** The order's delivery method — a pickup's SHIPPED reads «Готово до видачі» (TASK-2052). */
+  deliveryMethod?: string | null,
+): string {
   if (isRefusedPaymentEvent(entry)) {
     const current = paymentStatusLabel(entry.toPaymentStatus ?? "");
     return entry.rejectedPaymentStatus
@@ -100,11 +104,15 @@ export function historyChangeLabel(entry: OrderStatusHistoryEntity): string {
   // STATUS row. A null fromStatus is the creation row — the order was born, not
   // transitioned from a prior status.
   if (entry.fromStatus == null) {
-    return `Замовлення створено (${orderStatusLabel(entry.toStatus ?? "")})`;
+    return `Замовлення створено (${orderStatusLabelFor(
+      entry.toStatus ?? "",
+      deliveryMethod,
+    )})`;
   }
-  return `Статус: ${orderStatusLabel(entry.fromStatus)} → ${orderStatusLabel(
-    entry.toStatus ?? "",
-  )}`;
+  return `Статус: ${orderStatusLabelFor(
+    entry.fromStatus,
+    deliveryMethod,
+  )} → ${orderStatusLabelFor(entry.toStatus ?? "", deliveryMethod)}`;
 }
 
 /**

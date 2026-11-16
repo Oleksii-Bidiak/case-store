@@ -46,10 +46,27 @@ describe("orderPath — the order path of the card (К1)", () => {
     ).toEqual(["done", "done", "now", "todo", "todo"]);
   });
 
-  it("ends at «Доставлено» as done", () => {
-    expect(
-      states(orderPath({ status: "DELIVERED", createdAt: CREATED }, [])).at(-1),
-    ).toBe("done");
+  it("ends at «Отримано покупцем» as done", () => {
+    const steps = orderPath({ status: "DELIVERED", createdAt: CREATED }, []);
+    expect(states(steps).at(-1)).toBe("done");
+    expect(steps.at(-1)?.title).toBe("Отримано покупцем");
+  });
+
+  it("names the fourth step «Готово до видачі» on a pickup order only (TASK-2052)", () => {
+    const titles = (deliveryMethod: string) =>
+      orderPath(
+        { status: "SHIPPED", createdAt: CREATED, deliveryMethod },
+        [],
+      ).map((step) => step.title);
+
+    expect(titles("PICKUP")).toEqual([
+      "Створено",
+      "Підтверджено",
+      "В обробці",
+      "Готово до видачі",
+      "Отримано покупцем",
+    ]);
+    expect(titles("NOVA_POSHTA")[3]).toBe("Відправлено");
   });
 
   it("shows a cancelled order's reached steps as done and the rest skipped", () => {

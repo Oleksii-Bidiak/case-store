@@ -5,7 +5,7 @@ export const ORDER_TIMELINE_LENGTH = 4;
 
 /**
  * How far an OPEN order has got on «Оформлено → Підтверджено → Відправлено →
- * Доставлено» (TASK-217): the index of the stage it is at. PROCESSING has no
+ * Отримано покупцем» (TASK-217): the index of the stage it is at. PROCESSING has no
  * stage of its own — it is still «Підтверджено», with «В обробці» under it.
  *
  * `null` for a closed order (CANCELLED, REFUNDED): it left the road, and the

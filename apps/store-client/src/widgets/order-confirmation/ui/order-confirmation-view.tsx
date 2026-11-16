@@ -149,6 +149,7 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
         status={order.status}
         paymentStatus={order.paymentStatus}
         createdAt={order.createdAt}
+        deliveryMethod={order.deliveryMethod}
       />
 
       {/* Every claim about money comes from the server's `paymentStatus`.

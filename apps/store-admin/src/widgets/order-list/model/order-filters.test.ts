@@ -112,7 +112,7 @@ describe("order-filters — chips", () => {
       ...EMPTY_FILTERS,
       status: ["DELIVERED", "CANCELLED"],
     });
-    expect(chip.label).toBe("Статус: Доставлено, Скасовано");
+    expect(chip.label).toBe("Статус: Отримано покупцем, Скасовано");
     expect(chip.clear).toEqual({ status: undefined });
   });
 

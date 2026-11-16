@@ -21,11 +21,17 @@ interface OrderStatusTimelineProps {
   status: OrderEntityStatus;
   /** Formatted `createdAt` — the only stage date the API keeps. */
   placedOn: string;
+  /**
+   * The order's delivery method (TASK-2052): on a pickup order the third stage
+   * is «Готово до видачі», not «Відправлено».
+   */
+  deliveryMethod?: string | null;
 }
 
 /**
- * OrderStatusTimeline — «Оформлено → Підтверджено → Відправлено → Доставлено»
- * for an OPEN order (TASK-217, AccountOrders.dc.html `.ao-steps`).
+ * OrderStatusTimeline — «Оформлено → Підтверджено → Відправлено → Отримано
+ * покупцем» for an OPEN order (TASK-217, AccountOrders.dc.html `.ao-steps`);
+ * a pickup order reads «Готово до видачі» at the third stage (TASK-2052).
  *
  * - done: a success-tint dot with a check, and a green line on to the next
  *   stage; current: the primary dot with its number, `aria-current="step"`;
@@ -46,11 +52,13 @@ interface OrderStatusTimelineProps {
 export function OrderStatusTimeline({
   status,
   placedOn,
+  deliveryMethod,
 }: OrderStatusTimelineProps) {
   const states = orderTimelineStates(status);
   if (!states) return null;
 
   const t = dict.order.detail;
+  const steps = deliveryMethod === "PICKUP" ? t.stepsPickup : t.steps;
   const last = states.length - 1;
 
   const subLines = (index: number): string[] => {
@@ -75,7 +83,7 @@ export function OrderStatusTimeline({
       className="rounded-card border border-border bg-card px-4 py-5 shadow-card sm:px-5"
     >
       <ol aria-label={t.stepsAria} className="flex flex-col sm:flex-row">
-        {t.steps.map((label, index) => {
+        {steps.map((label, index) => {
           const state = states[index];
           return (
             <li

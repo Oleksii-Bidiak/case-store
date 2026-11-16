@@ -9,10 +9,11 @@ import {
   getAdminOrderMoneyControllerGetQueryKey,
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
-  orderStatusLabel,
+  orderStatusLabelFor,
   useAdminOrderControllerFindById,
   useAdminOrderControllerGetAllowedTransitions,
   useAdminOrderControllerUpdateStatus,
+  OrderEntityDeliveryMethod,
   OrderEntityPaymentMethod,
   OrderEntityPaymentStatus,
   OrderEntityStatus,
@@ -21,7 +22,7 @@ import {
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
-import { ChevronDownIcon, TruckIcon } from "lucide-react";
+import { ChevronDownIcon, PackageCheckIcon, TruckIcon } from "lucide-react";
 import {
   Button,
   DropdownMenu,
@@ -181,6 +182,12 @@ function OrderStatusSelectControl({
 
   const { allowed, expectedUpdatedAt } = toTransitionOptions(transitions.data);
 
+  // TASK-2052: this order's words — SHIPPED on a pickup order is «Готово до
+  // видачі». Until the order has loaded the generic word stands.
+  const pickup = order?.deliveryMethod === OrderEntityDeliveryMethod.PICKUP;
+  const label = (status: string) =>
+    orderStatusLabelFor(status, order?.deliveryMethod);
+
   // A 409 (with or without the reload button) or, since TASK-622, a 403 naming
   // the missing grant — both stay on screen until the next attempt.
   const conflict = orderWriteErrorMessage(updateStatus.error as ApiErrorLike);
@@ -257,7 +264,7 @@ function OrderStatusSelectControl({
           void queryClient.invalidateQueries({
             queryKey: getAdminDashboardControllerGetNeedsActionQueryKey(),
           });
-          toast.success(dict.orderStatus.toastUpdated(orderStatusLabel(value)));
+          toast.success(dict.orderStatus.toastUpdated(label(value)));
         },
         onError: (error) => {
           const message = orderConflictMessage(error as ApiErrorLike);
@@ -332,7 +339,11 @@ function OrderStatusSelectControl({
   const unavailable = LIFECYCLE.filter(
     (status) => status !== current && !allowed.includes(status),
   );
-  const next = NEXT_STEP[current];
+  const step = NEXT_STEP[current];
+  const next =
+    step && pickup && step.status === OrderEntityStatus.SHIPPED
+      ? { ...step, label: dict.orderStatus.nextPickupReady }
+      : step;
   const nextAction = next && allowed.includes(next.status) ? next : null;
   const askPayment = asksAboutPayment;
 
@@ -358,7 +369,7 @@ function OrderStatusSelectControl({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-80">
               <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground">
-                {dict.orderStatus.menuCurrent(orderStatusLabel(current))}
+                {dict.orderStatus.menuCurrent(label(current))}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuGroup aria-label={dict.orderStatus.menuAllowed}>
@@ -375,7 +386,7 @@ function OrderStatusSelectControl({
                     }
                     onSelect={() => handleChange(status)}
                   >
-                    {orderStatusLabel(status)}
+                    {label(status)}
                     {askPayment(status) ? (
                       <span
                         aria-hidden="true"
@@ -398,7 +409,7 @@ function OrderStatusSelectControl({
                     </DropdownMenuLabel>
                     {unavailable.map((status) => (
                       <DropdownMenuItem key={status} disabled>
-                        {orderStatusLabel(status)}
+                        {label(status)}
                         <span className="ml-auto text-xs text-muted-foreground">
                           {unavailableReason(current, status)}
                         </span>
@@ -422,7 +433,11 @@ function OrderStatusSelectControl({
             onClick={() => handleChange(nextAction.status)}
           >
             {nextAction.status === OrderEntityStatus.SHIPPED ? (
-              <TruckIcon aria-hidden="true" />
+              pickup ? (
+                <PackageCheckIcon aria-hidden="true" />
+              ) : (
+                <TruckIcon aria-hidden="true" />
+              )
             ) : null}
             {nextAction.label}
           </Button>

@@ -23706,6 +23706,17 @@
             ],
             "example": "PAID"
           },
+          "deliveryMethod": {
+            "type": "string",
+            "description": "Delivery method — a SHIPPED pickup order is labelled «Готово до видачі», not «Відправлено» (TASK-2052)",
+            "enum": [
+              "NOVA_POSHTA",
+              "PICKUP",
+              "COURIER",
+              "OTHER"
+            ],
+            "example": "NOVA_POSHTA"
+          },
           "total": {
             "type": "number",
             "description": "Order total",
@@ -23722,6 +23733,7 @@
           "id",
           "status",
           "paymentStatus",
+          "deliveryMethod",
           "total",
           "createdAt"
         ]

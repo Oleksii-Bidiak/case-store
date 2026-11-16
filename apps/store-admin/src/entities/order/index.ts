@@ -97,6 +97,7 @@ export {
 export {
   orderHeadlineStatusLabel,
   orderStatusLabel,
+  orderStatusLabelFor,
   paymentStatusLabel,
 } from "./status-label";
 

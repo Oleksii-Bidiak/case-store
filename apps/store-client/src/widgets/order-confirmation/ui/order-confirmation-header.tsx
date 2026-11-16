@@ -12,6 +12,8 @@ interface OrderConfirmationHeaderProps {
   paymentStatus: OrderEntityPaymentStatus;
   /** ISO timestamp */
   createdAt: string;
+  /** A SHIPPED pickup order reads «Готово до видачі» (TASK-2052). */
+  deliveryMethod?: string | null;
   /** The h1; «Дякуємо за ваше замовлення!» unless a host says otherwise. */
   heading?: string;
 }
@@ -27,6 +29,7 @@ export function OrderConfirmationHeader({
   status,
   paymentStatus,
   createdAt,
+  deliveryMethod,
   heading = dict.order.thankYou,
 }: OrderConfirmationHeaderProps) {
   const orderNumber = orderId.slice(0, 8).toUpperCase();
@@ -52,7 +55,7 @@ export function OrderConfirmationHeader({
         <dt className="sr-only">{dict.order.orderStatusSr}</dt>
         <dd>
           <OrderStatusBadge status={status}>
-            {dict.order.orderStatusLabels[status] ?? status}
+            {dict.order.orderStatusLabelFor(status, deliveryMethod)}
           </OrderStatusBadge>
         </dd>
         <dt className="sr-only">{dict.order.paymentStatusSr}</dt>

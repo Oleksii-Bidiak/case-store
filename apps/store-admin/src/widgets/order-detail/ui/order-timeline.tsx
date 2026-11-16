@@ -15,6 +15,8 @@ interface OrderTimelineProps {
   orderId: string;
   /** The order's owner id — used to tell a customer self-action from an admin's. */
   customerUserId: string | null;
+  /** The order's delivery method — worded into the status rows (TASK-2052). */
+  deliveryMethod?: string | null;
 }
 
 /**
@@ -28,7 +30,11 @@ interface OrderTimelineProps {
  * the one row that records something that did NOT happen, and reading it as an
  * ordinary move is exactly the mistake the old «Оплачено → Оплачено» invited.
  */
-export function OrderTimeline({ orderId, customerUserId }: OrderTimelineProps) {
+export function OrderTimeline({
+  orderId,
+  customerUserId,
+  deliveryMethod,
+}: OrderTimelineProps) {
   const { data, isLoading, isError } =
     useAdminOrderControllerGetHistory(orderId);
 
@@ -68,7 +74,7 @@ export function OrderTimeline({ orderId, customerUserId }: OrderTimelineProps) {
             )}
           >
             <span className="text-sm font-medium text-foreground">
-              {historyChangeLabel(entry)}
+              {historyChangeLabel(entry, deliveryMethod)}
             </span>
             {/* TASK-932 / TASK-788: the flag that makes this row not ordinary. */}
             {note && (

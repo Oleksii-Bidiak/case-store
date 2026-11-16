@@ -378,6 +378,7 @@ describe('UserService', () => {
         id: 'order-1',
         status: 'DELIVERED',
         paymentStatus: 'PAID',
+        deliveryMethod: 'PICKUP',
         total: 129.99,
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
       },

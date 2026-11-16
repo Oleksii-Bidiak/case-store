@@ -101,6 +101,27 @@ describe("historyChangeLabel (TASK-251)", () => {
     );
     expect(label).toBe("Оплата: Очікує оплати → Оплачено");
   });
+
+  it("words a pickup order's moves through SHIPPED for pickup (TASK-2052)", () => {
+    const shipped = makeEntry({
+      fromStatus: OrderEntityStatus.CONFIRMED,
+      toStatus: OrderEntityStatus.SHIPPED,
+    });
+    const delivered = makeEntry({
+      fromStatus: OrderEntityStatus.SHIPPED,
+      toStatus: OrderEntityStatus.DELIVERED,
+    });
+
+    expect(historyChangeLabel(shipped, "PICKUP")).toBe(
+      "Статус: Підтверджено → Готово до видачі",
+    );
+    expect(historyChangeLabel(delivered, "PICKUP")).toBe(
+      "Статус: Готово до видачі → Отримано покупцем",
+    );
+    expect(historyChangeLabel(shipped, "NOVA_POSHTA")).toBe(
+      "Статус: Підтверджено → Відправлено",
+    );
+  });
 });
 
 // TASK-932 / TASK-788: the note is the part of the row an operator must not miss.

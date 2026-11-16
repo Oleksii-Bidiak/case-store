@@ -19,7 +19,7 @@ import {
 import {
   OrderNumber,
   orderStatusBadgeVariant,
-  orderStatusLabel,
+  orderStatusLabelFor,
 } from "@/entities/order";
 import { useAuth } from "@/entities/session";
 import { PERM } from "@/entities/permission";
@@ -508,7 +508,7 @@ function CustomerHistorySections({ card }: { card: UserAdminCardEntity }) {
                   </TableCell>
                   <TableCell>
                     <Badge variant={orderStatusBadgeVariant(order.status)}>
-                      {orderStatusLabel(order.status)}
+                      {orderStatusLabelFor(order.status, order.deliveryMethod)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">

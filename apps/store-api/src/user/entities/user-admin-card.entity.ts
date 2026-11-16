@@ -1,4 +1,5 @@
 import {
+  DeliveryMethod,
   OrderStatus,
   PaymentStatus,
   DiscountType,
@@ -31,6 +32,14 @@ export class CustomerCardOrderEntity {
     example: PaymentStatus.PAID,
   })
   paymentStatus!: PaymentStatus;
+
+  @ApiProperty({
+    description:
+      'Delivery method — a SHIPPED pickup order is labelled «Готово до видачі», not «Відправлено» (TASK-2052)',
+    enum: DeliveryMethod,
+    example: DeliveryMethod.NOVA_POSHTA,
+  })
+  deliveryMethod!: DeliveryMethod;
 
   @ApiProperty({ description: 'Order total', example: 129.99 })
   total!: number;
@@ -195,6 +204,7 @@ export class UserAdminCardEntity {
       id: order.id,
       status: order.status,
       paymentStatus: order.paymentStatus,
+      deliveryMethod: order.deliveryMethod,
       total: Number(order.total),
       createdAt: order.createdAt,
     }));

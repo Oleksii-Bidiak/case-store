@@ -17,7 +17,7 @@ import { waitForHydration } from "./fixtures/hydration";
  *
  * Seed (`seed-e2e.ts`): the e2e customer holds three open orders — PENDING and
  * PROCESSING cash on delivery, CONFIRMED paid online — so «Активні» lists all
- * three and «Доставлені» lists none.
+ * three and «Отримані» lists none.
  */
 
 const VIEWPORT_HEIGHT = 900;
@@ -113,7 +113,7 @@ test.describe("order history and detail in the account (TASK-217)", () => {
     ).toHaveAttribute("aria-current", "page");
     await expect(main.locator("article")).toHaveCount(3);
 
-    await main.getByRole("tab", { name: /^Доставлені/ }).click();
+    await main.getByRole("tab", { name: /^Отримані/ }).click();
     await expect(page).toHaveURL(/status=delivered/);
     await expect(main.getByText("Тут поки немає замовлень.")).toBeVisible();
 

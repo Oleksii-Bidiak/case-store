@@ -1,4 +1,5 @@
 import {
+  OrderEntityDeliveryMethod,
   OrderEntityStatus,
   OrderEntityPaymentStatus,
   type OrderEntity,
@@ -21,7 +22,9 @@ const ORDER_STATUS_LABELS: Record<OrderEntityStatus, string> = {
   [OrderEntityStatus.CONFIRMED]: "Підтверджено",
   [OrderEntityStatus.PROCESSING]: "В обробці",
   [OrderEntityStatus.SHIPPED]: "Відправлено",
-  [OrderEntityStatus.DELIVERED]: "Доставлено",
+  // TASK-2052: the end of the path is the buyer having it — true of a parcel
+  // and of a pickup alike, so one word for both.
+  [OrderEntityStatus.DELIVERED]: "Отримано покупцем",
   [OrderEntityStatus.CANCELLED]: "Скасовано",
   [OrderEntityStatus.REFUNDED]: "Повернення коштів",
 };
@@ -47,9 +50,41 @@ const PAYMENT_STATUS_LABELS: Record<OrderEntityPaymentStatus, string> = {
   [OrderEntityPaymentStatus.REFUNDED]: dict.orderStatus.paymentLabels.REFUNDED,
 };
 
-/** Map a raw order-status enum to its Ukrainian label (falls back to input). */
+/**
+ * SHIPPED on a PICKUP order (TASK-2052, B-12 topic 6). There is no separate enum
+ * value: the operator's «Відправити» on a pickup order means the order is
+ * packed and waiting at the point — «Відправлено» would send the buyer looking
+ * for a parcel.
+ */
+const PICKUP_READY_LABEL = "Готово до видачі";
+
+/**
+ * Map a raw order-status enum to its Ukrainian label (falls back to input).
+ *
+ * The GENERIC word — for places with no concrete order behind them: filter
+ * checkboxes and chips, the orders-by-status chart, the audit log. Where an
+ * order is on screen, use {@link orderStatusLabelFor}.
+ */
 export function orderStatusLabel(status: string): string {
   return ORDER_STATUS_LABELS[status as OrderEntityStatus] ?? status;
+}
+
+/**
+ * The status of ONE order, worded for how it leaves the shop (TASK-2052): a
+ * SHIPPED pickup order reads «Готово до видачі»; everything else reads as
+ * {@link orderStatusLabel}. A missing delivery method is the generic word.
+ */
+export function orderStatusLabelFor(
+  status: string,
+  deliveryMethod: string | null | undefined,
+): string {
+  if (
+    status === OrderEntityStatus.SHIPPED &&
+    deliveryMethod === OrderEntityDeliveryMethod.PICKUP
+  ) {
+    return PICKUP_READY_LABEL;
+  }
+  return orderStatusLabel(status);
 }
 
 /**
@@ -58,15 +93,18 @@ export function orderStatusLabel(status: string): string {
  * that went back after the cancel is said on the badge itself: «Скасовано ·
  * кошти повернено» when everything paid came back, «Скасовано · повернуто
  * частково» while part of it is still held. Every other status reads as
- * `orderStatusLabel`.
+ * `orderStatusLabelFor` — a SHIPPED pickup order is «Готово до видачі» (TASK-2052).
  */
 export function orderHeadlineStatusLabel(
   order: Pick<
     OrderEntity,
     "status" | "refundedAfterCancel" | "paidKop" | "refundedKop"
-  >,
+  > &
+    Partial<Pick<OrderEntity, "deliveryMethod">>,
 ): string {
-  if (!order.refundedAfterCancel) return orderStatusLabel(order.status);
+  if (!order.refundedAfterCancel) {
+    return orderStatusLabelFor(order.status, order.deliveryMethod);
+  }
   return order.refundedKop < order.paidKop
     ? dict.orderStatus.cancelledPartlyRefunded
     : dict.orderStatus.cancelledRefunded;

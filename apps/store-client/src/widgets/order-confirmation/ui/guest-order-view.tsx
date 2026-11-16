@@ -172,6 +172,7 @@ export function GuestOrderView({ token, contact }: GuestOrderViewProps) {
         status={order.status}
         paymentStatus={order.paymentStatus}
         createdAt={order.createdAt}
+        deliveryMethod={order.deliveryMethod}
         heading={justPlaced ? dict.order.guest.placedHeading : undefined}
       />
 

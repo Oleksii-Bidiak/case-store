@@ -1,6 +1,7 @@
 import {
   orderHeadlineStatusLabel,
   orderStatusLabel,
+  orderStatusLabelFor,
   paymentStatusLabel,
 } from "./status-label";
 
@@ -10,7 +11,7 @@ describe("orderStatusLabel (TASK-129)", () => {
     ["CONFIRMED", "Підтверджено"],
     ["PROCESSING", "В обробці"],
     ["SHIPPED", "Відправлено"],
-    ["DELIVERED", "Доставлено"],
+    ["DELIVERED", "Отримано покупцем"],
     ["CANCELLED", "Скасовано"],
     ["REFUNDED", "Повернення коштів"],
   ])("maps %s → %s", (status, label) => {
@@ -19,6 +20,33 @@ describe("orderStatusLabel (TASK-129)", () => {
 
   it("falls back to the raw value for an unknown status", () => {
     expect(orderStatusLabel("UNKNOWN")).toBe("UNKNOWN");
+  });
+});
+
+/**
+ * TASK-2052 (B-12 topic 6): no new enum value — a SHIPPED pickup order is worded
+ * «Готово до видачі»; every other pair reads as the generic label.
+ */
+describe("orderStatusLabelFor (TASK-2052)", () => {
+  it("words SHIPPED on a pickup order as «Готово до видачі»", () => {
+    expect(orderStatusLabelFor("SHIPPED", "PICKUP")).toBe("Готово до видачі");
+  });
+
+  it.each([["NOVA_POSHTA"], ["COURIER"], ["OTHER"], [null], [undefined]])(
+    "keeps «Відправлено» for delivery method %p",
+    (method) => {
+      expect(orderStatusLabelFor("SHIPPED", method)).toBe("Відправлено");
+    },
+  );
+
+  it.each([
+    ["PENDING", "Очікує підтвердження"],
+    ["CONFIRMED", "Підтверджено"],
+    ["PROCESSING", "В обробці"],
+    ["DELIVERED", "Отримано покупцем"],
+    ["CANCELLED", "Скасовано"],
+  ])("leaves %s on a pickup order as the generic «%s»", (status, label) => {
+    expect(orderStatusLabelFor(status, "PICKUP")).toBe(label);
   });
 });
 
@@ -64,8 +92,25 @@ describe("orderHeadlineStatusLabel (TASK-1970)", () => {
       "Скасовано",
     );
     expect(orderHeadlineStatusLabel({ ...base, status: "DELIVERED" })).toBe(
-      "Доставлено",
+      "Отримано покупцем",
     );
+  });
+
+  it("reads «Готово до видачі» on a shipped pickup order (TASK-2052)", () => {
+    expect(
+      orderHeadlineStatusLabel({
+        ...base,
+        status: "SHIPPED",
+        deliveryMethod: "PICKUP",
+      }),
+    ).toBe("Готово до видачі");
+    expect(
+      orderHeadlineStatusLabel({
+        ...base,
+        status: "SHIPPED",
+        deliveryMethod: "NOVA_POSHTA",
+      }),
+    ).toBe("Відправлено");
   });
 
   it("says «Скасовано · кошти повернено» when everything paid came back", () => {
