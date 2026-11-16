@@ -5,6 +5,7 @@ import { deterministicUuid } from '../lib/ids';
 import { pickIcon } from '../lib/images/icon-set';
 import { pickPalette } from '../lib/images/palettes';
 import { renderSeedImages } from '../lib/images/seed-image.generator';
+import { createSeedMediaRegistry } from '../lib/media-assets';
 import { positionSlugsOf } from '../lib/position-slug';
 import { assertLatinSlug, assertUniqueSlugs } from '../lib/slug';
 
@@ -42,6 +43,7 @@ export async function seedProducts(
   let groupCount = 0;
   let positionCount = 0;
   let imageCount = 0;
+  const registerAsset = createSeedMediaRegistry(prisma);
 
   for (const p of productsData) {
     // A catalog entry with more than one variant becomes a ProductGroup whose
@@ -152,6 +154,9 @@ export async function seedProducts(
         })),
       );
       for (const ref of imageRefs) {
+        // Every photo is a media-library asset too (TASK-1029), linked the way
+        // an admin upload is — otherwise a fresh environment's library is empty.
+        const mediaAssetId = await registerAsset(ref);
         await prisma.productImage.create({
           data: {
             productId: position.id,
@@ -160,6 +165,7 @@ export async function seedProducts(
             blurDataUrl: ref.blurDataUrl,
             sortOrder: ref.sortOrder,
             isPrimary: ref.isPrimary,
+            mediaAssetId,
           },
         });
         imageCount++;
