@@ -249,6 +249,41 @@ describe("MediaLibraryView — the grid", () => {
     expect(screen.getByText(t.noAltAdd)).toBeInTheDocument();
   });
 
+  it("announces a tile's state after its name, not only inside the dialog (TASK-1746)", async () => {
+    stubMedia([
+      makeAsset("a1"),
+      makeAsset("a2", {
+        alt: "Банер",
+        usedInCount: 3,
+        tags: ["літо"],
+        uploadedById: "u1",
+      }),
+    ]);
+
+    renderLibrary();
+
+    // The name stays short — action + which picture; the state is the
+    // description, read right after it, so a missing alt is heard on the grid.
+    const bare = await screen.findByRole("button", {
+      name: t.openCardAria("a1.webp"),
+    });
+    expect(bare).toHaveAccessibleDescription(
+      expect.stringContaining(t.noAltAdd),
+    );
+    expect(bare).toHaveAccessibleDescription(
+      expect.stringContaining(t.unusedBadge),
+    );
+
+    const used = screen.getByRole("button", { name: t.openCardAria("Банер") });
+    expect(used).toHaveAccessibleDescription(
+      expect.stringContaining(t.usedInBadge(3)),
+    );
+    expect(used).toHaveAccessibleDescription(
+      expect.stringContaining(`${t.cardDimensions(2000, 1333)} · 180 КБ`),
+    );
+    expect(used).toHaveAccessibleDescription(expect.stringContaining("літо"));
+  });
+
   it("shows the empty state when the library holds nothing", async () => {
     stubMedia([]);
 
