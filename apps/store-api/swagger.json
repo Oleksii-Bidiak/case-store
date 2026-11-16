@@ -13732,6 +13732,16 @@
             }
           },
           {
+            "name": "owedToCustomer",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders the shop owes money back — balanceKop < 0, any status (TASK-2395). The «Переплата» side of the money flow report: what the order list shows behind its «owed to customers» number.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
             "name": "awaitingPayment",
             "required": false,
             "in": "query",
@@ -14028,6 +14038,16 @@
             }
           },
           {
+            "name": "owedToCustomer",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders the shop owes money back — balanceKop < 0, any status (TASK-2395). The «Переплата» side of the money flow report: what the order list shows behind its «owed to customers» number.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
             "name": "awaitingPayment",
             "required": false,
             "in": "query",
@@ -14273,6 +14293,16 @@
             "required": false,
             "in": "query",
             "description": "Filter to orders carrying a debt — status = DELIVERED AND paymentStatus NOT IN (PAID, REFUNDED). The «Борг N ₴» mark (TASK-470 / B-1): delivered goods nobody has paid for.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "owedToCustomer",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders the shop owes money back — balanceKop < 0, any status (TASK-2395). The «Переплата» side of the money flow report: what the order list shows behind its «owed to customers» number.",
             "schema": {
               "example": true,
               "type": "boolean"
@@ -16160,6 +16190,172 @@
         "summary": "Get needs-action counters (admin)",
         "tags": [
           "Admin Dashboard"
+        ]
+      }
+    },
+    "/api/admin/analytics/reports/money-flow": {
+      "get": {
+        "description": "Read from the order money ledger. An entry counts on the Kyiv calendar day of its `occurredAt` (when the money moved). A reversal (сторно) keeps its original’s kind and direction and is subtracted on ITS own day, so an earlier period never changes. Voided entries never moved money and are excluded everywhere. LiqPay refunds still REQUESTED are counted and also reported apart. All amounts are integer kopecks. Requires analytics:read (the route) plus analytics:revenue AND payments:read, checked before the period. Not cached. `rows` is always the 8 ledger kinds (IN kinds, then OUT kinds), zero rows included. `totals` (in, out, net = in − out, requested out) are compared with the previous range. `balances` is a snapshot as of now, independent of the period: `debt` = DELIVERED orders with a positive balance (order list `hasDebt=true`), `owedToCustomer` = orders of any status with a negative balance (order list `owedToCustomer=true`).",
+        "operationId": "getMoneyFlowReport",
+        "parameters": [
+          {
+            "name": "preset",
+            "required": false,
+            "in": "query",
+            "description": "Period preset. Rolling presets and `custom` are compared with the equal run of days right before; `this-month` (1…N) with days 1…N of the previous month; `last-month` with the whole month before it. Days are Kyiv calendar days, today included.",
+            "schema": {
+              "$ref": "#/components/schemas/ReportPreset"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Money flow report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoneyFlowReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The period cannot be answered"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics:read, analytics:revenue and payments:read required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Money in and out of the period by ledger kind, with current debts and overpayments",
+        "tags": [
+          "Admin Analytics Reports"
+        ]
+      }
+    },
+    "/api/admin/analytics/reports/money-flow/entries": {
+      "get": {
+        "description": "Read from the order money ledger. An entry counts on the Kyiv calendar day of its `occurredAt` (when the money moved). A reversal (сторно) keeps its original’s kind and direction and is subtracted on ITS own day, so an earlier period never changes. Voided entries never moved money and are excluded everywhere. LiqPay refunds still REQUESTED are counted and also reported apart. All amounts are integer kopecks. Requires analytics:read (the route) plus analytics:revenue AND payments:read, checked before the period. Not cached. Ordered by `occurredAt`, then `id`. `signedKop` is negative for a reversal only — the direction is not folded in (an OUT payout is positive; read it under `direction`). `requested` flags a LiqPay refund awaiting confirmation; `actorName` is null for LiqPay and system entries.",
+        "operationId": "getMoneyFlowEntries",
+        "parameters": [
+          {
+            "name": "preset",
+            "required": false,
+            "in": "query",
+            "description": "Period preset. Rolling presets and `custom` are compared with the equal run of days right before; `this-month` (1…N) with days 1…N of the previous month; `last-month` with the whole month before it. Days are Kyiv calendar days, today included.",
+            "schema": {
+              "$ref": "#/components/schemas/ReportPreset"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-31",
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Only entries of this ledger kind",
+            "schema": {
+              "$ref": "#/components/schemas/MoneyEntryKind"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page, from 1",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Entries per page",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoneyFlowEntriesEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The period, kind, page or limit cannot be answered"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics:read, analytics:revenue and payments:read required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "The ledger entries of the period, oldest first, optionally of one kind",
+        "tags": [
+          "Admin Analytics Reports"
         ]
       }
     },
@@ -34386,10 +34582,56 @@
           "previousDays"
         ]
       },
-      "CatalogueBasis": {
-        "type": "string",
-        "enum": [
-          "current-catalogue"
+      "MoneyFlowKindRowEntity": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MoneyEntryKind"
+              }
+            ]
+          },
+          "direction": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MoneyDirection"
+              }
+            ]
+          },
+          "grossKop": {
+            "type": "integer",
+            "description": "Σ of the ordinary entries dated in the period (reversals not subtracted)",
+            "example": 1250000
+          },
+          "reversedKop": {
+            "type": "integer",
+            "description": "Σ of the reversals (сторно) dated in the period, as a positive number",
+            "example": 50000
+          },
+          "netKop": {
+            "type": "integer",
+            "description": "grossKop − reversedKop; negative when a period holds only a reversal",
+            "example": 1200000
+          },
+          "count": {
+            "type": "integer",
+            "description": "Entries dated in the period, reversals included"
+          },
+          "requestedKop": {
+            "type": "integer",
+            "description": "Part of grossKop LiqPay has not confirmed yet (provider_state REQUESTED) — counted in the sums all the same; 0 for every kind but LIQPAY_REFUND",
+            "example": 0
+          }
+        },
+        "required": [
+          "kind",
+          "direction",
+          "grossKop",
+          "reversedKop",
+          "netKop",
+          "count",
+          "requestedKop"
         ]
       },
       "ComparedValueEntity": {
@@ -34414,6 +34656,286 @@
           "current",
           "previous",
           "changePct"
+        ]
+      },
+      "MoneyFlowTotalsEntity": {
+        "type": "object",
+        "properties": {
+          "inKop": {
+            "description": "Money in, net of reversals (kopecks)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "outKop": {
+            "description": "Money out, net of reversals (kopecks)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "netKop": {
+            "description": "inKop − outKop (kopecks)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "requestedOutKop": {
+            "description": "Of outKop, LiqPay refunds still awaiting confirmation (kopecks)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "inKop",
+          "outKop",
+          "netKop",
+          "requestedOutKop"
+        ]
+      },
+      "MoneyBalanceEntity": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "integer",
+            "example": 3
+          },
+          "kop": {
+            "type": "integer",
+            "description": "Kopecks, always ≥ 0",
+            "example": 450000
+          }
+        },
+        "required": [
+          "orders",
+          "kop"
+        ]
+      },
+      "MoneyBalancesEntity": {
+        "type": "object",
+        "properties": {
+          "debt": {
+            "description": "Customers owe the shop: DELIVERED orders with a positive balance (the order list’s hasDebt=true)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MoneyBalanceEntity"
+              }
+            ]
+          },
+          "owedToCustomer": {
+            "description": "The shop owes customers: orders of any status with a negative balance (the order list’s owedToCustomer=true); kop is the positive amount owed",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MoneyBalanceEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "debt",
+          "owedToCustomer"
+        ]
+      },
+      "MoneyFlowReportEntity": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodEntity"
+          },
+          "rows": {
+            "description": "Always 8 rows: the IN kinds, then the OUT kinds, zero rows included",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MoneyFlowKindRowEntity"
+            }
+          },
+          "totals": {
+            "$ref": "#/components/schemas/MoneyFlowTotalsEntity"
+          },
+          "balances": {
+            "$ref": "#/components/schemas/MoneyBalancesEntity"
+          }
+        },
+        "required": [
+          "period",
+          "rows",
+          "totals",
+          "balances"
+        ]
+      },
+      "MoneyFlowReportEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MoneyFlowReportEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "MoneyFlowEntryEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the money moved — the date the report counts it on"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When it was written down"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "orderNumber": {
+            "type": "string",
+            "description": "Short order number (first 8 id characters, uppercased), without \"#\"",
+            "example": "0871A795"
+          },
+          "direction": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MoneyDirection"
+              }
+            ]
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MoneyEntryKind"
+              }
+            ]
+          },
+          "amountKop": {
+            "type": "integer",
+            "description": "As stored: always > 0",
+            "example": 50000
+          },
+          "signedKop": {
+            "type": "integer",
+            "description": "amountKop, negative for a reversal (сторно). The direction is NOT folded in: an OUT payout is positive here — read it under `direction`. Σ signedKop of one direction is that direction’s net",
+            "example": -50000
+          },
+          "isReversal": {
+            "type": "boolean",
+            "description": "A reversal (сторно) of `reversalOfId`"
+          },
+          "reversalOfId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The entry this reversal cancels"
+          },
+          "providerState": {
+            "nullable": true,
+            "description": "LiqPay refunds only: REQUESTED until the provider confirms, then CONFIRMED",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MoneyProviderState"
+              }
+            ]
+          },
+          "requested": {
+            "type": "boolean",
+            "description": "A LiqPay refund not yet confirmed by the provider («очікує підтвердження LiqPay»); counted in the sums all the same"
+          },
+          "legacy": {
+            "type": "boolean",
+            "description": "Inferred by the R2 backfill from pre-ledger labels"
+          },
+          "actorName": {
+            "type": "string",
+            "nullable": true,
+            "description": "The operator who wrote it; null for LiqPay/system rows",
+            "example": "Олена Коваль"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Note or reason"
+          }
+        },
+        "required": [
+          "id",
+          "occurredAt",
+          "createdAt",
+          "orderId",
+          "orderNumber",
+          "direction",
+          "kind",
+          "amountKop",
+          "signedKop",
+          "isReversal",
+          "reversalOfId",
+          "providerState",
+          "requested",
+          "legacy",
+          "actorName",
+          "reason"
+        ]
+      },
+      "MoneyFlowEntriesPaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "example": 240
+          },
+          "page": {
+            "type": "number",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "example": 50
+          },
+          "totalPages": {
+            "type": "number",
+            "example": 5
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
+      "MoneyFlowEntriesEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MoneyFlowEntryEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MoneyFlowEntriesPaginationMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "CatalogueBasis": {
+        "type": "string",
+        "enum": [
+          "current-catalogue"
         ]
       },
       "CategoryReportRowEntity": {

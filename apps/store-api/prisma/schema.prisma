@@ -1072,6 +1072,9 @@ model OrderMoneyEntry {
   @@unique([paymentId, providerRef])
   @@index([orderId, createdAt])
   @@index([returnId])
+  /// TASK-2395: the «Рух коштів» report and its register range-scan the whole
+  /// ledger by when money moved (and the sales report's refunds read the same).
+  @@index([occurredAt])
   @@map("order_money_entries")
 }
 
