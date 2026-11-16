@@ -34,8 +34,15 @@ describe('MoneyFlowEntriesQueryDto (TASK-2395)', () => {
     expect(parse({ limit }).errors).toEqual(['limit']);
   });
 
-  it.each([['0'], ['-1'], ['abc']])('rejects page=%s', (page) => {
+  it.each([['0'], ['-1'], ['abc'], ['100001'], ['9999999999']])('rejects page=%s', (page) => {
     expect(parse({ page }).errors).toEqual(['page']);
+  });
+
+  it('accepts the last allowed page, so (page − 1) × limit stays a safe Prisma skip', () => {
+    const { dto, errors } = parse({ page: '100000', limit: '500' });
+    expect(errors).toEqual([]);
+    // 99 999 × 500 < 2^31 − 1: Prisma's 32-bit skip cannot overflow into a 500.
+    expect(((dto.page ?? 1) - 1) * (dto.limit ?? 50)).toBeLessThan(2 ** 31 - 1);
   });
 
   it('accepts every ledger kind and rejects anything else', () => {

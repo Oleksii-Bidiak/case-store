@@ -16310,6 +16310,7 @@
             "description": "Page, from 1",
             "schema": {
               "minimum": 1,
+              "maximum": 100000,
               "default": 1,
               "type": "number"
             }

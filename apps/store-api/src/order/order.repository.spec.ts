@@ -3035,6 +3035,17 @@ describe('OrderRepository', () => {
       expect(where.AND).toContainEqual({ balanceKop: { lt: 0 } });
     });
 
+    // TASK-2395: the money flow report's balances count live orders only, and its
+    // links land here — a soft-deleted order must be out of both chips too.
+    it.each([[{ hasDebt: true }], [{ owedToCustomer: true }]])(
+      'keeps soft-deleted orders out of %j',
+      async (query) => {
+        const where = await whereFor(query);
+
+        expect(where.deletedAt).toBeNull();
+      },
+    );
+
     it('«Очікує оплати» is a timed-reservation PENDING order whose deadline is still ahead', async () => {
       const where = await whereFor({ awaitingPayment: true });
 

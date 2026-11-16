@@ -124,6 +124,8 @@ export class MoneyFlowRepository {
              COALESCE(SUM(m.amount_kop) FILTER (WHERE m.reversal_of_id IS NOT NULL), 0)::bigint
                AS reversed_kop,
              COUNT(*)::bigint AS count,
+             -- Part of gross_kop, so reversals stay out: a LIQPAY_REFUND is never reversed
+             -- (canReverse refuses provider kinds; a refused request is voided instead).
              COALESCE(SUM(m.amount_kop) FILTER (
                WHERE m.reversal_of_id IS NULL AND m.provider_state = 'REQUESTED'
              ), 0)::bigint AS requested_kop

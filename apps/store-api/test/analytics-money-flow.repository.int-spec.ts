@@ -46,6 +46,8 @@ function days(from: string, to: string): ReportRange {
 
 const JUN = days('2021-06-01', '2021-06-30');
 const JUL = days('2021-07-01', '2021-07-31');
+const JAN = days('2021-01-01', '2021-01-31');
+const FEB = days('2021-02-01', '2021-02-28');
 
 describe('MoneyFlowRepository (integration, TASK-2395)', () => {
   let app: INestApplication;
@@ -58,7 +60,7 @@ describe('MoneyFlowRepository (integration, TASK-2395)', () => {
   const createdUserIds: string[] = [];
 
   async function createOrder(
-    opts: { status?: OrderStatus; balanceKop?: number } = {},
+    opts: { status?: OrderStatus; balanceKop?: number; deletedAt?: Date } = {},
   ): Promise<string> {
     const order = await prisma.order.create({
       data: {
@@ -68,6 +70,7 @@ describe('MoneyFlowRepository (integration, TASK-2395)', () => {
         subtotal: 1000,
         total: 1000,
         balanceKop: opts.balanceKop ?? 0,
+        deletedAt: opts.deletedAt ?? null,
       },
     });
     createdOrderIds.push(order.id);
@@ -225,6 +228,28 @@ describe('MoneyFlowRepository (integration, TASK-2395)', () => {
 
       expect(kindOf(await repo.getByKind(JUN), MoneyEntryKind.PAID_AT_POINT)?.grossKop).toBe(1_111);
       expect(kindOf(await repo.getByKind(JUL), MoneyEntryKind.PAID_AT_POINT)?.grossKop).toBe(2_222);
+    });
+
+    it('draws the same boundary in winter time, when Kyiv is UTC+2', async () => {
+      const orderId = await createOrder();
+      // Winter, UTC+2: 21:30Z is 23:30 on 31 January in Kyiv; 22:30Z is 00:30 on 1 February.
+      await addEntry(orderId, {
+        kind: MoneyEntryKind.PAID_TO_COURIER,
+        amountKop: 3_333,
+        at: '2021-01-31T21:30:00Z',
+      });
+      await addEntry(orderId, {
+        kind: MoneyEntryKind.PAID_TO_COURIER,
+        amountKop: 4_444,
+        at: '2021-01-31T22:30:00Z',
+      });
+
+      expect(kindOf(await repo.getByKind(JAN), MoneyEntryKind.PAID_TO_COURIER)?.grossKop).toBe(
+        3_333,
+      );
+      expect(kindOf(await repo.getByKind(FEB), MoneyEntryKind.PAID_TO_COURIER)?.grossKop).toBe(
+        4_444,
+      );
     });
   });
 
@@ -434,6 +459,17 @@ describe('MoneyFlowRepository (integration, TASK-2395)', () => {
       });
       const owedDelivered = await createOrder({ status: OrderStatus.DELIVERED, balanceKop: -500 });
       const settled = await createOrder({ status: OrderStatus.DELIVERED, balanceKop: 0 });
+      // Soft-deleted (audit tombstone): out of the balances and out of both chips.
+      const deletedDebt = await createOrder({
+        status: OrderStatus.DELIVERED,
+        balanceKop: 70_000,
+        deletedAt: new Date(),
+      });
+      const deletedOwed = await createOrder({
+        status: OrderStatus.CANCELLED,
+        balanceKop: -80_000,
+        deletedAt: new Date(),
+      });
 
       const after = await repo.getBalances();
       expect(after.debt.orders - before.debt.orders).toBe(1);
@@ -441,7 +477,15 @@ describe('MoneyFlowRepository (integration, TASK-2395)', () => {
       expect(after.owedToCustomer.orders - before.owedToCustomer.orders).toBe(2);
       expect(after.owedToCustomer.kop - before.owedToCustomer.kop).toBe(3_000);
 
-      const mine = new Set([debt, notDelivered, owedCancelled, owedDelivered, settled]);
+      const mine = new Set([
+        debt,
+        notDelivered,
+        owedCancelled,
+        owedDelivered,
+        settled,
+        deletedDebt,
+        deletedOwed,
+      ]);
       const listed = async (query: { hasDebt?: boolean; owedToCustomer?: boolean }) =>
         (await orders.findAll({ ...query, limit: 100 })).orders
           .map((row) => row.id)
