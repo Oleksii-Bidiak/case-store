@@ -909,6 +909,10 @@ export class OrderRepository {
         status: OrderStatus.DELIVERED,
       });
     }
+    // «Переплата» (TASK-2395): the ledger says the shop owes the customer — any
+    // status, a cancelled prepaid order included. The money flow report's
+    // `owedToCustomer` balance counts exactly this set.
+    if (query.owedToCustomer) and.push({ balanceKop: { lt: 0 } });
     // `gt` / `lte` against a single `now` taken here, so the two flags partition
     // the same set at the same instant rather than at two instants a query apart.
     // Rows with a NULL deadline match neither comparison — correct: an order with

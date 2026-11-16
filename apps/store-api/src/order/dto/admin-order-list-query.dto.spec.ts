@@ -169,6 +169,8 @@ describe('AdminOrderListQueryDto — payment + overdue filters (TASK-425)', () =
  */
 describe.each([
   ['hasDebt'],
+  // TASK-2395: the shop owes the customer (balance < 0) — the money flow report's link.
+  ['owedToCustomer'],
   ['awaitingPayment'],
   ['reservationExpired'],
   ['hasUnavailableItems'],

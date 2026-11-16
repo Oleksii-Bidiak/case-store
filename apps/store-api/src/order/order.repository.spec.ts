@@ -3029,6 +3029,12 @@ describe('OrderRepository', () => {
       });
     });
 
+    it('«Переплата» is any order the shop owes money back — a negative balance (TASK-2395)', async () => {
+      const where = await whereFor({ owedToCustomer: true });
+
+      expect(where.AND).toContainEqual({ balanceKop: { lt: 0 } });
+    });
+
     it('«Очікує оплати» is a timed-reservation PENDING order whose deadline is still ahead', async () => {
       const where = await whereFor({ awaitingPayment: true });
 
