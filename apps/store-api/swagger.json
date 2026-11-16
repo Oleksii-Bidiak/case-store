@@ -6094,6 +6094,24 @@
             }
           },
           {
+            "name": "view",
+            "required": false,
+            "in": "query",
+            "description": "Which slice of the filtered library to list: every asset, the ones referenced from nowhere (the same definition the delete gate uses), or the ones without alt text. The counters in `meta.counts` ignore this and show all three.",
+            "schema": {
+              "$ref": "#/components/schemas/MediaListView"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Row order: newest or oldest upload first, or the largest stored file first. Ties are broken by id, so pages never overlap.",
+            "schema": {
+              "$ref": "#/components/schemas/MediaListSort"
+            }
+          },
+          {
             "name": "page",
             "required": false,
             "in": "query",
@@ -23202,12 +23220,37 @@
           "usedIn"
         ]
       },
+      "MediaListCountsEntity": {
+        "type": "object",
+        "properties": {
+          "all": {
+            "type": "number",
+            "description": "Every asset matching the filters",
+            "example": 128
+          },
+          "unused": {
+            "type": "number",
+            "description": "Assets referenced from nowhere — the ones a delete would accept",
+            "example": 2
+          },
+          "noAlt": {
+            "type": "number",
+            "description": "Assets without alt text",
+            "example": 1
+          }
+        },
+        "required": [
+          "all",
+          "unused",
+          "noAlt"
+        ]
+      },
       "MediaPaginationMetaEntity": {
         "type": "object",
         "properties": {
           "total": {
             "type": "number",
-            "description": "Total assets matching the filters",
+            "description": "Total assets matching the filters AND the view",
             "example": 125
           },
           "page": {
@@ -23224,13 +23267,17 @@
             "type": "number",
             "description": "Total number of pages",
             "example": 6
+          },
+          "counts": {
+            "$ref": "#/components/schemas/MediaListCountsEntity"
           }
         },
         "required": [
           "total",
           "page",
           "limit",
-          "totalPages"
+          "totalPages",
+          "counts"
         ]
       },
       "MediaListResponseEnvelope": {
@@ -23260,6 +23307,22 @@
         },
         "required": [
           "data"
+        ]
+      },
+      "MediaListView": {
+        "type": "string",
+        "enum": [
+          "all",
+          "unused",
+          "noAlt"
+        ]
+      },
+      "MediaListSort": {
+        "type": "string",
+        "enum": [
+          "newest",
+          "oldest",
+          "largest"
         ]
       },
       "MediaMetadataDto": {

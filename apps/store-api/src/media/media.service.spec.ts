@@ -72,7 +72,9 @@ describe('MediaService', () => {
 
   beforeEach(async () => {
     repository = {
-      findAll: jest.fn().mockResolvedValue({ assets: [], total: 0 }),
+      findAll: jest
+        .fn()
+        .mockResolvedValue({ assets: [], total: 0, counts: { all: 0, unused: 0, noAlt: 0 } }),
       findById: jest.fn().mockResolvedValue(makeAsset()),
       findByUrl: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(makeAsset()),
@@ -106,12 +108,16 @@ describe('MediaService', () => {
 
   describe('findAll', () => {
     it('returns one page of items with honest pagination meta', async () => {
-      repository.findAll.mockResolvedValue({ assets: [makeAsset()], total: 125 });
+      repository.findAll.mockResolvedValue({
+        assets: [makeAsset()],
+        total: 125,
+        counts: { all: 125, unused: 0, noAlt: 0 },
+      });
       usage.findUsage.mockResolvedValue(new Map([[ASSET_URL, []]]));
 
       const result = await service.findAll({ page: 2, limit: 24 });
 
-      expect(result.meta).toEqual({ total: 125, page: 2, limit: 24, totalPages: 6 });
+      expect(result.meta).toMatchObject({ total: 125, page: 2, limit: 24, totalPages: 6 });
       expect(result.items).toHaveLength(1);
       expect(result.items[0].url).toBe(ASSET_URL);
     });
@@ -137,7 +143,11 @@ describe('MediaService', () => {
       // The grid badge and the delete refusal must never disagree: an asset the
       // list calls unused and the delete then rejects is a bug an operator reads
       // as the software lying to them.
-      repository.findAll.mockResolvedValue({ assets: [makeAsset()], total: 1 });
+      repository.findAll.mockResolvedValue({
+        assets: [makeAsset()],
+        total: 1,
+        counts: { all: 1, unused: 0, noAlt: 0 },
+      });
       usage.findUsage.mockResolvedValue(
         new Map([
           [
@@ -163,6 +173,45 @@ describe('MediaService', () => {
       expect(repository.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ page: 1, limit: 24 }),
       );
+    });
+
+    it('defaults to every asset, newest first (TASK-1730)', async () => {
+      await service.findAll({});
+
+      expect(repository.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ view: 'all', sort: 'newest' }),
+      );
+    });
+
+    it('passes the view and the sort through to the repository (TASK-1730)', async () => {
+      await service.findAll({ view: 'unused', sort: 'largest', search: 'банер', tag: 'осінь' });
+
+      expect(repository.findAll).toHaveBeenCalledWith({
+        search: 'банер',
+        tag: 'осінь',
+        view: 'unused',
+        sort: 'largest',
+        page: 1,
+        limit: 24,
+      });
+    });
+
+    it('reports the three view counters in meta, next to the paging (TASK-1730)', async () => {
+      repository.findAll.mockResolvedValue({
+        assets: [makeAsset()],
+        total: 2,
+        counts: { all: 128, unused: 2, noAlt: 1 },
+      });
+
+      const result = await service.findAll({ view: 'unused' });
+
+      expect(result.meta).toEqual({
+        total: 2,
+        page: 1,
+        limit: 24,
+        totalPages: 1,
+        counts: { all: 128, unused: 2, noAlt: 1 },
+      });
     });
   });
 

@@ -1,7 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { MEDIA_USAGE_MAX_URLS } from '../media-usage.repository';
+import {
+  DEFAULT_MEDIA_LIST_SORT,
+  DEFAULT_MEDIA_LIST_VIEW,
+  MEDIA_LIST_SORTS,
+  MEDIA_LIST_VIEWS,
+  type MediaListSort,
+  type MediaListView,
+} from '../media-list.types';
 
 /** Page size used when the caller names none. A grid of thumbnails, not a table. */
 export const DEFAULT_MEDIA_PAGE_SIZE = 24;
@@ -37,6 +45,33 @@ export class MediaListQueryDto {
   @IsString()
   @MaxLength(50, { message: 'Tag must be at most 50 characters' })
   tag?: string;
+
+  @ApiProperty({
+    description:
+      'Which slice of the filtered library to list: every asset, the ones referenced from ' +
+      'nowhere (the same definition the delete gate uses), or the ones without alt text. ' +
+      'The counters in `meta.counts` ignore this and show all three.',
+    enum: MEDIA_LIST_VIEWS,
+    enumName: 'MediaListView',
+    required: false,
+    default: DEFAULT_MEDIA_LIST_VIEW,
+  })
+  @IsOptional()
+  @IsIn(MEDIA_LIST_VIEWS, { message: `View must be one of: ${MEDIA_LIST_VIEWS.join(', ')}` })
+  view?: MediaListView;
+
+  @ApiProperty({
+    description:
+      'Row order: newest or oldest upload first, or the largest stored file first. ' +
+      'Ties are broken by id, so pages never overlap.',
+    enum: MEDIA_LIST_SORTS,
+    enumName: 'MediaListSort',
+    required: false,
+    default: DEFAULT_MEDIA_LIST_SORT,
+  })
+  @IsOptional()
+  @IsIn(MEDIA_LIST_SORTS, { message: `Sort must be one of: ${MEDIA_LIST_SORTS.join(', ')}` })
+  sort?: MediaListSort;
 
   @ApiProperty({ description: 'Page number (1-based)', example: 1, required: false, default: 1 })
   @IsOptional()

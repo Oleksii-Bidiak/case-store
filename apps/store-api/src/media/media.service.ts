@@ -8,7 +8,17 @@ import { MediaUsageRepository } from './media-usage.repository';
 import { MEDIA_USAGE_KIND_ORDER, MediaUsage } from './media-usage.types';
 import { MediaListQueryDto, MediaMetadataDto, DEFAULT_MEDIA_PAGE_SIZE } from './dto';
 import { MediaAssetDetailEntity, MediaAssetEntity } from './entities';
-import type { Paginated } from '../common/pagination';
+import type { Paginated, PaginationMeta } from '../common/pagination';
+import {
+  DEFAULT_MEDIA_LIST_SORT,
+  DEFAULT_MEDIA_LIST_VIEW,
+  type MediaListCounts,
+} from './media-list.types';
+
+/** The list's paging counters plus the per-view counts the tabs show (TASK-1730). */
+export interface MediaListMeta extends PaginationMeta {
+  counts: MediaListCounts;
+}
 
 /** How many usages the delete refusal spells out before it says "and N more". */
 const MAX_USAGES_IN_REFUSAL = 8;
@@ -33,14 +43,20 @@ export class MediaService {
     this.logger.setContext(MediaService.name);
   }
 
-  /** One page of the library, each row carrying how many places use it. */
-  async findAll(query: MediaListQueryDto): Promise<Paginated<MediaAssetEntity>> {
+  /**
+   * One page of the library, each row carrying how many places use it, plus how
+   * many assets each view («Усі · Не використовуються · Без опису») holds under
+   * the same search and tag (TASK-1730).
+   */
+  async findAll(query: MediaListQueryDto): Promise<Paginated<MediaAssetEntity, MediaListMeta>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? DEFAULT_MEDIA_PAGE_SIZE;
 
-    const { assets, total } = await this.repository.findAll({
+    const { assets, total, counts } = await this.repository.findAll({
       search: query.search,
       tag: query.tag,
+      view: query.view ?? DEFAULT_MEDIA_LIST_VIEW,
+      sort: query.sort ?? DEFAULT_MEDIA_LIST_SORT,
       page,
       limit,
     });
@@ -59,6 +75,7 @@ export class MediaService {
         page,
         limit,
         totalPages: limit > 0 ? Math.ceil(total / limit) : 0,
+        counts,
       },
     };
   }

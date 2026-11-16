@@ -51,9 +51,27 @@ const UPLOAD_BODY = {
   },
 };
 
+/**
+ * How many assets each view holds under the current search and tag (TASK-1730)
+ * — NOT narrowed by `view`, so the tabs can show all three at once.
+ */
+class MediaListCountsEntity {
+  @ApiProperty({ description: 'Every asset matching the filters', example: 128 })
+  all!: number;
+
+  @ApiProperty({
+    description: 'Assets referenced from nowhere — the ones a delete would accept',
+    example: 2,
+  })
+  unused!: number;
+
+  @ApiProperty({ description: 'Assets without alt text', example: 1 })
+  noAlt!: number;
+}
+
 /** Pagination metadata for the media list. */
 class MediaPaginationMetaEntity {
-  @ApiProperty({ description: 'Total assets matching the filters', example: 125 })
+  @ApiProperty({ description: 'Total assets matching the filters AND the view', example: 125 })
   total!: number;
 
   @ApiProperty({ description: 'Current page (1-based)', example: 1 })
@@ -64,6 +82,9 @@ class MediaPaginationMetaEntity {
 
   @ApiProperty({ description: 'Total number of pages', example: 6 })
   totalPages!: number;
+
+  @ApiProperty({ type: MediaListCountsEntity })
+  counts!: MediaListCountsEntity;
 }
 
 /** Response envelope for the media list. */
@@ -112,6 +133,7 @@ class MediaAssetResponseEnvelope {
   MediaListResponseEnvelope,
   MediaAssetResponseEnvelope,
   MediaPaginationMetaEntity,
+  MediaListCountsEntity,
 )
 @Controller('admin/media')
 @UseGuards(PermissionGuard)
