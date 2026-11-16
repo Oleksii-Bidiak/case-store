@@ -1846,12 +1846,12 @@ export class OrderService {
         ? releasedQuantities(copySource.items)
         : new Map<string, number>();
 
+    const account = dto.userId ? await this.userRepository.findById(dto.userId) : null;
     if (dto.userId) {
-      const user = await this.userRepository.findById(dto.userId);
-      if (!user) {
+      if (!account) {
         throw new BadRequestException('That customer account does not exist');
       }
-      if (!user.isActive) {
+      if (!account.isActive) {
         throw new ForbiddenException('That customer account is deactivated');
       }
     }
@@ -1919,11 +1919,33 @@ export class OrderService {
 
     // TASK-2048: a copy cancels the original (when asked) and moves its money in
     // the same transaction as its own creation — see `createManualCopy`.
+    // «Замовлення #старе замінено на #нове» is queued INSIDE that transaction:
+    // the letter exists exactly when the replacement does. Same recipient rule
+    // as `findRecipient`: the contact email, otherwise the account's.
+    const replacedTo = dto.contact?.email
+      ? { email: dto.contact.email, name: dto.contact.name }
+      : account
+        ? { email: account.email, name: account.firstName ?? undefined }
+        : null;
     const copied = copySource
       ? await this.orderRepository.createManualCopy(
           params,
           { sourceOrderId: copySource.id, cancelOriginal },
           adminUserId,
+          async (tx, created, { replaced }) => {
+            if (!replaced || !replacedTo) return;
+            await this.mailOutbox.enqueueOrderReplaced(
+              {
+                to: replacedTo.email,
+                ...(replacedTo.name ? { customerName: replacedTo.name } : {}),
+                oldOrderId: copySource.id,
+                newOrderId: created.id,
+                // A guest's only way to the new order; an account has its cabinet.
+                ...(!dto.userId && accessUrl ? { orderStatusUrl: accessUrl } : {}),
+              },
+              tx,
+            );
+          },
         )
       : null;
     const order = copied
@@ -1936,7 +1958,7 @@ export class OrderService {
           event: 'order.copied',
           orderId: order.id,
           sourceOrderId: copySource.id,
-          originalCancelled: copied.originalCancelled,
+          replaced: copied.replaced,
           offsetKop: copied.offsetKop,
           adminUserId,
         },
@@ -1980,15 +2002,6 @@ export class OrderService {
     // reason. A guest phone order has no chat yet.
     if (dto.userId) {
       await this.enqueueCustomerConfirmationAfterCommit(order, dto.userId);
-    }
-
-    // TASK-2048: the original is replaced — tell the customer the new number.
-    if (copied?.originalCancelled && copySource) {
-      await this.enqueueOrderReplacedAfterCommit(
-        copySource.id,
-        order.id,
-        dto.userId ? null : accessUrl,
-      );
     }
 
     return { order: entity, accessUrl };
@@ -2076,34 +2089,6 @@ export class OrderService {
       throw copyOriginalNotCancellableError(source.status);
     }
     return source;
-  }
-
-  /**
-   * «Замовлення #старе замінено на #нове» (TASK-2048), to the copy's buyer —
-   * the contact email or the account's. Never throws: the copy is committed and
-   * the operator is on the phone; a failed enqueue is logged.
-   */
-  private async enqueueOrderReplacedAfterCommit(
-    oldOrderId: string,
-    newOrderId: string,
-    orderStatusUrl: string | null,
-  ): Promise<void> {
-    try {
-      const recipient = await this.orderRepository.findRecipient(newOrderId);
-      if (!recipient) return;
-      await this.mailOutbox.enqueueOrderReplaced({
-        to: recipient.email,
-        ...(recipient.name ? { customerName: recipient.name } : {}),
-        oldOrderId,
-        newOrderId,
-        ...(orderStatusUrl ? { orderStatusUrl } : {}),
-      });
-    } catch (err) {
-      this.logger.error(
-        { err, event: 'order.copy_mail_failed', orderId: newOrderId, sourceOrderId: oldOrderId },
-        'Failed to queue the «order replaced» letter; the copy stands',
-      );
-    }
   }
 
   /**

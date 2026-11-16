@@ -159,7 +159,22 @@ const ADMIN_ORDERS_INCLUDE = {
   copies: {
     where: { deletedAt: null },
     orderBy: { createdAt: 'asc' as const },
-    select: { id: true },
+    select: { id: true, createdAt: true },
+  },
+  /**
+   * TASK-2048: the cancel row a «Створити копію» wrote, if one cancelled this
+   * order — `OrderEntity.replacedById` picks the copy created with it. Only
+   * that row: the timeline itself is `findHistoryByOrderId`.
+   */
+  statusHistory: {
+    where: {
+      note: OrderHistoryNote.COPIED_TO_ORDER,
+      toStatus: OrderStatus.CANCELLED,
+      fromStatus: { not: OrderStatus.CANCELLED },
+    },
+    orderBy: { changedAt: 'asc' as const },
+    take: 1,
+    select: { changedAt: true },
   },
 } satisfies Prisma.OrderInclude;
 
@@ -766,7 +781,12 @@ export class OrderRepository {
    *    holds, capped by the copy's total ({@link offsetAmountKop}), goes OUT of
    *    it and IN to the copy; both are recomputed. The rest stays on the
    *    original as «Винні покупцю».
+   * 5. `afterCopy` — the caller's writes that must commit with the copy (the
+   *    «замінено» letter into the outbox). `replaced` is true only when THIS
+   *    copy cancelled the original; an original cancelled long ago was not
+   *    replaced by it, even though its money still moves.
    *
+   * @throws NotFoundException when the original was deleted before the lock.
    * @throws ConflictException ORDER_COPY_ORIGINAL_NOT_CANCELLABLE, or a stock
    *   conflict of either half.
    */
@@ -774,10 +794,25 @@ export class OrderRepository {
     params: ManualOrderParams,
     copy: { sourceOrderId: string; cancelOriginal: boolean },
     changedBy: string | null,
-  ): Promise<{ order: OrderWithItems; offsetKop: number; originalCancelled: boolean }> {
+    afterCopy?: (
+      tx: Prisma.TransactionClient,
+      created: OrderWithItems,
+      outcome: { replaced: boolean },
+    ) => Promise<void>,
+  ): Promise<{ order: OrderWithItems; offsetKop: number; replaced: boolean }> {
     const { sourceOrderId, cancelOriginal } = copy;
+    const replaced = cancelOriginal;
     const result = await this.prisma.$transaction(async (tx) => {
       const source = await this.money.lockOrder(tx, sourceOrderId);
+      // The lock reads the row whatever its tombstone: one deleted after the
+      // service's pre-read must not be cancelled, copied or offset.
+      const live = await tx.order.findFirst({
+        where: { id: sourceOrderId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!live) {
+        throw new NotFoundException(`Order ${sourceOrderId} not found`);
+      }
       if (cancelOriginal && !PRE_SHIPMENT_STATUSES.has(source.status)) {
         throw copyOriginalNotCancellableError(source.status);
       }
@@ -806,8 +841,9 @@ export class OrderRepository {
         note: OrderHistoryNote.COPY_OF_ORDER,
       });
 
-      const originalCancelled = cancelOriginal || source.status === OrderStatus.CANCELLED;
-      const offsetKop = originalCancelled
+      // The money moves off any cancelled original — cancelled now or before.
+      const offsetFromOriginal = cancelOriginal || source.status === OrderStatus.CANCELLED;
+      const offsetKop = offsetFromOriginal
         ? offsetAmountKop({
             ...(await this.money.totalsFromLedger(tx, sourceOrderId)),
             copyTotalKop: toCents(created.total),
@@ -836,7 +872,10 @@ export class OrderRepository {
         where: { id: created.id },
         include: ORDERS_INCLUDE,
       })) as OrderWithItems;
-      return { order, offsetKop, originalCancelled, released: original?.items ?? [] };
+      if (afterCopy) {
+        await afterCopy(tx, order, { replaced });
+      }
+      return { order, offsetKop, released: original?.items ?? [] };
     });
 
     // Both halves moved stock: the released lines and the reserved ones.
@@ -845,7 +884,7 @@ export class OrderRepository {
     return {
       order: result.order,
       offsetKop: result.offsetKop,
-      originalCancelled: result.originalCancelled,
+      replaced,
     };
   }
 

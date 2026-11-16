@@ -6143,16 +6143,27 @@ describe('OrderService', () => {
         configValues.set('STORE_CLIENT_URL', 'https://shop.test');
         orderRepositoryMock.findCopySource.mockResolvedValue(makeSource());
         orderRepositoryMock.findOrderableProducts.mockResolvedValue([catalogueProduct]);
-        orderRepositoryMock.createManualCopy.mockResolvedValue({
-          order: makeOrder({ id: 'copy-uuid-1' }),
-          offsetKop: 0,
-          originalCancelled: true,
-        });
-        orderRepositoryMock.findRecipient.mockResolvedValue({
-          email: 'guest@example.com',
-          name: 'Гість',
-        });
+        armCopy(true);
       });
+
+      /** The repository double: runs the in-transaction hook like the real one. */
+      const armCopy = (replaced: boolean) =>
+        orderRepositoryMock.createManualCopy.mockImplementation(
+          async (
+            _params: unknown,
+            _copy: unknown,
+            _changedBy: unknown,
+            afterCopy?: (
+              tx: unknown,
+              created: OrderWithItems,
+              o: { replaced: boolean },
+            ) => Promise<void>,
+          ) => {
+            const order = makeOrder({ id: 'copy-uuid-1' });
+            if (afterCopy) await afterCopy(txMock, order, { replaced });
+            return { order, offsetKop: 0, replaced };
+          },
+        );
 
       it('cancels and copies in one repository call, never a plain create', async () => {
         await service.adminCreateOrder(dto, ADMIN_ID);
@@ -6163,6 +6174,7 @@ describe('OrderService', () => {
           }),
           { sourceOrderId: SOURCE_ID, cancelOriginal: true },
           ADMIN_ID,
+          expect.any(Function),
         );
         expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
       });
@@ -6204,46 +6216,75 @@ describe('OrderService', () => {
         expect(orderRepositoryMock.createManualCopy).not.toHaveBeenCalled();
       });
 
-      it('tells the customer the new number once the original is replaced', async () => {
+      it('queues «замінено» to the contact, in the copy transaction', async () => {
         await service.adminCreateOrder(dto, ADMIN_ID);
 
         expect(mailOutboxServiceMock.enqueueOrderReplaced).toHaveBeenCalledWith(
-          expect.objectContaining({
+          {
             to: 'guest@example.com',
-            customerName: 'Гість',
+            customerName: 'Гість Гостьович',
             oldOrderId: SOURCE_ID,
             newOrderId: 'copy-uuid-1',
             orderStatusUrl: expect.stringContaining('/orders/guest/'),
-          }),
+          },
+          txMock,
         );
-        expect(orderRepositoryMock.findRecipient).toHaveBeenCalledWith('copy-uuid-1');
+      });
+
+      it('addresses an account copy to the account, without a guest link', async () => {
+        userRepositoryMock.findById.mockResolvedValue(recipient);
+
+        await service.adminCreateOrder({ ...dto, contact: undefined, userId: USER_ID }, ADMIN_ID);
+
+        expect(mailOutboxServiceMock.enqueueOrderReplaced).toHaveBeenCalledWith(
+          {
+            to: 'olena@example.com',
+            customerName: 'Olena',
+            oldOrderId: SOURCE_ID,
+            newOrderId: 'copy-uuid-1',
+          },
+          txMock,
+        );
+      });
+
+      it('sends nothing to a walk-in with no email', async () => {
+        await service.adminCreateOrder(
+          { ...dto, contact: { name: 'Гість', phone: '+380671112233' } as never },
+          ADMIN_ID,
+        );
+
+        expect(mailOutboxServiceMock.enqueueOrderReplaced).not.toHaveBeenCalled();
       });
 
       it('sends no «replaced» letter while the original stays live', async () => {
         orderRepositoryMock.findOrderableProducts.mockResolvedValue([
           { ...catalogueProduct, stock: 5 },
         ]);
-        orderRepositoryMock.createManualCopy.mockResolvedValue({
-          order: makeOrder({ id: 'copy-uuid-1' }),
-          offsetKop: 0,
-          originalCancelled: false,
-        });
+        armCopy(false);
 
         await service.adminCreateOrder({ ...dto, cancelOriginal: false }, ADMIN_ID);
 
         expect(mailOutboxServiceMock.enqueueOrderReplaced).not.toHaveBeenCalled();
       });
 
-      it('never fails the committed copy when the letter cannot be queued', async () => {
+      it('sends none for an original cancelled long ago — this copy replaced nothing', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(
+          makeSource({ status: OrderStatus.CANCELLED }),
+        );
+        orderRepositoryMock.findOrderableProducts.mockResolvedValue([
+          { ...catalogueProduct, stock: 5 },
+        ]);
+        armCopy(false);
+
+        await service.adminCreateOrder({ ...dto, cancelOriginal: false }, ADMIN_ID);
+
+        expect(mailOutboxServiceMock.enqueueOrderReplaced).not.toHaveBeenCalled();
+      });
+
+      it('fails the copy with the letter — enqueue and commit are one', async () => {
         mailOutboxServiceMock.enqueueOrderReplaced.mockRejectedValueOnce(new Error('db down'));
 
-        await expect(service.adminCreateOrder(dto, ADMIN_ID)).resolves.toEqual(
-          expect.objectContaining({ order: expect.any(OrderEntity) }),
-        );
-        expect(pinoLoggerMock.error).toHaveBeenCalledWith(
-          expect.objectContaining({ event: 'order.copy_mail_failed' }),
-          expect.any(String),
-        );
+        await expect(service.adminCreateOrder(dto, ADMIN_ID)).rejects.toThrow('db down');
       });
     });
   });

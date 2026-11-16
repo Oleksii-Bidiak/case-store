@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
@@ -14,6 +14,7 @@ import { randomUUID } from 'crypto';
 import { CacheService } from '../src/cache';
 import { OrderMoneyRepository } from '../src/order/order-money.repository';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderEntity } from '../src/order/entities';
 import { PrismaService } from '../src/prisma';
 import { ProductIndexer } from '../src/search/product-indexer';
 
@@ -290,5 +291,91 @@ describe('OrderRepository.createManualCopy (integration, TASK-2048)', () => {
       OrderStatus.SHIPPED,
     );
     expect(await prisma.order.count({ where: { copiedFromId: originalId } })).toBe(0);
+  });
+
+  // Verifier findings on TASK-2048.
+  it('refuses an original deleted before the lock — nothing written', async () => {
+    const originalId = await placeOriginal();
+    await prisma.order.update({ where: { id: originalId }, data: { deletedAt: new Date() } });
+
+    await expect(
+      orders.createManualCopy(
+        copyParams([{ productId, price: '1000.00' }]),
+        { sourceOrderId: originalId, cancelOriginal: true },
+        userId,
+      ),
+    ).rejects.toThrow(NotFoundException);
+
+    const original = await prisma.order.findUniqueOrThrow({ where: { id: originalId } });
+    expect(original.status).toBe(OrderStatus.PROCESSING);
+    expect(original.restockedAt).toBeNull();
+    expect(await prisma.order.count({ where: { copiedFromId: originalId } })).toBe(0);
+  });
+
+  it('rolls everything back when the in-transaction hook fails', async () => {
+    const originalId = await placeOriginal();
+
+    await expect(
+      orders.createManualCopy(
+        copyParams([{ productId, price: '1000.00' }]),
+        { sourceOrderId: originalId, cancelOriginal: true },
+        userId,
+        async () => {
+          throw new Error('outbox down');
+        },
+      ),
+    ).rejects.toThrow('outbox down');
+
+    const original = await prisma.order.findUniqueOrThrow({ where: { id: originalId } });
+    expect(original.status).toBe(OrderStatus.PROCESSING);
+    expect(await stockOf(productId)).toBe(0);
+    expect(await prisma.order.count({ where: { copiedFromId: originalId } })).toBe(0);
+  });
+
+  it('moves the money off an original cancelled long ago, but did not replace it', async () => {
+    const originalId = await placeOriginal(20_000, OrderStatus.CANCELLED);
+    // Its stock came back with that old cancel.
+    await prisma.product.update({ where: { id: productId }, data: { stock: 1 } });
+    const hook = jest.fn().mockResolvedValue(undefined);
+
+    const { replaced, offsetKop } = await orders.createManualCopy(
+      copyParams([{ productId, price: '1000.00' }]),
+      { sourceOrderId: originalId, cancelOriginal: false },
+      userId,
+      hook,
+    );
+
+    expect(replaced).toBe(false);
+    expect(offsetKop).toBe(20_000);
+    expect(hook).toHaveBeenCalledWith(expect.anything(), expect.anything(), { replaced: false });
+    // The card: a plain copy, not «Замінено на».
+    const card = OrderEntity.fromPrisma((await orders.findByIdForAdmin(originalId))!);
+    expect(card.copyIds).toHaveLength(1);
+    expect(card.replacedById).toBeNull();
+  });
+
+  it('names the replacing copy on the original’s card, not an earlier or later one', async () => {
+    await prisma.product.update({ where: { id: productId }, data: { stock: 3 } });
+    const originalId = await placeOriginal();
+    const line = copyParams([{ productId, price: '1000.00' }]);
+    const before = await orders.createManualCopy(
+      line,
+      { sourceOrderId: originalId, cancelOriginal: false },
+      userId,
+    );
+    const replacer = await orders.createManualCopy(
+      line,
+      { sourceOrderId: originalId, cancelOriginal: true },
+      userId,
+    );
+    const later = await orders.createManualCopy(
+      line,
+      { sourceOrderId: originalId, cancelOriginal: false },
+      userId,
+    );
+
+    const card = OrderEntity.fromPrisma((await orders.findByIdForAdmin(originalId))!);
+    expect(card.copyIds).toEqual([before.order.id, replacer.order.id, later.order.id]);
+    expect(card.replacedById).toBe(replacer.order.id);
   });
 });

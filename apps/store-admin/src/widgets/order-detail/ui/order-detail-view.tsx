@@ -116,10 +116,14 @@ function copyNumber(order: OrderEntity) {
 function CopyLinks({
   order,
 }: {
-  order: Pick<OrderEntity, "status" | "copiedFromId" | "copyIds">;
+  order: Pick<OrderEntity, "copiedFromId" | "copyIds" | "replacedById">;
 }) {
-  const copies = order.copyIds ?? [];
-  if (!order.copiedFromId && copies.length === 0) return null;
+  // «Замінено на» only for the copy whose «Скасувати #старе» cancelled this
+  // order (the server's `replacedById`); every other copy — made while it
+  // stayed live, or of it once cancelled — is listed under «Копії».
+  const replacedById = order.replacedById ?? null;
+  const copies = (order.copyIds ?? []).filter((id) => id !== replacedById);
+  if (!order.copiedFromId && !replacedById && copies.length === 0) return null;
   const orderLink = (id: string) => (
     <Link
       key={id}
@@ -129,7 +133,6 @@ function CopyLinks({
       {formatOrderNumber(id)}
     </Link>
   );
-  const replaced = order.status === "CANCELLED" && copies.length === 1;
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
       {order.copiedFromId ? (
@@ -137,9 +140,14 @@ function CopyLinks({
           {d.copyOf} {orderLink(order.copiedFromId)}
         </span>
       ) : null}
+      {replacedById ? (
+        <span className="flex items-center gap-1.5">
+          {d.replacedBy} {orderLink(replacedById)}
+        </span>
+      ) : null}
       {copies.length ? (
         <span className="flex flex-wrap items-center gap-1.5">
-          {replaced ? d.replacedBy : d.copiesLabel} {copies.map(orderLink)}
+          {d.copiesLabel} {copies.map(orderLink)}
         </span>
       ) : null}
     </div>

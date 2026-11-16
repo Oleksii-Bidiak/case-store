@@ -3414,7 +3414,11 @@ describe('OrderRepository', () => {
       refundedKop?: number;
       copyTotal?: string;
     } = {}) => {
-      const tx = makeTx();
+      const tx = {
+        ...makeTx(),
+        // The live-row check after the lock (verifier, TASK-2048).
+        order: { ...makeTx().order, findFirst: jest.fn().mockResolvedValue({ id: 'source-1' }) },
+      };
       const calls: string[] = [];
       moneyMock.lockOrder.mockImplementation(async (_tx: unknown, id: string) => {
         calls.push(`lock:${id}`);
@@ -3561,6 +3565,65 @@ describe('OrderRepository', () => {
 
       expect(moneyMock.insertEntry).not.toHaveBeenCalled();
       expect(result.offsetKop).toBe(0);
+    });
+
+    // Verifier findings on TASK-2048.
+    it('reports «replaced» only for the cancel made by THIS copy', async () => {
+      seedCopyTx({ status: OrderStatus.CANCELLED });
+      const already = await repository.createManualCopy(
+        copyParams,
+        { sourceOrderId: 'source-1', cancelOriginal: false },
+        'admin-uuid-1',
+      );
+      expect(already.replaced).toBe(false);
+
+      seedCopyTx();
+      const now = await repository.createManualCopy(
+        copyParams,
+        { sourceOrderId: 'source-1', cancelOriginal: true },
+        'admin-uuid-1',
+      );
+      expect(now.replaced).toBe(true);
+    });
+
+    it('runs the caller’s hook inside the copy transaction, with the copy and the verdict', async () => {
+      const { tx, calls } = seedCopyTx();
+      const hook = jest.fn(async () => {
+        calls.push('hook');
+      });
+
+      await repository.createManualCopy(
+        copyParams,
+        { sourceOrderId: 'source-1', cancelOriginal: true },
+        'admin-uuid-1',
+        hook,
+      );
+
+      expect(hook).toHaveBeenCalledWith(tx, expect.objectContaining({ id: 'copy-1' }), {
+        replaced: true,
+      });
+      // After both orders are settled, still inside the transaction.
+      expect(calls.indexOf('hook')).toBeGreaterThan(calls.lastIndexOf('recompute:copy-1'));
+    });
+
+    it('is a 404 when the original was deleted before the lock — nothing written', async () => {
+      const { tx } = seedCopyTx();
+      tx.order.findFirst.mockResolvedValue(null);
+
+      await expect(
+        repository.createManualCopy(
+          copyParams,
+          { sourceOrderId: 'source-1', cancelOriginal: true },
+          'admin-uuid-1',
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(tx.order.findFirst).toHaveBeenCalledWith({
+        where: { id: 'source-1', deletedAt: null },
+        select: { id: true },
+      });
+      expect(tx.order.updateMany).not.toHaveBeenCalled();
+      expect(tx.order.create).not.toHaveBeenCalled();
+      expect(tx.product.update).not.toHaveBeenCalled();
     });
 
     it('offsets from an order that was ALREADY cancelled, without cancelling it again', async () => {

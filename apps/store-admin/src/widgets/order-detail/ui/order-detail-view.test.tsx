@@ -1264,13 +1264,37 @@ describe("OrderDetailView — order copy (TASK-2048)", () => {
     expect(link.parentElement).toHaveTextContent(dict.orders.copyOf);
   });
 
-  it("says a cancelled original was replaced by its copy", async () => {
-    serveOrder({ id: ORIGINAL, status: "CANCELLED", copyIds: [COPY] });
+  it("says the original was replaced by the copy that cancelled it", async () => {
+    const OTHER = "b2c3d4e5-0000-4000-8000-000000000003";
+    serveOrder({
+      id: ORIGINAL,
+      status: "CANCELLED",
+      copyIds: [COPY, OTHER],
+      replacedById: COPY,
+    });
     renderWithProviders(<OrderDetailView orderId={ORIGINAL} />);
 
     const link = await screen.findByRole("link", { name: "#A1B2C3D4" });
     expect(link).toHaveAttribute("href", `/orders/${COPY}`);
     expect(link.parentElement).toHaveTextContent(dict.orders.replacedBy);
+    // Any other copy is just a copy.
+    const other = screen.getByRole("link", { name: "#B2C3D4E5" });
+    expect(other.parentElement).toHaveTextContent(dict.orders.copiesLabel);
+    expect(other.parentElement).not.toHaveTextContent(dict.orders.replacedBy);
+  });
+
+  it("lists a copy of an order cancelled earlier as a plain copy", async () => {
+    serveOrder({
+      id: ORIGINAL,
+      status: "CANCELLED",
+      copyIds: [COPY],
+      replacedById: null,
+    });
+    renderWithProviders(<OrderDetailView orderId={ORIGINAL} />);
+
+    const link = await screen.findByRole("link", { name: "#A1B2C3D4" });
+    expect(link.parentElement).toHaveTextContent(dict.orders.copiesLabel);
+    expect(screen.queryByText(dict.orders.replacedBy)).not.toBeInTheDocument();
   });
 
   it("lists the copies of an original that stayed live", async () => {

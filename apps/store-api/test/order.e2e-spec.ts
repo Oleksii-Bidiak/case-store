@@ -4083,12 +4083,19 @@ describe('OrderController (e2e)', () => {
             category: { isActive: true, ancestorsActive: true },
           },
         ]);
-        orderRepositoryMock.createManualCopy.mockResolvedValue({
-          order: makeOrder({ id: 'copy-e2e-1', userId: null }),
-          offsetKop: 0,
-          originalCancelled: true,
-        });
-        orderRepositoryMock.findRecipient.mockResolvedValue({ email: 'guest@example.com' });
+        // The repository double runs the in-transaction hook as the real one does.
+        orderRepositoryMock.createManualCopy.mockImplementation(
+          async (
+            _params: unknown,
+            copy: { cancelOriginal: boolean },
+            _by: unknown,
+            afterCopy?: (tx: unknown, created: unknown, o: { replaced: boolean }) => Promise<void>,
+          ) => {
+            const order = makeOrder({ id: 'copy-e2e-1', userId: null });
+            await afterCopy?.({ tx: true }, order, { replaced: copy.cancelOriginal });
+            return { order, offsetKop: 0, replaced: copy.cancelOriginal };
+          },
+        );
       });
 
       it('cancels the original and creates the copy in one call (201)', async () => {
@@ -4103,11 +4110,45 @@ describe('OrderController (e2e)', () => {
           expect.objectContaining({ items: [expect.objectContaining({ price: '549.00' })] }),
           { sourceOrderId: SOURCE_ID, cancelOriginal: true },
           admin.id,
+          expect.any(Function),
         );
         expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
         expect(mailOutboxServiceMock.enqueueOrderReplaced).toHaveBeenCalledWith(
-          expect.objectContaining({ oldOrderId: SOURCE_ID, newOrderId: 'copy-e2e-1' }),
+          expect.objectContaining({
+            to: 'guest@example.com',
+            oldOrderId: SOURCE_ID,
+            newOrderId: 'copy-e2e-1',
+          }),
+          { tx: true },
         );
+      });
+
+      it('sends no «replaced» letter for an original cancelled long ago (201)', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(source(OrderStatus.CANCELLED));
+
+        await request(app.getHttpServer())
+          .post('/api/admin/orders')
+          .set('Authorization', adminAuth())
+          .send(body({ cancelOriginal: false }))
+          .expect(400); // the last unit: shelf 0, nothing released
+
+        orderRepositoryMock.findOrderableProducts.mockResolvedValue([
+          {
+            id: copyProductId,
+            name: 'iPhone 15 Pro Case',
+            price: { toString: () => '549.00' },
+            stock: 3,
+            isActive: true,
+            category: { isActive: true, ancestorsActive: true },
+          },
+        ]);
+        await request(app.getHttpServer())
+          .post('/api/admin/orders')
+          .set('Authorization', adminAuth())
+          .send(body({ cancelOriginal: false }))
+          .expect(201);
+
+        expect(mailOutboxServiceMock.enqueueOrderReplaced).not.toHaveBeenCalled();
       });
 
       it('is a 409 when the original shipped in the meantime', async () => {

@@ -461,6 +461,18 @@ export class OrderEntity {
   })
   copyIds?: string[];
 
+  @ApiProperty({
+    description:
+      'TASK-2048: the copy whose «Скасувати #старе — замінено» cancelled this order ' +
+      '(«Замінено на»), or null — a copy of an order cancelled earlier replaced nothing. ' +
+      'Admin reads only — absent elsewhere.',
+    type: String,
+    nullable: true,
+    required: false,
+    format: 'uuid',
+  })
+  replacedById?: string | null;
+
   /**
    * Create an OrderEntity from a repository order. Converts all Decimal money
    * fields to strings and maps each line into an {@link OrderItemEntity}.
@@ -572,6 +584,15 @@ export class OrderEntity {
     entity.copiedFromId = order.copiedFromId ?? null;
     if (order.copies) {
       entity.copyIds = order.copies.map((copy) => copy.id);
+      // The cancel and the copy share one transaction, so the replacing copy is
+      // the first one created at or after that cancel row; copies made before
+      // it (no cancel) and after it (of a cancelled order) are plain copies.
+      const cancelledAt = order.statusHistory?.[0]?.changedAt;
+      entity.replacedById = cancelledAt
+        ? (order.copies.find(
+            (copy) => copy.createdAt && copy.createdAt.getTime() >= cancelledAt.getTime(),
+          )?.id ?? null)
+        : null;
     }
     entity.trackingNumber = order.trackingNumber ?? null;
     // TASK-336: opt-in, never automatic — see the docblock above.

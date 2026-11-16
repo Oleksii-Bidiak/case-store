@@ -274,8 +274,14 @@ export interface OrderWithItems {
   accessTokenIssuedAt?: Date | null;
   /** The original of a «Створити копію» copy (TASK-2048); null otherwise. */
   copiedFromId?: string | null;
-  /** The copies made of this order (TASK-2048) — admin reads only. */
-  copies?: Array<{ id: string }>;
+  /** The copies made of this order (TASK-2048), oldest first — admin reads only. */
+  copies?: Array<{ id: string; createdAt?: Date }>;
+  /**
+   * Admin reads only, and NARROWED (TASK-2048): at most the one history row of a
+   * «Створити копію» that cancelled this order (note COPIED_TO_ORDER into
+   * CANCELLED) — what tells «Замінено на» from «Копії». Never the timeline.
+   */
+  statusHistory?: Array<{ changedAt: Date }>;
   items: OrderItemRow[];
   /**
    * Owning user account, selected only by the admin read paths

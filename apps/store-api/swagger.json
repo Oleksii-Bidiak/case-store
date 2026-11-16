@@ -30449,6 +30449,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "replacedById": {
+            "type": "string",
+            "description": "TASK-2048: the copy whose «Скасувати #старе — замінено» cancelled this order («Замінено на»), or null — a copy of an order cancelled earlier replaced nothing. Admin reads only — absent elsewhere.",
+            "nullable": true,
+            "format": "uuid"
           }
         },
         "required": [
@@ -30737,6 +30743,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "replacedById": {
+            "type": "string",
+            "description": "TASK-2048: the copy whose «Скасувати #старе — замінено» cancelled this order («Замінено на»), or null — a copy of an order cancelled earlier replaced nothing. Admin reads only — absent elsewhere.",
+            "nullable": true,
+            "format": "uuid"
           },
           "guestAccessToken": {
             "type": "string",

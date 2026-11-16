@@ -341,4 +341,36 @@ describe('OrderEntity — copy links (TASK-2048)', () => {
   it('says nothing about copies on reads that did not join them', () => {
     expect(OrderEntity.fromPrisma(buildOrder()).copyIds).toBeUndefined();
   });
+
+  // Verifier finding: «Замінено на» names the copy whose «Скасувати #старе»
+  // cancelled this order — not just any copy of a cancelled order.
+  describe('replacedById', () => {
+    const at = (iso: string) => new Date(iso);
+    const copies = [
+      { id: 'c-before', createdAt: at('2026-11-16T10:00:00Z') },
+      { id: 'c-replacer', createdAt: at('2026-11-16T11:00:00Z') },
+      { id: 'c-later', createdAt: at('2026-11-16T12:00:00Z') },
+    ];
+
+    it('is the first copy made with (or after) the copy-cancel of this order', () => {
+      const entity = OrderEntity.fromPrisma(
+        buildOrder({
+          status: OrderStatus.CANCELLED,
+          copies,
+          statusHistory: [{ changedAt: at('2026-11-16T11:00:00Z') }],
+        }),
+      );
+
+      expect(entity.replacedById).toBe('c-replacer');
+      expect(entity.copyIds).toEqual(['c-before', 'c-replacer', 'c-later']);
+    });
+
+    it('is null for an order no copy cancelled, even a cancelled one with copies', () => {
+      expect(
+        OrderEntity.fromPrisma(
+          buildOrder({ status: OrderStatus.CANCELLED, copies, statusHistory: [] }),
+        ).replacedById,
+      ).toBeNull();
+    });
+  });
 });
