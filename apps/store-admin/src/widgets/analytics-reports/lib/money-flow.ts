@@ -31,9 +31,19 @@ export function formatSignedKop(kop: number): string {
   return kop < 0 ? `${MINUS}${formatKop(-kop)}` : formatKop(kop);
 }
 
-/** Every ledger kind, in the order the API sends the rows. */
-export const MONEY_KINDS: readonly MoneyEntryKind[] =
-  Object.values(MoneyEntryKind);
+/**
+ * «Залік» (TASK-2048) only carries money from an original to its copy; the
+ * report and the register leave it out, so the filter does not offer it.
+ */
+const OFFSET_KINDS: readonly MoneyEntryKind[] = [
+  MoneyEntryKind.OFFSET_TO_ORDER,
+  MoneyEntryKind.OFFSET_FROM_ORDER,
+];
+
+/** Every ledger kind that moves real money, in the order the API sends the rows. */
+export const MONEY_KINDS: readonly MoneyEntryKind[] = Object.values(
+  MoneyEntryKind,
+).filter((kind) => !OFFSET_KINDS.includes(kind));
 
 const isKind = (value: string): value is MoneyEntryKind =>
   (MONEY_KINDS as readonly string[]).includes(value);

@@ -58,6 +58,9 @@ describe("money-flow rules", () => {
     expect(readMoneyKind("CASH_REFUND")).toBe("CASH_REFUND");
     expect(readMoneyKind("cash_refund")).toBeUndefined();
     expect(readMoneyKind(null)).toBeUndefined();
+    // «Залік» is not in the report, so a link to it falls back to every kind.
+    expect(readMoneyKind("OFFSET_TO_ORDER")).toBeUndefined();
+    expect(readMoneyKind("OFFSET_FROM_ORDER")).toBeUndefined();
   });
 
   it("links the register with the period as /analytics spells it", () => {

@@ -89,12 +89,14 @@ describe('MoneyFlowRepository (integration, TASK-2395)', () => {
       legacy?: boolean;
       actorId?: string;
       reason?: string;
+      counterpartOrderId?: string;
     },
   ): Promise<string> {
     const outKinds: MoneyEntryKind[] = [
       MoneyEntryKind.LIQPAY_REFUND,
       MoneyEntryKind.CASH_REFUND,
       MoneyEntryKind.TRANSFER_REFUND,
+      MoneyEntryKind.OFFSET_TO_ORDER,
     ];
     const entry = await prisma.orderMoneyEntry.create({
       data: {
@@ -109,6 +111,7 @@ describe('MoneyFlowRepository (integration, TASK-2395)', () => {
         legacy: opts.legacy ?? false,
         actorId: opts.actorId ?? null,
         reason: opts.reason ?? (opts.reversalOfId ? 'помилка' : null),
+        counterpartOrderId: opts.counterpartOrderId ?? null,
       },
     });
     return entry.id;
@@ -266,6 +269,41 @@ describe('MoneyFlowRepository (integration, TASK-2395)', () => {
 
       expect(kindOf(await repo.getByKind(JUN), MoneyEntryKind.LIQPAY_REFUND)).toBeUndefined();
       expect(await repo.findEntries(JUN, { page: 1, limit: 50 })).toEqual({ rows: [], total: 0 });
+    });
+
+    it('leaves a «Залік» pair (TASK-2048) out of the sums and the register', async () => {
+      const original = await createOrder();
+      const copy = await createOrder();
+      await addEntry(original, {
+        kind: MoneyEntryKind.BANK_TRANSFER,
+        amountKop: 70_000,
+        at: '2021-06-10T10:00:00Z',
+      });
+      // The customer paid once; «Створити копію» carries that money over.
+      await addEntry(original, {
+        kind: MoneyEntryKind.OFFSET_TO_ORDER,
+        amountKop: 70_000,
+        at: '2021-06-11T10:00:00Z',
+        counterpartOrderId: copy,
+      });
+      await addEntry(copy, {
+        kind: MoneyEntryKind.OFFSET_FROM_ORDER,
+        amountKop: 70_000,
+        at: '2021-06-11T10:00:00Z',
+        counterpartOrderId: original,
+      });
+
+      const rows = await repo.getByKind(JUN);
+      expect(rows.map((row) => row.kind)).toEqual([MoneyEntryKind.BANK_TRANSFER]);
+      expect(kindOf(rows, MoneyEntryKind.BANK_TRANSFER)?.netKop).toBe(70_000);
+
+      const register = await repo.findEntries(JUN, { page: 1, limit: 50 });
+      expect(register.total).toBe(1);
+      expect(register.rows.map((row) => row.kind)).toEqual([MoneyEntryKind.BANK_TRANSFER]);
+      // Even asked for by name, an offset kind has no register rows.
+      expect(
+        await repo.findEntries(JUN, { page: 1, limit: 50, kind: MoneyEntryKind.OFFSET_TO_ORDER }),
+      ).toEqual({ rows: [], total: 0 });
     });
 
     it('counts a REQUESTED LiqPay refund and reports it apart in requestedKop', async () => {

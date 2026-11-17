@@ -3,6 +3,8 @@ import { MoneyDirection, MoneyEntryKind, MoneyProviderState, Prisma } from '@pri
 import { orderNumber } from '../../mail';
 // eslint-disable-next-line local/no-deep-module-import -- cycle: order barrel > order.module > order.repository > dashboard barrel > dashboard.module > reports.module > this file
 import { actorDisplayName } from '../../order/order-money.repository';
+// eslint-disable-next-line local/no-deep-module-import -- same cycle as above
+import { OFFSET_KINDS } from '../../order/order-money';
 import { PrismaService } from '../../prisma';
 import { ReportRange } from './report-period';
 
@@ -183,7 +185,8 @@ export class MoneyFlowRepository {
     const where: Prisma.OrderMoneyEntryWhereInput = {
       voidedAt: null,
       occurredAt: { gte: range.start, lt: range.end },
-      ...(filter.kind ? { kind: filter.kind } : {}),
+      // «Залік» never leaves the register's money: see liveInRange.
+      kind: { notIn: [...OFFSET_KINDS], ...(filter.kind ? { equals: filter.kind } : {}) },
     };
     const [entries, total] = await Promise.all([
       this.prisma.orderMoneyEntry.findMany({
@@ -226,8 +229,15 @@ export class MoneyFlowRepository {
 }
 
 /** Live (never voided) entries whose `occurred_at` is in `[start, end)` — see the class doc. */
+/**
+ * Live entries of `range` that moved real money. The «Залік» pair (OFFSET_*,
+ * TASK-2048) only carries what was paid on an original over to its copy: in the
+ * report it would add the same sum to both «Надійшло» and «Повернено», so it is
+ * left to the order card's journal.
+ */
 function liveInRange(range: ReportRange): Prisma.Sql {
   return Prisma.sql`m.voided_at IS NULL
+    AND m.kind::text NOT IN (${Prisma.join([...OFFSET_KINDS])})
     AND m.occurred_at >= ${range.start}
     AND m.occurred_at < ${range.end}`;
 }

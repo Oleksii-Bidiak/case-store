@@ -1,13 +1,18 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { MoneyDirection, MoneyEntryKind } from '@prisma/client';
 // eslint-disable-next-line local/no-deep-module-import -- cycle: order barrel > order.module > order.repository > dashboard barrel > dashboard.module > reports.module > money-flow-report.service > this file
-import { IN_KINDS, OUT_KINDS } from '../../../order/order-money';
+import { IN_KINDS, OFFSET_KINDS, OUT_KINDS } from '../../../order/order-money';
 import type { MoneyBalances, MoneyFlowKindTotals } from '../money-flow.repository';
 import { ReportPeriod } from '../report-period';
 import { ComparedValueEntity, ReportPeriodEntity } from './report-common.entity';
 
-/** Every ledger kind, in the order the report always lists them: IN kinds, then OUT kinds. */
-const REPORT_KINDS: readonly MoneyEntryKind[] = [...IN_KINDS, ...OUT_KINDS];
+/**
+ * Every ledger kind that moves real money, in the order the report always lists
+ * them: IN kinds, then OUT kinds. «Залік» (OFFSET_*) is not one — see the repository.
+ */
+const REPORT_KINDS: readonly MoneyEntryKind[] = [...IN_KINDS, ...OUT_KINDS].filter(
+  (kind) => !OFFSET_KINDS.includes(kind),
+);
 
 /** One ledger kind's money in the chosen period (TASK-2395). Integer kopecks. */
 export class MoneyFlowKindRowEntity {
@@ -111,7 +116,8 @@ export class MoneyFlowReportEntity {
 
   @ApiProperty({
     type: [MoneyFlowKindRowEntity],
-    description: 'Always 8 rows: the IN kinds, then the OUT kinds, zero rows included',
+    description:
+      'Always 8 rows: the IN kinds, then the OUT kinds, zero rows included; «Залік» (OFFSET_*) is not money that moved and is never listed',
   })
   rows!: MoneyFlowKindRowEntity[];
 

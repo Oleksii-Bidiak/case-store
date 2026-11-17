@@ -35196,7 +35196,7 @@
             "$ref": "#/components/schemas/ReportPeriodEntity"
           },
           "rows": {
-            "description": "Always 8 rows: the IN kinds, then the OUT kinds, zero rows included",
+            "description": "Always 8 rows: the IN kinds, then the OUT kinds, zero rows included; «Залік» (OFFSET_*) is not money that moved and is never listed",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/MoneyFlowKindRowEntity"
