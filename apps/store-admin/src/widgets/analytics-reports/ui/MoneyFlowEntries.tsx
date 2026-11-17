@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import {
   getMoneyFlowEntries,
   MoneyDirection,
+  ReportPreset,
   useGetMoneyFlowEntries,
   useGetMoneyFlowReport,
   type MoneyFlowEntryEntity,
@@ -109,6 +110,11 @@ function readPage(raw: string | null): number {
 /**
  * Every entry of the period (and kind), through the plain generated function
  * — the CSV holds the whole register, not the page on screen.
+ *
+ * The register is paged over a live ledger: an entry recorded between two
+ * requests shifts every later row, so a page repeats or skips one. The file
+ * must equal the report to the kopeck, so a drifted read is refused (the
+ * button turns the throw into a toast) instead of handed to the accountant.
  */
 export async function fetchAllMoneyFlowEntries(
   query: ReportQuery & { kind?: MoneyFlowEntryEntity["kind"] },
@@ -116,6 +122,7 @@ export async function fetchAllMoneyFlowEntries(
   const entries: MoneyFlowEntryEntity[] = [];
   let page = 1;
   let totalPages = 1;
+  let expected: number | undefined;
   do {
     const response = await getMoneyFlowEntries({
       ...query,
@@ -123,9 +130,19 @@ export async function fetchAllMoneyFlowEntries(
       limit: MONEY_FLOW_CSV_PAGE_SIZE,
     });
     entries.push(...response.data);
+    expected ??= response.meta.total;
+    if (response.meta.total !== expected) {
+      throw new Error("The ledger changed while the CSV was being read");
+    }
     totalPages = response.meta.totalPages;
     page += 1;
   } while (page <= totalPages);
+  if (
+    entries.length !== expected ||
+    new Set(entries.map((entry) => entry.id)).size !== entries.length
+  ) {
+    throw new Error("The ledger changed while the CSV was being read");
+  }
   return entries;
 }
 
@@ -169,9 +186,15 @@ export function MoneyFlowEntries() {
   const build =
     period && !entries.isError
       ? (): Promise<CsvFile> =>
-          fetchAllMoneyFlowEntries({ ...query, kind }).then((all) =>
-            moneyFlowEntriesCsv(period, all),
-          )
+          // The days the server resolved, not the preset: a preset is re-read
+          // against "now" on every request, and a page fetched after midnight
+          // would come from another window.
+          fetchAllMoneyFlowEntries({
+            preset: ReportPreset.custom,
+            from: period.from,
+            to: period.to,
+            kind,
+          }).then((all) => moneyFlowEntriesCsv(period, all))
       : null;
 
   return (

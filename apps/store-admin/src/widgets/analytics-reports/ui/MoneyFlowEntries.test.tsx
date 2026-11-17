@@ -29,6 +29,14 @@ jest.mock("@/shared/lib/download-csv", () => ({
   downloadCsv: (...args: unknown[]) => mockDownloadCsv(...args),
 }));
 
+const mockToastError = jest.fn();
+jest.mock("@/shared/ui/toast", () => ({
+  toast: {
+    success: jest.fn(),
+    error: (...args: unknown[]) => mockToastError(...args),
+  },
+}));
+
 let mockSearchParams = new URLSearchParams("");
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
@@ -57,6 +65,7 @@ function serveEntries(
 }
 
 beforeEach(() => {
+  mockToastError.mockClear();
   mockSearchParams = new URLSearchParams("");
   mockDownloadCsv.mockClear();
 });
@@ -213,12 +222,14 @@ describe("MoneyFlowEntries — CSV", () => {
       ],
     };
     const csvPages: string[] = [];
+    const csvQueries: URLSearchParams[] = [];
     server.use(
       http.get(ENTRIES, ({ request }) => {
         const params = new URL(request.url).searchParams;
         if (params.get("limit") === "500") {
           const page = params.get("page") ?? "1";
           csvPages.push(page);
+          csvQueries.push(params);
           return HttpResponse.json({
             data: pages[page] ?? [],
             meta: { total: 3, page: Number(page), limit: 500, totalPages: 3 },
@@ -240,6 +251,12 @@ describe("MoneyFlowEntries — CSV", () => {
     await waitFor(() => expect(mockDownloadCsv).toHaveBeenCalledTimes(1));
 
     expect(csvPages).toEqual(["1", "2", "3"]);
+    // Every page reads the days the server resolved, not the rolling preset.
+    for (const params of csvQueries) {
+      expect(params.get("preset")).toBe("custom");
+      expect(params.get("from")).toBe("2026-09-06");
+      expect(params.get("to")).toBe("2026-10-05");
+    }
     const [csv, filename] = mockDownloadCsv.mock.calls[0] as [string, string];
     expect(filename).toBe("money-flow-entries-2026-09-06_2026-10-05.csv");
     const lines = csv.split("\r\n");
@@ -259,5 +276,49 @@ describe("MoneyFlowEntries — CSV", () => {
     expect(lines[3]).toContain(
       `Повернення,${k.LIQPAY_REFUND},500,"${d.moneyFlowMarkReversal}; ${d.moneyFlowMarkRequestedFull}",`,
     );
+  });
+
+  it.each([
+    ["an entry lands between two pages", [3, 4]],
+    ["a page repeats a row", [3, 3]],
+  ])("refuses the file when %s", async (_case, totals) => {
+    const pages: Record<string, MoneyFlowEntryEntity[]> = {
+      "1": [moneyFlowEntry({ id: "a" }), moneyFlowEntry({ id: "b" })],
+      // Page 2 repeats "b" — the last row of page 1 shifted down by one.
+      "2": [moneyFlowEntry({ id: "b" })],
+    };
+    server.use(
+      http.get(ENTRIES, ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        if (params.get("limit") === "500") {
+          const page = params.get("page") ?? "1";
+          return HttpResponse.json({
+            data: pages[page] ?? [],
+            meta: {
+              total: totals[Number(page) - 1],
+              page: Number(page),
+              limit: 500,
+              totalPages: 2,
+            },
+          });
+        }
+        return HttpResponse.json({
+          data: pages["1"],
+          meta: { total: 2, page: 1, limit: 50, totalPages: 1 },
+        });
+      }),
+    );
+    renderWithProviders(<MoneyFlowEntriesView />, OWNER);
+
+    const button = screen.getByRole("button", {
+      name: d.csvAria(d.moneyFlowEntriesHeading),
+    });
+    await waitFor(() => expect(button).toBeEnabled());
+    await userEvent.click(button);
+
+    await waitFor(() =>
+      expect(mockToastError).toHaveBeenCalledWith(d.csvError),
+    );
+    expect(mockDownloadCsv).not.toHaveBeenCalled();
   });
 });
