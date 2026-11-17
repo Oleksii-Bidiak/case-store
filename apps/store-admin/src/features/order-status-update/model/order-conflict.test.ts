@@ -4,6 +4,7 @@ import {
   isOrderConflict,
   isStaleWriteConflict,
   orderConflictMessage,
+  offersCopy,
   orderWriteErrorMessage,
   requiresReload,
 } from "./order-conflict";
@@ -191,5 +192,28 @@ describe("isStaleWriteConflict (TASK-1972)", () => {
     expect(isStaleWriteConflict(rejection(409))).toBe(false);
     expect(isStaleWriteConflict(rejection(403, "Forbidden"))).toBe(false);
     expect(isStaleWriteConflict(null)).toBe(false);
+  });
+});
+
+// TASK-2048 / AD-ORD-96: a spent promo code is answered with «Створити копію».
+describe("offersCopy", () => {
+  it.each([
+    ORDER_CONFLICT_CODE.PROMO_EXHAUSTED,
+    ORDER_CONFLICT_CODE.PROMO_USER_LIMIT,
+    ORDER_CONFLICT_CODE.PROMO_GONE,
+  ])("is true for the promo refusal %s", (code) => {
+    expect(offersCopy(rejection(409, code))).toBe(true);
+  });
+
+  it.each([
+    [409, ORDER_CONFLICT_CODE.STALE],
+    [409, undefined],
+    [400, ORDER_CONFLICT_CODE.PROMO_EXHAUSTED],
+  ])("is false for %s %s", (status, code) => {
+    expect(offersCopy(rejection(status, code))).toBe(false);
+  });
+
+  it("is false with no error", () => {
+    expect(offersCopy(null)).toBe(false);
   });
 });

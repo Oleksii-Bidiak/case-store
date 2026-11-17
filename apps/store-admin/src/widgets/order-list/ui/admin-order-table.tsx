@@ -19,7 +19,7 @@ import {
   orderStatusBadgeVariant,
   orderStatusLabel,
   paymentStatusBadgeVariant,
-  paymentStatusLabel,
+  orderPaymentStatusLabel,
   useAdminOrderControllerFindAll,
   type OrderEntity,
 } from "@/entities/order";
@@ -341,7 +341,7 @@ function DeliveryCell({
 function PaymentStatusBadge({ order }: { order: OrderEntity }) {
   return (
     <Badge variant={paymentStatusBadgeVariant(order.paymentStatus)}>
-      {paymentStatusLabel(order.paymentStatus)}
+      {orderPaymentStatusLabel(order)}
     </Badge>
   );
 }

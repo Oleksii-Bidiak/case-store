@@ -25,9 +25,13 @@ describe('order money DTOs', () => {
       expect(parse(RecordMoneyInDto, { ...ok, amountKop }).errors).not.toEqual([]);
     });
 
-    it.each(['LIQPAY_PAYMENT', 'CASH_REFUND', 'NOPE'])('refuses kind %s', (kind) => {
-      expect(parse(RecordMoneyInDto, { ...ok, kind }).errors).not.toEqual([]);
-    });
+    // TASK-2048: OFFSET_FROM_ORDER is written only by «Створити копію».
+    it.each(['LIQPAY_PAYMENT', 'CASH_REFUND', 'OFFSET_FROM_ORDER', 'NOPE'])(
+      'refuses kind %s',
+      (kind) => {
+        expect(parse(RecordMoneyInDto, { ...ok, kind }).errors).not.toEqual([]);
+      },
+    );
 
     it('requires expectedUpdatedAt', () => {
       expect(parse(RecordMoneyInDto, { kind: 'BANK_TRANSFER', amountKop: 1 }).errors).not.toEqual(
@@ -56,9 +60,12 @@ describe('order money DTOs', () => {
       ).toEqual([]);
     });
 
-    it.each(['COD_NOVA_POSHTA', 'LIQPAY_PAYMENT'])('refuses the IN kind %s', (kind) => {
-      expect(parse(RecordMoneyOutDto, { ...ok, kind }).errors).not.toEqual([]);
-    });
+    it.each(['COD_NOVA_POSHTA', 'LIQPAY_PAYMENT', 'OFFSET_TO_ORDER'])(
+      'refuses the kind %s',
+      (kind) => {
+        expect(parse(RecordMoneyOutDto, { ...ok, kind }).errors).not.toEqual([]);
+      },
+    );
 
     it('refuses a decimal amount', () => {
       expect(parse(RecordMoneyOutDto, { ...ok, amountKop: 499.5 }).errors).not.toEqual([]);

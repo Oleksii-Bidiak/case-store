@@ -116,6 +116,9 @@ const DYNAMIC_ACCESS: Record<string, string> = {
     "entities/order/lib/order-delivery.ts — deliveryMethodLabel(method)",
   "orders.deliveryFilterLabels":
     "widgets/order-list/model/order-filters.ts — deliveryFilterLabel(method)",
+  // TASK-2048: why a line was left out of an order copy, by its reason code.
+  "orderCreate.copyDropReasons":
+    "features/order-create/ui/order-create-form.tsx — t.copyDropReasons[line.reason]",
   // Not listed, because the scan sees through them: `reorderList` (read via the
   // `a = dict.reorderList.announce` / `rejected` aliases in shared/lib/list-reorder)
   // and every `*.errors` block the zod schemas alias as `e`.

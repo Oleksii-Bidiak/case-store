@@ -23,10 +23,11 @@ import {
   moneyDueText,
   moneyKindLabel,
   OrderEntityPaymentMethod,
+  formatOrderNumber,
   OrderEntityStatus,
   OrderStatusHistoryEntityNote,
   paymentStatusBadgeVariant,
-  paymentStatusLabel,
+  orderPaymentStatusLabel,
   useAdminOrderControllerGetHistory,
   useAdminOrderMoneyControllerGet,
   type AdminOrderMoneyResponse,
@@ -73,7 +74,8 @@ const LIQPAY_KINDS: readonly string[] = [
 ];
 
 interface OrderPaymentBlockProps {
-  order: Pick<OrderEntity, "id" | "paymentStatus">;
+  order: Pick<OrderEntity, "id" | "paymentStatus"> &
+    Partial<Pick<OrderEntity, "refundedKop" | "offsetOutKop">>;
   /** Opens the card's «Оформити повернення» dialog (TASK-1963). */
   onCreateReturn?: () => void;
 }
@@ -150,7 +152,11 @@ export function OrderPaymentBlock({
           {m.heading}
         </h3>
         <Badge variant={paymentStatusBadgeVariant(paymentStatus)}>
-          {paymentStatusLabel(paymentStatus)}
+          {orderPaymentStatusLabel({
+            paymentStatus,
+            refundedKop: money?.totals.refundedKop ?? order.refundedKop ?? 0,
+            offsetOutKop: order.offsetOutKop,
+          })}
         </Badge>
       </div>
 
@@ -489,6 +495,17 @@ function JournalRow({
             className="text-primary hover:underline"
           >
             {m.forReturn}
+          </Link>
+        ) : null}
+        {/* TASK-2048: «Залік» — the other order of the pair. */}
+        {entry.counterpartOrderId ? (
+          <Link
+            href={`/orders/${entry.counterpartOrderId}`}
+            className="text-primary hover:underline"
+          >
+            {(isIn ? m.offsetFromOrder : m.offsetToOrder)(
+              formatOrderNumber(entry.counterpartOrderId),
+            )}
           </Link>
         ) : null}
       </div>

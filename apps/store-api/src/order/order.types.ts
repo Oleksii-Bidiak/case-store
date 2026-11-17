@@ -13,6 +13,7 @@ import type { IssuedSession } from '../auth';
 import type { AddressDto } from './dto';
 import type { OrderEntity } from './entities/order.entity';
 import type { LockedOrder } from './order-money.repository';
+import type { CopySourceLine } from './order-copy';
 
 /**
  * A single order-status-history audit row as returned by the repository
@@ -271,6 +272,16 @@ export interface OrderWithItems {
    * column existed, which is why every reader falls back to `createdAt`.
    */
   accessTokenIssuedAt?: Date | null;
+  /** The original of a «Створити копію» copy (TASK-2048); null otherwise. */
+  copiedFromId?: string | null;
+  /** The copies made of this order (TASK-2048), oldest first — admin reads only. */
+  copies?: Array<{ id: string; createdAt?: Date }>;
+  /**
+   * Admin reads only, and NARROWED (TASK-2048): at most the one history row of a
+   * «Створити копію» that cancelled this order (note COPIED_TO_ORDER into
+   * CANCELLED) — what tells «Замінено на» from «Копії». Never the timeline.
+   */
+  statusHistory?: Array<{ changedAt: Date }>;
   items: OrderItemRow[];
   /**
    * Owning user account, selected only by the admin read paths
@@ -298,6 +309,7 @@ export interface OrderWithItems {
    */
   paidKop?: number;
   refundedKop?: number;
+  offsetOutKop?: number;
   returnCreditKop?: number;
   balanceKop?: number;
 }
@@ -712,4 +724,35 @@ export interface ManualOrderParams {
    * other unpaid card order rather than being held forever.
    */
   reservationExpiresAt?: Date | null;
+}
+
+/**
+ * The original of «Створити копію» (TASK-2048), as the copy form and the copy
+ * flow read it: who bought, how it travels, what it holds, and every line with
+ * its product as the catalogue has it NOW (`OrderRepository.findCopySource`).
+ */
+export interface OrderCopySource {
+  id: string;
+  status: OrderStatus;
+  restockedAt: Date | null;
+  userId: string | null;
+  user: {
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    phone: string | null;
+  } | null;
+  guestEmail: string | null;
+  guestPhone: string | null;
+  guestName: string | null;
+  paymentMethod: PaymentMethod;
+  deliveryMethod: DeliveryMethod;
+  pickupPointId: string | null;
+  shippingAddress: Prisma.JsonValue | null;
+  shippingCost: { toString(): string };
+  notes: string | null;
+  paidKop: number;
+  refundedKop: number;
+  items: CopySourceLine[];
 }

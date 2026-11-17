@@ -61,7 +61,7 @@ const OPERATOR_NOTES = `Внутрішнє: клієнт сварився (${RUN
 /** Admin labels — `dict.returns` / `dict.orders`. */
 const A = {
   orderHeading: `Замовлення #${ORDER_REF}`,
-  orderDelivered: "Доставлено",
+  orderDelivered: "Отримано покупцем",
   createAction: "Оформити повернення",
   increase: (name: string) => `Більше: ${name}`,
   quantity: (name: string) => `Кількість до повернення: ${name}`,

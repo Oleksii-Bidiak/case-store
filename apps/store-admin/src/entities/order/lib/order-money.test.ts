@@ -1,4 +1,37 @@
-import { returnPayoutDueKop } from "./order-money";
+import { MoneyEntryKind } from "@/shared/api";
+import { dict } from "@/shared/config";
+import {
+  isReversibleEntry,
+  moneyKindLabel,
+  returnPayoutDueKop,
+} from "./order-money";
+
+/** TASK-2048: the «Залік» pair of «Створити копію». */
+describe("offset entries", () => {
+  const row = (kind: string) => ({
+    kind: kind as MoneyEntryKind,
+    reversalOfId: null,
+    reversedById: null,
+    voidedAt: null,
+  });
+
+  it("reads each half of the pair by its own name", () => {
+    expect(moneyKindLabel(MoneyEntryKind.OFFSET_TO_ORDER)).toBe(
+      dict.orderMoney.kindLabels.OFFSET_TO_ORDER,
+    );
+    expect(moneyKindLabel(MoneyEntryKind.OFFSET_FROM_ORDER)).toBe(
+      dict.orderMoney.kindLabels.OFFSET_FROM_ORDER,
+    );
+  });
+
+  it("never offers «Сторнувати» on one half — the server refuses it", () => {
+    expect(isReversibleEntry(row(MoneyEntryKind.OFFSET_TO_ORDER))).toBe(false);
+    expect(isReversibleEntry(row(MoneyEntryKind.OFFSET_FROM_ORDER))).toBe(
+      false,
+    );
+    expect(isReversibleEntry(row(MoneyEntryKind.CASH_REFUND))).toBe(true);
+  });
+});
 
 /**
  * R2 (TASK-2046): what one return may still pay out — the server's payout

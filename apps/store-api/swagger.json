@@ -14448,6 +14448,49 @@
         ]
       }
     },
+    "/api/admin/orders/{orderId}/copy-draft": {
+      "get": {
+        "operationId": "adminOrderControllerGetCopyDraft",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID of the original",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Customer, delivery and lines at today’s price; `dropped` lists lines not copied whole",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderCopyDraftResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — orders:write required"
+          },
+          "404": {
+            "description": "Order not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Prefill for «Створити копію» (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
     "/api/admin/orders/{orderId}/history": {
       "get": {
         "operationId": "adminOrderControllerGetHistory",
@@ -23706,6 +23749,17 @@
             ],
             "example": "PAID"
           },
+          "deliveryMethod": {
+            "type": "string",
+            "description": "Delivery method — a SHIPPED pickup order is labelled «Готово до видачі», not «Відправлено» (TASK-2052)",
+            "enum": [
+              "NOVA_POSHTA",
+              "PICKUP",
+              "COURIER",
+              "OTHER"
+            ],
+            "example": "NOVA_POSHTA"
+          },
           "total": {
             "type": "number",
             "description": "Order total",
@@ -23722,6 +23776,7 @@
           "id",
           "status",
           "paymentStatus",
+          "deliveryMethod",
           "total",
           "createdAt"
         ]
@@ -30278,6 +30333,11 @@
             "description": "Money sent back, integer kopecks — Σ OUT of the ledger, net of reversals, voided ignored; a LiqPay refund counts from the moment it is requested.",
             "example": 0
           },
+          "offsetOutKop": {
+            "type": "number",
+            "description": "The part of refundedKop that went on to a copy as «Залік» (OFFSET_TO_ORDER, TASK-2048), not back to the customer — integer kopecks. refundedKop − offsetOutKop is what the customer actually got back.",
+            "example": 0
+          },
           "returnCreditKop": {
             "type": "number",
             "description": "Σ «До повернення» of the order's REFUND-decided returns, integer kopecks: the part of the total the customer no longer owes for goods that came back.",
@@ -30381,6 +30441,25 @@
             "type": "string",
             "description": "Operator-only notes (TASK-336). Present ONLY on admin responses — distinct from `notes`, which is what the customer typed and is shown back to them.",
             "nullable": true
+          },
+          "copiedFromId": {
+            "type": "string",
+            "description": "TASK-2048 «Створити копію»: the order this one is a copy of («Копія #старе»), or null",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "copyIds": {
+            "description": "TASK-2048: the copies made of this order, oldest first («Замінено на #нове» / «Копії»). Admin reads only — absent elsewhere.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replacedById": {
+            "type": "string",
+            "description": "TASK-2048: the copy whose «Скасувати #старе — замінено» cancelled this order («Замінено на»), or null — a copy of an order cancelled earlier replaced nothing. Admin reads only — absent elsewhere.",
+            "nullable": true,
+            "format": "uuid"
           }
         },
         "required": [
@@ -30401,6 +30480,7 @@
           "total",
           "paidKop",
           "refundedKop",
+          "offsetOutKop",
           "returnCreditKop",
           "balanceKop",
           "refundedAfterCancel",
@@ -30412,7 +30492,8 @@
           "restockedAt",
           "createdAt",
           "updatedAt",
-          "trackingNumber"
+          "trackingNumber",
+          "copiedFromId"
         ]
       },
       "CreatedOrderEntity": {
@@ -30552,6 +30633,11 @@
             "description": "Money sent back, integer kopecks — Σ OUT of the ledger, net of reversals, voided ignored; a LiqPay refund counts from the moment it is requested.",
             "example": 0
           },
+          "offsetOutKop": {
+            "type": "number",
+            "description": "The part of refundedKop that went on to a copy as «Залік» (OFFSET_TO_ORDER, TASK-2048), not back to the customer — integer kopecks. refundedKop − offsetOutKop is what the customer actually got back.",
+            "example": 0
+          },
           "returnCreditKop": {
             "type": "number",
             "description": "Σ «До повернення» of the order's REFUND-decided returns, integer kopecks: the part of the total the customer no longer owes for goods that came back.",
@@ -30656,6 +30742,25 @@
             "description": "Operator-only notes (TASK-336). Present ONLY on admin responses — distinct from `notes`, which is what the customer typed and is shown back to them.",
             "nullable": true
           },
+          "copiedFromId": {
+            "type": "string",
+            "description": "TASK-2048 «Створити копію»: the order this one is a copy of («Копія #старе»), or null",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "copyIds": {
+            "description": "TASK-2048: the copies made of this order, oldest first («Замінено на #нове» / «Копії»). Admin reads only — absent elsewhere.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replacedById": {
+            "type": "string",
+            "description": "TASK-2048: the copy whose «Скасувати #старе — замінено» cancelled this order («Замінено на»), or null — a copy of an order cancelled earlier replaced nothing. Admin reads only — absent elsewhere.",
+            "nullable": true,
+            "format": "uuid"
+          },
           "guestAccessToken": {
             "type": "string",
             "description": "GUEST orders only, and only in this create response: the raw order access token — the same one the confirmation e-mail carries. It opens `GET /orders/guest/{token}` and the guest's Telegram routes (`/orders/guest/{token}/notifications/telegram`). Absent for an account order. Never returned again by any read; keep it client-side for this session.",
@@ -30688,6 +30793,7 @@
           "total",
           "paidKop",
           "refundedKop",
+          "offsetOutKop",
           "returnCreditKop",
           "balanceKop",
           "refundedAfterCancel",
@@ -30699,7 +30805,8 @@
           "restockedAt",
           "createdAt",
           "updatedAt",
-          "trackingNumber"
+          "trackingNumber",
+          "copiedFromId"
         ]
       },
       "StorefrontPaginationMeta": {
@@ -31432,7 +31539,9 @@
               "SHIPPED_UNPAID",
               "PAYMENT_EVENT_REFUSED",
               "LEGACY_MONEY_UNKNOWN",
-              "PROVIDER_REFUND_UNMATCHED"
+              "PROVIDER_REFUND_UNMATCHED",
+              "COPIED_TO_ORDER",
+              "COPY_OF_ORDER"
             ],
             "nullable": true,
             "example": null
@@ -31847,11 +31956,358 @@
             "type": "string",
             "description": "Operator-only notes",
             "maxLength": 2000
+          },
+          "copyOfOrderId": {
+            "type": "string",
+            "description": "TASK-2048 «Створити копію»: the order this one is a copy of (404 if unknown). The new order links to it (`copiedFromId`). When the original is cancelled — by `cancelOriginal` or already — what it holds (paid − refunded), capped by the new total, moves over as a pair of OFFSET money entries. Prices still come from the catalogue; no promo is copied.",
+            "format": "uuid"
+          },
+          "cancelOriginal": {
+            "type": "boolean",
+            "description": "With `copyOfOrderId`: cancel the original in the SAME transaction («Скасувати #старе — замінено»), releasing its stock before the copy reserves — so the last unit can move to the copy. 409 ORDER_COPY_ORIGINAL_NOT_CANCELLABLE when the original is no longer PENDING/CONFIRMED/PROCESSING. Refused (400) without `copyOfOrderId`.",
+            "default": false
           }
         },
         "required": [
           "shippingAddress",
           "items"
+        ]
+      },
+      "OrderStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "CONFIRMED",
+          "PROCESSING",
+          "SHIPPED",
+          "DELIVERED",
+          "CANCELLED",
+          "REFUNDED"
+        ]
+      },
+      "OrderCopyDraftCustomerEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "example": "olena@example.com"
+          },
+          "firstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "firstName",
+          "lastName",
+          "phone"
+        ]
+      },
+      "OrderCopyDraftContactEntity": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Олена Коваль"
+          },
+          "phone": {
+            "type": "string",
+            "example": "+380501234567"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "name",
+          "phone",
+          "email"
+        ]
+      },
+      "PaymentMethod": {
+        "type": "string",
+        "enum": [
+          "ONLINE",
+          "ON_DELIVERY",
+          "INSTALLMENTS",
+          "BANK_TRANSFER"
+        ]
+      },
+      "OrderCopyDraftAddressEntity": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "example": "Олена"
+          },
+          "lastName": {
+            "type": "string",
+            "example": "Коваль"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "city": {
+            "type": "string",
+            "example": "Київ"
+          },
+          "address1": {
+            "type": "string",
+            "example": "Відділення №12"
+          },
+          "postalCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "npCityRef": {
+            "type": "string",
+            "nullable": true,
+            "description": "Nova Poshta city ref"
+          },
+          "npWarehouseRef": {
+            "type": "string",
+            "nullable": true,
+            "description": "Nova Poshta branch ref"
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName",
+          "phone",
+          "city",
+          "address1",
+          "postalCode",
+          "npCityRef",
+          "npWarehouseRef"
+        ]
+      },
+      "OrderCopyDraftLineEntity": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productName": {
+            "type": "string",
+            "example": "Чохол iPhone 15"
+          },
+          "sku": {
+            "type": "string",
+            "nullable": true
+          },
+          "price": {
+            "type": "string",
+            "description": "TODAY’s catalogue price — display only",
+            "example": "549.00"
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Quantity, clamped to what can be sold",
+            "example": 1
+          },
+          "stock": {
+            "type": "number",
+            "description": "What the copy may take: shelf stock plus the units cancelling the original releases (only while it is pre-shipment and still holds them)",
+            "example": 3
+          }
+        },
+        "required": [
+          "productId",
+          "productName",
+          "sku",
+          "price",
+          "quantity",
+          "stock"
+        ]
+      },
+      "OrderCopyDropReason": {
+        "type": "string",
+        "enum": [
+          "DELETED",
+          "INACTIVE",
+          "OUT_OF_STOCK",
+          "CLAMPED"
+        ]
+      },
+      "OrderCopyDraftDroppedEntity": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productName": {
+            "type": "string",
+            "example": "Чохол iPhone 15"
+          },
+          "requested": {
+            "type": "number",
+            "description": "Quantity on the original",
+            "example": 2
+          },
+          "copied": {
+            "type": "number",
+            "description": "0 = dropped; otherwise the clamped quantity",
+            "example": 1
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderCopyDropReason"
+              }
+            ]
+          }
+        },
+        "required": [
+          "productId",
+          "productName",
+          "requested",
+          "copied",
+          "reason"
+        ]
+      },
+      "OrderCopyDraftEntity": {
+        "type": "object",
+        "properties": {
+          "sourceOrderId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderStatus"
+              }
+            ]
+          },
+          "canCancelOriginal": {
+            "type": "boolean",
+            "description": "Whether «Скасувати #старе — замінено» is offered (and ticked): the original is PENDING/CONFIRMED/PROCESSING"
+          },
+          "userId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "customer": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderCopyDraftCustomerEntity"
+              }
+            ]
+          },
+          "contact": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderCopyDraftContactEntity"
+              }
+            ]
+          },
+          "paymentMethod": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentMethod"
+              }
+            ]
+          },
+          "deliveryMethod": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryMethod"
+              }
+            ]
+          },
+          "pickupPointId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "shippingAddress": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderCopyDraftAddressEntity"
+              }
+            ]
+          },
+          "shippingCost": {
+            "type": "string",
+            "nullable": true,
+            "description": "The agreed «Інша доставка» cost; null when none was agreed or another method"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "Notes the customer gave"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderCopyDraftLineEntity"
+            }
+          },
+          "dropped": {
+            "description": "Lines not copied, or copied with a lower quantity — the operator is warned",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderCopyDraftDroppedEntity"
+            }
+          },
+          "heldKop": {
+            "type": "number",
+            "description": "What the original holds (paid − refunded, kopecks): moves to the copy as «Залік», up to its total, once the original is cancelled",
+            "example": 0
+          }
+        },
+        "required": [
+          "sourceOrderId",
+          "sourceStatus",
+          "canCancelOriginal",
+          "userId",
+          "customer",
+          "contact",
+          "paymentMethod",
+          "deliveryMethod",
+          "pickupPointId",
+          "shippingAddress",
+          "shippingCost",
+          "notes",
+          "items",
+          "dropped",
+          "heldKop"
+        ]
+      },
+      "AdminOrderCopyDraftResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OrderCopyDraftEntity"
+          }
+        },
+        "required": [
+          "data"
         ]
       },
       "UpdateOrderStatusDto": {
@@ -31938,18 +32394,6 @@
           }
         }
       },
-      "OrderStatus": {
-        "type": "string",
-        "enum": [
-          "PENDING",
-          "CONFIRMED",
-          "PROCESSING",
-          "SHIPPED",
-          "DELIVERED",
-          "CANCELLED",
-          "REFUNDED"
-        ]
-      },
       "PaymentStatus": {
         "type": "string",
         "enum": [
@@ -31961,15 +32405,6 @@
           "PARTIALLY_PAID"
         ],
         "description": "Derived from the ledger — a label to show, not a control"
-      },
-      "PaymentMethod": {
-        "type": "string",
-        "enum": [
-          "ONLINE",
-          "ON_DELIVERY",
-          "INSTALLMENTS",
-          "BANK_TRANSFER"
-        ]
       },
       "OrderMoneyTotalsEntity": {
         "type": "object",
@@ -32025,7 +32460,9 @@
           "BANK_TRANSFER",
           "LIQPAY_REFUND",
           "CASH_REFUND",
-          "TRANSFER_REFUND"
+          "TRANSFER_REFUND",
+          "OFFSET_TO_ORDER",
+          "OFFSET_FROM_ORDER"
         ]
       },
       "MoneyProviderState": {
@@ -32117,6 +32554,12 @@
             "type": "string",
             "nullable": true
           },
+          "counterpartOrderId": {
+            "type": "string",
+            "description": "OFFSET_TO_ORDER / OFFSET_FROM_ORDER only (TASK-2048 «Залік»): the other order of the pair — the copy on the original, the original on the copy",
+            "nullable": true,
+            "format": "uuid"
+          },
           "legacy": {
             "type": "boolean",
             "description": "Inferred by the R2 backfill from pre-ledger labels"
@@ -32147,6 +32590,7 @@
           "reversedById",
           "voidedAt",
           "voidReason",
+          "counterpartOrderId",
           "legacy",
           "occurredAt",
           "createdAt"

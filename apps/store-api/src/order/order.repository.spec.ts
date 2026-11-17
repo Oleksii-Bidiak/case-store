@@ -50,6 +50,8 @@ const moneyMock = {
   findOldestRequestedRefund: jest.fn(),
   syncAttemptStatus: jest.fn(),
   paymentProviderTotals: jest.fn(),
+  // TASK-2048: what the original still holds when its money moves to a copy.
+  totalsFromLedger: jest.fn(),
 };
 
 // ─── Prisma mock ────────────────────────────────────────────────────────────
@@ -3387,6 +3389,295 @@ describe('OrderRepository', () => {
         expect(tx.payment.count).not.toHaveBeenCalled();
         expect(tx.order.updateMany).toHaveBeenCalled();
       });
+    });
+  });
+
+  // ─── TASK-2048: «Створити копію» — cancel, copy and offset in ONE transaction ─
+
+  describe('createManualCopy', () => {
+    const copyParams = {
+      userId: 'user-uuid-1',
+      items: [{ productId: 'product-uuid-1', quantity: 1, price: '500.00', name: 'Case' }],
+      shippingAddress: baseParams.shippingAddress as never,
+      deliveryMethod: 'OTHER' as const,
+    };
+
+    /** A source order in `status` holding one unit of product-uuid-1, and its copy. */
+    const seedCopyTx = ({
+      status = OrderStatus.PROCESSING,
+      paidKop = 0,
+      refundedKop = 0,
+      copyTotal = '500.00',
+    }: {
+      status?: OrderStatus;
+      paidKop?: number;
+      refundedKop?: number;
+      copyTotal?: string;
+    } = {}) => {
+      const tx = {
+        ...makeTx(),
+        // The live-row check after the lock (verifier, TASK-2048).
+        order: { ...makeTx().order, findFirst: jest.fn().mockResolvedValue({ id: 'source-1' }) },
+      };
+      const calls: string[] = [];
+      moneyMock.lockOrder.mockImplementation(async (_tx: unknown, id: string) => {
+        calls.push(`lock:${id}`);
+        return { id, status, totalKop: 50_000, updatedAt: new Date() };
+      });
+      tx.order.findUniqueOrThrow.mockImplementation(async ({ where }: { where: { id: string } }) =>
+        where.id === 'source-1'
+          ? {
+              id: 'source-1',
+              status,
+              items: [{ productId: 'product-uuid-1', quantity: 1, product: { slug: 'case' } }],
+            }
+          : { id: 'copy-1', total: copyTotal, items: [] },
+      );
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
+      tx.order.create.mockImplementation(async () => {
+        calls.push('create:copy');
+        return { id: 'copy-1', total: { toString: () => copyTotal }, items: [] };
+      });
+      tx.product.update.mockImplementation(async () => {
+        calls.push('stock:release');
+      });
+      tx.product.updateMany.mockImplementation(async () => {
+        calls.push('stock:reserve');
+        return { count: 1 };
+      });
+      tx.discountRedemption.findUnique.mockResolvedValue(null);
+      moneyMock.totalsFromLedger.mockResolvedValue({ paidKop, refundedKop });
+      moneyMock.insertEntry.mockImplementation(
+        async (_tx: unknown, input: { orderId: string; kind: string }) => {
+          calls.push(`money:${input.kind}:${input.orderId}`);
+        },
+      );
+      moneyMock.recompute.mockImplementation(async (_tx: unknown, id: string) => {
+        calls.push(`recompute:${id}`);
+      });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      return { tx, calls };
+    };
+
+    it('locks the original, releases its stock, THEN reserves for the copy', async () => {
+      const { calls } = seedCopyTx();
+
+      await repository.createManualCopy(
+        copyParams,
+        { sourceOrderId: 'source-1', cancelOriginal: true },
+        'admin-uuid-1',
+      );
+
+      expect(calls[0]).toBe('lock:source-1');
+      // The last unit on the shelf can move: the release comes first.
+      expect(calls.indexOf('stock:release')).toBeLessThan(calls.indexOf('stock:reserve'));
+      expect(calls.indexOf('stock:release')).toBeLessThan(calls.indexOf('create:copy'));
+    });
+
+    it('cancels the original and links the copy to it, a history note on each', async () => {
+      const { tx } = seedCopyTx();
+
+      await repository.createManualCopy(
+        copyParams,
+        { sourceOrderId: 'source-1', cancelOriginal: true },
+        'admin-uuid-1',
+      );
+
+      expect(tx.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'source-1', restockedAt: null },
+        data: { status: OrderStatus.CANCELLED, restockedAt: expect.any(Date) },
+      });
+      expect(tx.order.create.mock.calls[0][0].data.copiedFromId).toBe('source-1');
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orderId: 'source-1',
+          fromStatus: OrderStatus.PROCESSING,
+          toStatus: OrderStatus.CANCELLED,
+          note: OrderHistoryNote.COPIED_TO_ORDER,
+        }),
+      });
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orderId: 'copy-1',
+          fromStatus: null,
+          toStatus: OrderStatus.PENDING,
+          note: OrderHistoryNote.COPY_OF_ORDER,
+        }),
+      });
+    });
+
+    it('refuses with 409 when the original is no longer pre-shipment — nothing is written', async () => {
+      const { tx } = seedCopyTx({ status: OrderStatus.SHIPPED });
+
+      await expect(
+        repository.createManualCopy(
+          copyParams,
+          { sourceOrderId: 'source-1', cancelOriginal: true },
+          'admin-uuid-1',
+        ),
+      ).rejects.toMatchObject({
+        response: { error: 'ORDER_COPY_ORIGINAL_NOT_CANCELLABLE' },
+      });
+
+      expect(tx.order.create).not.toHaveBeenCalled();
+      expect(tx.product.update).not.toHaveBeenCalled();
+      expect(tx.product.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('moves the paid money as an offset pair, capped by the copy total, and recomputes both', async () => {
+      const { calls } = seedCopyTx({ paidKop: 80_000, copyTotal: '500.00' });
+
+      const result = await repository.createManualCopy(
+        copyParams,
+        { sourceOrderId: 'source-1', cancelOriginal: true },
+        'admin-uuid-1',
+      );
+
+      expect(moneyMock.insertEntry).toHaveBeenCalledWith(expect.anything(), {
+        orderId: 'source-1',
+        kind: MoneyEntryKind.OFFSET_TO_ORDER,
+        amountKop: 50_000,
+        counterpartOrderId: 'copy-1',
+        actorId: 'admin-uuid-1',
+      });
+      expect(moneyMock.insertEntry).toHaveBeenCalledWith(expect.anything(), {
+        orderId: 'copy-1',
+        kind: MoneyEntryKind.OFFSET_FROM_ORDER,
+        amountKop: 50_000,
+        counterpartOrderId: 'source-1',
+        actorId: 'admin-uuid-1',
+      });
+      // Both orders are recomputed after the pair is written.
+      const lastOffset = calls.lastIndexOf('money:OFFSET_FROM_ORDER:copy-1');
+      expect(calls.lastIndexOf('recompute:source-1')).toBeGreaterThan(lastOffset);
+      expect(calls.lastIndexOf('recompute:copy-1')).toBeGreaterThan(lastOffset);
+      expect(result.offsetKop).toBe(50_000);
+    });
+
+    it('writes no offset when nothing was paid', async () => {
+      seedCopyTx({ paidKop: 0 });
+
+      const result = await repository.createManualCopy(
+        copyParams,
+        { sourceOrderId: 'source-1', cancelOriginal: true },
+        'admin-uuid-1',
+      );
+
+      expect(moneyMock.insertEntry).not.toHaveBeenCalled();
+      expect(result.offsetKop).toBe(0);
+    });
+
+    // Verifier findings on TASK-2048.
+    it('reports «replaced» only for the cancel made by THIS copy', async () => {
+      seedCopyTx({ status: OrderStatus.CANCELLED });
+      const already = await repository.createManualCopy(
+        copyParams,
+        { sourceOrderId: 'source-1', cancelOriginal: false },
+        'admin-uuid-1',
+      );
+      expect(already.replaced).toBe(false);
+
+      seedCopyTx();
+      const now = await repository.createManualCopy(
+        copyParams,
+        { sourceOrderId: 'source-1', cancelOriginal: true },
+        'admin-uuid-1',
+      );
+      expect(now.replaced).toBe(true);
+    });
+
+    it('runs the caller’s hook inside the copy transaction, with the copy and the verdict', async () => {
+      const { tx, calls } = seedCopyTx();
+      const hook = jest.fn(async () => {
+        calls.push('hook');
+      });
+
+      await repository.createManualCopy(
+        copyParams,
+        { sourceOrderId: 'source-1', cancelOriginal: true },
+        'admin-uuid-1',
+        hook,
+      );
+
+      expect(hook).toHaveBeenCalledWith(tx, expect.objectContaining({ id: 'copy-1' }), {
+        replaced: true,
+      });
+      // After both orders are settled, still inside the transaction.
+      expect(calls.indexOf('hook')).toBeGreaterThan(calls.lastIndexOf('recompute:copy-1'));
+    });
+
+    it('is a 404 when the original was deleted before the lock — nothing written', async () => {
+      const { tx } = seedCopyTx();
+      tx.order.findFirst.mockResolvedValue(null);
+
+      await expect(
+        repository.createManualCopy(
+          copyParams,
+          { sourceOrderId: 'source-1', cancelOriginal: true },
+          'admin-uuid-1',
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(tx.order.findFirst).toHaveBeenCalledWith({
+        where: { id: 'source-1', deletedAt: null },
+        select: { id: true },
+      });
+      expect(tx.order.updateMany).not.toHaveBeenCalled();
+      expect(tx.order.create).not.toHaveBeenCalled();
+      expect(tx.product.update).not.toHaveBeenCalled();
+    });
+
+    it('offsets from an order that was ALREADY cancelled, without cancelling it again', async () => {
+      const { tx } = seedCopyTx({ status: OrderStatus.CANCELLED, paidKop: 20_000 });
+
+      await repository.createManualCopy(
+        copyParams,
+        { sourceOrderId: 'source-1', cancelOriginal: false },
+        'admin-uuid-1',
+      );
+
+      expect(tx.product.update).not.toHaveBeenCalled();
+      // The note still lands on the original: current → current.
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          orderId: 'source-1',
+          fromStatus: OrderStatus.CANCELLED,
+          toStatus: OrderStatus.CANCELLED,
+          note: OrderHistoryNote.COPIED_TO_ORDER,
+        }),
+      });
+      expect(moneyMock.insertEntry).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ kind: MoneyEntryKind.OFFSET_TO_ORDER, amountKop: 20_000 }),
+      );
+    });
+
+    it('moves no money off a live original that stays live (no cancel)', async () => {
+      const { tx } = seedCopyTx({ status: OrderStatus.PENDING, paidKop: 20_000 });
+
+      await repository.createManualCopy(
+        copyParams,
+        { sourceOrderId: 'source-1', cancelOriginal: false },
+        'admin-uuid-1',
+      );
+
+      expect(tx.product.update).not.toHaveBeenCalled();
+      expect(moneyMock.insertEntry).not.toHaveBeenCalled();
+    });
+
+    it('rolls the cancel back with the copy when the copy cannot reserve its stock', async () => {
+      const { tx } = seedCopyTx();
+      tx.product.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        repository.createManualCopy(
+          copyParams,
+          { sourceOrderId: 'source-1', cancelOriginal: true },
+          'admin-uuid-1',
+        ),
+      ).rejects.toThrow(ConflictException);
+      // One transaction for both: the throw is what makes Postgres undo the cancel.
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(moneyMock.insertEntry).not.toHaveBeenCalled();
     });
   });
 });

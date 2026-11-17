@@ -36,6 +36,50 @@ const withFields = (
   },
 });
 
+// TASK-2048: the original of a copy left pre-shipment before «Створити».
+describe("readCreateOrderRefusal — a copy whose original moved on", () => {
+  it("says the original can no longer be cancelled with the copy", () => {
+    expect(
+      readCreateOrderRefusal(
+        {
+          response: {
+            status: 409,
+            data: {
+              statusCode: 409,
+              error: "ORDER_COPY_ORIGINAL_NOT_CANCELLABLE",
+              message: "The original order is SHIPPED now",
+            },
+          },
+        },
+        LINES,
+      ),
+    ).toEqual({ lines: {}, summary: t.copyOriginalGone });
+  });
+
+  it("says a cancelling copy must stay with the original's customer", () => {
+    expect(
+      readCreateOrderRefusal(
+        {
+          response: {
+            status: 409,
+            data: {
+              statusCode: 409,
+              error: "ORDER_COPY_CUSTOMER_CHANGED",
+              message:
+                "A copy that cancels the original must keep the same customer",
+            },
+          },
+        },
+        LINES,
+      ),
+    ).toEqual({ lines: {}, summary: t.copyCustomerChanged });
+  });
+
+  it("leaves any other 409 to the caller", () => {
+    expect(readCreateOrderRefusal(refusal(409, "nope"), LINES)).toBeNull();
+  });
+});
+
 describe("readCreateOrderRefusal — a 400 placed where it can be fixed (Н3)", () => {
   it("puts a stock refusal under the line it names, with the free count", () => {
     const result = readCreateOrderRefusal(

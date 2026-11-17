@@ -11,6 +11,11 @@
  * `InternetDocument/save` needs a counterparty in the client's own NP account, so
  * the system does not create waybills — but the number still belongs in the
  * customer's hands the moment it exists.
+ *
+ * A PICKUP order is not a parcel (TASK-1883): the same SHIPPED event means it is
+ * ready at the pickup point, so that letter says «готове до видачі», asks the
+ * buyer to bring the order number and carries no waybill or tracking link — the
+ * same wording as the Telegram notice.
  */
 
 /** The rendered email parts handed to the transport. */
@@ -32,6 +37,12 @@ export interface OrderShippedParams {
      * one told nothing.
      */
     trackingNumber?: string | null;
+    /**
+     * How the order leaves the shop (TASK-1883). `PICKUP` turns the letter into
+     * «готове до видачі»; anything else — or absent, as in rows enqueued before
+     * this field existed — is the parcel letter.
+     */
+    deliveryMethod?: string | null;
   };
   /** Absolute link to the order's status page; present for guest orders. */
   orderStatusUrl?: string;
@@ -102,6 +113,52 @@ function renderStatusLinkHtml(orderStatusUrl?: string): string {
 </p>`;
 }
 
+/** A pickup order: ready at the point, not handed to a carrier (TASK-1883). */
+function isPickup(params: OrderShippedParams): boolean {
+  return params.order.deliveryMethod === 'PICKUP';
+}
+
+const PICKUP_BRING_NUMBER = 'Візьміть із собою номер замовлення.';
+
+function renderPickupHtml(params: OrderShippedParams): string {
+  const greetingName = params.customerName ? ` ${escapeHtml(params.customerName)}` : '';
+
+  return `<!DOCTYPE html>
+<html lang="uk">
+<body style="margin:0;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#0f172a;background:#f8fafc;">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;padding:32px;border-radius:12px;">
+    <h1 style="margin:0 0 8px;font-size:22px;">Ваше замовлення готове до видачі${greetingName}!</h1>
+    <p style="margin:0 0 16px;color:#475569;">
+      Замовлення <strong>#${orderNumber(params.order.id)}</strong> чекає на вас у пункті самовивозу.
+    </p>
+    <p style="margin:16px 0 0;color:#334155;">${PICKUP_BRING_NUMBER}</p>
+    ${renderStatusLinkHtml(params.orderStatusUrl)}
+    <p style="margin:24px 0 0;color:#94a3b8;font-size:13px;">
+      Якщо у вас є запитання щодо отримання, просто дайте відповідь на цей лист.
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
+function renderPickupText(params: OrderShippedParams): string {
+  const greetingName = params.customerName ? ` ${params.customerName}` : '';
+
+  const sections = [
+    `Ваше замовлення готове до видачі${greetingName}!`,
+    `Замовлення #${orderNumber(params.order.id)} чекає на вас у пункті самовивозу.`,
+    '',
+    PICKUP_BRING_NUMBER,
+  ];
+
+  if (params.orderStatusUrl) {
+    sections.push('', `Переглянути замовлення: ${params.orderStatusUrl}`);
+  }
+
+  sections.push('', 'Якщо у вас є запитання щодо отримання, просто дайте відповідь на цей лист.');
+  return sections.join('\n');
+}
+
 function renderHtml(params: OrderShippedParams): string {
   const greetingName = params.customerName ? ` ${escapeHtml(params.customerName)}` : '';
 
@@ -149,6 +206,13 @@ function renderText(params: OrderShippedParams): string {
  * Build the shipped-notice email parts (subject, HTML, plain text).
  */
 export function buildOrderShippedEmail(params: OrderShippedParams): MailTemplate {
+  if (isPickup(params)) {
+    return {
+      subject: `Замовлення #${orderNumber(params.order.id)} готове до видачі`,
+      html: renderPickupHtml(params),
+      text: renderPickupText(params),
+    };
+  }
   return {
     subject: `Замовлення #${orderNumber(params.order.id)} відправлено`,
     html: renderHtml(params),

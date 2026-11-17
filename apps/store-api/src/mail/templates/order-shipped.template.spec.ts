@@ -89,4 +89,66 @@ describe('buildOrderShippedEmail', () => {
     expect(html).not.toContain('novaposhta.ua/tracking/?');
     expect(text).not.toContain('novaposhta.ua/tracking/?');
   });
+
+  it.each([['NOVA_POSHTA'], ['COURIER'], [null], [undefined]])(
+    'keeps the parcel letter for delivery method %p',
+    (deliveryMethod) => {
+      const { subject, html } = buildOrderShippedEmail(baseParams({ deliveryMethod }));
+
+      expect(subject).toBe('Замовлення #550E8400 відправлено');
+      expect(html).toContain('Ваше замовлення відправлено');
+    },
+  );
+});
+
+/**
+ * TASK-1883: a PICKUP order travels nowhere — the SHIPPED event means it is ready at
+ * the point, and a letter saying «передано перевізнику» sends the buyer looking for a
+ * parcel that does not exist.
+ */
+describe('buildOrderShippedEmail — pickup', () => {
+  const pickup = () =>
+    buildOrderShippedEmail(baseParams({ deliveryMethod: 'PICKUP', trackingNumber: WAYBILL }));
+
+  it('says «готове до видачі» in the subject and the heading', () => {
+    const { subject, html, text } = pickup();
+
+    expect(subject).toBe('Замовлення #550E8400 готове до видачі');
+    expect(html).toContain('Ваше замовлення готове до видачі Олена!');
+    expect(text.split('\n')[0]).toBe('Ваше замовлення готове до видачі Олена!');
+  });
+
+  it('asks the buyer to bring the order number', () => {
+    const { html, text } = pickup();
+
+    expect(html).toContain('Візьміть із собою номер замовлення.');
+    expect(text).toContain('Візьміть із собою номер замовлення.');
+  });
+
+  it('carries no waybill and no tracking link, even if one was typed in', () => {
+    for (const body of [pickup().html, pickup().text]) {
+      expect(body).not.toContain('Номер накладної');
+      expect(body).not.toContain('novaposhta.ua');
+      expect(body).not.toContain('Відстежити');
+      expect(body).not.toContain('перевізнику');
+      expect(body).not.toContain('відправлено');
+    }
+  });
+
+  it('keeps the link to the order page', () => {
+    const { html, text } = pickup();
+
+    expect(html).toContain('href="https://shop.test/orders/status"');
+    expect(text).toContain('Переглянути замовлення: https://shop.test/orders/status');
+  });
+
+  it('escapes the customer name in the HTML part', () => {
+    const { html } = buildOrderShippedEmail({
+      ...baseParams({ deliveryMethod: 'PICKUP' }),
+      customerName: '<b>x</b>',
+    });
+
+    expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
+    expect(html).not.toContain('<b>x</b>');
+  });
 });

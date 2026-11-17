@@ -289,6 +289,7 @@ export class UserRepository {
         id: true,
         status: true,
         paymentStatus: true,
+        deliveryMethod: true,
         total: true,
         createdAt: true,
       },

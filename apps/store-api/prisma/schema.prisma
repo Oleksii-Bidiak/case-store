@@ -185,8 +185,13 @@ enum MoneyDirection {
 
 /// What one money-ledger row records (TASK-2047). IN: LIQPAY_PAYMENT (written only
 /// by the provider path, never by hand), COD_NOVA_POSHTA, PAID_AT_POINT,
-/// PAID_TO_COURIER, BANK_TRANSFER. OUT: LIQPAY_REFUND, CASH_REFUND,
-/// TRANSFER_REFUND.
+/// PAID_TO_COURIER, BANK_TRANSFER, OFFSET_FROM_ORDER. OUT: LIQPAY_REFUND,
+/// CASH_REFUND, TRANSFER_REFUND, OFFSET_TO_ORDER.
+///
+/// The two OFFSET kinds (TASK-2048, «Залік») are written only in pairs by
+/// «Створити копію»: what the customer paid on the original goes OUT of it and IN
+/// to the copy, each row naming the other order (`counterpartOrderId`). Never
+/// recorded by hand and never reversed on their own.
 enum MoneyEntryKind {
   LIQPAY_PAYMENT
   COD_NOVA_POSHTA
@@ -196,6 +201,8 @@ enum MoneyEntryKind {
   LIQPAY_REFUND
   CASH_REFUND
   TRANSFER_REFUND
+  OFFSET_TO_ORDER
+  OFFSET_FROM_ORDER
 }
 
 /// Provider-side state of a LiqPay refund row (TASK-2047): written REQUESTED before
@@ -281,6 +288,11 @@ enum OrderHistoryNote {
   /// LiqPay reported a refund the shop never requested (made in the provider's
   /// cabinet, TASK-1500). No money row is written; the operator records it.
   PROVIDER_REFUND_UNMATCHED
+  /// «Створити копію» (TASK-2048) made a copy of this order — on its cancel row
+  /// when the copy replaced it, otherwise on a current → current row.
+  COPIED_TO_ORDER
+  /// This order was born as a copy of another (TASK-2048) — on its creation row.
+  COPY_OF_ORDER
 }
 
 /// Data type of a structured product characteristic (TASK-191, plan 112).
@@ -950,21 +962,31 @@ model Order {
   /// paid_kop >= 0, refunded_kop >= 0.
   paidKop              Int            @default(0) @map("paid_kop")
   refundedKop          Int            @default(0) @map("refunded_kop")
+  /// The part of refundedKop that went on to a copy as «Залік» (OFFSET_TO_ORDER,
+  /// TASK-2048), not back to the customer. Same writer as the totals above.
+  offsetOutKop         Int            @default(0) @map("offset_out_kop")
   /// Σ Return.creditKop — what is owed back for goods that came back.
   returnCreditKop      Int            @default(0) @map("return_credit_kop")
   /// total − returnCredit − paid + refunded: > 0 the customer owes, < 0 the shop
   /// owes the customer.
   balanceKop           Int            @default(0) @map("balance_kop")
+  /// The order this one was copied from by «Створити копію» (TASK-2048). Restrict:
+  /// an order is the record of money taken, and the link is part of that record.
+  copiedFromId         String?        @map("copied_from_id")
+  copiedFrom           Order?         @relation("OrderCopies", fields: [copiedFromId], references: [id], onDelete: Restrict)
+  copies               Order[]        @relation("OrderCopies")
 
-  items         OrderItem[]
+  items             OrderItem[]
   /// Every money movement on this order (TASK-2047).
-  moneyEntries  OrderMoneyEntry[]
-  statusHistory OrderStatusHistory[]
-  payments      Payment[]
-  returns       Return[]
+  moneyEntries      OrderMoneyEntry[]
+  /// «Залік» rows of OTHER orders that name this one (TASK-2048).
+  moneyCounterparts OrderMoneyEntry[]          @relation("OrderMoneyEntryCounterpart")
+  statusHistory     OrderStatusHistory[]
+  payments          Payment[]
+  returns           Return[]
   /// Telegram chats a guest connected from the order-success page (TASK-675/679).
-  chatBindings  NotificationBinding[]
-  chatTokens    NotificationBindingToken[]
+  chatBindings      NotificationBinding[]
+  chatTokens        NotificationBindingToken[]
 
   @@index([userId])
   @@index([status])
@@ -983,6 +1005,7 @@ model Order {
   // TASK-642: the admin order list filters by delivery method and by pickup point.
   @@index([deliveryMethod])
   @@index([pickupPointId])
+  @@index([copiedFromId])
   @@map("orders")
 }
 
@@ -1034,40 +1057,44 @@ model OrderStatusHistory {
 /// required. A LiqPay refund the provider refused is VOIDED (`voidedAt`) — it
 /// never moved money. Rows are never updated otherwise and never deleted.
 model OrderMoneyEntry {
-  id            String              @id @default(uuid())
-  orderId       String              @map("order_id")
+  id                 String              @id @default(uuid())
+  orderId            String              @map("order_id")
   /// Restrict: a money row must never vanish with a tidy-up of its order.
-  order         Order               @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  direction     MoneyDirection
-  kind          MoneyEntryKind
+  order              Order               @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  direction          MoneyDirection
+  kind               MoneyEntryKind
   /// Integer kopecks, CHECK (amount_kop > 0) — the direction carries the sign.
-  amountKop     Int                 @map("amount_kop")
+  amountKop          Int                 @map("amount_kop")
   /// The return this payout settles, if any.
-  returnId      String?             @map("return_id")
-  returnRequest Return?             @relation(fields: [returnId], references: [id], onDelete: Restrict)
+  returnId           String?             @map("return_id")
+  returnRequest      Return?             @relation(fields: [returnId], references: [id], onDelete: Restrict)
   /// The LiqPay attempt this row belongs to (LIQPAY_PAYMENT / LIQPAY_REFUND).
-  paymentId     String?             @map("payment_id")
-  payment       Payment?            @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  paymentId          String?             @map("payment_id")
+  payment            Payment?            @relation(fields: [paymentId], references: [id], onDelete: Restrict)
   /// Provider-side discriminator, unique per attempt with `paymentId`, so a
   /// repeated callback cannot write the same money twice ('success' for the
   /// payment; the refund request id for a refund).
-  providerRef   String?             @map("provider_ref")
-  providerState MoneyProviderState? @map("provider_state")
+  providerRef        String?             @map("provider_ref")
+  providerState      MoneyProviderState? @map("provider_state")
   /// Null for LiqPay/system rows; the operator otherwise.
-  actorId       String?             @map("actor_id")
-  actor         User?               @relation("OrderMoneyEntryActor", fields: [actorId], references: [id], onDelete: SetNull)
-  reason        String?
+  actorId            String?             @map("actor_id")
+  actor              User?               @relation("OrderMoneyEntryActor", fields: [actorId], references: [id], onDelete: SetNull)
+  reason             String?
   /// Set on a reversal: the row it cancels. Unique — a row is reversed at most once.
-  reversalOfId  String?             @unique @map("reversal_of_id")
-  reversalOf    OrderMoneyEntry?    @relation("OrderMoneyEntryReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
-  reversedBy    OrderMoneyEntry?    @relation("OrderMoneyEntryReversal")
-  voidedAt      DateTime?           @map("voided_at")
-  voidReason    String?             @map("void_reason")
+  reversalOfId       String?             @unique @map("reversal_of_id")
+  reversalOf         OrderMoneyEntry?    @relation("OrderMoneyEntryReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversedBy         OrderMoneyEntry?    @relation("OrderMoneyEntryReversal")
+  voidedAt           DateTime?           @map("voided_at")
+  voidReason         String?             @map("void_reason")
+  /// OFFSET rows only (TASK-2048): the other order of the «Залік» pair — the copy
+  /// on the original's OUT row, the original on the copy's IN row.
+  counterpartOrderId String?             @map("counterpart_order_id")
+  counterpartOrder   Order?              @relation("OrderMoneyEntryCounterpart", fields: [counterpartOrderId], references: [id], onDelete: Restrict)
   /// Inferred by the R2 backfill from pre-ledger labels and amounts.
-  legacy        Boolean             @default(false)
+  legacy             Boolean             @default(false)
   /// When the money actually moved (may predate `createdAt` for a late record).
-  occurredAt    DateTime            @map("occurred_at")
-  createdAt     DateTime            @default(now()) @map("created_at")
+  occurredAt         DateTime            @map("occurred_at")
+  createdAt          DateTime            @default(now()) @map("created_at")
 
   @@unique([paymentId, providerRef])
   @@index([orderId, createdAt])

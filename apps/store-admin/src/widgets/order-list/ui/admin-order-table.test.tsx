@@ -545,7 +545,7 @@ describe("AdminOrderTable — filters in the sheet", () => {
       within(sheet).getByRole("group", { name: d.filterStatusAria }),
     );
     await userEvent.click(
-      statuses.getByRole("checkbox", { name: "Доставлено" }),
+      statuses.getByRole("checkbox", { name: "Отримано покупцем" }),
     );
     await userEvent.click(
       statuses.getByRole("checkbox", { name: "Скасовано" }),
