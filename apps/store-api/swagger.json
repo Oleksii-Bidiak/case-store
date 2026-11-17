@@ -30333,6 +30333,11 @@
             "description": "Money sent back, integer kopecks — Σ OUT of the ledger, net of reversals, voided ignored; a LiqPay refund counts from the moment it is requested.",
             "example": 0
           },
+          "offsetOutKop": {
+            "type": "number",
+            "description": "The part of refundedKop that went on to a copy as «Залік» (OFFSET_TO_ORDER, TASK-2048), not back to the customer — integer kopecks. refundedKop − offsetOutKop is what the customer actually got back.",
+            "example": 0
+          },
           "returnCreditKop": {
             "type": "number",
             "description": "Σ «До повернення» of the order's REFUND-decided returns, integer kopecks: the part of the total the customer no longer owes for goods that came back.",
@@ -30475,6 +30480,7 @@
           "total",
           "paidKop",
           "refundedKop",
+          "offsetOutKop",
           "returnCreditKop",
           "balanceKop",
           "refundedAfterCancel",
@@ -30625,6 +30631,11 @@
           "refundedKop": {
             "type": "number",
             "description": "Money sent back, integer kopecks — Σ OUT of the ledger, net of reversals, voided ignored; a LiqPay refund counts from the moment it is requested.",
+            "example": 0
+          },
+          "offsetOutKop": {
+            "type": "number",
+            "description": "The part of refundedKop that went on to a copy as «Залік» (OFFSET_TO_ORDER, TASK-2048), not back to the customer — integer kopecks. refundedKop − offsetOutKop is what the customer actually got back.",
             "example": 0
           },
           "returnCreditKop": {
@@ -30782,6 +30793,7 @@
           "total",
           "paidKop",
           "refundedKop",
+          "offsetOutKop",
           "returnCreditKop",
           "balanceKop",
           "refundedAfterCancel",

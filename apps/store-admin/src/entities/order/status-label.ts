@@ -100,14 +100,36 @@ export function orderHeadlineStatusLabel(
     OrderEntity,
     "status" | "refundedAfterCancel" | "paidKop" | "refundedKop"
   > &
-    Partial<Pick<OrderEntity, "deliveryMethod">>,
+    Partial<Pick<OrderEntity, "deliveryMethod" | "offsetOutKop">>,
 ): string {
   if (!order.refundedAfterCancel) {
     return orderStatusLabelFor(order.status, order.deliveryMethod);
   }
-  return order.refundedKop < order.paidKop
+  // TASK-2048: what moved on to a copy neither came back nor is still held.
+  const offsetKop = order.offsetOutKop ?? 0;
+  return order.refundedKop - offsetKop < order.paidKop - offsetKop
     ? dict.orderStatus.cancelledPartlyRefunded
     : dict.orderStatus.cancelledRefunded;
+}
+
+/**
+ * The payment badge of an ORDER (TASK-2048): a cancelled original whose money
+ * all went on to its copy as «Залік» reads «Оплату перенесено в копію», not
+ * «Кошти повернено» — nothing went back to the customer. The status itself is
+ * untouched (filters and reports count it as before); only the words change.
+ */
+export function orderPaymentStatusLabel(
+  order: Pick<OrderEntity, "paymentStatus" | "refundedKop"> &
+    Partial<Pick<OrderEntity, "offsetOutKop">>,
+): string {
+  const offsetKop = order.offsetOutKop ?? 0;
+  const refundStatus =
+    order.paymentStatus === OrderEntityPaymentStatus.REFUNDED ||
+    order.paymentStatus === OrderEntityPaymentStatus.PARTIALLY_REFUNDED;
+  if (refundStatus && offsetKop > 0 && order.refundedKop <= offsetKop) {
+    return dict.orderStatus.paymentMovedToCopy;
+  }
+  return paymentStatusLabel(order.paymentStatus);
 }
 
 /** Map a raw payment-status enum to its Ukrainian label (falls back to input). */

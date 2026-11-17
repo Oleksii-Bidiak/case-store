@@ -10,6 +10,8 @@ interface OrderConfirmationHeaderProps {
   orderId: string;
   status: OrderEntityStatus;
   paymentStatus: OrderEntityPaymentStatus;
+  /** Ledger totals — tell a refund from money moved to a replacement (TASK-2048). */
+  money?: { refundedKop: number; offsetOutKop?: number };
   /** ISO timestamp */
   createdAt: string;
   /** A SHIPPED pickup order reads «Готово до видачі» (TASK-2052). */
@@ -28,6 +30,7 @@ export function OrderConfirmationHeader({
   orderId,
   status,
   paymentStatus,
+  money,
   createdAt,
   deliveryMethod,
   heading = dict.order.thankYou,
@@ -61,7 +64,7 @@ export function OrderConfirmationHeader({
         <dt className="sr-only">{dict.order.paymentStatusSr}</dt>
         <dd>
           <OrderStatusBadge status={paymentStatus}>
-            {dict.order.paymentLabel(paymentStatus)}
+            {dict.order.paymentLabel(paymentStatus, money)}
           </OrderStatusBadge>
         </dd>
       </dl>

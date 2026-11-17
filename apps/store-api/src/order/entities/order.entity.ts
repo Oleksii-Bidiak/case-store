@@ -298,6 +298,15 @@ export class OrderEntity {
 
   @ApiProperty({
     description:
+      'The part of refundedKop that went on to a copy as «Залік» (OFFSET_TO_ORDER, TASK-2048), ' +
+      'not back to the customer — integer kopecks. refundedKop − offsetOutKop is what the ' +
+      'customer actually got back.',
+    example: 0,
+  })
+  offsetOutKop!: number;
+
+  @ApiProperty({
+    description:
       "Σ «До повернення» of the order's REFUND-decided returns, integer kopecks: the part " +
       'of the total the customer no longer owes for goods that came back.',
     example: 0,
@@ -564,10 +573,13 @@ export class OrderEntity {
     // fixtures that predate the columns (NOT NULL DEFAULT 0 in the schema).
     entity.paidKop = order.paidKop ?? 0;
     entity.refundedKop = order.refundedKop ?? 0;
+    entity.offsetOutKop = order.offsetOutKop ?? 0;
     entity.returnCreditKop = order.returnCreditKop ?? 0;
     entity.balanceKop = order.balanceKop ?? 0;
-    // TASK-1970: a cancelled order whose money went back stays CANCELLED.
-    entity.refundedAfterCancel = order.status === OrderStatus.CANCELLED && entity.refundedKop > 0;
+    // TASK-1970: a cancelled order whose money went back stays CANCELLED. Money
+    // that moved on to a copy (TASK-2048) did not go back to the customer.
+    entity.refundedAfterCancel =
+      order.status === OrderStatus.CANCELLED && entity.refundedKop - entity.offsetOutKop > 0;
     // TASK-472: only when this read actually joined the returns (admin) — an
     // unmeasured customer read must not report a zero.
     if (order.returns) {

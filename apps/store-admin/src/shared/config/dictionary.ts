@@ -4470,6 +4470,9 @@ export const dict = {
       PARTIALLY_REFUNDED: "Частково повернуто",
       REFUNDED: "Кошти повернено",
     },
+    // TASK-2048: the money of a cancelled original went on to its copy as
+    // «Залік», not back to the customer — not «Кошти повернено».
+    paymentMovedToCopy: "Оплату перенесено в копію",
     // --- Server-driven transitions (TASK-332) ---------------------------------
     transitionsLoading: "Завантаження доступних статусів…",
     transitionsLoadError:

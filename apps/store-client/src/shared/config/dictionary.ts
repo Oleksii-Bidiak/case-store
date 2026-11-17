@@ -1861,8 +1861,21 @@ export const dict = {
       `Статус замовлення: ${orderStatusLabelFor(status, deliveryMethod)}`,
     paymentStatusAria: (status: string) =>
       `Статус оплати: ${PAYMENT_STATUS_LABELS[status] ?? status}`,
-    paymentLabel: (status: string) =>
-      `Оплата: ${PAYMENT_STATUS_LABELS[status] ?? status}`,
+    // TASK-2048: a cancelled order whose money all went on to its replacement
+    // («Залік») got nothing back — «Кошти повернено» would be a false promise.
+    paymentLabel: (
+      status: string,
+      money?: { refundedKop: number; offsetOutKop?: number },
+    ) => {
+      const offsetKop = money?.offsetOutKop ?? 0;
+      const movedToCopy =
+        (status === "REFUNDED" || status === "PARTIALLY_REFUNDED") &&
+        offsetKop > 0 &&
+        (money?.refundedKop ?? 0) <= offsetKop;
+      return movedToCopy
+        ? "Оплата: перенесена в нове замовлення"
+        : `Оплата: ${PAYMENT_STATUS_LABELS[status] ?? status}`;
+    },
     itemsOrdered: "Замовлені товари",
     viewProductAria: (name: string) => `Переглянути «${name}»`,
     billingAddress: "Адреса оплати",

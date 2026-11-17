@@ -1,5 +1,6 @@
 import {
   orderHeadlineStatusLabel,
+  orderPaymentStatusLabel,
   orderStatusLabel,
   orderStatusLabelFor,
   paymentStatusLabel,
@@ -133,5 +134,57 @@ describe("orderHeadlineStatusLabel (TASK-1970)", () => {
         refundedAfterCancel: true,
       }),
     ).toBe("Скасовано · повернуто частково");
+  });
+});
+
+describe("a cancelled original whose money went to its copy (TASK-2048)", () => {
+  it("reads «Оплату перенесено в копію», not «Кошти повернено»", () => {
+    expect(
+      orderPaymentStatusLabel({
+        paymentStatus: "REFUNDED",
+        refundedKop: 120000,
+        offsetOutKop: 120000,
+      }),
+    ).toBe("Оплату перенесено в копію");
+  });
+
+  it("keeps «Кошти повернено» when money really went back", () => {
+    expect(
+      orderPaymentStatusLabel({
+        paymentStatus: "REFUNDED",
+        refundedKop: 120000,
+      }),
+    ).toBe("Кошти повернено");
+    expect(
+      orderPaymentStatusLabel({
+        paymentStatus: "REFUNDED",
+        refundedKop: 120000,
+        offsetOutKop: 20000,
+      }),
+    ).toBe("Кошти повернено");
+  });
+
+  it("says «повернуто частково» when only part of what was not moved came back", () => {
+    expect(
+      orderHeadlineStatusLabel({
+        status: "CANCELLED",
+        paidKop: 120000,
+        refundedKop: 100000,
+        offsetOutKop: 60000,
+        refundedAfterCancel: true,
+      }),
+    ).toBe("Скасовано · повернуто частково");
+  });
+
+  it("says «кошти повернено» when the rest, beyond the offset, all came back", () => {
+    expect(
+      orderHeadlineStatusLabel({
+        status: "CANCELLED",
+        paidKop: 120000,
+        refundedKop: 120000,
+        offsetOutKop: 60000,
+        refundedAfterCancel: true,
+      }),
+    ).toBe("Скасовано · кошти повернено");
   });
 });

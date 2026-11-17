@@ -309,6 +309,7 @@ export interface OrderWithItems {
    */
   paidKop?: number;
   refundedKop?: number;
+  offsetOutKop?: number;
   returnCreditKop?: number;
   balanceKop?: number;
 }

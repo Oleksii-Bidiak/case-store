@@ -13,7 +13,7 @@ import {
   orderHeadlineStatusLabel,
   orderListHref,
   paymentStatusBadgeVariant,
-  paymentStatusLabel,
+  orderPaymentStatusLabel,
   useAdminOrderControllerFindById,
   useAdminOrderControllerGetHistory,
   type OrderEntity,
@@ -310,7 +310,7 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
               {orderHeadlineStatusLabel(order)}
             </Badge>
             <Badge variant={paymentStatusBadgeVariant(order.paymentStatus)}>
-              {paymentStatusLabel(order.paymentStatus)}
+              {orderPaymentStatusLabel(order)}
             </Badge>
             {holdsStock ? (
               <Badge variant="warning">{d.holdsStock(heldQuantity)}</Badge>

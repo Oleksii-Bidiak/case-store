@@ -962,6 +962,9 @@ model Order {
   /// paid_kop >= 0, refunded_kop >= 0.
   paidKop              Int            @default(0) @map("paid_kop")
   refundedKop          Int            @default(0) @map("refunded_kop")
+  /// The part of refundedKop that went on to a copy as «Залік» (OFFSET_TO_ORDER,
+  /// TASK-2048), not back to the customer. Same writer as the totals above.
+  offsetOutKop         Int            @default(0) @map("offset_out_kop")
   /// Σ Return.creditKop — what is owed back for goods that came back.
   returnCreditKop      Int            @default(0) @map("return_credit_kop")
   /// total − returnCredit − paid + refunded: > 0 the customer owes, < 0 the shop

@@ -27,7 +27,7 @@ import {
   OrderEntityStatus,
   OrderStatusHistoryEntityNote,
   paymentStatusBadgeVariant,
-  paymentStatusLabel,
+  orderPaymentStatusLabel,
   useAdminOrderControllerGetHistory,
   useAdminOrderMoneyControllerGet,
   type AdminOrderMoneyResponse,
@@ -74,7 +74,8 @@ const LIQPAY_KINDS: readonly string[] = [
 ];
 
 interface OrderPaymentBlockProps {
-  order: Pick<OrderEntity, "id" | "paymentStatus">;
+  order: Pick<OrderEntity, "id" | "paymentStatus"> &
+    Partial<Pick<OrderEntity, "refundedKop" | "offsetOutKop">>;
   /** Opens the card's «Оформити повернення» dialog (TASK-1963). */
   onCreateReturn?: () => void;
 }
@@ -151,7 +152,11 @@ export function OrderPaymentBlock({
           {m.heading}
         </h3>
         <Badge variant={paymentStatusBadgeVariant(paymentStatus)}>
-          {paymentStatusLabel(paymentStatus)}
+          {orderPaymentStatusLabel({
+            paymentStatus,
+            refundedKop: money?.totals.refundedKop ?? order.refundedKop ?? 0,
+            offsetOutKop: order.offsetOutKop,
+          })}
         </Badge>
       </div>
 

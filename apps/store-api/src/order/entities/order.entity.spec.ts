@@ -291,6 +291,18 @@ describe('OrderEntity.fromPrisma — ledger money (R2 A4)', () => {
     });
   });
 
+  it('refundedAfterCancel: money moved on to a copy did not go back (TASK-2048)', () => {
+    const cancelled = { status: OrderStatus.CANCELLED, paidKop: 100_000 };
+    expect(
+      OrderEntity.fromPrisma(ledger({ ...cancelled, refundedKop: 100_000, offsetOutKop: 100_000 }))
+        .refundedAfterCancel,
+    ).toBe(false);
+    expect(
+      OrderEntity.fromPrisma(ledger({ ...cancelled, refundedKop: 100_000, offsetOutKop: 30_000 }))
+        .refundedAfterCancel,
+    ).toBe(true);
+  });
+
   it('refundedAfterCancel: a CANCELLED order with money sent back (TASK-1970)', () => {
     const cancelled = { status: OrderStatus.CANCELLED, paidKop: 100_000 };
     expect(

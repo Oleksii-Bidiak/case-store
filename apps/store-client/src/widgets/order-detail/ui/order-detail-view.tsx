@@ -190,7 +190,7 @@ function OrderDetailContent({
           </OrderStatusBadge>
           {/* «Оплата: …» names itself — no sr prefix needed. */}
           <OrderStatusBadge status={order.paymentStatus}>
-            {dict.order.paymentLabel(order.paymentStatus)}
+            {dict.order.paymentLabel(order.paymentStatus, order)}
           </OrderStatusBadge>
         </div>
       </header>

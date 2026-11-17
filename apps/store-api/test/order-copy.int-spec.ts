@@ -267,7 +267,13 @@ describe('OrderRepository.createManualCopy (integration, TASK-2048)', () => {
     ]);
 
     const original = await prisma.order.findUniqueOrThrow({ where: { id: originalId } });
-    expect(original).toMatchObject({ paidKop: 100_000, refundedKop: 30_000, balanceKop: -70_000 });
+    expect(original).toMatchObject({
+      paidKop: 100_000,
+      refundedKop: 30_000,
+      // The 300 ₴ went on to the copy, not back to the customer.
+      offsetOutKop: 30_000,
+      balanceKop: -70_000,
+    });
     const stored = await prisma.order.findUniqueOrThrow({ where: { id: copy.id } });
     expect(stored).toMatchObject({
       paidKop: 30_000,

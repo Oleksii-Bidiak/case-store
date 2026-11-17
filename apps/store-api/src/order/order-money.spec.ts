@@ -17,6 +17,7 @@ import {
   directionOf,
   ledgerTotals,
   offsetAmountKop,
+  offsetOutTotal,
   providerRefundAvailableKop,
   reversalDraft,
   unitsCreditKop,
@@ -288,6 +289,40 @@ describe('order-money', () => {
       expect([...IN_KINDS, ...OUT_KINDS].sort()).toEqual(Object.values(MoneyEntryKind).sort());
       IN_KINDS.forEach((kind) => expect(directionOf(kind)).toBe(MoneyDirection.IN));
       OUT_KINDS.forEach((kind) => expect(directionOf(kind)).toBe(MoneyDirection.OUT));
+    });
+  });
+
+  describe('offsetOutTotal (TASK-2048)', () => {
+    const out = (kind: MoneyEntryKind, amountKop: number, over: object = {}) => ({
+      direction: MoneyDirection.OUT,
+      kind,
+      amountKop,
+      reversalOfId: null,
+      voidedAt: null,
+      ...over,
+    });
+
+    it('counts only the «Залік» to a copy, not money sent back to the customer', () => {
+      expect(
+        offsetOutTotal([
+          out(MoneyEntryKind.OFFSET_TO_ORDER, 30_000),
+          out(MoneyEntryKind.CASH_REFUND, 70_000),
+        ]),
+      ).toBe(30_000);
+    });
+
+    it('nets reversals and ignores voided rows', () => {
+      expect(
+        offsetOutTotal([
+          out(MoneyEntryKind.OFFSET_TO_ORDER, 30_000),
+          out(MoneyEntryKind.OFFSET_TO_ORDER, 10_000, { reversalOfId: 'x' }),
+          out(MoneyEntryKind.OFFSET_TO_ORDER, 5_000, { voidedAt: new Date() }),
+        ]),
+      ).toBe(20_000);
+    });
+
+    it('is zero on a ledger without offsets', () => {
+      expect(offsetOutTotal([])).toBe(0);
     });
   });
 

@@ -52,3 +52,24 @@ describe("dict.order.orderStatusLabelFor (TASK-2052)", () => {
     expect(dict.orderHistory.tabs.delivered).toBe("Отримані");
   });
 });
+
+describe("dict.order.paymentLabel — money moved to a replacement (TASK-2048)", () => {
+  it("does not promise a refund when all the money went to the new order", () => {
+    expect(
+      dict.order.paymentLabel("REFUNDED", {
+        refundedKop: 50000,
+        offsetOutKop: 50000,
+      }),
+    ).toBe("Оплата: перенесена в нове замовлення");
+  });
+
+  it("keeps «Кошти повернено» for a real refund", () => {
+    expect(
+      dict.order.paymentLabel("REFUNDED", {
+        refundedKop: 50000,
+        offsetOutKop: 0,
+      }),
+    ).toBe("Оплата: Кошти повернено");
+    expect(dict.order.paymentLabel("REFUNDED")).toBe("Оплата: Кошти повернено");
+  });
+});

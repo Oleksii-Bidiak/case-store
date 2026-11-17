@@ -106,6 +106,7 @@ export {
   orderStatusLabel,
   orderStatusLabelFor,
   paymentStatusLabel,
+  orderPaymentStatusLabel,
 } from "./status-label";
 
 export { isPreShipmentStatus } from "./is-pre-shipment-status";

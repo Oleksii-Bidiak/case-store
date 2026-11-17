@@ -390,6 +390,26 @@ export function ledgerTotals(entries: ReadonlyArray<LedgerRow>): {
 // ── «Залік» to a copy (TASK-2048) ───────────────────────────────────────────
 
 /**
+ * The part of the OUT total that went on to a copy (OFFSET_TO_ORDER), not back
+ * to the customer — net of reversals, voided rows not counted, like
+ * {@link ledgerTotals}. A cancelled original whose money moved to its copy is
+ * not «кошти повернено».
+ */
+export function offsetOutTotal(
+  entries: ReadonlyArray<LedgerRow & { kind: MoneyEntryKind }>,
+): number {
+  let offsetKop = 0;
+  for (const entry of entries) {
+    if (entry.kind !== MoneyEntryKind.OFFSET_TO_ORDER || entry.voidedAt !== null) {
+      continue;
+    }
+    assertKopecks(entry.amountKop);
+    offsetKop += entry.reversalOfId === null ? entry.amountKop : -entry.amountKop;
+  }
+  return offsetKop;
+}
+
+/**
  * How much of the original's money moves to its copy: what it still holds
  * (`paid − refunded`), but never more than the copy costs — the rest stays on
  * the cancelled original as «Винні покупцю». Never negative.

@@ -118,6 +118,7 @@ export function makeOrder(overrides: Partial<OrderEntity> = {}): {
       // R2 ledger totals (integer kopecks) — nothing paid yet.
       paidKop: 0,
       refundedKop: 0,
+      offsetOutKop: 0,
       returnCreditKop: 0,
       // TASK-2048 — not a copy of another order.
       copiedFromId: null,

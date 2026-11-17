@@ -25,6 +25,7 @@ import {
   directionOf,
   isOrderFullyRefunded,
   ledgerTotals,
+  offsetOutTotal,
   returnStatusAfterPayouts,
   reversalDraft,
   type LedgerRow,
@@ -353,6 +354,7 @@ export class OrderMoneyRepository {
       where: { orderId },
       select: {
         direction: true,
+        kind: true,
         amountKop: true,
         reversalOfId: true,
         voidedAt: true,
@@ -360,6 +362,7 @@ export class OrderMoneyRepository {
       },
     });
     const { paidKop, refundedKop } = ledgerTotals(rows);
+    const offsetOutKop = offsetOutTotal(rows);
     const status = await this.deriveStatus(tx, order.status, {
       orderId,
       refundedKop,
@@ -402,7 +405,15 @@ export class OrderMoneyRepository {
 
     await tx.order.update({
       where: { id: orderId },
-      data: { paidKop, refundedKop, returnCreditKop, balanceKop, paymentStatus, status },
+      data: {
+        paidKop,
+        refundedKop,
+        offsetOutKop,
+        returnCreditKop,
+        balanceKop,
+        paymentStatus,
+        status,
+      },
     });
 
     // TASK-1969: the order's own REFUNDED moved with the money — one STATUS row,
