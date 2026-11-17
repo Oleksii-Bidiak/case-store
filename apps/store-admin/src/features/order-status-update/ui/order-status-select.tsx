@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
@@ -9,10 +10,11 @@ import {
   getAdminOrderMoneyControllerGetQueryKey,
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
-  orderStatusLabel,
+  orderStatusLabelFor,
   useAdminOrderControllerFindById,
   useAdminOrderControllerGetAllowedTransitions,
   useAdminOrderControllerUpdateStatus,
+  OrderEntityDeliveryMethod,
   OrderEntityPaymentMethod,
   OrderEntityPaymentStatus,
   OrderEntityStatus,
@@ -21,7 +23,7 @@ import {
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
-import { ChevronDownIcon, TruckIcon } from "lucide-react";
+import { ChevronDownIcon, PackageCheckIcon, TruckIcon } from "lucide-react";
 import {
   Button,
   DropdownMenu,
@@ -37,6 +39,7 @@ import { toTransitionOptions } from "../model/transitions";
 import {
   orderConflictMessage,
   orderWriteErrorMessage,
+  offersCopy,
   requiresReload,
   type ApiErrorLike,
 } from "../model/order-conflict";
@@ -181,10 +184,18 @@ function OrderStatusSelectControl({
 
   const { allowed, expectedUpdatedAt } = toTransitionOptions(transitions.data);
 
+  // TASK-2052: this order's words — SHIPPED on a pickup order is «Готово до
+  // видачі». Until the order has loaded the generic word stands.
+  const pickup = order?.deliveryMethod === OrderEntityDeliveryMethod.PICKUP;
+  const label = (status: string) =>
+    orderStatusLabelFor(status, order?.deliveryMethod);
+
   // A 409 (with or without the reload button) or, since TASK-622, a 403 naming
   // the missing grant — both stay on screen until the next attempt.
   const conflict = orderWriteErrorMessage(updateStatus.error as ApiErrorLike);
   const showReload = requiresReload(updateStatus.error as ApiErrorLike);
+  // TASK-2048 / AD-ORD-96: a spent promo code — the way out is a copy without it.
+  const showCopy = offersCopy(updateStatus.error as ApiErrorLike);
 
   /**
    * The soft warning of decision B-1: shipping an online order whose payment
@@ -257,7 +268,7 @@ function OrderStatusSelectControl({
           void queryClient.invalidateQueries({
             queryKey: getAdminDashboardControllerGetNeedsActionQueryKey(),
           });
-          toast.success(dict.orderStatus.toastUpdated(orderStatusLabel(value)));
+          toast.success(dict.orderStatus.toastUpdated(label(value)));
         },
         onError: (error) => {
           const message = orderConflictMessage(error as ApiErrorLike);
@@ -332,7 +343,11 @@ function OrderStatusSelectControl({
   const unavailable = LIFECYCLE.filter(
     (status) => status !== current && !allowed.includes(status),
   );
-  const next = NEXT_STEP[current];
+  const step = NEXT_STEP[current];
+  const next =
+    step && pickup && step.status === OrderEntityStatus.SHIPPED
+      ? { ...step, label: dict.orderStatus.nextPickupReady }
+      : step;
   const nextAction = next && allowed.includes(next.status) ? next : null;
   const askPayment = asksAboutPayment;
 
@@ -358,7 +373,7 @@ function OrderStatusSelectControl({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-80">
               <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground">
-                {dict.orderStatus.menuCurrent(orderStatusLabel(current))}
+                {dict.orderStatus.menuCurrent(label(current))}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuGroup aria-label={dict.orderStatus.menuAllowed}>
@@ -375,7 +390,7 @@ function OrderStatusSelectControl({
                     }
                     onSelect={() => handleChange(status)}
                   >
-                    {orderStatusLabel(status)}
+                    {label(status)}
                     {askPayment(status) ? (
                       <span
                         aria-hidden="true"
@@ -398,7 +413,7 @@ function OrderStatusSelectControl({
                     </DropdownMenuLabel>
                     {unavailable.map((status) => (
                       <DropdownMenuItem key={status} disabled>
-                        {orderStatusLabel(status)}
+                        {label(status)}
                         <span className="ml-auto text-xs text-muted-foreground">
                           {unavailableReason(current, status)}
                         </span>
@@ -422,7 +437,11 @@ function OrderStatusSelectControl({
             onClick={() => handleChange(nextAction.status)}
           >
             {nextAction.status === OrderEntityStatus.SHIPPED ? (
-              <TruckIcon aria-hidden="true" />
+              pickup ? (
+                <PackageCheckIcon aria-hidden="true" />
+              ) : (
+                <TruckIcon aria-hidden="true" />
+              )
             ) : null}
             {nextAction.label}
           </Button>
@@ -435,7 +454,21 @@ function OrderStatusSelectControl({
           role="alert"
           className="flex basis-full flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
         >
-          <span className="flex-1">{conflict}</span>
+          <span className="flex-1">
+            {conflict}
+            {showCopy ? (
+              <span className="mt-1 block text-foreground">
+                {dict.orderStatus.promoCopyHint}
+              </span>
+            ) : null}
+          </span>
+          {showCopy ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/orders/new?copyOf=${orderId}`}>
+                {dict.orders.copyAction}
+              </Link>
+            </Button>
+          ) : null}
           {showReload ? (
             <Button variant="outline" size="sm" onClick={handleReload}>
               {dict.orderStatus.reloadCta}

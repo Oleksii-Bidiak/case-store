@@ -11,6 +11,7 @@ import {
   type EmailChangeNoticeMailPayload,
   type EmailVerificationMailPayload,
   type OrderPaymentExpiredMailPayload,
+  type OrderReplacedMailPayload,
   type OrderShippedMailPayload,
   type PasswordResetMailPayload,
   type SendOrderConfirmationParams,
@@ -25,6 +26,7 @@ import {
   ORDER_CONFIRMATION_MAIL_TYPE,
   ORDER_SHIPPED_MAIL_TYPE,
   ORDER_PAYMENT_EXPIRED_MAIL_TYPE,
+  ORDER_REPLACED_MAIL_TYPE,
   PASSWORD_RESET_MAIL_TYPE,
   type DispatchResult,
 } from './notification-outbox.types';
@@ -262,6 +264,24 @@ export class NotificationOutboxService {
     await this.repository.enqueue(
       {
         type: ORDER_PAYMENT_EXPIRED_MAIL_TYPE,
+        recipientAddress: payload.to,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Enqueue «Замовлення #старе замінено на #нове» (TASK-2048) — after the copy and
+   * the original's cancel have committed together.
+   */
+  async enqueueOrderReplaced(
+    payload: OrderReplacedMailPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.repository.enqueue(
+      {
+        type: ORDER_REPLACED_MAIL_TYPE,
         recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },

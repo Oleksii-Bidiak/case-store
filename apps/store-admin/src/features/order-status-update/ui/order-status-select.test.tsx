@@ -35,6 +35,7 @@ function stubOrder(
     paymentMethod: string;
     paymentStatus: string;
     total: string;
+    deliveryMethod: string;
   }> = {},
 ) {
   server.use(
@@ -46,6 +47,7 @@ function stubOrder(
           paymentStatus: overrides.paymentStatus ?? "PAID",
           paymentMethod: overrides.paymentMethod ?? "ON_DELIVERY",
           total: overrides.total ?? "1498.00",
+          deliveryMethod: overrides.deliveryMethod ?? "NOVA_POSHTA",
           items: [
             {
               id: "line-1",
@@ -299,6 +301,60 @@ describe("OrderStatusSelect — 409 conflicts (TASK-332, edge case E-11)", () =>
       screen.queryByRole("button", { name: dict.orderStatus.reloadCta }),
     ).not.toBeInTheDocument();
   });
+
+  // TASK-2048 / AD-ORD-96: the way out of a spent promo code is a copy without it.
+  it.each([
+    "DISCOUNT_MAX_REDEMPTIONS_REACHED",
+    "DISCOUNT_USER_LIMIT_REACHED",
+    "DISCOUNT_NOT_FOUND",
+  ])("offers «Створити копію» beside the %s refusal", async (code) => {
+    stubOrder({ status: "CANCELLED" });
+    stubTransitions(["PENDING"]);
+    stubStatusPatch(() =>
+      HttpResponse.json(
+        { statusCode: 409, error: code, message: "refused" },
+        { status: 409 },
+      ),
+    );
+
+    renderSelect();
+    await openPicker();
+    await userEvent.click(
+      await screen.findByRole("menuitem", {
+        name: orderStatusLabel("PENDING"),
+      }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(dict.orderStatus.promoCopyHint);
+    expect(
+      within(alert).getByRole("link", { name: dict.orders.copyAction }),
+    ).toHaveAttribute("href", `/orders/new?copyOf=${ORDER_ID}`);
+  });
+
+  it("offers no copy beside any other refusal", async () => {
+    stubOrder({ status: "CANCELLED" });
+    stubTransitions(["PENDING"]);
+    stubStatusPatch(() =>
+      HttpResponse.json(
+        { statusCode: 409, error: "ORDER_STALE", message: "stale" },
+        { status: 409 },
+      ),
+    );
+
+    renderSelect();
+    await openPicker();
+    await userEvent.click(
+      await screen.findByRole("menuitem", {
+        name: orderStatusLabel("PENDING"),
+      }),
+    );
+
+    await screen.findByRole("alert");
+    expect(
+      screen.queryByRole("link", { name: dict.orders.copyAction }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 /**
@@ -549,7 +605,7 @@ describe("OrderStatusSelect — menu-button and next step (TASK-1046)", () => {
     );
     expect(
       allowed.getAllByRole("menuitem").map((item) => item.textContent),
-    ).toEqual(["В обробці", "Відправлено", "Доставлено", "Скасовано"]);
+    ).toEqual(["В обробці", "Відправлено", "Отримано покупцем", "Скасовано"]);
 
     const unavailable = within(
       screen.getByRole("group", { name: dict.orderStatus.menuUnavailable }),
@@ -614,6 +670,46 @@ describe("OrderStatusSelect — menu-button and next step (TASK-1046)", () => {
 
     await waitFor(() => expect(patch.bodies).toHaveLength(1));
     expect(patch.bodies[0]).toMatchObject({ status: "DELIVERED" });
+  });
+
+  it("words a pickup order's ship step «Готово до видачі», in the button and the menu (TASK-2052)", async () => {
+    stubOrder({ status: "CONFIRMED", deliveryMethod: "PICKUP" });
+    server.use(
+      http.get("*/api/admin/orders/:orderId/allowed-transitions", () =>
+        HttpResponse.json({
+          data: {
+            current: "CONFIRMED",
+            allowed: ["PROCESSING", "SHIPPED", "CANCELLED"],
+            updatedAt: "2026-06-01T10:00:00.000Z",
+          },
+        }),
+      ),
+    );
+    const patch = stubStatusPatch(() =>
+      HttpResponse.json({ data: { id: ORDER_ID } }),
+    );
+    renderSelect();
+
+    const primary = await screen.findByRole("button", {
+      name: dict.orderStatus.nextPickupReady,
+    });
+    expect(
+      screen.queryByRole("button", { name: dict.orderStatus.nextShip }),
+    ).not.toBeInTheDocument();
+
+    await openPicker();
+    const allowed = within(
+      screen.getByRole("group", { name: dict.orderStatus.menuAllowed }),
+    );
+    expect(
+      allowed.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual(["В обробці", "Готово до видачі", "Скасовано"]);
+    await userEvent.keyboard("{Escape}");
+
+    // Same move underneath — no new status exists.
+    await userEvent.click(primary);
+    await waitFor(() => expect(patch.bodies).toHaveLength(1));
+    expect(patch.bodies[0]).toMatchObject({ status: "SHIPPED" });
   });
 
   it("offers no primary step the server does not allow", async () => {

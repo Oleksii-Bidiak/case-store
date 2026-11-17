@@ -1213,3 +1213,95 @@ describe("OrderDetailView — the card by mockup (TASK-1046)", () => {
     expect(container.querySelector("#order-status")).not.toBeNull();
   });
 });
+
+// TASK-2048: «Створити копію» and the links between an original and its copies.
+describe("OrderDetailView — order copy (TASK-2048)", () => {
+  const ORIGINAL = "7c1e9a42-0000-4000-8000-000000000001";
+  const COPY = "a1b2c3d4-0000-4000-8000-000000000002";
+
+  function serveOrder(extra: Record<string, unknown>) {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: { ...makeOrder(undefined), copiedFromId: null, ...extra },
+        }),
+      ),
+    );
+  }
+
+  it.each(["PENDING", "CANCELLED", "DELIVERED"])(
+    "offers «Створити копію» on a %s order",
+    async (status) => {
+      serveOrder({ id: ORIGINAL, status });
+      renderWithProviders(<OrderDetailView orderId={ORIGINAL} />, {
+        auth: { permissions: ["orders:read", "orders:write"] },
+      });
+
+      expect(
+        await screen.findByRole("link", { name: dict.orders.copyAction }),
+      ).toHaveAttribute("href", `/orders/new?copyOf=${ORIGINAL}`);
+    },
+  );
+
+  it("offers no copy without orders:write", async () => {
+    serveOrder({ id: ORIGINAL });
+    renderWithProviders(<OrderDetailView orderId={ORIGINAL} />, {
+      auth: { permissions: ["orders:read"] },
+    });
+
+    await screen.findByText(dict.orders.itemsHeading);
+    expect(
+      screen.queryByRole("link", { name: dict.orders.copyAction }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("names the original on a copy, as a link", async () => {
+    serveOrder({ id: COPY, copiedFromId: ORIGINAL, copyIds: [] });
+    renderWithProviders(<OrderDetailView orderId={COPY} />);
+
+    const link = await screen.findByRole("link", { name: "#7C1E9A42" });
+    expect(link).toHaveAttribute("href", `/orders/${ORIGINAL}`);
+    expect(link.parentElement).toHaveTextContent(dict.orders.copyOf);
+  });
+
+  it("says the original was replaced by the copy that cancelled it", async () => {
+    const OTHER = "b2c3d4e5-0000-4000-8000-000000000003";
+    serveOrder({
+      id: ORIGINAL,
+      status: "CANCELLED",
+      copyIds: [COPY, OTHER],
+      replacedById: COPY,
+    });
+    renderWithProviders(<OrderDetailView orderId={ORIGINAL} />);
+
+    const link = await screen.findByRole("link", { name: "#A1B2C3D4" });
+    expect(link).toHaveAttribute("href", `/orders/${COPY}`);
+    expect(link.parentElement).toHaveTextContent(dict.orders.replacedBy);
+    // Any other copy is just a copy.
+    const other = screen.getByRole("link", { name: "#B2C3D4E5" });
+    expect(other.parentElement).toHaveTextContent(dict.orders.copiesLabel);
+    expect(other.parentElement).not.toHaveTextContent(dict.orders.replacedBy);
+  });
+
+  it("lists a copy of an order cancelled earlier as a plain copy", async () => {
+    serveOrder({
+      id: ORIGINAL,
+      status: "CANCELLED",
+      copyIds: [COPY],
+      replacedById: null,
+    });
+    renderWithProviders(<OrderDetailView orderId={ORIGINAL} />);
+
+    const link = await screen.findByRole("link", { name: "#A1B2C3D4" });
+    expect(link.parentElement).toHaveTextContent(dict.orders.copiesLabel);
+    expect(screen.queryByText(dict.orders.replacedBy)).not.toBeInTheDocument();
+  });
+
+  it("lists the copies of an original that stayed live", async () => {
+    serveOrder({ id: ORIGINAL, status: "PENDING", copyIds: [COPY] });
+    renderWithProviders(<OrderDetailView orderId={ORIGINAL} />);
+
+    const link = await screen.findByRole("link", { name: "#A1B2C3D4" });
+    expect(link.parentElement).toHaveTextContent(dict.orders.copiesLabel);
+  });
+});

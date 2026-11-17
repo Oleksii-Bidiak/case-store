@@ -33,6 +33,10 @@ import {
   type OrderPaymentExpiredMailPayload,
 } from './templates/order-payment-expired.template';
 import {
+  buildOrderReplacedEmail,
+  type OrderReplacedMailPayload,
+} from './templates/order-replaced.template';
+import {
   buildEmailChangeConfirmEmail,
   buildEmailChangeNoticeEmail,
   type EmailChangeConfirmMailPayload,
@@ -310,6 +314,28 @@ export class MailService {
     }
 
     const template = buildOrderPaymentExpiredEmail(payload);
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
+   * Render and send «замовлення замінено» (TASK-2048) from a stored outbox
+   * payload. No-op when mail is disabled, throwing on transport failure so the
+   * outbox worker retries.
+   */
+  async sendOrderReplacedPayload(payload: OrderReplacedMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping order-replaced notice to ${payload.to}`);
+      return;
+    }
+
+    const template = buildOrderReplacedEmail(payload);
 
     await this.getTransporter().sendMail({
       from: this.from,

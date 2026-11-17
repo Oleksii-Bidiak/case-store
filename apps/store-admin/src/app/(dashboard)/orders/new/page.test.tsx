@@ -5,7 +5,9 @@ import NewOrderPage from "./page";
 // The form itself is never reached in these tests; stub the view so the page's
 // own decision is the only thing under test.
 jest.mock("@/widgets", () => ({
-  OrderCreateView: () => <p>Форма нового замовлення</p>,
+  OrderCreateView: ({ copyOf }: { copyOf?: string }) => (
+    <p>Форма нового замовлення{copyOf ? ` · копія ${copyOf}` : ""}</p>
+  ),
 }));
 
 /**
@@ -14,10 +16,13 @@ jest.mock("@/widgets", () => ({
  * submit.
  */
 describe("NewOrderPage — orders:write gate (TASK-715)", () => {
-  it("refuses a manager holding only orders:read, and names the right", () => {
-    renderWithProviders(<NewOrderPage />, {
-      auth: { permissions: ["orders:read"] },
-    });
+  it("refuses a manager holding only orders:read, and names the right", async () => {
+    renderWithProviders(
+      await NewOrderPage({ searchParams: Promise.resolve({}) }),
+      {
+        auth: { permissions: ["orders:read"] },
+      },
+    );
 
     expect(
       screen.queryByText("Форма нового замовлення"),
@@ -30,12 +35,29 @@ describe("NewOrderPage — orders:write gate (TASK-715)", () => {
     );
   });
 
-  it("renders the form for a manager holding orders:write", () => {
-    renderWithProviders(<NewOrderPage />, {
-      auth: { permissions: ["orders:read", "orders:write"] },
-    });
+  it("renders the form for a manager holding orders:write", async () => {
+    renderWithProviders(
+      await NewOrderPage({ searchParams: Promise.resolve({}) }),
+      {
+        auth: { permissions: ["orders:read", "orders:write"] },
+      },
+    );
 
     expect(screen.getByText("Форма нового замовлення")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  // TASK-2048: «Створити копію» opens the form at ?copyOf=<id>.
+  it("hands ?copyOf to the view", async () => {
+    renderWithProviders(
+      await NewOrderPage({
+        searchParams: Promise.resolve({ copyOf: "order-1" }),
+      }),
+      { auth: { permissions: ["orders:read", "orders:write"] } },
+    );
+
+    expect(
+      screen.getByText("Форма нового замовлення · копія order-1"),
+    ).toBeInTheDocument();
   });
 });

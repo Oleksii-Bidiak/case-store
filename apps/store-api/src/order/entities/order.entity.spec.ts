@@ -291,6 +291,18 @@ describe('OrderEntity.fromPrisma — ledger money (R2 A4)', () => {
     });
   });
 
+  it('refundedAfterCancel: money moved on to a copy did not go back (TASK-2048)', () => {
+    const cancelled = { status: OrderStatus.CANCELLED, paidKop: 100_000 };
+    expect(
+      OrderEntity.fromPrisma(ledger({ ...cancelled, refundedKop: 100_000, offsetOutKop: 100_000 }))
+        .refundedAfterCancel,
+    ).toBe(false);
+    expect(
+      OrderEntity.fromPrisma(ledger({ ...cancelled, refundedKop: 100_000, offsetOutKop: 30_000 }))
+        .refundedAfterCancel,
+    ).toBe(true);
+  });
+
   it('refundedAfterCancel: a CANCELLED order with money sent back (TASK-1970)', () => {
     const cancelled = { status: OrderStatus.CANCELLED, paidKop: 100_000 };
     expect(
@@ -317,5 +329,60 @@ describe('OrderEntity.fromPrisma — ledger money (R2 A4)', () => {
 
   it('leaves refundedTotal absent on reads that did not join the returns', () => {
     expect(OrderEntity.fromPrisma(ledger({ refundedKop: 47_222 })).refundedTotal).toBeUndefined();
+  });
+});
+
+/** TASK-2048: «Копія #старе» on the copy, «Замінено на #нове» on the original. */
+describe('OrderEntity — copy links (TASK-2048)', () => {
+  it('names the original of a copy', () => {
+    const entity = OrderEntity.fromPrisma(buildOrder({ copiedFromId: 'order-0' }));
+
+    expect(entity.copiedFromId).toBe('order-0');
+  });
+
+  it('reads an order that is not a copy as null', () => {
+    expect(OrderEntity.fromPrisma(buildOrder()).copiedFromId).toBeNull();
+  });
+
+  it('lists the copies on reads that joined them, oldest first as read', () => {
+    const entity = OrderEntity.fromPrisma(buildOrder({ copies: [{ id: 'c-1' }, { id: 'c-2' }] }));
+
+    expect(entity.copyIds).toEqual(['c-1', 'c-2']);
+  });
+
+  it('says nothing about copies on reads that did not join them', () => {
+    expect(OrderEntity.fromPrisma(buildOrder()).copyIds).toBeUndefined();
+  });
+
+  // Verifier finding: «Замінено на» names the copy whose «Скасувати #старе»
+  // cancelled this order — not just any copy of a cancelled order.
+  describe('replacedById', () => {
+    const at = (iso: string) => new Date(iso);
+    const copies = [
+      { id: 'c-before', createdAt: at('2026-11-16T10:00:00Z') },
+      { id: 'c-replacer', createdAt: at('2026-11-16T11:00:00Z') },
+      { id: 'c-later', createdAt: at('2026-11-16T12:00:00Z') },
+    ];
+
+    it('is the first copy made with (or after) the copy-cancel of this order', () => {
+      const entity = OrderEntity.fromPrisma(
+        buildOrder({
+          status: OrderStatus.CANCELLED,
+          copies,
+          statusHistory: [{ changedAt: at('2026-11-16T11:00:00Z') }],
+        }),
+      );
+
+      expect(entity.replacedById).toBe('c-replacer');
+      expect(entity.copyIds).toEqual(['c-before', 'c-replacer', 'c-later']);
+    });
+
+    it('is null for an order no copy cancelled, even a cancelled one with copies', () => {
+      expect(
+        OrderEntity.fromPrisma(
+          buildOrder({ status: OrderStatus.CANCELLED, copies, statusHistory: [] }),
+        ).replacedById,
+      ).toBeNull();
+    });
   });
 });

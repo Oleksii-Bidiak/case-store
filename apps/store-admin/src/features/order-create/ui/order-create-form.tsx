@@ -8,6 +8,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Controller,
@@ -22,8 +23,11 @@ import { CircleCheckIcon, CircleIcon } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
   CreateManualOrderDtoPaymentMethod,
+  formatOrderNumber,
   getAdminOrderControllerFindAllQueryKey,
+  getAdminOrderControllerFindByIdQueryKey,
   useAdminOrderControllerCreate,
+  type OrderCopyDraftEntity,
 } from "@/entities/order";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import {
@@ -51,7 +55,13 @@ import {
 } from "@/shared/ui";
 import { PhoneInput } from "@/shared/ui/phone-input";
 import { dict } from "@/shared/config";
-import { apiErrorStatus, cn, countLabel, formatCurrency } from "@/shared/lib";
+import {
+  apiErrorStatus,
+  cn,
+  countLabel,
+  formatCurrency,
+  formatKop,
+} from "@/shared/lib";
 import { applyServerFieldErrors } from "@/shared/lib/form-errors";
 import { EMAIL_MAX_LENGTH } from "@/shared/lib/form-fields";
 import {
@@ -74,6 +84,11 @@ import {
   readCreateOrderRefusal,
   type CreateOrderRefusal,
 } from "../model/create-order-error";
+import {
+  copyDraftCustomer,
+  copyDraftLines,
+  copyDraftToFormValues,
+} from "../model/copy-draft";
 import { OrderLinePicker } from "./order-line-picker";
 import { OrderCustomerPicker } from "./order-customer-picker";
 
@@ -189,10 +204,20 @@ function errorLinksOf(
  * recipient. A missing surname is therefore an error under the client's
  * «Прізвище», and the checkbox is the operator's alone: nothing unticks it.
  *
- * This is a CREATE form, so forms.md Rule 2 does not bite: nothing async seeds
- * it. The picked lines are local state — a list with its own add/remove/qty.
+ * The picked lines are local state — a list with its own add/remove/qty.
+ *
+ * «Створити копію» (TASK-2048): with `copyDraft` the form starts from an
+ * original — async server data, so forms.md applies: the RHF values are
+ * `reset()` once per original id (Rule 2b), the lines, the picked account and
+ * the «Скасувати #старе» choice are re-seeded by a render-time guard on the
+ * same id (Rule 1a). A refetch of the same original never clobbers edits.
  */
-export function OrderCreateForm() {
+export function OrderCreateForm({
+  copyDraft,
+}: {
+  /** The original of a copy (`GET /admin/orders/:id/copy-draft`). */
+  copyDraft?: OrderCopyDraftEntity;
+} = {}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const createOrder = useAdminOrderControllerCreate();
@@ -213,10 +238,40 @@ export function OrderCreateForm() {
     emailed: boolean;
   } | null>(null);
 
+  // TASK-2048: «Скасувати #старе — замінено», ticked while it is offered.
+  const [cancelOriginal, setCancelOriginal] = useState(false);
+  // Rule 1a: the local state follows a NEW original, never a refetch of it.
+  const copyId = copyDraft?.sourceOrderId ?? null;
+  const [seededCopyId, setSeededCopyId] = useState<string | null>(null);
+  if (copyDraft && copyId !== seededCopyId) {
+    setSeededCopyId(copyId);
+    setLines(copyDraftLines(copyDraft));
+    setCustomer(copyDraftCustomer(copyDraft));
+    setCancelOriginal(copyDraft.canCancelOriginal);
+  }
+
   const form = useForm<CreateOrderFormValues>({
     resolver: zodResolver(createOrderSchema),
     defaultValues: CREATE_ORDER_DEFAULTS,
   });
+
+  // Rule 2b: the form values are reset once per original id.
+  const resetFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!copyDraft || resetFor.current === copyDraft.sourceOrderId) return;
+    resetFor.current = copyDraft.sourceOrderId;
+    const seeded = copyDraftToFormValues(copyDraft);
+    form.reset(seeded);
+    // What the account seeded is the picker's own, as if it had been picked.
+    prefilled.current = copyDraft.userId
+      ? {
+          contactFirstName: seeded.contactFirstName,
+          contactLastName: seeded.contactLastName,
+          contactPhone: seeded.contactPhone,
+          contactEmail: seeded.contactEmail,
+        }
+      : {};
+  }, [copyDraft, form]);
 
   // `useWatch`, not `form.watch` — memoization-safe. The summary's checklist
   // reads most of the form, so the whole value set is watched once here.
@@ -332,12 +387,32 @@ export function OrderCreateForm() {
 
     setRefusal(null);
     createOrder.mutate(
-      { data: createOrderValuesToDto(formValues, lines, pickedPoint) },
+      {
+        data: createOrderValuesToDto(
+          formValues,
+          lines,
+          pickedPoint,
+          copyDraft
+            ? {
+                copyOfOrderId: copyDraft.sourceOrderId,
+                cancelOriginal: copyDraft.canCancelOriginal && cancelOriginal,
+              }
+            : undefined,
+        ),
+      },
       {
         onSuccess: (response) => {
           void queryClient.invalidateQueries({
             queryKey: getAdminOrderControllerFindAllQueryKey(),
           });
+          // TASK-2048: the original changed too (cancelled, «Замінено на»).
+          if (copyDraft) {
+            void queryClient.invalidateQueries({
+              queryKey: getAdminOrderControllerFindByIdQueryKey(
+                copyDraft.sourceOrderId,
+              ),
+            });
+          }
           // TASK-400: a new PENDING order moves the needs-action badge.
           void queryClient.invalidateQueries({
             queryKey: getAdminDashboardControllerGetNeedsActionQueryKey(),
@@ -457,6 +532,13 @@ export function OrderCreateForm() {
       noValidate
     >
       <div className="flex min-w-0 flex-col gap-6 lg:col-span-2">
+        {copyDraft ? (
+          <CopyOrigin
+            draft={copyDraft}
+            cancelOriginal={cancelOriginal}
+            onCancelOriginalChange={setCancelOriginal}
+          />
+        ) : null}
         <Section number={1} title={t.customerHeading} id={CUSTOMER_ANCHOR}>
           <Tabs
             value={customerMode}
@@ -808,6 +890,89 @@ export function OrderCreateForm() {
         </Button>
       </aside>
     </form>
+  );
+}
+
+/**
+ * «Створити копію» (TASK-2048): which order this copies, what could not be
+ * copied whole, the money that will follow, and «Скасувати #старе — замінено»
+ * — offered (and ticked) only while the original is pre-shipment.
+ */
+function CopyOrigin({
+  draft,
+  cancelOriginal,
+  onCancelOriginalChange,
+}: {
+  draft: OrderCopyDraftEntity;
+  cancelOriginal: boolean;
+  onCancelOriginalChange: (checked: boolean) => void;
+}) {
+  const number = formatOrderNumber(draft.sourceOrderId);
+  return (
+    <section
+      aria-labelledby="order-create-copy-heading"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4 md:p-5"
+    >
+      <h3
+        id="order-create-copy-heading"
+        className="text-base font-semibold text-foreground"
+      >
+        <Link
+          href={`/orders/${draft.sourceOrderId}`}
+          className="rounded-xs outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          {t.copyHeading(number)}
+        </Link>
+      </h3>
+      <p className="text-sm text-muted-foreground">{t.copyIntro}</p>
+      {draft.dropped.length ? (
+        <div
+          role="alert"
+          aria-labelledby="order-create-copy-dropped"
+          className="flex flex-col gap-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm text-foreground"
+        >
+          <p id="order-create-copy-dropped" className="font-semibold">
+            {t.copyDroppedTitle}
+          </p>
+          <ul className="list-disc pl-5">
+            {draft.dropped.map((line) => (
+              <li key={`${line.productId}-${line.reason}`}>
+                {t.copyDroppedLine(
+                  line.productName,
+                  line.requested,
+                  line.copied,
+                )}{" "}
+                <span className="text-muted-foreground">
+                  ({t.copyDropReasons[line.reason]})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {draft.heldKop > 0 ? (
+        <p className="text-sm text-foreground">
+          {t.copyHeld(formatKop(draft.heldKop))}
+        </p>
+      ) : null}
+      {draft.canCancelOriginal ? (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="order-create-cancel-original"
+              checked={cancelOriginal}
+              onCheckedChange={(checked) =>
+                onCancelOriginalChange(checked === true)
+              }
+            />
+            <Label htmlFor="order-create-cancel-original">
+              {t.copyCancelOriginal(number)}
+            </Label>
+          </div>
+          <p className="text-xs text-muted-foreground">{t.copyCancelHint}</p>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

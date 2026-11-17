@@ -64,6 +64,8 @@ import {
   invalidTransitionError,
   reviveRefundedPaymentError,
   staleOrderError,
+  copyCustomerChangedError,
+  copyOriginalNotCancellableError,
 } from './order.errors';
 import {
   AddonApplicabilityResolver,
@@ -103,7 +105,16 @@ import type {
   ProviderRefundRequestInput,
   PlacedOrder,
   ShippingAddressData,
+  OrderCopySource,
 } from './order.types';
+import {
+  copyBindsOriginalCustomer,
+  isSameCopyCustomer,
+  planCopyLines,
+  releasedQuantities,
+  releasesStockOnCopy,
+} from './order-copy';
+import { OrderCopyDraftEntity } from './entities/order-copy-draft.entity';
 import type { PaymentApplyResult, PaymentEventInput } from '../payment';
 // eslint-disable-next-line local/no-deep-module-import -- cycle: payment barrel > payment.module > order barrel > this file
 import { PaymentOutcome } from '../payment/payment.types';
@@ -1830,12 +1841,34 @@ export class OrderService {
       );
     }
 
+    // TASK-2048 «Створити копію»: the original first — a 404 or a 409 «already
+    // shipped» is the answer before anything about the new order is judged.
+    const cancelOriginal = dto.cancelOriginal === true;
+    const copySource = dto.copyOfOrderId
+      ? await this.loadCopySource(dto.copyOfOrderId, cancelOriginal)
+      : null;
+    // A copy that cancels the original or takes its money answers to the
+    // original's customer: the offset and the «замінено» letter must not reach
+    // a different buyer, and the one who paid must not be left unaware.
+    if (
+      copySource &&
+      copyBindsOriginalCustomer(copySource, cancelOriginal) &&
+      !isSameCopyCustomer(copySource, { userId: dto.userId ?? null, contact: dto.contact ?? null })
+    ) {
+      throw copyCustomerChangedError();
+    }
+    // What the original's cancel puts back on the shelf before the copy reserves.
+    const released =
+      copySource && releasesStockOnCopy(copySource, cancelOriginal)
+        ? releasedQuantities(copySource.items)
+        : new Map<string, number>();
+
+    const account = dto.userId ? await this.userRepository.findById(dto.userId) : null;
     if (dto.userId) {
-      const user = await this.userRepository.findById(dto.userId);
-      if (!user) {
+      if (!account) {
         throw new BadRequestException('That customer account does not exist');
       }
-      if (!user.isActive) {
+      if (!account.isActive) {
         throw new ForbiddenException('That customer account is deactivated');
       }
     }
@@ -1861,9 +1894,10 @@ export class OrderService {
       if (!product.isActive || !isCategoryOnSale(product.category)) {
         throw new BadRequestException(`Product "${product.name}" is no longer available`);
       }
-      if (line.quantity > product.stock) {
+      const available = product.stock + (released.get(line.productId) ?? 0);
+      if (line.quantity > available) {
         throw new BadRequestException(
-          `Insufficient stock for "${product.name}" — ${product.stock} available`,
+          `Insufficient stock for "${product.name}" — ${available} available`,
         );
       }
 
@@ -1882,26 +1916,72 @@ export class OrderService {
     const accessToken = generateGuestToken();
     const accessUrl = this.buildGuestStatusUrl(accessToken);
 
-    const order = await this.orderRepository.createManual(
-      {
-        userId: dto.userId ?? null,
-        ...(dto.contact ? { guest: dto.contact } : {}),
-        accessTokenHash: hashGuestToken(accessToken),
-        items,
-        shippingAddress: delivery.shippingAddress,
-        deliveryMethod: delivery.deliveryMethod,
-        ...(delivery.pickupPointId ? { pickupPointId: delivery.pickupPointId } : {}),
-        shippingCost: delivery.price(sumLineCents(items)),
-        ...(dto.notes ? { notes: dto.notes } : {}),
-        ...(dto.internalNotes ? { internalNotes: dto.internalNotes } : {}),
-        ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
-        // An operator can take a phone order and send a payment link, so a manual
-        // order needs the same reservation deadline as a storefront one — its
-        // stock must expire rather than be held forever by a link nobody opened.
-        reservationExpiresAt: this.resolveReservationDeadline(paymentMethod),
-      },
-      adminUserId,
-    );
+    const params = {
+      userId: dto.userId ?? null,
+      ...(dto.contact ? { guest: dto.contact } : {}),
+      accessTokenHash: hashGuestToken(accessToken),
+      items,
+      shippingAddress: delivery.shippingAddress,
+      deliveryMethod: delivery.deliveryMethod,
+      ...(delivery.pickupPointId ? { pickupPointId: delivery.pickupPointId } : {}),
+      shippingCost: delivery.price(sumLineCents(items)),
+      ...(dto.notes ? { notes: dto.notes } : {}),
+      ...(dto.internalNotes ? { internalNotes: dto.internalNotes } : {}),
+      ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
+      // An operator can take a phone order and send a payment link, so a manual
+      // order needs the same reservation deadline as a storefront one — its
+      // stock must expire rather than be held forever by a link nobody opened.
+      reservationExpiresAt: this.resolveReservationDeadline(paymentMethod),
+    };
+
+    // TASK-2048: a copy cancels the original (when asked) and moves its money in
+    // the same transaction as its own creation — see `createManualCopy`.
+    // «Замовлення #старе замінено на #нове» is queued INSIDE that transaction:
+    // the letter exists exactly when the replacement does. Same recipient rule
+    // as `findRecipient`: the contact email, otherwise the account's.
+    const replacedTo = dto.contact?.email
+      ? { email: dto.contact.email, name: dto.contact.name }
+      : account
+        ? { email: account.email, name: account.firstName ?? undefined }
+        : null;
+    const copied = copySource
+      ? await this.orderRepository.createManualCopy(
+          params,
+          { sourceOrderId: copySource.id, cancelOriginal },
+          adminUserId,
+          async (tx, created, { replaced }) => {
+            if (!replaced || !replacedTo) return;
+            await this.mailOutbox.enqueueOrderReplaced(
+              {
+                to: replacedTo.email,
+                ...(replacedTo.name ? { customerName: replacedTo.name } : {}),
+                oldOrderId: copySource.id,
+                newOrderId: created.id,
+                // A guest's only way to the new order; an account has its cabinet.
+                ...(!dto.userId && accessUrl ? { orderStatusUrl: accessUrl } : {}),
+              },
+              tx,
+            );
+          },
+        )
+      : null;
+    const order = copied
+      ? copied.order
+      : await this.orderRepository.createManual(params, adminUserId);
+
+    if (copied && copySource) {
+      this.logger.info(
+        {
+          event: 'order.copied',
+          orderId: order.id,
+          sourceOrderId: copySource.id,
+          replaced: copied.replaced,
+          offsetKop: copied.offsetKop,
+          adminUserId,
+        },
+        'Operator created a copy of an order',
+      );
+    }
 
     this.logger.info(
       {
@@ -1942,6 +2022,90 @@ export class OrderService {
     }
 
     return { order: entity, accessUrl };
+  }
+
+  /**
+   * «Створити копію» (TASK-2048): the prefill of `/orders/new?copyOf=<id>` —
+   * the original's customer, delivery and lines at TODAY's price, with what
+   * could not be copied whole listed. No promo code: a manual order has none,
+   * and the original's is released with its cancel.
+   *
+   * @throws NotFoundException for an unknown or deleted order.
+   */
+  async adminGetCopyDraft(orderId: string): Promise<OrderCopyDraftEntity> {
+    const source = await this.orderRepository.findCopySource(orderId);
+    if (!source) {
+      throw new NotFoundException(`Order ${orderId} not found`);
+    }
+
+    const canCancelOriginal = PRE_SHIPMENT_STATUSES.has(source.status);
+    // The form ticks «Скасувати» whenever it is offered, so the draft counts the
+    // units that cancel gives back.
+    const released = releasesStockOnCopy(source, canCancelOriginal)
+      ? releasedQuantities(source.items)
+      : new Map<string, number>();
+    const { lines, dropped } = planCopyLines(source.items, { released });
+    const address = (source.shippingAddress as Partial<ShippingAddressData> | null) ?? null;
+
+    const draft = new OrderCopyDraftEntity();
+    draft.sourceOrderId = source.id;
+    draft.sourceStatus = source.status;
+    draft.canCancelOriginal = canCancelOriginal;
+    draft.userId = source.userId;
+    draft.customer = source.user
+      ? {
+          id: source.user.id,
+          email: source.user.email,
+          firstName: source.user.firstName,
+          lastName: source.user.lastName,
+          phone: source.user.phone,
+        }
+      : null;
+    draft.contact =
+      !source.userId && (source.guestPhone || source.guestName)
+        ? {
+            name: source.guestName ?? '',
+            phone: source.guestPhone ?? '',
+            email: source.guestEmail ?? null,
+          }
+        : null;
+    draft.paymentMethod = source.paymentMethod;
+    draft.deliveryMethod = source.deliveryMethod;
+    draft.pickupPointId = source.pickupPointId;
+    draft.shippingAddress = address
+      ? {
+          firstName: address.firstName ?? '',
+          lastName: address.lastName ?? '',
+          phone: address.phone ?? null,
+          city: address.city ?? '',
+          address1: address.address1 ?? '',
+          postalCode: address.postalCode ?? null,
+          npCityRef: address.npCityRef ?? null,
+          npWarehouseRef: address.npWarehouseRef ?? null,
+        }
+      : null;
+    // Only a cost the operator agreed; «to be quoted» stays to be quoted.
+    draft.shippingCost =
+      source.deliveryMethod === DeliveryMethod.OTHER && !address?.shippingCostPending
+        ? source.shippingCost.toString()
+        : null;
+    draft.notes = source.notes;
+    draft.items = lines;
+    draft.dropped = dropped;
+    draft.heldKop = Math.max(0, source.paidKop - source.refundedKop);
+    return draft;
+  }
+
+  /** The original of a copy: 404 unknown, 409 when «Скасувати» meets a shipped one. */
+  private async loadCopySource(orderId: string, cancelOriginal: boolean): Promise<OrderCopySource> {
+    const source = await this.orderRepository.findCopySource(orderId);
+    if (!source) {
+      throw new NotFoundException(`Order ${orderId} not found`);
+    }
+    if (cancelOriginal && !PRE_SHIPMENT_STATUSES.has(source.status)) {
+      throw copyOriginalNotCancellableError(source.status);
+    }
+    return source;
   }
 
   /**
@@ -2161,6 +2325,8 @@ export class OrderService {
         order: {
           id: order.id,
           trackingNumber: order.trackingNumber ?? null,
+          // TASK-1883: a pickup order gets «готове до видачі», not a parcel letter.
+          deliveryMethod: order.deliveryMethod ?? null,
         },
       });
 

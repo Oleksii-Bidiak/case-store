@@ -929,3 +929,44 @@ describe("OrderPaymentBlock — LiqPay attempts, folded", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+// TASK-2048: «Залік» — each half of the pair links the other order, and is
+// never offered «Сторнувати» on its own.
+describe("OrderPaymentBlock — «Залік» of a copy (TASK-2048)", () => {
+  const COPY = "a1b2c3d4-0000-4000-8000-000000000002";
+  const ORIGINAL = "7c1e9a42-0000-4000-8000-000000000001";
+
+  it.each([
+    ["OUT", "OFFSET_TO_ORDER", COPY, m.offsetToOrder("#A1B2C3D4")],
+    ["IN", "OFFSET_FROM_ORDER", ORIGINAL, m.offsetFromOrder("#7C1E9A42")],
+  ])(
+    "links the other order of a %s %s row",
+    async (direction, kind, other, label) => {
+      serveMoney(
+        makeMoney({
+          totals: { paidKop: 50000, balanceKop: 0 },
+          entries: [
+            makeEntry({
+              id: "e-off",
+              direction,
+              kind,
+              counterpartOrderId: other,
+            }),
+          ],
+        }),
+      );
+      renderBlock();
+
+      const [row] = await screen.findAllByTestId("money-entry");
+      expect(within(row).getByRole("link", { name: label })).toHaveAttribute(
+        "href",
+        `/orders/${other}`,
+      );
+      expect(
+        within(row).queryByRole("button", {
+          name: new RegExp(m.reverseAction),
+        }),
+      ).not.toBeInTheDocument();
+    },
+  );
+});

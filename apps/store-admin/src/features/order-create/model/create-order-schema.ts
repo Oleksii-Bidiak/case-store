@@ -444,6 +444,8 @@ export function createOrderValuesToDto(
    * but `AddressDto` refuses an empty city or address line.
    */
   pickupPoint?: { city: string; address: string },
+  /** «Створити копію» (TASK-2048): the original, and whether it is cancelled. */
+  copy?: { copyOfOrderId: string; cancelOriginal: boolean },
 ): CreateManualOrderDto {
   const optional = (value: string) => (value === "" ? undefined : value);
   const isNp = values.deliveryMethod === "NOVA_POSHTA";
@@ -516,6 +518,12 @@ export function createOrderValuesToDto(
     ...(optional(values.notes) ? { notes: values.notes } : {}),
     ...(optional(values.internalNotes)
       ? { internalNotes: values.internalNotes }
+      : {}),
+    ...(copy
+      ? {
+          copyOfOrderId: copy.copyOfOrderId,
+          cancelOriginal: copy.cancelOriginal,
+        }
       : {}),
   };
 }

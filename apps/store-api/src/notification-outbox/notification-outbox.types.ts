@@ -67,6 +67,12 @@ export const ORDER_SHIPPED_MAIL_TYPE = 'order-shipped';
  */
 export const ORDER_PAYMENT_EXPIRED_MAIL_TYPE = 'order-payment-expired';
 
+/**
+ * `NotificationOutbox.type` for «Замовлення #старе замінено на #нове» (TASK-2048): sent
+ * after «Створити копію» replaced a cancelled order with its copy.
+ */
+export const ORDER_REPLACED_MAIL_TYPE = 'order-replaced';
+
 /** Aggregate outcome of a single {@link NotificationOutboxService.dispatchDue} run. */
 export interface DispatchResult {
   /** Rows delivered (or drained as a no-op when mail is disabled). */

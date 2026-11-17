@@ -9,6 +9,7 @@ import {
   type EmailVerificationMailPayload,
   type OrderConfirmationMailPayload,
   type OrderPaymentExpiredMailPayload,
+  type OrderReplacedMailPayload,
   type OrderShippedMailPayload,
   type PasswordResetMailPayload,
 } from '../../mail';
@@ -21,6 +22,7 @@ import {
   ORDER_CONFIRMATION_MAIL_TYPE,
   ORDER_SHIPPED_MAIL_TYPE,
   ORDER_PAYMENT_EXPIRED_MAIL_TYPE,
+  ORDER_REPLACED_MAIL_TYPE,
   PASSWORD_RESET_MAIL_TYPE,
 } from '../notification-outbox.types';
 import type { ChannelHealth, NotificationChannelAdapter } from './notification-channel-adapter';
@@ -86,6 +88,11 @@ export class EmailAdapter implements NotificationChannelAdapter {
       case ORDER_PAYMENT_EXPIRED_MAIL_TYPE:
         await this.mailService.sendOrderPaymentExpiredPayload(
           row.payload as unknown as OrderPaymentExpiredMailPayload,
+        );
+        return;
+      case ORDER_REPLACED_MAIL_TYPE:
+        await this.mailService.sendOrderReplacedPayload(
+          row.payload as unknown as OrderReplacedMailPayload,
         );
         return;
       case ACCOUNT_LOCKED_MAIL_TYPE:

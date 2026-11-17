@@ -1,4 +1,10 @@
-import { OrderStatus, PaymentStatus, Prisma, ReviewTextStatus } from '@prisma/client';
+import {
+  DeliveryMethod,
+  OrderStatus,
+  PaymentStatus,
+  Prisma,
+  ReviewTextStatus,
+} from '@prisma/client';
 import type { UserDiscountRedemption } from '../discount';
 
 /**
@@ -32,6 +38,7 @@ export interface AdminCardOrderRow {
   id: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  deliveryMethod: DeliveryMethod;
   total: Prisma.Decimal;
   createdAt: Date;
 }

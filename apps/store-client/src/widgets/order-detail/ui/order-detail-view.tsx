@@ -186,17 +186,21 @@ function OrderDetailContent({
             status={order.status}
             srLabel={dict.order.orderStatusSr}
           >
-            {dict.order.orderStatusLabels[order.status] ?? order.status}
+            {dict.order.orderStatusLabelFor(order.status, order.deliveryMethod)}
           </OrderStatusBadge>
           {/* «Оплата: …» names itself — no sr prefix needed. */}
           <OrderStatusBadge status={order.paymentStatus}>
-            {dict.order.paymentLabel(order.paymentStatus)}
+            {dict.order.paymentLabel(order.paymentStatus, order)}
           </OrderStatusBadge>
         </div>
       </header>
 
       {open ? (
-        <OrderStatusTimeline status={order.status} placedOn={placedOn} />
+        <OrderStatusTimeline
+          status={order.status}
+          placedOn={placedOn}
+          deliveryMethod={order.deliveryMethod}
+        />
       ) : (
         !panelSaysCancelled && (
           <OrderClosedStrip status={order.status} placedOn={placedOn} />
