@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma';
 import { CatalogueReportService } from './catalogue-report.service';
 import { CatalogueRepository } from './catalogue.repository';
+import { MoneyFlowReportService } from './money-flow-report.service';
+import { MoneyFlowRepository } from './money-flow.repository';
 import { ProductsReportRepository } from './products-report.repository';
 import { ProductsReportService } from './products-report.service';
 import { RegistrationsReportService } from './registrations-report.service';
@@ -38,6 +40,9 @@ import { SalesRepository } from './sales.repository';
     ProductsReportService,
     RegistrationsRepository,
     RegistrationsReportService,
+    // TASK-2395 «Рух коштів» — deliberately without ReportCache (owner decision).
+    MoneyFlowRepository,
+    MoneyFlowReportService,
   ],
   exports: [ReportCache, SalesRepository, ProductsReportRepository],
 })

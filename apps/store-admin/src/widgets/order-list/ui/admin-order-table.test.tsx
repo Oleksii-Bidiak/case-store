@@ -623,6 +623,7 @@ describe("AdminOrderTable — filters in the sheet", () => {
   const SIGNALS: ReadonlyArray<[string, string]> = [
     [dict.orders.overdueChip, "pendingOverdue"],
     [dict.orders.debtChip, "hasDebt"],
+    [dict.orders.owedToCustomerChip, "owedToCustomer"],
     [dict.orders.awaitingPaymentChip, "awaitingPayment"],
     [dict.orders.reservationExpiredChip, "reservationExpired"],
     [dict.orders.unavailableItemsChip, "hasUnavailableItems"],

@@ -12,6 +12,9 @@ import type {
   CategoryReportRowEntity,
   ComparedValueEntity,
   FunnelReportEntity,
+  MoneyFlowEntryEntity,
+  MoneyFlowKindRowEntity,
+  MoneyFlowReportEntity,
   ProductsReportEntity,
   RegistrationsReportEntity,
   ReportPeriodEntity,
@@ -279,5 +282,96 @@ export function registrationsReport(): RegistrationsReportEntity {
       date,
       registrations: index % 5,
     })),
+  };
+}
+
+/* ── Money flow (TASK-2395) ────────────────────────────────────────────── */
+
+type KindRow = MoneyFlowKindRowEntity;
+
+const kindRow = (
+  kind: KindRow["kind"],
+  direction: KindRow["direction"],
+  grossKop: number,
+  reversedKop: number,
+  count: number,
+  requestedKop = 0,
+): KindRow => ({
+  kind,
+  direction,
+  grossKop,
+  reversedKop,
+  netKop: grossKop - reversedKop,
+  count,
+  requestedKop,
+});
+
+/**
+ * Kopecks. In: 358 701,50 ₴ (one NP cash-on-delivery reversed, 1 299 ₴);
+ * out: 19 699 ₴, of which 2 500 ₴ is a LiqPay refund still REQUESTED.
+ */
+export function moneyFlowReport(): MoneyFlowReportEntity {
+  return {
+    period: reportPeriod,
+    rows: [
+      kindRow("LIQPAY_PAYMENT", "IN", 25_000_000, 0, 120),
+      kindRow("COD_NOVA_POSHTA", "IN", 9_000_000, 129_900, 41),
+      kindRow("PAID_AT_POINT", "IN", 1_500_000, 0, 9),
+      kindRow("PAID_TO_COURIER", "IN", 0, 0, 0),
+      kindRow("BANK_TRANSFER", "IN", 500_050, 0, 2),
+      kindRow("LIQPAY_REFUND", "OUT", 1_840_000, 0, 6, 250_000),
+      kindRow("CASH_REFUND", "OUT", 129_900, 0, 1),
+      kindRow("TRANSFER_REFUND", "OUT", 0, 0, 0),
+    ],
+    totals: {
+      inKop: cv(35_870_150, 32_000_000, 12.1),
+      outKop: cv(1_969_900, 1_546_000, 27.4),
+      netKop: cv(33_900_250, 30_454_000, 11.3),
+      requestedOutKop: cv(250_000, 0, null),
+    },
+    balances: {
+      debt: { orders: 3, kop: 459_800 },
+      owedToCustomer: { orders: 2, kop: 129_950 },
+    },
+  };
+}
+
+/** A period with no entry at all; the balances are a snapshot all the same. */
+export function emptyMoneyFlowReport(): MoneyFlowReportEntity {
+  const full = moneyFlowReport();
+  return {
+    ...full,
+    rows: full.rows.map((row) => kindRow(row.kind, row.direction, 0, 0, 0)),
+    totals: {
+      inKop: cv(0, 0, null),
+      outKop: cv(0, 0, null),
+      netKop: cv(0, 0, null),
+      requestedOutKop: cv(0, 0, null),
+    },
+  };
+}
+
+/** One register entry: a LiqPay payment, written the moment it moved. */
+export function moneyFlowEntry(
+  overrides: Partial<MoneyFlowEntryEntity> = {},
+): MoneyFlowEntryEntity {
+  return {
+    id: "entry-1",
+    occurredAt: "2026-09-24T12:00:00.000Z",
+    createdAt: "2026-09-24T12:00:00.000Z",
+    orderId: "ord-1",
+    orderNumber: "AB12CD34",
+    direction: "IN",
+    kind: "LIQPAY_PAYMENT",
+    amountKop: 129_900,
+    signedKop: 129_900,
+    isReversal: false,
+    reversalOfId: null,
+    providerState: null,
+    requested: false,
+    legacy: false,
+    actorName: null,
+    reason: null,
+    ...overrides,
   };
 }

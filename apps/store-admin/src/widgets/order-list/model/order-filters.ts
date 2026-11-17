@@ -24,6 +24,8 @@ const d = dict.orders;
 export const SIGNAL_PARAMS = [
   "pendingOverdue",
   "hasDebt",
+  // TASK-2395: the other side of a debt — the shop owes the customer.
+  "owedToCustomer",
   "awaitingPayment",
   "reservationExpired",
   "hasUnavailableItems",
@@ -39,6 +41,10 @@ export const SIGNAL_LABELS: Record<
 > = {
   pendingOverdue: { label: d.overdueChip, description: d.overdueChipAria },
   hasDebt: { label: d.debtChip, description: d.debtChipAria },
+  owedToCustomer: {
+    label: d.owedToCustomerChip,
+    description: d.owedToCustomerChipAria,
+  },
   awaitingPayment: {
     label: d.awaitingPaymentChip,
     description: d.awaitingPaymentChipAria,

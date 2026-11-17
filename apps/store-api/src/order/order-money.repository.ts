@@ -817,8 +817,11 @@ function assertAmount(amountKop: number): void {
   }
 }
 
-/** Same rule as the returns card: the name, or the readable email (TASK-104). */
-function actorDisplayName(actor: {
+/**
+ * Same rule as the returns card: the name, or the readable email (TASK-104).
+ * Exported for the «Рух коштів» register (TASK-2395), which names the same authors.
+ */
+export function actorDisplayName(actor: {
   email: string;
   originalEmail: string | null;
   firstName: string | null;

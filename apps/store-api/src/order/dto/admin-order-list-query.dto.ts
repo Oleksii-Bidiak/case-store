@@ -275,6 +275,24 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
 
   @ApiProperty({
     description:
+      'Filter to orders the shop owes money back — balanceKop < 0, any status (TASK-2395). ' +
+      'The «Переплата» side of the money flow report: what the order list shows behind its ' +
+      '«owed to customers» number.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
+    return undefined;
+  })
+  @IsBoolean({ message: 'owedToCustomer must be true or false' })
+  owedToCustomer?: boolean;
+
+  @ApiProperty({
+    description:
       'Filter to orders still within their payment window — paymentMethod IN (ONLINE, ' +
       'INSTALLMENTS) AND paymentStatus = PENDING AND reservationExpiresAt in the future. ' +
       'The «Очікує оплати · N хв» mark (TASK-471). BNPL is included because it holds a ' +

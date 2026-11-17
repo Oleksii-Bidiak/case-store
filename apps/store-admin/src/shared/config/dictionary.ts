@@ -4118,6 +4118,11 @@ export const dict = {
     deliveryPickupMapAria: (name: string) =>
       `Відкрити «${name}» на карті (нова вкладка)`,
 
+    // TASK-2395: фільтр-перемикач поруч із «Борг» — замовлення з від'ємним
+    // балансом (переплата або не повернуті гроші), будь-якого статусу.
+    owedToCustomerChip: "Винні покупцю",
+    owedToCustomerChipAria:
+      "Показати лише замовлення, за якими магазин винен покупцю гроші — переплата або ще не повернута сума",
     // --- «Створити копію» (TASK-2048, B-12 тема 7) ---------------------------
     copyAction: "Створити копію",
     // Посилання в шапці картки: копія ← оригінал, оригінал → копії.
@@ -8095,6 +8100,68 @@ export const dict = {
     csvConversionCurrent: "Поточна, %",
     csvConversionPrevious: "Попередня, %",
     csvRegistrationsDay: "Реєстрацій",
+
+    // TASK-2395: «Рух коштів» — з журналів оплат замовлень. Лише з правами
+    // `analytics:revenue` і `payments:read`.
+    moneyFlowTitle: "Рух коштів",
+    moneyFlowSubtitle:
+      "За днем, коли гроші надійшли чи пішли назад, — із журналів оплат замовлень.",
+    moneyFlowInTile: "Надійшло",
+    moneyFlowOutTile: "Повернуто",
+    moneyFlowNetTile: "Рух нетто",
+    moneyFlowRequested: (amount: string) =>
+      `з них очікує підтвердження LiqPay: ${amount}`,
+    moneyFlowKindsAria: "Рух коштів за способами",
+    moneyFlowColKind: "Спосіб",
+    moneyFlowColGross: "Сума",
+    moneyFlowColReversed: "Сторно",
+    moneyFlowColNet: "Нетто",
+    moneyFlowColCount: "Записів",
+    moneyFlowGroupIn: "Надходження",
+    moneyFlowGroupOut: "Повернення",
+    moneyFlowRowLinkAria: (kind: string) => `${kind}: записи за період`,
+    moneyFlowEmpty: "За період руху коштів не було",
+    moneyFlowNowTitle: "Станом на зараз",
+    moneyFlowNowHint: "Не залежить від вибраного періоду.",
+    moneyFlowDebt: "Борг покупців",
+    moneyFlowOwed: "Винні покупцям",
+    moneyFlowBalance: (orders: number, amount: string) =>
+      `${countLabel(orders, ["замовлення", "замовлення", "замовлень"])} · ${amount}`,
+    moneyFlowAllEntries: "Усі записи",
+    moneyFlowFootnote:
+      "Сторно віднімається в день, коли його провели, тож минулий період не змінюється. Повернення через LiqPay, які ще чекають підтвердження, уже враховано в сумах.",
+    moneyFlowForbidden: "У вас немає доступу до руху коштів.",
+    moneyFlowForbiddenHint:
+      "Потрібні права «Виторг і фінансові показники» та «Бачити платежі» — власник видає їх у розділі «Співробітники» → ваша картка → вкладка «Права».",
+    csvDirection: "Напрям",
+    csvRequestedRow: "З них очікує підтвердження LiqPay",
+
+    // Реєстр записів `/analytics/money-flow`.
+    moneyFlowEntriesMetaTitle: "Рух коштів — записи — Адмін",
+    moneyFlowEntriesHeading: "Рух коштів: записи",
+    moneyFlowEntriesIntro:
+      "Кожне надходження й повернення за період — за днем, коли гроші рухалися.",
+    moneyFlowBack: "← До звітів",
+    moneyFlowKindFilter: "Спосіб",
+    moneyFlowKindAll: "Усі способи",
+    moneyFlowColDate: "Дата руху",
+    moneyFlowColOrder: "Замовлення",
+    moneyFlowColIn: "Надійшло",
+    moneyFlowColOut: "Повернуто",
+    moneyFlowColActor: "Автор",
+    moneyFlowColReason: "Причина",
+    moneyFlowColCreated: "Внесено",
+    moneyFlowColAmount: "Сума",
+    moneyFlowColState: "Стан",
+    moneyFlowOrderAria: (number: string) => `Замовлення #${number}`,
+    moneyFlowMarkReversal: "Сторно",
+    moneyFlowMarkRequested: "Очікує LiqPay",
+    moneyFlowMarkRequestedFull: "Очікує підтвердження LiqPay",
+    moneyFlowMarkCreated: (day: string) => `Внесено ${day}`,
+    moneyFlowMarkLegacy: "Перенесено з обліку до R2",
+    moneyFlowEntriesEmpty: "За період записів немає",
+    moneyFlowEntriesEmptyKind: "За період записів цього способу немає",
+    moneyFlowEntriesError: "Не вдалося завантажити записи.",
   },
 
   // Налаштування доставки `/settings/delivery` (план 184 U, TASK-644; макет

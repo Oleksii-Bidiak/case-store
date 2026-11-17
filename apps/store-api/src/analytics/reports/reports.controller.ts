@@ -8,8 +8,12 @@ import {
 } from '../../auth/permissions';
 import { CatalogueReportService } from './catalogue-report.service';
 import { CategoryReportQueryDto } from './dto/category-report-query.dto';
+import { MoneyFlowEntriesQueryDto } from './dto/money-flow-entries-query.dto';
 import { PeriodQueryDto } from './dto/period-query.dto';
 import { BrandReportEntity, CategoryReportEntity } from './entities/catalogue-report.entity';
+import { MoneyFlowEntryEntity } from './entities/money-flow-entry.entity';
+import { MoneyFlowReportEntity } from './entities/money-flow-report.entity';
+import { MoneyFlowReportService } from './money-flow-report.service';
 import { ProductsReportQueryDto } from './dto/products-report-query.dto';
 import { ProductsReportEntity } from './entities/products-report.entity';
 import { SalesReportEntity } from './entities/sales-report.entity';
@@ -43,6 +47,32 @@ class BrandReportEnvelope {
   data!: BrandReportEntity;
 }
 
+class MoneyFlowReportEnvelope {
+  @ApiProperty({ type: MoneyFlowReportEntity })
+  data!: MoneyFlowReportEntity;
+}
+
+class MoneyFlowEntriesPaginationMeta {
+  @ApiProperty({ example: 240 }) total!: number;
+  @ApiProperty({ example: 1 }) page!: number;
+  @ApiProperty({ example: 50 }) limit!: number;
+  @ApiProperty({ example: 5 }) totalPages!: number;
+}
+
+class MoneyFlowEntriesEnvelope {
+  @ApiProperty({ type: [MoneyFlowEntryEntity] }) data!: MoneyFlowEntryEntity[];
+  @ApiProperty({ type: MoneyFlowEntriesPaginationMeta }) meta!: MoneyFlowEntriesPaginationMeta;
+}
+
+/** Shared by both money flow routes: the ledger rules the numbers follow. */
+const MONEY_FLOW_RULES =
+  'Read from the order money ledger. An entry counts on the Kyiv calendar day of its ' +
+  '`occurredAt` (when the money moved). A reversal (сторно) keeps its original’s kind and ' +
+  'direction and is subtracted on ITS own day, so an earlier period never changes. Voided ' +
+  'entries never moved money and are excluded everywhere. LiqPay refunds still REQUESTED are ' +
+  'counted and also reported apart. All amounts are integer kopecks. Requires analytics:read ' +
+  '(the route) plus analytics:revenue AND payments:read, checked before the period. Not cached.';
+
 /**
  * The `/analytics` reports (plan 188, TASK-686…690).
  *
@@ -67,7 +97,64 @@ export class ReportsController {
     private readonly catalogueReportService: CatalogueReportService,
     private readonly productsReportService: ProductsReportService,
     private readonly registrationsReportService: RegistrationsReportService,
+    private readonly moneyFlowReportService: MoneyFlowReportService,
   ) {}
+
+  /** «Рух коштів» — money in and out by ledger kind, with who-owes-whom right now. */
+  @Get('money-flow')
+  @RequirePermission('analytics:read')
+  @ApiOperation({
+    summary: 'Money in and out of the period by ledger kind, with current debts and overpayments',
+    description:
+      MONEY_FLOW_RULES +
+      ' `rows` is always the 8 ledger kinds (IN kinds, then OUT kinds), zero rows included. ' +
+      '`totals` (in, out, net = in − out, requested out) are compared with the previous range. ' +
+      '`balances` is a snapshot as of now, independent of the period: `debt` = DELIVERED orders ' +
+      'with a positive balance (order list `hasDebt=true`), `owedToCustomer` = orders of any ' +
+      'status with a negative balance (order list `owedToCustomer=true`).',
+    operationId: 'getMoneyFlowReport',
+  })
+  @ApiResponse({ status: 200, description: 'Money flow report', type: MoneyFlowReportEnvelope })
+  @ApiResponse({ status: 400, description: 'The period cannot be answered' })
+  @ApiResponse({ status: 401, description: 'Unauthorized — missing or invalid token' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — analytics:read, analytics:revenue and payments:read required',
+  })
+  async getMoneyFlow(
+    @Query() query: PeriodQueryDto,
+    @CurrentActor() actor: PermissionActor,
+  ): Promise<{ data: MoneyFlowReportEntity }> {
+    return { data: await this.moneyFlowReportService.getMoneyFlowReport(query, actor) };
+  }
+
+  /** «Рух коштів» register — the entries behind the report, one page at a time. */
+  @Get('money-flow/entries')
+  @RequirePermission('analytics:read')
+  @ApiOperation({
+    summary: 'The ledger entries of the period, oldest first, optionally of one kind',
+    description:
+      MONEY_FLOW_RULES +
+      ' Ordered by `occurredAt`, then `id`. `signedKop` is negative for a reversal only — the ' +
+      'direction is not folded in (an OUT payout is positive; read it under `direction`). ' +
+      '`requested` flags a LiqPay refund awaiting confirmation; `actorName` is null for LiqPay ' +
+      'and system entries.',
+    operationId: 'getMoneyFlowEntries',
+  })
+  @ApiResponse({ status: 200, description: 'A page of entries', type: MoneyFlowEntriesEnvelope })
+  @ApiResponse({ status: 400, description: 'The period, kind, page or limit cannot be answered' })
+  @ApiResponse({ status: 401, description: 'Unauthorized — missing or invalid token' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — analytics:read, analytics:revenue and payments:read required',
+  })
+  async getMoneyFlowEntries(
+    @Query() query: MoneyFlowEntriesQueryDto,
+    @CurrentActor() actor: PermissionActor,
+  ): Promise<{ data: MoneyFlowEntryEntity[]; meta: MoneyFlowEntriesPaginationMeta }> {
+    const page = await this.moneyFlowReportService.getMoneyFlowEntries(query, actor);
+    return { data: page.items, meta: page.meta };
+  }
 
   /** «Продажі за категоріями» — roots, or the children of `parentId`, each over its subtree. */
   @Get('categories')
