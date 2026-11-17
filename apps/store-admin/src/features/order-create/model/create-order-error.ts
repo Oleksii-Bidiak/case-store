@@ -104,6 +104,14 @@ export function readCreateOrderRefusal(
   ) {
     return { lines: {}, summary: t.copyOriginalGone };
   }
+  // TASK-2048: the copy would cancel the original or take its money, but the
+  // operator changed who it is for — nothing was written.
+  if (
+    apiErrorStatus(error) === 409 &&
+    apiErrorCode(error) === "ORDER_COPY_CUSTOMER_CHANGED"
+  ) {
+    return { lines: {}, summary: t.copyCustomerChanged };
+  }
   if (apiErrorStatus(error) !== 400) return null;
   const message = apiErrorMessage(error) ?? "";
 

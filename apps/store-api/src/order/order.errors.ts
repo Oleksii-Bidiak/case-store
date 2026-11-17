@@ -87,6 +87,12 @@ export const OrderErrorCode = {
    * or cancelled in another tab): nothing is cancelled and no copy is made.
    */
   COPY_ORIGINAL_NOT_CANCELLABLE: 'ORDER_COPY_ORIGINAL_NOT_CANCELLABLE',
+  /**
+   * «Створити копію» that would cancel the original or take its money, made out
+   * to a different customer (TASK-2048): the offset and the «замінено» letter
+   * would reach someone who never paid. A new order is the way to change who buys.
+   */
+  COPY_CUSTOMER_CHANGED: 'ORDER_COPY_CUSTOMER_CHANGED',
 } as const;
 
 export type OrderErrorCode = (typeof OrderErrorCode)[keyof typeof OrderErrorCode];
@@ -173,6 +179,15 @@ export function copyOriginalNotCancellableError(status: OrderStatus): ConflictEx
   return new ConflictException({
     error: OrderErrorCode.COPY_ORIGINAL_NOT_CANCELLABLE,
     message: `The original order is ${status} now and can no longer be cancelled — reload and decide again`,
+  });
+}
+
+/** 409 for a cancelling / money-moving copy made out to another customer (TASK-2048). */
+export function copyCustomerChangedError(): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.COPY_CUSTOMER_CHANGED,
+    message:
+      'A copy that cancels the original or takes its money must keep the same customer — create a new order to sell to someone else',
   });
 }
 

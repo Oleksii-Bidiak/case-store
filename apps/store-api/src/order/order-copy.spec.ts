@@ -1,5 +1,11 @@
 import { OrderStatus } from '@prisma/client';
-import { planCopyLines, releasesStockOnCopy, type CopySourceLine } from './order-copy';
+import {
+  copyBindsOriginalCustomer,
+  isSameCopyCustomer,
+  planCopyLines,
+  releasesStockOnCopy,
+  type CopySourceLine,
+} from './order-copy';
 
 /**
  * TASK-2048 «Створити копію» — which lines of the original make it into the copy
@@ -109,5 +115,69 @@ describe('order-copy', () => {
         expect(releasesStockOnCopy({ status, restockedAt: null }, true)).toBe(false);
       },
     );
+  });
+
+  describe('copyBindsOriginalCustomer', () => {
+    const money = (paidKop: number, refundedKop = 0) => ({ paidKop, refundedKop });
+
+    it('binds every copy that cancels the original', () => {
+      expect(copyBindsOriginalCustomer({ status: OrderStatus.PROCESSING, ...money(0) }, true)).toBe(
+        true,
+      );
+    });
+
+    it('binds a copy of a cancelled original that still holds money', () => {
+      expect(
+        copyBindsOriginalCustomer(
+          { status: OrderStatus.CANCELLED, ...money(50_000, 10_000) },
+          false,
+        ),
+      ).toBe(true);
+    });
+
+    it('leaves free a copy of a cancelled original with nothing held', () => {
+      expect(
+        copyBindsOriginalCustomer(
+          { status: OrderStatus.CANCELLED, ...money(50_000, 50_000) },
+          false,
+        ),
+      ).toBe(false);
+    });
+
+    it('leaves free a copy that keeps a live original live', () => {
+      expect(
+        copyBindsOriginalCustomer({ status: OrderStatus.PENDING, ...money(50_000) }, false),
+      ).toBe(false);
+    });
+  });
+
+  describe('isSameCopyCustomer', () => {
+    const accountOrder = { userId: 'u-1', guestPhone: null, guestEmail: null };
+    const guestOrder = { userId: null, guestPhone: '380671112233', guestEmail: 'a@b.ua' };
+
+    it('keeps an account order with that account', () => {
+      expect(isSameCopyCustomer(accountOrder, { userId: 'u-1' })).toBe(true);
+      expect(isSameCopyCustomer(accountOrder, { userId: 'u-2' })).toBe(false);
+      expect(isSameCopyCustomer(accountOrder, { contact: { phone: '380671112233' } })).toBe(false);
+    });
+
+    it('keeps a guest order with the same phone, whatever its formatting', () => {
+      expect(isSameCopyCustomer(guestOrder, { contact: { phone: '+380 67 111 22 33' } })).toBe(
+        true,
+      );
+      expect(isSameCopyCustomer(guestOrder, { contact: { phone: '380509998877' } })).toBe(false);
+    });
+
+    it('does not let a guest order move onto an account', () => {
+      expect(
+        isSameCopyCustomer(guestOrder, { userId: 'u-1', contact: { phone: '380671112233' } }),
+      ).toBe(false);
+    });
+
+    it('falls back to the email when the original has no phone', () => {
+      const noPhone = { ...guestOrder, guestPhone: null };
+      expect(isSameCopyCustomer(noPhone, { contact: { phone: '1', email: 'a@b.ua' } })).toBe(true);
+      expect(isSameCopyCustomer(noPhone, { contact: { phone: '1', email: 'c@d.ua' } })).toBe(false);
+    });
   });
 });

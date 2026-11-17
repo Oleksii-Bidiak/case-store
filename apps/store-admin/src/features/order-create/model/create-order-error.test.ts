@@ -56,6 +56,25 @@ describe("readCreateOrderRefusal — a copy whose original moved on", () => {
     ).toEqual({ lines: {}, summary: t.copyOriginalGone });
   });
 
+  it("says a cancelling copy must stay with the original's customer", () => {
+    expect(
+      readCreateOrderRefusal(
+        {
+          response: {
+            status: 409,
+            data: {
+              statusCode: 409,
+              error: "ORDER_COPY_CUSTOMER_CHANGED",
+              message:
+                "A copy that cancels the original must keep the same customer",
+            },
+          },
+        },
+        LINES,
+      ),
+    ).toEqual({ lines: {}, summary: t.copyCustomerChanged });
+  });
+
   it("leaves any other 409 to the caller", () => {
     expect(readCreateOrderRefusal(refusal(409, "nope"), LINES)).toBeNull();
   });

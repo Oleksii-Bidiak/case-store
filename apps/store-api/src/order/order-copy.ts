@@ -1,4 +1,4 @@
-import type { OrderStatus } from '@prisma/client';
+import { OrderStatus } from '@prisma/client';
 import { isCategoryOnSale } from '../product';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
 
@@ -132,4 +132,35 @@ export function releasedQuantities(
     released.set(item.productId, (released.get(item.productId) ?? 0) + item.quantity);
   }
   return released;
+}
+
+/**
+ * Whether the copy is bound to the original's customer: it cancels the original
+ * (the «замінено» letter goes out) or takes money still held on a cancelled one
+ * (the «Залік» pair). Same rule as the repository's offset: the money moves off
+ * any cancelled original — cancelled now or before.
+ */
+export function copyBindsOriginalCustomer(
+  source: { status: OrderStatus; paidKop: number; refundedKop: number },
+  cancelOriginal: boolean,
+): boolean {
+  if (cancelOriginal) return true;
+  return source.status === OrderStatus.CANCELLED && source.paidKop - source.refundedKop > 0;
+}
+
+/**
+ * Whether the copy is made out to the original's customer. An account order
+ * stays with that account; a guest order stays a guest order with the same
+ * (normalised, digits-only) phone — or the same email when the original has no
+ * phone on record.
+ */
+export function isSameCopyCustomer(
+  source: { userId: string | null; guestPhone: string | null; guestEmail: string | null },
+  target: { userId?: string | null; contact?: { phone: string; email?: string | null } | null },
+): boolean {
+  if (source.userId) return target.userId === source.userId;
+  if (target.userId || !target.contact) return false;
+  const digits = (phone: string) => phone.replace(/\D/g, '');
+  if (source.guestPhone) return digits(target.contact.phone) === digits(source.guestPhone);
+  return !!source.guestEmail && target.contact.email === source.guestEmail;
 }

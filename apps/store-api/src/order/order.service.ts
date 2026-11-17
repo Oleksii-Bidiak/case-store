@@ -64,6 +64,7 @@ import {
   invalidTransitionError,
   reviveRefundedPaymentError,
   staleOrderError,
+  copyCustomerChangedError,
   copyOriginalNotCancellableError,
 } from './order.errors';
 import {
@@ -106,7 +107,13 @@ import type {
   ShippingAddressData,
   OrderCopySource,
 } from './order.types';
-import { planCopyLines, releasedQuantities, releasesStockOnCopy } from './order-copy';
+import {
+  copyBindsOriginalCustomer,
+  isSameCopyCustomer,
+  planCopyLines,
+  releasedQuantities,
+  releasesStockOnCopy,
+} from './order-copy';
 import { OrderCopyDraftEntity } from './entities/order-copy-draft.entity';
 import type { PaymentApplyResult, PaymentEventInput } from '../payment';
 // eslint-disable-next-line local/no-deep-module-import -- cycle: payment barrel > payment.module > order barrel > this file
@@ -1840,6 +1847,16 @@ export class OrderService {
     const copySource = dto.copyOfOrderId
       ? await this.loadCopySource(dto.copyOfOrderId, cancelOriginal)
       : null;
+    // A copy that cancels the original or takes its money answers to the
+    // original's customer: the offset and the «замінено» letter must not reach
+    // a different buyer, and the one who paid must not be left unaware.
+    if (
+      copySource &&
+      copyBindsOriginalCustomer(copySource, cancelOriginal) &&
+      !isSameCopyCustomer(copySource, { userId: dto.userId ?? null, contact: dto.contact ?? null })
+    ) {
+      throw copyCustomerChangedError();
+    }
     // What the original's cancel puts back on the shelf before the copy reserves.
     const released =
       copySource && releasesStockOnCopy(copySource, cancelOriginal)

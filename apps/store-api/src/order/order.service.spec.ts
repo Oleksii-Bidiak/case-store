@@ -6233,6 +6233,9 @@ describe('OrderService', () => {
 
       it('addresses an account copy to the account, without a guest link', async () => {
         userRepositoryMock.findById.mockResolvedValue(recipient);
+        orderRepositoryMock.findCopySource.mockResolvedValue(
+          makeSource({ userId: USER_ID, guestEmail: null, guestPhone: null, guestName: null }),
+        );
 
         await service.adminCreateOrder({ ...dto, contact: undefined, userId: USER_ID }, ADMIN_ID);
 
@@ -6245,6 +6248,46 @@ describe('OrderService', () => {
           },
           txMock,
         );
+      });
+
+      it('is a 409 when a cancelling copy is made out to another customer', async () => {
+        await expect(
+          service.adminCreateOrder(
+            { ...dto, contact: { ...guestContact, phone: '+380509998877' } },
+            ADMIN_ID,
+          ),
+        ).rejects.toMatchObject({ response: { error: 'ORDER_COPY_CUSTOMER_CHANGED' } });
+        expect(orderRepositoryMock.createManualCopy).not.toHaveBeenCalled();
+        expect(mailOutboxServiceMock.enqueueOrderReplaced).not.toHaveBeenCalled();
+      });
+
+      it('is a 409 when the copy would take a cancelled original’s money for someone else', async () => {
+        userRepositoryMock.findById.mockResolvedValue(recipient);
+        orderRepositoryMock.findCopySource.mockResolvedValue(
+          makeSource({ status: OrderStatus.CANCELLED, paidKop: 54_900 }),
+        );
+
+        await expect(
+          service.adminCreateOrder(
+            { ...dto, cancelOriginal: false, contact: undefined, userId: USER_ID },
+            ADMIN_ID,
+          ),
+        ).rejects.toMatchObject({ response: { error: 'ORDER_COPY_CUSTOMER_CHANGED' } });
+        expect(orderRepositoryMock.createManualCopy).not.toHaveBeenCalled();
+      });
+
+      it('lets a copy that keeps the original live go to another customer', async () => {
+        orderRepositoryMock.findOrderableProducts.mockResolvedValue([
+          { ...catalogueProduct, stock: 5 },
+        ]);
+        armCopy(false);
+
+        await expect(
+          service.adminCreateOrder(
+            { ...dto, cancelOriginal: false, contact: { ...guestContact, phone: '+380509998877' } },
+            ADMIN_ID,
+          ),
+        ).resolves.toBeDefined();
       });
 
       it('sends nothing to a walk-in with no email', async () => {
