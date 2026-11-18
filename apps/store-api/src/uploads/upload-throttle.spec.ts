@@ -1,7 +1,7 @@
 // Deep import, like `newsletter.controller.spec.ts`: the package barrel does not
 // re-export the metadata-key constants.
 import { THROTTLER_LIMIT } from '@nestjs/throttler/dist/throttler.constants';
-import { UploadsController } from '../media/content-uploads.controller';
+import { ContentUploadsController } from '../media/content-uploads.controller';
 import { MediaController } from '../media/media.controller';
 import { ProductImageController } from '../product/product-image.controller';
 
@@ -22,7 +22,10 @@ import { ProductImageController } from '../product/product-image.controller';
  */
 const UPLOAD_ROUTES: Array<{ name: string; target: object }> = [
   // Class-level: every route on this controller is an upload.
-  { name: 'UploadsController (category/brand/banner/blog covers)', target: UploadsController },
+  {
+    name: 'ContentUploadsController (category/brand/banner/blog covers)',
+    target: ContentUploadsController,
+  },
   { name: 'MediaController.upload', target: MediaController.prototype.upload },
   { name: 'ProductImageController.upload', target: ProductImageController.prototype.upload },
 ];

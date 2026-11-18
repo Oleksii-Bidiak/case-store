@@ -49,7 +49,7 @@ const PNG_BYTES = Buffer.from('png-bytes');
 // placeholder string would be refused with 415 before it reached storage.
 const GIF_BYTES = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 
-describe('UploadsController (e2e)', () => {
+describe('ContentUploadsController (e2e)', () => {
   let app: INestApplication;
   let jwtService: JwtService;
 

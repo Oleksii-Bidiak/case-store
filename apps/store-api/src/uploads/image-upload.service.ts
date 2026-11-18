@@ -69,7 +69,7 @@ export interface StoredImage {
 /**
  * THE image-upload pipeline (TASK-424). Every accepted image in the API goes
  * through here: the product gallery (`ProductImageService`) and the four content
- * routes (`UploadsController`).
+ * routes (`ContentUploadsController`).
  *
  * It exists because the same eight steps were about to be written a second time.
  * They are, in order: reject an unlisted MIME type (415), reject over 20 MB (413),

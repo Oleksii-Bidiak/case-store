@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnsupportedMediaTypeException } from '@nestjs/common';
 import { PermissionGuard } from '../auth/permissions';
-import { UploadsController } from './content-uploads.controller';
+import { ContentUploadsController } from './content-uploads.controller';
 import { MediaService } from './media.service';
 import { MediaAssetDetailEntity } from './entities';
 
@@ -33,20 +33,20 @@ const file = { originalname: 'cover.png', buffer: Buffer.from('png') } as Expres
  * holds `<kind>:write` but not `media:write` must not be able to put a file on the
  * disk that the library does not know about.
  */
-describe('UploadsController (content-field uploads)', () => {
-  let controller: UploadsController;
+describe('ContentUploadsController (content-field uploads)', () => {
+  let controller: ContentUploadsController;
   const mediaMock = { upload: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      controllers: [UploadsController],
+      controllers: [ContentUploadsController],
       providers: [{ provide: MediaService, useValue: mediaMock }],
     })
       .overrideGuard(PermissionGuard)
       .useValue({ canActivate: () => true })
       .compile();
 
-    controller = module.get(UploadsController);
+    controller = module.get(ContentUploadsController);
     mediaMock.upload.mockResolvedValue(asset);
   });
 
