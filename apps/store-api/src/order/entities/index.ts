@@ -1,5 +1,6 @@
 export { OrderEntity, OrderCustomerData, OrderGuestData } from './order.entity';
 export { OrderShippingAddressEntity } from './order-shipping-address.entity';
+export { OrderCopyDraftEntity } from './order-copy-draft.entity';
 export { OrderItemEntity, OrderItemAddonEntity } from './order-item.entity';
 export { OrderStatusHistoryEntity, OrderHistoryActorEntity } from './order-status-history.entity';
 // TASK-483: the public "check my order" projection. Deliberately a sibling of

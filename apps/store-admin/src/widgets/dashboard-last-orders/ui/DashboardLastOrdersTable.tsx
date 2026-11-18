@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import {
   OrderNumber,
   orderStatusBadgeVariant,
-  orderStatusLabel,
+  orderStatusLabelFor,
   useAdminOrderControllerFindAll,
   type OrderEntity,
 } from "@/entities/order";
@@ -126,7 +126,7 @@ export function DashboardLastOrdersTable() {
               <span className="flex items-center justify-between gap-2">
                 <OrderNumber id={order.id} />
                 <Badge variant={orderStatusBadgeVariant(order.status)}>
-                  {orderStatusLabel(order.status)}
+                  {orderStatusLabelFor(order.status, order.deliveryMethod)}
                 </Badge>
               </span>
               <span className="flex items-center justify-between gap-2 text-sm">
@@ -195,7 +195,7 @@ export function DashboardLastOrdersTable() {
                 </TableCell>
                 <TableCell>
                   <Badge variant={orderStatusBadgeVariant(order.status)}>
-                    {orderStatusLabel(order.status)}
+                    {orderStatusLabelFor(order.status, order.deliveryMethod)}
                   </Badge>
                 </TableCell>
                 <TableCell className="tabular-nums">

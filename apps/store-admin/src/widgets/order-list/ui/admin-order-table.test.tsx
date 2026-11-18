@@ -545,7 +545,7 @@ describe("AdminOrderTable — filters in the sheet", () => {
       within(sheet).getByRole("group", { name: d.filterStatusAria }),
     );
     await userEvent.click(
-      statuses.getByRole("checkbox", { name: "Доставлено" }),
+      statuses.getByRole("checkbox", { name: "Отримано покупцем" }),
     );
     await userEvent.click(
       statuses.getByRole("checkbox", { name: "Скасовано" }),
@@ -623,6 +623,7 @@ describe("AdminOrderTable — filters in the sheet", () => {
   const SIGNALS: ReadonlyArray<[string, string]> = [
     [dict.orders.overdueChip, "pendingOverdue"],
     [dict.orders.debtChip, "hasDebt"],
+    [dict.orders.owedToCustomerChip, "owedToCustomer"],
     [dict.orders.awaitingPaymentChip, "awaitingPayment"],
     [dict.orders.reservationExpiredChip, "reservationExpired"],
     [dict.orders.unavailableItemsChip, "hasUnavailableItems"],

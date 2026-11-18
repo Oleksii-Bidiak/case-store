@@ -359,6 +359,29 @@ describe('NotificationOutboxService', () => {
     });
   });
 
+  // ─── «Замовлення #старе замінено на #нове» (TASK-2048) ───────────────────────
+
+  describe('order-replaced letter (TASK-2048)', () => {
+    const payload = {
+      to: 'buyer@example.com',
+      oldOrderId: 'order-old',
+      newOrderId: 'order-new',
+    };
+
+    it('enqueues an order-replaced row to the buyer', async () => {
+      await service.enqueueOrderReplaced(payload);
+
+      expect(repositoryMock.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'order-replaced',
+          recipientAddress: 'buyer@example.com',
+          payload,
+        }),
+        undefined,
+      );
+    });
+  });
+
   // ─── dispatchDue — password-reset delivery ────────────────────────────────────
 
   describe('dispatchDue — password-reset delivery', () => {

@@ -121,6 +121,16 @@ export class OrderMoneyEntryEntity {
   @ApiProperty({ type: String, nullable: true })
   voidReason!: string | null;
 
+  @ApiProperty({
+    description:
+      'OFFSET_TO_ORDER / OFFSET_FROM_ORDER only (TASK-2048 «Залік»): the other order of the ' +
+      'pair — the copy on the original, the original on the copy',
+    type: String,
+    nullable: true,
+    format: 'uuid',
+  })
+  counterpartOrderId!: string | null;
+
   @ApiProperty({ description: 'Inferred by the R2 backfill from pre-ledger labels' })
   legacy!: boolean;
 
@@ -146,6 +156,7 @@ export class OrderMoneyEntryEntity {
     entity.reversedById = row.reversedById;
     entity.voidedAt = row.voidedAt;
     entity.voidReason = row.voidReason;
+    entity.counterpartOrderId = row.counterpartOrderId ?? null;
     entity.legacy = row.legacy;
     entity.occurredAt = row.occurredAt;
     entity.createdAt = row.createdAt;

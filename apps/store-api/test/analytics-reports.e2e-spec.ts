@@ -14,6 +14,7 @@ import type { SalesDay, SalesTotals } from '../src/analytics/reports/sales.repos
 import { CatalogueRepository } from '../src/analytics/reports/catalogue.repository';
 import { ProductsReportRepository } from '../src/analytics/reports/products-report.repository';
 import { RegistrationsRepository } from '../src/analytics/reports/registrations.repository';
+import { MoneyFlowRepository } from '../src/analytics/reports/money-flow.repository';
 import { UmamiClient } from '../src/analytics/umami.client';
 import type {
   BrandSalesRow,
@@ -89,6 +90,46 @@ describe('Admin Analytics Reports (e2e)', () => {
     getDaily: jest.fn().mockResolvedValue([{ date: '2026-09-01', registrations: 2 }]),
   };
 
+  const moneyFlowRepositoryMock = {
+    getByKind: jest.fn().mockResolvedValue([
+      {
+        kind: 'COD_NOVA_POSHTA',
+        direction: 'IN',
+        grossKop: 100_000,
+        reversedKop: 0,
+        netKop: 100_000,
+        count: 1,
+        requestedKop: 0,
+      },
+    ]),
+    getBalances: jest.fn().mockResolvedValue({
+      debt: { orders: 1, kop: 5_000 },
+      owedToCustomer: { orders: 0, kop: 0 },
+    }),
+    findEntries: jest.fn().mockResolvedValue({
+      total: 1,
+      rows: [
+        {
+          id: 'entry-1',
+          occurredAt: new Date('2026-09-20T10:00:00Z'),
+          createdAt: new Date('2026-09-20T10:00:00Z'),
+          orderId: 'abcdef12-0000-0000-0000-000000000000',
+          orderNumber: 'ABCDEF12',
+          direction: 'IN',
+          kind: 'COD_NOVA_POSHTA',
+          amountKop: 100_000,
+          signedKop: 100_000,
+          isReversal: false,
+          reversalOfId: null,
+          providerState: null,
+          legacy: false,
+          actorName: null,
+          reason: null,
+        },
+      ],
+    }),
+  };
+
   const permissionRepositoryMock = createPermissionRepositoryMock();
 
   const authRepositoryMock = {
@@ -142,6 +183,8 @@ describe('Admin Analytics Reports (e2e)', () => {
       .useValue(productsRepositoryMock)
       .overrideProvider(RegistrationsRepository)
       .useValue(registrationsRepositoryMock)
+      .overrideProvider(MoneyFlowRepository)
+      .useValue(moneyFlowRepositoryMock)
       // Deterministic whatever the machine's env holds: Umami is "not set up".
       .overrideProvider(UmamiClient)
       .useValue({ isConfigured: () => false, getStats: jest.fn(), getEventCounts: jest.fn() })
@@ -434,6 +477,100 @@ describe('Admin Analytics Reports (e2e)', () => {
         .get(URL)
         .query({ preset: '365d' })
         .set('Authorization', `Bearer ${tokenFor('admin-e2e-1', UserRole.ADMIN)}`)
+        .expect(400);
+    });
+  });
+
+  describe('GET /api/admin/analytics/reports/money-flow and /entries (TASK-2395)', () => {
+    const REPORT = '/api/admin/analytics/reports/money-flow';
+    const ENTRIES = '/api/admin/analytics/reports/money-flow/entries';
+    const MANAGER = () => `Bearer ${tokenFor('manager-e2e-1', UserRole.MANAGER)}`;
+    const OWNER = () => `Bearer ${tokenFor('admin-e2e-1', UserRole.ADMIN)}`;
+
+    it('answers the owner with the 8-row report in a { data } envelope', async () => {
+      const response = await request(app.getHttpServer())
+        .get(REPORT)
+        .query({ preset: '30d' })
+        .set('Authorization', OWNER())
+        .expect(200);
+
+      const { data } = response.body;
+      expect(data.rows).toHaveLength(8);
+      expect(data.rows[1]).toMatchObject({ kind: 'COD_NOVA_POSHTA', netKop: 100_000 });
+      expect(data.totals.inKop).toEqual({ current: 100_000, previous: 100_000, changePct: 0 });
+      expect(data.balances).toEqual({
+        debt: { orders: 1, kop: 5_000 },
+        owedToCustomer: { orders: 0, kop: 0 },
+      });
+    });
+
+    it('answers the owner with a page of the register and its meta', async () => {
+      const response = await request(app.getHttpServer())
+        .get(ENTRIES)
+        .query({ preset: '30d', kind: 'COD_NOVA_POSHTA', page: '1', limit: '20' })
+        .set('Authorization', OWNER())
+        .expect(200);
+
+      expect(moneyFlowRepositoryMock.findEntries).toHaveBeenCalledWith(expect.anything(), {
+        kind: 'COD_NOVA_POSHTA',
+        page: 1,
+        limit: 20,
+      });
+      expect(response.body.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
+      expect(response.body.data[0]).toMatchObject({
+        orderNumber: 'ABCDEF12',
+        signedKop: 100_000,
+        requested: false,
+      });
+    });
+
+    it.each([
+      ['payments:read', ['analytics:read', 'analytics:revenue']],
+      ['analytics:revenue', ['analytics:read', 'payments:read']],
+    ])('returns 403 on both routes without %s', async (_, grants) => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, grants);
+
+      for (const url of [REPORT, ENTRIES]) {
+        await request(app.getHttpServer()).get(url).set('Authorization', MANAGER()).expect(403);
+      }
+      expect(moneyFlowRepositoryMock.getByKind).not.toHaveBeenCalled();
+      expect(moneyFlowRepositoryMock.findEntries).not.toHaveBeenCalled();
+    });
+
+    it('answers a manager holding all three rights', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, [
+        'analytics:read',
+        'analytics:revenue',
+        'payments:read',
+      ]);
+      await request(app.getHttpServer()).get(REPORT).set('Authorization', MANAGER()).expect(200);
+    });
+
+    it('returns 400 on a bad period, before any query', async () => {
+      for (const url of [REPORT, ENTRIES]) {
+        await request(app.getHttpServer())
+          .get(url)
+          .query({ preset: 'custom', from: '2026-09-10', to: '2026-09-01' })
+          .set('Authorization', OWNER())
+          .expect(400);
+      }
+      expect(moneyFlowRepositoryMock.getByKind).not.toHaveBeenCalled();
+      expect(moneyFlowRepositoryMock.findEntries).not.toHaveBeenCalled();
+    });
+
+    it.each([['0'], ['501'], ['abc']])('returns 400 on limit=%s', async (limit) => {
+      await request(app.getHttpServer())
+        .get(ENTRIES)
+        .query({ limit })
+        .set('Authorization', OWNER())
+        .expect(400);
+    });
+
+    it('returns 400 on an unknown kind', async () => {
+      await request(app.getHttpServer())
+        .get(ENTRIES)
+        .query({ kind: 'CASH' })
+        .set('Authorization', OWNER())
         .expect(400);
     });
   });

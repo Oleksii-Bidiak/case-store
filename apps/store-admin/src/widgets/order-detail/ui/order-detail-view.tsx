@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CopyIcon } from "lucide-react";
+import { CopyIcon, CopyPlusIcon } from "lucide-react";
 import {
   formatOrderNumber,
   isPreShipmentStatus,
@@ -13,7 +13,7 @@ import {
   orderHeadlineStatusLabel,
   orderListHref,
   paymentStatusBadgeVariant,
-  paymentStatusLabel,
+  orderPaymentStatusLabel,
   useAdminOrderControllerFindById,
   useAdminOrderControllerGetHistory,
   type OrderEntity,
@@ -106,6 +106,51 @@ function copyNumber(order: OrderEntity) {
   write.then(
     () => toast.success(d.copiedNumber(number)),
     () => toast.error(d.copyFailed),
+  );
+}
+
+/**
+ * «Копія #старе» on a copy; «Замінено на #нове» on a cancelled original, or
+ * «Копії: …» on one that stayed live (TASK-2048). Nothing on any other order.
+ */
+function CopyLinks({
+  order,
+}: {
+  order: Pick<OrderEntity, "copiedFromId" | "copyIds" | "replacedById">;
+}) {
+  // «Замінено на» only for the copy whose «Скасувати #старе» cancelled this
+  // order (the server's `replacedById`); every other copy — made while it
+  // stayed live, or of it once cancelled — is listed under «Копії».
+  const replacedById = order.replacedById ?? null;
+  const copies = (order.copyIds ?? []).filter((id) => id !== replacedById);
+  if (!order.copiedFromId && !replacedById && copies.length === 0) return null;
+  const orderLink = (id: string) => (
+    <Link
+      key={id}
+      href={`/orders/${id}`}
+      className="font-mono text-primary hover:underline"
+    >
+      {formatOrderNumber(id)}
+    </Link>
+  );
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+      {order.copiedFromId ? (
+        <span className="flex items-center gap-1.5">
+          {d.copyOf} {orderLink(order.copiedFromId)}
+        </span>
+      ) : null}
+      {replacedById ? (
+        <span className="flex items-center gap-1.5">
+          {d.replacedBy} {orderLink(replacedById)}
+        </span>
+      ) : null}
+      {copies.length ? (
+        <span className="flex flex-wrap items-center gap-1.5">
+          {d.copiesLabel} {copies.map(orderLink)}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -208,6 +253,16 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
   const more = moreActions.length ? (
     <RowActionsMenu label={d.moreActionsAria} items={moreActions} />
   ) : null;
+  // TASK-2048: «Створити копію» — on any order; the create form decides
+  // whether «Скасувати #старе» is offered.
+  const copyAction = (
+    <Button asChild variant="outline">
+      <Link href={`/orders/new?copyOf=${order.id}`}>
+        <CopyPlusIcon aria-hidden="true" />
+        {d.copyAction}
+      </Link>
+    </Button>
+  );
   // Renders nothing without `returns:write` or off SHIPPED / DELIVERED.
   const returnAction = (
     <ReturnCreateAction
@@ -255,7 +310,7 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
               {orderHeadlineStatusLabel(order)}
             </Badge>
             <Badge variant={paymentStatusBadgeVariant(order.paymentStatus)}>
-              {paymentStatusLabel(order.paymentStatus)}
+              {orderPaymentStatusLabel(order)}
             </Badge>
             {holdsStock ? (
               <Badge variant="warning">{d.holdsStock(heldQuantity)}</Badge>
@@ -279,6 +334,7 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
               )}
             </span>
           </div>
+          <CopyLinks order={order} />
         </div>
 
         {/* `#order-status`: the list's «⋯ → Змінити статус…» lands here. */}
@@ -294,6 +350,7 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
               trailing={
                 <>
                   {returnAction}
+                  {copyAction}
                   {more}
                 </>
               }
@@ -464,7 +521,11 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
             <h3 className="text-sm font-semibold text-foreground">
               {d.timelineHeading}
             </h3>
-            <OrderTimeline orderId={order.id} customerUserId={order.userId} />
+            <OrderTimeline
+              orderId={order.id}
+              customerUserId={order.userId}
+              deliveryMethod={order.deliveryMethod}
+            />
           </section>
         </div>
 

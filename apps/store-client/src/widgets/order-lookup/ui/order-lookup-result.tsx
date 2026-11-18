@@ -50,7 +50,10 @@ export function OrderLookupResult({ order }: { order: PublicOrderEntity }) {
           <dt className="sr-only">{dict.order.orderStatusSr}</dt>
           <dd>
             <OrderStatusBadge status={order.status}>
-              {dict.order.orderStatusLabels[order.status] ?? order.status}
+              {dict.order.orderStatusLabelFor(
+                order.status,
+                order.deliveryMethod,
+              )}
             </OrderStatusBadge>
           </dd>
           <dt className="sr-only">{dict.order.paymentStatusSr}</dt>

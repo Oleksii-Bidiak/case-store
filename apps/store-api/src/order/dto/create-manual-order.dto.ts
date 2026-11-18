@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsNumber,
@@ -13,6 +14,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateBy,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
@@ -206,4 +208,41 @@ export class CreateManualOrderDto {
   @IsString()
   @MaxLength(2000)
   internalNotes?: string;
+
+  /**
+   * «Створити копію» (TASK-2048): the order this one copies. The copy links back
+   * to it, and money the original holds moves over as «Залік» once it is
+   * cancelled (here, or before).
+   */
+  @ApiPropertyOptional({
+    description:
+      'TASK-2048 «Створити копію»: the order this one is a copy of (404 if unknown). The new ' +
+      'order links to it (`copiedFromId`). When the original is cancelled — by `cancelOriginal` ' +
+      'or already — what it holds (paid − refunded), capped by the new total, moves over as a ' +
+      'pair of OFFSET money entries. Prices still come from the catalogue; no promo is copied.',
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsUUID('loose', { message: 'copyOfOrderId must be a valid UUID' })
+  copyOfOrderId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'With `copyOfOrderId`: cancel the original in the SAME transaction («Скасувати #старе — ' +
+      'замінено»), releasing its stock before the copy reserves — so the last unit can move to ' +
+      'the copy. 409 ORDER_COPY_ORIGINAL_NOT_CANCELLABLE when the original is no longer ' +
+      'PENDING/CONFIRMED/PROCESSING. Refused (400) without `copyOfOrderId`.',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  @ValidateBy({
+    name: 'cancelNeedsCopy',
+    validator: {
+      validate: (value: unknown, args) =>
+        value !== true || Boolean((args?.object as CreateManualOrderDto).copyOfOrderId),
+      defaultMessage: () => 'cancelOriginal needs copyOfOrderId',
+    },
+  })
+  cancelOriginal?: boolean;
 }

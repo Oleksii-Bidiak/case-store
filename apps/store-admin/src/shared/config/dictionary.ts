@@ -3932,7 +3932,7 @@ export const dict = {
     // оператор законно вмикає два одразу.
     debtChip: "Борг",
     debtChipAria:
-      "Показати лише доставлені замовлення, за які не розрахувалися",
+      "Показати лише отримані покупцем замовлення, за які не розрахувалися",
     // НЕ «Очікує оплати»: рівно так підписаний бейдж статусу оплати PENDING, а
     // він стоїть на кожному неоплаченому замовленні, включно з післяплатою.
     // Однаково названий фільтр читався б як «показати всі неоплачені» — тобто
@@ -4123,6 +4123,18 @@ export const dict = {
     deliveryPickupMap: "Відкрити на карті ↗",
     deliveryPickupMapAria: (name: string) =>
       `Відкрити «${name}» на карті (нова вкладка)`,
+
+    // TASK-2395: фільтр-перемикач поруч із «Борг» — замовлення з від'ємним
+    // балансом (переплата або не повернуті гроші), будь-якого статусу.
+    owedToCustomerChip: "Винні покупцю",
+    owedToCustomerChipAria:
+      "Показати лише замовлення, за якими магазин винен покупцю гроші — переплата або ще не повернута сума",
+    // --- «Створити копію» (TASK-2048, B-12 тема 7) ---------------------------
+    copyAction: "Створити копію",
+    // Посилання в шапці картки: копія ← оригінал, оригінал → копії.
+    copyOf: "Копія",
+    replacedBy: "Замінено на",
+    copiesLabel: "Копії:",
   },
 
   reviews: {
@@ -4469,6 +4481,9 @@ export const dict = {
       PARTIALLY_REFUNDED: "Частково повернуто",
       REFUNDED: "Кошти повернено",
     },
+    // TASK-2048: the money of a cancelled original went on to its copy as
+    // «Залік», not back to the customer — not «Кошти повернено».
+    paymentMovedToCopy: "Оплату перенесено в копію",
     // --- Server-driven transitions (TASK-332) ---------------------------------
     transitionsLoading: "Завантаження доступних статусів…",
     transitionsLoadError:
@@ -4571,7 +4586,7 @@ export const dict = {
     // Головна кнопка — природний наступний крок.
     nextConfirm: "Підтвердити",
     nextShip: "Відправити",
-    nextDeliver: "Позначити доставленим",
+    nextDeliver: "Позначити отриманим",
     // Скасоване замовлення ніколи не стає «Повернення коштів» (R2, TASK-1970):
     // гроші, що повернулися після скасування, видно на самому бейджі статусу.
     cancelledRefunded: "Скасовано · кошти повернено",
@@ -4597,6 +4612,15 @@ export const dict = {
     // більше немає — повторне «Зберегти» знову отримає 409 і спробує ще раз.
     staleReviewFetchFailed:
       "Хтось інший щойно змінив це замовлення, але його версію не вдалося завантажити. Ваша зміна не збережена — натисніть «Зберегти» ще раз, щоб побачити версію колеги.",
+    // Головна кнопка на самовивозі (TASK-2052): той самий перехід у SHIPPED, але
+    // замовлення нікуди не їде — воно чекає в пункті видачі.
+    nextPickupReady: "Готово до видачі",
+    // «Створити копію» (TASK-2048): позначки в історії обох замовлень і вихід
+    // поруч із помилкою промокоду (AD-ORD-96).
+    copiedToOrderHistoryNote: "Створено копію цього замовлення",
+    copyOfOrderHistoryNote: "Створено як копію іншого замовлення",
+    promoCopyHint:
+      "Відновити не можна, але можна створити копію без промокоду — за поточними цінами.",
   },
 
   // --- Оплата з одного місця (R2: TASK-1967 / 1807 / 2047) --------------------
@@ -4667,6 +4691,9 @@ export const dict = {
       LIQPAY_REFUND: "Повернення через LiqPay",
       CASH_REFUND: "Повернення готівкою на точці",
       TRANSFER_REFUND: "Повернення переказом",
+      // TASK-2048: «Залік» — пара записів «Створити копію».
+      OFFSET_TO_ORDER: "Залік на копію",
+      OFFSET_FROM_ORDER: "Залік з оригіналу",
     },
 
     // --- «Записати надходження» (orders:write) ------------------------------
@@ -4798,6 +4825,9 @@ export const dict = {
       generic:
         "Не вдалося зберегти: сервер не відповів. Перевірте з'єднання й спробуйте ще раз.",
     },
+    // TASK-2048: друге замовлення пари «Залік» — посилання під записом.
+    offsetToOrder: (number: string) => `Зараховано в ${number}`,
+    offsetFromOrder: (number: string) => `Перенесено з ${number}`,
   },
 
   // --- Гроші за заявкою на повернення (R2, TASK-2046) -------------------------
@@ -5432,6 +5462,35 @@ export const dict = {
     // TASK-1021 → TASK-1973: матриця доставка × оплата за обраним способом.
     paymentNotForMethod:
       "Картка онлайн і оплата частинами недоступні для «Іншої доставки»: її вартість узгоджує оператор. Оберіть оплату при отриманні або переказ на рахунок ФОП.",
+
+    // --- «Створити копію» (TASK-2048, B-12 тема 7) ---------------------------
+    copyHeading: (number: string) => `Копія замовлення ${number}`,
+    copyIntro:
+      "Покупця, доставку й позиції перенесено з оригіналу за поточними цінами каталогу. Промокод не копіюється. Змініть, що потрібно.",
+    copyLoading: "Завантажуємо замовлення, з якого робимо копію…",
+    copyLoadFailed:
+      "Не вдалося завантажити замовлення для копії. Оновіть сторінку або створіть замовлення з нуля.",
+    copyCancelOriginal: (number: string) =>
+      `Скасувати ${number} — замінено цією копією`,
+    copyCancelHint:
+      "Скасування й створення копії — одна дія: товар оригіналу спершу повертається на склад, тож остання одиниця перейде в копію.",
+    copyHeld: (amount: string) =>
+      `Уже сплачено за оригіналом: ${amount}. Після скасування ця сума (не більше за суму копії) перейде в копію записом «Залік».`,
+    copyDroppedTitle: "Не все вдалося перенести",
+    copyDroppedLine: (name: string, requested: number, copied: number) =>
+      copied > 0
+        ? `${name}: було ${requested} шт., у наявності лише ${copied} — перенесено ${copied}`
+        : `${name}: ${requested} шт. не перенесено`,
+    copyDropReasons: {
+      DELETED: "товар видалено",
+      INACTIVE: "товар знято з продажу",
+      OUT_OF_STOCK: "немає в наявності",
+      CLAMPED: "менше в наявності",
+    },
+    copyOriginalGone:
+      "Оригінал уже відправлено або скасовано — скасувати його разом із копією не можна. Зніміть галочку або оновіть сторінку.",
+    copyCustomerChanged:
+      "Копія, яка скасовує оригінал або переносить його оплату, має бути на того самого покупця. Поверніть покупця з оригіналу або створіть нове замовлення.",
   },
 
   // --- Users (TASK-115) -------------------------------------------------------
@@ -8066,6 +8125,68 @@ export const dict = {
     csvConversionCurrent: "Поточна, %",
     csvConversionPrevious: "Попередня, %",
     csvRegistrationsDay: "Реєстрацій",
+
+    // TASK-2395: «Рух коштів» — з журналів оплат замовлень. Лише з правами
+    // `analytics:revenue` і `payments:read`.
+    moneyFlowTitle: "Рух коштів",
+    moneyFlowSubtitle:
+      "За днем, коли гроші надійшли чи пішли назад, — із журналів оплат замовлень.",
+    moneyFlowInTile: "Надійшло",
+    moneyFlowOutTile: "Повернуто",
+    moneyFlowNetTile: "Рух нетто",
+    moneyFlowRequested: (amount: string) =>
+      `з них очікує підтвердження LiqPay: ${amount}`,
+    moneyFlowKindsAria: "Рух коштів за способами",
+    moneyFlowColKind: "Спосіб",
+    moneyFlowColGross: "Сума",
+    moneyFlowColReversed: "Сторно",
+    moneyFlowColNet: "Нетто",
+    moneyFlowColCount: "Записів",
+    moneyFlowGroupIn: "Надходження",
+    moneyFlowGroupOut: "Повернення",
+    moneyFlowRowLinkAria: (kind: string) => `${kind}: записи за період`,
+    moneyFlowEmpty: "За період руху коштів не було",
+    moneyFlowNowTitle: "Станом на зараз",
+    moneyFlowNowHint: "Не залежить від вибраного періоду.",
+    moneyFlowDebt: "Борг покупців",
+    moneyFlowOwed: "Винні покупцям",
+    moneyFlowBalance: (orders: number, amount: string) =>
+      `${countLabel(orders, ["замовлення", "замовлення", "замовлень"])} · ${amount}`,
+    moneyFlowAllEntries: "Усі записи",
+    moneyFlowFootnote:
+      "Сторно віднімається в день, коли його провели, тож минулий період не змінюється. Повернення через LiqPay, які ще чекають підтвердження, уже враховано в сумах.",
+    moneyFlowForbidden: "У вас немає доступу до руху коштів.",
+    moneyFlowForbiddenHint:
+      "Потрібні права «Виторг і фінансові показники» та «Бачити платежі» — власник видає їх у розділі «Співробітники» → ваша картка → вкладка «Права».",
+    csvDirection: "Напрям",
+    csvRequestedRow: "З них очікує підтвердження LiqPay",
+
+    // Реєстр записів `/analytics/money-flow`.
+    moneyFlowEntriesMetaTitle: "Рух коштів — записи — Адмін",
+    moneyFlowEntriesHeading: "Рух коштів: записи",
+    moneyFlowEntriesIntro:
+      "Кожне надходження й повернення за період — за днем, коли гроші рухалися.",
+    moneyFlowBack: "← До звітів",
+    moneyFlowKindFilter: "Спосіб",
+    moneyFlowKindAll: "Усі способи",
+    moneyFlowColDate: "Дата руху",
+    moneyFlowColOrder: "Замовлення",
+    moneyFlowColIn: "Надійшло",
+    moneyFlowColOut: "Повернуто",
+    moneyFlowColActor: "Автор",
+    moneyFlowColReason: "Причина",
+    moneyFlowColCreated: "Внесено",
+    moneyFlowColAmount: "Сума",
+    moneyFlowColState: "Стан",
+    moneyFlowOrderAria: (number: string) => `Замовлення #${number}`,
+    moneyFlowMarkReversal: "Сторно",
+    moneyFlowMarkRequested: "Очікує LiqPay",
+    moneyFlowMarkRequestedFull: "Очікує підтвердження LiqPay",
+    moneyFlowMarkCreated: (day: string) => `Внесено ${day}`,
+    moneyFlowMarkLegacy: "Перенесено з обліку до R2",
+    moneyFlowEntriesEmpty: "За період записів немає",
+    moneyFlowEntriesEmptyKind: "За період записів цього способу немає",
+    moneyFlowEntriesError: "Не вдалося завантажити записи.",
   },
 
   // Налаштування доставки `/settings/delivery` (план 184 U, TASK-644; макет

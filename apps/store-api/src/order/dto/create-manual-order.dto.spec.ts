@@ -60,3 +60,41 @@ describe('CreateManualOrderDto — delivery', () => {
     expect(errorsFor('shippingCost', undefined)).toEqual([]);
   });
 });
+
+/** TASK-2048: «Створити копію» — the original, and whether it is cancelled with it. */
+describe('CreateManualOrderDto — copy of an order', () => {
+  const SOURCE = '6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11';
+  const errorsFor = (body: Record<string, unknown>, property: string) =>
+    validateSync(plainToInstance(CreateManualOrderDto, body)).filter(
+      (error) => error.property === property,
+    );
+
+  it('accepts a copy, with or without the cancel of the original', () => {
+    expect(errorsFor({ copyOfOrderId: SOURCE }, 'copyOfOrderId')).toEqual([]);
+    expect(errorsFor({ copyOfOrderId: SOURCE, cancelOriginal: true }, 'cancelOriginal')).toEqual(
+      [],
+    );
+    expect(errorsFor({ copyOfOrderId: SOURCE, cancelOriginal: false }, 'cancelOriginal')).toEqual(
+      [],
+    );
+  });
+
+  it('refuses an original that is not a uuid', () => {
+    expect(errorsFor({ copyOfOrderId: 'order-1' }, 'copyOfOrderId')).not.toEqual([]);
+  });
+
+  it('refuses a non-boolean cancel', () => {
+    expect(
+      errorsFor({ copyOfOrderId: SOURCE, cancelOriginal: 'yes' }, 'cancelOriginal'),
+    ).not.toEqual([]);
+  });
+
+  it('refuses «cancel the original» with no original named', () => {
+    expect(errorsFor({ cancelOriginal: true }, 'cancelOriginal')).not.toEqual([]);
+  });
+
+  it('leaves both optional — an ordinary phone order', () => {
+    expect(errorsFor({}, 'copyOfOrderId')).toEqual([]);
+    expect(errorsFor({}, 'cancelOriginal')).toEqual([]);
+  });
+});

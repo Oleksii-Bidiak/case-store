@@ -24,10 +24,34 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   CONFIRMED: "Підтверджено",
   PROCESSING: "В обробці",
   SHIPPED: "Відправлено",
-  DELIVERED: "Доставлено",
+  // TASK-2052: the end of the path is the buyer having it — a parcel and a
+  // pickup alike.
+  DELIVERED: "Отримано покупцем",
   CANCELLED: "Скасовано",
   REFUNDED: "Повернення коштів",
 };
+
+/**
+ * SHIPPED on a PICKUP order (TASK-2052, B-12 topic 6). No new enum value: the
+ * order is packed and waiting at the point, and «Відправлено» would send the
+ * buyer looking for a parcel.
+ */
+const PICKUP_READY_LABEL = "Готово до видачі";
+
+/**
+ * The status of ONE order, worded for how it leaves the shop: a SHIPPED pickup
+ * order reads «Готово до видачі», everything else as `ORDER_STATUS_LABELS`
+ * (falling back to the raw value). A missing delivery method is the generic word.
+ */
+function orderStatusLabelFor(
+  status: string,
+  deliveryMethod?: string | null,
+): string {
+  if (status === "SHIPPED" && deliveryMethod === "PICKUP") {
+    return PICKUP_READY_LABEL;
+  }
+  return ORDER_STATUS_LABELS[status] ?? status;
+}
 
 const PAYMENT_STATUS_LABELS: Record<string, string> = {
   PENDING: "Очікує оплати",
@@ -1833,12 +1857,25 @@ export const dict = {
     // Direct-access label maps for components that render badge text (TASK-129).
     orderStatusLabels: ORDER_STATUS_LABELS,
     paymentStatusLabels: PAYMENT_STATUS_LABELS,
-    orderStatusAria: (status: string) =>
-      `Статус замовлення: ${ORDER_STATUS_LABELS[status] ?? status}`,
+    orderStatusAria: (status: string, deliveryMethod?: string | null) =>
+      `Статус замовлення: ${orderStatusLabelFor(status, deliveryMethod)}`,
     paymentStatusAria: (status: string) =>
       `Статус оплати: ${PAYMENT_STATUS_LABELS[status] ?? status}`,
-    paymentLabel: (status: string) =>
-      `Оплата: ${PAYMENT_STATUS_LABELS[status] ?? status}`,
+    // TASK-2048: a cancelled order whose money all went on to its replacement
+    // («Залік») got nothing back — «Кошти повернено» would be a false promise.
+    paymentLabel: (
+      status: string,
+      money?: { refundedKop: number; offsetOutKop?: number },
+    ) => {
+      const offsetKop = money?.offsetOutKop ?? 0;
+      const movedToCopy =
+        (status === "REFUNDED" || status === "PARTIALLY_REFUNDED") &&
+        offsetKop > 0 &&
+        (money?.refundedKop ?? 0) <= offsetKop;
+      return movedToCopy
+        ? "Оплата: перенесена в нове замовлення"
+        : `Оплата: ${PAYMENT_STATUS_LABELS[status] ?? status}`;
+    },
     itemsOrdered: "Замовлені товари",
     viewProductAria: (name: string) => `Переглянути «${name}»`,
     billingAddress: "Адреса оплати",
@@ -1914,7 +1951,7 @@ export const dict = {
         "Це замовлення скасовано, тому оплатити його вже не можна. Якщо гроші все ж було списано — зателефонуйте нам, ми повернемо кошти.",
       orderClosedTitle: "Замовлення вже виконано",
       orderClosedBody:
-        "Замовлення доставлено, тож онлайн-оплата для нього недоступна. Якщо є питання щодо оплати — зателефонуйте нам.",
+        "Замовлення вже отримано, тож онлайн-оплата для нього недоступна. Якщо є питання щодо оплати — зателефонуйте нам.",
       // TASK-217: an unpaid ONLINE order still holding its reservation, on the
       // account order detail. The title is `orderHistory.awaitingPayment(N)`,
       // the button `orderHistory.pay(total)` — one wording on both screens.
@@ -1941,7 +1978,7 @@ export const dict = {
       placedOn: (date: string) => `Оформлено ${date}`,
       stepsAria: "Етапи замовлення",
       // The API keeps no per-stage dates, so only «Оформлено» carries one.
-      steps: ["Оформлено", "Підтверджено", "Відправлено", "Доставлено"],
+      steps: ["Оформлено", "Підтверджено", "Відправлено", "Отримано покупцем"],
       // A screen reader hears the state the colour shows.
       stepDoneSr: "виконано",
       stepNextSr: "ще попереду",
@@ -1964,6 +2001,14 @@ export const dict = {
         OTHER: "Інша доставка",
       } as Record<string, string>,
       backToList: "До історії замовлень",
+      // TASK-2052: a pickup order travels nowhere — its third stage is being
+      // ready at the point. Same four stages, same indices as `steps`.
+      stepsPickup: [
+        "Оформлено",
+        "Підтверджено",
+        PICKUP_READY_LABEL,
+        "Отримано покупцем",
+      ],
     },
 
     // ── Guest order status page (TASK-338) ──────────────────────────────────
@@ -2024,6 +2069,12 @@ export const dict = {
       // Under «Разом» while the delivery is unpriced (shippingCostPending).
       totalWithoutShipping: "Без доставки — її вартість уточнить оператор",
     },
+
+    // TASK-2052 (B-12 topic 6): the status of a concrete order — a SHIPPED
+    // pickup order is «Готово до видачі». Use this wherever an order is on
+    // screen; `orderStatusLabels` stays the generic word.
+    pickupReadyLabel: PICKUP_READY_LABEL,
+    orderStatusLabelFor,
   },
 
   // ── Публічна форма «Статус замовлення» (TASK-483) ─────────────────────────
@@ -2241,7 +2292,7 @@ export const dict = {
     tabs: {
       all: "Усі",
       active: "Активні",
-      delivered: "Доставлені",
+      delivered: "Отримані",
       cancelled: "Скасовані",
     },
     // An unpaid ONLINE order still holding its reservation (TASK-471).

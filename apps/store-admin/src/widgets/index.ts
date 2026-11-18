@@ -130,7 +130,11 @@ export {
 } from "./dashboard-last-orders";
 export { DashboardTrafficCard } from "./dashboard-traffic";
 // TASK-692 — /analytics: five reports over one period.
-export { AnalyticsView, AnalyticsSkeleton } from "./analytics-reports";
+export {
+  AnalyticsView,
+  AnalyticsSkeleton,
+  MoneyFlowEntriesView,
+} from "./analytics-reports";
 export {
   AdminCarouselTable,
   AdminCarouselTableSkeleton,

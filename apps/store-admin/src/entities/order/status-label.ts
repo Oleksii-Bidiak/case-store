@@ -1,4 +1,5 @@
 import {
+  OrderEntityDeliveryMethod,
   OrderEntityStatus,
   OrderEntityPaymentStatus,
   type OrderEntity,
@@ -21,7 +22,9 @@ const ORDER_STATUS_LABELS: Record<OrderEntityStatus, string> = {
   [OrderEntityStatus.CONFIRMED]: "Підтверджено",
   [OrderEntityStatus.PROCESSING]: "В обробці",
   [OrderEntityStatus.SHIPPED]: "Відправлено",
-  [OrderEntityStatus.DELIVERED]: "Доставлено",
+  // TASK-2052: the end of the path is the buyer having it — true of a parcel
+  // and of a pickup alike, so one word for both.
+  [OrderEntityStatus.DELIVERED]: "Отримано покупцем",
   [OrderEntityStatus.CANCELLED]: "Скасовано",
   [OrderEntityStatus.REFUNDED]: "Повернення коштів",
 };
@@ -47,9 +50,41 @@ const PAYMENT_STATUS_LABELS: Record<OrderEntityPaymentStatus, string> = {
   [OrderEntityPaymentStatus.REFUNDED]: dict.orderStatus.paymentLabels.REFUNDED,
 };
 
-/** Map a raw order-status enum to its Ukrainian label (falls back to input). */
+/**
+ * SHIPPED on a PICKUP order (TASK-2052, B-12 topic 6). There is no separate enum
+ * value: the operator's «Відправити» on a pickup order means the order is
+ * packed and waiting at the point — «Відправлено» would send the buyer looking
+ * for a parcel.
+ */
+const PICKUP_READY_LABEL = "Готово до видачі";
+
+/**
+ * Map a raw order-status enum to its Ukrainian label (falls back to input).
+ *
+ * The GENERIC word — for places with no concrete order behind them: filter
+ * checkboxes and chips, the orders-by-status chart, the audit log. Where an
+ * order is on screen, use {@link orderStatusLabelFor}.
+ */
 export function orderStatusLabel(status: string): string {
   return ORDER_STATUS_LABELS[status as OrderEntityStatus] ?? status;
+}
+
+/**
+ * The status of ONE order, worded for how it leaves the shop (TASK-2052): a
+ * SHIPPED pickup order reads «Готово до видачі»; everything else reads as
+ * {@link orderStatusLabel}. A missing delivery method is the generic word.
+ */
+export function orderStatusLabelFor(
+  status: string,
+  deliveryMethod: string | null | undefined,
+): string {
+  if (
+    status === OrderEntityStatus.SHIPPED &&
+    deliveryMethod === OrderEntityDeliveryMethod.PICKUP
+  ) {
+    return PICKUP_READY_LABEL;
+  }
+  return orderStatusLabel(status);
 }
 
 /**
@@ -58,18 +93,43 @@ export function orderStatusLabel(status: string): string {
  * that went back after the cancel is said on the badge itself: «Скасовано ·
  * кошти повернено» when everything paid came back, «Скасовано · повернуто
  * частково» while part of it is still held. Every other status reads as
- * `orderStatusLabel`.
+ * `orderStatusLabelFor` — a SHIPPED pickup order is «Готово до видачі» (TASK-2052).
  */
 export function orderHeadlineStatusLabel(
   order: Pick<
     OrderEntity,
     "status" | "refundedAfterCancel" | "paidKop" | "refundedKop"
-  >,
+  > &
+    Partial<Pick<OrderEntity, "deliveryMethod" | "offsetOutKop">>,
 ): string {
-  if (!order.refundedAfterCancel) return orderStatusLabel(order.status);
-  return order.refundedKop < order.paidKop
+  if (!order.refundedAfterCancel) {
+    return orderStatusLabelFor(order.status, order.deliveryMethod);
+  }
+  // TASK-2048: what moved on to a copy neither came back nor is still held.
+  const offsetKop = order.offsetOutKop ?? 0;
+  return order.refundedKop - offsetKop < order.paidKop - offsetKop
     ? dict.orderStatus.cancelledPartlyRefunded
     : dict.orderStatus.cancelledRefunded;
+}
+
+/**
+ * The payment badge of an ORDER (TASK-2048): a cancelled original whose money
+ * all went on to its copy as «Залік» reads «Оплату перенесено в копію», not
+ * «Кошти повернено» — nothing went back to the customer. The status itself is
+ * untouched (filters and reports count it as before); only the words change.
+ */
+export function orderPaymentStatusLabel(
+  order: Pick<OrderEntity, "paymentStatus" | "refundedKop"> &
+    Partial<Pick<OrderEntity, "offsetOutKop">>,
+): string {
+  const offsetKop = order.offsetOutKop ?? 0;
+  const refundStatus =
+    order.paymentStatus === OrderEntityPaymentStatus.REFUNDED ||
+    order.paymentStatus === OrderEntityPaymentStatus.PARTIALLY_REFUNDED;
+  if (refundStatus && offsetKop > 0 && order.refundedKop <= offsetKop) {
+    return dict.orderStatus.paymentMovedToCopy;
+  }
+  return paymentStatusLabel(order.paymentStatus);
 }
 
 /** Map a raw payment-status enum to its Ukrainian label (falls back to input). */

@@ -9,6 +9,7 @@ import {
   EMAIL_VERIFICATION_MAIL_TYPE,
   ORDER_CONFIRMATION_MAIL_TYPE,
   ORDER_PAYMENT_EXPIRED_MAIL_TYPE,
+  ORDER_REPLACED_MAIL_TYPE,
   ORDER_SHIPPED_MAIL_TYPE,
   PASSWORD_RESET_MAIL_TYPE,
 } from '../notification-outbox.types';
@@ -18,6 +19,7 @@ const SENDERS = [
   'sendPasswordResetPayload',
   'sendOrderShippedPayload',
   'sendOrderPaymentExpiredPayload',
+  'sendOrderReplacedPayload',
   'sendAccountLockedPayload',
   'sendEmailVerificationPayload',
   'sendEmailChangeConfirmPayload',
@@ -65,6 +67,8 @@ describe('EmailAdapter', () => {
     [PASSWORD_RESET_MAIL_TYPE, 'sendPasswordResetPayload'],
     [ORDER_SHIPPED_MAIL_TYPE, 'sendOrderShippedPayload'],
     [ORDER_PAYMENT_EXPIRED_MAIL_TYPE, 'sendOrderPaymentExpiredPayload'],
+    // TASK-2048: «Замовлення #старе замінено на #нове».
+    [ORDER_REPLACED_MAIL_TYPE, 'sendOrderReplacedPayload'],
     [ACCOUNT_LOCKED_MAIL_TYPE, 'sendAccountLockedPayload'],
     [EMAIL_VERIFICATION_MAIL_TYPE, 'sendEmailVerificationPayload'],
     [EMAIL_CHANGE_CONFIRM_MAIL_TYPE, 'sendEmailChangeConfirmPayload'],

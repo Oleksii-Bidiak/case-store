@@ -34,6 +34,30 @@ describe("OrderStatusTimeline (TASK-217)", () => {
     },
   );
 
+  it("names the stages «… → Відправлено → Отримано покупцем» on a parcel", () => {
+    const items = steps("SHIPPED");
+    expect(items[2]).toHaveTextContent("Відправлено");
+    expect(items[3]).toHaveTextContent("Отримано покупцем");
+  });
+
+  it("names the third stage «Готово до видачі» on a pickup order (TASK-2052)", () => {
+    render(
+      <OrderStatusTimeline
+        status="SHIPPED"
+        placedOn={PLACED}
+        deliveryMethod="PICKUP"
+      />,
+    );
+    const items = within(
+      screen.getByRole("list", { name: t.stepsAria }),
+    ).getAllByRole("listitem");
+    expect(items).toHaveLength(4);
+    expect(items[2]).toHaveTextContent("Готово до видачі");
+    expect(items[2]).toHaveAttribute("aria-current", "step");
+    expect(items[3]).toHaveTextContent("Отримано покупцем");
+    expect(screen.queryByText("Відправлено")).not.toBeInTheDocument();
+  });
+
   it("DELIVERED: all four stages done, none current", () => {
     const items = steps("DELIVERED");
     expect(states(items)).toEqual(["done", "done", "done", "done"]);

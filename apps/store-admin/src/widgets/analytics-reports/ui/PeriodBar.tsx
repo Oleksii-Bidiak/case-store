@@ -59,6 +59,11 @@ export interface PeriodBarProps {
   period?: ReportPeriodEntity;
   /** The period is on its way — draw a placeholder, not a stale label. */
   periodLoading?: boolean;
+  /**
+   * URL keys a new period makes stale — the money-flow register drops its
+   * `page` (TASK-2395): page 3 of September is not page 3 of October.
+   */
+  resetOnChange?: readonly string[];
 }
 
 /**
@@ -78,8 +83,14 @@ export function PeriodBar({
   selection,
   period,
   periodLoading,
+  resetOnChange,
 }: PeriodBarProps) {
-  const setUrlParams = useUrlParams();
+  const writeUrlParams = useUrlParams();
+  const setUrlParams = (patch: Record<string, string | undefined>) => {
+    const stale: Record<string, undefined> = {};
+    for (const key of resetOnChange ?? []) stale[key] = undefined;
+    writeUrlParams({ ...patch, ...stale });
+  };
   const today = kyivToday();
   const isCustom = selection.preset === ReportPreset.custom;
 

@@ -208,6 +208,9 @@ const orderRepositoryMock = {
   // TASK-341: operator-created orders + pre-shipment address correction.
   findOrderableProducts: jest.fn(),
   createManual: jest.fn(),
+  // TASK-2048: «Створити копію».
+  findCopySource: jest.fn(),
+  createManualCopy: jest.fn(),
   claimGuestOrders: jest.fn(),
   updateStatus: jest.fn(),
   cancelAndRestock: jest.fn(),
@@ -252,6 +255,8 @@ const mailOutboxServiceMock = {
   enqueueOrderShipped: jest.fn(),
   // TASK-352 (b): «оплату не отримано».
   enqueueOrderPaymentExpired: jest.fn(),
+  // TASK-2048: «Замовлення #старе замінено на #нове».
+  enqueueOrderReplaced: jest.fn(),
 };
 
 /** Fake transaction client handed to the createFromCart afterCreate hook. */
@@ -3555,8 +3560,23 @@ describe('OrderService', () => {
       expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledWith({
         to: 'buyer@example.com',
         customerName: 'Olena',
-        order: { id: 'order-uuid-1', trackingNumber: '20450000000001' },
+        order: { id: 'order-uuid-1', trackingNumber: '20450000000001', deliveryMethod: null },
       });
+    });
+
+    it('passes the delivery method, so a pickup order gets the «готове до видачі» letter', async () => {
+      seedShipped(
+        { status: OrderStatus.PROCESSING },
+        { status: OrderStatus.SHIPPED, deliveryMethod: 'PICKUP', trackingNumber: null },
+      );
+
+      await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
+
+      expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledWith(
+        expect.objectContaining({
+          order: { id: 'order-uuid-1', trackingNumber: null, deliveryMethod: 'PICKUP' },
+        }),
+      );
     });
 
     it('still tells the customer when no waybill has been entered yet', async () => {
@@ -3569,7 +3589,9 @@ describe('OrderService', () => {
 
       // "On its way" with no number still beats silence.
       expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledWith(
-        expect.objectContaining({ order: { id: 'order-uuid-1', trackingNumber: null } }),
+        expect.objectContaining({
+          order: { id: 'order-uuid-1', trackingNumber: null, deliveryMethod: null },
+        }),
       );
     });
 
@@ -3811,7 +3833,7 @@ describe('OrderService', () => {
 
       expect(mailOutboxServiceMock.enqueueOrderShipped).toHaveBeenCalledWith(
         expect.objectContaining({
-          order: { id: 'order-uuid-1', trackingNumber: '20450000000001' },
+          order: { id: 'order-uuid-1', trackingNumber: '20450000000001', deliveryMethod: null },
         }),
       );
     });
@@ -5915,6 +5937,398 @@ describe('OrderService', () => {
       const entity = OrderEntity.fromPrisma(makeOrder({ returns: [], refundedKop: 9_999 }));
 
       expect(entity.refundedTotal).toBe('99.99');
+    });
+  });
+
+  // ─── TASK-2048: «Створити копію» ──────────────────────────────────────────
+
+  describe('order copy (TASK-2048)', () => {
+    const SOURCE_ID = 'source-uuid-1';
+
+    const sourceLine = (
+      over: { stock?: number; isActive?: boolean; quantity?: number; productId?: string } = {},
+    ) => ({
+      productId: over.productId ?? 'product-uuid-1',
+      quantity: over.quantity ?? 1,
+      product: {
+        id: over.productId ?? 'product-uuid-1',
+        name: 'iPhone 15 Pro Case',
+        sku: 'CASE-15',
+        price: { toString: () => '549.00' },
+        stock: over.stock ?? 10,
+        isActive: over.isActive ?? true,
+        deletedAt: null,
+        category: { isActive: true, ancestorsActive: true },
+      },
+    });
+
+    const makeSource = (over: Record<string, unknown> = {}) => ({
+      id: SOURCE_ID,
+      status: OrderStatus.PROCESSING,
+      restockedAt: null,
+      userId: null,
+      user: null,
+      guestEmail: 'guest@example.com',
+      guestPhone: '+380671112233',
+      guestName: 'Гість Гостьович',
+      paymentMethod: PaymentMethod.ON_DELIVERY,
+      deliveryMethod: DeliveryMethod.NOVA_POSHTA,
+      pickupPointId: null,
+      shippingAddress: {
+        ...address,
+        npCityRef: 'city-ref-1',
+        npWarehouseRef: 'wh-ref-1',
+        npWarehouseName: 'Відділення №12',
+        deliveryMethod: 'NOVA_POSHTA',
+        carrier: 'NOVA_POSHTA',
+      },
+      shippingCost: { toString: () => '0' },
+      discountCode: 'SPRING10',
+      notes: 'Подзвонити заздалегідь',
+      paidKop: 0,
+      refundedKop: 0,
+      items: [sourceLine()],
+      ...over,
+    });
+
+    describe('adminGetCopyDraft', () => {
+      it('is a 404 for an order that does not exist', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(null);
+
+        await expect(service.adminGetCopyDraft(SOURCE_ID)).rejects.toThrow(NotFoundException);
+      });
+
+      it('prefills customer, delivery and lines at today’s price; the promo stays behind', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(makeSource());
+
+        const draft = await service.adminGetCopyDraft(SOURCE_ID);
+
+        expect(draft).toMatchObject({
+          sourceOrderId: SOURCE_ID,
+          sourceStatus: OrderStatus.PROCESSING,
+          canCancelOriginal: true,
+          userId: null,
+          customer: null,
+          contact: { name: 'Гість Гостьович', phone: '+380671112233', email: 'guest@example.com' },
+          paymentMethod: PaymentMethod.ON_DELIVERY,
+          deliveryMethod: DeliveryMethod.NOVA_POSHTA,
+          pickupPointId: null,
+          shippingCost: null,
+          notes: 'Подзвонити заздалегідь',
+          shippingAddress: {
+            firstName: 'Olena',
+            lastName: 'Shevchenko',
+            phone: '+380501234567',
+            city: 'Kyiv',
+            npCityRef: 'city-ref-1',
+            npWarehouseRef: 'wh-ref-1',
+          },
+          items: [
+            {
+              productId: 'product-uuid-1',
+              productName: 'iPhone 15 Pro Case',
+              price: '549.00',
+              quantity: 1,
+            },
+          ],
+          dropped: [],
+          heldKop: 0,
+        });
+        expect(draft).not.toHaveProperty('discountCode');
+      });
+
+      it('counts the unit the original would give back — the last unit can move', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(
+          makeSource({ items: [sourceLine({ stock: 0 })] }),
+        );
+
+        const draft = await service.adminGetCopyDraft(SOURCE_ID);
+
+        expect(draft.items).toEqual([expect.objectContaining({ quantity: 1, stock: 1 })]);
+        expect(draft.dropped).toEqual([]);
+      });
+
+      it('lists what was dropped or clamped', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(
+          makeSource({
+            status: OrderStatus.CANCELLED,
+            items: [
+              sourceLine({ isActive: false }),
+              sourceLine({ productId: 'product-uuid-2', stock: 1, quantity: 3 }),
+            ],
+          }),
+        );
+
+        const draft = await service.adminGetCopyDraft(SOURCE_ID);
+
+        expect(draft.canCancelOriginal).toBe(false);
+        expect(draft.dropped).toEqual([
+          expect.objectContaining({ productId: 'product-uuid-1', reason: 'INACTIVE', copied: 0 }),
+          expect.objectContaining({ productId: 'product-uuid-2', reason: 'CLAMPED', copied: 1 }),
+        ]);
+      });
+
+      it('names the account of an account order and what the original holds', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(
+          makeSource({
+            userId: USER_ID,
+            user: {
+              id: USER_ID,
+              email: 'olena@example.com',
+              firstName: 'Olena',
+              lastName: 'Shevchenko',
+              phone: '+380501234567',
+            },
+            guestEmail: null,
+            guestPhone: null,
+            guestName: null,
+            paidKop: 80_000,
+            refundedKop: 10_000,
+          }),
+        );
+
+        const draft = await service.adminGetCopyDraft(SOURCE_ID);
+
+        expect(draft.userId).toBe(USER_ID);
+        expect(draft.customer).toEqual({
+          id: USER_ID,
+          email: 'olena@example.com',
+          firstName: 'Olena',
+          lastName: 'Shevchenko',
+          phone: '+380501234567',
+        });
+        expect(draft.contact).toBeNull();
+        expect(draft.heldKop).toBe(70_000);
+      });
+
+      it('carries an agreed OTHER cost, never a «to be quoted» placeholder', async () => {
+        const other = {
+          deliveryMethod: DeliveryMethod.OTHER,
+          shippingAddress: { ...address, deliveryMethod: 'OTHER', carrier: null },
+          shippingCost: { toString: () => '150.00' },
+        };
+        orderRepositoryMock.findCopySource.mockResolvedValueOnce(makeSource(other));
+        expect((await service.adminGetCopyDraft(SOURCE_ID)).shippingCost).toBe('150.00');
+
+        orderRepositoryMock.findCopySource.mockResolvedValueOnce(
+          makeSource({
+            ...other,
+            shippingAddress: { ...other.shippingAddress, shippingCostPending: true },
+            shippingCost: { toString: () => '0' },
+          }),
+        );
+        expect((await service.adminGetCopyDraft(SOURCE_ID)).shippingCost).toBeNull();
+      });
+    });
+
+    describe('adminCreateOrder with copyOfOrderId', () => {
+      const catalogueProduct = {
+        id: 'product-uuid-1',
+        name: 'iPhone 15 Pro Case',
+        price: { toString: () => '549.00' },
+        stock: 0,
+        isActive: true,
+        category: { isActive: true, ancestorsActive: true },
+      };
+
+      const dto = {
+        contact: guestContact,
+        shippingAddress: address,
+        items: [{ productId: 'product-uuid-1', quantity: 1 }],
+        copyOfOrderId: SOURCE_ID,
+        cancelOriginal: true,
+      };
+
+      beforeEach(() => {
+        configValues.set('STORE_CLIENT_URL', 'https://shop.test');
+        orderRepositoryMock.findCopySource.mockResolvedValue(makeSource());
+        orderRepositoryMock.findOrderableProducts.mockResolvedValue([catalogueProduct]);
+        armCopy(true);
+      });
+
+      /** The repository double: runs the in-transaction hook like the real one. */
+      const armCopy = (replaced: boolean) =>
+        orderRepositoryMock.createManualCopy.mockImplementation(
+          async (
+            _params: unknown,
+            _copy: unknown,
+            _changedBy: unknown,
+            afterCopy?: (
+              tx: unknown,
+              created: OrderWithItems,
+              o: { replaced: boolean },
+            ) => Promise<void>,
+          ) => {
+            const order = makeOrder({ id: 'copy-uuid-1' });
+            if (afterCopy) await afterCopy(txMock, order, { replaced });
+            return { order, offsetKop: 0, replaced };
+          },
+        );
+
+      it('cancels and copies in one repository call, never a plain create', async () => {
+        await service.adminCreateOrder(dto, ADMIN_ID);
+
+        expect(orderRepositoryMock.createManualCopy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            items: [expect.objectContaining({ productId: 'product-uuid-1', price: '549.00' })],
+          }),
+          { sourceOrderId: SOURCE_ID, cancelOriginal: true },
+          ADMIN_ID,
+          expect.any(Function),
+        );
+        expect(orderRepositoryMock.createManual).not.toHaveBeenCalled();
+      });
+
+      it('lets the last unit move when the original is cancelled with the copy', async () => {
+        // Shelf stock 0, the original holds 1: the pre-check counts it as released.
+        await expect(service.adminCreateOrder(dto, ADMIN_ID)).resolves.toBeDefined();
+      });
+
+      it('refuses the last unit when the original stays live', async () => {
+        await expect(
+          service.adminCreateOrder({ ...dto, cancelOriginal: false }, ADMIN_ID),
+        ).rejects.toThrow(BadRequestException);
+        expect(orderRepositoryMock.createManualCopy).not.toHaveBeenCalled();
+      });
+
+      it('never copies the promo code', async () => {
+        await service.adminCreateOrder(dto, ADMIN_ID);
+
+        const [params] = orderRepositoryMock.createManualCopy.mock.calls[0];
+        expect(params).not.toHaveProperty('discountCode');
+        expect(params).not.toHaveProperty('discount');
+      });
+
+      it('is a 404 when the original does not exist', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(null);
+
+        await expect(service.adminCreateOrder(dto, ADMIN_ID)).rejects.toThrow(NotFoundException);
+      });
+
+      it('is a 409 when «Скасувати» meets an original that already shipped', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(
+          makeSource({ status: OrderStatus.SHIPPED }),
+        );
+
+        await expect(service.adminCreateOrder(dto, ADMIN_ID)).rejects.toMatchObject({
+          response: { error: 'ORDER_COPY_ORIGINAL_NOT_CANCELLABLE' },
+        });
+        expect(orderRepositoryMock.createManualCopy).not.toHaveBeenCalled();
+      });
+
+      it('queues «замінено» to the contact, in the copy transaction', async () => {
+        await service.adminCreateOrder(dto, ADMIN_ID);
+
+        expect(mailOutboxServiceMock.enqueueOrderReplaced).toHaveBeenCalledWith(
+          {
+            to: 'guest@example.com',
+            customerName: 'Гість Гостьович',
+            oldOrderId: SOURCE_ID,
+            newOrderId: 'copy-uuid-1',
+            orderStatusUrl: expect.stringContaining('/orders/guest/'),
+          },
+          txMock,
+        );
+      });
+
+      it('addresses an account copy to the account, without a guest link', async () => {
+        userRepositoryMock.findById.mockResolvedValue(recipient);
+        orderRepositoryMock.findCopySource.mockResolvedValue(
+          makeSource({ userId: USER_ID, guestEmail: null, guestPhone: null, guestName: null }),
+        );
+
+        await service.adminCreateOrder({ ...dto, contact: undefined, userId: USER_ID }, ADMIN_ID);
+
+        expect(mailOutboxServiceMock.enqueueOrderReplaced).toHaveBeenCalledWith(
+          {
+            to: 'olena@example.com',
+            customerName: 'Olena',
+            oldOrderId: SOURCE_ID,
+            newOrderId: 'copy-uuid-1',
+          },
+          txMock,
+        );
+      });
+
+      it('is a 409 when a cancelling copy is made out to another customer', async () => {
+        await expect(
+          service.adminCreateOrder(
+            { ...dto, contact: { ...guestContact, phone: '+380509998877' } },
+            ADMIN_ID,
+          ),
+        ).rejects.toMatchObject({ response: { error: 'ORDER_COPY_CUSTOMER_CHANGED' } });
+        expect(orderRepositoryMock.createManualCopy).not.toHaveBeenCalled();
+        expect(mailOutboxServiceMock.enqueueOrderReplaced).not.toHaveBeenCalled();
+      });
+
+      it('is a 409 when the copy would take a cancelled original’s money for someone else', async () => {
+        userRepositoryMock.findById.mockResolvedValue(recipient);
+        orderRepositoryMock.findCopySource.mockResolvedValue(
+          makeSource({ status: OrderStatus.CANCELLED, paidKop: 54_900 }),
+        );
+
+        await expect(
+          service.adminCreateOrder(
+            { ...dto, cancelOriginal: false, contact: undefined, userId: USER_ID },
+            ADMIN_ID,
+          ),
+        ).rejects.toMatchObject({ response: { error: 'ORDER_COPY_CUSTOMER_CHANGED' } });
+        expect(orderRepositoryMock.createManualCopy).not.toHaveBeenCalled();
+      });
+
+      it('lets a copy that keeps the original live go to another customer', async () => {
+        orderRepositoryMock.findOrderableProducts.mockResolvedValue([
+          { ...catalogueProduct, stock: 5 },
+        ]);
+        armCopy(false);
+
+        await expect(
+          service.adminCreateOrder(
+            { ...dto, cancelOriginal: false, contact: { ...guestContact, phone: '+380509998877' } },
+            ADMIN_ID,
+          ),
+        ).resolves.toBeDefined();
+      });
+
+      it('sends nothing to a walk-in with no email', async () => {
+        await service.adminCreateOrder(
+          { ...dto, contact: { name: 'Гість', phone: '+380671112233' } as never },
+          ADMIN_ID,
+        );
+
+        expect(mailOutboxServiceMock.enqueueOrderReplaced).not.toHaveBeenCalled();
+      });
+
+      it('sends no «replaced» letter while the original stays live', async () => {
+        orderRepositoryMock.findOrderableProducts.mockResolvedValue([
+          { ...catalogueProduct, stock: 5 },
+        ]);
+        armCopy(false);
+
+        await service.adminCreateOrder({ ...dto, cancelOriginal: false }, ADMIN_ID);
+
+        expect(mailOutboxServiceMock.enqueueOrderReplaced).not.toHaveBeenCalled();
+      });
+
+      it('sends none for an original cancelled long ago — this copy replaced nothing', async () => {
+        orderRepositoryMock.findCopySource.mockResolvedValue(
+          makeSource({ status: OrderStatus.CANCELLED }),
+        );
+        orderRepositoryMock.findOrderableProducts.mockResolvedValue([
+          { ...catalogueProduct, stock: 5 },
+        ]);
+        armCopy(false);
+
+        await service.adminCreateOrder({ ...dto, cancelOriginal: false }, ADMIN_ID);
+
+        expect(mailOutboxServiceMock.enqueueOrderReplaced).not.toHaveBeenCalled();
+      });
+
+      it('fails the copy with the letter — enqueue and commit are one', async () => {
+        mailOutboxServiceMock.enqueueOrderReplaced.mockRejectedValueOnce(new Error('db down'));
+
+        await expect(service.adminCreateOrder(dto, ADMIN_ID)).rejects.toThrow('db down');
+      });
     });
   });
 });

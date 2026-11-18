@@ -298,6 +298,15 @@ export class OrderEntity {
 
   @ApiProperty({
     description:
+      'The part of refundedKop that went on to a copy as «Залік» (OFFSET_TO_ORDER, TASK-2048), ' +
+      'not back to the customer — integer kopecks. refundedKop − offsetOutKop is what the ' +
+      'customer actually got back.',
+    example: 0,
+  })
+  offsetOutKop!: number;
+
+  @ApiProperty({
+    description:
       "Σ «До повернення» of the order's REFUND-decided returns, integer kopecks: the part " +
       'of the total the customer no longer owes for goods that came back.',
     example: 0,
@@ -443,6 +452,36 @@ export class OrderEntity {
   })
   internalNotes?: string | null;
 
+  @ApiProperty({
+    description:
+      'TASK-2048 «Створити копію»: the order this one is a copy of («Копія #старе»), or null',
+    type: String,
+    nullable: true,
+    format: 'uuid',
+  })
+  copiedFromId!: string | null;
+
+  @ApiProperty({
+    description:
+      'TASK-2048: the copies made of this order, oldest first («Замінено на #нове» / «Копії»). ' +
+      'Admin reads only — absent elsewhere.',
+    type: [String],
+    required: false,
+  })
+  copyIds?: string[];
+
+  @ApiProperty({
+    description:
+      'TASK-2048: the copy whose «Скасувати #старе — замінено» cancelled this order ' +
+      '(«Замінено на»), or null — a copy of an order cancelled earlier replaced nothing. ' +
+      'Admin reads only — absent elsewhere.',
+    type: String,
+    nullable: true,
+    required: false,
+    format: 'uuid',
+  })
+  replacedById?: string | null;
+
   /**
    * Create an OrderEntity from a repository order. Converts all Decimal money
    * fields to strings and maps each line into an {@link OrderItemEntity}.
@@ -534,10 +573,13 @@ export class OrderEntity {
     // fixtures that predate the columns (NOT NULL DEFAULT 0 in the schema).
     entity.paidKop = order.paidKop ?? 0;
     entity.refundedKop = order.refundedKop ?? 0;
+    entity.offsetOutKop = order.offsetOutKop ?? 0;
     entity.returnCreditKop = order.returnCreditKop ?? 0;
     entity.balanceKop = order.balanceKop ?? 0;
-    // TASK-1970: a cancelled order whose money went back stays CANCELLED.
-    entity.refundedAfterCancel = order.status === OrderStatus.CANCELLED && entity.refundedKop > 0;
+    // TASK-1970: a cancelled order whose money went back stays CANCELLED. Money
+    // that moved on to a copy (TASK-2048) did not go back to the customer.
+    entity.refundedAfterCancel =
+      order.status === OrderStatus.CANCELLED && entity.refundedKop - entity.offsetOutKop > 0;
     // TASK-472: only when this read actually joined the returns (admin) — an
     // unmeasured customer read must not report a zero.
     if (order.returns) {
@@ -550,6 +592,20 @@ export class OrderEntity {
       entity.unavailableItemIds = unavailableItemIds;
     }
     entity.restockedAt = order.restockedAt;
+    // TASK-2048: the copy links. `copies` only on reads that joined them.
+    entity.copiedFromId = order.copiedFromId ?? null;
+    if (order.copies) {
+      entity.copyIds = order.copies.map((copy) => copy.id);
+      // The cancel and the copy share one transaction, so the replacing copy is
+      // the first one created at or after that cancel row; copies made before
+      // it (no cancel) and after it (of a cancelled order) are plain copies.
+      const cancelledAt = order.statusHistory?.[0]?.changedAt;
+      entity.replacedById = cancelledAt
+        ? (order.copies.find(
+            (copy) => copy.createdAt && copy.createdAt.getTime() >= cancelledAt.getTime(),
+          )?.id ?? null)
+        : null;
+    }
     entity.trackingNumber = order.trackingNumber ?? null;
     // TASK-336: opt-in, never automatic — see the docblock above.
     if (options.includeInternal) {
