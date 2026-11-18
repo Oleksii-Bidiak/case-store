@@ -38,6 +38,11 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
   const cart = data?.data;
   const items = cart?.items ?? [];
   const count = cart?.totals.itemCount ?? 0;
+  // «Разом» is goods plus the selected add-on services (TASK-2519) — the same
+  // sum the cart page charges; delivery is priced at checkout.
+  const totalCents =
+    Math.round(parseFloat(cart?.totals.subtotal ?? "0") * 100) +
+    Math.max(0, Math.round(parseFloat(cart?.totals.addonsTotal ?? "0") * 100));
   // Same rule as the cart page (TASK-403): a line the API withdrew from sale
   // blocks checkout. "Перейти в кошик" below stays live; the rows carry the
   // badge via the shared CartItemRow.
@@ -170,7 +175,7 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
                   {dict.cart.total}
                 </span>
                 <span className="font-display text-xl font-bold tracking-tight text-foreground">
-                  {formatMoney(cart?.totals.subtotal ?? "0")}
+                  {formatMoney((totalCents / 100).toFixed(2))}
                 </span>
               </div>
               {/* Not a promise of free delivery (TASK-881): the price depends

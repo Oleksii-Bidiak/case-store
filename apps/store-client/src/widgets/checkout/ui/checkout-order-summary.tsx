@@ -86,6 +86,7 @@ export function CheckoutOrderSummary({
     cartQuery: { data, isLoading, isError },
     quote,
     excludesShipping,
+    addonsCents,
     totalText = formatMoney("0.00"),
   } = useCheckoutTotal({ method, npManual, npCityRef });
   const isNovaPoshta = method === "NOVA_POSHTA" && !npManual;
@@ -180,6 +181,15 @@ export function CheckoutOrderSummary({
             <span>{dict.checkout.deliveryEstimateLabel}</span>
             <span className="text-foreground">
               {dict.checkout.etaValue(quote.etaDays)}
+            </span>
+          </div>
+        )}
+
+        {addonsCents > 0 && (
+          <div className="flex justify-between py-1.5 text-sm text-muted-foreground">
+            <span>{dict.cart.addonServicesLine}</span>
+            <span className="font-mono text-foreground">
+              +{centsToMoney(addonsCents)}
             </span>
           </div>
         )}

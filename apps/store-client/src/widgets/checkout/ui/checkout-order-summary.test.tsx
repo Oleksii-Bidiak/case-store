@@ -1,7 +1,9 @@
 import { http, HttpResponse } from "msw";
 import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
+import { makeCart } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
+import { formatMoney } from "@/shared/lib";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { clearAppliedDiscount } from "@/features/apply-discount";
 
@@ -184,5 +186,39 @@ describe("CheckoutOrderSummary", () => {
     expect(
       await screen.findByText(dict.checkout.summaryError),
     ).toBeInTheDocument();
+  });
+
+  // TASK-2519: the checkout total ignored the add-on services the cart page
+  // and the server both charge for.
+  describe("add-on services (TASK-2519)", () => {
+    const totalRow = () =>
+      screen.getByText(dict.checkout.totalLine).parentElement as HTMLElement;
+    const stripped = (amount: string) => formatMoney(amount).replace(/\s/g, "");
+
+    it("shows the add-on services line and adds it to «До сплати»", async () => {
+      const cart = makeCart(); // subtotal 998.00
+      cart.data.totals.addonsTotal = "500.00";
+      server.use(http.get("*/api/cart", () => HttpResponse.json(cart)));
+
+      renderWithProviders(<CheckoutOrderSummary method="PICKUP" />, authed);
+
+      const line = await screen.findByText(dict.cart.addonServicesLine);
+      expect(line.parentElement?.textContent?.replace(/\s/g, "")).toContain(
+        stripped("500.00"),
+      );
+      expect(totalRow().textContent?.replace(/\s/g, "")).toContain(
+        stripped("1498.00"),
+      );
+    });
+
+    it("omits the line when no add-on service is selected", async () => {
+      renderWithProviders(<CheckoutOrderSummary method="PICKUP" />, authed);
+
+      await screen.findByText(dict.checkout.totalLine);
+      expect(screen.queryByText(dict.cart.addonServicesLine)).toBeNull();
+      expect(totalRow().textContent?.replace(/\s/g, "")).toContain(
+        stripped("998.00"),
+      );
+    });
   });
 });

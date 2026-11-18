@@ -9,6 +9,7 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { makeCart, makeCartItem } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
+import { formatMoney } from "@/shared/lib";
 import { Toaster } from "@/shared/ui";
 import { CartSheet } from "./cart-sheet";
 
@@ -122,5 +123,23 @@ describe("CartSheet — delivery note (TASK-881)", () => {
       await within(dialog).findByText(dict.cart.sheetDeliveryNote),
     ).toBeInTheDocument();
     expect(within(dialog).queryByText(/безкоштовн/i)).not.toBeInTheDocument();
+  });
+});
+
+// TASK-2519: the mini-cart printed the goods subtotal as «Разом» and silently
+// dropped the selected add-on services the cart page charges for.
+describe("CartSheet — add-on services in the total (TASK-2519)", () => {
+  it("adds the selected add-on services to «Разом»", async () => {
+    const cart = makeCart(); // subtotal 998.00
+    cart.data.totals.addonsTotal = "500.00";
+    server.use(http.get("*/api/cart", () => HttpResponse.json(cart)));
+
+    renderWithProviders(<CartSheet open onOpenChange={jest.fn()} />);
+
+    const dialog = await screen.findByRole("dialog");
+    const label = await within(dialog).findByText(dict.cart.total);
+    expect(label.parentElement?.textContent?.replace(/\s/g, "")).toContain(
+      formatMoney("1498.00").replace(/\s/g, ""),
+    );
   });
 });
