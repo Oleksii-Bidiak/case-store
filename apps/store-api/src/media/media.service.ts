@@ -116,7 +116,14 @@ export class MediaService {
   ): Promise<MediaAssetDetailEntity> {
     const stored = await this.uploads.store(file, MEDIA_SUBDIR);
 
-    return this.recordStored(stored, file?.originalname, uploadedById, metadata);
+    // A file with no row is invisible to the library and can never be deleted
+    // from it, so a failed insert takes the file back with it.
+    try {
+      return await this.recordStored(stored, file?.originalname, uploadedById, metadata);
+    } catch (error) {
+      await this.uploads.removeByUrl(stored.url);
+      throw error;
+    }
   }
 
   /**

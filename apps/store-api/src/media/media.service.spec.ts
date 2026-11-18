@@ -320,6 +320,13 @@ describe('MediaService', () => {
       expect(repository.create).not.toHaveBeenCalled();
     });
 
+    it('removes the stored file when the row cannot be recorded', async () => {
+      repository.create.mockRejectedValue(new Error('db down'));
+
+      await expect(service.upload(makeFile(), {}, 'admin-1')).rejects.toThrow('db down');
+      expect(uploads.removeByUrl).toHaveBeenCalledWith(makeStored().url);
+    });
+
     it('defaults alt to null and tags to an empty list', async () => {
       await service.upload(makeFile(), {}, 'admin-1');
 
