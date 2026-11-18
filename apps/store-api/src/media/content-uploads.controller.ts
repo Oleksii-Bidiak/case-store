@@ -89,7 +89,7 @@ const SINGLE_FILE_BODY = {
 // the API were also the least limited ones. 20/min matches the admin routes and
 // is far above any real rate of picking cover images by hand.
 @Throttle({ default: { limit: 20, ttl: 60000 } })
-export class ContentUploadsController {
+export class UploadsController {
   constructor(private readonly media: MediaService) {}
 
   /** POST /api/admin/uploads/categories — cover image for a category. */
