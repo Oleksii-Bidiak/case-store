@@ -11,7 +11,12 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { ImageProcessor, STORAGE_SERVICE } from '../src/storage';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
-import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { MediaRepository } from '../src/media/media.repository';
+import { MediaUsageRepository } from '../src/media/media-usage.repository';
+import {
+  createPermissionRepositoryMock,
+  PermissionRepositoryMock,
+} from './permission-repository.mock';
 import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
@@ -26,6 +31,11 @@ import { createGlobalValidationPipe } from '../src/common/pipes';
  * they carry four different permissions, so a manager who holds exactly one of
  * them must reach exactly one route — a test that only proves "admin can upload"
  * would pass against a single route with the wrong key on it.
+ *
+ * Since TASK-2042 every one of these uploads is also a media-library asset, so
+ * the second axis is the library's own keys: the banner manager here holds
+ * `banners:write` and NO `media:*` key, and must still upload — while gaining
+ * nothing on `/admin/media` itself.
  */
 
 class ThrottlerGuardPassThrough extends ThrottlerGuard {
@@ -48,6 +58,21 @@ describe('UploadsController (e2e)', () => {
   const imageProcessorMock = { process: jest.fn(), detectFormat: jest.fn(), probe: jest.fn() };
   const prismaServiceMock = { $connect: jest.fn(), $disconnect: jest.fn() };
 
+  const mediaRepositoryMock = {
+    findAll: jest.fn(),
+    findById: jest.fn(),
+    findByUrl: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+  };
+  const mediaUsageRepositoryMock = { findUsage: jest.fn(), findUsageForUrl: jest.fn() };
+
+  /** A content manager who may edit banners and nothing else — no `media:*` key. */
+  const permissionRepositoryMock: PermissionRepositoryMock = createPermissionRepositoryMock({
+    grants: { [UserRole.MANAGER]: ['banners:write'] },
+  });
+
   function generateAccessToken(userId: string, role: string): string {
     return jwtService.sign(
       { sub: userId, role },
@@ -66,16 +91,17 @@ describe('UploadsController (e2e)', () => {
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
       .overrideProvider(PermissionRepository)
-      // A content manager who may edit banners and nothing else.
-      .useValue(
-        createPermissionRepositoryMock({ grants: { [UserRole.MANAGER]: ['banners:write'] } }),
-      )
+      .useValue(permissionRepositoryMock)
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(STORAGE_SERVICE)
       .useValue(storageMock)
       .overrideProvider(ImageProcessor)
       .useValue(imageProcessorMock)
+      .overrideProvider(MediaRepository)
+      .useValue(mediaRepositoryMock)
+      .overrideProvider(MediaUsageRepository)
+      .useValue(mediaUsageRepositoryMock)
       .overrideProvider(APP_GUARD)
       .useClass(ThrottlerGuardPassThrough)
       .compile();
@@ -94,7 +120,7 @@ describe('UploadsController (e2e)', () => {
   });
 
   beforeEach(() => {
-    storageMock.save.mockResolvedValue('content/abc.webp');
+    storageMock.save.mockResolvedValue('media/abc.webp');
     imageProcessorMock.detectFormat.mockResolvedValue('png');
     imageProcessorMock.probe.mockResolvedValue({ format: 'png', width: 2000, height: 1333 });
     imageProcessorMock.process.mockResolvedValue({
@@ -103,7 +129,16 @@ describe('UploadsController (e2e)', () => {
       width: 2000,
       height: 1333,
       bytes: Buffer.from('optimized-webp').length,
+      sourceFormat: 'png',
     });
+    // The library row the upload creates — echoed back the way Prisma would.
+    mediaRepositoryMock.create.mockImplementation(async (input: Record<string, unknown>) => ({
+      id: 'asset-1',
+      ...input,
+      createdAt: new Date('2026-11-16T10:00:00.000Z'),
+      updatedAt: new Date('2026-11-16T10:00:00.000Z'),
+    }));
+    mediaRepositoryMock.findById.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -113,7 +148,7 @@ describe('UploadsController (e2e)', () => {
   // ─── Happy path ───────────────────────────────────────────────────────────
 
   describe('POST /api/admin/uploads/categories', () => {
-    it('stores the re-encoded WebP under the content subdir and returns its URL + LQIP', async () => {
+    it('stores the re-encoded WebP under the media subdir and returns its URL + LQIP', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
 
       const response = await request(app.getHttpServer())
@@ -123,7 +158,7 @@ describe('UploadsController (e2e)', () => {
         .expect(201);
 
       expect(response.body.data).toEqual({
-        url: 'http://localhost:3001/uploads/content/abc.webp',
+        url: 'http://localhost:3001/uploads/media/abc.webp',
         blurDataUrl: 'data:image/webp;base64,BLUR',
       });
 
@@ -131,7 +166,7 @@ describe('UploadsController (e2e)', () => {
       // The processed bytes, never the client's — and in the whitelisted subdir.
       expect(buffer).toEqual(Buffer.from('optimized-webp'));
       expect(ext).toBe('webp');
-      expect(subdir).toBe('content');
+      expect(subdir).toBe('media');
     });
 
     it('returns 400 when no file part is present', async () => {
@@ -158,17 +193,18 @@ describe('UploadsController (e2e)', () => {
     }
 
     expect(storageMock.save).toHaveBeenCalledTimes(4);
-    // All four land in ONE subdir: which entity an image belongs to is recorded
-    // in the row that points at it, not in the path.
+    // All four land in the library's subdir (TASK-2042): which entity an image
+    // belongs to is recorded in the row that points at it, not in the path.
     for (const call of storageMock.save.mock.calls) {
-      expect(call[2]).toBe('content');
+      expect(call[2]).toBe('media');
     }
+    expect(mediaRepositoryMock.create).toHaveBeenCalledTimes(4);
   });
 
   it('passes an animated GIF through untouched with a null blurDataUrl', async () => {
     const token = generateAccessToken('admin-e2e-1', 'ADMIN');
     imageProcessorMock.probe.mockResolvedValue({ format: 'gif', width: 320, height: 240 });
-    storageMock.save.mockResolvedValue('content/abc.gif');
+    storageMock.save.mockResolvedValue('media/abc.gif');
 
     const response = await request(app.getHttpServer())
       .post('/api/admin/uploads/banners')
@@ -343,5 +379,82 @@ describe('UploadsController (e2e)', () => {
         expect(storageMock.save).not.toHaveBeenCalled();
       },
     );
+  });
+
+  // ─── The library record (TASK-2042) ───────────────────────────────────────
+
+  describe('an editor with banners:write and no media:write', () => {
+    const asBannerEditor = (): string => generateAccessToken('manager-e2e-1', 'MANAGER');
+
+    it('uploads into the library: the file lands under /uploads/media/ with an asset row', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/admin/uploads/banners')
+        .set('Authorization', `Bearer ${asBannerEditor()}`)
+        .attach('file', PNG_BYTES, { filename: 'autumn.png', contentType: 'image/png' })
+        .expect(201);
+
+      expect(response.body.data.url).toBe('http://localhost:3001/uploads/media/abc.webp');
+      expect(mediaRepositoryMock.create).toHaveBeenCalledTimes(1);
+      expect(mediaRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'http://localhost:3001/uploads/media/abc.webp',
+          uploadedById: 'manager-e2e-1',
+          originalFilename: 'autumn.png',
+          originalMime: 'image/png',
+          alt: null,
+          tags: [],
+        }),
+      );
+    });
+
+    it('still cannot upload through the library route itself (403)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/admin/media')
+        .set('Authorization', `Bearer ${asBannerEditor()}`)
+        .attach('file', PNG_BYTES, { filename: 'a.png', contentType: 'image/png' })
+        .expect(403);
+
+      expect(storageMock.save).not.toHaveBeenCalled();
+    });
+
+    it('cannot edit the asset it just created (403)', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/admin/media/asset-1')
+        .set('Authorization', `Bearer ${asBannerEditor()}`)
+        .send({ alt: 'Осінній банер' })
+        .expect(403);
+
+      expect(mediaRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('cannot delete the asset it just created (403)', async () => {
+      await request(app.getHttpServer())
+        .delete('/api/admin/media/asset-1')
+        .set('Authorization', `Bearer ${asBannerEditor()}`)
+        .expect(403);
+
+      expect(mediaRepositoryMock.delete).not.toHaveBeenCalled();
+      expect(storageMock.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('an editor with media:write but no banners:write', () => {
+    afterEach(() => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['banners:write']);
+    });
+
+    it('is refused on the banner route — the library key does not stand in for the field key', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['media:read', 'media:write']);
+      const token = generateAccessToken('manager-e2e-1', 'MANAGER');
+
+      await request(app.getHttpServer())
+        .post('/api/admin/uploads/banners')
+        .set('Authorization', `Bearer ${token}`)
+        .attach('file', PNG_BYTES, { filename: 'a.png', contentType: 'image/png' })
+        .expect(403);
+
+      expect(storageMock.save).not.toHaveBeenCalled();
+      expect(mediaRepositoryMock.create).not.toHaveBeenCalled();
+    });
   });
 });

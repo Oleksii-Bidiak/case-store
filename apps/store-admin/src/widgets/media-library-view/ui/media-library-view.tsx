@@ -4,7 +4,12 @@ import { useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Eye, ImagePlus, Loader2, Upload } from "lucide-react";
-import { getMediaControllerFindAllQueryKey } from "@/entities/media";
+import {
+  MediaListSort,
+  MediaListView,
+  getMediaControllerFindAllQueryKey,
+  useMediaControllerFindAll,
+} from "@/entities/media";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import {
@@ -12,14 +17,25 @@ import {
   MediaAssetGrid,
   MediaPendingTile,
   MediaUploadSummary,
+  mediaListParams,
+  parseMediaListSort,
+  parseMediaListView,
   useMediaUploads,
 } from "@/features/media-picker";
 import { CONTENT_IMAGE_ACCEPT } from "@/shared/lib/image-upload-error";
 import { usePageFileDrop } from "@/shared/lib/use-page-file-drop";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import {
   Button,
   Callout,
   LiveAnnouncer,
+  SELECT_PANEL_CLASS,
+  SegmentedControl,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   TablePagination,
   TableSearch,
   TableToolbar,
@@ -51,11 +67,15 @@ const t = dict.mediaLibrary;
  * so a content manager granted the read key alone gets a library they can
  * browse rather than a screen of controls that answer 403.
  *
- * NOT DRAWN, because the API cannot answer them yet (wave 198 tails): the
- * views «Усі · Не використовуються · Без опису» and their counts (no usage/alt
- * filter on `GET /admin/media`), sorting (no sort parameter — the list is
- * always newest first), search by file name and the original file name on the
- * card (MediaAsset stores no original name).
+ * VIEWS AND SORT (TASK-1730). «Усі · Не використовуються · Без опису» with the
+ * counts the API reports under the current search, and «Спершу нові» beside the
+ * search — both in the URL (`?view=`, `?sort=`) like the search and the page,
+ * and both reset the page when they change. The counters come from the grid's
+ * own request: `mediaListParams` builds one key for both, so reading them here
+ * costs no second fetch.
+ *
+ * The search also matches the original file name, which the cards show on
+ * their second line (TASK-1731).
  *
  * `LiveAnnouncer` wraps the body rather than sitting inside it: the uploads
  * hook and the toolbar call `useAnnouncer()`, and a hook called in the same
@@ -81,6 +101,40 @@ function MediaLibraryBody() {
   const search = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
+  const view = parseMediaListView(searchParams.get("view"));
+  const sort = parseMediaListSort(searchParams.get("sort"));
+  const updateParams = useUrlParams();
+
+  // The SAME params as the grid's query, so this is a cache read of the page
+  // the grid is fetching, not a second request.
+  const { data: listPage } = useMediaControllerFindAll(
+    mediaListParams({ search, page, pageSize, view, sort }),
+  );
+  const counts = listPage?.meta?.counts;
+
+  const viewOptions = [
+    { value: MediaListView.all, label: t.viewAll, count: counts?.all },
+    { value: MediaListView.unused, label: t.viewUnused, count: counts?.unused },
+    { value: MediaListView.noAlt, label: t.viewNoAlt, count: counts?.noAlt },
+  ].map((option) => ({
+    value: option.value,
+    label: (
+      <>
+        {option.label}
+        {option.count !== undefined && (
+          <span className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">
+            {option.count.toLocaleString("uk-UA")}
+          </span>
+        )}
+      </>
+    ),
+  }));
+
+  const sortOptions = [
+    { value: MediaListSort.newest, label: t.sortNewest },
+    { value: MediaListSort.oldest, label: t.sortOldest },
+    { value: MediaListSort.largest, label: t.sortLargest },
+  ];
 
   const listKey = getMediaControllerFindAllQueryKey();
 
@@ -164,6 +218,21 @@ function MediaLibraryBody() {
         </Callout>
       )}
 
+      <SegmentedControl
+        variant="pill"
+        aria-label={t.viewsAria}
+        className="md:w-fit"
+        value={view}
+        options={viewOptions}
+        // The default is written as NO param, so «Усі» is the plain /media link.
+        onValueChange={(next) =>
+          updateParams({
+            view: next === MediaListView.all ? undefined : next,
+            page: undefined,
+          })
+        }
+      />
+
       <TableToolbar
         className="mb-0"
         onRefresh={() => void invalidateGrid()}
@@ -174,6 +243,28 @@ function MediaLibraryBody() {
             placeholder={t.searchPlaceholder}
             label={t.searchAria}
           />
+        }
+        actions={
+          <Select
+            value={sort}
+            onValueChange={(next) =>
+              updateParams({
+                sort: next === MediaListSort.newest ? undefined : next,
+                page: undefined,
+              })
+            }
+          >
+            <SelectTrigger size="sm" className="w-40" aria-label={t.sortAria}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" className={SELECT_PANEL_CLASS}>
+              {sortOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         }
       />
 
@@ -200,6 +291,8 @@ function MediaLibraryBody() {
         search={search}
         page={page}
         pageSize={pageSize}
+        view={view}
+        sort={sort}
         canWrite={canWrite}
         isNew={(asset) => uploads.newAssetIds.has(asset.id)}
         leading={

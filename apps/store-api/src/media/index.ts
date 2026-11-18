@@ -1,5 +1,5 @@
 export { MediaModule } from './media.module';
-export { MediaService } from './media.service';
+export { MediaService, type StoredFileFacts } from './media.service';
 export { MediaRepository } from './media.repository';
 export { MediaUsageRepository, MEDIA_USAGE_MAX_URLS } from './media-usage.repository';
 export {

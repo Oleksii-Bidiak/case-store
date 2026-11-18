@@ -1,7 +1,7 @@
 // Deep import, like `newsletter.controller.spec.ts`: the package barrel does not
 // re-export the metadata-key constants.
 import { THROTTLER_LIMIT } from '@nestjs/throttler/dist/throttler.constants';
-import { UploadsController } from './uploads.controller';
+import { UploadsController } from '../media/content-uploads.controller';
 import { MediaController } from '../media/media.controller';
 import { ProductImageController } from '../product/product-image.controller';
 

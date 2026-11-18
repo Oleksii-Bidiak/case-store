@@ -18,6 +18,13 @@ export {
   MediaAssetGrid,
   type MediaAssetGridProps,
 } from "./ui/media-asset-grid";
+// TASK-1730 — one builder for the list params, so the /media screen's view
+// counters share the grid's request instead of starting a second one.
+export {
+  mediaListParams,
+  parseMediaListSort,
+  parseMediaListView,
+} from "./model/media-list-params";
 export { MediaAssetDialog } from "./ui/media-asset-dialog";
 export { MediaUploadZone } from "./ui/media-upload-zone";
 export { MediaLibrarySkeleton } from "./ui/media-library-skeleton";

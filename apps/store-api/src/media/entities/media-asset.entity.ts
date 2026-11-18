@@ -77,6 +77,27 @@ export class MediaAssetEntity {
 
   @ApiProperty({
     description:
+      'Name of the file the operator uploaded (basename, cleaned up). Null = unknown: ' +
+      'assets from before TASK-1731, the TASK-441 backfill and the seed.',
+    // `type: String` is mandatory on a nullable union — see `blurDataUrl`.
+    type: String,
+    nullable: true,
+    example: 'Банер осінь.jpg',
+  })
+  originalFilename!: string | null;
+
+  @ApiProperty({
+    description:
+      'Media type of the uploaded file as the pipeline DETECTED it from the bytes. Differs ' +
+      'from `mime` when the upload was re-encoded (a JPEG stored as WebP). Null = unknown.',
+    type: String,
+    nullable: true,
+    example: 'image/jpeg',
+  })
+  originalMime!: string | null;
+
+  @ApiProperty({
+    description:
       'How many places currently reference this asset. COMPUTED on every read, never ' +
       'stored — see MediaUsageRepository. 0 is the only state in which a delete succeeds.',
     example: 0,
@@ -101,6 +122,8 @@ export class MediaAssetEntity {
     entity.alt = asset.alt;
     entity.tags = asset.tags;
     entity.uploadedById = asset.uploadedById;
+    entity.originalFilename = asset.originalFilename;
+    entity.originalMime = asset.originalMime;
     entity.usedInCount = usedInCount;
     entity.createdAt = asset.createdAt;
     entity.updatedAt = asset.updatedAt;

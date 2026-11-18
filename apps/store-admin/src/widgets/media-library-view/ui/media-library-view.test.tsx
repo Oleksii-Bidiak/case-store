@@ -23,6 +23,10 @@ import { server } from "@/shared/test/msw-server";
 import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { PERM } from "@/entities/permission";
 import { dict } from "@/shared/config";
+import {
+  makeMediaAsset,
+  stubMediaLibrary,
+} from "@/features/media-picker/model/media-picker.fixture";
 import { MediaLibraryView } from "./media-library-view";
 
 const t = dict.mediaLibrary;
@@ -63,6 +67,8 @@ interface Asset {
   alt: string | null;
   tags: string[];
   uploadedById: string | null;
+  originalFilename: string | null;
+  originalMime: string | null;
   usedInCount: number;
   createdAt: string;
   updatedAt: string;
@@ -80,6 +86,8 @@ function makeAsset(id: string, overrides: Partial<Asset> = {}): Asset {
     alt: null,
     tags: [],
     uploadedById: null,
+    originalFilename: null,
+    originalMime: null,
     usedInCount: 0,
     createdAt: "2026-09-01T10:00:00.000Z",
     updatedAt: "2026-09-01T10:00:00.000Z",
@@ -239,6 +247,41 @@ describe("MediaLibraryView — the grid", () => {
     ).toBeInTheDocument();
     // With media:write the empty line is a call to action (МТ1).
     expect(screen.getByText(t.noAltAdd)).toBeInTheDocument();
+  });
+
+  it("announces a tile's state after its name, not only inside the dialog (TASK-1746)", async () => {
+    stubMedia([
+      makeAsset("a1"),
+      makeAsset("a2", {
+        alt: "Банер",
+        usedInCount: 3,
+        tags: ["літо"],
+        uploadedById: "u1",
+      }),
+    ]);
+
+    renderLibrary();
+
+    // The name stays short — action + which picture; the state is the
+    // description, read right after it, so a missing alt is heard on the grid.
+    const bare = await screen.findByRole("button", {
+      name: t.openCardAria("a1.webp"),
+    });
+    expect(bare).toHaveAccessibleDescription(
+      expect.stringContaining(t.noAltAdd),
+    );
+    expect(bare).toHaveAccessibleDescription(
+      expect.stringContaining(t.unusedBadge),
+    );
+
+    const used = screen.getByRole("button", { name: t.openCardAria("Банер") });
+    expect(used).toHaveAccessibleDescription(
+      expect.stringContaining(t.usedInBadge(3)),
+    );
+    expect(used).toHaveAccessibleDescription(
+      expect.stringContaining(`${t.cardDimensions(2000, 1333)} · 180 КБ`),
+    );
+    expect(used).toHaveAccessibleDescription(expect.stringContaining("літо"));
   });
 
   it("shows the empty state when the library holds nothing", async () => {
@@ -811,5 +854,246 @@ describe("MediaLibraryView — the asset dialog (МТ5–МТ9)", () => {
       within(dialog).queryByRole("button", { name: t.tagRemoveAria("банер") }),
     ).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText(t.tagsLabel)).toBeDisabled();
+  });
+});
+
+describe("MediaLibraryView — views and sort (TASK-1730)", () => {
+  const library = () => [
+    makeMediaAsset("used", {
+      alt: "Банер",
+      usedInCount: 2,
+      bytes: 100,
+      createdAt: "2026-09-03T10:00:00.000Z",
+    }),
+    makeMediaAsset("free", {
+      alt: "Вільне",
+      bytes: 900,
+      createdAt: "2026-09-02T10:00:00.000Z",
+    }),
+    makeMediaAsset("bare", {
+      alt: null,
+      usedInCount: 1,
+      bytes: 500,
+      createdAt: "2026-09-01T10:00:00.000Z",
+    }),
+  ];
+
+  it("shows «Усі · Не використовуються · Без опису» with the counts the API reports", async () => {
+    stubMediaLibrary(library());
+
+    renderLibrary();
+
+    const views = await screen.findByRole("radiogroup", { name: t.viewsAria });
+    const all = within(views).getByRole("radio", {
+      name: new RegExp(t.viewAll),
+    });
+    const unused = within(views).getByRole("radio", {
+      name: new RegExp(t.viewUnused),
+    });
+    const noAlt = within(views).getByRole("radio", {
+      name: new RegExp(t.viewNoAlt),
+    });
+
+    await waitFor(() => expect(all).toHaveTextContent("3"));
+    expect(unused).toHaveTextContent("1");
+    expect(noAlt).toHaveTextContent("1");
+    expect(all).toBeChecked();
+  });
+
+  it("does not send a view or a sort the operator never chose", async () => {
+    const { listRequests } = stubMediaLibrary(library());
+
+    renderLibrary();
+
+    await waitFor(() => expect(listRequests.length).toBeGreaterThan(0));
+    expect(listRequests[0].searchParams.get("view")).toBeNull();
+    expect(listRequests[0].searchParams.get("sort")).toBeNull();
+  });
+
+  it("asks the API for the view and sort the URL carries", async () => {
+    mockSearchParams = new URLSearchParams("view=unused&sort=largest");
+    const { listRequests } = stubMediaLibrary(library());
+
+    renderLibrary();
+
+    expect(
+      await screen.findByRole("button", { name: t.openCardAria("Вільне") }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: t.openCardAria("Банер") }),
+    ).not.toBeInTheDocument();
+    expect(listRequests[0].searchParams.get("view")).toBe("unused");
+    expect(listRequests[0].searchParams.get("sort")).toBe("largest");
+    expect(
+      screen.getByRole("radio", { name: new RegExp(t.viewUnused) }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("combobox", { name: t.sortAria }),
+    ).toHaveTextContent(t.sortLargest);
+  });
+
+  it("ignores a view or sort the API does not know", async () => {
+    mockSearchParams = new URLSearchParams("view=bogus&sort=smallest");
+    const { listRequests } = stubMediaLibrary(library());
+
+    renderLibrary();
+
+    await waitFor(() => expect(listRequests.length).toBeGreaterThan(0));
+    expect(listRequests[0].searchParams.get("view")).toBeNull();
+    expect(listRequests[0].searchParams.get("sort")).toBeNull();
+    expect(
+      screen.getByRole("radio", { name: new RegExp(t.viewAll) }),
+    ).toBeChecked();
+  });
+
+  it("writes the chosen view into the URL, keeping the search and resetting the page", async () => {
+    mockSearchParams = new URLSearchParams("search=x&page=3");
+    stubMediaLibrary(library());
+
+    renderLibrary();
+
+    await userEvent.click(
+      await screen.findByRole("radio", { name: new RegExp(t.viewNoAlt) }),
+    );
+
+    expect(mockReplace).toHaveBeenLastCalledWith("/media?search=x&view=noAlt");
+  });
+
+  it("drops ?view= when the operator goes back to «Усі»", async () => {
+    mockSearchParams = new URLSearchParams("view=unused");
+    stubMediaLibrary(library());
+
+    renderLibrary();
+
+    await userEvent.click(
+      await screen.findByRole("radio", { name: new RegExp(t.viewAll) }),
+    );
+
+    expect(mockReplace).toHaveBeenLastCalledWith("/media");
+  });
+
+  it("writes the chosen sort into the URL and resets the page; «Спершу нові» is the default", async () => {
+    mockSearchParams = new URLSearchParams("page=2");
+    stubMediaLibrary(library());
+    const user = userEvent.setup();
+
+    renderLibrary();
+
+    const sort = await screen.findByRole("combobox", { name: t.sortAria });
+    expect(sort).toHaveTextContent(t.sortNewest);
+
+    await user.click(sort);
+    await user.click(screen.getByRole("option", { name: t.sortOldest }));
+
+    expect(mockReplace).toHaveBeenLastCalledWith("/media?sort=oldest");
+  });
+
+  it("says why a view is empty instead of calling the library empty", async () => {
+    mockSearchParams = new URLSearchParams("view=unused");
+    stubMediaLibrary([
+      makeMediaAsset("used", { alt: "Банер", usedInCount: 1 }),
+    ]);
+
+    renderLibrary();
+
+    expect(await screen.findByText(t.emptyUnused)).toBeInTheDocument();
+    expect(screen.queryByText(t.empty)).not.toBeInTheDocument();
+  });
+
+  it("says every image has a description when the noAlt view is empty", async () => {
+    mockSearchParams = new URLSearchParams("view=noAlt");
+    stubMediaLibrary([makeMediaAsset("a", { alt: "Банер" })]);
+
+    renderLibrary();
+
+    expect(await screen.findByText(t.emptyNoAlt)).toBeInTheDocument();
+  });
+});
+
+describe("MediaLibraryView — original file name (TASK-1731)", () => {
+  it("puts the uploaded file's own name on the card's second line", async () => {
+    stubMediaLibrary([
+      makeMediaAsset("a1", {
+        alt: "Банер",
+        uploadedById: "admin-1",
+        originalFilename: "autumn-sale-hero.jpg",
+        originalMime: "image/jpeg",
+      }),
+    ]);
+
+    renderLibrary();
+
+    const card = await screen.findByRole("button", {
+      name: t.openCardAria("Банер"),
+    });
+    expect(within(card).getByText("autumn-sale-hero.jpg")).toBeInTheDocument();
+  });
+
+  it("keeps «з каталогу (імпорт)» for an imported asset and shows no file line for an unknown name", async () => {
+    stubMediaLibrary([
+      makeMediaAsset("imp", { alt: "Імпорт", width: 0, height: 0, bytes: 0 }),
+      makeMediaAsset("old", { alt: "Старе", uploadedById: "admin-1" }),
+    ]);
+
+    renderLibrary();
+
+    const imported = await screen.findByRole("button", {
+      name: t.openCardAria("Імпорт"),
+    });
+    expect(within(imported).getByText(t.importedSource)).toBeInTheDocument();
+    const old = screen.getByRole("button", { name: t.openCardAria("Старе") });
+    expect(within(old).queryByText(t.importedSource)).not.toBeInTheDocument();
+    expect(within(old).queryByText(/\.webp$/)).not.toBeInTheDocument();
+  });
+
+  it("invites searching by file name", async () => {
+    stubMediaLibrary([]);
+
+    renderLibrary();
+
+    expect(
+      await screen.findByRole("searchbox", { name: t.searchAria }),
+    ).toHaveAttribute("placeholder", "Опис, тег або назва файлу…");
+  });
+
+  it("says in the dialog what the file was before the pipeline re-encoded it", async () => {
+    stubMedia([
+      makeAsset("a1", {
+        alt: "Банер",
+        uploadedById: "admin-1",
+        originalFilename: "Банер осінь.jpg",
+        originalMime: "image/jpeg",
+      }),
+    ]);
+
+    renderLibrary();
+    const dialog = await openCard("Банер");
+
+    expect(
+      await within(dialog).findByText("Банер осінь.jpg"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(`WebP · ${t.convertedFrom("JPEG")}`),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about a conversion when the stored type is the uploaded one", async () => {
+    stubMedia([
+      makeAsset("g1", {
+        alt: "Гіфка",
+        uploadedById: "admin-1",
+        mime: "image/gif",
+        originalFilename: "spin.gif",
+        originalMime: "image/gif",
+      }),
+    ]);
+
+    renderLibrary();
+    const dialog = await openCard("Гіфка");
+
+    expect(await within(dialog).findByText("GIF")).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText(new RegExp(t.convertedFrom("GIF"))),
+    ).not.toBeInTheDocument();
   });
 });

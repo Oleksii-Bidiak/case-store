@@ -56,6 +56,8 @@ const ASSET = {
   alt: 'Чохол',
   tags: ['iphone'],
   uploadedById: 'admin-e2e-1',
+  originalFilename: 'chohol.png',
+  originalMime: 'image/png',
   createdAt: new Date('2026-09-14T10:00:00.000Z'),
   updatedAt: new Date('2026-09-14T10:00:00.000Z'),
 };
@@ -140,9 +142,14 @@ describe('MediaController (e2e)', () => {
       width: 2000,
       height: 1333,
       bytes: Buffer.from('optimized-webp').length,
+      sourceFormat: 'png',
     });
 
-    mediaRepositoryMock.findAll.mockResolvedValue({ assets: [ASSET], total: 1 });
+    mediaRepositoryMock.findAll.mockResolvedValue({
+      assets: [ASSET],
+      total: 1,
+      counts: { all: 1, unused: 0, noAlt: 0 },
+    });
     mediaRepositoryMock.findById.mockResolvedValue(ASSET);
     mediaRepositoryMock.create.mockResolvedValue(ASSET);
     mediaRepositoryMock.update.mockResolvedValue({ ...ASSET, alt: 'Новий опис' });
@@ -173,13 +180,21 @@ describe('MediaController (e2e)', () => {
         .set('Authorization', `Bearer ${asAdmin()}`)
         .expect(200);
 
-      expect(response.body.meta).toEqual({ total: 1, page: 1, limit: 24, totalPages: 1 });
+      expect(response.body.meta).toEqual({
+        total: 1,
+        page: 1,
+        limit: 24,
+        totalPages: 1,
+        counts: { all: 1, unused: 0, noAlt: 0 },
+      });
       expect(response.body.data[0]).toMatchObject({
         id: 'asset-1',
         url: ASSET_URL,
         width: 2000,
         mime: 'image/webp',
         usedInCount: 1,
+        originalFilename: 'chohol.png',
+        originalMime: 'image/png',
       });
     });
 
@@ -192,10 +207,54 @@ describe('MediaController (e2e)', () => {
       expect(mediaRepositoryMock.findAll).toHaveBeenCalledWith({
         search: 'iphone',
         tag: 'банер',
+        view: 'all',
+        sort: 'newest',
         page: 2,
         limit: 10,
       });
     });
+
+    it('passes the view and the sort through (TASK-1730)', async () => {
+      await request(app.getHttpServer())
+        .get('/api/admin/media?view=unused&sort=largest')
+        .set('Authorization', `Bearer ${asAdmin()}`)
+        .expect(200);
+
+      expect(mediaRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ view: 'unused', sort: 'largest' }),
+      );
+    });
+
+    it('lists the noAlt view with its counters (TASK-1730)', async () => {
+      mediaRepositoryMock.findAll.mockResolvedValue({
+        assets: [{ ...ASSET, alt: null }],
+        total: 1,
+        counts: { all: 128, unused: 2, noAlt: 1 },
+      });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/media?view=noAlt&sort=oldest')
+        .set('Authorization', `Bearer ${asAdmin()}`)
+        .expect(200);
+
+      expect(mediaRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ view: 'noAlt', sort: 'oldest' }),
+      );
+      expect(response.body.meta.counts).toEqual({ all: 128, unused: 2, noAlt: 1 });
+      expect(response.body.meta.total).toBe(1);
+    });
+
+    it.each(['view=used', 'view=UNUSED', 'sort=smallest', 'sort=created_at'])(
+      'rejects an unknown %s with 400 (TASK-1730)',
+      async (query) => {
+        await request(app.getHttpServer())
+          .get(`/api/admin/media?${query}`)
+          .set('Authorization', `Bearer ${asAdmin()}`)
+          .expect(400);
+
+        expect(mediaRepositoryMock.findAll).not.toHaveBeenCalled();
+      },
+    );
 
     it('refuses a page size above the usage-scan cap', async () => {
       // The page's urls are what the usage scan is handed, and that scan refuses
@@ -287,6 +346,41 @@ describe('MediaController (e2e)', () => {
         }),
       );
       expect(response.body.data.usedIn).toEqual([]);
+    });
+
+    it('records a Cyrillic file name as the browser sent it, in UTF-8 (TASK-1731)', async () => {
+      // Browsers send the name as raw UTF-8 inside filename="…"; busboy's default
+      // reads header parameters as latin1, which would store mojibake.
+      await request(app.getHttpServer())
+        .post('/api/admin/media')
+        .set('Authorization', `Bearer ${asAdmin()}`)
+        .attach('file', PNG_BYTES, { filename: 'Банер осінь.png', contentType: 'image/png' })
+        .expect(201);
+
+      expect(mediaRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ originalFilename: 'Банер осінь.png' }),
+      );
+    });
+
+    it('records the sniffed source type, not the declared Content-Type (TASK-1731)', async () => {
+      imageProcessorMock.process.mockResolvedValue({
+        webp: Buffer.from('optimized-webp'),
+        blurDataUrl: 'data:image/webp;base64,BLUR',
+        width: 2000,
+        height: 1333,
+        bytes: Buffer.from('optimized-webp').length,
+        sourceFormat: 'jpeg',
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/admin/media')
+        .set('Authorization', `Bearer ${asAdmin()}`)
+        .attach('file', PNG_BYTES, { filename: 'photo.png', contentType: 'image/png' })
+        .expect(201);
+
+      expect(mediaRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ originalMime: 'image/jpeg' }),
+      );
     });
 
     it('returns 400 when no file part is present', async () => {

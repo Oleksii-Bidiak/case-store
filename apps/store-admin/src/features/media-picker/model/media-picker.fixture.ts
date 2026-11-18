@@ -32,6 +32,8 @@ export interface MediaAssetStub {
   alt: string | null;
   tags: string[];
   uploadedById: string | null;
+  originalFilename: string | null;
+  originalMime: string | null;
   usedInCount: number;
   createdAt: string;
   updatedAt: string;
@@ -52,6 +54,8 @@ export function makeMediaAsset(
     alt: null,
     tags: [],
     uploadedById: null,
+    originalFilename: null,
+    originalMime: null,
     usedInCount: 0,
     createdAt: "2026-09-01T10:00:00.000Z",
     updatedAt: "2026-09-01T10:00:00.000Z",
@@ -83,13 +87,28 @@ export function stubMediaLibrary(
       const url = new URL(request.url);
       listRequests.push(url);
       const search = url.searchParams.get("search")?.toLocaleLowerCase();
-      const matching = search
+      const filtered = search
         ? state.assets.filter(
             (asset) =>
               asset.alt?.toLocaleLowerCase().includes(search) ||
               asset.tags.some((tag) => tag.toLocaleLowerCase() === search),
           )
         : state.assets;
+
+      // Views and counters as the API defines them (TASK-1730): the counters
+      // follow the search but not the view.
+      const unused = filtered.filter((asset) => asset.usedInCount === 0);
+      const noAlt = filtered.filter((asset) => asset.alt === null);
+      const view = url.searchParams.get("view") ?? "all";
+      const inView =
+        view === "unused" ? unused : view === "noAlt" ? noAlt : filtered;
+
+      const sort = url.searchParams.get("sort") ?? "newest";
+      const matching = [...inView].sort((a, b) => {
+        if (sort === "largest") return b.bytes - a.bytes;
+        const byDate = a.createdAt.localeCompare(b.createdAt);
+        return sort === "oldest" ? byDate : -byDate;
+      });
 
       return HttpResponse.json({
         data: matching,
@@ -98,6 +117,11 @@ export function stubMediaLibrary(
           page: 1,
           limit: 20,
           totalPages: Math.max(1, Math.ceil(matching.length / 20)),
+          counts: {
+            all: filtered.length,
+            unused: unused.length,
+            noAlt: noAlt.length,
+          },
         },
       });
     }),

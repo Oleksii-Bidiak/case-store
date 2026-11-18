@@ -23,6 +23,8 @@ function makeAsset(overrides: Partial<MediaAsset> = {}): MediaAsset {
     alt: 'Чохол',
     tags: ['iphone'],
     uploadedById: 'admin-1',
+    originalFilename: 'photo.jpg',
+    originalMime: 'image/jpeg',
     createdAt: new Date('2026-09-14T10:00:00.000Z'),
     updatedAt: new Date('2026-09-14T10:00:00.000Z'),
     ...overrides,
@@ -38,6 +40,7 @@ function makeStored(overrides: Partial<StoredImage> = {}): StoredImage {
     height: 1333,
     bytes: 184320,
     mime: 'image/webp',
+    sourceMime: 'image/jpeg',
     ...overrides,
   };
 }
@@ -72,7 +75,9 @@ describe('MediaService', () => {
 
   beforeEach(async () => {
     repository = {
-      findAll: jest.fn().mockResolvedValue({ assets: [], total: 0 }),
+      findAll: jest
+        .fn()
+        .mockResolvedValue({ assets: [], total: 0, counts: { all: 0, unused: 0, noAlt: 0 } }),
       findById: jest.fn().mockResolvedValue(makeAsset()),
       findByUrl: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(makeAsset()),
@@ -106,12 +111,16 @@ describe('MediaService', () => {
 
   describe('findAll', () => {
     it('returns one page of items with honest pagination meta', async () => {
-      repository.findAll.mockResolvedValue({ assets: [makeAsset()], total: 125 });
+      repository.findAll.mockResolvedValue({
+        assets: [makeAsset()],
+        total: 125,
+        counts: { all: 125, unused: 0, noAlt: 0 },
+      });
       usage.findUsage.mockResolvedValue(new Map([[ASSET_URL, []]]));
 
       const result = await service.findAll({ page: 2, limit: 24 });
 
-      expect(result.meta).toEqual({ total: 125, page: 2, limit: 24, totalPages: 6 });
+      expect(result.meta).toMatchObject({ total: 125, page: 2, limit: 24, totalPages: 6 });
       expect(result.items).toHaveLength(1);
       expect(result.items[0].url).toBe(ASSET_URL);
     });
@@ -137,7 +146,11 @@ describe('MediaService', () => {
       // The grid badge and the delete refusal must never disagree: an asset the
       // list calls unused and the delete then rejects is a bug an operator reads
       // as the software lying to them.
-      repository.findAll.mockResolvedValue({ assets: [makeAsset()], total: 1 });
+      repository.findAll.mockResolvedValue({
+        assets: [makeAsset()],
+        total: 1,
+        counts: { all: 1, unused: 0, noAlt: 0 },
+      });
       usage.findUsage.mockResolvedValue(
         new Map([
           [
@@ -163,6 +176,45 @@ describe('MediaService', () => {
       expect(repository.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ page: 1, limit: 24 }),
       );
+    });
+
+    it('defaults to every asset, newest first (TASK-1730)', async () => {
+      await service.findAll({});
+
+      expect(repository.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ view: 'all', sort: 'newest' }),
+      );
+    });
+
+    it('passes the view and the sort through to the repository (TASK-1730)', async () => {
+      await service.findAll({ view: 'unused', sort: 'largest', search: 'банер', tag: 'осінь' });
+
+      expect(repository.findAll).toHaveBeenCalledWith({
+        search: 'банер',
+        tag: 'осінь',
+        view: 'unused',
+        sort: 'largest',
+        page: 1,
+        limit: 24,
+      });
+    });
+
+    it('reports the three view counters in meta, next to the paging (TASK-1730)', async () => {
+      repository.findAll.mockResolvedValue({
+        assets: [makeAsset()],
+        total: 2,
+        counts: { all: 128, unused: 2, noAlt: 1 },
+      });
+
+      const result = await service.findAll({ view: 'unused' });
+
+      expect(result.meta).toEqual({
+        total: 2,
+        page: 1,
+        limit: 24,
+        totalPages: 1,
+        counts: { all: 128, unused: 2, noAlt: 1 },
+      });
     });
   });
 
@@ -229,7 +281,36 @@ describe('MediaService', () => {
         alt: 'Чохол',
         tags: ['iphone'],
         uploadedById: 'admin-1',
+        originalFilename: 'photo.jpg',
+        originalMime: 'image/jpeg',
       });
+    });
+
+    it('records the file name the operator picked, cleaned up (TASK-1731)', async () => {
+      const file = { ...makeFile(), originalname: 'C:\\Фото\\  Банер осінь.jpg ' };
+
+      await service.upload(file, {}, 'admin-1');
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ originalFilename: 'Банер осінь.jpg' }),
+      );
+    });
+
+    it('records the DETECTED source type, not the one the client declared (TASK-1731)', async () => {
+      uploads.store.mockResolvedValue(makeStored({ sourceMime: 'image/png' }));
+
+      await service.upload({ ...makeFile(), mimetype: 'image/jpeg' }, {}, 'admin-1');
+
+      expect(repository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ originalMime: 'image/png' }),
+      );
+    });
+
+    it('returns both on the created asset (TASK-1731)', async () => {
+      const asset = await service.upload(makeFile(), {}, 'admin-1');
+
+      expect(asset.originalFilename).toBe('photo.jpg');
+      expect(asset.originalMime).toBe('image/jpeg');
     });
 
     it('stores no row when the pipeline rejects the file', async () => {
@@ -239,12 +320,67 @@ describe('MediaService', () => {
       expect(repository.create).not.toHaveBeenCalled();
     });
 
+    it('removes the stored file when the row cannot be recorded', async () => {
+      repository.create.mockRejectedValue(new Error('db down'));
+
+      await expect(service.upload(makeFile(), {}, 'admin-1')).rejects.toThrow('db down');
+      expect(uploads.removeByUrl).toHaveBeenCalledWith(makeStored().url);
+    });
+
     it('defaults alt to null and tags to an empty list', async () => {
       await service.upload(makeFile(), {}, 'admin-1');
 
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({ alt: null, tags: [] }),
       );
+    });
+  });
+
+  describe('recordStored (TASK-2041)', () => {
+    it('records a file another pipeline already stored, without storing it again', async () => {
+      const logoUrl = 'http://localhost:3001/uploads/branding/logo.svg';
+
+      await service.recordStored(
+        {
+          url: logoUrl,
+          blurDataUrl: null,
+          width: 0,
+          height: 0,
+          bytes: 512,
+          mime: 'image/svg+xml',
+          sourceMime: 'image/svg+xml',
+        },
+        'C:\\Лого\\ logo.svg ',
+        'admin-1',
+      );
+
+      expect(uploads.store).not.toHaveBeenCalled();
+      expect(repository.create).toHaveBeenCalledWith({
+        url: logoUrl,
+        blurDataUrl: null,
+        width: 0,
+        height: 0,
+        bytes: 512,
+        mime: 'image/svg+xml',
+        alt: null,
+        tags: [],
+        uploadedById: 'admin-1',
+        originalFilename: 'logo.svg',
+        originalMime: 'image/svg+xml',
+      });
+    });
+  });
+
+  describe('isLibraryAsset (TASK-2041)', () => {
+    it('is true when a library row holds the URL', async () => {
+      repository.findByUrl.mockResolvedValue(makeAsset());
+
+      await expect(service.isLibraryAsset(ASSET_URL)).resolves.toBe(true);
+      expect(repository.findByUrl).toHaveBeenCalledWith(ASSET_URL);
+    });
+
+    it('is false when no row holds it', async () => {
+      await expect(service.isLibraryAsset(ASSET_URL)).resolves.toBe(false);
     });
   });
 

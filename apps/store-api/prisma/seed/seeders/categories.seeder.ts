@@ -2,7 +2,8 @@ import { PrismaClient } from '@prisma/client';
 import { buildSubcategories, categoriesData } from '../data/categories.data';
 import { pickIcon } from '../lib/images/icon-set';
 import { pickPalette } from '../lib/images/palettes';
-import { renderCategoryTile } from '../lib/images/seed-image.generator';
+import { renderCategoryTileRef } from '../lib/images/seed-image.generator';
+import { createSeedMediaRegistry } from '../lib/media-assets';
 import { assertLatinSlug, assertUniqueSlugs } from '../lib/slug';
 
 interface CategoryInput {
@@ -34,9 +35,10 @@ interface CategoryInput {
 export async function seedCategories(prisma: PrismaClient) {
   const categories: Record<string, { id: string }> = {};
   let tileCount = 0;
+  const registerAsset = createSeedMediaRegistry(prisma);
 
   const upsertCategory = async (cat: CategoryInput) => {
-    const image = await renderCategoryTile({
+    const tile = await renderCategoryTileRef({
       key: `category-${cat.slug}`,
       iconId: pickIcon(cat.slug, cat.slug),
       paletteId: pickPalette(cat.slug),
@@ -44,7 +46,13 @@ export async function seedCategories(prisma: PrismaClient) {
       sortOrder: 0,
       alt: cat.name,
     });
-    if (image) tileCount++;
+    const image = tile?.url ?? null;
+    if (tile) {
+      tileCount++;
+      // The tile (and the demo `ogImage`, the same file) is a media-library
+      // asset too (TASK-1029); usage is matched by URL, so no link column.
+      await registerAsset(tile);
+    }
 
     const data = {
       name: cat.name,

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { MEDIA_USAGE_KINDS, MediaUsage } from './media-usage.types';
 
@@ -285,5 +286,54 @@ export class MediaUsageRepository {
   async findUsageForUrl(url: string): Promise<MediaUsage[]> {
     const map = await this.findUsage([url]);
     return map.get(url) ?? [];
+  }
+
+  /**
+   * A SQL condition that is true when the URL in `urlColumn` is referenced from
+   * NOWHERE — the «Не використовуються» view of the library (TASK-1730).
+   *
+   * THE SAME QUESTION AS {@link findUsage}, ASKED IN SQL. The view has to filter
+   * and count the whole table, so it cannot call `findUsage` page by page; but a
+   * second definition of "used" is precisely how the list ends up calling free
+   * something the delete then refuses. So this mirrors `findUsage` source for
+   * source and condition for condition — and `test/media-library.int-spec.ts`
+   * proves the two agree on a real database, one row per source column. Adding a
+   * source means adding it in BOTH places, and that spec fails until you do.
+   *
+   * Rich-text columns use `strpos(column, url) > 0`, an exact case-sensitive
+   * substring test — the same thing `findUsage`'s JS `includes` re-check decides
+   * on — rather than `LIKE`: no wildcard in a URL (`_` is a common one) can widen
+   * or narrow the match, and no escaping is needed.
+   *
+   * Category references count only on live categories (TASK-653), as in
+   * `findUsage`. Products are NOT filtered by `deleted_at`, also as in
+   * `findUsage`: the two must disagree on nothing, and that decision belongs to
+   * the delete gate, not to a view.
+   *
+   * `urlColumn` is SQL the caller wrote (`Prisma.sql\`m.url\``), never input;
+   * the fragment has no bound values of its own.
+   */
+  unreferencedPredicate(urlColumn: Prisma.Sql): Prisma.Sql {
+    const sources: Prisma.Sql[] = [
+      Prisma.sql`SELECT 1 FROM product_images pi WHERE pi.url = ${urlColumn}`,
+      Prisma.sql`SELECT 1 FROM products p
+        WHERE p.og_image = ${urlColumn} OR strpos(p.description, ${urlColumn}) > 0`,
+      Prisma.sql`SELECT 1 FROM categories c
+        WHERE c.deleted_at IS NULL AND (c.image = ${urlColumn} OR c.og_image = ${urlColumn})`,
+      Prisma.sql`SELECT 1 FROM brands b WHERE b.logo = ${urlColumn}`,
+      Prisma.sql`SELECT 1 FROM banners bn WHERE bn.image_url = ${urlColumn}`,
+      Prisma.sql`SELECT 1 FROM blog_posts bp
+        WHERE bp.cover_image_url = ${urlColumn} OR bp.og_image = ${urlColumn}
+           OR strpos(bp.content, ${urlColumn}) > 0`,
+      Prisma.sql`SELECT 1 FROM pages pg
+        WHERE pg.og_image = ${urlColumn} OR strpos(pg.content, ${urlColumn}) > 0`,
+      Prisma.sql`SELECT 1 FROM seo_settings ss
+        WHERE ss.default_og_image = ${urlColumn} OR ss.logo_url = ${urlColumn}`,
+    ];
+
+    return Prisma.sql`(${Prisma.join(
+      sources.map((source) => Prisma.sql`NOT EXISTS (${source})`),
+      ' AND ',
+    )})`;
   }
 }

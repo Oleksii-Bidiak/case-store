@@ -1,5 +1,17 @@
 import { dict } from "@/shared/config";
+import { apiErrorStatus } from "@/shared/lib";
 import { imageUploadErrorMessage } from "@/shared/lib/image-upload-error";
+
+/**
+ * Map a failed «choose from the media library» (TASK-2041) onto copy. 400 is
+ * the API's "this asset cannot be the logo" (a GIF); anything else — a 404 for
+ * an asset deleted meanwhile included — is a generic retry.
+ */
+export function logoPickErrorMessage(error: unknown): string {
+  return apiErrorStatus(error) === 400
+    ? dict.storeLogo.errorLibraryRejected
+    : dict.storeLogo.errorPickFailed;
+}
 
 /**
  * Extensions offered by the file picker. Mirrors the API's `ALLOWED_LOGO_MIME`

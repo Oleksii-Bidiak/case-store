@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import type { MediaAssetEntity } from "@/entities/media";
 import { Badge } from "@/shared/ui";
 import { cn } from "@/shared/lib/utils";
@@ -55,15 +56,23 @@ interface MediaAssetCardProps {
  * THREE LINES UNDER THE PICTURE (wave 198, МТ1): the description, where the
  * file came from, and what it is (dimensions · weight · date). The second line
  * is the honest one for the catalogue backfill — «з каталогу (імпорт)» rather
- * than «невідомо · невідомо». The ORIGINAL file name the artboard shows there
- * for fresh uploads is not stored by the API yet (MediaAsset has no such
- * column); until it is, an upload's second line is simply absent rather than a
- * hashed storage key nobody chose.
+ * than «невідомо · невідомо». For an upload it is the ORIGINAL file name the
+ * operator picked (TASK-1731); where that is unknown (rows from before it was
+ * recorded) the line is simply absent rather than a hashed storage key nobody
+ * chose.
  *
  * The whole tile is a single `<button>`, so there is exactly one tab stop per
  * asset and Enter/Space do what a click does. Everything inside is therefore
  * presentational: the `<img>` carries an empty `alt` because the button's own
  * name already says which picture this is.
+ *
+ * NAME VS DESCRIPTION (TASK-1746): `aria-label` replaces the button's content,
+ * so on its own it hides every line under the picture — a screen-reader user
+ * would learn about a missing alt only inside the dialog. The name therefore
+ * stays short (action + which picture) and the visible state lines are the
+ * button's DESCRIPTION, by `aria-describedby` pointing at those same elements:
+ * read right after the name, never duplicated as hidden text. The alt line is
+ * referenced only when it is empty — a filled alt is already the name.
  */
 export function MediaAssetCard({
   asset,
@@ -76,6 +85,27 @@ export function MediaAssetCard({
   const alt = asset.alt?.trim();
   const name = alt || fileNameFrom(asset.url);
   const imported = isImportedAsset(asset);
+  const hasSourceLine = imported || Boolean(asset.originalFilename);
+
+  const id = useId();
+  const ids = {
+    alt: `${id}-alt`,
+    source: `${id}-source`,
+    meta: `${id}-meta`,
+    usage: `${id}-usage`,
+    tag: (index: number) => `${id}-tag-${index}`,
+    isNew: `${id}-new`,
+  };
+  const describedBy = [
+    !alt && ids.alt,
+    hasSourceLine && ids.source,
+    ids.meta,
+    ids.usage,
+    ...asset.tags.map((_, index) => ids.tag(index)),
+    isNew && ids.isNew,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <li className="flex">
@@ -83,6 +113,7 @@ export function MediaAssetCard({
         type="button"
         onClick={() => onOpen(asset)}
         aria-label={label(name)}
+        aria-describedby={describedBy}
         aria-pressed={selected}
         className={cn(
           "flex w-full flex-col overflow-hidden rounded-lg border border-border bg-card text-left transition-colors outline-none hover:border-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
@@ -100,13 +131,16 @@ export function MediaAssetCard({
           {/* An opaque pill under the tinted badge, so it reads over any photo. */}
           {isNew && (
             <span className="absolute top-2 left-2 rounded-full bg-background">
-              <Badge variant="new">{t.newBadge}</Badge>
+              <Badge id={ids.isNew} variant="new">
+                {t.newBadge}
+              </Badge>
             </span>
           )}
         </span>
 
         <span className="flex flex-1 flex-col gap-0.5 p-2.5">
           <span
+            id={ids.alt}
             className={cn(
               "truncate text-sm font-medium",
               !alt && "text-muted-foreground italic",
@@ -114,23 +148,29 @@ export function MediaAssetCard({
           >
             {alt || (canWrite ? t.noAltAdd : t.noAlt)}
           </span>
-          {imported && (
-            <span className="truncate font-mono text-xs text-muted-foreground">
-              {t.importedSource}
+          {hasSourceLine && (
+            <span
+              id={ids.source}
+              className="truncate font-mono text-xs text-muted-foreground"
+            >
+              {imported ? t.importedSource : asset.originalFilename}
             </span>
           )}
-          <span className="text-xs text-muted-foreground">
+          <span id={ids.meta} className="text-xs text-muted-foreground">
             {mediaCardMeta(asset)}
           </span>
 
           <span className="mt-1.5 flex flex-wrap items-center gap-1">
-            <Badge variant={asset.usedInCount > 0 ? "default" : "secondary"}>
+            <Badge
+              id={ids.usage}
+              variant={asset.usedInCount > 0 ? "default" : "secondary"}
+            >
               {asset.usedInCount > 0
                 ? t.usedInBadge(asset.usedInCount)
                 : t.unusedBadge}
             </Badge>
-            {asset.tags.map((tag) => (
-              <Badge key={tag} variant="outline">
+            {asset.tags.map((tag, index) => (
+              <Badge key={tag} id={ids.tag(index)} variant="outline">
                 {tag}
               </Badge>
             ))}

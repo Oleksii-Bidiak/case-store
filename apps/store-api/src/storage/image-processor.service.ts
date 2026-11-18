@@ -29,6 +29,13 @@ export interface ProcessedImage {
   width: number;
   height: number;
   bytes: number;
+  /**
+   * The format sharp DECODED (`'jpeg'`, `'png'`, `'webp'`, …) — the source, not the
+   * WebP returned (TASK-1731). Read from the bytes' own header, so it is a fact
+   * about the file and not the client's Content-Type claim; the media library
+   * records it as the asset's original type.
+   */
+  sourceFormat: string;
 }
 
 /** What {@link ImageProcessor.probe} reports about an undecoded buffer. */
@@ -193,7 +200,12 @@ export class ImageProcessor {
     // is the only place untrusted bytes get fully decoded, so it is the only guard
     // against a decompression bomb (a small file that decodes huge, which no byte
     // cap can catch). See MAX_INPUT_PIXELS for why the number is what it is.
-    const { data: webp, info } = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
+    //
+    // `metadata()` first reads only the header of the SAME instance — no decode,
+    // no second input — to learn what the operator actually uploaded (TASK-1731).
+    const input = sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS });
+    const { format: sourceFormat } = await input.metadata();
+    const { data: webp, info } = await input
       .rotate()
       .resize({
         width: MAX_DIMENSION,
@@ -215,6 +227,7 @@ export class ImageProcessor {
       width: info.width,
       height: info.height,
       bytes: info.size,
+      sourceFormat: sourceFormat ?? 'unknown',
     };
   }
 

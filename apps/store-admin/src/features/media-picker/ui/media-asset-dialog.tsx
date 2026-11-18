@@ -30,7 +30,7 @@ import { apiErrorStatus } from "@/shared/lib";
 import { formatDateTime, formatFileSize } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
-import { isImportedAsset, mediaFormatName } from "../model/media-asset-meta";
+import { isImportedAsset, mediaFormatLine } from "../model/media-asset-meta";
 import { mediaUsageLink } from "../model/media-usage-links";
 import { MediaMetadataField } from "./media-metadata-field";
 import { MediaTagsField } from "./media-tags-field";
@@ -378,12 +378,18 @@ function MediaAssetFacts({ asset }: { asset: MediaAssetDetailEntity }) {
             <dd className="col-span-2 break-words">{t.importedSource}</dd>
           </>
         )}
+        {!imported && asset.originalFilename && (
+          <>
+            <dt className="text-muted-foreground">{t.fileLabel}</dt>
+            <dd className="col-span-2 font-mono text-xs break-all">
+              {asset.originalFilename}
+            </dd>
+          </>
+        )}
         <dt className="text-muted-foreground">{t.dimensionsLabel}</dt>
         <dd className="col-span-2 break-words">{dimensions}</dd>
         <dt className="text-muted-foreground">{t.formatLabel}</dt>
-        <dd className="col-span-2 break-words">
-          {mediaFormatName(asset.mime)}
-        </dd>
+        <dd className="col-span-2 break-words">{mediaFormatLine(asset)}</dd>
         <dt className="text-muted-foreground">{t.uploadedAt}</dt>
         <dd className="col-span-2 break-words">
           {formatDateTime(asset.createdAt)}

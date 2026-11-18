@@ -7,7 +7,7 @@ import { ImageProcessor } from './image-processor.service';
  * committing a binary blob, while still exercising the real encode path.
  */
 async function makeFixture(
-  format: 'png' | 'jpeg' = 'png',
+  format: 'png' | 'jpeg' | 'webp' = 'png',
   width = 64,
   height = 48,
 ): Promise<Buffer> {
@@ -19,6 +19,7 @@ async function makeFixture(
       background: { r: 30, g: 120, b: 210 },
     },
   });
+  if (format === 'webp') return img.webp().toBuffer();
   return format === 'png' ? img.png().toBuffer() : img.jpeg().toBuffer();
 }
 
@@ -87,6 +88,15 @@ describe('ImageProcessor', () => {
     const meta = await sharp(webp).metadata();
     expect(meta.format).toBe('webp');
   });
+
+  it.each(['png', 'jpeg', 'webp'] as const)(
+    'reports the format it actually decoded (%s) — the original, not the WebP (TASK-1731)',
+    async (format) => {
+      const { sourceFormat } = await processor.process(await makeFixture(format));
+
+      expect(sourceFormat).toBe(format);
+    },
+  );
 
   it('returns a base64 WebP data URI for the blur placeholder', async () => {
     const input = await makeFixture('jpeg');

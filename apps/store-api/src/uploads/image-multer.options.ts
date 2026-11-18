@@ -34,6 +34,12 @@ import {
 export function imageMulterOptions(maxFiles: number = MAX_FILES_PER_UPLOAD) {
   return {
     storage: memoryStorage(),
+    // Browsers send a non-ASCII file name as raw UTF-8 inside `filename="…"`,
+    // and busboy reads header parameters as latin1 unless told otherwise — so
+    // «Банер осінь.jpg» would arrive as mojibake (TASK-1731). Only the media
+    // library reads `originalname`, and only as a label; a name sent with an
+    // explicit RFC 5987 `filename*=` charset is still decoded as declared.
+    defParamCharset: 'utf8',
     limits: { fileSize: IMAGE_MULTER_MAX_BYTES, files: maxFiles },
     fileFilter: (
       _req: unknown,

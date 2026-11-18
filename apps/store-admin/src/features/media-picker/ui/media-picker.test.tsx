@@ -141,6 +141,26 @@ describe("MediaPicker — choosing an existing asset", () => {
     expect(onPick.mock.calls[0][0]).toMatchObject({ id: "m2" });
   });
 
+  it("announces a tile's state after its name (TASK-1746)", async () => {
+    stubMediaLibrary([makeMediaAsset("m1", { usedInCount: 2 })]);
+    renderPicker();
+
+    await userEvent.click(screen.getByRole("button", { name: t.trigger }));
+    const tile = await screen.findByRole("button", {
+      name: t.pickCardAria("m1.webp"),
+    });
+
+    // The name stays short — action + which picture; the state is the
+    // description, read right after it, so a missing alt is heard on the grid.
+    expect(tile).toHaveAccessibleDescription(
+      expect.stringContaining(dict.mediaLibrary.noAlt),
+    );
+    expect(tile).toHaveAccessibleDescription(
+      expect.stringContaining(dict.mediaLibrary.usedInBadge(2)),
+    );
+    expect(tile).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("lays the grid out by the dialog's own width — four columns (БЛ11)", async () => {
     stubMediaLibrary();
     renderPicker();

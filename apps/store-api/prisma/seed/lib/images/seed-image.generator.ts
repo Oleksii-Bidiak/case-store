@@ -13,7 +13,11 @@
  * works with no network at all.
  *
  * THE EXPORTED SIGNATURES ARE THE FROZEN CONTRACT (TASK-363): the seeders call
- * them and must not change.
+ * them and must not change. Changes since are ADDITIVE only (TASK-1029): the
+ * render's `width` / `height` / `bytes` ride along on {@link SeedImageRef}, and
+ * {@link renderCategoryTileRef} returns a tile as one, so the seeders can
+ * register every file they write as a media-library asset with the real numbers
+ * instead of the zeros the migration backfill had to use.
  */
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, unlink, writeFile } from 'node:fs/promises';
@@ -45,6 +49,10 @@ export interface SeedImageRef {
   blurDataUrl: string | null;
   sortOrder: number;
   isPrimary: boolean;
+  /** Of the stored WebP render, as `ImageProcessor.process` reports them (TASK-1029). */
+  width: number;
+  height: number;
+  bytes: number;
 }
 
 // ─── Geometry ───────────────────────────────────────────────────────────────
@@ -242,6 +250,9 @@ const processor = new ImageProcessor();
 interface RenderedImage {
   url: string;
   blurDataUrl: string;
+  width: number;
+  height: number;
+  bytes: number;
 }
 
 /**
@@ -266,7 +277,7 @@ function render(spec: RenderSpec): Promise<RenderedImage> {
       .toBuffer();
 
     // The same processor the real upload path uses: WebP q80 + a 16 px LQIP.
-    const { webp, blurDataUrl } = await processor.process(png);
+    const { webp, blurDataUrl, width, height, bytes } = await processor.process(png);
 
     // Content-derived name: identical recipes overwrite identical bytes, so
     // re-seeding never accumulates files and never invalidates a cached URL.
@@ -279,6 +290,9 @@ function render(spec: RenderSpec): Promise<RenderedImage> {
     return {
       url: `${publicBaseUrl()}${PUBLIC_UPLOADS_PREFIX}${PRODUCTS_SUBDIR}/${filename}`,
       blurDataUrl,
+      width,
+      height,
+      bytes,
     };
   })();
 
@@ -286,18 +300,24 @@ function render(spec: RenderSpec): Promise<RenderedImage> {
   return pending;
 }
 
+function toRef(req: SeedImageRequest, image: RenderedImage): SeedImageRef {
+  return {
+    url: image.url,
+    alt: req.alt,
+    blurDataUrl: image.blurDataUrl,
+    sortOrder: req.sortOrder,
+    isPrimary: req.sortOrder === 0,
+    width: image.width,
+    height: image.height,
+    bytes: image.bytes,
+  };
+}
+
 /** Render one image per request, in request order. Sort order 0 is the cover. */
 export async function renderSeedImages(reqs: SeedImageRequest[]): Promise<SeedImageRef[]> {
   const refs: SeedImageRef[] = [];
   for (const req of reqs) {
-    const { url, blurDataUrl } = await render(specFor(req));
-    refs.push({
-      url,
-      alt: req.alt,
-      blurDataUrl,
-      sortOrder: req.sortOrder,
-      isPrimary: req.sortOrder === 0,
-    });
+    refs.push(toRef(req, await render(specFor(req))));
   }
   return refs;
 }
@@ -312,9 +332,18 @@ export async function renderSeedImages(reqs: SeedImageRequest[]): Promise<SeedIm
  * `/uploads/` prefix, not the sub-directory (plan 170 §6).
  */
 export async function renderCategoryTile(req: SeedImageRequest): Promise<string | null> {
+  return (await renderCategoryTileRef(req))?.url ?? null;
+}
+
+/**
+ * {@link renderCategoryTile} with the whole render instead of just its URL —
+ * what the categories seeder needs to register the tile in the media library
+ * (TASK-1029). Same null-on-failure rule.
+ */
+export async function renderCategoryTileRef(req: SeedImageRequest): Promise<SeedImageRef | null> {
+  const tileReq = { ...req, shape: 'category' as const };
   try {
-    const { url } = await render(specFor({ ...req, shape: 'category' }));
-    return url;
+    return toRef(tileReq, await render(specFor(tileReq)));
   } catch (error) {
     console.warn(
       `  ⚠ Seed images: could not render tile for "${req.key}": ${(error as Error).message}`,
