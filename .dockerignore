@@ -14,6 +14,11 @@
 **/out
 **/build
 **/coverage
+# …but not an app-router ROUTE that happens to be called `coverage` (TASK-2550):
+# `/devices/models/[id]/coverage` was silently left out of the admin image and
+# answered 404 on the stand. `.gitignore` carries the same exception.
+!apps/store-admin/src/app/**/coverage
+!apps/store-admin/src/app/**/coverage/**
 **/.turbo
 **/.swc
 
