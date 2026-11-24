@@ -34,6 +34,9 @@ function refundDedupeKey(body: LiqPayCallbackBody): string {
 /** Payment methods LiqPay offers when `LIQPAY_PAYTYPES` is unset. */
 const DEFAULT_PAYTYPES = 'card,apay,gpay,privat24';
 
+/** Upper bound on one LiqPay API call when `LIQPAY_REQUEST_TIMEOUT_MS` is unset (TASK-2523). */
+export const DEFAULT_LIQPAY_REQUEST_TIMEOUT_MS = 10_000;
+
 /**
  * LiqPayAdapter — the ONLY place in the codebase that knows what LiqPay is.
  *
@@ -58,6 +61,7 @@ export class LiqPayAdapter implements PaymentProvider {
   private readonly privateKey?: string;
   private readonly sandbox: boolean;
   private readonly paytypes: string;
+  private readonly timeoutMs: number;
 
   constructor(
     private readonly config: ConfigService,
@@ -69,6 +73,8 @@ export class LiqPayAdapter implements PaymentProvider {
     this.privateKey = this.config.get<string>('LIQPAY_PRIVATE_KEY');
     this.sandbox = this.config.get<string>('LIQPAY_SANDBOX') === 'true';
     this.paytypes = this.config.get<string>('LIQPAY_PAYTYPES', DEFAULT_PAYTYPES);
+    this.timeoutMs =
+      this.config.get<number>('LIQPAY_REQUEST_TIMEOUT_MS') ?? DEFAULT_LIQPAY_REQUEST_TIMEOUT_MS;
 
     if (this.sandbox && this.config.get<string>('NODE_ENV') === 'production') {
       // Not fatal — a staging stack legitimately runs NODE_ENV=production with
@@ -301,6 +307,8 @@ export class LiqPayAdapter implements PaymentProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ data, signature: signLiqPayData(data, privateKey) }),
+        // A timeout lands in the catch below, like LiqPay being unreachable (TASK-2523).
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (err) {
       this.logger.error(

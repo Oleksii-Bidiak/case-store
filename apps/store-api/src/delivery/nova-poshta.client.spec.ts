@@ -497,4 +497,57 @@ describe('NovaPoshtaClient', () => {
       expect(np.requests.map((r) => r.apiKey)).toEqual(['', '']);
     });
   });
+
+  // ─── Timeouts (TASK-2523) ──────────────────────────────────────────────────
+
+  describe('request timeout', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    /** A fetch that never answers, and rejects only when its signal aborts. */
+    function hangingFetch(): jest.SpyInstance {
+      return jest.spyOn(global, 'fetch').mockImplementation(
+        (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            const signal = init?.signal;
+            signal?.addEventListener('abort', () => reject(signal.reason));
+          }),
+      );
+    }
+
+    it('turns a hung NP into DeliveryUnavailableException after NP_REQUEST_TIMEOUT_MS', async () => {
+      const fetchSpy = hangingFetch();
+      const client = makeClient({ NP_API_KEY: 'test-key', NP_REQUEST_TIMEOUT_MS: 20 });
+
+      await expect(client.searchCities('Київ')).rejects.toBeInstanceOf(
+        DeliveryUnavailableException,
+      );
+      const init = fetchSpy.mock.calls[0][1] as RequestInit;
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      expect(logger.error).toHaveBeenCalled();
+    });
+
+    it('defaults to 5000 ms when NP_REQUEST_TIMEOUT_MS is unset', async () => {
+      const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+      np.respond = () => ok([]);
+
+      await makeClient({ NP_API_KEY: 'test-key' }).searchWarehouses('city-ref');
+
+      expect(timeoutSpy).toHaveBeenCalledWith(5000);
+    });
+
+    it('turns a failed body read into DeliveryUnavailableException, not a raw error', async () => {
+      jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.reject(new SyntaxError('Unexpected end of JSON input')),
+      } as unknown as Response);
+
+      await expect(makeClient().searchWarehouses('city-ref')).rejects.toBeInstanceOf(
+        DeliveryUnavailableException,
+      );
+      expect(logger.error).toHaveBeenCalled();
+    });
+  });
 });

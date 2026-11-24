@@ -106,6 +106,37 @@ describe('MailService', () => {
       );
     });
 
+    // TASK-2523: nodemailer's own defaults (120 s / 30 s / 600 s) let a hung
+    // SMTP server pin the outbox worker; one config value bounds all three.
+    it('bounds connection, greeting and socket with SMTP_TIMEOUT_MS', async () => {
+      const config = makeConfig({ ...enabledConfig(), SMTP_TIMEOUT_MS: 2500 });
+      const service = new MailService(config, makeLogger());
+
+      await service.sendOrderConfirmation({ to: 'c@example.com', order });
+
+      expect(createTransportMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectionTimeout: 2500,
+          greetingTimeout: 2500,
+          socketTimeout: 2500,
+        }),
+      );
+    });
+
+    it('defaults all three SMTP timeouts to 10000 ms when SMTP_TIMEOUT_MS is unset', async () => {
+      const service = new MailService(makeConfig(enabledConfig()), makeLogger());
+
+      await service.sendOrderConfirmation({ to: 'c@example.com', order });
+
+      expect(createTransportMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectionTimeout: 10000,
+          greetingTimeout: 10000,
+          socketTimeout: 10000,
+        }),
+      );
+    });
+
     it('does not throw when sending succeeds', async () => {
       const service = new MailService(makeConfig(enabledConfig()), makeLogger());
 

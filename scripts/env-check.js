@@ -856,6 +856,21 @@ const VARS = [
     howTo:
       "`Магазин <no-reply@mail.<DOMAIN>>` — див. docs/deploy/02-domain-dns.md.",
   },
+  {
+    name: "SMTP_TIMEOUT_MS",
+    group: "mail",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    // Reader landed with TASK-2523: mail/mail.service.ts.
+    code: "used",
+    effect:
+      "Дефолт 10000. Межа на з'єднання, привітання й тишу в сокеті SMTP. Сервер не відповів за цей час → відправка падає, і черга повторює лист пізніше з наростаючою паузою, як за будь-якої помилки SMTP. Без межі завислий сервер тримав би воркер черги хвилинами.",
+    howTo: "Мілісекунди, ціле число. Зазвичай не чіпати.",
+  },
 
   // ─── Сповіщення в Telegram (власник і покупці) ────────────────────────────
   {
@@ -918,6 +933,21 @@ const VARS = [
     effect:
       "Лише dev/staging. `true` → клієнт НП ходить у справжнє API з порожнім ключем (перевірено 2026-07-28: усі методи, які викликає проєкт, так відповідають) — це дозволяє пройти живу перевірку LG-4 ще до видачі ключа замовником. У проді МУСИТЬ бути `false`: поведінка недокументована й анонімні запити лімітуються.",
     howTo: "Не задавайте у проді. На стенді — `true`.",
+  },
+  {
+    name: "NP_REQUEST_TIMEOUT_MS",
+    group: "delivery",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    // Reader landed with TASK-2523: apps/store-api/src/delivery/nova-poshta.client.ts.
+    code: "used",
+    effect:
+      "Дефолт 5000. Скільки чекати відповіді Нової Пошти на один запит. Не дочекались → те саме, що НП недоступна: ендпоінт доставки віддає 503, чекаут переходить на введення адреси текстом.",
+    howTo: "Мілісекунди, ціле число. Зазвичай не чіпати.",
   },
 
   // ─── Онлайн-оплата ────────────────────────────────────────────────────────
@@ -982,6 +1012,21 @@ const VARS = [
     effect:
       "Порожній → дефолтний набір (картка, Apple/Google Pay, Privat24). `payparts`/`moment_part` (оплата частинами) потребують ОКРЕМОЇ угоди з ПриватБанком — без неї кнопка з'явиться і не спрацює.",
     howTo: "Через кому. Розстрочку додавати лише після підписання угоди.",
+  },
+  {
+    name: "LIQPAY_REQUEST_TIMEOUT_MS",
+    group: "payments",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    // Reader landed with TASK-2523: payment/adapters/liqpay/liqpay.adapter.ts.
+    code: "used",
+    effect:
+      "Дефолт 10000. Скільки чекати відповіді API LiqPay (перевірка статусу, повернення коштів). Не дочекались → те саме, що LiqPay недоступний: оплата лишається «очікує» до наступної перевірки, а повернення показує «результат невідомий» і не скасовується.",
+    howTo: "Мілісекунди, ціле число. Зазвичай не чіпати.",
   },
   {
     name: "PAYMENT_RECONCILE_CRON",

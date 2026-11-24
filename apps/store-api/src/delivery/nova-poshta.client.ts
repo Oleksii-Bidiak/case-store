@@ -15,6 +15,8 @@ export const DEFAULT_WEIGHT_KG = 0.5;
 const DEFAULT_ASSESSED_COST = '300';
 /** Branch-to-branch is the typical small-parcel mode in Ukraine. */
 const SERVICE_TYPE = 'WarehouseWarehouse';
+/** Upper bound on one NP call when `NP_REQUEST_TIMEOUT_MS` is unset (TASK-2523). */
+export const DEFAULT_NP_REQUEST_TIMEOUT_MS = 5000;
 
 /** Standard NP response envelope. */
 interface NpEnvelope<T> {
@@ -105,6 +107,7 @@ export type NpClientMode = 'key' | 'keyless' | 'unconfigured';
 export class NovaPoshtaClient {
   private readonly apiKey?: string;
   private readonly mode: NpClientMode;
+  private readonly timeoutMs: number;
 
   constructor(
     private readonly config: ConfigService,
@@ -113,6 +116,8 @@ export class NovaPoshtaClient {
   ) {
     this.logger.setContext(NovaPoshtaClient.name);
     this.apiKey = this.config.get<string>('NP_API_KEY') || undefined;
+    this.timeoutMs =
+      this.config.get<number>('NP_REQUEST_TIMEOUT_MS') ?? DEFAULT_NP_REQUEST_TIMEOUT_MS;
 
     const keylessRequested = this.config.get<string>('NP_ALLOW_KEYLESS') === 'true';
     const isProduction = this.config.get<string>('NODE_ENV') === 'production';
@@ -261,6 +266,9 @@ export class NovaPoshtaClient {
           calledMethod,
           methodProperties,
         }),
+        // A hung NP must not hold the shop's request open: a timeout takes the
+        // same path as NP being unreachable (TASK-2523).
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (err) {
       this.logger.error({ err, modelName, calledMethod }, 'Nova Poshta request failed');
@@ -275,7 +283,18 @@ export class NovaPoshtaClient {
       throw new DeliveryUnavailableException();
     }
 
-    const body = (await response.json()) as NpEnvelope<T>;
+    // The timeout also covers reading the body; an abort here, or a body that is
+    // not JSON, is NP being unavailable — never a raw 500.
+    let body: NpEnvelope<T>;
+    try {
+      body = (await response.json()) as NpEnvelope<T>;
+    } catch (err) {
+      this.logger.error(
+        { err, modelName, calledMethod },
+        'Nova Poshta response could not be read as JSON',
+      );
+      throw new DeliveryUnavailableException();
+    }
     if (!body.success) {
       this.logger.warn(
         { errors: body.errors, modelName, calledMethod, mode: this.mode },

@@ -19,8 +19,8 @@ const loggerMock = {
   setContext: jest.fn(),
 };
 
-function buildAdapter(env: Record<string, string | undefined> = {}): LiqPayAdapter {
-  const values: Record<string, string | undefined> = {
+function buildAdapter(env: Record<string, unknown> = {}): LiqPayAdapter {
+  const values: Record<string, unknown> = {
     LIQPAY_PUBLIC_KEY: PUBLIC_KEY,
     LIQPAY_PRIVATE_KEY: PRIVATE_KEY,
     ...env,
@@ -519,6 +519,51 @@ describe('LiqPayAdapter', () => {
         .catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ServiceUnavailableException);
       expect(error).not.toBeInstanceOf(RefundOutcomeUnknownException);
+    });
+  });
+
+  // TASK-2523: a hung LiqPay must take the same path as an unreachable one.
+  describe('request timeout', () => {
+    /** A fetch that never answers, and rejects only when its signal aborts. */
+    function hangingFetch(): jest.SpyInstance {
+      return jest.spyOn(global, 'fetch').mockImplementation(
+        (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            const signal = init?.signal;
+            signal?.addEventListener('abort', () => reject(signal.reason));
+          }),
+      );
+    }
+
+    it('fetchStatus resolves null after LIQPAY_REQUEST_TIMEOUT_MS, leaving the payment PENDING', async () => {
+      const fetchSpy = hangingFetch();
+
+      expect(await buildAdapter({ LIQPAY_REQUEST_TIMEOUT_MS: 20 }).fetchStatus('pay-1')).toBeNull();
+      expect((fetchSpy.mock.calls[0][1] as RequestInit).signal).toBeInstanceOf(AbortSignal);
+      expect(loggerMock.error).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'payment.liqpay.request.failed' }),
+        expect.any(String),
+      );
+    });
+
+    it('refund reports an unknown outcome after LIQPAY_REQUEST_TIMEOUT_MS', async () => {
+      hangingFetch();
+
+      await expect(
+        buildAdapter({ LIQPAY_REQUEST_TIMEOUT_MS: 20 }).refund({ paymentId: 'pay-1', amount: '1' }),
+      ).rejects.toBeInstanceOf(RefundOutcomeUnknownException);
+    });
+
+    it('defaults to 10000 ms when LIQPAY_REQUEST_TIMEOUT_MS is unset', async () => {
+      const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
+      jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => ({ status: 'success', order_id: 'pay-1' }),
+      } as unknown as Response);
+
+      await buildAdapter().fetchStatus('pay-1');
+
+      expect(timeoutSpy).toHaveBeenCalledWith(10000);
     });
   });
 });
