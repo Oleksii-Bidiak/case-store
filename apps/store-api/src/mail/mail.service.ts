@@ -43,8 +43,15 @@ import {
   type EmailChangeNoticeMailPayload,
 } from './templates/email-change.template';
 
-/** SMTP connection/greeting/socket timeout when `SMTP_TIMEOUT_MS` is unset (TASK-2523). */
+/** SMTP connection/greeting timeout when `SMTP_TIMEOUT_MS` is unset (TASK-2523). */
 export const DEFAULT_SMTP_TIMEOUT_MS = 10_000;
+
+/**
+ * SMTP socket inactivity timeout when `SMTP_SOCKET_TIMEOUT_MS` is unset. Longer
+ * than the connection one: after DATA a timeout is ambiguous — the server may
+ * have accepted the mail — and the outbox retry would deliver it twice.
+ */
+export const DEFAULT_SMTP_SOCKET_TIMEOUT_MS = 60_000;
 
 /** Parameters accepted by {@link MailService.sendOrderConfirmation}. */
 export interface SendOrderConfirmationParams {
@@ -396,8 +403,11 @@ export class MailService {
       const pass = this.config.get<string>('SMTP_PASS');
       // nodemailer's own defaults (120 s / 30 s / 600 s) let a hung SMTP server
       // pin an outbox tick for minutes; a timeout rejects sendMail, and the
-      // outbox retries the row with backoff (TASK-2523).
+      // outbox retries the row with backoff (TASK-2523). The socket gets its own,
+      // longer bound — see DEFAULT_SMTP_SOCKET_TIMEOUT_MS.
       const timeoutMs = this.config.get<number>('SMTP_TIMEOUT_MS') ?? DEFAULT_SMTP_TIMEOUT_MS;
+      const socketTimeoutMs =
+        this.config.get<number>('SMTP_SOCKET_TIMEOUT_MS') ?? DEFAULT_SMTP_SOCKET_TIMEOUT_MS;
       this.transporter = createTransport({
         host: this.config.get<string>('SMTP_HOST'),
         port: this.config.get<number>('SMTP_PORT'),
@@ -405,7 +415,7 @@ export class MailService {
         auth: user ? { user, pass } : undefined,
         connectionTimeout: timeoutMs,
         greetingTimeout: timeoutMs,
-        socketTimeout: timeoutMs,
+        socketTimeout: socketTimeoutMs,
       });
     }
     return this.transporter;

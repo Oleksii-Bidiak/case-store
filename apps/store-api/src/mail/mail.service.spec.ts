@@ -107,9 +107,14 @@ describe('MailService', () => {
     });
 
     // TASK-2523: nodemailer's own defaults (120 s / 30 s / 600 s) let a hung
-    // SMTP server pin the outbox worker; one config value bounds all three.
-    it('bounds connection, greeting and socket with SMTP_TIMEOUT_MS', async () => {
-      const config = makeConfig({ ...enabledConfig(), SMTP_TIMEOUT_MS: 2500 });
+    // SMTP server pin the outbox worker. The socket has its own, longer bound:
+    // a timeout after DATA is ambiguous and the outbox retry would send twice.
+    it('bounds connection and greeting with SMTP_TIMEOUT_MS, the socket with SMTP_SOCKET_TIMEOUT_MS', async () => {
+      const config = makeConfig({
+        ...enabledConfig(),
+        SMTP_TIMEOUT_MS: 2500,
+        SMTP_SOCKET_TIMEOUT_MS: 45000,
+      });
       const service = new MailService(config, makeLogger());
 
       await service.sendOrderConfirmation({ to: 'c@example.com', order });
@@ -118,12 +123,12 @@ describe('MailService', () => {
         expect.objectContaining({
           connectionTimeout: 2500,
           greetingTimeout: 2500,
-          socketTimeout: 2500,
+          socketTimeout: 45000,
         }),
       );
     });
 
-    it('defaults all three SMTP timeouts to 10000 ms when SMTP_TIMEOUT_MS is unset', async () => {
+    it('defaults connection/greeting to 10000 ms and the socket to 60000 ms when unset', async () => {
       const service = new MailService(makeConfig(enabledConfig()), makeLogger());
 
       await service.sendOrderConfirmation({ to: 'c@example.com', order });
@@ -132,7 +137,7 @@ describe('MailService', () => {
         expect.objectContaining({
           connectionTimeout: 10000,
           greetingTimeout: 10000,
-          socketTimeout: 10000,
+          socketTimeout: 60000,
         }),
       );
     });

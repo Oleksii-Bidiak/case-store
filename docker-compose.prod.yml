@@ -227,6 +227,7 @@ services:
       # Upper bounds on external calls (TASK-2523): a timeout takes the same path
       # as the service being down.
       SMTP_TIMEOUT_MS: ${SMTP_TIMEOUT_MS:-10000}
+      SMTP_SOCKET_TIMEOUT_MS: ${SMTP_SOCKET_TIMEOUT_MS:-60000}
       NP_REQUEST_TIMEOUT_MS: ${NP_REQUEST_TIMEOUT_MS:-5000}
       LIQPAY_REQUEST_TIMEOUT_MS: ${LIQPAY_REQUEST_TIMEOUT_MS:-10000}
       NP_API_KEY: ${NP_API_KEY:-}

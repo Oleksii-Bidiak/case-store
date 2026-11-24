@@ -289,12 +289,22 @@ export class EnvironmentVariables {
   @IsString()
   MAIL_FROM?: string;
 
-  // SMTP connection / greeting / socket timeout (TASK-2523), default 10000 in
-  // MailService. A timeout fails the send and the outbox retries it with backoff.
+  // SMTP connection + greeting timeout (TASK-2523), default 10000 in MailService.
+  // Failing there means nothing was sent, so the outbox retry is safe.
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(120000)
   SMTP_TIMEOUT_MS?: number;
+
+  // SMTP socket inactivity timeout, default 60000 in MailService. Longer than the
+  // connection one on purpose: once DATA is sent, a timeout is ambiguous (the
+  // server may have accepted the mail) and the outbox retry would send it twice.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(600000)
+  SMTP_SOCKET_TIMEOUT_MS?: number;
 
   // ─── Outbound-mail queue + scheduled publishing ────────────────────────────
   // All optional tuning knobs with defaults in their services. They are declared
@@ -473,6 +483,7 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(120000)
   NP_REQUEST_TIMEOUT_MS?: number;
 
   // ─── Owner notifications — Telegram (TASK-674) ──────────────────────────────
@@ -526,6 +537,7 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(120000)
   LIQPAY_REQUEST_TIMEOUT_MS?: number;
 
   // Safety net for callbacks that never arrive: LiqPay does not document its
