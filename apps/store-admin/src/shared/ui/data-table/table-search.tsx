@@ -21,9 +21,9 @@
  * on change (a `key` prop) destroys DOM focus on every keystroke — the exact bug
  * TASK-117 removed from the storefront. The field therefore stays mounted and
  * re-seeds only on a GENUINE external change, told apart from this component's
- * own echo by `lastPushedRef` (docs/conventions/forms.md rule 1b). The reference
- * implementation is
- * `apps/store-client/src/features/product-filters/ui/search-input.tsx`.
+ * own echo by `lastPushedRef` (docs/conventions/forms.md rule 1b). This file is
+ * now that rule's reference implementation: the storefront search box it was
+ * modelled on was removed in `f809ad50`.
  *
  * ── `local` mode is not a shortcut ──────────────────────────────────────────
  * Three tables (banners, device brands, blog categories) are UNPAGINATED and
