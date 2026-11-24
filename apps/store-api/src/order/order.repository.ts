@@ -54,6 +54,7 @@ import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto'
 // the other one, and the chip would then quietly disagree with the tile.
 import { PENDING_STALE_HOURS } from '../dashboard';
 import {
+  cartAlreadyOrderedError,
   copyOriginalNotCancellableError,
   orderPaymentInProgressError,
   staleOrderError,
@@ -385,12 +386,16 @@ export class OrderRepository {
   /**
    * Create an order from a cart inside a single transaction:
    *   1. Snapshot each cart line's unit price and compute the subtotal.
-   *   2. Create the order with its nested items.
-   *   3. Clear the originating cart.
+   *   2. Clear the cart lines that were read — the at-most-once guard: if any
+   *      is already gone, another request ordered them (TASK-2521).
+   *   3. Create the order with its nested items.
    *   4. Atomically decrement stock for each variant line, guarding against
    *      overselling under concurrency (see below).
    * Either the whole block commits or nothing does — there is no partial state.
    *
+   * @throws ConflictException `CART_ALREADY_ORDERED` when a concurrent request
+   *   (double click, two tabs) already turned these cart lines into an order —
+   *   see {@link cartAlreadyOrderedError}.
    * @throws ConflictException when a variant has insufficient stock at commit
    *   time. The service performs an early best-effort check, but that read is
    *   a TOCTOU window: two concurrent orders for the last unit could both pass
@@ -477,6 +482,19 @@ export class OrderRepository {
     // ───────────────────────────────────────────────────────────────────────────
 
     const order = await this.prisma.$transaction(async (tx) => {
+      // TASK-2521: the at-most-once guard, deliberately the FIRST statement.
+      // Delete exactly the lines that were read; a concurrent request from the
+      // same cart blocks on these rows and, once the winner commits, finds fewer
+      // than it read — so it fails here with one code, before creating an
+      // account (TASK-2010) or redeeming a promo. A line added after the read is
+      // not ordered and stays in the cart.
+      const cleared = await tx.cartItem.deleteMany({
+        where: { cartId, id: { in: cartItems.map((item) => item.id) } },
+      });
+      if (cleared.count !== cartItems.length) {
+        throw cartAlreadyOrderedError();
+      }
+
       // TASK-2010: a checkout sign-up's account is written first, through this
       // tx, and owns the order outright — so anything below that throws (stock
       // gone, a promo cap, the outbox) takes the account down with the order.
@@ -560,9 +578,6 @@ export class OrderRepository {
       if (discountParam) {
         await discountParam.redeem(created.id, tx, ownerId);
       }
-
-      // Empty the originating cart so it cannot be ordered twice.
-      await tx.cartItem.deleteMany({ where: { cartId } });
 
       // Authoritative inventory decrement on each ordered position. The
       // conditional `WHERE stock >= quantity` makes this safe under concurrency:

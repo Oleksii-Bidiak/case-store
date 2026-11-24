@@ -7,6 +7,7 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { getGetCartQueryKey } from "@/entities/cart";
 import {
   GUEST_ORDER_PLACED_PARAM,
   toDeliveryPayload,
@@ -163,6 +164,41 @@ describe("useCheckout — order-creation failures (TASK-402)", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("Internal server error")).toBeNull();
   });
+
+  // TASK-2521: a double click or a second tab — the server already turned this
+  // cart into an order. Not a generic failure: point the shopper to the order.
+  // The cart is left alone — refetched empty, CheckoutView's empty-cart guard
+  // would replace the page with /cart and the sentence would never be read.
+  it.each([
+    [409, "CART_ALREADY_ORDERED"],
+    [400, "CART_EMPTY"],
+  ])(
+    "points to orders or the cart on %i %s, without refetching the cart",
+    async (status, error) => {
+      server.use(
+        http.post("*/api/orders", () =>
+          HttpResponse.json(
+            { statusCode: status, error, message: "Cart is gone" },
+            { status },
+          ),
+        ),
+      );
+      const user = userEvent.setup();
+      const { queryClient } = renderWithProviders(<Harness />, authed);
+      const invalidateSpy = jest.spyOn(queryClient, "invalidateQueries");
+
+      await user.click(screen.getByRole("button", { name: "submit" }));
+
+      expect(
+        await screen.findByText(dict.checkout.errorCartAlreadyOrdered),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(dict.common.genericError)).toBeNull();
+      expect(invalidateSpy).not.toHaveBeenCalledWith({
+        queryKey: getGetCartQueryKey(),
+      });
+      expect(mockPush).not.toHaveBeenCalled();
+    },
+  );
 });
 
 // TASK-646 / TASK-1097. What each delivery branch puts on `CreateOrderDto`.

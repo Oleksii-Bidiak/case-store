@@ -738,10 +738,12 @@ describe('OrderService', () => {
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException when the cart is empty', async () => {
+    it('should throw BadRequestException CART_EMPTY when the cart is empty', async () => {
       cartServiceMock.loadForCheckout.mockResolvedValue(emptyCart);
 
-      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(BadRequestException);
+      const error = await service.createOrder(userActor, createDto).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({ error: 'CART_EMPTY' });
       expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
     });
 

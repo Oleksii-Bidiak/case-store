@@ -106,6 +106,42 @@ describe('MailService', () => {
       );
     });
 
+    // TASK-2523: nodemailer's own defaults (120 s / 30 s / 600 s) let a hung
+    // SMTP server pin the outbox worker. The socket has its own, longer bound:
+    // a timeout after DATA is ambiguous and the outbox retry would send twice.
+    it('bounds connection and greeting with SMTP_TIMEOUT_MS, the socket with SMTP_SOCKET_TIMEOUT_MS', async () => {
+      const config = makeConfig({
+        ...enabledConfig(),
+        SMTP_TIMEOUT_MS: 2500,
+        SMTP_SOCKET_TIMEOUT_MS: 45000,
+      });
+      const service = new MailService(config, makeLogger());
+
+      await service.sendOrderConfirmation({ to: 'c@example.com', order });
+
+      expect(createTransportMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectionTimeout: 2500,
+          greetingTimeout: 2500,
+          socketTimeout: 45000,
+        }),
+      );
+    });
+
+    it('defaults connection/greeting to 10000 ms and the socket to 60000 ms when unset', async () => {
+      const service = new MailService(makeConfig(enabledConfig()), makeLogger());
+
+      await service.sendOrderConfirmation({ to: 'c@example.com', order });
+
+      expect(createTransportMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectionTimeout: 10000,
+          greetingTimeout: 10000,
+          socketTimeout: 60000,
+        }),
+      );
+    });
+
     it('does not throw when sending succeeds', async () => {
       const service = new MailService(makeConfig(enabledConfig()), makeLogger());
 

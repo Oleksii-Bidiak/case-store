@@ -289,6 +289,23 @@ export class EnvironmentVariables {
   @IsString()
   MAIL_FROM?: string;
 
+  // SMTP connection + greeting timeout (TASK-2523), default 10000 in MailService.
+  // Failing there means nothing was sent, so the outbox retry is safe.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(120000)
+  SMTP_TIMEOUT_MS?: number;
+
+  // SMTP socket inactivity timeout, default 60000 in MailService. Longer than the
+  // connection one on purpose: once DATA is sent, a timeout is ambiguous (the
+  // server may have accepted the mail) and the outbox retry would send it twice.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(600000)
+  SMTP_SOCKET_TIMEOUT_MS?: number;
+
   // ─── Outbound-mail queue + scheduled publishing ────────────────────────────
   // All optional tuning knobs with defaults in their services. They are declared
   // here anyway, because "read through ConfigService but declared nowhere" is the
@@ -461,6 +478,14 @@ export class EnvironmentVariables {
   @IsString()
   NP_ALLOW_KEYLESS?: string;
 
+  // Upper bound on one Nova Poshta call (TASK-2523), default 5000 in the client.
+  // A timeout is reported exactly like NP being down: 503 DELIVERY_UNAVAILABLE.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(120000)
+  NP_REQUEST_TIMEOUT_MS?: number;
+
   // ─── Owner notifications — Telegram (TASK-674) ──────────────────────────────
   // Optional: dev and CI boot without it. With no token the Telegram channel is
   // "unconfigured" — and says so at start-up with an error-level
@@ -505,6 +530,15 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   LIQPAY_PAYTYPES?: string;
+
+  // Upper bound on one LiqPay API call (TASK-2523), default 10000 in the adapter.
+  // A timeout is handled like LiqPay being unreachable: the status poll leaves
+  // the payment PENDING, a refund ends in "outcome unknown".
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(120000)
+  LIQPAY_REQUEST_TIMEOUT_MS?: number;
 
   // Safety net for callbacks that never arrive: LiqPay does not document its
   // retry behaviour, so without polling a customer can pay while the order stays

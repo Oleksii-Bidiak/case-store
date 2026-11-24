@@ -1846,6 +1846,10 @@ export const dict = {
       "Промокод діє лише з акаунтом. Ми позначили «Створити акаунт на цю пошту» — підтвердьте замовлення ще раз.",
     errorPaymentAccountRequired:
       "Оплата карткою доступна лише з акаунтом. Ми позначили «Створити акаунт на цю пошту» — підтвердьте замовлення ще раз.",
+    // TASK-2521: the cart changed or emptied mid-checkout — most often a second
+    // tab or a retry already placed the order, sometimes a line was removed.
+    errorCartAlreadyOrdered:
+      "Кошик змінився, поки ви оформлювали, — можливо, замовлення вже створено в іншій вкладці. Перевірте «Мої замовлення» або кошик.",
   },
 
   order: {

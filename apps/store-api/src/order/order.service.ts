@@ -66,6 +66,7 @@ import {
   staleOrderError,
   copyCustomerChangedError,
   copyOriginalNotCancellableError,
+  cartEmptyError,
 } from './order.errors';
 import {
   AddonApplicabilityResolver,
@@ -427,7 +428,7 @@ export class OrderService {
     }
 
     if (cart.items.length === 0) {
-      throw new BadRequestException('Cart is empty — add items before placing an order');
+      throw cartEmptyError();
     }
 
     // Re-validate every line at order-creation time — state may have changed

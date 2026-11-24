@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DeliveryMethod, PaymentMethod, Prisma } from '@prisma/client';
@@ -351,6 +352,69 @@ describe('OrderRepository.createFromCart — persisted row (integration)', () =>
       );
 
       expect((await persisted(created.id)).billingAddress).toEqual(billing);
+    });
+  });
+
+  // ─── At most one order per cart (TASK-2521) ─────────────────────────────────
+  // The service reads the cart BEFORE the transaction, so two requests from one
+  // cart (a double click, two tabs) carry the same lines into createFromCart.
+  // Only the transaction can decide which of them gets to order those lines.
+
+  describe('at most one order per cart (TASK-2521)', () => {
+    let otherProductId = '';
+
+    afterEach(async () => {
+      // Runs BEFORE the outer afterEach: drop the extra line, then its product.
+      if (!prisma || !otherProductId) return;
+      await prisma.cartItem.deleteMany({ where: { productId: otherProductId } });
+      await prisma.product.deleteMany({ where: { id: otherProductId } });
+      otherProductId = '';
+    });
+
+    it('two concurrent createFromCart calls from one cart create exactly one order', async () => {
+      // Read once, as the service does — both requests saw the same cart.
+      const params = await buildParams();
+
+      const results = await Promise.allSettled([
+        repo.createFromCart(params),
+        repo.createFromCart(params),
+      ]);
+
+      expect(await prisma.order.count({ where: { userId } })).toBe(1);
+      const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
+      expect(product.stock).toBe(INITIAL_STOCK - ORDERED_QTY);
+      expect(await prisma.cartItem.count({ where: { cartId } })).toBe(0);
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toBeInstanceOf(ConflictException);
+      expect((rejected[0].reason as ConflictException).getResponse()).toMatchObject({
+        error: 'CART_ALREADY_ORDERED',
+      });
+    });
+
+    it('a line added to the cart after it was read is not ordered and stays in the cart', async () => {
+      const params = await buildParams();
+      // Another tab adds a product between the read and the transaction.
+      const suffix = randomUUID().slice(0, 8);
+      const other = await prisma.product.create({
+        data: {
+          name: `cfc-other-${suffix}`,
+          slug: `cfc-other-${suffix}`,
+          price: new Prisma.Decimal('10.00'),
+          stock: INITIAL_STOCK,
+          categoryId,
+        },
+      });
+      otherProductId = other.id;
+      await prisma.cartItem.create({ data: { cartId, productId: other.id, quantity: 1 } });
+
+      const created = await repo.createFromCart(params);
+
+      expect(created.items).toHaveLength(1);
+      const left = await prisma.cartItem.findMany({ where: { cartId } });
+      expect(left.map((i) => i.productId)).toEqual([other.id]);
     });
   });
 
