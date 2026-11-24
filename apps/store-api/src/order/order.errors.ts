@@ -94,10 +94,16 @@ export const OrderErrorCode = {
    */
   COPY_CUSTOMER_CHANGED: 'ORDER_COPY_CUSTOMER_CHANGED',
   /**
-   * A checkout whose cart lines a concurrent request (double click, two tabs)
-   * already turned into an order (TASK-2521).
+   * A checkout whose cart lines changed between the read and the transaction:
+   * a concurrent request (retry, double submit) already ordered them, or a line
+   * was removed in another tab (TASK-2521).
    */
   CART_ALREADY_ORDERED: 'CART_ALREADY_ORDERED',
+  /**
+   * A checkout of an empty cart — typically a second tab submitting after the
+   * first one already placed the order (TASK-2521).
+   */
+  CART_EMPTY: 'CART_EMPTY',
 } as const;
 
 export type OrderErrorCode = (typeof OrderErrorCode)[keyof typeof OrderErrorCode];
@@ -154,14 +160,25 @@ export function staleOrderError(): ConflictException {
 }
 
 /**
- * 409 for a second checkout of the same cart (TASK-2521): the lines it read are
- * already gone because another request ordered them. Nothing is created; the
- * storefront points the shopper to their orders instead of a generic error.
+ * 409 for a checkout whose cart lines are already gone (TASK-2521): another
+ * request ordered them, or they were removed meanwhile. Nothing is created; the
+ * storefront asks the shopper to check their orders or the cart.
  */
 export function cartAlreadyOrderedError(): ConflictException {
   return new ConflictException({
     error: OrderErrorCode.CART_ALREADY_ORDERED,
     message: 'This cart has already been turned into an order',
+  });
+}
+
+/**
+ * 400 for a checkout of an empty cart (TASK-2521). Coded, so the storefront can
+ * tell a second tab (the order is likely placed already) from a generic refusal.
+ */
+export function cartEmptyError(): BadRequestException {
+  return new BadRequestException({
+    error: OrderErrorCode.CART_EMPTY,
+    message: 'Cart is empty — add items before placing an order',
   });
 }
 
