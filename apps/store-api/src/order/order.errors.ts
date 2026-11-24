@@ -93,6 +93,11 @@ export const OrderErrorCode = {
    * would reach someone who never paid. A new order is the way to change who buys.
    */
   COPY_CUSTOMER_CHANGED: 'ORDER_COPY_CUSTOMER_CHANGED',
+  /**
+   * A checkout whose cart lines a concurrent request (double click, two tabs)
+   * already turned into an order (TASK-2521).
+   */
+  CART_ALREADY_ORDERED: 'CART_ALREADY_ORDERED',
 } as const;
 
 export type OrderErrorCode = (typeof OrderErrorCode)[keyof typeof OrderErrorCode];
@@ -145,6 +150,18 @@ export function staleOrderError(): ConflictException {
   return new ConflictException({
     error: OrderErrorCode.STALE,
     message: 'This order changed since it was loaded — reload and retry',
+  });
+}
+
+/**
+ * 409 for a second checkout of the same cart (TASK-2521): the lines it read are
+ * already gone because another request ordered them. Nothing is created; the
+ * storefront points the shopper to their orders instead of a generic error.
+ */
+export function cartAlreadyOrderedError(): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.CART_ALREADY_ORDERED,
+    message: 'This cart has already been turned into an order',
   });
 }
 

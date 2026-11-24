@@ -63,8 +63,12 @@ const makeTx = () => ({
     updateMany: jest.fn(),
     findUniqueOrThrow: jest.fn(),
   },
+  // TASK-2521: createFromCart clears exactly the lines it read and checks the
+  // count. By default every requested line is still there (no concurrent order).
   cartItem: {
-    deleteMany: jest.fn(),
+    deleteMany: jest.fn(({ where }: { where: { id?: { in: string[] } } }) =>
+      Promise.resolve({ count: where.id?.in.length ?? 0 }),
+    ),
   },
   // TASK-627: the lines a released reservation gives back / a late payment re-takes.
   orderItem: {
@@ -316,6 +320,31 @@ describe('OrderRepository', () => {
     });
   });
 
+  // ─── createFromCart — at most one order per cart (TASK-2521) ───────────────
+
+  describe('createFromCart — at most one order per cart (TASK-2521)', () => {
+    it('throws CART_ALREADY_ORDERED and writes nothing when a read line is already gone', async () => {
+      const tx = makeTx();
+      // A concurrent request ordered the cart: one of the two read lines is left.
+      tx.cartItem.deleteMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      const account = { create: jest.fn() };
+      const afterCreate = jest.fn();
+
+      const attempt = repository.createFromCart({ ...baseParams, account }, afterCreate);
+
+      await expect(attempt).rejects.toBeInstanceOf(ConflictException);
+      await expect(attempt).rejects.toMatchObject({
+        response: { error: 'CART_ALREADY_ORDERED' },
+      });
+      // The guard is the first statement: nothing after it ran.
+      expect(account.create).not.toHaveBeenCalled();
+      expect(tx.order.create).not.toHaveBeenCalled();
+      expect(tx.product.updateMany).not.toHaveBeenCalled();
+      expect(afterCreate).not.toHaveBeenCalled();
+    });
+  });
+
   // ─── createFromCart — checkout sign-up (TASK-2010) ─────────────────────────
   // The account is written INSIDE the order transaction, before the order, and
   // the order is written for it — so a failed checkout leaves no account behind.
@@ -448,8 +477,10 @@ describe('OrderRepository', () => {
       expect(data.subtotal.toString()).toBe('69.97');
       expect(data.total.toString()).toBe('69.97');
 
-      // The originating cart is emptied so it cannot be ordered twice.
-      expect(tx.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: 'cart-uuid-1' } });
+      // Exactly the lines that were read are cleared, so the cart is ordered once.
+      expect(tx.cartItem.deleteMany).toHaveBeenCalledWith({
+        where: { cartId: 'cart-uuid-1', id: { in: ['cart-item-1', 'cart-item-2'] } },
+      });
     });
 
     it('zero-pads sub-dollar cents without float drift', async () => {

@@ -148,6 +148,8 @@ export type SubmitOrderOutcome =
 
 /** The server's account rules (TASK-2010) — `error` codes on `POST /orders`. */
 const ACCOUNT_EXISTS = "ACCOUNT_EXISTS";
+/** TASK-2521: a double click or a second tab — this cart is already an order. */
+const CART_ALREADY_ORDERED = "CART_ALREADY_ORDERED";
 const ACCOUNT_REQUIRED_MESSAGES: Record<string, string> = {
   DISCOUNT_ACCOUNT_REQUIRED: dict.checkout.errorDiscountAccountRequired,
   PAYMENT_ACCOUNT_REQUIRED: dict.checkout.errorPaymentAccountRequired,
@@ -424,22 +426,27 @@ export function useCheckout({ isGuest, setError }: UseCheckoutOptions) {
   // TASK-2010: the account rules have their own Ukrainian sentences, and
   // ACCOUNT_EXISTS has none at all — checkout answers it with the sign-in
   // block at the e-mail, not with an alert above the form.
+  // TASK-2521: a 409 CART_ALREADY_ORDERED points to the order already placed.
+  // The cart is NOT refetched here: it is empty now, and CheckoutView's
+  // empty-cart guard would replace the page with /cart, taking this sentence.
   const status = apiErrorStatus(mutation.error);
   const errorCode = apiErrorCode(mutation.error);
   const accountExists = status === 409 && errorCode === ACCOUNT_EXISTS;
   const errorMessage = accountExists
     ? null
-    : errorCode && errorCode in ACCOUNT_REQUIRED_MESSAGES
-      ? ACCOUNT_REQUIRED_MESSAGES[errorCode]
-      : status === 400
-        ? isDeliveryRefusal(errorCode)
-          ? (apiErrorMessage(mutation.error) ?? dict.checkout.error400)
-          : fieldsCoverRefusal
-            ? null
-            : dict.checkout.error400
-        : mutation.isError
-          ? dict.common.genericError
-          : null;
+    : status === 409 && errorCode === CART_ALREADY_ORDERED
+      ? dict.checkout.errorCartAlreadyOrdered
+      : errorCode && errorCode in ACCOUNT_REQUIRED_MESSAGES
+        ? ACCOUNT_REQUIRED_MESSAGES[errorCode]
+        : status === 400
+          ? isDeliveryRefusal(errorCode)
+            ? (apiErrorMessage(mutation.error) ?? dict.checkout.error400)
+            : fieldsCoverRefusal
+              ? null
+              : dict.checkout.error400
+          : mutation.isError
+            ? dict.common.genericError
+            : null;
 
   /** Forget a shown refusal — the shopper has moved on to try again. */
   const clearError = () => {
