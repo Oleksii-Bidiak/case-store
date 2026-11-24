@@ -119,6 +119,12 @@
     "patch-level lift, not a behaviour change. We never talk to MySQL at all",
     "(Postgres only), so this is hygiene rather than a live exposure.",
     "",
+    "effect under prisma (TASK-2522): `@prisma/config@7.10.1` declares",
+    "`effect: '3.20.0'` EXACTLY, which carries GHSA-7589-6fvf-x4pw (ReDoS in",
+    "Schema.TemplateLiteral, fixed 3.22.1). Same major, so a minor-level lift.",
+    "Only the prisma CLI loads it, on our own prisma.config.ts: hygiene, not a",
+    "live exposure.",
+    "",
     "js-yaml under orval (TASK-757): `orval@8.23.0` declares `js-yaml: '4.3.0'`",
     "EXACTLY (GHSA-5p4m-2wfm-xmqj / GHSA-2883-xcg3-v3hh, fixed 4.3.2). Overridden",
     "rather than bumping orval to 8.37: generated hooks are untracked and rebuilt",
@@ -142,7 +148,8 @@
   ],
   "overrides": {
     "prisma": {
-      "mysql2": "^3.24.4"
+      "mysql2": "^3.24.4",
+      "effect": "^3.22.5"
     },
     "orval": {
       "js-yaml": "^4.3.2"

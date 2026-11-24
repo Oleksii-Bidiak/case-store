@@ -54,8 +54,10 @@ useEffect(() => {
 }, [initialValue]);
 ```
 
-**Reference implementation:** `apps/store-client/src/features/product-filters/ui/search-input.tsx`
-(TASK-117) — the product search box.
+**Reference implementation:** `apps/store-admin/src/shared/ui/data-table/table-search.tsx`
+(TASK-423) — the one search box every admin table uses; its test `table-search.test.tsx` pins
+focus across the URL round-trip. The original storefront search box from TASK-117 was removed
+when the filter rail merged into one panel (`f809ad50`).
 
 > **🚫 `key`-remount is NOT acceptable for focus-sensitive inputs.** Forcing a remount via a
 > changing `key` prop unmounts the DOM element and destroys focus on every keystroke — this was
