@@ -19,7 +19,7 @@
     "@dnd-kit/sortable": "10.0.0",
     "@dnd-kit/utilities": "3.2.2",
     "@hookform/resolvers": "^5.4.0",
-    "@sentry/nextjs": "^10.62.0",
+    "@sentry/nextjs": "^10.78.0",
     "@tanstack/react-query": "^5.80.0",
     "@tanstack/react-query-devtools": "^5.80.0",
     "@tiptap/extension-table": "3.31.3",
