@@ -508,6 +508,9 @@ function CategoryDeleteForm({
   const onValid = (values: CategoryDeleteFormValues) => {
     setServerError(null);
     const body = toDeleteCategoryDto(values, isEmpty, {
+      // `impact` is the read this render shows (TASK-2551): its numbers and
+      // its fingerprint go together, so a re-read after a 409 sends the new one.
+      expectedBranchVersion: impact.branchVersion,
       // `hiddenTargetName` is what this render shows for THIS target — the
       // consent is given only for a warning the operator has seen.
       allowHiddenTarget:
