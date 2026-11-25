@@ -88,7 +88,13 @@ export class AdminHomeBlockController {
   @ApiResponse({ status: 400, description: 'Validation error or REORDER_DUPLICATE_ID' })
   @ApiResponse({ status: 403, description: 'Forbidden — needs home:write' })
   @ApiResponse({ status: 404, description: 'REORDER_NOT_FOUND — an id is not a block' })
-  @ApiResponse({ status: 409, description: 'REORDER_STALE — the page changed since it was loaded' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'REORDER_STALE — the page changed since it was loaded: expectedIds is no longer the ' +
+      'saved order (another tab reordered, added or removed a block), or a block is missing ' +
+      'from orderedIds. Nothing is written',
+  })
   async reorder(@Body() dto: ReorderHomeBlocksDto): Promise<AdminHomeBlockListResponse> {
     return { data: await this.homeBlockService.reorder(dto) };
   }

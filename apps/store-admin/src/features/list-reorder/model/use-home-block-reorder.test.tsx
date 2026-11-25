@@ -115,6 +115,17 @@ describe("homeBlockReorderPayload", () => {
     if (outcome.kind !== "moved") throw new Error("not moved");
     expect(homeBlockReorderPayload(items, outcome.items)).toEqual({
       orderedIds: [NEWS, HERO, TABS, RAIL],
+      expectedIds: [HERO, TABS, RAIL, NEWS],
+    });
+  });
+
+  it("expects the order the move started from — for an undo, the one just saved (TASK-2547)", () => {
+    const outcome = applyIntent(items, NEWS, "first");
+    if (outcome.kind !== "moved") throw new Error("not moved");
+    // The lifecycle builds the undo as `toPayload(next, prev)`.
+    expect(homeBlockReorderPayload(outcome.items, items)).toEqual({
+      orderedIds: [HERO, TABS, RAIL, NEWS],
+      expectedIds: [NEWS, HERO, TABS, RAIL],
     });
   });
 
@@ -186,7 +197,10 @@ describe("useHomeBlockReorder", () => {
     await userEvent.click(screen.getByRole("button", { name: "move-last-up" }));
 
     await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ orderedIds: [HERO, TABS, NEWS, RAIL] });
+    expect(bodies[0]).toEqual({
+      orderedIds: [HERO, TABS, NEWS, RAIL],
+      expectedIds: [HERO, TABS, RAIL, NEWS],
+    });
   });
 
   it("409 REORDER_STALE → the «list changed» alert and a reload", async () => {

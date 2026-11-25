@@ -100,7 +100,12 @@ interface Impact {
   carouselCount: number;
   carousels: { id: string; name: string }[];
   deletedProductCount: number;
+  /** `deletionImpact.branchVersion` (TASK-2551); `BRANCH_VERSION` unless set. */
+  branchVersion?: string;
 }
+
+/** The branch fingerprint every preview carries unless a test says otherwise. */
+const BRANCH_VERSION = "a".repeat(64);
 
 const HEAD_IMPACT: Impact = {
   subcategoryCount: 2,
@@ -141,7 +146,7 @@ function detail(id: string, impact: Impact) {
       ogImage: null,
       createdAt: "2026-10-01T00:00:00.000Z",
       updatedAt: "2026-10-01T00:00:00.000Z",
-      deletionImpact: impact,
+      deletionImpact: impact && { branchVersion: BRANCH_VERSION, ...impact },
     },
   };
 }
@@ -729,7 +734,9 @@ describe("CategoryDeleteDialog — the target picker", () => {
     );
 
     await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
-    expect(bodies).toEqual([{ moveToId: AUDIO }]);
+    expect(bodies).toEqual([
+      { moveToId: AUDIO, expectedBranchVersion: BRANCH_VERSION },
+    ]);
     expect(onOpenChange).toHaveBeenCalledWith(false);
 
     const keys = invalidate.mock.calls.map(([filters]) =>
@@ -845,7 +852,9 @@ describe("CategoryDeleteDialog — the target picker", () => {
     await user.click(screen.getByRole("button", { name: d.confirm }));
 
     await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
-    expect(bodies).toEqual([{ moveToId: AUDIO }]);
+    expect(bodies).toEqual([
+      { moveToId: AUDIO, expectedBranchVersion: BRANCH_VERSION },
+    ]);
     expect(successToast).toHaveBeenCalledTimes(1);
     const [message, options] = successToast.mock.calls[0];
     expect(message).toBe(d.toastMovedDeleted("Навушники", 2, "Аудіоаксесуари"));
@@ -1025,7 +1034,9 @@ describe("CategoryDeleteDialog — «Створити нову» (ДН-2.5 / Д�
       screen.getByRole("button", { name: "Видалити й перенести 15 товарів" }),
     );
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());
-    expect(bodies).toEqual([{ moveToNew: { name: "Аудіо" } }]);
+    expect(bodies).toEqual([
+      { moveToNew: { name: "Аудіо" }, expectedBranchVersion: BRANCH_VERSION },
+    ]);
   });
 
   it("sends the parent picked outside the branch", async () => {
@@ -1053,7 +1064,12 @@ describe("CategoryDeleteDialog — «Створити нову» (ДН-2.5 / Д�
     );
 
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());
-    expect(bodies).toEqual([{ moveToNew: { name: "Аудіо", parentId: ACC } }]);
+    expect(bodies).toEqual([
+      {
+        moveToNew: { name: "Аудіо", parentId: ACC },
+        expectedBranchVersion: BRANCH_VERSION,
+      },
+    ]);
   });
 
   it("refuses an empty name and focuses the field", async () => {
@@ -1104,7 +1120,7 @@ describe("CategoryDeleteDialog — an empty category (ДН-2.9)", () => {
 
     await user.click(screen.getByRole("button", { name: d.confirm }));
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());
-    expect(bodies).toEqual([{}]);
+    expect(bodies).toEqual([{ expectedBranchVersion: BRANCH_VERSION }]);
     expect(successToast).toHaveBeenCalledWith(d.toastDone("Чохли для Pixel"));
   });
 
@@ -1195,7 +1211,13 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
 
     await user.click(confirm());
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());
-    expect(bodies).toEqual([{ moveToId: AUDIO, allowHiddenTarget: true }]);
+    expect(bodies).toEqual([
+      {
+        moveToId: AUDIO,
+        allowHiddenTarget: true,
+        expectedBranchVersion: BRANCH_VERSION,
+      },
+    ]);
     // The toast repeats that the products are off the site (TASK-1841).
     const [message, options] = successToast.mock.calls[0];
     expect(message).toBe(
@@ -1281,7 +1303,9 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
 
     await user.click(confirm());
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());
-    expect(bodies).toEqual([{ moveToId: PIXEL }]);
+    expect(bodies).toEqual([
+      { moveToId: PIXEL, expectedBranchVersion: BRANCH_VERSION },
+    ]);
   });
 
   it("409 CATEGORY_MOVE_TARGET_HIDDEN: says so, keeps the choice, and the second confirm consents", async () => {
@@ -1330,8 +1354,12 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
     await user.click(confirm());
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());
     expect(bodies).toEqual([
-      { moveToId: AUDIO },
-      { moveToId: AUDIO, allowHiddenTarget: true },
+      { moveToId: AUDIO, expectedBranchVersion: BRANCH_VERSION },
+      {
+        moveToId: AUDIO,
+        allowHiddenTarget: true,
+        expectedBranchVersion: BRANCH_VERSION,
+      },
     ]);
   });
 
@@ -1369,12 +1397,16 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
     await user.click(confirm());
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());
     expect(bodies).toEqual([
-      { moveToId: AUDIO },
-      { moveToId: AUDIO, allowHiddenTarget: true },
+      { moveToId: AUDIO, expectedBranchVersion: BRANCH_VERSION },
+      {
+        moveToId: AUDIO,
+        allowHiddenTarget: true,
+        expectedBranchVersion: BRANCH_VERSION,
+      },
     ]);
   });
 
-  it("«Створити нову» under a hidden parent: a light note, products stay, no consent", async () => {
+  it("«Створити нову» under a hidden parent: the note says the moved products are off the site, no consent (TASK-2552)", async () => {
     const user = userEvent.setup();
     stub();
     serveTree(() => treeHiding([ACC]));
@@ -1396,18 +1428,26 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
       within(listbox).getByRole("option", { name: /^Аксесуари\s*прихована$/ }),
     );
 
-    expect(
-      screen.getByText(d.newParentHiddenNote("Аксесуари")),
-    ).toBeInTheDocument();
-    // Its products stay on the site: no hidden-target warning, the usual promise.
+    // The storefront hides a product under ANY hidden ancestor (TASK-1032):
+    // the note must not promise the products stay on the site.
+    const note = screen.getByText(d.newParentHiddenNote("Аксесуари"));
+    expect(note).toHaveTextContent(
+      "«Аксесуари» прихована — нова категорія не зʼявиться в меню сайту, а перенесені товари не буде видно на сайті, доки «Аксесуари» не покажуть.",
+    );
+    expect(note).not.toHaveTextContent("Товари лишаться на сайті");
+    // The new category is created shown: no hidden-TARGET warning, no consent.
     expect(
       screen.queryByText(/прихована: після переїзду/),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(d.productsSub)).toBeInTheDocument();
 
     await user.click(confirm());
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());
-    expect(bodies).toEqual([{ moveToNew: { name: "Аудіо", parentId: ACC } }]);
+    expect(bodies).toEqual([
+      {
+        moveToNew: { name: "Аудіо", parentId: ACC },
+        expectedBranchVersion: BRANCH_VERSION,
+      },
+    ]);
   });
 
   it("names the hidden ANCESTOR when the parent itself is shown", async () => {
@@ -1428,6 +1468,122 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
     expect(
       screen.getByText(d.newParentHiddenNote("Аксесуари")),
     ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["a hidden parent", /^Аксесуари\s*прихована$/],
+    ["a hidden ANCESTOR", /^Аудіоаксесуари$/],
+  ])(
+    "«Створити нову» under %s: the products line does not promise «не ховається» (TASK-2610)",
+    async (_case, parentOption) => {
+      const user = userEvent.setup();
+      stub();
+      serveTree(() => treeHiding([ACC]));
+      renderDialog();
+      await ready();
+
+      await user.click(screen.getByRole("radio", { name: d.modeNew }));
+      await user.type(
+        screen.getByRole("textbox", { name: /Назва нової/ }),
+        "Аудіо",
+      );
+      await user.click(screen.getByRole("combobox", { name: d.newParent }));
+      await user.click(
+        within(await screen.findByRole("listbox")).getByRole("option", {
+          name: parentOption,
+        }),
+      );
+
+      expect(screen.queryByText(d.productsSub)).not.toBeInTheDocument();
+      expect(screen.getByText(d.productsSubHidden)).toBeInTheDocument();
+    },
+  );
+});
+
+describe("CategoryDeleteDialog — the branch the operator saw (TASK-2551)", () => {
+  const V1 = "1".repeat(64);
+  const V2 = "2".repeat(64);
+
+  it("sends the preview's branch version with a move", async () => {
+    const user = userEvent.setup();
+    stub({ impacts: { [HEAD]: { ...HEAD_IMPACT, branchVersion: V1 } } });
+    const { onDeleted } = renderDialog();
+    await ready();
+    await pickTarget(user, "Аудіоаксесуари");
+    await user.click(
+      screen.getByRole("button", { name: "Видалити й перенести 15 товарів" }),
+    );
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+    expect(bodies).toEqual([{ moveToId: AUDIO, expectedBranchVersion: V1 }]);
+  });
+
+  it("sends it with the target-less delete of an empty category too", async () => {
+    const user = userEvent.setup();
+    stub({ impacts: { [PIXEL]: { ...EMPTY_IMPACT, branchVersion: V1 } } });
+    const { onDeleted } = renderDialog(PIXEL);
+    await ready();
+    await user.click(screen.getByRole("button", { name: d.confirm }));
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+    expect(bodies).toEqual([{ expectedBranchVersion: V1 }]);
+  });
+
+  it("after a 409 TREE_STALE re-read, the second confirm sends the NEW version", async () => {
+    const user = userEvent.setup();
+    let refusals = 0;
+    stub({
+      respond: () => {
+        if (refusals > 0)
+          return deleted({ targetId: AUDIO, movedProducts: 16 });
+        refusals += 1;
+        return HttpResponse.json(
+          {
+            statusCode: 409,
+            error: "CATEGORY_TREE_STALE",
+            message: "stale",
+          },
+          { status: 409 },
+        );
+      },
+    });
+    // A colleague added a product while the dialog was open: the re-read
+    // brings a new count AND a new fingerprint.
+    server.use(
+      http.get("*/api/admin/categories/:id", () => {
+        detailGets += 1;
+        return HttpResponse.json(
+          detail(
+            HEAD,
+            detailGets === 1
+              ? { ...HEAD_IMPACT, branchVersion: V1 }
+              : { ...HEAD_IMPACT, productCount: 16, branchVersion: V2 },
+          ),
+        );
+      }),
+    );
+    const { onDeleted } = renderDialog();
+    await ready();
+    await pickTarget(user, "Аудіоаксесуари");
+    await user.click(
+      screen.getByRole("button", { name: "Видалити й перенести 15 товарів" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      d.errorTreeStale,
+    );
+    // The re-read landed: the numbers are today's.
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Видалити й перенести 16 товарів",
+      }),
+    );
+
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+    expect(bodies).toEqual([
+      { moveToId: AUDIO, expectedBranchVersion: V1 },
+      { moveToId: AUDIO, expectedBranchVersion: V2 },
+    ]);
   });
 });
 

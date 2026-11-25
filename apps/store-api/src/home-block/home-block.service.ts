@@ -221,7 +221,7 @@ export class HomeBlockService {
   async reorder(dto: ReorderHomeBlocksDto): Promise<HomeBlockEntity[]> {
     let rows: HomeBlockRecord[];
     try {
-      rows = await this.homeBlockRepository.reorder(dto.orderedIds);
+      rows = await this.homeBlockRepository.reorder(dto.orderedIds, dto.expectedIds);
     } catch (error) {
       throw reorderErrorToHttp(error);
     }

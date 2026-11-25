@@ -496,10 +496,13 @@ function CategoryDeleteForm({
     mode === "existing" && targetId && byId.has(targetId) && isHidden(targetId)
       ? byId.get(targetId)!.label
       : null;
-  // A new category under a hidden parent (or ancestor) is created shown and
-  // its products stay on the site — only the menu will not lead to it.
+  // A new category under a hidden parent (or ancestor) is created shown, but
+  // the storefront hides everything under a hidden ancestor (TASK-2552): the
+  // menu will not lead to it and the moved products are off the site.
   const hiddenParentName =
     mode === "new" && parentId ? nearestHidden(byId, parentId) : null;
+  const productsOffSite =
+    hiddenTargetName !== null || hiddenParentName !== null;
 
   /* ── submit ─────────────────────────────────────────────────────────── */
 
@@ -508,6 +511,9 @@ function CategoryDeleteForm({
   const onValid = (values: CategoryDeleteFormValues) => {
     setServerError(null);
     const body = toDeleteCategoryDto(values, isEmpty, {
+      // `impact` is the read this render shows (TASK-2551): its numbers and
+      // its fingerprint go together, so a re-read after a 409 sends the new one.
+      expectedBranchVersion: impact.branchVersion,
       // `hiddenTargetName` is what this render shows for THIS target — the
       // consent is given only for a warning the operator has seen.
       allowHiddenTarget:
@@ -919,15 +925,14 @@ function CategoryDeleteForm({
             <>
               {impact.productCount > 0 ? (
                 <ConsequenceRow
-                  // TASK-1837: «не ховається» would be false for a hidden target.
-                  tone={hiddenTargetName !== null ? "warning" : "neutral"}
+                  // TASK-1837 / TASK-2610: «не ховається» would be false for a hidden
+                  // target and for a new one under a hidden parent or ancestor.
+                  tone={productsOffSite ? "warning" : "neutral"}
                   icon={<PackageIcon />}
                   count={d.productsCount(impact.productCount)}
                   text={d.productsText(impact.productCount, target)}
                   sub={[
-                    hiddenTargetName !== null
-                      ? d.productsSubHidden
-                      : d.productsSub,
+                    productsOffSite ? d.productsSubHidden : d.productsSub,
                     impact.deletedProductCount > 0
                       ? d.productsDeletedToo(impact.deletedProductCount)
                       : null,

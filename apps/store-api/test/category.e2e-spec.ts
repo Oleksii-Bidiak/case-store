@@ -15,6 +15,7 @@ import {
   CategoryMoveTargetInSubtreeError,
   CategoryMoveTargetRequiredError,
   CategoryNotFoundError,
+  CategoryTreeStaleError,
 } from '../src/category/category.errors';
 import { HttpExceptionFilter } from '../src/common/filters';
 import { PrismaService } from '../src/prisma';
@@ -524,6 +525,7 @@ describe('CategoryController (e2e)', () => {
           { id: 'car-2', name: 'Чохли' },
         ],
         deletedProductCount: 1,
+        branchVersion: 'branch-v1',
       });
 
       const response = await request(app.getHttpServer())
@@ -546,6 +548,8 @@ describe('CategoryController (e2e)', () => {
           { id: 'car-2', name: 'Чохли' },
         ],
         deletedProductCount: 1,
+        // TASK-2551: the fingerprint the delete sends back as expectedBranchVersion.
+        branchVersion: 'branch-v1',
       });
       expect(categoryRepositoryMock.countDeletionImpact).toHaveBeenCalledWith('cat-e2e-1');
     });
@@ -1403,8 +1407,11 @@ describe('CategoryController (e2e)', () => {
   describe('DELETE /api/admin/categories/:id', () => {
     const TARGET_ID = '550e8400-e29b-41d4-a716-446655440000';
     const url = '/api/admin/categories/cat-e2e-1';
-    const moveToId = { moveToId: TARGET_ID };
-    const moveToNew = { moveToNew: { name: 'Інші аксесуари' } };
+    /** The preview's fingerprint every dialog delete carries (TASK-2551). */
+    const VERSION = 'branch-v1';
+    const version = { expectedBranchVersion: VERSION };
+    const moveToId = { ...version, moveToId: TARGET_ID };
+    const moveToNew = { ...version, moveToNew: { name: 'Інші аксесуари' } };
     const managerId = 'manager-e2e-1';
 
     beforeEach(() => {
@@ -1478,11 +1485,15 @@ describe('CategoryController (e2e)', () => {
       expect(response.body).toEqual({
         data: { targetId: TARGET_ID, movedProducts: 3, movedLiveProducts: 2, switchedCarousels: 0 },
       });
-      expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(testCategory.id, {
-        kind: 'existing',
-        id: TARGET_ID,
-        allowHidden: false,
-      });
+      expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
+        testCategory.id,
+        {
+          kind: 'existing',
+          id: TARGET_ID,
+          allowHidden: false,
+        },
+        VERSION,
+      );
     });
 
     // TASK-1837: a hidden target takes the moved products off the storefront — the
@@ -1511,11 +1522,15 @@ describe('CategoryController (e2e)', () => {
           .set('Authorization', `Bearer ${token}`)
           .send({ ...moveToId, allowHiddenTarget: true })
           .expect(200);
-        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(testCategory.id, {
-          kind: 'existing',
-          id: TARGET_ID,
-          allowHidden: true,
-        });
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
+          testCategory.id,
+          {
+            kind: 'existing',
+            id: TARGET_ID,
+            allowHidden: true,
+          },
+          VERSION,
+        );
       });
 
       it('returns 400 for a non-boolean allowHiddenTarget — a string is not consent', async () => {
@@ -1556,6 +1571,7 @@ describe('CategoryController (e2e)', () => {
       expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
         testCategory.id,
         expect.objectContaining({ kind: 'new', name: 'Інші аксесуари', parentId: null }),
+        VERSION,
       );
     });
 
@@ -1614,22 +1630,23 @@ describe('CategoryController (e2e)', () => {
         });
       });
 
-      it.each([
-        ['an empty JSON body', (req: request.Test) => req.send({})],
-        ['no body at all', (req: request.Test) => req],
-      ])('returns 200 for %s and passes kind "none"', async (_label, withBody) => {
+      it('returns 200 for a body with only the fingerprint and passes kind "none"', async () => {
         const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-        const response = await withBody(
-          request(app.getHttpServer()).delete(url).set('Authorization', `Bearer ${token}`),
-        ).expect(200);
+        const response = await request(app.getHttpServer())
+          .delete(url)
+          .set('Authorization', `Bearer ${token}`)
+          .send(version)
+          .expect(200);
         // Nothing moved, so there is no target (TASK-1775).
         expect(response.body).toEqual({
           data: { targetId: null, movedProducts: 0, movedLiveProducts: 0, switchedCarousels: 0 },
         });
-        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(testCategory.id, {
-          kind: 'none',
-        });
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
+          testCategory.id,
+          { kind: 'none' },
+          VERSION,
+        );
       });
 
       // Nothing is created, so `categories:delete` alone is enough.
@@ -1640,7 +1657,7 @@ describe('CategoryController (e2e)', () => {
         await request(app.getHttpServer())
           .delete(url)
           .set('Authorization', `Bearer ${token}`)
-          .send({})
+          .send(version)
           .expect(200);
       });
 
@@ -1653,7 +1670,7 @@ describe('CategoryController (e2e)', () => {
         const response = await request(app.getHttpServer())
           .delete(url)
           .set('Authorization', `Bearer ${token}`)
-          .send({})
+          .send(version)
           .expect(400);
         expect(response.body).toHaveProperty('error', 'CATEGORY_MOVE_TARGET_REQUIRED');
       });
@@ -1679,12 +1696,12 @@ describe('CategoryController (e2e)', () => {
       await request(app.getHttpServer())
         .delete(url)
         .set('Authorization', `Bearer ${token}`)
-        .send({ moveToId: 'not-a-uuid' })
+        .send({ ...version, moveToId: 'not-a-uuid' })
         .expect(400);
       await request(app.getHttpServer())
         .delete(url)
         .set('Authorization', `Bearer ${token}`)
-        .send({ moveToNew: { name: '   ' } })
+        .send({ ...version, moveToNew: { name: '   ' } })
         .expect(400);
       expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
     });
@@ -1695,9 +1712,45 @@ describe('CategoryController (e2e)', () => {
       const response = await request(app.getHttpServer())
         .delete(url)
         .set('Authorization', `Bearer ${token}`)
-        .send({ moveToId: '650e8400-e29b-41d4-a716-446655440000' })
+        .send({ ...version, moveToId: '650e8400-e29b-41d4-a716-446655440000' })
         .expect(404);
       expect(response.body).toHaveProperty('error', 'CATEGORY_MOVE_TARGET_NOT_FOUND');
+    });
+
+    // TASK-2551: the preview's fingerprint is what lets the server tell that the branch the
+    // operator confirmed is no longer the branch it would delete.
+    it.each([
+      ['no body at all', (req: request.Test) => req],
+      ['an empty JSON body', (req: request.Test) => req.send({})],
+      ['a body without the fingerprint', (req: request.Test) => req.send({ moveToId: TARGET_ID })],
+      [
+        'an empty fingerprint',
+        (req: request.Test) => req.send({ ...moveToId, expectedBranchVersion: '' }),
+      ],
+    ])('returns 400 for %s — nothing is deleted', async (_label, withBody) => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await withBody(
+        request(app.getHttpServer()).delete(url).set('Authorization', `Bearer ${token}`),
+      ).expect(400);
+      expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+    });
+
+    it('returns 409 CATEGORY_TREE_STALE when the branch changed since the preview', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      categoryRepositoryMock.deleteSubtreeWithMove.mockRejectedValue(new CategoryTreeStaleError());
+
+      const response = await request(app.getHttpServer())
+        .delete(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...moveToId, expectedBranchVersion: 'branch-v0' })
+        .expect(409);
+      expect(response.body).toHaveProperty('error', 'CATEGORY_TREE_STALE');
+      expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
+        testCategory.id,
+        { kind: 'existing', id: TARGET_ID, allowHidden: false },
+        'branch-v0',
+      );
     });
 
     it('returns 404 for an unknown category', async () => {

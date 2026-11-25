@@ -350,7 +350,9 @@ export class AdminCategoryController {
     status: 409,
     description:
       'CATEGORY_SLUG_CONFLICT (the new target slug is taken), CATEGORY_TREE_STALE ' +
-      '(the subtree changed concurrently — reload and retry) or CATEGORY_MOVE_TARGET_HIDDEN ' +
+      '(the subtree changed concurrently, or the branch — its subcategories or products — ' +
+      'changed since the dialog read it: expectedBranchVersion no longer matches; reload ' +
+      'and retry, nothing changed) or CATEGORY_MOVE_TARGET_HIDDEN ' +
       '(the moveToId target is hidden and allowHiddenTarget was not true — nothing changed)',
   })
   async delete(

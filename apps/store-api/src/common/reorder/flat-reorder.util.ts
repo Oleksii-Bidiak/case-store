@@ -53,10 +53,18 @@ export interface ReorderTransactionClient {
  * membership IS the version. The client reloads and retries (409).
  *
  * `orderedIds` MAY be empty — but only if the bucket is empty too (same rule, no exception).
+ *
+ * `expectedIds` (TASK-2547, optional) — the ORDER the client loaded. Membership alone cannot
+ * see a second tab that permuted the same set: its payload passes all three checks and
+ * silently overwrites the first tab's saved order. When given, it is compared right after
+ * check 1: a snapshot that is not exactly `expectedIds`, in that order, is STALE — so a row
+ * removed since the load is a 409 the client reloads from, not a NOT_FOUND. Without it the
+ * three checks above are the whole contract (every list but the home blocks, for now).
  */
 export function assertFlatReorder(
   snapshotIds: readonly string[],
   orderedIds: readonly string[],
+  expectedIds?: readonly string[],
 ): void {
   const seen = new Set<string>();
   for (const id of orderedIds) {
@@ -64,6 +72,16 @@ export function assertFlatReorder(
       throw new ReorderDuplicateIdError(`Id "${id}" appears more than once in the payload`);
     }
     seen.add(id);
+  }
+
+  if (
+    expectedIds !== undefined &&
+    (expectedIds.length !== snapshotIds.length ||
+      expectedIds.some((id, index) => snapshotIds[index] !== id))
+  ) {
+    throw new ReorderStaleError(
+      'The list changed since it was loaded (another change reordered, added or removed an item) — reload and retry',
+    );
   }
 
   const known = new Set(snapshotIds);
@@ -90,6 +108,12 @@ export interface ReorderBucketParams<T> {
   bucket: string | null;
   /** The COMPLETE, FINAL ordering of the bucket. The array index becomes `sortOrder`. */
   orderedIds: readonly string[];
+  /**
+   * The order the client loaded (TASK-2547) — see {@link assertFlatReorder}. When given, the
+   * `snapshot` MUST be read in the same order the list endpoint returns, or every request
+   * would be stale.
+   */
+  expectedIds?: readonly string[];
   /** Extra WHERE guard on every write, so a foreign id can never be stolen into this bucket. */
   scope?: Record<string, unknown>;
   /**
@@ -131,6 +155,7 @@ export function reorderBucket<T>(
       assertFlatReorder(
         snapshot.map((row) => row.id),
         params.orderedIds,
+        params.expectedIds,
       );
 
       // The snapshot is handed to the writer so it can drop the no-op rows (TASK-429). It

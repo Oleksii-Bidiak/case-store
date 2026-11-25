@@ -9,8 +9,14 @@ import { DeleteCategoryDto } from './delete-category.dto';
  * lives in `CategoryService.delete`, so it can answer with a stable error code.
  */
 describe('DeleteCategoryDto', () => {
-  const check = async (body: Record<string, unknown>) => {
-    const dto = plainToInstance(DeleteCategoryDto, body, { enableImplicitConversion: true });
+  /** Every body carries the preview's fingerprint (TASK-2551) unless a case overrides it. */
+  const VERSION = { expectedBranchVersion: 'a'.repeat(64) };
+  const check = async (body: Record<string, unknown>, base: Record<string, unknown> = VERSION) => {
+    const dto = plainToInstance(
+      DeleteCategoryDto,
+      { ...base, ...body },
+      { enableImplicitConversion: true },
+    );
     const errors = await validate(dto, { whitelist: true, forbidNonWhitelisted: true });
     return { dto, errors };
   };
@@ -66,6 +72,21 @@ describe('DeleteCategoryDto', () => {
       expect(errors.map((e) => e.property)).toEqual(['allowHiddenTarget']);
     },
   );
+
+  // TASK-2551: without the preview's fingerprint a delete could not tell whether the
+  // branch the operator confirmed is still the branch it deletes.
+  it('requires expectedBranchVersion — an empty body is not enough', async () => {
+    const { errors } = await check({}, {});
+    expect(errors.map((e) => e.property)).toEqual(['expectedBranchVersion']);
+  });
+
+  it.each([
+    ['an empty', ''],
+    ['an oversized', 'x'.repeat(129)],
+  ])('rejects %s expectedBranchVersion', async (_label, value) => {
+    const { errors } = await check({ expectedBranchVersion: value });
+    expect(errors.map((e) => e.property)).toEqual(['expectedBranchVersion']);
+  });
 
   it('forbids unknown fields inside moveToNew', async () => {
     const { errors } = await check({ moveToNew: { name: 'A', slug: 'a' } });

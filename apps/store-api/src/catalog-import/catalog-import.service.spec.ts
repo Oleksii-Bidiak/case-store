@@ -2,11 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { CatalogImportStatus } from '@prisma/client';
 import { CatalogImportService, IMPORT_CHUNK_SIZE } from './catalog-import.service';
-import { CatalogImportRepository } from './catalog-import.repository';
+import { CatalogImportRepository, deviceModelKey } from './catalog-import.repository';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductService } from '../product/product.service';
 import { STORAGE_SERVICE } from '../storage';
-import type { CatalogImportPlan, PlannedRow } from './catalog-plan';
+import type { CatalogImportPlan, FieldChange, PlannedRow } from './catalog-plan';
+import type { ParsedCatalog, ParsedProductRow } from './catalog-import.types';
 
 const repositoryMock = {
   createRun: jest.fn(),
@@ -158,6 +159,8 @@ describe('CatalogImportService', () => {
         decisions: { excludedSkus: ['A2'] },
         appliedRows: 0,
         totalRows: 1,
+        // The plan's single row is a create (TASK-2545: re-counted from the decisions).
+        updateCount: 0,
       });
     });
 
@@ -178,6 +181,55 @@ describe('CatalogImportService', () => {
       expect(repositoryMock.updateRun).toHaveBeenCalledWith(
         'run-1',
         expect.objectContaining({ totalRows: 1 }),
+      );
+    });
+
+    // TASK-2545: an update row whose every change was unticked writes nothing, so it is
+    // neither part of the run's work nor one of the «N оновлено» the history shows.
+    it('counts an update with every field unticked neither in totalRows nor in updateCount', async () => {
+      const change = (field: FieldChange['field']): FieldChange => ({
+        field,
+        label: field,
+        to: 'x',
+        conflict: false,
+      });
+      const rows = [
+        // every change unticked → not authorised
+        plannedRow({
+          sourceSku: 'U1',
+          action: 'update',
+          productId: 'p1',
+          changes: [change('price')],
+        }),
+        // one of two unticked → still an update
+        plannedRow({
+          sourceSku: 'U2',
+          action: 'update',
+          productId: 'p2',
+          changes: [change('name'), change('price')],
+        }),
+        // whole row unticked
+        plannedRow({
+          sourceSku: 'U3',
+          action: 'update',
+          productId: 'p3',
+          changes: [change('name')],
+        }),
+        plannedRow({ sourceSku: 'C1', action: 'create' }),
+      ];
+      repositoryMock.findRun.mockResolvedValue(
+        run({ plan: plan(rows), totalRows: 4, updateCount: 3 }),
+      );
+      repositoryMock.updateRun.mockResolvedValue(run());
+
+      await service.apply('run-1', {
+        excludedSkus: ['U3'],
+        excludedFields: { U1: ['price'], U2: ['price'] },
+      });
+
+      expect(repositoryMock.updateRun).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({ totalRows: 2, updateCount: 1 }),
       );
     });
 
@@ -387,6 +439,68 @@ describe('CatalogImportService', () => {
 
       expect(more).toBe(false);
       expect(productServiceMock.create).not.toHaveBeenCalled();
+    });
+
+    // TASK-2545: unticking every field of an update must leave the product exactly as it
+    // is — specs, compatibility and the ledger included, not only the product columns.
+    it('never writes an update row whose every field the operator unticked', async () => {
+      const source: ParsedProductRow = {
+        rowNumber: 3,
+        categoryName: 'Чохли',
+        sourceSku: 'U1',
+        name: 'Чохол Armor',
+        sourceUrl: null,
+        description: null,
+        price: 499,
+        brandName: null,
+        design: null,
+        barcode: null,
+        manufacturerCode: null,
+        videoUrl: null,
+        deviceBrandName: 'Apple',
+        deviceModelNames: ['iPhone 15'],
+        attributes: { material: 'TPU' },
+      };
+      const catalog: ParsedCatalog = {
+        sheetName: 'Аркуш1',
+        categoryNames: ['Чохли'],
+        rows: [source],
+        attributeColumns: [{ key: 'material', label: 'Матеріал', filledCount: 1 }],
+        issues: [],
+        totalProductRows: 1,
+      };
+      jest
+        .spyOn(service as unknown as { readCatalog: () => Promise<ParsedCatalog> }, 'readCatalog')
+        .mockResolvedValue(catalog);
+      repositoryMock.ensureDeviceBrands.mockResolvedValue(new Map([['Apple', 'db-apple']]));
+      repositoryMock.ensureDeviceModels.mockResolvedValue(
+        new Map([[deviceModelKey('db-apple', 'iPhone 15'), 'model-15']]),
+      );
+      repositoryMock.ensureAttributeDefinitions.mockResolvedValue(new Map([['material', 'def-1']]));
+
+      const more = await service.applyChunk(
+        run({
+          status: CatalogImportStatus.APPLYING,
+          plan: plan([
+            plannedRow({
+              sourceSku: 'U1',
+              action: 'update',
+              productId: 'p1',
+              changes: [
+                { field: 'price', label: 'Ціна', from: '450', to: '499', conflict: false },
+                { field: 'attributes', label: 'Характеристики', to: 'TPU', conflict: false },
+              ],
+            }),
+          ]),
+          decisions: { excludedFields: { U1: ['price', 'attributes'] } },
+        }),
+      );
+
+      expect(more).toBe(false);
+      expect(productServiceMock.update).not.toHaveBeenCalled();
+      expect(repositoryMock.setSpecValues).not.toHaveBeenCalled();
+      expect(repositoryMock.setDeviceCompat).not.toHaveBeenCalled();
+      expect(repositoryMock.recordImported).not.toHaveBeenCalled();
     });
 
     // A missing row needs no file access at all, which is what lets the "hide

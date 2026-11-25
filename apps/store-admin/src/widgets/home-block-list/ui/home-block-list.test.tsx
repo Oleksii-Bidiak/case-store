@@ -6,6 +6,7 @@
  * `applyMove()` reducer with the keyboard, pinned in `shared/lib/sortable-tree`).
  */
 
+import { QueryClient } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import {
   act,
@@ -21,6 +22,7 @@ import { dict } from "@/shared/config";
 import { resetReorderLock } from "@/shared/lib/reorder-lock";
 import { toast } from "@/shared/ui/toast";
 import type { HomeBlockEntity } from "@/entities/home-block";
+import { getAdminHomeBlockControllerFindAllQueryKey } from "@/shared/api";
 import { HomeBlockList } from "./home-block-list";
 
 jest.mock("@/shared/ui/toast", () => ({
@@ -249,6 +251,7 @@ describe("HomeBlockList — reorder", () => {
     await waitFor(() => expect(patches).toHaveLength(1));
     expect(patches[0]).toEqual({
       orderedIds: [RECENT, HERO, TABS, RAIL, ORPHAN],
+      expectedIds: ALL,
     });
     await waitFor(() => expect(toast.undo).toHaveBeenCalled());
   });
@@ -272,6 +275,7 @@ describe("HomeBlockList — reorder", () => {
     await waitFor(() => expect(patches).toHaveLength(1));
     expect(patches[0]).toEqual({
       orderedIds: [TABS, HERO, RAIL, ORPHAN, RECENT],
+      expectedIds: ALL,
     });
   });
 
@@ -302,6 +306,103 @@ describe("HomeBlockList — reorder", () => {
         .getAllByRole("switch")
         .forEach((toggle) => expect(toggle).toBeEnabled()),
     );
+  });
+});
+
+describe("HomeBlockList — another tab changed the page (TASK-2547)", () => {
+  /**
+   * The app's own QueryClient keeps a list fresh for five minutes
+   * (`app/providers.tsx`) and the screen was loaded a moment ago: a re-read
+   * that honours that `staleTime` never reaches the server.
+   */
+  function productionClient() {
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { staleTime: 5 * 60 * 1000, retry: false },
+        mutations: { retry: false },
+      },
+    });
+    client.setQueryData(getAdminHomeBlockControllerFindAllQueryKey(), {
+      data: blocks(),
+    });
+    return client;
+  }
+
+  /** The page as the colleague left it; every PATCH is refused as stale. */
+  function serveColleague(page: HomeBlockEntity[]) {
+    let gets = 0;
+    server.use(
+      http.get("*/api/admin/home-blocks", () => {
+        gets += 1;
+        return HttpResponse.json({ data: page });
+      }),
+      http.patch("*/api/admin/home-blocks/reorder", async ({ request }) => {
+        patches.push(await request.json());
+        return HttpResponse.json(
+          { statusCode: 409, error: "REORDER_STALE", message: "stale" },
+          { status: 409 },
+        );
+      }),
+    );
+    return { gets: () => gets };
+  }
+
+  async function renderLoaded() {
+    renderWithProviders(<HomeBlockList />, {
+      auth: { permissions: WRITER },
+      queryClient: productionClient(),
+    });
+    await screen.findByRole("grid", { name: d.gridLabel });
+    expect(rowIds()).toEqual(ALL);
+  }
+
+  const RAIL_NAME = "Редакція обирає";
+
+  it("sends the order it loaded; a 409 really re-reads and shows the server's order", async () => {
+    const page = blocks();
+    // The colleague moved «Редакція обирає» to the top.
+    const theirs = [page[2], page[0], page[1], page[3], page[4]].map(
+      (b, i) => ({
+        ...b,
+        sortOrder: i,
+      }),
+    );
+    const api = serveColleague(theirs);
+    await renderLoaded();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: d.moveDown(dict.homeBlocks.hero) }),
+    );
+
+    await waitFor(() => expect(patches).toHaveLength(1));
+    expect(patches[0]).toEqual({
+      orderedIds: [TABS, HERO, RAIL, ORPHAN, RECENT],
+      expectedIds: ALL,
+    });
+    await waitFor(() => expect(api.gets()).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(rowIds()).toEqual([RAIL, HERO, TABS, ORPHAN, RECENT]),
+    );
+    expect(toast.error).toHaveBeenCalledWith(
+      dict.reorderList.rejected.REORDER_STALE,
+    );
+  });
+
+  it("a block removed in the other tab: the neutral alert, never the dragged block's name", async () => {
+    // The colleague removed the orphaned carousel block; this tab drags «Редакція обирає».
+    const api = serveColleague(blocks().filter((b) => b.id !== ORPHAN));
+    await renderLoaded();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: d.moveUp(RAIL_NAME) }),
+    );
+
+    await waitFor(() => expect(patches).toHaveLength(1));
+    await waitFor(() => expect(api.gets()).toBeGreaterThan(0));
+    await waitFor(() => expect(rowIds()).toEqual([HERO, TABS, RAIL, RECENT]));
+    const errors = (toast.error as jest.Mock).mock.calls.map(([m]) => m);
+    expect(errors).toEqual([dict.reorderList.rejected.REORDER_STALE]);
+    expect(errors.join(" ")).not.toContain(RAIL_NAME);
   });
 });
 

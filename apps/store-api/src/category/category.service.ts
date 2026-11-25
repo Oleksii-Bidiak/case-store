@@ -534,7 +534,9 @@ export class CategoryService {
    * target in the subtree → 400 `CATEGORY_MOVE_TARGET_IN_SUBTREE`, target (or its
    * parent) missing/deleted → 404 `CATEGORY_MOVE_TARGET_NOT_FOUND`, slug taken → 409,
    * a HIDDEN existing target without `allowHiddenTarget: true` → 409
-   * `CATEGORY_MOVE_TARGET_HIDDEN` (TASK-1837 — the moved products would leave the site).
+   * `CATEGORY_MOVE_TARGET_HIDDEN` (TASK-1837 — the moved products would leave the site),
+   * a branch that changed since the dialog's preview (`expectedBranchVersion`, TASK-2551)
+   * → 409 `CATEGORY_TREE_STALE`.
    *
    * After the commit: the whole product cache namespace and the storefront catalogue
    * are purged (as a status change does — a deleted category withdraws pages and
@@ -573,7 +575,11 @@ export class CategoryService {
 
     let result: CategoryDeletionResult;
     try {
-      result = await this.categoryRepository.deleteSubtreeWithMove(id, target);
+      result = await this.categoryRepository.deleteSubtreeWithMove(
+        id,
+        target,
+        dto.expectedBranchVersion,
+      );
     } catch (error) {
       throw this.toHttp(error);
     }

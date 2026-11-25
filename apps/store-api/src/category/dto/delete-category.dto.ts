@@ -71,8 +71,25 @@ export class DeleteCategoryMoveToNewDto {
  * Without it the repository refuses a hidden target with 409
  * `CATEGORY_MOVE_TARGET_HIDDEN`, decided under the tree lock, so a target hidden after
  * the dialog loaded never silently hides the products.
+ *
+ * `expectedBranchVersion` (TASK-2551, REQUIRED) is the `deletionImpact.branchVersion` of
+ * the preview the dialog showed. The repository re-fingerprints the branch under its locks
+ * and refuses with 409 `CATEGORY_TREE_STALE` if a subcategory or a product arrived or
+ * left since — the operator confirmed numbers that are no longer true.
  */
 export class DeleteCategoryDto {
+  @ApiProperty({
+    description:
+      'The deletionImpact.branchVersion of the GET /api/admin/categories/:id read the ' +
+      'dialog showed. If the branch (its live subcategories or non-deleted products) ' +
+      'changed since, the delete is refused with 409 CATEGORY_TREE_STALE and nothing changes',
+    example: '9f2c4e1ab07d5c3e8f6a2b1d0c9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e',
+  })
+  @IsString({ message: 'expectedBranchVersion must be a string' })
+  @IsNotEmpty({ message: 'expectedBranchVersion must not be empty' })
+  @MaxLength(128, { message: 'expectedBranchVersion must be at most 128 characters' })
+  expectedBranchVersion!: string;
+
   @ApiProperty({
     description:
       'Move the products into this EXISTING live category. Must be outside the subtree ' +
