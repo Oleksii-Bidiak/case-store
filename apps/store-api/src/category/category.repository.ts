@@ -1385,15 +1385,15 @@ export class CategoryRepository {
    * confirmed. Right after the stale re-check of step 2 the branch is fingerprinted under
    * the locks; a different value means a subcategory or product arrived or left while the
    * dialog was open, and the delete is refused as `CategoryTreeStaleError`. Step 2 alone
-   * cannot see that: such a write commits long before this transaction starts. `undefined`
-   * skips the comparison — the HTTP path always sends it (`DeleteCategoryDto` requires it).
+   * cannot see that: such a write commits long before this transaction starts. Required on
+   * every call — there is no unchecked delete (`DeleteCategoryDto` requires it too).
    *
    * Throws the domain errors of `category.errors.ts`; any throw rolls everything back.
    */
   deleteSubtreeWithMove(
     id: string,
     target: CategoryDeletionTarget,
-    expectedBranchVersion: string | undefined,
+    expectedBranchVersion: string,
     now: Date = new Date(),
   ): Promise<CategoryDeletionResult> {
     return this.prisma.$transaction(
@@ -1425,10 +1425,7 @@ export class CategoryRepository {
         if (subtreeNow.length !== subtree.size || subtreeNow.some((sid) => !subtree.has(sid))) {
           throw new CategoryTreeStaleError();
         }
-        if (
-          expectedBranchVersion !== undefined &&
-          (await this.branchVersion(subtreeIds, tx)) !== expectedBranchVersion
-        ) {
+        if ((await this.branchVersion(subtreeIds, tx)) !== expectedBranchVersion) {
           throw new CategoryTreeStaleError(
             'The branch changed since the delete dialog read it — reload and retry',
           );

@@ -922,33 +922,42 @@ describe('Category deletion (integration, TASK-652/653)', () => {
       expect(state.categoryId).toBe(doomed);
     });
 
-    it('a restore racing a real delete always ends live, in the live target', async () => {
+    it('a restore racing a real delete always ends live, in a live category', async () => {
       const doomed = await makeCategory('race-doomed', anchor, 96);
       const raceTarget = await makeCategory('race-target', anchor, 97);
       const pRace = await makeProduct('p-race', doomed, {
         isActive: false,
         deletedAt: new Date('2026-01-01'),
       });
+      const { branchVersion } = await categories.countDeletionImpact(doomed);
 
       const [restored, deleted] = await Promise.allSettled([
         products.restore(pRace, slug('p-race'), null),
-        // The fingerprint is not under test here — the tree lock is (TASK-2551).
-        categories.deleteSubtreeWithMove(doomed, { kind: 'existing', id: raceTarget }, undefined),
+        categories.deleteSubtreeWithMove(
+          doomed,
+          { kind: 'existing', id: raceTarget },
+          branchVersion,
+        ),
       ]);
 
-      // Whichever commits first, the other sees its result: the delete moves the
-      // (live or tombstoned) product, and the restore reads the row's CURRENT category.
-      expect(deleted.status).toBe('fulfilled');
+      // Whichever commits first, the other sees its result: the restore reads the row's
+      // CURRENT category, and a restore that commits first changes the branch the delete
+      // was previewed with (TASK-2551) — so the delete refuses rather than moving it.
       expect(restored.status).toBe('fulfilled');
       const row = await prisma.product.findUnique({
         where: { id: pRace },
         select: { categoryId: true, deletedAt: true, category: { select: { deletedAt: true } } },
       });
-      expect(row).toEqual({
-        categoryId: raceTarget,
-        deletedAt: null,
-        category: { deletedAt: null },
-      });
+      if (deleted.status === 'fulfilled') {
+        expect(row).toEqual({
+          categoryId: raceTarget,
+          deletedAt: null,
+          category: { deletedAt: null },
+        });
+      } else {
+        expect(deleted.reason).toBeInstanceOf(CategoryTreeStaleError);
+        expect(row).toEqual({ categoryId: doomed, deletedAt: null, category: { deletedAt: null } });
+      }
     });
   });
 
@@ -1060,23 +1069,31 @@ describe('Category deletion (integration, TASK-652/653)', () => {
       const doomed = await makeCategory('create-race-doomed', anchor, 115);
       const raceTarget = await makeCategory('create-race-target', anchor, 116);
 
+      const { branchVersion } = await categories.countDeletionImpact(doomed);
+
       const [created, deleted] = await Promise.allSettled([
         createInto('p-create-race', doomed),
-        // The fingerprint is not under test here — the tree lock is (TASK-2551).
-        categories.deleteSubtreeWithMove(doomed, { kind: 'existing', id: raceTarget }, undefined),
+        categories.deleteSubtreeWithMove(
+          doomed,
+          { kind: 'existing', id: raceTarget },
+          branchVersion,
+        ),
       ]);
 
-      expect(deleted.status).toBe('fulfilled');
       const row = await prisma.product.findFirst({
         where: { slug: slug('p-create-race') },
         select: { categoryId: true, category: { select: { deletedAt: true } } },
       });
-      if (created.status === 'fulfilled') {
-        // The insert committed first; the delete then moved it with the subtree.
-        expect(row).toEqual({ categoryId: raceTarget, category: { deletedAt: null } });
-      } else {
-        expect(created.reason).toBeInstanceOf(ProductCategoryGoneError);
+      if (deleted.status === 'fulfilled') {
+        // The delete committed first; the insert then saw the tombstone under the lock.
+        expect(created.status).toBe('rejected');
+        expect((created as PromiseRejectedResult).reason).toBeInstanceOf(ProductCategoryGoneError);
         expect(row).toBeNull();
+      } else {
+        // The insert committed first — a product the preview never counted (TASK-2551).
+        expect(deleted.reason).toBeInstanceOf(CategoryTreeStaleError);
+        expect(created.status).toBe('fulfilled');
+        expect(row).toEqual({ categoryId: doomed, category: { deletedAt: null } });
       }
     });
 
@@ -1086,23 +1103,32 @@ describe('Category deletion (integration, TASK-652/653)', () => {
       const raceTarget = await makeCategory('update-race-target', anchor, 119);
       const pRace = await makeProduct('p-update-race', home);
 
+      const { branchVersion } = await categories.countDeletionImpact(doomed);
+
       const [updated, deleted] = await Promise.allSettled([
         products.update(pRace, { categoryId: doomed }),
-        // The fingerprint is not under test here — the tree lock is (TASK-2551).
-        categories.deleteSubtreeWithMove(doomed, { kind: 'existing', id: raceTarget }, undefined),
+        categories.deleteSubtreeWithMove(
+          doomed,
+          { kind: 'existing', id: raceTarget },
+          branchVersion,
+        ),
       ]);
 
-      expect(deleted.status).toBe('fulfilled');
       const row = await prisma.product.findUnique({
         where: { id: pRace },
         select: { categoryId: true, category: { select: { deletedAt: true } } },
       });
       expect(row?.category.deletedAt).toBeNull();
-      if (updated.status === 'fulfilled') {
-        expect(row?.categoryId).toBe(raceTarget);
-      } else {
-        expect(updated.reason).toBeInstanceOf(ProductCategoryGoneError);
+      if (deleted.status === 'fulfilled') {
+        // The delete committed first; the update then saw the tombstone under the lock.
+        expect(updated.status).toBe('rejected');
+        expect((updated as PromiseRejectedResult).reason).toBeInstanceOf(ProductCategoryGoneError);
         expect(row?.categoryId).toBe(home);
+      } else {
+        // The update committed first — a product the preview never counted (TASK-2551).
+        expect(deleted.reason).toBeInstanceOf(CategoryTreeStaleError);
+        expect(updated.status).toBe('fulfilled');
+        expect(row?.categoryId).toBe(doomed);
       }
     });
 
