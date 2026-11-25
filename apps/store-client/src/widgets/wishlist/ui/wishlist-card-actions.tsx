@@ -6,7 +6,7 @@ import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
 import type { WishlistItemEntity } from "@/entities/wishlist";
 import { AddToCartButton } from "@/features/add-to-cart";
-import { CartSheet } from "@/widgets/cart";
+import { LazyCartSheet, loadCartSheet, preloadCartSheet } from "@/widgets/cart";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
@@ -81,9 +81,17 @@ export function WishlistCardActions({
             size="sm"
             variant="outline"
             onClick={() => {
+              // Its code loads on demand (TASK-2524); every open retries a
+              // failed load, and an open whose load failed is taken back.
               setSheetMounted(true);
               setSheetOpen(true);
+              void loadCartSheet().then((arrived) => {
+                if (!arrived) setSheetOpen(false);
+              });
             }}
+            onPointerEnter={preloadCartSheet}
+            onFocus={preloadCartSheet}
+            onTouchStart={preloadCartSheet}
             aria-label={dict.productCard.inCartAria(item.productName)}
             className="h-10 flex-1 border-success/40 font-semibold text-success transition-all hover:bg-success/10 hover:text-success active:scale-99 motion-reduce:transition-none"
           >
@@ -109,7 +117,7 @@ export function WishlistCardActions({
         </button>
       </div>
       {sheetMounted && (
-        <CartSheet open={sheetOpen} onOpenChange={setSheetOpen} />
+        <LazyCartSheet open={sheetOpen} onOpenChange={setSheetOpen} />
       )}
     </div>
   );

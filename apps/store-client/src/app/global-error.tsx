@@ -1,6 +1,6 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
+import { captureException } from "@/shared/lib/monitoring";
 import { useEffect } from "react";
 import { dict, H1_CLASS } from "@/shared/config";
 // global-error replaces the root layout, and with it the layout's stylesheet
@@ -27,7 +27,7 @@ export default function GlobalError({
   retry: () => void;
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    captureException(error);
   }, [error]);
 
   const c = dict.common;

@@ -1,5 +1,7 @@
+jest.mock("@/shared/lib/monitoring", () => ({ addBreadcrumb: jest.fn() }));
+
 import { http, HttpResponse } from "msw";
-import * as Sentry from "@sentry/nextjs";
+import * as monitoring from "@/shared/lib/monitoring";
 import {
   renderWithProviders,
   screen,
@@ -11,7 +13,7 @@ import { dict } from "@/shared/config";
 import { ApplyDiscount } from "./apply-discount";
 import { clearAppliedDiscount } from "@/entities/discount";
 
-const addBreadcrumb = Sentry.addBreadcrumb as jest.Mock;
+const addBreadcrumb = monitoring.addBreadcrumb as jest.Mock;
 
 /** A signed-in shopper. */
 const authed = {

@@ -19,7 +19,6 @@ import {
 import { dict, PAGE_CONTAINER } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import type { BannerEntity } from "@/shared/api/generated/models";
-import { DevicePicker } from "@/features/device-picker";
 import { DeviceBar } from "@/widgets/device-bar";
 import { SearchAutocomplete } from "@/features/search";
 import { ThemeSwitchRow, ThemeToggleButton } from "@/features/theme";
@@ -28,6 +27,7 @@ import { HeaderSearch, type CatalogMenuSlotProps } from "./header-search";
 import { ACCOUNT_ACTION_CLASS, HeaderAuth } from "./header-auth";
 import { HeaderCartBadge } from "./header-cart-badge";
 import { HeaderWishlistBadge } from "./header-wishlist-badge";
+import { LazyDevicePicker } from "./lazy-device-picker";
 
 /** Shared styling for the links in the slide-out menu. */
 const MOBILE_LINK_CLASS =
@@ -419,8 +419,9 @@ export function Header({
       {/* The ONE device picker (TASK-2070). The header is on every page, so
           every entry point — chip, homepage picker, PDP compat row, /devices,
           search — opens this instance via `openDevicePicker()`. Renders
-          nothing until opened; the model list is fetched on first open. */}
-      <DevicePicker />
+          nothing until opened; its code and the model list load on first
+          open (TASK-2524). */}
+      <LazyDevicePicker />
     </>
   );
 }

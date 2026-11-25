@@ -4,9 +4,11 @@
  * (merge), afterwards keeps localStorage as a mirror of the account (GET on a
  * restored session, debounced PUT of local edits) and forgets it on sign-out.
  */
+jest.mock("@/shared/lib/monitoring", () => ({ captureException: jest.fn() }));
+
 import { act, render, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
-import * as Sentry from "@sentry/nextjs";
+import * as monitoring from "@/shared/lib/monitoring";
 import { server } from "@/shared/test/msw-server";
 import { setAccessToken } from "@/shared/api";
 import {
@@ -180,7 +182,7 @@ beforeEach(() => {
   resetStore();
   useApi();
   setAccessToken("token");
-  jest.mocked(Sentry.captureException).mockClear();
+  jest.mocked(monitoring.captureException).mockClear();
 });
 
 afterEach(() => {
@@ -293,7 +295,7 @@ describe("restored session", () => {
 
     mount(signedIn("user-1"));
 
-    await waitFor(() => expect(Sentry.captureException).toHaveBeenCalled());
+    await waitFor(() => expect(monitoring.captureException).toHaveBeenCalled());
     expect(readMyDevices()).toEqual([LOCAL]);
   });
 });

@@ -319,6 +319,8 @@ jobs:
           NEXT_PUBLIC_SITE_URL: http://localhost:3000
           NEXT_PUBLIC_CURRENCY: UAH
           NEXT_PUBLIC_ADMIN_URL: http://localhost:3002
+      # Storefront first-load JS budgets (TASK-2524): fails when a page grows.
+      - run: npm run bundle-size
 
   test-unit:
     name: Unit Tests

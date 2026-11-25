@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
-import { CartSheet } from "@/widgets/cart";
+import { LazyCartSheet, loadCartSheet, preloadCartSheet } from "@/widgets/cart";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
@@ -26,12 +26,27 @@ export function HeaderCartBadge({ className }: { className?: string }) {
   const count = totals?.itemCount ?? 0;
 
   const [open, setOpen] = useState(false);
+  // The mini-cart's code loads on the first open (TASK-2524); it is mounted
+  // then and kept mounted, so the close animation and Radix's focus handling
+  // run exactly as before. Every open also (re)starts the load, so one that
+  // failed is retried; an open whose load failed is taken back.
+  const [sheetMounted, setSheetMounted] = useState(false);
+  const openSheet = () => {
+    setSheetMounted(true);
+    setOpen(true);
+    void loadCartSheet().then((arrived) => {
+      if (!arrived) setOpen(false);
+    });
+  };
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openSheet}
+        onPointerEnter={preloadCartSheet}
+        onFocus={preloadCartSheet}
+        onTouchStart={preloadCartSheet}
         aria-label={dict.cart.openAria}
         className={cn(
           "relative inline-flex h-11 items-center gap-2.5 rounded-xl bg-primary px-3 text-primary-foreground transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100 sm:pr-4",
@@ -59,7 +74,7 @@ export function HeaderCartBadge({ className }: { className?: string }) {
         </span>
       </button>
 
-      <CartSheet open={open} onOpenChange={setOpen} />
+      {sheetMounted && <LazyCartSheet open={open} onOpenChange={setOpen} />}
     </>
   );
 }

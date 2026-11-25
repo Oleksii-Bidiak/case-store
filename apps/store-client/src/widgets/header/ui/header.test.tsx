@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { ThemeProvider } from "next-themes";
 import {
+  act,
   renderWithProviders,
   screen,
   userEvent,
@@ -8,15 +9,18 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { closeDevicePicker, openDevicePicker } from "@/entities/my-devices";
 import { Header } from "./header";
 
 /** Not the `SITE_NAME` fallback — proves the wordmark comes from the prop (TASK-546). */
 const STORE_NAME = "Аксесуарня";
 
 // next/navigation is unavailable under jsdom — the header's logout and the
-// search autocomplete both reach for the router.
+// search autocomplete both reach for the router; the sign-in sheet's forms
+// read the search params.
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: jest.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 /**
@@ -306,6 +310,68 @@ describe("Header — the order-status lookup for guests (TASK-1999)", () => {
     expect(
       within(menu).queryByRole("link", { name: dict.header.orderStatusLink }),
     ).toBeNull();
+  });
+});
+
+// TASK-2524: the closed panels are not in the first-load JS — each one mounts
+// on its first open, from a lazily loaded chunk, and stays mounted after.
+describe("Header — panels load on first open (TASK-2524)", () => {
+  function renderGuestHeader() {
+    server.use(
+      http.get("*/api/cart", () =>
+        HttpResponse.json({
+          data: {
+            items: [],
+            totals: { itemCount: 0, subtotal: "0.00", addonsTotal: "0.00" },
+          },
+        }),
+      ),
+      http.get("*/api/device-models", () => HttpResponse.json({ data: [] })),
+    );
+    return renderHeader({
+      auth: { isAuthenticated: false, isInitializing: false },
+    });
+  }
+
+  it("mounts the mini-cart on the first open and keeps it after closing", async () => {
+    const user = userEvent.setup();
+    renderGuestHeader();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: dict.cart.openAria }));
+    const sheet = await screen.findByRole("dialog");
+    expect(
+      within(sheet).getByRole("heading", { name: dict.cart.title }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: dict.cart.openAria }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("mounts the guest sign-in sheet on the first open of «Кабінет»", async () => {
+    const user = userEvent.setup();
+    renderGuestHeader();
+
+    await user.click(
+      screen.getByRole("button", { name: dict.header.accountOpenAria }),
+    );
+
+    const sheet = await screen.findByRole("dialog");
+    expect(
+      within(sheet).getByRole("heading", { name: dict.auth.sheet.title }),
+    ).toBeInTheDocument();
+  });
+
+  it("mounts the device picker the first time openDevicePicker() runs", async () => {
+    renderGuestHeader();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    act(() => openDevicePicker());
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    act(() => closeDevicePicker());
   });
 });
 

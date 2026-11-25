@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { User } from "lucide-react";
 import { useAuth, useAuthControllerLogout } from "@/entities/session";
-import { AuthSheet } from "@/features/auth";
 import {
   AccountDropdown,
   AccountDropdownItem,
@@ -13,6 +12,22 @@ import {
   Skeleton,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { lazyComponent } from "@/shared/lib/lazy-component";
+
+// The guest's sign-in slide-out is closed on every first paint, so its code
+// (the login / register / forgot-password forms, react-hook-form, zod) stays
+// out of the page's first-load JS (TASK-2524): it loads on the first open and
+// is preloaded on intent (hover, focus or touch on «Кабінет»). A load that
+// fails renders nothing and is reported; the next open retries, and the open
+// that failed is taken back. The slice's
+// own file, not its barrel, so the chunk carries only what the sheet uses.
+const lazyAuthSheet = lazyComponent(() =>
+  import("@/features/auth/ui/auth-sheet").then((m) => m.AuthSheet),
+);
+const AuthSheet = lazyAuthSheet.Component;
+const preloadAuthSheet = () => {
+  void lazyAuthSheet.load();
+};
 
 /**
  * The «Кабінет» action box, shared by the guest button and the signed-in menu
@@ -43,6 +58,16 @@ export function HeaderAuth() {
   const queryClient = useQueryClient();
   const { isInitializing, isAuthenticated, clearTokens } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
+  // Mounted on the first open and kept mounted afterwards, so the close
+  // animation, the chosen tab and Radix's focus handling behave as before.
+  const [authMounted, setAuthMounted] = useState(false);
+  const openAuth = () => {
+    setAuthMounted(true);
+    setAuthOpen(true);
+    void lazyAuthSheet.load().then((arrived) => {
+      if (!arrived) setAuthOpen(false);
+    });
+  };
 
   // Mirrors LogoutButton exactly: best-effort server logout, then clear local
   // session whether or not the server call succeeds.
@@ -70,13 +95,18 @@ export function HeaderAuth() {
       <>
         <button
           type="button"
-          onClick={() => setAuthOpen(true)}
+          onClick={openAuth}
+          onPointerEnter={preloadAuthSheet}
+          onFocus={preloadAuthSheet}
+          onTouchStart={preloadAuthSheet}
           aria-label={dict.header.accountOpenAria}
           className={ACCOUNT_ACTION_CLASS}
         >
           {accountActionContent}
         </button>
-        <AuthSheet open={authOpen} onOpenChange={setAuthOpen} />
+        {authMounted && (
+          <AuthSheet open={authOpen} onOpenChange={setAuthOpen} />
+        )}
       </>
     );
   }

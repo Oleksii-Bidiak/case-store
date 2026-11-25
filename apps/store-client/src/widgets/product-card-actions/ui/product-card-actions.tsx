@@ -7,7 +7,7 @@ import { DeviceFitMark } from "@/features/device-fit";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
-import { CartSheet } from "@/widgets/cart";
+import { LazyCartSheet, loadCartSheet, preloadCartSheet } from "@/widgets/cart";
 import { Button } from "@/shared/ui";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
@@ -75,8 +75,13 @@ export function ProductCardActions({
   const [sheetMounted, setSheetMounted] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const openCartSheet = () => {
+    // Its code loads on demand (TASK-2524); every open retries a failed
+    // load, and an open whose load failed is taken back.
     setSheetMounted(true);
     setSheetOpen(true);
+    void loadCartSheet().then((arrived) => {
+      if (!arrived) setSheetOpen(false);
+    });
   };
 
   return (
@@ -115,6 +120,9 @@ export function ProductCardActions({
             size="sm"
             variant="outline"
             onClick={openCartSheet}
+            onPointerEnter={preloadCartSheet}
+            onFocus={preloadCartSheet}
+            onTouchStart={preloadCartSheet}
             aria-label={dict.productCard.inCartAria(product.name)}
             className={cn(
               "h-10 flex-1 border-success/40 font-semibold text-success hover:border-success/60 hover:bg-success/10 hover:text-success active:bg-success/10",
@@ -141,7 +149,7 @@ export function ProductCardActions({
         />
       </div>
       {sheetMounted && (
-        <CartSheet open={sheetOpen} onOpenChange={setSheetOpen} />
+        <LazyCartSheet open={sheetOpen} onOpenChange={setSheetOpen} />
       )}
     </div>
   );

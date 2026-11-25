@@ -4,6 +4,9 @@
   "private": true,
   "description": "Mobile Accessories E-Commerce — Next.js Storefront",
   "license": "UNLICENSED",
+  "sideEffects": [
+    "*.css"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
