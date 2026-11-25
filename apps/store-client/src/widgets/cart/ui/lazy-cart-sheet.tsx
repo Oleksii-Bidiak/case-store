@@ -12,8 +12,9 @@ import type { CartSheet } from "./cart-sheet";
  *
  * Hosts mount `<LazyCartSheet>` on the first open and keep it mounted, so the
  * close animation and Radix's focus handling run as before. They call
- * `preloadCartSheet()` on the trigger's intent (hover, focus, touch) and on
- * every open: if the code failed to load once, the next open retries.
+ * `preloadCartSheet()` on the trigger's intent (hover, focus, touch) and
+ * `loadCartSheet()` on every open: if the code failed to load once, the next
+ * open retries, and an open whose load failed is taken back.
  */
 const lazyCartSheet = lazyComponent(() =>
   import("./cart-sheet").then((m) => m.CartSheet),
@@ -25,4 +26,9 @@ export const LazyCartSheet: LazyComponent<
 
 export function preloadCartSheet(): void {
   void lazyCartSheet.load();
+}
+
+/** Resolves to whether the sheet's code arrived; never rejects. */
+export function loadCartSheet(): Promise<boolean> {
+  return lazyCartSheet.load();
 }

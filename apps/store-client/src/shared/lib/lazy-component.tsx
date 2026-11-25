@@ -15,11 +15,15 @@ export interface LazyComponent<P extends object> {
    */
   Component: (props: P) => ReactElement | null;
   /**
-   * Starts the load, or joins the one in flight. Never rejects: a failure is
-   * reported to monitoring and forgotten, so the next call tries again.
-   * Call it on the trigger's intent and on every open.
+   * Starts the load, or joins the one in flight. Never rejects: it resolves to
+   * whether the code arrived. A failure is forgotten, so the next call tries
+   * again, and is reported to monitoring once — a trigger hovered while the
+   * chunk is unreachable must not flood it.
+   * Call it on the trigger's intent and on every open; a host that opened on a
+   * click takes the open back on `false`, or a later successful load would
+   * pop the panel open on its own.
    */
-  load: () => Promise<void>;
+  load: () => Promise<boolean>;
 }
 
 /**
@@ -39,19 +43,25 @@ export function lazyComponent<P extends object>(
   loader: () => Promise<ComponentType<P>>,
 ): LazyComponent<P> {
   let loaded: ComponentType<P> | null = null;
-  let pending: Promise<void> | null = null;
+  let pending: Promise<boolean> | null = null;
+  let reported = false;
   const listeners = new Set<() => void>();
 
-  const load = (): Promise<void> => {
-    if (loaded) return Promise.resolve();
+  const load = (): Promise<boolean> => {
+    if (loaded) return Promise.resolve(true);
     pending ??= loader().then(
       (component) => {
         loaded = component;
         listeners.forEach((notify) => notify());
+        return true;
       },
       (error: unknown) => {
         pending = null;
-        captureException(error);
+        if (!reported) {
+          reported = true;
+          captureException(error);
+        }
+        return false;
       },
     );
     return pending;

@@ -18,7 +18,8 @@ import { lazyComponent } from "@/shared/lib/lazy-component";
 // (the login / register / forgot-password forms, react-hook-form, zod) stays
 // out of the page's first-load JS (TASK-2524): it loads on the first open and
 // is preloaded on intent (hover, focus or touch on «Кабінет»). A load that
-// fails renders nothing and is reported; the next open retries. The slice's
+// fails renders nothing and is reported; the next open retries, and the open
+// that failed is taken back. The slice's
 // own file, not its barrel, so the chunk carries only what the sheet uses.
 const lazyAuthSheet = lazyComponent(() =>
   import("@/features/auth/ui/auth-sheet").then((m) => m.AuthSheet),
@@ -61,9 +62,11 @@ export function HeaderAuth() {
   // animation, the chosen tab and Radix's focus handling behave as before.
   const [authMounted, setAuthMounted] = useState(false);
   const openAuth = () => {
-    preloadAuthSheet();
     setAuthMounted(true);
     setAuthOpen(true);
+    void lazyAuthSheet.load().then((arrived) => {
+      if (!arrived) setAuthOpen(false);
+    });
   };
 
   // Mirrors LogoutButton exactly: best-effort server logout, then clear local

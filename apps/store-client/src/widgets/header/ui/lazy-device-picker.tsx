@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useDevicePickerState } from "@/entities/my-devices";
+import { closeDevicePicker, useDevicePickerState } from "@/entities/my-devices";
 import { lazyComponent } from "@/shared/lib/lazy-component";
 
 // The device picker is closed on every first paint, so its code (the dialog,
@@ -44,9 +44,13 @@ export function LazyDevicePicker() {
   if (open && !mounted) setMounted(true);
 
   useEffect(() => preloadWhenIdle(), []);
-  // Every open (re)starts the load, so one that failed is retried.
+  // Every open (re)starts the load, so one that failed is retried; an open
+  // whose load failed is closed again.
   useEffect(() => {
-    if (open) void lazyDevicePicker.load();
+    if (!open) return;
+    void lazyDevicePicker.load().then((arrived) => {
+      if (!arrived) closeDevicePicker();
+    });
   }, [open]);
 
   return mounted ? <DevicePicker /> : null;

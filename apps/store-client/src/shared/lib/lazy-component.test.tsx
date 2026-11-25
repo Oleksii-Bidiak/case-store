@@ -58,7 +58,31 @@ describe("lazyComponent (TASK-2524)", () => {
   it("never rejects to its caller, so a preload handler needs no catch", async () => {
     const lazy = lazyComponent(() => Promise.reject(new Error("offline")));
 
-    await expect(lazy.load()).resolves.toBeUndefined();
+    await expect(lazy.load()).resolves.toBe(false);
+    expect(captureException).toHaveBeenCalledTimes(1);
+  });
+
+  it("tells the caller whether the code arrived, so a host can undo its open", async () => {
+    const loader = jest
+      .fn<Promise<typeof Panel>, []>()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(Panel);
+    const lazy = lazyComponent(loader);
+
+    await expect(lazy.load()).resolves.toBe(false);
+    await expect(lazy.load()).resolves.toBe(true);
+    await expect(lazy.load()).resolves.toBe(true);
+  });
+
+  it("reports a failing chunk once, however often the trigger retries it", async () => {
+    const loader = jest.fn(() => Promise.reject(new Error("offline")));
+    const lazy = lazyComponent(loader);
+
+    await lazy.load();
+    await lazy.load();
+    await lazy.load();
+
+    expect(loader).toHaveBeenCalledTimes(3);
     expect(captureException).toHaveBeenCalledTimes(1);
   });
 });

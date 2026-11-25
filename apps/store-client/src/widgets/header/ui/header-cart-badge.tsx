@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
-import { LazyCartSheet, preloadCartSheet } from "@/widgets/cart";
+import { LazyCartSheet, loadCartSheet, preloadCartSheet } from "@/widgets/cart";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
@@ -29,12 +29,14 @@ export function HeaderCartBadge({ className }: { className?: string }) {
   // The mini-cart's code loads on the first open (TASK-2524); it is mounted
   // then and kept mounted, so the close animation and Radix's focus handling
   // run exactly as before. Every open also (re)starts the load, so one that
-  // failed is retried.
+  // failed is retried; an open whose load failed is taken back.
   const [sheetMounted, setSheetMounted] = useState(false);
   const openSheet = () => {
-    preloadCartSheet();
     setSheetMounted(true);
     setOpen(true);
+    void loadCartSheet().then((arrived) => {
+      if (!arrived) setOpen(false);
+    });
   };
 
   return (

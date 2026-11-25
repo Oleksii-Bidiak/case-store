@@ -6,7 +6,7 @@ import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
 import type { WishlistItemEntity } from "@/entities/wishlist";
 import { AddToCartButton } from "@/features/add-to-cart";
-import { LazyCartSheet, preloadCartSheet } from "@/widgets/cart";
+import { LazyCartSheet, loadCartSheet, preloadCartSheet } from "@/widgets/cart";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
@@ -82,10 +82,12 @@ export function WishlistCardActions({
             variant="outline"
             onClick={() => {
               // Its code loads on demand (TASK-2524); every open retries a
-              // failed load.
-              preloadCartSheet();
+              // failed load, and an open whose load failed is taken back.
               setSheetMounted(true);
               setSheetOpen(true);
+              void loadCartSheet().then((arrived) => {
+                if (!arrived) setSheetOpen(false);
+              });
             }}
             onPointerEnter={preloadCartSheet}
             onFocus={preloadCartSheet}

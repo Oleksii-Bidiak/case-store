@@ -12,7 +12,7 @@ import {
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
 import { pushRecentlyViewed } from "@/widgets/recently-viewed";
-import { LazyCartSheet, preloadCartSheet } from "@/widgets/cart";
+import { LazyCartSheet, loadCartSheet, preloadCartSheet } from "@/widgets/cart";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { formatMoney, trackEvent } from "@/shared/lib";
@@ -99,10 +99,13 @@ export function ProductDetailView({
   const [sheetMounted, setSheetMounted] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const openCartSheet = () => {
-    // Its code loads on demand (TASK-2524); every open retries a failed load.
-    preloadCartSheet();
+    // Its code loads on demand (TASK-2524); every open retries a failed
+    // load, and an open whose load failed is taken back.
     setSheetMounted(true);
     setSheetOpen(true);
+    void loadCartSheet().then((arrived) => {
+      if (!arrived) setSheetOpen(false);
+    });
   };
   // The sheet opens only from the «В кошику» controls (buy box, mobile bar),
   // which take a click handler and nothing else — so instead of their hover,
