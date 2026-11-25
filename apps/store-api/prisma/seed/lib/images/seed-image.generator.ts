@@ -17,7 +17,11 @@
  * render's `width` / `height` / `bytes` ride along on {@link SeedImageRef}, and
  * {@link renderCategoryTileRef} returns a tile as one, so the seeders can
  * register every file they write as a media-library asset with the real numbers
- * instead of the zeros the migration backfill had to use.
+ * instead of the zeros the migration backfill had to use. TASK-2569 adds two
+ * shapes beside the square one — {@link renderBannerImage} (wide banners and
+ * blog covers) and {@link renderLogoImage} (the store monogram) — from the same
+ * palettes and icons, into the same directory under the same `seed-<hash>.webp`
+ * naming, so {@link pruneSeedImages} covers them unchanged.
  */
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, unlink, writeFile } from 'node:fs/promises';
@@ -266,13 +270,29 @@ const rendered = new Map<string, Promise<RenderedImage>>();
 const writtenThisRun = new Set<string>();
 
 function render(spec: RenderSpec): Promise<RenderedImage> {
-  const recipe = JSON.stringify(spec);
+  return rasterise(JSON.stringify(spec), () => buildSvg(spec), spec.size, spec.size);
+}
+
+/**
+ * Rasterise one SVG recipe at `width × height` and store it, memoised on the
+ * recipe. The recipe string is also the filename seed, so every shape must put
+ * something in it that tells it apart from the others (the square spec predates
+ * the wide shapes and is left byte-for-byte as it was, so its files keep their
+ * names; the wide shapes carry a `shape` field).
+ */
+function rasterise(
+  recipe: string,
+  svg: () => string,
+  canvasWidth: number,
+  canvasHeight: number,
+  density = RASTER_DENSITY,
+): Promise<RenderedImage> {
   const cached = rendered.get(recipe);
   if (cached) return cached;
 
   const pending = (async (): Promise<RenderedImage> => {
-    const png = await sharp(Buffer.from(buildSvg(spec)), { density: RASTER_DENSITY })
-      .resize(spec.size, spec.size, { fit: 'fill' })
+    const png = await sharp(Buffer.from(svg()), { density })
+      .resize(canvasWidth, canvasHeight, { fit: 'fill' })
       .png()
       .toBuffer();
 
@@ -350,6 +370,168 @@ export async function renderCategoryTileRef(req: SeedImageRequest): Promise<Seed
     );
     return null;
   }
+}
+
+// ─── Wide banners and the logo (TASK-2569) ──────────────────────────────────
+
+/**
+ * Wide banner canvas. The storefront's hero art box is ≈968×440 on desktop
+ * (`aspect-banner-hero`, ≈2.2:1) and the wide promo banner spans up to 1280 px,
+ * so one 1600×720 render (20:9) covers both at retina density; the promo tiles
+ * and blog covers crop it with `object-cover`.
+ */
+const BANNER_WIDTH = 1600;
+const BANNER_HEIGHT = 720;
+
+/**
+ * A banner is mostly flat gradient, so 2× supersampling is plenty — 300 dpi
+ * would rasterise a 6.7k-pixel-wide intermediate for no visible gain.
+ */
+const BANNER_DENSITY = 144;
+
+/** Logo canvas: square, the store-logo slot letterboxes it to the header row height. */
+const LOGO_SIZE = 512;
+
+/**
+ * The monogram glyph: a «C» drawn as one arc on the icon grid, so it needs no
+ * font. A text node would rasterise with whatever fonts the seeding machine has,
+ * and two machines would then write different bytes under one name.
+ */
+const MONOGRAM_MARKUP = '<path d="M16.6 7.4a6.5 6.5 0 1 0 0 9.2"/>';
+
+export interface SeedBannerImageRequest {
+  /** Stable identity, e.g. the banner slot — kept for the error message only. */
+  key: string;
+  iconId: IconId;
+  paletteId: PaletteId;
+  /** Picks the gradient angle / accent the same way `sortOrder` does for products. */
+  variant: number;
+  alt: string;
+}
+
+interface BannerSpec {
+  shape: 'banner';
+  width: number;
+  height: number;
+  angle: number;
+  from: string;
+  to: string;
+  fg: string;
+  icon: IconId;
+  rotate: number;
+}
+
+function buildBannerSvg(spec: BannerSpec): string {
+  const { width: w, height: h } = spec;
+  const { x1, y1, x2, y2 } = gradientVector(spec.angle);
+  // The copy sits on the left of every banner placement, so the art lives on the right.
+  const cx = w * 0.74;
+  const cy = h * 0.5;
+  const unit = (h * 0.42) / ICON_VIEWBOX;
+  const half = ICON_VIEWBOX / 2;
+  const transform = `translate(${cx} ${cy}) rotate(${spec.rotate}) scale(${unit.toFixed(4)}) translate(${-half} ${-half})`;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+    `<defs><linearGradient id="bg" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">` +
+    `<stop offset="0" stop-color="${spec.from}"/><stop offset="1" stop-color="${spec.to}"/>` +
+    `</linearGradient></defs>` +
+    `<rect width="${w}" height="${h}" fill="url(#bg)"/>` +
+    `<circle cx="${w * 0.08}" cy="${h * 0.95}" r="${h * 0.55}" fill="#ffffff" fill-opacity="0.08"/>` +
+    `<circle cx="${w * 0.94}" cy="${h * 0.05}" r="${h * 0.42}" fill="#ffffff" fill-opacity="0.1"/>` +
+    `<circle cx="${cx}" cy="${cy}" r="${h * 0.36}" fill="#ffffff" fill-opacity="0.12" stroke="#ffffff" stroke-opacity="0.22" stroke-width="${h * 0.006}"/>` +
+    `<g transform="${transform}" fill="none" stroke="${spec.fg}" stroke-width="${ICON_STROKE_WIDTH}" stroke-linecap="round" stroke-linejoin="round">` +
+    iconMarkup(spec.icon) +
+    `</g></svg>`
+  );
+}
+
+interface LogoSpec {
+  shape: 'logo';
+  size: number;
+  from: string;
+  to: string;
+  fg: string;
+}
+
+function buildLogoSvg(spec: LogoSpec): string {
+  const { size } = spec;
+  const { x1, y1, x2, y2 } = gradientVector(140);
+  const unit = (size * 0.62) / ICON_VIEWBOX;
+  const half = ICON_VIEWBOX / 2;
+  const transform = `translate(${size / 2} ${size / 2}) scale(${unit.toFixed(4)}) translate(${-half} ${-half})`;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
+    `<defs><linearGradient id="bg" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">` +
+    `<stop offset="0" stop-color="${spec.from}"/><stop offset="1" stop-color="${spec.to}"/>` +
+    `</linearGradient></defs>` +
+    // Rounded square, the same silhouette as the storefront's typographic monogram.
+    `<rect width="${size}" height="${size}" rx="${size * 0.22}" fill="url(#bg)"/>` +
+    `<g transform="${transform}" fill="none" stroke="${spec.fg}" stroke-width="${ICON_STROKE_WIDTH * 1.5}" stroke-linecap="round" stroke-linejoin="round">` +
+    MONOGRAM_MARKUP +
+    `</g></svg>`
+  );
+}
+
+function paletteOf(id: PaletteId, key: string) {
+  const palette = PALETTES[id];
+  if (!palette) throw new Error(`Seed images: unknown palette "${id}" for key "${key}"`);
+  return palette;
+}
+
+function singleRef(alt: string, image: RenderedImage): SeedImageRef {
+  return { ...image, alt, sortOrder: 0, isPrimary: true };
+}
+
+/**
+ * Render one wide banner (also the blog cover shape). Throws on failure, unlike
+ * a category tile: a banner whose picture is missing is the broken-image demo
+ * this shape exists to fix.
+ */
+export async function renderBannerImage(req: SeedBannerImageRequest): Promise<SeedImageRef> {
+  const variant = VARIANTS[Math.abs(Math.trunc(req.variant)) % VARIANTS.length];
+  const palette = paletteOf(req.paletteId, req.key);
+  const spec: BannerSpec = {
+    shape: 'banner',
+    width: BANNER_WIDTH,
+    height: BANNER_HEIGHT,
+    angle: variant.angle,
+    from: palette.from,
+    to: palette.to,
+    fg: palette.fg,
+    icon: req.iconId,
+    rotate: variant.rotate,
+  };
+  const image = await rasterise(
+    JSON.stringify(spec),
+    () => buildBannerSvg(spec),
+    spec.width,
+    spec.height,
+    BANNER_DENSITY,
+  );
+  return singleRef(req.alt, image);
+}
+
+/** Render the store's square monogram logo in one palette. */
+export async function renderLogoImage(req: {
+  key: string;
+  paletteId: PaletteId;
+  alt: string;
+}): Promise<SeedImageRef> {
+  const palette = paletteOf(req.paletteId, req.key);
+  const spec: LogoSpec = {
+    shape: 'logo',
+    size: LOGO_SIZE,
+    from: palette.from,
+    to: palette.to,
+    fg: palette.fg,
+  };
+  const image = await rasterise(
+    JSON.stringify(spec),
+    () => buildLogoSvg(spec),
+    LOGO_SIZE,
+    LOGO_SIZE,
+  );
+  return singleRef(req.alt, image);
 }
 
 /**
