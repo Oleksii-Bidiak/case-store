@@ -12,7 +12,7 @@ import {
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
 import { pushRecentlyViewed } from "@/widgets/recently-viewed";
-import { CartSheet } from "@/widgets/cart";
+import { LazyCartSheet, preloadCartSheet } from "@/widgets/cart";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { formatMoney, trackEvent } from "@/shared/lib";
@@ -99,9 +99,17 @@ export function ProductDetailView({
   const [sheetMounted, setSheetMounted] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const openCartSheet = () => {
+    // Its code loads on demand (TASK-2524); every open retries a failed load.
+    preloadCartSheet();
     setSheetMounted(true);
     setSheetOpen(true);
   };
+  // The sheet opens only from the «В кошику» controls (buy box, mobile bar),
+  // which take a click handler and nothing else — so instead of their hover,
+  // the code is fetched as soon as they appear.
+  useEffect(() => {
+    if (inCart) preloadCartSheet();
+  }, [inCart]);
 
   // Record this product in the guest "recently viewed" history (localStorage),
   // so the homepage "Ви переглядали" rail has something to show. Keyed to the
@@ -384,7 +392,7 @@ export function ProductDetailView({
       />
 
       {sheetMounted && (
-        <CartSheet open={sheetOpen} onOpenChange={setSheetOpen} />
+        <LazyCartSheet open={sheetOpen} onOpenChange={setSheetOpen} />
       )}
     </article>
   );
