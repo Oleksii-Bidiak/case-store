@@ -360,6 +360,69 @@ describe("CatalogImportView — step «Перевірка» (ІК4–ІК9)", ()
     ).toBeInTheDocument();
   });
 
+  it("an update row with every field unticked is no change — not in the button, the dialog or «Запис» (TASK-2545)", async () => {
+    // Three changes: one update, one new product, one gone from the file.
+    const plan = makePlan({
+      rows: makePlan().rows.filter((row) => row.sourceSku !== "M-2"),
+      counts: { ...makePlan().counts, total: 4, missing: 1 },
+    });
+    const run = makeRun({ plan, totalRows: 3, missingCount: 1 });
+    const stub = stubApi({ run });
+    // The server writes the two authorised rows and finishes.
+    let current: Record<string, unknown> = run;
+    server.use(
+      http.get(`*/api/catalog-import/${RUN_ID}`, () =>
+        HttpResponse.json({ data: current }),
+      ),
+      http.post(`*/api/catalog-import/${RUN_ID}/apply`, async ({ request }) => {
+        stub.applies.push((await request.json()) as Record<string, unknown>);
+        current = {
+          ...run,
+          status: "APPLIED",
+          totalRows: 2,
+          appliedRows: 2,
+          updateCount: 0,
+          appliedAt: "2026-09-30T11:40:00.000Z",
+        };
+        return HttpResponse.json({ data: current });
+      }),
+    );
+    await openPlan(stub);
+    expect(
+      screen.getByRole("button", { name: d.applyButton(3) }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: /Ціна/ }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /Назва/ }));
+
+    expect(
+      screen.getByRole("button", { name: d.applyButton(2) }),
+    ).toBeInTheDocument();
+    // The hand edit over the price is still kept.
+    expect(screen.getByText(new RegExp(d.barKeep(1)))).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: d.applyButton(2) }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent(d.applyTitle(2));
+    expect(dialog).toHaveTextContent(d.applyCreates(1));
+    expect(dialog).toHaveTextContent(d.applyMissing(1));
+    expect(dialog).not.toHaveTextContent(d.applyUpdates(1, 1));
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.apply }),
+    );
+
+    await waitFor(() => expect(stub.applies).toHaveLength(1));
+    expect(stub.applies[0]).toEqual({
+      excludedSkus: [],
+      excludedFields: { "558400004": ["price", "name"] },
+    });
+    expect(await screen.findByText(d.doneHeading)).toBeInTheDocument();
+    const updated = screen.getByText(d.doneUpdatedKept(1)).closest("div")!;
+    expect(within(updated).getByText("0")).toBeInTheDocument();
+  });
+
   it("asks with a summary before applying — cancel sends nothing (was window.confirm)", async () => {
     const confirmSpy = jest.spyOn(window, "confirm");
     const stub = await openPlan();

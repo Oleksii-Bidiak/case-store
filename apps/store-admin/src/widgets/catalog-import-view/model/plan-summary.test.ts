@@ -92,6 +92,18 @@ describe("summarisePlan (ІК4)", () => {
     // The row still counts — the server still walks it.
     expect(summary.positions).toBe(6);
   });
+
+  it("does not count an update row whose every field was unticked, but keeps its hand edits (TASK-2545)", () => {
+    const summary = summarisePlan(PLAN, {
+      isRowExcluded: () => false,
+      // Both of U1's fields unticked: the server skips the row entirely.
+      isFieldExcluded: (sku) => sku === "U1",
+    });
+    expect(summary.updates).toBe(1);
+    expect(summary.positions).toBe(5);
+    // Its conflicting price stays as the operator edited it.
+    expect(summary.keptEdits).toBe(1);
+  });
 });
 
 describe("runResultLabel (ІК1 history)", () => {
