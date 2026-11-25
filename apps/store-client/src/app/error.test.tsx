@@ -1,6 +1,6 @@
-jest.mock("@sentry/nextjs", () => ({ captureException: jest.fn() }));
+jest.mock("@/shared/lib/monitoring", () => ({ captureException: jest.fn() }));
 
-import * as Sentry from "@sentry/nextjs";
+import { captureException } from "@/shared/lib/monitoring";
 import { render, screen, userEvent } from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import SegmentError from "./error";
@@ -67,7 +67,7 @@ describe("app/error.tsx", () => {
     const error = boom();
     render(<SegmentError error={error} retry={jest.fn()} />);
 
-    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
-    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException).toHaveBeenCalledWith(error);
   });
 });

@@ -2,7 +2,7 @@
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as Sentry from "@sentry/nextjs";
+import { addBreadcrumb } from "@/shared/lib/monitoring";
 import { Tag, X } from "lucide-react";
 import {
   usePreviewDiscount,
@@ -83,7 +83,7 @@ export function ApplyDiscount() {
       onError: (error) => {
         // A breadcrumb, not an exception: a rejected promo code is normal
         // traffic. What was missing from the demo report was the status.
-        Sentry.addBreadcrumb({
+        addBreadcrumb({
           category: "discount",
           message: "discount.preview.failed",
           level: "warning",

@@ -15,7 +15,7 @@
 //   - window focus, nothing pending                           → GET (another browser's changes).
 // localStorage stays the mirror, so every synchronous read keeps working.
 
-import * as Sentry from "@sentry/nextjs";
+import { captureException } from "@/shared/lib/monitoring";
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/entities/session";
 import {
@@ -71,7 +71,7 @@ function localPayload() {
 }
 
 function report(error: unknown, action: string): void {
-  Sentry.captureException(error, {
+  captureException(error, {
     tags: { feature: "my-devices-sync", action },
   });
 }

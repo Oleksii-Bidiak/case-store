@@ -1,8 +1,8 @@
-jest.mock("@sentry/nextjs", () => ({ captureException: jest.fn() }));
+jest.mock("@/shared/lib/monitoring", () => ({ captureException: jest.fn() }));
 // The stylesheet import is for the browser; Jest has no CSS transform.
 jest.mock("./globals.css", () => ({}));
 
-import * as Sentry from "@sentry/nextjs";
+import { captureException } from "@/shared/lib/monitoring";
 import { render, screen, userEvent } from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import GlobalError from "./global-error";
@@ -53,6 +53,6 @@ describe("app/global-error.tsx", () => {
     render(<GlobalError error={error} retry={jest.fn()} />);
 
     expect(screen.getByText(c.errorCode("4144696081"))).toBeInTheDocument();
-    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(captureException).toHaveBeenCalledWith(error);
   });
 });

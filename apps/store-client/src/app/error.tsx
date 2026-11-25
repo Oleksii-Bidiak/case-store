@@ -1,6 +1,6 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
+import { captureException } from "@/shared/lib/monitoring";
 import Link from "next/link";
 import { useEffect } from "react";
 import { Home, RotateCw, TriangleAlert } from "lucide-react";
@@ -27,7 +27,7 @@ export default function SegmentError({
   retry: () => void;
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    captureException(error);
   }, [error]);
 
   const c = dict.common;
