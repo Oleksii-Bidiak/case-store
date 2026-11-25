@@ -25,6 +25,7 @@ import { seedProducts } from './seed/seeders/products.seeder';
 import { seedReviews } from './seed/seeders/reviews.seeder';
 import { seedSeoSettings, seedSiteContactSettings } from './seed/seeders/site-settings.seeder';
 import { managerByEmail, seedStaff } from './seed/seeders/staff.seeder';
+import { seedUserDevices } from './seed/seeders/user-devices.seeder';
 import { seedUsers } from './seed/seeders/users.seeder';
 import { pruneSeedImages } from './seed/lib/images/seed-image.generator';
 
@@ -101,6 +102,7 @@ async function main() {
     await seedNewsletter(prisma);
     await seedReviews(prisma);
     await seedAddresses(prisma, customers);
+    await seedUserDevices(prisma, customers); // must follow seedDevices (device models)
     await seedPages(prisma);
     await seedBlog(prisma);
 
