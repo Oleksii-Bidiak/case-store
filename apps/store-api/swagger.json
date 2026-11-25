@@ -2097,7 +2097,7 @@
             "description": "Category not found, or CATEGORY_MOVE_TARGET_NOT_FOUND"
           },
           "409": {
-            "description": "CATEGORY_SLUG_CONFLICT (the new target slug is taken), CATEGORY_TREE_STALE (the subtree changed concurrently — reload and retry) or CATEGORY_MOVE_TARGET_HIDDEN (the moveToId target is hidden and allowHiddenTarget was not true — nothing changed)"
+            "description": "CATEGORY_SLUG_CONFLICT (the new target slug is taken), CATEGORY_TREE_STALE (the subtree changed concurrently, or the branch — its subcategories or products — changed since the dialog read it: expectedBranchVersion no longer matches; reload and retry, nothing changed) or CATEGORY_MOVE_TARGET_HIDDEN (the moveToId target is hidden and allowHiddenTarget was not true — nothing changed)"
           }
         },
         "security": [
@@ -19317,6 +19317,11 @@
             "type": "number",
             "description": "Soft-deleted products filed anywhere in the subtree (TASK-655). Hidden from the catalogue, but they still move with a delete — and they block a delete WITHOUT a move target: only a category with all four counts at zero is truly empty",
             "example": 0
+          },
+          "branchVersion": {
+            "type": "string",
+            "description": "Opaque fingerprint of the branch this preview counted — its live subcategories and non-deleted products (TASK-2551). Send it back as DeleteCategoryDto.expectedBranchVersion",
+            "example": "9f2c4e1ab07d5c3e8f6a2b1d0c9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e"
           }
         },
         "required": [
@@ -19324,7 +19329,8 @@
           "productCount",
           "carouselCount",
           "carousels",
-          "deletedProductCount"
+          "deletedProductCount",
+          "branchVersion"
         ]
       },
       "AdminCategoryDetailEntity": {
@@ -19521,6 +19527,11 @@
       "DeleteCategoryDto": {
         "type": "object",
         "properties": {
+          "expectedBranchVersion": {
+            "type": "string",
+            "description": "The deletionImpact.branchVersion of the GET /api/admin/categories/:id read the dialog showed. If the branch (its live subcategories or non-deleted products) changed since, the delete is refused with 409 CATEGORY_TREE_STALE and nothing changes",
+            "example": "9f2c4e1ab07d5c3e8f6a2b1d0c9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e"
+          },
           "moveToId": {
             "type": "string",
             "description": "Move the products into this EXISTING live category. Must be outside the subtree being deleted. Mutually exclusive with `moveToNew`; omit both only for a truly empty category (no subcategory, no product — deleted ones included — no carousel).",
@@ -19539,7 +19550,10 @@
             "description": "Consent to move the products into a HIDDEN (inactive) `moveToId` target — they then disappear from the storefront until that category is shown again. Without it a hidden target is refused with 409 `CATEGORY_MOVE_TARGET_HIDDEN` and nothing changes. Ignored for `moveToNew` (the new category is always created active).",
             "example": true
           }
-        }
+        },
+        "required": [
+          "expectedBranchVersion"
+        ]
       },
       "ReorderGroupDto": {
         "type": "object",

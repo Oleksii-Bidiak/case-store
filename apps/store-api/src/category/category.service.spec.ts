@@ -1201,6 +1201,8 @@ describe('CategoryService', () => {
 
   describe('delete', () => {
     const TARGET_ID = 'cat-target';
+    /** The preview's branchVersion the dialog sends back (TASK-2551). */
+    const VERSION = 'branch-v1';
     const deletionResult = {
       targetId: TARGET_ID,
       targetCreated: false,
@@ -1235,7 +1237,11 @@ describe('CategoryService', () => {
 
     describe('at most one move mode', () => {
       it('rejects both modes with 400 CATEGORY_MOVE_TARGET_REQUIRED and writes nothing', async () => {
-        const dto = { moveToId: TARGET_ID, moveToNew: { name: 'Інше' } };
+        const dto = {
+          expectedBranchVersion: VERSION,
+          moveToId: TARGET_ID,
+          moveToNew: { name: 'Інше' },
+        };
         const call = service.delete('cat-uuid-1', dto, 'admin-1');
 
         await expect(call).rejects.toThrow(BadRequestException);
@@ -1263,12 +1269,20 @@ describe('CategoryService', () => {
       });
 
       it('passes kind "none" through without asking for categories:write', async () => {
-        const result = await service.delete('cat-uuid-1', {}, 'manager-1');
+        const result = await service.delete(
+          'cat-uuid-1',
+          { expectedBranchVersion: VERSION },
+          'manager-1',
+        );
 
         expect(result).toEqual(emptyResult);
-        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith('cat-uuid-1', {
-          kind: 'none',
-        });
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
+          'cat-uuid-1',
+          {
+            kind: 'none',
+          },
+          VERSION,
+        );
         expect(permissionServiceMock.findActor).not.toHaveBeenCalled();
         expect(categoryRepositoryMock.findBySlug).not.toHaveBeenCalled();
         // Only the category itself is read — there is no target to resolve.
@@ -1276,7 +1290,7 @@ describe('CategoryService', () => {
       });
 
       it('purges the caches but re-indexes nothing — nothing moved', async () => {
-        await service.delete('cat-uuid-1', {}, 'admin-1');
+        await service.delete('cat-uuid-1', { expectedBranchVersion: VERSION }, 'admin-1');
 
         expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
         expect(revalidationMock.revalidate).toHaveBeenCalledWith(CATALOGUE_REVALIDATE_TARGET);
@@ -1292,25 +1306,31 @@ describe('CategoryService', () => {
           new CategoryMoveTargetRequiredError(),
         );
 
-        const call = service.delete('cat-uuid-1', {}, 'admin-1');
+        const call = service.delete('cat-uuid-1', { expectedBranchVersion: VERSION }, 'admin-1');
 
         await expect(call).rejects.toThrow(BadRequestException);
-        expect(await codeOf(service.delete('cat-uuid-1', {}, 'admin-1'))).toBe(
-          CategoryErrorCode.MOVE_TARGET_REQUIRED,
-        );
+        expect(
+          await codeOf(service.delete('cat-uuid-1', { expectedBranchVersion: VERSION }, 'admin-1')),
+        ).toBe(CategoryErrorCode.MOVE_TARGET_REQUIRED);
         expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
         expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
       });
 
       it('returns 404 when the category to delete does not exist', async () => {
-        await expect(service.delete('cat-gone', {}, 'admin-1')).rejects.toThrow(NotFoundException);
+        await expect(
+          service.delete('cat-gone', { expectedBranchVersion: VERSION }, 'admin-1'),
+        ).rejects.toThrow(NotFoundException);
         expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
       });
     });
 
     describe('target validation', () => {
       it('rejects the category itself as the target with 400 CATEGORY_MOVE_TARGET_IN_SUBTREE', async () => {
-        const call = service.delete('cat-uuid-1', { moveToId: 'cat-uuid-1' }, 'admin-1');
+        const call = service.delete(
+          'cat-uuid-1',
+          { expectedBranchVersion: VERSION, moveToId: 'cat-uuid-1' },
+          'admin-1',
+        );
 
         expect(await codeOf(call)).toBe(CategoryErrorCode.MOVE_TARGET_IN_SUBTREE);
         expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
@@ -1322,21 +1342,41 @@ describe('CategoryService', () => {
           new CategoryMoveTargetInSubtreeError(),
         );
 
-        const call = service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1');
+        const call = service.delete(
+          'cat-uuid-1',
+          { expectedBranchVersion: VERSION, moveToId: TARGET_ID },
+          'admin-1',
+        );
 
         await expect(call).rejects.toThrow(BadRequestException);
-        expect(await codeOf(service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1'))).toBe(
-          CategoryErrorCode.MOVE_TARGET_IN_SUBTREE,
-        );
+        expect(
+          await codeOf(
+            service.delete(
+              'cat-uuid-1',
+              { expectedBranchVersion: VERSION, moveToId: TARGET_ID },
+              'admin-1',
+            ),
+          ),
+        ).toBe(CategoryErrorCode.MOVE_TARGET_IN_SUBTREE);
         expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
       });
 
       it('rejects a missing or deleted target with 404 CATEGORY_MOVE_TARGET_NOT_FOUND', async () => {
-        const call = service.delete('cat-uuid-1', { moveToId: 'cat-gone' }, 'admin-1');
+        const call = service.delete(
+          'cat-uuid-1',
+          { expectedBranchVersion: VERSION, moveToId: 'cat-gone' },
+          'admin-1',
+        );
 
         await expect(call).rejects.toThrow(NotFoundException);
         expect(
-          await codeOf(service.delete('cat-uuid-1', { moveToId: 'cat-gone' }, 'admin-1')),
+          await codeOf(
+            service.delete(
+              'cat-uuid-1',
+              { expectedBranchVersion: VERSION, moveToId: 'cat-gone' },
+              'admin-1',
+            ),
+          ),
         ).toBe(CategoryErrorCode.MOVE_TARGET_NOT_FOUND);
         expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
       });
@@ -1346,7 +1386,11 @@ describe('CategoryService', () => {
           new CategoryMoveTargetNotFoundError(),
         );
 
-        const call = service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1');
+        const call = service.delete(
+          'cat-uuid-1',
+          { expectedBranchVersion: VERSION, moveToId: TARGET_ID },
+          'admin-1',
+        );
 
         await expect(call).rejects.toThrow(NotFoundException);
       });
@@ -1354,7 +1398,7 @@ describe('CategoryService', () => {
       it('rejects a missing parent of the new target with 404 CATEGORY_MOVE_TARGET_NOT_FOUND', async () => {
         const call = service.delete(
           'cat-uuid-1',
-          { moveToNew: { name: 'Інше', parentId: 'cat-gone' } },
+          { expectedBranchVersion: VERSION, moveToNew: { name: 'Інше', parentId: 'cat-gone' } },
           'admin-1',
         );
 
@@ -1367,15 +1411,19 @@ describe('CategoryService', () => {
       it('passes allowHiddenTarget through as the target consent', async () => {
         await service.delete(
           'cat-uuid-1',
-          { moveToId: TARGET_ID, allowHiddenTarget: true },
+          { expectedBranchVersion: VERSION, moveToId: TARGET_ID, allowHiddenTarget: true },
           'admin-1',
         );
 
-        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith('cat-uuid-1', {
-          kind: 'existing',
-          id: TARGET_ID,
-          allowHidden: true,
-        });
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
+          'cat-uuid-1',
+          {
+            kind: 'existing',
+            id: TARGET_ID,
+            allowHidden: true,
+          },
+          VERSION,
+        );
       });
 
       it('maps a hidden target refused under the lock to 409 CATEGORY_MOVE_TARGET_HIDDEN, no side effects', async () => {
@@ -1383,19 +1431,33 @@ describe('CategoryService', () => {
           new CategoryMoveTargetHiddenError(),
         );
 
-        const call = service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1');
+        const call = service.delete(
+          'cat-uuid-1',
+          { expectedBranchVersion: VERSION, moveToId: TARGET_ID },
+          'admin-1',
+        );
 
         await expect(call).rejects.toThrow(ConflictException);
-        expect(await codeOf(service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1'))).toBe(
-          CategoryErrorCode.MOVE_TARGET_HIDDEN,
-        );
+        expect(
+          await codeOf(
+            service.delete(
+              'cat-uuid-1',
+              { expectedBranchVersion: VERSION, moveToId: TARGET_ID },
+              'admin-1',
+            ),
+          ),
+        ).toBe(CategoryErrorCode.MOVE_TARGET_HIDDEN);
         expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
         expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
         expect(revalidationMock.revalidate).not.toHaveBeenCalled();
       });
 
       it('returns 404 when the category to delete does not exist (or is already deleted)', async () => {
-        const call = service.delete('cat-gone', { moveToId: TARGET_ID }, 'admin-1');
+        const call = service.delete(
+          'cat-gone',
+          { expectedBranchVersion: VERSION, moveToId: TARGET_ID },
+          'admin-1',
+        );
 
         await expect(call).rejects.toThrow(NotFoundException);
         expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
@@ -1405,7 +1467,11 @@ describe('CategoryService', () => {
         categoryRepositoryMock.deleteSubtreeWithMove.mockRejectedValue(new CategoryNotFoundError());
 
         await expect(
-          service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1'),
+          service.delete(
+            'cat-uuid-1',
+            { expectedBranchVersion: VERSION, moveToId: TARGET_ID },
+            'admin-1',
+          ),
         ).rejects.toThrow(NotFoundException);
       });
     });
@@ -1416,7 +1482,11 @@ describe('CategoryService', () => {
       it('returns 403 without categories:write and never reaches the repository', async () => {
         permissionServiceMock.actorHasPermission.mockReturnValue(false);
 
-        const call = service.delete('cat-uuid-1', { moveToNew: { name: 'Інше' } }, 'manager-1');
+        const call = service.delete(
+          'cat-uuid-1',
+          { expectedBranchVersion: VERSION, moveToNew: { name: 'Інше' } },
+          'manager-1',
+        );
 
         await expect(call).rejects.toThrow(ForbiddenException);
         expect(permissionServiceMock.findActor).toHaveBeenCalledWith('manager-1');
@@ -1432,53 +1502,81 @@ describe('CategoryService', () => {
         permissionServiceMock.findActor.mockResolvedValue(null);
 
         await expect(
-          service.delete('cat-uuid-1', { moveToNew: { name: 'Інше' } }, 'manager-1'),
+          service.delete(
+            'cat-uuid-1',
+            { expectedBranchVersion: VERSION, moveToNew: { name: 'Інше' } },
+            'manager-1',
+          ),
         ).rejects.toThrow(ForbiddenException);
         expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
       });
 
       it('does not ask for categories:write in the moveToId mode', async () => {
-        await service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'manager-1');
+        await service.delete(
+          'cat-uuid-1',
+          { expectedBranchVersion: VERSION, moveToId: TARGET_ID },
+          'manager-1',
+        );
 
         expect(permissionServiceMock.findActor).not.toHaveBeenCalled();
-        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith('cat-uuid-1', {
-          kind: 'existing',
-          id: TARGET_ID,
-          allowHidden: false,
-        });
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
+          'cat-uuid-1',
+          {
+            kind: 'existing',
+            id: TARGET_ID,
+            allowHidden: false,
+          },
+          VERSION,
+        );
       });
 
       it('passes the generated slug and parent to the repository', async () => {
         await service.delete(
           'cat-uuid-1',
-          { moveToNew: { name: 'Other Cases', parentId: TARGET_ID } },
+          {
+            expectedBranchVersion: VERSION,
+            moveToNew: { name: 'Other Cases', parentId: TARGET_ID },
+          },
           'admin-1',
         );
 
         expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('other-cases', {
           activeOnly: false,
         });
-        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith('cat-uuid-1', {
-          kind: 'new',
-          name: 'Other Cases',
-          slug: 'other-cases',
-          parentId: TARGET_ID,
-        });
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
+          'cat-uuid-1',
+          {
+            kind: 'new',
+            name: 'Other Cases',
+            slug: 'other-cases',
+            parentId: TARGET_ID,
+          },
+          VERSION,
+        );
       });
 
       it('creates a root target when no parent is given', async () => {
-        await service.delete('cat-uuid-1', { moveToNew: { name: 'Other' } }, 'admin-1');
+        await service.delete(
+          'cat-uuid-1',
+          { expectedBranchVersion: VERSION, moveToNew: { name: 'Other' } },
+          'admin-1',
+        );
 
         expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
           'cat-uuid-1',
           expect.objectContaining({ kind: 'new', parentId: null }),
+          VERSION,
         );
       });
 
       it('returns 409 CATEGORY_SLUG_CONFLICT when the slug is taken (even by an inactive one)', async () => {
         categoryRepositoryMock.findBySlug.mockResolvedValue(mockInactiveCategory);
 
-        const call = service.delete('cat-uuid-1', { moveToNew: { name: 'Other' } }, 'admin-1');
+        const call = service.delete(
+          'cat-uuid-1',
+          { expectedBranchVersion: VERSION, moveToNew: { name: 'Other' } },
+          'admin-1',
+        );
 
         expect(await codeOf(call)).toBe(CategoryErrorCode.SLUG_CONFLICT);
         expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
@@ -1490,13 +1588,21 @@ describe('CategoryService', () => {
         );
 
         await expect(
-          service.delete('cat-uuid-1', { moveToNew: { name: 'Other' } }, 'admin-1'),
+          service.delete(
+            'cat-uuid-1',
+            { expectedBranchVersion: VERSION, moveToNew: { name: 'Other' } },
+            'admin-1',
+          ),
         ).rejects.toThrow(ConflictException);
       });
 
       it('rejects a name that yields an empty slug with 400', async () => {
         await expect(
-          service.delete('cat-uuid-1', { moveToNew: { name: '!!!' } }, 'admin-1'),
+          service.delete(
+            'cat-uuid-1',
+            { expectedBranchVersion: VERSION, moveToNew: { name: '!!!' } },
+            'admin-1',
+          ),
         ).rejects.toThrow(BadRequestException);
         expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
       });
@@ -1504,7 +1610,11 @@ describe('CategoryService', () => {
 
     describe('on success', () => {
       it('purges the product caches, revalidates the catalogue and reindexes the target', async () => {
-        const result = await service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1');
+        const result = await service.delete(
+          'cat-uuid-1',
+          { expectedBranchVersion: VERSION, moveToId: TARGET_ID },
+          'admin-1',
+        );
 
         expect(result).toEqual(deletionResult);
         expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
@@ -1514,7 +1624,11 @@ describe('CategoryService', () => {
       });
 
       it('logs a category.deleted line with the counts', async () => {
-        await service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1');
+        await service.delete(
+          'cat-uuid-1',
+          { expectedBranchVersion: VERSION, moveToId: TARGET_ID },
+          'admin-1',
+        );
 
         expect(pinoLoggerMock.info).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -1535,7 +1649,11 @@ describe('CategoryService', () => {
         revalidationMock.revalidate.mockRejectedValue(new Error('storefront down'));
 
         await expect(
-          service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1'),
+          service.delete(
+            'cat-uuid-1',
+            { expectedBranchVersion: VERSION, moveToId: TARGET_ID },
+            'admin-1',
+          ),
         ).resolves.toEqual(deletionResult);
       });
 
@@ -1545,7 +1663,11 @@ describe('CategoryService', () => {
         );
 
         await expect(
-          service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1'),
+          service.delete(
+            'cat-uuid-1',
+            { expectedBranchVersion: VERSION, moveToId: TARGET_ID },
+            'admin-1',
+          ),
         ).rejects.toThrow(ConflictException);
         expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
         expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();

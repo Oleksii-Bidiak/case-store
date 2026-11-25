@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { PrismaService } from '../prisma';
 import { Category, Prisma, SlugRedirectEntity } from '@prisma/client';
 import { SlugRedirectRepository } from '../slug-redirect';
@@ -286,7 +287,23 @@ export interface CategoryDeletionImpact {
   carousels: Array<{ id: string; name: string }>;
   /** Soft-deleted products of the subtree (TASK-655) — they still block a target-less delete. */
   deletedProductCount: number;
+  /**
+   * Fingerprint of the branch as this preview saw it (TASK-2551) — see
+   * {@link branchFingerprint}. The delete sends it back as `expectedBranchVersion`.
+   */
+  branchVersion: string;
 }
+
+/**
+ * The branch a delete preview showed, as one opaque string (TASK-2551): sha256 over the
+ * sorted live subtree ids and the sorted ids of its non-deleted products — the same sets
+ * `subcategoryCount` and `productCount` count. Order-independent, so two reads of an
+ * unchanged branch always agree.
+ */
+export const branchFingerprint = (categoryIds: string[], productIds: string[]): string =>
+  createHash('sha256')
+    .update(JSON.stringify([[...categoryIds].sort(), [...productIds].sort()]))
+    .digest('hex');
 
 @Injectable()
 export class CategoryRepository {
@@ -1364,11 +1381,19 @@ export class CategoryRepository {
    * {@link CategoryRepository.assertDeletableWithoutTarget} — the category must be a
    * truly empty leaf — and tombstones the single row; `targetId` is then `null`.
    *
+   * `expectedBranchVersion` (TASK-2551) — the `branchVersion` of the preview the operator
+   * confirmed. Right after the stale re-check of step 2 the branch is fingerprinted under
+   * the locks; a different value means a subcategory or product arrived or left while the
+   * dialog was open, and the delete is refused as `CategoryTreeStaleError`. Step 2 alone
+   * cannot see that: such a write commits long before this transaction starts. `undefined`
+   * skips the comparison — the HTTP path always sends it (`DeleteCategoryDto` requires it).
+   *
    * Throws the domain errors of `category.errors.ts`; any throw rolls everything back.
    */
   deleteSubtreeWithMove(
     id: string,
     target: CategoryDeletionTarget,
+    expectedBranchVersion: string | undefined,
     now: Date = new Date(),
   ): Promise<CategoryDeletionResult> {
     return this.prisma.$transaction(
@@ -1399,6 +1424,14 @@ export class CategoryRepository {
         const subtree = new Set(subtreeIds);
         if (subtreeNow.length !== subtree.size || subtreeNow.some((sid) => !subtree.has(sid))) {
           throw new CategoryTreeStaleError();
+        }
+        if (
+          expectedBranchVersion !== undefined &&
+          (await this.branchVersion(subtreeIds, tx)) !== expectedBranchVersion
+        ) {
+          throw new CategoryTreeStaleError(
+            'The branch changed since the delete dialog read it — reload and retry',
+          );
         }
 
         let targetId: string | null = null;
@@ -1588,10 +1621,8 @@ export class CategoryRepository {
    */
   async countDeletionImpact(id: string): Promise<CategoryDeletionImpact> {
     const subtreeIds = await this.findSubtreeIds(id);
-    const [productCount, deletedProductCount, carouselRows] = await Promise.all([
-      this.prisma.product.count({
-        where: { categoryId: { in: subtreeIds }, deletedAt: null },
-      }),
+    const [liveProducts, deletedProductCount, carouselRows] = await Promise.all([
+      this.findLiveProductIds(subtreeIds, this.prisma),
       this.prisma.product.count({
         where: { categoryId: { in: subtreeIds }, deletedAt: { not: null } },
       }),
@@ -1604,11 +1635,29 @@ export class CategoryRepository {
 
     return {
       subcategoryCount: subtreeIds.length - 1,
-      productCount,
+      productCount: liveProducts.length,
       carouselCount: carouselRows.length,
       carousels: carouselRows.map((row) => ({ id: row.id, name: row.title })),
       deletedProductCount,
+      branchVersion: branchFingerprint(subtreeIds, liveProducts),
     };
+  }
+
+  /** {@link branchFingerprint} of `subtreeIds` as `client` sees it now (TASK-2551). */
+  private async branchVersion(subtreeIds: string[], client: CategoryDbClient): Promise<string> {
+    return branchFingerprint(subtreeIds, await this.findLiveProductIds(subtreeIds, client));
+  }
+
+  /** Ids of the non-deleted products filed in `categoryIds` — any `isActive`. */
+  private async findLiveProductIds(
+    categoryIds: string[],
+    client: CategoryDbClient,
+  ): Promise<string[]> {
+    const rows = await client.product.findMany({
+      where: { categoryId: { in: categoryIds }, deletedAt: null },
+      select: { id: true },
+    });
+    return rows.map((row) => row.id);
   }
 
   /**
