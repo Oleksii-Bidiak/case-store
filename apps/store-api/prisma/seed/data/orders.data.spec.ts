@@ -5,7 +5,7 @@ import { planReturns } from '../lib/return-plan';
 import { copyPairs } from './order-copies.data';
 import { returnSpecs } from './returns.data';
 import type { OrderSpec } from '../types';
-import { deltas, servicesData, templateServiceNames } from './addons.data';
+import { categoryTemplates, deltas, servicesData } from './addons.data';
 import { cataloguePositions } from './catalogue';
 import { rootCategorySlug } from './categories.data';
 import { pickupPointsData } from './delivery.data';
@@ -24,22 +24,24 @@ const NOW = Date.now();
 const HOUR = 60 * 60 * 1000;
 
 /**
- * The add-ons checkout would offer, from the seed data alone: the «Смартфони»
- * template (its subtree inherits it), then the product deltas. The seeder asks
+ * The add-ons checkout would offer, from the seed data alone: the nearest
+ * category template (own, else the root's — a child's template replaces its
+ * parent's), inactive services dropped, then the product deltas. The seeder asks
  * the real AddonApplicabilityResolver instead; this is its data-level twin.
  */
 function addonPrice(sku: string, name: string): number {
   const position = cataloguePositions().find((p) => p.sku === sku);
   if (!position) throw new Error(`unknown SKU ${sku}`);
+  const service = servicesData.find((s) => s.name === name)!;
   const delta = deltas.find((d) => d.positionSlug === position.slug && d.serviceName === name);
-  const templated =
-    rootCategorySlug(position.entry.categorySlug) === 'smartphones' &&
-    templateServiceNames.includes(name);
-  if (delta?.type === 'REMOVE' || (!templated && !delta)) {
+  const template =
+    categoryTemplates.find((t) => t.categorySlug === position.entry.categorySlug) ??
+    categoryTemplates.find((t) => t.categorySlug === rootCategorySlug(position.entry.categorySlug));
+  const templated = template?.serviceNames.includes(name) ?? false;
+  if (service.isActive === false || delta?.type === 'REMOVE' || (!templated && !delta)) {
     throw new Error(`${name} does not apply to ${sku}`);
   }
-  const service = servicesData.find((s) => s.name === name)!;
-  return delta?.type === 'OVERRIDE' && delta.price !== undefined ? delta.price : service.price;
+  return delta?.price ?? service.price;
 }
 
 const ctx: PlanContext = {
