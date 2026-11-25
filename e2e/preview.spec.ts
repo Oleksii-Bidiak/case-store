@@ -291,6 +291,34 @@ test("on a product preview the bar rides above the buy bar up to lg", async ({
     .toBeLessThanOrEqual(1);
 });
 
+// TASK-2600 (AD-PROD-79) — draft mode bypasses Next's Data Cache and fetch
+// dedupe, so every render read /api/seo-settings once per consumer (6 times),
+// all into the storefront server's one throttler bucket (100/min/route): about
+// the 17th render within a minute got a 429 and the strict layout read threw
+// into «Щось пішло не так». One read per render keeps a long preview session —
+// reloads included — far below that budget.
+test("a preview survives a run of reloads without hitting the error page", async ({
+  page,
+  request,
+}) => {
+  const { token } = await issuePreviewLink(request, {
+    type: "product",
+    id: hiddenProductId,
+  });
+
+  await page.goto(`/preview?token=${encodeURIComponent(token)}`);
+  await expect(page).toHaveURL(new RegExp(`/products/${HIDDEN_SLUG}$`));
+  const heading = page.getByRole("heading", { level: 1, name: HIDDEN_NAME });
+  await expectPreviewIntact(page, heading);
+
+  // 20 full draft renders: 120 seo-settings reads without the fix.
+  for (let render = 1; render <= 20; render++) {
+    const response = await page.reload();
+    expect(response?.status(), `render ${render}`).toBe(200);
+    await expectPreviewIntact(page, heading);
+  }
+});
+
 /** Background the tab and bring it back, as a tab switch does. */
 async function toggleTabVisibility(page: Page): Promise<void> {
   await page.evaluate(() => {

@@ -1,9 +1,37 @@
+// React `cache()` memoizes only inside a server request, which Jest never opens —
+// outside one it is a pass-through. Stand in for the request scope, emptied
+// between tests (same stand-in as products/page.test.ts, TASK-703): each test is
+// one server render.
+jest.mock("react", () => {
+  const actual = jest.requireActual("react");
+  const scope = globalThis as { __requestMemos?: Map<string, unknown>[] };
+  scope.__requestMemos ??= [];
+  return {
+    ...actual,
+    cache: <A extends unknown[], R>(fn: (...args: A) => R) => {
+      const memo = new Map<string, R>();
+      scope.__requestMemos!.push(memo as Map<string, unknown>);
+      return (...args: A): R => {
+        const key = JSON.stringify(args);
+        if (!memo.has(key)) memo.set(key, fn(...args));
+        return memo.get(key)!;
+      };
+    },
+  };
+});
+
 import {
   fetchSeoSettings,
   fetchSeoSettingsForChrome,
   SEO_SETTINGS_TAG,
   SeoSettingsUnavailableError,
 } from "./seo-settings-server";
+
+beforeEach(() => {
+  (
+    globalThis as { __requestMemos?: Map<string, unknown>[] }
+  ).__requestMemos?.forEach((memo) => memo.clear());
+});
 
 /**
  * Regression tests for TASK-327 — build-time fetches must be time-boxed.
@@ -210,5 +238,59 @@ describe("fetchSeoSettings — durable cache and failure contract (TASK-1988)", 
     global.fetch = respondWith(429) as unknown as typeof fetch;
 
     await expect(fetchSeoSettings()).resolves.toBeNull();
+  });
+});
+
+/**
+ * Regression tests for TASK-2600 — every preview fell into global-error after a
+ * handful of renders.
+ *
+ * In draft mode Next bypasses the Data Cache and its fetch dedupe, so the
+ * `force-cache` above stops helping: the root layout, generateMetadata, the page
+ * and the footer each called `/api/seo-settings` (6 reads per render), all from
+ * the storefront server's one address into one throttler bucket, and the strict
+ * layout read turned the first 429 into the error page. One render must read
+ * once — in draft mode too — and the TASK-1988 failure contract must hold for
+ * every consumer of that one read.
+ */
+describe("seo-settings — one read per server render (TASK-2600)", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
+  it("the layout, metadata, page and footer readers share one request", async () => {
+    const settings = { id: "s", logoUrl: "/logo.png", siteName: "Shop" };
+    const fetchMock = jest.fn(
+      async () => new Response(JSON.stringify({ data: settings })),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const reads = await Promise.all([
+      fetchSeoSettingsForChrome("phase-production-server"),
+      fetchSeoSettings(),
+      fetchSeoSettings(),
+      fetchSeoSettingsForChrome("phase-production-server"),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(reads).toEqual([settings, settings, settings, settings]);
+  });
+
+  it("a failed read is one request: strict for the layout, null for SEO surfaces", async () => {
+    const fetchMock = jest.fn(async () => new Response("{}", { status: 429 }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(
+      fetchSeoSettingsForChrome("phase-production-server"),
+    ).rejects.toBeInstanceOf(SeoSettingsUnavailableError);
+    await expect(fetchSeoSettings()).resolves.toBeNull();
+    await expect(
+      fetchSeoSettingsForChrome("phase-production-build"),
+    ).resolves.toBeNull();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
