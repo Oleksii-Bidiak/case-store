@@ -1,3 +1,4 @@
+import type { IconId, PaletteId } from '../../lib/images/seed-image.generator';
 import { STORE_NAME } from '../../lib/store';
 
 export const categoriesData = [
@@ -51,7 +52,15 @@ export const postsData: {
   title: string;
   excerpt: string;
   author: string;
-  publishedAt: string;
+  /** Publish day of a PUBLISHED post. Absent on a scheduled or draft post. */
+  publishedAt?: string;
+  /**
+   * TASK-2569 — absent = PUBLISHED on `publishedAt`; `DRAFT`; or SCHEDULED for
+   * `now + scheduledInDays`, relative to the run so it is always «in a week».
+   */
+  state?: 'DRAFT' | { scheduledInDays: number };
+  /** TASK-2569 — the cover, rendered by the seed generator's wide shape. */
+  cover: { iconId: IconId; paletteId: PaletteId };
   featured?: boolean;
   /** TASK-436 — omitted means listed (the column default). */
   listed?: boolean;
@@ -78,6 +87,7 @@ export const postsData: {
     keywords: ['iphone 16', 'iphone 15', 'порівняння', 'апгрейд'],
     author: 'Олег Пилипенко',
     publishedAt: '2026-06-28',
+    cover: { iconId: 'smartphone', paletteId: 'indigo' },
     featured: true,
   },
   {
@@ -92,6 +102,7 @@ export const postsData: {
     keywords: ['навушники', 'tws', 'anc', 'кодеки'],
     author: 'Ірина Ткач',
     publishedAt: '2026-06-25',
+    cover: { iconId: 'headphones', paletteId: 'violet' },
   },
   {
     slug: 'powerbank-guide',
@@ -105,6 +116,7 @@ export const postsData: {
     keywords: ['павербанк', 'powerbank', 'mah', 'gan'],
     author: 'Ірина Ткач',
     publishedAt: '2026-06-22',
+    cover: { iconId: 'powerbank', paletteId: 'amber' },
   },
   {
     slug: 'galaxy-s26-review',
@@ -113,7 +125,9 @@ export const postsData: {
     excerpt: 'Екран, камери на 200 Мп, S Pen і батарея — що вражає, а до чого доведеться звикати.',
     author: 'Олег Пилипенко',
     publishedAt: '2026-06-20',
-    featured: true,
+    cover: { iconId: 'smartphone', paletteId: 'sky' },
+    // Not featured since TASK-2569: the storefront's hero takes the FIRST
+    // featured post, so a second one was a flag that did nothing visible.
   },
   {
     slug: 'macbook-air-m3',
@@ -123,6 +137,7 @@ export const postsData: {
       'Чи вистачить 8 ГБ памʼяті, як щодо нагріву без кулера та скільки живе батарея в реальних задачах.',
     author: 'Марія Литвин',
     publishedAt: '2026-06-17',
+    cover: { iconId: 'adapter', paletteId: 'slate' },
   },
   {
     slug: 'trade-in-how',
@@ -132,6 +147,7 @@ export const postsData: {
       'Готуємо пристрій до оцінки, дивимось, що впливає на ціну, і не втрачаємо на дрібницях.',
     author: 'Андрій Мороз',
     publishedAt: '2026-06-14',
+    cover: { iconId: 'smartphone', paletteId: 'emerald' },
     // TASK-436 — the one seeded post that demonstrates `listed = false`: it is
     // published and opens at /blog/trade-in-how, but stays out of the blog grid,
     // the header search suggestions and "Читайте також". Without an example in
@@ -146,6 +162,7 @@ export const postsData: {
     excerpt: 'Лампи, розетки, датчики та хаб — базовий набір, який реально економить час і гроші.',
     author: 'Марія Литвин',
     publishedAt: '2026-06-11',
+    cover: { iconId: 'speaker', paletteId: 'teal' },
   },
   {
     slug: 'new-arrivals-june',
@@ -154,6 +171,7 @@ export const postsData: {
     excerpt: 'Свіжі флагмани, аудіо та аксесуари — коротко про найцікавіші релізи та ціни.',
     author: `Редакція ${STORE_NAME}`,
     publishedAt: '2026-06-08',
+    cover: { iconId: 'package', paletteId: 'orange' },
   },
   {
     slug: 'protect-screen',
@@ -163,6 +181,7 @@ export const postsData: {
       'Порівнюємо типи захисту, розвіюємо міфи про олеофобне покриття та вчимось клеїти без пузирів.',
     author: 'Андрій Мороз',
     publishedAt: '2026-06-05',
+    cover: { iconId: 'shield', paletteId: 'blue' },
   },
   {
     slug: 'gaming-laptop-2026',
@@ -172,6 +191,7 @@ export const postsData: {
       'RTX проти інтегрованої графіки, частота екрана й охолодження — на що дивитись перед покупкою.',
     author: 'Олег Пилипенко',
     publishedAt: '2026-06-02',
+    cover: { iconId: 'headphones', paletteId: 'fuchsia' },
   },
   {
     slug: 'battery-health',
@@ -181,6 +201,7 @@ export const postsData: {
       'Прості правила зарядки й налаштувань, які реально сповільнюють деградацію акумулятора.',
     author: 'Ірина Ткач',
     publishedAt: '2026-05-30',
+    cover: { iconId: 'powerbank', paletteId: 'lime' },
   },
   {
     slug: 'tv-buying-guide',
@@ -190,5 +211,27 @@ export const postsData: {
       'Розбираємось у типах матриць, яскравості та частоті — і підбираємо діагональ під відстань перегляду.',
     author: 'Марія Литвин',
     publishedAt: '2026-05-27',
+    cover: { iconId: 'stand', paletteId: 'rose' },
+  },
+  // ── Not live (TASK-2569) ──
+  {
+    slug: 'gift-guide-accessories',
+    cat: 'guides',
+    title: 'Подарунки до свят: аксесуари, з якими не промахнешся',
+    excerpt:
+      'Що подарувати власнику смартфона, якщо не знаєш його модель, — і як перевірити сумісність, якщо знаєш.',
+    author: 'Ірина Ткач',
+    state: { scheduledInDays: 7 },
+    cover: { iconId: 'earbuds', paletteId: 'fuchsia' },
+  },
+  {
+    slug: 'magsafe-explained',
+    cat: 'tips',
+    title: 'MagSafe без міфів: що він уміє, а що ні',
+    excerpt:
+      'Магніти, бездротова зарядка й аксесуари: розбираємось, навіщо MagSafe і як обрати сумісний тримач чи павербанк.',
+    author: 'Андрій Мороз',
+    state: 'DRAFT',
+    cover: { iconId: 'adapter', paletteId: 'sky' },
   },
 ];

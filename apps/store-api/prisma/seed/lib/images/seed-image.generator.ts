@@ -407,6 +407,12 @@ export interface SeedBannerImageRequest {
   /** Picks the gradient angle / accent the same way `sortOrder` does for products. */
   variant: number;
   alt: string;
+  /**
+   * Where the art sits. `right` (default) for banners, whose copy sits on the
+   * left of every placement; `center` for blog covers, which the cards crop to
+   * 4:3 around the middle.
+   */
+  align?: 'right' | 'center';
 }
 
 interface BannerSpec {
@@ -419,13 +425,14 @@ interface BannerSpec {
   fg: string;
   icon: IconId;
   rotate: number;
+  /** Horizontal centre of the art, as a fraction of the width. */
+  artX: number;
 }
 
 function buildBannerSvg(spec: BannerSpec): string {
   const { width: w, height: h } = spec;
   const { x1, y1, x2, y2 } = gradientVector(spec.angle);
-  // The copy sits on the left of every banner placement, so the art lives on the right.
-  const cx = w * 0.74;
+  const cx = w * spec.artX;
   const cy = h * 0.5;
   const unit = (h * 0.42) / ICON_VIEWBOX;
   const half = ICON_VIEWBOX / 2;
@@ -500,6 +507,7 @@ export async function renderBannerImage(req: SeedBannerImageRequest): Promise<Se
     fg: palette.fg,
     icon: req.iconId,
     rotate: variant.rotate,
+    artX: req.align === 'center' ? 0.5 : 0.74,
   };
   const image = await rasterise(
     JSON.stringify(spec),
