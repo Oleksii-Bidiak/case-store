@@ -11871,7 +11871,7 @@
             "description": "REORDER_NOT_FOUND — an id is not a block"
           },
           "409": {
-            "description": "REORDER_STALE — the page changed since it was loaded"
+            "description": "REORDER_STALE — the page changed since it was loaded: expectedIds is no longer the saved order (another tab reordered, added or removed a block), or a block is missing from orderedIds. Nothing is written"
           }
         },
         "security": [
@@ -29078,10 +29078,18 @@
             "items": {
               "type": "string"
             }
+          },
+          "expectedIds": {
+            "description": "The page order this tab loaded, before the drag (every block id, in order). If the saved order differs — another tab reordered, added or removed a block — the request is refused with 409 REORDER_STALE and nothing changes.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
-          "orderedIds"
+          "orderedIds",
+          "expectedIds"
         ]
       },
       "CreateHomeBlockDto": {

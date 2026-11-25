@@ -404,7 +404,7 @@ describe('HomeBlockService', () => {
     it('maps a stale reorder to 409', async () => {
       repository.reorder.mockRejectedValue(new ReorderStaleError());
 
-      await expect(service.reorder({ orderedIds: [] })).rejects.toMatchObject({
+      await expect(service.reorder({ orderedIds: [], expectedIds: [] })).rejects.toMatchObject({
         status: 409,
         response: { error: 'REORDER_STALE' },
       });
@@ -413,9 +413,11 @@ describe('HomeBlockService', () => {
     it('returns the refreshed admin list after a reorder', async () => {
       repository.reorder.mockResolvedValue([record({ id: 'b' }), record({ id: 'a' })]);
 
-      const result = await service.reorder({ orderedIds: ['b', 'a'] });
+      const result = await service.reorder({ orderedIds: ['b', 'a'], expectedIds: ['a', 'b'] });
 
       expect(result.map((block) => block.id)).toEqual(['b', 'a']);
+      // TASK-2547: the order the tab loaded travels to the locked snapshot check.
+      expect(repository.reorder).toHaveBeenCalledWith(['b', 'a'], ['a', 'b']);
       expect(revalidation.revalidate).toHaveBeenCalledWith(target);
     });
   });

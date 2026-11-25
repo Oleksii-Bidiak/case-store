@@ -13,6 +13,7 @@ import { CarouselRepository } from '../src/carousels/carousels.repository';
 import { ProductService } from '../src/product/product.service';
 import { RevalidationNotifier } from '../src/publishing';
 import { HttpExceptionFilter } from '../src/common/filters';
+import { ReorderStaleError } from '../src/common/reorder';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
@@ -272,7 +273,7 @@ describe('Home blocks (e2e)', () => {
           request(app.getHttpServer())
             .patch('/api/admin/home-blocks/reorder')
             .set('Authorization', auth)
-            .send({ orderedIds: [B1] }),
+            .send({ orderedIds: [B1], expectedIds: [B1] }),
       ];
       for (const write of writes) {
         await write().expect(403);
@@ -445,16 +446,41 @@ describe('Home blocks (e2e)', () => {
       const response = await request(app.getHttpServer())
         .patch('/api/admin/home-blocks/reorder')
         .set('Authorization', admin())
-        .send({ orderedIds: [B2, B1] })
+        .send({ orderedIds: [B2, B1], expectedIds: [B1, B2] })
         .expect(200);
 
-      expect(homeBlockRepositoryMock.reorder).toHaveBeenCalledWith([B2, B1]);
+      expect(homeBlockRepositoryMock.reorder).toHaveBeenCalledWith([B2, B1], [B1, B2]);
       expect(homeBlockRepositoryMock.findById).not.toHaveBeenCalled();
       expect(response.body.data.map((b: { id: string }) => b.id)).toEqual([B2, B1]);
       expect(revalidationMock.revalidate).toHaveBeenCalledWith({
         tags: ['home-blocks', 'carousels'],
         paths: ['/'],
       });
+    });
+
+    // TASK-2547: the order the tab loaded is required — without it a second tab's save
+    // could not be told apart from a fresh one.
+    it('reorder without expectedIds is a 400 and writes nothing', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/admin/home-blocks/reorder')
+        .set('Authorization', admin())
+        .send({ orderedIds: [B2, B1] })
+        .expect(400);
+
+      expect(homeBlockRepositoryMock.reorder).not.toHaveBeenCalled();
+    });
+
+    it('a second tab with a stale expectedIds gets 409 REORDER_STALE', async () => {
+      homeBlockRepositoryMock.reorder.mockRejectedValue(new ReorderStaleError());
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/home-blocks/reorder')
+        .set('Authorization', admin())
+        .send({ orderedIds: [B2, B1], expectedIds: [B1, B2] })
+        .expect(409);
+
+      expect(response.body).toHaveProperty('error', 'REORDER_STALE');
+      expect(revalidationMock.revalidate).not.toHaveBeenCalled();
     });
   });
 });

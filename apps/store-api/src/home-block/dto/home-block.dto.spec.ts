@@ -2,6 +2,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { CreateHomeBlockDto } from './create-home-block.dto';
 import { UpdateHomeBlockDto } from './update-home-block.dto';
+import { ReorderHomeBlocksDto } from './reorder-home-blocks.dto';
 
 // Mirrors the global ValidationPipe behaviour from `main.ts`.
 const UUID = '550e8400-e29b-41d4-a716-446655440000';
@@ -61,6 +62,31 @@ const updateErrorsOf = async (body: Record<string, unknown>) =>
   ).map((error) => error.property);
 
 const FUTURE = '2099-01-01T09:00:00.000Z';
+
+// TASK-2547: the order the tab loaded is what lets the server refuse a second tab's save.
+describe('ReorderHomeBlocksDto — expectedIds', () => {
+  const reorderErrorsOf = async (body: Record<string, unknown>) =>
+    (await validate(plainToInstance(ReorderHomeBlocksDto, body))).map((error) => error.property);
+
+  it('accepts orderedIds with the loaded order', async () => {
+    expect(
+      await reorderErrorsOf({ orderedIds: [UUID2, UUID], expectedIds: [UUID, UUID2] }),
+    ).toEqual([]);
+  });
+
+  it('requires expectedIds', async () => {
+    expect(await reorderErrorsOf({ orderedIds: [UUID] })).toEqual(['expectedIds']);
+  });
+
+  it('rejects a non-UUID or oversized expectedIds', async () => {
+    expect(await reorderErrorsOf({ orderedIds: [UUID], expectedIds: ['nope'] })).toEqual([
+      'expectedIds',
+    ]);
+    expect(
+      await reorderErrorsOf({ orderedIds: [UUID], expectedIds: Array(501).fill(UUID) }),
+    ).toEqual(['expectedIds']);
+  });
+});
 
 describe('UpdateHomeBlockDto', () => {
   it('accepts an empty body and partial fields', async () => {

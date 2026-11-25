@@ -45,6 +45,30 @@ describe('assertFlatReorder', () => {
   it('reports a payload that is BOTH duplicated and stale as DUPLICATE_ID (check order)', () => {
     expect(() => assertFlatReorder([A, B, C], [A, A])).toThrow(ReorderDuplicateIdError);
   });
+
+  // TASK-2547: `expectedIds` is the order the client loaded. Without it a second tab's
+  // permutation of the SAME set silently overwrites the first tab's saved order.
+  describe('with expectedIds (the order the client loaded)', () => {
+    it('accepts a permutation when the snapshot is still in the loaded order', () => {
+      expect(() => assertFlatReorder([A, B, C], [C, A, B], [A, B, C])).not.toThrow();
+    });
+
+    it('rejects the same set in a different snapshot order with STALE', () => {
+      expect(() => assertFlatReorder([B, A, C], [C, A, B], [A, B, C])).toThrow(ReorderStaleError);
+    });
+
+    it('rejects a row removed since the load with STALE, not NOT_FOUND', () => {
+      expect(() => assertFlatReorder([A, C], [C, A, B], [A, B, C])).toThrow(ReorderStaleError);
+    });
+
+    it('still reports a duplicate as DUPLICATE_ID first', () => {
+      expect(() => assertFlatReorder([B, A], [A, A], [A, B])).toThrow(ReorderDuplicateIdError);
+    });
+
+    it('still rejects a forged id with NOT_FOUND when the snapshot is as loaded', () => {
+      expect(() => assertFlatReorder([A, B], [A, B, C], [A, B])).toThrow(ReorderNotFoundError);
+    });
+  });
 });
 
 describe('reorderErrorToHttp', () => {

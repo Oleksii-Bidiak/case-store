@@ -1,5 +1,6 @@
 import { HomeBlockType, PublishStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { ReorderStaleError } from '../common/reorder';
 import { HomeBlockRepository } from './home-block.repository';
 
 const row = {
@@ -273,5 +274,80 @@ describe('HomeBlockRepository (TASK-661)', () => {
       tags: ['home-blocks', 'carousels'],
       paths: ['/'],
     });
+  });
+});
+
+/**
+ * Two admin tabs reordering the homepage (TASK-2547). A stateful fake: the snapshot read
+ * WITHOUT an `orderBy` comes back in storage order (as Postgres may), WITH one in page
+ * order — so the test also pins that the snapshot is read in the order the list returns.
+ */
+describe('HomeBlockRepository.reorder × a second tab (TASK-2547)', () => {
+  type Stored = { id: string; sortOrder: number; createdAt: Date };
+  let store: Stored[];
+  let repository: HomeBlockRepository;
+
+  const pageOrder = () =>
+    [...store].sort(
+      (a, b) =>
+        a.sortOrder - b.sortOrder ||
+        a.createdAt.getTime() - b.createdAt.getTime() ||
+        a.id.localeCompare(b.id),
+    );
+  const savedOrder = () => pageOrder().map((block) => block.id);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    const created = (n: number) => new Date(`2026-01-0${n}T00:00:00.000Z`);
+    // Storage order deliberately differs from page order (C was updated last).
+    store = [
+      { id: 'A', sortOrder: 0, createdAt: created(1) },
+      { id: 'B', sortOrder: 1, createdAt: created(2) },
+      { id: 'C', sortOrder: 2, createdAt: created(3) },
+    ];
+    homeBlock.findMany.mockImplementation((args: { orderBy?: unknown; select?: unknown }) => {
+      const rows =
+        args.orderBy === undefined ? [...store.slice(-1), ...store.slice(0, -1)] : pageOrder();
+      return Promise.resolve(
+        args.select
+          ? rows.map(({ id, sortOrder }) => ({ id, sortOrder }))
+          : rows.map((block) => ({ ...row, ...block })),
+      );
+    });
+    homeBlock.updateMany.mockImplementation(
+      ({ where, data }: { where: { id: string }; data: { sortOrder: number } }) => {
+        const block = store.find((candidate) => candidate.id === where.id);
+        if (block) block.sortOrder = data.sortOrder;
+        return Promise.resolve({ count: block ? 1 : 0 });
+      },
+    );
+    tx.$executeRaw.mockResolvedValue(1);
+    repository = new HomeBlockRepository(prisma as unknown as PrismaService);
+  });
+
+  it('saves a reorder whose expectedIds is the page as loaded', async () => {
+    const result = await repository.reorder(['C', 'A', 'B'], ['A', 'B', 'C']);
+
+    expect(result.map((block) => block.id)).toEqual(['C', 'A', 'B']);
+    expect(savedOrder()).toEqual(['C', 'A', 'B']);
+  });
+
+  it('refuses the second tab (same set, stale expectedIds) with STALE — the first tab’s order stays', async () => {
+    const loaded = ['A', 'B', 'C']; // both tabs loaded this
+    await repository.reorder(['C', 'A', 'B'], loaded); // tab 1 saves
+
+    await expect(repository.reorder(['B', 'A', 'C'], loaded)).rejects.toBeInstanceOf(
+      ReorderStaleError,
+    );
+    expect(savedOrder()).toEqual(['C', 'A', 'B']);
+  });
+
+  it('refuses a reorder naming a block deleted since the load with STALE, not NOT_FOUND', async () => {
+    store = store.filter((block) => block.id !== 'B');
+
+    await expect(repository.reorder(['B', 'A', 'C'], ['A', 'B', 'C'])).rejects.toBeInstanceOf(
+      ReorderStaleError,
+    );
+    expect(savedOrder()).toEqual(['A', 'C']);
   });
 });
