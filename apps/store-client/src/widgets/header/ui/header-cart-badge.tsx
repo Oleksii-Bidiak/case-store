@@ -1,13 +1,27 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { ShoppingCart } from "lucide-react";
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
-import { CartSheet } from "@/widgets/cart";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
+
+// The mini-cart is closed on every first paint, so its code stays out of the
+// page's first-load JS (TASK-2524): it loads on the first open and is
+// preloaded on intent (hover, focus or touch on the button). The slice's own
+// file, not its barrel: `import()` of the barrel would carry the whole cart
+// widget (CartView included) into the chunk.
+const CartSheet = dynamic(
+  () => import("@/widgets/cart/ui/cart-sheet").then((m) => m.CartSheet),
+  { ssr: false },
+);
+const preloadCartSheet = () => {
+  // A failed preload is retried by the real open, which owns the error.
+  import("@/widgets/cart/ui/cart-sheet").catch(() => {});
+};
 
 /**
  * HeaderCartBadge — the prominent cart action: a filled primary button with the
@@ -26,12 +40,22 @@ export function HeaderCartBadge({ className }: { className?: string }) {
   const count = totals?.itemCount ?? 0;
 
   const [open, setOpen] = useState(false);
+  // Mounted on the first open and kept mounted afterwards, so the close
+  // animation and Radix's focus handling run exactly as before.
+  const [sheetMounted, setSheetMounted] = useState(false);
+  const openSheet = () => {
+    setSheetMounted(true);
+    setOpen(true);
+  };
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openSheet}
+        onPointerEnter={preloadCartSheet}
+        onFocus={preloadCartSheet}
+        onTouchStart={preloadCartSheet}
         aria-label={dict.cart.openAria}
         className={cn(
           "relative inline-flex h-11 items-center gap-2.5 rounded-xl bg-primary px-3 text-primary-foreground transition-interactive hover:bg-primary-hover hover:shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-solid focus-visible:outline-ring active:scale-98 active:bg-primary active:shadow-none motion-reduce:active:scale-100 sm:pr-4",
@@ -59,7 +83,7 @@ export function HeaderCartBadge({ className }: { className?: string }) {
         </span>
       </button>
 
-      <CartSheet open={open} onOpenChange={setOpen} />
+      {sheetMounted && <CartSheet open={open} onOpenChange={setOpen} />}
     </>
   );
 }
