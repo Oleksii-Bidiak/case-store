@@ -554,7 +554,11 @@ describe("ProductDetailView — signed preview keeps the seeded draft (TASK-669)
 
   it("does not refetch the seed in preview, so the draft stays on screen", async () => {
     renderWithProviders(
-      <ProductDetailView slug="glass-blue-single" preview />,
+      <ProductDetailView
+        slug="glass-blue-single"
+        preview
+        previewDetail={detailEnvelope() as never}
+      />,
       { queryClient: seededClient() },
     );
 
@@ -574,5 +578,58 @@ describe("ProductDetailView — signed preview keeps the seeded draft (TASK-669)
     });
 
     await waitFor(() => expect(detailReads).toBe(1));
+  });
+
+  // TASK-2536 — a long-open preview still lost the draft: the store's own
+  // hooks re-read every active query regardless of staleTime (tab return →
+  // refetchQueries, Back/Forward → invalidateQueries, sign-out → clear()). In
+  // preview the product therefore comes from the server's read, never the
+  // browser's.
+  async function expectDraftKept() {
+    // Give any refetch every chance to land.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(
+      screen.getByRole("heading", { name: "Tempered Glass — Blue Single" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(dict.product.loadError)).not.toBeInTheDocument();
+    expect(detailReads).toBe(0);
+  }
+
+  function renderPreview() {
+    const queryClient = seededClient();
+    const view = (
+      <ProductDetailView
+        slug="glass-blue-single"
+        preview
+        previewDetail={detailEnvelope() as never}
+      />
+    );
+    const result = renderWithProviders(view, { queryClient });
+    return { ...result, queryClient, view };
+  }
+
+  it("keeps the draft through a forced refetch and an invalidation of every query", async () => {
+    const { queryClient } = renderPreview();
+    await screen.findByRole("heading", {
+      name: "Tempered Glass — Blue Single",
+    });
+
+    await queryClient.refetchQueries({ type: "active" });
+    await queryClient.invalidateQueries();
+
+    await expectDraftKept();
+  });
+
+  it("keeps the draft when the whole cache is cleared (sign-out)", async () => {
+    const { queryClient, rerender, view } = renderPreview();
+    await screen.findByRole("heading", {
+      name: "Tempered Glass — Blue Single",
+    });
+
+    queryClient.clear();
+    // The sign-out re-renders the page through the auth state change.
+    rerender(view);
+
+    await expectDraftKept();
   });
 });

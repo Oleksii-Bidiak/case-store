@@ -158,6 +158,14 @@ interface ProductListViewProps {
    * on `/promo`. A route-locked device ignores it.
    */
   myDevicesDefault?: Readonly<MyDevicesFilterDefault>;
+  /**
+   * The default device filter the route already applied on the server
+   * (TASK-2564): read from the `catalog-device` cookie and prefetched with,
+   * only when the URL names no device and does not say `compat=off`. Until
+   * the device store hydrates it IS the default — the listing asks for the
+   * prefetched query and nothing waits behind the TASK-2421 skeleton.
+   */
+  serverDevice?: string;
 }
 
 /**
@@ -174,6 +182,7 @@ export function ProductListView({
   anchorId,
   categoryTreePrefetched = false,
   myDevicesDefault = NO_MY_DEVICES_DEFAULT,
+  serverDevice,
 }: ProductListViewProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -191,23 +200,30 @@ export function ProductListView({
   // The one exception is `device=` (TASK-2077): with no device in the URL —
   // and no `compat=off` — the listing filters by the «Мої пристрої» default.
   // The saved devices are localStorage-only, so the server and the hydration
-  // render list what the URL says; the default lands on the next render.
+  // render list what the URL says — or the default the route read from the
+  // `catalog-device` cookie (TASK-2564); the saved list decides on the next
+  // render.
+  const routeServerDevice = lockedDevice ? undefined : serverDevice;
   const catalogDevice = useCatalogDeviceParam(
     searchParams.get("device"),
     searchParams.get(COMPAT_PARAM),
     myDevicesDefault,
+    routeServerDevice,
   );
   const hasDeviceDefault = catalogDevice.hasDevices && myDevicesDefault.on;
   // The server and hydration renders cannot know whether the default applies
   // (TASK-2421): the route opts in, nothing in the URL or the route fixes the
   // device, and the device store has not hydrated yet. Then the pre-paint
-  // flag decides, in CSS, between the server grid and the skeleton.
+  // flag decides, in CSS, between the server grid and the skeleton. Not when
+  // the server already listed by the default (TASK-2564): that grid is the
+  // filtered one, nothing to hide.
   const devicesHydrated = useMyDevicesHydrated();
   const defaultPending =
     myDevicesDefault.on &&
     !lockedDevice &&
     !searchParams.get("device") &&
     searchParams.get(COMPAT_PARAM) !== COMPAT_OFF &&
+    !routeServerDevice &&
     !devicesHydrated;
   const readParam = (key: string) =>
     key === "device" ? (catalogDevice.device ?? null) : searchParams.get(key);

@@ -1,7 +1,9 @@
 // «Мої пристрої» persistence — an external store over localStorage, read with
-// useSyncExternalStore (same pattern as widgets/recently-viewed). Client-only
-// by design: no cookie, no header, so ISR pages stay personal-content-free and
-// the server snapshot is always the empty list.
+// useSyncExternalStore (same pattern as widgets/recently-viewed). The list
+// itself never leaves the browser: ISR pages stay personal-content-free and
+// the server snapshot is always the empty list. The one exception is the
+// catalogue default filter's slugs, mirrored into the `catalog-device` cookie
+// for the catalogue's server prefetch (TASK-2564, ./catalog-device-cookie).
 
 import {
   EMPTY_DEVICES,
@@ -16,6 +18,7 @@ import {
   type MyDeviceInput,
 } from "./my-devices";
 import { syncDeviceFlags } from "./device-flags";
+import { syncCatalogDeviceCookie } from "./catalog-device-cookie";
 import { notifyMyDevicesEdit } from "./my-devices-edits";
 import { readMyDevicesSettings } from "./my-devices-settings";
 
@@ -54,15 +57,16 @@ function emit(): void {
 }
 
 /**
- * Keep the <html> flags (TASK-2421/2410) in line with the stored list. Also
- * called once on the first client mount: the pre-paint script only checks the
- * raw JSON, so a list whose entries all fail validation must clear the flags.
+ * Keep the <html> flags (TASK-2421/2410) and the `catalog-device` cookie
+ * (TASK-2564) in line with the stored list. Also called once on the first
+ * client mount: the pre-paint script only checks the raw JSON, so a list whose
+ * entries all fail validation must clear the flags and the cookie.
  */
 export function syncFlags(): void {
-  syncDeviceFlags(
-    getMyDevicesSnapshot().length > 0,
-    readMyDevicesSettings().compatOnly,
-  );
+  const devices = getMyDevicesSnapshot();
+  const settings = readMyDevicesSettings();
+  syncDeviceFlags(devices.length > 0, settings.compatOnly);
+  syncCatalogDeviceCookie(devices, settings);
 }
 
 // getSnapshot must return the same reference while the data is unchanged —

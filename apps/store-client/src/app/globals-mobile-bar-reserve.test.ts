@@ -67,14 +67,17 @@ describe("globals.css — toasts clear a fixed bottom bar (TASK-1771)", () => {
       ":root { @variant max-md { --toast-offset-bottom: calc(--spacing(6) + var(--mobile-bar-inset, 0px)); --toast-mobile-offset-bottom: calc(--spacing(4) + var(--mobile-bar-inset, 0px)); } }",
     );
     // …and nowhere else: one read per offset, both inside that block — plus
-    // the one below-md read of the preview bar's utility (TASK-669, pinned in
-    // the next test).
+    // the one below-lg read of the preview bar's utility (TASK-669/TASK-2558,
+    // pinned in the next test).
     expect(flat.match(/var\(--mobile-bar-inset/g)).toHaveLength(3);
   });
 
-  it("lets the preview bar ride above the fixed bar, below md only (TASK-669)", () => {
+  it("lets the preview bar ride above the fixed bar, below lg (TASK-669/TASK-2558)", () => {
+    // The PDP buy bar lives up to `lg` (`lg:hidden`); a `max-md` read left the
+    // preview bar over it at 768–1023. The pay bar dissolves from `md` and
+    // measures 0, so the wider read changes nothing on cart / checkout.
     expect(flat).toContain(
-      "@utility bottom-above-mobile-bar { bottom: 0; @variant max-md { bottom: var(--mobile-bar-inset, 0px); } }",
+      "@utility bottom-above-mobile-bar { bottom: 0; @variant max-lg { bottom: var(--mobile-bar-inset, 0px); } }",
     );
   });
 

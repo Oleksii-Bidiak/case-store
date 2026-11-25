@@ -21,9 +21,9 @@ export function previewExitHref(pathname: string): string {
  * Pinned to the BOTTOM of the viewport: the site header is already sticky at
  * the top, and two sticky bars would eat a third of a 390px screen. Inverted
  * colours (`bg-foreground` / `text-background`) so it reads as chrome, not
- * content, in both themes. Below `md` it rides on top of a page's own fixed
- * bar (the PDP «Купити», the cart «До сплати») through the inset those bars
- * publish, instead of covering their action.
+ * content, in both themes. It rides on top of a page's own fixed bar (the PDP
+ * «Купити» below `lg`, the cart «До сплати» below `md`) through the inset those
+ * bars publish, instead of covering their action (TASK-2558).
  *
  * «Вийти з прев'ю» is a plain link, not `next/link`: a prefetch of the exit
  * route would end the preview on hover, and leaving must be a full document

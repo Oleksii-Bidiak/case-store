@@ -346,11 +346,15 @@ describe("products/[slug] — the signed preview (TASK-669)", () => {
     });
     expect(meta).not.toHaveProperty("robots");
     expect(viewProps(tree)).toEqual([
-      expect.objectContaining({ slug: "draft-case", preview: false }),
+      expect.objectContaining({
+        slug: "draft-case",
+        preview: false,
+        previewDetail: null,
+      }),
     ]);
   });
 
-  it("in a preview forwards the token, is noindex and keeps the seeded draft on the client", async () => {
+  it("in a preview forwards the token, is noindex and hands the server read to the view", async () => {
     mockPreviewRequest("product-token");
     findBySlug.mockResolvedValue(detail as never);
 
@@ -363,7 +367,12 @@ describe("products/[slug] — the signed preview (TASK-669)", () => {
     });
     expect(meta.robots).toEqual(PREVIEW_ROBOTS);
     expect(viewProps(tree)).toEqual([
-      expect.objectContaining({ slug: "draft-case", preview: true }),
+      // TASK-2536 — the view renders the server read, never re-reads it.
+      expect.objectContaining({
+        slug: "draft-case",
+        preview: true,
+        previewDetail: detail,
+      }),
     ]);
   });
 

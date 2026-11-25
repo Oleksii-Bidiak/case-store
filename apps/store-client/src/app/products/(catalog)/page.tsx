@@ -47,6 +47,10 @@ import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 import { CatalogHead } from "./catalog-head";
+import {
+  readServerCatalogDevice,
+  withServerDevice,
+} from "./server-catalog-device";
 
 /** Take the first value when a query param appears more than once. */
 function first(value: string | string[] | undefined): string | undefined {
@@ -264,9 +268,13 @@ export default async function ProductsPage({
   // The listing query of this URL — built by the same function the client view
   // reads the URL with (TASK-563), so the prefetched page below is the very
   // cache entry the grid asks for. It carries every rule the listing has
-  // (TASK-513's literal-"true" boolean facets included).
+  // (TASK-513's literal-"true" boolean facets included). With no device in
+  // the URL the «Мої пристрої» default rides the `catalog-device` cookie
+  // (TASK-2564), so the first HTML is already the filtered grid.
+  const readQuery = readSearchParamsRecord(resolved);
+  const serverDevice = await readServerCatalogDevice(readQuery);
   const initialParams = buildCatalogListingParams(
-    readSearchParamsRecord(resolved),
+    withServerDevice(readQuery, serverDevice),
   );
   const categorySlug = initialParams.category;
   const search = initialParams.search;
@@ -356,6 +364,7 @@ export default async function ProductsPage({
           <CatalogListingView
             initialParams={initialParams}
             categoryTreePrefetched={categoryTree !== null}
+            serverDevice={serverDevice}
           />
         </Suspense>
       </PrefetchBoundary>

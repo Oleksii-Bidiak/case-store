@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { PHASE_PRODUCTION_BUILD } from "next/constants";
 import type { SeoSettingsEntity } from "@/shared/api/generated/models";
 import { serverFetch } from "@/shared/api/server-fetch";
@@ -41,29 +42,42 @@ export class SeoSettingsUnavailableError extends Error {
  *
  * Uses a native tagged `fetch` (not the axios Orval client) so Next.js can carry
  * the cache directives.
+ *
+ * ## Why React `cache()` on top (TASK-2600)
+ *
+ * In draft mode (the admin preview) Next bypasses the Data Cache AND its fetch
+ * dedupe (`patch-fetch.js`, `isDraftMode → originFetch`), so the root layout,
+ * generateMetadata, the page and the footer each reached the API: 6 reads per
+ * render, all from this server's one address into one throttler bucket, and the
+ * strict layout read turned the first 429 into global-error. `cache()` makes it
+ * one read per server render in every mode; a failed read is shared too, so the
+ * contracts below are unchanged. Outside a React render (route handlers —
+ * robots, sitemap, llms.txt, the feed) it is a plain pass-through.
  */
-async function requestSeoSettings(): Promise<SeoSettingsEntity | null> {
-  let res: Response;
-  try {
-    res = await serverFetch(`${API_BASE_URL}/api/seo-settings`, {
-      cache: "force-cache",
-      next: { tags: [SEO_SETTINGS_TAG] },
-    });
-  } catch (error) {
-    throw new SeoSettingsUnavailableError(
-      error instanceof Error ? error.name : "network error",
-    );
-  }
-  if (!res.ok) {
-    throw new SeoSettingsUnavailableError(`HTTP ${res.status}`);
-  }
-  try {
-    const body = (await res.json()) as { data?: SeoSettingsEntity };
-    return body.data ?? null;
-  } catch {
-    throw new SeoSettingsUnavailableError("malformed body");
-  }
-}
+const requestSeoSettings = cache(
+  async function requestSeoSettings(): Promise<SeoSettingsEntity | null> {
+    let res: Response;
+    try {
+      res = await serverFetch(`${API_BASE_URL}/api/seo-settings`, {
+        cache: "force-cache",
+        next: { tags: [SEO_SETTINGS_TAG] },
+      });
+    } catch (error) {
+      throw new SeoSettingsUnavailableError(
+        error instanceof Error ? error.name : "network error",
+      );
+    }
+    if (!res.ok) {
+      throw new SeoSettingsUnavailableError(`HTTP ${res.status}`);
+    }
+    try {
+      const body = (await res.json()) as { data?: SeoSettingsEntity };
+      return body.data ?? null;
+    } catch {
+      throw new SeoSettingsUnavailableError("malformed body");
+    }
+  },
+);
 
 /**
  * Fetch the admin-managed global SEO settings for the SEO surfaces — page
