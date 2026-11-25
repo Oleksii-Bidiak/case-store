@@ -10,6 +10,7 @@ import { seedBlog } from './seed/seeders/blog.seeder';
 import { seedBrands } from './seed/seeders/brands.seeder';
 import { seedCarousels } from './seed/seeders/carousels.seeder';
 import { seedCategories } from './seed/seeders/categories.seeder';
+import { seedDelivery } from './seed/seeders/delivery.seeder';
 import { seedContactMessages } from './seed/seeders/contact-messages.seeder';
 import { seedDeviceCompat } from './seed/seeders/device-compat.seeder';
 import { seedDevices } from './seed/seeders/devices.seeder';
@@ -82,6 +83,7 @@ async function main() {
     await seedAttributeDefinitions(prisma, categories);
     await seedAddonServices(prisma, categories); // must follow seedProducts (deltas need products)
     await seedDeviceCompat(prisma);
+    await seedDelivery(prisma); // must precede seedOrders (pickup points, enabled methods)
     await seedDiscounts(prisma);
     await seedOrders(prisma, admins, customers);
     await seedContactMessages(prisma);
