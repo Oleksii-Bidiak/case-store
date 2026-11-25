@@ -33,6 +33,12 @@ export interface SeedBanner {
   ctaHref: string;
   theme: string;
   sortOrder: number;
+  /**
+   * Absent = PUBLISHED now. `DRAFT`, or SCHEDULED for `now + scheduledInDays`
+   * with the window ending at `now + untilInDays` — relative to the run, so a
+   * re-seed always shows the same «in a week».
+   */
+  state?: 'DRAFT' | { scheduledInDays: number; untilInDays: number };
 }
 
 export const banners: SeedBanner[] = [
@@ -105,5 +111,33 @@ export const banners: SeedBanner[] = [
     ctaHref: '/promo',
     theme: 'accent',
     sortOrder: 0,
+  },
+  // ── Not live yet (TASK-2569) ──
+  // Goes live in a week on its own and comes down two weeks later (the
+  // PublishingScheduler does both). Counts toward the five-tile limit already.
+  {
+    placement: 'PROMO_TILE' as const,
+    slot: 'promo-tile-3',
+    title: 'Ремінці для Apple Watch',
+    subtitle: 'Силікон і нейлон під корпуси 42, 46 і 49 мм',
+    image: { iconId: 'band', paletteId: 'rose', alt: 'Ремінець для годинника на рожевому тлі' },
+    ctaLabel: 'Підібрати',
+    ctaHref: '/categories/smartwatches',
+    theme: 'default',
+    sortOrder: 2,
+    state: { scheduledInDays: 7, untilInDays: 21 },
+  },
+  // A draft the content manager is still working on: in the panel, nowhere else.
+  {
+    placement: 'HERO_SLIDE' as const,
+    slot: 'hero-3',
+    title: 'Колонки для дому й дороги',
+    subtitle: 'Від кишенькових до вечірніх — з підсвіткою та захистом від води',
+    image: { iconId: 'speaker', paletteId: 'emerald', alt: 'Колонка на смарагдовому тлі' },
+    ctaLabel: 'Слухати',
+    ctaHref: '/categories/speakers',
+    theme: 'default',
+    sortOrder: 2,
+    state: 'DRAFT',
   },
 ];
