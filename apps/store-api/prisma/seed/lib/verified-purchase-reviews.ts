@@ -1,3 +1,4 @@
+import { returnSpecs, type ReturnSpec } from '../data/returns.data';
 import { hashStr } from './ids';
 import type { OrderSpec } from '../types';
 
@@ -64,12 +65,19 @@ function isDelivered(spec: OrderSpec): spec is OrderSpec & { email: string } {
  * Deduplicated on `(email, sku)` — `Review` is unique on `(userId, productId)`,
  * and a buyer who ordered the same position twice still writes one review.
  */
-export function buildVerifiedPurchaseReviews(specs: OrderSpec[]): VerifiedReviewSpec[] {
+export function buildVerifiedPurchaseReviews(
+  specs: OrderSpec[],
+  returns: ReadonlyArray<Pick<ReturnSpec, 'order' | 'items'>> = returnSpecs,
+): VerifiedReviewSpec[] {
   const seen = new Set<string>();
   const reviews: VerifiedReviewSpec[] = [];
+  // A line its buyer asked to send back (TASK-2569) — for a refund, a
+  // replacement or a repair — is not one they praise with five stars.
+  const returned = new Set(returns.flatMap((r) => r.items.map((i) => `${r.order}:${i.line}`)));
 
   for (const spec of specs.filter(isDelivered)) {
-    for (const item of spec.items) {
+    for (const [index, item] of spec.items.entries()) {
+      if (returned.has(`${spec.key}:${index}`)) continue;
       const pair = `${spec.email}:${item.sku}`;
       if (seen.has(pair)) continue;
       seen.add(pair);

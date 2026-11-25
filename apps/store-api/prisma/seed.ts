@@ -20,6 +20,7 @@ import { seedNewsletter } from './seed/seeders/newsletter.seeder';
 import { seedOrderCopies } from './seed/seeders/order-copies.seeder';
 import { seedOrders } from './seed/seeders/orders.seeder';
 import { seedPages } from './seed/seeders/pages.seeder';
+import { seedReturns } from './seed/seeders/returns.seeder';
 import { seedProducts } from './seed/seeders/products.seeder';
 import { seedReviews } from './seed/seeders/reviews.seeder';
 import { seedSeoSettings, seedSiteContactSettings } from './seed/seeders/site-settings.seeder';
@@ -93,8 +94,9 @@ async function main() {
       operator: managerByEmail(managers, 'orders@store.com'),
       customers,
     };
-    await seedOrders(prisma, orderActors);
+    const orderPlans = await seedOrders(prisma, orderActors);
     await seedOrderCopies(prisma, orderActors); // must follow seedOrders
+    await seedReturns(prisma, orderPlans, orderActors); // must follow seedOrders (its plans)
     await seedContactMessages(prisma);
     await seedNewsletter(prisma);
     await seedReviews(prisma);

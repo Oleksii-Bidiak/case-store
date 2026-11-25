@@ -1,7 +1,9 @@
 import { allowedInKinds } from '../../../src/order/order-money';
 import { planCopyPair } from '../lib/order-copy-plan';
 import { assertOrderSet, planOrder, type OrderPlan, type PlanContext } from '../lib/order-plan';
+import { planReturns } from '../lib/return-plan';
 import { copyPairs } from './order-copies.data';
+import { returnSpecs } from './returns.data';
 import type { OrderSpec } from '../types';
 import { deltas, servicesData, templateServiceNames } from './addons.data';
 import { cataloguePositions } from './catalogue';
@@ -225,11 +227,68 @@ describe('seeded order copies (TASK-2048)', () => {
     expect(plan.copy.entries).toEqual([]);
   });
 
-  it('never collides with the plain order keys', () => {
+  it('keeps copy keys apart from the plain order keys', () => {
     const keys = new Set(orderSpecs.map((s) => s.key));
     for (const { pair } of pairs) {
       expect(keys.has(pair.original.key)).toBe(false);
       expect(keys.has(pair.copy.key)).toBe(false);
     }
+  });
+});
+
+describe('seeded returns — every path allowed by the return state machine', () => {
+  const plan = planReturns(returnSpecs, new Map(plans.map((p) => [p.spec.key, p])), NOW);
+  const byKey = new Map(plan.returns.map((r) => [r.spec.key, r]));
+
+  it('walks every return to the status its spec states', () => {
+    expect(plan.returns).toHaveLength(returnSpecs.length);
+    for (const ret of plan.returns) expect(ret.status).toBe(ret.spec.status);
+  });
+
+  it('covers every status, every decision and every channel', () => {
+    expect(new Set(plan.returns.map((r) => r.status))).toEqual(
+      new Set(['REQUESTED', 'APPROVED', 'REJECTED', 'RECEIVED', 'REFUNDED']),
+    );
+    expect(new Set(plan.returns.flatMap((r) => r.decisionEvents.map((e) => e.decision)))).toEqual(
+      new Set(['REFUND', 'REPLACEMENT', 'REPAIR', 'REJECT']),
+    );
+    expect(new Set(plan.returns.map((r) => r.channel))).toEqual(
+      new Set(['ACCOUNT', 'GUEST_LINK', 'OPERATOR']),
+    );
+  });
+
+  it('gives a reason to the refusal, the changed decision and the lowered credit', () => {
+    const rejected = plan.returns.find((r) => r.decision === 'REJECT')!;
+    expect(rejected.decisionReason).toBeTruthy();
+    const changed = plan.returns.find((r) => r.decisionEvents.length > 1)!;
+    expect(changed.decisionEvents[1].reason).toBeTruthy();
+    expect(plan.returns.some((r) => r.creditReason)).toBe(true);
+  });
+
+  it('has a repair stopped half-way, one finished, and an UNREPAIRABLE one re-decided', () => {
+    const repairs = plan.returns.filter((r) => r.repairEvents.length > 0);
+    expect(repairs.some((r) => r.decision === 'REPAIR' && r.repairEvents.length === 2)).toBe(true);
+    expect(repairs.some((r) => r.repairEvents.some((e) => e.step === 'HANDED_TO_CUSTOMER'))).toBe(
+      true,
+    );
+    const unrepairable = repairs.find((r) =>
+      r.repairEvents.some((e) => e.result === 'UNREPAIRABLE'),
+    )!;
+    expect(unrepairable.decision).toBe('REFUND');
+  });
+
+  it('turns one order REFUNDED through LiqPay and cash payouts, and leaves one PARTIALLY_REFUNDED', () => {
+    const refunded = plan.orders.filter((o) => o.status === 'REFUNDED');
+    expect(refunded).toHaveLength(1);
+    expect(new Set(refunded[0].payouts.map((p) => p.kind))).toEqual(
+      new Set(['LIQPAY_REFUND', 'CASH_REFUND']),
+    );
+    expect(refunded[0].paymentStatus).toBe('REFUNDED');
+    expect(plan.orders.some((o) => o.paymentStatus === 'PARTIALLY_REFUNDED')).toBe(true);
+  });
+
+  it('restocks exactly the returns received with restock', () => {
+    expect(byKey.get('dmytro-1-charger')!.restockedAt).not.toBeNull();
+    expect(byKey.get('taras-4-unrepairable')!.restockedAt).toBeNull();
   });
 });

@@ -76,6 +76,23 @@ describe('buildVerifiedPurchaseReviews', () => {
     expect(reviews.map((r) => r.sku)).toEqual(['YES-1']);
   });
 
+  it('skips a delivered line its buyer asked to return (TASK-2569)', () => {
+    const reviews = buildVerifiedPurchaseReviews(
+      [
+        spec({
+          key: 'o',
+          items: [
+            { sku: 'KEPT', quantity: 1 },
+            { sku: 'SENT-BACK', quantity: 1 },
+          ],
+        }),
+      ],
+      [{ order: 'o', items: [{ line: 1, quantity: 1 }] }],
+    );
+
+    expect(reviews.map((r) => r.sku)).toEqual(['KEPT']);
+  });
+
   it('emits one review per (buyer, position) — the Review table is unique on that pair', () => {
     const reviews = buildVerifiedPurchaseReviews([
       spec({ key: 'a', items: [{ sku: 'SKU-1', quantity: 1 }] }),

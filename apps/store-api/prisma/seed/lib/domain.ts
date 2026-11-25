@@ -28,7 +28,23 @@ export {
   directionOf,
   ledgerTotals,
   offsetAmountKop,
+  assessCreditChange,
+  attemptStatusAfterRefunds,
+  deriveOrderStatus,
+  outstandingReturnCreditKop,
+  providerRefundAvailableKop,
+  returnCreditFor,
+  returnStatusAfterPayouts,
 } from '../../../src/order/order-money';
+export {
+  canTransitionReturn,
+  decisionPermitsTransition,
+  nextRepairStep,
+  repairAcceptsSteps,
+  repairStepRequiresResult,
+  RESTOCK_ON_STATUS,
+  returnStatusAfterDecision,
+} from '../../../src/order/returns/return-state-machine';
 export { copyBindsOriginalCustomer } from '../../../src/order/order-copy';
 export { OrderMoneyRepository } from '../../../src/order/order-money.repository';
 export { AddonApplicabilityResolver } from '../../../src/addon-service/addon-applicability.resolver';
