@@ -3,8 +3,9 @@ import { messages } from '../data/content/contact-messages.data';
 import { deterministicUuid } from '../lib/ids';
 
 /**
- * Seed customer contact / support messages (TASK-177) across the NEW / READ /
- * ARCHIVED statuses so the admin inbox + unread badge have real data.
+ * Seed customer contact / support messages (TASK-177) across every status —
+ * NEW / IN_PROGRESS / READ / ARCHIVED / SPAM (the last two kinds since
+ * TASK-2569) — so the admin inbox, its filters and the unread badge have data.
  * Idempotent — upsert on a deterministic id.
  */
 export async function seedContactMessages(prisma: PrismaClient) {
@@ -36,5 +37,6 @@ export async function seedContactMessages(prisma: PrismaClient) {
     });
   }
 
-  console.log(`  ✓ Contact messages: ${messages.length} upserted`);
+  const statuses = [...new Set(messages.map((m) => m.status))].join('/');
+  console.log(`  ✓ Contact messages: ${messages.length} upserted (${statuses})`);
 }

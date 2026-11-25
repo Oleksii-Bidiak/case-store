@@ -22,5 +22,8 @@ export async function seedNewsletter(prisma: PrismaClient) {
     });
   }
 
-  console.log(`  ✓ Newsletter: ${subscribers.length} subscribers upserted`);
+  const sourceless = subscribers.filter((s) => s.source === null).length;
+  console.log(
+    `  ✓ Newsletter: ${subscribers.length} subscribers upserted (${sourceless} without a source)`,
+  );
 }
