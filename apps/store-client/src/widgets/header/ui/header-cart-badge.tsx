@@ -1,27 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import dynamic from "next/dynamic";
 import { ShoppingCart } from "lucide-react";
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
+import { LazyCartSheet, preloadCartSheet } from "@/widgets/cart";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
-
-// The mini-cart is closed on every first paint, so its code stays out of the
-// page's first-load JS (TASK-2524): it loads on the first open and is
-// preloaded on intent (hover, focus or touch on the button). The slice's own
-// file, not its barrel: `import()` of the barrel would carry the whole cart
-// widget (CartView included) into the chunk.
-const CartSheet = dynamic(
-  () => import("@/widgets/cart/ui/cart-sheet").then((m) => m.CartSheet),
-  { ssr: false },
-);
-const preloadCartSheet = () => {
-  // A failed preload is retried by the real open, which owns the error.
-  import("@/widgets/cart/ui/cart-sheet").catch(() => {});
-};
 
 /**
  * HeaderCartBadge — the prominent cart action: a filled primary button with the
@@ -40,10 +26,13 @@ export function HeaderCartBadge({ className }: { className?: string }) {
   const count = totals?.itemCount ?? 0;
 
   const [open, setOpen] = useState(false);
-  // Mounted on the first open and kept mounted afterwards, so the close
-  // animation and Radix's focus handling run exactly as before.
+  // The mini-cart's code loads on the first open (TASK-2524); it is mounted
+  // then and kept mounted, so the close animation and Radix's focus handling
+  // run exactly as before. Every open also (re)starts the load, so one that
+  // failed is retried.
   const [sheetMounted, setSheetMounted] = useState(false);
   const openSheet = () => {
+    preloadCartSheet();
     setSheetMounted(true);
     setOpen(true);
   };
@@ -83,7 +72,7 @@ export function HeaderCartBadge({ className }: { className?: string }) {
         </span>
       </button>
 
-      {sheetMounted && <CartSheet open={open} onOpenChange={setOpen} />}
+      {sheetMounted && <LazyCartSheet open={open} onOpenChange={setOpen} />}
     </>
   );
 }

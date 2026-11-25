@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { User } from "lucide-react";
@@ -13,19 +12,20 @@ import {
   Skeleton,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { lazyComponent } from "@/shared/lib/lazy-component";
 
 // The guest's sign-in slide-out is closed on every first paint, so its code
 // (the login / register / forgot-password forms, react-hook-form, zod) stays
 // out of the page's first-load JS (TASK-2524): it loads on the first open and
-// is preloaded on intent (hover, focus or touch on «Кабінет»). The slice's own
-// file, not its barrel, so the chunk carries only what the sheet uses.
-const AuthSheet = dynamic(
-  () => import("@/features/auth/ui/auth-sheet").then((m) => m.AuthSheet),
-  { ssr: false },
+// is preloaded on intent (hover, focus or touch on «Кабінет»). A load that
+// fails renders nothing and is reported; the next open retries. The slice's
+// own file, not its barrel, so the chunk carries only what the sheet uses.
+const lazyAuthSheet = lazyComponent(() =>
+  import("@/features/auth/ui/auth-sheet").then((m) => m.AuthSheet),
 );
+const AuthSheet = lazyAuthSheet.Component;
 const preloadAuthSheet = () => {
-  // A failed preload is retried by the real open, which owns the error.
-  import("@/features/auth/ui/auth-sheet").catch(() => {});
+  void lazyAuthSheet.load();
 };
 
 /**
@@ -61,6 +61,7 @@ export function HeaderAuth() {
   // animation, the chosen tab and Radix's focus handling behave as before.
   const [authMounted, setAuthMounted] = useState(false);
   const openAuth = () => {
+    preloadAuthSheet();
     setAuthMounted(true);
     setAuthOpen(true);
   };
