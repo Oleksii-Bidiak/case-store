@@ -1,5 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, PublishStatus } from '@prisma/client';
 import { sanitizeRichText } from '../../../src/common/sanitize';
+import { resolvePublishState } from '../../../src/publishing/resolve-publish-state';
 import { pagesData } from '../data/content/pages.data';
 
 /**
@@ -8,8 +9,9 @@ import { pagesData } from '../data/content/pages.data';
  * `/info` (including `about`, which the `/info` hub renders inline), and the six
  * HUB rows that give the storefront's listing routes their meta tags. Content is
  * Tiptap-style HTML sanitized through {@link sanitizeRichText} on write, exactly
- * like the admin editor. All pages are PUBLISHED with a real `publishedAt` and
- * the derived `isActive` mirror set true. Idempotent — upsert on the unique (kind, slug).
+ * like the admin editor. Pages are PUBLISHED with a real `publishedAt` and the
+ * derived `isActive` mirror set true — except one DRAFT (TASK-2569), whose
+ * mirror is false. Idempotent — upsert on the unique (kind, slug).
  *
  * TASK-311 — NO FABRICATED FACTS. The prose is deliberately realistic (the
  * staging site must look like a real shop), but EVERY factual claim about the
@@ -48,6 +50,8 @@ export async function seedPages(prisma: PrismaClient) {
   });
   const existingKind = new Map(existing.map((row) => [row.slug, row.kind]));
   let upserted = 0;
+  let drafts = 0;
+  const now = new Date();
 
   for (let i = 0; i < pagesData.length; i++) {
     const page = pagesData[i];
@@ -61,6 +65,13 @@ export async function seedPages(prisma: PrismaClient) {
       continue;
     }
     const content = sanitizeRichText(page.content);
+    // The domain's resolver decides the publish fields; a published page keeps
+    // the fixed archive date. `isActive` is the derived mirror of PUBLISHED.
+    const publish =
+      page.state === 'DRAFT'
+        ? resolvePublishState({ status: PublishStatus.DRAFT }, now)
+        : { ...resolvePublishState({ status: PublishStatus.PUBLISHED }, now), publishedAt };
+    if (publish.status === PublishStatus.DRAFT) drafts++;
     const data = {
       kind: page.kind,
       title: page.title,
@@ -69,10 +80,8 @@ export async function seedPages(prisma: PrismaClient) {
       metaTitle: page.metaTitle,
       metaDescription: page.metaDescription,
       keywords: page.keywords ?? [],
-      status: 'PUBLISHED' as const,
-      publishedAt,
-      scheduledAt: null,
-      isActive: true,
+      ...publish,
+      isActive: publish.status === PublishStatus.PUBLISHED,
       sortOrder: i,
     };
     // Keyed by address (TASK-566): a slug is unique per kind, not globally.
@@ -84,5 +93,5 @@ export async function seedPages(prisma: PrismaClient) {
     upserted++;
   }
 
-  console.log(`  ✓ Pages: ${upserted} published pages upserted`);
+  console.log(`  ✓ Pages: ${upserted} upserted (${upserted - drafts} published, ${drafts} draft)`);
 }
