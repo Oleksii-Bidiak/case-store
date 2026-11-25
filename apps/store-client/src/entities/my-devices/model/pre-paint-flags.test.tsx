@@ -10,8 +10,10 @@ import {
   addDevice,
   clearMyDevices,
   replaceMyDevices,
+  subscribeMyDevices,
   syncFlags,
 } from "./my-devices-storage";
+import { CATALOG_DEVICE_COOKIE } from "./catalog-device-cookie";
 import {
   MY_DEVICES_SETTINGS_STORAGE_KEY,
   replaceMyDevicesSettings,
@@ -33,9 +35,35 @@ function resetFlags(): void {
   html().removeAttribute(DEVICE_FILTER_EXPIRED_ATTR);
 }
 
+/** The `catalog-device` cookie's (decoded) value, or undefined (TASK-2564). */
+function catalogCookie(): string | undefined {
+  const prefix = `${CATALOG_DEVICE_COOKIE}=`;
+  const pair = document.cookie
+    .split("; ")
+    .find((entry) => entry.startsWith(prefix));
+  return pair ? decodeURIComponent(pair.slice(prefix.length)) : undefined;
+}
+
+function setCatalogCookie(value: string): void {
+  document.cookie = `${CATALOG_DEVICE_COOKIE}=${encodeURIComponent(value)}; path=/`;
+}
+
+/** A device entry the store keeps (the cookie only counts valid ones). */
+function saved(slug: string, lastUsedAt: number, modelId = `id-${slug}`) {
+  return {
+    modelId,
+    slug,
+    name: slug,
+    brandName: "Apple",
+    family: "iphone",
+    lastUsedAt,
+  };
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   resetFlags();
+  document.cookie = `${CATALOG_DEVICE_COOKIE}=; path=/; max-age=0`;
 });
 
 describe("PRE_PAINT_FLAGS_SCRIPT (TASK-2421 / TASK-2074)", () => {
@@ -92,21 +120,27 @@ describe("PRE_PAINT_FLAGS_SCRIPT (TASK-2421 / TASK-2074)", () => {
     expect(html()).not.toHaveAttribute(DEVICE_FILTER_ATTR);
   });
 
-  it("expires the filter gate when the app has not hydrated in time", () => {
+  it("expires the filter gate only once the page has loaded and the app still has not hydrated", () => {
     jest.useFakeTimers();
     try {
       window.localStorage.setItem(MY_DEVICES_STORAGE_KEY, DEVICE);
       runScript();
+      // A slow network: the bundle is still downloading long after <head>
+      // (TASK-2564) — the gate holds however long that takes.
+      jest.advanceTimersByTime(PRE_PAINT_FILTER_TIMEOUT_MS * 10);
       expect(html()).not.toHaveAttribute(DEVICE_FILTER_EXPIRED_ATTR);
-      jest.advanceTimersByTime(PRE_PAINT_FILTER_TIMEOUT_MS);
+      window.dispatchEvent(new Event("load"));
+      jest.advanceTimersByTime(PRE_PAINT_FILTER_TIMEOUT_MS - 1);
+      expect(html()).not.toHaveAttribute(DEVICE_FILTER_EXPIRED_ATTR);
+      jest.advanceTimersByTime(1);
       expect(html()).toHaveAttribute(DEVICE_FILTER_EXPIRED_ATTR);
     } finally {
       jest.useRealTimers();
     }
   });
 
-  it("starts no expiry timer when the filter does not apply", () => {
-    jest.useFakeTimers();
+  it("arms no expiry when the filter does not apply", () => {
+    const listen = jest.spyOn(window, "addEventListener");
     try {
       window.localStorage.setItem(MY_DEVICES_STORAGE_KEY, DEVICE);
       window.localStorage.setItem(
@@ -114,10 +148,9 @@ describe("PRE_PAINT_FLAGS_SCRIPT (TASK-2421 / TASK-2074)", () => {
         JSON.stringify({ compatOnly: false, compatScope: "all" }),
       );
       runScript();
-      jest.advanceTimersByTime(PRE_PAINT_FILTER_TIMEOUT_MS);
-      expect(html()).not.toHaveAttribute(DEVICE_FILTER_EXPIRED_ATTR);
+      expect(listen).not.toHaveBeenCalledWith("load", expect.anything());
     } finally {
-      jest.useRealTimers();
+      listen.mockRestore();
     }
   });
 
@@ -131,6 +164,53 @@ describe("PRE_PAINT_FLAGS_SCRIPT (TASK-2421 / TASK-2074)", () => {
     expect(html()).not.toHaveAttribute(HAS_DEVICE_ATTR);
     expect(html()).not.toHaveAttribute(DEVICE_FILTER_ATTR);
     spy.mockRestore();
+  });
+});
+
+describe("PRE_PAINT_FLAGS_SCRIPT — the catalog-device cookie (TASK-2564)", () => {
+  it("writes the active device's slug (most recent first)", () => {
+    window.localStorage.setItem(
+      MY_DEVICES_STORAGE_KEY,
+      JSON.stringify([saved("iphone-13", 1), saved("iphone-15-pro", 5)]),
+    );
+    runScript();
+    expect(catalogCookie()).toBe("iphone-15-pro");
+  });
+
+  it("writes every saved device for «для всіх моїх», capped at 20, one per model", () => {
+    const list = Array.from({ length: 22 }, (_, i) => saved(`m-${i}`, 100 - i));
+    // An older duplicate of the most recent model: the store keeps one.
+    list.push(saved("m-0-old", 1, "id-m-0"));
+    window.localStorage.setItem(MY_DEVICES_STORAGE_KEY, JSON.stringify(list));
+    window.localStorage.setItem(
+      MY_DEVICES_SETTINGS_STORAGE_KEY,
+      JSON.stringify({ compatOnly: true, compatScope: "all" }),
+    );
+    runScript();
+    expect(catalogCookie()).toBe(
+      Array.from({ length: 20 }, (_, i) => `m-${i}`).join(","),
+    );
+  });
+
+  it.each([
+    [
+      "«лише сумісне» is off",
+      [saved("iphone-15-pro", 1)],
+      { compatOnly: false },
+    ],
+    ["nothing is saved", [], null],
+    ["no entry is one the store keeps", [{ modelId: "a" }], null],
+  ])("deletes the cookie when %s", (_, list, settings) => {
+    setCatalogCookie("stale-model");
+    window.localStorage.setItem(MY_DEVICES_STORAGE_KEY, JSON.stringify(list));
+    if (settings) {
+      window.localStorage.setItem(
+        MY_DEVICES_SETTINGS_STORAGE_KEY,
+        JSON.stringify(settings),
+      );
+    }
+    runScript();
+    expect(catalogCookie()).toBeUndefined();
   });
 });
 
@@ -202,6 +282,66 @@ describe("syncDeviceFlags — the flags stay live after first paint", () => {
     syncDeviceFlags(true, false);
     expect(html()).toHaveAttribute(HAS_DEVICE_ATTR);
     expect(html()).not.toHaveAttribute(DEVICE_FILTER_ATTR);
+  });
+
+  it("keeps the catalog-device cookie in line with every store write (TASK-2564)", () => {
+    addDevice({
+      modelId: "a",
+      slug: "iphone-15-pro",
+      name: "iPhone 15 Pro",
+      brandName: "Apple",
+      family: "iphone",
+    });
+    expect(catalogCookie()).toBe("iphone-15-pro");
+
+    addDevice({
+      modelId: "b",
+      slug: "iphone-13",
+      name: "iPhone 13",
+      brandName: "Apple",
+      family: "iphone",
+    });
+    expect(catalogCookie()).toBe("iphone-13");
+
+    updateMyDevicesSettings({ compatScope: "all" });
+    expect(catalogCookie()).toBe("iphone-13,iphone-15-pro");
+
+    updateMyDevicesSettings({ compatOnly: false });
+    expect(catalogCookie()).toBeUndefined();
+
+    // The account's settings and list (TASK-1959).
+    replaceMyDevicesSettings({ compatOnly: true, compatScope: "active" });
+    expect(catalogCookie()).toBe("iphone-13");
+    replaceMyDevices([
+      {
+        modelId: "c",
+        slug: "galaxy-s24",
+        name: "Galaxy S24",
+        brandName: "Samsung",
+        family: null,
+        lastUsedAt: 1,
+      },
+    ]);
+    expect(catalogCookie()).toBe("galaxy-s24");
+
+    clearMyDevices();
+    expect(catalogCookie()).toBeUndefined();
+  });
+
+  it("follows another tab's write of the list (TASK-2564)", () => {
+    const unsubscribe = subscribeMyDevices(() => {});
+    try {
+      window.localStorage.setItem(
+        MY_DEVICES_STORAGE_KEY,
+        JSON.stringify([saved("pixel-9", 1)]),
+      );
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: MY_DEVICES_STORAGE_KEY }),
+      );
+      expect(catalogCookie()).toBe("pixel-9");
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("the first-mount resync clears flags the script set for an invalid entry", () => {

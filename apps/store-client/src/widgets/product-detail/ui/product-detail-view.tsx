@@ -8,6 +8,7 @@ import {
   ProductImageGallery,
   ProductStockIndicator,
   useProductControllerFindBySlug,
+  type ProductDetailResponseEnvelope,
 } from "@/entities/product";
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
@@ -55,6 +56,7 @@ function truncate(value: string, max: number): string {
 export function ProductDetailView({
   slug,
   preview = false,
+  previewDetail = null,
   siteName = resolveSiteName(),
 }: {
   slug: string;
@@ -64,17 +66,25 @@ export function ProductDetailView({
    */
   siteName?: string;
   /**
-   * The page is a signed preview (TASK-669). The product the server seeded may
-   * be a draft, and the browser's own read carries no preview token (it lives
-   * in an httpOnly cookie), so any background refetch would swap the draft for
-   * a 404. In preview the seed is therefore never considered stale.
+   * The page is a signed preview (TASK-669). The product may be a draft, and
+   * the browser's own read carries no preview token (it lives in an httpOnly
+   * cookie), so any browser read would swap the draft for a 404. In preview
+   * the product query is therefore disabled and the view renders
+   * `previewDetail` — the server's tokened read — instead (TASK-2536): a
+   * disabled query is skipped by the store's tab-return refetch and Back/
+   * Forward invalidation, and a prop survives a sign-out's cache clear. Each
+   * server render (navigation, `router.refresh()`) brings a fresh read.
    */
   preview?: boolean;
+  /** The server's read of the product under a signed preview; `null` → it did not load. */
+  previewDetail?: ProductDetailResponseEnvelope | null;
 }) {
-  const { data, isLoading, isError } = useProductControllerFindBySlug(
-    slug,
-    preview ? { query: { staleTime: Infinity } } : undefined,
-  );
+  const query = useProductControllerFindBySlug(slug, {
+    query: { enabled: !preview },
+  });
+  const data = preview ? (previewDetail ?? undefined) : query.data;
+  const isLoading = preview ? false : query.isLoading;
+  const isError = preview ? false : query.isError;
 
   const sortedImages = useMemo(
     () => [...(data?.images ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),

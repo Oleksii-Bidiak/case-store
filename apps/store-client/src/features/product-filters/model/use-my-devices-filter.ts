@@ -12,6 +12,7 @@ import {
 } from "@/entities/my-devices";
 import {
   CATALOG_MY_DEVICES_DEFAULT,
+  COMPAT_OFF,
   catalogDeviceParam,
   resolveMyDevicesFilter,
   type MyDevicesFilterDefault,
@@ -48,19 +49,30 @@ export function useMyDevicesFilter(
  * The catalogue's `device=` with the «Мої пристрої» default applied (Д3-2
  * Catalog §11/§20): the URL's own, nothing after `compat=off`, else the
  * active device. The saved list is localStorage-only, so the server render and
- * the hydration render see no devices and list what the URL says — the server
- * prefetch's own query; the default lands on the first client render after.
+ * the hydration render see no devices; the default lands on the first client
+ * render after.
+ *
+ * `serverDevice` (TASK-2564) is the default the route already read from the
+ * `catalog-device` cookie and prefetched with: until hydration it stands in
+ * for the default, so the server render and the hydration render ask for the
+ * very query the server prefetched. After hydration the saved list decides as
+ * before — when it yields the same value, the key does not change and nothing
+ * is fetched again.
  */
 export function useCatalogDeviceParam(
   urlDevice: string | null | undefined,
   compat: string | null | undefined,
   defaults: Readonly<MyDevicesFilterDefault> = CATALOG_MY_DEVICES_DEFAULT,
+  serverDevice?: string,
 ): { device: string | undefined; hasDevices: boolean } {
   const hydrated = useMyDevicesHydrated();
   const saved = useMyDevices();
   const devices = hydrated ? saved : [];
+  const fromServer =
+    !hydrated && !urlDevice && compat !== COMPAT_OFF ? serverDevice : undefined;
   return {
-    device: catalogDeviceParam(urlDevice, compat, devices, defaults),
+    device:
+      fromServer ?? catalogDeviceParam(urlDevice, compat, devices, defaults),
     hasDevices: devices.length > 0,
   };
 }

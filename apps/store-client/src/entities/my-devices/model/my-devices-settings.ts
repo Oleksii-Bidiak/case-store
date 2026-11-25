@@ -4,9 +4,10 @@
 //   - compatOnly  — the filter starts ON (only what fits);
 //   - compatScope — when on, for the active device or for ALL saved devices.
 //
-// Client-only, like the device list itself (localStorage, no cookie: cached
-// HTML stays personal-content-free). Lives in entities/my-devices since
-// TASK-1959 — the account sync (features/my-devices-sync) reads and writes it
+// Client-only, like the device list itself (localStorage: cached HTML stays
+// personal-content-free); only the default filter they produce is mirrored
+// into the `catalog-device` cookie (TASK-2564, ./catalog-device-cookie).
+// Lives in entities/my-devices since TASK-1959 — the account sync (features/my-devices-sync) reads and writes it
 // next to the device list; widgets/my-devices-manager re-exports it.
 //
 // This file stays server-safe (no React import): the widget barrel is imported
@@ -14,6 +15,7 @@
 // The hook lives in the "use client" module ./use-my-devices-settings.
 
 import { hasDeviceFlag, syncDeviceFlags } from "./device-flags";
+import { syncCatalogDeviceCookie } from "./catalog-device-cookie";
 import { notifyMyDevicesEdit } from "./my-devices-edits";
 
 export const MY_DEVICES_SETTINGS_STORAGE_KEY = "my-devices-settings:v1";
@@ -139,12 +141,15 @@ export function subscribeMyDevicesSettings(onChange: () => void): () => void {
 }
 
 /**
- * Keep `data-device-filter` (TASK-2421) in line with «лише сумісне». The
- * device half is read off <html>: the device store keeps `data-has-device`
- * live, and importing that store here would close an import cycle.
+ * Keep `data-device-filter` (TASK-2421) and the `catalog-device` cookie
+ * (TASK-2564) in line with the settings. The device half is what the device
+ * store last published — `data-has-device` on <html>, the list in the cookie
+ * module: importing that store here would close an import cycle.
  */
 function syncFlags(): void {
-  syncDeviceFlags(hasDeviceFlag(), getMyDevicesSettingsSnapshot().compatOnly);
+  const settings = getMyDevicesSettingsSnapshot();
+  syncDeviceFlags(hasDeviceFlag(), settings.compatOnly);
+  syncCatalogDeviceCookie(null, settings);
 }
 
 /** Plain read for non-React callers (server-safe: defaults on the server). */

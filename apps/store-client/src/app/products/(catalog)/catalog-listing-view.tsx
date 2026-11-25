@@ -18,7 +18,8 @@ type CatalogListingViewProps = Omit<
  * settings belong to a widget the listing widget cannot import, so this
  * route-level shell — `/products` and `/categories/[slug]` — reads them and
  * hands the default down. Client-only (localStorage): the server render gets
- * the settings' defaults, and no device is known there anyway.
+ * the settings' defaults; the device it may know comes from the route as
+ * `serverDevice`, read from the `catalog-device` cookie (TASK-2564).
  */
 export function CatalogListingView(props: CatalogListingViewProps) {
   const settings = useMyDevicesSettings();

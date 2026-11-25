@@ -5,6 +5,8 @@ import {
   QueryClientProvider,
   dehydrate,
 } from "@tanstack/react-query";
+import { act } from "react";
+import { hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { getCategoryControllerGetCategoryTreeQueryKey } from "@/entities/category";
 import { getProductControllerFindAllQueryKey } from "@/entities/product";
@@ -1038,26 +1040,27 @@ describe("ProductListView — no unfiltered first paint (TASK-2421)", () => {
   };
   const ON = { on: true, scope: "active" } as const;
 
+  const withProviders = (client: QueryClient, ui: React.ReactElement) => (
+    <QueryClientProvider client={client}>
+      <AuthContext.Provider
+        value={{
+          accessToken: null,
+          userId: null,
+          role: null,
+          isAuthenticated: false,
+          isInitializing: false,
+          setTokens: jest.fn(),
+          clearTokens: jest.fn(),
+        }}
+      >
+        {ui}
+      </AuthContext.Provider>
+    </QueryClientProvider>
+  );
   const serverHtml = (ui: React.ReactElement) => {
     const doc = document.createElement("div");
     // innerHTML never runs scripts — the markup is only inspected.
-    doc.innerHTML = renderToString(
-      <QueryClientProvider client={new QueryClient()}>
-        <AuthContext.Provider
-          value={{
-            accessToken: null,
-            userId: null,
-            role: null,
-            isAuthenticated: false,
-            isInitializing: false,
-            setTokens: jest.fn(),
-            clearTokens: jest.fn(),
-          }}
-        >
-          {ui}
-        </AuthContext.Provider>
-      </QueryClientProvider>,
-    );
+    doc.innerHTML = renderToString(withProviders(new QueryClient(), ui));
     return doc;
   };
   const results = (doc: ParentNode) =>
@@ -1147,5 +1150,103 @@ describe("ProductListView — no unfiltered first paint (TASK-2421)", () => {
     expect(
       screen.queryByText(dict.catalog.countProducts(1)),
     ).not.toBeInTheDocument();
+  });
+
+  // TASK-2564 — the route read the default from the `catalog-device` cookie
+  // and prefetched the filtered listing: the server and hydration renders ask
+  // for that very query, and there is nothing to hide behind the skeleton.
+  describe("with the server's device (TASK-2564)", () => {
+    const deviceState = () => {
+      const server = new QueryClient();
+      server.setQueryData(
+        getProductControllerFindAllQueryKey(
+          buildCatalogListingParams((key) =>
+            key === "device" ? pro.slug : null,
+          ),
+        ),
+        {
+          data: [makeProduct("p-fit", "Fitting Case")],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        },
+      );
+      return dehydrate(server);
+    };
+
+    it("server HTML: the prefetched filtered grid, no gate, no skeleton", () => {
+      const doc = serverHtml(
+        <HydrationBoundary state={deviceState()}>
+          <ProductListView myDevicesDefault={ON} serverDevice={pro.slug} />
+        </HydrationBoundary>,
+      );
+
+      expect(doc.textContent).toContain("Fitting Case");
+      expect(skeleton(doc)).toBeNull();
+      expect(results(doc)?.className ?? "").toBe("");
+      expect(doc.querySelector("p[aria-live='polite']")).not.toHaveClass(
+        "[html[data-device-filter]:not([data-device-filter-expired])_&]:invisible",
+      );
+    });
+
+    // A real hydration, not a client render: during `hydrateRoot` the device
+    // store still reports "not hydrated" and an empty list, so only
+    // `serverDevice` keeps the hydration render on the prefetched key. Without
+    // it the hydration render diverges from the server HTML (a recoverable
+    // mismatch) or asks for another listing.
+    it("hydrating the server HTML keeps the prefetched grid — no mismatch, no request", async () => {
+      const productRequests = installCatalogHandlers();
+      addDevice(pro);
+      const ui = (
+        <HydrationBoundary state={deviceState()}>
+          <ProductListView myDevicesDefault={ON} serverDevice={pro.slug} />
+        </HydrationBoundary>
+      );
+
+      const container = document.createElement("div");
+      container.innerHTML = renderToString(
+        withProviders(new QueryClient(), ui),
+      );
+      document.body.appendChild(container);
+      expect(container.textContent).toContain("Fitting Case");
+
+      const onRecoverableError = jest.fn();
+      let root: Root | undefined;
+      await act(async () => {
+        root = hydrateRoot(
+          container,
+          withProviders(
+            new QueryClient({
+              defaultOptions: {
+                queries: { retry: false, staleTime: 5 * 60 * 1000 },
+              },
+            }),
+            ui,
+          ),
+          { onRecoverableError },
+        );
+      });
+      // Past hydration: the saved list now decides and yields the same device.
+      await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+
+      expect(onRecoverableError).not.toHaveBeenCalled();
+      expect(container.textContent).toContain("Fitting Case");
+      expect(skeleton(container)).toBeNull();
+      expect(productRequests).toHaveLength(0);
+
+      act(() => root?.unmount());
+      container.remove();
+    });
+
+    it.each([
+      ["compat=off", "compat=off"],
+      ["a device in the URL", "device=galaxy-s24"],
+    ])("never stands in for %s", (_, query) => {
+      currentQuery = query;
+      const doc = serverHtml(
+        <HydrationBoundary state={deviceState()}>
+          <ProductListView myDevicesDefault={ON} serverDevice={pro.slug} />
+        </HydrationBoundary>,
+      );
+      expect(doc.textContent).not.toContain("Fitting Case");
+    });
   });
 });

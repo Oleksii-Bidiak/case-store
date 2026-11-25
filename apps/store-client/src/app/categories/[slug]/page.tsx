@@ -44,6 +44,10 @@ import {
 } from "@/shared/lib/legacy-catalog-params";
 import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 import { CatalogHead } from "@/app/products/(catalog)/catalog-head";
+import {
+  readServerCatalogDevice,
+  withServerDevice,
+} from "@/app/products/(catalog)/server-catalog-device";
 
 interface CategoryLandingPageProps {
   params: Promise<{ slug: string }>;
@@ -242,9 +246,13 @@ export default async function CategoryLandingPage({
   // Filters/sort/pagination ride the query string on top of this route, parsed
   // by the builder /products and the client view share (TASK-563) — but the
   // category itself is locked by the segment: the route's own slug IS the
-  // category filter (TASK-420), no id round-trip.
+  // category filter (TASK-420), no id round-trip. With no device in the URL
+  // the «Мої пристрої» default rides the `catalog-device` cookie (TASK-2564),
+  // so the first HTML is already the filtered grid.
+  const readQuery = readSearchParamsRecord(resolved);
+  const serverDevice = await readServerCatalogDevice(readQuery);
   const initialParams = buildCatalogListingParams(
-    readSearchParamsRecord(resolved),
+    withServerDevice(readQuery, serverDevice),
     { categorySlug: node.slug },
   );
 
@@ -323,6 +331,7 @@ export default async function CategoryLandingPage({
             // endpoints (brands-per-category, filterable specs) — TASK-420.
             lockedCategory={{ id: node.id, slug: node.slug }}
             categoryTreePrefetched
+            serverDevice={serverDevice}
           />
         </Suspense>
       </PrefetchBoundary>
