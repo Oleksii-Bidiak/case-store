@@ -1406,7 +1406,7 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
     ]);
   });
 
-  it("«Створити нову» under a hidden parent: a light note, products stay, no consent", async () => {
+  it("«Створити нову» under a hidden parent: the note says the moved products are off the site, no consent (TASK-2552)", async () => {
     const user = userEvent.setup();
     stub();
     serveTree(() => treeHiding([ACC]));
@@ -1428,14 +1428,17 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
       within(listbox).getByRole("option", { name: /^Аксесуари\s*прихована$/ }),
     );
 
-    expect(
-      screen.getByText(d.newParentHiddenNote("Аксесуари")),
-    ).toBeInTheDocument();
-    // Its products stay on the site: no hidden-target warning, the usual promise.
+    // The storefront hides a product under ANY hidden ancestor (TASK-1032):
+    // the note must not promise the products stay on the site.
+    const note = screen.getByText(d.newParentHiddenNote("Аксесуари"));
+    expect(note).toHaveTextContent(
+      "«Аксесуари» прихована — нова категорія не зʼявиться в меню сайту, а перенесені товари не буде видно на сайті, доки «Аксесуари» не покажуть.",
+    );
+    expect(note).not.toHaveTextContent("Товари лишаться на сайті");
+    // The new category is created shown: no hidden-TARGET warning, no consent.
     expect(
       screen.queryByText(/прихована: після переїзду/),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(d.productsSub)).toBeInTheDocument();
 
     await user.click(confirm());
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());

@@ -496,8 +496,9 @@ function CategoryDeleteForm({
     mode === "existing" && targetId && byId.has(targetId) && isHidden(targetId)
       ? byId.get(targetId)!.label
       : null;
-  // A new category under a hidden parent (or ancestor) is created shown and
-  // its products stay on the site — only the menu will not lead to it.
+  // A new category under a hidden parent (or ancestor) is created shown, but
+  // the storefront hides everything under a hidden ancestor (TASK-2552): the
+  // menu will not lead to it and the moved products are off the site.
   const hiddenParentName =
     mode === "new" && parentId ? nearestHidden(byId, parentId) : null;
 
