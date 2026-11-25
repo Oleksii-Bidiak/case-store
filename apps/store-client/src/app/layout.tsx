@@ -3,7 +3,7 @@ import { Geist_Mono, Onest, Unbounded } from "next/font/google";
 import Script from "next/script";
 import { Providers } from "./providers";
 import { SiteHeader } from "./site-header";
-import { Footer } from "@/widgets";
+import { Footer } from "@/widgets/footer";
 import { PreviewBar } from "@/widgets/preview-bar";
 import { ThemeColorSync } from "@/features/theme";
 import { PRE_PAINT_FLAGS_SCRIPT } from "@/entities/my-devices";
