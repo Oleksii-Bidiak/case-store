@@ -26,7 +26,7 @@
  *   node scripts/bundle-size.js --limit=250   # override every budget (kB)
  *
  * Exit code 0 = every budget met; 1 = a budget exceeded; 2 = could not run
- * (no build, a missing page or chunk).
+ * (no build, a missing page or chunk, a page that stopped being prerendered).
  */
 'use strict';
 
@@ -43,13 +43,18 @@ const NEXT_DIR = path.join(APP_DIR, '.next');
  * goal is 300 kB for `/` and `/login`; the remaining ~60 kB are the dictionary
  * and axios (TASK-2586, TASK-2587). When a change makes a page lighter, lower
  * its budget in the same commit.
+ *
+ * `prerendered: true` — the page must have prerendered HTML in the build. It
+ * is how TASK-2524's other condition is watched: `/` and `/categories` stay
+ * ISR. A page that turned dynamic has no HTML, and without this flag it would
+ * be measured from the bundle stats and pass unnoticed.
  */
 const PAGES = [
-  { route: '/', budgetKb: 360 },
-  { route: '/login', budgetKb: 335 },
-  { route: '/cart', budgetKb: 345 },
-  { route: '/checkout', budgetKb: 375 },
-  { route: '/categories', budgetKb: 310 },
+  { route: '/', budgetKb: 360, prerendered: true },
+  { route: '/login', budgetKb: 335, prerendered: true },
+  { route: '/cart', budgetKb: 345, prerendered: true },
+  { route: '/checkout', budgetKb: 375, prerendered: true },
+  { route: '/categories', budgetKb: 310, prerendered: true },
   { route: '/products/[slug]', budgetKb: 365 },
 ];
 
@@ -120,40 +125,44 @@ function measure(nextDir, pages) {
     ? new Map(JSON.parse(fs.readFileSync(statsFile, 'utf8')).map((r) => [r.route, r]))
     : new Map();
 
-  return pages.map(({ route, budgetKb }) => {
+  return pages.map(({ route, budgetKb, prerendered }) => {
     const html = htmlByRoute.get(route);
     let refs;
     let source;
     if (html) {
       refs = scriptSources(fs.readFileSync(html, 'utf8'));
       source = 'html';
+    } else if (prerendered) {
+      throw new Error(`${route} is no longer prerendered (static or ISR) — it became dynamic`);
     } else if (stats.has(route)) {
       refs = stats.get(route).firstLoadChunkPaths;
       source = 'stats';
     } else {
       throw new Error(`no prerendered HTML and no bundle stats for ${route}`);
     }
+    // A page that loads no script is a broken measurement, not a light page.
+    if (refs.length === 0) throw new Error(`no scripts found for ${route}`);
     const bytes = measureFiles(nextDir, refs);
     return { route, source, files: refs.length, kb: bytes / 1024, budgetKb };
   });
 }
 
-function main(argv) {
+function main(argv, nextDir = NEXT_DIR, pageList = PAGES) {
   const limitArg = argv.find((arg) => arg.startsWith('--limit='));
   const override = limitArg ? Number(limitArg.slice('--limit='.length)) : null;
   if (limitArg && !(override > 0)) {
     console.error(`bundle-size: invalid ${limitArg}`);
     return 2;
   }
-  if (!fs.existsSync(path.join(NEXT_DIR, 'BUILD_ID'))) {
+  if (!fs.existsSync(path.join(nextDir, 'BUILD_ID'))) {
     console.error('bundle-size: no build — run `npm run build -w apps/store-client` first');
     return 2;
   }
 
-  const pages = PAGES.map((page) => ({ ...page, budgetKb: override ?? page.budgetKb }));
+  const pages = pageList.map((page) => ({ ...page, budgetKb: override ?? page.budgetKb }));
   let rows;
   try {
-    rows = measure(NEXT_DIR, pages);
+    rows = measure(nextDir, pages);
   } catch (error) {
     console.error(`bundle-size: ${error.message}`);
     return 2;

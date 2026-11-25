@@ -15,7 +15,20 @@ const os = require('node:os');
 const path = require('node:path');
 const zlib = require('node:zlib');
 
-const { scriptSources, findPrerenderedHtml, measure } = require('../bundle-size.js');
+const { scriptSources, findPrerenderedHtml, measure, main } = require('../bundle-size.js');
+
+/** Runs `main` against a fake build with console output silenced. */
+function run(dir, pages, argv = []) {
+  const { log, error } = console;
+  console.log = () => {};
+  console.error = () => {};
+  try {
+    return main(argv, dir, pages);
+  } finally {
+    console.log = log;
+    console.error = error;
+  }
+}
 
 function fakeNext() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bundle-size-'));
@@ -81,4 +94,32 @@ test('measure: HTML for static pages, bundle stats for dynamic ones', () => {
 test('measure: a page with neither HTML nor stats is an error, not a zero', () => {
   const dir = fakeNext();
   assert.throws(() => measure(dir, [{ route: '/nowhere', budgetKb: 1 }]), /no prerendered HTML/);
+});
+
+test('measure: a prerendered page that lost its HTML is an error, even with bundle stats', () => {
+  const dir = fakeNext();
+  assert.throws(
+    () => measure(dir, [{ route: '/products/[slug]', budgetKb: 300, prerendered: true }]),
+    /no longer prerendered/,
+  );
+});
+
+test('measure: a page without a single script is an error, not 0 kB', () => {
+  const dir = fakeNext();
+  fs.writeFileSync(path.join(dir, 'server', 'app', 'empty.html'), '<html></html>');
+  assert.throws(() => measure(dir, [{ route: '/empty', budgetKb: 300 }]), /no scripts found/);
+});
+
+test('main: exit code 0 within budget, 1 over it, 2 when it cannot measure', () => {
+  const dir = fakeNext();
+  const pages = [{ route: '/', budgetKb: 300, prerendered: true }];
+
+  assert.equal(run(dir, pages), 2, 'no BUILD_ID is not a build');
+  fs.writeFileSync(path.join(dir, 'BUILD_ID'), 'test');
+
+  assert.equal(run(dir, pages), 0);
+  assert.equal(run(dir, [{ route: '/', budgetKb: 0.001, prerendered: true }]), 1);
+  assert.equal(run(dir, pages, ['--limit=0.001']), 1, '--limit overrides every budget');
+  assert.equal(run(dir, [{ route: '/categories', budgetKb: 300, prerendered: true }]), 2);
+  assert.equal(run(dir, pages, ['--limit=abc']), 2);
 });
