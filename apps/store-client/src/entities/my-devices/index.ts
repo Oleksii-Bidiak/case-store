@@ -39,6 +39,15 @@ export {
 } from "./model/device-flags";
 export { PRE_PAINT_FLAGS_SCRIPT } from "./model/pre-paint-flags";
 
+// The catalogue's default device filter for the server prefetch (TASK-2564):
+// the stores and the pre-paint script write it, `/categories/[slug]` and
+// `/products` read it.
+export {
+  CATALOG_DEVICE_COOKIE,
+  defaultCatalogDevice,
+  parseCatalogDeviceCookie,
+} from "./model/catalog-device-cookie";
+
 // Account mirror (TASK-1959): the shopper's own edits vs the server state
 // applied locally, and whose account the local copy belongs to.
 export { subscribeMyDevicesEdits } from "./model/my-devices-edits";

@@ -1148,4 +1148,81 @@ describe("ProductListView — no unfiltered first paint (TASK-2421)", () => {
       screen.queryByText(dict.catalog.countProducts(1)),
     ).not.toBeInTheDocument();
   });
+
+  // TASK-2564 — the route read the default from the `catalog-device` cookie
+  // and prefetched the filtered listing: the server and hydration renders ask
+  // for that very query, and there is nothing to hide behind the skeleton.
+  describe("with the server's device (TASK-2564)", () => {
+    const deviceState = () => {
+      const server = new QueryClient();
+      server.setQueryData(
+        getProductControllerFindAllQueryKey(
+          buildCatalogListingParams((key) =>
+            key === "device" ? pro.slug : null,
+          ),
+        ),
+        {
+          data: [makeProduct("p-fit", "Fitting Case")],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        },
+      );
+      return dehydrate(server);
+    };
+
+    it("server HTML: the prefetched filtered grid, no gate, no skeleton", () => {
+      const doc = serverHtml(
+        <HydrationBoundary state={deviceState()}>
+          <ProductListView myDevicesDefault={ON} serverDevice={pro.slug} />
+        </HydrationBoundary>,
+      );
+
+      expect(doc.textContent).toContain("Fitting Case");
+      expect(skeleton(doc)).toBeNull();
+      expect(results(doc)?.className ?? "").toBe("");
+      expect(doc.querySelector("p[aria-live='polite']")).not.toHaveClass(
+        "[html[data-device-filter]:not([data-device-filter-expired])_&]:invisible",
+      );
+    });
+
+    it("after hydration the same saved device keeps the key — no second request", async () => {
+      const productRequests = installCatalogHandlers();
+      addDevice(pro);
+
+      renderWithProviders(
+        <HydrationBoundary state={deviceState()}>
+          <ProductListView myDevicesDefault={ON} serverDevice={pro.slug} />
+        </HydrationBoundary>,
+        {
+          queryClient: new QueryClient({
+            defaultOptions: {
+              queries: { retry: false, staleTime: 5 * 60 * 1000 },
+            },
+          }),
+        },
+      );
+
+      expect(screen.getByText("Fitting Case")).toBeInTheDocument();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(
+        productRequests.filter(
+          (url) =>
+            url.searchParams.get("limit") !== "1" &&
+            url.searchParams.get("device") === pro.slug,
+        ),
+      ).toHaveLength(0);
+    });
+
+    it.each([
+      ["compat=off", "compat=off"],
+      ["a device in the URL", "device=galaxy-s24"],
+    ])("never stands in for %s", (_, query) => {
+      currentQuery = query;
+      const doc = serverHtml(
+        <HydrationBoundary state={deviceState()}>
+          <ProductListView myDevicesDefault={ON} serverDevice={pro.slug} />
+        </HydrationBoundary>,
+      );
+      expect(doc.textContent).not.toContain("Fitting Case");
+    });
+  });
 });

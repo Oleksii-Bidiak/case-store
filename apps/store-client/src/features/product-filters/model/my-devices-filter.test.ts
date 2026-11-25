@@ -1,4 +1,9 @@
-import type { MyDevice } from "@/entities/my-devices";
+import {
+  catalogFilterDefault,
+  defaultCatalogDevice,
+  type MyDevice,
+  type MyDevicesSettings,
+} from "@/entities/my-devices";
 import {
   MAX_DEVICE_FILTER_SLUGS,
   allMyDevicesParam,
@@ -179,5 +184,50 @@ describe("withCompatMarker", () => {
       device: undefined,
       compat: undefined,
     });
+  });
+});
+
+// The entity writes the default into the `catalog-device` cookie for the
+// server prefetch (TASK-2564); it cannot import this feature, so it carries
+// its own copy of the rule — which must never drift from this one, or the
+// server prefetches a query the hydrated listing does not ask for.
+describe("defaultCatalogDevice mirrors catalogDeviceParam (TASK-2564)", () => {
+  const many = Array.from({ length: 25 }, (_, i) =>
+    device(`model-${i}`, 100 - i),
+  );
+  const settingsCases: MyDevicesSettings[] = [
+    { compatOnly: true, compatScope: "active" },
+    { compatOnly: true, compatScope: "all" },
+    { compatOnly: false, compatScope: "active" },
+    { compatOnly: false, compatScope: "all" },
+  ];
+  const deviceCases: [string, readonly MyDevice[]][] = [
+    ["no device", []],
+    ["one device", [pro]],
+    ["three devices", saved],
+    ["25 devices (capped at 20)", many],
+  ];
+
+  for (const settings of settingsCases) {
+    for (const [label, devices] of deviceCases) {
+      it(`${label}, compatOnly ${settings.compatOnly}, scope ${settings.compatScope}`, () => {
+        expect(defaultCatalogDevice(devices, settings)).toBe(
+          catalogDeviceParam(
+            undefined,
+            undefined,
+            devices,
+            catalogFilterDefault(settings),
+          ),
+        );
+      });
+    }
+  }
+
+  it("caps «для всіх моїх» at the API's limit", () => {
+    const value = defaultCatalogDevice(many, {
+      compatOnly: true,
+      compatScope: "all",
+    });
+    expect(value?.split(",")).toHaveLength(MAX_DEVICE_FILTER_SLUGS);
   });
 });

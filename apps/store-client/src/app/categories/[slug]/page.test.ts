@@ -34,6 +34,14 @@ jest.mock("@/shared/api/seo-settings-server", () => ({
 }));
 // Next's notFound()/permanentRedirect() throw special signals; mock them with
 // throwing jest.fn()s so the tests can assert which one fired.
+// The `catalog-device` cookie (TASK-2564) — an empty jar unless a case sets one.
+const mockCookies: Record<string, string> = {};
+jest.mock("next/headers", () => ({
+  cookies: jest.fn(async () => ({
+    get: (name: string) =>
+      name in mockCookies ? { name, value: mockCookies[name] } : undefined,
+  })),
+}));
 jest.mock("next/navigation", () => ({
   notFound: jest.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
@@ -106,6 +114,7 @@ function makeTree(): CategoryTreeNodeEntity[] {
 }
 
 afterEach(() => {
+  for (const name of Object.keys(mockCookies)) delete mockCookies[name];
   jest.clearAllMocks();
   (
     globalThis as { __requestMemos?: Map<string, unknown>[] }
@@ -340,5 +349,47 @@ describe("categories/[slug] — the first HTML carries the product cards (TASK-5
     expect(findJsonLdSchemas(tree).map((schema) => schema["@type"])).toEqual([
       "BreadcrumbList",
     ]);
+  });
+});
+
+describe("categories/[slug] — the saved device filter is known before the first request (TASK-2564)", () => {
+  const run = (query: Record<string, string> = {}) =>
+    CategoryLandingPage({
+      params: Promise.resolve({ slug: "chohly" }),
+      searchParams: Promise.resolve(query),
+    });
+  const listingWith = (query: Record<string, string>, device?: string) =>
+    buildCatalogListingParams(
+      (key) => (key === "device" && device !== undefined ? device : query[key]),
+      { categorySlug: "chohly" },
+    );
+
+  it("prefetches the listing filtered by the catalog-device cookie and hands the device to the view", async () => {
+    getTree.mockResolvedValue({ data: makeTree() } as never);
+    mockCookies["catalog-device"] = "iphone-15-pro";
+
+    const tree = await run();
+
+    const expected = listingWith({}, "iphone-15-pro");
+    expect(findAll).toHaveBeenCalledTimes(1);
+    expect(findAll).toHaveBeenCalledWith(expected);
+    expect(findDehydratedQueryKeys(tree)).toContainEqual([
+      "/api/products",
+      expected,
+    ]);
+    expect(findPropValues(tree, "serverDevice")).toEqual(["iphone-15-pro"]);
+  });
+
+  it.each([
+    ["compat=off", { compat: "off" }],
+    ["a device in the URL", { device: "pixel-9" }],
+  ])("ignores the cookie with %s", async (_, query: Record<string, string>) => {
+    getTree.mockResolvedValue({ data: makeTree() } as never);
+    mockCookies["catalog-device"] = "iphone-15-pro";
+
+    const tree = await run(query);
+
+    expect(findAll).toHaveBeenCalledWith(listingWith(query));
+    expect(findPropValues(tree, "serverDevice")).toEqual([]);
   });
 });
