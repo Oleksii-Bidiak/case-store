@@ -8,7 +8,7 @@
  * JavaScript — `/login` as much as `/checkout` — because the root layout pulled
  * the whole widget layer into its shared chunk. Nothing in CI watched the
  * number, so it grew unnoticed. This script is the watch: it fails when a
- * budgeted page goes over its limit.
+ * budgeted page goes over its limit. CI runs it right after `npm run build`.
  *
  * HOW IT COUNTS
  * -------------
@@ -37,14 +37,20 @@ const zlib = require('node:zlib');
 const APP_DIR = path.join(__dirname, '..', 'apps', 'store-client');
 const NEXT_DIR = path.join(APP_DIR, '.next');
 
-/** Pages to report. `budgetKb` — the TASK-2524 limit; null = reported only. */
+/**
+ * Pages and their budgets, gzip kB. A RATCHET, not the goal: each budget is
+ * what TASK-2524 reached (2026-11-25), rounded up, so any growth fails CI. The
+ * goal is 300 kB for `/` and `/login`; the remaining ~60 kB are the dictionary
+ * and axios (TASK-2586, TASK-2587). When a change makes a page lighter, lower
+ * its budget in the same commit.
+ */
 const PAGES = [
-  { route: '/', budgetKb: 300 },
-  { route: '/login', budgetKb: 300 },
-  { route: '/cart', budgetKb: null },
-  { route: '/checkout', budgetKb: null },
-  { route: '/categories', budgetKb: null },
-  { route: '/products/[slug]', budgetKb: null },
+  { route: '/', budgetKb: 360 },
+  { route: '/login', budgetKb: 335 },
+  { route: '/cart', budgetKb: 345 },
+  { route: '/checkout', budgetKb: 375 },
+  { route: '/categories', budgetKb: 310 },
+  { route: '/products/[slug]', budgetKb: 365 },
 ];
 
 function gzipSize(buffer) {
@@ -144,10 +150,7 @@ function main(argv) {
     return 2;
   }
 
-  const pages = PAGES.map((page) => ({
-    ...page,
-    budgetKb: override && page.budgetKb !== null ? override : page.budgetKb,
-  }));
+  const pages = PAGES.map((page) => ({ ...page, budgetKb: override ?? page.budgetKb }));
   let rows;
   try {
     rows = measure(NEXT_DIR, pages);
