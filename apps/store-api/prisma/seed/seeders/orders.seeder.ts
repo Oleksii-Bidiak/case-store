@@ -11,7 +11,13 @@ import {
   centsToString,
   OrderMoneyRepository,
 } from '../lib/domain';
-import { assertOrderSet, planOrder, type OrderPlan, type PlanContext } from '../lib/order-plan';
+import {
+  assertOrderSet,
+  orderId,
+  planOrder,
+  type OrderPlan,
+  type PlanContext,
+} from '../lib/order-plan';
 import type { OrderSpec, SeedActor, SeededUser } from '../types';
 import { pickupPointId } from './delivery.seeder';
 
@@ -153,7 +159,7 @@ export async function writeOrderPlan(
   prisma: PrismaClient,
   plan: OrderPlan,
   actorId: (actor: SeedActor) => string | null,
-  extra: { userId: string | null; copiedFromId?: string | null } = { userId: null },
+  extra: { userId: string | null } = { userId: null },
 ): Promise<void> {
   const { spec } = plan;
   const money = new OrderMoneyRepository(
@@ -189,7 +195,7 @@ export async function writeOrderPlan(
         restockedAt: plan.restockedAt,
         paidAt: plan.paidAt,
         reservationExpiresAt: null,
-        copiedFromId: extra.copiedFromId ?? null,
+        copiedFromId: spec.copiedFrom ? orderId(spec.copiedFrom) : null,
       };
       await tx.order.upsert({
         where: { id: plan.id },
@@ -317,6 +323,7 @@ export async function writeOrderPlan(
             actorId: actorId(e.actor),
             reason: e.reason,
             reversalOfId: e.reversalOfId,
+            counterpartOrderId: e.counterpartOrderId,
             occurredAt: e.occurredAt,
             createdAt: e.occurredAt,
           },

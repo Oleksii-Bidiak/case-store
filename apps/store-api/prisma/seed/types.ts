@@ -4,7 +4,7 @@
  * single-file `prisma/seed.ts` (plan 170, TASK-363) and reshaped for the
  * Ukrainian catalogue (TASK-366).
  */
-import type { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
+import type { OrderHistoryNote, OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
 import type { NpCityKey } from './data/delivery.data';
 
 export interface SeededUser {
@@ -123,7 +123,20 @@ export type MoneyEventSpec =
       reason: string;
     }
   /** Сторно of the money event at index `of` of the same list. */
-  | { type: 'reversal'; of: number; at: number; reason: string };
+  | { type: 'reversal'; of: number; at: number; reason: string }
+  /**
+   * «Залік» (TASK-2048): one half of the pair «Створити копію» writes — OUT of
+   * a cancelled original (`OFFSET_TO_ORDER`), IN to its copy
+   * (`OFFSET_FROM_ORDER`) — naming the other order by its seed key.
+   */
+  | {
+      type: 'offset';
+      kind: 'OFFSET_TO_ORDER' | 'OFFSET_FROM_ORDER';
+      counterpart: string;
+      amountKop: number;
+      at: number;
+      actor: SeedActor;
+    };
 
 export interface OrderSpec {
   key: string;
@@ -143,6 +156,14 @@ export interface OrderSpec {
   statusAt?: Partial<Record<OrderStatus, number>>;
   /** Statuses the shop set by itself (LiqPay → CONFIRMED, an expired reservation → CANCELLED). */
   systemStatuses?: OrderStatus[];
+  /** Who moved the order into a status, where it is not the default (see `statusActor`). */
+  statusActors?: Partial<Record<OrderStatus, SeedActor>>;
+  /** A history note on the row INTO a status (PENDING = the creation row). */
+  statusNotes?: Partial<Record<OrderStatus, OrderHistoryNote>>;
+  /** `current → current` STATUS rows that only carry a note (a copy made without a cancel). */
+  markers?: { at: number; note: OrderHistoryNote; actor: SeedActor }[];
+  /** Seed key of the order this one is a copy of (TASK-2048). */
+  copiedFrom?: string;
   paymentMethod: PaymentMethod;
   delivery: DeliverySpec;
   /** `addons` are AddonService names bought with the line. */

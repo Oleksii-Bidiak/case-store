@@ -105,6 +105,8 @@ export interface PlannedMoneyEntry {
   actor: SeedActor;
   reason: string | null;
   reversalOfId: string | null;
+  /** «Залік» rows only: the other order of the pair. */
+  counterpartOrderId: string | null;
   occurredAt: Date;
 }
 
@@ -221,6 +223,8 @@ function statusHour(spec: OrderSpec, status: OrderStatus): number {
 }
 
 function statusActor(spec: OrderSpec, status: OrderStatus, index: number): SeedActor {
+  const explicit = spec.statusActors?.[status];
+  if (explicit) return explicit;
   if (index === 0) return spec.byOperator ? 'operator' : 'system';
   if (spec.systemStatuses?.includes(status)) return 'system';
   if (status === 'CANCELLED' && spec.selfCancel) return 'customer';
@@ -230,10 +234,25 @@ function statusActor(spec: OrderSpec, status: OrderStatus, index: number): SeedA
 /** Money and status events of an order, in the order they happened. */
 type TimelineEvent =
   | { at: number; kind: 'status'; index: number }
+  | { at: number; kind: 'marker'; index: number }
   | { at: number; kind: 'money'; index: number; event: MoneyEventSpec };
 
+/**
+ * Order of events at the same hour: a LiqPay success first (it is what moves
+ * the order to CONFIRMED), then statuses and markers, then any other money
+ * (a «Залік» follows the cancel it depends on).
+ */
+function tieRank(event: TimelineEvent): number {
+  if (event.kind === 'money') return event.event.type === 'liqpay' ? 0 : 2;
+  return 1;
+}
+
 /** Build — and check — the plan of one order. */
-export function planOrder(spec: OrderSpec, ctx: PlanContext): OrderPlan {
+export function planOrder(
+  spec: OrderSpec,
+  ctx: PlanContext,
+  options: { draft?: boolean } = {},
+): OrderPlan {
   // ── Who placed it ─────────────────────────────────────────────────────────
   if (Boolean(spec.email) === Boolean(spec.guest)) {
     fail(spec, 'an order has exactly one of an account (email) and a guest contact');
@@ -338,10 +357,9 @@ export function planOrder(spec: OrderSpec, ctx: PlanContext): OrderPlan {
       index,
       event,
     })),
+    ...(spec.markers ?? []).map((m, index) => ({ at: m.at, kind: 'marker' as const, index })),
   ];
-  // Stable sort; on a tie money comes first — a LiqPay success is what moves the
-  // order to CONFIRMED.
-  events.sort((a, b) => a.at - b.at || (a.kind === b.kind ? 0 : a.kind === 'money' ? -1 : 1));
+  events.sort((a, b) => a.at - b.at || tieRank(a) - tieRank(b));
 
   const history: PlannedHistoryRow[] = [];
   const payments: PlannedPayment[] = [];
@@ -397,6 +415,7 @@ export function planOrder(spec: OrderSpec, ctx: PlanContext): OrderPlan {
       providerRef: null,
       reason: null,
       reversalOfId: null,
+      counterpartOrderId: null,
       ...extra,
     };
     entries.push(entry);
@@ -425,7 +444,7 @@ export function planOrder(spec: OrderSpec, ctx: PlanContext): OrderPlan {
         toStatus: to,
         fromPaymentStatus: null,
         toPaymentStatus: null,
-        note: null,
+        note: spec.statusNotes?.[to] ?? null,
         actor: statusActor(spec, to, event.index),
         at: when,
       });
@@ -434,6 +453,22 @@ export function planOrder(spec: OrderSpec, ctx: PlanContext): OrderPlan {
         restockedAt = when;
       }
       status = to;
+      continue;
+    }
+
+    if (event.kind === 'marker') {
+      // No status moved; the row only carries its note (`current → current`).
+      const marker = spec.markers![event.index];
+      history.push({
+        changeType: 'STATUS',
+        fromStatus: status,
+        toStatus: status,
+        fromPaymentStatus: null,
+        toPaymentStatus: null,
+        note: marker.note,
+        actor: marker.actor,
+        at: when,
+      });
       continue;
     }
 
@@ -534,11 +569,32 @@ export function planOrder(spec: OrderSpec, ctx: PlanContext): OrderPlan {
         rederive('operator', when);
         break;
       }
+      case 'offset': {
+        // OrderRepository.createManualCopy: the pair is written only off a
+        // CANCELLED original, OUT never above what it still holds.
+        if (m.kind === 'OFFSET_TO_ORDER') {
+          if (status !== 'CANCELLED')
+            fail(spec, '«Залік» moves money only off a cancelled original');
+          const { paidKop, refundedKop } = totals();
+          if (m.amountKop > paidKop - refundedKop) fail(spec, '«Залік» above what the order holds');
+        } else if (!spec.copiedFrom || spec.copiedFrom !== m.counterpart) {
+          fail(spec, '«Залік» comes IN only to a copy, from its own original');
+        }
+        if (m.amountKop <= 0) fail(spec, '«Залік» of nothing');
+        addEntry(event.index, m.kind, m.amountKop, {
+          actor: m.actor,
+          counterpartOrderId: orderId(m.counterpart),
+          occurredAt: when,
+        });
+        rederive(m.actor, when);
+        break;
+      }
     }
   }
 
   // ── What must hold at the end ─────────────────────────────────────────────
-  if (paymentStatus !== spec.paymentStatus) {
+  // A draft (a copy pair planned before its «Залік» is known) skips this one check.
+  if (!options.draft && paymentStatus !== spec.paymentStatus) {
     fail(spec, `the money above derives ${paymentStatus}, the spec says ${spec.paymentStatus}`);
   }
   const live = ['PENDING', 'CONFIRMED', 'PROCESSING'].includes(status);

@@ -27,7 +27,9 @@ export {
   derivePaymentStatus,
   directionOf,
   ledgerTotals,
+  offsetAmountKop,
 } from '../../../src/order/order-money';
+export { copyBindsOriginalCustomer } from '../../../src/order/order-copy';
 export { OrderMoneyRepository } from '../../../src/order/order-money.repository';
 export { AddonApplicabilityResolver } from '../../../src/addon-service/addon-applicability.resolver';
 export { AddonServiceRepository } from '../../../src/addon-service/addon-service.repository';

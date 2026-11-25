@@ -1,5 +1,7 @@
 import { allowedInKinds } from '../../../src/order/order-money';
+import { planCopyPair } from '../lib/order-copy-plan';
 import { assertOrderSet, planOrder, type OrderPlan, type PlanContext } from '../lib/order-plan';
+import { copyPairs } from './order-copies.data';
 import type { OrderSpec } from '../types';
 import { deltas, servicesData, templateServiceNames } from './addons.data';
 import { cataloguePositions } from './catalogue';
@@ -190,5 +192,44 @@ describe('planOrder refuses what the domain refuses', () => {
       ],
       paymentStatus: 'PAID',
     });
+  });
+});
+
+describe('seeded order copies (TASK-2048)', () => {
+  const pairs = copyPairs.map((pair) => ({ pair, plan: planCopyPair(pair, ctx) }));
+
+  it('plans every pair through the domain', () => {
+    expect(pairs).toHaveLength(2);
+  });
+
+  it('cancels the original with a COPIED_TO_ORDER note and moves its money in a «Залік» pair', () => {
+    const { plan } = pairs.find(({ pair }) => pair.cancelOriginal)!;
+    const cancel = plan.original.history.find((h) => h.toStatus === 'CANCELLED')!;
+    expect(cancel.note).toBe('COPIED_TO_ORDER');
+    expect(plan.offsetKop).toBeGreaterThan(0);
+
+    const out = plan.original.entries.find((e) => e.kind === 'OFFSET_TO_ORDER')!;
+    const into = plan.copy.entries.find((e) => e.kind === 'OFFSET_FROM_ORDER')!;
+    expect(out.amountKop).toBe(plan.offsetKop);
+    expect(into.amountKop).toBe(plan.offsetKop);
+    expect(out.counterpartOrderId).toBe(plan.copy.id);
+    expect(into.counterpartOrderId).toBe(plan.original.id);
+    expect(plan.copy.history[0].note).toBe('COPY_OF_ORDER');
+  });
+
+  it('marks the original of a copy made without a cancel on a current → current row', () => {
+    const { plan } = pairs.find(({ pair }) => !pair.cancelOriginal)!;
+    const marker = plan.original.history.find((h) => h.note === 'COPIED_TO_ORDER')!;
+    expect(marker.fromStatus).toBe(marker.toStatus);
+    expect(plan.offsetKop).toBe(0);
+    expect(plan.copy.entries).toEqual([]);
+  });
+
+  it('never collides with the plain order keys', () => {
+    const keys = new Set(orderSpecs.map((s) => s.key));
+    for (const { pair } of pairs) {
+      expect(keys.has(pair.original.key)).toBe(false);
+      expect(keys.has(pair.copy.key)).toBe(false);
+    }
   });
 });
