@@ -15,6 +15,13 @@ export interface SeededManager {
   email: string;
 }
 
+/** One of the seeded managers by email — the author later seeders put on operator rows. */
+export function managerByEmail(managers: readonly SeededManager[], email: string): SeededManager {
+  const manager = managers.find((m) => m.email === email);
+  if (!manager) throw new Error(`Seed: manager ${email} was not seeded (data/staff.data.ts)`);
+  return manager;
+}
+
 /**
  * The template's keys as the owner's screen would save them: each `:write`
  * brings its `:read` partner (READ_BACKFILL_PAIRS), duplicates collapse, and a

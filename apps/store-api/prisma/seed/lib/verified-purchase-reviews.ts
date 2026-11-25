@@ -38,8 +38,10 @@ const COMMENTS = [
  * received, or something they sent back (`mariia-2` passed through DELIVERED on
  * its way to REFUNDED and is excluded on purpose).
  */
-function isDelivered(spec: OrderSpec): boolean {
-  return spec.status === 'DELIVERED';
+function isDelivered(spec: OrderSpec): spec is OrderSpec & { email: string } {
+  // A guest has no account to write a review from; an order its returns turn
+  // REFUNDED (TASK-2569) was sent back, so its buyer is not endorsing it.
+  return spec.status === 'DELIVERED' && Boolean(spec.email) && !spec.refundedByReturns;
 }
 
 /**

@@ -20,11 +20,10 @@ const spec = (overrides: Partial<OrderSpec> = {}): OrderSpec => ({
   status: 'DELIVERED',
   paymentStatus: 'PAID',
   statusFlow: ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED'],
-  paymentFlow: ['PENDING', 'PAID'],
+  paymentMethod: 'ON_DELIVERY',
+  delivery: { method: 'NOVA_POSHTA', city: 'kyiv', branch: 0 },
   items: [{ sku: 'SKU-1', quantity: 1 }],
   daysAgo: 5,
-  city: 'Київ',
-  warehouse: 'Відділення №1',
   ...overrides,
 });
 
@@ -61,6 +60,15 @@ describe('buildVerifiedPurchaseReviews', () => {
         status: 'REFUNDED',
         statusFlow: ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'REFUNDED'],
         items: [{ sku: 'NOPE-4', quantity: 1 }],
+      }),
+      // Delivered, but its returns will turn it REFUNDED (TASK-2569).
+      spec({ key: 'returned', refundedByReturns: true, items: [{ sku: 'NOPE-5', quantity: 1 }] }),
+      // A guest has no account to review from.
+      spec({
+        key: 'guest',
+        email: undefined,
+        guest: { firstName: 'Г', lastName: 'Г', email: 'g@example.com', phone: '380500000000' },
+        items: [{ sku: 'NOPE-6', quantity: 1 }],
       }),
       spec({ key: 'delivered', items: [{ sku: 'YES-1', quantity: 1 }] }),
     ]);

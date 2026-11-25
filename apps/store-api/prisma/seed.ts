@@ -22,7 +22,7 @@ import { seedPages } from './seed/seeders/pages.seeder';
 import { seedProducts } from './seed/seeders/products.seeder';
 import { seedReviews } from './seed/seeders/reviews.seeder';
 import { seedSeoSettings, seedSiteContactSettings } from './seed/seeders/site-settings.seeder';
-import { seedStaff } from './seed/seeders/staff.seeder';
+import { managerByEmail, seedStaff } from './seed/seeders/staff.seeder';
 import { seedUsers } from './seed/seeders/users.seeder';
 import { pruneSeedImages } from './seed/lib/images/seed-image.generator';
 
@@ -71,8 +71,8 @@ async function main() {
 
   try {
     // Seed in dependency (FK-safe) order.
-    const { admin, admins, customers } = await seedUsers(prisma);
-    await seedStaff(prisma, admin); // must follow seedUsers (the owner authors the audit rows)
+    const { admin, customers } = await seedUsers(prisma);
+    const managers = await seedStaff(prisma, admin); // must follow seedUsers (the owner authors the audit rows)
     await seedSiteContactSettings(prisma);
     await seedSeoSettings(prisma);
     await seedFaqItems(prisma);
@@ -87,7 +87,12 @@ async function main() {
     await seedDeviceCompat(prisma);
     await seedDelivery(prisma); // must precede seedOrders (pickup points, enabled methods)
     await seedDiscounts(prisma);
-    await seedOrders(prisma, admins, customers);
+    const orderActors = {
+      owner: admin,
+      operator: managerByEmail(managers, 'orders@store.com'),
+      customers,
+    };
+    await seedOrders(prisma, orderActors);
     await seedContactMessages(prisma);
     await seedNewsletter(prisma);
     await seedReviews(prisma);
