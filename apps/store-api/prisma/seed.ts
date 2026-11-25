@@ -23,7 +23,11 @@ import { seedPages } from './seed/seeders/pages.seeder';
 import { seedReturns } from './seed/seeders/returns.seeder';
 import { seedProducts } from './seed/seeders/products.seeder';
 import { seedReviews } from './seed/seeders/reviews.seeder';
-import { seedSeoSettings, seedSiteContactSettings } from './seed/seeders/site-settings.seeder';
+import {
+  seedSeoSettings,
+  seedSiteContactSettings,
+  seedStoreLogo,
+} from './seed/seeders/site-settings.seeder';
 import { managerByEmail, seedStaff } from './seed/seeders/staff.seeder';
 import { seedUserDevices } from './seed/seeders/user-devices.seeder';
 import { seedUsers } from './seed/seeders/users.seeder';
@@ -78,6 +82,7 @@ async function main() {
     const managers = await seedStaff(prisma, admin); // must follow seedUsers (the owner authors the audit rows)
     await seedSiteContactSettings(prisma);
     await seedSeoSettings(prisma);
+    await seedStoreLogo(prisma); // must follow seedSeoSettings (fills its logoUrl)
     await seedFaqItems(prisma);
     await seedBanners(prisma);
     const brands = await seedBrands(prisma);
