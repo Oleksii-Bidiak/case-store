@@ -50,3 +50,10 @@ export { OrderMoneyRepository } from '../../../src/order/order-money.repository'
 export { AddonApplicabilityResolver } from '../../../src/addon-service/addon-applicability.resolver';
 export { AddonServiceRepository } from '../../../src/addon-service/addon-service.repository';
 export { CategoryRepository } from '../../../src/category/category.repository';
+export { ReviewRepository } from '../../../src/review/review.repository';
+export {
+  ONE_STAR_RUN_THRESHOLD,
+  ONE_STAR_RUN_WINDOW_HOURS,
+  RATING_BURST_THRESHOLD,
+  RATING_BURST_WINDOW_HOURS,
+} from '../../../src/dashboard/dashboard.types';

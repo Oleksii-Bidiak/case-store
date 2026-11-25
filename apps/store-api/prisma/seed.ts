@@ -105,7 +105,10 @@ async function main() {
     await seedReturns(prisma, orderPlans, orderActors); // must follow seedOrders (its plans)
     await seedContactMessages(prisma);
     await seedNewsletter(prisma);
-    await seedReviews(prisma);
+    await seedReviews(prisma, {
+      owner: admin,
+      content: managerByEmail(managers, 'content@store.com'),
+    }); // must follow seedStaff (the shop's replies are signed by staff)
     await seedAddresses(prisma, customers);
     await seedUserDevices(prisma, customers); // must follow seedDevices (device models)
     await seedPages(prisma);
