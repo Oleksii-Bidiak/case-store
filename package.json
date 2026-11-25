@@ -27,6 +27,7 @@
     "generate:api": "npm run generate:api -w apps/store-client -w apps/store-admin",
     "env:check": "node scripts/env-check.js --audit",
     "docs:links": "node scripts/check-docs-links.js",
+    "bundle-size": "node scripts/bundle-size.js",
     "prepare": "husky"
   },
   "//prettier": [
