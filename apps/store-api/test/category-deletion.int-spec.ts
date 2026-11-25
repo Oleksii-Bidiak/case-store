@@ -840,6 +840,79 @@ describe('Category deletion (integration, TASK-652/653)', () => {
       const [state] = await productState([pShown]);
       expect(state).toEqual(expect.objectContaining({ categoryId: shown, deletedAt: null }));
     });
+
+    it('the target was moved INTO the branch → MOVE_TARGET_IN_SUBTREE, not TREE_STALE', async () => {
+      // AD-CAT-57 (б): the move changes the fingerprint too, but the operator must
+      // hear that the TARGET is now inside the branch, not a generic «tree changed».
+      const shown = await makeCategory('moved-in-branch', anchor, 122);
+      const movedTarget = await makeCategory('moved-in-target', anchor, 123);
+      const pShown = await makeProduct('p-moved-in-branch', shown);
+
+      const preview = await categories.countDeletionImpact(shown);
+      await categories.update(movedTarget, { parentId: shown });
+
+      await expect(
+        categories.deleteSubtreeWithMove(
+          shown,
+          { kind: 'existing', id: movedTarget },
+          preview.branchVersion,
+        ),
+      ).rejects.toBeInstanceOf(CategoryMoveTargetInSubtreeError);
+
+      const rows = await prisma.category.findMany({
+        where: { id: { in: [shown, movedTarget] } },
+        select: { deletedAt: true, isActive: true },
+      });
+      expect(rows).toHaveLength(2);
+      expect(rows.every((row) => row.deletedAt === null && row.isActive)).toBe(true);
+      const [state] = await productState([pShown]);
+      expect(state).toEqual(expect.objectContaining({ categoryId: shown, deletedAt: null }));
+    });
+
+    it('a product was added to the branch → TREE_STALE; nothing written', async () => {
+      const shown = await makeCategory('product-added-branch', anchor, 124);
+      const staleTarget = await makeCategory('product-added-target', anchor, 125);
+      const pBefore = await makeProduct('p-product-added-before', shown);
+
+      const preview = await categories.countDeletionImpact(shown);
+      const pAdded = await makeProduct('p-product-added-after', shown);
+
+      await expect(
+        categories.deleteSubtreeWithMove(
+          shown,
+          { kind: 'existing', id: staleTarget },
+          preview.branchVersion,
+        ),
+      ).rejects.toBeInstanceOf(CategoryTreeStaleError);
+
+      const branch = await prisma.category.findUnique({ where: { id: shown } });
+      expect(branch).toEqual(expect.objectContaining({ deletedAt: null, isActive: true }));
+      const state = await productState([pBefore, pAdded]);
+      expect(state.every((row) => row.categoryId === shown && row.deletedAt === null)).toBe(true);
+    });
+
+    it('a product was moved out of the branch → TREE_STALE; nothing written', async () => {
+      const shown = await makeCategory('product-removed-branch', anchor, 126);
+      const staleTarget = await makeCategory('product-removed-target', anchor, 127);
+      const pStays = await makeProduct('p-product-removed-stays', shown);
+      const pLeaves = await makeProduct('p-product-removed-leaves', shown);
+
+      const preview = await categories.countDeletionImpact(shown);
+      await prisma.product.update({ where: { id: pLeaves }, data: { categoryId: staleTarget } });
+
+      await expect(
+        categories.deleteSubtreeWithMove(
+          shown,
+          { kind: 'existing', id: staleTarget },
+          preview.branchVersion,
+        ),
+      ).rejects.toBeInstanceOf(CategoryTreeStaleError);
+
+      const branch = await prisma.category.findUnique({ where: { id: shown } });
+      expect(branch).toEqual(expect.objectContaining({ deletedAt: null, isActive: true }));
+      const [state] = await productState([pStays]);
+      expect(state).toEqual(expect.objectContaining({ categoryId: shown, deletedAt: null }));
+    });
   });
 
   // ─── The preview names the carousels it switches (TASK-1776) ─────────────────

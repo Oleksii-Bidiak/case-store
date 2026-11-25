@@ -1420,8 +1420,14 @@ export class CategoryRepository {
         }
         await this.acquireLocks(tx, bucketKeys);
 
-        const subtreeNow = await this.findSubtreeIds(id, tx);
         const subtree = new Set(subtreeIds);
+        // A target moved INTO the branch changes the fingerprint too, so this specific
+        // refusal goes before the stale checks — otherwise the operator hears a generic
+        // «tree changed» instead of «the target is now inside the branch» (AD-CAT-57 б).
+        if (target.kind === 'existing' && subtree.has(target.id)) {
+          throw new CategoryMoveTargetInSubtreeError();
+        }
+        const subtreeNow = await this.findSubtreeIds(id, tx);
         if (subtreeNow.length !== subtree.size || subtreeNow.some((sid) => !subtree.has(sid))) {
           throw new CategoryTreeStaleError();
         }
@@ -1439,9 +1445,6 @@ export class CategoryRepository {
           await this.assertDeletableWithoutTarget(tx, id, subtreeIds);
         } else {
           if (target.kind === 'existing') {
-            if (subtree.has(target.id)) {
-              throw new CategoryMoveTargetInSubtreeError();
-            }
             const live = await tx.category.findFirst({
               where: { id: target.id, deletedAt: null },
               select: { id: true, isActive: true },
