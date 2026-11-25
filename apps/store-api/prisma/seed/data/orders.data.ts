@@ -42,6 +42,8 @@ export const orderSpecs: OrderSpec[] = [
       { sku: 'CASE-SIL-MAG-IP15-BK', quantity: 2 },
       { sku: 'SP-GL-IP15-1', quantity: 1 },
     ],
+    // One of the two redemptions that use FLASH300 up.
+    discountCode: 'FLASH300',
     daysAgo: 2,
     money: [{ type: 'liqpay', outcome: 'SUCCEEDED', at: 0.2 }],
   },
@@ -180,6 +182,8 @@ export const orderSpecs: OrderSpec[] = [
     paymentMethod: 'ON_DELIVERY',
     delivery: { method: 'COURIER', street: 'просп. Берестейський, 37, кв. 112' },
     items: [{ sku: 'CHG-BSU-65W-BK', quantity: 1 }],
+    // The second FLASH300 redemption — the code is used up from here on.
+    discountCode: 'FLASH300',
     notes: 'Оплачу курʼєру готівкою.',
     daysAgo: 2,
   },
@@ -308,6 +312,8 @@ export const orderSpecs: OrderSpec[] = [
     paymentMethod: 'INSTALLMENTS',
     delivery: { method: 'PICKUP', point: 'kyiv-khreshchatyk' },
     items: [{ sku: 'HP-SNY-XM5-BK', quantity: 1 }],
+    // The private code: works at checkout, absent from the «Акції» page.
+    discountCode: 'VIP20',
     daysAgo: 1,
     money: [{ type: 'liqpay', outcome: 'SUCCEEDED', at: 0.2 }],
   },

@@ -292,3 +292,44 @@ describe('seeded returns — every path allowed by the return state machine', ()
     expect(byKey.get('taras-4-unrepairable')!.restockedAt).toBeNull();
   });
 });
+
+describe('seeded promo codes (TASK-2569)', () => {
+  const codes = buildDiscountsData();
+  const redeemed = (code: string) => plans.filter((p) => p.spec.discountCode === code);
+  /** DiscountRepository.findPromoPage: active, on the page, started, not expired. */
+  const onPromoPage = codes.filter(
+    (d) =>
+      d.isActive &&
+      d.showOnPromoPage &&
+      (!d.startsAt || d.startsAt.getTime() <= NOW) &&
+      (!d.expiresAt || NOW < d.expiresAt.getTime()) &&
+      (d.maxRedemptions === undefined || redeemed(d.code).length < d.maxRedemptions),
+  );
+
+  it('has a code scheduled to start later', () => {
+    expect(codes.some((d) => d.isActive && d.startsAt && d.startsAt.getTime() > NOW)).toBe(true);
+  });
+
+  it('has a code used up by real redemptions on live account orders', () => {
+    const exhausted = codes.find(
+      (d) => d.maxRedemptions !== undefined && redeemed(d.code).length === d.maxRedemptions,
+    )!;
+    expect(exhausted).toBeDefined();
+    for (const plan of redeemed(exhausted.code)) {
+      expect(plan.spec.email).toBeDefined();
+      expect(plan.status).not.toBe('CANCELLED');
+    }
+  });
+
+  it('lists two or three live codes on the «Акції» page', () => {
+    expect(onPromoPage.length).toBeGreaterThanOrEqual(2);
+    expect(onPromoPage.length).toBeLessThanOrEqual(3);
+  });
+
+  it('redeems the private VIP20, and every redemption carries the order phone', () => {
+    expect(redeemed('VIP20').length).toBeGreaterThan(0);
+    for (const plan of plans.filter((p) => p.spec.discountCode)) {
+      expect(plan.shippingAddress.phone).toMatch(/^380\d{9}$/);
+    }
+  });
+});
