@@ -22,6 +22,7 @@ import { seedPages } from './seed/seeders/pages.seeder';
 import { seedProducts } from './seed/seeders/products.seeder';
 import { seedReviews } from './seed/seeders/reviews.seeder';
 import { seedSeoSettings, seedSiteContactSettings } from './seed/seeders/site-settings.seeder';
+import { seedStaff } from './seed/seeders/staff.seeder';
 import { seedUsers } from './seed/seeders/users.seeder';
 import { pruneSeedImages } from './seed/lib/images/seed-image.generator';
 
@@ -70,7 +71,8 @@ async function main() {
 
   try {
     // Seed in dependency (FK-safe) order.
-    const { admins, customers } = await seedUsers(prisma);
+    const { admin, admins, customers } = await seedUsers(prisma);
+    await seedStaff(prisma, admin); // must follow seedUsers (the owner authors the audit rows)
     await seedSiteContactSettings(prisma);
     await seedSeoSettings(prisma);
     await seedFaqItems(prisma);
