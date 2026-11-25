@@ -258,26 +258,40 @@ test("on a product preview the bar rides above the buy bar up to lg", async ({
     id: hiddenProductId,
   });
 
-  await page.setViewportSize({ width: 768, height: 1024 });
-  await page.goto(`/preview?token=${encodeURIComponent(token)}`);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const response = await page.goto(
+    `/preview?token=${encodeURIComponent(token)}`,
+  );
   await expect(page).toHaveURL(new RegExp(`/products/${HIDDEN_SLUG}$`));
   await expect(
     page.getByRole("heading", { level: 1, name: HIDDEN_NAME }),
   ).toBeVisible();
+  // The draft render is per-visitor: never stored by any cache, never indexed.
+  // `no-store` only — the dev server sends just that; a production build sends
+  // Next's `private, no-cache, no-store, max-age=0, must-revalidate`.
+  expect(response?.headers()["cache-control"] ?? "").toContain("no-store");
+  await expect(page.locator(noindexMeta)).not.toHaveCount(0);
 
   const previewBar = page.getByTestId("preview-bar");
   const buyBar = page.getByTestId("mobile-atc-bar");
-  await expect(previewBar).toBeVisible();
-  await expect(buyBar).toBeVisible();
-  // The inset is published after the buy bar measures itself — poll.
-  await expect
-    .poll(async () => {
-      const preview = await previewBar.boundingBox();
-      const buy = await buyBar.boundingBox();
-      if (!preview || !buy) return Number.POSITIVE_INFINITY;
-      return preview.y + preview.height - buy.y;
-    })
-    .toBeLessThanOrEqual(1);
+  // 1023 is the last width with the buy bar (`lg:hidden` from 1024).
+  for (const width of [390, 768, 1023]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(previewBar, `${width}`).toBeVisible();
+    await expect(buyBar, `${width}`).toBeVisible();
+    // The inset is published after the buy bar measures itself — poll.
+    await expect
+      .poll(
+        async () => {
+          const preview = await previewBar.boundingBox();
+          const buy = await buyBar.boundingBox();
+          if (!preview || !buy) return Number.POSITIVE_INFINITY;
+          return preview.y + preview.height - buy.y;
+        },
+        { message: `preview bar above the buy bar at ${width}` },
+      )
+      .toBeLessThanOrEqual(1);
+  }
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(buyBar).toBeHidden();
