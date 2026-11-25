@@ -245,6 +245,52 @@ test("a hidden product's preview survives a tab return and Back/Forward", async 
   expect(productReads).toEqual([]);
 });
 
+// TASK-2558 (SF-PDP-45) — the PDP buy bar is drawn up to `lg`, so at 768–1023
+// the preview bar must ride on top of it, not cover «Купити». From `lg` up the
+// buy bar is hidden and the preview bar sits on the bottom edge. One link, one
+// page: the spec shares the preview-token rate-limit budget.
+test("on a product preview the bar rides above the buy bar up to lg", async ({
+  page,
+  request,
+}) => {
+  const { token } = await issuePreviewLink(request, {
+    type: "product",
+    id: hiddenProductId,
+  });
+
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.goto(`/preview?token=${encodeURIComponent(token)}`);
+  await expect(page).toHaveURL(new RegExp(`/products/${HIDDEN_SLUG}$`));
+  await expect(
+    page.getByRole("heading", { level: 1, name: HIDDEN_NAME }),
+  ).toBeVisible();
+
+  const previewBar = page.getByTestId("preview-bar");
+  const buyBar = page.getByTestId("mobile-atc-bar");
+  await expect(previewBar).toBeVisible();
+  await expect(buyBar).toBeVisible();
+  // The inset is published after the buy bar measures itself — poll.
+  await expect
+    .poll(async () => {
+      const preview = await previewBar.boundingBox();
+      const buy = await buyBar.boundingBox();
+      if (!preview || !buy) return Number.POSITIVE_INFINITY;
+      return preview.y + preview.height - buy.y;
+    })
+    .toBeLessThanOrEqual(1);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(buyBar).toBeHidden();
+  await expect(previewBar).toBeVisible();
+  await expect
+    .poll(async () => {
+      const preview = await previewBar.boundingBox();
+      if (!preview) return Number.POSITIVE_INFINITY;
+      return Math.abs(900 - (preview.y + preview.height));
+    })
+    .toBeLessThanOrEqual(1);
+});
+
 /** Background the tab and bring it back, as a tab switch does. */
 async function toggleTabVisibility(page: Page): Promise<void> {
   await page.evaluate(() => {
