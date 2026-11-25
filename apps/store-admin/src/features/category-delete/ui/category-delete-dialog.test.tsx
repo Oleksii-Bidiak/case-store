@@ -1469,6 +1469,35 @@ describe("CategoryDeleteDialog — a hidden target (TASK-1837)", () => {
       screen.getByText(d.newParentHiddenNote("Аксесуари")),
     ).toBeInTheDocument();
   });
+
+  it.each([
+    ["a hidden parent", /^Аксесуари\s*прихована$/],
+    ["a hidden ANCESTOR", /^Аудіоаксесуари$/],
+  ])(
+    "«Створити нову» under %s: the products line does not promise «не ховається» (TASK-2610)",
+    async (_case, parentOption) => {
+      const user = userEvent.setup();
+      stub();
+      serveTree(() => treeHiding([ACC]));
+      renderDialog();
+      await ready();
+
+      await user.click(screen.getByRole("radio", { name: d.modeNew }));
+      await user.type(
+        screen.getByRole("textbox", { name: /Назва нової/ }),
+        "Аудіо",
+      );
+      await user.click(screen.getByRole("combobox", { name: d.newParent }));
+      await user.click(
+        within(await screen.findByRole("listbox")).getByRole("option", {
+          name: parentOption,
+        }),
+      );
+
+      expect(screen.queryByText(d.productsSub)).not.toBeInTheDocument();
+      expect(screen.getByText(d.productsSubHidden)).toBeInTheDocument();
+    },
+  );
 });
 
 describe("CategoryDeleteDialog — the branch the operator saw (TASK-2551)", () => {

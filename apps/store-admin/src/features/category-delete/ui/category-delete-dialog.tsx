@@ -501,6 +501,8 @@ function CategoryDeleteForm({
   // menu will not lead to it and the moved products are off the site.
   const hiddenParentName =
     mode === "new" && parentId ? nearestHidden(byId, parentId) : null;
+  const productsOffSite =
+    hiddenTargetName !== null || hiddenParentName !== null;
 
   /* ── submit ─────────────────────────────────────────────────────────── */
 
@@ -923,15 +925,14 @@ function CategoryDeleteForm({
             <>
               {impact.productCount > 0 ? (
                 <ConsequenceRow
-                  // TASK-1837: «не ховається» would be false for a hidden target.
-                  tone={hiddenTargetName !== null ? "warning" : "neutral"}
+                  // TASK-1837 / TASK-2610: «не ховається» would be false for a hidden
+                  // target and for a new one under a hidden parent or ancestor.
+                  tone={productsOffSite ? "warning" : "neutral"}
                   icon={<PackageIcon />}
                   count={d.productsCount(impact.productCount)}
                   text={d.productsText(impact.productCount, target)}
                   sub={[
-                    hiddenTargetName !== null
-                      ? d.productsSubHidden
-                      : d.productsSub,
+                    productsOffSite ? d.productsSubHidden : d.productsSub,
                     impact.deletedProductCount > 0
                       ? d.productsDeletedToo(impact.deletedProductCount)
                       : null,
