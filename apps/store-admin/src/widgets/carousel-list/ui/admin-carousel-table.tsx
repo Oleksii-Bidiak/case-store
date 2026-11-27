@@ -175,10 +175,14 @@ function AdminCarouselView() {
     [homeBlocks.data],
   );
   const [toHome, setToHome] = useState<CarouselToHomeTarget | null>(null);
-  // TASK-2546: the dialog has no trigger — focus returns here on close.
+  // TASK-2546: the dialog has no trigger — focus returns to the opener on
+  // close; after a successful add the opener is gone, so focus goes to the
+  // carousel's row (a focusable grid row that outlives the refetch).
   const homeOpenerRef = useRef<HTMLElement | null>(null);
+  const homeRowRef = useRef<HTMLElement | null>(null);
   const openToHome = (carousel: CarouselEntity, opener: HTMLElement) => {
     homeOpenerRef.current = opener;
+    homeRowRef.current = opener.closest("tr");
     setToHome({
       id: carousel.id,
       title: carousel.title,
@@ -348,6 +352,8 @@ function AdminCarouselView() {
 
         {/* ДН-4.11: where a carousel shows is decided on «Головна» — said once,
             above the column that answers it. */}
+        {/* `canReadHome`, not `home`: `home` carries `onAdd`, which writes a
+            ref, and reading it in render trips react-hooks/refs. */}
         {canReadHome && <Callout>{d.homeIntro}</Callout>}
       </div>
 
@@ -392,6 +398,7 @@ function AdminCarouselView() {
             if (!open) setToHome(null);
           }}
           returnFocusRef={homeOpenerRef}
+          addedFocusRef={homeRowRef}
         />
       )}
     </div>
