@@ -163,6 +163,9 @@ export function auditValue(
  * request body only — `{ field: { to } }` — so «Було» is often unknown; the
  * before-image is written only by the routes that record their own entry
  * (permissions, ownership). Human «Було» everywhere is an API tail.
+ * Some own-audit routes write context fields as plain values, not pairs —
+ * `user.changeEmail` stores `reason` as a string (TASK-2562) — so a value that
+ * is not a `{ from?, to }` object is read itself as «Стало».
  */
 export function auditChanges(entry: AuditEntry): AuditChange[] {
   if (!entry.diff) return [];
@@ -170,17 +173,28 @@ export function auditChanges(entry: AuditEntry): AuditChange[] {
   return Object.entries(entry.diff)
     .filter(([field]) => !TECHNICAL_FIELDS.has(field))
     .map(([field, change]) => {
-      const hasFrom =
-        change !== null &&
-        typeof change === "object" &&
-        Object.prototype.hasOwnProperty.call(change, "from");
+      const label = FIELD_LABELS[field] ?? field;
+      if (!isPair(change)) {
+        return {
+          field,
+          label,
+          from: null,
+          to: auditValue(field, change, type),
+        };
+      }
       return {
         field,
-        label: FIELD_LABELS[field] ?? field,
-        from: hasFrom ? auditValue(field, change.from, type) : null,
-        to: auditValue(field, change?.to, type),
+        label,
+        from: Object.prototype.hasOwnProperty.call(change, "from")
+          ? auditValue(field, change.from, type)
+          : null,
+        to: auditValue(field, change.to, type),
       };
     });
+}
+
+function isPair(value: unknown): value is { from?: unknown; to?: unknown } {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 const MAX_INLINE = 3;

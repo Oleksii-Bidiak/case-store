@@ -104,6 +104,51 @@ describe("auditChanges — «Поле · Було · Стало»", () => {
     );
     expect(line).toBe(`a → 1 · b → 1 · c → 1 · ${d.moreChanges(2)}`);
   });
+
+  // TASK-2562: own-audit routes write context fields as plain values —
+  // `user.changeEmail` stores `reason` as a string, not `{ from, to }`.
+  const emailChange = () =>
+    entry({
+      action: "user.changeEmail",
+      entityType: "user",
+      diff: {
+        email: { from: "a@x.ua", to: "b@x.ua" },
+        emailVerified: { from: true, to: false },
+        reason: "Клієнт втратив доступ до пошти",
+      },
+    });
+
+  it("reads a plain-value field as «Стало» with «Було» unknown (TASK-2562)", () => {
+    const reason = auditChanges(emailChange()).find(
+      (change) => change.field === "reason",
+    );
+    expect(reason).toEqual({
+      field: "reason",
+      label: "Причина",
+      from: null,
+      to: "Клієнт втратив доступ до пошти",
+    });
+  });
+
+  it("puts the plain-value reason into the line under the sentence (TASK-2562)", () => {
+    expect(auditChangesLine(auditChanges(emailChange()))).toContain(
+      d.changeTo("Причина", "Клієнт втратив доступ до пошти"),
+    );
+  });
+
+  it("reads plain numbers and booleans in words too (TASK-2562)", () => {
+    const changes = auditChanges(
+      entry({ diff: { isActive: true, stock: 12 } }),
+    );
+    expect(changes).toEqual([
+      expect.objectContaining({
+        field: "isActive",
+        from: null,
+        to: d.valueYes,
+      }),
+      expect.objectContaining({ field: "stock", from: null, to: "12" }),
+    ]);
+  });
 });
 
 describe("audit filters — period and day groups", () => {
