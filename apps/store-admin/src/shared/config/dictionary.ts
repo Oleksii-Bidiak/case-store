@@ -1184,6 +1184,14 @@ export const dict = {
     notShown: (reasons: string) => `Товар не показано: ${reasons}`,
     stateLoadFailed:
       "Не вдалося перевірити готовність товару. Оновіть сторінку.",
+    // TASK-2574: a hidden category (its own or an ancestor) keeps an active
+    // product off the storefront — the panel names it instead of «Показується».
+    hiddenByCategoryLive: "Приховано на сайті: категорія ",
+    hiddenByCategoryDraft:
+      "Навіть після публікації товару не буде на сайті: прихована категорія ",
+    hiddenByCategoryTail: " прихована",
+    hiddenByCategoryLinkAria: (name: string) =>
+      `Відкрити категорію «${name}» для редагування`,
   },
 
   productForm: {

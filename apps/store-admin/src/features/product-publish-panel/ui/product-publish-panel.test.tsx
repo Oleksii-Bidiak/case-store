@@ -27,7 +27,10 @@ beforeEach(() => {
 });
 
 /** The panel's two reads; returns how often publish-state was asked. */
-function stubReads(blockers: string[] = []) {
+function stubReads(
+  blockers: string[] = [],
+  hiddenByCategory: { id: string; name: string } | null = null,
+) {
   const hits = { state: 0 };
   server.use(
     http.get(`*/api/products/${ID}/images`, () =>
@@ -35,7 +38,7 @@ function stubReads(blockers: string[] = []) {
     ),
     http.get(`*/api/products/${ID}/publish-state`, () => {
       hits.state += 1;
-      return HttpResponse.json({ data: { blockers, hiddenByCategory: null } });
+      return HttpResponse.json({ data: { blockers, hiddenByCategory } });
     }),
   );
   return hits;
@@ -161,5 +164,63 @@ describe("ProductPublishPanel — the server judges readiness (TASK-2573)", () =
 
     await userEvent.click(publishButton());
     await waitFor(() => expect(toastError).toHaveBeenCalledWith(p.toastFailed));
+  });
+});
+
+describe("ProductPublishPanel — a hidden category (TASK-2574)", () => {
+  const live = { ...props, isActive: true };
+  const categoryLink = (name: string) =>
+    screen.findByRole("link", { name: p.hiddenByCategoryLinkAria(name) });
+
+  it("says «Приховано» and names the product's own hidden category", async () => {
+    stubReads([], { id: "cat-1", name: "Чохли" });
+    renderWithProviders(<ProductPublishPanel {...live} />);
+
+    const link = await categoryLink("Чохли");
+    expect(link).toHaveAttribute("href", "/categories/cat-1/edit");
+    expect(link.closest("p")).toHaveTextContent(
+      `${p.hiddenByCategoryLive}«Чохли»${p.hiddenByCategoryTail}`,
+    );
+    expect(screen.getByText(p.draftBadge)).toBeInTheDocument();
+    expect(screen.queryByText(p.liveBadge)).not.toBeInTheDocument();
+    // A hidden category never blocks: the category check is about selection.
+    expect(screen.getByTestId("publish-check-category")).toHaveAttribute(
+      "data-done",
+      "true",
+    );
+  });
+
+  it("links the hidden ANCESTOR the server names", async () => {
+    stubReads([], { id: "cat-root", name: "Аксесуари" });
+    renderWithProviders(<ProductPublishPanel {...live} />);
+
+    expect(await categoryLink("Аксесуари")).toHaveAttribute(
+      "href",
+      "/categories/cat-root/edit",
+    );
+    expect(screen.getByText(p.draftBadge)).toBeInTheDocument();
+  });
+
+  it("warns a hidden draft in one line that publishing alone will not show it", async () => {
+    stubReads([], { id: "cat-1", name: "Чохли" });
+    renderWithProviders(<ProductPublishPanel {...props} />);
+
+    const link = await categoryLink("Чохли");
+    expect(link.closest("p")).toHaveTextContent(
+      `${p.hiddenByCategoryDraft}«Чохли»`,
+    );
+    expect(screen.getByText(p.draftBadge)).toBeInTheDocument();
+    await waitFor(() => expect(publishButton()).toBeEnabled());
+  });
+
+  it("draws no line and says «Показується» when the category is on sale", async () => {
+    stubReads([], null);
+    renderWithProviders(<ProductPublishPanel {...live} />);
+
+    expect(await screen.findByText(p.liveBadge)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: p.unpublish })).toBeEnabled(),
+    );
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Circle, Eye, EyeOff } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
@@ -101,6 +102,12 @@ export function ProductPublishPanel({
     blockers,
   );
   const ready = !stateUnavailable && canPublish(checks);
+  // TASK-2574: an active product under a hidden category (its own or an
+  // ancestor — the server resolves which) is still off the storefront, so the
+  // badge must not say «Показується». It never blocks publishing: the category
+  // check is only about one being selected.
+  const hiddenByCategory = publishState.data?.data.hiddenByCategory ?? null;
+  const onSale = isActive && !hiddenByCategory;
 
   const handleToggle = () => {
     if (isPending) return;
@@ -144,12 +151,29 @@ export function ProductPublishPanel({
         >
           {dict.productPublish.heading}
         </h3>
-        <Badge variant={isActive ? "default" : "secondary"}>
-          {isActive
+        <Badge variant={onSale ? "default" : "secondary"}>
+          {onSale
             ? dict.productPublish.liveBadge
             : dict.productPublish.draftBadge}
         </Badge>
       </div>
+      {hiddenByCategory ? (
+        <p className="text-xs text-muted-foreground">
+          {isActive
+            ? dict.productPublish.hiddenByCategoryLive
+            : dict.productPublish.hiddenByCategoryDraft}
+          <Link
+            href={`/categories/${hiddenByCategory.id}/edit`}
+            aria-label={dict.productPublish.hiddenByCategoryLinkAria(
+              hiddenByCategory.name,
+            )}
+            className="rounded-xs font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            «{hiddenByCategory.name}»
+          </Link>
+          {isActive ? dict.productPublish.hiddenByCategoryTail : null}
+        </p>
+      ) : null}
 
       {publishState.isError ? (
         <p role="alert" className="text-xs text-destructive">
