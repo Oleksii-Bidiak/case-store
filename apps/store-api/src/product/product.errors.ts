@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import type { PublishBlocker } from './product-readiness';
 
 /**
  * Stable, machine-readable error codes for product failures the admin panel has to
@@ -34,6 +35,12 @@ export const ProductErrorCode = {
    * Nothing was written; the same request can simply be sent again in a moment.
    */
   CATEGORY_BUSY: 'PRODUCT_CATEGORY_BUSY',
+  /**
+   * A write that would show the product (activate, create / update with `isActive:
+   * true`) found it missing a blocking requirement — a 400 (TASK-2573). The body
+   * carries `blockers`, the unmet requirements in checklist order.
+   */
+  NOT_READY: 'PRODUCT_NOT_READY',
 } as const;
 
 export type ProductErrorCode = (typeof ProductErrorCode)[keyof typeof ProductErrorCode];
@@ -195,4 +202,24 @@ export function categoryBusyProduct(): ConflictException {
     error: ProductErrorCode.CATEGORY_BUSY,
     message: 'Categories are being changed right now — try again in a moment',
   });
+}
+
+/**
+ * The 400 a write that would show a product answers when the product is not ready
+ * (TASK-2573): {@link ProductErrorCode.NOT_READY} plus the unmet requirements.
+ *
+ * `blockers` reaches the client because `HttpExceptionFilter` passes it through for an
+ * instance of THIS class only — the same by-class terms as `retryAfterSeconds` and
+ * `fieldErrors`; any other exception's extra keys are still dropped.
+ */
+export class ProductNotReadyException extends BadRequestException {
+  readonly blockers: readonly PublishBlocker[];
+
+  constructor(blockers: readonly PublishBlocker[]) {
+    super({
+      error: ProductErrorCode.NOT_READY,
+      message: `The product is not ready to be shown — missing: ${blockers.join(', ')}`,
+    });
+    this.blockers = blockers;
+  }
 }

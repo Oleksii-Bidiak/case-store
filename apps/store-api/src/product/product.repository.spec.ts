@@ -300,6 +300,45 @@ describe('ProductRepository (soft-delete behaviour)', () => {
     });
   });
 
+  describe('findPublishFacts (TASK-2573)', () => {
+    it('reads live products only and flattens the image count', async () => {
+      const category = {
+        id: 'c1',
+        name: 'Cases',
+        isActive: true,
+        ancestorsActive: true,
+        parentId: null,
+        deletedAt: null,
+      };
+      prismaMock.product.findMany.mockResolvedValue([
+        {
+          id: 'p1',
+          name: 'Case',
+          categoryId: 'c1',
+          price: new Prisma.Decimal('10'),
+          _count: { images: 3 },
+          category,
+        },
+      ]);
+
+      const result = await repository.findPublishFacts(['p1', 'gone']);
+
+      expect(prismaMock.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: { in: ['p1', 'gone'] }, deletedAt: null } }),
+      );
+      expect(result).toEqual([
+        {
+          id: 'p1',
+          name: 'Case',
+          categoryId: 'c1',
+          price: new Prisma.Decimal('10'),
+          imageCount: 3,
+          category,
+        },
+      ]);
+    });
+  });
+
   describe('findPublicById (TASK-781)', () => {
     it('reads through the shared public predicate, so a draft answers like a missing id', async () => {
       prismaMock.product.findFirst.mockResolvedValue(null);

@@ -40,3 +40,7 @@ export {
   type ProductListWhereParams,
 } from './product-list-where';
 export { LOW_STOCK_THRESHOLD, MAX_DESCRIPTION_LENGTH } from './product.constants';
+// The publish-readiness rule (TASK-2573) and the 400 a refused show answers with —
+// the global HttpExceptionFilter passes its `blockers` through by class.
+export { PUBLISH_BLOCKERS, publishBlockers, type PublishBlocker } from './product-readiness';
+export { ProductNotReadyException } from './product.errors';

@@ -11,8 +11,10 @@ import {
 import {
   ProductCategoryBusyError,
   ProductCategoryGoneError,
+  ProductNotReadyException,
   ProductRestoreConflictError,
 } from './product.errors';
+import { Prisma } from '@prisma/client';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
 import { AuditService } from '../audit';
 import { ProductSpecRepository } from './product-spec.repository';
@@ -100,7 +102,34 @@ const productRepositoryMock = {
   // TASK-254: derived reserved-qty aggregate. Defaults to an empty map (no
   // reservations); individual tests override to assert the enrichment.
   getReservedQtyByProductId: jest.fn().mockResolvedValue(new Map<string, number>()),
+  // TASK-2573: what the publish-readiness rule judges. Defaults to a READY product
+  // for every asked id, so the show paths behave as before unless a test says not.
+  findPublishFacts: jest.fn(),
 };
+
+/** A ready product's publish facts (TASK-2573); override a field to make it not ready. */
+function publishFacts(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    name: `Product ${id}`,
+    categoryId: 'category-uuid-1',
+    price: new Prisma.Decimal('29.99'),
+    imageCount: 1,
+    category: {
+      id: 'category-uuid-1',
+      name: 'Cases',
+      isActive: true,
+      ancestorsActive: true,
+      parentId: null,
+      deletedAt: null,
+    },
+    ...overrides,
+  };
+}
+
+function readyFactsFor(ids: string[]) {
+  return Promise.resolve(ids.map((id) => publishFacts(id)));
+}
 
 // ─── CategoryRepository mock (TASK-236 subtree rollup) ────────────────────────
 // `findSubtreeIds` echoes back a single-element subtree by default; individual
@@ -275,6 +304,7 @@ describe('ProductService', () => {
     specRepositoryMock.setSpecs.mockResolvedValue(undefined);
     attributeDefinitionRepositoryMock.findEffectiveForCategory.mockResolvedValue([]);
     productRepositoryMock.getReservedQtyByProductId.mockResolvedValue(new Map<string, number>());
+    productRepositoryMock.findPublishFacts.mockImplementation(readyFactsFor);
     auditServiceMock.findLatestActors.mockResolvedValue(new Map());
 
     const module: TestingModule = await Test.createTestingModule({
@@ -1174,16 +1204,33 @@ describe('ProductService', () => {
       );
     });
 
-    it('honours an explicit isActive=true (publishing straight from the API)', async () => {
+    // TASK-2573: a product being created has no images yet, so «publish straight
+    // from the API» would put a photo-less product on the storefront. Refused.
+    it('refuses an explicit isActive=true — a product being created has no photo', async () => {
       productRepositoryMock.findBySlug.mockResolvedValue(null);
       productRepositoryMock.findBySku.mockResolvedValue(null);
       productRepositoryMock.create.mockResolvedValue(mockProduct);
 
-      await service.create({ ...createInput, isActive: true });
+      const error = await service
+        .create({ ...createInput, isActive: true })
+        .catch((e: unknown) => e);
 
-      expect(productRepositoryMock.create).toHaveBeenCalledWith(
-        expect.objectContaining({ isActive: true }),
-      );
+      expect(error).toBeInstanceOf(ProductNotReadyException);
+      expect(errorCodeOf(error)).toBe('PRODUCT_NOT_READY');
+      expect((error as ProductNotReadyException).blockers).toEqual(['photo']);
+      expect(productRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('names every blocker of the create payload, in the fixed order', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+
+      const error = await service
+        .create({ ...createInput, price: 0, isActive: true })
+        .catch((e: unknown) => e);
+
+      expect((error as ProductNotReadyException).blockers).toEqual(['price', 'photo']);
+      expect(productRepositoryMock.create).not.toHaveBeenCalled();
     });
 
     it('sanitizes the description before persisting it (TASK-361)', async () => {
@@ -1538,6 +1585,63 @@ describe('ProductService', () => {
         { oldSlug: 'iphone-15-pro-case-clear-magsafe', newSlug: 'new-slug' },
       );
     });
+
+    // TASK-2573: showing a hidden product through PUT is judged like activate,
+    // on the values the product will have AFTER this write — input over stored.
+    describe('isActive=true on a hidden product (TASK-2573)', () => {
+      beforeEach(() => {
+        productRepositoryMock.findById.mockResolvedValue(mockInactiveProduct);
+        productRepositoryMock.update.mockResolvedValue({ ...mockInactiveProduct, isActive: true });
+      });
+
+      it('refuses when the written price is zero, though the stored one is fine', async () => {
+        const error = await service
+          .update('product-uuid-2', { isActive: true, price: 0 })
+          .catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(ProductNotReadyException);
+        expect((error as ProductNotReadyException).blockers).toEqual(['price']);
+        expect(productRepositoryMock.findPublishFacts).toHaveBeenCalledWith(['product-uuid-2']);
+        expect(productRepositoryMock.update).not.toHaveBeenCalled();
+      });
+
+      it('allows it when the written price fixes a stored zero', async () => {
+        productRepositoryMock.findPublishFacts.mockResolvedValue([
+          publishFacts('product-uuid-2', { price: new Prisma.Decimal('0') }),
+        ]);
+
+        await service.update('product-uuid-2', { isActive: true, price: 10 });
+
+        expect(productRepositoryMock.update).toHaveBeenCalledWith(
+          'product-uuid-2',
+          expect.objectContaining({ isActive: true, price: 10 }),
+          undefined,
+        );
+      });
+
+      it('refuses a stored product without photos', async () => {
+        productRepositoryMock.findPublishFacts.mockResolvedValue([
+          publishFacts('product-uuid-2', { imageCount: 0 }),
+        ]);
+
+        const error = await service
+          .update('product-uuid-2', { isActive: true, name: 'Renamed' })
+          .catch((e: unknown) => e);
+
+        expect((error as ProductNotReadyException).blockers).toEqual(['photo']);
+        expect(productRepositoryMock.update).not.toHaveBeenCalled();
+      });
+
+      it('never checks a write that hides the product', async () => {
+        productRepositoryMock.findPublishFacts.mockResolvedValue([
+          publishFacts('product-uuid-2', { imageCount: 0, price: new Prisma.Decimal('0') }),
+        ]);
+
+        await service.update('product-uuid-2', { isActive: false });
+
+        expect(productRepositoryMock.update).toHaveBeenCalled();
+      });
+    });
   });
 
   // ─── deactivate (admin) ──────────────────────────────────────────────────────
@@ -1574,9 +1678,9 @@ describe('ProductService', () => {
     it('performs the SAME side effects the per-row toggle does, for every row', async () => {
       productRepositoryMock.setActiveMany.mockResolvedValue(updated);
 
-      const count = await service.setStatusMany(['product-uuid-1', 'product-uuid-2'], false);
+      const result = await service.setStatusMany(['product-uuid-1', 'product-uuid-2'], false);
 
-      expect(count).toBe(2);
+      expect(result).toEqual({ updatedCount: 2, skipped: [] });
       expect(productRepositoryMock.setActiveMany).toHaveBeenCalledWith(
         ['product-uuid-1', 'product-uuid-2'],
         false,
@@ -1647,6 +1751,66 @@ describe('ProductService', () => {
       productRepositoryMock.setActiveMany.mockRejectedValue(boom);
 
       await expect(service.setStatusMany(['product-uuid-1'], true)).rejects.toThrow(boom);
+    });
+
+    // TASK-2573: the bulk show applies the same readiness rule as activate —
+    // per product, not all-or-nothing: the ready ones go live, the rest are
+    // reported back with what they lack.
+    describe('showing products that are not ready (TASK-2573)', () => {
+      const ids = ['product-uuid-1', 'product-uuid-2', 'product-uuid-3'];
+
+      beforeEach(() => {
+        productRepositoryMock.findPublishFacts.mockResolvedValue([
+          publishFacts('product-uuid-1'),
+          publishFacts('product-uuid-2', { name: 'No photo', imageCount: 0 }),
+          publishFacts('product-uuid-3', { name: 'Free', price: new Prisma.Decimal('0.00') }),
+        ]);
+      });
+
+      it('writes only the ready ids and reports the rest as skipped, with reasons', async () => {
+        productRepositoryMock.setActiveMany.mockResolvedValue([
+          { id: 'product-uuid-1', slug: 'iphone-15-pro-case', isActive: true },
+        ]);
+
+        const result = await service.setStatusMany(ids, true);
+
+        expect(productRepositoryMock.findPublishFacts).toHaveBeenCalledWith(ids);
+        expect(productRepositoryMock.setActiveMany).toHaveBeenCalledWith(['product-uuid-1'], true);
+        expect(result).toEqual({
+          updatedCount: 1,
+          skipped: [
+            { id: 'product-uuid-2', name: 'No photo', blockers: ['photo'] },
+            { id: 'product-uuid-3', name: 'Free', blockers: ['price'] },
+          ],
+        });
+        expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-1');
+        expect(productIndexerMock.index).toHaveBeenCalledTimes(1);
+      });
+
+      it('writes nothing and evicts nothing when no id is ready', async () => {
+        const result = await service.setStatusMany(['product-uuid-2', 'product-uuid-3'], true);
+
+        expect(productRepositoryMock.setActiveMany).not.toHaveBeenCalled();
+        expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+        expect(result.updatedCount).toBe(0);
+        expect(result.skipped.map((row) => row.id)).toEqual(['product-uuid-2', 'product-uuid-3']);
+      });
+
+      it('still answers 404 for the whole batch when an id is unknown', async () => {
+        await expect(service.setStatusMany([...ids, 'missing-uuid'], true)).rejects.toThrow(
+          NotFoundException,
+        );
+        expect(productRepositoryMock.setActiveMany).not.toHaveBeenCalled();
+      });
+
+      it('never checks a bulk hide', async () => {
+        productRepositoryMock.setActiveMany.mockResolvedValue([]);
+
+        await service.setStatusMany(ids, false);
+
+        expect(productRepositoryMock.findPublishFacts).not.toHaveBeenCalled();
+        expect(productRepositoryMock.setActiveMany).toHaveBeenCalledWith(ids, false);
+      });
     });
   });
 
@@ -1957,6 +2121,62 @@ describe('ProductService', () => {
 
       await expect(service.activate('nonexistent-id')).rejects.toThrow(NotFoundException);
       expect(productRepositoryMock.activate).not.toHaveBeenCalled();
+    });
+
+    // TASK-2573: the admin checklist's blocking rules, enforced by the server.
+    it('refuses a product without photos with PRODUCT_NOT_READY naming the photo', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockInactiveProduct);
+      productRepositoryMock.findPublishFacts.mockResolvedValue([
+        publishFacts('product-uuid-2', { imageCount: 0 }),
+      ]);
+
+      const error = await service.activate('product-uuid-2').catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ProductNotReadyException);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(errorCodeOf(error)).toBe('PRODUCT_NOT_READY');
+      expect((error as ProductNotReadyException).blockers).toEqual(['photo']);
+      expect(productRepositoryMock.activate).not.toHaveBeenCalled();
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+    });
+
+    it('refuses a zero price with PRODUCT_NOT_READY naming the price', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockInactiveProduct);
+      productRepositoryMock.findPublishFacts.mockResolvedValue([
+        publishFacts('product-uuid-2', { price: new Prisma.Decimal('0.00') }),
+      ]);
+
+      const error = await service.activate('product-uuid-2').catch((e: unknown) => e);
+
+      expect((error as ProductNotReadyException).blockers).toEqual(['price']);
+      expect(productRepositoryMock.activate).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── publish state (admin, TASK-2573) ────────────────────────────────────────
+
+  describe('getPublishState', () => {
+    it('returns the blockers of the saved product', async () => {
+      productRepositoryMock.findPublishFacts.mockResolvedValue([
+        publishFacts('product-uuid-2', { imageCount: 0, price: new Prisma.Decimal('0') }),
+      ]);
+
+      const state = await service.getPublishState('product-uuid-2');
+
+      expect(productRepositoryMock.findPublishFacts).toHaveBeenCalledWith(['product-uuid-2']);
+      expect(state).toEqual({ blockers: ['price', 'photo'], hiddenByCategory: null });
+    });
+
+    it('returns no blockers for a ready product', async () => {
+      const state = await service.getPublishState('product-uuid-1');
+
+      expect(state).toEqual({ blockers: [], hiddenByCategory: null });
+    });
+
+    it('answers 404 for an unknown or deleted product', async () => {
+      productRepositoryMock.findPublishFacts.mockResolvedValue([]);
+
+      await expect(service.getPublishState('missing')).rejects.toThrow(NotFoundException);
     });
   });
 

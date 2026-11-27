@@ -28,6 +28,7 @@ import {
 } from '@nestjs/swagger';
 import { PREVIEW_TOKEN_HEADER, PreviewTokenService, markPreviewResponse } from '../preview-token';
 import { ProductService } from './product.service';
+import { PUBLISH_BLOCKERS, type PublishBlocker } from './product-readiness';
 import {
   CreateProductDto,
   UpdateProductDto,
@@ -113,10 +114,93 @@ class AdminProductListResponseEnvelope {
  * if something went wrong, and the operator's confirmation should say what
  * happened rather than what was requested.
  */
+class BulkProductStatusSkipped {
+  @ApiProperty({ description: 'Product UUID' })
+  id!: string;
+
+  @ApiProperty({ description: 'Product name, for the operator report' })
+  name!: string;
+
+  @ApiProperty({
+    description: 'What keeps the product hidden, in checklist order',
+    enum: PUBLISH_BLOCKERS,
+    enumName: 'PublishBlocker',
+    isArray: true,
+  })
+  blockers!: PublishBlocker[];
+}
+
 class BulkProductStatusResult {
   @ApiProperty({ description: 'Products whose isActive was written', example: 12 })
   updatedCount!: number;
+
+  @ApiProperty({
+    type: [BulkProductStatusSkipped],
+    description:
+      'Products a bulk SHOW left hidden because they are not ready (TASK-2573); always ' +
+      'empty for a bulk hide',
+  })
+  skipped!: BulkProductStatusSkipped[];
 }
+
+/** The category that hides an otherwise shown product (TASK-2574). */
+class PublishStateHiddenCategory {
+  @ApiProperty({ description: 'Category UUID' })
+  id!: string;
+
+  @ApiProperty()
+  name!: string;
+}
+
+/** What the publish panel shows for a saved product (TASK-2573). */
+class ProductPublishState {
+  @ApiProperty({
+    description: 'Unmet blocking requirements, in checklist order; empty = may be shown',
+    enum: PUBLISH_BLOCKERS,
+    enumName: 'PublishBlocker',
+    isArray: true,
+  })
+  blockers!: PublishBlocker[];
+
+  @ApiProperty({
+    type: PublishStateHiddenCategory,
+    nullable: true,
+    description:
+      'The category (the product’s own or an ancestor) that keeps the product off the ' +
+      'storefront even while it is active; null when the category is on sale',
+  })
+  hiddenByCategory!: PublishStateHiddenCategory | null;
+}
+
+class ProductPublishStateResponse {
+  @ApiProperty({ type: ProductPublishState })
+  data!: ProductPublishState;
+}
+
+/** The 400 body a refused show answers with (TASK-2573). */
+class ProductNotReadyErrorBody {
+  @ApiProperty({ example: 400 })
+  statusCode!: number;
+
+  @ApiProperty({ example: 'PRODUCT_NOT_READY' })
+  error!: string;
+
+  @ApiProperty()
+  message!: string;
+
+  @ApiProperty({
+    enum: PUBLISH_BLOCKERS,
+    enumName: 'PublishBlocker',
+    isArray: true,
+    required: false,
+    description: 'Present for PRODUCT_NOT_READY only: what is missing, in checklist order',
+  })
+  blockers?: PublishBlocker[];
+}
+
+const PRODUCT_NOT_READY_DESCRIPTION =
+  'PRODUCT_NOT_READY — the write would show a product that is not ready (no name, ' +
+  'category, price above zero or photo); `blockers` lists what is missing (TASK-2573)';
 
 class BulkProductStatusResponse {
   @ApiProperty({ type: BulkProductStatusResult })
@@ -452,6 +536,33 @@ export class ProductController {
   }
 
   /**
+   * GET /api/products/:id/publish-state
+   *
+   * The publish panel's server truth (TASK-2573): which blocking requirements the
+   * SAVED product misses — the same rule activate, the bulk show and create / update
+   * enforce — and which category, if any, hides it from the storefront anyway.
+   * Not cached: the panel reads it right after the edits that change it.
+   *
+   * Two segments, the second literal, so neither `GET /:slug` (one segment) nor
+   * `GET /admin/:id` (literal first segment) can capture it.
+   */
+  @Get(':id/publish-state')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:read')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Publish readiness of a product (admin)',
+    operationId: 'productControllerPublishState',
+  })
+  @ApiParam({ name: 'id', description: 'Product UUID' })
+  @ApiResponse({ status: 200, description: 'Publish state', type: ProductPublishStateResponse })
+  @ApiResponse({ status: 403, description: 'Forbidden — products:read required' })
+  @ApiResponse({ status: 404, description: 'Product not found (or deleted)' })
+  async publishState(@Param('id') id: string): Promise<ProductPublishStateResponse> {
+    return { data: await this.productService.getPublishState(id) };
+  }
+
+  /**
    * POST /api/products
    *
    * Creates a new product. Admin-only endpoint.
@@ -465,9 +576,12 @@ export class ProductController {
   @ApiResponse({ status: 201, description: 'Product created', type: ProductResponseEnvelope })
   @ApiResponse({
     status: 400,
+    type: ProductNotReadyErrorBody,
     description:
       'Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing ' +
-      'category (TASK-1831)',
+      'category (TASK-1831), or ' +
+      PRODUCT_NOT_READY_DESCRIPTION +
+      ' — a product being created has no photo, so `isActive: true` is always refused',
   })
   @ApiResponse({
     status: 409,
@@ -498,9 +612,12 @@ export class ProductController {
   @ApiResponse({ status: 200, description: 'Product updated', type: ProductResponseEnvelope })
   @ApiResponse({
     status: 400,
+    type: ProductNotReadyErrorBody,
     description:
       'Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing ' +
-      'category (TASK-1831)',
+      'category (TASK-1831), or ' +
+      PRODUCT_NOT_READY_DESCRIPTION +
+      ' — checked when `isActive: true` shows a hidden product, on the values after the write',
   })
   @ApiResponse({ status: 404, description: 'Product not found' })
   @ApiResponse({
@@ -639,16 +756,18 @@ export class ProductController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Number of products updated',
+    description:
+      'Number of products updated, and — for a show — the products left hidden because ' +
+      'they are not ready (`skipped`, TASK-2573). Nothing is written when none is ready',
     type: BulkProductStatusResponse,
   })
   @ApiResponse({ status: 400, description: 'Validation error — empty, oversized or non-UUID ids' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   @ApiResponse({ status: 404, description: 'Unknown product id — nothing was written' })
   async setStatusMany(@Body() dto: BulkProductStatusDto): Promise<BulkProductStatusResponse> {
-    const updatedCount = await this.productService.setStatusMany(dto.ids, dto.isActive);
+    const result = await this.productService.setStatusMany(dto.ids, dto.isActive);
 
-    return { data: { updatedCount } };
+    return { data: result };
   }
 
   /**
@@ -785,6 +904,11 @@ export class ProductController {
   @ApiOperation({ summary: 'Activate a product (admin)' })
   @ApiParam({ name: 'id', description: 'Product UUID' })
   @ApiResponse({ status: 200, description: 'Product activated', type: ProductResponseEnvelope })
+  @ApiResponse({
+    status: 400,
+    type: ProductNotReadyErrorBody,
+    description: PRODUCT_NOT_READY_DESCRIPTION,
+  })
   @ApiResponse({ status: 404, description: 'Product not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async activate(@Param('id') id: string): Promise<ProductResponse> {

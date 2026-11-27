@@ -6,6 +6,7 @@ import { translatePrismaError } from './prisma-error.translator';
 import { RetryAfterException } from './retry-after.exception';
 import { ValidationFailedException } from './validation-failed.exception';
 import { redactUrlSecrets } from '../security';
+import { ProductNotReadyException } from '../../product';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -106,6 +107,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // so a client can put the error under its field (forms convention, Rule 6b).
     if (exception instanceof ValidationFailedException) {
       responseBody.fieldErrors = exception.fieldErrors;
+    }
+
+    // TASK-2573: the third, on the same terms. A refused show names what the
+    // product lacks, so the panel can point at the section to fill in.
+    if (exception instanceof ProductNotReadyException) {
+      responseBody.blockers = exception.blockers;
     }
 
     response.status(status).json(responseBody);
