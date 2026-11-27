@@ -195,7 +195,11 @@ describe("OrderPaymentPanel — a partly paid order (R2 A4)", () => {
     expect(screen.getByText(copy.partiallyPaidTitle)).toBeInTheDocument();
     expect(
       screen.getByText(
-        copy.partiallyPaidBody(formatMoney("500.00"), formatMoney("1200.00")),
+        copy.partiallyPaidBody(
+          formatMoney("500.00"),
+          formatMoney("1200.00"),
+          formatMoney("700.00"),
+        ),
         // formatMoney groups with a no-break space; the default normalizer
         // would turn it into a plain one on the page side only.
         { normalizer: (text) => text },

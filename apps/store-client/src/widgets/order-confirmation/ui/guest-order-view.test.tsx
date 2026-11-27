@@ -14,6 +14,7 @@ import {
 } from "@/shared/test/msw-handlers";
 import type { ReturnEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
+import { formatMoney } from "@/shared/lib";
 import { Toaster } from "@/shared/ui";
 import { GuestOrderView } from "./guest-order-view";
 
@@ -145,6 +146,43 @@ describe("GuestOrderView", () => {
     expect(
       await screen.findByText("Оплата: Очікує оплати"),
     ).toBeInTheDocument();
+    // A plain PENDING (cash on delivery) gets no payment panel here.
+    expect(screen.queryByTestId("order-payment-panel")).toBeNull();
+  });
+
+  // TASK-2544: a part-paid order shows how much came in and what is left.
+  it("shows «Сплачено X з Y» and the balance on a part-paid order", async () => {
+    server.use(
+      http.get("*/api/orders/guest/:token", () =>
+        HttpResponse.json(
+          makeOrder({
+            userId: null,
+            status: "CONFIRMED",
+            paymentStatus: "PARTIALLY_PAID",
+            paymentMethod: "ON_DELIVERY",
+            paidKop: 10_000,
+            total: "179.00",
+          }),
+        ),
+      ),
+    );
+
+    renderWithProviders(<GuestOrderView token="token-1" />);
+
+    const panel = await screen.findByTestId("order-payment-panel");
+    expect(
+      within(panel).getByText(
+        dict.order.payment.partiallyPaidBody(
+          formatMoney("100.00"),
+          formatMoney("179.00"),
+          formatMoney("79.00"),
+        ),
+        // formatMoney's no-break space must survive on both sides.
+        { normalizer: (text) => text },
+      ),
+    ).toBeInTheDocument();
+    expect(panel.textContent).toContain(`Залишок ${formatMoney("79.00")}`);
+    expect(within(panel).queryAllByRole("button")).toHaveLength(0);
   });
 
   it("gives one indistinguishable message for a bad or expired link", async () => {

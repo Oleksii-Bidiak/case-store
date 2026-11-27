@@ -242,6 +242,10 @@ export function OrderPaymentPanel({
   // R2: part of the money is in, the rest is paid outside LiqPay (on delivery
   // or by transfer). No retry, no «Оплатити» — the API refuses an attempt here.
   if (paymentStatus === "PARTIALLY_PAID") {
+    // TASK-2544: the balance too, in kopecks so a float total cannot drift.
+    const restKop = partial
+      ? Math.max(0, Math.round(Number(partial.total) * 100) - partial.paidKop)
+      : 0;
     return shell(
       "neutral",
       <CircleDollarSign className="size-5" aria-hidden />,
@@ -250,6 +254,7 @@ export function OrderPaymentPanel({
         ? copy.partiallyPaidBody(
             formatMoney((partial.paidKop / 100).toFixed(2)),
             formatMoney(partial.total),
+            formatMoney((restKop / 100).toFixed(2)),
           )
         : copy.partiallyPaidNoAmount,
     );

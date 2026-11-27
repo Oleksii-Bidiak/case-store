@@ -1940,8 +1940,8 @@ export const dict = {
       refundedBody: "Кошти за це замовлення повернуто на вашу картку.",
       // R2 (TASK-2047 / TASK-2340): a prepaid order — no online payment for the rest.
       partiallyPaidTitle: "Частково оплачено",
-      partiallyPaidBody: (paid: string, total: string) =>
-        `Сплачено ${paid} з ${total}. Решту ви сплачуєте при отриманні або переказом — менеджер підкаже.`,
+      partiallyPaidBody: (paid: string, total: string, rest: string) =>
+        `Сплачено ${paid} з ${total}. Залишок ${rest} — при отриманні або переказом, менеджер підкаже.`,
       partiallyPaidNoAmount:
         "Частину суми вже сплачено. Решту ви сплачуєте при отриманні або переказом — менеджер підкаже.",
       retry: "Спробувати ще раз",
