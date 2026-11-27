@@ -12,7 +12,10 @@ import {
 } from "@/entities/order";
 import { GuestOrderReturnHistory } from "@/entities/return";
 import { useAuth } from "@/entities/session";
-import { GUEST_ORDER_PLACED_PARAM } from "@/features/checkout";
+import {
+  GUEST_ORDER_PLACED_PARAM,
+  OrderPaymentPanel,
+} from "@/features/checkout";
 import { CreateGuestAccount } from "@/features/guest-order-account";
 import { ReturnRequestButton } from "@/features/return-request";
 import { CheckoutTelegramCard } from "@/features/telegram-connect";
@@ -176,6 +179,23 @@ export function GuestOrderView({ token, contact }: GuestOrderViewProps) {
         deliveryMethod={order.deliveryMethod}
         heading={justPlaced ? dict.order.guest.placedHeading : undefined}
       />
+
+      {/* TASK-2544: a part-paid order says how much came in and what is
+          left, as the confirmation page does. No other payment state here. */}
+      {order.paymentStatus === "PARTIALLY_PAID" && (
+        <OrderPaymentPanel
+          orderId={order.id}
+          paymentStatus={order.paymentStatus}
+          orderStatus={order.status}
+          hasRecentAttempt={false}
+          isAwaitingCallback={false}
+          partial={{
+            paidKop: order.paidKop,
+            total: order.total,
+            balanceKop: order.balanceKop,
+          }}
+        />
+      )}
 
       {/* The offer, at the top but after the order is confirmed — still an
           offer, never a condition (TASK-338). */}

@@ -1502,7 +1502,8 @@ export const dict = {
         "Сума замовлення не досягає мінімуму для цього промокоду.",
       DISCOUNT_MAX_REDEMPTIONS_REACHED:
         "Ліміт використань цього промокоду вичерпано.",
-      DISCOUNT_USER_LIMIT_REACHED: "Ви вже використали цей промокод.",
+      DISCOUNT_USER_LIMIT_REACHED:
+        "Цей промокод уже використано для вашого акаунта або номера телефону.",
       // Status-driven branches (TASK-402). The live demo read a plain 401 as
       // "WELCOME10 не працює" because every failure shared one sentence.
       unauthorized: "Щоб скористатись промокодом, увійдіть в акаунт.",
@@ -1850,6 +1851,10 @@ export const dict = {
     // tab or a retry already placed the order, sometimes a line was removed.
     errorCartAlreadyOrdered:
       "Кошик змінився, поки ви оформлювали, — можливо, замовлення вже створено в іншій вкладці. Перевірте «Мої замовлення» або кошик.",
+    // TASK-2543: follows the cart's own sentence for a refused promo code
+    // (`discounts.errors[code]`) — the way out is the «Прибрати» next to it.
+    errorPromoRefusedHint:
+      "Приберіть його в «Підсумку замовлення», щоб оформити без знижки.",
   },
 
   order: {
@@ -1936,8 +1941,10 @@ export const dict = {
       refundedBody: "Кошти за це замовлення повернуто на вашу картку.",
       // R2 (TASK-2047 / TASK-2340): a prepaid order — no online payment for the rest.
       partiallyPaidTitle: "Частково оплачено",
-      partiallyPaidBody: (paid: string, total: string) =>
-        `Сплачено ${paid} з ${total}. Решту ви сплачуєте при отриманні або переказом — менеджер підкаже.`,
+      partiallyPaidBody: (paid: string, total: string, rest: string) =>
+        `Сплачено ${paid} з ${total}. Залишок ${rest} — при отриманні або переказом, менеджер підкаже.`,
+      partiallyPaidBodyNoRest: (paid: string, total: string) =>
+        `Сплачено ${paid} з ${total}.`,
       partiallyPaidNoAmount:
         "Частину суми вже сплачено. Решту ви сплачуєте при отриманні або переказом — менеджер підкаже.",
       retry: "Спробувати ще раз",

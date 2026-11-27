@@ -13,7 +13,7 @@ import {
 } from "@/shared/test/msw-handlers";
 import type { OrderEntity } from "@/entities/order";
 import { dict } from "@/shared/config";
-import { formatTime } from "@/shared/lib";
+import { formatMoney, formatTime } from "@/shared/lib";
 import { OrderDetailView } from "./order-detail-view";
 
 jest.mock("next/navigation", () => ({
@@ -141,6 +141,24 @@ describe("OrderDetailView (TASK-217)", () => {
       expect(panel()).toBeNull();
       expect(screen.getByTestId("order-closed-strip")).toBeInTheDocument();
     });
+
+    // TASK-2544: the panel says «Частково оплачено», not «скасовано» — the
+    // strip stays the one place that says the order is closed.
+    it("keeps the strip for a cancelled part-paid cash-on-delivery order", async () => {
+      await renderDetail({
+        status: "CANCELLED",
+        paymentStatus: "PARTIALLY_PAID",
+        paymentMethod: "ON_DELIVERY",
+        paidKop: 10_000,
+        total: "179.00",
+      });
+      expect(panel()).toHaveTextContent(pay.partiallyPaidTitle);
+      // Nothing is owed on a cancelled order — no «Залишок … при отриманні».
+      expect(panel()?.textContent).not.toContain("Залишок");
+      expect(screen.getByTestId("order-closed-strip")).toHaveTextContent(
+        d.closedCancelled,
+      );
+    });
   });
 
   describe("payment panel", () => {
@@ -242,6 +260,32 @@ describe("OrderDetailView (TASK-217)", () => {
       });
       expect(panel()).toBeNull();
       expect(primaries(container)).toHaveLength(0);
+    });
+
+    // TASK-2544: part of the money recorded in the admin — the shopper sees
+    // how much came in and what is left, not just the pill.
+    it("cash on delivery, part-paid — «Сплачено X з Y» and the balance, no button", async () => {
+      await renderDetail({
+        status: "CONFIRMED",
+        paymentStatus: "PARTIALLY_PAID",
+        paymentMethod: "ON_DELIVERY",
+        paidKop: 10_000,
+        balanceKop: 7_900,
+        total: "179.00",
+      });
+      expect(
+        screen.getByText(
+          pay.partiallyPaidBody(
+            formatMoney("100.00"),
+            formatMoney("179.00"),
+            formatMoney("79.00"),
+          ),
+          // formatMoney's no-break space must survive on both sides.
+          { normalizer: (text) => text },
+        ),
+      ).toBeInTheDocument();
+      expect(panel()?.textContent).toContain(`Залишок ${formatMoney("79.00")}`);
+      expect(within(panel()!).queryAllByRole("button")).toHaveLength(0);
     });
   });
 

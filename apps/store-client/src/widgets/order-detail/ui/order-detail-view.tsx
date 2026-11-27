@@ -155,15 +155,20 @@ function OrderDetailContent({
   // `notes` is generated loosely; narrow to a display string.
   const notes = typeof order.notes === "string" && order.notes.trim();
 
-  // Cash on delivery: nothing to say about money online (AccountOrders.dc.html).
-  const showPanel = order.paymentMethod !== "ON_DELIVERY";
+  // Cash on delivery: nothing to say about money online (AccountOrders.dc.html)
+  // — unless part of it was recorded in the admin: then the shopper is told
+  // how much came in and what is left (TASK-2544).
+  const showPanel =
+    order.paymentMethod !== "ON_DELIVERY" ||
+    order.paymentStatus === "PARTIALLY_PAID";
   // When the panel itself says «Замовлення скасовано», the strip would repeat
   // it word for word — the panel's body already explains, so the strip goes.
   const panelSaysCancelled =
     showPanel &&
     !open &&
     order.paymentStatus !== "PAID" &&
-    order.paymentStatus !== "REFUNDED";
+    order.paymentStatus !== "REFUNDED" &&
+    order.paymentStatus !== "PARTIALLY_PAID";
 
   const canCancel = order.status === "PENDING";
   // TASK-373: DELIVERED only, though the API accepts SHIPPED too — a parcel
@@ -214,7 +219,11 @@ function OrderDetailContent({
           orderStatus={order.status}
           hasRecentAttempt={watch.hasRecentAttempt}
           isAwaitingCallback={watch.isAwaitingCallback}
-          partial={{ paidKop: order.paidKop, total: order.total }}
+          partial={{
+            paidKop: order.paidKop,
+            total: order.total,
+            balanceKop: order.balanceKop,
+          }}
           awaiting={{
             minutes: awaitingPaymentMinutes(order, now),
             until: order.reservationExpiresAt

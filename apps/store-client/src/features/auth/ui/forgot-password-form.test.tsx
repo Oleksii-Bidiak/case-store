@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw";
+import { onlineManager } from "@tanstack/react-query";
 import {
   renderWithProviders,
   screen,
@@ -111,6 +112,42 @@ describe("ForgotPasswordForm", () => {
     expect(
       screen.getByRole("button", { name: dict.auth.forgotPassword.submit }),
     ).toBeEnabled();
+  });
+
+  // TASK-2541: offline, React Query used to PAUSE the mutation — the button
+  // stuck on "submitting" with no error, and the request went out by itself
+  // once the network came back.
+  it("shows the network error at once when the browser is offline", async () => {
+    server.use(
+      http.post("*/api/auth/password-reset/request", () =>
+        HttpResponse.error(),
+      ),
+    );
+    onlineManager.setOnline(false);
+    try {
+      const user = userEvent.setup();
+      renderWithProviders(<ForgotPasswordForm />);
+
+      await user.type(
+        screen.getByLabelText(dict.auth.forgotPassword.email),
+        "user@test.ua",
+      );
+      await user.click(
+        screen.getByRole("button", { name: dict.auth.forgotPassword.submit }),
+      );
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        dict.auth.forgotPassword.errorNetwork,
+      );
+      expect(
+        screen.getByRole("button", { name: dict.auth.forgotPassword.submit }),
+      ).toBeEnabled();
+      expect(
+        screen.queryByText(dict.auth.forgotPassword.submitting),
+      ).not.toBeInTheDocument();
+    } finally {
+      onlineManager.setOnline(true);
+    }
   });
 
   it("names the throttle on a 429 instead of a network error", async () => {
