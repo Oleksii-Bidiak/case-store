@@ -32,6 +32,7 @@ import type { OrderWithItems } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { ParcelReturnRefusedError } from '../src/order/order.errors';
 import { createGlobalValidationPipe } from '../src/common/pipes';
 
 /**
@@ -81,7 +82,14 @@ describe('OrderController (e2e)', () => {
     // TASK-2048: «Створити копію».
     findCopySource: jest.fn(),
     createManualCopy: jest.fn(),
+    // TASK-2575: «Посилку повернуто на склад» and the detail's canReturnParcel.
+    returnParcelToStock: jest.fn(),
+    readParcelReturnFacts: jest.fn(),
   };
+
+  // TASK-2575: kept in a variable so a test can grant a staff member orders:write.
+  // A plain object, so the suite's resetAllMocks does not wipe it.
+  const permissionRepositoryMock = createPermissionRepositoryMock();
 
   // TASK-483: the public "check my order" form has its own narrow repository, so
   // the wide order read can never leak into it. Mocked separately for the same
@@ -316,7 +324,7 @@ describe('OrderController (e2e)', () => {
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
       .overrideProvider(PermissionRepository)
-      .useValue(createPermissionRepositoryMock())
+      .useValue(permissionRepositoryMock)
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)
@@ -398,6 +406,8 @@ describe('OrderController (e2e)', () => {
     prismaServiceMock.pickupPoint.findFirst.mockResolvedValue(null);
     novaPoshtaClientMock.isConfigured.mockReturnValue(true);
     novaPoshtaClientMock.estimateShipping.mockResolvedValue({ cost: NP_COST, etaDays: 2 });
+    // TASK-2575: the admin detail reads the parcel-return facts; none by default.
+    orderRepositoryMock.readParcelReturnFacts.mockResolvedValue(null);
   });
 
   // ─── POST /api/orders ────────────────────────────────────────────────────────
@@ -2348,6 +2358,83 @@ describe('OrderController (e2e)', () => {
       await request(app.getHttpServer())
         .get('/api/admin/orders/order-e2e-1/allowed-transitions')
         .expect(401);
+    });
+  });
+
+  // ─── POST /api/admin/orders/:orderId/parcel-returned (TASK-2575) ───────────────
+
+  describe('POST /api/admin/orders/:orderId/parcel-returned', () => {
+    const url = '/api/admin/orders/order-e2e-1/parcel-returned';
+    const manager = { id: 'manager-parcel-1', role: 'MANAGER' as const };
+
+    afterEach(() => {
+      permissionRepositoryMock.setGrants('MANAGER', []);
+    });
+
+    it('returns 403 for a staff member without orders:write, and writes nothing', async () => {
+      permissionRepositoryMock.setGrants('MANAGER', ['orders:read']);
+      const token = generateAccessToken(manager.id, manager.role);
+
+      await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      expect(orderRepositoryMock.returnParcelToStock).not.toHaveBeenCalled();
+    });
+
+    it('returns 200 with the order for a staff member with orders:write', async () => {
+      permissionRepositoryMock.setGrants('MANAGER', ['orders:read', 'orders:write']);
+      const token = generateAccessToken(manager.id, manager.role);
+      orderRepositoryMock.returnParcelToStock.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CANCELLED, restockedAt: new Date() }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data.status).toBe(OrderStatus.CANCELLED);
+      expect(response.body.data.restockedAt).not.toBeNull();
+      expect(orderRepositoryMock.returnParcelToStock).toHaveBeenCalledWith(
+        'order-e2e-1',
+        manager.id,
+      );
+    });
+
+    it('answers 409 with the stable code when the parcel was already returned', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.returnParcelToStock.mockRejectedValue(
+        new ParcelReturnRefusedError('ALREADY_RETURNED'),
+      );
+
+      const response = await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+
+      expect(response.body.error).toBe('ORDER_PARCEL_ALREADY_RETURNED');
+    });
+
+    it('GET detail carries canReturnParcel from the server rule', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CANCELLED }),
+      );
+      orderRepositoryMock.readParcelReturnFacts.mockResolvedValue({
+        status: OrderStatus.CANCELLED,
+        restockedAt: null,
+        cancelledFrom: OrderStatus.SHIPPED,
+        hasOpenReturn: false,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data.canReturnParcel).toBe(true);
     });
   });
 

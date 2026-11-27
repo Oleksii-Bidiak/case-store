@@ -14795,6 +14795,52 @@
         ]
       }
     },
+    "/api/admin/orders/{orderId}/parcel-returned": {
+      "post": {
+        "operationId": "adminOrderControllerReturnParcelToStock",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stock credited; the order stays CANCELLED with restockedAt set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — orders:write required"
+          },
+          "404": {
+            "description": "Order not found"
+          },
+          "409": {
+            "description": "ORDER_NOT_CANCELLED_AFTER_SHIPMENT — the order is not CANCELLED, or its cancel came before shipment (that cancel restocked it); ORDER_PARCEL_ALREADY_RETURNED — the stock was already credited; ORDER_HAS_RETURN — a return that is not REJECTED owns the units"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Return a refused parcel to stock (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
     "/api/admin/orders/{orderId}/money": {
       "get": {
         "description": "Totals (paid, refunded, return credit, balance), the journal with authors and reversals, the receipt kinds this order admits, what may go back with and without a return, and the LiqPay attempts still refundable (null without payments:read).",
@@ -31022,6 +31068,10 @@
             "description": "TASK-2048: the copy whose «Скасувати #старе — замінено» cancelled this order («Замінено на»), or null — a copy of an order cancelled earlier replaced nothing. Admin reads only — absent elsewhere.",
             "nullable": true,
             "format": "uuid"
+          },
+          "canReturnParcel": {
+            "type": "boolean",
+            "description": "TASK-2575 «Посилку повернуто на склад»: whether the refused parcel of this order may be returned to stock now — CANCELLED after it shipped, not yet restocked, no return that is not REJECTED. Admin order detail only — absent elsewhere."
           }
         },
         "required": [
@@ -31322,6 +31372,10 @@
             "description": "TASK-2048: the copy whose «Скасувати #старе — замінено» cancelled this order («Замінено на»), or null — a copy of an order cancelled earlier replaced nothing. Admin reads only — absent elsewhere.",
             "nullable": true,
             "format": "uuid"
+          },
+          "canReturnParcel": {
+            "type": "boolean",
+            "description": "TASK-2575 «Посилку повернуто на склад»: whether the refused parcel of this order may be returned to stock now — CANCELLED after it shipped, not yet restocked, no return that is not REJECTED. Admin order detail only — absent elsewhere."
           },
           "guestAccessToken": {
             "type": "string",
@@ -32103,7 +32157,8 @@
               "LEGACY_MONEY_UNKNOWN",
               "PROVIDER_REFUND_UNMATCHED",
               "COPIED_TO_ORDER",
-              "COPY_OF_ORDER"
+              "COPY_OF_ORDER",
+              "PARCEL_RETURNED_TO_STOCK"
             ],
             "nullable": true,
             "example": null

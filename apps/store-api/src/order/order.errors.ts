@@ -1,7 +1,8 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DeliveryMethod } from '@prisma/client';
 import type { OrderStatus } from '@prisma/client';
 import type { PayoutRefusal, ReceiptRefusal } from './order-money';
+import type { ParcelReturnRefusal } from './parcel-return';
 
 /**
  * Stable, machine-readable error codes for order-lifecycle conflicts (TASK-332).
@@ -104,6 +105,18 @@ export const OrderErrorCode = {
    * first one already placed the order (TASK-2521).
    */
   CART_EMPTY: 'CART_EMPTY',
+  /**
+   * «Посилку повернуто на склад» (TASK-2575) on an order that is not CANCELLED, or
+   * whose latest cancel came from a pre-shipment status (that cancel restocked it).
+   */
+  NOT_CANCELLED_AFTER_SHIPMENT: 'ORDER_NOT_CANCELLED_AFTER_SHIPMENT',
+  /** The refused parcel's units were already credited back to stock (TASK-2575). */
+  PARCEL_ALREADY_RETURNED: 'ORDER_PARCEL_ALREADY_RETURNED',
+  /**
+   * The order has a return that is not REJECTED (TASK-2575): resolving it can credit
+   * the same units, so the parcel return is refused — the return is the way.
+   */
+  HAS_RETURN: 'ORDER_HAS_RETURN',
 } as const;
 
 export type OrderErrorCode = (typeof OrderErrorCode)[keyof typeof OrderErrorCode];
@@ -231,6 +244,48 @@ export function orderDeliveryLockedError(): ConflictException {
     error: OrderErrorCode.DELIVERY_LOCKED,
     message: 'The delivery can only be changed before the order ships',
   });
+}
+
+// ─── «Посилку повернуто на склад» (TASK-2575) ───────────────────────────────
+
+/**
+ * `OrderRepository.returnParcelToStock` refused, decided under the order-row lock.
+ * A domain error, not an HTTP one: the service maps it ({@link parcelReturnHttpError}).
+ * Nothing was written.
+ */
+export class ParcelReturnRefusedError extends Error {
+  constructor(readonly reason: ParcelReturnRefusal | 'ORDER_NOT_FOUND') {
+    super(`The parcel cannot be returned to stock: ${reason}`);
+    this.name = 'ParcelReturnRefusedError';
+  }
+}
+
+const PARCEL_RETURN_CONFLICTS: Record<
+  ParcelReturnRefusal,
+  { error: OrderErrorCode; message: string }
+> = {
+  NOT_CANCELLED_AFTER_SHIPMENT: {
+    error: OrderErrorCode.NOT_CANCELLED_AFTER_SHIPMENT,
+    message: 'Only an order cancelled after it shipped can have its parcel returned to stock',
+  },
+  ALREADY_RETURNED: {
+    error: OrderErrorCode.PARCEL_ALREADY_RETURNED,
+    message: 'This order’s parcel has already been returned to stock',
+  },
+  HAS_RETURN: {
+    error: OrderErrorCode.HAS_RETURN,
+    message: 'This order has a return request — receive the goods through the return instead',
+  },
+};
+
+/** 404 for a missing order, else the 409 that names why the parcel return was refused. */
+export function parcelReturnHttpError(
+  error: ParcelReturnRefusedError,
+): NotFoundException | ConflictException {
+  if (error.reason === 'ORDER_NOT_FOUND') {
+    return new NotFoundException('Order not found');
+  }
+  return new ConflictException(PARCEL_RETURN_CONFLICTS[error.reason]);
 }
 
 // ─── What a guest checkout needs an account for (TASK-2010) ─────────────────

@@ -6258,6 +6258,7 @@ export const dict = {
       revokeAll: "відкликано всі прев'ю",
       // TASK-2041: PUT /admin/seo-settings/logo — the logo chosen from the library.
       setLogoFromLibrary: "обрано логотип з медіатеки",
+      returnParcelToStock: "посилку повернуто на склад",
     },
 
     /** How the two halves are joined: «Замовлення — змінено статус». */

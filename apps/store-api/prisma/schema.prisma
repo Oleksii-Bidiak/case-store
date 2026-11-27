@@ -293,6 +293,10 @@ enum OrderHistoryNote {
   COPIED_TO_ORDER
   /// This order was born as a copy of another (TASK-2048) — on its creation row.
   COPY_OF_ORDER
+  /// «Посилку повернуто на склад» (TASK-2575): the refused parcel of an order
+  /// cancelled after shipment came back and its units were credited to stock — on a
+  /// CANCELLED → CANCELLED row. Written once per order (`restockedAt` arbitrates).
+  PARCEL_RETURNED_TO_STOCK
 }
 
 /// Data type of a structured product characteristic (TASK-191, plan 112).

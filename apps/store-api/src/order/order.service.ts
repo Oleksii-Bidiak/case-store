@@ -67,7 +67,10 @@ import {
   copyCustomerChangedError,
   copyOriginalNotCancellableError,
   cartEmptyError,
+  ParcelReturnRefusedError,
+  parcelReturnHttpError,
 } from './order.errors';
+import { parcelReturnRefusal } from './parcel-return';
 import {
   AddonApplicabilityResolver,
   centsToString,
@@ -1348,7 +1351,32 @@ export class OrderService {
     }
 
     // TASK-336: the admin card is the one place internalNotes belongs.
-    return OrderEntity.fromPrisma(order, { includeInternal: true });
+    const entity = OrderEntity.fromPrisma(order, { includeInternal: true });
+    // TASK-2575: offered from the same rule the write enforces under the lock.
+    const parcelFacts = await this.orderRepository.readParcelReturnFacts(orderId);
+    entity.canReturnParcel = parcelFacts !== null && parcelReturnRefusal(parcelFacts) === null;
+    return entity;
+  }
+
+  /**
+   * Admin — «Посилку повернуто на склад» (TASK-2575): credit the units of a refused
+   * parcel (an order cancelled after shipment) back to stock, once. The repository
+   * decides under the order-row lock; its refusal becomes a 404 or a coded 409.
+   */
+  async returnParcelToStock(orderId: string, adminUserId: string): Promise<OrderEntity> {
+    try {
+      const order = await this.orderRepository.returnParcelToStock(orderId, adminUserId);
+      this.logger.info(
+        { event: 'order.parcel_returned_to_stock', orderId, changedBy: adminUserId },
+        'Refused parcel returned to stock',
+      );
+      return OrderEntity.fromPrisma(order);
+    } catch (error) {
+      if (error instanceof ParcelReturnRefusedError) {
+        throw parcelReturnHttpError(error);
+      }
+      throw error;
+    }
   }
 
   /**

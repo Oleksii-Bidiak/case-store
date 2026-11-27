@@ -482,6 +482,16 @@ export class OrderEntity {
   })
   replacedById?: string | null;
 
+  @ApiProperty({
+    description:
+      'TASK-2575 «Посилку повернуто на склад»: whether the refused parcel of this order may ' +
+      'be returned to stock now — CANCELLED after it shipped, not yet restocked, no return ' +
+      'that is not REJECTED. Admin order detail only — absent elsewhere.',
+    type: Boolean,
+    required: false,
+  })
+  canReturnParcel?: boolean;
+
   /**
    * Create an OrderEntity from a repository order. Converts all Decimal money
    * fields to strings and maps each line into an {@link OrderItemEntity}.
