@@ -1942,6 +1942,8 @@ export const dict = {
       partiallyPaidTitle: "Частково оплачено",
       partiallyPaidBody: (paid: string, total: string, rest: string) =>
         `Сплачено ${paid} з ${total}. Залишок ${rest} — при отриманні або переказом, менеджер підкаже.`,
+      partiallyPaidBodyNoRest: (paid: string, total: string) =>
+        `Сплачено ${paid} з ${total}.`,
       partiallyPaidNoAmount:
         "Частину суми вже сплачено. Решту ви сплачуєте при отриманні або переказом — менеджер підкаже.",
       retry: "Спробувати ще раз",

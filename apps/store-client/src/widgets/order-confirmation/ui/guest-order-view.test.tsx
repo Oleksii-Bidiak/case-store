@@ -161,6 +161,7 @@ describe("GuestOrderView", () => {
             paymentStatus: "PARTIALLY_PAID",
             paymentMethod: "ON_DELIVERY",
             paidKop: 10_000,
+            balanceKop: 7_900,
             total: "179.00",
           }),
         ),

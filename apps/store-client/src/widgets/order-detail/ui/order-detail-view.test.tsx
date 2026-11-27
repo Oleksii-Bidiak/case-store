@@ -153,6 +153,8 @@ describe("OrderDetailView (TASK-217)", () => {
         total: "179.00",
       });
       expect(panel()).toHaveTextContent(pay.partiallyPaidTitle);
+      // Nothing is owed on a cancelled order — no «Залишок … при отриманні».
+      expect(panel()?.textContent).not.toContain("Залишок");
       expect(screen.getByTestId("order-closed-strip")).toHaveTextContent(
         d.closedCancelled,
       );
@@ -268,6 +270,7 @@ describe("OrderDetailView (TASK-217)", () => {
         paymentStatus: "PARTIALLY_PAID",
         paymentMethod: "ON_DELIVERY",
         paidKop: 10_000,
+        balanceKop: 7_900,
         total: "179.00",
       });
       expect(

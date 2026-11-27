@@ -95,9 +95,11 @@ interface OrderPaymentPanelProps {
    * What came in so far on a PARTIALLY_PAID order (R2, TASK-2047): the ledger's
    * `paidKop` and the order total as the API sends it ("1200.00"). Read only
    * for that status — «Сплачено X з Y», never a pay button (TASK-2340: an
-   * attempt would charge the whole total again).
+   * attempt would charge the whole total again). `balanceKop` is the server's
+   * balance (TASK-2544): it already nets out a return credit and is 0 on a
+   * cancelled order, so «Залишок» is never recomputed here.
    */
-  partial?: { paidKop: number; total: string };
+  partial?: { paidKop: number; total: string; balanceKop: number };
 }
 
 type Tone = "positive" | "neutral" | "warning" | "negative";
@@ -242,21 +244,26 @@ export function OrderPaymentPanel({
   // R2: part of the money is in, the rest is paid outside LiqPay (on delivery
   // or by transfer). No retry, no «Оплатити» — the API refuses an attempt here.
   if (paymentStatus === "PARTIALLY_PAID") {
-    // TASK-2544: the balance too, in kopecks so a float total cannot drift.
-    const restKop = partial
-      ? Math.max(0, Math.round(Number(partial.total) * 100) - partial.paidKop)
-      : 0;
+    // TASK-2544: what is left is the server's balance, as the admin shows it —
+    // none on a cancelled order (nothing is owed there) or when nothing is due.
+    let body: string = copy.partiallyPaidNoAmount;
+    if (partial) {
+      const paid = formatMoney((partial.paidKop / 100).toFixed(2));
+      const total = formatMoney(partial.total);
+      body =
+        orderStatus !== "CANCELLED" && partial.balanceKop > 0
+          ? copy.partiallyPaidBody(
+              paid,
+              total,
+              formatMoney((partial.balanceKop / 100).toFixed(2)),
+            )
+          : copy.partiallyPaidBodyNoRest(paid, total);
+    }
     return shell(
       "neutral",
       <CircleDollarSign className="size-5" aria-hidden />,
       copy.partiallyPaidTitle,
-      partial
-        ? copy.partiallyPaidBody(
-            formatMoney((partial.paidKop / 100).toFixed(2)),
-            formatMoney(partial.total),
-            formatMoney((restKop / 100).toFixed(2)),
-          )
-        : copy.partiallyPaidNoAmount,
+      body,
     );
   }
 

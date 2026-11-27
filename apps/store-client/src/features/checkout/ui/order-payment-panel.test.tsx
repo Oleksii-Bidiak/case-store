@@ -189,7 +189,7 @@ describe("OrderPaymentPanel — a partly paid order (R2 A4)", () => {
       paymentStatus: "PARTIALLY_PAID",
       orderStatus: "CONFIRMED",
       hasRecentAttempt: false,
-      partial: { paidKop: 50_000, total: "1200.00" },
+      partial: { paidKop: 50_000, total: "1200.00", balanceKop: 70_000 },
     });
 
     expect(screen.getByText(copy.partiallyPaidTitle)).toBeInTheDocument();
@@ -208,13 +208,74 @@ describe("OrderPaymentPanel — a partly paid order (R2 A4)", () => {
     expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 
+  // TASK-2544: the balance is the server's, as the admin shows it — a return
+  // credit is netted out, never recomputed as total − paid.
+  it("shows the server balance, not total − paid, after a return credit", () => {
+    renderPanel({
+      paymentStatus: "PARTIALLY_PAID",
+      orderStatus: "DELIVERED",
+      hasRecentAttempt: false,
+      // 1000 total, 300 credited back for a return, 400 paid → 300 left.
+      partial: { paidKop: 40_000, total: "1000.00", balanceKop: 30_000 },
+    });
+
+    const text = screen.getByTestId("order-payment-panel").textContent;
+    expect(text).toContain(`Залишок ${formatMoney("300.00")}`);
+    expect(text).not.toContain(formatMoney("600.00"));
+  });
+
+  it("says no «Залишок» when the server owes nothing more", () => {
+    renderPanel({
+      paymentStatus: "PARTIALLY_PAID",
+      orderStatus: "DELIVERED",
+      hasRecentAttempt: false,
+      partial: { paidKop: 70_000, total: "1000.00", balanceKop: 0 },
+    });
+
+    expect(
+      screen.getByText(
+        copy.partiallyPaidBodyNoRest(
+          formatMoney("700.00"),
+          formatMoney("1000.00"),
+        ),
+        { normalizer: (text) => text },
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("order-payment-panel").textContent).not.toContain(
+      "Залишок",
+    );
+  });
+
+  it("says no «Залишок» on a cancelled order — nothing is owed there", () => {
+    renderPanel({
+      paymentStatus: "PARTIALLY_PAID",
+      orderStatus: "CANCELLED",
+      hasRecentAttempt: false,
+      // The server balance is negative: the shop owes the 400 back.
+      partial: { paidKop: 40_000, total: "1000.00", balanceKop: -40_000 },
+    });
+
+    expect(
+      screen.getByText(
+        copy.partiallyPaidBodyNoRest(
+          formatMoney("400.00"),
+          formatMoney("1000.00"),
+        ),
+        { normalizer: (text) => text },
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("order-payment-panel").textContent).not.toContain(
+      "Залишок",
+    );
+  });
+
   it("offers no «Оплатити» even with the reservation still running", () => {
     renderPanel({
       paymentStatus: "PARTIALLY_PAID",
       orderStatus: "PENDING",
       hasRecentAttempt: true,
       isAwaitingCallback: false,
-      partial: { paidKop: 1, total: "10.00" },
+      partial: { paidKop: 1, total: "10.00", balanceKop: 999 },
       awaiting: { minutes: 23, until: "14:52", total: "10 ₴" },
     });
 

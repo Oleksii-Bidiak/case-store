@@ -189,7 +189,11 @@ export function GuestOrderView({ token, contact }: GuestOrderViewProps) {
           orderStatus={order.status}
           hasRecentAttempt={false}
           isAwaitingCallback={false}
-          partial={{ paidKop: order.paidKop, total: order.total }}
+          partial={{
+            paidKop: order.paidKop,
+            total: order.total,
+            balanceKop: order.balanceKop,
+          }}
         />
       )}
 
