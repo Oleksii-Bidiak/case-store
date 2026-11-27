@@ -164,9 +164,33 @@ describe('CatalogImportService', () => {
         decisions: { excludedSkus: ['A2'] },
         appliedRows: 0,
         totalRows: 1,
-        // The plan's single row is a create (TASK-2545: re-counted from the decisions).
+        // The plan's single row is a create (TASK-2545/2609: re-counted from the decisions).
+        createCount: 1,
         updateCount: 0,
+        missingCount: 0,
       });
+    });
+
+    // TASK-2609: the history's «N створено» / «N приховано» read these counters, and the
+    // parse-time values still counted the creates and hides the operator unticked.
+    it('counts only the creates and hides the operator authorised', async () => {
+      const rows = [
+        plannedRow({ sourceSku: 'C1', action: 'create' }),
+        plannedRow({ sourceSku: 'C2', action: 'create' }),
+        plannedRow({ sourceSku: 'M1', action: 'missing', productId: 'p-m1' }),
+        plannedRow({ sourceSku: 'M2', action: 'missing', productId: 'p-m2' }),
+      ];
+      repositoryMock.findRun.mockResolvedValue(
+        run({ plan: plan(rows), totalRows: 4, createCount: 2, missingCount: 2 }),
+      );
+      repositoryMock.updateRun.mockResolvedValue(run());
+
+      await service.apply('run-1', { excludedSkus: ['C2', 'M2'] });
+
+      expect(repositoryMock.updateRun).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({ totalRows: 2, createCount: 1, updateCount: 0, missingCount: 1 }),
+      );
     });
 
     // Caught on the first live run: confirming 4 rows out of a 1297-row plan

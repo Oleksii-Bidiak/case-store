@@ -178,16 +178,21 @@ export class CatalogImportService {
     // becomes the subset the operator authorised. Without this the progress bar
     // divides by the full plan — confirming four rows out of 1297 renders as 0%
     // and looks stuck, which is exactly what it did on the first live run.
-    // `updateCount` likewise (TASK-2545): the history's «N оновлено» reads it, and the
-    // parse-time value still counts the updates the operator unticked entirely.
+    // The per-action counters likewise (TASK-2545, TASK-2609): the history's
+    // «N створено / оновлено / приховано» reads them, and the parse-time values still
+    // count the rows the operator unticked.
     const actionable = this.actionableRows(run.plan as unknown as CatalogImportPlan, decisions);
+    const countOf = (action: PlannedRow['action']) =>
+      actionable.filter((row) => row.action === action).length;
 
     return this.repository.updateRun(id, {
       status: CatalogImportStatus.APPLYING,
       decisions: decisions as unknown as Prisma.InputJsonValue,
       appliedRows: 0,
       totalRows: actionable.length,
-      updateCount: actionable.filter((row) => row.action === 'update').length,
+      createCount: countOf('create'),
+      updateCount: countOf('update'),
+      missingCount: countOf('missing'),
     });
   }
 
