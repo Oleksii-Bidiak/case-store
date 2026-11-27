@@ -36,7 +36,7 @@
  * the provider would read the default no-op context.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -175,17 +175,18 @@ function AdminCarouselView() {
     [homeBlocks.data],
   );
   const [toHome, setToHome] = useState<CarouselToHomeTarget | null>(null);
+  // TASK-2546: the dialog has no trigger — focus returns here on close.
+  const homeOpenerRef = useRef<HTMLElement | null>(null);
+  const openToHome = (carousel: CarouselEntity, opener: HTMLElement) => {
+    homeOpenerRef.current = opener;
+    setToHome({
+      id: carousel.id,
+      title: carousel.title,
+      status: carousel.status,
+    });
+  };
   const home: HomeColumn | null = canReadHome
-    ? {
-        placements,
-        canAdd: canAddHome,
-        onAdd: (carousel) =>
-          setToHome({
-            id: carousel.id,
-            title: carousel.title,
-            status: carousel.status,
-          }),
-      }
+    ? { placements, canAdd: canAddHome, onAdd: openToHome }
     : null;
 
   // Only a CATEGORY carousel needs a category name.
@@ -347,7 +348,7 @@ function AdminCarouselView() {
 
         {/* ДН-4.11: where a carousel shows is decided on «Головна» — said once,
             above the column that answers it. */}
-        {home && <Callout>{d.homeIntro}</Callout>}
+        {canReadHome && <Callout>{d.homeIntro}</Callout>}
       </div>
 
       <div id={CAROUSEL_INSTRUCTIONS_LONG_ID} className="sr-only">
@@ -390,6 +391,7 @@ function AdminCarouselView() {
           onOpenChange={(open) => {
             if (!open) setToHome(null);
           }}
+          returnFocusRef={homeOpenerRef}
         />
       )}
     </div>
@@ -415,7 +417,8 @@ interface HomeColumn {
   placements: ReadonlyMap<string, CarouselHomePlacement[]> | undefined;
   /** `home:write` — «Додати на головну» is offered. */
   canAdd: boolean;
-  onAdd: (carousel: CarouselEntity) => void;
+  /** `opener` — the clicked button; focus goes back to it on close. */
+  onAdd: (carousel: CarouselEntity, opener: HTMLElement) => void;
 }
 
 /**
@@ -582,7 +585,7 @@ function CarouselRow({
         size="sm"
         variant="outline"
         tabIndex={tabIndex}
-        onClick={() => home.onAdd(carousel)}
+        onClick={(event) => home.onAdd(carousel, event.currentTarget)}
         className="w-fit max-md:min-h-11"
       >
         <PlusIcon aria-hidden="true" />

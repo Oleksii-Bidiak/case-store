@@ -18,7 +18,7 @@
  * They reset when the dialog opens for another carousel (render-time guard).
  */
 
-import { useState } from "react";
+import { useState, type RefObject } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getAdminHomeBlockControllerFindAllQueryKey,
@@ -63,6 +63,12 @@ export interface AddCarouselToHomeDialogProps {
   /** The carousel to place; `null` closes the dialog. */
   carousel: CarouselToHomeTarget | null;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Where focus goes when the dialog closes (TASK-2546). The dialog is opened by
+   * state, with no `DialogTrigger`, so Radix has nothing to return focus to and
+   * it falls to <body>; the caller hands in the button that opened it.
+   */
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }
 
 const SELECT_CLASS =
@@ -71,6 +77,7 @@ const SELECT_CLASS =
 export function AddCarouselToHomeDialog({
   carousel,
   onOpenChange,
+  returnFocusRef,
 }: AddCarouselToHomeDialogProps) {
   const queryClient = useQueryClient();
   const blocksQuery = useAdminHomeBlockControllerFindAll({
@@ -138,7 +145,15 @@ export function AddCarouselToHomeDialog({
 
   return (
     <Dialog open={carousel !== null} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent
+        onCloseAutoFocus={(event) => {
+          const el = returnFocusRef?.current;
+          if (el?.isConnected) {
+            event.preventDefault();
+            el.focus();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{t.title(carousel?.title ?? "")}</DialogTitle>
           <DialogDescription>{t.description}</DialogDescription>

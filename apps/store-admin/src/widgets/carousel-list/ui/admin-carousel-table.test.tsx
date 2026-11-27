@@ -733,6 +733,52 @@ describe("AdminCarouselTable — «На головній» (TASK-664)", () => {
     ).toBeInTheDocument();
   });
 
+  // TASK-2546 (AD-CNT-75): the dialog opens by state, with no trigger, so Radix
+  // has nothing to return focus to — the opener is handed in explicitly.
+  it("returns focus to «Додати на головну» after Esc", async () => {
+    mockHome();
+    renderTable([...WRITER, "home:write"]);
+    await waitFor(() => expect(railIds()).toHaveLength(3));
+
+    const [add] = await within(rowEl(R1)).findAllByRole("button", {
+      name: `${dict.carousels.addToHome} — ${TITLES[R1]}`,
+    });
+    await userEvent.click(add);
+    await screen.findByRole("dialog", {
+      name: dict.carouselToHome.title(TITLES[R1]),
+    });
+
+    await userEvent.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(add).toHaveFocus();
+  });
+
+  it("returns focus to «Додати на головну» after «Скасувати»", async () => {
+    mockHome();
+    renderTable([...WRITER, "home:write"]);
+    await waitFor(() => expect(railIds()).toHaveLength(3));
+
+    const [add] = await within(rowEl(R1)).findAllByRole("button", {
+      name: `${dict.carousels.addToHome} — ${TITLES[R1]}`,
+    });
+    await userEvent.click(add);
+    const dialog = await screen.findByRole("dialog", {
+      name: dict.carouselToHome.title(TITLES[R1]),
+    });
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.carouselToHome.cancel }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(add).toHaveFocus();
+  });
+
   it("without a home key draws no column and asks nothing", async () => {
     const homeRequests = mockHome();
     renderTable();
