@@ -2231,6 +2231,17 @@ describe('ProductService', () => {
         expect(state.hiddenByCategory).toEqual({ id: 'cat-leaf', name: 'Clear cases' });
       });
 
+      it('names the own category when it is deleted, as the storefront hides it', async () => {
+        productRepositoryMock.findPublishFacts.mockResolvedValue([
+          publishFacts('p1', { category: { ...category, deletedAt: new Date('2026-11-01') } }),
+        ]);
+
+        const state = await service.getPublishState('p1');
+
+        expect(state.hiddenByCategory).toEqual({ id: 'cat-leaf', name: 'Clear cases' });
+        expect(categoryRepositoryMock.findNearestHiddenAncestor).not.toHaveBeenCalled();
+      });
+
       it('is null for a category on sale', async () => {
         productRepositoryMock.findPublishFacts.mockResolvedValue([
           publishFacts('p1', { category }),

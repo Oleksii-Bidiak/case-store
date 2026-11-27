@@ -11,7 +11,7 @@ import {
   type ProductPublishFacts,
   type PublishCategoryFacts,
 } from './product.repository';
-import { isCategoryOnSale } from './product-visibility';
+import { isPubliclyVisible } from './product-visibility';
 import {
   ProductErrorCode,
   ProductCategoryBusyError,
@@ -871,20 +871,20 @@ export class ProductService {
 
   /**
    * The category that keeps a product off the storefront (TASK-2574), or null when it
-   * is on sale. Hidden is decided ONLY by {@link isCategoryOnSale} — the storefront's
+   * is on sale. Hidden is decided ONLY by {@link isPubliclyVisible} — the storefront's
    * own rule — so the panel can never disagree with what shoppers see. Only then is
-   * the link named: the product's own category when it is inactive, otherwise the
+   * the link named: the product's own category when it is inactive or deleted, otherwise the
    * nearest inactive / deleted ancestor; if that walk finds nothing (the stored
    * `ancestorsActive` drifted), the own category rather than a silent null.
    */
   private async hidingCategory(
     category: PublishCategoryFacts,
   ): Promise<{ id: string; name: string } | null> {
-    if (isCategoryOnSale(category)) {
+    if (isPubliclyVisible({ isActive: true, deletedAt: null, category })) {
       return null;
     }
     const own = { id: category.id, name: category.name };
-    if (!category.isActive) {
+    if (!category.isActive || category.deletedAt) {
       return own;
     }
     return (await this.categoryRepository.findNearestHiddenAncestor(category.id)) ?? own;
@@ -1270,22 +1270,6 @@ export class ProductService {
   }
 
   /**
-   * Validate that a supplied brand id references an existing brand (TASK-189).
-   * A null / undefined id means "no brand" and is always allowed. Throws
-   * NotFoundException for an unknown brand so the write fails cleanly before it
-   * hits the DB foreign key.
-   */
-  /**
-   * Refuse to file a product in a category that does not exist or is deleted
-   * (TASK-653). Deleting a category moves every product out of it in one
-   * transaction (invariant I1); without this guard the product API alone could put
-   * one straight back into the tombstone, where no public read would ever show it.
-   * `CategoryRepository.findById` hides tombstones, so one read covers both cases.
-   *
-   * 400, not 404: the product request is well-addressed — it is its `categoryId`
-   * field that is invalid.
-   */
-  /**
    * Refuse a write that would show a product missing a blocking requirement
    * (TASK-2573) — the one place every show path (activate, bulk show, create /
    * update with `isActive: true`) is judged by {@link publishBlockers}.
@@ -1306,6 +1290,22 @@ export class ProductService {
     return facts;
   }
 
+  /**
+   * Validate that a supplied brand id references an existing brand (TASK-189).
+   * A null / undefined id means "no brand" and is always allowed. Throws
+   * NotFoundException for an unknown brand so the write fails cleanly before it
+   * hits the DB foreign key.
+   */
+  /**
+   * Refuse to file a product in a category that does not exist or is deleted
+   * (TASK-653). Deleting a category moves every product out of it in one
+   * transaction (invariant I1); without this guard the product API alone could put
+   * one straight back into the tombstone, where no public read would ever show it.
+   * `CategoryRepository.findById` hides tombstones, so one read covers both cases.
+   *
+   * 400, not 404: the product request is well-addressed — it is its `categoryId`
+   * field that is invalid.
+   */
   private async ensureCategoryIsLive(categoryId: string): Promise<void> {
     const category = await this.categoryRepository.findById(categoryId);
     if (!category) {

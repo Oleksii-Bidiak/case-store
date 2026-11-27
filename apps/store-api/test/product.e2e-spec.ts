@@ -137,6 +137,8 @@ describe('ProductController (e2e)', () => {
     // TASK-1830: the action log the deleted list reads its actors from.
     auditLog: {
       findMany: jest.fn().mockResolvedValue([]),
+      // TASK-2573: the bulk status route writes its own row.
+      create: jest.fn().mockResolvedValue({}),
     },
     refreshToken: {
       findUnique: jest.fn(),
@@ -1208,6 +1210,35 @@ describe('ProductController (e2e)', () => {
         skipped: [{ id: noPhoto, name: 'No photo', blockers: ['photo'] }],
       });
       expect(productRepositoryMock.setActiveMany).toHaveBeenCalledWith([ready], true);
+    });
+
+    it('logs the products actually shown and the skipped ones — one row, not the request body', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      const ready = '11111111-1111-4111-8111-111111111111';
+      const noPhoto = '22222222-2222-4222-8222-222222222222';
+      productRepositoryMock.findPublishFacts.mockResolvedValue([
+        publishFacts(ready),
+        publishFacts(noPhoto, { name: 'No photo', imageCount: 0 }),
+      ]);
+      productRepositoryMock.setActiveMany.mockResolvedValue([
+        { id: ready, slug: 'a', isActive: true },
+      ]);
+      prismaServiceMock.auditLog.create.mockClear();
+
+      await request(app.getHttpServer())
+        .patch(bulkUrl)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: [ready, noPhoto], isActive: true })
+        .expect(200);
+
+      expect(prismaServiceMock.auditLog.create).toHaveBeenCalledTimes(1);
+      const row = prismaServiceMock.auditLog.create.mock.calls[0][0].data;
+      expect(row.action).toBe('product.setStatusMany');
+      expect(row.diff).toEqual({
+        ids: { to: [ready] },
+        isActive: { to: true },
+        skipped: { to: [{ id: noPhoto, blockers: 'photo' }] },
+      });
     });
   });
 

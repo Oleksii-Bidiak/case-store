@@ -13,8 +13,9 @@ import {
   HttpStatus,
   Headers,
   Res,
+  Req,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -41,7 +42,13 @@ import {
   BulkProductColorDto,
   RestoreProductDto,
 } from './dto';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import {
+  CurrentActor,
+  PermissionGuard,
+  RequirePermission,
+  type PermissionActor,
+} from '../auth/permissions';
+import { AuditService, RecordsOwnAudit, entityTypeFromController } from '../audit';
 import {
   ProductEntity,
   AdminProductListItemEntity,
@@ -108,12 +115,7 @@ class AdminProductListResponseEnvelope {
   meta!: PaginationMeta;
 }
 
-/**
- * What a bulk status write reports back (TASK-355): how many rows the database
- * actually wrote, not how many the payload asked for. The two can only differ
- * if something went wrong, and the operator's confirmation should say what
- * happened rather than what was requested.
- */
+/** A product a bulk show left hidden, and why (TASK-2573). */
 class BulkProductStatusSkipped {
   @ApiProperty({ description: 'Product UUID' })
   id!: string;
@@ -130,6 +132,12 @@ class BulkProductStatusSkipped {
   blockers!: PublishBlocker[];
 }
 
+/**
+ * What a bulk status write reports back (TASK-355): how many rows the database
+ * actually wrote, not how many the payload asked for. The two can only differ
+ * if something went wrong, and the operator's confirmation should say what
+ * happened rather than what was requested.
+ */
 class BulkProductStatusResult {
   @ApiProperty({ description: 'Products whose isActive was written', example: 12 })
   updatedCount!: number;
@@ -357,6 +365,8 @@ export class ProductController {
   constructor(
     private readonly productService: ProductService,
     private readonly previewTokenService: PreviewTokenService,
+    // TASK-2573: the bulk status change writes its own row (see setStatusMany).
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -745,10 +755,16 @@ export class ProductController {
    * There is deliberately no bulk counterpart to `DELETE /:id`. Soft-deletion
    * mangles slug and sku and is not something to hand an operator behind a
    * checkbox column.
+   *
+   * `@RecordsOwnAudit()` (TASK-2573): a bulk show leaves unready products hidden, so
+   * the request body — all the generic interceptor has — would log every asked id as
+   * shown. The row records the ids actually written and the `skipped` ones instead,
+   * under the same action key the interceptor derives.
    */
   @Patch('status')
   @UseGuards(PermissionGuard)
   @RequirePermission('products:write')
+  @RecordsOwnAudit()
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Bulk activate / deactivate products (admin)',
@@ -764,8 +780,36 @@ export class ProductController {
   @ApiResponse({ status: 400, description: 'Validation error — empty, oversized or non-UUID ids' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   @ApiResponse({ status: 404, description: 'Unknown product id — nothing was written' })
-  async setStatusMany(@Body() dto: BulkProductStatusDto): Promise<BulkProductStatusResponse> {
+  async setStatusMany(
+    @Body() dto: BulkProductStatusDto,
+    @CurrentActor() actor: PermissionActor,
+    @Req() request: Request,
+  ): Promise<BulkProductStatusResponse> {
     const result = await this.productService.setStatusMany(dto.ids, dto.isActive);
+
+    const skippedIds = new Set(result.skipped.map((product) => product.id));
+    const entityType = entityTypeFromController(ProductController.name);
+    await this.auditService.record({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      action: `${entityType}.${ProductController.prototype.setStatusMany.name}`,
+      entityType,
+      entityId: null,
+      summary: `${request.method} ${request.originalUrl ?? request.url}`,
+      diff: {
+        ids: { to: dto.ids.filter((id) => !skippedIds.has(id)) },
+        isActive: { to: dto.isActive },
+        ...(result.skipped.length > 0 && {
+          skipped: {
+            // Joined: the audit sanitizer truncates arrays nested this deep.
+            to: result.skipped.map(({ id, blockers }) => ({ id, blockers: blockers.join(', ') })),
+          },
+        }),
+      },
+      ip: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
 
     return { data: result };
   }
