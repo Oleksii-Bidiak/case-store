@@ -119,6 +119,16 @@ const DYNAMIC_ACCESS: Record<string, string> = {
   // TASK-2048: why a line was left out of an order copy, by its reason code.
   "orderCreate.copyDropReasons":
     "features/order-create/ui/order-create-form.tsx — t.copyDropReasons[line.reason]",
+  // TASK-2573: the four blocking checks and their reasons, by the server's
+  // blocker code. The advisory checks are read statically and stay scanned.
+  ...Object.fromEntries(
+    ["name", "category", "price", "photo"].map((blocker) => [
+      `productPublish.checks.${blocker}`,
+      "features/product-publish-panel/model/readiness.ts — c[key] per blocker",
+    ]),
+  ),
+  "productPublish.blockerReasons":
+    "entities/product/lib/publish-blockers.ts — blockerReasons[blocker]",
   // Not listed, because the scan sees through them: `reorderList` (read via the
   // `a = dict.reorderList.announce` / `rejected` aliases in shared/lib/list-reorder)
   // and every `*.errors` block the zod schemas alias as `e`.
