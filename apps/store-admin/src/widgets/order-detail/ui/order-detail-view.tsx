@@ -24,6 +24,8 @@ import { OrderStatusSelect } from "@/features/order-status-update";
 // TASK-1963: «Оформити повернення» — composed here because the «Оплата» block
 // points at the same dialog when money for shipped goods goes back by return.
 import { ReturnCreateAction } from "@/features/return-create";
+// TASK-2575: «Посилку повернуто на склад» on a cancelled shipped order.
+import { OrderParcelReturnAction } from "@/features/order-parcel-return";
 // TASK-484: "give the buyer a link to their own order" — a mutation with its own
 // one-shot state, so it lives in features, not here.
 import { OrderAccessLinkCard } from "@/features/order-access-link";
@@ -350,6 +352,10 @@ export function OrderDetailView({ orderId, from }: OrderDetailViewProps) {
               trailing={
                 <>
                   {returnAction}
+                  {/* TASK-2575: renders only when the server allows it. */}
+                  {order.canReturnParcel ? (
+                    <OrderParcelReturnAction order={order} />
+                  ) : null}
                   {copyAction}
                   {more}
                 </>

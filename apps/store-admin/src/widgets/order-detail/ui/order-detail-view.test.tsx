@@ -1305,3 +1305,58 @@ describe("OrderDetailView — order copy (TASK-2048)", () => {
     expect(link.parentElement).toHaveTextContent(dict.orders.copiesLabel);
   });
 });
+
+describe("OrderDetailView — «Посилку повернуто на склад» (TASK-2575)", () => {
+  function serveOrder(canReturnParcel: boolean | undefined) {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: {
+            ...makeOrder(null, { status: "CANCELLED" }),
+            canReturnParcel,
+          },
+        }),
+      ),
+    );
+  }
+
+  it("sits with the card's actions when the server allows it", async () => {
+    serveOrder(true);
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: ["orders:read", "orders:write"] },
+    });
+
+    expect(
+      await screen.findByRole("button", {
+        name: dict.orders.parcelReturnAction,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it.each([false, undefined])(
+    "is absent when canReturnParcel is %s",
+    async (canReturnParcel) => {
+      serveOrder(canReturnParcel);
+      renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+        auth: { permissions: ["orders:read", "orders:write"] },
+      });
+
+      await screen.findByRole("link", { name: dict.orders.copyAction });
+      expect(
+        screen.queryByRole("button", { name: dict.orders.parcelReturnAction }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("is absent without orders:write", async () => {
+    serveOrder(true);
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: ["orders:read"] },
+    });
+
+    await screen.findByText(dict.orders.itemsHeading);
+    expect(
+      screen.queryByRole("button", { name: dict.orders.parcelReturnAction }),
+    ).not.toBeInTheDocument();
+  });
+});

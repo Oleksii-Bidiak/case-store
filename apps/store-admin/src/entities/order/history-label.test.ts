@@ -9,6 +9,7 @@ import {
   historyActorLabel,
   historyChangeLabel,
   historyNoteLabel,
+  isParcelReturnedRow,
   isRefusedPaymentEvent,
 } from "./history-label";
 import { dict } from "@/shared/config";
@@ -214,5 +215,35 @@ describe("refused payment events", () => {
         }),
       ),
     ).toBe(false);
+  });
+});
+
+// TASK-2575: a refused parcel taken back into stock — CANCELLED → CANCELLED.
+describe("parcel returned to stock", () => {
+  const returned = makeEntry({
+    fromStatus: OrderEntityStatus.CANCELLED,
+    toStatus: OrderEntityStatus.CANCELLED,
+    note: OrderStatusHistoryEntityNote.PARCEL_RETURNED_TO_STOCK,
+  });
+
+  it("reads as the note alone, never «Скасовано → Скасовано»", () => {
+    expect(isParcelReturnedRow(returned)).toBe(true);
+    expect(historyChangeLabel(returned)).toBe(
+      dict.orderStatus.parcelReturnedHistoryNote,
+    );
+    expect(historyChangeLabel(returned)).not.toContain("→");
+  });
+
+  it("does not repeat the note under the label", () => {
+    expect(historyNoteLabel(returned)).toBeNull();
+  });
+
+  it("leaves an ordinary cancellation alone", () => {
+    const cancelled = makeEntry({
+      fromStatus: OrderEntityStatus.SHIPPED,
+      toStatus: OrderEntityStatus.CANCELLED,
+    });
+    expect(isParcelReturnedRow(cancelled)).toBe(false);
+    expect(historyChangeLabel(cancelled)).toContain("→");
   });
 });
