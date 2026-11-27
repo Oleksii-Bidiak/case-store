@@ -10,17 +10,26 @@ import { seedBlog } from './seed/seeders/blog.seeder';
 import { seedBrands } from './seed/seeders/brands.seeder';
 import { seedCarousels } from './seed/seeders/carousels.seeder';
 import { seedCategories } from './seed/seeders/categories.seeder';
+import { seedDelivery } from './seed/seeders/delivery.seeder';
 import { seedContactMessages } from './seed/seeders/contact-messages.seeder';
 import { seedDeviceCompat } from './seed/seeders/device-compat.seeder';
 import { seedDevices } from './seed/seeders/devices.seeder';
 import { seedDiscounts } from './seed/seeders/discounts.seeder';
 import { seedFaqItems } from './seed/seeders/faq.seeder';
 import { seedNewsletter } from './seed/seeders/newsletter.seeder';
+import { seedOrderCopies } from './seed/seeders/order-copies.seeder';
 import { seedOrders } from './seed/seeders/orders.seeder';
 import { seedPages } from './seed/seeders/pages.seeder';
+import { seedReturns } from './seed/seeders/returns.seeder';
 import { seedProducts } from './seed/seeders/products.seeder';
 import { seedReviews } from './seed/seeders/reviews.seeder';
-import { seedSeoSettings, seedSiteContactSettings } from './seed/seeders/site-settings.seeder';
+import {
+  seedSeoSettings,
+  seedSiteContactSettings,
+  seedStoreLogo,
+} from './seed/seeders/site-settings.seeder';
+import { managerByEmail, seedStaff } from './seed/seeders/staff.seeder';
+import { seedUserDevices } from './seed/seeders/user-devices.seeder';
 import { seedUsers } from './seed/seeders/users.seeder';
 import { pruneSeedImages } from './seed/lib/images/seed-image.generator';
 
@@ -69,9 +78,11 @@ async function main() {
 
   try {
     // Seed in dependency (FK-safe) order.
-    const { admins, customers } = await seedUsers(prisma);
+    const { admin, customers } = await seedUsers(prisma);
+    const managers = await seedStaff(prisma, admin); // must follow seedUsers (the owner authors the audit rows)
     await seedSiteContactSettings(prisma);
     await seedSeoSettings(prisma);
+    await seedStoreLogo(prisma); // must follow seedSeoSettings (fills its logoUrl)
     await seedFaqItems(prisma);
     await seedBanners(prisma);
     const brands = await seedBrands(prisma);
@@ -82,12 +93,24 @@ async function main() {
     await seedAttributeDefinitions(prisma, categories);
     await seedAddonServices(prisma, categories); // must follow seedProducts (deltas need products)
     await seedDeviceCompat(prisma);
+    await seedDelivery(prisma); // must precede seedOrders (pickup points, enabled methods)
     await seedDiscounts(prisma);
-    await seedOrders(prisma, admins, customers);
+    const orderActors = {
+      owner: admin,
+      operator: managerByEmail(managers, 'orders@store.com'),
+      customers,
+    };
+    const orderPlans = await seedOrders(prisma, orderActors);
+    await seedOrderCopies(prisma, orderActors); // must follow seedOrders
+    await seedReturns(prisma, orderPlans, orderActors); // must follow seedOrders (its plans)
     await seedContactMessages(prisma);
     await seedNewsletter(prisma);
-    await seedReviews(prisma);
+    await seedReviews(prisma, {
+      owner: admin,
+      content: managerByEmail(managers, 'content@store.com'),
+    }); // must follow seedStaff (the shop's replies are signed by staff)
     await seedAddresses(prisma, customers);
+    await seedUserDevices(prisma, customers); // must follow seedDevices (device models)
     await seedPages(prisma);
     await seedBlog(prisma);
 

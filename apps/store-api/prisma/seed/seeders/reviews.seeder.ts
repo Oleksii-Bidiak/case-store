@@ -1,6 +1,13 @@
-import { PrismaClient, ReviewTextStatus } from '@prisma/client';
+import { PrismaClient, ReviewHiddenReason, ReviewTextStatus } from '@prisma/client';
 import argon2 from 'argon2';
 import { orderSpecs } from '../data/orders.data';
+import {
+  ONE_STAR_RUN_THRESHOLD,
+  ONE_STAR_RUN_WINDOW_HOURS,
+  RATING_BURST_THRESHOLD,
+  RATING_BURST_WINDOW_HOURS,
+  ReviewRepository,
+} from '../lib/domain';
 import { hashStr } from '../lib/ids';
 import { buildVerifiedPurchaseReviews } from '../lib/verified-purchase-reviews';
 
@@ -36,6 +43,79 @@ export const PENDING_REVIEW_TARGETS = [
   },
   { slug: 'cable-ugreen-usbc-100w-1m', comment: 'Ціна виправдана, буду замовляти ще.' },
 ];
+
+/**
+ * Moderation and abuse states on top of the pool (TASK-2569). Every row is
+ * written by a pool account, so the wholesale delete below covers it and a
+ * re-seed rebuilds the same set; replies cascade with their review and are
+ * written again after it.
+ *
+ * - `rejected` — the first pool review of each product (always a text) gets this
+ *   text instead, enters as PENDING and is rejected by the domain's
+ *   `rejectText`: the text leaves, the rating stays.
+ * - `replies` — the shop answers the first pool review of each product through
+ *   the domain's `upsertReply`, as the owner or the content manager.
+ * - `hiddenAuthorIndex` — every review of that pool account is withdrawn by the
+ *   domain's `hideAuthorReviews(…, MODERATOR)`.
+ * - `burst` — extra rating-only 5★ rows on one product from pool accounts not
+ *   yet on it, all inside the last quarter-hour: more than
+ *   `RATING_BURST_THRESHOLD` in `RATING_BURST_WINDOW_HOURS`, so the dashboard
+ *   flags the product for about 45 minutes after the seed — seed on the day.
+ * - `oneStarRun` — 1★ rating-only rows from ONE account and ONE address on
+ *   products that are not bursting, inside `ONE_STAR_RUN_WINDOW_HOURS`.
+ */
+export const REVIEW_STATES = {
+  rejected: [
+    {
+      slug: 'samsung-galaxy-s24-128gb-black',
+      comment: 'Пишіть у телеграм @deshevo_phones — продам такий самий на 30% дешевше.',
+    },
+    {
+      slug: 'headphones-apple-airpods-pro-2',
+      comment: 'Купуйте на сайті конкурента, там дешевше, посилання в профілі!!!',
+    },
+  ],
+  replies: [
+    {
+      slug: 'apple-iphone-15-pro-128gb-titanium',
+      author: 'owner' as const,
+      body: 'Дякуємо за відгук! Раді, що покупка сподобалась, — гарного користування.',
+    },
+    {
+      slug: 'cable-ugreen-usbc-100w-1m',
+      author: 'owner' as const,
+      body: 'Дякуємо, що обрали нас! Якщо будуть питання щодо товару — пишіть, допоможемо.',
+    },
+    {
+      slug: 'powerbank-anker-10000-black',
+      author: 'content' as const,
+      body: 'Дякуємо, що поділилися враженнями, — такі відгуки допомагають іншим із вибором.',
+    },
+  ],
+  hiddenAuthorIndex: 19,
+  burst: { slug: 'powerbank-hoco-10000-cables', size: 12 },
+  oneStarRun: {
+    reviewerIndex: 17,
+    // RFC 5737 documentation range: never a real customer's address.
+    createdIp: '203.0.113.42',
+    slugs: [
+      'case-spigen-tough-armor-iphone-15-pro-gray',
+      'cable-baseus-usbc-240w-1m',
+      'speaker-jbl-flip-6-black',
+    ],
+  },
+};
+
+/** The staff accounts that answer reviews in the demo. */
+export interface ReviewStaff {
+  owner: { id: string };
+  content: { id: string };
+}
+
+/** How many pool reviewers a product gets — 5..20, stable per slug. */
+function poolSize(slug: string, reviewerCount: number): number {
+  return 5 + (hashStr(slug) % (reviewerCount - 4));
+}
 
 /**
  * Seed approved product reviews so the storefront can render real star ratings,
@@ -79,7 +159,7 @@ const POOL_COMMENTS = [
   'Тримається міцно, зроблено акуратно.',
 ];
 
-export async function seedReviews(prisma: PrismaClient) {
+export async function seedReviews(prisma: PrismaClient, staff: ReviewStaff) {
   const reviewerPasswordHash = await argon2.hash('Reviewer123!');
 
   // Since TASK-588 a rating counts only while its author's address is proven, and
@@ -138,11 +218,18 @@ export async function seedReviews(prisma: PrismaClient) {
   });
   const productIdBySlug = new Map(products.map((p) => [p.slug, p.id]));
 
-  const missingTargets = PENDING_REVIEW_TARGETS.filter((t) => !productIdBySlug.has(t.slug));
+  const targetSlugs = [
+    ...PENDING_REVIEW_TARGETS.map((t) => t.slug),
+    ...REVIEW_STATES.rejected.map((t) => t.slug),
+    ...REVIEW_STATES.replies.map((t) => t.slug),
+    REVIEW_STATES.burst.slug,
+    ...REVIEW_STATES.oneStarRun.slugs,
+  ];
+  const missingTargets = targetSlugs.filter((slug) => !productIdBySlug.has(slug));
   if (missingTargets.length) {
     throw new Error(
-      `seedReviews: PENDING_REVIEW_TARGETS names position(s) that do not exist: ` +
-        `${missingTargets.map((t) => t.slug).join(', ')}. Update the list when the catalogue changes.`,
+      `seedReviews: PENDING_REVIEW_TARGETS / REVIEW_STATES name position(s) that do not exist: ` +
+        `${missingTargets.join(', ')}. Update the lists when the catalogue changes.`,
     );
   }
 
@@ -174,11 +261,14 @@ export async function seedReviews(prisma: PrismaClient) {
     ratingVisible: boolean;
     textStatus: ReviewTextStatus;
     createdAt: Date;
+    createdIp?: string;
   }[] = [];
 
+  const rejectedBySlug = new Map(REVIEW_STATES.rejected.map((t) => [t.slug, t.comment]));
+
   for (const product of products) {
-    // 5..16 reviews per product, stable per slug.
-    const count = 5 + (hashStr(product.slug) % (reviewers.length - 4));
+    // 5..20 reviews per product, stable per slug.
+    const count = poolSize(product.slug, reviewers.length);
     for (let i = 0; i < count; i++) {
       // Ratings skew positive (mostly 4–5) with occasional lower scores.
       const r = hashStr(`${product.slug}:${i}`) % 100;
@@ -196,6 +286,20 @@ export async function seedReviews(prisma: PrismaClient) {
       // leaves it to chance for each of the 178 positions, and the one that came
       // up empty would be found by a customer, not by a test.
       const hasText = i === 0 || hashStr(`${product.slug}:text:${i}`) % 3 === 0;
+      // TASK-2569: a text to be rejected arrives in the queue like any other.
+      const rejectedText = i === 0 ? rejectedBySlug.get(product.slug) : undefined;
+      if (rejectedText) {
+        rows.push({
+          userId: reviewers[i].id,
+          productId: product.id,
+          rating: 1 + (hashStr(`${product.slug}:rejected`) % 2), // 1..2
+          comment: rejectedText,
+          ratingVisible: true,
+          textStatus: ReviewTextStatus.PENDING,
+          createdAt: poolCreatedAt,
+        });
+        continue;
+      }
       rows.push({
         userId: reviewers[i].id,
         productId: product.id,
@@ -226,7 +330,12 @@ export async function seedReviews(prisma: PrismaClient) {
     });
   });
 
+  const signalRows = buildSignalRows(products, reviewers, now);
+  rows.push(...signalRows);
+
   await prisma.review.createMany({ data: rows });
+
+  const moderation = await applyModeration(prisma, staff, reviewers, productIdBySlug);
 
   // ─── Verified purchases (TASK-409) ────────────────────────────────────────
   //
@@ -288,10 +397,136 @@ export async function seedReviews(prisma: PrismaClient) {
   await prisma.review.createMany({ data: verifiedRows });
 
   console.log(
-    `  ✓ Reviews: ${approvedCount} approved + ${PENDING_REVIEW_TARGETS.length} pending across ${products.length} products`,
+    `  ✓ Reviews: ${approvedCount} pool + ${PENDING_REVIEW_TARGETS.length} pending across ${products.length} products`,
+  );
+  console.log(
+    `  ✓ Review moderation: ${moderation.rejected} rejected, ${moderation.replies} shop replies, ` +
+      `${moderation.hidden} hidden (one author); abuse signals: ${REVIEW_STATES.burst.size}-review burst on ` +
+      `${REVIEW_STATES.burst.slug}, ${REVIEW_STATES.oneStarRun.slugs.length}× 1★ from ${REVIEW_STATES.oneStarRun.createdIp}`,
   );
   console.log(
     `  ✓ Verified purchases: ${verifiedRows.length} review(s) with the «Підтверджена покупка» badge ` +
       `(SKU: ${verifiedSpecs.map((s) => s.sku).join(', ')})`,
   );
+}
+
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+
+/**
+ * The burst and the 1★ run (TASK-2569), checked against the dashboard's own
+ * thresholds before anything is written. Pool accounts only, each on a product
+ * it has not reviewed — the pool gives product P reviewers `0..poolSize(P)-1`,
+ * so every index from `poolSize(P)` up is free — and never the hidden author,
+ * whose rows no longer count.
+ */
+function buildSignalRows(
+  products: { id: string; slug: string }[],
+  reviewers: { id: string }[],
+  now: number,
+) {
+  const { burst, oneStarRun, hiddenAuthorIndex } = REVIEW_STATES;
+  const idOf = (slug: string) => products.find((p) => p.slug === slug)!.id;
+
+  const freeForBurst = Array.from({ length: reviewers.length }, (_, i) => i).filter(
+    (i) => i >= poolSize(burst.slug, reviewers.length) && i !== hiddenAuthorIndex,
+  );
+  if (burst.size <= RATING_BURST_THRESHOLD || freeForBurst.length < burst.size) {
+    throw new Error(
+      `seedReviews: the burst needs more than ${RATING_BURST_THRESHOLD} reviews on ${burst.slug} ` +
+        `from pool accounts not yet on it — planned ${burst.size}, free ${freeForBurst.length}`,
+    );
+  }
+  // One every minute over the last quarter-hour: the window is an hour wide.
+  const burstRows = freeForBurst.slice(0, burst.size).map((index, k) => ({
+    userId: reviewers[index].id,
+    productId: idOf(burst.slug),
+    rating: 5,
+    ratingVisible: true,
+    textStatus: ReviewTextStatus.APPROVED,
+    createdAt: new Date(now - (k + 1) * MINUTE_MS),
+  }));
+  if (burstRows.some((r) => r.createdAt.getTime() <= now - RATING_BURST_WINDOW_HOURS * HOUR_MS)) {
+    throw new Error('seedReviews: a burst review falls outside the dashboard window');
+  }
+
+  const runner = oneStarRun.reviewerIndex;
+  const busy = oneStarRun.slugs.filter(
+    (slug) => slug === burst.slug || runner < poolSize(slug, reviewers.length),
+  );
+  if (
+    runner === hiddenAuthorIndex ||
+    busy.length > 0 ||
+    oneStarRun.slugs.length < ONE_STAR_RUN_THRESHOLD
+  ) {
+    throw new Error(
+      `seedReviews: the 1★ run needs ${ONE_STAR_RUN_THRESHOLD}+ products the visible reviewer ` +
+        `#${runner} has not reviewed and that are not bursting — clashes: ${busy.join(', ') || 'none'}`,
+    );
+  }
+  // Two, three, four hours ago: well inside the 24-hour window.
+  const oneStarRows = oneStarRun.slugs.map((slug, k) => ({
+    userId: reviewers[runner].id,
+    productId: idOf(slug),
+    rating: 1,
+    ratingVisible: true,
+    textStatus: ReviewTextStatus.APPROVED,
+    createdAt: new Date(now - (k + 2) * HOUR_MS),
+    createdIp: oneStarRun.createdIp,
+  }));
+  if (oneStarRows.some((r) => r.createdAt.getTime() <= now - ONE_STAR_RUN_WINDOW_HOURS * HOUR_MS)) {
+    throw new Error('seedReviews: a 1★ review falls outside the dashboard window');
+  }
+
+  return [...burstRows, ...oneStarRows];
+}
+
+/**
+ * Rejections, the hidden author and the shop's replies — each through the
+ * review domain's own repository method, on the rows just written. The ids are
+ * new on every run (the pool is recreated), so they are looked up here.
+ */
+async function applyModeration(
+  prisma: PrismaClient,
+  staff: ReviewStaff,
+  reviewers: { id: string }[],
+  productIdBySlug: Map<string, string>,
+) {
+  const repository = new ReviewRepository(
+    prisma as unknown as ConstructorParameters<typeof ReviewRepository>[0],
+  );
+  // The first pool review of a product is always reviewer #0's, and always a text.
+  const firstReviewOf = async (slug: string) => {
+    const review = await prisma.review.findUnique({
+      where: {
+        userId_productId: { userId: reviewers[0].id, productId: productIdBySlug.get(slug)! },
+      },
+      select: { id: true },
+    });
+    if (!review) throw new Error(`seedReviews: no pool review on ${slug} to moderate`);
+    return review.id;
+  };
+
+  for (const target of REVIEW_STATES.rejected) {
+    await repository.rejectText(await firstReviewOf(target.slug));
+  }
+
+  const hidden = await repository.hideAuthorReviews(
+    reviewers[REVIEW_STATES.hiddenAuthorIndex].id,
+    ReviewHiddenReason.MODERATOR,
+  );
+  if (hidden === 0) {
+    throw new Error('seedReviews: the hidden author has no reviews — pick another pool index');
+  }
+
+  for (const reply of REVIEW_STATES.replies) {
+    const author = reply.author === 'owner' ? staff.owner : staff.content;
+    await repository.upsertReply(await firstReviewOf(reply.slug), author.id, reply.body);
+  }
+
+  return {
+    rejected: REVIEW_STATES.rejected.length,
+    replies: REVIEW_STATES.replies.length,
+    hidden,
+  };
 }

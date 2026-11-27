@@ -26,6 +26,8 @@ export const pagesData: {
    */
   keywords?: string[];
   content: string;
+  /** TASK-2569 — absent = PUBLISHED; `DRAFT` = in the panel only (`isActive` false). */
+  state?: 'DRAFT';
 }[] = [
   {
     slug: 'about',
@@ -425,5 +427,20 @@ export const pagesData: {
     metaDescription: 'Магазин у цифрах і чому його обирають.',
     content:
       '<ul><li><p><strong>[N]</strong> років на ринку</p></li><li><p><strong>[N]</strong> товарів у каталозі</p></li><li><p><strong>[N]</strong> клієнтів</p></li><li><p><strong>[N]</strong> середня оцінка</p></li></ul><h2>Чому обирають нас</h2><ul><li><p><strong>Тільки оригінал</strong> — офіційні постачальники, жодних сірих пристроїв.</p></li><li><p><strong>Чесні ціни</strong> — без прихованих доплат і накруток.</p></li><li><p><strong>Швидка доставка</strong> — відправка день у день по всій Україні.</p></li><li><p><strong>Підтримка</strong> — допоможемо з вибором та після покупки: [графік роботи підтримки].</p></li></ul>',
+  },
+  // TASK-2569: a page still being written — DRAFT, so `isActive` is false and
+  // the storefront does not serve it until someone publishes it. Facts stay
+  // bracketed like everywhere else here (TASK-311).
+  {
+    slug: 'info-pickup',
+    kind: PageKind.INFO,
+    title: 'Самовивіз',
+    excerpt: 'Заберіть замовлення самостійно з точки самовивозу — у зручний для вас час.',
+    metaTitle: `Самовивіз | ${STORE_NAME}`,
+    metaDescription:
+      'Як забрати замовлення з точки самовивозу: адреси, графік роботи і що взяти з собою.',
+    content:
+      '<h2>Як це працює</h2><p>Оберіть «Самовивіз» під час оформлення і вкажіть зручну точку. Ми напишемо, щойно замовлення буде готове до видачі.</p><h2>Адреси та графік</h2><ul><li><p>[адреса точки самовивозу] — [графік роботи]</p></li></ul><h2>Що взяти з собою</h2><p>Номер замовлення і телефон, вказаний під час оформлення.</p>',
+    state: 'DRAFT',
   },
 ];

@@ -22,10 +22,11 @@ export async function seedFaqItems(prisma: PrismaClient) {
         question: faq.question,
         answer: faq.answer,
         sortOrder: index,
-        isActive: true,
+        isActive: faq.isActive ?? true,
       },
     });
   }
 
-  console.log(`  ✓ Seeded ${faqs.length} FAQ items`);
+  const inactive = faqs.filter((faq) => faq.isActive === false).length;
+  console.log(`  ✓ Seeded ${faqs.length} FAQ items (${inactive} inactive)`);
 }

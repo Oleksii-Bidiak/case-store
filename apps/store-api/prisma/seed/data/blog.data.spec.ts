@@ -74,6 +74,26 @@ describe('seeded blog bodies', () => {
   });
 });
 
+describe('seeded blog publish states (TASK-2569)', () => {
+  it('features exactly one post — the storefront hero shows only the first', () => {
+    expect(postsData.filter((p) => p.featured)).toHaveLength(1);
+  });
+
+  it('seeds one scheduled and one draft post, neither of them featured', () => {
+    const scheduled = postsData.filter((p) => typeof p.state === 'object');
+    const drafts = postsData.filter((p) => p.state === 'DRAFT');
+    expect(scheduled).toHaveLength(1);
+    expect(drafts).toHaveLength(1);
+    expect([...scheduled, ...drafts].some((p) => p.featured || p.publishedAt)).toBe(false);
+  });
+
+  it('dates every published post', () => {
+    for (const post of postsData.filter((p) => !p.state)) {
+      expect(post.publishedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+});
+
 describe('seeded blog authors', () => {
   it('backs every byline with an author row', () => {
     const names = new Set(authorsData.map((a) => a.name));
