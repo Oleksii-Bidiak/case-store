@@ -41,7 +41,13 @@ export function ForgotPasswordForm({
   onSwitchToLogin,
 }: ForgotPasswordFormProps) {
   const [submitted, setSubmitted] = useState(false);
-  const requestReset = useAuthControllerRequestPasswordReset();
+  // `networkMode: "always"` (TASK-2541): by default React Query PAUSES a
+  // mutation while offline — the button stays on "submitting", no error shows,
+  // and the request is sent invisibly once the network returns. Offline it must
+  // fail at once so `errorNetwork` appears and the customer can retry.
+  const requestReset = useAuthControllerRequestPasswordReset({
+    mutation: { networkMode: "always" },
+  });
 
   const {
     register,
