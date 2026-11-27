@@ -153,6 +153,18 @@ with no images. Recovery is simply re-running `npm run db:seed`.
 > repair (john's and dmytro's chargers, nataliia's case). Cleaning them up is TASK-2604; until
 > then, reset the DB (§5) if the demo must not show them.
 
+> ⚠️ **A re-seed undoes what a tester did to the seed's own rows.** The seeded orders belong to
+> the seed: every run rewrites their status, money ledger, payments and returns from the plan, so a
+> return, refund or status change made by hand on a seeded order (e.g. #5A6EA987) is gone after
+> the next `db:seed`. The same holds for the seed-owned delivery fields (the four method switches,
+> courier city, price and free-from threshold) and the two managers' permission sets. Rows a tester
+> created themselves — their own orders, returns, reviews, codes — are never touched. Do manual
+> checks on your own orders, or finish them before re-seeding.
+>
+> Promo tiles are the one place the seed gives way: if admins already keep promo tiles published or
+> scheduled, the seed writes as many of its own as fit under the five-tile limit and the rest as
+> DRAFT (the scheduled one first), printing a `! Banners:` warning instead of failing.
+
 ---
 
 ## 4. After a Prisma migration
