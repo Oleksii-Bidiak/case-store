@@ -612,6 +612,46 @@ export class AdminOrderController {
   }
 
   /**
+   * POST /api/admin/orders/:orderId/parcel-returned
+   *
+   * «Посилку повернуто на склад» (TASK-2575): the refused parcel of an order cancelled
+   * after shipment came back — credit its units to stock, exactly once. The detail's
+   * `canReturnParcel` says when the button applies. The handler name is the audit
+   * action (`order.returnParcelToStock`, «Журнал дій»).
+   */
+  @Post(':orderId/parcel-returned')
+  @RequirePermission('orders:write')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Return a refused parcel to stock (admin)',
+    operationId: 'adminOrderControllerReturnParcelToStock',
+  })
+  @ApiParam({ name: 'orderId', description: 'Order UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Stock credited; the order stays CANCELLED with restockedAt set',
+    type: AdminOrderResponseEnvelope,
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — orders:write required' })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'ORDER_NOT_CANCELLED_AFTER_SHIPMENT — the order is not CANCELLED, or its cancel came ' +
+      'before shipment (that cancel restocked it); ORDER_PARCEL_ALREADY_RETURNED — the stock ' +
+      'was already credited; ORDER_HAS_RETURN — a return that is not REJECTED owns the units',
+  })
+  async returnParcelToStock(
+    @Param('orderId') orderId: string,
+    @CurrentUser('id') adminUserId: string,
+  ): Promise<AdminOrderResponseEnvelope> {
+    const order = await this.orderService.returnParcelToStock(orderId, adminUserId);
+
+    return { data: order };
+  }
+
+  /**
    * PATCH /api/admin/orders/:orderId
    *
    * Update the operator-editable fields that are not part of the order's

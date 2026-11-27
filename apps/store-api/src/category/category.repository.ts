@@ -1871,6 +1871,37 @@ export class CategoryRepository {
   }
 
   /**
+   * The nearest ANCESTOR of a category (never the category itself) that is inactive or
+   * deleted — the link that withdraws the branch below it (TASK-2574). The admin's
+   * publish state names it when a product is hidden by `ancestorsActive = false`.
+   *
+   * Same upward recursive CTE as {@link findAncestorChainsOrdered}, with the same
+   * `MAX_CATEGORY_DEPTH` guard so a parent cycle cannot spin it. Null when no ancestor
+   * hides the branch (or the category does not exist).
+   */
+  async findNearestHiddenAncestor(
+    categoryId: string,
+  ): Promise<{ id: string; name: string } | null> {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string; name: string }>>`
+      WITH RECURSIVE chain AS (
+        SELECT c.id, c.name, c.is_active, c.deleted_at, c.parent_id, 0 AS depth
+        FROM categories c
+        WHERE c.id = ${categoryId}
+        UNION ALL
+        SELECT p.id, p.name, p.is_active, p.deleted_at, p.parent_id, ch.depth + 1
+        FROM categories p
+        INNER JOIN chain ch ON ch.parent_id = p.id
+        WHERE ch.depth < ${MAX_CATEGORY_DEPTH}
+      )
+      SELECT id, name FROM chain
+      WHERE depth > 0 AND (is_active = false OR deleted_at IS NOT NULL)
+      ORDER BY depth ASC
+      LIMIT 1
+    `;
+    return rows[0] ?? null;
+  }
+
+  /**
    * Batched form of {@link findAncestorChainOrdered} — resolves the ordered
    * ancestor chain for MANY categories in a SINGLE recursive CTE, partitioned by
    * the base row each branch started from (TASK-174). Backs

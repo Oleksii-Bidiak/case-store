@@ -8,11 +8,15 @@ import {
   CreateProductInput,
   UpdateProductInput,
   FindAllParams,
+  type ProductPublishFacts,
+  type PublishCategoryFacts,
 } from './product.repository';
+import { isPubliclyVisible } from './product-visibility';
 import {
   ProductErrorCode,
   ProductCategoryBusyError,
   ProductCategoryGoneError,
+  ProductNotReadyException,
   ProductRestoreConflictError,
   type ProductUniqueClash,
   categoryBusyProduct,
@@ -23,6 +27,7 @@ import {
   slugTakenProduct,
 } from './product.errors';
 import { ProductDeviceCompatRepository } from './product-device-compat.repository';
+import { publishBlockers, type PublishBlocker, type PublishFacts } from './product-readiness';
 import { PRODUCT_DELETE_AUDIT } from './product.constants';
 import { ProductSpecRepository, SpecValueWrite } from './product-spec.repository';
 import { CategoryRepository } from '../category';
@@ -100,6 +105,25 @@ function rethrowCategoryWrite(error: unknown): never {
     throw categoryBusyProduct();
   }
   throw error;
+}
+
+/** A product a bulk show left hidden, and what it lacks (TASK-2573). */
+export interface SkippedProduct {
+  id: string;
+  name: string;
+  blockers: PublishBlocker[];
+}
+
+/** Whether a saved product may be shown, and what hides it otherwise (TASK-2573). */
+export interface PublishState {
+  blockers: PublishBlocker[];
+  hiddenByCategory: { id: string; name: string } | null;
+}
+
+/** What a bulk status write did: rows written, and the ones a show left hidden. */
+export interface BulkStatusResult {
+  updatedCount: number;
+  skipped: SkippedProduct[];
 }
 
 /**
@@ -659,6 +683,12 @@ export class ProductService {
     // ProductCategoryGoneError → the same 400.
     await this.ensureCategoryIsLive(input.categoryId);
 
+    // TASK-2573: a product being created has no images yet, so an explicit
+    // `isActive: true` is always refused (with `photo` among the blockers).
+    if (input.isActive === true) {
+      this.assertReadyToShow({ ...input, imageCount: 0 });
+    }
+
     const product = await this.productRepository
       .create({
         ...input,
@@ -719,6 +749,18 @@ export class ProductService {
     // under the category tree lock (TASK-1772) → ProductCategoryGoneError → same 400.
     if (input.categoryId !== undefined && input.categoryId !== product.categoryId) {
       await this.ensureCategoryIsLive(input.categoryId);
+    }
+
+    // TASK-2573: showing a hidden product through PUT is judged like activate, on
+    // the values it will have after this write — the input over the stored row.
+    if (input.isActive === true && !product.isActive) {
+      const stored = await this.publishFactsOf(id);
+      this.assertReadyToShow({
+        name: input.name ?? stored.name,
+        categoryId: input.categoryId ?? stored.categoryId,
+        price: input.price ?? stored.price,
+        imageCount: stored.imageCount,
+      });
     }
 
     // Record a 301 redirect only when the product was publicly visible (active)
@@ -789,7 +831,8 @@ export class ProductService {
 
   /**
    * Activate a product by setting isActive = true (admin-only).
-   * Throws NotFoundException if the product is not found.
+   * Throws NotFoundException if the product is not found, and
+   * {@link ProductNotReadyException} when it misses a blocking requirement (TASK-2573).
    */
   async activate(id: string): Promise<ProductEntity> {
     const product = await this.productRepository.findById(id);
@@ -797,6 +840,8 @@ export class ProductService {
     if (!product) {
       throw new NotFoundException('Product not found');
     }
+
+    this.assertReadyToShow(await this.publishFactsOf(id));
 
     const activatedProduct = await this.productRepository.activate(id);
 
@@ -808,6 +853,41 @@ export class ProductService {
       ...activatedProduct,
       reservedQty: await this.reservedQtyFor(activatedProduct.id),
     });
+  }
+
+  /**
+   * What the publish panel shows (TASK-2573): the saved product's blockers, judged by
+   * the same rule every show path enforces, and — when the storefront hides it anyway
+   * — the category responsible (`hiddenByCategory`, null when the category is on sale).
+   * Uncached: it is an admin read right after edits.
+   */
+  async getPublishState(id: string): Promise<PublishState> {
+    const facts = await this.publishFactsOf(id);
+    return {
+      blockers: publishBlockers(facts),
+      hiddenByCategory: await this.hidingCategory(facts.category),
+    };
+  }
+
+  /**
+   * The category that keeps a product off the storefront (TASK-2574), or null when it
+   * is on sale. Hidden is decided ONLY by {@link isPubliclyVisible} — the storefront's
+   * own rule — so the panel can never disagree with what shoppers see. Only then is
+   * the link named: the product's own category when it is inactive or deleted, otherwise the
+   * nearest inactive / deleted ancestor; if that walk finds nothing (the stored
+   * `ancestorsActive` drifted), the own category rather than a silent null.
+   */
+  private async hidingCategory(
+    category: PublishCategoryFacts,
+  ): Promise<{ id: string; name: string } | null> {
+    if (isPubliclyVisible({ isActive: true, deletedAt: null, category })) {
+      return null;
+    }
+    const own = { id: category.id, name: category.name };
+    if (!category.isActive || category.deletedAt) {
+      return own;
+    }
+    return (await this.categoryRepository.findNearestHiddenAncestor(category.id)) ?? own;
   }
 
   /**
@@ -824,8 +904,43 @@ export class ProductService {
    *
    * The list prefix is evicted once rather than per product: it is one key
    * space, and N identical `delByPrefix` scans would be pure waste.
+   *
+   * A bulk SHOW applies the readiness rule {@link activate} does (TASK-2573), per
+   * product: the ready ones are written, the rest come back as `skipped` with
+   * their blockers. An unknown id still fails the whole batch with a 404, and a
+   * batch with nothing ready writes nothing. A bulk hide is never checked.
    */
-  async setStatusMany(ids: string[], isActive: boolean): Promise<number> {
+  async setStatusMany(ids: string[], isActive: boolean): Promise<BulkStatusResult> {
+    if (!isActive) {
+      return { updatedCount: await this.writeStatusMany(ids, false), skipped: [] };
+    }
+
+    const factsById = new Map(
+      (await this.productRepository.findPublishFacts(ids)).map((facts) => [facts.id, facts]),
+    );
+    const missing = ids.filter((id) => !factsById.has(id));
+    if (missing.length > 0) {
+      throw new NotFoundException(new ProductsNotFoundError(missing).message);
+    }
+
+    const readyIds: string[] = [];
+    const skipped: SkippedProduct[] = [];
+    for (const id of ids) {
+      const facts = factsById.get(id)!;
+      const blockers = publishBlockers(facts);
+      if (blockers.length === 0) {
+        readyIds.push(id);
+      } else {
+        skipped.push({ id, name: facts.name, blockers });
+      }
+    }
+
+    const updatedCount = readyIds.length > 0 ? await this.writeStatusMany(readyIds, true) : 0;
+    return { updatedCount, skipped };
+  }
+
+  /** The bulk status write and its per-product side effects; returns rows written. */
+  private async writeStatusMany(ids: string[], isActive: boolean): Promise<number> {
     let updated;
     try {
       updated = await this.productRepository.setActiveMany(ids, isActive);
@@ -1152,6 +1267,27 @@ export class ProductService {
    */
   private sanitizeDescription<T extends string | null | undefined>(description: T): T {
     return (typeof description === 'string' ? sanitizeRichText(description) : description) as T;
+  }
+
+  /**
+   * Refuse a write that would show a product missing a blocking requirement
+   * (TASK-2573) — the one place every show path (activate, bulk show, create /
+   * update with `isActive: true`) is judged by {@link publishBlockers}.
+   */
+  private assertReadyToShow(facts: PublishFacts): void {
+    const blockers = publishBlockers(facts);
+    if (blockers.length > 0) {
+      throw new ProductNotReadyException(blockers);
+    }
+  }
+
+  /** The publish facts of one live product; 404 when it is gone. */
+  private async publishFactsOf(id: string): Promise<ProductPublishFacts> {
+    const [facts] = await this.productRepository.findPublishFacts([id]);
+    if (!facts) {
+      throw new NotFoundException('Product not found');
+    }
+    return facts;
   }
 
   /**

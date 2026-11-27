@@ -10,6 +10,7 @@ import {
   PaymentAttemptStatus,
   OrderHistoryChangeType,
   OrderHistoryNote,
+  ReturnStatus,
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma';
@@ -57,8 +58,10 @@ import {
   cartAlreadyOrderedError,
   copyOriginalNotCancellableError,
   orderPaymentInProgressError,
+  ParcelReturnRefusedError,
   staleOrderError,
 } from './order.errors';
+import { parcelReturnRefusal, type ParcelReturnFacts } from './parcel-return';
 import { centsToString, sumLineCents, toCents } from '../addon-service';
 import { kyivDayRange } from '../common/time';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
@@ -1456,6 +1459,126 @@ export class OrderRepository {
       where: { id: orderId },
       include: ORDERS_INCLUDE,
     })) as OrderWithItems;
+  }
+
+  /**
+   * «Посилку повернуто на склад» (TASK-2575): credit a refused parcel's units back to
+   * stock, exactly once.
+   *
+   * A cancel after shipment does not restock (the parcel is with the carrier), and a
+   * CANCELLED order cannot open a return — so before this the units the order
+   * decremented were lost to inventory for good. {@link parcelReturnRefusal} decides
+   * whether it may happen, on facts read under the order-row lock (orders first, the
+   * money lock order). `restockedAt IS NULL` is then the arbiter, as in
+   * {@link cancelAndRestockTx}: a concurrent second call blocks on the lock, re-reads
+   * the stamped row and is refused before touching any product. The stamp also makes
+   * a later revive (CANCELLED → live) re-reserve the stock, as for any restocked
+   * cancel. The promo redemption is NOT touched: the cancel already settled it.
+   *
+   * @throws ParcelReturnRefusedError — nothing written.
+   */
+  async returnParcelToStock(orderId: string, changedBy: string | null): Promise<OrderWithItems> {
+    const updated = (await this.prisma.$transaction(async (tx) => {
+      // `lockOrder` answers a missing row with an HTTP 404; the domain refusal is
+      // raised first so the service owns the mapping.
+      const exists = await tx.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!exists) {
+        throw new ParcelReturnRefusedError('ORDER_NOT_FOUND');
+      }
+      await this.money.lockOrder(tx, orderId);
+
+      const facts = await this.readParcelReturnFacts(orderId, tx);
+      const refusal = facts ? parcelReturnRefusal(facts) : 'ORDER_NOT_FOUND';
+      if (refusal) {
+        throw new ParcelReturnRefusedError(refusal);
+      }
+
+      // The arbiter. Runs BEFORE any stock write.
+      const { count } = await tx.order.updateMany({
+        where: { id: orderId, status: OrderStatus.CANCELLED, restockedAt: null },
+        data: { restockedAt: new Date() },
+      });
+      if (count === 0) {
+        throw new ParcelReturnRefusedError('ALREADY_RETURNED');
+      }
+
+      const lines = await tx.orderItem.findMany({
+        where: { orderId },
+        select: { productId: true, quantity: true },
+      });
+      // The same per-line credit cancelAndRestockTx gives back.
+      for (const item of lines) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stock: { increment: item.quantity } },
+        });
+      }
+
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          changeType: OrderHistoryChangeType.STATUS,
+          fromStatus: OrderStatus.CANCELLED,
+          toStatus: OrderStatus.CANCELLED,
+          changedBy,
+          note: OrderHistoryNote.PARCEL_RETURNED_TO_STOCK,
+        },
+      });
+
+      return tx.order.findUniqueOrThrow({ where: { id: orderId }, include: ORDERS_INCLUDE });
+    })) as OrderWithItems;
+
+    // Stock changed — evict the same caches cancelAndRestock does.
+    await this.evictProductCaches(updated.items);
+
+    return updated;
+  }
+
+  /**
+   * The facts {@link parcelReturnRefusal} judges (TASK-2575), or null for a missing /
+   * deleted order. The cancel that counts is the latest STATUS row INTO CANCELLED —
+   * `fromStatus` not CANCELLED, so the CANCELLED → CANCELLED rows (this action's own,
+   * a copy's) never stand in for it. Admin detail reads it outside a transaction for
+   * `canReturnParcel`; {@link returnParcelToStock} under the order-row lock.
+   */
+  async readParcelReturnFacts(
+    orderId: string,
+    client: Prisma.TransactionClient = this.prisma,
+  ): Promise<ParcelReturnFacts | null> {
+    const order = await client.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      select: {
+        status: true,
+        restockedAt: true,
+        statusHistory: {
+          where: {
+            changeType: OrderHistoryChangeType.STATUS,
+            toStatus: OrderStatus.CANCELLED,
+            fromStatus: { not: OrderStatus.CANCELLED },
+          },
+          orderBy: { changedAt: 'desc' },
+          take: 1,
+          select: { fromStatus: true },
+        },
+        returns: {
+          where: { status: { not: ReturnStatus.REJECTED } },
+          take: 1,
+          select: { id: true },
+        },
+      },
+    });
+    if (!order) {
+      return null;
+    }
+    return {
+      status: order.status,
+      restockedAt: order.restockedAt,
+      cancelledFrom: order.statusHistory[0]?.fromStatus ?? null,
+      hasOpenReturn: order.returns.length > 0,
+    };
   }
 
   /**

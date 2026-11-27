@@ -18,6 +18,13 @@ describe("auditActionLabel (TASK-430)", () => {
     );
   });
 
+  // TASK-2575: POST /admin/orders/:orderId/parcel-returned.
+  it("names the returned parcel", () => {
+    expect(auditActionLabel("order.returnParcelToStock")).toBe(
+      "Замовлення — посилку повернуто на склад",
+    );
+  });
+
   it("returns null for an entity it does not know", () => {
     // The caller then renders the raw key — the behaviour the column had before
     // labels existed. A new module must degrade, never disappear.

@@ -4,8 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getProductControllerAdminFindAllQueryKey,
+  skippedProductsMessage,
   useProductControllerSetStatusMany,
 } from "@/entities/product";
+import { toast } from "@/shared/ui/toast";
 import {
   useProductControllerSetColorMany,
   useProductControllerSetGroupMany,
@@ -16,6 +18,7 @@ import { dict } from "@/shared/config";
 import {
   buildBulkUndoPlan,
   countPlanIds,
+  withoutIds,
   type BulkUndoKind,
   type BulkUndoPlan,
   type BulkUndoRow,
@@ -38,9 +41,11 @@ export interface ProductBulkUndoApi {
   /**
    * The write succeeded: offer its undo for `UNDO_WINDOW_MS`. Returns how many
    * products the offer would put back — `null` when nothing changed, so the
-   * caller shows no «Скасувати» toast either (wave 198).
+   * caller shows no «Скасувати» toast either (wave 198). `skippedIds` are
+   * products the write left untouched (a bulk show's unready ones, TASK-2573):
+   * they never changed, so the undo leaves them out.
    */
-  commit: () => number | null;
+  commit: (skippedIds?: readonly string[]) => number | null;
   undo: () => void;
   /**
    * An undo is on offer (inside the window, not yet used). It does NOT know
@@ -120,44 +125,53 @@ export function useProductBulkUndo(): ProductBulkUndoApi {
     [],
   );
 
-  const commit = useCallback(() => {
-    const plan = preparedRef.current;
-    preparedRef.current = null;
-    // `null` plan: nothing actually changed, so there is nothing to offer — and
-    // an older offer is stale now either way.
-    setOffer(plan ? { plan, expiresAt: Date.now() + UNDO_WINDOW_MS } : null);
-    // Tell a screen-reader user the undo exists, naming the control by its
-    // label (the reorder commit announcement does the same). The caller calls
-    // `commit` last in its `onSuccess` — after `selection.clear()` — so this is
-    // the message that stays in the polite region.
-    if (!plan) return null;
-    const count = countPlanIds(plan);
-    announcePolite(t.announceUndoAvailable(count, t.undo));
-    return count;
-  }, [announcePolite]);
+  const commit = useCallback(
+    (skippedIds: readonly string[] = []) => {
+      const plan = withoutIds(preparedRef.current, skippedIds);
+      preparedRef.current = null;
+      // `null` plan: nothing actually changed, so there is nothing to offer — and
+      // an older offer is stale now either way.
+      setOffer(plan ? { plan, expiresAt: Date.now() + UNDO_WINDOW_MS } : null);
+      // Tell a screen-reader user the undo exists, naming the control by its
+      // label (the reorder commit announcement does the same). The caller calls
+      // `commit` last in its `onSuccess` — after `selection.clear()` — so this is
+      // the message that stays in the polite region.
+      if (!plan) return null;
+      const count = countPlanIds(plan);
+      announcePolite(t.announceUndoAvailable(count, t.undo));
+      return count;
+    },
+    [announcePolite],
+  );
 
   const runStep = useCallback(
+    /** Resolves to how many of `ids` the server left as they were. */
     async (
       kind: BulkUndoKind,
       value: boolean | string | null,
       ids: string[],
-    ) => {
+    ): Promise<number> => {
       switch (kind) {
-        case "status":
-          await statusMutation.mutateAsync({
+        case "status": {
+          const response = await statusMutation.mutateAsync({
             data: { ids, isActive: value as boolean },
           });
-          return;
+          // Undoing a bulk HIDE re-shows through the same endpoint, which
+          // leaves unready products hidden (TASK-2573) — say which.
+          const skipped = response.data.skipped ?? [];
+          if (skipped.length > 0) toast.error(skippedProductsMessage(skipped));
+          return skipped.length;
+        }
         case "group":
           await groupMutation.mutateAsync({
             data: { ids, groupId: value as string | null },
           });
-          return;
+          return 0;
         case "color":
           await colorMutation.mutateAsync({
             data: { ids, color: value as string | null },
           });
-          return;
+          return 0;
       }
     },
     [colorMutation, groupMutation, statusMutation],
@@ -171,14 +185,16 @@ export function useProductBulkUndo(): ProductBulkUndoApi {
     announcePolite(t.announceUndoing(total));
 
     const remaining = [...plan.steps];
+    let skipped = 0;
     try {
       while (remaining.length > 0) {
         const step = remaining[0];
-        await runStep(plan.kind, step.value, step.ids);
+        skipped += await runStep(plan.kind, step.value, step.ids);
         remaining.shift();
       }
       setOffer(null);
-      announcePolite(t.announceUndone(total));
+      // Count what was actually undone: a re-show skips unready products.
+      announcePolite(t.announceUndone(total - skipped));
     } catch {
       // Keep only what is still to do: a second press retries the rest
       // instead of replaying the steps that already landed.

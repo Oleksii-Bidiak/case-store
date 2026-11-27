@@ -76,9 +76,21 @@ export function isRefusedPaymentEvent(
 }
 
 /**
+ * Whether the row records a refused parcel taken back into stock (TASK-2575).
+ * The server writes it CANCELLED → CANCELLED — the status did not move, the
+ * stock did — so the row reads as its note alone, never «Скасовано → Скасовано».
+ */
+export function isParcelReturnedRow(entry: OrderStatusHistoryEntity): boolean {
+  return (
+    entry.changeType === OrderStatusHistoryEntityChangeType.STATUS &&
+    entry.note === OrderStatusHistoryEntityNote.PARCEL_RETURNED_TO_STOCK
+  );
+}
+
+/**
  * What a history row records: a status transition (with the order-creation row
- * treated as the order's birth), a payment-status change, or a refused payment
- * event (TASK-621).
+ * treated as the order's birth), a payment-status change, a refused payment
+ * event (TASK-621), or a returned parcel (TASK-2575).
  */
 export function historyChangeLabel(
   entry: OrderStatusHistoryEntity,
@@ -93,6 +105,10 @@ export function historyChangeLabel(
           current,
         )
       : dict.orderStatus.paymentEventRefusedLegacyLabel(current);
+  }
+
+  if (isParcelReturnedRow(entry)) {
+    return dict.orderStatus.parcelReturnedHistoryNote;
   }
 
   if (entry.changeType === OrderStatusHistoryEntityChangeType.PAYMENT_STATUS) {
@@ -144,6 +160,10 @@ export function historyNoteLabel(
       return dict.orderStatus.copiedToOrderHistoryNote;
     case OrderStatusHistoryEntityNote.COPY_OF_ORDER:
       return dict.orderStatus.copyOfOrderHistoryNote;
+    // TASK-2575: the note IS the row's label (see `historyChangeLabel`) — not
+    // repeated underneath it.
+    case OrderStatusHistoryEntityNote.PARCEL_RETURNED_TO_STOCK:
+      return null;
     default:
       return null;
   }

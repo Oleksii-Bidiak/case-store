@@ -120,6 +120,35 @@ export class ProductGroupNotFoundError extends Error {
   }
 }
 
+/** The category link the publish state names when it hides a product (TASK-2573/2574). */
+const PUBLISH_CATEGORY_SELECT = {
+  id: true,
+  name: true,
+  isActive: true,
+  ancestorsActive: true,
+  parentId: true,
+  deletedAt: true,
+} as const satisfies Prisma.CategorySelect;
+
+export interface PublishCategoryFacts {
+  id: string;
+  name: string;
+  isActive: boolean;
+  ancestorsActive: boolean;
+  parentId: string | null;
+  deletedAt: Date | null;
+}
+
+/** One product as the publish-readiness rule sees it (TASK-2573). */
+export interface ProductPublishFacts {
+  id: string;
+  name: string;
+  categoryId: string;
+  price: Prisma.Decimal;
+  imageCount: number;
+  category: PublishCategoryFacts;
+}
+
 export class ProductsNotFoundError extends Error {
   constructor(readonly missingIds: string[]) {
     super(`Unknown product id(s): ${missingIds.join(', ')}`);
@@ -424,6 +453,26 @@ export class ProductRepository {
       where: { id, deletedAt: null },
       include: { brand: { select: BRAND_SUMMARY_SELECT } },
     });
+  }
+
+  /**
+   * What the publish-readiness rule and the publish state judge (TASK-2573), for
+   * the named live products — soft-deleted and unknown ids are simply absent, so
+   * the caller can tell which ids it asked for that do not exist.
+   */
+  async findPublishFacts(ids: string[]): Promise<ProductPublishFacts[]> {
+    const rows = await this.prisma.product.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        categoryId: true,
+        price: true,
+        _count: { select: { images: true } },
+        category: { select: PUBLISH_CATEGORY_SELECT },
+      },
+    });
+    return rows.map(({ _count, ...row }) => ({ ...row, imageCount: _count.images }));
   }
 
   /**

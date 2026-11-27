@@ -96,6 +96,10 @@ function stubProduct(product: ReturnType<typeof makeProduct>) {
     http.get(`*/api/products/${PRODUCT_ID}/images`, () =>
       HttpResponse.json({ data: [] }),
     ),
+    // The publish panel's server verdict (TASK-2573).
+    http.get(`*/api/products/${PRODUCT_ID}/publish-state`, () =>
+      HttpResponse.json({ data: { blockers: [], hiddenByCategory: null } }),
+    ),
     http.get("*/api/device-brands", () => HttpResponse.json({ data: [] })),
     http.get("*/api/device-models", () => HttpResponse.json({ data: [] })),
     http.get(`*/api/products/admin/${PRODUCT_ID}`, () =>

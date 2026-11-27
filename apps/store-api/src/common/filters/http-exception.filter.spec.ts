@@ -10,6 +10,7 @@ import * as Sentry from '@sentry/nestjs';
 import { HttpExceptionFilter } from './http-exception.filter';
 import { RetryAfterException } from './retry-after.exception';
 import { ValidationFailedException } from './validation-failed.exception';
+import { ProductNotReadyException } from '../../product';
 
 // Sentry is stubbed so the spec asserts capture behaviour without any DSN/network.
 jest.mock('@sentry/nestjs', () => ({
@@ -190,6 +191,33 @@ describe('HttpExceptionFilter', () => {
       );
 
       expect(jsonMock.mock.calls[0][0]).not.toHaveProperty('fieldErrors');
+    });
+  });
+
+  // TASK-2573: the third pass-through, on the same by-class terms.
+  describe('ProductNotReadyException', () => {
+    it('passes blockers through with the PRODUCT_NOT_READY code', () => {
+      filter.catch(
+        new ProductNotReadyException(['price', 'photo']),
+        createHost('/api/products/p1/activate', 'PATCH'),
+      );
+
+      expect(statusMock).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+      expect(jsonMock.mock.calls[0][0]).toMatchObject({
+        statusCode: 400,
+        error: 'PRODUCT_NOT_READY',
+        message: expect.any(String),
+        blockers: ['price', 'photo'],
+      });
+    });
+
+    it('drops a blockers key carried by any other exception body', () => {
+      filter.catch(
+        new BadRequestException({ error: 'PRODUCT_NOT_READY', message: 'm', blockers: ['x'] }),
+        createHost(),
+      );
+
+      expect(jsonMock.mock.calls[0][0]).not.toHaveProperty('blockers');
     });
   });
 });

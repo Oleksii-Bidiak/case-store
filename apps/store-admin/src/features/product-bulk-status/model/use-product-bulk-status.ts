@@ -1,10 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getProductControllerAdminFindAllQueryKey,
   useProductControllerSetStatusMany,
+  type BulkProductStatusResult,
 } from "@/entities/product";
 import { useBulkStatus } from "@/features/bulk-status";
 import { dict } from "@/shared/config";
@@ -12,8 +13,12 @@ import { dict } from "@/shared/config";
 const t = dict.products.bulk;
 
 export interface UseProductBulkStatusOptions {
-  /** Called after the server confirms the write — the caller clears its selection. */
-  onSuccess?: () => void;
+  /**
+   * Called after the server confirms the write — the caller clears its
+   * selection. Gets what the server wrote: a bulk SHOW writes only ready
+   * products and lists the rest in `skipped` (TASK-2573).
+   */
+  onSuccess?: (result: BulkProductStatusResult) => void;
 }
 
 export interface ProductBulkStatusApi {
@@ -41,6 +46,9 @@ export function useProductBulkStatus({
 }: UseProductBulkStatusOptions = {}): ProductBulkStatusApi {
   const queryClient = useQueryClient();
   const mutation = useProductControllerSetStatusMany();
+  // `useBulkStatus` hands the response to `onWritten` only; keep it for the
+  // caller's `onSuccess`, which runs right after.
+  const lastResult = useRef<BulkProductStatusResult | null>(null);
 
   const { run, isPending, confirmDialog } = useBulkStatus({
     mutation,
@@ -57,12 +65,17 @@ export function useProductBulkStatus({
     announceDone: (response, _ids, isActive) =>
       t.announceDone(response.data.updatedCount, isActive),
     announceFailed: t.announceFailed,
-    onWritten: () => {
+    onWritten: (response) => {
+      lastResult.current = response.data;
       void queryClient.invalidateQueries({
         queryKey: getProductControllerAdminFindAllQueryKey(),
       });
     },
-    onSuccess,
+    onSuccess: () => {
+      const result = lastResult.current;
+      lastResult.current = null;
+      if (result) onSuccess?.(result);
+    },
   });
 
   return { setStatus: run, isPending, confirmDialog };

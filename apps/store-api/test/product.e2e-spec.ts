@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
+import { Prisma } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
@@ -15,6 +16,7 @@ import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 import { createGlobalValidationPipe } from '../src/common/pipes';
+import { HttpExceptionFilter } from '../src/common/filters';
 
 /**
  * E2E tests for the Product module.
@@ -80,7 +82,29 @@ describe('ProductController (e2e)', () => {
     // TASK-254: adminFindAll/findById/preview enrich with the derived reserved
     // aggregate; default to an empty map (no reservations) for these mocked reads.
     getReservedQtyByProductId: jest.fn().mockResolvedValue(new Map<string, number>()),
+    // TASK-2573: what the publish-readiness rule judges on every show path.
+    findPublishFacts: jest.fn(),
   };
+
+  /** A product's publish facts (TASK-2573) — ready unless a field is overridden. */
+  function publishFacts(id: string, overrides: Record<string, unknown> = {}) {
+    return {
+      id,
+      name: `Product ${id}`,
+      categoryId: 'category-e2e-1',
+      price: new Prisma.Decimal('29.99'),
+      imageCount: 1,
+      category: {
+        id: 'category-e2e-1',
+        name: 'Phone Cases',
+        isActive: true,
+        ancestorsActive: true,
+        parentId: null,
+        deletedAt: null,
+      },
+      ...overrides,
+    };
+  }
 
   // Mock CategoryRepository — ProductService depends on it for the TASK-236
   // subtree rollup. `findSubtreeIds` echoes the requested id as a single-element
@@ -113,6 +137,8 @@ describe('ProductController (e2e)', () => {
     // TASK-1830: the action log the deleted list reads its actors from.
     auditLog: {
       findMany: jest.fn().mockResolvedValue([]),
+      // TASK-2573: the bulk status route writes its own row.
+      create: jest.fn().mockResolvedValue({}),
     },
     refreshToken: {
       findUnique: jest.fn(),
@@ -247,6 +273,9 @@ describe('ProductController (e2e)', () => {
     jwtService = moduleFixture.get<JwtService>(JwtService);
 
     app.useGlobalPipes(createGlobalValidationPipe());
+    // The production error envelope (main.ts), so a pass-through key such as the
+    // PRODUCT_NOT_READY `blockers` (TASK-2573) is asserted as clients receive it.
+    app.useGlobalFilters(moduleFixture.get(HttpExceptionFilter));
 
     app.setGlobalPrefix('api', {
       exclude: ['health'],
@@ -1156,6 +1185,61 @@ describe('ProductController (e2e)', () => {
         })
         .expect(400);
     });
+
+    // TASK-2573: a bulk show writes the ready products and reports the rest.
+    it('shows only the ready products and returns the others as skipped', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      const ready = '11111111-1111-4111-8111-111111111111';
+      const noPhoto = '22222222-2222-4222-8222-222222222222';
+      productRepositoryMock.findPublishFacts.mockResolvedValue([
+        publishFacts(ready),
+        publishFacts(noPhoto, { name: 'No photo', imageCount: 0 }),
+      ]);
+      productRepositoryMock.setActiveMany.mockResolvedValue([
+        { id: ready, slug: 'a', isActive: true },
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .patch(bulkUrl)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: [ready, noPhoto], isActive: true })
+        .expect(200);
+
+      expect(response.body.data).toEqual({
+        updatedCount: 1,
+        skipped: [{ id: noPhoto, name: 'No photo', blockers: ['photo'] }],
+      });
+      expect(productRepositoryMock.setActiveMany).toHaveBeenCalledWith([ready], true);
+    });
+
+    it('logs the products actually shown and the skipped ones — one row, not the request body', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      const ready = '11111111-1111-4111-8111-111111111111';
+      const noPhoto = '22222222-2222-4222-8222-222222222222';
+      productRepositoryMock.findPublishFacts.mockResolvedValue([
+        publishFacts(ready),
+        publishFacts(noPhoto, { name: 'No photo', imageCount: 0 }),
+      ]);
+      productRepositoryMock.setActiveMany.mockResolvedValue([
+        { id: ready, slug: 'a', isActive: true },
+      ]);
+      prismaServiceMock.auditLog.create.mockClear();
+
+      await request(app.getHttpServer())
+        .patch(bulkUrl)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ids: [ready, noPhoto], isActive: true })
+        .expect(200);
+
+      expect(prismaServiceMock.auditLog.create).toHaveBeenCalledTimes(1);
+      const row = prismaServiceMock.auditLog.create.mock.calls[0][0].data;
+      expect(row.action).toBe('product.setStatusMany');
+      expect(row.diff).toEqual({
+        ids: { to: [ready] },
+        isActive: { to: true },
+        skipped: { to: [{ id: noPhoto, blockers: 'photo' }] },
+      });
+    });
   });
 
   describe('PATCH /api/products/:id/deactivate', () => {
@@ -1209,6 +1293,73 @@ describe('ProductController (e2e)', () => {
 
   // ─── PATCH /api/products/:id/activate (admin) ───────────────────────────────
 
+  // ─── GET /api/products/:id/publish-state (admin, TASK-2573) ─────────────────
+  describe('GET /api/products/:id/publish-state', () => {
+    const url = '/api/products/product-e2e-1/publish-state';
+
+    it('returns the blockers and the hiding category (none) for products:read', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findPublishFacts.mockResolvedValue([
+        publishFacts('product-e2e-1', { imageCount: 0 }),
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body).toEqual({ data: { blockers: ['photo'], hiddenByCategory: null } });
+      expect(productRepositoryMock.findPublishFacts).toHaveBeenCalledWith(['product-e2e-1']);
+    });
+
+    it('names the category that hides an active product (TASK-2574)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findPublishFacts.mockResolvedValue([
+        publishFacts('product-e2e-1', {
+          category: {
+            id: 'category-e2e-1',
+            name: 'Phone Cases',
+            isActive: false,
+            ancestorsActive: true,
+            parentId: null,
+            deletedAt: null,
+          },
+        }),
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data).toEqual({
+        blockers: [],
+        hiddenByCategory: { id: 'category-e2e-1', name: 'Phone Cases' },
+      });
+    });
+
+    it('answers 404 for an unknown or deleted product', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findPublishFacts.mockResolvedValue([]);
+
+      await request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('returns 403 for a staff member without products:read', async () => {
+      const token = generateAccessToken('manager-e2e-1', 'MANAGER');
+
+      await request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      expect(productRepositoryMock.findPublishFacts).not.toHaveBeenCalled();
+    });
+  });
+
   describe('PATCH /api/products/:id/activate', () => {
     it('should return 401 without auth token', async () => {
       await request(app.getHttpServer()).patch('/api/products/some-id/activate').expect(401);
@@ -1231,6 +1382,10 @@ describe('ProductController (e2e)', () => {
         id: 'product-to-activate',
         isActive: false,
       });
+      // A ready product (TASK-2573): a photo and a price above zero.
+      productRepositoryMock.findPublishFacts.mockResolvedValue([
+        publishFacts('product-to-activate'),
+      ]);
       productRepositoryMock.activate.mockResolvedValue({
         ...testProduct,
         id: 'product-to-activate',
@@ -1244,6 +1399,30 @@ describe('ProductController (e2e)', () => {
 
       expect(response.body).toHaveProperty('data');
       expect(response.body.data.isActive).toBe(true);
+    });
+
+    it('answers 400 PRODUCT_NOT_READY with the blockers for a product not ready', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue({
+        ...testProduct,
+        id: 'product-not-ready',
+        isActive: false,
+      });
+      productRepositoryMock.findPublishFacts.mockResolvedValue([
+        publishFacts('product-not-ready', { price: new Prisma.Decimal('0'), imageCount: 0 }),
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/products/product-not-ready/activate')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        statusCode: 400,
+        error: 'PRODUCT_NOT_READY',
+        blockers: ['price', 'photo'],
+      });
+      expect(productRepositoryMock.activate).not.toHaveBeenCalled();
     });
 
     it('should return 404 when activating non-existent product', async () => {

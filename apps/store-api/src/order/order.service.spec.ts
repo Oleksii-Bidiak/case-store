@@ -20,6 +20,7 @@ import {
 import { OrderRepository } from './order.repository';
 import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
+import { ParcelReturnRefusedError } from './order.errors';
 import { confirmsPaymentOfLiveOrder } from './shop-order-ping';
 import { OrderEntity, PublicOrderEntity, type PublicOrderRow } from './entities';
 import { CartService, type CartWithItems } from '../cart';
@@ -227,6 +228,9 @@ const orderRepositoryMock = {
   countByDeliveryMethod: jest.fn(),
   // TASK-2010: the one-click account from the guest success page.
   assignGuestOrderToNewAccount: jest.fn(),
+  // TASK-2575: «Посилку повернуто на склад» and the admin detail's canReturnParcel.
+  returnParcelToStock: jest.fn(),
+  readParcelReturnFacts: jest.fn().mockResolvedValue(null),
 };
 
 // TASK-827: checkout reads the cart through CartService, the one method it uses.
@@ -5725,6 +5729,98 @@ describe('OrderService', () => {
       orderRepositoryMock.findByIdForAdmin.mockResolvedValue(null);
 
       await expect(service.adminGetOrder('missing')).rejects.toThrow(NotFoundException);
+    });
+
+    // TASK-2575: the «Посилку повернуто на склад» button is offered from the server's rule.
+    it('sets canReturnParcel=true for a refused parcel not yet returned', async () => {
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CANCELLED }),
+      );
+      orderRepositoryMock.readParcelReturnFacts.mockResolvedValueOnce({
+        status: OrderStatus.CANCELLED,
+        restockedAt: null,
+        cancelledFrom: OrderStatus.SHIPPED,
+        hasOpenReturn: false,
+      });
+
+      const result = await service.adminGetOrder('order-uuid-1');
+
+      expect(orderRepositoryMock.readParcelReturnFacts).toHaveBeenCalledWith('order-uuid-1');
+      expect(result.canReturnParcel).toBe(true);
+    });
+
+    it.each([
+      ['cancelled before shipment', { cancelledFrom: OrderStatus.PROCESSING }],
+      ['already returned', { restockedAt: new Date() }],
+      ['with an open return', { hasOpenReturn: true }],
+    ])('sets canReturnParcel=false for an order %s', async (_label, overrides) => {
+      orderRepositoryMock.findByIdForAdmin.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CANCELLED }),
+      );
+      orderRepositoryMock.readParcelReturnFacts.mockResolvedValueOnce({
+        status: OrderStatus.CANCELLED,
+        restockedAt: null,
+        cancelledFrom: OrderStatus.SHIPPED,
+        hasOpenReturn: false,
+        ...overrides,
+      });
+
+      const result = await service.adminGetOrder('order-uuid-1');
+
+      expect(result.canReturnParcel).toBe(false);
+    });
+  });
+
+  // ─── returnParcelToStock (admin, TASK-2575) ─────────────────────────────────
+
+  describe('returnParcelToStock', () => {
+    it('returns the parcel through the repository, as the acting admin', async () => {
+      orderRepositoryMock.returnParcelToStock.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CANCELLED, restockedAt: new Date() }),
+      );
+
+      const result = await service.returnParcelToStock('order-uuid-1', 'admin-1');
+
+      expect(orderRepositoryMock.returnParcelToStock).toHaveBeenCalledWith(
+        'order-uuid-1',
+        'admin-1',
+      );
+      expect(result).toBeInstanceOf(OrderEntity);
+      expect(result.restockedAt).not.toBeNull();
+    });
+
+    it('answers 404 for a missing order', async () => {
+      orderRepositoryMock.returnParcelToStock.mockRejectedValue(
+        new ParcelReturnRefusedError('ORDER_NOT_FOUND'),
+      );
+
+      await expect(service.returnParcelToStock('missing', 'admin-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it.each([
+      ['NOT_CANCELLED_AFTER_SHIPMENT', 'ORDER_NOT_CANCELLED_AFTER_SHIPMENT'],
+      ['ALREADY_RETURNED', 'ORDER_PARCEL_ALREADY_RETURNED'],
+      ['HAS_RETURN', 'ORDER_HAS_RETURN'],
+    ] as const)('maps %s to a 409 with the stable code %s', async (reason, code) => {
+      orderRepositoryMock.returnParcelToStock.mockRejectedValue(
+        new ParcelReturnRefusedError(reason),
+      );
+
+      const error = await service
+        .returnParcelToStock('order-uuid-1', 'admin-1')
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toMatchObject({ error: code });
+    });
+
+    it('lets an unexpected failure through untouched', async () => {
+      const boom = new Error('connection reset');
+      orderRepositoryMock.returnParcelToStock.mockRejectedValue(boom);
+
+      await expect(service.returnParcelToStock('order-uuid-1', 'admin-1')).rejects.toBe(boom);
     });
   });
 

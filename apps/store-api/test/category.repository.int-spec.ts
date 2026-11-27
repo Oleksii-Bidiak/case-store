@@ -502,3 +502,94 @@ describe('CategoryRepository branch visibility (integration, TASK-1032)', () => 
     }
   });
 });
+
+/**
+ * `findNearestHiddenAncestor` (TASK-2574) — which link above a category withdraws it.
+ *
+ *   rootH            (inactive)
+ *     └── midH       (inactive)
+ *           └── leafH (active — hidden only through its ancestors)
+ *   rootOk
+ *     └── tombH      (deleted)
+ *           └── underTombH
+ *   liveRoot
+ *     └── liveLeaf   (whole chain on sale)
+ */
+describe('CategoryRepository.findNearestHiddenAncestor (integration, TASK-2574)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let repo: CategoryRepository;
+  const ids: string[] = [];
+
+  let midH: string;
+  let leafH: string;
+  let tombH: string;
+  let underTombH: string;
+  let liveRoot: string;
+  let liveLeaf: string;
+
+  beforeAll(async () => {
+    const url = process.env.DATABASE_URL ?? '';
+    if (!/test/i.test(url)) {
+      throw new Error(`Refusing to run integration tests against a non-test database: "${url}"`);
+    }
+
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
+      providers: [PrismaService, CategoryRepository, SlugRedirectRepository],
+    }).compile();
+
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = moduleRef.get(PrismaService);
+    repo = moduleRef.get(CategoryRepository);
+
+    const s = randomUUID();
+    const mk = async (
+      name: string,
+      parentId: string | null,
+      data: { isActive?: boolean; deletedAt?: Date } = {},
+    ): Promise<string> => {
+      const cat = await prisma.category.create({
+        data: { name, slug: `${name}-${s}`, parentId, ...data },
+      });
+      ids.unshift(cat.id); // leaves-first for the cleanup
+      return cat.id;
+    };
+
+    const rootH = await mk('rootH', null, { isActive: false });
+    midH = await mk('midH', rootH, { isActive: false });
+    leafH = await mk('leafH', midH);
+    const rootOk = await mk('rootOk', null);
+    tombH = await mk('tombH', rootOk, { isActive: false, deletedAt: new Date() });
+    underTombH = await mk('underTombH', tombH);
+    liveRoot = await mk('liveRoot', null);
+    liveLeaf = await mk('liveLeaf', liveRoot);
+  });
+
+  afterAll(async () => {
+    if (!prisma) {
+      return;
+    }
+    for (const id of ids) {
+      await prisma.category.deleteMany({ where: { id } });
+    }
+    await app.close();
+  });
+
+  it('names the NEAREST inactive ancestor, not the root', async () => {
+    expect(await repo.findNearestHiddenAncestor(leafH)).toEqual({ id: midH, name: 'midH' });
+  });
+
+  it('counts a deleted ancestor as hiding', async () => {
+    expect(await repo.findNearestHiddenAncestor(underTombH)).toEqual({ id: tombH, name: 'tombH' });
+  });
+
+  it('never names the category itself', async () => {
+    expect(await repo.findNearestHiddenAncestor(tombH)).toBeNull();
+  });
+
+  it('is null when the whole chain is on sale', async () => {
+    expect(await repo.findNearestHiddenAncestor(liveLeaf)).toBeNull();
+  });
+});

@@ -601,6 +601,11 @@ export const dict = {
       // by its label, as the reorder commit announcement does.
       announceUndoAvailable: (count: number, undoLabel: string) =>
         `Готово, змінено товарів: ${count}. Щоб повернути, як було, скористайтеся кнопкою «${undoLabel}».`,
+      // TASK-2573: a bulk show writes only ready products; the rest are named.
+      skippedItem: (name: string, reasons: string) => `«${name}» — ${reasons}`,
+      skippedNotShown: (count: number, list: string, more: number) =>
+        `Не показано ${countLabel(count, ["товар", "товари", "товарів"])}: ${list}` +
+        (more > 0 ? ` і ще ${more}` : ""),
     },
     back: "← Товари",
     createHeading: "Створення товару",
@@ -1168,6 +1173,25 @@ export const dict = {
     toastPublished: "Товар опубліковано — він з'явився на вітрині",
     toastUnpublished: "Товар знято з публікації",
     toastFailed: "Не вдалося змінити статус публікації",
+    // TASK-2573: the server is the one judge of readiness. Its blocker codes,
+    // as short reasons — one mapping for the panel, the row «⋯» and the bulk bar.
+    blockerReasons: {
+      name: "немає назви",
+      category: "не вибрано категорію",
+      price: "ціна не більша за 0",
+      photo: "немає фото",
+    },
+    notShown: (reasons: string) => `Товар не показано: ${reasons}`,
+    stateLoadFailed:
+      "Не вдалося перевірити готовність товару. Оновіть сторінку.",
+    // TASK-2574: a hidden category (its own or an ancestor) keeps an active
+    // product off the storefront — the panel names it instead of «Показується».
+    hiddenByCategoryLive: "Приховано на сайті: категорія ",
+    hiddenByCategoryDraft:
+      "Навіть після публікації товару не буде на сайті: прихована категорія ",
+    hiddenByCategoryTail: " прихована",
+    hiddenByCategoryLinkAria: (name: string) =>
+      `Відкрити категорію «${name}» для редагування`,
   },
 
   productForm: {
@@ -4137,6 +4161,23 @@ export const dict = {
     copyOf: "Копія",
     replacedBy: "Замінено на",
     copiesLabel: "Копії:",
+    // --- «Посилку повернуто на склад» (TASK-2575) ----------------------------
+    // Скасоване ПІСЛЯ відправки замовлення: покупець не забрав посилку, вона
+    // повернулася — залишок додається назад один раз, руками оператора.
+    parcelReturnAction: "Посилку повернуто на склад",
+    parcelReturnConfirmTitle: "Посилку повернуто на склад?",
+    parcelReturnConfirmDescription:
+      "Залишок цих позицій буде повернуто на склад — один раз, повторно цього зробити не можна:",
+    parcelReturnLine: (name: string, quantity: number) =>
+      `${name} × ${quantity}`,
+    parcelReturnConfirm: "Повернути залишок",
+    parcelReturnDone: "Залишок повернуто на склад",
+    parcelReturnFailed: "Не вдалося повернути залишок на склад",
+    parcelReturnAlready: "Залишок цієї посилки вже повернуто на склад.",
+    parcelReturnNotShipped:
+      "Замовлення скасовано до відправки — залишок уже повернуто автоматично.",
+    parcelReturnHasReturn:
+      "Для цього замовлення є заявка на повернення — поверніть залишок через неї.",
   },
 
   reviews: {
@@ -4623,6 +4664,9 @@ export const dict = {
     copyOfOrderHistoryNote: "Створено як копію іншого замовлення",
     promoCopyHint:
       "Відновити не можна, але можна створити копію без промокоду — за поточними цінами.",
+    // TASK-2575: рядок CANCELLED → CANCELLED, коли відмовну посилку прийняли
+    // на склад, — у стрічці лише ця позначка, без «Скасовано → Скасовано».
+    parcelReturnedHistoryNote: "Посилку повернуто на склад — залишок повернуто",
   },
 
   // --- Оплата з одного місця (R2: TASK-1967 / 1807 / 2047) --------------------
@@ -6258,6 +6302,7 @@ export const dict = {
       revokeAll: "відкликано всі прев'ю",
       // TASK-2041: PUT /admin/seo-settings/logo — the logo chosen from the library.
       setLogoFromLibrary: "обрано логотип з медіатеки",
+      returnParcelToStock: "посилку повернуто на склад",
     },
 
     /** How the two halves are joined: «Замовлення — змінено статус». */
@@ -6417,6 +6462,7 @@ export const dict = {
       restock: "Повернути на склад",
       role: "Роль",
       shippingAddress: "Адреса доставки",
+      skipped: "Не показано: не готові до публікації",
       sku: "Артикул",
       slug: "Адреса (slug)",
       startsAt: "Діє з",

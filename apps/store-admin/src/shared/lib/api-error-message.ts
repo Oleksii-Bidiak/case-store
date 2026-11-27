@@ -22,6 +22,8 @@
  * so callers fall back to their own copy with `?? dict…`.
  */
 
+import { PublishBlocker } from "@/shared/api/generated/models";
+
 interface ApiErrorBody {
   statusCode?: unknown;
   error?: unknown;
@@ -82,6 +84,22 @@ export function apiErrorCode(error: unknown): string | undefined {
 export function apiErrorFieldErrors(error: unknown): unknown {
   return (errorBody(error) as { fieldErrors?: unknown } | undefined)
     ?.fieldErrors;
+}
+
+/**
+ * The `blockers` a `PRODUCT_NOT_READY` refusal carries (TASK-2573) — what keeps
+ * a product off the storefront. Validated: only an array of known blocker codes
+ * comes back; anything else (absent, malformed, an unknown code) is `undefined`,
+ * so the caller falls back to its generic copy instead of naming a wrong reason.
+ */
+export function apiErrorBlockers(error: unknown): PublishBlocker[] | undefined {
+  const value = (errorBody(error) as { blockers?: unknown } | undefined)
+    ?.blockers;
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const known = Object.values(PublishBlocker) as unknown[];
+  return value.every((item) => known.includes(item))
+    ? (value as PublishBlocker[])
+    : undefined;
 }
 
 /** HTTP status of a failed request, when there is one. */

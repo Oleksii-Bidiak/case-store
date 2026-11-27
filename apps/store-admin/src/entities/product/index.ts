@@ -71,3 +71,21 @@ export type {
 
 // TASK-656: a deleted product's native slug / артикул, without `deleted:<id>:`.
 export { stripTombstonePrefix, tombstonePrefix } from "./lib/tombstone";
+
+// TASK-2573: the server's publish verdict and its one Ukrainian wording.
+export {
+  useProductControllerPublishState,
+  getProductControllerPublishStateQueryKey,
+} from "@/shared/api";
+export type {
+  BulkProductStatusResult,
+  BulkProductStatusSkipped,
+  ProductPublishState,
+  PublishBlocker,
+} from "@/shared/api";
+export {
+  productNotReadyMessage,
+  productNotShownMessage,
+  publishBlockerReasons,
+  skippedProductsMessage,
+} from "./lib/publish-blockers";

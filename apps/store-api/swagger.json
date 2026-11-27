@@ -2862,7 +2862,14 @@
             }
           },
           "400": {
-            "description": "Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing category (TASK-1831)"
+            "description": "Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing category (TASK-1831), or PRODUCT_NOT_READY — the write would show a product that is not ready (no name, category, price above zero or photo); `blockers` lists what is missing (TASK-2573) — a product being created has no photo, so `isActive: true` is always refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductNotReadyErrorBody"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden — admin access required"
@@ -3272,6 +3279,49 @@
         ]
       }
     },
+    "/api/products/{id}/publish-state": {
+      "get": {
+        "operationId": "productControllerPublishState",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Product UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publish state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductPublishStateResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — products:read required"
+          },
+          "404": {
+            "description": "Product not found (or deleted)"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Publish readiness of a product (admin)",
+        "tags": [
+          "Products"
+        ]
+      }
+    },
     "/api/products/{id}": {
       "put": {
         "operationId": "ProductController_update",
@@ -3308,7 +3358,14 @@
             }
           },
           "400": {
-            "description": "Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing category (TASK-1831)"
+            "description": "Invalid input data, or PRODUCT_CATEGORY_GONE — categoryId names a deleted or missing category (TASK-1831), or PRODUCT_NOT_READY — the write would show a product that is not ready (no name, category, price above zero or photo); `blockers` lists what is missing (TASK-2573) — checked when `isActive: true` shows a hidden product, on the values after the write",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductNotReadyErrorBody"
+                }
+              }
+            }
           },
           "403": {
             "description": "Forbidden — admin access required"
@@ -3549,7 +3606,7 @@
         },
         "responses": {
           "200": {
-            "description": "Number of products updated",
+            "description": "Number of products updated, and — for a show — the products left hidden because they are not ready (`skipped`, TASK-2573). Nothing is written when none is ready",
             "content": {
               "application/json": {
                 "schema": {
@@ -3735,6 +3792,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProductResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "PRODUCT_NOT_READY — the write would show a product that is not ready (no name, category, price above zero or photo); `blockers` lists what is missing (TASK-2573)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductNotReadyErrorBody"
                 }
               }
             }
@@ -14728,6 +14795,52 @@
         ]
       }
     },
+    "/api/admin/orders/{orderId}/parcel-returned": {
+      "post": {
+        "operationId": "adminOrderControllerReturnParcelToStock",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stock credited; the order stays CANCELLED with restockedAt set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — orders:write required"
+          },
+          "404": {
+            "description": "Order not found"
+          },
+          "409": {
+            "description": "ORDER_NOT_CANCELLED_AFTER_SHIPMENT — the order is not CANCELLED, or its cancel came before shipment (that cancel restocked it); ORDER_PARCEL_ALREADY_RETURNED — the stock was already credited; ORDER_HAS_RETURN — a return that is not REJECTED owns the units"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Return a refused parcel to stock (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
     "/api/admin/orders/{orderId}/money": {
       "get": {
         "description": "Totals (paid, refunded, return credit, balance), the journal with authors and reversals, the receipt kinds this order admits, what may go back with and without a return, and the LiqPay attempts still refundable (null without payments:read).",
@@ -21278,6 +21391,69 @@
           "data"
         ]
       },
+      "PublishBlocker": {
+        "type": "string",
+        "enum": [
+          "name",
+          "category",
+          "price",
+          "photo"
+        ],
+        "description": "Unmet blocking requirements, in checklist order; empty = may be shown"
+      },
+      "PublishStateHiddenCategory": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Category UUID"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "ProductPublishState": {
+        "type": "object",
+        "properties": {
+          "blockers": {
+            "type": "array",
+            "description": "Unmet blocking requirements, in checklist order; empty = may be shown",
+            "items": {
+              "$ref": "#/components/schemas/PublishBlocker"
+            }
+          },
+          "hiddenByCategory": {
+            "nullable": true,
+            "description": "The category (the product’s own or an ancestor) that keeps the product off the storefront even while it is active; null when the category is on sale",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PublishStateHiddenCategory"
+              }
+            ]
+          }
+        },
+        "required": [
+          "blockers",
+          "hiddenByCategory"
+        ]
+      },
+      "ProductPublishStateResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ProductPublishState"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "CreateProductDto": {
         "type": "object",
         "properties": {
@@ -21388,6 +21564,34 @@
           "name",
           "price",
           "categoryId"
+        ]
+      },
+      "ProductNotReadyErrorBody": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "example": 400
+          },
+          "error": {
+            "type": "string",
+            "example": "PRODUCT_NOT_READY"
+          },
+          "message": {
+            "type": "string"
+          },
+          "blockers": {
+            "type": "array",
+            "description": "Present for PRODUCT_NOT_READY only: what is missing, in checklist order",
+            "items": {
+              "$ref": "#/components/schemas/PublishBlocker"
+            }
+          }
+        },
+        "required": [
+          "statusCode",
+          "error",
+          "message"
         ]
       },
       "UpdateProductDto": {
@@ -21577,6 +21781,31 @@
           "isActive"
         ]
       },
+      "BulkProductStatusSkipped": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Product UUID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name, for the operator report"
+          },
+          "blockers": {
+            "type": "array",
+            "description": "What keeps the product hidden, in checklist order",
+            "items": {
+              "$ref": "#/components/schemas/PublishBlocker"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "blockers"
+        ]
+      },
       "BulkProductStatusResult": {
         "type": "object",
         "properties": {
@@ -21584,10 +21813,18 @@
             "type": "number",
             "description": "Products whose isActive was written",
             "example": 12
+          },
+          "skipped": {
+            "description": "Products a bulk SHOW left hidden because they are not ready (TASK-2573); always empty for a bulk hide",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BulkProductStatusSkipped"
+            }
           }
         },
         "required": [
-          "updatedCount"
+          "updatedCount",
+          "skipped"
         ]
       },
       "BulkProductStatusResponse": {
@@ -30831,6 +31068,10 @@
             "description": "TASK-2048: the copy whose «Скасувати #старе — замінено» cancelled this order («Замінено на»), or null — a copy of an order cancelled earlier replaced nothing. Admin reads only — absent elsewhere.",
             "nullable": true,
             "format": "uuid"
+          },
+          "canReturnParcel": {
+            "type": "boolean",
+            "description": "TASK-2575 «Посилку повернуто на склад»: whether the refused parcel of this order may be returned to stock now — CANCELLED after it shipped, not yet restocked, no return that is not REJECTED. Admin order detail only — absent elsewhere."
           }
         },
         "required": [
@@ -31131,6 +31372,10 @@
             "description": "TASK-2048: the copy whose «Скасувати #старе — замінено» cancelled this order («Замінено на»), or null — a copy of an order cancelled earlier replaced nothing. Admin reads only — absent elsewhere.",
             "nullable": true,
             "format": "uuid"
+          },
+          "canReturnParcel": {
+            "type": "boolean",
+            "description": "TASK-2575 «Посилку повернуто на склад»: whether the refused parcel of this order may be returned to stock now — CANCELLED after it shipped, not yet restocked, no return that is not REJECTED. Admin order detail only — absent elsewhere."
           },
           "guestAccessToken": {
             "type": "string",
@@ -31912,7 +32157,8 @@
               "LEGACY_MONEY_UNKNOWN",
               "PROVIDER_REFUND_UNMATCHED",
               "COPIED_TO_ORDER",
-              "COPY_OF_ORDER"
+              "COPY_OF_ORDER",
+              "PARCEL_RETURNED_TO_STOCK"
             ],
             "nullable": true,
             "example": null

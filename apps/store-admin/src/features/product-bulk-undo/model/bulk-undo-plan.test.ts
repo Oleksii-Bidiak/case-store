@@ -1,4 +1,4 @@
-import { buildBulkUndoPlan, countPlanIds } from "./bulk-undo-plan";
+import { buildBulkUndoPlan, countPlanIds, withoutIds } from "./bulk-undo-plan";
 
 const rows = [
   { id: "a", isActive: true, groupId: "g1", attributes: { Колір: "Чорний" } },
@@ -51,5 +51,25 @@ describe("buildBulkUndoPlan (TASK-837)", () => {
       steps: [{ value: true, ids: ["a"] }],
     });
     expect(countPlanIds(plan!)).toBe(1);
+  });
+});
+
+describe("withoutIds (TASK-2573)", () => {
+  const plan = buildBulkUndoPlan("group", ["a", "b", "c"], rows, "g2");
+
+  it("drops the products the write skipped, and steps left empty", () => {
+    expect(withoutIds(plan, ["b", "c"])).toEqual({
+      kind: "group",
+      steps: [{ value: "g1", ids: ["a"] }],
+    });
+  });
+
+  it("is null once every product is excluded", () => {
+    expect(withoutIds(plan, ["a", "b", "c"])).toBeNull();
+  });
+
+  it("returns the plan as-is when nothing is excluded", () => {
+    expect(withoutIds(plan, [])).toBe(plan);
+    expect(withoutIds(null, ["a"])).toBeNull();
   });
 });

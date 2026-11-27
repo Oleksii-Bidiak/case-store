@@ -283,6 +283,10 @@ function stubEditPage() {
     http.get(`*/api/products/${NEW_ID}/images`, () =>
       HttpResponse.json({ data: [] }),
     ),
+    // The publish panel's server verdict (TASK-2573).
+    http.get(`*/api/products/${NEW_ID}/publish-state`, () =>
+      HttpResponse.json({ data: { blockers: [], hiddenByCategory: null } }),
+    ),
     http.get(`*/api/addon-services/admin/resolved-for-product/${NEW_ID}`, () =>
       HttpResponse.json({ data: [] }),
     ),

@@ -97,6 +97,24 @@ export function buildBulkUndoPlan<K extends BulkUndoKind>(
   };
 }
 
+/**
+ * The plan minus products the forward write did NOT touch (TASK-2573): a bulk
+ * show leaves unready products hidden and reports them as skipped — they never
+ * changed, so the undo must not write them either. Steps left empty are
+ * dropped; `null` when nothing is left to undo.
+ */
+export function withoutIds<K extends BulkUndoKind>(
+  plan: BulkUndoPlan<K> | null,
+  excluded: readonly string[],
+): BulkUndoPlan<K> | null {
+  if (!plan || excluded.length === 0) return plan;
+  const skip = new Set(excluded);
+  const steps = plan.steps
+    .map((step) => ({ ...step, ids: step.ids.filter((id) => !skip.has(id)) }))
+    .filter((step) => step.ids.length > 0);
+  return steps.length > 0 ? { ...plan, steps } : null;
+}
+
 /** How many products an undo plan touches. */
 export function countPlanIds(plan: BulkUndoPlan): number {
   return plan.steps.reduce((sum, step) => sum + step.ids.length, 0);

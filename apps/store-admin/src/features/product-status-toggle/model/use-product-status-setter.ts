@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   getProductControllerAdminFindAllQueryKey,
   getProductControllerFindByIdQueryKey,
+  productNotReadyMessage,
   useProductControllerActivate,
   useProductControllerDeactivate,
 } from "@/entities/product";
@@ -53,8 +54,12 @@ export function useProductStatusSetter(): ProductStatusSetterApi {
             });
           },
           onError: (error) => {
+            // TASK-2573: a readiness refusal names what is missing — never
+            // the server's English sentence.
             toast.error(
-              apiErrorMessage(error) ?? dict.products.rowStatusFailed,
+              productNotReadyMessage(error) ??
+                apiErrorMessage(error) ??
+                dict.products.rowStatusFailed,
             );
           },
         },

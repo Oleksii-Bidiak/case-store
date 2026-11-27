@@ -1,4 +1,5 @@
 import {
+  apiErrorBlockers,
   apiErrorCode,
   apiErrorFieldErrors,
   apiErrorMessage,
@@ -99,5 +100,31 @@ describe("apiErrorFieldErrors", () => {
     ).toBeUndefined();
     expect(apiErrorFieldErrors({ response: { data: "text" } })).toBeUndefined();
     expect(apiErrorFieldErrors(undefined)).toBeUndefined();
+  });
+});
+
+/** TASK-2573: what keeps a product off the storefront, off a 400 PRODUCT_NOT_READY. */
+describe("apiErrorBlockers", () => {
+  const notReady = (blockers: unknown) =>
+    axiosError(400, {
+      statusCode: 400,
+      error: "PRODUCT_NOT_READY",
+      message: "Product is not ready to be shown",
+      blockers,
+    });
+
+  it("returns the known blocker codes in the server's order", () => {
+    expect(apiErrorBlockers(notReady(["price", "photo"]))).toEqual([
+      "price",
+      "photo",
+    ]);
+  });
+
+  it("returns undefined for an absent, empty, malformed or unknown list", () => {
+    expect(apiErrorBlockers(axiosError(400, { error: "X" }))).toBeUndefined();
+    expect(apiErrorBlockers(notReady([]))).toBeUndefined();
+    expect(apiErrorBlockers(notReady("photo"))).toBeUndefined();
+    expect(apiErrorBlockers(notReady(["photo", "stock"]))).toBeUndefined();
+    expect(apiErrorBlockers(new Error("Network Error"))).toBeUndefined();
   });
 });

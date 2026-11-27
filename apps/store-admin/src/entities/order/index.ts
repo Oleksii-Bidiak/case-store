@@ -20,6 +20,8 @@ export {
   useAdminOrderControllerIssueAccessLink,
   // TASK-2048: the «Створити копію» prefill.
   useAdminOrderControllerGetCopyDraft,
+  // TASK-2575: «Посилку повернуто на склад» on a cancelled shipped order.
+  useAdminOrderControllerReturnParcelToStock,
   getAdminOrderControllerGetCopyDraftQueryKey,
   getAdminOrderControllerFindAllQueryKey,
   getAdminOrderControllerFindByIdQueryKey,

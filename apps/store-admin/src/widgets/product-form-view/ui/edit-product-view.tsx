@@ -20,6 +20,7 @@ import {
   getProductControllerAdminFindAllQueryKey,
   getProductControllerFindByIdQueryKey,
   useProductControllerFindById,
+  useProductControllerPublishState,
   useProductControllerUpdate,
 } from "@/entities/product";
 import { PERM } from "@/entities/permission";
@@ -35,7 +36,6 @@ import {
   missingSections,
 } from "@/features/product-publish-panel";
 import { SitePreviewButton } from "@/features/site-preview";
-import { useProductImageControllerList } from "@/shared/api";
 import {
   Badge,
   Button,
@@ -97,7 +97,7 @@ export function EditProductView({ productId }: EditProductViewProps) {
   const { data, isLoading, isError, error } =
     useProductControllerFindById(productId);
   const update = useProductControllerUpdate();
-  const images = useProductImageControllerList(productId);
+  const publishState = useProductControllerPublishState(productId);
 
   const isNotFound = error?.response?.status === 404;
 
@@ -201,18 +201,21 @@ export function EditProductView({ productId }: EditProductViewProps) {
     return { mainSaved, complete };
   };
 
+  // TASK-2573: the blocking dots read the same server verdict as the publish
+  // panel (one query key, so the panel's refetch repaints them too). Until it
+  // answers, no blocking dot — a dot on a section with nothing wrong would send
+  // the operator looking for a problem that is not there.
   const readinessMissing = product
     ? missingSections(
-        buildReadinessChecks({
-          name: product.name,
-          categoryId: product.categoryId,
-          price: product.price,
-          stock: product.stock,
-          description: product.description,
-          imageCount: images.data?.data?.length ?? 0,
-          specCount: product.specs?.length ?? 0,
-          compatCount: product.compatibleDeviceModels?.length ?? 0,
-        }),
+        buildReadinessChecks(
+          {
+            stock: product.stock,
+            description: product.description,
+            specCount: product.specs?.length ?? 0,
+            compatCount: product.compatibleDeviceModels?.length ?? 0,
+          },
+          publishState.data?.data.blockers ?? [],
+        ),
       )
     : [];
 
