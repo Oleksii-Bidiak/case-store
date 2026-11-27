@@ -98,10 +98,13 @@ export async function seedStaff(
       create: { email: m.email, passwordHash, ...profile },
     });
 
-    await prisma.userPermission.deleteMany({ where: { userId: user.id } });
-    await prisma.userPermission.createMany({
-      data: template.permissions.map((permission) => ({ userId: user.id, permission })),
-    });
+    // One transaction: a failure between the two must not leave a manager with no rights.
+    await prisma.$transaction([
+      prisma.userPermission.deleteMany({ where: { userId: user.id } }),
+      prisma.userPermission.createMany({
+        data: template.permissions.map((permission) => ({ userId: user.id, permission })),
+      }),
+    ]);
 
     // Same shape as PermissionTemplateController.apply's audit row. The person
     // started with no rights (StaffService.create grants none), so `from` is [].
