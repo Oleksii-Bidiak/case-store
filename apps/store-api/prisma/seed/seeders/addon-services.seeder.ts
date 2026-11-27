@@ -1,5 +1,10 @@
 import { PrismaClient } from '@prisma/client';
-import { deltas, servicesData, templateServiceNames } from '../data/addons.data';
+import { categoryTemplates, deltas, expectedAddons, servicesData } from '../data/addons.data';
+import {
+  AddonApplicabilityResolver,
+  AddonServiceRepository,
+  CategoryRepository,
+} from '../lib/domain';
 
 /**
  * Add-on services / protection plans (TASK-174).
@@ -10,7 +15,10 @@ import { deltas, servicesData, templateServiceNames } from '../data/addons.data'
  *     product in its `iphone` subcategory (which has no template of its own)
  *     inherits it via nearest-ancestor-wins;
  *   - one delta of EACH type on three distinct iPhone products — an exclusive
- *     ADD, a REMOVE opt-out, and a price OVERRIDE.
+ *     ADD, a REMOVE opt-out, and a price OVERRIDE;
+ *   - (TASK-2569) a child template that replaces its parent's («Samsung»), a
+ *     second tree («Навушники»), an inactive service and a priced ADD — see
+ *     `addons.data.ts`. The resolver is asked to confirm the outcome at the end.
  */
 export async function seedAddonServices(
   prisma: PrismaClient,
@@ -28,27 +36,37 @@ export async function seedAddonServices(
     services[s.name] = record;
   }
 
-  console.log(`  ✓ AddonServices: ${servicesData.length} services`);
+  const inactive = servicesData.filter((s) => s.isActive === false).length;
+  console.log(`  ✓ AddonServices: ${servicesData.length} services (${inactive} inactive)`);
 
-  // Template on the PARENT category — the `iphone` subcategory inherits it.
-  // Replaced wholesale for the same reason as the deltas below: dropping a name
-  // from `templateServiceNames` has to actually remove the row, or «Смартфони»
-  // keeps offering a service the data stopped declaring.
+  // Templates on the planned categories. Replaced wholesale for the same reason
+  // as the deltas below: dropping a name from `categoryTemplates` has to actually
+  // remove the row, or the category keeps offering a service the data stopped
+  // declaring. Scoped to the planned categories × seeded services.
+  const templateCategoryIds = categoryTemplates.map((t) => {
+    const category = categories[t.categorySlug];
+    if (!category) throw new Error(`seedAddonServices: unknown category "${t.categorySlug}"`);
+    return category.id;
+  });
   await prisma.categoryAddonTemplate.deleteMany({
     where: {
-      categoryId: categories['smartphones'].id,
+      categoryId: { in: templateCategoryIds },
       addonServiceId: { in: Object.values(services).map((s) => s.id) },
     },
   });
   await prisma.categoryAddonTemplate.createMany({
-    data: templateServiceNames.map((name) => ({
-      categoryId: categories['smartphones'].id,
-      addonServiceId: services[name].id,
-    })),
+    data: categoryTemplates.flatMap((t) =>
+      t.serviceNames.map((name) => ({
+        categoryId: categories[t.categorySlug].id,
+        addonServiceId: services[name].id,
+      })),
+    ),
   });
 
   console.log(
-    `  ✓ CategoryAddonTemplate: ${templateServiceNames.length} services on «Смартфони» (inherited by «iPhone»)`,
+    `  ✓ CategoryAddonTemplate: ${categoryTemplates
+      .map((t) => `${t.categorySlug} ${t.serviceNames.length}`)
+      .join(', ')} (a child template replaces its parent's)`,
   );
 
   // One delta of each type, on the three iPhone positions named in the data.
@@ -101,4 +119,40 @@ export async function seedAddonServices(
   });
 
   console.log(`  ✓ AddonServiceDelta: ${deltas.length} deltas (ADD / REMOVE / OVERRIDE)`);
+
+  await assertResolvedAddons(prisma);
+}
+
+/**
+ * Ask the real applicability resolver what checkout would offer on a few
+ * positions and compare with `expectedAddons` — the seed's claim about the
+ * override, the inactive service and the priced ADD, checked by the domain.
+ */
+async function assertResolvedAddons(prisma: PrismaClient) {
+  const repo = prisma as unknown as ConstructorParameters<typeof AddonServiceRepository>[0];
+  const resolver = new AddonApplicabilityResolver(
+    new AddonServiceRepository(repo),
+    // The slug-redirect repository is not on the resolver's read path.
+    new CategoryRepository(repo, null as never),
+  );
+  const products = await prisma.product.findMany({
+    where: { slug: { in: expectedAddons.map((e) => e.positionSlug) } },
+    select: { id: true, slug: true, categoryId: true },
+  });
+  const resolved = await resolver.resolveForProducts(products);
+  for (const expected of expectedAddons) {
+    const product = products.find((p) => p.slug === expected.positionSlug);
+    if (!product) throw new Error(`seedAddonServices: no position "${expected.positionSlug}"`);
+    const actual = Object.fromEntries(
+      (resolved.get(product.id) ?? []).map((a) => [a.name, Number(a.price)]),
+    );
+    const want = JSON.stringify(expected.addons, Object.keys(expected.addons).sort());
+    const got = JSON.stringify(actual, Object.keys(actual).sort());
+    if (want !== got) {
+      throw new Error(
+        `seedAddonServices: the resolver offers ${got} on "${expected.positionSlug}", ` +
+          `addons.data.ts expects ${want}`,
+      );
+    }
+  }
 }

@@ -6,12 +6,13 @@ import { slugify } from '../lib/slug';
  * Seed the device-compatibility taxonomy (TASK-190): a representative slice of
  * device brands + models grouped by `series` for the storefront ModelPicker
  * cascade. Idempotent — brands and models upsert on their unique `slug`, safe to
- * re-run. Compat assignment (Product ↔ DeviceModel) is intentionally NOT seeded
- * here — admins tag products via the admin UI / a separate backfill.
+ * re-run. A model with `seo` copy gets its landing-page overrides written too.
+ * Product ↔ DeviceModel links are seeded by `seedDeviceCompat`, which runs after.
  */
 export async function seedDevices(prisma: PrismaClient) {
   let brandCount = 0;
   let modelCount = 0;
+  let seoCount = 0;
   for (const { brand, sortOrder, models } of devices) {
     const brandSlug = slugify(brand);
     const brandRecord = await prisma.deviceBrand.upsert({
@@ -33,6 +34,7 @@ export async function seedDevices(prisma: PrismaClient) {
           releaseYear: model.releaseYear,
           deviceBrandId: brandRecord.id,
           isActive: true,
+          ...model.seo,
         },
         create: {
           name: model.name,
@@ -41,11 +43,15 @@ export async function seedDevices(prisma: PrismaClient) {
           releaseYear: model.releaseYear,
           deviceBrandId: brandRecord.id,
           isActive: true,
+          ...model.seo,
         },
       });
       modelCount++;
+      if (model.seo) seoCount++;
     }
   }
 
-  console.log(`  ✓ Seeded ${brandCount} device brands, ${modelCount} device models`);
+  console.log(
+    `  ✓ Seeded ${brandCount} device brands, ${modelCount} device models (${seoCount} with SEO copy)`,
+  );
 }

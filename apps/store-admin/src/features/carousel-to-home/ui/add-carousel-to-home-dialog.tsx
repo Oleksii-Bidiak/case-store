@@ -18,7 +18,7 @@
  * They reset when the dialog opens for another carousel (render-time guard).
  */
 
-import { useState } from "react";
+import { useRef, useState, type RefObject } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getAdminHomeBlockControllerFindAllQueryKey,
@@ -63,6 +63,19 @@ export interface AddCarouselToHomeDialogProps {
   /** The carousel to place; `null` closes the dialog. */
   carousel: CarouselToHomeTarget | null;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Where focus goes when the dialog closes (TASK-2546). The dialog is opened by
+   * state, with no `DialogTrigger`, so Radix has nothing to return focus to and
+   * it falls to <body>; the caller hands in the button that opened it.
+   */
+  returnFocusRef?: RefObject<HTMLElement | null>;
+  /**
+   * Where focus goes after a SUCCESSFUL add. The opener usually disappears once
+   * the carousel is on the homepage, so returning to it would drop focus to
+   * <body> as soon as the list refetches; the caller hands in something that
+   * stays (the carousel's row). Falls back to `returnFocusRef`.
+   */
+  addedFocusRef?: RefObject<HTMLElement | null>;
 }
 
 const SELECT_CLASS =
@@ -71,8 +84,12 @@ const SELECT_CLASS =
 export function AddCarouselToHomeDialog({
   carousel,
   onOpenChange,
+  returnFocusRef,
+  addedFocusRef,
 }: AddCarouselToHomeDialogProps) {
   const queryClient = useQueryClient();
+  // Set by a successful submit, read once by the close handler below.
+  const addedRef = useRef(false);
   const blocksQuery = useAdminHomeBlockControllerFindAll({
     query: { enabled: carousel !== null },
   });
@@ -133,12 +150,24 @@ export function AddCarouselToHomeDialog({
       queryKey: getAdminHomeBlockControllerFindAllQueryKey(),
     });
     toast.success(t.toastAdded(carousel.title));
+    addedRef.current = true;
     onOpenChange(false);
   };
 
   return (
     <Dialog open={carousel !== null} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent
+        onCloseAutoFocus={(event) => {
+          const added = addedRef.current;
+          addedRef.current = false;
+          const el =
+            (added ? addedFocusRef?.current : null) ?? returnFocusRef?.current;
+          if (el?.isConnected) {
+            event.preventDefault();
+            el.focus();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{t.title(carousel?.title ?? "")}</DialogTitle>
           <DialogDescription>{t.description}</DialogDescription>

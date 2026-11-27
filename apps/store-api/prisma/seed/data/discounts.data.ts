@@ -1,4 +1,4 @@
-/** Promo codes. A factory, not a literal: two codes carry `Date.now()`-relative dates. */
+/** Promo codes. A factory, not a literal: several codes carry `Date.now()`-relative dates. */
 export function buildDiscountsData() {
   const now = Date.now();
   const day = 24 * 60 * 60 * 1000;
@@ -52,6 +52,41 @@ export function buildDiscountsData() {
       showOnPromoPage: true,
     },
     { code: 'OLDPROMO', type: 'FIXED', value: 200, isActive: false, showOnPromoPage: false },
+    // TASK-2569: a code that has not started yet — the admin list shows it as
+    // scheduled, the «Акції» page lists it only from `startsAt` on, and
+    // checkout refuses it until then.
+    {
+      code: 'NEWYEAR15',
+      type: 'PERCENT',
+      value: 15,
+      startsAt: new Date(now + 5 * day),
+      expiresAt: new Date(now + 40 * day),
+      isActive: true,
+      showOnPromoPage: true,
+    },
+    // TASK-2569: used up — two real redemptions on seeded orders reach
+    // `maxRedemptions`, so checkout refuses it and the «Акції» page hides it.
+    {
+      code: 'FLASH300',
+      type: 'FIXED',
+      value: 300,
+      minSpend: 1000,
+      maxRedemptions: 2,
+      startsAt: new Date(now - 10 * day),
+      expiresAt: new Date(now + 20 * day),
+      isActive: true,
+      showOnPromoPage: true,
+    },
+    // TASK-2569: a third live code on the «Акції» page, with an end date.
+    {
+      code: 'AUDIO7',
+      type: 'PERCENT',
+      value: 7,
+      startsAt: new Date(now - 3 * day),
+      expiresAt: new Date(now + 14 * day),
+      isActive: true,
+      showOnPromoPage: true,
+    },
   ];
 
   return discountsData;

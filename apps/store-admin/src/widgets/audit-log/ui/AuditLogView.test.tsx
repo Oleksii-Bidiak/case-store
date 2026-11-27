@@ -354,6 +354,32 @@ describe("AuditLogView — the opened entry (Ж2)", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the email-change reason in words, not «—» (TASK-2562)", async () => {
+    const user = userEvent.setup();
+    stubLog([
+      makeEntry({
+        action: "user.changeEmail",
+        entityType: "user",
+        summary: null,
+        diff: {
+          email: { from: "a@x.ua", to: "b@x.ua" },
+          emailVerified: { from: true, to: false },
+          reason: "Клієнт втратив доступ до пошти",
+        },
+      }),
+    ]);
+    renderWithProviders(<AuditLogView />);
+
+    await user.click(await screen.findByRole("button", { name: /^Деталі: / }));
+
+    const table = screen.getByRole("table", { name: d.diffCaption });
+    const reasonRow = within(table)
+      .getAllByRole("row")
+      .find((row) => row.textContent?.includes(d.fieldLabels.reason));
+    expect(reasonRow).toBeDefined();
+    expect(reasonRow).toHaveTextContent("Клієнт втратив доступ до пошти");
+  });
+
   it("opens on a click anywhere on the row — and navigates nowhere", async () => {
     const user = userEvent.setup();
     stubLog([makeEntry({ diff: { name: { to: "Чохол" } } })]);

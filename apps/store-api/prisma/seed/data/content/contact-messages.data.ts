@@ -14,7 +14,7 @@ export const messages: {
   topic: string;
   orderRef?: string;
   message: string;
-  status: 'NEW' | 'READ' | 'ARCHIVED';
+  status: 'NEW' | 'IN_PROGRESS' | 'READ' | 'ARCHIVED' | 'SPAM';
   adminNote?: string;
 }[] = [
   {
@@ -64,5 +64,27 @@ export const messages: {
     message: 'Вітаю! Цікавить оптова закупівля аксесуарів. З ким можна поспілкуватися?',
     status: 'ARCHIVED',
     adminNote: 'Передано менеджеру з оптових продажів.',
+  },
+  // TASK-2569: the two statuses the inbox had no example of.
+  {
+    key: 'msg-6',
+    name: 'John Doe',
+    phone: '380991234567',
+    email: 'customer@store.com',
+    topic: 'Обмін товару',
+    message:
+      'Доброго дня! Чохол не підійшов за кольором — чи можна обміняти його на чорний? Упаковку не відкривав.',
+    status: 'IN_PROGRESS',
+    adminNote: 'Чорний є на складі. Чекаємо, коли клієнт надішле чохол назад.',
+  },
+  {
+    key: 'msg-7',
+    name: 'Best Offer',
+    phone: '380500000000',
+    email: 'promo@bulk-offers.example',
+    topic: 'Співпраця',
+    message:
+      'Просування сайту в ТОП-1 за 3 дні! 100 000 відвідувачів гарантовано. Пишіть у месенджер, знижка лише сьогодні.',
+    status: 'SPAM',
   },
 ];
