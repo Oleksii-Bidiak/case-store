@@ -2,6 +2,7 @@ import { STORE_NAME } from '../lib/store';
 import { catalogueEntries } from './catalogue';
 import { categoryTree } from './categories.data';
 import { postsData } from './content/blog.data';
+import { devices } from './devices.data';
 import { pagesData } from './content/pages.data';
 
 /**
@@ -26,6 +27,11 @@ const seeded: [string, string][] = [
   ),
   ...postsData.map((post) => [`post ${post.slug}`, post.metaTitle] as [string, string | undefined]),
   ...pagesData.map((page) => [`page ${page.slug}`, page.metaTitle] as [string, string | undefined]),
+  ...devices.flatMap((brand) =>
+    brand.models.map(
+      (model) => [`device ${model.name}`, model.seo?.metaTitle] as [string, string | undefined],
+    ),
+  ),
 ].filter((pair): pair is [string, string] => typeof pair[1] === 'string');
 
 describe('seeded metaTitles (TASK-553)', () => {

@@ -1,6 +1,25 @@
-import { HomeBlockType, PrismaClient } from '@prisma/client';
-import { buildCarousels } from '../data/content/carousels.data';
+import { HomeBlockType, PrismaClient, PublishStatus } from '@prisma/client';
+import { resolvePublishState } from '../../../src/publishing/resolve-publish-state';
+import { buildCarousels, type SeedCarousel } from '../data/content/carousels.data';
 import { deterministicUuid } from '../lib/ids';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A carousel's (and its rail block's) publish fields, resolved by the domain's
+ * own `resolvePublishState` — a schedule that is not in the future would
+ * collapse to PUBLISHED there, so the seed fails rather than plant it.
+ */
+function publishFieldsFor(c: SeedCarousel, now: Date) {
+  if (c.state === 'DRAFT') return resolvePublishState({ status: PublishStatus.DRAFT }, now);
+  if (!c.state) return resolvePublishState({ status: PublishStatus.PUBLISHED }, now);
+  const scheduledAt = new Date(now.getTime() + c.state.scheduledInDays * DAY_MS);
+  const resolved = resolvePublishState({ status: PublishStatus.SCHEDULED, scheduledAt }, now);
+  if (resolved.status !== PublishStatus.SCHEDULED) {
+    throw new Error(`seedCarousels: "${c.slug}" must be scheduled into the future`);
+  }
+  return resolved;
+}
 
 /**
  * The order of the homepage sections as the old hard-coded `page.tsx` had it — the
@@ -40,6 +59,8 @@ const SYSTEM_BLOCKS: HomeBlockType[] = [
  *   rails — standalone CAROUSEL blocks: a CATEGORY rule pointed at a seeded parent
  *           category (exercises the subtree rollup) and a MANUAL carousel with
  *           hand-picked products.
+ *   (TASK-2569) a SCHEDULED rail whose block is scheduled for the same instant,
+ *           and a DRAFT carousel that is on no block.
  *
  * A published carousel shows on the homepage ONLY through a block (decision B-9 №3),
  * so the seeder writes the blocks too — otherwise a freshly seeded shop would show
@@ -54,11 +75,15 @@ const SYSTEM_BLOCKS: HomeBlockType[] = [
  * seedCategories/seedProducts.
  */
 export async function seedCarousels(prisma: PrismaClient) {
-  const casesCategory = await prisma.category.findUnique({ where: { slug: 'cases' } });
+  const railCategories = await prisma.category.findMany({
+    where: { slug: { in: ['cases', 'power-banks', 'headphones'] } },
+    select: { id: true, slug: true },
+  });
+  const categoryBySlug = Object.fromEntries(railCategories.map((c) => [c.slug, { id: c.id }]));
 
   const now = new Date();
 
-  const carousels = buildCarousels(casesCategory);
+  const carousels = buildCarousels(categoryBySlug);
 
   for (const c of carousels) {
     const id = deterministicUuid(`carousel:${c.slug}`);
@@ -68,9 +93,7 @@ export async function seedCarousels(prisma: PrismaClient) {
       categoryId: c.categoryId ?? null,
       itemLimit: c.itemLimit ?? 12,
       sortOrder: c.sortOrder,
-      status: 'PUBLISHED' as const,
-      publishedAt: now,
-      scheduledAt: null,
+      ...publishFieldsFor(c, now),
     };
 
     await prisma.carousel.upsert({
@@ -107,9 +130,12 @@ export async function seedCarousels(prisma: PrismaClient) {
 
   const created = await seedHomeBlocks(prisma, carousels, now);
 
-  const tabCount = carousels.filter((c) => c.home === 'tab').length;
+  const count = (pick: (c: SeedCarousel) => boolean) => carousels.filter(pick).length;
   console.log(
-    `  ✓ Carousels: ${carousels.length} published (${tabCount} tabs, ${carousels.length - tabCount} rails, ${picks.length} manual items); home blocks created: ${created}`,
+    `  ✓ Carousels: ${carousels.length} (${count((c) => !c.state)} published, ` +
+      `${count((c) => typeof c.state === 'object')} scheduled, ${count((c) => c.state === 'DRAFT')} draft; ` +
+      `${count((c) => c.home === 'tab')} tabs, ${count((c) => c.home === 'rail')} rails, ` +
+      `${picks.length} manual items); home blocks created: ${created}`,
   );
 }
 
@@ -157,12 +183,18 @@ async function seedHomeBlocks(
 
   for (const c of carousels.filter((entry) => entry.home === 'rail')) {
     const carouselId = deterministicUuid(`carousel:${c.slug}`);
+    // A scheduled rail's block goes live together with its carousel (TASK-2569);
+    // the date is the seed's, so it is rewritten on every run like the carousel's.
+    const scheduled = typeof c.state === 'object';
+    const state = scheduled ? publishFieldsFor(c, now) : published;
     const shown = await prisma.homeBlock.findFirst({ where: { type: 'CAROUSEL', carouselId } });
     if (!shown) {
       const block = await prisma.homeBlock.create({
-        data: { type: 'CAROUSEL', carouselId, ...published },
+        data: { type: 'CAROUSEL', carouselId, ...state },
       });
       createdIds.push(block.id);
+    } else if (scheduled) {
+      await prisma.homeBlock.update({ where: { id: shown.id }, data: state });
     }
   }
 

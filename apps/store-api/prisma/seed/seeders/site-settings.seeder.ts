@@ -1,4 +1,7 @@
 import { PrismaClient } from '@prisma/client';
+import { LOGO_LIBRARY_MIME } from '../../../src/seo-settings/store-logo.constants';
+import { renderLogoImage } from '../lib/images/seed-image.generator';
+import { createSeedMediaRegistry } from '../lib/media-assets';
 import { STORE_NAME } from '../lib/store';
 
 /**
@@ -24,13 +27,66 @@ export async function seedSiteContactSettings(prisma: PrismaClient) {
       email: 'support@casestore.ua',
       phone: '+380 44 000 0000',
       workingHours: 'Пн–Нд: 9:00 – 20:00',
-      viberLink: null,
-      telegramLink: null,
-      instagramLink: null,
+      ...DEMO_MESSENGERS,
     },
   });
 
-  console.log('  ✓ SiteContactSettings: singleton row upserted');
+  // TASK-2569: the messenger links landed only on a fresh row (`update: {}`), and
+  // before that they were null, so the storefront's messenger buttons never had
+  // anything to show. Fill each one only while it is still empty — a link the
+  // owner typed, or cleared and retyped, is theirs.
+  let filled = 0;
+  for (const [field, value] of Object.entries(DEMO_MESSENGERS)) {
+    const result = await prisma.siteContactSettings.updateMany({
+      where: { id: SINGLETON_ID, [field]: null },
+      data: { [field]: value },
+    });
+    filled += result.count;
+  }
+
+  console.log(
+    `  ✓ SiteContactSettings: singleton row upserted${filled > 0 ? ` (${filled} messenger link(s) filled)` : ''}`,
+  );
+}
+
+/**
+ * DUMMY messenger links (TASK-2569), like the phone and email above: valid
+ * `https` URLs (the admin DTO's rule) on a demo handle, replaced by the owner.
+ */
+const DEMO_MESSENGERS = {
+  viberLink: 'https://viber.click/380440000000',
+  telegramLink: 'https://t.me/casestore_demo',
+  instagramLink: 'https://www.instagram.com/casestore.demo/',
+} as const;
+
+/**
+ * Give the store a logo from the media library (TASK-2569): the generator's
+ * monogram, registered as a WebP library asset — a type the logo slot takes
+ * (`LOGO_LIBRARY_MIME`) — and set exactly the way «Обрати з медіатеки» sets it:
+ * `logoUrl` = the asset's URL. Only while `logoUrl` is still null, so a logo the
+ * owner uploaded, or picked, survives every re-seed.
+ */
+export async function seedStoreLogo(prisma: PrismaClient) {
+  const SINGLETON_ID = '00000000-0000-0000-0000-000000000002';
+  const logo = await renderLogoImage({
+    key: 'store-logo',
+    paletteId: 'indigo',
+    alt: `Логотип ${STORE_NAME}`,
+  });
+  const assetId = await createSeedMediaRegistry(prisma)({ ...logo, tags: ['логотип', 'демо'] });
+  // `StoreLogoService.setLogoFromLibrary`'s own gate, on the row it would read.
+  const asset = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: assetId } });
+  if (!LOGO_LIBRARY_MIME.has(asset.mime)) {
+    throw new Error(`seedStoreLogo: the logo slot does not take ${asset.mime} library assets`);
+  }
+
+  const set = await prisma.seoSettings.updateMany({
+    where: { id: SINGLETON_ID, logoUrl: null },
+    data: { logoUrl: asset.url },
+  });
+  console.log(
+    `  ✓ Store logo: ${set.count > 0 ? 'set from the media library' : 'kept (already set)'}`,
+  );
 }
 
 /**

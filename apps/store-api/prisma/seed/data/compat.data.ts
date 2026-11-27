@@ -1,3 +1,14 @@
+/** Every seeded iPad — all five charge over USB-C. */
+const IPAD_USB_C = [
+  'ipad-pro-13-m4',
+  'ipad-pro-11-m4',
+  'ipad-air-13-m2',
+  'ipad-air-11-m2',
+  'ipad-10th-gen',
+];
+/** The two smaller iPads — the ones a 20 W block is the usual charger for. */
+const IPAD_SMALL_USB_C = ['ipad-air-11-m2', 'ipad-10th-gen'];
+
 /**
  * Product ↔ DeviceModel compatibility (TASK-190), as authored pairs of
  * **catalogue entry slug → device model slugs**.
@@ -19,6 +30,11 @@
  * Device slugs are what `seedDevices` produces: `slugify(name)` with `+`
  * expanded to ` plus ` (so `Galaxy S24+` → `galaxy-s24-plus`). Both sides are
  * validated against reality by the seeder, loudly.
+ *
+ * iPad (TASK-2569): the catalogue has no iPad cases or screen glass, so the
+ * iPads are linked only to USB-C power and connectivity entries whose card names
+ * the port. Chargers whose card does not name a port type stay unlinked —
+ * inferring a fit is a wrong «підходить» waiting to happen.
  */
 export const compatPlan: { entrySlug: string; deviceSlugs: string[] }[] = [
   // ── Чохли ─────────────────────────────────────────────────────────────────
@@ -95,11 +111,11 @@ export const compatPlan: { entrySlug: string; deviceSlugs: string[] }[] = [
   },
   {
     entrySlug: 'charger-anker-20w',
-    deviceSlugs: ['iphone-15', 'iphone-15-pro', 'iphone-14', 'iphone-13'],
+    deviceSlugs: ['iphone-15', 'iphone-15-pro', 'iphone-14', 'iphone-13', ...IPAD_SMALL_USB_C],
   },
   {
     entrySlug: 'charger-baseus-gan-65w',
-    deviceSlugs: ['iphone-16-pro', 'galaxy-s24', 'xiaomi-14'],
+    deviceSlugs: ['iphone-16-pro', 'galaxy-s24', 'xiaomi-14', ...IPAD_USB_C],
   },
   {
     entrySlug: 'car-charger-baseus-30w',
@@ -114,8 +130,12 @@ export const compatPlan: { entrySlug: string; deviceSlugs: string[] }[] = [
   { entrySlug: 'cable-hoco-lightning-usba', deviceSlugs: ['iphone-14', 'iphone-13'] },
   {
     entrySlug: 'cable-ugreen-usbc-100w',
-    deviceSlugs: ['iphone-16-pro', 'iphone-15-pro', 'galaxy-s24', 'xiaomi-14'],
+    deviceSlugs: ['iphone-16-pro', 'iphone-15-pro', 'galaxy-s24', 'xiaomi-14', ...IPAD_USB_C],
   },
+  { entrySlug: 'cable-baseus-usbc-240w', deviceSlugs: IPAD_USB_C },
+  // Both take USB-C in — what every seeded iPad has.
+  { entrySlug: 'hub-ugreen-6in1', deviceSlugs: IPAD_USB_C },
+  { entrySlug: 'adapter-baseus-usbc-hdmi', deviceSlugs: IPAD_USB_C },
 
   // ── Ремінці ───────────────────────────────────────────────────────────────
   {

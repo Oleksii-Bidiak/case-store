@@ -1,4 +1,4 @@
-export const faqs = [
+export const faqs: Array<{ id: string; question: string; answer: string; isActive?: boolean }> = [
   {
     id: 'fa900000-0000-4000-8000-000000000001',
     question: 'Скільки коштує доставка?',
@@ -34,5 +34,14 @@ export const faqs = [
     question: 'Які способи оплати доступні?',
     answer:
       'Оплата при отриманні — готівкою або карткою у відділенні Нової Пошти. Оплата карткою онлайн — [платіжний провайдер: підключити перед запуском].',
+  },
+  // Switched off (TASK-2569): an answer the shop has taken down until it is true
+  // again — the admin list shows it, the storefront does not.
+  {
+    id: 'fa900000-0000-4000-8000-000000000007',
+    question: 'Чи можна забрати замовлення в магазині сьогодні?',
+    answer:
+      'Так, якщо товар є на складі точки самовивозу: оформіть замовлення з самовивозом, і ми напишемо, щойно воно буде готове.',
+    isActive: false,
   },
 ];

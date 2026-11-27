@@ -6,7 +6,10 @@ import type { SeedImageRef } from './images/seed-image.generator';
 export type SeedMediaAssetInput = Pick<
   SeedImageRef,
   'url' | 'alt' | 'blurDataUrl' | 'width' | 'height' | 'bytes'
->;
+> & {
+  /** Library tags on first registration (TASK-2569: banners, covers, the logo). */
+  tags?: string[];
+};
 
 /** Every seeded file is the generator's own WebP render. */
 const SEED_MIME = 'image/webp';
@@ -50,7 +53,7 @@ export function createSeedMediaRegistry(prisma: PrismaClient) {
           bytes: input.bytes,
           mime: SEED_MIME,
           alt: input.alt,
-          tags: [],
+          tags: input.tags ?? [],
           uploadedById: null,
           originalFilename: null,
         },
