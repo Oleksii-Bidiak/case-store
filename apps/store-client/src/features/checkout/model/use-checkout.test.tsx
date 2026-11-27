@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { http, HttpResponse } from "msw";
 import {
   renderWithProviders,
@@ -196,6 +197,71 @@ describe("useCheckout — order-creation failures (TASK-402)", () => {
       expect(invalidateSpy).not.toHaveBeenCalledWith({
         queryKey: getGetCartQueryKey(),
       });
+      expect(mockPush).not.toHaveBeenCalled();
+    },
+  );
+});
+
+// TASK-2543 (SF-CHK-57): a promo code the server refuses at order time — used up,
+// expired, below its minimum. The shopper reads why, and how to order without
+// it, instead of the generic failure (409) or the «товари недоступні» one (400).
+describe("useCheckout — promo code refusals (TASK-2543)", () => {
+  function OutcomeHarness() {
+    const { submitOrder, errorMessage } = useCheckout({ isGuest: false });
+    const [outcome, setOutcome] = useState<string>("none");
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() => void submitOrder(VALUES).then(setOutcome)}
+        >
+          submit
+        </button>
+        <p data-testid="outcome">{outcome}</p>
+        {errorMessage && <p role="alert">{errorMessage}</p>}
+      </div>
+    );
+  }
+
+  beforeEach(() => {
+    mockPush.mockClear();
+  });
+
+  it.each([
+    [400, "DISCOUNT_NOT_FOUND"],
+    [400, "DISCOUNT_INACTIVE"],
+    [409, "DISCOUNT_INACTIVE"],
+    [400, "DISCOUNT_NOT_STARTED"],
+    [400, "DISCOUNT_EXPIRED"],
+    [400, "DISCOUNT_MIN_SPEND_NOT_MET"],
+    [409, "DISCOUNT_MAX_REDEMPTIONS_REACHED"],
+    [409, "DISCOUNT_USER_LIMIT_REACHED"],
+  ])(
+    "explains a %i %s and how to order without the code",
+    async (status, error) => {
+      server.use(
+        http.post("*/api/orders", () =>
+          HttpResponse.json(
+            { statusCode: status, error, message: "Discount refused" },
+            { status },
+          ),
+        ),
+      );
+      const user = userEvent.setup();
+      renderWithProviders(<OutcomeHarness />, authed);
+
+      await user.click(screen.getByRole("button", { name: "submit" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        `${dict.discounts.errors[error]} ${dict.checkout.errorPromoRefusedHint}`,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("outcome")).toHaveTextContent(
+          "promo-refused",
+        ),
+      );
+      expect(screen.queryByText(dict.common.genericError)).toBeNull();
+      expect(screen.queryByText(dict.checkout.error400)).toBeNull();
       expect(mockPush).not.toHaveBeenCalled();
     },
   );

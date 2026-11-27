@@ -1850,6 +1850,10 @@ export const dict = {
     // tab or a retry already placed the order, sometimes a line was removed.
     errorCartAlreadyOrdered:
       "Кошик змінився, поки ви оформлювали, — можливо, замовлення вже створено в іншій вкладці. Перевірте «Мої замовлення» або кошик.",
+    // TASK-2543: follows the cart's own sentence for a refused promo code
+    // (`discounts.errors[code]`) — the way out is the «Прибрати» next to it.
+    errorPromoRefusedHint:
+      "Приберіть його в «Підсумку замовлення», щоб оформити без знижки.",
   },
 
   order: {

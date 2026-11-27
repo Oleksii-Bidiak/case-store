@@ -144,7 +144,8 @@ export type SubmitOrderOutcome =
   | "invalid"
   | "failed"
   | "account-exists"
-  | "account-required";
+  | "account-required"
+  | "promo-refused";
 
 /** The server's account rules (TASK-2010) — `error` codes on `POST /orders`. */
 const ACCOUNT_EXISTS = "ACCOUNT_EXISTS";
@@ -164,6 +165,25 @@ const ACCOUNT_REQUIRED_MESSAGES: Record<string, string> = {
   DISCOUNT_ACCOUNT_REQUIRED: dict.checkout.errorDiscountAccountRequired,
   PAYMENT_ACCOUNT_REQUIRED: dict.checkout.errorPaymentAccountRequired,
 };
+/**
+ * TASK-2543: the promo code itself refused at order time — 400 from the
+ * eligibility check, 409 from the redemption (limits reached, or deactivated in
+ * between). DISCOUNT_ACCOUNT_REQUIRED is not here: it has its own path above.
+ */
+const PROMO_REFUSAL_CODES = new Set([
+  "DISCOUNT_NOT_FOUND",
+  "DISCOUNT_INACTIVE",
+  "DISCOUNT_NOT_STARTED",
+  "DISCOUNT_EXPIRED",
+  "DISCOUNT_MIN_SPEND_NOT_MET",
+  "DISCOUNT_MAX_REDEMPTIONS_REACHED",
+  "DISCOUNT_USER_LIMIT_REACHED",
+]);
+const isPromoRefusal = (code: string | undefined): code is string =>
+  code !== undefined && PROMO_REFUSAL_CODES.has(code);
+/** The cart's sentence for the code, then how to order without it. */
+const promoRefusalMessage = (code: string) =>
+  `${dict.discounts.errors[code]} ${dict.checkout.errorPromoRefusedHint}`;
 
 export interface UseCheckoutOptions {
   /**
@@ -290,6 +310,11 @@ export function useCheckout({ isGuest, setError }: UseCheckoutOptions) {
    *   - `account-required` — 400 DISCOUNT_/PAYMENT_ACCOUNT_REQUIRED: a code or
    *                 a card without the box ticked. The caller ticks it and
    *                 shows the Ukrainian reason on step 1.
+   *   - `promo-refused` — 400/409 DISCOUNT_* (TASK-2543): the code is used up,
+   *                 expired, below its minimum… Nothing on step 1 is wrong, so
+   *                 the shopper stays put; the alert says why and to press
+   *                 «Прибрати». The code is NOT cleared here — the total must
+   *                 not change behind the shopper's back.
    */
   const submitOrder = async (
     values: CheckoutFormValues,
@@ -341,6 +366,7 @@ export function useCheckout({ isGuest, setError }: UseCheckoutOptions) {
         return "account-exists";
       }
       if (code && code in ACCOUNT_REQUIRED_MESSAGES) return "account-required";
+      if (isPromoRefusal(code)) return "promo-refused";
       if (apiErrorStatus(error) !== 400) return "failed";
 
       // A DTO failure names its fields (forms Rule 6b): put each under its
@@ -450,15 +476,17 @@ export function useCheckout({ isGuest, setError }: UseCheckoutOptions) {
       ? dict.checkout.errorCartAlreadyOrdered
       : errorCode && errorCode in ACCOUNT_REQUIRED_MESSAGES
         ? ACCOUNT_REQUIRED_MESSAGES[errorCode]
-        : status === 400
-          ? isDeliveryRefusal(errorCode)
-            ? (apiErrorMessage(mutation.error) ?? dict.checkout.error400)
-            : fieldsCoverRefusal
-              ? null
-              : dict.checkout.error400
-          : mutation.isError
-            ? dict.common.genericError
-            : null;
+        : isPromoRefusal(errorCode)
+          ? promoRefusalMessage(errorCode)
+          : status === 400
+            ? isDeliveryRefusal(errorCode)
+              ? (apiErrorMessage(mutation.error) ?? dict.checkout.error400)
+              : fieldsCoverRefusal
+                ? null
+                : dict.checkout.error400
+            : mutation.isError
+              ? dict.common.genericError
+              : null;
 
   /** Forget a shown refusal — the shopper has moved on to try again. */
   const clearError = () => {
