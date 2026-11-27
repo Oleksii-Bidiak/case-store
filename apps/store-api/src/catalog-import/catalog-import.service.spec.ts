@@ -17,6 +17,7 @@ const repositoryMock = {
   updateRun: jest.fn(),
   findNextApplying: jest.fn(),
   loadLedger: jest.fn(),
+  loadLedgerEntries: jest.fn(),
   loadCurrentProducts: jest.fn(),
   recordImported: jest.fn(),
   markMissing: jest.fn(),
@@ -25,6 +26,7 @@ const repositoryMock = {
   ensureDeviceBrands: jest.fn(),
   ensureDeviceModels: jest.fn(),
   ensureAttributeDefinitions: jest.fn(),
+  ensureColorDefinition: jest.fn(),
   ensureGroup: jest.fn(),
   setSpecValues: jest.fn(),
   setDeviceCompat: jest.fn(),
@@ -120,6 +122,7 @@ describe('CatalogImportService', () => {
     repositoryMock.ensureDeviceBrands.mockResolvedValue(new Map());
     repositoryMock.ensureDeviceModels.mockResolvedValue(new Map());
     repositoryMock.ensureAttributeDefinitions.mockResolvedValue(new Map());
+    repositoryMock.loadLedgerEntries.mockResolvedValue(new Map());
     productServiceMock.create.mockResolvedValue({ id: 'p-new' });
     productServiceMock.update.mockResolvedValue({ id: 'p1' });
   });
@@ -501,6 +504,138 @@ describe('CatalogImportService', () => {
       expect(repositoryMock.setSpecValues).not.toHaveBeenCalled();
       expect(repositoryMock.setDeviceCompat).not.toHaveBeenCalled();
       expect(repositoryMock.recordImported).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A PARTIALLY unticked update (TASK-2608). TASK-2545 covered the row whose every change
+     * was unticked; here some changes stay ticked, so the row IS written — and the unticked
+     * ones must still be left exactly as they are: the product column, the file's spec
+     * columns, the colour spec value, the compatibility set, and the ledger digest that
+     * decides whether the next import proposes the change again.
+     */
+    describe('applyChunk — a partially unticked update (TASK-2608)', () => {
+      const source: ParsedProductRow = {
+        rowNumber: 3,
+        categoryName: 'Чохли',
+        sourceSku: 'U1',
+        name: 'Чохол Armor',
+        sourceUrl: null,
+        description: null,
+        price: 499,
+        brandName: null,
+        design: 'Чорний',
+        barcode: null,
+        manufacturerCode: null,
+        videoUrl: null,
+        deviceBrandName: 'Apple',
+        deviceModelNames: ['iPhone 15'],
+        attributes: { material: 'TPU' },
+      };
+
+      const change = (field: FieldChange['field']): FieldChange => ({
+        field,
+        label: field,
+        to: 'x',
+        conflict: false,
+      });
+
+      const applyUpdate = (fields: Array<FieldChange['field']>, unticked: string[]) =>
+        service.applyChunk(
+          run({
+            status: CatalogImportStatus.APPLYING,
+            plan: plan([
+              plannedRow({
+                sourceSku: 'U1',
+                action: 'update',
+                productId: 'p1',
+                slug: 'chehol-armor',
+                changes: fields.map(change),
+              }),
+            ]),
+            decisions: { excludedFields: { U1: unticked } },
+          }),
+        );
+
+      beforeEach(() => {
+        jest
+          .spyOn(service as unknown as { readCatalog: () => Promise<ParsedCatalog> }, 'readCatalog')
+          .mockResolvedValue({
+            sheetName: 'Аркуш1',
+            categoryNames: ['Чохли'],
+            rows: [source],
+            attributeColumns: [{ key: 'material', label: 'Матеріал', filledCount: 1 }],
+            issues: [],
+            totalProductRows: 1,
+          });
+        repositoryMock.ensureDeviceBrands.mockResolvedValue(new Map([['Apple', 'db-apple']]));
+        repositoryMock.ensureDeviceModels.mockResolvedValue(
+          new Map([[deviceModelKey('db-apple', 'iPhone 15'), 'model-15']]),
+        );
+        repositoryMock.ensureAttributeDefinitions.mockResolvedValue(
+          new Map([['material', 'def-1']]),
+        );
+        repositoryMock.ensureColorDefinition.mockResolvedValue('def-color');
+        repositoryMock.loadLedgerEntries.mockResolvedValue(
+          new Map([
+            [
+              'U1',
+              {
+                sourceSku: 'U1',
+                productId: 'p1',
+                lastImported: { price: 'prev-price', deviceModels: 'prev-models' },
+              },
+            ],
+          ]),
+        );
+      });
+
+      it('an unticked compatibility stays as it was', async () => {
+        await applyUpdate(['price', 'deviceModels'], ['deviceModels']);
+
+        expect(productServiceMock.update).toHaveBeenCalledWith('p1', { price: 499 });
+        expect(repositoryMock.setDeviceCompat).not.toHaveBeenCalled();
+      });
+
+      it('unticked characteristics leave the file columns unwritten but still write the colour', async () => {
+        await applyUpdate(['price', 'attributes'], ['attributes']);
+
+        expect(repositoryMock.setSpecValues).toHaveBeenCalledTimes(1);
+        expect(repositoryMock.setSpecValues).toHaveBeenCalledWith(
+          'p1',
+          [{ definitionId: 'def-color', value: 'Чорний' }],
+          { only: ['def-color'] },
+        );
+      });
+
+      it('an unticked colour leaves the colour spec value unwritten but still writes the columns', async () => {
+        await applyUpdate(['price', 'design'], ['design']);
+
+        expect(repositoryMock.setSpecValues).toHaveBeenCalledTimes(1);
+        expect(repositoryMock.setSpecValues).toHaveBeenCalledWith(
+          'p1',
+          [{ definitionId: 'def-1', value: 'TPU' }],
+          { except: ['def-color'] },
+        );
+        expect(productServiceMock.update).toHaveBeenCalledWith('p1', { price: 499 });
+      });
+
+      it('writes no spec values at all when both characteristics and colour are unticked', async () => {
+        await applyUpdate(['price', 'attributes', 'design'], ['attributes', 'design']);
+
+        expect(repositoryMock.setSpecValues).not.toHaveBeenCalled();
+      });
+
+      it('records the previous ledger digest for an unticked price and the new one for the rest', async () => {
+        await applyUpdate(['price', 'deviceModels'], ['price']);
+
+        expect(repositoryMock.loadLedgerEntries).toHaveBeenCalledTimes(1);
+        expect(repositoryMock.loadLedgerEntries).toHaveBeenCalledWith(['U1']);
+        const [{ lastImported }] = repositoryMock.recordImported.mock.calls[0];
+        expect(lastImported.price).toBe('prev-price');
+        expect(lastImported.deviceModels).toMatch(/^[0-9a-f]{16}$/);
+        expect(lastImported.deviceModels).not.toBe('prev-models');
+        expect(repositoryMock.setDeviceCompat).toHaveBeenCalledWith('p1', ['model-15']);
+      });
     });
 
     // A missing row needs no file access at all, which is what lets the "hide

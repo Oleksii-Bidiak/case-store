@@ -98,3 +98,59 @@ describe('CatalogImportRepository — the colour definition (TASK-487)', () => {
     expect(data.options).toEqual(['Чорний']);
   });
 });
+
+/**
+ * A spec write scoped to some definitions (TASK-2608).
+ *
+ * `setSpecValues` is replace-all, which is right when the whole spec set is applied and
+ * wrong when the operator unticked one half of it: the file's columns («Характеристики»)
+ * and the colour («Колір / дизайн») are separate review decisions that land in the same
+ * table. The scope narrows the delete to the definitions actually being written, so the
+ * unticked half stays as it was.
+ */
+describe('CatalogImportRepository — scoped spec writes (TASK-2608)', () => {
+  let repo: CatalogImportRepository;
+
+  const value = {
+    deleteMany: jest.fn((args: unknown) => ({ op: 'deleteMany', args })),
+    createMany: jest.fn((args: unknown) => ({ op: 'createMany', args })),
+  };
+  const prismaMock = {
+    productAttributeValue: value,
+    $transaction: jest.fn().mockResolvedValue([]),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [CatalogImportRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(CatalogImportRepository);
+  });
+
+  it('still replaces every spec value when no scope is given', async () => {
+    await repo.setSpecValues('p-1', [{ definitionId: 'def-1', value: 'TPU' }]);
+
+    expect(value.deleteMany).toHaveBeenCalledWith({ where: { productId: 'p-1' } });
+  });
+
+  it('deletes only the definitions it writes with `only`', async () => {
+    await repo.setSpecValues('p-1', [{ definitionId: 'def-color', value: 'Чорний' }], {
+      only: ['def-color'],
+    });
+
+    expect(value.deleteMany).toHaveBeenCalledWith({
+      where: { productId: 'p-1', definitionId: { in: ['def-color'] } },
+    });
+  });
+
+  it('leaves the excluded definitions alone with `except`', async () => {
+    await repo.setSpecValues('p-1', [{ definitionId: 'def-1', value: 'TPU' }], {
+      except: ['def-color'],
+    });
+
+    expect(value.deleteMany).toHaveBeenCalledWith({
+      where: { productId: 'p-1', definitionId: { notIn: ['def-color'] } },
+    });
+  });
+});

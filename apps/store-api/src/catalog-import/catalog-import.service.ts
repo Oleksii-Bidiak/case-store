@@ -12,9 +12,10 @@ import { CatalogImportRepository, deviceModelKey } from './catalog-import.reposi
 import { parseXlsxCatalog } from './xlsx-catalog.parser';
 import {
   buildImportPlan,
-  fingerprintOf,
+  ledgerFingerprintAfterApply,
   type CatalogImportPlan,
   type ChangeField,
+  type ImportedFingerprint,
   type PlannedRow,
 } from './catalog-plan';
 import type { ParsedCatalog, ParsedProductRow } from './catalog-import.types';
@@ -51,6 +52,22 @@ export function isRowAuthorised(row: PlannedRow, decisions: ImportDecisions): bo
   }
   const excludedFields = new Set(decisions.excludedFields?.[row.sourceSku] ?? []);
   return !row.changes.every((change) => excludedFields.has(change.field));
+}
+
+/**
+ * The proposed changes on `row` that the operator unticked (TASK-2608) — the one answer
+ * every write of an update consults: the product columns, the two halves of the spec
+ * values, the compatibility set and the ledger digest. Only a field that was PROPOSED and
+ * then unticked counts; a field the plan never proposed keeps being written exactly as
+ * before (the colour spec value of TASK-487, the compatibility rewrite of TASK-705).
+ * Creates have nothing to untick.
+ */
+function untickedFields(row: PlannedRow, decisions: ImportDecisions): ReadonlySet<ChangeField> {
+  if (row.action !== 'update') {
+    return new Set();
+  }
+  const excluded = new Set(decisions.excludedFields?.[row.sourceSku] ?? []);
+  return new Set(row.changes.map((change) => change.field).filter((field) => excluded.has(field)));
 }
 
 /** How many rows one worker tick writes. Keeps a 1300-row run off the request path. */
@@ -246,10 +263,23 @@ export class CatalogImportService {
     const catalog = await this.readCatalog(run);
     const bySku = new Map(catalog.rows.map((row) => [row.sourceSku, row]));
     const context = await this.resolveReferences(catalog, plan);
+    // What the importer last wrote, for the rows with an unticked field: their ledger
+    // digest must stay the previous one (TASK-2608). One query per chunk, not per row.
+    const unticked = slice.map((planned) => untickedFields(planned, decisions));
+    const ledger = await this.repository.loadLedgerEntries(
+      slice.filter((_, index) => unticked[index].size > 0).map((planned) => planned.sourceSku),
+    );
 
-    for (const planned of slice) {
+    for (const [index, planned] of slice.entries()) {
       try {
-        await this.applyRow(run.id, planned, bySku.get(planned.sourceSku), context, decisions);
+        await this.applyRow(
+          run.id,
+          planned,
+          bySku.get(planned.sourceSku),
+          context,
+          unticked[index],
+          ledger.get(planned.sourceSku)?.lastImported,
+        );
       } catch (error) {
         // One bad row must not abandon the other 1299. Log it and carry on; the
         // ledger simply does not learn about this article, so the next import
@@ -400,7 +430,8 @@ export class CatalogImportService {
     planned: PlannedRow,
     source: ParsedProductRow | undefined,
     context: Awaited<ReturnType<CatalogImportService['resolveReferences']>>,
-    decisions: ImportDecisions,
+    unticked: ReadonlySet<ChangeField>,
+    previous: ImportedFingerprint | undefined,
   ): Promise<void> {
     // An article that fell out of the file: hide the product, never delete it.
     // Reversible by design — restoring the row upstream brings it straight back.
@@ -426,19 +457,21 @@ export class CatalogImportService {
     const productId =
       planned.action === 'create'
         ? await this.createProduct(planned, source, categoryId, brandId, groupId)
-        : await this.updateProduct(planned, source, categoryId, brandId, decisions);
+        : await this.updateProduct(planned, source, categoryId, brandId, unticked);
 
     if (!productId) {
       return;
     }
 
-    await this.writeSpecs(productId, source, context);
-    await this.writeCompat(productId, source, context);
+    await this.writeSpecs(productId, source, context, unticked);
+    if (!unticked.has('deviceModels')) {
+      await this.writeCompat(productId, source, context);
+    }
 
     await this.repository.recordImported({
       sourceSku: source.sourceSku,
       productId,
-      lastImported: fingerprintOf(source, planned.slug),
+      lastImported: ledgerFingerprintAfterApply(source, planned.slug, previous, unticked),
       lastSeenRunId: runId,
     });
   }
@@ -474,14 +507,13 @@ export class CatalogImportService {
     source: ParsedProductRow,
     categoryId: string,
     brandId: string | undefined,
-    decisions: ImportDecisions,
+    unticked: ReadonlySet<ChangeField>,
   ): Promise<string | null> {
     if (!planned.productId) {
       return null;
     }
-    const excluded = new Set(decisions.excludedFields?.[planned.sourceSku] ?? []);
     const wanted = (field: ChangeField): boolean =>
-      planned.changes.some((change) => change.field === field) && !excluded.has(field);
+      planned.changes.some((change) => change.field === field) && !unticked.has(field);
 
     const data: Parameters<ProductService['update']>[1] = {};
     if (wanted('name')) data.name = source.name;
@@ -509,26 +541,48 @@ export class CatalogImportService {
    * this copy is the only one `?specs=color:…` and `filterable-specs` can see.
    * Dropping either half puts the swatches and the colour filter back into
    * disagreement, which is the state this task was opened to end.
+   *
+   * The two halves are separate review decisions, though — «Характеристики» and
+   * «Колір / дизайн» — so an unticked one is left exactly as it is (TASK-2608): the write
+   * is scoped to the other half's definitions instead of replacing all of them, and with
+   * both unticked nothing is written at all.
    */
   private async writeSpecs(
     productId: string,
     source: ParsedProductRow,
     context: Awaited<ReturnType<CatalogImportService['resolveReferences']>>,
+    unticked: ReadonlySet<ChangeField> = new Set(),
   ): Promise<void> {
+    const keepColumns = unticked.has('attributes');
+    const keepColor = unticked.has('design');
+    if (keepColumns && keepColor) {
+      return;
+    }
+
     const definitions = context.definitions.get(source.categoryName);
-    const values = definitions
-      ? Object.entries(source.attributes)
-          .map(([key, value]) => {
-            const definitionId = definitions.get(key);
-            return definitionId ? { definitionId, value } : null;
-          })
-          .filter((value): value is { definitionId: string; value: string } => value !== null)
-      : [];
+    const values =
+      definitions && !keepColumns
+        ? Object.entries(source.attributes)
+            .map(([key, value]) => {
+              const definitionId = definitions.get(key);
+              return definitionId ? { definitionId, value } : null;
+            })
+            .filter((value): value is { definitionId: string; value: string } => value !== null)
+        : [];
 
     const color = source.design?.trim();
     const colorDefinitionId = context.colorDefinitions.get(source.categoryName);
-    if (color && colorDefinitionId) {
+    if (!keepColor && color && colorDefinitionId) {
       values.push({ definitionId: colorDefinitionId, value: color });
+    }
+
+    if (keepColumns) {
+      // Only the colour half: clear and rewrite the colour value alone — a blank
+      // «дизайн» still clears it, as the replace-all did.
+      if (colorDefinitionId) {
+        await this.repository.setSpecValues(productId, values, { only: [colorDefinitionId] });
+      }
+      return;
     }
 
     // `setSpecValues` is replace-all, so an empty list is a meaningful write: it
@@ -537,6 +591,10 @@ export class CatalogImportService {
     // behind — but only bail when there is nothing resolved at all, to keep that
     // old behaviour for a category the file declares no columns for.
     if (!definitions && values.length === 0) {
+      return;
+    }
+    if (keepColor && colorDefinitionId) {
+      await this.repository.setSpecValues(productId, values, { except: [colorDefinitionId] });
       return;
     }
     await this.repository.setSpecValues(productId, values);

@@ -120,6 +120,31 @@ export class CatalogImportRepository {
   }
 
   /**
+   * The ledger rows for just these articles, in one query — what an applying chunk needs
+   * to keep the previous digest of a field the operator unticked (TASK-2608) without
+   * loading the whole ledger, or querying once per row.
+   */
+  async loadLedgerEntries(sourceSkus: string[]): Promise<Map<string, LedgerEntry>> {
+    if (sourceSkus.length === 0) {
+      return new Map();
+    }
+    const items = await this.prisma.catalogImportItem.findMany({
+      where: { sourceSku: { in: sourceSkus } },
+      select: { sourceSku: true, productId: true, lastImported: true },
+    });
+    return new Map(
+      items.map((item) => [
+        item.sourceSku,
+        {
+          sourceSku: item.sourceSku,
+          productId: item.productId,
+          lastImported: item.lastImported as unknown as ImportedFingerprint,
+        },
+      ]),
+    );
+  }
+
+  /**
    * Current state of the products the ledger points at, in the exact shape the
    * diff compares against. Soft-deleted rows are excluded, so a tombstoned
    * product reads as "gone" and its article is planned as a fresh create.
@@ -388,13 +413,27 @@ export class CatalogImportRepository {
     return group.id;
   }
 
-  /** Replace a product's structured spec values in one transaction. */
+  /**
+   * Replace a product's structured spec values in one transaction.
+   *
+   * Without `scope` it is replace-all. With it, only the named definitions are cleared
+   * first (`only`), or every definition but the named ones (`except`) — so an import that
+   * the operator told to leave the colour or the file's columns alone (TASK-2608) can
+   * rewrite the other half without wiping the one it was told to keep.
+   */
   async setSpecValues(
     productId: string,
     values: Array<{ definitionId: string; value: string }>,
+    scope?: { only?: string[]; except?: string[] },
   ): Promise<void> {
+    const where: Prisma.ProductAttributeValueWhereInput = { productId };
+    if (scope?.only) {
+      where.definitionId = { in: scope.only };
+    } else if (scope?.except) {
+      where.definitionId = { notIn: scope.except };
+    }
     await this.prisma.$transaction([
-      this.prisma.productAttributeValue.deleteMany({ where: { productId } }),
+      this.prisma.productAttributeValue.deleteMany({ where }),
       ...(values.length > 0
         ? [
             this.prisma.productAttributeValue.createMany({
