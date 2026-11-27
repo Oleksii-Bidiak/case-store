@@ -601,6 +601,11 @@ export const dict = {
       // by its label, as the reorder commit announcement does.
       announceUndoAvailable: (count: number, undoLabel: string) =>
         `Готово, змінено товарів: ${count}. Щоб повернути, як було, скористайтеся кнопкою «${undoLabel}».`,
+      // TASK-2573: a bulk show writes only ready products; the rest are named.
+      skippedItem: (name: string, reasons: string) => `«${name}» — ${reasons}`,
+      skippedNotShown: (count: number, list: string, more: number) =>
+        `Не показано ${countLabel(count, ["товар", "товари", "товарів"])}: ${list}` +
+        (more > 0 ? ` і ще ${more}` : ""),
     },
     back: "← Товари",
     createHeading: "Створення товару",
@@ -1168,6 +1173,17 @@ export const dict = {
     toastPublished: "Товар опубліковано — він з'явився на вітрині",
     toastUnpublished: "Товар знято з публікації",
     toastFailed: "Не вдалося змінити статус публікації",
+    // TASK-2573: the server is the one judge of readiness. Its blocker codes,
+    // as short reasons — one mapping for the panel, the row «⋯» and the bulk bar.
+    blockerReasons: {
+      name: "немає назви",
+      category: "не вибрано категорію",
+      price: "ціна не більша за 0",
+      photo: "немає фото",
+    },
+    notShown: (reasons: string) => `Товар не показано: ${reasons}`,
+    stateLoadFailed:
+      "Не вдалося перевірити готовність товару. Оновіть сторінку.",
   },
 
   productForm: {

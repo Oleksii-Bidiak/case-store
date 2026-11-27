@@ -1555,7 +1555,7 @@ describe("AdminProductTable — bulk show / hide (TASK-355, TASK-812)", () => {
     server.use(
       http.patch("*/api/products/status", async ({ request }) => {
         bodies.push(await request.json());
-        return HttpResponse.json({ data: { updatedCount: 1 } });
+        return HttpResponse.json({ data: { updatedCount: 1, skipped: [] } });
       }),
     );
     return bodies;
@@ -1610,6 +1610,152 @@ describe("AdminProductTable — bulk show / hide (TASK-355, TASK-812)", () => {
   });
 });
 
+/* ── a bulk show writes only ready products (TASK-2573) ──────────────── */
+
+describe("AdminProductTable — bulk show skips unready products (TASK-2573)", () => {
+  const reasons = dict.productPublish.blockerReasons;
+
+  function stubTwoHidden() {
+    stubList([
+      makeProductRow({ isActive: false }),
+      makeProductRow({
+        id: "product-2",
+        name: P2,
+        slug: "galaxy-s24-case",
+        isActive: false,
+      }),
+    ]);
+  }
+
+  function stubShow(result: { updatedCount: number; skipped: unknown[] }) {
+    const bodies: unknown[] = [];
+    server.use(
+      http.patch("*/api/products/status", async ({ request }) => {
+        const body = (await request.json()) as { isActive: boolean };
+        bodies.push(body);
+        return HttpResponse.json({
+          data: body.isActive ? result : { updatedCount: 1, skipped: [] },
+        });
+      }),
+    );
+    return bodies;
+  }
+
+  it("counts what the server wrote, names the skipped ones, and undoes only the written", async () => {
+    stubTwoHidden();
+    const bodies = stubShow({
+      updatedCount: 1,
+      skipped: [{ id: "product-2", name: P2, blockers: ["photo", "price"] }],
+    });
+    renderTable();
+    await screen.findByText(P1);
+    await selectRow(P1);
+    await selectRow(P2);
+
+    await userEvent.click(screen.getByRole("button", { name: d.bulkShow }));
+    await waitFor(() => expect(toastUndo).toHaveBeenCalledTimes(1));
+    const [message, options] = toastUndo.mock.calls[0] as [
+      string,
+      { onUndo: () => void },
+    ];
+    expect(message).toBe(d.toastShown(countLabel(1, forms)));
+    expect(toastError).toHaveBeenCalledTimes(1);
+    const report = String(toastError.mock.calls[0][0]);
+    expect(report).toContain(`«${P2}» — ${reasons.photo}, ${reasons.price}`);
+    expect(report).not.toContain(P1);
+
+    // product-2 was never shown, so the undo must not hide it.
+    options.onUndo();
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({ ids: ["product-1"], isActive: false });
+  });
+
+  it("offers no success and no undo when nothing was written", async () => {
+    stubTwoHidden();
+    stubShow({
+      updatedCount: 0,
+      skipped: [
+        { id: "product-1", name: P1, blockers: ["photo"] },
+        { id: "product-2", name: P2, blockers: ["category"] },
+      ],
+    });
+    renderTable();
+    await screen.findByText(P1);
+    await selectRow(P1);
+    await selectRow(P2);
+
+    await userEvent.click(screen.getByRole("button", { name: d.bulkShow }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    const report = String(toastError.mock.calls[0][0]);
+    expect(report).toContain(`«${P1}» — ${reasons.photo}`);
+    expect(report).toContain(`«${P2}» — ${reasons.category}`);
+    expect(toastUndo).not.toHaveBeenCalled();
+  });
+
+  it("undoing a bulk hide re-shows only the ready ones and names the rest", async () => {
+    stubList([makeProductRow({ isActive: true })]);
+    // The hide writes; the undo (a show) finds the product no longer ready.
+    stubShow({
+      updatedCount: 0,
+      skipped: [{ id: "product-1", name: P1, blockers: ["name"] }],
+    });
+    renderTable();
+    await screen.findByText(P1);
+    await selectRow(P1);
+
+    await userEvent.click(screen.getByRole("button", { name: d.bulkHide }));
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: d.bulk.deactivate(1),
+      }),
+    );
+    await waitFor(() => expect(toastUndo).toHaveBeenCalledTimes(1));
+    expect(toastError).not.toHaveBeenCalled();
+
+    const [, options] = toastUndo.mock.calls[0] as [
+      string,
+      { onUndo: () => void },
+    ];
+    options.onUndo();
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        expect.stringContaining(`«${P1}» — ${reasons.name}`),
+      ),
+    );
+  });
+
+  it("row «Показати» refused as PRODUCT_NOT_READY says why, not the server's English", async () => {
+    stubList([makeProductRow({ isActive: false })]);
+    server.use(
+      http.patch("*/api/products/product-1/activate", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "PRODUCT_NOT_READY",
+            message: "Product is not ready to be shown",
+            blockers: ["photo"],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderTable();
+    await screen.findByText(P1);
+
+    const menu = await openRowMenu(P1);
+    await userEvent.click(
+      within(menu).getByRole("menuitem", {
+        name: dict.statusToggle.productActivate,
+      }),
+    );
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        dict.productPublish.notShown(reasons.photo),
+      ),
+    );
+  });
+});
+
 /* ── undo (TASK-837) ──────────────────────────────────────────────────── */
 
 describe("AdminProductTable — undo the last bulk action (TASK-837)", () => {
@@ -1647,7 +1793,7 @@ describe("AdminProductTable — undo the last bulk action (TASK-837)", () => {
       http.patch(`*/api/products/${path}`, async ({ request }) => {
         bodies.push(await request.json());
         return status === 200
-          ? HttpResponse.json({ data: { updatedCount: 1 } })
+          ? HttpResponse.json({ data: { updatedCount: 1, skipped: [] } })
           : HttpResponse.json({ message: "boom" }, { status });
       }),
     );

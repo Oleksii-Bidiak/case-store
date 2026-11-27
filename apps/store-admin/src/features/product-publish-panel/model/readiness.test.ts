@@ -1,3 +1,4 @@
+import type { PublishBlocker } from "@/shared/api";
 import {
   buildReadinessChecks,
   canPublish,
@@ -5,38 +6,48 @@ import {
   type ReadinessInput,
 } from "./readiness";
 
-/** A product that satisfies every check — each test spoils exactly one thing. */
+/** A product that satisfies every advisory check — each test spoils one thing. */
 const READY: ReadinessInput = {
-  name: "Чохол Armor Magnetic",
-  categoryId: "9f6f0b1e-0000-4000-8000-000000000001",
-  price: "299.00",
   stock: 12,
   description: "<p>Протиударний чохол</p>",
-  imageCount: 3,
   specCount: 4,
   compatCount: 2,
 };
 
-const check = (input: ReadinessInput, key: string) =>
-  buildReadinessChecks(input).find((c) => c.key === key)!;
+const check = (
+  input: ReadinessInput,
+  key: string,
+  blockers: readonly PublishBlocker[] = [],
+) => buildReadinessChecks(input, blockers).find((c) => c.key === key)!;
 
-describe("buildReadinessChecks (TASK-361)", () => {
-  it("passes every check for a fully filled product", () => {
-    expect(buildReadinessChecks(READY).every((c) => c.done)).toBe(true);
-    expect(canPublish(buildReadinessChecks(READY))).toBe(true);
+describe("buildReadinessChecks (TASK-361, TASK-2573)", () => {
+  it("passes every check for a fully filled product the server calls ready", () => {
+    expect(buildReadinessChecks(READY, []).every((c) => c.done)).toBe(true);
+    expect(canPublish(buildReadinessChecks(READY, []))).toBe(true);
   });
 
-  describe("blocking checks keep the product unpublishable", () => {
-    it.each([
-      ["name", { name: "   " }],
-      ["category", { categoryId: "" }],
-      ["price", { price: "0" }],
-      ["photo", { imageCount: 0 }],
-    ] as const)("%s", (key, overrides) => {
-      const input = { ...READY, ...overrides };
-      expect(check(input, key).done).toBe(false);
-      expect(check(input, key).blocking).toBe(true);
-      expect(canPublish(buildReadinessChecks(input))).toBe(false);
+  it("lists the four blocking checks first, in the server's order", () => {
+    expect(
+      buildReadinessChecks(READY, [])
+        .filter((c) => c.blocking)
+        .map((c) => c.key),
+    ).toEqual(["name", "category", "price", "photo"]);
+  });
+
+  // The blocking half is the server's verdict, not a local rule: whatever the
+  // API lists as a blocker is unmet, and nothing else is.
+  describe("blocking checks follow the server's blockers", () => {
+    it.each(["name", "category", "price", "photo"] as const)("%s", (key) => {
+      expect(check(READY, key, [key]).done).toBe(false);
+      expect(check(READY, key, [key]).blocking).toBe(true);
+      expect(canPublish(buildReadinessChecks(READY, [key]))).toBe(false);
+    });
+
+    it("marks only the listed blockers unmet", () => {
+      const checks = buildReadinessChecks(READY, ["price", "photo"]);
+      expect(
+        checks.filter((c) => c.blocking && !c.done).map((c) => c.key),
+      ).toEqual(["price", "photo"]);
     });
   });
 
@@ -50,7 +61,7 @@ describe("buildReadinessChecks (TASK-361)", () => {
       const input = { ...READY, ...overrides };
       expect(check(input, key).done).toBe(false);
       expect(check(input, key).blocking).toBe(false);
-      expect(canPublish(buildReadinessChecks(input))).toBe(true);
+      expect(canPublish(buildReadinessChecks(input, []))).toBe(true);
     });
   });
 
@@ -64,39 +75,28 @@ describe("buildReadinessChecks (TASK-361)", () => {
       check({ ...READY, description: "<p><br></p>" }, "description").done,
     ).toBe(false);
   });
-
-  it("rejects a price that is not a positive number", () => {
-    expect(check({ ...READY, price: "" }, "price").done).toBe(false);
-    expect(check({ ...READY, price: "-1" }, "price").done).toBe(false);
-    expect(check({ ...READY, price: "0.01" }, "price").done).toBe(true);
-  });
 });
 
 describe("missingSections (wave 198, TASK-1050)", () => {
   it("is empty for a fully filled product", () => {
-    expect(missingSections(buildReadinessChecks(READY))).toEqual([]);
+    expect(missingSections(buildReadinessChecks(READY, []))).toEqual([]);
   });
 
   it("names the form section each unmet check lives in, once", () => {
-    const checks = buildReadinessChecks({
-      ...READY,
-      price: "0",
-      stock: 0,
-      imageCount: 0,
-      compatCount: 0,
-    });
+    const checks = buildReadinessChecks(
+      { ...READY, stock: 0, compatCount: 0 },
+      ["price", "photo"],
+    );
     expect(missingSections(checks).sort()).toEqual(
       ["compat", "photos", "price"].sort(),
     );
   });
 
   it("puts name and category under «Основне», description and specs in their own", () => {
-    const checks = buildReadinessChecks({
-      ...READY,
-      name: "",
-      description: "<p></p>",
-      specCount: 0,
-    });
+    const checks = buildReadinessChecks(
+      { ...READY, description: "<p></p>", specCount: 0 },
+      ["name", "category"],
+    );
     expect(missingSections(checks).sort()).toEqual(
       ["description", "main", "specs"].sort(),
     );

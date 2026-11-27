@@ -10,6 +10,7 @@ import {
 } from "@/entities/category";
 import { PERM } from "@/entities/permission";
 import {
+  skippedProductsMessage,
   useProductControllerAdminFindAll,
   type ProductEntity,
 } from "@/entities/product";
@@ -331,10 +332,18 @@ function AdminProductTableView() {
   const pendingStatus = useRef<boolean>(true);
   const latestUndo = useRef({ run: bulkUndo.undo, available: false });
 
-  /** Commit the prepared undo and offer it in a toast, naming what changed. */
-  const offerUndo = (message: (label: string) => string) => {
-    const count = bulkUndo.commit();
-    if (count === null) return;
+  /**
+   * Commit the prepared undo and offer it in a toast, naming what changed.
+   * `written` (a bulk show, TASK-2573) leaves the products the server skipped
+   * out of the undo and puts the server's own `updatedCount` in the toast.
+   */
+  const offerUndo = (
+    message: (label: string) => string,
+    written?: { count: number; skippedIds: readonly string[] },
+  ) => {
+    const planned = bulkUndo.commit(written?.skippedIds);
+    if (planned === null) return;
+    const count = written?.count ?? planned;
     undoToastId.current = toast.undo(message(countLabel(count, d.itemForms)), {
       onUndo: () => {
         // Read at CLICK time: the toast outlives renders, and a used-up or
@@ -346,9 +355,21 @@ function AdminProductTableView() {
   };
 
   const bulk = useProductBulkStatus({
-    onSuccess: () => {
+    onSuccess: ({ updatedCount, skipped }) => {
       selection.clear();
-      offerUndo(pendingStatus.current ? d.toastShown : d.toastHidden);
+      if (!pendingStatus.current) {
+        offerUndo(d.toastHidden);
+        return;
+      }
+      // TASK-2573: a bulk show writes only ready products. Nothing written ⇒
+      // no success and nothing to undo — only the report of what stayed hidden.
+      if (updatedCount > 0) {
+        offerUndo(d.toastShown, {
+          count: updatedCount,
+          skippedIds: skipped.map((item) => item.id),
+        });
+      }
+      if (skipped.length > 0) toast.error(skippedProductsMessage(skipped));
     },
   });
 

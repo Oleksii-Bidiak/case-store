@@ -9,6 +9,7 @@ export {
   apiErrorMessage,
   apiErrorStatus,
   apiErrorCode,
+  apiErrorBlockers,
 } from "./api-error-message";
 export {
   PASSWORD_MIN_LENGTH,

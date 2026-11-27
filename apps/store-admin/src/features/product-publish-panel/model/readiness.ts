@@ -1,3 +1,4 @@
+import type { PublishBlocker } from "@/shared/api";
 import { dict } from "@/shared/config";
 
 /** One line of the publish readiness checklist. */
@@ -17,18 +18,26 @@ export interface ReadinessCheck {
   blocking: boolean;
 }
 
-/** Everything the checklist needs to judge a product, in its SAVED state. */
+/**
+ * What the checklist judges LOCALLY, in the product's SAVED state — the
+ * advisory checks only. The four blocking ones (name, category, price, photo)
+ * come from the server's `publish-state` (TASK-2573): the API refuses to show
+ * an unready product, so that is the one place the rule lives.
+ */
 export interface ReadinessInput {
-  name: string;
-  categoryId: string;
-  /** Decimal string off the API (never a float). */
-  price: string;
   stock: number;
   description?: string | null;
-  imageCount: number;
   specCount: number;
   compatCount: number;
 }
+
+/** The blocking checks, in the order the server reports its blockers. */
+const BLOCKING_KEYS: readonly PublishBlocker[] = [
+  "name",
+  "category",
+  "price",
+  "photo",
+];
 
 /**
  * Rich text is "filled in" only when it has text — Tiptap serializes a cleared
@@ -41,39 +50,30 @@ function hasText(value: string | null | undefined): boolean {
 /**
  * Build the publish readiness checklist for a product (TASK-361).
  *
- * Deliberately judges the SAVED product rather than the form's current values:
+ * The BLOCKING checks mirror `blockers` from `GET /products/:id/publish-state`
+ * (TASK-2573): a check is done when the server does not list it. They used to
+ * be judged here, which let the panel and the API disagree about what may go on
+ * sale. The advisory checks stay local — they never block, so the server has no
+ * opinion on them.
+ *
+ * Both halves judge the SAVED product rather than the form's current values:
  * publishing is a separate action from saving, and a checklist that went green
  * on unsaved text would be lying about what visitors are about to see.
  *
  * Pure function — no hooks, no API. Unit-tested.
  */
-export function buildReadinessChecks(input: ReadinessInput): ReadinessCheck[] {
+export function buildReadinessChecks(
+  input: ReadinessInput,
+  blockers: readonly PublishBlocker[],
+): ReadinessCheck[] {
   const c = dict.productPublish.checks;
   return [
-    {
-      key: "name",
-      label: c.name,
-      done: input.name.trim().length > 0,
+    ...BLOCKING_KEYS.map((key) => ({
+      key,
+      label: c[key],
+      done: !blockers.includes(key),
       blocking: true,
-    },
-    {
-      key: "category",
-      label: c.category,
-      done: input.categoryId.trim().length > 0,
-      blocking: true,
-    },
-    {
-      key: "price",
-      label: c.price,
-      done: Number(input.price) > 0,
-      blocking: true,
-    },
-    {
-      key: "photo",
-      label: c.photo,
-      done: input.imageCount > 0,
-      blocking: true,
-    },
+    })),
     {
       key: "description",
       label: c.description,
