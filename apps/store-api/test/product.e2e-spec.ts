@@ -1281,6 +1281,32 @@ describe('ProductController (e2e)', () => {
       expect(productRepositoryMock.findPublishFacts).toHaveBeenCalledWith(['product-e2e-1']);
     });
 
+    it('names the category that hides an active product (TASK-2574)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      productRepositoryMock.findPublishFacts.mockResolvedValue([
+        publishFacts('product-e2e-1', {
+          category: {
+            id: 'category-e2e-1',
+            name: 'Phone Cases',
+            isActive: false,
+            ancestorsActive: true,
+            parentId: null,
+            deletedAt: null,
+          },
+        }),
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data).toEqual({
+        blockers: [],
+        hiddenByCategory: { id: 'category-e2e-1', name: 'Phone Cases' },
+      });
+    });
+
     it('answers 404 for an unknown or deleted product', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
       productRepositoryMock.findPublishFacts.mockResolvedValue([]);

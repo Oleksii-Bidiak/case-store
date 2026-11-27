@@ -151,6 +151,8 @@ const categoryRepositoryMock = {
   findBySlug: jest.fn((slug: string): Promise<SlugRow | null> =>
     Promise.resolve({ id: `id-of-${slug}`, slug }),
   ),
+  // TASK-2574: the publish state names the ancestor that withdrew the branch.
+  findNearestHiddenAncestor: jest.fn(),
 };
 
 // ─── BrandRepository mock (TASK-189 brand validation on create/update) ────────
@@ -2177,6 +2179,68 @@ describe('ProductService', () => {
       productRepositoryMock.findPublishFacts.mockResolvedValue([]);
 
       await expect(service.getPublishState('missing')).rejects.toThrow(NotFoundException);
+    });
+
+    // TASK-2574: «Показується» was a lie when the category withdrew the product.
+    // Hidden is decided by the storefront's own rule (isCategoryOnSale); only then
+    // is the responsible link named.
+    describe('hiddenByCategory (TASK-2574)', () => {
+      const category = {
+        id: 'cat-leaf',
+        name: 'Clear cases',
+        isActive: true,
+        ancestorsActive: true,
+        parentId: 'cat-parent',
+        deletedAt: null,
+      };
+
+      it('names the product’s own category when it is inactive', async () => {
+        productRepositoryMock.findPublishFacts.mockResolvedValue([
+          publishFacts('p1', { category: { ...category, isActive: false } }),
+        ]);
+
+        const state = await service.getPublishState('p1');
+
+        expect(state.hiddenByCategory).toEqual({ id: 'cat-leaf', name: 'Clear cases' });
+        expect(categoryRepositoryMock.findNearestHiddenAncestor).not.toHaveBeenCalled();
+      });
+
+      it('names the nearest inactive ancestor when the branch above is withdrawn', async () => {
+        productRepositoryMock.findPublishFacts.mockResolvedValue([
+          publishFacts('p1', { category: { ...category, ancestorsActive: false } }),
+        ]);
+        categoryRepositoryMock.findNearestHiddenAncestor.mockResolvedValue({
+          id: 'cat-grandparent',
+          name: 'Cases',
+        });
+
+        const state = await service.getPublishState('p1');
+
+        expect(categoryRepositoryMock.findNearestHiddenAncestor).toHaveBeenCalledWith('cat-leaf');
+        expect(state.hiddenByCategory).toEqual({ id: 'cat-grandparent', name: 'Cases' });
+      });
+
+      it('falls back to the own category when the walk finds no hidden ancestor', async () => {
+        productRepositoryMock.findPublishFacts.mockResolvedValue([
+          publishFacts('p1', { category: { ...category, ancestorsActive: false } }),
+        ]);
+        categoryRepositoryMock.findNearestHiddenAncestor.mockResolvedValue(null);
+
+        const state = await service.getPublishState('p1');
+
+        expect(state.hiddenByCategory).toEqual({ id: 'cat-leaf', name: 'Clear cases' });
+      });
+
+      it('is null for a category on sale', async () => {
+        productRepositoryMock.findPublishFacts.mockResolvedValue([
+          publishFacts('p1', { category }),
+        ]);
+
+        const state = await service.getPublishState('p1');
+
+        expect(state.hiddenByCategory).toBeNull();
+        expect(categoryRepositoryMock.findNearestHiddenAncestor).not.toHaveBeenCalled();
+      });
     });
   });
 

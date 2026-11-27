@@ -9,7 +9,9 @@ import {
   UpdateProductInput,
   FindAllParams,
   type ProductPublishFacts,
+  type PublishCategoryFacts,
 } from './product.repository';
+import { isCategoryOnSale } from './product-visibility';
 import {
   ProductErrorCode,
   ProductCategoryBusyError,
@@ -861,7 +863,31 @@ export class ProductService {
    */
   async getPublishState(id: string): Promise<PublishState> {
     const facts = await this.publishFactsOf(id);
-    return { blockers: publishBlockers(facts), hiddenByCategory: null };
+    return {
+      blockers: publishBlockers(facts),
+      hiddenByCategory: await this.hidingCategory(facts.category),
+    };
+  }
+
+  /**
+   * The category that keeps a product off the storefront (TASK-2574), or null when it
+   * is on sale. Hidden is decided ONLY by {@link isCategoryOnSale} — the storefront's
+   * own rule — so the panel can never disagree with what shoppers see. Only then is
+   * the link named: the product's own category when it is inactive, otherwise the
+   * nearest inactive / deleted ancestor; if that walk finds nothing (the stored
+   * `ancestorsActive` drifted), the own category rather than a silent null.
+   */
+  private async hidingCategory(
+    category: PublishCategoryFacts,
+  ): Promise<{ id: string; name: string } | null> {
+    if (isCategoryOnSale(category)) {
+      return null;
+    }
+    const own = { id: category.id, name: category.name };
+    if (!category.isActive) {
+      return own;
+    }
+    return (await this.categoryRepository.findNearestHiddenAncestor(category.id)) ?? own;
   }
 
   /**
