@@ -84,6 +84,8 @@ export function CopyButton({
         type="button"
         variant="outline"
         size="sm"
+        // 44 px touch target below md, like its popover neighbours (TASK-2555).
+        className="max-md:min-h-11"
         onClick={copy}
         aria-label={ariaLabel}
       >

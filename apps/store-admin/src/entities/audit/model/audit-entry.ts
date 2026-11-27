@@ -26,21 +26,26 @@ export interface AuditEntry {
   entityType: string | null;
   entityId: string | null;
   summary: string | null;
-  diff: Record<string, { from?: unknown; to?: unknown }> | null;
+  diff: Record<string, AuditDiffValue> | null;
   createdAt: string;
 }
+
+/**
+ * A `diff` field: usually a `{ from?, to }` pair, but own-audit routes also
+ * write plain context values (e.g. `user.changeEmail` → `reason`, TASK-2562),
+ * so readers must narrow it before touching `from`/`to`.
+ */
+export type AuditDiffValue = unknown;
 
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function asDiff(
-  value: unknown,
-): Record<string, { from?: unknown; to?: unknown }> | null {
+function asDiff(value: unknown): Record<string, AuditDiffValue> | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
-  return value as Record<string, { from?: unknown; to?: unknown }>;
+  return value as Record<string, AuditDiffValue>;
 }
 
 export function toAuditEntry(row: AuditLogEntity): AuditEntry {
