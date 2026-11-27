@@ -163,6 +163,8 @@ describe('CatalogImportService', () => {
         status: CatalogImportStatus.APPLYING,
         decisions: { excludedSkus: ['A2'] },
         appliedRows: 0,
+        // TASK-2626: an applied run records its per-row failures; `null` is a pre-2626 run.
+        failures: [],
         totalRows: 1,
         // The plan's single row is a create (TASK-2545/2609: re-counted from the decisions).
         createCount: 1,
@@ -732,6 +734,177 @@ describe('CatalogImportService', () => {
       expect(productServiceMock.deactivate).not.toHaveBeenCalledWith(
         expect.objectContaining({ hardDelete: true }),
       );
+    });
+
+    /**
+     * A row whose write threw (TASK-2626). It used to be only logged: it still landed in
+     * `appliedRows` and in the history's counters, and the operator had no way to learn
+     * that the product was never written. Now it is recorded in `failures` instead, and
+     * `appliedRows + failures.length` is the cursor, so a failed row is never retried.
+     */
+    describe('applyChunk — a row that fails to write (TASK-2626)', () => {
+      const source = (sourceSku: string, rowNumber: number): ParsedProductRow => ({
+        rowNumber,
+        categoryName: 'Чохли',
+        sourceSku,
+        name: `Чохол ${sourceSku}`,
+        sourceUrl: null,
+        description: null,
+        price: 499,
+        brandName: null,
+        design: null,
+        barcode: null,
+        manufacturerCode: null,
+        videoUrl: null,
+        deviceBrandName: null,
+        deviceModelNames: [],
+        attributes: {},
+      });
+
+      const priceChange: FieldChange = {
+        field: 'price',
+        label: 'Ціна',
+        from: '450',
+        to: '499',
+        conflict: false,
+      };
+
+      const updates = [
+        plannedRow({
+          sourceSku: 'U1',
+          rowNumber: 3,
+          name: 'Чохол U1',
+          action: 'update',
+          productId: 'p1',
+          changes: [priceChange],
+        }),
+        plannedRow({
+          sourceSku: 'U2',
+          rowNumber: 4,
+          name: 'Чохол U2',
+          action: 'update',
+          productId: 'p2',
+          changes: [priceChange],
+        }),
+      ];
+
+      beforeEach(() => {
+        jest
+          .spyOn(service as unknown as { readCatalog: () => Promise<ParsedCatalog> }, 'readCatalog')
+          .mockResolvedValue({
+            sheetName: 'Аркуш1',
+            categoryNames: ['Чохли'],
+            rows: [source('U1', 3), source('U2', 4), source('C1', 5), source('C2', 6)],
+            attributeColumns: [],
+            issues: [],
+            totalProductRows: 4,
+          });
+      });
+
+      it('a row that failed is not counted as written', async () => {
+        productServiceMock.update
+          .mockResolvedValueOnce({ id: 'p1' })
+          .mockRejectedValueOnce(new Error('Slug already taken'));
+
+        const more = await service.applyChunk(
+          run({
+            status: CatalogImportStatus.APPLYING,
+            plan: plan(updates),
+            totalRows: 2,
+            createCount: 0,
+            updateCount: 2,
+            failures: [],
+          }),
+        );
+
+        expect(more).toBe(true);
+        expect(repositoryMock.updateRun).toHaveBeenCalledTimes(1);
+        expect(repositoryMock.updateRun).toHaveBeenCalledWith('run-1', {
+          appliedRows: 1,
+          failures: [
+            { sourceSku: 'U2', rowNumber: 4, name: 'Чохол U2', reason: 'Slug already taken' },
+          ],
+          updateCount: { decrement: 1 },
+        });
+      });
+
+      it('treats a run whose only unwritten row already failed as exhausted', async () => {
+        const failed = {
+          sourceSku: 'U2',
+          rowNumber: 4,
+          name: 'Чохол U2',
+          reason: 'Slug already taken',
+        };
+
+        const more = await service.applyChunk(
+          run({
+            status: CatalogImportStatus.APPLYING,
+            plan: plan(updates),
+            appliedRows: 1,
+            failures: [failed],
+          }),
+        );
+
+        expect(more).toBe(false);
+        expect(productServiceMock.update).not.toHaveBeenCalled();
+        expect(repositoryMock.updateRun).toHaveBeenCalledWith(
+          'run-1',
+          expect.objectContaining({ status: CatalogImportStatus.APPLIED }),
+        );
+      });
+
+      it('a failed create is taken off createCount', async () => {
+        productServiceMock.create
+          .mockRejectedValueOnce(new Error('category is archived'))
+          .mockResolvedValueOnce({ id: 'p-new' });
+
+        await service.applyChunk(
+          run({
+            status: CatalogImportStatus.APPLYING,
+            plan: plan([
+              plannedRow({ sourceSku: 'C1', rowNumber: 5, name: 'Чохол C1' }),
+              plannedRow({ sourceSku: 'C2', rowNumber: 6, name: 'Чохол C2', slug: 'c2' }),
+            ]),
+            totalRows: 2,
+            createCount: 2,
+            failures: [],
+          }),
+        );
+
+        expect(repositoryMock.updateRun).toHaveBeenCalledWith('run-1', {
+          appliedRows: 1,
+          failures: [
+            { sourceSku: 'C1', rowNumber: 5, name: 'Чохол C1', reason: 'category is archived' },
+          ],
+          createCount: { decrement: 1 },
+        });
+      });
+
+      it('appends to the failures of earlier chunks and trims a long reason', async () => {
+        const earlier = { sourceSku: 'X0', rowNumber: 2, name: 'Чохол X0', reason: 'boom' };
+        productServiceMock.update.mockRejectedValueOnce(new Error('x'.repeat(1000)));
+
+        await service.applyChunk(
+          run({
+            status: CatalogImportStatus.APPLYING,
+            plan: plan([
+              plannedRow({ sourceSku: 'X0', action: 'create' }),
+              plannedRow({ sourceSku: 'X1', action: 'create' }),
+              ...updates,
+            ]),
+            // X0 failed in an earlier chunk, X1 was written: the cursor is at U1.
+            appliedRows: 1,
+            failures: [earlier],
+          }),
+        );
+
+        const [, data] = repositoryMock.updateRun.mock.calls[0];
+        expect(data.appliedRows).toBe(2);
+        expect(data.failures).toHaveLength(2);
+        expect(data.failures[0]).toEqual(earlier);
+        expect(data.failures[1]).toMatchObject({ sourceSku: 'U1', rowNumber: 3 });
+        expect(data.failures[1].reason.length).toBeLessThanOrEqual(300);
+      });
     });
 
     it('advances the progress counter by the chunk size, not the whole plan', () => {

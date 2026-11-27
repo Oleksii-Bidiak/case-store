@@ -2975,6 +2975,12 @@ model CatalogImportRun {
   errorCount   Int @map("error_count")
   /// Rows written so far — the progress bar while status is APPLYING.
   appliedRows  Int @default(0) @map("applied_rows")
+  /// Rows whose write threw, as `[{ sourceSku, rowNumber, name, reason }]` (TASK-2626).
+  /// `null` = a run applied before this column existed: its counters are the plan, and a
+  /// failed row was only logged. `[]` and up = recorded per row; such a row is not in
+  /// `appliedRows` nor in the per-action counters, and `appliedRows + failures.length`
+  /// is the worker's cursor over the actionable rows.
+  failures     Json?        @map("failures")
 
   /// The computed diff (see CatalogImportPlan in catalog-import.types.ts).
   plan      Json

@@ -86,3 +86,19 @@ export interface ParsedCatalog {
   /** Product rows seen before validation — `rows.length + errors` ≥ this. */
   totalProductRows: number;
 }
+
+/**
+ * A planned row whose write threw while the run was applying (TASK-2626) — recorded on
+ * the run so the history can say which products were NOT written, and why.
+ */
+export interface ImportRowFailure {
+  sourceSku: string;
+  /** 1-based sheet row number, as the plan carried it. */
+  rowNumber: number;
+  name: string;
+  /** The error message, cut to {@link IMPORT_FAILURE_REASON_MAX} characters. */
+  reason: string;
+}
+
+/** A failure's `reason` is the error message cut to this length — enough to act on. */
+export const IMPORT_FAILURE_REASON_MAX = 300;

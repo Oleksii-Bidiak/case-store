@@ -18,7 +18,12 @@ import {
   type ImportedFingerprint,
   type PlannedRow,
 } from './catalog-plan';
-import type { ParsedCatalog, ParsedProductRow } from './catalog-import.types';
+import {
+  IMPORT_FAILURE_REASON_MAX,
+  type ImportRowFailure,
+  type ParsedCatalog,
+  type ParsedProductRow,
+} from './catalog-import.types';
 import { ProductService } from '../product';
 import { IMPORTS_SUBDIR, type IStorageService, STORAGE_SERVICE } from '../storage';
 import { generateSlug } from '../common/utils';
@@ -72,6 +77,16 @@ function untickedFields(row: PlannedRow, decisions: ImportDecisions): ReadonlySe
 
 /** How many rows one worker tick writes. Keeps a 1300-row run off the request path. */
 export const IMPORT_CHUNK_SIZE = 50;
+
+type RunCounter = 'createCount' | 'updateCount' | 'missingCount';
+type WritableAction = Exclude<PlannedRow['action'], 'unchanged'>;
+
+/** The run's history counter each writable action is counted in (TASK-2609, TASK-2626). */
+const RUN_COUNTER_BY_ACTION: Record<WritableAction, RunCounter> = {
+  create: 'createCount',
+  update: 'updateCount',
+  missing: 'missingCount',
+};
 
 /** Uploaded workbooks larger than this are rejected before parsing. */
 export const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
@@ -189,6 +204,7 @@ export class CatalogImportService {
       status: CatalogImportStatus.APPLYING,
       decisions: decisions as unknown as Prisma.InputJsonValue,
       appliedRows: 0,
+      failures: [],
       totalRows: actionable.length,
       createCount: countOf('create'),
       updateCount: countOf('update'),
@@ -249,10 +265,13 @@ export class CatalogImportService {
   async applyChunk(run: CatalogImportRun): Promise<boolean> {
     const plan = run.plan as unknown as CatalogImportPlan;
     const decisions = (run.decisions ?? {}) as ImportDecisions;
-    // The same rows `apply` counted into `totalRows`, so `appliedRows` pages through them.
+    // The same rows `apply` counted into `totalRows`. Every one of them ends up either
+    // written (`appliedRows`) or failed (`failures`, TASK-2626), so the two together are
+    // the cursor — a failed row is reported, never retried. `null` is a pre-2626 run.
     const actionable = this.actionableRows(plan, decisions);
+    const previousFailures = (run.failures ?? []) as unknown as ImportRowFailure[];
 
-    const from = run.appliedRows;
+    const from = run.appliedRows + previousFailures.length;
     const slice = actionable.slice(from, from + IMPORT_CHUNK_SIZE);
     if (slice.length === 0) {
       await this.repository.updateRun(run.id, {
@@ -275,6 +294,10 @@ export class CatalogImportService {
       slice.filter((_, index) => unticked[index].size > 0).map((planned) => planned.sourceSku),
     );
 
+    let written = 0;
+    const failed: ImportRowFailure[] = [];
+    const uncounted = new Map<RunCounter, number>();
+
     for (const [index, planned] of slice.entries()) {
       try {
         await this.applyRow(
@@ -285,19 +308,36 @@ export class CatalogImportService {
           unticked[index],
           ledger.get(planned.sourceSku)?.lastImported,
         );
+        written += 1;
       } catch (error) {
-        // One bad row must not abandon the other 1299. Log it and carry on; the
+        // One bad row must not abandon the other 1299. Record it and carry on; the
         // ledger simply does not learn about this article, so the next import
-        // proposes it again.
-        this.logger.error(
-          `Import ${run.id}: row ${planned.sourceSku} failed — ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
+        // proposes it again. It is not one of the rows written (TASK-2626): the
+        // history shows it as not written, with the reason.
+        const reason = error instanceof Error ? error.message : String(error);
+        this.logger.error(`Import ${run.id}: row ${planned.sourceSku} failed — ${reason}`);
+        failed.push({
+          sourceSku: planned.sourceSku,
+          rowNumber: planned.rowNumber,
+          name: planned.name,
+          reason: reason.slice(0, IMPORT_FAILURE_REASON_MAX),
+        });
+        // `unchanged` never reaches here — `actionableRows` drops it.
+        const counter = RUN_COUNTER_BY_ACTION[planned.action as WritableAction];
+        uncounted.set(counter, (uncounted.get(counter) ?? 0) + 1);
       }
     }
 
-    await this.repository.updateRun(run.id, { appliedRows: from + slice.length });
+    // Only the counters a failure actually touched — `apply` set them to what this run
+    // would write, and a failed row is not written.
+    const decrements = Object.fromEntries(
+      [...uncounted].map(([counter, n]) => [counter, { decrement: n }]),
+    );
+    await this.repository.updateRun(run.id, {
+      appliedRows: run.appliedRows + written,
+      failures: [...previousFailures, ...failed] as unknown as Prisma.InputJsonValue,
+      ...decrements,
+    });
     return true;
   }
 
