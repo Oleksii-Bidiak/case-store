@@ -36,7 +36,9 @@ const ENTITY_HREFS: Record<string, (id: string) => string> = {
 };
 
 /** Request-plumbing keys that say nothing to a person reading the log. */
-const TECHNICAL_FIELDS = new Set(["expectedUpdatedAt"]);
+// `targetUserId` (`permissionTemplate.apply`) is a bare id; the row's summary
+// names that person by email already (TASK-2562).
+const TECHNICAL_FIELDS = new Set(["expectedUpdatedAt", "targetUserId"]);
 
 /** Fields holding money, printed as «1 299 ₴». */
 const MONEY_FIELDS = new Set([

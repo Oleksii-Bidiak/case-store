@@ -149,6 +149,22 @@ describe("auditChanges — «Поле · Було · Стало»", () => {
       expect.objectContaining({ field: "stock", from: null, to: "12" }),
     ]);
   });
+
+  // `permissionTemplate.apply` stores the person as a bare id; the row's summary
+  // already names them by email, so the table must not print the UUID.
+  it("does not print the target user id of a template apply (TASK-2562)", () => {
+    const changes = auditChanges(
+      entry({
+        action: "permissionTemplate.apply",
+        entityType: "permissionTemplate",
+        diff: {
+          targetUserId: "3f2a9c1e-0b7d-4e5f-9a1b-2c3d4e5f6a7b",
+          permissions: { from: ["orders:read"], to: ["orders:read"] },
+        },
+      }),
+    );
+    expect(changes.map((change) => change.field)).toEqual(["permissions"]);
+  });
 });
 
 describe("audit filters — period and day groups", () => {
