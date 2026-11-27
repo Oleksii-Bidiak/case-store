@@ -227,18 +227,33 @@ describe("useCheckout — promo code refusals (TASK-2543)", () => {
     mockPush.mockClear();
   });
 
+  // Literal texts, not a dictionary lookup: a code wired to the wrong sentence
+  // must fail here. The per-customer limit counts the phone too, so its text
+  // never claims "you" used it (SF-CHK-57: a guest on a shared phone).
   it.each([
-    [400, "DISCOUNT_NOT_FOUND"],
-    [400, "DISCOUNT_INACTIVE"],
-    [409, "DISCOUNT_INACTIVE"],
-    [400, "DISCOUNT_NOT_STARTED"],
-    [400, "DISCOUNT_EXPIRED"],
-    [400, "DISCOUNT_MIN_SPEND_NOT_MET"],
-    [409, "DISCOUNT_MAX_REDEMPTIONS_REACHED"],
-    [409, "DISCOUNT_USER_LIMIT_REACHED"],
+    [400, "DISCOUNT_NOT_FOUND", "Такого промокоду не існує."],
+    [400, "DISCOUNT_INACTIVE", "Цей промокод більше не діє."],
+    [409, "DISCOUNT_INACTIVE", "Цей промокод більше не діє."],
+    [400, "DISCOUNT_NOT_STARTED", "Цей промокод ще не активний."],
+    [400, "DISCOUNT_EXPIRED", "Термін дії промокоду закінчився."],
+    [
+      400,
+      "DISCOUNT_MIN_SPEND_NOT_MET",
+      "Сума замовлення не досягає мінімуму для цього промокоду.",
+    ],
+    [
+      409,
+      "DISCOUNT_MAX_REDEMPTIONS_REACHED",
+      "Ліміт використань цього промокоду вичерпано.",
+    ],
+    [
+      409,
+      "DISCOUNT_USER_LIMIT_REACHED",
+      "Цей промокод уже використано для вашого акаунта або номера телефону.",
+    ],
   ])(
     "explains a %i %s and how to order without the code",
-    async (status, error) => {
+    async (status, error, text) => {
       server.use(
         http.post("*/api/orders", () =>
           HttpResponse.json(
@@ -253,7 +268,7 @@ describe("useCheckout — promo code refusals (TASK-2543)", () => {
       await user.click(screen.getByRole("button", { name: "submit" }));
 
       expect(await screen.findByRole("alert")).toHaveTextContent(
-        `${dict.discounts.errors[error]} ${dict.checkout.errorPromoRefusedHint}`,
+        `${text} ${dict.checkout.errorPromoRefusedHint}`,
       );
       await waitFor(() =>
         expect(screen.getByTestId("outcome")).toHaveTextContent(

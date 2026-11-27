@@ -1502,7 +1502,8 @@ export const dict = {
         "Сума замовлення не досягає мінімуму для цього промокоду.",
       DISCOUNT_MAX_REDEMPTIONS_REACHED:
         "Ліміт використань цього промокоду вичерпано.",
-      DISCOUNT_USER_LIMIT_REACHED: "Ви вже використали цей промокод.",
+      DISCOUNT_USER_LIMIT_REACHED:
+        "Цей промокод уже використано для вашого акаунта або номера телефону.",
       // Status-driven branches (TASK-402). The live demo read a plain 401 as
       // "WELCOME10 не працює" because every failure shared one sentence.
       unauthorized: "Щоб скористатись промокодом, увійдіть в акаунт.",
