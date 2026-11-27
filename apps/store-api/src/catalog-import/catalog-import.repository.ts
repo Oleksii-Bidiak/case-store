@@ -348,6 +348,25 @@ export class CatalogImportRepository {
    * as a closed dropdown, and a later file listing fewer colours must not make
    * the earlier ones unpickable.
    */
+  /**
+   * The colour definitions these categories ALREADY have, keyed by category id — one
+   * query, lookup only (TASK-2608). For the categories whose rows carry no colour in this
+   * file: there is nothing for {@link ensureColorDefinition} to create or merge, but a
+   * product there may still hold a colour from an earlier import, and a spec write can
+   * only be scoped around it by knowing its definition. Creating one here would give a
+   * category a colour facet no file asked for.
+   */
+  async findColorDefinitions(categoryIds: string[]): Promise<Map<string, string>> {
+    if (categoryIds.length === 0) {
+      return new Map();
+    }
+    const found = await this.prisma.attributeDefinition.findMany({
+      where: { categoryId: { in: categoryIds }, key: COLOR_SPEC_KEY },
+      select: { id: true, categoryId: true },
+    });
+    return new Map(found.map((definition) => [definition.categoryId, definition.id]));
+  }
+
   async ensureColorDefinition(categoryId: string, colors: string[]): Promise<string> {
     const wanted = colors.map((color) => color.trim()).filter((color) => color !== '');
 

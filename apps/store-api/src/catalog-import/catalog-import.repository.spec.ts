@@ -154,3 +154,48 @@ describe('CatalogImportRepository — scoped spec writes (TASK-2608)', () => {
     });
   });
 });
+
+/**
+ * The colour definitions a category already has (TASK-2608).
+ *
+ * Needed for the categories whose rows carry no colour in this file: the import still has
+ * to know the existing colour definition to scope a spec write around an unticked colour.
+ * Lookup only — a category the file says nothing about must not gain a definition, nor
+ * have its options touched.
+ */
+describe('CatalogImportRepository — finding existing colour definitions (TASK-2608)', () => {
+  let repo: CatalogImportRepository;
+
+  const definition = { findMany: jest.fn(), create: jest.fn(), update: jest.fn() };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        CatalogImportRepository,
+        { provide: PrismaService, useValue: { attributeDefinition: definition } },
+      ],
+    }).compile();
+    repo = module.get(CatalogImportRepository);
+  });
+
+  it('looks them up in one query keyed by category, creating nothing', async () => {
+    definition.findMany.mockResolvedValue([{ id: 'def-color', categoryId: 'cat-1' }]);
+
+    const found = await repo.findColorDefinitions(['cat-1', 'cat-2']);
+
+    expect(found).toEqual(new Map([['cat-1', 'def-color']]));
+    expect(definition.findMany).toHaveBeenCalledTimes(1);
+    expect(definition.findMany).toHaveBeenCalledWith({
+      where: { categoryId: { in: ['cat-1', 'cat-2'] }, key: 'color' },
+      select: { id: true, categoryId: true },
+    });
+    expect(definition.create).not.toHaveBeenCalled();
+    expect(definition.update).not.toHaveBeenCalled();
+  });
+
+  it('skips the query for no categories', async () => {
+    expect(await repo.findColorDefinitions([])).toEqual(new Map());
+    expect(definition.findMany).not.toHaveBeenCalled();
+  });
+});

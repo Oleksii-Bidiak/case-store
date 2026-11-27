@@ -27,6 +27,7 @@ const repositoryMock = {
   ensureDeviceModels: jest.fn(),
   ensureAttributeDefinitions: jest.fn(),
   ensureColorDefinition: jest.fn(),
+  findColorDefinitions: jest.fn(),
   ensureGroup: jest.fn(),
   setSpecValues: jest.fn(),
   setDeviceCompat: jest.fn(),
@@ -123,6 +124,7 @@ describe('CatalogImportService', () => {
     repositoryMock.ensureDeviceModels.mockResolvedValue(new Map());
     repositoryMock.ensureAttributeDefinitions.mockResolvedValue(new Map());
     repositoryMock.loadLedgerEntries.mockResolvedValue(new Map());
+    repositoryMock.findColorDefinitions.mockResolvedValue(new Map());
     productServiceMock.create.mockResolvedValue({ id: 'p-new' });
     productServiceMock.update.mockResolvedValue({ id: 'p1' });
   });
@@ -623,6 +625,54 @@ describe('CatalogImportService', () => {
         await applyUpdate(['price', 'attributes', 'design'], ['attributes', 'design']);
 
         expect(repositoryMock.setSpecValues).not.toHaveBeenCalled();
+      });
+
+      /**
+       * The file carries no colour for the category at all, so `ensureColorDefinition` is
+       * never reached — yet the product still holds a colour value from an earlier import.
+       * Without the existing definition's id the write cannot be scoped around it, and the
+       * replace-all fallback deletes it even though the operator unticked the colour.
+       */
+      describe('when the file has no colour for the category', () => {
+        beforeEach(() => {
+          jest
+            .spyOn(
+              service as unknown as { readCatalog: () => Promise<ParsedCatalog> },
+              'readCatalog',
+            )
+            .mockResolvedValue({
+              sheetName: 'Аркуш1',
+              categoryNames: ['Чохли'],
+              rows: [{ ...source, design: null }],
+              attributeColumns: [{ key: 'material', label: 'Матеріал', filledCount: 1 }],
+              issues: [],
+              totalProductRows: 1,
+            });
+          repositoryMock.findColorDefinitions.mockResolvedValue(
+            new Map([['cat-1', 'def-color-old']]),
+          );
+        });
+
+        it('keeps the existing colour value when the blanked colour is unticked', async () => {
+          await applyUpdate(['price', 'design'], ['design']);
+
+          expect(repositoryMock.ensureColorDefinition).not.toHaveBeenCalled();
+          expect(repositoryMock.setSpecValues).toHaveBeenCalledTimes(1);
+          expect(repositoryMock.setSpecValues).toHaveBeenCalledWith(
+            'p1',
+            [{ definitionId: 'def-1', value: 'TPU' }],
+            { except: ['def-color-old'] },
+          );
+        });
+
+        it('still clears the colour when characteristics are unticked and the colour is ticked blank', async () => {
+          await applyUpdate(['price', 'attributes', 'design'], ['attributes']);
+
+          expect(repositoryMock.setSpecValues).toHaveBeenCalledTimes(1);
+          expect(repositoryMock.setSpecValues).toHaveBeenCalledWith('p1', [], {
+            only: ['def-color-old'],
+          });
+        });
       });
 
       it('records the previous ledger digest for an unticked price and the new one for the rest', async () => {

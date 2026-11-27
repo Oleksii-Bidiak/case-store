@@ -397,6 +397,24 @@ export class CatalogImportService {
       );
     }
 
+    // A category whose rows carry no colour in THIS file still needs its existing colour
+    // definition known (TASK-2608): an earlier import may have left a colour value on its
+    // products, and an unticked «Колір / дизайн» can only be kept by scoping the spec write
+    // around that definition — without the id it fell back to replace-all and deleted it.
+    // Looked up, never created: the file asks for no colour facet there.
+    const colourless = [...categories].filter(
+      ([categoryName]) => !colorsByCategory.has(categoryName),
+    );
+    const existingColors = await this.repository.findColorDefinitions(
+      colourless.map(([, categoryId]) => categoryId),
+    );
+    for (const [categoryName, categoryId] of colourless) {
+      const definitionId = existingColors.get(categoryId);
+      if (definitionId) {
+        colorDefinitions.set(categoryName, definitionId);
+      }
+    }
+
     // Variant groups: only names the file uses more than once.
     const groupNames = new Set(plan.groups.map((group) => group.name));
     const groupIdByName = new Map<string, string>();
