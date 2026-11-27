@@ -53,12 +53,13 @@ function publishFieldsFor(b: SeedBanner, now: Date) {
  */
 export async function seedBanners(prisma: PrismaClient) {
   const now = new Date();
-  await assertPromoTileLimit(prisma);
+  const demoted = await promoTilesOverLimit(prisma);
   const registerAsset = createSeedMediaRegistry(prisma);
   let pictures = 0;
   const byStatus: Record<PublishStatus, number> = { PUBLISHED: 0, SCHEDULED: 0, DRAFT: 0 };
 
-  for (const [index, b] of banners.entries()) {
+  for (const [index, planned] of banners.entries()) {
+    const b: SeedBanner = demoted.has(planned.slot) ? { ...planned, state: 'DRAFT' } : planned;
     const id = deterministicUuid(`banner:${b.placement}:${b.slot}`);
     const image = b.image
       ? await renderBannerImage({ key: b.slot, variant: index, ...b.image })
@@ -97,13 +98,29 @@ export async function seedBanners(prisma: PrismaClient) {
 }
 
 /**
- * `BannersService.assertPromoTileSlot`: at most five PROMO_TILE banners PUBLISHED
- * or SCHEDULED at once. Counted with whatever an admin added beside the seed's
- * own rows, because together they are what the storefront would hold.
+ * The seed's own promo tiles that must stay DRAFT so the storefront keeps to
+ * `BannersService.assertPromoTileSlot`: at most {@link MAX_ACTIVE_PROMO_TILES}
+ * PROMO_TILE banners PUBLISHED or SCHEDULED at once, counted with the
+ * `othersActive` tiles an admin added beside the seed. Admin rows are never
+ * touched — the seed gives way instead, SCHEDULED tiles first, then published
+ * ones from the highest `sortOrder` — so a re-seed on a busy stand cannot stop
+ * halfway (TASK-2569).
  */
-async function assertPromoTileLimit(prisma: PrismaClient) {
+export function promoTilesToDemote(
+  seeded: readonly SeedBanner[],
+  othersActive: number,
+  max = MAX_ACTIVE_PROMO_TILES,
+): Set<string> {
+  const active = seeded.filter((b) => b.placement === 'PROMO_TILE' && b.state !== 'DRAFT');
+  const excess = Math.max(0, active.length + othersActive - max);
+  const giveWayOrder = [...active].sort(
+    (a, b) => Number(!!b.state) - Number(!!a.state) || b.sortOrder - a.sortOrder,
+  );
+  return new Set(giveWayOrder.slice(0, excess).map((b) => b.slot));
+}
+
+async function promoTilesOverLimit(prisma: PrismaClient): Promise<Set<string>> {
   const seededIds = banners.map((b) => deterministicUuid(`banner:${b.placement}:${b.slot}`));
-  const planned = banners.filter((b) => b.placement === 'PROMO_TILE' && b.state !== 'DRAFT').length;
   const others = await prisma.banner.count({
     where: {
       placement: 'PROMO_TILE',
@@ -111,10 +128,12 @@ async function assertPromoTileLimit(prisma: PrismaClient) {
       id: { notIn: seededIds },
     },
   });
-  if (planned + others > MAX_ACTIVE_PROMO_TILES) {
-    throw new Error(
-      `seedBanners: ${planned} seeded + ${others} other active promo tiles exceed the limit of ` +
-        `${MAX_ACTIVE_PROMO_TILES} — unpublish one in the admin or trim banners.data.ts`,
+  const demoted = promoTilesToDemote(banners, others);
+  if (demoted.size > 0) {
+    console.warn(
+      `  ! Banners: ${others} other active promo tiles — seeding ${[...demoted].join(', ')} ` +
+        `as DRAFT to stay within ${MAX_ACTIVE_PROMO_TILES}`,
     );
   }
+  return demoted;
 }
