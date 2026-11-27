@@ -50,13 +50,22 @@ export function homeBlocksToItems(
   }));
 }
 
-/** The PATCH body: the FULL new order, or `null` when nothing moved. */
+/**
+ * The PATCH body: the FULL new order, or `null` when nothing moved.
+ *
+ * `expectedIds` (TASK-2547) is the order this tab moved FROM. The API refuses
+ * with 409 `REORDER_STALE` when the page no longer is that order — another tab
+ * reordered it, or removed a block — instead of silently writing over it. The
+ * undo goes through here as `(next, prev)`, so it expects the order just saved.
+ */
 export function homeBlockReorderPayload(
   from: TreeItem[],
   to: TreeItem[],
 ): ReorderHomeBlocksDto | null {
   const orderedIds = orderedIdsIfChanged(from, to);
-  return orderedIds === null ? null : { orderedIds };
+  return orderedIds === null
+    ? null
+    : { orderedIds, expectedIds: from.map((item) => item.id) };
 }
 
 export interface UseHomeBlockReorderOptions {
@@ -87,11 +96,19 @@ export function useHomeBlockReorder({
     [rawMutate],
   );
 
-  /** `fetchQuery` writes the fresh list into the cache AND resolves with it. */
+  /**
+   * `fetchQuery` writes the fresh list into the cache AND resolves with it.
+   * `staleTime: 0` (TASK-2547): after a 409 the cached list is by definition
+   * not the server's — the app-wide five-minute `staleTime` would hand it back
+   * without a request.
+   */
   const refetch = useCallback(
     () =>
       queryClient
-        .fetchQuery(getAdminHomeBlockControllerFindAllQueryOptions())
+        .fetchQuery({
+          ...getAdminHomeBlockControllerFindAllQueryOptions(),
+          staleTime: 0,
+        })
         .then((fresh: AdminHomeBlockListResponse) =>
           homeBlocksToItems(fresh?.data ?? []),
         ),

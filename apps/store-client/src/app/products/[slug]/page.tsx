@@ -134,9 +134,10 @@ export default async function ProductDetailPage({
   // skeleton no longer wraps a product page). The in-page <Suspense> fallback
   // below keeps the skeleton UX while ProductDetailView hydrates.
   const detail = await resolveProductRoute(slug);
-  // Under a signed preview (TASK-669) the seeded product may be a draft the
-  // browser cannot re-read: its own request carries no token, so a background
-  // refetch would replace the draft with a 404. The view keeps the seed instead.
+  // Under a signed preview (TASK-669) the product may be a draft the browser
+  // cannot re-read: its own request carries no token, so any browser read would
+  // replace the draft with a 404. The view renders this server read instead and
+  // never queries the product itself (TASK-2536).
   const preview = (await readPreviewToken()) !== null;
   // TASK-1639 — the buy box's warranty row names the admin-managed store; the
   // same tagged settings read generateMetadata made (null → the default name).
@@ -157,6 +158,7 @@ export default async function ProductDetailPage({
           <ProductDetailView
             slug={slug}
             preview={preview}
+            previewDetail={preview ? detail : null}
             siteName={siteName}
           />
         </Suspense>

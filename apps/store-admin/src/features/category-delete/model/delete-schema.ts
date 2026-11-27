@@ -92,20 +92,33 @@ export function makeCategoryDeleteSchema(isEmpty: boolean) {
  * HIDDEN existing target. The caller passes `true` only when the dialog showed
  * the «зникнуть із сайту» warning for exactly this target; without it the API
  * refuses a hidden target with 409 `CATEGORY_MOVE_TARGET_HIDDEN`.
+ *
+ * `expectedBranchVersion` (TASK-2551) is the `deletionImpact.branchVersion` of
+ * the SAME read whose numbers the dialog shows. Every body carries it, the
+ * empty one too: if the branch changed since, the API refuses with 409
+ * `CATEGORY_TREE_STALE` instead of deleting what the operator never saw.
  */
 export function toDeleteCategoryDto(
   values: CategoryDeleteFormValues,
   isEmpty: boolean,
-  { allowHiddenTarget = false }: { allowHiddenTarget?: boolean } = {},
+  {
+    expectedBranchVersion,
+    allowHiddenTarget = false,
+  }: { expectedBranchVersion: string; allowHiddenTarget?: boolean },
 ): DeleteCategoryDto {
-  if (isEmpty) return {};
+  if (isEmpty) return { expectedBranchVersion };
   if (values.mode === "existing") {
     return allowHiddenTarget
-      ? { moveToId: values.targetId, allowHiddenTarget: true }
-      : { moveToId: values.targetId };
+      ? {
+          moveToId: values.targetId,
+          allowHiddenTarget: true,
+          expectedBranchVersion,
+        }
+      : { moveToId: values.targetId, expectedBranchVersion };
   }
   const name = values.name.trim();
   return {
     moveToNew: values.parentId ? { name, parentId: values.parentId } : { name },
+    expectedBranchVersion,
   };
 }

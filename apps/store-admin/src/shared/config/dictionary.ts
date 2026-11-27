@@ -1636,8 +1636,10 @@ export const dict = {
             : "";
         return `${lead}${tail}, доки ви не покажете «${name}».`;
       },
+      // TASK-2552: the storefront hides a product under ANY hidden ancestor
+      // (`ancestorsActive`, TASK-1032) — the moved products are off the site too.
       newParentHiddenNote: (name: string) =>
-        `«${name}» прихована — нова категорія не зʼявиться в меню сайту, доки «${name}» не покажуть. Товари лишаться на сайті.`,
+        `«${name}» прихована — нова категорія не зʼявиться в меню сайту, а перенесені товари не буде видно на сайті, доки «${name}» не покажуть.`,
       errorTargetHidden: (name: string) =>
         `Категорію «${name}» щойно приховали — товари, перенесені туди, зникнуть із сайту. Перевірте попередження й підтвердьте ще раз. Нічого не змінилося.`,
       // ── каруселі на ім'я (TASK-1776) ──

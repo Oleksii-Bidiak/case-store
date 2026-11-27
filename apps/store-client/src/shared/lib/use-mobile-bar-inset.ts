@@ -34,9 +34,11 @@ function publish() {
  * useMobileBarInset — publish a fixed bottom bar's height for the toaster.
  *
  * The height is MEASURED, not assumed: the bar's content wraps differently with
- * a long amount or a larger system font, and a constant would drift. From `md`
- * up the bars dissolve (`md:contents` / `md:hidden`) and measure 0; globals.css
- * additionally reads the property below `md` only, so desktop toast placement
+ * a long amount or a larger system font, and a constant would drift. The cart
+ * and checkout bars dissolve from `md` up (`md:contents`) and measure 0; the
+ * product page's buy bar stays until `lg` (`lg:hidden`). globals.css reads the
+ * property for the toast lift below `md` only, and for the signed-preview bar
+ * (`bottom-above-mobile-bar`, TASK-2558) below `lg`, so desktop placement
  * never moves even if an observer misses the breakpoint switch.
  */
 export function useMobileBarInset(ref: RefObject<HTMLElement | null>) {

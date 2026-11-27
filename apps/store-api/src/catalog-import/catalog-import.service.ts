@@ -36,6 +36,23 @@ export interface ImportDecisions {
   excludedFields?: Record<string, string[]>;
 }
 
+/**
+ * Does the operator's review let `row` be written at all (TASK-2545)? Not when the whole
+ * article was unticked, and not when it is an update whose EVERY proposed change was
+ * unticked — such a row would otherwise still rewrite specs, compatibility and the ledger,
+ * and be counted as «оновлено». The one rule `apply` counts by and `applyChunk` writes by.
+ */
+export function isRowAuthorised(row: PlannedRow, decisions: ImportDecisions): boolean {
+  if (decisions.excludedSkus?.includes(row.sourceSku)) {
+    return false;
+  }
+  if (row.action !== 'update') {
+    return true;
+  }
+  const excludedFields = new Set(decisions.excludedFields?.[row.sourceSku] ?? []);
+  return !row.changes.every((change) => excludedFields.has(change.field));
+}
+
 /** How many rows one worker tick writes. Keeps a 1300-row run off the request path. */
 export const IMPORT_CHUNK_SIZE = 50;
 
@@ -144,21 +161,22 @@ export class CatalogImportService {
     // becomes the subset the operator authorised. Without this the progress bar
     // divides by the full plan — confirming four rows out of 1297 renders as 0%
     // and looks stuck, which is exactly what it did on the first live run.
-    const actionable = this.countActionable(run.plan as unknown as CatalogImportPlan, decisions);
+    // `updateCount` likewise (TASK-2545): the history's «N оновлено» reads it, and the
+    // parse-time value still counts the updates the operator unticked entirely.
+    const actionable = this.actionableRows(run.plan as unknown as CatalogImportPlan, decisions);
 
     return this.repository.updateRun(id, {
       status: CatalogImportStatus.APPLYING,
       decisions: decisions as unknown as Prisma.InputJsonValue,
       appliedRows: 0,
-      totalRows: actionable,
+      totalRows: actionable.length,
+      updateCount: actionable.filter((row) => row.action === 'update').length,
     });
   }
 
   /** Rows a run will write: everything that changes, minus what was unticked. */
-  private countActionable(plan: CatalogImportPlan, decisions: ImportDecisions): number {
-    const excluded = new Set(decisions.excludedSkus ?? []);
-    return plan.rows.filter((row) => row.action !== 'unchanged' && !excluded.has(row.sourceSku))
-      .length;
+  private actionableRows(plan: CatalogImportPlan, decisions: ImportDecisions): PlannedRow[] {
+    return plan.rows.filter((row) => row.action !== 'unchanged' && isRowAuthorised(row, decisions));
   }
 
   async cancel(id: string): Promise<CatalogImportRun> {
@@ -209,11 +227,8 @@ export class CatalogImportService {
   async applyChunk(run: CatalogImportRun): Promise<boolean> {
     const plan = run.plan as unknown as CatalogImportPlan;
     const decisions = (run.decisions ?? {}) as ImportDecisions;
-    const excludedSkus = new Set(decisions.excludedSkus ?? []);
-
-    const actionable = plan.rows.filter(
-      (row) => row.action !== 'unchanged' && !excludedSkus.has(row.sourceSku),
-    );
+    // The same rows `apply` counted into `totalRows`, so `appliedRows` pages through them.
+    const actionable = this.actionableRows(plan, decisions);
 
     const from = run.appliedRows;
     const slice = actionable.slice(from, from + IMPORT_CHUNK_SIZE);

@@ -18,7 +18,8 @@ export interface PlanSummary {
   /**
    * Rows the run will write — counted EXACTLY as the server counts
    * `totalRows` on apply: every row that changes something, minus the rows
-   * unticked as a whole. The old counter added the plan's three totals and
+   * unticked as a whole and the update rows with every field unticked
+   * (TASK-2545). The old counter added the plan's three totals and
    * ignored the unticked rows, so «Застосувати N» promised more than the
    * progress bar then counted (CatalogImportProposal ІК4).
    */
@@ -43,12 +44,18 @@ export function summarisePlan(
     if (row.action === "create") creates += 1;
     else if (row.action === "missing") missing += 1;
     else if (row.action === "update") {
-      updates += 1;
+      // Hand edits unticked here are kept whether or not the row is written.
       keptEdits += row.changes.filter(
         (change) =>
           change.conflict &&
           decisions.isFieldExcluded(row.sourceSku, change.field),
       ).length;
+      // TASK-2545: with every field unticked the row changes nothing — the
+      // server skips it on apply (`isRowAuthorised`), so it is no update here.
+      const allUnticked = row.changes.every((change) =>
+        decisions.isFieldExcluded(row.sourceSku, change.field),
+      );
+      if (!allUnticked) updates += 1;
     }
   }
   return {

@@ -299,13 +299,24 @@ export class HomeBlockRepository implements PublishablePort {
   /**
    * Rewrite the complete page order and return the refreshed list, read in the same
    * advisory-locked transaction. Throws the domain errors of `common/reorder`.
+   *
+   * `expectedIds` (TASK-2547) — the page order the admin tab loaded. Under the lock the
+   * snapshot must still be exactly that order, or the request is `ReorderStaleError`: a
+   * second tab that permuted the same blocks no longer overwrites the first one's save,
+   * and a block deleted meanwhile is a 409, not a 404. So the snapshot is read in
+   * {@link PAGE_ORDER} — the order {@link findAll} hands the admin list.
    */
-  reorder(orderedIds: readonly string[]): Promise<HomeBlockRecord[]> {
+  reorder(
+    orderedIds: readonly string[],
+    expectedIds: readonly string[],
+  ): Promise<HomeBlockRecord[]> {
     return reorderBucket<HomeBlockRecord[]>(this.prisma, {
       resource: LOCK_RESOURCE,
       bucket: null,
       orderedIds,
-      snapshot: (tx) => tx.homeBlock.findMany({ select: { id: true, sortOrder: true } }),
+      expectedIds,
+      snapshot: (tx) =>
+        tx.homeBlock.findMany({ select: { id: true, sortOrder: true }, orderBy: PAGE_ORDER }),
       delegate: (tx) => tx.homeBlock,
       result: (tx) => this.findAll(tx),
     });

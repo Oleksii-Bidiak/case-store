@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
@@ -18,6 +20,11 @@ import {
  * saw that grid for a moment, then the filtered one. Now the root layout's
  * pre-paint script sets `html[data-device-filter]` and CSS keeps the server
  * grid hidden behind a skeleton until the filtered query lands.
+ *
+ * That gate alone lost on a slow phone (TASK-2564): it expired on a timer
+ * before hydration. Now every page writes the `catalog-device` cookie, so from
+ * the second page on the server prefetches the filtered listing itself and
+ * the gate only covers the very first page of a visit.
  *
  * Fixture: `test-product` fits the device `e2e-phone-15` (the same pair
  * `compat-robots.spec.ts` creates), `test-product-sold-out` fits nothing — so
@@ -303,6 +310,192 @@ test.describe("catalogue first paint, edge cases (TASK-2421, TASK-2410)", () => 
       .locator('[data-slot="device-fit-slot"]')
       .all()) {
       await expect(slot).toBeHidden();
+    }
+  });
+});
+
+/**
+ * Record, from the first frame, every change of what the catalogue shows:
+ * the unfiltered-only card, the fitting card, the default-filter skeleton,
+ * the gate's expiry flag and whether React has hydrated the page. One entry
+ * per change, stamped with `performance.now()` — the frame sequence a slow
+ * phone goes through.
+ */
+async function watchPaintTimeline(page: Page): Promise<void> {
+  await page.addInitScript(
+    ({ unfiltered, fitting }) => {
+      const w = window as unknown as {
+        __paintTimeline?: { t: number; state: string }[];
+      };
+      const timeline: { t: number; state: string }[] = [];
+      w.__paintTimeline = timeline;
+      const visible = (selector: string) =>
+        Array.from(document.querySelectorAll(selector)).some((el) =>
+          (el as HTMLElement).checkVisibility(),
+        );
+      let last = "";
+      const sample = () => {
+        const html = document.documentElement;
+        const main = document.querySelector("main");
+        const hydrated =
+          !!main && Object.keys(main).some((k) => k.startsWith("__react"));
+        const state = [
+          visible(unfiltered) ? "UNFILTERED" : "-",
+          visible(fitting) ? "fitting" : "-",
+          visible('[data-testid="default-filter-skeleton"]') ? "skeleton" : "-",
+          html.hasAttribute("data-device-filter-expired") ? "expired" : "-",
+          hydrated ? "hydrated" : "-",
+        ].join(" ");
+        if (state !== last) {
+          timeline.push({ t: Math.round(performance.now()), state });
+          last = state;
+        }
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    },
+    { unfiltered: UNFILTERED_ONLY, fitting: FITTING },
+  );
+}
+
+test.describe("catalogue first paint on a slow phone (TASK-2564)", () => {
+  // Slow-4G + 4× CPU against a dev server: minutes, not seconds.
+  test.setTimeout(300_000);
+
+  test("TASK-2564: with a saved device on Slow 4G the unfiltered grid is never painted or served", async ({
+    browser,
+  }, testInfo) => {
+    const viewport = { width: 390, height: 844 };
+    const context = await browser.newContext({
+      viewport,
+      recordVideo: { dir: testInfo.outputPath("video"), size: viewport },
+    });
+    const page = await context.newPage();
+    await saveDevice(page);
+    await watchUnfilteredPaint(page);
+    await watchPaintTimeline(page);
+
+    // The owner's path: the device was saved earlier, the shopper lands on
+    // the home page first and only then opens a category.
+    await page.goto("/", { timeout: 120_000 });
+
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Network.enable");
+    await cdp.send("Network.emulateNetworkConditions", {
+      offline: false,
+      latency: 400,
+      downloadThroughput: Math.round((1.6 * 1024 * 1024) / 8),
+      uploadThroughput: Math.round((750 * 1024) / 8),
+    });
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+
+    // Screencast frames with their timestamps, for the report.
+    const frames: { t: number; data: string }[] = [];
+    cdp.on("Page.screencastFrame", (frame) => {
+      frames.push({ t: frame.metadata.timestamp ?? 0, data: frame.data });
+      void cdp
+        .send("Page.screencastFrameAck", { sessionId: frame.sessionId })
+        .catch(() => {});
+    });
+    await cdp.send("Page.startScreencast", {
+      format: "jpeg",
+      quality: 50,
+      maxWidth: viewport.width,
+      maxHeight: viewport.height,
+    });
+
+    // Every browser request for the grid's page (not the `limit: 1` counts).
+    const gridRequests: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (
+        url.pathname.endsWith("/api/products") &&
+        url.searchParams.get("category") === E2E_CATEGORY_SLUG &&
+        url.searchParams.get("limit") !== "1"
+      ) {
+        gridRequests.push(url.search);
+      }
+    });
+
+    const navigationStart = Date.now() / 1000;
+    const response = await page.goto(CATEGORY_PATH, { timeout: 240_000 });
+    const documentHtml = (await response?.text()) ?? "";
+
+    await expect(page.locator(FITTING).first()).toBeVisible({
+      timeout: 240_000,
+    });
+    // The post-hydration render (the saved list names the chip) — the grid
+    // must survive it without a refetch or a skeleton.
+    await expect(
+      page
+        .getByText("Для E2E Phone 15", { exact: true })
+        .filter({ visible: true })
+        .first(),
+    ).toBeVisible({ timeout: 240_000 });
+    // Let a late re-render show itself before the probes are read.
+    await page.waitForTimeout(3_000);
+
+    await cdp.send("Page.stopScreencast").catch(() => {});
+    const timeline = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __paintTimeline?: { t: number; state: string }[];
+          }
+        ).__paintTimeline ?? [],
+    );
+    const unfilteredPainted = await page.evaluate(
+      () =>
+        (window as unknown as { __unfilteredPainted?: boolean })
+          .__unfilteredPainted,
+    );
+    await context.close();
+
+    // Attachments: the timeline, the grid requests, the frames, the video.
+    await testInfo.attach("paint-timeline.json", {
+      body: JSON.stringify({ timeline, gridRequests }, null, 2),
+      contentType: "application/json",
+    });
+    // Frame names carry the time since the category navigation started.
+    const step = Math.max(1, Math.floor(frames.length / 40));
+    for (let i = 0; i < frames.length; i += step) {
+      const ms = Math.round((frames[i].t - navigationStart) * 1000);
+      const file = testInfo.outputPath(
+        "frames",
+        `${String(i).padStart(4, "0")}-${ms}ms.jpg`,
+      );
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(file, Buffer.from(frames[i].data, "base64"));
+      await testInfo.attach(basename(file), {
+        path: file,
+        contentType: "image/jpeg",
+      });
+    }
+    const video = page.video();
+    if (video) {
+      await testInfo.attach("video", {
+        path: await video.path(),
+        contentType: "video/webm",
+      });
+    }
+    console.log(
+      `[TASK-2564] timeline (ms · unfiltered fitting skeleton expired hydrated):\n${timeline
+        .map((e) => `  ${e.t} · ${e.state}`)
+        .join("\n")}\n  grid requests: ${gridRequests.join(" | ") || "none"}`,
+    );
+
+    // The server's HTML already lists by the saved device…
+    expect
+      .soft(documentHtml, "document HTML must not carry the unfiltered card")
+      .not.toContain(`href="/products/${E2E_SOLD_OUT_PRODUCT_SLUG}"`);
+    expect
+      .soft(documentHtml, "document HTML must carry the fitting card")
+      .toContain(`href="/products/${E2E_PRODUCT_SLUG}"`);
+    // …no frame ever shows the unfiltered grid…
+    expect.soft(unfilteredPainted, "unfiltered grid painted").toBe(false);
+    // …and whatever the browser asks for the grid is device-filtered.
+    for (const search of gridRequests) {
+      expect.soft(search, "grid request without device=").toContain("device=");
     }
   });
 });
