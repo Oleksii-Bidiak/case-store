@@ -145,11 +145,12 @@ export function useProductBulkUndo(): ProductBulkUndoApi {
   );
 
   const runStep = useCallback(
+    /** Resolves to how many of `ids` the server left as they were. */
     async (
       kind: BulkUndoKind,
       value: boolean | string | null,
       ids: string[],
-    ) => {
+    ): Promise<number> => {
       switch (kind) {
         case "status": {
           const response = await statusMutation.mutateAsync({
@@ -159,18 +160,18 @@ export function useProductBulkUndo(): ProductBulkUndoApi {
           // leaves unready products hidden (TASK-2573) — say which.
           const skipped = response.data.skipped ?? [];
           if (skipped.length > 0) toast.error(skippedProductsMessage(skipped));
-          return;
+          return skipped.length;
         }
         case "group":
           await groupMutation.mutateAsync({
             data: { ids, groupId: value as string | null },
           });
-          return;
+          return 0;
         case "color":
           await colorMutation.mutateAsync({
             data: { ids, color: value as string | null },
           });
-          return;
+          return 0;
       }
     },
     [colorMutation, groupMutation, statusMutation],
@@ -184,14 +185,16 @@ export function useProductBulkUndo(): ProductBulkUndoApi {
     announcePolite(t.announceUndoing(total));
 
     const remaining = [...plan.steps];
+    let skipped = 0;
     try {
       while (remaining.length > 0) {
         const step = remaining[0];
-        await runStep(plan.kind, step.value, step.ids);
+        skipped += await runStep(plan.kind, step.value, step.ids);
         remaining.shift();
       }
       setOffer(null);
-      announcePolite(t.announceUndone(total));
+      // Count what was actually undone: a re-show skips unready products.
+      announcePolite(t.announceUndone(total - skipped));
     } catch {
       // Keep only what is still to do: a second press retries the rest
       // instead of replaying the steps that already landed.

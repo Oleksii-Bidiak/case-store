@@ -1722,6 +1722,12 @@ describe("AdminProductTable — bulk show skips unready products (TASK-2573)", (
         expect.stringContaining(`«${P1}» — ${reasons.name}`),
       ),
     );
+    // The live region counts what was undone, not what was planned.
+    await waitFor(() =>
+      expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
+        d.bulk.announceUndone(0),
+      ),
+    );
   });
 
   it("row «Показати» refused as PRODUCT_NOT_READY says why, not the server's English", async () => {

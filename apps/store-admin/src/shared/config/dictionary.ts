@@ -6462,6 +6462,7 @@ export const dict = {
       restock: "Повернути на склад",
       role: "Роль",
       shippingAddress: "Адреса доставки",
+      skipped: "Не показано: не готові до публікації",
       sku: "Артикул",
       slug: "Адреса (slug)",
       startsAt: "Діє з",

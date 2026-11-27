@@ -1,4 +1,4 @@
-import type { PublishBlocker } from "@/shared/api";
+import { PublishBlocker } from "@/shared/api";
 import { dict } from "@/shared/config";
 
 /** One line of the publish readiness checklist. */
@@ -31,13 +31,12 @@ export interface ReadinessInput {
   compatCount: number;
 }
 
-/** The blocking checks, in the order the server reports its blockers. */
-const BLOCKING_KEYS: readonly PublishBlocker[] = [
-  "name",
-  "category",
-  "price",
-  "photo",
-];
+/**
+ * The blocking checks, in the order the server reports its blockers — read from
+ * the generated enum, so a blocker the API adds lands in the checklist (and
+ * fails the type check until it has a label) instead of being silently dropped.
+ */
+const BLOCKING_KEYS: readonly PublishBlocker[] = Object.values(PublishBlocker);
 
 /**
  * Rich text is "filled in" only when it has text — Tiptap serializes a cleared
