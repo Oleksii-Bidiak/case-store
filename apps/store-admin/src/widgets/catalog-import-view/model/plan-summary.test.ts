@@ -133,6 +133,48 @@ describe("runResultLabel (ІК1 history)", () => {
     ).toBe(d.resultCreated(1297));
   });
 
+  it("names the rows that failed to write — alone they still beat «змін немає» (TASK-2626)", () => {
+    const failure = {
+      sourceSku: "558400004",
+      rowNumber: 7,
+      name: "Чохол",
+      reason: "Unique constraint failed on the fields: (`slug`)",
+    };
+    expect(
+      runResultLabel({
+        ...base,
+        status: "APPLIED",
+        createCount: 2,
+        updateCount: 0,
+        missingCount: 0,
+        failures: [failure, { ...failure, sourceSku: "558400005" }],
+      }),
+    ).toBe(`${d.resultCreated(2)} · ${d.resultFailed(2)}`);
+    expect(
+      runResultLabel({
+        ...base,
+        status: "APPLIED",
+        createCount: 0,
+        updateCount: 0,
+        missingCount: 0,
+        failures: [failure],
+      }),
+    ).toBe(d.resultFailed(1));
+  });
+
+  it("counts a failed row as processed while writing and where it stopped (TASK-2626)", () => {
+    const failures = [
+      { sourceSku: "A", rowNumber: 2, name: "A", reason: "x" },
+      { sourceSku: "B", rowNumber: 0, name: "B", reason: "y" },
+    ];
+    expect(runResultLabel({ ...base, status: "APPLYING", failures })).toBe(
+      d.resultWriting(414, 1297),
+    );
+    expect(runResultLabel({ ...base, status: "FAILED", failures })).toBe(
+      d.resultStopped(414, 1297),
+    );
+  });
+
   it("says where a failed run stopped, and that a rejected one wrote nothing", () => {
     expect(runResultLabel({ ...base, status: "FAILED" })).toBe(
       d.resultStopped(412, 1297),

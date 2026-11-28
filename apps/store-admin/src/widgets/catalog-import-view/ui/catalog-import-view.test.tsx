@@ -561,6 +561,81 @@ describe("CatalogImportView — step «Запис» (ІК11–ІК13)", () => {
     // Opened from the history: the unticked rows are not known here, so the
     // figures are the plan's, and the screen says so.
     expect(screen.getByText(d.donePlannedNote)).toBeInTheDocument();
+    expect(screen.queryByText(d.doneFailedHeading(1))).not.toBeInTheDocument();
+  });
+
+  it("counts a failed row as processed in the progress (TASK-2626)", async () => {
+    await openRun({
+      status: "APPLYING",
+      appliedRows: 412,
+      totalRows: 1297,
+      failures: [{ sourceSku: "A-1", rowNumber: 9, name: "A", reason: "x" }],
+    });
+
+    expect(
+      await screen.findByText(norm(d.progress(413, 1297))),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "413",
+    );
+  });
+
+  it("shows the server's real counters and names the rows that failed to write (TASK-2609, TASK-2626)", async () => {
+    await openRun({
+      status: "APPLIED",
+      appliedAt: "2026-09-30T11:40:00.000Z",
+      createCount: 3,
+      updateCount: 5,
+      missingCount: 1,
+      failures: [
+        {
+          sourceSku: "558400004",
+          rowNumber: 7,
+          name: "Чохол Clear",
+          reason: "Unique constraint failed",
+        },
+        {
+          sourceSku: "558400009",
+          rowNumber: 0,
+          name: "Скло Glass",
+          reason: "Record to update not found",
+        },
+      ],
+    });
+
+    expect(await screen.findByText(d.doneHeading)).toBeInTheDocument();
+    const list = screen.getByRole("list", { name: d.doneFailedHeading(2) });
+    const items = within(list).getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent(
+      `558400004 · Чохол Clear · ${d.rowNumber(7)} — Unique constraint failed`,
+    );
+    // A product gone from the file has no row in it.
+    expect(items[1]).toHaveTextContent(
+      "558400009 · Скло Glass — Record to update not found",
+    );
+    expect(items[1]).not.toHaveTextContent(/рядок/);
+    const created = screen.getByText(d.doneCreated).closest("div")!;
+    expect(within(created).getByText("3")).toBeInTheDocument();
+    const updated = screen.getByText(d.doneUpdated).closest("div")!;
+    expect(within(updated).getByText("5")).toBeInTheDocument();
+    const hidden = screen.getByText(d.doneHidden).closest("div")!;
+    expect(within(hidden).getByText("1")).toBeInTheDocument();
+    // The counters are the result, not the plan.
+    expect(screen.queryByText(d.donePlannedNote)).not.toBeInTheDocument();
+  });
+
+  it("an APPLIED run with no failures shows no «not written» block and no plan note", async () => {
+    await openRun({
+      status: "APPLIED",
+      appliedAt: "2026-09-30T11:40:00.000Z",
+      failures: [],
+    });
+
+    expect(await screen.findByText(d.doneHeading)).toBeInTheDocument();
+    expect(screen.queryByText(/Не записано/)).not.toBeInTheDocument();
+    expect(screen.queryByText(d.donePlannedNote)).not.toBeInTheDocument();
   });
 
   it("explains a failure in words, keeps the raw text folded, and offers a retry", async () => {

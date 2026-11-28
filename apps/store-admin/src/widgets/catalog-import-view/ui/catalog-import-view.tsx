@@ -369,27 +369,19 @@ export function CatalogImportView() {
 
           {run.status === "APPLIED" ? (
             <ImportDone
-              figures={
-                // The ticks are known only for a run applied on this screen;
-                // anything else shows the plan, and says so.
-                appliedHere === runId && summary
-                  ? {
-                      created: summary.creates,
-                      updated: summary.updates,
-                      hidden: summary.missing,
-                      skipped: run.errorCount,
-                      keptEdits: summary.keptEdits,
-                      planned: false,
-                    }
-                  : {
-                      created: run.createCount,
-                      updated: run.updateCount,
-                      hidden: run.missingCount,
-                      skipped: run.errorCount,
-                      keptEdits: null,
-                      planned: true,
-                    }
-              }
+              figures={{
+                // TASK-2609: the counters are what was really written; only
+                // a run applied before that (`failures` null) holds the plan.
+                created: run.createCount,
+                updated: run.updateCount,
+                hidden: run.missingCount,
+                skipped: run.errorCount,
+                // The kept hand edits are known only for a run applied here.
+                keptEdits:
+                  appliedHere === runId && summary ? summary.keptEdits : null,
+                planned: run.failures == null,
+                failures: run.failures ?? [],
+              }}
               onStartOver={finishRun}
             />
           ) : null}
