@@ -30,6 +30,9 @@ export interface PlanSummary {
   skipped: number;
 }
 
+/** Changes written through the row's category — unticked along with it. */
+const CATEGORY_BOUND_FIELDS: readonly string[] = ["attributes", "design"];
+
 export function summarisePlan(
   plan: CatalogImportPlan,
   decisions: DecisionReader,
@@ -52,8 +55,17 @@ export function summarisePlan(
       ).length;
       // TASK-2545: with every field unticked the row changes nothing — the
       // server skips it on apply (`isRowAuthorised`), so it is no update here.
-      const allUnticked = row.changes.every((change) =>
-        decisions.isFieldExcluded(row.sourceSku, change.field),
+      // An unticked category change takes the spec columns and the colour with
+      // it (TASK-2608), exactly as the server's `untickedFields` does.
+      const categoryUnticked = row.changes.some(
+        (change) =>
+          change.field === "categoryName" &&
+          decisions.isFieldExcluded(row.sourceSku, change.field),
+      );
+      const allUnticked = row.changes.every(
+        (change) =>
+          decisions.isFieldExcluded(row.sourceSku, change.field) ||
+          (categoryUnticked && CATEGORY_BOUND_FIELDS.includes(change.field)),
       );
       if (!allUnticked) updates += 1;
     }

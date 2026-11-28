@@ -264,6 +264,44 @@ describe('CatalogImportService', () => {
       );
     });
 
+    // An unticked category change takes the spec columns and the colour with it, so a row
+    // whose only ticked changes were those two writes nothing and is no update either.
+    it('counts an update left with only category-bound changes after its category was unticked as no update', async () => {
+      const change = (field: FieldChange['field']): FieldChange => ({
+        field,
+        label: field,
+        to: 'x',
+        conflict: false,
+      });
+      const rows = [
+        plannedRow({
+          sourceSku: 'U1',
+          action: 'update',
+          productId: 'p1',
+          changes: [change('categoryName'), change('attributes'), change('design')],
+        }),
+        plannedRow({
+          sourceSku: 'U2',
+          action: 'update',
+          productId: 'p2',
+          changes: [change('categoryName'), change('price')],
+        }),
+      ];
+      repositoryMock.findRun.mockResolvedValue(
+        run({ plan: plan(rows), totalRows: 2, updateCount: 2 }),
+      );
+      repositoryMock.updateRun.mockResolvedValue(run());
+
+      await service.apply('run-1', {
+        excludedFields: { U1: ['categoryName'], U2: ['categoryName'] },
+      });
+
+      expect(repositoryMock.updateRun).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({ totalRows: 1, updateCount: 1 }),
+      );
+    });
+
     // Without this, a double-click on «Застосувати» would rewind appliedRows to
     // 0 mid-run and write the first chunk a second time.
     it('refuses to apply a run that is already applying', async () => {
@@ -699,6 +737,26 @@ describe('CatalogImportService', () => {
             only: ['def-color-old'],
           });
         });
+      });
+
+      /**
+       * The file moves the product to another category and the operator unticks that move.
+       * The spec columns and the colour are resolved through the FILE's category, so writing
+       * them would file values under the other category's definitions and let the scoped
+       * write delete the colour the product holds under its own — they stay with the
+       * category, and the ledger keeps their old digests so the next import offers them again.
+       */
+      it('leaves the spec values, the colour and their ledger digests alone with an unticked category change', async () => {
+        await applyUpdate(['price', 'categoryName', 'attributes', 'design'], ['categoryName']);
+
+        expect(productServiceMock.update).toHaveBeenCalledWith('p1', { price: 499 });
+        expect(repositoryMock.setSpecValues).not.toHaveBeenCalled();
+        const [{ lastImported }] = repositoryMock.recordImported.mock.calls[0];
+        expect(lastImported.price).toMatch(/^[0-9a-f]{16}$/);
+        expect(lastImported.price).not.toBe('prev-price');
+        expect(lastImported).not.toHaveProperty('categoryName');
+        expect(lastImported).not.toHaveProperty('attributes');
+        expect(lastImported).not.toHaveProperty('design');
       });
 
       it('records the previous ledger digest for an unticked price and the new one for the rest', async () => {

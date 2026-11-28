@@ -104,6 +104,44 @@ describe("summarisePlan (ІК4)", () => {
     // Its conflicting price stays as the operator edited it.
     expect(summary.keptEdits).toBe(1);
   });
+
+  it("does not count a row left with only category-bound changes once its category is unticked (TASK-2608)", () => {
+    const moved: CatalogImportPlan = {
+      ...PLAN,
+      rows: [
+        row("C1", "update", [
+          {
+            field: "categoryName",
+            label: "Категорія",
+            to: "b",
+            conflict: false,
+          },
+          {
+            field: "attributes",
+            label: "Характеристики",
+            to: "x",
+            conflict: false,
+          },
+          { field: "design", label: "Колір", to: "x", conflict: false },
+        ]),
+        row("C2", "update", [
+          {
+            field: "categoryName",
+            label: "Категорія",
+            to: "b",
+            conflict: false,
+          },
+          { field: "price", label: "Ціна", to: "2", conflict: false },
+        ]),
+      ],
+    };
+    const summary = summarisePlan(moved, {
+      isRowExcluded: () => false,
+      isFieldExcluded: (_sku, field) => field === "categoryName",
+    });
+    // The server writes nothing on C1 — matches `isRowAuthorised`.
+    expect(summary.updates).toBe(1);
+  });
 });
 
 describe("runResultLabel (ІК1 history)", () => {

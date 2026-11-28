@@ -55,16 +55,26 @@ export function isRowAuthorised(row: PlannedRow, decisions: ImportDecisions): bo
   if (row.action !== 'update') {
     return true;
   }
-  const excludedFields = new Set(decisions.excludedFields?.[row.sourceSku] ?? []);
-  return !row.changes.every((change) => excludedFields.has(change.field));
+  const unticked = untickedFields(row, decisions);
+  return row.changes.some((change) => !unticked.has(change.field));
 }
+
+/**
+ * The fields whose write is resolved through the row's CATEGORY: the file's spec columns
+ * and the colour are matched to that category's attribute definitions. With a category
+ * change unticked the product stays where it is, so writing them would put the old
+ * category's colour out of reach of the scoped write and file the columns under another
+ * category's definitions — they are left alone with it.
+ */
+const CATEGORY_BOUND_FIELDS: readonly ChangeField[] = ['attributes', 'design'];
 
 /**
  * The proposed changes on `row` that the operator unticked (TASK-2608) — the one answer
  * every write of an update consults: the product columns, the two halves of the spec
  * values, the compatibility set and the ledger digest. Only a field that was PROPOSED and
  * then unticked counts; a field the plan never proposed keeps being written exactly as
- * before (the colour spec value of TASK-487, the compatibility rewrite of TASK-705).
+ * before (the colour spec value of TASK-487, the compatibility rewrite of TASK-705) —
+ * except the {@link CATEGORY_BOUND_FIELDS}, which follow an unticked category change.
  * Creates have nothing to untick.
  */
 function untickedFields(row: PlannedRow, decisions: ImportDecisions): ReadonlySet<ChangeField> {
@@ -72,7 +82,13 @@ function untickedFields(row: PlannedRow, decisions: ImportDecisions): ReadonlySe
     return new Set();
   }
   const excluded = new Set(decisions.excludedFields?.[row.sourceSku] ?? []);
-  return new Set(row.changes.map((change) => change.field).filter((field) => excluded.has(field)));
+  const unticked = new Set(
+    row.changes.map((change) => change.field).filter((field) => excluded.has(field)),
+  );
+  if (unticked.has('categoryName')) {
+    CATEGORY_BOUND_FIELDS.forEach((field) => unticked.add(field));
+  }
+  return unticked;
 }
 
 /** How many rows one worker tick writes. Keeps a 1300-row run off the request path. */
