@@ -330,25 +330,6 @@ export class CatalogImportRepository {
   }
 
   /**
-   * Resolve (creating if needed) the `color` definition for an imported
-   * category, widening its option list to cover the colours this file carries —
-   * TASK-487.
-   *
-   * It does NOT go through {@link ensureAttributeDefinitions}, and the
-   * difference is the whole point. That method types every column TEXT and
-   * leaves it non-filterable on purpose: the source columns mix "до 20м" with
-   * "5", so inferring a type would reject real values, and an operator promotes
-   * the ones worth filtering on afterwards. Colour needs neither judgement —
-   * it is a closed set of short names and it is the strongest facet in
-   * accessories (owner decision B-10) — and a TEXT definition is never offered
-   * as a facet at all, so leaving colour to the default meant importing a
-   * catalogue with colours nobody could filter by.
-   *
-   * Options are MERGED, never replaced: the admin spec editor renders a SELECT
-   * as a closed dropdown, and a later file listing fewer colours must not make
-   * the earlier ones unpickable.
-   */
-  /**
    * The colour definitions these categories ALREADY have, keyed by category id — one
    * query, lookup only (TASK-2608). For the categories whose rows carry no colour in this
    * file: there is nothing for {@link ensureColorDefinition} to create or merge, but a
@@ -367,6 +348,25 @@ export class CatalogImportRepository {
     return new Map(found.map((definition) => [definition.categoryId, definition.id]));
   }
 
+  /**
+   * Resolve (creating if needed) the `color` definition for an imported
+   * category, widening its option list to cover the colours this file carries —
+   * TASK-487.
+   *
+   * It does NOT go through {@link ensureAttributeDefinitions}, and the
+   * difference is the whole point. That method types every column TEXT and
+   * leaves it non-filterable on purpose: the source columns mix "до 20м" with
+   * "5", so inferring a type would reject real values, and an operator promotes
+   * the ones worth filtering on afterwards. Colour needs neither judgement —
+   * it is a closed set of short names and it is the strongest facet in
+   * accessories (owner decision B-10) — and a TEXT definition is never offered
+   * as a facet at all, so leaving colour to the default meant importing a
+   * catalogue with colours nobody could filter by.
+   *
+   * Options are MERGED, never replaced: the admin spec editor renders a SELECT
+   * as a closed dropdown, and a later file listing fewer colours must not make
+   * the earlier ones unpickable.
+   */
   async ensureColorDefinition(categoryId: string, colors: string[]): Promise<string> {
     const wanted = colors.map((color) => color.trim()).filter((color) => color !== '');
 
