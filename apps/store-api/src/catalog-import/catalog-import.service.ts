@@ -12,12 +12,18 @@ import { CatalogImportRepository, deviceModelKey } from './catalog-import.reposi
 import { parseXlsxCatalog } from './xlsx-catalog.parser';
 import {
   buildImportPlan,
-  fingerprintOf,
+  ledgerFingerprintAfterApply,
   type CatalogImportPlan,
   type ChangeField,
+  type ImportedFingerprint,
   type PlannedRow,
 } from './catalog-plan';
-import type { ParsedCatalog, ParsedProductRow } from './catalog-import.types';
+import {
+  IMPORT_FAILURE_REASON_MAX,
+  type ImportRowFailure,
+  type ParsedCatalog,
+  type ParsedProductRow,
+} from './catalog-import.types';
 import { ProductService } from '../product';
 import { IMPORTS_SUBDIR, type IStorageService, STORAGE_SERVICE } from '../storage';
 import { generateSlug } from '../common/utils';
@@ -49,12 +55,54 @@ export function isRowAuthorised(row: PlannedRow, decisions: ImportDecisions): bo
   if (row.action !== 'update') {
     return true;
   }
-  const excludedFields = new Set(decisions.excludedFields?.[row.sourceSku] ?? []);
-  return !row.changes.every((change) => excludedFields.has(change.field));
+  const unticked = untickedFields(row, decisions);
+  return row.changes.some((change) => !unticked.has(change.field));
+}
+
+/**
+ * The fields whose write is resolved through the row's CATEGORY: the file's spec columns
+ * and the colour are matched to that category's attribute definitions. With a category
+ * change unticked the product stays where it is, so writing them would put the old
+ * category's colour out of reach of the scoped write and file the columns under another
+ * category's definitions — they are left alone with it.
+ */
+const CATEGORY_BOUND_FIELDS: readonly ChangeField[] = ['attributes', 'design'];
+
+/**
+ * The proposed changes on `row` that the operator unticked (TASK-2608) — the one answer
+ * every write of an update consults: the product columns, the two halves of the spec
+ * values, the compatibility set and the ledger digest. Only a field that was PROPOSED and
+ * then unticked counts; a field the plan never proposed keeps being written exactly as
+ * before (the colour spec value of TASK-487, the compatibility rewrite of TASK-705) —
+ * except the {@link CATEGORY_BOUND_FIELDS}, which follow an unticked category change.
+ * Creates have nothing to untick.
+ */
+function untickedFields(row: PlannedRow, decisions: ImportDecisions): ReadonlySet<ChangeField> {
+  if (row.action !== 'update') {
+    return new Set();
+  }
+  const excluded = new Set(decisions.excludedFields?.[row.sourceSku] ?? []);
+  const unticked = new Set(
+    row.changes.map((change) => change.field).filter((field) => excluded.has(field)),
+  );
+  if (unticked.has('categoryName')) {
+    CATEGORY_BOUND_FIELDS.forEach((field) => unticked.add(field));
+  }
+  return unticked;
 }
 
 /** How many rows one worker tick writes. Keeps a 1300-row run off the request path. */
 export const IMPORT_CHUNK_SIZE = 50;
+
+type RunCounter = 'createCount' | 'updateCount' | 'missingCount';
+type WritableAction = Exclude<PlannedRow['action'], 'unchanged'>;
+
+/** The run's history counter each writable action is counted in (TASK-2609, TASK-2626). */
+const RUN_COUNTER_BY_ACTION: Record<WritableAction, RunCounter> = {
+  create: 'createCount',
+  update: 'updateCount',
+  missing: 'missingCount',
+};
 
 /** Uploaded workbooks larger than this are rejected before parsing. */
 export const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
@@ -161,16 +209,22 @@ export class CatalogImportService {
     // becomes the subset the operator authorised. Without this the progress bar
     // divides by the full plan — confirming four rows out of 1297 renders as 0%
     // and looks stuck, which is exactly what it did on the first live run.
-    // `updateCount` likewise (TASK-2545): the history's «N оновлено» reads it, and the
-    // parse-time value still counts the updates the operator unticked entirely.
+    // The per-action counters likewise (TASK-2545, TASK-2609): the history's
+    // «N створено / оновлено / приховано» reads them, and the parse-time values still
+    // count the rows the operator unticked.
     const actionable = this.actionableRows(run.plan as unknown as CatalogImportPlan, decisions);
+    const countOf = (action: PlannedRow['action']) =>
+      actionable.filter((row) => row.action === action).length;
 
     return this.repository.updateRun(id, {
       status: CatalogImportStatus.APPLYING,
       decisions: decisions as unknown as Prisma.InputJsonValue,
       appliedRows: 0,
+      failures: [],
       totalRows: actionable.length,
-      updateCount: actionable.filter((row) => row.action === 'update').length,
+      createCount: countOf('create'),
+      updateCount: countOf('update'),
+      missingCount: countOf('missing'),
     });
   }
 
@@ -227,10 +281,13 @@ export class CatalogImportService {
   async applyChunk(run: CatalogImportRun): Promise<boolean> {
     const plan = run.plan as unknown as CatalogImportPlan;
     const decisions = (run.decisions ?? {}) as ImportDecisions;
-    // The same rows `apply` counted into `totalRows`, so `appliedRows` pages through them.
+    // The same rows `apply` counted into `totalRows`. Every one of them ends up either
+    // written (`appliedRows`) or failed (`failures`, TASK-2626), so the two together are
+    // the cursor — a failed row is reported, never retried. `null` is a pre-2626 run.
     const actionable = this.actionableRows(plan, decisions);
+    const previousFailures = (run.failures ?? []) as unknown as ImportRowFailure[];
 
-    const from = run.appliedRows;
+    const from = run.appliedRows + previousFailures.length;
     const slice = actionable.slice(from, from + IMPORT_CHUNK_SIZE);
     if (slice.length === 0) {
       await this.repository.updateRun(run.id, {
@@ -246,23 +303,57 @@ export class CatalogImportService {
     const catalog = await this.readCatalog(run);
     const bySku = new Map(catalog.rows.map((row) => [row.sourceSku, row]));
     const context = await this.resolveReferences(catalog, plan);
+    // What the importer last wrote, for the rows with an unticked field: their ledger
+    // digest must stay the previous one (TASK-2608). One query per chunk, not per row.
+    const unticked = slice.map((planned) => untickedFields(planned, decisions));
+    const ledger = await this.repository.loadLedgerEntries(
+      slice.filter((_, index) => unticked[index].size > 0).map((planned) => planned.sourceSku),
+    );
 
-    for (const planned of slice) {
+    let written = 0;
+    const failed: ImportRowFailure[] = [];
+    const uncounted = new Map<RunCounter, number>();
+
+    for (const [index, planned] of slice.entries()) {
       try {
-        await this.applyRow(run.id, planned, bySku.get(planned.sourceSku), context, decisions);
-      } catch (error) {
-        // One bad row must not abandon the other 1299. Log it and carry on; the
-        // ledger simply does not learn about this article, so the next import
-        // proposes it again.
-        this.logger.error(
-          `Import ${run.id}: row ${planned.sourceSku} failed — ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+        await this.applyRow(
+          run.id,
+          planned,
+          bySku.get(planned.sourceSku),
+          context,
+          unticked[index],
+          ledger.get(planned.sourceSku)?.lastImported,
         );
+        written += 1;
+      } catch (error) {
+        // One bad row must not abandon the other 1299. Record it and carry on; the
+        // ledger simply does not learn about this article, so the next import
+        // proposes it again. It is not one of the rows written (TASK-2626): the
+        // history shows it as not written, with the reason.
+        const reason = error instanceof Error ? error.message : String(error);
+        this.logger.error(`Import ${run.id}: row ${planned.sourceSku} failed — ${reason}`);
+        failed.push({
+          sourceSku: planned.sourceSku,
+          rowNumber: planned.rowNumber,
+          name: planned.name,
+          reason: reason.slice(0, IMPORT_FAILURE_REASON_MAX),
+        });
+        // `unchanged` never reaches here — `actionableRows` drops it.
+        const counter = RUN_COUNTER_BY_ACTION[planned.action as WritableAction];
+        uncounted.set(counter, (uncounted.get(counter) ?? 0) + 1);
       }
     }
 
-    await this.repository.updateRun(run.id, { appliedRows: from + slice.length });
+    // Only the counters a failure actually touched — `apply` set them to what this run
+    // would write, and a failed row is not written.
+    const decrements = Object.fromEntries(
+      [...uncounted].map(([counter, n]) => [counter, { decrement: n }]),
+    );
+    await this.repository.updateRun(run.id, {
+      appliedRows: run.appliedRows + written,
+      failures: [...previousFailures, ...failed] as unknown as Prisma.InputJsonValue,
+      ...decrements,
+    });
     return true;
   }
 
@@ -367,6 +458,24 @@ export class CatalogImportService {
       );
     }
 
+    // A category whose rows carry no colour in THIS file still needs its existing colour
+    // definition known (TASK-2608): an earlier import may have left a colour value on its
+    // products, and an unticked «Колір / дизайн» can only be kept by scoping the spec write
+    // around that definition — without the id it fell back to replace-all and deleted it.
+    // Looked up, never created: the file asks for no colour facet there.
+    const colourless = [...categories].filter(
+      ([categoryName]) => !colorsByCategory.has(categoryName),
+    );
+    const existingColors = await this.repository.findColorDefinitions(
+      colourless.map(([, categoryId]) => categoryId),
+    );
+    for (const [categoryName, categoryId] of colourless) {
+      const definitionId = existingColors.get(categoryId);
+      if (definitionId) {
+        colorDefinitions.set(categoryName, definitionId);
+      }
+    }
+
     // Variant groups: only names the file uses more than once.
     const groupNames = new Set(plan.groups.map((group) => group.name));
     const groupIdByName = new Map<string, string>();
@@ -400,7 +509,8 @@ export class CatalogImportService {
     planned: PlannedRow,
     source: ParsedProductRow | undefined,
     context: Awaited<ReturnType<CatalogImportService['resolveReferences']>>,
-    decisions: ImportDecisions,
+    unticked: ReadonlySet<ChangeField>,
+    previous: ImportedFingerprint | undefined,
   ): Promise<void> {
     // An article that fell out of the file: hide the product, never delete it.
     // Reversible by design — restoring the row upstream brings it straight back.
@@ -426,19 +536,21 @@ export class CatalogImportService {
     const productId =
       planned.action === 'create'
         ? await this.createProduct(planned, source, categoryId, brandId, groupId)
-        : await this.updateProduct(planned, source, categoryId, brandId, decisions);
+        : await this.updateProduct(planned, source, categoryId, brandId, unticked);
 
     if (!productId) {
       return;
     }
 
-    await this.writeSpecs(productId, source, context);
-    await this.writeCompat(productId, source, context);
+    await this.writeSpecs(productId, source, context, unticked);
+    if (!unticked.has('deviceModels')) {
+      await this.writeCompat(productId, source, context);
+    }
 
     await this.repository.recordImported({
       sourceSku: source.sourceSku,
       productId,
-      lastImported: fingerprintOf(source, planned.slug),
+      lastImported: ledgerFingerprintAfterApply(source, planned.slug, previous, unticked),
       lastSeenRunId: runId,
     });
   }
@@ -474,14 +586,13 @@ export class CatalogImportService {
     source: ParsedProductRow,
     categoryId: string,
     brandId: string | undefined,
-    decisions: ImportDecisions,
+    unticked: ReadonlySet<ChangeField>,
   ): Promise<string | null> {
     if (!planned.productId) {
       return null;
     }
-    const excluded = new Set(decisions.excludedFields?.[planned.sourceSku] ?? []);
     const wanted = (field: ChangeField): boolean =>
-      planned.changes.some((change) => change.field === field) && !excluded.has(field);
+      planned.changes.some((change) => change.field === field) && !unticked.has(field);
 
     const data: Parameters<ProductService['update']>[1] = {};
     if (wanted('name')) data.name = source.name;
@@ -509,26 +620,48 @@ export class CatalogImportService {
    * this copy is the only one `?specs=color:…` and `filterable-specs` can see.
    * Dropping either half puts the swatches and the colour filter back into
    * disagreement, which is the state this task was opened to end.
+   *
+   * The two halves are separate review decisions, though — «Характеристики» and
+   * «Колір / дизайн» — so an unticked one is left exactly as it is (TASK-2608): the write
+   * is scoped to the other half's definitions instead of replacing all of them, and with
+   * both unticked nothing is written at all.
    */
   private async writeSpecs(
     productId: string,
     source: ParsedProductRow,
     context: Awaited<ReturnType<CatalogImportService['resolveReferences']>>,
+    unticked: ReadonlySet<ChangeField> = new Set(),
   ): Promise<void> {
+    const keepColumns = unticked.has('attributes');
+    const keepColor = unticked.has('design');
+    if (keepColumns && keepColor) {
+      return;
+    }
+
     const definitions = context.definitions.get(source.categoryName);
-    const values = definitions
-      ? Object.entries(source.attributes)
-          .map(([key, value]) => {
-            const definitionId = definitions.get(key);
-            return definitionId ? { definitionId, value } : null;
-          })
-          .filter((value): value is { definitionId: string; value: string } => value !== null)
-      : [];
+    const values =
+      definitions && !keepColumns
+        ? Object.entries(source.attributes)
+            .map(([key, value]) => {
+              const definitionId = definitions.get(key);
+              return definitionId ? { definitionId, value } : null;
+            })
+            .filter((value): value is { definitionId: string; value: string } => value !== null)
+        : [];
 
     const color = source.design?.trim();
     const colorDefinitionId = context.colorDefinitions.get(source.categoryName);
-    if (color && colorDefinitionId) {
+    if (!keepColor && color && colorDefinitionId) {
       values.push({ definitionId: colorDefinitionId, value: color });
+    }
+
+    if (keepColumns) {
+      // Only the colour half: clear and rewrite the colour value alone — a blank
+      // «дизайн» still clears it, as the replace-all did.
+      if (colorDefinitionId) {
+        await this.repository.setSpecValues(productId, values, { only: [colorDefinitionId] });
+      }
+      return;
     }
 
     // `setSpecValues` is replace-all, so an empty list is a meaningful write: it
@@ -537,6 +670,10 @@ export class CatalogImportService {
     // behind — but only bail when there is nothing resolved at all, to keep that
     // old behaviour for a category the file declares no columns for.
     if (!definitions && values.length === 0) {
+      return;
+    }
+    if (keepColor && colorDefinitionId) {
+      await this.repository.setSpecValues(productId, values, { except: [colorDefinitionId] });
       return;
     }
     await this.repository.setSpecValues(productId, values);

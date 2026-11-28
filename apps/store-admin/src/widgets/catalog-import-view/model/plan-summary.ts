@@ -30,6 +30,9 @@ export interface PlanSummary {
   skipped: number;
 }
 
+/** Changes written through the row's category — unticked along with it. */
+const CATEGORY_BOUND_FIELDS: readonly string[] = ["attributes", "design"];
+
 export function summarisePlan(
   plan: CatalogImportPlan,
   decisions: DecisionReader,
@@ -52,8 +55,17 @@ export function summarisePlan(
       ).length;
       // TASK-2545: with every field unticked the row changes nothing — the
       // server skips it on apply (`isRowAuthorised`), so it is no update here.
-      const allUnticked = row.changes.every((change) =>
-        decisions.isFieldExcluded(row.sourceSku, change.field),
+      // An unticked category change takes the spec columns and the colour with
+      // it (TASK-2608), exactly as the server's `untickedFields` does.
+      const categoryUnticked = row.changes.some(
+        (change) =>
+          change.field === "categoryName" &&
+          decisions.isFieldExcluded(row.sourceSku, change.field),
+      );
+      const allUnticked = row.changes.every(
+        (change) =>
+          decisions.isFieldExcluded(row.sourceSku, change.field) ||
+          (categoryUnticked && CATEGORY_BOUND_FIELDS.includes(change.field)),
       );
       if (!allUnticked) updates += 1;
     }
@@ -76,6 +88,7 @@ type RunCounts = Pick<
   | "missingCount"
   | "appliedRows"
   | "totalRows"
+  | "failures"
 >;
 
 /**
@@ -92,6 +105,10 @@ export function runResultLabel(run: RunCounts): string {
       .map(([count, label]) => label(count));
     return words.length > 0 ? words.join(" · ") : null;
   };
+  // TASK-2626: a row that failed to write is not in `appliedRows` — the run
+  // has still processed it.
+  const failed = run.failures?.length ?? 0;
+  const processed = run.appliedRows + failed;
   switch (run.status) {
     case "PARSED":
       return (
@@ -107,12 +124,13 @@ export function runResultLabel(run: RunCounts): string {
           [run.createCount, d.resultCreated],
           [run.updateCount, d.resultUpdated],
           [run.missingCount, d.resultHidden],
+          [failed, d.resultFailed],
         ]) ?? d.resultNoChanges
       );
     case "APPLYING":
-      return d.resultWriting(run.appliedRows, run.totalRows);
+      return d.resultWriting(processed, run.totalRows);
     case "FAILED":
-      return d.resultStopped(run.appliedRows, run.totalRows);
+      return d.resultStopped(processed, run.totalRows);
     default:
       return d.resultNothing;
   }

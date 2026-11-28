@@ -104,6 +104,44 @@ describe("summarisePlan (ІК4)", () => {
     // Its conflicting price stays as the operator edited it.
     expect(summary.keptEdits).toBe(1);
   });
+
+  it("does not count a row left with only category-bound changes once its category is unticked (TASK-2608)", () => {
+    const moved: CatalogImportPlan = {
+      ...PLAN,
+      rows: [
+        row("C1", "update", [
+          {
+            field: "categoryName",
+            label: "Категорія",
+            to: "b",
+            conflict: false,
+          },
+          {
+            field: "attributes",
+            label: "Характеристики",
+            to: "x",
+            conflict: false,
+          },
+          { field: "design", label: "Колір", to: "x", conflict: false },
+        ]),
+        row("C2", "update", [
+          {
+            field: "categoryName",
+            label: "Категорія",
+            to: "b",
+            conflict: false,
+          },
+          { field: "price", label: "Ціна", to: "2", conflict: false },
+        ]),
+      ],
+    };
+    const summary = summarisePlan(moved, {
+      isRowExcluded: () => false,
+      isFieldExcluded: (_sku, field) => field === "categoryName",
+    });
+    // The server writes nothing on C1 — matches `isRowAuthorised`.
+    expect(summary.updates).toBe(1);
+  });
 });
 
 describe("runResultLabel (ІК1 history)", () => {
@@ -131,6 +169,48 @@ describe("runResultLabel (ІК1 history)", () => {
         missingCount: 0,
       }),
     ).toBe(d.resultCreated(1297));
+  });
+
+  it("names the rows that failed to write — alone they still beat «змін немає» (TASK-2626)", () => {
+    const failure = {
+      sourceSku: "558400004",
+      rowNumber: 7,
+      name: "Чохол",
+      reason: "Unique constraint failed on the fields: (`slug`)",
+    };
+    expect(
+      runResultLabel({
+        ...base,
+        status: "APPLIED",
+        createCount: 2,
+        updateCount: 0,
+        missingCount: 0,
+        failures: [failure, { ...failure, sourceSku: "558400005" }],
+      }),
+    ).toBe(`${d.resultCreated(2)} · ${d.resultFailed(2)}`);
+    expect(
+      runResultLabel({
+        ...base,
+        status: "APPLIED",
+        createCount: 0,
+        updateCount: 0,
+        missingCount: 0,
+        failures: [failure],
+      }),
+    ).toBe(d.resultFailed(1));
+  });
+
+  it("counts a failed row as processed while writing and where it stopped (TASK-2626)", () => {
+    const failures = [
+      { sourceSku: "A", rowNumber: 2, name: "A", reason: "x" },
+      { sourceSku: "B", rowNumber: 0, name: "B", reason: "y" },
+    ];
+    expect(runResultLabel({ ...base, status: "APPLYING", failures })).toBe(
+      d.resultWriting(414, 1297),
+    );
+    expect(runResultLabel({ ...base, status: "FAILED", failures })).toBe(
+      d.resultStopped(414, 1297),
+    );
   });
 
   it("says where a failed run stopped, and that a rejected one wrote nothing", () => {

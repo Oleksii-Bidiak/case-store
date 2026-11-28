@@ -304,6 +304,35 @@ export function fingerprintOf(row: ParsedProductRow, slug: string): ImportedFing
   return out;
 }
 
+/**
+ * The ledger entry for a row the operator applied with some fields UNTICKED (TASK-2608).
+ *
+ * The ledger answers "has the supplier moved since the importer last wrote this?". An
+ * unticked field was not written, so its answer must not change: it keeps the digest of
+ * what the importer last wrote (`previous`), not the file's new one — otherwise the same
+ * file uploaded again plans that field as already applied and never proposes it again,
+ * turning the operator's «not now» into «never». A field `previous` has no digest for is
+ * left out, which reads as "never imported" and is proposed again too.
+ *
+ * Deliberately a layer over {@link fingerprintOf} rather than a change to it: the hashing
+ * must stay byte-identical, or every product in the ledger would come back as a change.
+ */
+export function ledgerFingerprintAfterApply(
+  row: ParsedProductRow,
+  slug: string,
+  previous: ImportedFingerprint | undefined,
+  excluded: ReadonlySet<string>,
+): ImportedFingerprint {
+  const out: ImportedFingerprint = {};
+  for (const [field, digest] of Object.entries(fingerprintOf(row, slug))) {
+    const kept = excluded.has(field) ? previous?.[field] : digest;
+    if (kept !== undefined) {
+      out[field] = kept;
+    }
+  }
+  return out;
+}
+
 /** Read the same field off the live product. */
 function dbValue(current: CurrentProductSnapshot, field: DiffableField): string | null {
   return current[field];

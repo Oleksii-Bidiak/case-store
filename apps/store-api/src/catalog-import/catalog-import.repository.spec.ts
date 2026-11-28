@@ -98,3 +98,104 @@ describe('CatalogImportRepository — the colour definition (TASK-487)', () => {
     expect(data.options).toEqual(['Чорний']);
   });
 });
+
+/**
+ * A spec write scoped to some definitions (TASK-2608).
+ *
+ * `setSpecValues` is replace-all, which is right when the whole spec set is applied and
+ * wrong when the operator unticked one half of it: the file's columns («Характеристики»)
+ * and the colour («Колір / дизайн») are separate review decisions that land in the same
+ * table. The scope narrows the delete to the definitions actually being written, so the
+ * unticked half stays as it was.
+ */
+describe('CatalogImportRepository — scoped spec writes (TASK-2608)', () => {
+  let repo: CatalogImportRepository;
+
+  const value = {
+    deleteMany: jest.fn((args: unknown) => ({ op: 'deleteMany', args })),
+    createMany: jest.fn((args: unknown) => ({ op: 'createMany', args })),
+  };
+  const prismaMock = {
+    productAttributeValue: value,
+    $transaction: jest.fn().mockResolvedValue([]),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [CatalogImportRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(CatalogImportRepository);
+  });
+
+  it('still replaces every spec value when no scope is given', async () => {
+    await repo.setSpecValues('p-1', [{ definitionId: 'def-1', value: 'TPU' }]);
+
+    expect(value.deleteMany).toHaveBeenCalledWith({ where: { productId: 'p-1' } });
+  });
+
+  it('deletes only the definitions it writes with `only`', async () => {
+    await repo.setSpecValues('p-1', [{ definitionId: 'def-color', value: 'Чорний' }], {
+      only: ['def-color'],
+    });
+
+    expect(value.deleteMany).toHaveBeenCalledWith({
+      where: { productId: 'p-1', definitionId: { in: ['def-color'] } },
+    });
+  });
+
+  it('leaves the excluded definitions alone with `except`', async () => {
+    await repo.setSpecValues('p-1', [{ definitionId: 'def-1', value: 'TPU' }], {
+      except: ['def-color'],
+    });
+
+    expect(value.deleteMany).toHaveBeenCalledWith({
+      where: { productId: 'p-1', definitionId: { notIn: ['def-color'] } },
+    });
+  });
+});
+
+/**
+ * The colour definitions a category already has (TASK-2608).
+ *
+ * Needed for the categories whose rows carry no colour in this file: the import still has
+ * to know the existing colour definition to scope a spec write around an unticked colour.
+ * Lookup only — a category the file says nothing about must not gain a definition, nor
+ * have its options touched.
+ */
+describe('CatalogImportRepository — finding existing colour definitions (TASK-2608)', () => {
+  let repo: CatalogImportRepository;
+
+  const definition = { findMany: jest.fn(), create: jest.fn(), update: jest.fn() };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        CatalogImportRepository,
+        { provide: PrismaService, useValue: { attributeDefinition: definition } },
+      ],
+    }).compile();
+    repo = module.get(CatalogImportRepository);
+  });
+
+  it('looks them up in one query keyed by category, creating nothing', async () => {
+    definition.findMany.mockResolvedValue([{ id: 'def-color', categoryId: 'cat-1' }]);
+
+    const found = await repo.findColorDefinitions(['cat-1', 'cat-2']);
+
+    expect(found).toEqual(new Map([['cat-1', 'def-color']]));
+    expect(definition.findMany).toHaveBeenCalledTimes(1);
+    expect(definition.findMany).toHaveBeenCalledWith({
+      where: { categoryId: { in: ['cat-1', 'cat-2'] }, key: 'color' },
+      select: { id: true, categoryId: true },
+    });
+    expect(definition.create).not.toHaveBeenCalled();
+    expect(definition.update).not.toHaveBeenCalled();
+  });
+
+  it('skips the query for no categories', async () => {
+    expect(await repo.findColorDefinitions([])).toEqual(new Map());
+    expect(definition.findMany).not.toHaveBeenCalled();
+  });
+});

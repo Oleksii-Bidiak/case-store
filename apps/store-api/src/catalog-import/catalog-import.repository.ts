@@ -120,6 +120,31 @@ export class CatalogImportRepository {
   }
 
   /**
+   * The ledger rows for just these articles, in one query — what an applying chunk needs
+   * to keep the previous digest of a field the operator unticked (TASK-2608) without
+   * loading the whole ledger, or querying once per row.
+   */
+  async loadLedgerEntries(sourceSkus: string[]): Promise<Map<string, LedgerEntry>> {
+    if (sourceSkus.length === 0) {
+      return new Map();
+    }
+    const items = await this.prisma.catalogImportItem.findMany({
+      where: { sourceSku: { in: sourceSkus } },
+      select: { sourceSku: true, productId: true, lastImported: true },
+    });
+    return new Map(
+      items.map((item) => [
+        item.sourceSku,
+        {
+          sourceSku: item.sourceSku,
+          productId: item.productId,
+          lastImported: item.lastImported as unknown as ImportedFingerprint,
+        },
+      ]),
+    );
+  }
+
+  /**
    * Current state of the products the ledger points at, in the exact shape the
    * diff compares against. Soft-deleted rows are excluded, so a tombstoned
    * product reads as "gone" and its article is planned as a fresh create.
@@ -305,6 +330,25 @@ export class CatalogImportRepository {
   }
 
   /**
+   * The colour definitions these categories ALREADY have, keyed by category id — one
+   * query, lookup only (TASK-2608). For the categories whose rows carry no colour in this
+   * file: there is nothing for {@link ensureColorDefinition} to create or merge, but a
+   * product there may still hold a colour from an earlier import, and a spec write can
+   * only be scoped around it by knowing its definition. Creating one here would give a
+   * category a colour facet no file asked for.
+   */
+  async findColorDefinitions(categoryIds: string[]): Promise<Map<string, string>> {
+    if (categoryIds.length === 0) {
+      return new Map();
+    }
+    const found = await this.prisma.attributeDefinition.findMany({
+      where: { categoryId: { in: categoryIds }, key: COLOR_SPEC_KEY },
+      select: { id: true, categoryId: true },
+    });
+    return new Map(found.map((definition) => [definition.categoryId, definition.id]));
+  }
+
+  /**
    * Resolve (creating if needed) the `color` definition for an imported
    * category, widening its option list to cover the colours this file carries —
    * TASK-487.
@@ -388,13 +432,27 @@ export class CatalogImportRepository {
     return group.id;
   }
 
-  /** Replace a product's structured spec values in one transaction. */
+  /**
+   * Replace a product's structured spec values in one transaction.
+   *
+   * Without `scope` it is replace-all. With it, only the named definitions are cleared
+   * first (`only`), or every definition but the named ones (`except`) — so an import that
+   * the operator told to leave the colour or the file's columns alone (TASK-2608) can
+   * rewrite the other half without wiping the one it was told to keep.
+   */
   async setSpecValues(
     productId: string,
     values: Array<{ definitionId: string; value: string }>,
+    scope?: { only?: string[]; except?: string[] },
   ): Promise<void> {
+    const where: Prisma.ProductAttributeValueWhereInput = { productId };
+    if (scope?.only) {
+      where.definitionId = { in: scope.only };
+    } else if (scope?.except) {
+      where.definitionId = { notIn: scope.except };
+    }
     await this.prisma.$transaction([
-      this.prisma.productAttributeValue.deleteMany({ where: { productId } }),
+      this.prisma.productAttributeValue.deleteMany({ where }),
       ...(values.length > 0
         ? [
             this.prisma.productAttributeValue.createMany({

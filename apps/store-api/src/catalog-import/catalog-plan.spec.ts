@@ -1,6 +1,7 @@
 import {
   buildImportPlan,
   fingerprintOf,
+  ledgerFingerprintAfterApply,
   type CurrentProductSnapshot,
   type LedgerEntry,
 } from './catalog-plan';
@@ -122,6 +123,73 @@ describe('fingerprintOf — the ledger keeps no supplier data', () => {
     const b = fingerprintOf(row({ deviceModelNames: ['iPhone 17', 'iPhone 16'] }), 's');
 
     expect(a.deviceModels).toBe(b.deviceModels);
+  });
+});
+
+/**
+ * The ledger after a partially unticked update (TASK-2608).
+ *
+ * The ledger is what tells the next import whether the supplier has moved. Writing the
+ * file's NEW hash for a field the operator unticked tells it "already applied" — so the
+ * same file uploaded again proposes nothing for that field, and the operator's «not now»
+ * silently becomes «never».
+ */
+describe('ledgerFingerprintAfterApply — unticked fields', () => {
+  it('an unticked field is proposed again', () => {
+    const first = row();
+    const ledger = ledgerMap(ledgerFor(first));
+    const raised = row({ price: 349 });
+
+    const planned = buildImportPlan(catalog([raised]), ledger, currentMap(product()));
+    expect(planned.rows[0].changes.map((change) => change.field)).toEqual(['price']);
+
+    // The operator unticks the price; nothing on the product changes.
+    const after = ledgerFingerprintAfterApply(
+      raised,
+      planned.rows[0].slug,
+      ledger.get('A1')!.lastImported,
+      new Set(['price']),
+    );
+
+    const again = buildImportPlan(
+      catalog([raised]),
+      ledgerMap({ sourceSku: 'A1', productId: 'p1', lastImported: after }),
+      currentMap(product()),
+    );
+    expect(again.rows[0].changes.map((change) => change.field)).toEqual(['price']);
+  });
+
+  it('keeps the previous digest for an unticked field and the new one for the rest', () => {
+    const previous = fingerprintOf(row(), 'chehol-armor');
+    const next = row({ price: 349, name: 'Чохол Armor Pro' });
+
+    const after = ledgerFingerprintAfterApply(next, 'chehol-armor', previous, new Set(['price']));
+
+    expect(after.price).toBe(previous.price);
+    expect(after.name).toBe(fingerprintOf(next, 'chehol-armor').name);
+    expect(after.name).not.toBe(previous.name);
+  });
+
+  it('drops an unticked field the previous entry never recorded', () => {
+    const previous = fingerprintOf(row(), 'chehol-armor');
+    delete previous.price;
+
+    const after = ledgerFingerprintAfterApply(
+      row({ price: 349 }),
+      'chehol-armor',
+      previous,
+      new Set(['price']),
+    );
+
+    expect(after).not.toHaveProperty('price');
+  });
+
+  it('is fingerprintOf when nothing was unticked', () => {
+    const next = row({ price: 349 });
+
+    expect(ledgerFingerprintAfterApply(next, 's', undefined, new Set())).toEqual(
+      fingerprintOf(next, 's'),
+    );
   });
 });
 

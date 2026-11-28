@@ -1145,6 +1145,12 @@ export const dict = {
       `зупинився на ${done.toLocaleString("uk-UA")} з ${total.toLocaleString("uk-UA")}`,
     resultWriting: (done: number, total: number) =>
       `записано ${done.toLocaleString("uk-UA")} з ${total.toLocaleString("uk-UA")}`,
+    // TASK-2626: rows whose write failed — named, not counted as written.
+    resultFailed: (n: number) => `${n.toLocaleString("uk-UA")} не записано`,
+    doneFailedHeading: (n: number) =>
+      `Не записано ${countLabel(n, ["товар", "товари", "товарів"])}`,
+    doneFailedHint:
+      "Ці товари записано не повністю — частина змін могла зберегтися. Перевірте їх у каталозі, виправте причину й завантажте файл знову.",
   },
 
   // TASK-361: publication is its own action, separate from saving the fields.

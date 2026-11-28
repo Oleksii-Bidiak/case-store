@@ -17,6 +17,7 @@ const repositoryMock = {
   updateRun: jest.fn(),
   findNextApplying: jest.fn(),
   loadLedger: jest.fn(),
+  loadLedgerEntries: jest.fn(),
   loadCurrentProducts: jest.fn(),
   recordImported: jest.fn(),
   markMissing: jest.fn(),
@@ -25,6 +26,8 @@ const repositoryMock = {
   ensureDeviceBrands: jest.fn(),
   ensureDeviceModels: jest.fn(),
   ensureAttributeDefinitions: jest.fn(),
+  ensureColorDefinition: jest.fn(),
+  findColorDefinitions: jest.fn(),
   ensureGroup: jest.fn(),
   setSpecValues: jest.fn(),
   setDeviceCompat: jest.fn(),
@@ -120,6 +123,8 @@ describe('CatalogImportService', () => {
     repositoryMock.ensureDeviceBrands.mockResolvedValue(new Map());
     repositoryMock.ensureDeviceModels.mockResolvedValue(new Map());
     repositoryMock.ensureAttributeDefinitions.mockResolvedValue(new Map());
+    repositoryMock.loadLedgerEntries.mockResolvedValue(new Map());
+    repositoryMock.findColorDefinitions.mockResolvedValue(new Map());
     productServiceMock.create.mockResolvedValue({ id: 'p-new' });
     productServiceMock.update.mockResolvedValue({ id: 'p1' });
   });
@@ -158,10 +163,36 @@ describe('CatalogImportService', () => {
         status: CatalogImportStatus.APPLYING,
         decisions: { excludedSkus: ['A2'] },
         appliedRows: 0,
+        // TASK-2626: an applied run records its per-row failures; `null` is a pre-2626 run.
+        failures: [],
         totalRows: 1,
-        // The plan's single row is a create (TASK-2545: re-counted from the decisions).
+        // The plan's single row is a create (TASK-2545/2609: re-counted from the decisions).
+        createCount: 1,
         updateCount: 0,
+        missingCount: 0,
       });
+    });
+
+    // TASK-2609: the history's «N створено» / «N приховано» read these counters, and the
+    // parse-time values still counted the creates and hides the operator unticked.
+    it('counts only the creates and hides the operator authorised', async () => {
+      const rows = [
+        plannedRow({ sourceSku: 'C1', action: 'create' }),
+        plannedRow({ sourceSku: 'C2', action: 'create' }),
+        plannedRow({ sourceSku: 'M1', action: 'missing', productId: 'p-m1' }),
+        plannedRow({ sourceSku: 'M2', action: 'missing', productId: 'p-m2' }),
+      ];
+      repositoryMock.findRun.mockResolvedValue(
+        run({ plan: plan(rows), totalRows: 4, createCount: 2, missingCount: 2 }),
+      );
+      repositoryMock.updateRun.mockResolvedValue(run());
+
+      await service.apply('run-1', { excludedSkus: ['C2', 'M2'] });
+
+      expect(repositoryMock.updateRun).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({ totalRows: 2, createCount: 1, updateCount: 0, missingCount: 1 }),
+      );
     });
 
     // Caught on the first live run: confirming 4 rows out of a 1297-row plan
@@ -230,6 +261,44 @@ describe('CatalogImportService', () => {
       expect(repositoryMock.updateRun).toHaveBeenCalledWith(
         'run-1',
         expect.objectContaining({ totalRows: 2, updateCount: 1 }),
+      );
+    });
+
+    // An unticked category change takes the spec columns and the colour with it, so a row
+    // whose only ticked changes were those two writes nothing and is no update either.
+    it('counts an update left with only category-bound changes after its category was unticked as no update', async () => {
+      const change = (field: FieldChange['field']): FieldChange => ({
+        field,
+        label: field,
+        to: 'x',
+        conflict: false,
+      });
+      const rows = [
+        plannedRow({
+          sourceSku: 'U1',
+          action: 'update',
+          productId: 'p1',
+          changes: [change('categoryName'), change('attributes'), change('design')],
+        }),
+        plannedRow({
+          sourceSku: 'U2',
+          action: 'update',
+          productId: 'p2',
+          changes: [change('categoryName'), change('price')],
+        }),
+      ];
+      repositoryMock.findRun.mockResolvedValue(
+        run({ plan: plan(rows), totalRows: 2, updateCount: 2 }),
+      );
+      repositoryMock.updateRun.mockResolvedValue(run());
+
+      await service.apply('run-1', {
+        excludedFields: { U1: ['categoryName'], U2: ['categoryName'] },
+      });
+
+      expect(repositoryMock.updateRun).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({ totalRows: 1, updateCount: 1 }),
       );
     });
 
@@ -503,6 +572,206 @@ describe('CatalogImportService', () => {
       expect(repositoryMock.recordImported).not.toHaveBeenCalled();
     });
 
+    /**
+     * A PARTIALLY unticked update (TASK-2608). TASK-2545 covered the row whose every change
+     * was unticked; here some changes stay ticked, so the row IS written — and the unticked
+     * ones must still be left exactly as they are: the product column, the file's spec
+     * columns, the colour spec value, the compatibility set, and the ledger digest that
+     * decides whether the next import proposes the change again.
+     */
+    describe('applyChunk — a partially unticked update (TASK-2608)', () => {
+      const source: ParsedProductRow = {
+        rowNumber: 3,
+        categoryName: 'Чохли',
+        sourceSku: 'U1',
+        name: 'Чохол Armor',
+        sourceUrl: null,
+        description: null,
+        price: 499,
+        brandName: null,
+        design: 'Чорний',
+        barcode: null,
+        manufacturerCode: null,
+        videoUrl: null,
+        deviceBrandName: 'Apple',
+        deviceModelNames: ['iPhone 15'],
+        attributes: { material: 'TPU' },
+      };
+
+      const change = (field: FieldChange['field']): FieldChange => ({
+        field,
+        label: field,
+        to: 'x',
+        conflict: false,
+      });
+
+      const applyUpdate = (fields: Array<FieldChange['field']>, unticked: string[]) =>
+        service.applyChunk(
+          run({
+            status: CatalogImportStatus.APPLYING,
+            plan: plan([
+              plannedRow({
+                sourceSku: 'U1',
+                action: 'update',
+                productId: 'p1',
+                slug: 'chehol-armor',
+                changes: fields.map(change),
+              }),
+            ]),
+            decisions: { excludedFields: { U1: unticked } },
+          }),
+        );
+
+      beforeEach(() => {
+        jest
+          .spyOn(service as unknown as { readCatalog: () => Promise<ParsedCatalog> }, 'readCatalog')
+          .mockResolvedValue({
+            sheetName: 'Аркуш1',
+            categoryNames: ['Чохли'],
+            rows: [source],
+            attributeColumns: [{ key: 'material', label: 'Матеріал', filledCount: 1 }],
+            issues: [],
+            totalProductRows: 1,
+          });
+        repositoryMock.ensureDeviceBrands.mockResolvedValue(new Map([['Apple', 'db-apple']]));
+        repositoryMock.ensureDeviceModels.mockResolvedValue(
+          new Map([[deviceModelKey('db-apple', 'iPhone 15'), 'model-15']]),
+        );
+        repositoryMock.ensureAttributeDefinitions.mockResolvedValue(
+          new Map([['material', 'def-1']]),
+        );
+        repositoryMock.ensureColorDefinition.mockResolvedValue('def-color');
+        repositoryMock.loadLedgerEntries.mockResolvedValue(
+          new Map([
+            [
+              'U1',
+              {
+                sourceSku: 'U1',
+                productId: 'p1',
+                lastImported: { price: 'prev-price', deviceModels: 'prev-models' },
+              },
+            ],
+          ]),
+        );
+      });
+
+      it('an unticked compatibility stays as it was', async () => {
+        await applyUpdate(['price', 'deviceModels'], ['deviceModels']);
+
+        expect(productServiceMock.update).toHaveBeenCalledWith('p1', { price: 499 });
+        expect(repositoryMock.setDeviceCompat).not.toHaveBeenCalled();
+      });
+
+      it('unticked characteristics leave the file columns unwritten but still write the colour', async () => {
+        await applyUpdate(['price', 'attributes'], ['attributes']);
+
+        expect(repositoryMock.setSpecValues).toHaveBeenCalledTimes(1);
+        expect(repositoryMock.setSpecValues).toHaveBeenCalledWith(
+          'p1',
+          [{ definitionId: 'def-color', value: 'Чорний' }],
+          { only: ['def-color'] },
+        );
+      });
+
+      it('an unticked colour leaves the colour spec value unwritten but still writes the columns', async () => {
+        await applyUpdate(['price', 'design'], ['design']);
+
+        expect(repositoryMock.setSpecValues).toHaveBeenCalledTimes(1);
+        expect(repositoryMock.setSpecValues).toHaveBeenCalledWith(
+          'p1',
+          [{ definitionId: 'def-1', value: 'TPU' }],
+          { except: ['def-color'] },
+        );
+        expect(productServiceMock.update).toHaveBeenCalledWith('p1', { price: 499 });
+      });
+
+      it('writes no spec values at all when both characteristics and colour are unticked', async () => {
+        await applyUpdate(['price', 'attributes', 'design'], ['attributes', 'design']);
+
+        expect(repositoryMock.setSpecValues).not.toHaveBeenCalled();
+      });
+
+      /**
+       * The file carries no colour for the category at all, so `ensureColorDefinition` is
+       * never reached — yet the product still holds a colour value from an earlier import.
+       * Without the existing definition's id the write cannot be scoped around it, and the
+       * replace-all fallback deletes it even though the operator unticked the colour.
+       */
+      describe('when the file has no colour for the category', () => {
+        beforeEach(() => {
+          jest
+            .spyOn(
+              service as unknown as { readCatalog: () => Promise<ParsedCatalog> },
+              'readCatalog',
+            )
+            .mockResolvedValue({
+              sheetName: 'Аркуш1',
+              categoryNames: ['Чохли'],
+              rows: [{ ...source, design: null }],
+              attributeColumns: [{ key: 'material', label: 'Матеріал', filledCount: 1 }],
+              issues: [],
+              totalProductRows: 1,
+            });
+          repositoryMock.findColorDefinitions.mockResolvedValue(
+            new Map([['cat-1', 'def-color-old']]),
+          );
+        });
+
+        it('keeps the existing colour value when the blanked colour is unticked', async () => {
+          await applyUpdate(['price', 'design'], ['design']);
+
+          expect(repositoryMock.ensureColorDefinition).not.toHaveBeenCalled();
+          expect(repositoryMock.setSpecValues).toHaveBeenCalledTimes(1);
+          expect(repositoryMock.setSpecValues).toHaveBeenCalledWith(
+            'p1',
+            [{ definitionId: 'def-1', value: 'TPU' }],
+            { except: ['def-color-old'] },
+          );
+        });
+
+        it('still clears the colour when characteristics are unticked and the colour is ticked blank', async () => {
+          await applyUpdate(['price', 'attributes', 'design'], ['attributes']);
+
+          expect(repositoryMock.setSpecValues).toHaveBeenCalledTimes(1);
+          expect(repositoryMock.setSpecValues).toHaveBeenCalledWith('p1', [], {
+            only: ['def-color-old'],
+          });
+        });
+      });
+
+      /**
+       * The file moves the product to another category and the operator unticks that move.
+       * The spec columns and the colour are resolved through the FILE's category, so writing
+       * them would file values under the other category's definitions and let the scoped
+       * write delete the colour the product holds under its own — they stay with the
+       * category, and the ledger keeps their old digests so the next import offers them again.
+       */
+      it('leaves the spec values, the colour and their ledger digests alone with an unticked category change', async () => {
+        await applyUpdate(['price', 'categoryName', 'attributes', 'design'], ['categoryName']);
+
+        expect(productServiceMock.update).toHaveBeenCalledWith('p1', { price: 499 });
+        expect(repositoryMock.setSpecValues).not.toHaveBeenCalled();
+        const [{ lastImported }] = repositoryMock.recordImported.mock.calls[0];
+        expect(lastImported.price).toMatch(/^[0-9a-f]{16}$/);
+        expect(lastImported.price).not.toBe('prev-price');
+        expect(lastImported).not.toHaveProperty('categoryName');
+        expect(lastImported).not.toHaveProperty('attributes');
+        expect(lastImported).not.toHaveProperty('design');
+      });
+
+      it('records the previous ledger digest for an unticked price and the new one for the rest', async () => {
+        await applyUpdate(['price', 'deviceModels'], ['price']);
+
+        expect(repositoryMock.loadLedgerEntries).toHaveBeenCalledTimes(1);
+        expect(repositoryMock.loadLedgerEntries).toHaveBeenCalledWith(['U1']);
+        const [{ lastImported }] = repositoryMock.recordImported.mock.calls[0];
+        expect(lastImported.price).toBe('prev-price');
+        expect(lastImported.deviceModels).toMatch(/^[0-9a-f]{16}$/);
+        expect(lastImported.deviceModels).not.toBe('prev-models');
+        expect(repositoryMock.setDeviceCompat).toHaveBeenCalledWith('p1', ['model-15']);
+      });
+    });
+
     // A missing row needs no file access at all, which is what lets the "hide
     // what vanished" half of a run work even if the workbook were unreadable.
     it('hides a product that fell out of the file, and never deletes it', async () => {
@@ -523,6 +792,177 @@ describe('CatalogImportService', () => {
       expect(productServiceMock.deactivate).not.toHaveBeenCalledWith(
         expect.objectContaining({ hardDelete: true }),
       );
+    });
+
+    /**
+     * A row whose write threw (TASK-2626). It used to be only logged: it still landed in
+     * `appliedRows` and in the history's counters, and the operator had no way to learn
+     * that the product was never written. Now it is recorded in `failures` instead, and
+     * `appliedRows + failures.length` is the cursor, so a failed row is never retried.
+     */
+    describe('applyChunk — a row that fails to write (TASK-2626)', () => {
+      const source = (sourceSku: string, rowNumber: number): ParsedProductRow => ({
+        rowNumber,
+        categoryName: 'Чохли',
+        sourceSku,
+        name: `Чохол ${sourceSku}`,
+        sourceUrl: null,
+        description: null,
+        price: 499,
+        brandName: null,
+        design: null,
+        barcode: null,
+        manufacturerCode: null,
+        videoUrl: null,
+        deviceBrandName: null,
+        deviceModelNames: [],
+        attributes: {},
+      });
+
+      const priceChange: FieldChange = {
+        field: 'price',
+        label: 'Ціна',
+        from: '450',
+        to: '499',
+        conflict: false,
+      };
+
+      const updates = [
+        plannedRow({
+          sourceSku: 'U1',
+          rowNumber: 3,
+          name: 'Чохол U1',
+          action: 'update',
+          productId: 'p1',
+          changes: [priceChange],
+        }),
+        plannedRow({
+          sourceSku: 'U2',
+          rowNumber: 4,
+          name: 'Чохол U2',
+          action: 'update',
+          productId: 'p2',
+          changes: [priceChange],
+        }),
+      ];
+
+      beforeEach(() => {
+        jest
+          .spyOn(service as unknown as { readCatalog: () => Promise<ParsedCatalog> }, 'readCatalog')
+          .mockResolvedValue({
+            sheetName: 'Аркуш1',
+            categoryNames: ['Чохли'],
+            rows: [source('U1', 3), source('U2', 4), source('C1', 5), source('C2', 6)],
+            attributeColumns: [],
+            issues: [],
+            totalProductRows: 4,
+          });
+      });
+
+      it('a row that failed is not counted as written', async () => {
+        productServiceMock.update
+          .mockResolvedValueOnce({ id: 'p1' })
+          .mockRejectedValueOnce(new Error('Slug already taken'));
+
+        const more = await service.applyChunk(
+          run({
+            status: CatalogImportStatus.APPLYING,
+            plan: plan(updates),
+            totalRows: 2,
+            createCount: 0,
+            updateCount: 2,
+            failures: [],
+          }),
+        );
+
+        expect(more).toBe(true);
+        expect(repositoryMock.updateRun).toHaveBeenCalledTimes(1);
+        expect(repositoryMock.updateRun).toHaveBeenCalledWith('run-1', {
+          appliedRows: 1,
+          failures: [
+            { sourceSku: 'U2', rowNumber: 4, name: 'Чохол U2', reason: 'Slug already taken' },
+          ],
+          updateCount: { decrement: 1 },
+        });
+      });
+
+      it('treats a run whose only unwritten row already failed as exhausted', async () => {
+        const failed = {
+          sourceSku: 'U2',
+          rowNumber: 4,
+          name: 'Чохол U2',
+          reason: 'Slug already taken',
+        };
+
+        const more = await service.applyChunk(
+          run({
+            status: CatalogImportStatus.APPLYING,
+            plan: plan(updates),
+            appliedRows: 1,
+            failures: [failed],
+          }),
+        );
+
+        expect(more).toBe(false);
+        expect(productServiceMock.update).not.toHaveBeenCalled();
+        expect(repositoryMock.updateRun).toHaveBeenCalledWith(
+          'run-1',
+          expect.objectContaining({ status: CatalogImportStatus.APPLIED }),
+        );
+      });
+
+      it('a failed create is taken off createCount', async () => {
+        productServiceMock.create
+          .mockRejectedValueOnce(new Error('category is archived'))
+          .mockResolvedValueOnce({ id: 'p-new' });
+
+        await service.applyChunk(
+          run({
+            status: CatalogImportStatus.APPLYING,
+            plan: plan([
+              plannedRow({ sourceSku: 'C1', rowNumber: 5, name: 'Чохол C1' }),
+              plannedRow({ sourceSku: 'C2', rowNumber: 6, name: 'Чохол C2', slug: 'c2' }),
+            ]),
+            totalRows: 2,
+            createCount: 2,
+            failures: [],
+          }),
+        );
+
+        expect(repositoryMock.updateRun).toHaveBeenCalledWith('run-1', {
+          appliedRows: 1,
+          failures: [
+            { sourceSku: 'C1', rowNumber: 5, name: 'Чохол C1', reason: 'category is archived' },
+          ],
+          createCount: { decrement: 1 },
+        });
+      });
+
+      it('appends to the failures of earlier chunks and trims a long reason', async () => {
+        const earlier = { sourceSku: 'X0', rowNumber: 2, name: 'Чохол X0', reason: 'boom' };
+        productServiceMock.update.mockRejectedValueOnce(new Error('x'.repeat(1000)));
+
+        await service.applyChunk(
+          run({
+            status: CatalogImportStatus.APPLYING,
+            plan: plan([
+              plannedRow({ sourceSku: 'X0', action: 'create' }),
+              plannedRow({ sourceSku: 'X1', action: 'create' }),
+              ...updates,
+            ]),
+            // X0 failed in an earlier chunk, X1 was written: the cursor is at U1.
+            appliedRows: 1,
+            failures: [earlier],
+          }),
+        );
+
+        const [, data] = repositoryMock.updateRun.mock.calls[0];
+        expect(data.appliedRows).toBe(2);
+        expect(data.failures).toHaveLength(2);
+        expect(data.failures[0]).toEqual(earlier);
+        expect(data.failures[1]).toMatchObject({ sourceSku: 'U1', rowNumber: 3 });
+        expect(data.failures[1].reason.length).toBeLessThanOrEqual(300);
+      });
     });
 
     it('advances the progress counter by the chunk size, not the whole plan', () => {

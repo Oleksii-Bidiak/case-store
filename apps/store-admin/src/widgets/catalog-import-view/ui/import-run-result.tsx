@@ -8,7 +8,10 @@ import {
   RotateCcwIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import type { CatalogImportRunEntity } from "@/shared/api";
+import type {
+  CatalogImportRunEntity,
+  ImportRowFailureEntity,
+} from "@/shared/api";
 import { Button } from "@/shared/ui";
 import { toast } from "@/shared/ui/toast";
 import { cn } from "@/shared/lib";
@@ -19,8 +22,11 @@ const d = dict.catalogImport;
 
 /** «Записуємо 412 з 1 297» with a bar (ІК11). Polled by the caller. */
 export function ImportProgress({ run }: { run: CatalogImportRunEntity }) {
+  // TASK-2626: a row that failed to write is not in `appliedRows` — it is
+  // processed all the same, so the bar counts it.
+  const processed = run.appliedRows + (run.failures?.length ?? 0);
   const share =
-    run.totalRows > 0 ? Math.round((run.appliedRows / run.totalRows) * 100) : 0;
+    run.totalRows > 0 ? Math.round((processed / run.totalRows) * 100) : 0;
   return (
     <div className="flex flex-col gap-3 rounded-lg border bg-card p-5 shadow-card">
       <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -28,12 +34,12 @@ export function ImportProgress({ run }: { run: CatalogImportRunEntity }) {
           aria-hidden="true"
           className="size-4 animate-spin text-primary motion-reduce:animate-none"
         />
-        {d.progress(run.appliedRows, run.totalRows)}
+        {d.progress(processed, run.totalRows)}
       </p>
       <div
         role="progressbar"
-        aria-label={d.progress(run.appliedRows, run.totalRows)}
-        aria-valuenow={run.appliedRows}
+        aria-label={d.progress(processed, run.totalRows)}
+        aria-valuenow={processed}
         aria-valuemin={0}
         aria-valuemax={run.totalRows}
         className="h-2 w-full overflow-hidden rounded-full bg-muted"
@@ -56,11 +62,12 @@ export interface WrittenFigures {
   /** Hand edits the operator kept — known only for a run reviewed here. */
   keptEdits: number | null;
   /**
-   * The figures are the file's PLAN at parse time, not what was written: a
-   * run opened from the history has lost the operator's unticked rows, and
-   * the API stores only the planned counts (actual counts — TASK-1741).
+   * The figures are the file's PLAN at parse time, not what was written — a
+   * run applied before the API stored the real result (TASK-2609/2626).
    */
   planned: boolean;
+  /** Rows whose write failed, with the reason (TASK-2626). */
+  failures: ImportRowFailureEntity[];
 }
 
 /** What was written, and where to go next (ІК12). */
@@ -71,6 +78,7 @@ export function ImportDone({
   figures: WrittenFigures;
   onStartOver: () => void;
 }) {
+  const failedId = useId();
   const items: Array<{ value: number; label: string; tone?: string }> = [
     { value: figures.created, label: d.doneCreated },
     {
@@ -108,6 +116,39 @@ export function ImportDone({
           </div>
         ))}
       </dl>
+      {figures.failures.length > 0 ? (
+        <div className="flex flex-col gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-4">
+          <p
+            id={failedId}
+            className="flex items-center gap-2 text-sm font-semibold text-destructive"
+          >
+            <TriangleAlertIcon aria-hidden="true" className="size-4 shrink-0" />
+            {d.doneFailedHeading(figures.failures.length)}
+          </p>
+          <p className="text-sm text-muted-foreground">{d.doneFailedHint}</p>
+          <ul aria-labelledby={failedId} className="flex flex-col gap-1.5">
+            {figures.failures.map((failure, index) => (
+              <li
+                key={`${failure.sourceSku}-${failure.rowNumber}-${index}`}
+                className="text-sm text-foreground"
+              >
+                {[
+                  failure.sourceSku,
+                  failure.name,
+                  // Row 0 is a product gone from the file — it has no row.
+                  failure.rowNumber > 0 ? d.rowNumber(failure.rowNumber) : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+                <span className="text-muted-foreground">
+                  {" — "}
+                  {failure.reason}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {figures.planned ? (
         <p className="text-sm text-muted-foreground">{d.donePlannedNote}</p>
       ) : null}
